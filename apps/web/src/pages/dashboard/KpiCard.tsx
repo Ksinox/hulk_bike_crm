@@ -1,75 +1,149 @@
-import type { LucideIcon } from "lucide-react";
-import { TrendingUp, TrendingDown } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
+import { ArrowUpRight, ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-type KpiCardProps = {
+type DeltaTone = "up" | "down" | "flat";
+
+export type KpiCardProps = {
   title: string;
   value: string;
-  icon: LucideIcon;
-  delta?: number;
-  deltaLabel?: string;
-  tone?: "default" | "success" | "warning" | "destructive";
-};
-
-const toneClasses: Record<NonNullable<KpiCardProps["tone"]>, string> = {
-  default: "bg-primary/10 text-primary",
-  success: "bg-success/10 text-success",
-  warning: "bg-warning/10 text-warning",
-  destructive: "bg-destructive/10 text-destructive",
+  unit?: string;
+  foot?: React.ReactNode;
+  delta?: { tone: DeltaTone; label: string };
+  blue?: boolean;
+  valueTone?: "default" | "red";
 };
 
 export function KpiCard({
   title,
   value,
-  icon: Icon,
+  unit,
+  foot,
   delta,
-  deltaLabel,
-  tone = "default",
+  blue,
+  valueTone = "default",
 }: KpiCardProps) {
-  const deltaPositive = (delta ?? 0) >= 0;
   return (
-    <Card className="hover:shadow-card-hover transition-shadow">
-      <CardContent className="p-5">
-        <div className="flex items-start justify-between">
-          <div className="space-y-1">
-            <div className="text-sm text-muted-foreground">{title}</div>
-            <div className="text-2xl font-semibold leading-tight">{value}</div>
-          </div>
-          <div
+    <Card blue={blue}>
+      <div
+        className={cn(
+          "flex items-center gap-1.5 text-[13px] font-medium",
+          blue ? "text-white/75" : "text-muted",
+        )}
+      >
+        {title}
+      </div>
+      <GoButton blue={blue} />
+      <div
+        className={cn(
+          "mt-3 font-display tabular-nums leading-[1.1] tracking-[-0.02em]",
+          "text-[34px] font-extrabold",
+          valueTone === "red" && !blue ? "text-red" : "",
+        )}
+      >
+        {value}
+        {unit && (
+          <span
             className={cn(
-              "flex h-10 w-10 items-center justify-center rounded-lg",
-              toneClasses[tone],
+              "ml-1 text-[20px] font-bold",
+              blue ? "text-white" : "text-muted",
             )}
           >
-            <Icon className="h-5 w-5" />
-          </div>
-        </div>
-        {delta !== undefined && (
-          <div className="mt-3 flex items-center gap-1.5 text-xs">
-            {deltaPositive ? (
-              <TrendingUp className="h-3.5 w-3.5 text-success" />
-            ) : (
-              <TrendingDown className="h-3.5 w-3.5 text-destructive" />
-            )}
-            <span
-              className={cn(
-                "font-medium",
-                deltaPositive ? "text-success" : "text-destructive",
-              )}
-            >
-              {deltaPositive ? "+" : ""}
-              {delta}
-              {typeof delta === "number" && deltaLabel?.includes("%")
-                ? ""
-                : ""}
-            </span>
-            <span className="text-muted-foreground">
-              {deltaLabel ?? "к прошлой неделе"}
-            </span>
-          </div>
+            {unit}
+          </span>
         )}
-      </CardContent>
+      </div>
+      <div
+        className={cn(
+          "mt-2.5 flex items-center gap-1.5 text-xs",
+          blue ? "text-white/75" : "text-muted",
+        )}
+      >
+        {delta && <DeltaPill tone={delta.tone} label={delta.label} blue={blue} />}
+        {foot}
+      </div>
     </Card>
+  );
+}
+
+export function Card({
+  children,
+  blue,
+  className,
+  ...rest
+}: {
+  children: React.ReactNode;
+  blue?: boolean;
+  className?: string;
+} & React.HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div
+      className={cn(
+        "relative rounded-xl p-[18px] shadow-card",
+        blue ? "text-white" : "bg-surface",
+        className,
+      )}
+      style={
+        blue
+          ? {
+              background:
+                "linear-gradient(135deg, hsl(var(--blue-600)) 0%, hsl(var(--blue)) 100%)",
+            }
+          : undefined
+      }
+      {...rest}
+    >
+      {children}
+    </div>
+  );
+}
+
+function GoButton({ blue }: { blue?: boolean }) {
+  return (
+    <button
+      type="button"
+      className={cn(
+        "absolute right-3.5 top-3.5 flex h-8 w-8 items-center justify-center rounded-full transition-transform hover:translate-x-0.5 hover:-translate-y-0.5",
+        blue ? "bg-white text-blue-600" : "bg-ink text-white",
+      )}
+    >
+      <ArrowUpRight size={14} strokeWidth={2.2} />
+    </button>
+  );
+}
+
+export function DeltaPill({
+  tone,
+  label,
+  blue,
+}: {
+  tone: DeltaTone;
+  label: string;
+  blue?: boolean;
+}) {
+  const cls = blue
+    ? tone === "up"
+      ? "bg-white/20 text-[#baffd6]"
+      : tone === "down"
+        ? "bg-white/20 text-[#ffc9c9]"
+        : "bg-white/15 text-white/80"
+    : tone === "up"
+      ? "bg-green-soft text-green-ink"
+      : tone === "down"
+        ? "bg-red-soft text-red-ink"
+        : "bg-surface-soft text-muted";
+
+  const Icon =
+    tone === "up" ? ChevronUp : tone === "down" ? ChevronDown : null;
+
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 rounded-full px-2 py-[3px] text-[11px] font-bold tracking-tight",
+        cls,
+      )}
+    >
+      {Icon && <Icon size={9} strokeWidth={3} />}
+      {label}
+    </span>
   );
 }

@@ -1,132 +1,318 @@
-export type RentalStatus =
-  | "active"
+export type ScootStatus =
+  | "rented"
   | "overdue"
-  | "completed"
-  | "incident"
-  | "draft";
+  | "free"
+  | "repair"
+  | "rassrochka"
+  | "sold";
 
-export type Rental = {
-  id: string;
-  clientName: string;
+export type ScootModel = "Yamaha Jog" | "Yamaha Gear" | "Tank";
+
+export type ParkItem = {
+  name: string;
+  model: ScootModel;
+  status: ScootStatus;
+};
+
+export type ReturnStatus = "active" | "late" | "soon" | "done";
+
+export type ReturnItem = {
+  client: string;
+  initials: string;
   scooter: string;
-  startDate: string;
-  endDate: string;
-  dailyRate: number;
-  totalAmount: number;
-  status: RentalStatus;
+  when: string;
+  status: ReturnStatus;
+  phone: string;
 };
 
-export type KpiSnapshot = {
-  revenueToday: number;
-  revenueTodayDelta: number;
-  activeRentals: number;
-  activeRentalsDelta: number;
-  overduePayments: number;
-  overduePaymentsAmount: number;
-  openTasks: number;
-  openTasksUrgent: number;
+export type OverdueItem = {
+  client: string;
+  initials: string;
+  scooter: string;
+  debt: string;
+  days: number;
+  phone: string;
 };
 
-export type RevenuePoint = { label: string; rental: number; repairs: number };
+export type TaskIcon =
+  | "wrench"
+  | "phone"
+  | "money"
+  | "doc"
+  | "bike"
+  | "box"
+  | "alert";
 
-export type SourceSplit = { label: string; value: number };
-
-export const mockKpi: KpiSnapshot = {
-  revenueToday: 24_800,
-  revenueTodayDelta: 12,
-  activeRentals: 31,
-  activeRentalsDelta: 3,
-  overduePayments: 4,
-  overduePaymentsAmount: 18_600,
-  openTasks: 7,
-  openTasksUrgent: 2,
+export type TaskItem = {
+  icon: TaskIcon;
+  title: string;
+  meta: string;
+  overdue: boolean;
+  done?: boolean;
 };
 
-export const mockRentals: Rental[] = [
+export type ActivityItem = {
+  who: string;
+  initials: string;
+  body: string;
+  when: string;
+  system?: boolean;
+};
+
+export type RevenuePeriod = "day" | "week" | "month";
+
+export type RevenueFrame = {
+  value: string;
+  unit: string;
+  delta: number;
+  vs: string;
+  chart: number[];
+  labels: string[];
+};
+
+function buildPark(): ParkItem[] {
+  const arr: { name: string; model: ScootModel }[] = [];
+  for (let i = 1; i <= 30; i++)
+    arr.push({
+      name: `Jog #${String(i).padStart(2, "0")}`,
+      model: "Yamaha Jog",
+    });
+  for (let i = 1; i <= 18; i++)
+    arr.push({
+      name: `Gear #${String(i).padStart(2, "0")}`,
+      model: "Yamaha Gear",
+    });
+  for (let i = 1; i <= 6; i++)
+    arr.push({ name: `Tank #${String(i).padStart(2, "0")}`, model: "Tank" });
+
+  const dist: Record<ScootStatus, number> = {
+    rented: 34,
+    overdue: 3,
+    repair: 3,
+    free: 10,
+    sold: 2,
+    rassrochka: 2,
+  };
+  const statuses: ScootStatus[] = [];
+  (Object.entries(dist) as [ScootStatus, number][]).forEach(([k, n]) => {
+    for (let i = 0; i < n; i++) statuses.push(k);
+  });
+  while (statuses.length < 54) statuses.push("free");
+  // deterministic shuffle (Фишер–Йетс на sin-ряду, идентично HTML-эталону)
+  for (let i = statuses.length - 1; i > 0; i--) {
+    const j = Math.floor(((Math.sin(i * 7 + 1) + 1) / 2) * (i + 1));
+    [statuses[i], statuses[j]] = [statuses[j], statuses[i]];
+  }
+  return arr.map((s, i) => ({ ...s, status: statuses[i] }));
+}
+
+export const mockPark: ParkItem[] = buildPark();
+
+export const mockReturns: ReturnItem[] = [
   {
-    id: "R-1042",
-    clientName: "Сахаров И.Н.",
-    scooter: "Jog #42",
-    startDate: "2026-04-16",
-    endDate: "2026-04-23",
-    dailyRate: 500,
-    totalAmount: 3_500,
+    client: "Андрей К.",
+    initials: "АК",
+    scooter: "Jog #12",
+    when: "сегодня 14:00",
     status: "active",
+    phone: "+7 928 111-22-33",
   },
   {
-    id: "R-1041",
-    clientName: "Волкова Е.М.",
-    scooter: "Gear #5",
-    startDate: "2026-04-10",
-    endDate: "2026-04-17",
-    dailyRate: 600,
-    totalAmount: 4_200,
-    status: "overdue",
-  },
-  {
-    id: "R-1040",
-    clientName: "Петров А.С.",
-    scooter: "Tank #12",
-    startDate: "2026-04-15",
-    endDate: "2026-04-22",
-    dailyRate: 500,
-    totalAmount: 3_500,
+    client: "Марина С.",
+    initials: "МС",
+    scooter: "Gear #07",
+    when: "сегодня 18:30",
     status: "active",
+    phone: "+7 918 445-12-09",
   },
   {
-    id: "R-1039",
-    clientName: "Иванова О.К.",
-    scooter: "Jog #19",
-    startDate: "2026-04-08",
-    endDate: "2026-04-15",
-    dailyRate: 400,
-    totalAmount: 2_800,
-    status: "completed",
+    client: "Игорь В.",
+    initials: "ИВ",
+    scooter: "Tank #04",
+    when: "просрочен 2 дн",
+    status: "late",
+    phone: "+7 962 377-89-01",
   },
   {
-    id: "R-1038",
-    clientName: "Громов Д.В.",
-    scooter: "Gear #7",
-    startDate: "2026-04-12",
-    endDate: "2026-04-18",
-    dailyRate: 550,
-    totalAmount: 3_300,
-    status: "incident",
+    client: "Ольга П.",
+    initials: "ОП",
+    scooter: "Jog #23",
+    when: "просрочен 4 ч",
+    status: "late",
+    phone: "+7 905 129-64-55",
   },
   {
-    id: "R-1037",
-    clientName: "Соколов П.А.",
-    scooter: "Jog #28",
-    startDate: "2026-04-14",
-    endDate: "2026-04-21",
-    dailyRate: 450,
-    totalAmount: 3_150,
-    status: "active",
+    client: "Денис М.",
+    initials: "ДМ",
+    scooter: "Gear #11",
+    when: "завтра 12:00",
+    status: "soon",
+    phone: "+7 961 200-41-18",
+  },
+  {
+    client: "Елена Т.",
+    initials: "ЕТ",
+    scooter: "Jog #02",
+    when: "завтра 19:00",
+    status: "soon",
+    phone: "+7 988 700-08-40",
+  },
+  {
+    client: "Николай З.",
+    initials: "НЗ",
+    scooter: "Jog #18",
+    when: "ср · 15 окт",
+    status: "soon",
+    phone: "+7 909 811-22-07",
   },
 ];
 
-export const mockRevenueTrend: RevenuePoint[] = [
-  { label: "Пн", rental: 18_200, repairs: 1_400 },
-  { label: "Вт", rental: 21_500, repairs: 2_100 },
-  { label: "Ср", rental: 19_800, repairs: 900 },
-  { label: "Чт", rental: 24_100, repairs: 3_200 },
-  { label: "Пт", rental: 27_600, repairs: 2_400 },
-  { label: "Сб", rental: 31_200, repairs: 1_800 },
-  { label: "Вс", rental: 28_400, repairs: 1_200 },
+export const mockOverdue: OverdueItem[] = [
+  {
+    client: "Игорь В.",
+    initials: "ИВ",
+    scooter: "Tank #04",
+    debt: "4 400 ₽",
+    days: 4,
+    phone: "+7 962 377-89-01",
+  },
+  {
+    client: "Ольга П.",
+    initials: "ОП",
+    scooter: "Jog #23",
+    debt: "1 800 ₽",
+    days: 2,
+    phone: "+7 905 129-64-55",
+  },
+  {
+    client: "Руслан А.",
+    initials: "РА",
+    scooter: "Jog #31",
+    debt: "1 200 ₽",
+    days: 1,
+    phone: "+7 919 442-80-12",
+  },
 ];
 
-export const mockSourceSplit: SourceSplit[] = [
-  { label: "Авито", value: 38 },
-  { label: "Повторные", value: 34 },
-  { label: "Рекомендация", value: 18 },
-  { label: "Карты", value: 7 },
-  { label: "Другое", value: 3 },
+export const mockTasks: TaskItem[] = [
+  {
+    icon: "wrench",
+    title: "ТО Jog #07 после 3 000 км",
+    meta: "просрочено · пт 10 окт",
+    overdue: true,
+  },
+  {
+    icon: "phone",
+    title: "Позвонить Игорю — возврат Tank",
+    meta: "просрочено · вс 12 окт",
+    overdue: true,
+  },
+  {
+    icon: "money",
+    title: "Забрать платёж у Ольги (1 800 ₽)",
+    meta: "сегодня до 18:00",
+    overdue: false,
+  },
+  {
+    icon: "doc",
+    title: "Договор рассрочки · Руслан А.",
+    meta: "сегодня · 14:00",
+    overdue: false,
+  },
+  {
+    icon: "bike",
+    title: "Отдать Gear #11 Денису",
+    meta: "сегодня · 16:30",
+    overdue: false,
+  },
+  {
+    icon: "box",
+    title: "Заказать колодки на Jog (4 шт)",
+    meta: "сегодня",
+    overdue: false,
+  },
+  {
+    icon: "money",
+    title: "Сверка кассы за выходные",
+    meta: "сегодня",
+    overdue: false,
+    done: true,
+  },
 ];
 
-export const statusLabel: Record<RentalStatus, string> = {
-  active: "Активна",
-  overdue: "Просрочка",
-  completed: "Завершена",
-  incident: "Инцидент",
-  draft: "Черновик",
+export const mockActivity: ActivityItem[] = [
+  {
+    who: "Дима",
+    initials: "Д",
+    body: "принял возврат <b>Jog #05</b> от Алексея Р.",
+    when: "8 мин назад",
+  },
+  {
+    who: "Дима",
+    initials: "Д",
+    body: "оформил аренду <b>Jog #12</b> → Андрей К.",
+    when: "22 мин назад",
+  },
+  {
+    who: "Владимир",
+    initials: "ВМ",
+    body: "изменил рейтинг клиента <b>Игорь В.</b> 72 → 45",
+    when: "1 ч назад",
+  },
+  {
+    who: "Система",
+    initials: "С",
+    body: "авто-штраф <b>200 ₽</b> за просрочку (А-121)",
+    when: "2 ч назад",
+    system: true,
+  },
+  {
+    who: "Дима",
+    initials: "Д",
+    body: "закрыл инцидент ДТП #17 (оплачено 6 000 ₽)",
+    when: "вчера 19:40",
+  },
+];
+
+export const mockRevenue: Record<RevenuePeriod, RevenueFrame> = {
+  day: {
+    value: "18 400",
+    unit: "₽",
+    delta: 12,
+    vs: "vs вс 12 окт",
+    chart: [45, 62, 58, 71, 49, 55, 88],
+    labels: ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"],
+  },
+  week: {
+    value: "142 600",
+    unit: "₽",
+    delta: 8,
+    vs: "vs прошлой неделе",
+    chart: [98, 102, 88, 115, 130, 95, 124],
+    labels: ["W38", "W39", "W40", "W41", "W42", "W43", "W44"],
+  },
+  month: {
+    value: "625 800",
+    unit: "₽",
+    delta: -3,
+    vs: "vs сентябрю",
+    chart: [82, 91, 78, 95, 88, 72, 65],
+    labels: ["Апр", "Май", "Июн", "Июл", "Авг", "Сен", "Окт"],
+  },
+};
+
+export const returnStatusLabel: Record<ReturnStatus, string> = {
+  active: "активна",
+  late: "просрочка",
+  soon: "скоро",
+  done: "завершена",
+};
+
+export const scootStatusLabel: Record<ScootStatus, string> = {
+  rented: "в аренде",
+  overdue: "просрочка",
+  free: "свободен",
+  repair: "ремонт",
+  sold: "продан",
+  rassrochka: "рассрочка",
 };

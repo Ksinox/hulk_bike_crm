@@ -1,0 +1,1350 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<title>Халк Байк · Дашборд (hi-fi)</title>
+<meta name="viewport" content="width=1440" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+  /* ============ Design Tokens ============ */
+  :root {
+    /* neutrals */
+    --bg: #f4f6fb;
+    --bg-gradient-1: #e3ecff;
+    --bg-gradient-2: #d6e1fb;
+    --surface: #ffffff;
+    --surface-soft: #f7f9fd;
+    --border: #eceff5;
+    --border-strong: #e2e6ef;
+    --ink: #101623;
+    --ink-2: #1f2a3d;
+    --muted: #6b7487;
+    --muted-2: #98a0b2;
+    /* brand */
+    --blue: #3b82f6;
+    --blue-600: #2563eb;
+    --blue-700: #1d4ed8;
+    --blue-50: #eff6ff;
+    --blue-100: #dbeafe;
+    --blue-ink: #0b1e46;
+    /* semantic */
+    --green: #10b981;
+    --green-soft: #d1fae5;
+    --green-ink: #065f46;
+    --red: #ef4444;
+    --red-soft: #fee2e2;
+    --red-ink: #991b1b;
+    --orange: #f59e0b;
+    --orange-soft: #fef3c7;
+    --orange-ink: #92400e;
+    --purple: #8b5cf6;
+    --purple-soft: #ede9fe;
+    --purple-ink: #5b21b6;
+    /* elevation */
+    --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.04);
+    --shadow-md: 0 4px 14px rgba(16, 24, 40, 0.05), 0 1px 3px rgba(16,24,40,0.04);
+    --shadow-lg: 0 12px 32px rgba(16, 24, 40, 0.08), 0 2px 6px rgba(16,24,40,0.04);
+    /* radii */
+    --r-sm: 8px;
+    --r-md: 12px;
+    --r-lg: 16px;
+    --r-xl: 20px;
+    --r-2xl: 24px;
+    --r-full: 999px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background:
+      radial-gradient(ellipse 70% 60% at 10% 10%, var(--bg-gradient-1) 0%, transparent 50%),
+      radial-gradient(ellipse 80% 60% at 100% 90%, var(--bg-gradient-2) 0%, transparent 50%),
+      var(--bg);
+    min-height: 100vh;
+    font-family: 'Inter', system-ui, sans-serif;
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: 'cv11','ss01';
+  }
+
+  /* ============ Typography ============ */
+  .h-display { font-family: 'Manrope', 'Inter', sans-serif; font-weight: 800; letter-spacing: -0.02em; }
+  .h1 { font-size: 28px; line-height: 1.15; }
+  .h2 { font-size: 20px; line-height: 1.2; font-weight: 700; letter-spacing: -0.01em; }
+  .h3 { font-size: 16px; line-height: 1.25; font-weight: 700; letter-spacing: -0.005em; }
+  .t-body { font-size: 14px; line-height: 1.45; color: var(--ink-2); }
+  .t-muted { color: var(--muted); }
+  .t-sm { font-size: 13px; }
+  .t-xs { font-size: 12px; }
+  .t-mono-num { font-feature-settings: 'tnum'; }
+
+  /* ============ Layout ============ */
+  .app {
+    display: flex; gap: 18px; padding: 18px;
+    min-height: 100vh;
+    max-width: 1440px; margin: 0 auto;
+  }
+
+  /* sidebar — collapsed/expanded states */
+  .sidebar {
+    width: 68px; flex-shrink: 0;
+    background: var(--surface);
+    border-radius: var(--r-2xl);
+    box-shadow: var(--shadow-md);
+    padding: 16px 10px;
+    display: flex; flex-direction: column; align-items: stretch;
+    gap: 4px;
+    position: sticky; top: 18px; height: calc(100vh - 36px);
+    transition: width 360ms cubic-bezier(0.22, 1, 0.36, 1),
+                padding 360ms cubic-bezier(0.22, 1, 0.36, 1),
+                box-shadow 240ms ease;
+    overflow: hidden;
+    z-index: 50;
+  }
+  .sidebar:hover {
+    width: 232px;
+    padding: 16px 12px;
+    box-shadow: var(--shadow-lg);
+  }
+  .sidebar .logo {
+    width: 40px; height: 40px; border-radius: 14px;
+    background: var(--ink);
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 10px 4px;
+    flex-shrink: 0;
+  }
+  .sidebar .nav-item {
+    height: 44px; border-radius: 14px;
+    display: flex; align-items: center;
+    color: var(--muted); cursor: pointer;
+    transition: background 0.18s, color 0.18s;
+    position: relative;
+    padding: 0 12px;
+    gap: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .sidebar .nav-item > svg { flex-shrink: 0; width: 20px; height: 20px; }
+  .sidebar .nav-item .label {
+    font-size: 13px; font-weight: 600;
+    opacity: 0;
+    transform: translateX(-6px);
+    transition: opacity 220ms cubic-bezier(0.22,1,0.36,1) 80ms,
+                transform 320ms cubic-bezier(0.22,1,0.36,1) 80ms;
+    pointer-events: none;
+  }
+  .sidebar:hover .nav-item .label { opacity: 1; transform: translateX(0); pointer-events: auto; }
+  .sidebar .nav-item:hover { background: var(--blue-50); color: var(--blue-600); }
+  .sidebar .nav-item.active { background: var(--ink); color: #fff; }
+  .sidebar .nav-item.active::before {
+    content: ''; position: absolute; left: -12px; top: 12px; bottom: 12px; width: 3px;
+    background: var(--ink); border-radius: 0 3px 3px 0;
+  }
+  /* floating tooltip — fixed-positioned, shown only when sidebar is collapsed */
+  .sb-tooltip {
+    position: fixed;
+    background: var(--ink); color: #fff;
+    padding: 6px 10px; border-radius: 8px;
+    font-size: 12px; font-weight: 600;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0; transform: translateX(-4px);
+    transition: opacity 150ms ease, transform 150ms ease;
+    z-index: 9999;
+    box-shadow: var(--shadow-md);
+  }
+  .sb-tooltip.show { opacity: 1; transform: translateX(0); }
+  .sb-tooltip::before {
+    content: ''; position: absolute; left: -5px; top: 50%; transform: translateY(-50%);
+    border-top: 5px solid transparent; border-bottom: 5px solid transparent;
+    border-right: 5px solid var(--ink);
+  }
+  .sidebar .spacer { flex: 1; }
+
+  /* main */
+  .main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 18px; }
+
+  /* topbar */
+  .topbar {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 16px;
+    background: var(--surface);
+    border-radius: var(--r-xl);
+    box-shadow: var(--shadow-sm);
+  }
+  .search {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--surface-soft);
+    border-radius: var(--r-full);
+    padding: 8px 14px;
+    min-width: 280px;
+    border: 1px solid transparent;
+    transition: border-color 0.15s;
+  }
+  .search:focus-within { border-color: var(--blue); background: #fff; }
+  .search input {
+    border: none; background: transparent; outline: none;
+    font-family: inherit; font-size: 14px; color: var(--ink);
+    width: 100%;
+  }
+  .search input::placeholder { color: var(--muted-2); }
+
+  .date-chip {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 6px 12px; border-radius: var(--r-full);
+    background: var(--blue-50); color: var(--blue-700);
+    font-weight: 600; font-size: 13px;
+  }
+
+  .topbar-spacer { flex: 1; }
+
+  .icon-btn {
+    width: 40px; height: 40px; border-radius: 12px;
+    background: var(--surface-soft); color: var(--ink-2);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; border: none;
+    transition: all 0.15s; position: relative;
+  }
+  .icon-btn:hover { background: var(--blue-50); color: var(--blue-600); }
+  .icon-btn .dot {
+    position: absolute; top: 8px; right: 9px;
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--red); border: 2px solid var(--surface);
+  }
+
+  .avatar {
+    width: 40px; height: 40px; border-radius: 14px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: #fff; display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 14px;
+    cursor: pointer;
+  }
+
+  /* greeting */
+  .greeting { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; flex-wrap: wrap; }
+  .greeting .lead { color: var(--muted); font-size: 14px; margin-top: 4px; }
+  .greeting h1 { margin: 0; display: flex; align-items: center; gap: 10px; }
+  .greeting .wave { display: inline-flex; animation: wave 2.2s ease-in-out infinite; transform-origin: 70% 70%; }
+  @keyframes wave { 0%,60%,100%{transform:rotate(0);} 10%{transform:rotate(14deg);} 20%{transform:rotate(-8deg);} 30%{transform:rotate(14deg);} 40%{transform:rotate(-4deg);} 50%{transform:rotate(10deg);} }
+
+  .view-switch {
+    display: inline-flex; background: var(--surface); padding: 4px;
+    border-radius: var(--r-full); box-shadow: var(--shadow-sm);
+    gap: 2px;
+  }
+  .view-switch button {
+    border: none; background: transparent; cursor: pointer;
+    padding: 8px 16px; border-radius: var(--r-full);
+    font-family: inherit; font-size: 13px; font-weight: 600;
+    color: var(--muted);
+    display: inline-flex; align-items: center; gap: 6px;
+    transition: all 0.15s;
+  }
+  .view-switch button.active { background: var(--ink); color: #fff; }
+  .view-switch button:not(.active):hover { color: var(--ink); }
+
+  .period-dropdown {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 8px 14px; border-radius: 12px;
+    background: var(--surface); border: 1px solid var(--border-strong);
+    font-size: 13px; font-weight: 600; color: var(--ink-2);
+    cursor: pointer;
+  }
+
+  /* ============ Card primitives ============ */
+  .card {
+    background: var(--surface);
+    border-radius: var(--r-xl);
+    box-shadow: var(--shadow-md);
+    padding: 18px;
+    position: relative;
+  }
+  .card.blue {
+    background: linear-gradient(135deg, var(--blue-600) 0%, var(--blue) 100%);
+    color: #fff;
+  }
+  .card-go {
+    position: absolute; top: 14px; right: 14px;
+    width: 32px; height: 32px; border-radius: 50%;
+    background: var(--ink); color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; border: none;
+    transition: transform 0.15s;
+  }
+  .card-go:hover { transform: translate(2px, -2px); }
+  .card.blue .card-go { background: #fff; color: var(--blue-600); }
+  .card-title {
+    font-size: 13px; color: var(--muted); font-weight: 500;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .card.blue .card-title { color: rgba(255,255,255,0.75); }
+
+  /* delta pill */
+  .delta {
+    display: inline-flex; align-items: center; gap: 3px;
+    padding: 3px 8px; border-radius: var(--r-full);
+    font-size: 11px; font-weight: 700; letter-spacing: -0.01em;
+  }
+  .delta.up { background: var(--green-soft); color: var(--green-ink); }
+  .delta.down { background: var(--red-soft); color: var(--red-ink); }
+  .delta.flat { background: var(--surface-soft); color: var(--muted); }
+  .card.blue .delta.up { background: rgba(255,255,255,0.18); color: #baffd6; }
+  .card.blue .delta.down { background: rgba(255,255,255,0.18); color: #ffc9c9; }
+
+  /* ============ Bento grid ============ */
+  .bento {
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    grid-auto-rows: minmax(120px, auto);
+    gap: 16px;
+  }
+
+  /* KPI cards */
+  .kpi .value {
+    font-family: 'Manrope', sans-serif; font-weight: 800;
+    font-size: 34px; line-height: 1.1; margin-top: 12px;
+    letter-spacing: -0.02em;
+  }
+  .kpi .value .unit { font-size: 20px; font-weight: 700; color: var(--muted); margin-left: 4px; }
+  .card.blue .kpi-foot, .kpi .kpi-foot {
+    font-size: 12px; margin-top: 10px; color: var(--muted);
+  }
+  .card.blue .kpi-foot { color: rgba(255,255,255,0.75); }
+
+  /* span helpers */
+  .c-3 { grid-column: span 3; }
+  .c-4 { grid-column: span 4; }
+  .c-5 { grid-column: span 5; }
+  .c-6 { grid-column: span 6; }
+  .c-7 { grid-column: span 7; }
+  .c-8 { grid-column: span 8; }
+  .c-9 { grid-column: span 9; }
+  .c-12 { grid-column: span 12; }
+  .r-2 { grid-row: span 2; }
+
+  /* ============ Park visualization ============ */
+  .park-head {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; margin-bottom: 14px; flex-wrap: wrap;
+  }
+  .park-title-row { display: flex; align-items: center; gap: 10px; }
+  .park-stats-inline {
+    display: flex; gap: 16px; font-size: 12px; color: var(--muted);
+  }
+  .park-stats-inline b { color: var(--ink); font-weight: 700; }
+
+  .chip-row { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 5px 10px; border-radius: var(--r-full);
+    font-size: 12px; font-weight: 600;
+    background: var(--surface-soft); color: var(--muted);
+    border: 1px solid var(--border);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .chip .swatch { width: 8px; height: 8px; border-radius: 50%; }
+  .chip .count { color: var(--muted-2); font-weight: 500; }
+  .chip.active { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .chip.active .count { color: rgba(255,255,255,0.7); }
+  .chip:not(.active):hover { background: var(--blue-50); color: var(--blue-700); border-color: var(--blue-100); }
+
+  .scale-row {
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 12px;
+    padding: 8px 12px;
+    background: var(--surface-soft);
+    border-radius: 12px;
+    font-size: 12px; color: var(--muted);
+  }
+  .scale-row input[type=range] {
+    flex: 1; max-width: 200px;
+    accent-color: var(--blue-600);
+  }
+
+  .park-grid {
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    gap: 6px;
+  }
+  .scoot-tile {
+    aspect-ratio: 1/1;
+    border-radius: 10px;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 600;
+    position: relative; cursor: pointer;
+    transition: all 0.15s;
+    border: 1px solid transparent;
+  }
+  .scoot-tile:hover { transform: translateY(-2px); z-index: 10; box-shadow: var(--shadow-md); }
+  .scoot-tile.rented     { background: var(--blue); color: #fff; }
+  .scoot-tile.overdue    { background: var(--red); color: #fff; }
+  .scoot-tile.free       { background: var(--surface-soft); color: var(--ink); border-color: var(--border); }
+  .scoot-tile.repair     { background: var(--orange); color: #fff; }
+  .scoot-tile.rassrochka { background: var(--purple); color: #fff; }
+  .scoot-tile.sold       { background: var(--border); color: var(--muted); }
+
+  .scoot-tile .tt {
+    display: none;
+    position: absolute; bottom: calc(100% + 6px); left: 50%;
+    transform: translateX(-50%);
+    background: var(--ink); color: #fff;
+    padding: 6px 10px; border-radius: 8px;
+    font-size: 11px; white-space: nowrap; z-index: 20;
+    font-weight: 500;
+  }
+  .scoot-tile:hover .tt { display: block; }
+
+  /* ============ Tables ============ */
+  table.crm {
+    width: 100%; border-collapse: separate; border-spacing: 0;
+    font-size: 13px;
+  }
+  table.crm th {
+    text-align: left; padding: 10px 14px;
+    font-size: 11px; font-weight: 600; color: var(--muted);
+    letter-spacing: 0.05em; text-transform: uppercase;
+    background: var(--surface-soft);
+  }
+  table.crm th:first-child { border-top-left-radius: 12px; border-bottom-left-radius: 12px; }
+  table.crm th:last-child { border-top-right-radius: 12px; border-bottom-right-radius: 12px; }
+  table.crm td { padding: 12px 14px; border-bottom: 1px solid var(--border); }
+  table.crm tbody tr:last-child td { border-bottom: none; }
+  table.crm tbody tr { cursor: pointer; transition: background 0.12s; }
+  table.crm tbody tr:hover td { background: var(--surface-soft); }
+  table.crm tr.overdue-row td { background: rgba(239,68,68,0.04); }
+  table.crm tr.overdue-row:hover td { background: rgba(239,68,68,0.08); }
+
+  .client-cell { display: flex; align-items: center; gap: 10px; }
+  .client-avatar {
+    width: 32px; height: 32px; border-radius: 10px;
+    background: var(--blue-50); color: var(--blue-700);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 12px;
+    flex-shrink: 0;
+  }
+  .client-cell .phone { font-size: 11px; color: var(--muted); }
+
+  /* status pills (table) */
+  .status-pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 10px; border-radius: var(--r-full);
+    font-size: 11px; font-weight: 600;
+  }
+  .status-pill .dot { width: 6px; height: 6px; border-radius: 50%; }
+  .status-pill.active  { background: var(--blue-50); color: var(--blue-700); }
+  .status-pill.active .dot { background: var(--blue); }
+  .status-pill.late    { background: var(--red-soft); color: var(--red-ink); }
+  .status-pill.late .dot { background: var(--red); }
+  .status-pill.done    { background: var(--green-soft); color: var(--green-ink); }
+  .status-pill.done .dot { background: var(--green); }
+  .status-pill.soon    { background: var(--orange-soft); color: var(--orange-ink); }
+  .status-pill.soon .dot { background: var(--orange); }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 12px; border-radius: 10px;
+    font-family: inherit; font-size: 12px; font-weight: 600;
+    border: none; cursor: pointer;
+    transition: all 0.15s;
+  }
+  .btn.primary { background: var(--ink); color: #fff; }
+  .btn.primary:hover { background: var(--blue-600); }
+  .btn.ghost { background: var(--surface-soft); color: var(--ink-2); }
+  .btn.ghost:hover { background: var(--blue-50); color: var(--blue-700); }
+
+  /* ============ Revenue card (director) ============ */
+  .revenue-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+  .revenue-seg {
+    display: inline-flex; background: rgba(255,255,255,0.15);
+    border-radius: var(--r-full); padding: 3px;
+  }
+  .revenue-seg button {
+    border: none; background: transparent; color: rgba(255,255,255,0.75);
+    font-family: inherit; font-size: 12px; font-weight: 600;
+    padding: 5px 12px; border-radius: var(--r-full); cursor: pointer;
+    transition: all 0.15s;
+  }
+  .revenue-seg button.on { background: #fff; color: var(--blue-700); }
+
+  .revenue-chart { margin-top: 10px; display: flex; align-items: flex-end; gap: 4px; height: 80px; }
+  .revenue-chart .bar {
+    flex: 1; background: rgba(255,255,255,0.4); border-radius: 4px 4px 0 0;
+    position: relative;
+  }
+  .revenue-chart .bar.today { background: #fff; }
+  .revenue-chart .bar::after {
+    content: attr(data-label);
+    position: absolute; bottom: -16px; left: 50%; transform: translateX(-50%);
+    font-size: 9px; color: rgba(255,255,255,0.6); font-weight: 500;
+  }
+
+  /* ============ Tasks list ============ */
+  .task-item {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .task-item:last-child { border-bottom: none; }
+  .task-check {
+    width: 20px; height: 20px; border-radius: 6px;
+    border: 1.5px solid var(--border-strong);
+    background: #fff;
+    flex-shrink: 0; margin-top: 1px;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    color: transparent;
+    transition: background 0.18s, border-color 0.18s, color 0.18s, transform 0.18s;
+  }
+  .task-check:hover { border-color: var(--blue-600); }
+  .task-check > svg { opacity: 0; transform: scale(0.6); transition: opacity 0.18s, transform 0.18s; }
+  .task-item.done .task-check { background: var(--green); border-color: var(--green); color: #fff; }
+  .task-item.done .task-check > svg { opacity: 1; transform: scale(1); }
+  .task-item.done .tt { text-decoration: line-through; color: var(--muted); }
+
+  /* fly-away animation when a task is completed */
+  @keyframes task-flyaway {
+    0%   { transform: translate(0, 0) scale(1) rotate(0deg); opacity: 1; }
+    35%  { transform: translate(8px, -14px) scale(1.02) rotate(3deg); opacity: 1; }
+    100% { transform: translate(320px, -120px) scale(0.4) rotate(18deg); opacity: 0; }
+  }
+  .task-item.flying {
+    animation: task-flyaway 700ms cubic-bezier(0.55, 0, 0.3, 1) forwards;
+    pointer-events: none;
+  }
+  .task-item.collapsing {
+    animation: task-collapse 260ms cubic-bezier(0.4,0,0.2,1) forwards;
+  }
+  @keyframes task-collapse {
+    0%   { max-height: 80px; padding-top: 10px; padding-bottom: 10px; opacity: 1; }
+    100% { max-height: 0; padding-top: 0; padding-bottom: 0; opacity: 0; border-bottom-width: 0; }
+  }
+  .task-icon {
+    width: 28px; height: 28px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .task-icon.wrench { background: var(--orange-soft); color: var(--orange-ink); }
+  .task-icon.phone  { background: var(--blue-50); color: var(--blue-700); }
+  .task-icon.money  { background: var(--green-soft); color: var(--green-ink); }
+  .task-icon.alert  { background: var(--red-soft); color: var(--red-ink); }
+  .task-icon.doc    { background: var(--purple-soft); color: var(--purple-ink); }
+  .task-icon.bike   { background: var(--blue-50); color: var(--blue-700); }
+  .task-icon.box    { background: var(--surface-soft); color: var(--ink-2); }
+  .task-body { flex: 1; min-width: 0; }
+  .task-body .tt { font-size: 13px; font-weight: 600; color: var(--ink); }
+  .task-body .meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .task-item.overdue .task-body .tt { color: var(--red-ink); }
+
+  /* ============ Activity feed ============ */
+  .activity-item {
+    display: flex; gap: 10px; padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .activity-item:last-child { border-bottom: none; }
+  .activity-who {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: var(--blue-50); color: var(--blue-700);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700;
+    flex-shrink: 0;
+  }
+  .activity-who.system { background: var(--surface-soft); color: var(--muted); }
+  .activity-body { flex: 1; min-width: 0; font-size: 13px; color: var(--ink-2); }
+  .activity-body b { color: var(--ink); font-weight: 700; }
+  .activity-body .when { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+  /* ============ Returns list (for V3 right column) ============ */
+  .return-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 0; border-bottom: 1px solid var(--border);
+    cursor: pointer;
+  }
+  .return-row:last-child { border-bottom: none; }
+  .return-row:hover { background: var(--surface-soft); margin: 0 -8px; padding-left: 8px; padding-right: 8px; border-radius: 10px; }
+
+  /* small util */
+  .row { display: flex; align-items: center; gap: 10px; }
+  .between { justify-content: space-between; }
+  .spacer { flex: 1; }
+  .stack { display: flex; flex-direction: column; gap: 10px; }
+
+  /* scrollbar tidy */
+  .card { scrollbar-width: thin; }
+
+  /* v1 classic only visible when active */
+  .variant-classic { display: none; }
+  body.v-classic .variant-park { display: none; }
+  body.v-classic .variant-classic { display: block; }
+
+  /* classic KPI variant uses plain white card with accent icon square */
+  .kpi-ic-square {
+    width: 40px; height: 40px; border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .kpi-ic-square.blue   { background: var(--blue-50); color: var(--blue-700); }
+  .kpi-ic-square.green  { background: var(--green-soft); color: var(--green-ink); }
+  .kpi-ic-square.red    { background: var(--red-soft); color: var(--red-ink); }
+  .kpi-ic-square.orange { background: var(--orange-soft); color: var(--orange-ink); }
+
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- ============ SIDEBAR ============ -->
+  <aside class="sidebar" id="sidebar"></aside>
+
+  <!-- ============ MAIN ============ -->
+  <main class="main">
+    <!-- TOPBAR -->
+    <div class="topbar">
+      <div class="search">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted-2);"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        <input type="text" placeholder="Поиск: клиент, скутер, № договора…" />
+      </div>
+      <div class="date-chip">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+        Сегодня, пн 13 окт
+      </div>
+      <div class="topbar-spacer"></div>
+      <button class="icon-btn" aria-label="Настройки">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+      <button class="icon-btn" aria-label="Уведомления">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+        <span class="dot"></span>
+      </button>
+      <div class="avatar">ВМ</div>
+    </div>
+
+    <!-- GREETING -->
+    <div class="greeting">
+      <div>
+        <h1 class="h-display h1">
+          Доброе утро, Даниил!<span class="wave">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none"><path d="M14.5 2.5c-.8-.8-2.2-.8-3 0L2.5 11.5c-.8.8-.8 2.2 0 3l7 7c.8.8 2.2.8 3 0l9-9c.8-.8.8-2.2 0-3l-7-7z" fill="#fbbf24" stroke="#f59e0b" stroke-width="1"/><circle cx="11" cy="7" r="1" fill="#7c2d12"/><circle cx="7" cy="11" r="1" fill="#7c2d12"/></svg>
+          </span>
+        </h1>
+        <div class="lead">3 просрочки, 7 задач на сегодня, парк загружен на 70%</div>
+      </div>
+      <div class="row">
+        <div class="view-switch" id="view-switch">
+          <button data-view="park" class="active">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+            Парк
+          </button>
+          <button data-view="classic">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+            Классика
+          </button>
+        </div>
+        <div class="period-dropdown">
+          Этот месяц
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ VARIANT: PARK-CENTRIC ============ -->
+    <div class="variant-park" id="variant-park">
+      <div class="bento">
+        <!-- Blue highlight KPI: Поступит сегодня -->
+        <div class="card blue c-3 kpi">
+          <div class="card-title" style="color:rgba(255,255,255,0.8);">Поступит сегодня</div>
+          <button class="card-go"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7M9 7h8v8"/></svg></button>
+          <div class="value t-mono-num">+14 600<span class="unit" style="color: rgb(255, 255, 255);">₽</span></div>
+          <div class="kpi-foot row" style="gap:6px;">
+            <span class="delta up">
+              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 15 12 9 18 15"/></svg>
+              +18%
+            </span>
+            к пн · 12 платежей
+          </div>
+        </div>
+        <!-- Просрочено -->
+        <div class="card c-3 kpi">
+          <div class="card-title">Просрочено</div>
+          <button class="card-go"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7M9 7h8v8"/></svg></button>
+          <div class="value t-mono-num" style="color:var(--red);">3</div>
+          <div class="kpi-foot row" style="gap:6px;">
+            <span class="delta down">
+              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+              +1
+            </span>
+            со вчера · долг 7 400 ₽
+          </div>
+        </div>
+        <!-- Активных -->
+        <div class="card c-3 kpi">
+          <div class="card-title">Активных аренд</div>
+          <button class="card-go"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7M9 7h8v8"/></svg></button>
+          <div class="value t-mono-num">38<span class="unit">/ 54</span></div>
+          <div class="kpi-foot">70% загрузка парка</div>
+        </div>
+        <!-- Задач -->
+        <div class="card c-3 kpi">
+          <div class="card-title">Задач на сегодня</div>
+          <button class="card-go"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7M9 7h8v8"/></svg></button>
+          <div class="value t-mono-num">7</div>
+          <div class="kpi-foot row" style="gap:6px;">
+            <span class="delta down">2 просрочены</span>
+            5 новых
+          </div>
+        </div>
+
+        <!-- Park viz — main central -->
+        <div class="card c-8 r-2" id="park-panel">
+          <div class="park-head">
+            <div class="park-title-row">
+              <div class="h2">Парк · 54 скутера</div>
+              <div class="park-stats-inline">
+                <span>загружен <b>70%</b></span>
+                <span>свободно <b>10</b></span>
+                <span>в ремонте <b>3</b></span>
+              </div>
+            </div>
+            <div class="chip-row" id="park-model-seg">
+              <button class="chip active" data-model="all">Все модели <span class="count">54</span></button>
+              <button class="chip" data-model="Yamaha Jog">Jog <span class="count">30</span></button>
+              <button class="chip" data-model="Yamaha Gear">Gear <span class="count">18</span></button>
+              <button class="chip" data-model="Tank">Tank <span class="count">6</span></button>
+            </div>
+          </div>
+
+          <div class="chip-row" id="park-status-seg" style="margin-bottom:10px;">
+            <button class="chip active" data-status="all"><span class="swatch" style="background:var(--muted);"></span> всё <span class="count">54</span></button>
+            <button class="chip" data-status="rented"><span class="swatch" style="background:var(--blue);"></span> аренда <span class="count">34</span></button>
+            <button class="chip" data-status="overdue"><span class="swatch" style="background:var(--red);"></span> просрочка <span class="count">3</span></button>
+            <button class="chip" data-status="free"><span class="swatch" style="background:var(--border-strong);"></span> свободен <span class="count">10</span></button>
+            <button class="chip" data-status="repair"><span class="swatch" style="background:var(--orange);"></span> ремонт <span class="count">3</span></button>
+            <button class="chip" data-status="rassrochka"><span class="swatch" style="background:var(--purple);"></span> рассрочка <span class="count">2</span></button>
+            <button class="chip" data-status="sold"><span class="swatch" style="background:var(--border);"></span> продан <span class="count">2</span></button>
+          </div>
+
+          <div class="scale-row">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted);"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+            <span>масштаб</span>
+            <input type="range" id="park-scale" min="6" max="18" step="1" value="12" />
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted);"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+            <span id="park-scale-label" style="min-width:70px; text-align:right;">12 в ряду</span>
+          </div>
+
+          <div class="park-grid" id="park-grid"></div>
+        </div>
+
+        <!-- Revenue (director) — top right -->
+        <div class="card blue c-4" id="revenue-card">
+          <div class="revenue-head">
+            <div>
+              <div class="card-title" style="color:rgba(255,255,255,0.8);">Выручка</div>
+              <div class="value t-mono-num" style="font-family:'Manrope';font-weight:800;font-size:28px;margin-top:8px;" id="revenue-value">18 400<span class="unit" style="color:rgba(255,255,255,0.7);">₽</span></div>
+              <div class="row" style="margin-top:6px;gap:6px;font-size:12px;color:rgba(255,255,255,0.8);">
+                <span class="delta up" id="revenue-delta">
+                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 15 12 9 18 15"/></svg>
+                  +12%
+                </span>
+                <span id="revenue-vs">vs вс 12 окт</span>
+              </div>
+            </div>
+            <div class="revenue-seg" id="revenue-seg">
+              <button data-period="day" class="on">День</button>
+              <button data-period="week">Неделя</button>
+              <button data-period="month">Месяц</button>
+            </div>
+          </div>
+          <div class="revenue-chart" id="revenue-chart"></div>
+        </div>
+
+        <!-- Today returns (narrow right) -->
+        <div class="card c-4">
+          <div class="row between" style="margin-bottom:4px;">
+            <div class="h3">Сегодня возвращают</div>
+            <span class="status-pill active" style="background:var(--blue-50);color:var(--blue-700);"><span class="dot"></span>7</span>
+          </div>
+          <div class="t-xs t-muted" style="margin-bottom:6px;">возврат в ближайшие 2 дня</div>
+          <div id="returns-list"></div>
+        </div>
+
+        <!-- Overdue payments: dynamic height, max 5 rows, empty state -->
+        <div class="card c-8" id="overdue-card">
+          <div class="row between" style="margin-bottom:10px;">
+            <div class="row" style="gap:8px;">
+              <div class="h3">Просроченные платежи</div>
+              <span class="status-pill late" id="overdue-count-pill"><span class="dot"></span><span id="overdue-count">3</span></span>
+            </div>
+            <button class="btn ghost" id="overdue-more-btn">Все долги <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></button>
+          </div>
+          <div id="overdue-wrap">
+            <table class="crm">
+              <thead>
+                <tr>
+                  <th style="width:34%;">Клиент</th>
+                  <th>Скутер</th>
+                  <th>Долг</th>
+                  <th>Просрочка</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="overdue-body"></tbody>
+            </table>
+          </div>
+          <div id="overdue-empty" style="display:none;align-items:center;gap:10px;padding:6px 2px;">
+            <div style="width:32px;height:32px;border-radius:10px;background:var(--green-soft);color:var(--green-ink);display:flex;align-items:center;justify-content:center;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            </div>
+            <div style="font-size:13px;font-weight:600;color:var(--ink);">Просроченных платежей нет</div>
+          </div>
+        </div>
+
+        <!-- Tasks -->
+        <div class="card c-4">
+          <div class="row between" style="margin-bottom:4px;">
+            <div class="h3">Задачи на сегодня</div>
+            <span class="status-pill soon"><span class="dot"></span>7</span>
+          </div>
+          <div class="t-xs t-muted" style="margin-bottom:6px;">просроченные первыми</div>
+          <div id="tasks-list"></div>
+        </div>
+
+        <!-- Activity feed (director) -->
+        <div class="card c-8">
+          <div class="row between" style="margin-bottom:10px;">
+            <div class="row" style="gap:8px;">
+              <div class="h3">Последние действия</div>
+              <span class="status-pill done" style="background:var(--purple-soft);color:var(--purple-ink);"><span class="dot" style="background:var(--purple);"></span>директор</span>
+            </div>
+            <button class="btn ghost">Весь журнал <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></button>
+          </div>
+          <div id="activity-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ VARIANT: CLASSIC ============ -->
+    <div class="variant-classic" id="variant-classic">
+      <div class="bento">
+        <!-- 4 KPI cards in a row, classic style -->
+        <div class="card c-3 kpi">
+          <div class="row" style="gap:10px;align-items:flex-start;">
+            <div class="kpi-ic-square green">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+            </div>
+            <div style="flex:1;">
+              <div class="card-title">Поступит сегодня</div>
+              <div class="value t-mono-num" style="font-size:28px;margin-top:6px;">14 600<span class="unit" style="font-size:16px;">₽</span></div>
+              <div class="kpi-foot row" style="gap:6px;"><span class="delta up">+18%</span>к пн</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card c-3 kpi">
+          <div class="row" style="gap:10px;align-items:flex-start;">
+            <div class="kpi-ic-square red">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            </div>
+            <div style="flex:1;">
+              <div class="card-title">Просрочено</div>
+              <div class="value t-mono-num" style="font-size:28px;margin-top:6px;color:var(--red);">3</div>
+              <div class="kpi-foot row" style="gap:6px;"><span class="delta down">+1</span>со вчера</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card c-3 kpi">
+          <div class="row" style="gap:10px;align-items:flex-start;">
+            <div class="kpi-ic-square blue">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="M15 6h3l-2 6h-4l-3-6H6M10 6l2 6"/></svg>
+            </div>
+            <div style="flex:1;">
+              <div class="card-title">Активных аренд</div>
+              <div class="value t-mono-num" style="font-size:28px;margin-top:6px;">38<span class="unit" style="font-size:16px;">/54</span></div>
+              <div class="kpi-foot">70% загрузка</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card c-3 kpi">
+          <div class="row" style="gap:10px;align-items:flex-start;">
+            <div class="kpi-ic-square orange">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+            </div>
+            <div style="flex:1;">
+              <div class="card-title">Задач на сегодня</div>
+              <div class="value t-mono-num" style="font-size:28px;margin-top:6px;">7</div>
+              <div class="kpi-foot row" style="gap:6px;"><span class="delta down">2 просрочены</span></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Today returns — main table -->
+        <div class="card c-8">
+          <div class="row between" style="margin-bottom:10px;">
+            <div class="row" style="gap:8px;">
+              <div class="h2">Сегодня возвращают</div>
+              <span class="status-pill active"><span class="dot"></span>7</span>
+            </div>
+            <div class="row" style="gap:6px;">
+              <button class="btn ghost">Фильтры</button>
+              <button class="btn primary">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Новая аренда
+              </button>
+            </div>
+          </div>
+          <table class="crm">
+            <thead>
+              <tr>
+                <th style="width:28%;">Клиент</th>
+                <th>Скутер</th>
+                <th>Срок</th>
+                <th>Статус</th>
+                <th>Телефон</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="returns-table-body"></tbody>
+          </table>
+        </div>
+
+        <!-- Tasks (classic sits on right) -->
+        <div class="card c-4">
+          <div class="row between" style="margin-bottom:4px;">
+            <div class="h3">Задачи на сегодня</div>
+            <span class="status-pill soon"><span class="dot"></span>7</span>
+          </div>
+          <div class="t-xs t-muted" style="margin-bottom:6px;">просроченные первыми</div>
+          <div id="tasks-list-classic"></div>
+        </div>
+
+        <!-- Overdue -->
+        <div class="card c-8">
+          <div class="row between" style="margin-bottom:10px;">
+            <div class="row" style="gap:8px;">
+              <div class="h3">Просроченные платежи</div>
+              <span class="status-pill late"><span class="dot"></span>3</span>
+            </div>
+            <button class="btn ghost">Все долги</button>
+          </div>
+          <table class="crm">
+            <thead>
+              <tr>
+                <th style="width:34%;">Клиент</th>
+                <th>Скутер</th>
+                <th>Долг</th>
+                <th>Просрочка</th>
+                <th>Телефон</th>
+              </tr>
+            </thead>
+            <tbody id="overdue-body-classic"></tbody>
+          </table>
+        </div>
+
+        <!-- Activity -->
+        <div class="card c-4">
+          <div class="row between" style="margin-bottom:10px;">
+            <div class="h3">Последние действия</div>
+            <span class="status-pill done" style="background:var(--purple-soft);color:var(--purple-ink);"><span class="dot" style="background:var(--purple);"></span>директор</span>
+          </div>
+          <div id="activity-list-classic"></div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+/* ============ Data ============ */
+const PARK = (() => {
+  const arr = [];
+  for (let i = 1; i <= 30; i++) arr.push({ name: 'Jog #' + String(i).padStart(2,'0'), model: 'Yamaha Jog' });
+  for (let i = 1; i <= 18; i++) arr.push({ name: 'Gear #' + String(i).padStart(2,'0'), model: 'Yamaha Gear' });
+  for (let i = 1; i <= 6;  i++) arr.push({ name: 'Tank #' + String(i).padStart(2,'0'), model: 'Tank' });
+  const dist = { rented: 34, overdue: 3, repair: 3, free: 10, sold: 2, rassrochka: 2 };
+  const statuses = [];
+  Object.entries(dist).forEach(([k,n]) => { for (let i=0;i<n;i++) statuses.push(k); });
+  while (statuses.length < 54) statuses.push('free');
+  for (let i = statuses.length - 1; i > 0; i--) {
+    const j = Math.floor(((Math.sin(i*7+1)+1)/2) * (i+1));
+    [statuses[i], statuses[j]] = [statuses[j], statuses[i]];
+  }
+  return arr.map((s, i) => ({ ...s, status: statuses[i] }));
+})();
+
+const RETURNS = [
+  { client: 'Андрей К.',  initials: 'АК', scooter: 'Jog #12',  when: 'сегодня 14:00',   status: 'active', phone: '+7 928 111-22-33' },
+  { client: 'Марина С.',  initials: 'МС', scooter: 'Gear #07', when: 'сегодня 18:30',   status: 'active', phone: '+7 918 445-12-09' },
+  { client: 'Игорь В.',   initials: 'ИВ', scooter: 'Tank #04', when: 'просрочен 2 дн',  status: 'late',   phone: '+7 962 377-89-01' },
+  { client: 'Ольга П.',   initials: 'ОП', scooter: 'Jog #23',  when: 'просрочен 4 ч',   status: 'late',   phone: '+7 905 129-64-55' },
+  { client: 'Денис М.',   initials: 'ДМ', scooter: 'Gear #11', when: 'завтра 12:00',    status: 'soon',   phone: '+7 961 200-41-18' },
+  { client: 'Елена Т.',   initials: 'ЕТ', scooter: 'Jog #02',  when: 'завтра 19:00',    status: 'soon',   phone: '+7 988 700-08-40' },
+  { client: 'Николай З.', initials: 'НЗ', scooter: 'Jog #18',  when: 'ср · 15 окт',     status: 'soon',   phone: '+7 909 811-22-07' },
+];
+
+const OVERDUE = [
+  { client: 'Игорь В.',  initials: 'ИВ', scooter: 'Tank #04', debt: '4 400 ₽', days: 4, phone: '+7 962 377-89-01' },
+  { client: 'Ольга П.',  initials: 'ОП', scooter: 'Jog #23',  debt: '1 800 ₽', days: 2, phone: '+7 905 129-64-55' },
+  { client: 'Руслан А.', initials: 'РА', scooter: 'Jog #31',  debt: '1 200 ₽', days: 1, phone: '+7 919 442-80-12' },
+];
+
+const TASKS = [
+  { icon: 'wrench', title: 'ТО Jog #07 после 3 000 км',        meta: 'просрочено · пт 10 окт', overdue: true },
+  { icon: 'phone',  title: 'Позвонить Игорю — возврат Tank',    meta: 'просрочено · вс 12 окт', overdue: true },
+  { icon: 'money',  title: 'Забрать платёж у Ольги (1 800 ₽)',   meta: 'сегодня до 18:00',      overdue: false },
+  { icon: 'doc',    title: 'Договор рассрочки · Руслан А.',      meta: 'сегодня · 14:00',       overdue: false },
+  { icon: 'bike',   title: 'Отдать Gear #11 Денису',            meta: 'сегодня · 16:30',       overdue: false },
+  { icon: 'box',    title: 'Заказать колодки на Jog (4 шт)',     meta: 'сегодня',               overdue: false },
+  { icon: 'money',  title: 'Сверка кассы за выходные',          meta: 'сегодня',               overdue: false, done: true },
+];
+
+const ACTIVITY = [
+  { who: 'Дима',     initials: 'Д',  body: 'принял возврат <b>Jog #05</b> от Алексея Р.',    when: '8 мин назад' },
+  { who: 'Дима',     initials: 'Д',  body: 'оформил аренду <b>Jog #12</b> → Андрей К.',      when: '22 мин назад' },
+  { who: 'Владимир', initials: 'ВМ', body: 'изменил рейтинг клиента <b>Игорь В.</b> 72 → 45', when: '1 ч назад' },
+  { who: 'Система',  initials: 'С',  body: 'авто-штраф <b>200 ₽</b> за просрочку (А-121)',   when: '2 ч назад', system: true },
+  { who: 'Дима',     initials: 'Д',  body: 'закрыл инцидент ДТП #17 (оплачено 6 000 ₽)',    when: 'вчера 19:40' },
+];
+
+const REVENUE = {
+  day:   { value: '18 400', unit: '₽', delta: 12,  vs: 'vs вс 12 окт',     chart: [45, 62, 58, 71, 49, 55, 88] },
+  week:  { value: '142 600', unit: '₽', delta: 8, vs: 'vs прошлой неделе', chart: [98, 102, 88, 115, 130, 95, 124] },
+  month: { value: '625 800', unit: '₽', delta: -3, vs: 'vs сентябрю',      chart: [82, 91, 78, 95, 88, 72, 65] },
+};
+
+/* ============ Icons ============ */
+const ICONS = {
+  home: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>',
+  users: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+  rent: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="M15 6h3l-2 6h-4l-3-6H6M10 6l2 6"/></svg>',
+  rassr: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 8h10M7 12h10M7 16h6"/></svg>',
+  sales: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>',
+  repair: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>',
+  bike: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01"/></svg>',
+  incident: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+  tasks: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>',
+  chart: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>',
+  docs: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>',
+  settings: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
+  logout: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>',
+  logo: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="#fff" stroke-width="2"/><path d="M8 7v10M16 7v10M8 12h8" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg>',
+  wrench: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>',
+  phone: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>',
+  money: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>',
+  doc: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>',
+  bikeTask: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="M15 6h3l-2 6h-4l-3-6H6M10 6l2 6"/></svg>',
+  box: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>',
+  alert: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+  check: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
+  phoneBtn: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>',
+};
+
+/* ============ Renderers ============ */
+function renderSidebar() {
+  const items = [
+    { icon: 'home',     label: 'Дашборд', active: true },
+    { icon: 'users',    label: 'Клиенты' },
+    { icon: 'rent',     label: 'Аренды' },
+    { icon: 'rassr',    label: 'Рассрочки' },
+    { icon: 'sales',    label: 'Продажи' },
+    { icon: 'repair',   label: 'Ремонты' },
+    { icon: 'bike',     label: 'Скутеры' },
+    { icon: 'incident', label: 'Инциденты' },
+    { icon: 'tasks',    label: 'Задачи' },
+    { icon: 'chart',    label: 'Аналитика' },
+    { icon: 'docs',     label: 'Документы' },
+  ];
+  const sb = document.getElementById('sidebar');
+  sb.innerHTML = `
+    <div class="logo">${ICONS.logo}</div>
+    ${items.map(i => `
+      <div class="nav-item ${i.active ? 'active' : ''}" data-label="${i.label}">${ICONS[i.icon]}<span class="label">${i.label}</span></div>
+    `).join('')}
+    <div class="spacer"></div>
+    <div class="nav-item" data-label="Настройки">${ICONS.settings}<span class="label">Настройки</span></div>
+    <div class="nav-item" data-label="Выход">${ICONS.logout}<span class="label">Выход</span></div>
+  `;
+
+  // floating tooltip (works while sidebar is collapsed)
+  let tip = document.getElementById('sb-tooltip');
+  if (!tip) {
+    tip = document.createElement('div');
+    tip.className = 'sb-tooltip';
+    tip.id = 'sb-tooltip';
+    document.body.appendChild(tip);
+  }
+  sb.querySelectorAll('.nav-item').forEach(el => {
+    el.addEventListener('mouseenter', () => {
+      if (sb.matches(':hover') && sb.offsetWidth > 100) { tip.classList.remove('show'); return; }
+      const r = el.getBoundingClientRect();
+      tip.textContent = el.dataset.label || '';
+      tip.style.top = (r.top + r.height/2 - 14) + 'px';
+      tip.style.left = (r.right + 12) + 'px';
+      tip.classList.add('show');
+    });
+    el.addEventListener('mouseleave', () => tip.classList.remove('show'));
+  });
+  // hide tooltip once sidebar fully expands
+  sb.addEventListener('mouseenter', () => tip.classList.remove('show'));
+}
+
+function renderParkGrid() {
+  const grid = document.getElementById('park-grid');
+  grid.innerHTML = PARK.map(s => `
+    <div class="scoot-tile ${s.status}" data-status="${s.status}" data-model="${s.model}">
+      ${s.name.split('#')[1] || ''}
+      <div class="tt">${s.name} · ${translateStatus(s.status)}</div>
+    </div>
+  `).join('');
+}
+function translateStatus(s) {
+  return { rented:'в аренде', overdue:'просрочка', free:'свободен', repair:'ремонт', sold:'продан', rassrochka:'рассрочка' }[s] || s;
+}
+
+function renderReturnsList() {
+  const el = document.getElementById('returns-list');
+  el.innerHTML = RETURNS.slice(0,5).map(r => `
+    <div class="return-row">
+      <div class="client-avatar">${r.initials}</div>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:13px;font-weight:600;color:var(--ink);">${r.client}</div>
+        <div class="t-xs t-muted">${r.scooter} · ${r.when}</div>
+      </div>
+      <span class="status-pill ${r.status}"><span class="dot"></span>${statusLabel(r.status)}</span>
+    </div>
+  `).join('');
+}
+function statusLabel(s) { return { active:'активна', late:'просрочка', soon:'скоро', done:'завершена' }[s] || s; }
+
+function renderReturnsTable() {
+  const tb = document.getElementById('returns-table-body');
+  tb.innerHTML = RETURNS.map(r => `
+    <tr class="${r.status==='late'?'overdue-row':''}">
+      <td>
+        <div class="client-cell">
+          <div class="client-avatar">${r.initials}</div>
+          <div>
+            <div style="font-weight:600;">${r.client}</div>
+            <div class="phone">${r.phone}</div>
+          </div>
+        </div>
+      </td>
+      <td>${r.scooter}</td>
+      <td style="${r.status==='late'?'color:var(--red-ink);font-weight:600;':''}">${r.when}</td>
+      <td><span class="status-pill ${r.status}"><span class="dot"></span>${statusLabel(r.status)}</span></td>
+      <td class="t-muted t-sm">${r.phone}</td>
+      <td><button class="btn primary copy-btn" data-phone="${r.phone}">${ICONS.phoneBtn} Позвонить</button></td>
+    </tr>
+  `).join('');
+}
+
+function renderOverdue(tbodyId) {
+  const tb = document.getElementById(tbodyId);
+  const showPhone = tbodyId.includes('classic');
+  // sort by days (most critical first) and cap at 5
+  const sorted = OVERDUE.slice().sort((a,b) => b.days - a.days);
+  const top = sorted.slice(0, 5);
+  const total = OVERDUE.length;
+
+  // empty state — only for park variant card
+  if (tbodyId === 'overdue-body') {
+    const wrap = document.getElementById('overdue-wrap');
+    const empty = document.getElementById('overdue-empty');
+    const pill = document.getElementById('overdue-count-pill');
+    const countEl = document.getElementById('overdue-count');
+    const moreBtn = document.getElementById('overdue-more-btn');
+    if (total === 0) {
+      wrap.style.display = 'none';
+      empty.style.display = 'flex';
+      if (pill) pill.style.display = 'none';
+      if (moreBtn) moreBtn.style.display = 'none';
+      return;
+    } else {
+      wrap.style.display = '';
+      empty.style.display = 'none';
+      if (pill) pill.style.display = '';
+      if (countEl) countEl.textContent = total;
+      if (moreBtn) moreBtn.style.display = total > 5 ? '' : 'none';
+    }
+  }
+
+  tb.innerHTML = top.map(o => `
+    <tr class="overdue-row">
+      <td>
+        <div class="client-cell">
+          <div class="client-avatar" style="background:var(--red-soft);color:var(--red-ink);">${o.initials}</div>
+          <div>
+            <div style="font-weight:600;">${o.client}</div>
+            <div class="phone">${o.phone}</div>
+          </div>
+        </div>
+      </td>
+      <td>${o.scooter}</td>
+      <td style="font-weight:700;color:var(--red-ink);">${o.debt}</td>
+      <td><span class="status-pill late"><span class="dot"></span>${o.days} дн</span></td>
+      ${showPhone ? `<td class="t-muted t-sm">${o.phone}</td>` : `<td><button class="btn primary copy-btn" data-phone="${o.phone}">${ICONS.phoneBtn} Позвонить</button></td>`}
+    </tr>
+  `).join('');
+}
+
+function renderTasks(containerId) {
+  const el = document.getElementById(containerId);
+  const sorted = TASKS.slice().sort((a,b) => (b.overdue?1:0) - (a.overdue?1:0));
+  el.innerHTML = sorted.map((t,i) => `
+    <div class="task-item ${t.overdue?'overdue':''} ${t.done?'done':''}" data-task-idx="${i}">
+      <div class="task-check">${ICONS.check}</div>
+      <div class="task-icon ${t.icon}">${iconForTask(t.icon)}</div>
+      <div class="task-body">
+        <div class="tt">${t.title}</div>
+        <div class="meta">${t.overdue?'<span style="color:var(--red-ink);font-weight:600;">⚠ </span>':''}${t.meta}</div>
+      </div>
+    </div>
+  `).join('');
+}
+function iconForTask(k) {
+  return ({
+    wrench: ICONS.wrench, phone: ICONS.phone, money: ICONS.money,
+    doc: ICONS.doc, bike: ICONS.bikeTask, box: ICONS.box, alert: ICONS.alert,
+  })[k] || ICONS.doc;
+}
+
+function renderActivity(containerId) {
+  const el = document.getElementById(containerId);
+  el.innerHTML = ACTIVITY.map(a => `
+    <div class="activity-item">
+      <div class="activity-who ${a.system?'system':''}">${a.initials}</div>
+      <div class="activity-body">
+        <div><b>${a.who}</b> ${a.body}</div>
+        <div class="when">${a.when}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderRevenue(period) {
+  const r = REVENUE[period];
+  document.getElementById('revenue-value').innerHTML = r.value + '<span class="unit" style="color:rgba(255,255,255,0.7);">' + r.unit + '</span>';
+  const up = r.delta >= 0;
+  const deltaEl = document.getElementById('revenue-delta');
+  deltaEl.className = 'delta ' + (up?'up':'down');
+  deltaEl.innerHTML = `<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="${up?'6 15 12 9 18 15':'6 9 12 15 18 9'}"/></svg>${up?'+':''}${r.delta}%`;
+  document.getElementById('revenue-vs').textContent = r.vs;
+  const chart = document.getElementById('revenue-chart');
+  const labels = period==='day' ? ['Пн','Вт','Ср','Чт','Пт','Сб','Вс']
+              : period==='week' ? ['W38','W39','W40','W41','W42','W43','W44']
+              :                    ['Апр','Май','Июн','Июл','Авг','Сен','Окт'];
+  const max = Math.max(...r.chart);
+  chart.innerHTML = r.chart.map((v,i) => `
+    <div class="bar ${i===r.chart.length-1?'today':''}" style="height:${(v/max)*100}%;" data-label="${labels[i]||''}"></div>
+  `).join('');
+}
+
+/* ============ Interactions ============ */
+function wireInteractions() {
+  // view switch
+  document.querySelectorAll('#view-switch button').forEach(b => {
+    b.addEventListener('click', () => {
+      const v = b.dataset.view;
+      document.body.classList.toggle('v-classic', v === 'classic');
+      document.querySelectorAll('#view-switch button').forEach(x => x.classList.toggle('active', x === b));
+      localStorage.setItem('hb_view', v);
+    });
+  });
+  const savedView = localStorage.getItem('hb_view');
+  if (savedView === 'classic') {
+    document.body.classList.add('v-classic');
+    document.querySelectorAll('#view-switch button').forEach(b => b.classList.toggle('active', b.dataset.view === 'classic'));
+  }
+
+  // park status filter
+  document.querySelectorAll('#park-status-seg .chip').forEach(b => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('#park-status-seg .chip').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      const st = b.dataset.status;
+      document.querySelectorAll('#park-grid .scoot-tile').forEach(s => {
+        const match = st === 'all' || s.dataset.status === st;
+        s.style.opacity = match ? '1' : '0.2';
+      });
+    });
+  });
+  // park model filter
+  document.querySelectorAll('#park-model-seg .chip').forEach(b => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('#park-model-seg .chip').forEach(x => x.classList.remove('active'));
+      b.classList.add('active');
+      const m = b.dataset.model;
+      document.querySelectorAll('#park-grid .scoot-tile').forEach(s => {
+        s.style.display = (m === 'all' || s.dataset.model === m) ? '' : 'none';
+      });
+    });
+  });
+  // park scale
+  const scale = document.getElementById('park-scale');
+  const scaleLabel = document.getElementById('park-scale-label');
+  const applyScale = () => {
+    const cols = parseInt(scale.value, 10);
+    document.getElementById('park-grid').style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+    scaleLabel.textContent = cols + ' в ряду';
+  };
+  scale.addEventListener('input', applyScale);
+  applyScale();
+
+  // revenue period
+  document.querySelectorAll('#revenue-seg button').forEach(b => {
+    b.addEventListener('click', () => {
+      document.querySelectorAll('#revenue-seg button').forEach(x => x.classList.remove('on'));
+      b.classList.add('on');
+      renderRevenue(b.dataset.period);
+    });
+  });
+
+  // task complete — animate fly-away, then remove from list
+  document.body.addEventListener('click', (e) => {
+    const check = e.target.closest('.task-check');
+    if (!check) return;
+    const t = e.target.closest('.task-item');
+    if (!t) return;
+    if (t.classList.contains('done') || t.classList.contains('flying')) return;
+    t.classList.add('done');
+    setTimeout(() => {
+      t.classList.add('flying');
+      setTimeout(() => {
+        t.classList.remove('flying');
+        t.classList.add('collapsing');
+        setTimeout(() => t.remove(), 280);
+      }, 700);
+    }, 180);
+  });
+
+  // copy phone
+  document.body.addEventListener('click', (e) => {
+    const btn = e.target.closest('.copy-btn');
+    if (!btn) return;
+    e.stopPropagation();
+    try { navigator.clipboard.writeText(btn.dataset.phone); } catch(_){}
+    const orig = btn.innerHTML;
+    btn.innerHTML = ICONS.check + ' Скопировано';
+    btn.style.background = 'var(--green)';
+    setTimeout(() => { btn.innerHTML = orig; btn.style.background = ''; }, 1200);
+  });
+}
+
+/* ============ Init ============ */
+renderSidebar();
+renderParkGrid();
+renderReturnsList();
+renderReturnsTable();
+renderOverdue('overdue-body');
+renderOverdue('overdue-body-classic');
+renderTasks('tasks-list');
+renderTasks('tasks-list-classic');
+renderActivity('activity-list');
+renderActivity('activity-list-classic');
+renderRevenue('day');
+wireInteractions();
+</script>
+</body>
+</html>

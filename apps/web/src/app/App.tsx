@@ -3,6 +3,7 @@ import { Sidebar } from "./Sidebar";
 import { Dashboard } from "@/pages/dashboard/Dashboard";
 import { UpdateToast } from "./UpdateToast";
 import { startWebVersionCheck } from "@/lib/version-check";
+import { desktop, isElectron } from "@/platform";
 
 export function App() {
   const [webUpdate, setWebUpdate] = useState<string | null>(null);
@@ -12,11 +13,9 @@ export function App() {
   }, []);
 
   return (
-    <div className="flex">
+    <div className="mx-auto flex min-h-screen max-w-[1440px] gap-[18px] p-[18px]">
       <Sidebar />
-      <div className="flex-1">
-        <Dashboard />
-      </div>
+      <Dashboard />
       {webUpdate && (
         <UpdateToast
           title="Доступна новая версия"
@@ -30,8 +29,6 @@ export function App() {
     </div>
   );
 }
-
-import { desktop, isElectron } from "@/platform";
 
 function ElectronUpdateWatcher() {
   const [available, setAvailable] = useState<string | null>(null);
