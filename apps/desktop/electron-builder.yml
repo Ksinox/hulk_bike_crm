@@ -1,0 +1,40 @@
+appId: ru.hulkbike.crm
+productName: Халк Байк CRM
+copyright: Copyright © 2026 Халк Байк
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - "dist/**/*"
+  - "package.json"
+
+extraResources:
+  - from: "../web/dist"
+    to: "web"
+
+# Windows: web-installer (лёгкий .exe докачивающий пакет с GitHub Releases)
+win:
+  target:
+    - target: nsis-web
+      arch: [x64]
+  artifactName: "HulkBikeCRM-Web-Setup-${version}.${ext}"
+  # Code signing — включить когда появится сертификат:
+  # certificateFile: path/to/cert.pfx
+  # certificatePassword: ${env.WIN_CSC_KEY_PASSWORD}
+
+nsisWeb:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  allowElevation: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Халк Байк CRM
+
+publish:
+  - provider: github
+    owner: Ksinox
+    repo: hulk_bike_crm
+    releaseType: release

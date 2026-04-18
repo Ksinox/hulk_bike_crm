@@ -1,0 +1,19 @@
+{
+  "name": "hulk-bike-crm",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CRM-система для компании «Халк Байк» (прокат скутеров)",
+  "packageManager": "pnpm@10.0.0",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "dev": "pnpm --filter web dev",
+    "dev:desktop": "pnpm --filter desktop dev",
+    "build": "pnpm --filter web build && pnpm --filter desktop build",
+    "build:web": "pnpm --filter web build",
+    "build:desktop": "pnpm --filter desktop build",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck"
+  }
+}

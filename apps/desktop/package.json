@@ -1,0 +1,28 @@
+{
+  "name": "desktop",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Electron-обёртка для Халк Байк CRM",
+  "main": "dist/main.js",
+  "scripts": {
+    "dev": "cross-env NODE_ENV=development concurrently -k -n web,electron -c blue,magenta \"pnpm --filter web dev\" \"wait-on http://localhost:5173 && pnpm build:electron && electron .\"",
+    "build:electron": "tsc -p tsconfig.electron.json",
+    "build:web": "pnpm --filter web build",
+    "build": "pnpm build:web && pnpm build:electron && electron-builder",
+    "release": "pnpm build:web && pnpm build:electron && electron-builder --publish always",
+    "typecheck": "tsc -p tsconfig.electron.json --noEmit"
+  },
+  "dependencies": {
+    "electron-log": "^5.2.0",
+    "electron-updater": "^6.3.9"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "concurrently": "^9.1.0",
+    "cross-env": "^7.0.3",
+    "electron": "^32.2.0",
+    "electron-builder": "^25.1.8",
+    "typescript": "^5.6.3",
+    "wait-on": "^8.0.1"
+  }
+}
