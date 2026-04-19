@@ -7,6 +7,9 @@
   "engines": {
     "node": ">=20.0.0"
   },
+  "pnpm": {
+    "onlyBuiltDependencies": ["electron", "esbuild"]
+  },
   "scripts": {
     "dev": "pnpm --filter web dev",
     "dev:desktop": "pnpm --filter desktop dev",
