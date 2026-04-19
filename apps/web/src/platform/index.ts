@@ -6,6 +6,9 @@ declare global {
       onUpdateDownloaded: (cb: (info: { version: string }) => void) => void;
       quitAndInstall: () => void;
       checkForUpdates: () => void;
+      windowMinimize: () => void;
+      windowMaximize: () => void;
+      windowClose: () => void;
     };
   }
 }
@@ -20,4 +23,7 @@ export const desktop = {
     window.hulkDesktop?.onUpdateDownloaded(cb),
   quitAndInstall: () => window.hulkDesktop?.quitAndInstall(),
   checkForUpdates: () => window.hulkDesktop?.checkForUpdates(),
+  minimize: () => window.hulkDesktop?.windowMinimize(),
+  maximize: () => window.hulkDesktop?.windowMaximize(),
+  close: () => window.hulkDesktop?.windowClose(),
 };

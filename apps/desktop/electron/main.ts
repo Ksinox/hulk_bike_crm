@@ -18,6 +18,7 @@ function createWindow() {
     minHeight: 700,
     backgroundColor: "#f8fafc",
     title: "Халк Байк CRM",
+    frame: false,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -62,6 +63,13 @@ app.on("activate", () => {
 });
 
 ipcMain.handle("app:getVersion", () => app.getVersion());
+
+ipcMain.on("window:minimize", () => mainWindow?.minimize());
+ipcMain.on("window:maximize", () => {
+  if (mainWindow?.isMaximized()) mainWindow.unmaximize();
+  else mainWindow?.maximize();
+});
+ipcMain.on("window:close", () => mainWindow?.close());
 ipcMain.on("updater:checkForUpdates", () => {
   if (!isDev) checkForUpdatesNow();
 });

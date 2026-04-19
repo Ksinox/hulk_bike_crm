@@ -16,4 +16,7 @@ contextBridge.exposeInMainWorld("hulkDesktop", {
       cb(info),
     );
   },
+  windowMinimize: () => ipcRenderer.send("window:minimize"),
+  windowMaximize: () => ipcRenderer.send("window:maximize"),
+  windowClose: () => ipcRenderer.send("window:close"),
 });
