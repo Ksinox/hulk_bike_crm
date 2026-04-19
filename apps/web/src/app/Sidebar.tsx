@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { UpdateBanner, useDesktopUpdate } from "./UpdateBanner";
+import { isElectron } from "@/platform";
 
 type NavItem = {
   id: string;
@@ -75,8 +76,11 @@ export function Sidebar() {
         onMouseEnter={() => setExpanded(true)}
         onMouseLeave={() => setExpanded(false)}
         className={cn(
-          "sticky top-[18px] z-50 flex h-[calc(100vh-36px)] flex-shrink-0 flex-col overflow-hidden rounded-2xl bg-surface py-4 shadow-card transition-[width,padding,box-shadow]",
+          "sticky z-50 flex flex-shrink-0 flex-col overflow-hidden rounded-2xl bg-surface py-4 shadow-card transition-[width,padding,box-shadow]",
           expanded ? "w-[232px] px-3 shadow-card-lg" : "w-[68px] px-[10px]",
+          isElectron
+            ? "top-[54px] h-[calc(100vh-72px)]"
+            : "top-[18px] h-[calc(100vh-36px)]",
         )}
         style={{
           transitionDuration: "360ms",
