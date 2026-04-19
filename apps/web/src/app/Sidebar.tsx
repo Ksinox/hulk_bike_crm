@@ -16,6 +16,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { UpdateBanner, useDesktopUpdate } from "./UpdateBanner";
 
 type NavItem = {
   id: string;
@@ -45,6 +46,7 @@ const footerItems: NavItem[] = [
 
 export function Sidebar() {
   const [expanded, setExpanded] = useState(false);
+  const { phase, version } = useDesktopUpdate();
   const [tooltip, setTooltip] = useState<{
     label: string;
     top: number;
@@ -106,6 +108,8 @@ export function Sidebar() {
         </div>
 
         <div className="flex-1" />
+
+        <UpdateBanner phase={phase} version={version} expanded={expanded} />
 
         <div className="flex flex-col gap-1">
           {footerItems.map((item) => (
