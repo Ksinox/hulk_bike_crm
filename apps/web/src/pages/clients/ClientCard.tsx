@@ -137,72 +137,128 @@ export function ClientCard({ client }: { client: Client }) {
         </div>
       )}
 
-      {/* Header */}
-      <header className="flex items-start gap-4">
-        <ClientPhoto client={client} size="lg" />
+      {/* Top row: photo (tall) + right column */}
+      <div className="flex items-start gap-4">
+        <ClientPhoto client={client} size="xl" />
 
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2
-              className={cn(
-                "font-display text-[24px] font-extrabold leading-tight text-ink",
-                client.blacklisted && "line-through decoration-red/60",
-              )}
-            >
-              {client.name}
-            </h2>
-            {client.blacklisted && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-red-soft px-2 py-0.5 text-[11px] font-bold text-red-ink">
-                <Ban size={12} /> Чёрный список
-              </span>
-            )}
-            <span
-              className={cn(
-                "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold tabular-nums",
-                tier.tone === "good"
-                  ? "bg-green-soft text-green-ink"
-                  : tier.tone === "mid"
-                    ? "bg-surface-soft text-ink"
-                    : "bg-red-soft text-red-ink",
-              )}
-            >
-              {client.rating} · {tier.label}
-            </span>
-          </div>
-          <div className="mt-1 text-[12px] text-muted-2">
-            id #{String(client.id).padStart(4, "0")} · добавлен{" "}
-            {client.added} · источник: {SOURCE_LABEL[client.source]} ·{" "}
-            <span className="tabular-nums">{client.phone}</span>
-          </div>
-        </div>
+        <div className="flex min-w-0 flex-1 flex-col gap-3">
+          <header className="flex items-start gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2
+                  className={cn(
+                    "font-display text-[24px] font-extrabold leading-tight text-ink",
+                    client.blacklisted && "line-through decoration-red/60",
+                  )}
+                >
+                  {client.name}
+                </h2>
+                {client.blacklisted && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-red-soft px-2 py-0.5 text-[11px] font-bold text-red-ink">
+                    <Ban size={12} /> Чёрный список
+                  </span>
+                )}
+                <span
+                  className={cn(
+                    "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold tabular-nums",
+                    tier.tone === "good"
+                      ? "bg-green-soft text-green-ink"
+                      : tier.tone === "mid"
+                        ? "bg-surface-soft text-ink"
+                        : "bg-red-soft text-red-ink",
+                  )}
+                >
+                  {client.rating} · {tier.label}
+                </span>
+              </div>
+              <div className="mt-1 text-[12px] text-muted-2">
+                id #{String(client.id).padStart(4, "0")} · добавлен{" "}
+                {client.added} · источник: {SOURCE_LABEL[client.source]} ·{" "}
+                <span className="tabular-nums">{client.phone}</span>
+              </div>
+            </div>
 
-        <div className="flex shrink-0 gap-2">
-          <button
-            type="button"
-            onClick={() => setEditOpen(true)}
-            className="inline-flex items-center gap-1 rounded-full bg-surface-soft px-3 py-1.5 text-[12px] font-semibold text-ink transition-colors hover:bg-border"
-          >
-            <Pencil size={13} /> Редактировать
-          </button>
-          <button
-            type="button"
-            disabled={client.blacklisted}
-            title={
-              client.blacklisted
-                ? "Клиент заблокирован"
-                : "Создать аренду"
-            }
-            className={cn(
-              "inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-[12px] font-semibold transition-colors",
-              client.blacklisted
-                ? "cursor-not-allowed bg-surface-soft text-muted-2"
-                : "bg-blue-600 text-white hover:bg-blue-700",
-            )}
-          >
-            <Plus size={13} /> Создать аренду
-          </button>
+            <div className="flex shrink-0 gap-2">
+              <button
+                type="button"
+                onClick={() => setEditOpen(true)}
+                className="inline-flex items-center gap-1 rounded-full bg-surface-soft px-3 py-1.5 text-[12px] font-semibold text-ink transition-colors hover:bg-border"
+              >
+                <Pencil size={13} /> Редактировать
+              </button>
+              <button
+                type="button"
+                disabled={client.blacklisted}
+                title={
+                  client.blacklisted ? "Клиент заблокирован" : "Создать аренду"
+                }
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-[12px] font-semibold transition-colors",
+                  client.blacklisted
+                    ? "cursor-not-allowed bg-surface-soft text-muted-2"
+                    : "bg-blue-600 text-white hover:bg-blue-700",
+                )}
+              >
+                <Plus size={13} /> Создать аренду
+              </button>
+            </div>
+          </header>
+
+          {/* KPIs — inside right column */}
+          <KpiRow
+            group="Деньги"
+            items={[
+              {
+                label: "Оборот",
+                value: turnover > 0 ? `${fmt(turnover)} ₽` : "—",
+                hint:
+                  d.rentals.length > 0
+                    ? `${d.rentals.length} ${rentalsWord(d.rentals.length)} за всё время`
+                    : "нет аренд",
+                tone: turnover > 0 ? "green" : "gray",
+              },
+              {
+                label: "Средний чек",
+                value: avgCheck > 0 ? `${fmt(avgCheck)} ₽` : "—",
+                hint: avgCheck > 0 ? "за одну аренду" : "нет данных",
+                tone: "neutral",
+              },
+              {
+                label: "Ср. длительность",
+                value:
+                  avgDuration > 0
+                    ? `${avgDuration} ${daysWord(avgDuration)}`
+                    : "—",
+                hint: avgDuration > 0 ? "одна аренда" : "нет данных",
+                tone: "neutral",
+              },
+            ]}
+          />
+          <KpiRow
+            group="Активность"
+            items={[
+              {
+                label: "Всего аренд",
+                value: String(d.stats.total),
+                hint: "за всё время",
+                tone: "neutral",
+              },
+              {
+                label: "Активных",
+                value: String(d.stats.active),
+                hint: d.stats.active > 0 ? "идут сейчас" : "нет активных",
+                tone: d.stats.active > 0 ? "green" : "gray",
+              },
+              {
+                label: "Общий долг",
+                value: client.debt > 0 ? `${fmt(client.debt)} ₽` : "—",
+                hint: client.debt > 0 ? "непогашен" : "нет долгов",
+                tone: client.debt > 0 ? "red" : "gray",
+              },
+            ]}
+          />
         </div>
-      </header>
+      </div>
 
       {/* Banners */}
       {client.blacklisted && (
@@ -235,58 +291,6 @@ export function ClientCard({ client }: { client: Client }) {
         </div>
       )}
 
-      {/* KPI rows */}
-      <KpiRow
-        group="Деньги"
-        items={[
-          {
-            label: "Оборот",
-            value: turnover > 0 ? `${fmt(turnover)} ₽` : "—",
-            hint:
-              d.rentals.length > 0
-                ? `${d.rentals.length} ${rentalsWord(d.rentals.length)} за всё время`
-                : "нет аренд",
-            tone: turnover > 0 ? "green" : "gray",
-          },
-          {
-            label: "Средний чек",
-            value: avgCheck > 0 ? `${fmt(avgCheck)} ₽` : "—",
-            hint: avgCheck > 0 ? "за одну аренду" : "нет данных",
-            tone: "neutral",
-          },
-          {
-            label: "Ср. длительность",
-            value:
-              avgDuration > 0 ? `${avgDuration} ${daysWord(avgDuration)}` : "—",
-            hint: avgDuration > 0 ? "одна аренда" : "нет данных",
-            tone: "neutral",
-          },
-        ]}
-      />
-      <KpiRow
-        group="Активность"
-        items={[
-          {
-            label: "Всего аренд",
-            value: String(d.stats.total),
-            hint: "за всё время",
-            tone: "neutral",
-          },
-          {
-            label: "Активных",
-            value: String(d.stats.active),
-            hint: d.stats.active > 0 ? "идут сейчас" : "нет активных",
-            tone: d.stats.active > 0 ? "green" : "gray",
-          },
-          {
-            label: "Общий долг",
-            value: client.debt > 0 ? `${fmt(client.debt)} ₽` : "—",
-            hint: client.debt > 0 ? "непогашен" : "нет долгов",
-            tone: client.debt > 0 ? "red" : "gray",
-          },
-        ]}
-      />
-
       {/* Tabs */}
       <div className="mt-1 flex gap-1 border-b border-border">
         {TABS.map((t) => (
@@ -310,7 +314,7 @@ export function ClientCard({ client }: { client: Client }) {
         {tab === "rentals" && <RentalsTab d={d} />}
         {tab === "instalments" && <InstalmentsTab d={d} />}
         {tab === "incidents" && <IncidentsTab d={d} />}
-        {tab === "docs" && <DocsTab client={client} d={d} />}
+        {tab === "docs" && <DocsTab key={client.id} client={client} d={d} />}
         {tab === "rhist" && <RatingTab d={d} />}
       </div>
 

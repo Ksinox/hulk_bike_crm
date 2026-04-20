@@ -6,12 +6,13 @@ import { FilePreviewModal } from "./FilePreviewModal";
 import { clientStore, useClientPhoto } from "./clientStore";
 import type { UploadedFile } from "./DocUpload";
 
-type Size = "sm" | "md" | "lg";
+type Size = "sm" | "md" | "lg" | "xl";
 
 const SIZES: Record<Size, { w: number; stampSize: number; iconSize: number }> = {
   sm: { w: 40, stampSize: 8, iconSize: 18 },
   md: { w: 56, stampSize: 9, iconSize: 22 },
   lg: { w: 88, stampSize: 10, iconSize: 28 },
+  xl: { w: 132, stampSize: 13, iconSize: 36 },
 };
 
 function Stamp({

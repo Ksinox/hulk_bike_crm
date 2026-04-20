@@ -67,7 +67,6 @@ export function ClientsList({
 function ClientRow({
   client: c,
   active,
-  hasSelection,
   onSelect,
 }: {
   client: Client;
@@ -93,19 +92,18 @@ function ClientRow({
     : hasDebt
       ? "before:bg-orange"
       : "before:bg-transparent";
-  const dim = hasSelection && !active;
   return (
     <button
       type="button"
       onClick={() => onSelect(c.id)}
       className={cn(
-        "relative flex w-full items-center gap-3 border-b border-border/60 px-3 py-2.5 pl-4 text-left transition-all last:border-b-0",
+        "relative flex w-full origin-center transform-gpu items-center gap-3 border-b border-border/60 px-3 py-2.5 pl-4 text-left transition-all last:border-b-0",
         "before:absolute before:left-0 before:top-0 before:h-full before:w-1",
         rowBg,
         accent,
-        dim && "opacity-40 hover:opacity-100",
+        !active && "hover:z-[5] hover:scale-[1.01] hover:shadow-card-sm",
         active &&
-          "z-10 shadow-[inset_0_0_0_2px_hsl(var(--blue-600))] before:!bg-blue-600",
+          "z-10 scale-[1.025] py-3 shadow-card shadow-[inset_0_0_0_2px_hsl(var(--blue-600))] before:!bg-blue-600",
       )}
     >
       <span
