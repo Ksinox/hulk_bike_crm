@@ -761,27 +761,27 @@ export function DocumentsTab({ rental }: { rental: Rental }) {
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="grid gap-2 sm:grid-cols-3">
+      <div className="grid items-stretch gap-2 sm:grid-cols-3">
         {(Object.keys(DOC_META) as DocType[]).map((t) => {
           const meta = DOC_META[t];
           const Icon = meta.icon;
           return (
             <div
               key={t}
-              className="flex flex-col gap-2 rounded-[14px] border border-border p-3"
+              className="flex h-full flex-col gap-3 rounded-[14px] border border-border p-3"
             >
               <div className="flex items-start gap-2">
-                <div className="flex h-9 w-9 items-center justify-center rounded-[10px] bg-blue-50 text-blue-700">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-blue-50 text-blue-700">
                   <Icon size={16} />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="text-[13px] font-semibold text-ink">
+                  <div className="text-[13px] font-semibold leading-tight text-ink">
                     {meta.title}
                   </div>
-                  <div className="text-[11px] text-muted-2">
-                    {meta.subtitle}
-                  </div>
                 </div>
+              </div>
+              <div className="flex-1 text-[11px] leading-snug text-muted-2">
+                {meta.subtitle}
               </div>
               <button
                 type="button"

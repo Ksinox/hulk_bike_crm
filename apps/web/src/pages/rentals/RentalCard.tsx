@@ -3,13 +3,9 @@ import {
   AlertTriangle,
   ArrowRight,
   Calendar,
-  Check,
   CheckCircle2,
-  Copy as CopyIcon,
   Gavel,
-  MessageCircle,
   Phone,
-  PhoneCall,
   Plus,
   Repeat,
   ShieldAlert,
@@ -30,7 +26,6 @@ import {
   type RentalStatus,
 } from "@/lib/mock/rentals";
 import { CLIENTS, ratingTier, SOURCE_LABEL } from "@/lib/mock/clients";
-import { navigate } from "@/app/navigationStore";
 import {
   DocumentsTab,
   IncidentsTab,
@@ -42,7 +37,9 @@ import {
 import { RentalActionDialog, type ActionKind } from "./RentalActionDialog";
 import { ConfirmPaymentDialog } from "./ConfirmPaymentDialog";
 import { ExtendRentalDialog } from "./ExtendRentalDialog";
+import { RentalActionsMenu, type MenuAction } from "./RentalActionsMenu";
 import { useRental, useRentalPayments } from "./rentalsStore";
+import { ClientQuickView } from "@/pages/clients/ClientQuickView";
 
 type TabId = "terms" | "payments" | "return" | "incidents" | "tasks" | "docs";
 
@@ -72,25 +69,16 @@ function daysBetween(a: Date, b: Date): number {
 /** Сейчас по демо-таймлайну — 13.10.2026 14:30 */
 const TODAY = new Date(2026, 9, 13, 14, 30);
 
-type ActionSpec = {
-  id: string;
-  label: string;
-  icon: typeof CheckCircle2;
-  tone: "primary" | "warn" | "danger" | "ghost";
-};
-
-function statusActions(status: RentalStatus): ActionSpec[] {
+function statusActions(status: RentalStatus): MenuAction[] {
   switch (status) {
     case "new_request":
       return [
         { id: "schedule", label: "Назначить встречу", icon: Calendar, tone: "primary" },
-        { id: "contact", label: "Связаться", icon: PhoneCall, tone: "ghost" },
         { id: "cancel", label: "Отменить", icon: XCircle, tone: "ghost" },
       ];
     case "meeting":
       return [
         { id: "activate", label: "Выдать скутер", icon: CheckCircle2, tone: "primary" },
-        { id: "contact", label: "Связаться", icon: PhoneCall, tone: "ghost" },
         { id: "cancel", label: "Отменить", icon: XCircle, tone: "ghost" },
       ];
     case "active":
@@ -98,17 +86,15 @@ function statusActions(status: RentalStatus): ActionSpec[] {
         { id: "extend", label: "Продлить", icon: Repeat, tone: "primary" },
         { id: "receive", label: "Принять возврат", icon: ArrowRight, tone: "ghost" },
         { id: "addPayment", label: "Принять платёж", icon: Plus, tone: "ghost" },
-        { id: "incident", label: "Инцидент", icon: AlertTriangle, tone: "warn" },
-        { id: "contact", label: "Связаться", icon: PhoneCall, tone: "ghost" },
+        { id: "incident", label: "Зафиксировать инцидент", icon: AlertTriangle, tone: "warn" },
       ];
     case "overdue":
       return [
         { id: "receive", label: "Принять возврат", icon: ArrowRight, tone: "primary" },
         { id: "addPayment", label: "Принять платёж", icon: Plus, tone: "ghost" },
-        { id: "incident", label: "Инцидент", icon: AlertTriangle, tone: "warn" },
-        { id: "contact", label: "Связаться", icon: PhoneCall, tone: "ghost" },
+        { id: "incident", label: "Зафиксировать инцидент", icon: AlertTriangle, tone: "warn" },
         { id: "revert-overdue", label: "Снять просрочку", icon: XCircle, tone: "ghost" },
-        { id: "police", label: "В полицию", icon: ShieldAlert, tone: "danger" },
+        { id: "police", label: "Подать в полицию", icon: ShieldAlert, tone: "danger" },
       ];
     case "returning":
       return [
@@ -123,7 +109,7 @@ function statusActions(status: RentalStatus): ActionSpec[] {
       return [
         { id: "record-damage", label: "Записать оплату ущерба", icon: CheckCircle2, tone: "primary" },
         { id: "claim", label: "Претензия", icon: AlertTriangle, tone: "warn" },
-        { id: "lawyer", label: "Юристу", icon: Gavel, tone: "danger" },
+        { id: "lawyer", label: "Передать юристу", icon: Gavel, tone: "danger" },
       ];
     case "police":
       return [
@@ -154,6 +140,7 @@ export function RentalCard({ rental }: { rental: Rental }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [extendOpen, setExtendOpen] = useState(false);
   const [confirmForNewId, setConfirmForNewId] = useState<number | null>(null);
+  const [clientQuickView, setClientQuickView] = useState(false);
   const newRental = useRental(confirmForNewId);
 
   const client = useMemo(
@@ -179,15 +166,7 @@ export function RentalCard({ rental }: { rental: Rental }) {
   const expectedTotal = rental.sum + rental.deposit;
 
   const handleAction = (id: string) => {
-    if (id === "extend") return setExtendOpen(true);
-    if (id === "contact") {
-      if (client) window.location.href = `tel:${client.phone.replace(/\s/g, "")}`;
-      return;
-    }
-    if (id === "clone") {
-      setExtendOpen(true); // переиспользуем диалог продления — создаётся новая аренда
-      return;
-    }
+    if (id === "extend" || id === "clone") return setExtendOpen(true);
     setAction(id as ActionKind);
   };
 
@@ -209,65 +188,64 @@ export function RentalCard({ rental }: { rental: Rental }) {
               {STATUS_LABEL[rental.status]}
             </span>
           </div>
-
-          {/* Компактная инфо-строка */}
-          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-muted-2">
-            <span className="font-semibold text-ink-2">
-              Аренда #{String(rental.id).padStart(4, "0")}
-            </span>
-            <Dot />
-            <span>
-              {MODEL_LABEL[rental.model]}
-              {rental.rate > 0 && ` · ${fmt(rental.rate)} ₽/сут`}
-            </span>
-            <Dot />
-            {client && (
-              <>
-                <button
-                  type="button"
-                  onClick={() =>
-                    navigate({ route: "clients", clientId: client.id })
-                  }
-                  className="inline-flex items-center gap-1 font-semibold text-blue-600 hover:underline"
-                  title="Открыть карточку клиента"
-                >
-                  <User size={12} /> профиль клиента
-                </button>
-                <Dot />
-                <a
-                  href={`tel:${client.phone.replace(/\s/g, "")}`}
-                  className="inline-flex items-center gap-1 font-semibold text-ink hover:text-blue-600"
-                >
-                  <Phone size={12} className="text-blue-600" /> {client.phone}
-                </a>
-                {tier && (
-                  <>
-                    <Dot />
-                    <span
-                      className={cn(
-                        "inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-bold",
-                        tier.tone === "good"
-                          ? "bg-green-soft text-green-ink"
-                          : tier.tone === "bad"
-                            ? "bg-red-soft text-red-ink"
-                            : "bg-surface-soft text-ink",
-                      )}
-                      title={tier.label}
-                    >
-                      <Star size={10} /> {client.rating}
-                    </span>
-                  </>
-                )}
-                <Dot />
-                <span>{SOURCE_LABEL[client.source]}</span>
-              </>
-            )}
-          </div>
         </div>
 
-        {/* ACTIONS */}
-        <ActionBar actions={actions} onAction={handleAction} />
+        {/* ACTIONS — одна primary + dropdown */}
+        <RentalActionsMenu actions={actions} onAction={handleAction} />
       </header>
+
+      {/* Инфо-строка: слева мелкая техинфо, по центру телефон крупный */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[12px]">
+        <span className="font-semibold text-ink-2">
+          Аренда #{String(rental.id).padStart(4, "0")}
+        </span>
+        <Dot />
+        <span className="text-muted-2">
+          {MODEL_LABEL[rental.model]}
+          {rental.rate > 0 && ` · ${fmt(rental.rate)} ₽/сут`}
+        </span>
+        {client && (
+          <>
+            <Dot />
+            <button
+              type="button"
+              onClick={() => setClientQuickView(true)}
+              className="inline-flex items-center gap-1 font-semibold text-blue-600 hover:underline"
+              title="Быстрый просмотр клиента"
+            >
+              <User size={12} /> профиль клиента
+            </button>
+            {tier && (
+              <>
+                <Dot />
+                <span
+                  className={cn(
+                    "inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] font-bold",
+                    tier.tone === "good"
+                      ? "bg-green-soft text-green-ink"
+                      : tier.tone === "bad"
+                        ? "bg-red-soft text-red-ink"
+                        : "bg-surface-soft text-ink",
+                  )}
+                  title={tier.label}
+                >
+                  <Star size={11} /> {client.rating}
+                </span>
+              </>
+            )}
+            <Dot />
+            <span className="text-muted-2">{SOURCE_LABEL[client.source]}</span>
+            <Dot />
+            <a
+              href={`tel:${client.phone.replace(/\s/g, "")}`}
+              className="inline-flex items-center gap-1.5 text-[15px] font-bold tabular-nums text-ink hover:text-blue-600"
+            >
+              <Phone size={14} className="text-blue-600" />
+              {client.phone}
+            </a>
+          </>
+        )}
+      </div>
 
       {/* =========== BANNERS =========== */}
       {rental.paymentConfirmed === null && (
@@ -337,23 +315,34 @@ export function RentalCard({ rental }: { rental: Rental }) {
 
       {/* =========== KPI STRIP =========== */}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-5">
-        <KpiChip
-          label="Период"
-          value={`${rental.start.slice(0, 5)} — ${rental.endPlanned.slice(0, 5)}`}
-          hint={
-            rental.status === "active" && daysLeft !== null
-              ? daysLeft >= 0
-                ? `осталось ${daysLeft} дн`
-                : `просрочено ${Math.abs(daysLeft)} дн`
-              : `${rental.days} дн`
+        {(() => {
+          let value = `${rental.days} дн`;
+          let hint = `${rental.start.slice(0, 5)} — ${rental.endPlanned.slice(0, 5)}`;
+          let kpiTone: "neutral" | "green" | "red" | "gray" = "neutral";
+          if (rental.status === "active" && daysLeft !== null) {
+            if (daysLeft > 0) {
+              value = `осталось ${daysLeft} дн`;
+              kpiTone = daysLeft < 2 ? "red" : "neutral";
+            } else if (daysLeft === 0) {
+              value = `возврат сегодня`;
+              kpiTone = "red";
+            } else {
+              value = `просрочка ${Math.abs(daysLeft)} дн`;
+              kpiTone = "red";
+            }
+          } else if (rental.status === "overdue") {
+            value = "просрочка";
+            kpiTone = "red";
           }
-          tone={
-            rental.status === "overdue" ||
-            (rental.status === "active" && daysLeft !== null && daysLeft < 2)
-              ? "red"
-              : "neutral"
-          }
-        />
+          return (
+            <KpiChip
+              label="Период"
+              value={value}
+              hint={hint}
+              tone={kpiTone}
+            />
+          );
+        })()}
         <KpiChip
           label="К оплате"
           value={rental.sum > 0 ? `${fmt(expectedTotal)} ₽` : "—"}
@@ -453,6 +442,14 @@ export function RentalCard({ rental }: { rental: Rental }) {
           onClose={() => setConfirmForNewId(null)}
         />
       )}
+
+      {clientQuickView && client && (
+        <ClientQuickView
+          clientId={client.id}
+          onClose={() => setClientQuickView(false)}
+          from={{ route: "rentals", rentalId: rental.id }}
+        />
+      )}
     </div>
   );
 }
@@ -496,44 +493,3 @@ function KpiChip({
   );
 }
 
-function ActionBar({
-  actions,
-  onAction,
-}: {
-  actions: ActionSpec[];
-  onAction: (id: string) => void;
-}) {
-  if (actions.length === 0) return null;
-  return (
-    <div className="flex shrink-0 flex-wrap items-center gap-1.5">
-      {actions.map((a) => {
-        const Icon = a.icon;
-        return (
-          <button
-            key={a.id}
-            type="button"
-            onClick={() => onAction(a.id)}
-            className={cn(
-              "inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-[12px] font-semibold transition-colors whitespace-nowrap",
-              a.tone === "primary" && "bg-blue-600 text-white hover:bg-blue-700",
-              a.tone === "warn" &&
-                "bg-orange-soft text-orange-ink hover:bg-orange/20",
-              a.tone === "danger" &&
-                "bg-red-soft text-red-ink hover:bg-red/20",
-              a.tone === "ghost" &&
-                "bg-surface-soft text-ink-2 hover:bg-border",
-            )}
-          >
-            <Icon size={13} />
-            {a.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-// locale-ignored: unused but kept for future "copy phone" feature
-void CopyIcon;
-void Check;
-void MessageCircle;

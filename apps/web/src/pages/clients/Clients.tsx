@@ -1,8 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus } from "lucide-react";
+import { ArrowLeft, Plus } from "lucide-react";
 import { Topbar } from "@/pages/dashboard/Topbar";
 import { type Client } from "@/lib/mock/clients";
-import { consumePending } from "@/app/navigationStore";
+import {
+  consumePending,
+  navigate,
+  type BackTarget,
+} from "@/app/navigationStore";
 import {
   ClientsFilters,
   type FiltersState,
@@ -63,10 +67,12 @@ export function Clients() {
   }, [rentals]);
   const [selectedId, setSelectedId] = useState<number>(17);
   const [addOpen, setAddOpen] = useState(false);
+  const [backTo, setBackTo] = useState<BackTarget | null>(null);
 
   useEffect(() => {
     const p = consumePending("clients");
     if (p?.clientId) setSelectedId(p.clientId);
+    if (p?.from) setBackTo(p.from);
   }, []);
 
   const filtered = useMemo(
@@ -80,6 +86,22 @@ export function Clients() {
   return (
     <main className="flex min-w-0 flex-1 flex-col gap-4">
       <Topbar />
+
+      {backTo?.route === "rentals" && (
+        <button
+          type="button"
+          onClick={() => {
+            navigate({ route: "rentals", rentalId: backTo.rentalId });
+            setBackTo(null);
+          }}
+          className="inline-flex w-fit items-center gap-1.5 rounded-full bg-surface-soft px-3 py-1.5 text-[12px] font-semibold text-muted transition-colors hover:bg-border hover:text-ink"
+        >
+          <ArrowLeft size={13} /> к аренде
+          {backTo.rentalId
+            ? ` #${String(backTo.rentalId).padStart(4, "0")}`
+            : ""}
+        </button>
+      )}
 
       <header className="flex items-center justify-between gap-3">
         <div className="flex items-baseline gap-3">
