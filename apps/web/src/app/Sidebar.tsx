@@ -30,7 +30,7 @@ type NavItem = {
 const mainItems: NavItem[] = [
   { id: "dashboard", label: "Дашборд", icon: Home, ready: true },
   { id: "clients", label: "Клиенты", icon: Users, ready: true },
-  { id: "rentals", label: "Аренды", icon: Bike },
+  { id: "rentals", label: "Аренды", icon: Bike, ready: true },
   { id: "rassrochki", label: "Рассрочки", icon: Receipt },
   { id: "sales", label: "Продажи", icon: Wallet },
   { id: "service", label: "Ремонты", icon: Wrench },
