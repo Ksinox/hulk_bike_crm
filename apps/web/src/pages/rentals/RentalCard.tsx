@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   Gavel,
   Phone,
+  Repeat,
   ShieldAlert,
   User,
   XCircle,
@@ -34,6 +35,8 @@ import {
 } from "./RentalCardTabs";
 import { RentalActionDialog, type ActionKind } from "./RentalActionDialog";
 import { ConfirmPaymentDialog } from "./ConfirmPaymentDialog";
+import { ExtendRentalDialog } from "./ExtendRentalDialog";
+import { useRental } from "./rentalsStore";
 
 type TabId = "terms" | "payments" | "return" | "incidents" | "tasks";
 
@@ -81,7 +84,8 @@ function statusActions(status: RentalStatus): {
       ];
     case "active":
       return [
-        { id: "receive", label: "Принять возврат", icon: ArrowRight, tone: "primary" },
+        { id: "extend", label: "Продлить", icon: Repeat, tone: "primary" },
+        { id: "receive", label: "Принять возврат", icon: ArrowRight, tone: "ghost" },
         { id: "incident", label: "Зафиксировать инцидент", icon: AlertTriangle, tone: "warn" },
       ];
     case "overdue":
@@ -114,6 +118,9 @@ export function RentalCard({ rental }: { rental: Rental }) {
   const [tab, setTab] = useState<TabId>("terms");
   const [action, setAction] = useState<ActionKind | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [extendOpen, setExtendOpen] = useState(false);
+  const [confirmForNewId, setConfirmForNewId] = useState<number | null>(null);
+  const newRental = useRental(confirmForNewId);
   const client = useMemo(
     () => CLIENTS.find((c) => c.id === rental.clientId),
     [rental.clientId],
@@ -221,7 +228,10 @@ export function RentalCard({ rental }: { rental: Rental }) {
               <button
                 key={a.id}
                 type="button"
-                onClick={() => setAction(a.id as ActionKind)}
+                onClick={() => {
+                  if (a.id === "extend") setExtendOpen(true);
+                  else setAction(a.id as ActionKind);
+                }}
                 className={cn(
                   "inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-[12px] font-semibold transition-colors",
                   a.tone === "primary" &&
@@ -435,6 +445,21 @@ export function RentalCard({ rental }: { rental: Rental }) {
         <ConfirmPaymentDialog
           rental={rental}
           onClose={() => setConfirmOpen(false)}
+        />
+      )}
+
+      {extendOpen && (
+        <ExtendRentalDialog
+          rental={rental}
+          onClose={() => setExtendOpen(false)}
+          onExtended={(r) => setConfirmForNewId(r.id)}
+        />
+      )}
+
+      {confirmForNewId != null && newRental && (
+        <ConfirmPaymentDialog
+          rental={newRental}
+          onClose={() => setConfirmForNewId(null)}
         />
       )}
     </div>

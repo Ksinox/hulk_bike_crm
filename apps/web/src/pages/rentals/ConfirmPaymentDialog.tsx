@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { Check, Upload, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { DEPOSIT_AMOUNT, type ConfirmerRole, type Rental } from "@/lib/mock/rentals";
+import { DEPOSIT_AMOUNT, type Rental } from "@/lib/mock/rentals";
 import { confirmRentalPayment } from "./rentalsStore";
 
-const TODAY_STR = "13.10.2026";
+/** Текущий вошедший — пока мок, позже возьмём из auth */
+const CURRENT_USER = { role: "admin" as const, name: "Антон Р." };
 
 export function ConfirmPaymentDialog({
   rental,
@@ -14,8 +15,6 @@ export function ConfirmPaymentDialog({
   onClose: () => void;
 }) {
   const [closing, setClosing] = useState(false);
-  const [role, setRole] = useState<ConfirmerRole>("admin");
-  const [byName, setByName] = useState("Антон Р.");
   const [contractUploaded, setContractUploaded] = useState(!!rental.contractUploaded);
   const [paymentOk, setPaymentOk] = useState(false);
   const [depositOk, setDepositOk] = useState(false);
@@ -35,10 +34,15 @@ export function ConfirmPaymentDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const canSave = paymentOk && depositOk && byName.trim().length > 1;
+  const canSave = paymentOk && depositOk;
 
   const handleConfirm = () => {
-    confirmRentalPayment(rental.id, role, byName.trim(), contractUploaded);
+    confirmRentalPayment(
+      rental.id,
+      CURRENT_USER.role,
+      CURRENT_USER.name,
+      contractUploaded,
+    );
     requestClose();
   };
 
@@ -125,42 +129,10 @@ export function ConfirmPaymentDialog({
             />
           </div>
 
-          {/* Кто подтвердил */}
-          <div className="rounded-[12px] border border-border px-3 py-3">
-            <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-2">
-              Кто подтвердил
-            </div>
-            <div className="mb-2 flex gap-2">
-              {(["admin", "director"] as ConfirmerRole[]).map((r) => (
-                <button
-                  key={r}
-                  type="button"
-                  onClick={() => setRole(r)}
-                  className={cn(
-                    "flex-1 rounded-[10px] px-3 py-2 text-[12px] font-semibold transition-colors",
-                    role === r
-                      ? "bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-600"
-                      : "bg-surface-soft text-muted hover:bg-border",
-                  )}
-                >
-                  {r === "admin" ? "Администратор" : "Директор"}
-                </button>
-              ))}
-            </div>
-            <label className="text-[12px] font-semibold text-ink">
-              Имя
-              <input
-                type="text"
-                value={byName}
-                onChange={(e) => setByName(e.target.value)}
-                placeholder="например: Антон Р."
-                className="mt-1 h-9 w-full rounded-[10px] border border-border bg-surface px-3 text-[13px] text-ink outline-none focus:border-blue-600"
-              />
-            </label>
-            <div className="mt-1 text-[10px] text-muted-2">
-              Запишется в журнал: {TODAY_STR} · {role === "admin" ? "Администратор" : "Директор"}{" "}
-              {byName}
-            </div>
+          <div className="text-[11px] text-muted-2">
+            В журнал запишется: 13.10.2026 ·{" "}
+            {CURRENT_USER.role === "admin" ? "Администратор" : "Директор"}{" "}
+            {CURRENT_USER.name}
           </div>
         </div>
 

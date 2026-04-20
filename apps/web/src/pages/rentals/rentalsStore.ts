@@ -305,6 +305,60 @@ export function addRental(r: Omit<Rental, "id">): Rental {
   return next;
 }
 
+/**
+ * Продление аренды: закрываем текущую как completed,
+ * создаём новую с той же парой клиент+скутер от даты предыдущего планового возврата.
+ */
+export function extendRental(
+  oldId: number,
+  extraDays: number,
+  newRate: number,
+  newTariffPeriod: Rental["tariffPeriod"],
+): Rental | null {
+  const old = state.rentals.find((r) => r.id === oldId);
+  if (!old) return null;
+  // закрываем старую
+  state.rentals = state.rentals.map((r) =>
+    r.id === oldId
+      ? {
+          ...r,
+          status: "completed",
+          endActual: r.endPlanned,
+          depositReturned: false, // залог переходит в новую аренду
+        }
+      : r,
+  );
+  // новая начинается там, где закончилась старая
+  const newStart = old.endPlanned;
+  const [d, m, y] = newStart.split(".").map(Number);
+  const endDate = new Date(y, m - 1, d);
+  endDate.setDate(endDate.getDate() + extraDays);
+  const dd = String(endDate.getDate()).padStart(2, "0");
+  const mm = String(endDate.getMonth() + 1).padStart(2, "0");
+  const newEnd = `${dd}.${mm}.${endDate.getFullYear()}`;
+
+  const newId = Math.max(...state.rentals.map((x) => x.id), 0) + 1;
+  const created: Rental = {
+    ...old,
+    id: newId,
+    start: newStart,
+    startTime: old.startTime,
+    endPlanned: newEnd,
+    endActual: undefined,
+    status: "active",
+    tariffPeriod: newTariffPeriod,
+    rate: newRate,
+    days: extraDays,
+    sum: newRate * extraDays,
+    contractUploaded: false,
+    paymentConfirmed: null,
+    note: `продление аренды #${String(oldId).padStart(4, "0")}`,
+  };
+  state.rentals = [...state.rentals, created];
+  emit();
+  return created;
+}
+
 export function toggleTask(id: number) {
   state.tasks = state.tasks.map((t) =>
     t.id === id ? { ...t, done: !t.done } : t,

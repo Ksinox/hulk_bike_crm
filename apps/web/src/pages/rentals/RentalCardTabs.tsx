@@ -168,6 +168,11 @@ export function PaymentsTab({ rental }: { rental: Rental }) {
   const payments = useRentalPayments(rental.id);
   const paid = payments.filter((p) => p.paid).reduce((s, p) => s + (p.type === "refund" ? -p.amount : p.amount), 0);
   const unpaid = payments.filter((p) => !p.paid).reduce((s, p) => s + p.amount, 0);
+  // свежие сверху — сортируем по id убывания (id у нас растёт со временем)
+  const sortedPayments = useMemo(
+    () => [...payments].sort((a, b) => b.id - a.id),
+    [payments],
+  );
 
   return (
     <div className="flex flex-col gap-3">
@@ -200,7 +205,7 @@ export function PaymentsTab({ rental }: { rental: Rental }) {
               </tr>
             </thead>
             <tbody>
-              {payments.map((p) => (
+              {sortedPayments.map((p) => (
                 <tr key={p.id} className="border-t border-border/60">
                   <td className="px-3 py-2 tabular-nums text-muted">{p.date}</td>
                   <td className="px-3 py-2">
