@@ -336,6 +336,33 @@ export function ClientCard({ client }: { client: Client }) {
   );
 }
 
+async function copyText(text: string): Promise<boolean> {
+  if (navigator.clipboard && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      /* fallthrough */
+    }
+  }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.left = "-9999px";
+    ta.style.top = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    ta.setSelectionRange(0, text.length);
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
 function PhoneDisplay({
   phone,
   primary,
@@ -350,17 +377,14 @@ function PhoneDisplay({
   const handleCopy = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    try {
-      await navigator.clipboard.writeText(phone);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1500);
-    } catch {
-      /* noop */
-    }
+    const ok = await copyText(phone);
+    if (!ok) console.warn("clipboard copy failed (sandbox?)");
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1600);
   };
 
   return (
-    <div className="inline-flex items-center gap-1.5">
+    <div className="relative inline-flex items-center gap-1.5">
       <a
         href={`tel:${phone.replace(/\s/g, "")}`}
         className={cn(
@@ -381,19 +405,28 @@ function PhoneDisplay({
           доп
         </span>
       )}
-      <button
-        type="button"
-        onClick={handleCopy}
-        title={copied ? "Скопировано" : "Скопировать номер"}
-        className={cn(
-          "flex h-6 w-6 items-center justify-center rounded-full transition-colors",
-          copied
-            ? "bg-green-soft text-green-ink"
-            : "text-muted-2 hover:bg-surface-soft hover:text-ink",
+      <span className="relative inline-block">
+        <button
+          type="button"
+          onClick={handleCopy}
+          title="Скопировать номер"
+          className={cn(
+            "flex h-6 w-6 items-center justify-center rounded-full transition-colors",
+            copied
+              ? "bg-green-soft text-green-ink"
+              : "text-muted-2 hover:bg-surface-soft hover:text-ink",
+          )}
+        >
+          {copied ? <Check size={12} /> : <Copy size={12} />}
+        </button>
+
+        {copied && (
+          <span className="pointer-events-none absolute -top-8 left-1/2 z-50 inline-flex -translate-x-1/2 animate-modal-in items-center gap-1 whitespace-nowrap rounded-full bg-ink px-2.5 py-1 text-[11px] font-semibold text-white shadow-card">
+            <Check size={11} className="text-green-soft" />
+            Скопировано
+          </span>
         )}
-      >
-        {copied ? <Check size={12} /> : <Copy size={12} />}
-      </button>
+      </span>
     </div>
   );
 }

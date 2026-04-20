@@ -36,8 +36,8 @@ export function ClientsList({
   }
 
   return (
-    <div className="overflow-hidden rounded-2xl bg-surface shadow-card-sm">
-      <div className="scroll-fade-y scrollbar-thin max-h-[calc(100vh-260px)] overflow-y-auto overflow-x-hidden px-1.5 py-2">
+    <div className="relative overflow-hidden rounded-2xl bg-surface shadow-card-sm">
+      <div className="scrollbar-thin max-h-[calc(100vh-260px)] overflow-y-auto overflow-x-hidden px-1.5 py-8">
         {items.map((c) => (
           <ClientRow
             key={c.id}
@@ -47,6 +47,34 @@ export function ClientsList({
           />
         ))}
       </div>
+
+      {/* Top fade + blur */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 h-14 z-10 backdrop-blur-[3px]"
+        style={{
+          background:
+            "linear-gradient(to bottom, hsl(var(--surface)) 0%, hsl(var(--surface) / 0.85) 40%, transparent 100%)",
+          WebkitMaskImage:
+            "linear-gradient(to bottom, black 0%, black 50%, transparent 100%)",
+          maskImage:
+            "linear-gradient(to bottom, black 0%, black 50%, transparent 100%)",
+        }}
+      />
+
+      {/* Bottom fade + blur */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 bottom-0 h-14 z-10 backdrop-blur-[3px]"
+        style={{
+          background:
+            "linear-gradient(to top, hsl(var(--surface)) 0%, hsl(var(--surface) / 0.85) 40%, transparent 100%)",
+          WebkitMaskImage:
+            "linear-gradient(to top, black 0%, black 50%, transparent 100%)",
+          maskImage:
+            "linear-gradient(to top, black 0%, black 50%, transparent 100%)",
+        }}
+      />
     </div>
   );
 }
