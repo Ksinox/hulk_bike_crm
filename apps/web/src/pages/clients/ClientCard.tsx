@@ -421,9 +421,14 @@ function PhoneDisplay({
         </button>
 
         {copied && (
-          <span className="pointer-events-none absolute -top-8 left-1/2 z-50 inline-flex -translate-x-1/2 animate-modal-in items-center gap-1 whitespace-nowrap rounded-full bg-ink px-2.5 py-1 text-[11px] font-semibold text-white shadow-card">
-            <Check size={11} className="text-green-soft" />
-            Скопировано
+          <span
+            className="pointer-events-none absolute -top-8 left-1/2 z-50 -translate-x-1/2"
+            aria-live="polite"
+          >
+            <span className="inline-flex animate-toast-in items-center gap-1 whitespace-nowrap rounded-full bg-ink px-2.5 py-1 text-[11px] font-semibold text-white shadow-card">
+              <Check size={11} className="text-green-soft" />
+              Скопировано
+            </span>
           </span>
         )}
       </span>

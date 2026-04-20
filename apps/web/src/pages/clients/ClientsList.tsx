@@ -37,7 +37,7 @@ export function ClientsList({
 
   return (
     <div className="relative overflow-hidden rounded-2xl bg-surface shadow-card-sm">
-      <div className="scrollbar-thin max-h-[calc(100vh-260px)] overflow-y-auto overflow-x-hidden px-1.5 py-8">
+      <div className="scrollbar-thin max-h-[calc(100vh-260px)] overflow-y-auto overflow-x-hidden px-1.5 py-16">
         {items.map((c) => (
           <ClientRow
             key={c.id}
