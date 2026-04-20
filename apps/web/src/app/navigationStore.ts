@@ -1,48 +1,36 @@
-import { useSyncExternalStore } from "react";
 import type { RouteId } from "./route";
 
-type PendingSelection = {
+type NavRequest = {
   route: RouteId;
   clientId?: number;
   rentalId?: number;
 };
 
-let pending: PendingSelection | null = null;
-const listeners = new Set<() => void>();
+const EVENT = "hulk:navigate";
 
-function emit() {
-  listeners.forEach((l) => l());
+let pending: NavRequest | null = null;
+
+/** Запросить переход на страницу с предустановленным выбором */
+export function navigate(req: NavRequest): void {
+  pending = req;
+  window.dispatchEvent(new CustomEvent<NavRequest>(EVENT, { detail: req }));
 }
 
-function subscribe(fn: () => void) {
-  listeners.add(fn);
-  return () => {
-    listeners.delete(fn);
-  };
-}
-
-/** Запросить переход на страницу route с предустановленным выбором */
-export function navigate(sel: PendingSelection): void {
-  pending = sel;
-  emit();
-}
-
-/** Прочитать pending-выбор для страницы; после чтения сбрасывается */
+/** Прочитать pending-выбор для маршрута; после чтения сбрасывается */
 export function consumePending(route: RouteId):
   | { clientId?: number; rentalId?: number }
   | null {
   if (!pending || pending.route !== route) return null;
   const { clientId, rentalId } = pending;
   pending = null;
-  emit();
   return { clientId, rentalId };
 }
 
-/** Текущий pending (readonly) — для подписки на смену маршрута */
-export function usePendingNavigation(): PendingSelection | null {
-  return useSyncExternalStore(
-    subscribe,
-    () => pending,
-    () => null,
-  );
+/** Подписаться на события навигации (для App) */
+export function onNavigate(cb: (req: NavRequest) => void): () => void {
+  const handler = (e: Event) => {
+    cb((e as CustomEvent<NavRequest>).detail);
+  };
+  window.addEventListener(EVENT, handler);
+  return () => window.removeEventListener(EVENT, handler);
 }

@@ -1,7 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Plus } from "lucide-react";
 import { Topbar } from "@/pages/dashboard/Topbar";
 import { CLIENTS, type Client } from "@/lib/mock/clients";
+import { consumePending } from "@/app/navigationStore";
 import {
   ClientsFilters,
   type FiltersState,
@@ -35,6 +36,11 @@ export function Clients() {
   });
   const [selectedId, setSelectedId] = useState<number>(17);
   const [addOpen, setAddOpen] = useState(false);
+
+  useEffect(() => {
+    const p = consumePending("clients");
+    if (p?.clientId) setSelectedId(p.clientId);
+  }, []);
 
   const filtered = useMemo(
     () =>

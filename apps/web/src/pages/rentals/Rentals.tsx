@@ -6,6 +6,7 @@ import { CLIENTS } from "@/lib/mock/clients";
 import { RentalsFilters, type FiltersState } from "./RentalsFilters";
 import { RentalsList } from "./RentalsList";
 import { RentalsKpi, type Kpi } from "./RentalsKpi";
+import { RentalCard } from "./RentalCard";
 
 function matchStatus(r: Rental, f: FiltersState["status"]): boolean {
   if (f === "all") return true;
@@ -176,18 +177,19 @@ export function Rentals() {
           onSelect={setSelectedId}
         />
 
-        <div className="flex min-h-[400px] items-center justify-center rounded-2xl bg-surface p-10 text-center shadow-card-sm">
-          <div>
-            <div className="text-[14px] font-semibold text-ink-2">
-              Карточка аренды появится в следующем этапе
-            </div>
-            <div className="mt-1 text-[12px] text-muted">
-              {selectedId
-                ? `Выбрана аренда #${String(selectedId).padStart(4, "0")}`
-                : "Выберите аренду из списка"}
-            </div>
-          </div>
-        </div>
+        {(() => {
+          const selected = RENTALS.find((r) => r.id === selectedId);
+          if (!selected) {
+            return (
+              <div className="flex min-h-[400px] items-center justify-center rounded-2xl bg-surface p-10 text-center shadow-card-sm">
+                <div className="text-[13px] text-muted">
+                  Выберите аренду из списка
+                </div>
+              </div>
+            );
+          }
+          return <RentalCard rental={selected} />;
+        })()}
       </div>
     </main>
   );

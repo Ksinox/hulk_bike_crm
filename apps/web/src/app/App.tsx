@@ -8,23 +8,22 @@ import { TitleBar } from "./TitleBar";
 import { startWebVersionCheck } from "@/lib/version-check";
 import { isElectron } from "@/platform";
 import { loadRoute, saveRoute, type RouteId } from "./route";
-import { usePendingNavigation } from "./navigationStore";
+import { onNavigate } from "./navigationStore";
 
 export function App() {
   const [webUpdate, setWebUpdate] = useState<string | null>(null);
   const [route, setRoute] = useState<RouteId>(() => loadRoute());
-  const pending = usePendingNavigation();
 
   useEffect(() => {
     return startWebVersionCheck((next) => setWebUpdate(next));
   }, []);
 
   useEffect(() => {
-    if (pending && pending.route !== route) {
-      setRoute(pending.route);
-      saveRoute(pending.route);
-    }
-  }, [pending, route]);
+    return onNavigate((req) => {
+      setRoute(req.route);
+      saveRoute(req.route);
+    });
+  }, []);
 
   const onSelect = (id: RouteId) => {
     setRoute(id);
