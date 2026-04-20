@@ -8,6 +8,7 @@ import {
 } from "./ClientsFilters";
 import { ClientsList } from "./ClientsList";
 import { ClientCard } from "./ClientCard";
+import { AddClientModal } from "./AddClientModal";
 
 function matchClient(c: Client, f: FiltersState): boolean {
   if (f.search.trim()) {
@@ -33,6 +34,7 @@ export function Clients() {
     source: "all",
   });
   const [selectedId, setSelectedId] = useState<number>(17);
+  const [addOpen, setAddOpen] = useState(false);
 
   const filtered = useMemo(
     () =>
@@ -57,6 +59,7 @@ export function Clients() {
         </div>
         <button
           type="button"
+          onClick={() => setAddOpen(true)}
           className="inline-flex items-center gap-1.5 rounded-full bg-ink px-4 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-ink-2"
         >
           <Plus size={16} />
@@ -87,6 +90,8 @@ export function Clients() {
           return <ClientCard client={selected} />;
         })()}
       </div>
+
+      {addOpen && <AddClientModal onClose={() => setAddOpen(false)} />}
     </main>
   );
 }
