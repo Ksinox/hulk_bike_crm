@@ -12,14 +12,20 @@ export type RentalStatus =
 
 export type PaymentMethod = "cash" | "card" | "transfer";
 
+export type ScooterModel = "jog" | "gear" | "honda" | "tank";
+
+export type TariffPeriod = "short" | "week" | "month";
+
 export type Rental = {
   id: number;
   clientId: number;
   scooter: string;
+  model: ScooterModel;
   start: string;
   endPlanned: string;
   endActual?: string;
   status: RentalStatus;
+  tariffPeriod: TariffPeriod;
   rate: number;
   days: number;
   sum: number;
@@ -29,6 +35,56 @@ export type Rental = {
   paymentMethod: PaymentMethod;
   note?: string;
 };
+
+/** Фиксированный залог согласно договору аренды */
+export const DEPOSIT_AMOUNT = 2000;
+
+export const MODEL_LABEL: Record<ScooterModel, string> = {
+  jog: "Yamaha Jog",
+  gear: "Yamaha Gear",
+  honda: "Honda DIO",
+  tank: "Tank",
+};
+
+/**
+ * Актуальный прайс (Вариант Б — реальный прайс из переписки с клиентами).
+ * Источник: 02_структурированные_знания/03_процесс_аренды.md
+ */
+export const TARIFF: Record<ScooterModel, Record<TariffPeriod, number>> = {
+  honda: { short: 400, week: 350, month: 300 },
+  jog: { short: 600, week: 500, month: 400 },
+  gear: { short: 700, week: 600, month: 500 },
+  tank: { short: 700, week: 700, month: 700 },
+};
+
+export const TARIFF_PERIOD_LABEL: Record<TariffPeriod, string> = {
+  short: "3–7 дней",
+  week: "от 7 дней",
+  month: "от 30 дней",
+};
+
+/** Определяет тарифный период по количеству дней */
+export function periodForDays(days: number): TariffPeriod {
+  if (days < 7) return "short";
+  if (days < 30) return "week";
+  return "month";
+}
+
+/**
+ * Штраф за просрочку возврата.
+ * 60-120 мин = 1/2 суточной ставки, > 120 мин = 300 ₽/час.
+ * Источник: договор аренды, 10_правила_бизнеса.md
+ */
+export function overdueReturnFine(hoursLate: number, rate: number): number {
+  if (hoursLate <= 1) return 0;
+  if (hoursLate <= 2) return Math.round(rate / 2);
+  return hoursLate * 300;
+}
+
+/** Штраф за просрочку оплаты: 200 ₽/день */
+export function overduePaymentFine(days: number): number {
+  return days * 200;
+}
 
 export const STATUS_LABEL: Record<RentalStatus, string> = {
   new_request: "Новая заявка",
@@ -71,139 +127,164 @@ export const PAYMENT_LABEL: Record<PaymentMethod, string> = {
  * Сегодня по демо-таймлайну: 13.10.2026.
  */
 export const RENTALS: Rental[] = [
-  // ===== ACTIVE (идут сейчас) =====
-  { id: 101, clientId: 17, scooter: "Jog #07", start: "14.09.2026", endPlanned: "14.10.2026", status: "active",
-    rate: 450, days: 30, sum: 13500, deposit: 2000, equipment: ["шлем"], paymentMethod: "card" },
-  { id: 102, clientId: 17, scooter: "Jog #23", start: "01.10.2026", endPlanned: "31.10.2026", status: "active",
-    rate: 450, days: 30, sum: 13500, deposit: 2000, equipment: ["шлем", "держатель"], paymentMethod: "card" },
-  { id: 103, clientId: 1,  scooter: "Jog #02", start: "05.10.2026", endPlanned: "19.10.2026", status: "active",
-    rate: 500, days: 14, sum: 7000, deposit: 2000, equipment: ["шлем"], paymentMethod: "cash" },
-  { id: 104, clientId: 1,  scooter: "Jog #11", start: "12.10.2026", endPlanned: "15.10.2026", status: "active",
-    rate: 500, days: 3, sum: 1500, deposit: 2000, equipment: [], paymentMethod: "cash" },
-  { id: 105, clientId: 2,  scooter: "Gear #04", start: "01.10.2026", endPlanned: "31.10.2026", status: "active",
-    rate: 550, days: 30, sum: 16500, deposit: 2000, equipment: ["шлем"], paymentMethod: "card" },
-  { id: 106, clientId: 4,  scooter: "Jog #17", start: "28.09.2026", endPlanned: "28.10.2026", status: "active",
-    rate: 450, days: 30, sum: 13500, deposit: 2000, equipment: ["шлем", "держатель"], paymentMethod: "card" },
-  { id: 107, clientId: 6,  scooter: "Gear #09", start: "10.10.2026", endPlanned: "24.10.2026", status: "active",
-    rate: 600, days: 14, sum: 8400, deposit: 2000, equipment: ["шлем"], paymentMethod: "card" },
-  { id: 108, clientId: 6,  scooter: "Jog #18", start: "02.10.2026", endPlanned: "16.10.2026", status: "active",
-    rate: 500, days: 14, sum: 7000, deposit: 2000, equipment: [], paymentMethod: "cash" },
-  { id: 109, clientId: 8,  scooter: "Tank #02", start: "05.10.2026", endPlanned: "19.10.2026", status: "active",
-    rate: 700, days: 14, sum: 9800, deposit: 2000, equipment: ["шлем", "держатель"], paymentMethod: "card" },
-  { id: 110, clientId: 9,  scooter: "Gear #12", start: "08.10.2026", endPlanned: "22.10.2026", status: "active",
-    rate: 550, days: 14, sum: 7700, deposit: 2000, equipment: ["шлем"], paymentMethod: "card" },
-  { id: 111, clientId: 11, scooter: "Jog #05", start: "03.10.2026", endPlanned: "17.10.2026", status: "active",
-    rate: 450, days: 14, sum: 6300, deposit: 2000, equipment: [], paymentMethod: "card" },
-  { id: 112, clientId: 14, scooter: "Jog #25", start: "12.10.2026", endPlanned: "14.10.2026", status: "active",
-    rate: 500, days: 2, sum: 1000, deposit: 2000, equipment: ["шлем"], paymentMethod: "cash",
-    note: "тест-драйв на 2 дня" },
-  { id: 113, clientId: 19, scooter: "Gear #07", start: "06.10.2026", endPlanned: "20.10.2026", status: "active",
-    rate: 550, days: 14, sum: 7700, deposit: 2000, equipment: ["шлем"], paymentMethod: "card" },
-  { id: 114, clientId: 22, scooter: "Jog #14", start: "11.10.2026", endPlanned: "18.10.2026", status: "active",
-    rate: 500, days: 7, sum: 3500, deposit: 2000, equipment: [], paymentMethod: "cash" },
-  { id: 115, clientId: 24, scooter: "Gear #15", start: "01.10.2026", endPlanned: "31.10.2026", status: "active",
-    rate: 550, days: 30, sum: 16500, deposit: 2000, equipment: ["шлем", "держатель"], paymentMethod: "card" },
-  { id: 116, clientId: 26, scooter: "Jog #29", start: "04.10.2026", endPlanned: "18.10.2026", status: "active",
-    rate: 450, days: 14, sum: 6300, deposit: 2000, equipment: ["шлем"], paymentMethod: "card" },
-  { id: 117, clientId: 26, scooter: "Tank #04", start: "10.10.2026", endPlanned: "17.10.2026", status: "active",
-    rate: 700, days: 7, sum: 4900, deposit: 2000, equipment: ["шлем"], paymentMethod: "card" },
-  { id: 118, clientId: 29, scooter: "Jog #08", start: "07.10.2026", endPlanned: "21.10.2026", status: "active",
-    rate: 500, days: 14, sum: 7000, deposit: 2000, equipment: [], paymentMethod: "cash" },
-  { id: 119, clientId: 31, scooter: "Gear #03", start: "09.10.2026", endPlanned: "23.10.2026", status: "active",
-    rate: 550, days: 14, sum: 7700, deposit: 2000, equipment: ["шлем"], paymentMethod: "card" },
-  { id: 120, clientId: 34, scooter: "Jog #22", start: "02.10.2026", endPlanned: "16.10.2026", status: "active",
-    rate: 500, days: 14, sum: 7000, deposit: 2000, equipment: ["шлем"], paymentMethod: "card" },
-  { id: 121, clientId: 34, scooter: "Gear #18", start: "06.10.2026", endPlanned: "13.10.2026", status: "active",
-    rate: 550, days: 7, sum: 3850, deposit: 2000, equipment: [], paymentMethod: "cash",
-    note: "возврат сегодня — нужно встретить" },
-  { id: 122, clientId: 36, scooter: "Jog #30", start: "08.10.2026", endPlanned: "15.10.2026", status: "active",
-    rate: 500, days: 7, sum: 3500, deposit: 2000, equipment: [], paymentMethod: "card" },
-  { id: 123, clientId: 38, scooter: "Tank #01", start: "05.10.2026", endPlanned: "19.10.2026", status: "active",
-    rate: 700, days: 14, sum: 9800, deposit: 2000, equipment: ["шлем", "держатель"], paymentMethod: "card" },
-  { id: 124, clientId: 40, scooter: "Jog #03", start: "11.10.2026", endPlanned: "14.10.2026", status: "active",
-    rate: 500, days: 3, sum: 1500, deposit: 2000, equipment: [], paymentMethod: "cash" },
-  { id: 125, clientId: 42, scooter: "Gear #11", start: "01.10.2026", endPlanned: "15.10.2026", status: "active",
-    rate: 550, days: 14, sum: 7700, deposit: 2000, equipment: ["шлем"], paymentMethod: "card" },
+  // ===== ACTIVE =====
+  { id: 101, clientId: 17, scooter: "Jog #07", model: "jog", start: "14.09.2026", endPlanned: "14.10.2026",
+    status: "active", tariffPeriod: "month", rate: 400, days: 30, sum: 12000, deposit: 2000,
+    equipment: ["шлем"], paymentMethod: "card" },
+  { id: 102, clientId: 17, scooter: "Jog #23", model: "jog", start: "01.10.2026", endPlanned: "31.10.2026",
+    status: "active", tariffPeriod: "month", rate: 400, days: 30, sum: 12000, deposit: 2000,
+    equipment: ["шлем", "держатель"], paymentMethod: "card" },
+  { id: 103, clientId: 1, scooter: "Jog #02", model: "jog", start: "05.10.2026", endPlanned: "19.10.2026",
+    status: "active", tariffPeriod: "week", rate: 500, days: 14, sum: 7000, deposit: 2000,
+    equipment: ["шлем"], paymentMethod: "cash" },
+  { id: 104, clientId: 1, scooter: "Jog #11", model: "jog", start: "12.10.2026", endPlanned: "15.10.2026",
+    status: "active", tariffPeriod: "short", rate: 600, days: 3, sum: 1800, deposit: 2000,
+    equipment: [], paymentMethod: "cash" },
+  { id: 105, clientId: 2, scooter: "Gear #04", model: "gear", start: "01.10.2026", endPlanned: "31.10.2026",
+    status: "active", tariffPeriod: "month", rate: 500, days: 30, sum: 15000, deposit: 2000,
+    equipment: ["шлем"], paymentMethod: "card" },
+  { id: 106, clientId: 4, scooter: "Jog #17", model: "jog", start: "28.09.2026", endPlanned: "28.10.2026",
+    status: "active", tariffPeriod: "month", rate: 400, days: 30, sum: 12000, deposit: 2000,
+    equipment: ["шлем", "держатель"], paymentMethod: "card" },
+  { id: 107, clientId: 6, scooter: "Gear #09", model: "gear", start: "10.10.2026", endPlanned: "24.10.2026",
+    status: "active", tariffPeriod: "week", rate: 600, days: 14, sum: 8400, deposit: 2000,
+    equipment: ["шлем"], paymentMethod: "card" },
+  { id: 108, clientId: 6, scooter: "Jog #18", model: "jog", start: "02.10.2026", endPlanned: "16.10.2026",
+    status: "active", tariffPeriod: "week", rate: 500, days: 14, sum: 7000, deposit: 2000,
+    equipment: [], paymentMethod: "cash" },
+  { id: 109, clientId: 8, scooter: "Tank #02", model: "tank", start: "05.10.2026", endPlanned: "19.10.2026",
+    status: "active", tariffPeriod: "week", rate: 700, days: 14, sum: 9800, deposit: 2000,
+    equipment: ["шлем", "держатель"], paymentMethod: "card" },
+  { id: 110, clientId: 9, scooter: "Gear #12", model: "gear", start: "08.10.2026", endPlanned: "22.10.2026",
+    status: "active", tariffPeriod: "week", rate: 600, days: 14, sum: 8400, deposit: 2000,
+    equipment: ["шлем"], paymentMethod: "card" },
+  { id: 111, clientId: 11, scooter: "Jog #05", model: "jog", start: "03.10.2026", endPlanned: "17.10.2026",
+    status: "active", tariffPeriod: "week", rate: 500, days: 14, sum: 7000, deposit: 2000,
+    equipment: [], paymentMethod: "card" },
+  { id: 112, clientId: 14, scooter: "Jog #25", model: "jog", start: "12.10.2026", endPlanned: "14.10.2026",
+    status: "active", tariffPeriod: "short", rate: 600, days: 2, sum: 1200, deposit: 2000,
+    equipment: ["шлем"], paymentMethod: "cash", note: "тест-драйв на 2 дня" },
+  { id: 113, clientId: 19, scooter: "Gear #07", model: "gear", start: "06.10.2026", endPlanned: "20.10.2026",
+    status: "active", tariffPeriod: "week", rate: 600, days: 14, sum: 8400, deposit: 2000,
+    equipment: ["шлем"], paymentMethod: "card" },
+  { id: 114, clientId: 22, scooter: "Jog #14", model: "jog", start: "11.10.2026", endPlanned: "18.10.2026",
+    status: "active", tariffPeriod: "week", rate: 500, days: 7, sum: 3500, deposit: 2000,
+    equipment: [], paymentMethod: "cash" },
+  { id: 115, clientId: 24, scooter: "Gear #15", model: "gear", start: "01.10.2026", endPlanned: "31.10.2026",
+    status: "active", tariffPeriod: "month", rate: 500, days: 30, sum: 15000, deposit: 2000,
+    equipment: ["шлем", "держатель"], paymentMethod: "card" },
+  { id: 116, clientId: 26, scooter: "Jog #29", model: "jog", start: "04.10.2026", endPlanned: "18.10.2026",
+    status: "active", tariffPeriod: "week", rate: 500, days: 14, sum: 7000, deposit: 2000,
+    equipment: ["шлем"], paymentMethod: "card" },
+  { id: 117, clientId: 26, scooter: "Tank #04", model: "tank", start: "10.10.2026", endPlanned: "17.10.2026",
+    status: "active", tariffPeriod: "week", rate: 700, days: 7, sum: 4900, deposit: 2000,
+    equipment: ["шлем"], paymentMethod: "card" },
+  { id: 118, clientId: 29, scooter: "Jog #08", model: "jog", start: "07.10.2026", endPlanned: "21.10.2026",
+    status: "active", tariffPeriod: "week", rate: 500, days: 14, sum: 7000, deposit: 2000,
+    equipment: [], paymentMethod: "cash" },
+  { id: 119, clientId: 31, scooter: "Gear #03", model: "gear", start: "09.10.2026", endPlanned: "23.10.2026",
+    status: "active", tariffPeriod: "week", rate: 600, days: 14, sum: 8400, deposit: 2000,
+    equipment: ["шлем"], paymentMethod: "card" },
+  { id: 120, clientId: 34, scooter: "Jog #22", model: "jog", start: "02.10.2026", endPlanned: "16.10.2026",
+    status: "active", tariffPeriod: "week", rate: 500, days: 14, sum: 7000, deposit: 2000,
+    equipment: ["шлем"], paymentMethod: "card" },
+  { id: 121, clientId: 34, scooter: "Gear #18", model: "gear", start: "06.10.2026", endPlanned: "13.10.2026",
+    status: "active", tariffPeriod: "week", rate: 600, days: 7, sum: 4200, deposit: 2000,
+    equipment: [], paymentMethod: "cash", note: "возврат сегодня — нужно встретить" },
+  { id: 122, clientId: 36, scooter: "Jog #30", model: "jog", start: "08.10.2026", endPlanned: "15.10.2026",
+    status: "active", tariffPeriod: "week", rate: 500, days: 7, sum: 3500, deposit: 2000,
+    equipment: [], paymentMethod: "card" },
+  { id: 123, clientId: 38, scooter: "Tank #01", model: "tank", start: "05.10.2026", endPlanned: "19.10.2026",
+    status: "active", tariffPeriod: "week", rate: 700, days: 14, sum: 9800, deposit: 2000,
+    equipment: ["шлем", "держатель"], paymentMethod: "card" },
+  { id: 124, clientId: 40, scooter: "Jog #03", model: "jog", start: "11.10.2026", endPlanned: "14.10.2026",
+    status: "active", tariffPeriod: "short", rate: 600, days: 3, sum: 1800, deposit: 2000,
+    equipment: [], paymentMethod: "cash" },
+  { id: 125, clientId: 42, scooter: "Gear #11", model: "gear", start: "01.10.2026", endPlanned: "15.10.2026",
+    status: "active", tariffPeriod: "week", rate: 600, days: 14, sum: 8400, deposit: 2000,
+    equipment: ["шлем"], paymentMethod: "card" },
 
-  // ===== OVERDUE (просрочка — из дашборда «Просрочено: 3») =====
-  { id: 130, clientId: 3,  scooter: "Jog #04", start: "25.09.2026", endPlanned: "09.10.2026", status: "overdue",
-    rate: 500, days: 14, sum: 8400, deposit: 2000, equipment: ["шлем"], paymentMethod: "cash",
+  // ===== OVERDUE =====
+  { id: 130, clientId: 3, scooter: "Jog #04", model: "jog", start: "25.09.2026", endPlanned: "09.10.2026",
+    status: "overdue", tariffPeriod: "week", rate: 500, days: 14, sum: 7000, deposit: 2000,
+    equipment: ["шлем"], paymentMethod: "cash",
     note: "просрочен возврат на 4 дня, клиент обещал вернуть завтра" },
-  { id: 131, clientId: 16, scooter: "Gear #06", start: "20.09.2026", endPlanned: "11.10.2026", status: "overdue",
-    rate: 550, days: 21, sum: 11550, deposit: 2000, equipment: [], paymentMethod: "card",
-    note: "обещает вернуть после зарплаты" },
-  { id: 132, clientId: 21, scooter: "Jog #20", start: "29.09.2026", endPlanned: "12.10.2026", status: "overdue",
-    rate: 500, days: 14, sum: 7000, deposit: 2000, equipment: ["шлем"], paymentMethod: "cash",
-    note: "первый раз пропустил платёж" },
-  { id: 133, clientId: 33, scooter: "Jog #13", start: "28.09.2026", endPlanned: "12.10.2026", status: "overdue",
-    rate: 450, days: 14, sum: 6300, deposit: 2000, equipment: [], paymentMethod: "card",
-    note: "должен 1800 ₽ до пятницы" },
-  { id: 134, clientId: 39, scooter: "Gear #02", start: "20.09.2026", endPlanned: "04.10.2026", status: "overdue",
-    rate: 550, days: 14, sum: 7700, deposit: 2000, equipment: [], paymentMethod: "cash",
-    note: "пропустил возврат, ссылается на жену" },
-  { id: 135, clientId: 28, scooter: "Jog #16", start: "22.09.2026", endPlanned: "06.10.2026", status: "overdue",
-    rate: 500, days: 14, sum: 7000, deposit: 2000, equipment: [], paymentMethod: "cash",
-    note: "просрочка 1 неделя" },
+  { id: 131, clientId: 16, scooter: "Gear #06", model: "gear", start: "20.09.2026", endPlanned: "11.10.2026",
+    status: "overdue", tariffPeriod: "week", rate: 600, days: 21, sum: 12600, deposit: 2000,
+    equipment: [], paymentMethod: "card", note: "обещает вернуть после зарплаты" },
+  { id: 132, clientId: 21, scooter: "Jog #20", model: "jog", start: "29.09.2026", endPlanned: "12.10.2026",
+    status: "overdue", tariffPeriod: "week", rate: 500, days: 14, sum: 7000, deposit: 2000,
+    equipment: ["шлем"], paymentMethod: "cash", note: "первый раз пропустил платёж" },
+  { id: 133, clientId: 33, scooter: "Jog #13", model: "jog", start: "28.09.2026", endPlanned: "12.10.2026",
+    status: "overdue", tariffPeriod: "week", rate: 500, days: 14, sum: 7000, deposit: 2000,
+    equipment: [], paymentMethod: "card", note: "должен 1800 ₽ до пятницы" },
+  { id: 134, clientId: 39, scooter: "Gear #02", model: "gear", start: "20.09.2026", endPlanned: "04.10.2026",
+    status: "overdue", tariffPeriod: "week", rate: 600, days: 14, sum: 8400, deposit: 2000,
+    equipment: [], paymentMethod: "cash", note: "пропустил возврат, ссылается на жену" },
+  { id: 135, clientId: 28, scooter: "Jog #16", model: "jog", start: "22.09.2026", endPlanned: "06.10.2026",
+    status: "overdue", tariffPeriod: "week", rate: 500, days: 14, sum: 7000, deposit: 2000,
+    equipment: [], paymentMethod: "cash", note: "просрочка 1 неделя" },
 
-  // ===== RETURNING (возвращают прямо сейчас) =====
-  { id: 140, clientId: 13, scooter: "Gear #01", start: "01.10.2026", endPlanned: "13.10.2026", status: "returning",
-    rate: 550, days: 12, sum: 6600, deposit: 2000, equipment: ["шлем"], paymentMethod: "card",
-    note: "осмотр 13.10 в 14:00" },
+  // ===== RETURNING =====
+  { id: 140, clientId: 13, scooter: "Gear #01", model: "gear", start: "01.10.2026", endPlanned: "13.10.2026",
+    status: "returning", tariffPeriod: "week", rate: 600, days: 12, sum: 7200, deposit: 2000,
+    equipment: ["шлем"], paymentMethod: "card", note: "осмотр 13.10 в 14:00" },
 
   // ===== COMPLETED_DAMAGE =====
-  { id: 150, clientId: 10, scooter: "Jog #12", start: "10.04.2026", endPlanned: "20.04.2026", endActual: "23.04.2026",
-    status: "completed_damage", rate: 500, days: 13, sum: 7800, deposit: 3000, depositReturned: false,
-    equipment: ["шлем"], paymentMethod: "cash",
+  { id: 150, clientId: 10, scooter: "Jog #12", model: "jog", start: "10.04.2026", endPlanned: "20.04.2026",
+    endActual: "23.04.2026", status: "completed_damage", tariffPeriod: "week", rate: 500, days: 13, sum: 6500,
+    deposit: 2000, depositReturned: false, equipment: ["шлем"], paymentMethod: "cash",
     note: "вернул на 3 дня позже, штраф 3200 ₽ не погашен" },
 
   // ===== POLICE =====
-  { id: 160, clientId: 5, scooter: "Jog #12", start: "11.04.2026", endPlanned: "25.04.2026", status: "police",
-    rate: 500, days: 14, sum: 14200, deposit: 3000, equipment: ["шлем"], paymentMethod: "cash",
+  { id: 160, clientId: 5, scooter: "Jog #12", model: "jog", start: "11.04.2026", endPlanned: "25.04.2026",
+    status: "police", tariffPeriod: "week", rate: 500, days: 14, sum: 7000, deposit: 2000,
+    equipment: ["шлем"], paymentMethod: "cash",
     note: "скутер не возвращён, заявление в ОВД 18.04.2026" },
 
-  // ===== NEW_REQUEST (новые заявки без встречи) =====
-  { id: 170, clientId: 7,  scooter: "—", start: "13.10.2026", endPlanned: "—", status: "new_request",
-    rate: 0, days: 0, sum: 0, deposit: 0, equipment: [], paymentMethod: "cash",
-    note: "хочет Jog на 2 недели, перезвонить после 18:00" },
-  { id: 171, clientId: 18, scooter: "—", start: "13.10.2026", endPlanned: "—", status: "new_request",
-    rate: 0, days: 0, sum: 0, deposit: 0, equipment: [], paymentMethod: "cash",
-    note: "интересуется Tank для курьерской работы" },
+  // ===== NEW_REQUEST =====
+  { id: 170, clientId: 7, scooter: "—", model: "jog", start: "13.10.2026", endPlanned: "—",
+    status: "new_request", tariffPeriod: "week", rate: 0, days: 0, sum: 0, deposit: 0,
+    equipment: [], paymentMethod: "cash", note: "хочет Jog на 2 недели, перезвонить после 18:00" },
+  { id: 171, clientId: 18, scooter: "—", model: "tank", start: "13.10.2026", endPlanned: "—",
+    status: "new_request", tariffPeriod: "week", rate: 0, days: 0, sum: 0, deposit: 0,
+    equipment: [], paymentMethod: "cash", note: "интересуется Tank для курьерской работы" },
 
-  // ===== MEETING (встреча назначена) =====
-  { id: 180, clientId: 25, scooter: "Jog #06", start: "14.10.2026", endPlanned: "28.10.2026", status: "meeting",
-    rate: 450, days: 14, sum: 6300, deposit: 2000, equipment: ["шлем"], paymentMethod: "card",
-    note: "встреча 14.10 в 11:00" },
-  { id: 181, clientId: 37, scooter: "Gear #17", start: "14.10.2026", endPlanned: "21.10.2026", status: "meeting",
-    rate: 550, days: 7, sum: 3850, deposit: 2000, equipment: [], paymentMethod: "cash",
-    note: "встреча 14.10 в 16:30, привезёт паспорт" },
+  // ===== MEETING =====
+  { id: 180, clientId: 25, scooter: "Jog #06", model: "jog", start: "14.10.2026", endPlanned: "28.10.2026",
+    status: "meeting", tariffPeriod: "week", rate: 500, days: 14, sum: 7000, deposit: 2000,
+    equipment: ["шлем"], paymentMethod: "card", note: "встреча 14.10 в 11:00" },
+  { id: 181, clientId: 37, scooter: "Gear #17", model: "gear", start: "14.10.2026", endPlanned: "21.10.2026",
+    status: "meeting", tariffPeriod: "week", rate: 600, days: 7, sum: 4200, deposit: 2000,
+    equipment: [], paymentMethod: "cash", note: "встреча 14.10 в 16:30, привезёт паспорт" },
 
   // ===== COMPLETED (историческая база) =====
-  { id: 200, clientId: 17, scooter: "Jog #11", start: "10.07.2026", endPlanned: "25.07.2026", endActual: "25.07.2026",
-    status: "completed", rate: 450, days: 15, sum: 6750, deposit: 2000, depositReturned: true,
-    equipment: ["шлем"], paymentMethod: "card" },
-  { id: 201, clientId: 17, scooter: "Jog #07", start: "20.05.2026", endPlanned: "10.06.2026", endActual: "10.06.2026",
-    status: "completed", rate: 450, days: 21, sum: 9450, deposit: 2000, depositReturned: true,
-    equipment: [], paymentMethod: "card" },
-  { id: 202, clientId: 10, scooter: "Gear #05", start: "05.03.2026", endPlanned: "12.03.2026", endActual: "12.03.2026",
-    status: "completed", rate: 550, days: 7, sum: 3850, deposit: 2000, depositReturned: true,
-    equipment: [], paymentMethod: "cash" },
-  { id: 203, clientId: 10, scooter: "Tank #05", start: "10.02.2026", endPlanned: "15.02.2026", endActual: "15.02.2026",
-    status: "completed", rate: 700, days: 5, sum: 3500, deposit: 2000, depositReturned: true,
-    equipment: [], paymentMethod: "card" },
-  { id: 204, clientId: 1,  scooter: "Jog #09", start: "05.09.2026", endPlanned: "20.09.2026", endActual: "20.09.2026",
-    status: "completed", rate: 500, days: 15, sum: 7500, deposit: 2000, depositReturned: true,
-    equipment: ["шлем"], paymentMethod: "card" },
-  { id: 205, clientId: 6,  scooter: "Gear #13", start: "15.08.2026", endPlanned: "01.09.2026", endActual: "01.09.2026",
-    status: "completed", rate: 550, days: 17, sum: 9350, deposit: 2000, depositReturned: true,
-    equipment: ["шлем"], paymentMethod: "card" },
-  { id: 206, clientId: 26, scooter: "Jog #24", start: "20.08.2026", endPlanned: "05.09.2026", endActual: "05.09.2026",
-    status: "completed", rate: 450, days: 16, sum: 7200, deposit: 2000, depositReturned: true,
-    equipment: ["шлем", "держатель"], paymentMethod: "card" },
+  { id: 200, clientId: 17, scooter: "Jog #11", model: "jog", start: "10.07.2026", endPlanned: "25.07.2026",
+    endActual: "25.07.2026", status: "completed", tariffPeriod: "week", rate: 500, days: 15, sum: 7500,
+    deposit: 2000, depositReturned: true, equipment: ["шлем"], paymentMethod: "card" },
+  { id: 201, clientId: 17, scooter: "Jog #07", model: "jog", start: "20.05.2026", endPlanned: "10.06.2026",
+    endActual: "10.06.2026", status: "completed", tariffPeriod: "week", rate: 500, days: 21, sum: 10500,
+    deposit: 2000, depositReturned: true, equipment: [], paymentMethod: "card" },
+  { id: 202, clientId: 10, scooter: "Gear #05", model: "gear", start: "05.03.2026", endPlanned: "12.03.2026",
+    endActual: "12.03.2026", status: "completed", tariffPeriod: "week", rate: 600, days: 7, sum: 4200,
+    deposit: 2000, depositReturned: true, equipment: [], paymentMethod: "cash" },
+  { id: 203, clientId: 10, scooter: "Tank #05", model: "tank", start: "10.02.2026", endPlanned: "15.02.2026",
+    endActual: "15.02.2026", status: "completed", tariffPeriod: "short", rate: 700, days: 5, sum: 3500,
+    deposit: 2000, depositReturned: true, equipment: [], paymentMethod: "card" },
+  { id: 204, clientId: 1, scooter: "Jog #09", model: "jog", start: "05.09.2026", endPlanned: "20.09.2026",
+    endActual: "20.09.2026", status: "completed", tariffPeriod: "week", rate: 500, days: 15, sum: 7500,
+    deposit: 2000, depositReturned: true, equipment: ["шлем"], paymentMethod: "card" },
+  { id: 205, clientId: 6, scooter: "Gear #13", model: "gear", start: "15.08.2026", endPlanned: "01.09.2026",
+    endActual: "01.09.2026", status: "completed", tariffPeriod: "week", rate: 600, days: 17, sum: 10200,
+    deposit: 2000, depositReturned: true, equipment: ["шлем"], paymentMethod: "card" },
+  { id: 206, clientId: 26, scooter: "Jog #24", model: "jog", start: "20.08.2026", endPlanned: "05.09.2026",
+    endActual: "05.09.2026", status: "completed", tariffPeriod: "week", rate: 500, days: 16, sum: 8000,
+    deposit: 2000, depositReturned: true, equipment: ["шлем", "держатель"], paymentMethod: "card" },
 
   // ===== CANCELLED =====
-  { id: 250, clientId: 27, scooter: "Jog #28", start: "11.10.2026", endPlanned: "—", status: "cancelled",
-    rate: 500, days: 0, sum: 0, deposit: 0, equipment: [], paymentMethod: "cash",
-    note: "клиент не пришёл на встречу" },
+  { id: 250, clientId: 27, scooter: "Jog #28", model: "jog", start: "11.10.2026", endPlanned: "—",
+    status: "cancelled", tariffPeriod: "week", rate: 0, days: 0, sum: 0, deposit: 0,
+    equipment: [], paymentMethod: "cash", note: "клиент не пришёл на встречу" },
 ];
 
 export function getRentalsByClient(clientId: number): Rental[] {

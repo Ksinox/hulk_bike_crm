@@ -14,9 +14,14 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
+  DEPOSIT_AMOUNT,
+  MODEL_LABEL,
+  overduePaymentFine,
+  overdueReturnFine,
   PAYMENT_LABEL,
   STATUS_LABEL,
   STATUS_TONE,
+  TARIFF_PERIOD_LABEL,
   type Rental,
   type RentalStatus,
 } from "@/lib/mock/rentals";
@@ -161,6 +166,19 @@ export function RentalCard({ rental }: { rental: Rental }) {
           </h2>
 
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-muted-2">
+            <span className="font-semibold text-ink-2">
+              {MODEL_LABEL[rental.model]}
+            </span>
+            {rental.rate > 0 && (
+              <>
+                <span>·</span>
+                <span>
+                  тариф {TARIFF_PERIOD_LABEL[rental.tariffPeriod]} ·{" "}
+                  {fmt(rental.rate)} ₽/сут
+                </span>
+              </>
+            )}
+            <span>·</span>
             <span className="inline-flex items-center gap-1">
               <Calendar size={12} />
               {rental.start} — {rental.endPlanned}
@@ -259,7 +277,7 @@ export function RentalCard({ rental }: { rental: Rental }) {
       )}
 
       {/* KPI row */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
         <KpiBox
           label="Ставка"
           value={rental.rate > 0 ? `${fmt(rental.rate)} ₽` : "—"}
@@ -271,46 +289,53 @@ export function RentalCard({ rental }: { rental: Rental }) {
           hint={startDate ? `с ${rental.start}` : "не определён"}
         />
         <KpiBox
-          label="Сумма"
+          label="Аренда"
           value={rental.sum > 0 ? `${fmt(rental.sum)} ₽` : "—"}
           hint={PAYMENT_LABEL[rental.paymentMethod]}
           tone="green"
         />
         <KpiBox
-          label={
-            rental.status === "active"
-              ? daysLeft !== null && daysLeft >= 0
-                ? "Осталось"
-                : "Просрочено"
-              : rental.status === "overdue" && endDate
-                ? "Просрочено"
-                : "Прошло"
-          }
-          value={
-            rental.status === "active"
-              ? daysLeft !== null
-                ? daysLeft >= 0
-                  ? `${daysLeft} дн`
-                  : `${Math.abs(daysLeft)} дн`
-                : "—"
-              : rental.status === "overdue" && endDate
-                ? `${daysBetween(endDate, TODAY)} дн`
-                : daysElapsed !== null
-                  ? `${daysElapsed} дн`
-                  : "—"
-          }
+          label="Залог"
+          value={`${fmt(rental.deposit || DEPOSIT_AMOUNT)} ₽`}
           hint={
-            rental.status === "active" && daysLeft !== null && daysLeft < 0
-              ? "возврат просрочен"
-              : "от даты выдачи"
+            rental.depositReturned === true
+              ? "возвращён"
+              : rental.depositReturned === false
+                ? "удержан"
+                : "при возврате"
           }
-          tone={
-            rental.status === "overdue" ||
-            (rental.status === "active" && daysLeft !== null && daysLeft < 2)
-              ? "red"
-              : "neutral"
-          }
+          tone={rental.depositReturned === false ? "red" : "neutral"}
         />
+        {rental.status === "overdue" && endDate ? (
+          (() => {
+            const daysLate = daysBetween(endDate, TODAY);
+            const fine =
+              overdueReturnFine(daysLate * 24, rental.rate) +
+              overduePaymentFine(daysLate);
+            return (
+              <KpiBox
+                label="Просрочка"
+                value={`${daysLate} дн`}
+                hint={`штраф ≈ ${fmt(fine)} ₽`}
+                tone="red"
+              />
+            );
+          })()
+        ) : rental.status === "active" && daysLeft !== null ? (
+          <KpiBox
+            label={daysLeft >= 0 ? "Осталось" : "Просрочено"}
+            value={`${Math.abs(daysLeft)} дн`}
+            hint={daysLeft < 0 ? "возврат просрочен" : "до возврата"}
+            tone={daysLeft < 2 ? "red" : "neutral"}
+          />
+        ) : (
+          <KpiBox
+            label="Прошло"
+            value={daysElapsed !== null ? `${daysElapsed} дн` : "—"}
+            hint="от даты выдачи"
+            tone="neutral"
+          />
+        )}
       </div>
 
       {/* Tabs */}
