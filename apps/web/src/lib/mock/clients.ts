@@ -332,3 +332,9 @@ export function initialsOf(name: string): string {
 export function avatarColorIndex(id: number): number {
   return ((id - 1) % 6) + 1;
 }
+
+export function guessGender(name: string): "male" | "female" {
+  const surname = name.trim().split(/\s+/)[0]?.toLowerCase() ?? "";
+  if (/(а|я|ая|ова|ева|ина|ская|цкая)$/.test(surname)) return "female";
+  return "male";
+}

@@ -2,9 +2,7 @@ import { useMemo, useState } from "react";
 import { AlertTriangle, Ban, Pencil, Plus, UploadCloud } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
-  avatarColorIndex,
   getClientDetails,
-  initialsOf,
   ratingTier,
   SOURCE_LABEL,
   type Client,
@@ -18,17 +16,9 @@ import {
 } from "./ClientCardTabs";
 import { AddClientModal } from "./AddClientModal";
 import { SequentialNamingModal } from "./SequentialNamingModal";
-import { clientStore, useClientPhoto } from "./clientStore";
+import { clientStore } from "./clientStore";
 import type { UploadedFile } from "./DocUpload";
-
-const AVATAR_COLORS = [
-  "bg-blue-100 text-blue-700",
-  "bg-green-soft text-green-ink",
-  "bg-orange-soft text-orange-ink",
-  "bg-purple-soft text-purple-ink",
-  "bg-red-soft text-red-ink",
-  "bg-yellow-100 text-yellow-700",
-];
+import { ClientPhoto } from "./ClientPhoto";
 
 export type CardTab =
   | "rentals"
@@ -89,9 +79,6 @@ export function ClientCard({ client }: { client: Client }) {
   const [pendingFiles, setPendingFiles] = useState<UploadedFile[] | null>(null);
   const d = useMemo(() => getClientDetails(client), [client]);
   const tier = ratingTier(client.rating);
-  const photo = useClientPhoto(client.id);
-
-  const avatar = AVATAR_COLORS[avatarColorIndex(client.id) - 1] ?? AVATAR_COLORS[0];
 
   const handleDroppedFiles = (list: FileList) => {
     const uploaded: UploadedFile[] = [];
@@ -151,26 +138,8 @@ export function ClientCard({ client }: { client: Client }) {
       )}
 
       {/* Header */}
-      <header className="flex items-start gap-3">
-        <span
-          className={cn(
-            "flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full text-[15px] font-bold",
-            client.blacklisted ? "bg-red text-white" : avatar,
-          )}
-          title={photo ? "Фото клиента" : undefined}
-        >
-          {photo?.thumbUrl ? (
-            <img
-              src={photo.thumbUrl}
-              alt={client.name}
-              className="h-full w-full object-cover"
-            />
-          ) : client.blacklisted ? (
-            "✕"
-          ) : (
-            initialsOf(client.name)
-          )}
-        </span>
+      <header className="flex items-start gap-4">
+        <ClientPhoto client={client} size="lg" />
 
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">

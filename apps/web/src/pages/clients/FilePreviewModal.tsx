@@ -14,9 +14,11 @@ function isPdfName(name: string): boolean {
 export function FilePreviewModal({
   file,
   onClose,
+  actions,
 }: {
   file: UploadedFile;
   onClose: () => void;
+  actions?: React.ReactNode;
 }) {
   const [closing, setClosing] = useState(false);
 
@@ -82,6 +84,7 @@ export function FilePreviewModal({
               </div>
             )}
           </div>
+          {actions}
           <button
             type="button"
             onClick={handleDownload}
