@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import {
   AlertTriangle,
   ArrowRight,
+  Bike,
   Calendar,
   CheckCircle2,
   Gavel,
@@ -10,6 +11,7 @@ import {
   Repeat,
   ShieldAlert,
   Star,
+  Tag,
   User,
   XCircle,
 } from "lucide-react";
@@ -17,7 +19,6 @@ import { cn } from "@/lib/utils";
 import {
   DEPOSIT_AMOUNT,
   hoursOverdue,
-  MODEL_LABEL,
   overdueReturnFine,
   STATUS_LABEL,
   STATUS_TONE,
@@ -176,8 +177,27 @@ export function RentalCard({ rental }: { rental: Rental }) {
       <header className="flex flex-wrap items-start gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="font-display text-[22px] font-extrabold leading-tight text-ink">
-              {rental.scooter} — {client?.name ?? `#${rental.clientId}`}
+            <h2 className="flex flex-wrap items-center gap-x-1 font-display text-[22px] font-extrabold leading-tight text-ink">
+              <button
+                type="button"
+                title="Карточка скутера (скоро)"
+                className="inline-flex items-center gap-1.5 rounded px-0.5 decoration-2 underline-offset-4 hover:underline"
+              >
+                <Bike size={18} className="text-ink-2" />
+                {rental.scooter}
+              </button>
+              <span className="text-muted-2">—</span>
+              {client && (
+                <button
+                  type="button"
+                  onClick={() => setClientQuickView(true)}
+                  title="Быстрый просмотр клиента"
+                  className="inline-flex items-center gap-1.5 rounded px-0.5 decoration-2 underline-offset-4 hover:underline"
+                >
+                  <User size={18} className="text-ink-2" />
+                  {client.name}
+                </button>
+              )}
             </h2>
             <span
               className={cn(
@@ -194,47 +214,45 @@ export function RentalCard({ rental }: { rental: Rental }) {
         <RentalActionsMenu actions={actions} onAction={handleAction} />
       </header>
 
-      {/* Инфо-строка: слева мелкая техинфо, по центру телефон крупный */}
+      {/* Инфо-строка */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[12px]">
         <span className="font-semibold text-ink-2">
           Аренда #{String(rental.id).padStart(4, "0")}
         </span>
-        <Dot />
-        <span className="text-muted-2">
-          {MODEL_LABEL[rental.model]}
-          {rental.rate > 0 && ` · ${fmt(rental.rate)} ₽/сут`}
-        </span>
-        {client && (
+        {rental.rate > 0 && (
           <>
             <Dot />
-            <button
-              type="button"
-              onClick={() => setClientQuickView(true)}
-              className="inline-flex items-center gap-1 font-semibold text-blue-600 hover:underline"
-              title="Быстрый просмотр клиента"
+            <span className="inline-flex items-center gap-1 text-muted-2">
+              <Tag size={12} className="text-blue-600" />
+              {TARIFF_PERIOD_LABEL[rental.tariffPeriod]} ·{" "}
+              <span className="font-semibold text-ink-2">
+                {fmt(rental.rate)} ₽/сут
+              </span>
+            </span>
+          </>
+        )}
+        {client && tier && (
+          <>
+            <Dot />
+            <span
+              className={cn(
+                "inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] font-bold",
+                tier.tone === "good"
+                  ? "bg-green-soft text-green-ink"
+                  : tier.tone === "bad"
+                    ? "bg-red-soft text-red-ink"
+                    : "bg-surface-soft text-ink",
+              )}
+              title={tier.label}
             >
-              <User size={12} /> профиль клиента
-            </button>
-            {tier && (
-              <>
-                <Dot />
-                <span
-                  className={cn(
-                    "inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] font-bold",
-                    tier.tone === "good"
-                      ? "bg-green-soft text-green-ink"
-                      : tier.tone === "bad"
-                        ? "bg-red-soft text-red-ink"
-                        : "bg-surface-soft text-ink",
-                  )}
-                  title={tier.label}
-                >
-                  <Star size={11} /> {client.rating}
-                </span>
-              </>
-            )}
+              <Star size={11} /> {client.rating}
+            </span>
             <Dot />
             <span className="text-muted-2">{SOURCE_LABEL[client.source]}</span>
+          </>
+        )}
+        {client && (
+          <>
             <Dot />
             <a
               href={`tel:${client.phone.replace(/\s/g, "")}`}

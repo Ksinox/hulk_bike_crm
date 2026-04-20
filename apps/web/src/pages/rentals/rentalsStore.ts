@@ -124,8 +124,6 @@ const state: State = {
 const listeners = new Set<() => void>();
 function emit() {
   listeners.forEach((l) => l());
-  // ревизия для useSyncExternalStore
-  rev = (rev + 1) & 0x7fffffff;
 }
 function subscribe(fn: () => void) {
   listeners.add(fn);
@@ -133,8 +131,6 @@ function subscribe(fn: () => void) {
     listeners.delete(fn);
   };
 }
-
-let rev = 0;
 
 /* ======================= actions ======================= */
 
@@ -210,7 +206,7 @@ export function revertOverdue(id: number) {
 }
 
 export function completeRentalNoDamage(id: number, inspection: ReturnInspection) {
-  state.inspections.set(id, inspection);
+  state.inspections = new Map(state.inspections).set(id, inspection);
   state.rentals = state.rentals.map((r) =>
     r.id === id
       ? {
@@ -230,7 +226,7 @@ export function completeRentalWithDamage(
   damageAmount: number,
   note?: string,
 ) {
-  state.inspections.set(id, inspection);
+  state.inspections = new Map(state.inspections).set(id, inspection);
   state.rentals = state.rentals.map((r) =>
     r.id === id
       ? {
@@ -369,13 +365,20 @@ export function toggleTask(id: number) {
 /* ======================= hooks ======================= */
 
 export function useRentals(): Rental[] {
-  useSyncExternalStore(subscribe, () => rev, () => 0);
-  return state.rentals;
+  return useSyncExternalStore(
+    subscribe,
+    () => state.rentals,
+    () => state.rentals,
+  );
 }
 
 export function useRentalsByClient(clientId: number): Rental[] {
-  useSyncExternalStore(subscribe, () => rev, () => 0);
-  return state.rentals.filter((r) => r.clientId === clientId);
+  const rentals = useSyncExternalStore(
+    subscribe,
+    () => state.rentals,
+    () => state.rentals,
+  );
+  return rentals.filter((r) => r.clientId === clientId);
 }
 
 export function getActiveRentalByClient(
@@ -394,27 +397,47 @@ export function getActiveRentalByClient(
 }
 
 export function useRental(id: number | null): Rental | null {
-  useSyncExternalStore(subscribe, () => rev, () => 0);
+  const rentals = useSyncExternalStore(
+    subscribe,
+    () => state.rentals,
+    () => state.rentals,
+  );
   if (id == null) return null;
-  return state.rentals.find((r) => r.id === id) ?? null;
+  return rentals.find((r) => r.id === id) ?? null;
 }
 
 export function useRentalPayments(rentalId: number): Payment[] {
-  useSyncExternalStore(subscribe, () => rev, () => 0);
-  return state.payments.filter((p) => p.rentalId === rentalId);
+  const payments = useSyncExternalStore(
+    subscribe,
+    () => state.payments,
+    () => state.payments,
+  );
+  return payments.filter((p) => p.rentalId === rentalId);
 }
 
 export function useRentalIncidents(rentalId: number): RentalIncident[] {
-  useSyncExternalStore(subscribe, () => rev, () => 0);
-  return state.incidents.filter((i) => i.rentalId === rentalId);
+  const incidents = useSyncExternalStore(
+    subscribe,
+    () => state.incidents,
+    () => state.incidents,
+  );
+  return incidents.filter((i) => i.rentalId === rentalId);
 }
 
 export function useRentalTasks(rentalId: number): RentalTask[] {
-  useSyncExternalStore(subscribe, () => rev, () => 0);
-  return state.tasks.filter((t) => t.rentalId === rentalId);
+  const tasks = useSyncExternalStore(
+    subscribe,
+    () => state.tasks,
+    () => state.tasks,
+  );
+  return tasks.filter((t) => t.rentalId === rentalId);
 }
 
 export function useInspection(rentalId: number): ReturnInspection | null {
-  useSyncExternalStore(subscribe, () => rev, () => 0);
-  return state.inspections.get(rentalId) ?? null;
+  const inspections = useSyncExternalStore(
+    subscribe,
+    () => state.inspections,
+    () => state.inspections,
+  );
+  return inspections.get(rentalId) ?? null;
 }
