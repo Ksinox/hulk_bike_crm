@@ -373,6 +373,26 @@ export function useRentals(): Rental[] {
   return state.rentals;
 }
 
+export function useRentalsByClient(clientId: number): Rental[] {
+  useSyncExternalStore(subscribe, () => rev, () => 0);
+  return state.rentals.filter((r) => r.clientId === clientId);
+}
+
+export function getActiveRentalByClient(
+  clientId: number,
+  rentals: Rental[],
+): Rental | null {
+  return (
+    rentals.find(
+      (r) =>
+        r.clientId === clientId &&
+        (r.status === "active" ||
+          r.status === "overdue" ||
+          r.status === "returning"),
+    ) ?? null
+  );
+}
+
 export function useRental(id: number | null): Rental | null {
   useSyncExternalStore(subscribe, () => rev, () => 0);
   if (id == null) return null;

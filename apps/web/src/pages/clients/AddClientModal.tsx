@@ -40,10 +40,6 @@ type Form = {
   sameAddr: boolean;
   liveAddr: string;
 
-  noLicense: boolean;
-  licenseSer: string;
-  licenseNum: string;
-
   photoFile: UploadedFile | null;
   passportMainFile: UploadedFile | null;
   passportRegFile: UploadedFile | null;
@@ -69,9 +65,6 @@ const EMPTY: Form = {
   regAddr: "",
   sameAddr: true,
   liveAddr: "",
-  noLicense: false,
-  licenseSer: "",
-  licenseNum: "",
   photoFile: null,
   passportMainFile: null,
   passportRegFile: null,
@@ -167,9 +160,6 @@ function initialForm(editing: Client | null): Form {
     regAddr: d.regAddr === "—" ? "" : d.regAddr,
     sameAddr,
     liveAddr: sameAddr ? "" : d.liveAddr,
-    noLicense: d.docs.license === null,
-    licenseSer: "",
-    licenseNum: "",
     photoFile: clientStore.getPhoto(editing.id),
     passportMainFile: docToUploaded(d.docs.passport_main),
     passportRegFile: docToUploaded(d.docs.passport_reg),
@@ -551,47 +541,12 @@ export function AddClientModal({
 
           {/* Section 4 — Водительское */}
           <Section num={4} title="Водительское" badge="если есть">
-            <label className="flex cursor-pointer items-center gap-2 text-[13px] text-ink">
-              <input
-                type="checkbox"
-                checked={f.noLicense}
-                onChange={(e) => set("noLicense", e.target.checked)}
-                className="h-4 w-4 accent-blue-600"
-              />
-              Клиент без водительского — только для скутеров до 50 куб.см
-            </label>
-            {!f.noLicense && (
-              <>
-                <Row>
-                  <Field label="Серия ВУ" htmlFor="f-lser">
-                    <input
-                      id="f-lser"
-                      type="text"
-                      value={f.licenseSer}
-                      placeholder="00 00"
-                      onChange={(e) => set("licenseSer", e.target.value)}
-                      className={inputClass(null)}
-                    />
-                  </Field>
-                  <Field label="Номер ВУ" htmlFor="f-lnum">
-                    <input
-                      id="f-lnum"
-                      type="text"
-                      value={f.licenseNum}
-                      placeholder="000000"
-                      onChange={(e) => set("licenseNum", e.target.value)}
-                      className={inputClass(null)}
-                    />
-                  </Field>
-                </Row>
-                <DocUpload
-                  label="Скан водительского"
-                  hint="обе стороны одним файлом или PDF"
-                  file={f.licenseFile}
-                  onChange={(v) => set("licenseFile", v)}
-                />
-              </>
-            )}
+            <DocUpload
+              label="Скан водительского"
+              hint="обе стороны одним файлом или PDF. Если ВУ нет — оставьте пустым (клиент сможет взять только скутеры до 50 куб.см)"
+              file={f.licenseFile}
+              onChange={(v) => set("licenseFile", v)}
+            />
           </Section>
 
           {/* Section 5 — Договор и сканы */}

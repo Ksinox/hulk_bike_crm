@@ -15,6 +15,13 @@ import type { UploadedFile } from "./DocUpload";
 import { FilePreviewModal } from "./FilePreviewModal";
 import { clientStore, useClientExtraDocs } from "./clientStore";
 import { SequentialNamingModal } from "./SequentialNamingModal";
+import {
+  PAYMENT_LABEL,
+  STATUS_LABEL as RENTAL_STATUS_LABEL,
+  type Rental,
+} from "@/lib/mock/rentals";
+import { useRentalsByClient } from "@/pages/rentals/rentalsStore";
+import { navigate } from "@/app/navigationStore";
 
 function fmt(n: number): string {
   return n.toLocaleString("ru-RU");
@@ -22,21 +29,86 @@ function fmt(n: number): string {
 
 /* =================== Аренды =================== */
 
-const STATUS_LABEL: Record<string, string> = {
-  active: "активна",
-  done: "завершена",
-  overdue: "просрочка",
-};
+/** Сегодня по демо-таймлайну — 13.10.2026 */
+const TODAY_DEMO = new Date(2026, 9, 13);
 
-const STATUS_CLASS: Record<string, string> = {
+function parseDate(s: string): Date | null {
+  const m = s.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  if (!m) return null;
+  return new Date(+m[3], +m[2] - 1, +m[1]);
+}
+
+function daysBetween(a: Date, b: Date): number {
+  return Math.round((b.getTime() - a.getTime()) / 86400000);
+}
+
+function daysWord(n: number): string {
+  const abs = Math.abs(n);
+  const n10 = abs % 10;
+  const n100 = abs % 100;
+  if (n10 === 1 && n100 !== 11) return "день";
+  if (n10 >= 2 && n10 <= 4 && (n100 < 10 || n100 >= 20)) return "дня";
+  return "дней";
+}
+
+const RENTAL_STATUS_TONE: Record<string, string> = {
   active: "bg-green-soft text-green-ink",
-  done: "bg-surface-soft text-muted",
   overdue: "bg-red-soft text-red-ink",
+  returning: "bg-orange-soft text-orange-ink",
+  completed: "bg-surface-soft text-muted",
+  completed_damage: "bg-red-soft text-red-ink",
+  new_request: "bg-blue-50 text-blue-700",
+  meeting: "bg-blue-50 text-blue-700",
+  police: "bg-red-soft text-red-ink",
+  court: "bg-purple-soft text-purple-ink",
+  cancelled: "bg-surface-soft text-muted",
 };
 
-export function RentalsTab({ d }: { d: ClientDetails }) {
-  if (d.rentals.length === 0)
+function periodText(r: Rental): { main: string; hint: string | null } {
+  const main = `с ${r.start} до ${r.endPlanned}`;
+  const end = parseDate(r.endPlanned);
+  if (!end) return { main, hint: null };
+  if (r.status === "active") {
+    const left = daysBetween(TODAY_DEMO, end);
+    if (left > 0)
+      return { main, hint: `осталось ${left} ${daysWord(left)}` };
+    if (left === 0) return { main, hint: "возврат сегодня" };
+    return { main, hint: `просрочка ${Math.abs(left)} ${daysWord(left)}` };
+  }
+  if (r.status === "overdue" && end) {
+    const over = daysBetween(end, TODAY_DEMO);
+    return { main, hint: `просрочка ${over} ${daysWord(over)}` };
+  }
+  if (r.endActual) {
+    return { main: `с ${r.start} до ${r.endActual}`, hint: "фактически" };
+  }
+  return { main, hint: null };
+}
+
+export function RentalsTab({ client }: { client: Client }) {
+  const rentals = useRentalsByClient(client.id);
+  if (rentals.length === 0)
     return <Empty text="У клиента ещё не было аренд" />;
+
+  // сначала активные/просроченные/возврат, затем историю по убыванию id
+  const STATUS_WEIGHT: Record<string, number> = {
+    active: 0,
+    overdue: 0,
+    returning: 1,
+    meeting: 2,
+    new_request: 2,
+    completed_damage: 3,
+    police: 3,
+    court: 3,
+    completed: 9,
+    cancelled: 10,
+  };
+  const sorted = [...rentals].sort((a, b) => {
+    const w = (STATUS_WEIGHT[a.status] ?? 5) - (STATUS_WEIGHT[b.status] ?? 5);
+    if (w !== 0) return w;
+    return b.id - a.id;
+  });
+
   return (
     <div className="overflow-hidden rounded-[14px] border border-border">
       <table className="w-full text-[13px]">
@@ -51,37 +123,56 @@ export function RentalsTab({ d }: { d: ClientDetails }) {
           </tr>
         </thead>
         <tbody>
-          {d.rentals.map((r, i) => (
-            <tr
-              key={i}
-              className="border-t border-border/60 hover:bg-surface-soft/60"
-            >
-              <td className="px-3 py-2 font-semibold text-ink">{r.scooter}</td>
-              <td className="px-3 py-2 text-muted">{r.period}</td>
-              <td className="px-3 py-2">
-                <span
-                  className={cn(
-                    "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold",
-                    STATUS_CLASS[r.status],
+          {sorted.map((r) => {
+            const p = periodText(r);
+            return (
+              <tr
+                key={r.id}
+                onClick={() =>
+                  navigate({ route: "rentals", rentalId: r.id })
+                }
+                className="cursor-pointer border-t border-border/60 hover:bg-surface-soft/60"
+                title="Открыть аренду"
+              >
+                <td className="px-3 py-2 font-semibold text-ink">
+                  {r.scooter}
+                </td>
+                <td className="px-3 py-2 text-muted">
+                  <div>{p.main}</div>
+                  {p.hint && (
+                    <div className="mt-0.5 text-[11px] text-muted-2">
+                      ({p.hint})
+                    </div>
                   )}
-                >
-                  {STATUS_LABEL[r.status]}
-                </span>
-                {r.note && (
-                  <div className="mt-0.5 text-[11px] text-muted-2">
-                    {r.note}
-                  </div>
-                )}
-              </td>
-              <td className="px-3 py-2 text-right font-semibold tabular-nums text-ink">
-                {fmt(r.sum)} ₽
-              </td>
-              <td className="px-3 py-2 text-right tabular-nums text-muted">
-                {fmt(r.deposit)} ₽
-              </td>
-              <td className="px-3 py-2 text-muted">{r.src}</td>
-            </tr>
-          ))}
+                </td>
+                <td className="px-3 py-2">
+                  <span
+                    className={cn(
+                      "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold",
+                      RENTAL_STATUS_TONE[r.status] ??
+                        "bg-surface-soft text-muted",
+                    )}
+                  >
+                    {RENTAL_STATUS_LABEL[r.status]}
+                  </span>
+                  {r.note && (
+                    <div className="mt-0.5 text-[11px] text-muted-2">
+                      {r.note}
+                    </div>
+                  )}
+                </td>
+                <td className="px-3 py-2 text-right font-semibold tabular-nums text-ink">
+                  {r.sum > 0 ? `${fmt(r.sum)} ₽` : "—"}
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums text-muted">
+                  {r.deposit > 0 ? `${fmt(r.deposit)} ₽` : "—"}
+                </td>
+                <td className="px-3 py-2 text-muted">
+                  {PAYMENT_LABEL[r.paymentMethod]}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

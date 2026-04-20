@@ -1,27 +1,24 @@
 import { Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export type StatusFilter = "all" | "active" | "debt" | "black";
-export type SourceFilter = "all" | "avito" | "repeat" | "ref";
+export type StatusFilter =
+  | "all"
+  | "active"
+  | "inactive"
+  | "debt"
+  | "black";
 
 export type FiltersState = {
   search: string;
   status: StatusFilter;
-  source: SourceFilter;
 };
 
-const STATUS_TABS: { id: StatusFilter; label: string }[] = [
+const STATUS_TABS: { id: StatusFilter; label: string; hint?: string }[] = [
   { id: "all", label: "Все" },
-  { id: "active", label: "Активные" },
+  { id: "active", label: "На аренде", hint: "сейчас катают" },
+  { id: "inactive", label: "Неактивные", hint: "без аренды и долгов" },
   { id: "debt", label: "С долгом" },
   { id: "black", label: "Ч/С" },
-];
-
-const SOURCE_TABS: { id: SourceFilter; label: string }[] = [
-  { id: "all", label: "Все" },
-  { id: "avito", label: "Авито" },
-  { id: "repeat", label: "Повторный" },
-  { id: "ref", label: "Реком." },
 ];
 
 export function ClientsFilters({
@@ -47,54 +44,28 @@ export function ClientsFilters({
         />
       </div>
 
-      <Segmented
-        label="Статус"
-        tabs={STATUS_TABS}
-        active={value.status}
-        onSelect={(id) => onChange({ ...value, status: id })}
-      />
-      <Segmented
-        label="Источник"
-        tabs={SOURCE_TABS}
-        active={value.source}
-        onSelect={(id) => onChange({ ...value, source: id })}
-      />
-    </div>
-  );
-}
-
-function Segmented<T extends string>({
-  label,
-  tabs,
-  active,
-  onSelect,
-}: {
-  label: string;
-  tabs: { id: T; label: string }[];
-  active: T;
-  onSelect: (id: T) => void;
-}) {
-  return (
-    <div className="flex items-center gap-2">
-      <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-2">
-        {label}
-      </span>
-      <div className="inline-flex rounded-full bg-surface-soft p-0.5">
-        {tabs.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => onSelect(t.id)}
-            className={cn(
-              "rounded-full px-3 py-1 text-[12px] font-semibold transition-colors",
-              active === t.id
-                ? "bg-white text-ink shadow-card-sm"
-                : "text-muted hover:text-ink",
-            )}
-          >
-            {t.label}
-          </button>
-        ))}
+      <div className="flex items-center gap-2">
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-2">
+          Статус
+        </span>
+        <div className="inline-flex rounded-full bg-surface-soft p-0.5">
+          {STATUS_TABS.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => onChange({ ...value, status: t.id })}
+              title={t.hint}
+              className={cn(
+                "rounded-full px-3 py-1 text-[12px] font-semibold transition-colors",
+                value.status === t.id
+                  ? "bg-white text-ink shadow-card-sm"
+                  : "text-muted hover:text-ink",
+              )}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );

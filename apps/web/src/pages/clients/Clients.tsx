@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Plus } from "lucide-react";
 import { Topbar } from "@/pages/dashboard/Topbar";
-import { CLIENTS, type Client } from "@/lib/mock/clients";
+import { type Client } from "@/lib/mock/clients";
 import { consumePending } from "@/app/navigationStore";
 import {
   ClientsFilters,
@@ -10,8 +10,14 @@ import {
 import { ClientsList } from "./ClientsList";
 import { ClientCard } from "./ClientCard";
 import { AddClientModal } from "./AddClientModal";
+import { useAllClients } from "./clientStore";
+import { useRentals } from "@/pages/rentals/rentalsStore";
 
-function matchClient(c: Client, f: FiltersState): boolean {
+function matchClient(
+  c: Client,
+  f: FiltersState,
+  activeSet: Set<number>,
+): boolean {
   if (f.search.trim()) {
     const q = f.search.toLowerCase().trim();
     const qDigits = q.replace(/[^\d+]/g, "");
@@ -21,8 +27,15 @@ function matchClient(c: Client, f: FiltersState): boolean {
       c.phone.replace(/[^\d+]/g, "").includes(qDigits);
     if (!matchName && !matchPhone) return false;
   }
-  if (f.source !== "all" && c.source !== f.source) return false;
-  if (f.status === "active" && (c.blacklisted || c.debt > 0)) return false;
+  const hasActive = activeSet.has(c.id);
+  if (f.status === "active") {
+    // показываем только тех, кто прямо сейчас катает и не в ЧС
+    if (!hasActive || c.blacklisted) return false;
+  }
+  if (f.status === "inactive") {
+    // без аренды, без долгов, не в ЧС
+    if (hasActive || c.debt > 0 || c.blacklisted) return false;
+  }
   if (f.status === "debt" && c.debt === 0) return false;
   if (f.status === "black" && !c.blacklisted) return false;
   return true;
@@ -32,8 +45,22 @@ export function Clients() {
   const [filters, setFilters] = useState<FiltersState>({
     search: "",
     status: "all",
-    source: "all",
   });
+  const clients = useAllClients();
+  const rentals = useRentals();
+  const activeSet = useMemo(() => {
+    const set = new Set<number>();
+    for (const r of rentals) {
+      if (
+        r.status === "active" ||
+        r.status === "overdue" ||
+        r.status === "returning"
+      ) {
+        set.add(r.clientId);
+      }
+    }
+    return set;
+  }, [rentals]);
   const [selectedId, setSelectedId] = useState<number>(17);
   const [addOpen, setAddOpen] = useState(false);
 
@@ -44,10 +71,10 @@ export function Clients() {
 
   const filtered = useMemo(
     () =>
-      CLIENTS.filter((c) => matchClient(c, filters)).sort((a, b) =>
-        a.name.localeCompare(b.name, "ru"),
-      ),
-    [filters],
+      clients
+        .filter((c) => matchClient(c, filters, activeSet))
+        .sort((a, b) => a.name.localeCompare(b.name, "ru")),
+    [clients, filters, activeSet],
   );
 
   return (
@@ -60,7 +87,7 @@ export function Clients() {
             Клиенты
           </h1>
           <span className="rounded-full bg-surface-soft px-3 py-1 text-[13px] font-semibold text-muted">
-            {CLIENTS.length} клиентов
+            {clients.length} клиентов
           </span>
         </div>
         <button
@@ -83,7 +110,7 @@ export function Clients() {
         />
 
         {(() => {
-          const selected = CLIENTS.find((c) => c.id === selectedId);
+          const selected = clients.find((c) => c.id === selectedId);
           if (!selected) {
             return (
               <div className="flex min-h-[400px] items-center justify-center rounded-2xl bg-surface p-10 text-center shadow-card-sm">

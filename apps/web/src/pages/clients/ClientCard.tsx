@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import {
   AlertTriangle,
   Ban,
+  Bike,
   Check,
   Copy,
   Pencil,
@@ -28,6 +29,11 @@ import { clientStore, useClientExtraPhone } from "./clientStore";
 import type { UploadedFile } from "./DocUpload";
 import { ClientPhoto } from "./ClientPhoto";
 import { CreateDealMenu } from "./CreateDealMenu";
+import {
+  getActiveRentalByClient,
+  useRentalsByClient,
+} from "@/pages/rentals/rentalsStore";
+import { navigate } from "@/app/navigationStore";
 
 export type CardTab =
   | "rentals"
@@ -44,37 +50,12 @@ const TABS: { id: CardTab; label: string }[] = [
   { id: "rhist", label: "Рейтинг" },
 ];
 
-function parseDays(period: string): number | null {
-  const m = period.match(
-    /(\d{1,2})\.(\d{1,2})(?:\.(\d{4}))?\s*[—-]\s*(?:(\d{1,2})\.(\d{1,2})(?:\.(\d{4}))?|(идёт|идет|невозврат))/i,
-  );
-  if (!m) return null;
-  const [, d1, mo1, y1, d2, mo2, y2, tail] = m;
-  const yr1 = Number(y1 || y2 || 2026);
-  const start = new Date(yr1, Number(mo1) - 1, Number(d1));
-  const end = tail
-    ? new Date(2026, 3, 18)
-    : new Date(Number(y2 || y1 || 2026), Number(mo2) - 1, Number(d2));
-  return Math.max(
-    1,
-    Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)),
-  );
-}
-
 function daysWord(n: number): string {
   const n10 = n % 10;
   const n100 = n % 100;
   if (n10 === 1 && n100 !== 11) return "день";
   if (n10 >= 2 && n10 <= 4 && (n100 < 10 || n100 >= 20)) return "дня";
   return "дней";
-}
-
-function rentalsWord(n: number): string {
-  const n10 = n % 10;
-  const n100 = n % 100;
-  if (n10 === 1 && n100 !== 11) return "аренда";
-  if (n10 >= 2 && n10 <= 4 && (n100 < 10 || n100 >= 20)) return "аренды";
-  return "аренд";
 }
 
 function fmt(n: number): string {
@@ -89,6 +70,20 @@ export function ClientCard({ client }: { client: Client }) {
   const d = useMemo(() => getClientDetails(client), [client]);
   const tier = ratingTier(client.rating);
   const phone2 = useClientExtraPhone(client.id);
+  const rentalsForClient = useRentalsByClient(client.id);
+  const activeRental = useMemo(
+    () => getActiveRentalByClient(client.id, rentalsForClient),
+    [client.id, rentalsForClient],
+  );
+  // сумма всех арендных дней по истории
+  const totalRentedDays = useMemo(
+    () => rentalsForClient.reduce((s, r) => s + (r.days || 0), 0),
+    [rentalsForClient],
+  );
+  const totalTurnover = useMemo(
+    () => rentalsForClient.reduce((s, r) => s + (r.sum || 0), 0),
+    [rentalsForClient],
+  );
 
   const handleDroppedFiles = (list: FileList) => {
     const uploaded: UploadedFile[] = [];
@@ -103,15 +98,6 @@ export function ClientCard({ client }: { client: Client }) {
     setPendingFiles(uploaded);
   };
 
-  const turnover = d.rentals.reduce((s, x) => s + (x.sum || 0), 0);
-  const avgCheck = d.rentals.length > 0 ? Math.round(turnover / d.rentals.length) : 0;
-  const durations = d.rentals
-    .map((x) => parseDays(x.period))
-    .filter((x): x is number => x != null);
-  const avgDuration =
-    durations.length > 0
-      ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length)
-      : 0;
 
   return (
     <div
@@ -168,6 +154,18 @@ export function ClientCard({ client }: { client: Client }) {
                     <Ban size={12} /> Чёрный список
                   </span>
                 )}
+                {activeRental && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      navigate({ route: "rentals", rentalId: activeRental.id })
+                    }
+                    className="inline-flex items-center gap-1 rounded-full bg-green-soft px-2 py-0.5 text-[11px] font-bold text-green-ink transition-colors hover:bg-green/20"
+                    title="Открыть аренду"
+                  >
+                    <Bike size={12} /> на аренде · {activeRental.scooter}
+                  </button>
+                )}
                 <span
                   className={cn(
                     "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold tabular-nums",
@@ -209,27 +207,18 @@ export function ClientCard({ client }: { client: Client }) {
             items={[
               {
                 label: "Оборот",
-                value: turnover > 0 ? `${fmt(turnover)} ₽` : "—",
-                hint:
-                  d.rentals.length > 0
-                    ? `${d.rentals.length} ${rentalsWord(d.rentals.length)} за всё время`
-                    : "нет аренд",
-                tone: turnover > 0 ? "green" : "gray",
-              },
-              {
-                label: "Средний чек",
-                value: avgCheck > 0 ? `${fmt(avgCheck)} ₽` : "—",
-                hint: avgCheck > 0 ? "за одну аренду" : "нет данных",
-                tone: "neutral",
-              },
-              {
-                label: "Ср. длительность",
                 value:
-                  avgDuration > 0
-                    ? `${avgDuration} ${daysWord(avgDuration)}`
-                    : "—",
-                hint: avgDuration > 0 ? "одна аренда" : "нет данных",
-                tone: "neutral",
+                  totalTurnover > 0 ? `${fmt(totalTurnover)} ₽` : "—",
+                hint: "за всё время",
+                tone: totalTurnover > 0 ? "green" : "gray",
+              },
+              {
+                label: "Оплата в день",
+                value: activeRental ? `${fmt(activeRental.rate)} ₽` : "—",
+                hint: activeRental
+                  ? `действует сейчас`
+                  : "нет активной аренды",
+                tone: activeRental ? "neutral" : "gray",
               },
             ]}
           />
@@ -237,16 +226,24 @@ export function ClientCard({ client }: { client: Client }) {
             group="Активность"
             items={[
               {
-                label: "Всего аренд",
-                value: String(d.stats.total),
-                hint: "за всё время",
-                tone: "neutral",
+                label: "Дней в аренде",
+                value:
+                  totalRentedDays > 0
+                    ? `${totalRentedDays} ${daysWord(totalRentedDays)}`
+                    : "—",
+                hint: "суммарно по истории",
+                tone: totalRentedDays > 0 ? "neutral" : "gray",
               },
               {
-                label: "Активных",
-                value: String(d.stats.active),
-                hint: d.stats.active > 0 ? "идут сейчас" : "нет активных",
-                tone: d.stats.active > 0 ? "green" : "gray",
+                label: "Рейтинг",
+                value: String(client.rating),
+                hint: tier.label.toLowerCase(),
+                tone:
+                  tier.tone === "good"
+                    ? "green"
+                    : tier.tone === "bad"
+                      ? "red"
+                      : "neutral",
               },
               {
                 label: "Общий долг",
@@ -310,7 +307,7 @@ export function ClientCard({ client }: { client: Client }) {
       </div>
 
       <div className="flex-1 pt-3">
-        {tab === "rentals" && <RentalsTab d={d} />}
+        {tab === "rentals" && <RentalsTab client={client} />}
         {tab === "instalments" && <InstalmentsTab d={d} />}
         {tab === "incidents" && <IncidentsTab d={d} />}
         {tab === "docs" && <DocsTab key={client.id} client={client} d={d} />}
