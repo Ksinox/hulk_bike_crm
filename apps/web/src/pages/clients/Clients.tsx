@@ -7,6 +7,7 @@ import {
   type FiltersState,
 } from "./ClientsFilters";
 import { ClientsList } from "./ClientsList";
+import { ClientCard } from "./ClientCard";
 
 function matchClient(c: Client, f: FiltersState): boolean {
   if (f.search.trim()) {
@@ -72,18 +73,19 @@ export function Clients() {
           onSelect={setSelectedId}
         />
 
-        <div className="flex min-h-[400px] items-center justify-center rounded-2xl bg-surface p-10 text-center shadow-card-sm">
-          <div>
-            <div className="text-[14px] font-semibold text-ink-2">
-              Карточка клиента появится в следующем этапе
-            </div>
-            <div className="mt-1 text-[12px] text-muted">
-              {selectedId
-                ? `Выбран #${String(selectedId).padStart(4, "0")}`
-                : "Выберите клиента из списка"}
-            </div>
-          </div>
-        </div>
+        {(() => {
+          const selected = CLIENTS.find((c) => c.id === selectedId);
+          if (!selected) {
+            return (
+              <div className="flex min-h-[400px] items-center justify-center rounded-2xl bg-surface p-10 text-center shadow-card-sm">
+                <div className="text-[13px] text-muted">
+                  Выберите клиента из списка
+                </div>
+              </div>
+            );
+          }
+          return <ClientCard client={selected} />;
+        })()}
       </div>
     </main>
   );
