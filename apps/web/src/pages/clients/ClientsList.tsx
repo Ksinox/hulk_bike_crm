@@ -77,7 +77,7 @@ function ClientRow({
   const photo = useClientPhoto(c.id);
   const hasDebt = c.debt > 0 && !c.blacklisted;
   const rowBg = active
-    ? "bg-surface"
+    ? "bg-blue-600 text-white"
     : c.blacklisted
       ? "bg-red-soft/40 hover:bg-red-soft/70"
       : hasDebt
@@ -107,7 +107,11 @@ function ClientRow({
       <span
         className={cn(
           "flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full text-[12px] font-bold",
-          c.blacklisted ? "bg-red text-white" : avatarClass(c.id),
+          active
+            ? "bg-white/20 text-white"
+            : c.blacklisted
+              ? "bg-red text-white"
+              : avatarClass(c.id),
         )}
       >
         {photo?.thumbUrl ? (
@@ -127,24 +131,26 @@ function ClientRow({
         <div
           className={cn(
             "truncate text-[13px] font-semibold",
-            c.blacklisted
-              ? "text-red-ink line-through decoration-red/60"
-              : "text-ink",
+            active
+              ? cn("text-white", c.blacklisted && "line-through decoration-white/70")
+              : c.blacklisted
+                ? "text-red-ink line-through decoration-red/60"
+                : "text-ink",
           )}
         >
           {c.name}
         </div>
         <div className="mt-0.5 flex items-center gap-1.5">
           {c.blacklisted ? (
-            <Pill tone="red">🚫 ч/с</Pill>
+            <Pill tone="red" active={active}>🚫 ч/с</Pill>
           ) : hasDebt ? (
-            <Pill tone="red">
+            <Pill tone="red" active={active}>
               ⚠ долг {c.debt.toLocaleString("ru-RU")} ₽
             </Pill>
           ) : c.rents > 0 ? (
-            <Pill tone="green">{c.rents} аренд.</Pill>
+            <Pill tone="green" active={active}>{c.rents} аренд.</Pill>
           ) : null}
-          <Pill tone="muted">{SOURCE_LABEL[c.source]}</Pill>
+          <Pill tone="muted" active={active}>{SOURCE_LABEL[c.source]}</Pill>
         </div>
       </div>
 
@@ -152,12 +158,17 @@ function ClientRow({
         <span
           className={cn(
             "inline-flex min-w-[28px] items-center justify-center rounded-md px-1.5 py-0.5 text-[12px] font-bold tabular-nums",
-            ratingToneClass(c.rating),
+            active ? "bg-white/20 text-white" : ratingToneClass(c.rating),
           )}
         >
           {c.rating}
         </span>
-        <div className="mt-0.5 text-[11px] text-muted-2 tabular-nums">
+        <div
+          className={cn(
+            "mt-0.5 text-[11px] tabular-nums",
+            active ? "text-white/80" : "text-muted-2",
+          )}
+        >
           {c.phone}
         </div>
       </div>
@@ -167,13 +178,16 @@ function ClientRow({
 
 function Pill({
   tone,
+  active,
   children,
 }: {
   tone: "red" | "green" | "muted";
+  active?: boolean;
   children: React.ReactNode;
 }) {
-  const toneClass =
-    tone === "red"
+  const toneClass = active
+    ? "bg-white/20 text-white"
+    : tone === "red"
       ? "bg-red-soft text-red-ink"
       : tone === "green"
         ? "bg-green-soft text-green-ink"
