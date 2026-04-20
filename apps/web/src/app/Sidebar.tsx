@@ -18,16 +18,16 @@ import {
 import { cn } from "@/lib/utils";
 import { UpdateBanner, useDesktopUpdate } from "./UpdateBanner";
 import { isElectron } from "@/platform";
+import type { RouteId } from "./route";
 
 type NavItem = {
-  id: string;
+  id: RouteId | "logout";
   label: string;
   icon: LucideIcon;
-  active?: boolean;
 };
 
 const mainItems: NavItem[] = [
-  { id: "dashboard", label: "Дашборд", icon: Home, active: true },
+  { id: "dashboard", label: "Дашборд", icon: Home },
   { id: "clients", label: "Клиенты", icon: Users },
   { id: "rentals", label: "Аренды", icon: Bike },
   { id: "rassrochki", label: "Рассрочки", icon: Receipt },
@@ -45,7 +45,13 @@ const footerItems: NavItem[] = [
   { id: "logout", label: "Выход", icon: LogOut },
 ];
 
-export function Sidebar() {
+export function Sidebar({
+  activeId,
+  onSelect,
+}: {
+  activeId: RouteId;
+  onSelect: (id: RouteId) => void;
+}) {
   const [expanded, setExpanded] = useState(false);
   const { phase, version } = useDesktopUpdate();
   const [tooltip, setTooltip] = useState<{
@@ -104,9 +110,11 @@ export function Sidebar() {
             <NavRow
               key={item.id}
               item={item}
+              active={item.id === activeId}
               expanded={expanded}
               onEnter={handleEnter}
               onLeave={handleLeave}
+              onSelect={onSelect}
             />
           ))}
         </div>
@@ -120,9 +128,11 @@ export function Sidebar() {
             <NavRow
               key={item.id}
               item={item}
+              active={item.id === activeId}
               expanded={expanded}
               onEnter={handleEnter}
               onLeave={handleLeave}
+              onSelect={onSelect}
             />
           ))}
         </div>
@@ -151,14 +161,18 @@ export function Sidebar() {
 
 function NavRow({
   item,
+  active,
   expanded,
   onEnter,
   onLeave,
+  onSelect,
 }: {
   item: NavItem;
+  active: boolean;
   expanded: boolean;
   onEnter: (e: React.MouseEvent<HTMLButtonElement>, label: string) => void;
   onLeave: () => void;
+  onSelect: (id: RouteId) => void;
 }) {
   const Icon = item.icon;
   return (
@@ -166,9 +180,12 @@ function NavRow({
       type="button"
       onMouseEnter={(e) => onEnter(e, item.label)}
       onMouseLeave={onLeave}
+      onClick={() => {
+        if (item.id !== "logout") onSelect(item.id);
+      }}
       className={cn(
         "relative flex h-11 items-center gap-3 overflow-hidden whitespace-nowrap rounded-[14px] px-3 text-left transition-colors",
-        item.active
+        active
           ? "bg-ink text-white"
           : "text-muted hover:bg-blue-50 hover:text-blue-600",
       )}
