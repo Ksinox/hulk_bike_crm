@@ -9,10 +9,10 @@ import type { UploadedFile } from "./DocUpload";
 type Size = "sm" | "md" | "lg" | "xl";
 
 const SIZES: Record<Size, { w: number; stampSize: number; iconSize: number }> = {
-  sm: { w: 40, stampSize: 8, iconSize: 18 },
-  md: { w: 56, stampSize: 9, iconSize: 22 },
-  lg: { w: 88, stampSize: 10, iconSize: 28 },
-  xl: { w: 132, stampSize: 13, iconSize: 36 },
+  sm: { w: 40, stampSize: 7, iconSize: 18 },
+  md: { w: 56, stampSize: 8, iconSize: 22 },
+  lg: { w: 88, stampSize: 9, iconSize: 28 },
+  xl: { w: 132, stampSize: 11, iconSize: 36 },
 };
 
 function Stamp({
@@ -26,15 +26,20 @@ function Stamp({
 }) {
   const toneCls =
     tone === "red"
-      ? "bg-red/85 border-red text-white"
-      : "bg-orange/85 border-orange text-white";
+      ? "bg-red/60 border-red/70 text-white"
+      : "bg-orange/65 border-orange/75 text-white";
   return (
     <div
       className={cn(
-        "pointer-events-none absolute inset-x-[-25%] top-[42%] -rotate-[16deg] border-y-[1.5px] text-center font-extrabold uppercase tracking-[0.15em] shadow-card-sm",
+        "pointer-events-none absolute inset-x-[-30%] top-[44%] -rotate-[16deg] border-y-[1px] text-center font-extrabold uppercase tracking-[0.08em]",
         toneCls,
       )}
-      style={{ fontSize: `${fontPx}px`, paddingTop: 2, paddingBottom: 2 }}
+      style={{
+        fontSize: `${fontPx}px`,
+        paddingTop: 1,
+        paddingBottom: 1,
+        textShadow: "0 1px 2px rgba(0,0,0,0.35)",
+      }}
     >
       {text}
     </div>

@@ -76,22 +76,20 @@ function ClientRow({
 }) {
   const photo = useClientPhoto(c.id);
   const hasDebt = c.debt > 0 && !c.blacklisted;
-  const rowBg = c.blacklisted
-    ? active
-      ? "bg-red-soft/80"
-      : "bg-red-soft/40 hover:bg-red-soft/70"
-    : hasDebt
-      ? active
-        ? "bg-orange-soft/60"
-        : "bg-orange-soft/25 hover:bg-orange-soft/50"
-      : active
-        ? "bg-blue-50"
+  const rowBg = active
+    ? "bg-surface"
+    : c.blacklisted
+      ? "bg-red-soft/40 hover:bg-red-soft/70"
+      : hasDebt
+        ? "bg-orange-soft/25 hover:bg-orange-soft/50"
         : "hover:bg-surface-soft";
-  const accent = c.blacklisted
-    ? "before:bg-red"
-    : hasDebt
-      ? "before:bg-orange"
-      : "before:bg-transparent";
+  const accent = active
+    ? "before:bg-blue-600"
+    : c.blacklisted
+      ? "before:bg-red"
+      : hasDebt
+        ? "before:bg-orange"
+        : "before:bg-transparent";
   return (
     <button
       type="button"
@@ -103,7 +101,7 @@ function ClientRow({
         accent,
         !active && "hover:z-[5] hover:scale-[1.01] hover:shadow-card-sm",
         active &&
-          "z-10 scale-[1.025] py-3 shadow-card shadow-[inset_0_0_0_2px_hsl(var(--blue-600))] before:!bg-blue-600",
+          "z-20 scale-[1.04] rounded-[12px] border-b-0 py-3 shadow-card-lg ring-2 ring-blue-600",
       )}
     >
       <span
