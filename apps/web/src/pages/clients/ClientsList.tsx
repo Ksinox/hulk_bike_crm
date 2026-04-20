@@ -37,7 +37,7 @@ export function ClientsList({
 
   return (
     <div className="overflow-hidden rounded-2xl bg-surface shadow-card-sm">
-      <div className="scrollbar-thin max-h-[calc(100vh-260px)] overflow-y-auto overflow-x-hidden px-1.5">
+      <div className="scroll-fade-y scrollbar-thin max-h-[calc(100vh-260px)] overflow-y-auto overflow-x-hidden px-1.5 py-2">
         {items.map((c) => (
           <ClientRow
             key={c.id}
@@ -63,11 +63,10 @@ function ClientRow({
   const photo = useClientPhoto(c.id);
   const hasDebt = c.debt > 0 && !c.blacklisted;
 
-  const accent = active
-    ? "before:bg-blue-600"
-    : c.blacklisted
+  const accent =
+    !active && c.blacklisted
       ? "before:bg-red"
-      : hasDebt
+      : !active && hasDebt
         ? "before:bg-orange"
         : "before:bg-transparent";
 

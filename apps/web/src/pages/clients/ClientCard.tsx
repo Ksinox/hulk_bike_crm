@@ -1,5 +1,13 @@
 import { useMemo, useState } from "react";
-import { AlertTriangle, Ban, Pencil, Phone, UploadCloud } from "lucide-react";
+import {
+  AlertTriangle,
+  Ban,
+  Check,
+  Copy,
+  Pencil,
+  Phone,
+  UploadCloud,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   getClientDetails,
@@ -178,26 +186,8 @@ export function ClientCard({ client }: { client: Client }) {
                 {client.added} · источник: {SOURCE_LABEL[client.source]}
               </div>
               <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
-                <a
-                  href={`tel:${client.phone.replace(/\s/g, "")}`}
-                  className="inline-flex items-center gap-1.5 text-[16px] font-bold tabular-nums text-ink transition-colors hover:text-blue-600"
-                >
-                  <Phone size={14} className="text-blue-600" />
-                  {client.phone}
-                </a>
-                {phone2 && (
-                  <a
-                    href={`tel:${phone2.replace(/\s/g, "")}`}
-                    className="inline-flex items-center gap-1.5 text-[14px] font-semibold tabular-nums text-ink-2 transition-colors hover:text-blue-600"
-                    title="Дополнительный контакт"
-                  >
-                    <Phone size={12} className="text-muted-2" />
-                    {phone2}
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-2">
-                      доп
-                    </span>
-                  </a>
-                )}
+                <PhoneDisplay phone={client.phone} primary />
+                {phone2 && <PhoneDisplay phone={phone2} extra />}
               </div>
             </div>
 
@@ -342,6 +332,68 @@ export function ClientCard({ client }: { client: Client }) {
           onCancel={() => setPendingFiles(null)}
         />
       )}
+    </div>
+  );
+}
+
+function PhoneDisplay({
+  phone,
+  primary,
+  extra,
+}: {
+  phone: string;
+  primary?: boolean;
+  extra?: boolean;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(phone);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* noop */
+    }
+  };
+
+  return (
+    <div className="inline-flex items-center gap-1.5">
+      <a
+        href={`tel:${phone.replace(/\s/g, "")}`}
+        className={cn(
+          "inline-flex items-center gap-1.5 tabular-nums transition-colors hover:text-blue-600",
+          primary && "text-[16px] font-bold text-ink",
+          extra && "text-[14px] font-semibold text-ink-2",
+        )}
+        title={extra ? "Дополнительный контакт" : "Позвонить"}
+      >
+        <Phone
+          size={primary ? 14 : 12}
+          className={primary ? "text-blue-600" : "text-muted-2"}
+        />
+        {phone}
+      </a>
+      {extra && (
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-2">
+          доп
+        </span>
+      )}
+      <button
+        type="button"
+        onClick={handleCopy}
+        title={copied ? "Скопировано" : "Скопировать номер"}
+        className={cn(
+          "flex h-6 w-6 items-center justify-center rounded-full transition-colors",
+          copied
+            ? "bg-green-soft text-green-ink"
+            : "text-muted-2 hover:bg-surface-soft hover:text-ink",
+        )}
+      >
+        {copied ? <Check size={12} /> : <Copy size={12} />}
+      </button>
     </div>
   );
 }
