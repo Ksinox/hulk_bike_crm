@@ -9,6 +9,13 @@ import {
   SOURCE_LABEL,
   type Client,
 } from "@/lib/mock/clients";
+import {
+  RentalsTab,
+  InstalmentsTab,
+  IncidentsTab,
+  DocsTab,
+  RatingTab,
+} from "./ClientCardTabs";
 
 const AVATAR_COLORS = [
   "bg-blue-100 text-blue-700",
@@ -265,9 +272,12 @@ export function ClientCard({ client }: { client: Client }) {
         ))}
       </div>
 
-      <div className="flex-1 py-4 text-[13px] text-muted">
-        Содержимое «{TABS.find((t) => t.id === tab)?.label}» появится в
-        следующем этапе.
+      <div className="flex-1 pt-3">
+        {tab === "rentals" && <RentalsTab d={d} />}
+        {tab === "instalments" && <InstalmentsTab d={d} />}
+        {tab === "incidents" && <IncidentsTab d={d} />}
+        {tab === "docs" && <DocsTab d={d} />}
+        {tab === "rhist" && <RatingTab d={d} />}
       </div>
     </div>
   );
