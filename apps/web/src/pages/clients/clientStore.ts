@@ -4,11 +4,13 @@ import type { UploadedFile } from "./DocUpload";
 type State = {
   photos: Map<number, UploadedFile>;
   extraDocs: Map<number, UploadedFile[]>;
+  extraPhones: Map<number, string>;
 };
 
 const state: State = {
   photos: new Map(),
   extraDocs: new Map(),
+  extraPhones: new Map(),
 };
 
 const listeners = new Set<() => void>();
@@ -49,12 +51,25 @@ function addExtraDocs(id: number, list: UploadedFile[]) {
   setExtraDocs(id, [...current, ...list]);
 }
 
+function getExtraPhone(id: number): string | null {
+  return state.extraPhones.get(id) ?? null;
+}
+
+function setExtraPhone(id: number, phone: string | null) {
+  const trimmed = phone?.trim() ?? "";
+  if (trimmed) state.extraPhones.set(id, trimmed);
+  else state.extraPhones.delete(id);
+  emit();
+}
+
 export const clientStore = {
   getPhoto,
   setPhoto,
   getExtraDocs,
   setExtraDocs,
   addExtraDocs,
+  getExtraPhone,
+  setExtraPhone,
   subscribe,
 };
 
@@ -71,6 +86,14 @@ export function useClientExtraDocs(id: number): UploadedFile[] {
     subscribe,
     () => state.extraDocs.get(id) ?? EMPTY,
     () => EMPTY,
+  );
+}
+
+export function useClientExtraPhone(id: number): string | null {
+  return useSyncExternalStore(
+    subscribe,
+    () => state.extraPhones.get(id) ?? null,
+    () => null,
   );
 }
 

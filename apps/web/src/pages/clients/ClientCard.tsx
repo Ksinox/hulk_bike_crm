@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { AlertTriangle, Ban, Pencil, Plus, UploadCloud } from "lucide-react";
+import { AlertTriangle, Ban, Pencil, Phone, Plus, UploadCloud } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   getClientDetails,
@@ -16,7 +16,7 @@ import {
 } from "./ClientCardTabs";
 import { AddClientModal } from "./AddClientModal";
 import { SequentialNamingModal } from "./SequentialNamingModal";
-import { clientStore } from "./clientStore";
+import { clientStore, useClientExtraPhone } from "./clientStore";
 import type { UploadedFile } from "./DocUpload";
 import { ClientPhoto } from "./ClientPhoto";
 
@@ -79,6 +79,7 @@ export function ClientCard({ client }: { client: Client }) {
   const [pendingFiles, setPendingFiles] = useState<UploadedFile[] | null>(null);
   const d = useMemo(() => getClientDetails(client), [client]);
   const tier = ratingTier(client.rating);
+  const phone2 = useClientExtraPhone(client.id);
 
   const handleDroppedFiles = (list: FileList) => {
     const uploaded: UploadedFile[] = [];
@@ -173,8 +174,29 @@ export function ClientCard({ client }: { client: Client }) {
               </div>
               <div className="mt-1 text-[12px] text-muted-2">
                 id #{String(client.id).padStart(4, "0")} · добавлен{" "}
-                {client.added} · источник: {SOURCE_LABEL[client.source]} ·{" "}
-                <span className="tabular-nums">{client.phone}</span>
+                {client.added} · источник: {SOURCE_LABEL[client.source]}
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
+                <a
+                  href={`tel:${client.phone.replace(/\s/g, "")}`}
+                  className="inline-flex items-center gap-1.5 text-[16px] font-bold tabular-nums text-ink transition-colors hover:text-blue-600"
+                >
+                  <Phone size={14} className="text-blue-600" />
+                  {client.phone}
+                </a>
+                {phone2 && (
+                  <a
+                    href={`tel:${phone2.replace(/\s/g, "")}`}
+                    className="inline-flex items-center gap-1.5 text-[14px] font-semibold tabular-nums text-ink-2 transition-colors hover:text-blue-600"
+                    title="Дополнительный контакт"
+                  >
+                    <Phone size={12} className="text-muted-2" />
+                    {phone2}
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-2">
+                      доп
+                    </span>
+                  </a>
+                )}
               </div>
             </div>
 

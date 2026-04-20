@@ -26,6 +26,7 @@ const SOURCE_OPTIONS: { id: ClientSource; label: string }[] = [
 type Form = {
   name: string;
   phone: string;
+  phone2: string;
   birth: string;
   source: ClientSource;
 
@@ -57,6 +58,7 @@ type Form = {
 const EMPTY: Form = {
   name: "",
   phone: "",
+  phone2: "",
   birth: "",
   source: "avito",
   passSer: "",
@@ -153,6 +155,7 @@ function initialForm(editing: Client | null): Form {
   return {
     name: editing.name,
     phone: editing.phone,
+    phone2: clientStore.getExtraPhone(editing.id) ?? "",
     birth: d.birth === "—" ? "" : d.birth,
     source: editing.source,
     passSer: d.passport.ser === "—" ? "" : d.passport.ser,
@@ -361,6 +364,21 @@ export function AddClientModal({
                   </span>
                 </div>
               )}
+            </Field>
+
+            <Field
+              label="Доп. контакт"
+              hint="Родственник, жена, водитель — тот кто ответит если основной недоступен"
+              htmlFor="f-phone2"
+            >
+              <input
+                id="f-phone2"
+                type="tel"
+                value={f.phone2}
+                placeholder="+7 (___) ___-__-__"
+                onChange={(e) => set("phone2", formatPhone(e.target.value))}
+                className={inputClass(null)}
+              />
             </Field>
 
             <Row>
@@ -668,6 +686,7 @@ export function AddClientModal({
                 onClick={() => {
                   if (editing) {
                     clientStore.setPhoto(editing.id, f.photoFile);
+                    clientStore.setExtraPhone(editing.id, f.phone2 || null);
                   }
                   requestClose();
                 }}
