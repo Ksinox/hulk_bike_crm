@@ -51,45 +51,61 @@ export function ClientsList({
       <div className="max-h-[calc(100vh-260px)] overflow-y-auto">
         {items.map((c) => {
           const active = c.id === selectedId;
+          const hasDebt = c.debt > 0 && !c.blacklisted;
+          const rowBg = c.blacklisted
+            ? active
+              ? "bg-red-soft/80"
+              : "bg-red-soft/40 hover:bg-red-soft/70"
+            : hasDebt
+              ? active
+                ? "bg-orange-soft/60"
+                : "bg-orange-soft/25 hover:bg-orange-soft/50"
+              : active
+                ? "bg-blue-50"
+                : "hover:bg-surface-soft";
+          const accent = c.blacklisted
+            ? "before:bg-red"
+            : hasDebt
+              ? "before:bg-orange"
+              : "before:bg-transparent";
           return (
             <button
               key={c.id}
               type="button"
               onClick={() => onSelect(c.id)}
               className={cn(
-                "flex w-full items-center gap-3 border-b border-border/60 px-3 py-2.5 text-left transition-colors last:border-b-0",
-                active ? "bg-blue-50" : "hover:bg-surface-soft",
+                "relative flex w-full items-center gap-3 border-b border-border/60 px-3 py-2.5 pl-4 text-left transition-colors last:border-b-0",
+                "before:absolute before:left-0 before:top-0 before:h-full before:w-1",
+                rowBg,
+                accent,
               )}
             >
               <span
                 className={cn(
                   "flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[12px] font-bold",
-                  avatarClass(c.id),
+                  c.blacklisted ? "bg-red text-white" : avatarClass(c.id),
                 )}
               >
-                {initialsOf(c.name)}
+                {c.blacklisted ? "✕" : initialsOf(c.name)}
               </span>
 
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5">
-                  {c.blacklisted && (
-                    <span
-                      className="text-[11px] font-bold text-red-ink"
-                      title="Чёрный список"
-                    >
-                      ✕
-                    </span>
+                <div
+                  className={cn(
+                    "truncate text-[13px] font-semibold",
+                    c.blacklisted
+                      ? "text-red-ink line-through decoration-red/60"
+                      : "text-ink",
                   )}
-                  <span className="truncate text-[13px] font-semibold text-ink">
-                    {c.name}
-                  </span>
+                >
+                  {c.name}
                 </div>
                 <div className="mt-0.5 flex items-center gap-1.5">
                   {c.blacklisted ? (
-                    <Pill tone="red">ч/с</Pill>
-                  ) : c.debt > 0 ? (
+                    <Pill tone="red">🚫 ч/с</Pill>
+                  ) : hasDebt ? (
                     <Pill tone="red">
-                      долг {c.debt.toLocaleString("ru-RU")} ₽
+                      ⚠ долг {c.debt.toLocaleString("ru-RU")} ₽
                     </Pill>
                   ) : c.rents > 0 ? (
                     <Pill tone="green">{c.rents} аренд.</Pill>
