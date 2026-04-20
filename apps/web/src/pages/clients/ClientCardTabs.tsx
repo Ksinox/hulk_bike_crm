@@ -10,9 +10,11 @@ import {
   Plus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { ClientDetails, DocFile } from "@/lib/mock/clients";
+import type { Client, ClientDetails, DocFile } from "@/lib/mock/clients";
 import type { UploadedFile } from "./DocUpload";
 import { FilePreviewModal } from "./FilePreviewModal";
+import { clientStore, useClientExtraDocs } from "./clientStore";
+import { SequentialNamingModal } from "./SequentialNamingModal";
 
 function fmt(n: number): string {
   return n.toLocaleString("ru-RU");
@@ -199,7 +201,7 @@ function docToUploaded(file: DocFile, title: string): UploadedFile | null {
   };
 }
 
-export function DocsTab({ d }: { d: ClientDetails }) {
+export function DocsTab({ client, d }: { client: Client; d: ClientDetails }) {
   const slots: DocSlot[] = [
     {
       key: "passport_main",
@@ -221,8 +223,9 @@ export function DocsTab({ d }: { d: ClientDetails }) {
     },
   ];
 
-  const [extraDocs, setExtraDocs] = useState<UploadedFile[]>([]);
+  const extraDocs = useClientExtraDocs(client.id);
   const [preview, setPreview] = useState<UploadedFile | null>(null);
+  const [pending, setPending] = useState<UploadedFile[] | null>(null);
   const addInputRef = useRef<HTMLInputElement>(null);
 
   const addUploaded = (list: FileList) => {
@@ -234,12 +237,13 @@ export function DocsTab({ d }: { d: ClientDetails }) {
       }
       next.push(uf);
     }
-    setExtraDocs((prev) => [...prev, ...next]);
+    if (next.length > 0) setPending(next);
   };
 
   const patchExtra = (i: number, upd: Partial<UploadedFile>) => {
-    setExtraDocs((prev) =>
-      prev.map((x, j) => (j === i ? { ...x, ...upd } : x)),
+    clientStore.setExtraDocs(
+      client.id,
+      extraDocs.map((x, j) => (j === i ? { ...x, ...upd } : x)),
     );
   };
 
@@ -271,7 +275,10 @@ export function DocsTab({ d }: { d: ClientDetails }) {
             onTitleChange={(v) => patchExtra(i, { title: v })}
             onCommentChange={(v) => patchExtra(i, { comment: v })}
             onRemove={() =>
-              setExtraDocs((prev) => prev.filter((_, j) => j !== i))
+              clientStore.setExtraDocs(
+                client.id,
+                extraDocs.filter((_, j) => j !== i),
+              )
             }
           />
         ))}
@@ -286,6 +293,17 @@ export function DocsTab({ d }: { d: ClientDetails }) {
 
       {preview && (
         <FilePreviewModal file={preview} onClose={() => setPreview(null)} />
+      )}
+
+      {pending && pending.length > 0 && (
+        <SequentialNamingModal
+          files={pending}
+          onComplete={(named) => {
+            clientStore.addExtraDocs(client.id, named);
+            setPending(null);
+          }}
+          onCancel={() => setPending(null)}
+        />
       )}
     </div>
   );

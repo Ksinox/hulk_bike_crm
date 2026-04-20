@@ -5,6 +5,7 @@ import {
   SOURCE_LABEL,
   type Client,
 } from "@/lib/mock/clients";
+import { useClientPhoto } from "./clientStore";
 
 const AVATAR_COLORS = [
   "bg-blue-100 text-blue-700",
@@ -49,89 +50,115 @@ export function ClientsList({
   return (
     <div className="overflow-hidden rounded-2xl bg-surface shadow-card-sm">
       <div className="max-h-[calc(100vh-260px)] overflow-y-auto">
-        {items.map((c) => {
-          const active = c.id === selectedId;
-          const hasDebt = c.debt > 0 && !c.blacklisted;
-          const rowBg = c.blacklisted
-            ? active
-              ? "bg-red-soft/80"
-              : "bg-red-soft/40 hover:bg-red-soft/70"
-            : hasDebt
-              ? active
-                ? "bg-orange-soft/60"
-                : "bg-orange-soft/25 hover:bg-orange-soft/50"
-              : active
-                ? "bg-blue-50"
-                : "hover:bg-surface-soft";
-          const accent = c.blacklisted
-            ? "before:bg-red"
-            : hasDebt
-              ? "before:bg-orange"
-              : "before:bg-transparent";
-          return (
-            <button
-              key={c.id}
-              type="button"
-              onClick={() => onSelect(c.id)}
-              className={cn(
-                "relative flex w-full items-center gap-3 border-b border-border/60 px-3 py-2.5 pl-4 text-left transition-colors last:border-b-0",
-                "before:absolute before:left-0 before:top-0 before:h-full before:w-1",
-                rowBg,
-                accent,
-              )}
-            >
-              <span
-                className={cn(
-                  "flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[12px] font-bold",
-                  c.blacklisted ? "bg-red text-white" : avatarClass(c.id),
-                )}
-              >
-                {c.blacklisted ? "✕" : initialsOf(c.name)}
-              </span>
-
-              <div className="min-w-0 flex-1">
-                <div
-                  className={cn(
-                    "truncate text-[13px] font-semibold",
-                    c.blacklisted
-                      ? "text-red-ink line-through decoration-red/60"
-                      : "text-ink",
-                  )}
-                >
-                  {c.name}
-                </div>
-                <div className="mt-0.5 flex items-center gap-1.5">
-                  {c.blacklisted ? (
-                    <Pill tone="red">🚫 ч/с</Pill>
-                  ) : hasDebt ? (
-                    <Pill tone="red">
-                      ⚠ долг {c.debt.toLocaleString("ru-RU")} ₽
-                    </Pill>
-                  ) : c.rents > 0 ? (
-                    <Pill tone="green">{c.rents} аренд.</Pill>
-                  ) : null}
-                  <Pill tone="muted">{SOURCE_LABEL[c.source]}</Pill>
-                </div>
-              </div>
-
-              <div className="shrink-0 text-right">
-                <span
-                  className={cn(
-                    "inline-flex min-w-[28px] items-center justify-center rounded-md px-1.5 py-0.5 text-[12px] font-bold tabular-nums",
-                    ratingToneClass(c.rating),
-                  )}
-                >
-                  {c.rating}
-                </span>
-                <div className="mt-0.5 text-[11px] text-muted-2 tabular-nums">
-                  {c.phone.replace("+7 ", "")}
-                </div>
-              </div>
-            </button>
-          );
-        })}
+        {items.map((c) => (
+          <ClientRow
+            key={c.id}
+            client={c}
+            active={c.id === selectedId}
+            onSelect={onSelect}
+          />
+        ))}
       </div>
     </div>
+  );
+}
+
+function ClientRow({
+  client: c,
+  active,
+  onSelect,
+}: {
+  client: Client;
+  active: boolean;
+  onSelect: (id: number) => void;
+}) {
+  const photo = useClientPhoto(c.id);
+  const hasDebt = c.debt > 0 && !c.blacklisted;
+  const rowBg = c.blacklisted
+    ? active
+      ? "bg-red-soft/80"
+      : "bg-red-soft/40 hover:bg-red-soft/70"
+    : hasDebt
+      ? active
+        ? "bg-orange-soft/60"
+        : "bg-orange-soft/25 hover:bg-orange-soft/50"
+      : active
+        ? "bg-blue-50"
+        : "hover:bg-surface-soft";
+  const accent = c.blacklisted
+    ? "before:bg-red"
+    : hasDebt
+      ? "before:bg-orange"
+      : "before:bg-transparent";
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(c.id)}
+      className={cn(
+        "relative flex w-full items-center gap-3 border-b border-border/60 px-3 py-2.5 pl-4 text-left transition-colors last:border-b-0",
+        "before:absolute before:left-0 before:top-0 before:h-full before:w-1",
+        rowBg,
+        accent,
+      )}
+    >
+      <span
+        className={cn(
+          "flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full text-[12px] font-bold",
+          c.blacklisted ? "bg-red text-white" : avatarClass(c.id),
+        )}
+      >
+        {photo?.thumbUrl ? (
+          <img
+            src={photo.thumbUrl}
+            alt=""
+            className="h-full w-full object-cover"
+          />
+        ) : c.blacklisted ? (
+          "✕"
+        ) : (
+          initialsOf(c.name)
+        )}
+      </span>
+
+      <div className="min-w-0 flex-1">
+        <div
+          className={cn(
+            "truncate text-[13px] font-semibold",
+            c.blacklisted
+              ? "text-red-ink line-through decoration-red/60"
+              : "text-ink",
+          )}
+        >
+          {c.name}
+        </div>
+        <div className="mt-0.5 flex items-center gap-1.5">
+          {c.blacklisted ? (
+            <Pill tone="red">🚫 ч/с</Pill>
+          ) : hasDebt ? (
+            <Pill tone="red">
+              ⚠ долг {c.debt.toLocaleString("ru-RU")} ₽
+            </Pill>
+          ) : c.rents > 0 ? (
+            <Pill tone="green">{c.rents} аренд.</Pill>
+          ) : null}
+          <Pill tone="muted">{SOURCE_LABEL[c.source]}</Pill>
+        </div>
+      </div>
+
+      <div className="shrink-0 text-right">
+        <span
+          className={cn(
+            "inline-flex min-w-[28px] items-center justify-center rounded-md px-1.5 py-0.5 text-[12px] font-bold tabular-nums",
+            ratingToneClass(c.rating),
+          )}
+        >
+          {c.rating}
+        </span>
+        <div className="mt-0.5 text-[11px] text-muted-2 tabular-nums">
+          {c.phone}
+        </div>
+      </div>
+    </button>
   );
 }
 

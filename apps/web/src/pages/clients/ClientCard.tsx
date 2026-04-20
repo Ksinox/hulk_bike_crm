@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { AlertTriangle, Ban, Pencil, Plus } from "lucide-react";
+import { AlertTriangle, Ban, Pencil, Plus, UploadCloud } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   avatarColorIndex,
@@ -17,6 +17,9 @@ import {
   RatingTab,
 } from "./ClientCardTabs";
 import { AddClientModal } from "./AddClientModal";
+import { SequentialNamingModal } from "./SequentialNamingModal";
+import { clientStore, useClientPhoto } from "./clientStore";
+import type { UploadedFile } from "./DocUpload";
 
 const AVATAR_COLORS = [
   "bg-blue-100 text-blue-700",
@@ -82,10 +85,26 @@ function fmt(n: number): string {
 export function ClientCard({ client }: { client: Client }) {
   const [tab, setTab] = useState<CardTab>("rentals");
   const [editOpen, setEditOpen] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const [pendingFiles, setPendingFiles] = useState<UploadedFile[] | null>(null);
   const d = useMemo(() => getClientDetails(client), [client]);
   const tier = ratingTier(client.rating);
+  const photo = useClientPhoto(client.id);
 
   const avatar = AVATAR_COLORS[avatarColorIndex(client.id) - 1] ?? AVATAR_COLORS[0];
+
+  const handleDroppedFiles = (list: FileList) => {
+    const uploaded: UploadedFile[] = [];
+    for (const f of Array.from(list)) {
+      const uf: UploadedFile = { name: f.name, size: f.size };
+      if (f.type.startsWith("image/") || f.type === "application/pdf") {
+        uf.thumbUrl = URL.createObjectURL(f);
+      }
+      uploaded.push(uf);
+    }
+    if (uploaded.length === 0) return;
+    setPendingFiles(uploaded);
+  };
 
   const turnover = d.rentals.reduce((s, x) => s + (x.sum || 0), 0);
   const avgCheck = d.rentals.length > 0 ? Math.round(turnover / d.rentals.length) : 0;
@@ -98,16 +117,59 @@ export function ClientCard({ client }: { client: Client }) {
       : 0;
 
   return (
-    <div className="flex min-h-0 flex-col gap-3 rounded-2xl bg-surface p-5 shadow-card-sm">
+    <div
+      className="relative flex min-h-0 flex-col gap-3 rounded-2xl bg-surface p-5 shadow-card-sm"
+      onDragOver={(e) => {
+        if (e.dataTransfer.types.includes("Files")) {
+          e.preventDefault();
+          setDragging(true);
+        }
+      }}
+      onDragLeave={(e) => {
+        if (e.currentTarget === e.target) setDragging(false);
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        setDragging(false);
+        if (e.dataTransfer.files?.length) {
+          handleDroppedFiles(e.dataTransfer.files);
+        }
+      }}
+    >
+      {dragging && (
+        <div className="pointer-events-none absolute inset-0 z-40 flex animate-backdrop-in flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-blue-600 bg-blue-50/90 backdrop-blur-sm">
+          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-white text-blue-600 shadow-card">
+            <UploadCloud size={28} />
+          </div>
+          <div className="font-display text-[20px] font-extrabold text-blue-700">
+            Отпустите — добавим в карточку {client.name.split(" ")[0]}
+          </div>
+          <div className="text-[12px] text-blue-700/80">
+            После загрузки дадим название каждому файлу
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <header className="flex items-start gap-3">
         <span
           className={cn(
-            "flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-[15px] font-bold",
+            "flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full text-[15px] font-bold",
             client.blacklisted ? "bg-red text-white" : avatar,
           )}
+          title={photo ? "Фото клиента" : undefined}
         >
-          {client.blacklisted ? "✕" : initialsOf(client.name)}
+          {photo?.thumbUrl ? (
+            <img
+              src={photo.thumbUrl}
+              alt={client.name}
+              className="h-full w-full object-cover"
+            />
+          ) : client.blacklisted ? (
+            "✕"
+          ) : (
+            initialsOf(client.name)
+          )}
         </span>
 
         <div className="min-w-0 flex-1">
@@ -279,12 +341,24 @@ export function ClientCard({ client }: { client: Client }) {
         {tab === "rentals" && <RentalsTab d={d} />}
         {tab === "instalments" && <InstalmentsTab d={d} />}
         {tab === "incidents" && <IncidentsTab d={d} />}
-        {tab === "docs" && <DocsTab d={d} />}
+        {tab === "docs" && <DocsTab client={client} d={d} />}
         {tab === "rhist" && <RatingTab d={d} />}
       </div>
 
       {editOpen && (
         <AddClientModal editing={client} onClose={() => setEditOpen(false)} />
+      )}
+
+      {pendingFiles && pendingFiles.length > 0 && (
+        <SequentialNamingModal
+          files={pendingFiles}
+          onComplete={(named) => {
+            clientStore.addExtraDocs(client.id, named);
+            setPendingFiles(null);
+            setTab("docs");
+          }}
+          onCancel={() => setPendingFiles(null)}
+        />
       )}
     </div>
   );

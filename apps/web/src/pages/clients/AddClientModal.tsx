@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { X, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -13,6 +13,7 @@ import {
   DocUploadMulti,
   type UploadedFile,
 } from "./DocUpload";
+import { clientStore } from "./clientStore";
 
 const SOURCE_OPTIONS: { id: ClientSource; label: string }[] = [
   { id: "avito", label: SOURCE_LABEL.avito },
@@ -42,6 +43,7 @@ type Form = {
   licenseSer: string;
   licenseNum: string;
 
+  photoFile: UploadedFile | null;
   passportMainFile: UploadedFile | null;
   passportRegFile: UploadedFile | null;
   licenseFile: UploadedFile | null;
@@ -68,6 +70,7 @@ const EMPTY: Form = {
   noLicense: false,
   licenseSer: "",
   licenseNum: "",
+  photoFile: null,
   passportMainFile: null,
   passportRegFile: null,
   licenseFile: null,
@@ -164,6 +167,7 @@ function initialForm(editing: Client | null): Form {
     noLicense: d.docs.license === null,
     licenseSer: "",
     licenseNum: "",
+    photoFile: clientStore.getPhoto(editing.id),
     passportMainFile: docToUploaded(d.docs.passport_main),
     passportRegFile: docToUploaded(d.docs.passport_reg),
     licenseFile: docToUploaded(d.docs.license),
@@ -295,6 +299,24 @@ export function AddClientModal({
 
         {/* Body */}
         <div className="max-h-[calc(100vh-260px)] overflow-y-auto px-6 py-5">
+          {/* Photo (optional) */}
+          <div className="mb-6 flex items-center gap-4">
+            <PhotoSlot
+              file={f.photoFile}
+              onChange={(v) => set("photoFile", v)}
+              fallback={f.name || (editing?.name ?? "")}
+            />
+            <div className="min-w-0 flex-1">
+              <div className="text-[13px] font-semibold text-ink">
+                Фото клиента
+              </div>
+              <div className="mt-0.5 text-[12px] text-muted">
+                Необязательно — но помогает узнать клиента в лицо. Для{" "}
+                проблемных клиентов особенно полезно.
+              </div>
+            </div>
+          </div>
+
           {/* Section 1 — Основные */}
           <Section num={1} title="Основные" badge="обязательно">
             <Field
@@ -643,7 +665,12 @@ export function AddClientModal({
               <button
                 type="button"
                 disabled={!canSave}
-                onClick={requestClose}
+                onClick={() => {
+                  if (editing) {
+                    clientStore.setPhoto(editing.id, f.photoFile);
+                  }
+                  requestClose();
+                }}
                 className={cn(
                   "rounded-full px-4 py-1.5 text-[12px] font-semibold transition-colors",
                   canSave
@@ -740,5 +767,80 @@ function inputClass(error: string | null) {
     error
       ? "border-red focus:border-red"
       : "border-border focus:border-blue-600",
+  );
+}
+
+function PhotoSlot({
+  file,
+  fallback,
+  onChange,
+}: {
+  file: UploadedFile | null;
+  fallback: string;
+  onChange: (next: UploadedFile | null) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const handleFile = (f: File) => {
+    if (!f.type.startsWith("image/")) return;
+    const uf: UploadedFile = {
+      name: f.name,
+      size: f.size,
+      thumbUrl: URL.createObjectURL(f),
+    };
+    onChange(uf);
+  };
+
+  const initials = fallback
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((p) => p[0] || "")
+    .join("")
+    .toUpperCase();
+
+  return (
+    <div className="relative">
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) handleFile(f);
+          e.target.value = "";
+        }}
+      />
+      <button
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        className="group relative flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-full border border-dashed border-border bg-surface-soft text-[20px] font-bold text-muted transition-colors hover:border-blue-600"
+        title={file ? "Заменить фото" : "Загрузить фото"}
+      >
+        {file?.thumbUrl ? (
+          <img
+            src={file.thumbUrl}
+            alt=""
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          <span>{initials || "?"}</span>
+        )}
+        <span className="absolute inset-0 flex flex-col items-center justify-center gap-0.5 bg-ink/60 text-[10px] font-semibold text-white opacity-0 transition-opacity group-hover:opacity-100">
+          {file ? "заменить" : "загрузить"}
+        </span>
+      </button>
+      {file && (
+        <button
+          type="button"
+          onClick={() => onChange(null)}
+          className="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full bg-red text-white shadow-card transition-colors hover:bg-red-ink"
+          title="Убрать фото"
+        >
+          <X size={12} />
+        </button>
+      )}
+    </div>
   );
 }
