@@ -16,6 +16,7 @@ import {
   DocsTab,
   RatingTab,
 } from "./ClientCardTabs";
+import { AddClientModal } from "./AddClientModal";
 
 const AVATAR_COLORS = [
   "bg-blue-100 text-blue-700",
@@ -80,6 +81,7 @@ function fmt(n: number): string {
 
 export function ClientCard({ client }: { client: Client }) {
   const [tab, setTab] = useState<CardTab>("rentals");
+  const [editOpen, setEditOpen] = useState(false);
   const d = useMemo(() => getClientDetails(client), [client]);
   const tier = ratingTier(client.rating);
 
@@ -146,6 +148,7 @@ export function ClientCard({ client }: { client: Client }) {
         <div className="flex shrink-0 gap-2">
           <button
             type="button"
+            onClick={() => setEditOpen(true)}
             className="inline-flex items-center gap-1 rounded-full bg-surface-soft px-3 py-1.5 text-[12px] font-semibold text-ink transition-colors hover:bg-border"
           >
             <Pencil size={13} /> Редактировать
@@ -279,6 +282,10 @@ export function ClientCard({ client }: { client: Client }) {
         {tab === "docs" && <DocsTab d={d} />}
         {tab === "rhist" && <RatingTab d={d} />}
       </div>
+
+      {editOpen && (
+        <AddClientModal editing={client} onClose={() => setEditOpen(false)} />
+      )}
     </div>
   );
 }

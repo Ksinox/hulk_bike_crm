@@ -3,6 +3,7 @@ import { X, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   CLIENTS,
+  getClientDetails,
   SOURCE_LABEL,
   type Client,
   type ClientSource,
@@ -118,9 +119,53 @@ function formatPhone(v: string): string {
   return parts.join("");
 }
 
-export function AddClientModal({ onClose }: { onClose: () => void }) {
-  const [f, setF] = useState<Form>(EMPTY);
-  const [touched, setTouched] = useState<Record<string, boolean>>({});
+function initialForm(editing: Client | null): Form {
+  if (!editing) return EMPTY;
+  const d = getClientDetails(editing);
+  const sameAddr =
+    d.liveAddr === "совпадает с регистрацией" || d.liveAddr === d.regAddr;
+  return {
+    name: editing.name,
+    phone: editing.phone,
+    birth: d.birth === "—" ? "" : d.birth,
+    source: editing.source,
+    passSer: d.passport.ser === "—" ? "" : d.passport.ser,
+    passNum:
+      d.passport.num === "—" ? "" : d.passport.num.replace(/\s/g, ""),
+    passIssuer: d.passport.issuer === "—" ? "" : d.passport.issuer,
+    passDate: d.passport.date === "—" ? "" : d.passport.date,
+    passCode: d.passport.code === "—" ? "" : d.passport.code,
+    regAddr: d.regAddr === "—" ? "" : d.regAddr,
+    sameAddr,
+    liveAddr: sameAddr ? "" : d.liveAddr,
+    noLicense: d.docs.license === null,
+    licenseSer: "",
+    licenseNum: "",
+    blacklisted: !!editing.blacklisted,
+    blReason: d.blReason || "",
+  };
+}
+
+export function AddClientModal({
+  editing,
+  onClose,
+}: {
+  editing?: Client | null;
+  onClose: () => void;
+}) {
+  const isEdit = !!editing;
+  const [f, setF] = useState<Form>(() => initialForm(editing ?? null));
+  const [touched, setTouched] = useState<Record<string, boolean>>(() =>
+    isEdit
+      ? ({
+          name: true,
+          phone: true,
+          birth: true,
+          passSer: true,
+          passNum: true,
+        } as Record<string, boolean>)
+      : ({} as Record<string, boolean>),
+  );
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -145,7 +190,11 @@ export function AddClientModal({ onClose }: { onClose: () => void }) {
     [f],
   );
 
-  const duplicate = useMemo(() => findDuplicate(f.phone), [f.phone]);
+  const duplicate = useMemo(() => {
+    const d = findDuplicate(f.phone);
+    if (d && editing && d.id === editing.id) return null;
+    return d;
+  }, [f.phone, editing]);
 
   const required = [
     errors.name,
@@ -188,11 +237,17 @@ export function AddClientModal({ onClose }: { onClose: () => void }) {
             <X size={16} />
           </button>
           <h2 className="font-display text-[22px] font-extrabold text-ink">
-            Новый клиент
+            {isEdit ? `Редактировать: ${editing!.name}` : "Новый клиент"}
           </h2>
           <p className="mt-0.5 text-[12px] text-muted">
-            Заполните данные — <span className="text-red-ink">*</span>{" "}
-            обязательные поля
+            {isEdit ? (
+              <>id #{String(editing!.id).padStart(4, "0")}</>
+            ) : (
+              <>
+                Заполните данные —{" "}
+                <span className="text-red-ink">*</span> обязательные поля
+              </>
+            )}
           </p>
         </div>
 
@@ -516,7 +571,9 @@ export function AddClientModal({ onClose }: { onClose: () => void }) {
                     : "cursor-not-allowed bg-surface-soft text-muted-2",
                 )}
               >
-                Сохранить и открыть карточку →
+                {isEdit
+                  ? "Сохранить изменения"
+                  : "Сохранить и открыть карточку →"}
               </button>
             </div>
           </div>
