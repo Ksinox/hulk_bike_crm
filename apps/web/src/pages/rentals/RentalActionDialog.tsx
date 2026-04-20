@@ -3,8 +3,11 @@ import { AlertTriangle, Check, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Rental } from "@/lib/mock/rentals";
 import {
+  addPayment,
+  addRentalIncident,
   completeRentalNoDamage,
   completeRentalWithDamage,
+  revertOverdue,
   setRentalStatus,
 } from "./rentalsStore";
 
@@ -13,11 +16,13 @@ export type ActionKind =
   | "activate"
   | "cancel"
   | "receive"
-  | "mark-overdue"
+  | "revert-overdue"
   | "complete"
   | "complete-damage"
   | "police"
   | "incident"
+  | "record-damage"
+  | "claim"
   | "lawyer";
 
 const TODAY_STR = "13.10.2026";
@@ -44,12 +49,15 @@ export function RentalActionDialog({
 }) {
   const [closing, setClosing] = useState(false);
 
-  // Форма для возврата с ущербом
+  // Форма для возврата с ущербом / инцидента
   const [damageAmount, setDamageAmount] = useState<string>("3000");
   const [damageNote, setDamageNote] = useState<string>("");
   const [returnOk, setReturnOk] = useState(true);
   const [equipmentOk, setEquipmentOk] = useState(true);
   const [depositBack, setDepositBack] = useState(true);
+
+  // Для инцидента посреди аренды
+  const [incidentType, setIncidentType] = useState("ДТП");
 
   const requestClose = () => {
     if (closing) return;
@@ -82,8 +90,8 @@ export function RentalActionDialog({
       case "receive":
         setRentalStatus(rental.id, "returning");
         break;
-      case "mark-overdue":
-        setRentalStatus(rental.id, "overdue");
+      case "revert-overdue":
+        revertOverdue(rental.id);
         break;
       case "complete":
         completeRentalNoDamage(rental.id, {
@@ -114,7 +122,30 @@ export function RentalActionDialog({
         setRentalStatus(rental.id, "court");
         break;
       case "incident":
-        // no-op: incident creation not yet wired
+        addRentalIncident(rental.id, {
+          type: incidentType,
+          date: TODAY_STR,
+          damage: Number(damageAmount) || 0,
+          note: damageNote,
+        });
+        break;
+      case "record-damage": {
+        const amt = Number(damageAmount) || 0;
+        if (amt > 0) {
+          addPayment({
+            rentalId: rental.id,
+            type: "damage",
+            amount: amt,
+            date: TODAY_STR,
+            method: "cash",
+            paid: true,
+            note: "частичная оплата ущерба",
+          });
+        }
+        break;
+      }
+      case "claim":
+        // Заглушка: в реальности — генерация досудебной претензии
         break;
     }
     requestClose();
@@ -161,6 +192,72 @@ export function RentalActionDialog({
               <Checkbox checked={returnOk} onChange={setReturnOk} label="Состояние скутера ОК" />
               <Checkbox checked={equipmentOk} onChange={setEquipmentOk} label="Экипировка в порядке" />
               <Checkbox checked={depositBack} onChange={setDepositBack} label={`Залог ${fmt(rental.deposit || 2000)} ₽ возвращён клиенту`} />
+            </div>
+          )}
+
+          {action === "incident" && (
+            <div className="mt-3 flex flex-col gap-2">
+              <label className="text-[12px] font-semibold text-ink">
+                Тип инцидента
+                <select
+                  value={incidentType}
+                  onChange={(e) => setIncidentType(e.target.value)}
+                  className="mt-1 h-9 w-full rounded-[10px] border border-border bg-surface px-3 text-[13px] text-ink outline-none focus:border-blue-600"
+                >
+                  <option value="ДТП">ДТП</option>
+                  <option value="Повреждение скутера">Повреждение скутера</option>
+                  <option value="Эвакуация на штрафстоянку">Эвакуация на штрафстоянку</option>
+                  <option value="Кража / пропажа">Кража / пропажа</option>
+                  <option value="Жалоба">Жалоба</option>
+                  <option value="Другое">Другое</option>
+                </select>
+              </label>
+              <label className="text-[12px] font-semibold text-ink">
+                Оценка ущерба, ₽
+                <input
+                  type="number"
+                  value={damageAmount}
+                  onChange={(e) => setDamageAmount(e.target.value)}
+                  className="mt-1 h-9 w-full rounded-[10px] border border-border bg-surface px-3 text-[13px] text-ink outline-none focus:border-blue-600"
+                />
+                <div className="mt-0.5 text-[10px] text-muted-2">
+                  можно 0 — если ущерб ещё не посчитан
+                </div>
+              </label>
+              <label className="text-[12px] font-semibold text-ink">
+                Описание
+                <textarea
+                  value={damageNote}
+                  onChange={(e) => setDamageNote(e.target.value)}
+                  placeholder="Например: клиент попал в ДТП на перекрёстке, повреждено переднее крыло и фонарь"
+                  rows={3}
+                  className="mt-1 w-full resize-y rounded-[10px] border border-border bg-surface px-3 py-2 text-[13px] text-ink outline-none focus:border-blue-600"
+                />
+              </label>
+            </div>
+          )}
+
+          {action === "record-damage" && (
+            <div className="mt-3 flex flex-col gap-2">
+              <label className="text-[12px] font-semibold text-ink">
+                Сумма оплаты, ₽
+                <input
+                  type="number"
+                  value={damageAmount}
+                  onChange={(e) => setDamageAmount(e.target.value)}
+                  className="mt-1 h-9 w-full rounded-[10px] border border-border bg-surface px-3 text-[13px] text-ink outline-none focus:border-blue-600"
+                />
+              </label>
+              <label className="text-[12px] font-semibold text-ink">
+                Комментарий
+                <input
+                  type="text"
+                  value={damageNote}
+                  onChange={(e) => setDamageNote(e.target.value)}
+                  placeholder="Необязательно"
+                  className="mt-1 h-9 w-full rounded-[10px] border border-border bg-surface px-3 text-[13px] text-ink outline-none focus:border-blue-600"
+                />
+              </label>
             </div>
           )}
 
@@ -299,18 +396,18 @@ function specFor(action: ActionKind, rental: Rental): Spec {
         cta: "Начать приём возврата",
         ctaTone: "primary",
       };
-    case "mark-overdue":
+    case "revert-overdue":
       return {
-        title: "Зафиксировать просрочку",
+        title: "Снять просрочку",
         body: (
-          <div>
-            Перевести аренду в статус <b>Просрочка</b>? Система начнёт начислять
-            штраф: 300 ₽/час после 2 часов просрочки возврата + 200 ₽/день за
-            просрочку платежа.
+          <div className="text-[12px]">
+            Аренда вернётся в статус <b>Активна</b>, накопленные штрафы по
+            просрочке будут списаны. Используйте, если у вас хорошие отношения с
+            клиентом и договорились без штрафа.
           </div>
         ),
-        cta: "Зафиксировать",
-        ctaTone: "warn",
+        cta: "Снять просрочку",
+        ctaTone: "primary",
       };
     case "complete":
       return {
@@ -369,15 +466,42 @@ function specFor(action: ActionKind, rental: Rental): Spec {
       };
     case "incident":
       return {
-        title: "Создать инцидент",
+        title: "Зафиксировать инцидент",
         body: (
-          <div>
-            Отдельная форма инцидента появится в следующем этапе. Пока инциденты
-            по ущербу создаются автоматически при завершении с ущербом.
+          <div className="text-[12px]">
+            Инцидент посреди аренды: ДТП, эвакуация на штрафстоянку, сломанный
+            скутер и т.п. Запись появится в истории этой аренды, в профиле
+            клиента и в общем разделе инцидентов.
           </div>
         ),
-        cta: "Понятно",
+        cta: "Создать инцидент",
+        ctaTone: "warn",
+      };
+    case "record-damage":
+      return {
+        title: "Записать оплату ущерба",
+        body: (
+          <div className="text-[12px]">
+            Введите сумму, которую клиент заплатил по ущербу. Когда общая сумма
+            будет погашена, аренда автоматически закроется. Приоритет списания:
+            штрафы → ущерб → неустойка → аренда.
+          </div>
+        ),
+        cta: "Зафиксировать",
         ctaTone: "primary",
+      };
+    case "claim":
+      return {
+        title: "Составить досудебную претензию",
+        body: (
+          <div className="text-[12px]">
+            Сформируется документ с перечнем повреждений, суммой и сроком для
+            добровольной оплаты. Клиент подписывает претензию (признаёт вину).
+            Если откажется — передать юристу.
+          </div>
+        ),
+        cta: "Сформировать претензию",
+        ctaTone: "warn",
       };
   }
 }

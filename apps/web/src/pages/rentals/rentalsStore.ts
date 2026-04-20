@@ -1,6 +1,8 @@
 import { useSyncExternalStore } from "react";
 import {
   RENTALS as SEED,
+  type ConfirmerRole,
+  type PaymentConfirmation,
   type Rental,
   type RentalStatus,
 } from "@/lib/mock/rentals";
@@ -143,6 +145,70 @@ export function setRentalStatus(id: number, status: RentalStatus) {
   emit();
 }
 
+export function patchRental(id: number, patch: Partial<Rental>) {
+  state.rentals = state.rentals.map((r) =>
+    r.id === id ? { ...r, ...patch } : r,
+  );
+  emit();
+}
+
+export function confirmRentalPayment(
+  id: number,
+  role: ConfirmerRole,
+  byName: string,
+  contractUploaded: boolean,
+) {
+  const confirmation: PaymentConfirmation = {
+    by: role,
+    byName,
+    at: "13.10.2026",
+  };
+  state.rentals = state.rentals.map((r) =>
+    r.id === id
+      ? { ...r, paymentConfirmed: confirmation, contractUploaded }
+      : r,
+  );
+  emit();
+}
+
+export function addRentalIncident(
+  rentalId: number,
+  data: { type: string; date: string; damage: number; note?: string },
+): void {
+  const id = Math.max(0, ...state.incidents.map((i) => i.id)) + 1;
+  state.incidents = [
+    ...state.incidents,
+    { id, rentalId, type: data.type, date: data.date, damage: data.damage, paid: 0, note: data.note },
+  ];
+  if (data.damage > 0) {
+    state.payments = [
+      ...state.payments,
+      {
+        id: Date.now(),
+        rentalId,
+        type: "damage",
+        amount: data.damage,
+        date: data.date,
+        method: "cash",
+        paid: false,
+        note: data.note || "ущерб по инциденту",
+      },
+    ];
+  }
+  emit();
+}
+
+export function revertOverdue(id: number) {
+  state.rentals = state.rentals.map((r) =>
+    r.id === id && r.status === "overdue" ? { ...r, status: "active" } : r,
+  );
+  // снимаем начисленные штрафы по этой аренде
+  state.payments = state.payments.filter(
+    (p) => !(p.rentalId === id && p.type === "fine" && !p.paid),
+  );
+  emit();
+}
+
 export function completeRentalNoDamage(id: number, inspection: ReturnInspection) {
   state.inspections.set(id, inspection);
   state.rentals = state.rentals.map((r) =>
@@ -203,8 +269,22 @@ export function completeRentalWithDamage(
   emit();
 }
 
+function maybeAutoClose(rentalId: number) {
+  const rental = state.rentals.find((r) => r.id === rentalId);
+  if (!rental || rental.status !== "completed_damage") return;
+  const damageUnpaid = state.payments
+    .filter((p) => p.rentalId === rentalId && p.type === "damage" && !p.paid)
+    .reduce((s, p) => s + p.amount, 0);
+  if (damageUnpaid === 0) {
+    state.rentals = state.rentals.map((r) =>
+      r.id === rentalId ? { ...r, status: "completed" } : r,
+    );
+  }
+}
+
 export function addPayment(p: Omit<Payment, "id">) {
   state.payments = [...state.payments, { ...p, id: Date.now() }];
+  maybeAutoClose(p.rentalId);
   emit();
 }
 
@@ -212,6 +292,8 @@ export function markPaymentPaid(id: number, paid = true) {
   state.payments = state.payments.map((p) =>
     p.id === id ? { ...p, paid } : p,
   );
+  const p = state.payments.find((x) => x.id === id);
+  if (p) maybeAutoClose(p.rentalId);
   emit();
 }
 

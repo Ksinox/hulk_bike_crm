@@ -33,6 +33,7 @@ import {
   TermsTab,
 } from "./RentalCardTabs";
 import { RentalActionDialog, type ActionKind } from "./RentalActionDialog";
+import { ConfirmPaymentDialog } from "./ConfirmPaymentDialog";
 
 type TabId = "terms" | "payments" | "return" | "incidents" | "tasks";
 
@@ -81,11 +82,12 @@ function statusActions(status: RentalStatus): {
     case "active":
       return [
         { id: "receive", label: "Принять возврат", icon: ArrowRight, tone: "primary" },
-        { id: "mark-overdue", label: "Зафиксировать просрочку", icon: AlertTriangle, tone: "warn" },
+        { id: "incident", label: "Зафиксировать инцидент", icon: AlertTriangle, tone: "warn" },
       ];
     case "overdue":
       return [
         { id: "receive", label: "Принять возврат", icon: ArrowRight, tone: "primary" },
+        { id: "revert-overdue", label: "Снять просрочку", icon: XCircle, tone: "ghost" },
         { id: "police", label: "Подать в полицию", icon: ShieldAlert, tone: "danger" },
       ];
     case "returning":
@@ -95,7 +97,8 @@ function statusActions(status: RentalStatus): {
       ];
     case "completed_damage":
       return [
-        { id: "incident", label: "Создать инцидент", icon: AlertTriangle, tone: "warn" },
+        { id: "record-damage", label: "Записать оплату ущерба", icon: CheckCircle2, tone: "primary" },
+        { id: "claim", label: "Составить претензию", icon: AlertTriangle, tone: "warn" },
         { id: "lawyer", label: "Передать юристу", icon: Gavel, tone: "danger" },
       ];
     case "police":
@@ -110,6 +113,7 @@ function statusActions(status: RentalStatus): {
 export function RentalCard({ rental }: { rental: Rental }) {
   const [tab, setTab] = useState<TabId>("terms");
   const [action, setAction] = useState<ActionKind | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const client = useMemo(
     () => CLIENTS.find((c) => c.id === rental.clientId),
     [rental.clientId],
@@ -237,6 +241,42 @@ export function RentalCard({ rental }: { rental: Rental }) {
           })}
         </div>
       </header>
+
+      {/* Требуется договор и подтверждение оплаты */}
+      {rental.paymentConfirmed === null && (
+        <div className="flex items-center gap-2 rounded-[14px] bg-blue-50 p-3 text-[13px] text-blue-700 ring-1 ring-inset ring-blue-600/30">
+          <AlertTriangle size={16} className="shrink-0" />
+          <div className="min-w-0 flex-1">
+            <b>Требуется подтверждение:</b>{" "}
+            <span>
+              {rental.contractUploaded
+                ? "оплата не подтверждена"
+                : "скан договора и оплата"}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setConfirmOpen(true)}
+            className="shrink-0 rounded-full bg-blue-600 px-3 py-1 text-[12px] font-semibold text-white hover:bg-blue-700"
+          >
+            Подтвердить
+          </button>
+        </div>
+      )}
+      {rental.paymentConfirmed && (
+        <div className="flex items-center gap-2 rounded-[14px] bg-green-soft/60 p-3 text-[12px] text-green-ink">
+          <CheckCircle2 size={14} className="shrink-0" />
+          <span>
+            Оплата подтверждена{" "}
+            {rental.paymentConfirmed.at} ·{" "}
+            {rental.paymentConfirmed.by === "admin"
+              ? "Администратор"
+              : "Директор"}{" "}
+            {rental.paymentConfirmed.byName}
+            {rental.contractUploaded ? " · договор загружен" : ""}
+          </span>
+        </div>
+      )}
 
       {/* Banners — specific situations */}
       {rental.status === "overdue" && endDate && (
@@ -378,6 +418,13 @@ export function RentalCard({ rental }: { rental: Rental }) {
           rental={rental}
           action={action}
           onClose={() => setAction(null)}
+        />
+      )}
+
+      {confirmOpen && (
+        <ConfirmPaymentDialog
+          rental={rental}
+          onClose={() => setConfirmOpen(false)}
         />
       )}
     </div>

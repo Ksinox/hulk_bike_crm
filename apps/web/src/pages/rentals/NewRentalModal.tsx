@@ -1,13 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, Search, X } from "lucide-react";
+import { Check, Search, UserPlus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import {
-  CLIENTS,
-  initialsOf,
-  type Client,
-} from "@/lib/mock/clients";
+import { initialsOf, type Client } from "@/lib/mock/clients";
 import {
   DEPOSIT_AMOUNT,
+  MIN_RENTAL_DAYS,
   MODEL_LABEL,
   periodForDays,
   TARIFF,
@@ -18,6 +15,8 @@ import {
 } from "@/lib/mock/rentals";
 import { mockPark, type ScootStatus } from "@/lib/mock/dashboard";
 import { addRental, useRentals } from "./rentalsStore";
+import { useAllClients } from "@/pages/clients/clientStore";
+import { AddClientModal } from "@/pages/clients/AddClientModal";
 
 const TODAY_STR = "13.10.2026";
 const EQUIPMENT = ["шлем", "держатель", "замок"];
@@ -59,16 +58,19 @@ export function NewRentalModal({
   onCreated?: (rental: Rental) => void;
 }) {
   const rentals = useRentals();
+  const allClients = useAllClients();
   const blocked = activeScooters(rentals);
   const [closing, setClosing] = useState(false);
 
   const [clientId, setClientId] = useState<number | null>(null);
   const [clientQuery, setClientQuery] = useState("");
+  const [clientOpen, setClientOpen] = useState(false);
+  const [newClientOpen, setNewClientOpen] = useState(false);
   const [scooterName, setScooterName] = useState<string | null>(null);
   const [start, setStart] = useState(TODAY_STR);
   const [days, setDays] = useState(14);
   const [equipment, setEquipment] = useState<string[]>(["шлем"]);
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("card");
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
   const [note, setNote] = useState("");
 
   const requestClose = () => {
@@ -87,8 +89,11 @@ export function NewRentalModal({
   }, []);
 
   const client = useMemo(
-    () => (clientId != null ? CLIENTS.find((c) => c.id === clientId) : null),
-    [clientId],
+    () =>
+      clientId != null
+        ? allClients.find((c) => c.id === clientId) ?? null
+        : null,
+    [clientId, allClients],
   );
 
   const model: ScooterModel = scooterName ? modelOfScooter(scooterName) : "jog";
@@ -106,13 +111,18 @@ export function NewRentalModal({
 
   const filteredClients = useMemo(() => {
     const q = clientQuery.trim().toLowerCase();
-    if (!q) return CLIENTS.slice(0, 8);
-    return CLIENTS.filter(
-      (c) =>
-        c.name.toLowerCase().includes(q) ||
-        c.phone.replace(/\D/g, "").includes(q.replace(/\D/g, "")),
-    ).slice(0, 8);
-  }, [clientQuery]);
+    if (q.length < 2) return [];
+    const qDigits = q.replace(/\D/g, "");
+    return allClients
+      .filter((c) => !c.blacklisted)
+      .filter(
+        (c) =>
+          c.name.toLowerCase().includes(q) ||
+          (qDigits.length > 0 &&
+            c.phone.replace(/\D/g, "").includes(qDigits)),
+      )
+      .slice(0, 6);
+  }, [clientQuery, allClients]);
 
   const availableScooters = useMemo(
     () =>
@@ -143,6 +153,8 @@ export function NewRentalModal({
       equipment,
       paymentMethod,
       note: note.trim() || undefined,
+      contractUploaded: false,
+      paymentConfirmed: null,
     });
     onCreated?.(created);
     requestClose();
@@ -193,57 +205,76 @@ export function NewRentalModal({
                 }}
               />
             ) : (
-              <>
-                <div className="relative">
-                  <Search
-                    size={14}
-                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-2"
-                  />
-                  <input
-                    type="text"
-                    value={clientQuery}
-                    onChange={(e) => setClientQuery(e.target.value)}
-                    placeholder="Имя или телефон…"
-                    className="h-9 w-full rounded-[10px] border border-border bg-surface pl-9 pr-3 text-[13px] text-ink outline-none focus:border-blue-600"
-                  />
-                </div>
-                <div className="mt-2 flex flex-col gap-1 overflow-hidden rounded-[10px] border border-border">
-                  {filteredClients.length === 0 ? (
-                    <div className="px-3 py-4 text-center text-[12px] text-muted">
-                      не найдено
-                    </div>
-                  ) : (
-                    filteredClients.map((c) => (
-                      <button
-                        key={c.id}
-                        type="button"
-                        onClick={() => setClientId(c.id)}
-                        className="flex items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-blue-50"
-                      >
-                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-surface-soft text-[10px] font-bold text-ink-2">
-                          {initialsOf(c.name)}
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate text-[13px] font-semibold text-ink">
-                            {c.name}
-                            {c.blacklisted && (
-                              <span className="ml-2 text-[10px] font-bold text-red-ink">
-                                ЧС
+              <div className="flex flex-col gap-2">
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Search
+                      size={14}
+                      className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-2"
+                    />
+                    <input
+                      type="text"
+                      value={clientQuery}
+                      onChange={(e) => {
+                        setClientQuery(e.target.value);
+                        setClientOpen(true);
+                      }}
+                      onFocus={() => setClientOpen(true)}
+                      placeholder="Начните вводить имя или телефон (минимум 2 символа)…"
+                      className="h-9 w-full rounded-[10px] border border-border bg-surface pl-9 pr-3 text-[13px] text-ink outline-none focus:border-blue-600"
+                    />
+                    {clientOpen && clientQuery.trim().length >= 2 && (
+                      <div className="absolute left-0 right-0 top-full z-30 mt-1 max-h-[260px] animate-toast-in overflow-y-auto rounded-[10px] border border-border bg-surface shadow-card-lg">
+                        {filteredClients.length === 0 ? (
+                          <div className="px-3 py-4 text-center text-[12px] text-muted">
+                            не найдено — создайте нового
+                          </div>
+                        ) : (
+                          filteredClients.map((c) => (
+                            <button
+                              key={c.id}
+                              type="button"
+                              onClick={() => {
+                                setClientId(c.id);
+                                setClientOpen(false);
+                              }}
+                              className="flex w-full items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-blue-50"
+                            >
+                              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-surface-soft text-[10px] font-bold text-ink-2">
+                                {initialsOf(c.name)}
                               </span>
-                            )}
-                          </div>
-                          <div className="text-[11px] text-muted-2 tabular-nums">
-                            {c.phone}
-                          </div>
-                        </div>
-                        <span className="shrink-0 text-[11px] font-semibold text-muted-2">
-                          {c.rating}
-                        </span>
-                      </button>
-                    ))
-                  )}
+                              <div className="min-w-0 flex-1">
+                                <div className="truncate text-[13px] font-semibold text-ink">
+                                  {c.name}
+                                </div>
+                                <div className="text-[11px] text-muted-2 tabular-nums">
+                                  {c.phone}
+                                </div>
+                              </div>
+                              <span className="shrink-0 text-[11px] font-semibold text-muted-2">
+                                {c.rating}
+                              </span>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setNewClientOpen(true)}
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-[10px] bg-ink px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-ink-2"
+                  >
+                    <UserPlus size={14} /> Новый клиент
+                  </button>
                 </div>
-              </>
+                {clientQuery.trim().length < 2 && (
+                  <div className="text-[11px] text-muted-2">
+                    Введите минимум 2 символа для поиска. Клиенты в чёрном
+                    списке не предлагаются.
+                  </div>
+                )}
+              </div>
             )}
             {blacklistedClient && (
               <div className="mt-2 rounded-[10px] bg-red-soft/70 px-3 py-2 text-[12px] text-red-ink">
@@ -309,12 +340,19 @@ export function NewRentalModal({
                 Срок, дней
                 <input
                   type="number"
-                  min={1}
+                  min={MIN_RENTAL_DAYS}
                   max={90}
                   value={days}
-                  onChange={(e) => setDays(Math.max(1, Number(e.target.value) || 0))}
+                  onChange={(e) =>
+                    setDays(
+                      Math.max(MIN_RENTAL_DAYS, Number(e.target.value) || MIN_RENTAL_DAYS),
+                    )
+                  }
                   className="mt-1 h-9 w-full rounded-[10px] border border-border bg-surface px-3 text-[13px] text-ink outline-none focus:border-blue-600"
                 />
+                <div className="mt-1 text-[10px] text-muted-2">
+                  минимум {MIN_RENTAL_DAYS} дня (минимальный тариф 3–7 дней)
+                </div>
               </label>
             </div>
             <div className="mt-3 grid grid-cols-3 gap-2">
@@ -389,7 +427,7 @@ export function NewRentalModal({
                 Способ оплаты
               </div>
               <div className="flex gap-2">
-                {(["cash", "card", "transfer"] as PaymentMethod[]).map((m) => (
+                {(["cash", "transfer"] as PaymentMethod[]).map((m) => (
                   <button
                     key={m}
                     type="button"
@@ -401,7 +439,7 @@ export function NewRentalModal({
                         : "bg-surface-soft text-muted hover:bg-border",
                     )}
                   >
-                    {m === "cash" ? "Наличные" : m === "card" ? "Карта" : "Перевод"}
+                    {m === "cash" ? "Наличные" : "Перевод"}
                   </button>
                 ))}
               </div>
@@ -429,12 +467,12 @@ export function NewRentalModal({
           </Section>
         </div>
 
-        <div className="flex items-center justify-between gap-2 border-t border-border bg-surface-soft px-5 py-3">
-          <span className="text-[11px] text-muted-2">
-            При сохранении аренда сразу станет активной (требуется подписанный
-            договор и получена оплата)
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border bg-surface-soft px-5 py-3">
+          <span className="min-w-0 flex-1 truncate text-[11px] text-muted-2">
+            После создания потребуется загрузить скан договора и подтвердить
+            оплату
           </span>
-          <div className="flex gap-2">
+          <div className="flex shrink-0 items-center gap-2 whitespace-nowrap">
             <button
               type="button"
               onClick={requestClose}
@@ -458,6 +496,17 @@ export function NewRentalModal({
           </div>
         </div>
       </div>
+
+      {newClientOpen && (
+        <AddClientModal
+          onClose={() => setNewClientOpen(false)}
+          onCreated={(c) => {
+            setClientId(c.id);
+            setClientQuery("");
+            setNewClientOpen(false);
+          }}
+        />
+      )}
     </div>
   );
 }

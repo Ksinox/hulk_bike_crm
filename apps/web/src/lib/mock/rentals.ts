@@ -16,6 +16,14 @@ export type ScooterModel = "jog" | "gear" | "honda" | "tank";
 
 export type TariffPeriod = "short" | "week" | "month";
 
+export type ConfirmerRole = "admin" | "director";
+
+export type PaymentConfirmation = {
+  by: ConfirmerRole;
+  byName: string;
+  at: string;
+};
+
 export type Rental = {
   id: number;
   clientId: number;
@@ -34,10 +42,15 @@ export type Rental = {
   equipment: string[];
   paymentMethod: PaymentMethod;
   note?: string;
+  contractUploaded?: boolean;
+  paymentConfirmed?: PaymentConfirmation | null;
 };
 
 /** Фиксированный залог согласно договору аренды */
 export const DEPOSIT_AMOUNT = 2000;
+
+/** Минимальный срок аренды — по минимальному тарифу «3-7 дней» */
+export const MIN_RENTAL_DAYS = 3;
 
 export const MODEL_LABEL: Record<ScooterModel, string> = {
   jog: "Yamaha Jog",

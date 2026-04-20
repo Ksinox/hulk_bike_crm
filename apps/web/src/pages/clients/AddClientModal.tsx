@@ -184,9 +184,11 @@ function initialForm(editing: Client | null): Form {
 export function AddClientModal({
   editing,
   onClose,
+  onCreated,
 }: {
   editing?: Client | null;
   onClose: () => void;
+  onCreated?: (client: Client) => void;
 }) {
   const isEdit = !!editing;
   const [f, setF] = useState<Form>(() => initialForm(editing ?? null));
@@ -687,6 +689,21 @@ export function AddClientModal({
                   if (editing) {
                     clientStore.setPhoto(editing.id, f.photoFile);
                     clientStore.setExtraPhone(editing.id, f.phone2 || null);
+                  } else {
+                    const created = clientStore.addClient({
+                      name: f.name.trim(),
+                      phone: f.phone,
+                      rating: 68,
+                      rents: 0,
+                      debt: 0,
+                      source: f.source,
+                      added: "13.10.26",
+                      blacklisted: f.blacklisted || undefined,
+                      comment: f.blReason || undefined,
+                    });
+                    if (f.photoFile) clientStore.setPhoto(created.id, f.photoFile);
+                    if (f.phone2) clientStore.setExtraPhone(created.id, f.phone2);
+                    onCreated?.(created);
                   }
                   requestClose();
                 }}

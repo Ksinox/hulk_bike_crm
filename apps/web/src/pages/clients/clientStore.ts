@@ -1,21 +1,27 @@
 import { useSyncExternalStore } from "react";
 import type { UploadedFile } from "./DocUpload";
+import { CLIENTS as SEED_CLIENTS, type Client } from "@/lib/mock/clients";
 
 type State = {
   photos: Map<number, UploadedFile>;
   extraDocs: Map<number, UploadedFile[]>;
   extraPhones: Map<number, string>;
+  addedClients: Client[];
 };
 
 const state: State = {
   photos: new Map(),
   extraDocs: new Map(),
   extraPhones: new Map(),
+  addedClients: [],
 };
+
+let rev = 0;
 
 const listeners = new Set<() => void>();
 
 function emit() {
+  rev = (rev + 1) & 0x7fffffff;
   listeners.forEach((l) => l());
 }
 
@@ -62,6 +68,20 @@ function setExtraPhone(id: number, phone: string | null) {
   emit();
 }
 
+function addClient(data: Omit<Client, "id">): Client {
+  const maxSeed = SEED_CLIENTS.reduce((m, c) => Math.max(m, c.id), 0);
+  const maxAdded = state.addedClients.reduce((m, c) => Math.max(m, c.id), 0);
+  const id = Math.max(maxSeed, maxAdded) + 1;
+  const client: Client = { ...data, id };
+  state.addedClients = [...state.addedClients, client];
+  emit();
+  return client;
+}
+
+function getAllClients(): Client[] {
+  return [...SEED_CLIENTS, ...state.addedClients];
+}
+
 export const clientStore = {
   getPhoto,
   setPhoto,
@@ -70,8 +90,15 @@ export const clientStore = {
   addExtraDocs,
   getExtraPhone,
   setExtraPhone,
+  addClient,
+  getAllClients,
   subscribe,
 };
+
+export function useAllClients(): Client[] {
+  useSyncExternalStore(subscribe, () => rev, () => 0);
+  return getAllClients();
+}
 
 export function useClientPhoto(id: number): UploadedFile | null {
   return useSyncExternalStore(
