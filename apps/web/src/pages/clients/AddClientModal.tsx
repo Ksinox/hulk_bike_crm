@@ -8,6 +8,11 @@ import {
   type Client,
   type ClientSource,
 } from "@/lib/mock/clients";
+import {
+  DocUpload,
+  DocUploadMulti,
+  type UploadedFile,
+} from "./DocUpload";
 
 const SOURCE_OPTIONS: { id: ClientSource; label: string }[] = [
   { id: "avito", label: SOURCE_LABEL.avito },
@@ -37,6 +42,12 @@ type Form = {
   licenseSer: string;
   licenseNum: string;
 
+  passportMainFile: UploadedFile | null;
+  passportRegFile: UploadedFile | null;
+  licenseFile: UploadedFile | null;
+  contractFile: UploadedFile | null;
+  otherDocs: UploadedFile[];
+
   blacklisted: boolean;
   blReason: string;
 };
@@ -57,6 +68,11 @@ const EMPTY: Form = {
   noLicense: false,
   licenseSer: "",
   licenseNum: "",
+  passportMainFile: null,
+  passportRegFile: null,
+  licenseFile: null,
+  contractFile: null,
+  otherDocs: [],
   blacklisted: false,
   blReason: "",
 };
@@ -119,6 +135,13 @@ function formatPhone(v: string): string {
   return parts.join("");
 }
 
+function docToUploaded(
+  doc: { name: string; date: string } | null,
+): UploadedFile | null {
+  if (!doc) return null;
+  return { name: doc.name, label: `загружено ${doc.date}`, existing: true };
+}
+
 function initialForm(editing: Client | null): Form {
   if (!editing) return EMPTY;
   const d = getClientDetails(editing);
@@ -141,6 +164,11 @@ function initialForm(editing: Client | null): Form {
     noLicense: d.docs.license === null,
     licenseSer: "",
     licenseNum: "",
+    passportMainFile: docToUploaded(d.docs.passport_main),
+    passportRegFile: docToUploaded(d.docs.passport_reg),
+    licenseFile: docToUploaded(d.docs.license),
+    contractFile: null,
+    otherDocs: [],
     blacklisted: !!editing.blacklisted,
     blReason: d.blReason || "",
   };
@@ -155,6 +183,7 @@ export function AddClientModal({
 }) {
   const isEdit = !!editing;
   const [f, setF] = useState<Form>(() => initialForm(editing ?? null));
+  const [closing, setClosing] = useState(false);
   const [touched, setTouched] = useState<Record<string, boolean>>(() =>
     isEdit
       ? ({
@@ -167,13 +196,20 @@ export function AddClientModal({
       : ({} as Record<string, boolean>),
   );
 
+  const requestClose = () => {
+    if (closing) return;
+    setClosing(true);
+    window.setTimeout(onClose, 160);
+  };
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") requestClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const errors = useMemo(
     () => ({
@@ -219,18 +255,24 @@ export function AddClientModal({
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-ink/50 p-6 backdrop-blur-sm"
-      onClick={onClose}
+      className={cn(
+        "fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-ink/50 p-6 backdrop-blur-sm",
+        closing ? "animate-backdrop-out" : "animate-backdrop-in",
+      )}
+      onClick={requestClose}
     >
       <div
-        className="w-full max-w-[720px] overflow-hidden rounded-2xl bg-surface shadow-card-lg"
+        className={cn(
+          "w-full max-w-[720px] overflow-hidden rounded-2xl bg-surface shadow-card-lg",
+          closing ? "animate-modal-out" : "animate-modal-in",
+        )}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="relative border-b border-border bg-surface-soft px-6 py-4">
           <button
             type="button"
-            onClick={onClose}
+            onClick={requestClose}
             className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full text-muted transition-colors hover:bg-border hover:text-ink"
             title="Закрыть (Esc)"
           >
@@ -412,6 +454,20 @@ export function AddClientModal({
                 />
               </Field>
             </Row>
+            <div className="mt-1 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <DocUpload
+                label="Скан паспорта (основной разворот)"
+                hint="JPG или PDF"
+                file={f.passportMainFile}
+                onChange={(v) => set("passportMainFile", v)}
+              />
+              <DocUpload
+                label="Скан паспорта (прописка)"
+                hint="JPG или PDF"
+                file={f.passportRegFile}
+                onChange={(v) => set("passportRegFile", v)}
+              />
+            </div>
           </Section>
 
           {/* Section 3 — Адрес */}
@@ -463,33 +519,57 @@ export function AddClientModal({
               Клиент без водительского — только для скутеров до 50 куб.см
             </label>
             {!f.noLicense && (
-              <Row>
-                <Field label="Серия ВУ" htmlFor="f-lser">
-                  <input
-                    id="f-lser"
-                    type="text"
-                    value={f.licenseSer}
-                    placeholder="00 00"
-                    onChange={(e) => set("licenseSer", e.target.value)}
-                    className={inputClass(null)}
-                  />
-                </Field>
-                <Field label="Номер ВУ" htmlFor="f-lnum">
-                  <input
-                    id="f-lnum"
-                    type="text"
-                    value={f.licenseNum}
-                    placeholder="000000"
-                    onChange={(e) => set("licenseNum", e.target.value)}
-                    className={inputClass(null)}
-                  />
-                </Field>
-              </Row>
+              <>
+                <Row>
+                  <Field label="Серия ВУ" htmlFor="f-lser">
+                    <input
+                      id="f-lser"
+                      type="text"
+                      value={f.licenseSer}
+                      placeholder="00 00"
+                      onChange={(e) => set("licenseSer", e.target.value)}
+                      className={inputClass(null)}
+                    />
+                  </Field>
+                  <Field label="Номер ВУ" htmlFor="f-lnum">
+                    <input
+                      id="f-lnum"
+                      type="text"
+                      value={f.licenseNum}
+                      placeholder="000000"
+                      onChange={(e) => set("licenseNum", e.target.value)}
+                      className={inputClass(null)}
+                    />
+                  </Field>
+                </Row>
+                <DocUpload
+                  label="Скан водительского"
+                  hint="обе стороны одним файлом или PDF"
+                  file={f.licenseFile}
+                  onChange={(v) => set("licenseFile", v)}
+                />
+              </>
             )}
           </Section>
 
-          {/* Section 5 — Статус */}
-          <Section num={5} title="Статус">
+          {/* Section 5 — Договор и сканы */}
+          <Section num={5} title="Договор и сканы" badge="подписанные копии">
+            <DocUpload
+              label="Скан подписанного договора"
+              hint="фото всех страниц или PDF со сквозной подписью"
+              file={f.contractFile}
+              onChange={(v) => set("contractFile", v)}
+            />
+            <DocUploadMulti
+              label="Другие документы"
+              hint="акты, расписки, чеки — можно несколько файлов"
+              files={f.otherDocs}
+              onChange={(v) => set("otherDocs", v)}
+            />
+          </Section>
+
+          {/* Section 6 — Статус */}
+          <Section num={6} title="Статус">
             <label className="flex cursor-pointer items-center justify-between gap-3 rounded-[12px] border border-border p-3">
               <div>
                 <div className="text-[13px] font-semibold text-ink">
@@ -555,7 +635,7 @@ export function AddClientModal({
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={onClose}
+                onClick={requestClose}
                 className="rounded-full border border-border px-4 py-1.5 text-[12px] font-semibold text-muted hover:bg-surface-soft"
               >
                 Отмена
@@ -563,7 +643,7 @@ export function AddClientModal({
               <button
                 type="button"
                 disabled={!canSave}
-                onClick={onClose}
+                onClick={requestClose}
                 className={cn(
                   "rounded-full px-4 py-1.5 text-[12px] font-semibold transition-colors",
                   canSave

@@ -90,10 +90,42 @@ const config: Config = {
           "0%": { transform: "translateX(0) scale(1)", opacity: "1" },
           "100%": { transform: "translateX(60px) scale(0.9)", opacity: "0" },
         },
+        "backdrop-in": {
+          "0%": { opacity: "0" },
+          "100%": { opacity: "1" },
+        },
+        "backdrop-out": {
+          "0%": { opacity: "1" },
+          "100%": { opacity: "0" },
+        },
+        "modal-in": {
+          "0%": {
+            opacity: "0",
+            transform: "translateY(16px) scale(0.96)",
+          },
+          "100%": {
+            opacity: "1",
+            transform: "translateY(0) scale(1)",
+          },
+        },
+        "modal-out": {
+          "0%": {
+            opacity: "1",
+            transform: "translateY(0) scale(1)",
+          },
+          "100%": {
+            opacity: "0",
+            transform: "translateY(8px) scale(0.98)",
+          },
+        },
       },
       animation: {
         "wave-hand": "wave-hand 2.5s ease-in-out infinite",
         "fly-away": "fly-away 0.5s ease-out forwards",
+        "backdrop-in": "backdrop-in 180ms ease-out",
+        "backdrop-out": "backdrop-out 160ms ease-in forwards",
+        "modal-in": "modal-in 220ms cubic-bezier(0.22, 1, 0.36, 1)",
+        "modal-out": "modal-out 160ms ease-in forwards",
       },
     },
   },

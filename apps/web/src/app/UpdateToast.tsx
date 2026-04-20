@@ -17,7 +17,7 @@ export function UpdateToast({
   onClose,
 }: Props) {
   return (
-    <div className="fixed bottom-6 right-6 z-50 w-[360px] rounded-lg border bg-card p-4 shadow-card-hover">
+    <div className="fixed bottom-6 right-6 z-50 w-[360px] animate-modal-in rounded-lg border bg-card p-4 shadow-card-hover">
       <div className="flex items-start gap-3">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
           <Sparkles className="h-4 w-4" />
