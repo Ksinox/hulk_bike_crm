@@ -14,10 +14,12 @@ export type RouteId =
 
 const KEY = "hulk-route";
 
+const READY: RouteId[] = ["dashboard", "clients"];
+
 export function loadRoute(): RouteId {
   try {
-    const v = localStorage.getItem(KEY);
-    if (v) return v as RouteId;
+    const v = localStorage.getItem(KEY) as RouteId | null;
+    if (v && READY.includes(v)) return v;
   } catch {}
   return "dashboard";
 }

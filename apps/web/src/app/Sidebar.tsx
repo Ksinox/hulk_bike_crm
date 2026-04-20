@@ -24,11 +24,12 @@ type NavItem = {
   id: RouteId | "logout";
   label: string;
   icon: LucideIcon;
+  ready?: boolean;
 };
 
 const mainItems: NavItem[] = [
-  { id: "dashboard", label: "Дашборд", icon: Home },
-  { id: "clients", label: "Клиенты", icon: Users },
+  { id: "dashboard", label: "Дашборд", icon: Home, ready: true },
+  { id: "clients", label: "Клиенты", icon: Users, ready: true },
   { id: "rentals", label: "Аренды", icon: Bike },
   { id: "rassrochki", label: "Рассрочки", icon: Receipt },
   { id: "sales", label: "Продажи", icon: Wallet },
@@ -175,25 +176,33 @@ function NavRow({
   onSelect: (id: RouteId) => void;
 }) {
   const Icon = item.icon;
+  const isLogout = item.id === "logout";
+  const disabled = !isLogout && item.ready !== true;
+
+  const tooltipLabel = disabled ? `${item.label} · скоро` : item.label;
+
   return (
     <button
       type="button"
-      onMouseEnter={(e) => onEnter(e, item.label)}
+      disabled={disabled}
+      onMouseEnter={(e) => onEnter(e, tooltipLabel)}
       onMouseLeave={onLeave}
       onClick={() => {
-        if (item.id !== "logout") onSelect(item.id);
+        if (disabled || isLogout) return;
+        onSelect(item.id as RouteId);
       }}
+      title={disabled ? "Раздел в разработке" : undefined}
       className={cn(
         "relative flex h-11 items-center gap-3 overflow-hidden whitespace-nowrap rounded-[14px] px-3 text-left transition-colors",
-        active
-          ? "bg-ink text-white"
-          : "text-muted hover:bg-blue-50 hover:text-blue-600",
+        active && "bg-ink text-white",
+        !active && !disabled && "text-muted hover:bg-blue-50 hover:text-blue-600",
+        !active && disabled && "cursor-not-allowed text-muted-2 opacity-50",
       )}
     >
       <Icon size={20} className="flex-shrink-0" />
       <span
         className={cn(
-          "text-[13px] font-semibold transition-[opacity,transform]",
+          "flex min-w-0 flex-1 items-center gap-2 text-[13px] font-semibold transition-[opacity,transform]",
           expanded
             ? "pointer-events-auto translate-x-0 opacity-100 [transition-delay:80ms]"
             : "pointer-events-none -translate-x-1.5 opacity-0",
@@ -203,7 +212,12 @@ function NavRow({
           transitionTimingFunction: "cubic-bezier(0.22,1,0.36,1)",
         }}
       >
-        {item.label}
+        <span className="truncate">{item.label}</span>
+        {disabled && (
+          <span className="ml-auto rounded-full bg-surface-soft px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-muted-2">
+            скоро
+          </span>
+        )}
       </span>
     </button>
   );
