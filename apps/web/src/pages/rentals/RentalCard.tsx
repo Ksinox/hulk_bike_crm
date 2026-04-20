@@ -13,8 +13,8 @@ import {
 import { cn } from "@/lib/utils";
 import {
   DEPOSIT_AMOUNT,
+  hoursOverdue,
   MODEL_LABEL,
-  overduePaymentFine,
   overdueReturnFine,
   PAYMENT_LABEL,
   STATUS_LABEL,
@@ -59,8 +59,8 @@ function daysBetween(a: Date, b: Date): number {
   return Math.round((b.getTime() - a.getTime()) / 86400000);
 }
 
-/** Сегодня по демо-таймлайну — 13.10.2026 */
-const TODAY = new Date(2026, 9, 13);
+/** Сейчас по демо-таймлайну — 13.10.2026 14:30 */
+const TODAY = new Date(2026, 9, 13, 14, 30);
 
 function statusActions(status: RentalStatus): {
   id: string;
@@ -279,17 +279,26 @@ export function RentalCard({ rental }: { rental: Rental }) {
       )}
 
       {/* Banners — specific situations */}
-      {rental.status === "overdue" && endDate && (
-        <div className="flex items-center gap-2 rounded-[14px] bg-red-soft/70 p-3 text-[13px] text-red-ink">
-          <AlertTriangle size={16} className="shrink-0" />
-          <div className="min-w-0 flex-1">
-            <b>Просрочка возврата: {daysBetween(endDate, TODAY)} дн.</b>
-            <span className="ml-2 text-[12px]">
-              плановый возврат — {rental.endPlanned}
-            </span>
+      {rental.status === "overdue" && endDate && (() => {
+        const hrs = hoursOverdue(rental, TODAY);
+        const fine = overdueReturnFine(hrs, rental.rate);
+        const days = Math.floor(hrs / 24);
+        const remHrs = Math.floor(hrs - days * 24);
+        const durText = days > 0 ? `${days} дн ${remHrs} ч` : `${Math.floor(hrs)} ч ${Math.round((hrs - Math.floor(hrs)) * 60)} мин`;
+        return (
+          <div className="flex items-center gap-2 rounded-[14px] bg-red-soft/70 p-3 text-[13px] text-red-ink">
+            <AlertTriangle size={16} className="shrink-0" />
+            <div className="min-w-0 flex-1">
+              <b>Просрочка возврата: {durText}.</b>
+              <span className="ml-2 text-[12px]">
+                плановый возврат — {rental.endPlanned}{" "}
+                {rental.startTime || "12:00"} · штраф {fmt(fine)} ₽ (300 ₽/час
+                по договору)
+              </span>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
       {rental.status === "police" && (
         <div className="flex items-center gap-2 rounded-[14px] bg-red-soft/70 p-3 text-[13px] text-red-ink">
           <ShieldAlert size={16} className="shrink-0" />
@@ -356,15 +365,16 @@ export function RentalCard({ rental }: { rental: Rental }) {
         />
         {rental.status === "overdue" && endDate ? (
           (() => {
-            const daysLate = daysBetween(endDate, TODAY);
-            const fine =
-              overdueReturnFine(daysLate * 24, rental.rate) +
-              overduePaymentFine(daysLate);
+            const hrs = hoursOverdue(rental, TODAY);
+            const fine = overdueReturnFine(hrs, rental.rate);
+            const d = Math.floor(hrs / 24);
+            const h = Math.floor(hrs - d * 24);
+            const label = d > 0 ? `${d} дн ${h} ч` : `${h} ч`;
             return (
               <KpiBox
                 label="Просрочка"
-                value={`${daysLate} дн`}
-                hint={`штраф ≈ ${fmt(fine)} ₽`}
+                value={label}
+                hint={`штраф ${fmt(fine)} ₽ (300 ₽/час)`}
                 tone="red"
               />
             );

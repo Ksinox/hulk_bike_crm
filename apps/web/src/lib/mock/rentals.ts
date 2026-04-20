@@ -29,7 +29,11 @@ export type Rental = {
   clientId: number;
   scooter: string;
   model: ScooterModel;
+  /** Дата выдачи, DD.MM.YYYY */
   start: string;
+  /** Время выдачи, HH:MM (по умолчанию 12:00 если не указано) */
+  startTime?: string;
+  /** Плановый возврат, DD.MM.YYYY. Время такое же как startTime */
   endPlanned: string;
   endActual?: string;
   status: RentalStatus;
@@ -85,18 +89,39 @@ export function periodForDays(days: number): TariffPeriod {
 
 /**
  * Штраф за просрочку возврата.
- * 60-120 мин = 1/2 суточной ставки, > 120 мин = 300 ₽/час.
+ * 60-120 мин = 1/2 суточной ставки, > 120 мин = 300 ₽/час (считается в час-за-час).
  * Источник: договор аренды, 10_правила_бизнеса.md
+ *
+ * Важно: аренда оплачивается единовременно при выдаче, поэтому «просрочка оплаты»
+ * (200 ₽/день) к аренде не применяется — это правило для рассрочек.
  */
 export function overdueReturnFine(hoursLate: number, rate: number): number {
-  if (hoursLate <= 1) return 0;
+  if (hoursLate < 1) return 0;
   if (hoursLate <= 2) return Math.round(rate / 2);
   return hoursLate * 300;
 }
 
-/** Штраф за просрочку оплаты: 200 ₽/день */
-export function overduePaymentFine(days: number): number {
+/**
+ * Штраф за просрочку платежа по рассрочке: 200 ₽/день.
+ * НЕ применяется к арендам — оплата аренды получается при выдаче.
+ */
+export function installmentOverdueFine(days: number): number {
   return days * 200;
+}
+
+/** Парсит DD.MM.YYYY + HH:MM в Date */
+export function parseRentalDateTime(date: string, time = "12:00"): Date | null {
+  const dm = date.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  if (!dm) return null;
+  const [h = "12", m = "00"] = time.split(":");
+  return new Date(+dm[3], +dm[2] - 1, +dm[1], +h, +m);
+}
+
+/** Часы просрочки на момент момент `nowAt` */
+export function hoursOverdue(rental: Rental, nowAt: Date): number {
+  const end = parseRentalDateTime(rental.endPlanned, rental.startTime);
+  if (!end) return 0;
+  return Math.max(0, (nowAt.getTime() - end.getTime()) / 3_600_000);
 }
 
 export const STATUS_LABEL: Record<RentalStatus, string> = {
@@ -218,23 +243,29 @@ export const RENTALS: Rental[] = [
     equipment: ["шлем"], paymentMethod: "card" },
 
   // ===== OVERDUE =====
-  { id: 130, clientId: 3, scooter: "Jog #04", model: "jog", start: "25.09.2026", endPlanned: "09.10.2026",
+  { id: 130, clientId: 3, scooter: "Jog #04", model: "jog", start: "25.09.2026", startTime: "11:00",
+    endPlanned: "09.10.2026",
     status: "overdue", tariffPeriod: "week", rate: 500, days: 14, sum: 7000, deposit: 2000,
     equipment: ["шлем"], paymentMethod: "cash",
     note: "просрочен возврат на 4 дня, клиент обещал вернуть завтра" },
-  { id: 131, clientId: 16, scooter: "Gear #06", model: "gear", start: "20.09.2026", endPlanned: "11.10.2026",
+  { id: 131, clientId: 16, scooter: "Gear #06", model: "gear", start: "20.09.2026", startTime: "15:30",
+    endPlanned: "11.10.2026",
     status: "overdue", tariffPeriod: "week", rate: 600, days: 21, sum: 12600, deposit: 2000,
-    equipment: [], paymentMethod: "card", note: "обещает вернуть после зарплаты" },
-  { id: 132, clientId: 21, scooter: "Jog #20", model: "jog", start: "29.09.2026", endPlanned: "12.10.2026",
+    equipment: [], paymentMethod: "transfer", note: "обещает вернуть после зарплаты" },
+  { id: 132, clientId: 21, scooter: "Jog #20", model: "jog", start: "29.09.2026", startTime: "10:00",
+    endPlanned: "12.10.2026",
     status: "overdue", tariffPeriod: "week", rate: 500, days: 14, sum: 7000, deposit: 2000,
     equipment: ["шлем"], paymentMethod: "cash", note: "первый раз пропустил платёж" },
-  { id: 133, clientId: 33, scooter: "Jog #13", model: "jog", start: "28.09.2026", endPlanned: "12.10.2026",
+  { id: 133, clientId: 33, scooter: "Jog #13", model: "jog", start: "28.09.2026", startTime: "09:00",
+    endPlanned: "12.10.2026",
     status: "overdue", tariffPeriod: "week", rate: 500, days: 14, sum: 7000, deposit: 2000,
-    equipment: [], paymentMethod: "card", note: "должен 1800 ₽ до пятницы" },
-  { id: 134, clientId: 39, scooter: "Gear #02", model: "gear", start: "20.09.2026", endPlanned: "04.10.2026",
+    equipment: [], paymentMethod: "transfer", note: "должен 1800 ₽ до пятницы" },
+  { id: 134, clientId: 39, scooter: "Gear #02", model: "gear", start: "20.09.2026", startTime: "14:00",
+    endPlanned: "04.10.2026",
     status: "overdue", tariffPeriod: "week", rate: 600, days: 14, sum: 8400, deposit: 2000,
     equipment: [], paymentMethod: "cash", note: "пропустил возврат, ссылается на жену" },
-  { id: 135, clientId: 28, scooter: "Jog #16", model: "jog", start: "22.09.2026", endPlanned: "06.10.2026",
+  { id: 135, clientId: 28, scooter: "Jog #16", model: "jog", start: "22.09.2026", startTime: "16:00",
+    endPlanned: "06.10.2026",
     status: "overdue", tariffPeriod: "week", rate: 500, days: 14, sum: 7000, deposit: 2000,
     equipment: [], paymentMethod: "cash", note: "просрочка 1 неделя" },
 

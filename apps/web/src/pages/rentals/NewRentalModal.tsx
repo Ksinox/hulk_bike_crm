@@ -68,6 +68,7 @@ export function NewRentalModal({
   const [newClientOpen, setNewClientOpen] = useState(false);
   const [scooterName, setScooterName] = useState<string | null>(null);
   const [start, setStart] = useState(TODAY_STR);
+  const [startTime, setStartTime] = useState("14:30");
   const [days, setDays] = useState(14);
   const [equipment, setEquipment] = useState<string[]>(["шлем"]);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
@@ -143,6 +144,7 @@ export function NewRentalModal({
       scooter: scooterName,
       model,
       start,
+      startTime,
       endPlanned,
       status: "active",
       tariffPeriod: period,
@@ -326,7 +328,7 @@ export function NewRentalModal({
 
           {/* 3 Срок и тариф */}
           <Section num={3} title="Срок и тариф">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <label className="text-[12px] font-semibold text-ink">
                 Дата выдачи
                 <input
@@ -335,6 +337,18 @@ export function NewRentalModal({
                   onChange={(e) => setStart(e.target.value)}
                   className="mt-1 h-9 w-full rounded-[10px] border border-border bg-surface px-3 text-[13px] text-ink outline-none focus:border-blue-600"
                 />
+              </label>
+              <label className="text-[12px] font-semibold text-ink">
+                Время
+                <input
+                  type="time"
+                  value={startTime}
+                  onChange={(e) => setStartTime(e.target.value)}
+                  className="mt-1 h-9 w-full rounded-[10px] border border-border bg-surface px-3 text-[13px] text-ink outline-none focus:border-blue-600"
+                />
+                <div className="mt-1 text-[10px] text-muted-2">
+                  то же время = дедлайн возврата
+                </div>
               </label>
               <label className="text-[12px] font-semibold text-ink">
                 Срок, дней
@@ -351,7 +365,7 @@ export function NewRentalModal({
                   className="mt-1 h-9 w-full rounded-[10px] border border-border bg-surface px-3 text-[13px] text-ink outline-none focus:border-blue-600"
                 />
                 <div className="mt-1 text-[10px] text-muted-2">
-                  минимум {MIN_RENTAL_DAYS} дня (минимальный тариф 3–7 дней)
+                  минимум {MIN_RENTAL_DAYS} дня
                 </div>
               </label>
             </div>
@@ -379,8 +393,8 @@ export function NewRentalModal({
               <Calc label="Ставка" value={`${rate} ₽/сут`} />
               <Calc
                 label="Возврат"
-                value={endPlanned}
-                hint={`+${days} дн от ${start}`}
+                value={`${endPlanned} ${startTime}`}
+                hint={`+${days} дн от ${start} ${startTime}`}
               />
               <Calc
                 label="Итог"
