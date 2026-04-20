@@ -195,8 +195,18 @@ export function addRentalIncident(
 }
 
 export function revertOverdue(id: number) {
+  // Сегодня по демо-таймлайну — 13.10.2026
+  const today = "13.10.2026";
   state.rentals = state.rentals.map((r) =>
-    r.id === id && r.status === "overdue" ? { ...r, status: "active" } : r,
+    r.id === id && r.status === "overdue"
+      ? {
+          ...r,
+          status: "active",
+          // Просрочка «прощена» — возврат переносится на сегодня,
+          // дальше админ либо принимает возврат, либо продлевает
+          endPlanned: today,
+        }
+      : r,
   );
   // снимаем начисленные штрафы по этой аренде
   state.payments = state.payments.filter(

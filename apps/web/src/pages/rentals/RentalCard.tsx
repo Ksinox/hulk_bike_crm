@@ -64,7 +64,10 @@ function parseDate(s: string): Date | null {
 }
 
 function daysBetween(a: Date, b: Date): number {
-  return Math.round((b.getTime() - a.getTime()) / 86400000);
+  // разница в календарных днях: нормализуем оба к началу дня
+  const aD = new Date(a.getFullYear(), a.getMonth(), a.getDate()).getTime();
+  const bD = new Date(b.getFullYear(), b.getMonth(), b.getDate()).getTime();
+  return Math.round((bD - aD) / 86400000);
 }
 
 /** Сейчас по демо-таймлайну — 13.10.2026 14:30 */
@@ -177,6 +180,16 @@ export function RentalCard({ rental }: { rental: Rental }) {
       <header className="flex flex-wrap items-start gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
+            {/* Статус — первым */}
+            <span
+              className={cn(
+                "inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold",
+                statusChipClass(tone),
+              )}
+            >
+              {STATUS_LABEL[rental.status]}
+            </span>
+
             <h2 className="flex flex-wrap items-center gap-x-1 font-display text-[22px] font-extrabold leading-tight text-ink">
               <button
                 type="button"
@@ -188,25 +201,34 @@ export function RentalCard({ rental }: { rental: Rental }) {
               </button>
               <span className="text-muted-2">—</span>
               {client && (
-                <button
-                  type="button"
-                  onClick={() => setClientQuickView(true)}
-                  title="Быстрый просмотр клиента"
-                  className="inline-flex items-center gap-1.5 rounded px-0.5 decoration-2 underline-offset-4 hover:underline"
-                >
-                  <User size={18} className="text-ink-2" />
-                  {client.name}
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setClientQuickView(true)}
+                    title="Быстрый просмотр клиента"
+                    className="inline-flex items-center gap-1.5 rounded px-0.5 decoration-2 underline-offset-4 hover:underline"
+                  >
+                    <User size={18} className="text-ink-2" />
+                    {client.name}
+                  </button>
+                  {tier && (
+                    <span
+                      className={cn(
+                        "ml-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold",
+                        tier.tone === "good"
+                          ? "bg-green-soft text-green-ink"
+                          : tier.tone === "bad"
+                            ? "bg-red-soft text-red-ink"
+                            : "bg-surface-soft text-ink",
+                      )}
+                      title={tier.label}
+                    >
+                      <Star size={11} /> {client.rating}
+                    </span>
+                  )}
+                </>
               )}
             </h2>
-            <span
-              className={cn(
-                "inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold",
-                statusChipClass(tone),
-              )}
-            >
-              {STATUS_LABEL[rental.status]}
-            </span>
           </div>
         </div>
 
@@ -214,8 +236,20 @@ export function RentalCard({ rental }: { rental: Rental }) {
         <RentalActionsMenu actions={actions} onAction={handleAction} />
       </header>
 
-      {/* Инфо-строка */}
+      {/* Инфо-строка: телефон первым */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[12px]">
+        {client && (
+          <>
+            <a
+              href={`tel:${client.phone.replace(/\s/g, "")}`}
+              className="inline-flex items-center gap-1.5 text-[15px] font-bold tabular-nums text-ink hover:text-blue-600"
+            >
+              <Phone size={14} className="text-blue-600" />
+              {client.phone}
+            </a>
+            <Dot />
+          </>
+        )}
         <span className="font-semibold text-ink-2">
           Аренда #{String(rental.id).padStart(4, "0")}
         </span>
@@ -231,36 +265,10 @@ export function RentalCard({ rental }: { rental: Rental }) {
             </span>
           </>
         )}
-        {client && tier && (
-          <>
-            <Dot />
-            <span
-              className={cn(
-                "inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[11px] font-bold",
-                tier.tone === "good"
-                  ? "bg-green-soft text-green-ink"
-                  : tier.tone === "bad"
-                    ? "bg-red-soft text-red-ink"
-                    : "bg-surface-soft text-ink",
-              )}
-              title={tier.label}
-            >
-              <Star size={11} /> {client.rating}
-            </span>
-            <Dot />
-            <span className="text-muted-2">{SOURCE_LABEL[client.source]}</span>
-          </>
-        )}
         {client && (
           <>
             <Dot />
-            <a
-              href={`tel:${client.phone.replace(/\s/g, "")}`}
-              className="inline-flex items-center gap-1.5 text-[15px] font-bold tabular-nums text-ink hover:text-blue-600"
-            >
-              <Phone size={14} className="text-blue-600" />
-              {client.phone}
-            </a>
+            <span className="text-muted-2">{SOURCE_LABEL[client.source]}</span>
           </>
         )}
       </div>
