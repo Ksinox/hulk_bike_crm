@@ -37,7 +37,7 @@ export function ClientsList({
 
   return (
     <div className="overflow-hidden rounded-2xl bg-surface shadow-card-sm">
-      <div className="max-h-[calc(100vh-260px)] overflow-y-auto">
+      <div className="scrollbar-thin max-h-[calc(100vh-260px)] overflow-y-auto overflow-x-hidden px-1.5">
         {items.map((c) => (
           <ClientRow
             key={c.id}
@@ -81,7 +81,7 @@ function ClientRow({
         accent,
         !active && "hover:z-[5] hover:bg-surface-soft",
         active &&
-          "z-20 scale-[1.03] rounded-[12px] border-b-0 bg-blue-600 py-3 text-white shadow-card-lg",
+          "z-20 rounded-[12px] border-b-0 bg-blue-600 py-3 text-white shadow-card-lg",
       )}
     >
       <span
