@@ -1,12 +1,13 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Plus } from "lucide-react";
 import { Topbar } from "@/pages/dashboard/Topbar";
-import { RENTALS, type Rental, type RentalStatus } from "@/lib/mock/rentals";
+import { type Rental, type RentalStatus } from "@/lib/mock/rentals";
 import { CLIENTS } from "@/lib/mock/clients";
 import { RentalsFilters, type FiltersState } from "./RentalsFilters";
 import { RentalsList } from "./RentalsList";
 import { RentalsKpi, type Kpi } from "./RentalsKpi";
 import { RentalCard } from "./RentalCard";
+import { useRentals } from "./rentalsStore";
 
 function matchStatus(r: Rental, f: FiltersState["status"]): boolean {
   if (f === "all") return true;
@@ -58,43 +59,48 @@ function statusRank(s: RentalStatus): number {
 }
 
 export function Rentals() {
+  const rentals = useRentals();
   const [filters, setFilters] = useState<FiltersState>({
     search: "",
     status: "all",
   });
-  const [selectedId, setSelectedId] = useState<number | null>(() => {
-    const first = RENTALS.find((r) => r.status === "active");
-    return first?.id ?? RENTALS[0]?.id ?? null;
-  });
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (selectedId != null) return;
+    const first = rentals.find((r) => r.status === "active");
+    setSelectedId(first?.id ?? rentals[0]?.id ?? null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const filtered = useMemo(
     () =>
-      RENTALS.filter(
+      rentals.filter(
         (r) => matchStatus(r, filters.status) && matchSearch(r, filters.search),
       ).sort((a, b) => {
         const sr = statusRank(a.status) - statusRank(b.status);
         if (sr !== 0) return sr;
         return b.id - a.id;
       }),
-    [filters],
+    [filters, rentals],
   );
 
   const kpi = useMemo<Kpi[]>(() => {
-    const active = RENTALS.filter((r) => r.status === "active").length;
-    const overdue = RENTALS.filter((r) => r.status === "overdue").length;
-    const returningToday = RENTALS.filter(
+    const active = rentals.filter((r) => r.status === "active").length;
+    const overdue = rentals.filter((r) => r.status === "overdue").length;
+    const returningToday = rentals.filter(
       (r) =>
         r.status === "returning" ||
         (r.status === "active" && r.endPlanned === "13.10.2026"),
     ).length;
-    const newReq = RENTALS.filter(
+    const newReq = rentals.filter(
       (r) => r.status === "new_request" || r.status === "meeting",
     ).length;
-    const overdueDebt = RENTALS.filter((r) => r.status === "overdue").reduce(
+    const overdueDebt = rentals.filter((r) => r.status === "overdue").reduce(
       (s, r) => s + (r.sum ?? 0),
       0,
     );
-    const monthRevenue = RENTALS.filter(
+    const monthRevenue = rentals.filter(
       (r) =>
         r.status === "active" ||
         r.status === "completed" ||
@@ -141,7 +147,7 @@ export function Rentals() {
         tone: "purple",
       },
     ];
-  }, []);
+  }, [rentals]);
 
   return (
     <main className="flex min-w-0 flex-1 flex-col gap-4">
@@ -153,8 +159,8 @@ export function Rentals() {
             Аренды
           </h1>
           <span className="rounded-full bg-surface-soft px-3 py-1 text-[13px] font-semibold text-muted">
-            {RENTALS.filter((r) => r.status === "active").length} активных из{" "}
-            {RENTALS.length}
+            {rentals.filter((r) => r.status === "active").length} активных из{" "}
+            {rentals.length}
           </span>
         </div>
         <button
@@ -178,7 +184,7 @@ export function Rentals() {
         />
 
         {(() => {
-          const selected = RENTALS.find((r) => r.id === selectedId);
+          const selected = rentals.find((r) => r.id === selectedId);
           if (!selected) {
             return (
               <div className="flex min-h-[400px] items-center justify-center rounded-2xl bg-surface p-10 text-center shadow-card-sm">

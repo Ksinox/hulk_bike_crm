@@ -2,10 +2,8 @@ import { useMemo, useState } from "react";
 import {
   AlertTriangle,
   ArrowRight,
-  Ban,
   Calendar,
   CheckCircle2,
-  FileText,
   Gavel,
   Phone,
   ShieldAlert,
@@ -27,6 +25,14 @@ import {
 } from "@/lib/mock/rentals";
 import { CLIENTS } from "@/lib/mock/clients";
 import { navigate } from "@/app/navigationStore";
+import {
+  IncidentsTab,
+  PaymentsTab,
+  ReturnTab,
+  TasksTab,
+  TermsTab,
+} from "./RentalCardTabs";
+import { RentalActionDialog, type ActionKind } from "./RentalActionDialog";
 
 type TabId = "terms" | "payments" | "return" | "incidents" | "tasks";
 
@@ -103,6 +109,7 @@ function statusActions(status: RentalStatus): {
 
 export function RentalCard({ rental }: { rental: Rental }) {
   const [tab, setTab] = useState<TabId>("terms");
+  const [action, setAction] = useState<ActionKind | null>(null);
   const client = useMemo(
     () => CLIENTS.find((c) => c.id === rental.clientId),
     [rental.clientId],
@@ -210,6 +217,7 @@ export function RentalCard({ rental }: { rental: Rental }) {
               <button
                 key={a.id}
                 type="button"
+                onClick={() => setAction(a.id as ActionKind)}
                 className={cn(
                   "inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-[12px] font-semibold transition-colors",
                   a.tone === "primary" &&
@@ -357,9 +365,21 @@ export function RentalCard({ rental }: { rental: Rental }) {
         ))}
       </div>
 
-      <div className="flex-1 pt-4 text-[13px] text-muted">
-        <TabPlaceholder tab={tab} />
+      <div className="flex-1 pt-4">
+        {tab === "terms" && <TermsTab rental={rental} />}
+        {tab === "payments" && <PaymentsTab rental={rental} />}
+        {tab === "return" && <ReturnTab rental={rental} />}
+        {tab === "incidents" && <IncidentsTab rental={rental} />}
+        {tab === "tasks" && <TasksTab rental={rental} />}
       </div>
+
+      {action && (
+        <RentalActionDialog
+          rental={rental}
+          action={action}
+          onClose={() => setAction(null)}
+        />
+      )}
     </div>
   );
 }
@@ -395,22 +415,3 @@ function KpiBox({
   );
 }
 
-function TabPlaceholder({ tab }: { tab: TabId }) {
-  const map: Record<TabId, { icon: typeof FileText; text: string }> = {
-    terms: { icon: FileText, text: "Условия аренды" },
-    payments: { icon: Ban, text: "Платежи" },
-    return: { icon: CheckCircle2, text: "Акт возврата" },
-    incidents: { icon: AlertTriangle, text: "Инциденты" },
-    tasks: { icon: Calendar, text: "Задачи" },
-  };
-  const Icon = map[tab].icon;
-  return (
-    <div className="flex min-h-[160px] flex-col items-center justify-center gap-2 rounded-[14px] border border-dashed border-border text-center">
-      <Icon size={22} className="text-muted-2" />
-      <div className="text-[13px] font-semibold text-ink-2">
-        {map[tab].text}
-      </div>
-      <div className="text-[11px] text-muted">появится в следующем этапе</div>
-    </div>
-  );
-}
