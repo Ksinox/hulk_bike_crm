@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { AlertTriangle, Ban, Pencil, Phone, Plus, UploadCloud } from "lucide-react";
+import { AlertTriangle, Ban, Pencil, Phone, UploadCloud } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   getClientDetails,
@@ -19,6 +19,7 @@ import { SequentialNamingModal } from "./SequentialNamingModal";
 import { clientStore, useClientExtraPhone } from "./clientStore";
 import type { UploadedFile } from "./DocUpload";
 import { ClientPhoto } from "./ClientPhoto";
+import { CreateDealMenu } from "./CreateDealMenu";
 
 export type CardTab =
   | "rentals"
@@ -208,21 +209,7 @@ export function ClientCard({ client }: { client: Client }) {
               >
                 <Pencil size={13} /> Редактировать
               </button>
-              <button
-                type="button"
-                disabled={client.blacklisted}
-                title={
-                  client.blacklisted ? "Клиент заблокирован" : "Создать аренду"
-                }
-                className={cn(
-                  "inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-[12px] font-semibold transition-colors",
-                  client.blacklisted
-                    ? "cursor-not-allowed bg-surface-soft text-muted-2"
-                    : "bg-blue-600 text-white hover:bg-blue-700",
-                )}
-              >
-                <Plus size={13} /> Создать аренду
-              </button>
+              <CreateDealMenu client={client} />
             </div>
           </header>
 
