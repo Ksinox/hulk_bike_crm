@@ -1,7 +1,11 @@
 import { app, BrowserWindow, ipcMain, shell } from "electron";
 import * as path from "node:path";
 import log from "electron-log";
-import { initAutoUpdater, checkForUpdatesNow } from "./updater";
+import {
+  checkForUpdatesNow,
+  initAutoUpdater,
+  quitAndInstallSilently,
+} from "./updater";
 
 log.transports.file.level = "info";
 log.info("Халк Байк CRM стартует", { version: app.getVersion() });
@@ -74,6 +78,5 @@ ipcMain.on("updater:checkForUpdates", () => {
   if (!isDev) checkForUpdatesNow();
 });
 ipcMain.on("updater:quitAndInstall", () => {
-  const { autoUpdater } = require("electron-updater");
-  autoUpdater.quitAndInstall();
+  quitAndInstallSilently();
 });

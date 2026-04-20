@@ -25,13 +25,19 @@ win:
   # certificatePassword: ${env.WIN_CSC_KEY_PASSWORD}
 
 nsisWeb:
-  oneClick: false
+  # one-click: без мастера, без выбора каталога — устанавливается сразу в %LOCALAPPDATA%
+  oneClick: true
+  # per-user: без UAC, без системного диалога «для кого устанавливать»
   perMachine: false
-  allowToChangeInstallationDirectory: true
-  allowElevation: true
+  allowToChangeInstallationDirectory: false
+  allowElevation: false
   createDesktopShortcut: true
   createStartMenuShortcut: true
   shortcutName: Халк Байк CRM
+  # После установки обновления — запустить приложение автоматически
+  runAfterFinish: true
+  # Отключаем возможность удалить из Панели управления с запросами
+  deleteAppDataOnUninstall: false
 
 publish:
   - provider: github
