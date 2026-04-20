@@ -8,6 +8,7 @@ import { RentalsList } from "./RentalsList";
 import { RentalsKpi, type Kpi } from "./RentalsKpi";
 import { RentalCard } from "./RentalCard";
 import { useRentals } from "./rentalsStore";
+import { NewRentalModal } from "./NewRentalModal";
 
 function matchStatus(r: Rental, f: FiltersState["status"]): boolean {
   if (f === "all") return true;
@@ -65,6 +66,7 @@ export function Rentals() {
     status: "all",
   });
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [newOpen, setNewOpen] = useState(false);
 
   useEffect(() => {
     if (selectedId != null) return;
@@ -165,6 +167,7 @@ export function Rentals() {
         </div>
         <button
           type="button"
+          onClick={() => setNewOpen(true)}
           className="inline-flex items-center gap-1.5 rounded-full bg-ink px-4 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-ink-2"
         >
           <Plus size={16} />
@@ -197,6 +200,13 @@ export function Rentals() {
           return <RentalCard rental={selected} />;
         })()}
       </div>
+
+      {newOpen && (
+        <NewRentalModal
+          onClose={() => setNewOpen(false)}
+          onCreated={(r) => setSelectedId(r.id)}
+        />
+      )}
     </main>
   );
 }
