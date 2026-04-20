@@ -15,7 +15,7 @@ export type FiltersState = {
 
 const STATUS_TABS: { id: StatusFilter; label: string; hint?: string }[] = [
   { id: "all", label: "Все" },
-  { id: "active", label: "На аренде", hint: "сейчас катают" },
+  { id: "active", label: "Аренда", hint: "сейчас катают" },
   { id: "inactive", label: "Неактивные", hint: "без аренды и долгов" },
   { id: "debt", label: "С долгом" },
   { id: "black", label: "Ч/С" },

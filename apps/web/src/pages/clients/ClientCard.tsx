@@ -2,7 +2,6 @@ import { useMemo, useState } from "react";
 import {
   AlertTriangle,
   Ban,
-  Bike,
   Check,
   Copy,
   Pencil,
@@ -160,24 +159,12 @@ export function ClientCard({ client }: { client: Client }) {
                     onClick={() =>
                       navigate({ route: "rentals", rentalId: activeRental.id })
                     }
-                    className="inline-flex items-center gap-1 rounded-full bg-green-soft px-2 py-0.5 text-[11px] font-bold text-green-ink transition-colors hover:bg-green/20"
+                    className="inline-flex items-center rounded-full bg-green-soft px-2 py-0.5 text-[11px] font-bold text-green-ink transition-colors hover:bg-green/20"
                     title="Открыть аренду"
                   >
-                    <Bike size={12} /> на аренде · {activeRental.scooter}
+                    аренда {activeRental.scooter}
                   </button>
                 )}
-                <span
-                  className={cn(
-                    "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold tabular-nums",
-                    tier.tone === "good"
-                      ? "bg-green-soft text-green-ink"
-                      : tier.tone === "mid"
-                        ? "bg-surface-soft text-ink"
-                        : "bg-red-soft text-red-ink",
-                  )}
-                >
-                  {client.rating} · {tier.label}
-                </span>
               </div>
               <div className="mt-1 text-[12px] text-muted-2">
                 id #{String(client.id).padStart(4, "0")} · добавлен{" "}
@@ -201,58 +188,56 @@ export function ClientCard({ client }: { client: Client }) {
             </div>
           </header>
 
-          {/* KPIs — inside right column */}
-          <KpiRow
-            group="Деньги"
-            items={[
-              {
-                label: "Оборот",
-                value:
-                  totalTurnover > 0 ? `${fmt(totalTurnover)} ₽` : "—",
-                hint: "за всё время",
-                tone: totalTurnover > 0 ? "green" : "gray",
-              },
-              {
-                label: "Оплата в день",
-                value: activeRental ? `${fmt(activeRental.rate)} ₽` : "—",
-                hint: activeRental
-                  ? `действует сейчас`
-                  : "нет активной аренды",
-                tone: activeRental ? "neutral" : "gray",
-              },
-            ]}
-          />
-          <KpiRow
-            group="Активность"
-            items={[
-              {
-                label: "Дней в аренде",
-                value:
+          {/* KPIs — 2x2 слева + общий долг справа во всю высоту */}
+          <div className="grid grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-3">
+            <div className="grid grid-cols-2 gap-3">
+              <KpiBox
+                label="Оборот"
+                value={
+                  totalTurnover > 0 ? `${fmt(totalTurnover)} ₽` : "—"
+                }
+                hint="за всё время"
+                tone={totalTurnover > 0 ? "green" : "gray"}
+              />
+              <KpiBox
+                label="Оплата в день"
+                value={activeRental ? `${fmt(activeRental.rate)} ₽` : "—"}
+                hint={
+                  activeRental ? "действует сейчас" : "нет активной аренды"
+                }
+                tone={activeRental ? "neutral" : "gray"}
+              />
+              <KpiBox
+                label="Дней в аренде"
+                value={
                   totalRentedDays > 0
                     ? `${totalRentedDays} ${daysWord(totalRentedDays)}`
-                    : "—",
-                hint: "суммарно по истории",
-                tone: totalRentedDays > 0 ? "neutral" : "gray",
-              },
-              {
-                label: "Рейтинг",
-                value: String(client.rating),
-                hint: tier.label.toLowerCase(),
-                tone:
+                    : "—"
+                }
+                hint="суммарно по истории"
+                tone={totalRentedDays > 0 ? "neutral" : "gray"}
+              />
+              <KpiBox
+                label="Рейтинг"
+                value={String(client.rating)}
+                hint={tier.label.toLowerCase()}
+                tone={
                   tier.tone === "good"
                     ? "green"
                     : tier.tone === "bad"
                       ? "red"
-                      : "neutral",
-              },
-              {
-                label: "Общий долг",
-                value: client.debt > 0 ? `${fmt(client.debt)} ₽` : "—",
-                hint: client.debt > 0 ? "непогашен" : "нет долгов",
-                tone: client.debt > 0 ? "red" : "gray",
-              },
-            ]}
-          />
+                      : "neutral"
+                }
+              />
+            </div>
+            <KpiBox
+              label="Общий долг"
+              value={client.debt > 0 ? `${fmt(client.debt)} ₽` : ""}
+              hint={client.debt > 0 ? "непогашен" : "нет долгов"}
+              tone={client.debt > 0 ? "red" : "gray"}
+              fill
+            />
+          </div>
         </div>
       </div>
 
@@ -433,46 +418,42 @@ function PhoneDisplay({
   );
 }
 
-function KpiRow({
-  group,
-  items,
+function KpiBox({
+  label,
+  value,
+  hint,
+  tone,
+  fill,
 }: {
-  group: string;
-  items: {
-    label: string;
-    value: string;
-    hint: string;
-    tone: "neutral" | "green" | "gray" | "red";
-  }[];
+  label: string;
+  value: string;
+  hint: string;
+  tone: "neutral" | "green" | "gray" | "red";
+  fill?: boolean;
 }) {
   return (
-    <div className="flex items-stretch gap-3">
-      <div className="flex w-[84px] shrink-0 items-center text-[11px] font-semibold uppercase tracking-wider text-muted-2">
-        {group}
-      </div>
-      {items.map((it) => (
-        <div
-          key={it.label}
-          className={cn(
-            "min-w-0 flex-1 rounded-[14px] px-3 py-2.5",
-            it.tone === "green"
-              ? "bg-green-soft/60"
-              : it.tone === "red"
-                ? "bg-red-soft/60"
-                : it.tone === "gray"
-                  ? "bg-surface-soft"
-                  : "bg-blue-50",
-          )}
-        >
-          <div className="text-[11px] font-semibold text-muted-2">
-            {it.label}
-          </div>
-          <div className="mt-0.5 font-display text-[20px] font-extrabold leading-none text-ink">
-            {it.value}
-          </div>
-          <div className="mt-1 text-[11px] text-muted-2">{it.hint}</div>
+    <div
+      className={cn(
+        "flex min-w-0 flex-col rounded-[14px] px-3 py-2.5",
+        fill && "h-full justify-between",
+        tone === "green"
+          ? "bg-green-soft/60"
+          : tone === "red"
+            ? "bg-red-soft/60"
+            : tone === "gray"
+              ? "bg-surface-soft"
+              : "bg-blue-50",
+      )}
+    >
+      <div className="text-[11px] font-semibold text-muted-2">{label}</div>
+      {value && (
+        <div className="mt-0.5 font-display text-[20px] font-extrabold leading-none text-ink">
+          {value}
         </div>
-      ))}
+      )}
+      <div className={cn("text-[11px] text-muted-2", value ? "mt-1" : "mt-0.5")}>
+        {hint}
+      </div>
     </div>
   );
 }
