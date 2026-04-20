@@ -1,31 +1,191 @@
+import { useMemo, useState } from "react";
+import { Plus } from "lucide-react";
 import { Topbar } from "@/pages/dashboard/Topbar";
-import { RENTALS } from "@/lib/mock/rentals";
+import { RENTALS, type Rental, type RentalStatus } from "@/lib/mock/rentals";
+import { CLIENTS } from "@/lib/mock/clients";
+import { RentalsFilters, type FiltersState } from "./RentalsFilters";
+import { RentalsList } from "./RentalsList";
+import { RentalsKpi, type Kpi } from "./RentalsKpi";
+
+function matchStatus(r: Rental, f: FiltersState["status"]): boolean {
+  if (f === "all") return true;
+  if (f === "active") return r.status === "active";
+  if (f === "overdue") return r.status === "overdue";
+  if (f === "returning") return r.status === "returning";
+  if (f === "new_request")
+    return r.status === "new_request" || r.status === "meeting";
+  if (f === "completed")
+    return r.status === "completed" || r.status === "cancelled";
+  if (f === "issue")
+    return (
+      r.status === "police" ||
+      r.status === "court" ||
+      r.status === "completed_damage"
+    );
+  return true;
+}
+
+function matchSearch(r: Rental, q: string): boolean {
+  if (!q.trim()) return true;
+  const needle = q.toLowerCase().trim();
+  const client = CLIENTS.find((c) => c.id === r.clientId);
+  if (client && client.name.toLowerCase().includes(needle)) return true;
+  if (client && client.phone.replace(/\D/g, "").includes(needle.replace(/\D/g, ""))) {
+    if (needle.replace(/\D/g, "").length > 0) return true;
+  }
+  if (r.scooter.toLowerCase().includes(needle)) return true;
+  if (String(r.id).includes(needle)) return true;
+  return false;
+}
+
+const STATUS_ORDER: RentalStatus[] = [
+  "overdue",
+  "returning",
+  "meeting",
+  "new_request",
+  "active",
+  "completed_damage",
+  "police",
+  "court",
+  "completed",
+  "cancelled",
+];
+
+function statusRank(s: RentalStatus): number {
+  const i = STATUS_ORDER.indexOf(s);
+  return i === -1 ? 999 : i;
+}
 
 export function Rentals() {
-  const active = RENTALS.filter(
-    (r) => r.status === "active" || r.status === "overdue",
-  ).length;
+  const [filters, setFilters] = useState<FiltersState>({
+    search: "",
+    status: "all",
+  });
+  const [selectedId, setSelectedId] = useState<number | null>(() => {
+    const first = RENTALS.find((r) => r.status === "active");
+    return first?.id ?? RENTALS[0]?.id ?? null;
+  });
+
+  const filtered = useMemo(
+    () =>
+      RENTALS.filter(
+        (r) => matchStatus(r, filters.status) && matchSearch(r, filters.search),
+      ).sort((a, b) => {
+        const sr = statusRank(a.status) - statusRank(b.status);
+        if (sr !== 0) return sr;
+        return b.id - a.id;
+      }),
+    [filters],
+  );
+
+  const kpi = useMemo<Kpi[]>(() => {
+    const active = RENTALS.filter((r) => r.status === "active").length;
+    const overdue = RENTALS.filter((r) => r.status === "overdue").length;
+    const returningToday = RENTALS.filter(
+      (r) =>
+        r.status === "returning" ||
+        (r.status === "active" && r.endPlanned === "13.10.2026"),
+    ).length;
+    const newReq = RENTALS.filter(
+      (r) => r.status === "new_request" || r.status === "meeting",
+    ).length;
+    const overdueDebt = RENTALS.filter((r) => r.status === "overdue").reduce(
+      (s, r) => s + (r.sum ?? 0),
+      0,
+    );
+    const monthRevenue = RENTALS.filter(
+      (r) =>
+        r.status === "active" ||
+        r.status === "completed" ||
+        r.status === "returning",
+    )
+      .filter((r) => r.start.endsWith(".10.2026") || r.start.endsWith(".09.2026"))
+      .reduce((s, r) => s + (r.sum ?? 0), 0);
+
+    return [
+      {
+        label: "Активных",
+        value: `${active} / 54`,
+        hint: "идут сейчас",
+        tone: "green",
+      },
+      {
+        label: "Просрочек",
+        value: String(overdue),
+        hint: overdue > 0 ? "требуют звонка" : "нет",
+        tone: overdue > 0 ? "red" : "neutral",
+      },
+      {
+        label: "Возврат сегодня",
+        value: String(returningToday),
+        hint: returningToday > 0 ? "встретить клиента" : "нет",
+        tone: returningToday > 0 ? "orange" : "neutral",
+      },
+      {
+        label: "Новые заявки",
+        value: String(newReq),
+        hint: newReq > 0 ? "перезвонить" : "нет",
+        tone: newReq > 0 ? "blue" : "neutral",
+      },
+      {
+        label: "Долг по просрочкам",
+        value: `${overdueDebt.toLocaleString("ru-RU")} ₽`,
+        hint: "непогашено",
+        tone: overdueDebt > 0 ? "red" : "neutral",
+      },
+      {
+        label: "Выручка сент–окт",
+        value: `${Math.round(monthRevenue / 1000)} тыс ₽`,
+        hint: "аренды за 2 мес.",
+        tone: "purple",
+      },
+    ];
+  }, []);
 
   return (
     <main className="flex min-w-0 flex-1 flex-col gap-4">
       <Topbar />
 
-      <header className="flex items-baseline gap-3">
-        <h1 className="font-display text-[34px] font-extrabold leading-none text-ink">
-          Аренды
-        </h1>
-        <span className="rounded-full bg-surface-soft px-3 py-1 text-[13px] font-semibold text-muted">
-          {active} активных / {RENTALS.length} всего
-        </span>
+      <header className="flex items-center justify-between gap-3">
+        <div className="flex items-baseline gap-3">
+          <h1 className="font-display text-[34px] font-extrabold leading-none text-ink">
+            Аренды
+          </h1>
+          <span className="rounded-full bg-surface-soft px-3 py-1 text-[13px] font-semibold text-muted">
+            {RENTALS.filter((r) => r.status === "active").length} активных из{" "}
+            {RENTALS.length}
+          </span>
+        </div>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1.5 rounded-full bg-ink px-4 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-ink-2"
+        >
+          <Plus size={16} />
+          Новая аренда
+        </button>
       </header>
 
-      <div className="flex flex-1 items-center justify-center rounded-2xl bg-surface py-24 shadow-card">
-        <div className="text-center">
-          <div className="text-[15px] font-semibold text-ink-2">
-            Раздел «Аренды» строится
-          </div>
-          <div className="mt-1 text-[13px] text-muted">
-            Скоро здесь появятся KPI, фильтры и карточки аренд
+      <RentalsKpi items={kpi} />
+
+      <RentalsFilters value={filters} onChange={setFilters} />
+
+      <div className="grid flex-1 gap-4 lg:grid-cols-[420px_1fr]">
+        <RentalsList
+          items={filtered}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+        />
+
+        <div className="flex min-h-[400px] items-center justify-center rounded-2xl bg-surface p-10 text-center shadow-card-sm">
+          <div>
+            <div className="text-[14px] font-semibold text-ink-2">
+              Карточка аренды появится в следующем этапе
+            </div>
+            <div className="mt-1 text-[12px] text-muted">
+              {selectedId
+                ? `Выбрана аренда #${String(selectedId).padStart(4, "0")}`
+                : "Выберите аренду из списка"}
+            </div>
           </div>
         </div>
       </div>
