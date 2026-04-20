@@ -23,7 +23,8 @@ export type ActionKind =
   | "incident"
   | "record-damage"
   | "claim"
-  | "lawyer";
+  | "lawyer"
+  | "addPayment";
 
 const TODAY_STR = "13.10.2026";
 
@@ -58,6 +59,12 @@ export function RentalActionDialog({
 
   // Для инцидента посреди аренды
   const [incidentType, setIncidentType] = useState("ДТП");
+
+  // Для принятия платежа
+  const [payType, setPayType] = useState<"rent" | "fine" | "damage" | "deposit">("rent");
+  const [payAmount, setPayAmount] = useState<string>("1000");
+  const [payMethod, setPayMethod] = useState<"cash" | "transfer">("cash");
+  const [payNote, setPayNote] = useState<string>("");
 
   const requestClose = () => {
     if (closing) return;
@@ -147,6 +154,21 @@ export function RentalActionDialog({
       case "claim":
         // Заглушка: в реальности — генерация досудебной претензии
         break;
+      case "addPayment": {
+        const amt = Number(payAmount) || 0;
+        if (amt > 0) {
+          addPayment({
+            rentalId: rental.id,
+            type: payType,
+            amount: amt,
+            date: TODAY_STR,
+            method: payMethod,
+            paid: true,
+            note: payNote.trim() || undefined,
+          });
+        }
+        break;
+      }
     }
     requestClose();
   };
@@ -232,6 +254,83 @@ export function RentalActionDialog({
                   placeholder="Например: клиент попал в ДТП на перекрёстке, повреждено переднее крыло и фонарь"
                   rows={3}
                   className="mt-1 w-full resize-y rounded-[10px] border border-border bg-surface px-3 py-2 text-[13px] text-ink outline-none focus:border-blue-600"
+                />
+              </label>
+            </div>
+          )}
+
+          {action === "addPayment" && (
+            <div className="mt-3 flex flex-col gap-2">
+              <div>
+                <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-2">
+                  Тип платежа
+                </div>
+                <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+                  {(
+                    [
+                      ["rent", "Аренда"],
+                      ["fine", "Штраф"],
+                      ["damage", "Ущерб"],
+                      ["deposit", "Залог"],
+                    ] as const
+                  ).map(([k, label]) => (
+                    <button
+                      key={k}
+                      type="button"
+                      onClick={() => setPayType(k)}
+                      className={cn(
+                        "rounded-[10px] px-2.5 py-1.5 text-[12px] font-semibold transition-colors",
+                        payType === k
+                          ? "bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-600"
+                          : "bg-surface-soft text-muted hover:bg-border",
+                      )}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="text-[12px] font-semibold text-ink">
+                  Сумма, ₽
+                  <input
+                    type="number"
+                    value={payAmount}
+                    onChange={(e) => setPayAmount(e.target.value)}
+                    className="mt-1 h-9 w-full rounded-[10px] border border-border bg-surface px-3 text-[13px] text-ink outline-none focus:border-blue-600"
+                  />
+                </label>
+                <div>
+                  <div className="mb-1 text-[12px] font-semibold text-ink">
+                    Метод
+                  </div>
+                  <div className="flex gap-1.5">
+                    {(["cash", "transfer"] as const).map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setPayMethod(m)}
+                        className={cn(
+                          "flex-1 rounded-[10px] px-2.5 py-1.5 text-[12px] font-semibold transition-colors",
+                          payMethod === m
+                            ? "bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-600"
+                            : "bg-surface-soft text-muted hover:bg-border",
+                        )}
+                      >
+                        {m === "cash" ? "Наличные" : "Перевод"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <label className="text-[12px] font-semibold text-ink">
+                Комментарий
+                <input
+                  type="text"
+                  value={payNote}
+                  onChange={(e) => setPayNote(e.target.value)}
+                  placeholder="Необязательно"
+                  className="mt-1 h-9 w-full rounded-[10px] border border-border bg-surface px-3 text-[13px] text-ink outline-none focus:border-blue-600"
                 />
               </label>
             </div>
@@ -502,6 +601,18 @@ function specFor(action: ActionKind, rental: Rental): Spec {
         ),
         cta: "Сформировать претензию",
         ctaTone: "warn",
+      };
+    case "addPayment":
+      return {
+        title: "Принять платёж",
+        body: (
+          <div className="text-[12px]">
+            Записать получение средств: доплата аренды, штраф, возврат залога и
+            т.п. Платёж появится в табе «Платежи».
+          </div>
+        ),
+        cta: "Зафиксировать",
+        ctaTone: "primary",
       };
   }
 }
