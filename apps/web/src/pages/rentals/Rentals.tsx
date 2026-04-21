@@ -88,6 +88,26 @@ export function Rentals() {
   );
 
   const kpi = useMemo<Kpi[]>(() => {
+    // Отчётный период — с 14-го прошлого месяца по 14-е текущего.
+    // Сегодня по демо-таймлайну: 13.10.2026 → период 14.09.2026 — 14.10.2026.
+    const today = new Date(2026, 9, 13);
+    const y = today.getFullYear();
+    const m = today.getMonth();
+    const d = today.getDate();
+    const periodEnd = d >= 14
+      ? new Date(y, m + 1, 14)
+      : new Date(y, m, 14);
+    const periodStart = new Date(periodEnd);
+    periodStart.setMonth(periodStart.getMonth() - 1);
+    const monthNames = ["янв","фев","мар","апр","май","июн","июл","авг","сен","окт","ноя","дек"];
+    const rangeLabel = `${String(periodStart.getDate()).padStart(2,"0")} ${monthNames[periodStart.getMonth()]} — ${String(periodEnd.getDate()).padStart(2,"0")} ${monthNames[periodEnd.getMonth()]}`;
+    const inPeriod = (dateStr: string) => {
+      const m2 = dateStr.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+      if (!m2) return false;
+      const dt = new Date(+m2[3], +m2[2] - 1, +m2[1]);
+      return dt >= periodStart && dt < periodEnd;
+    };
+
     const active = rentals.filter((r) => r.status === "active").length;
     const overdue = rentals.filter((r) => r.status === "overdue").length;
     const returningToday = rentals.filter(
@@ -95,20 +115,18 @@ export function Rentals() {
         r.status === "returning" ||
         (r.status === "active" && r.endPlanned === "13.10.2026"),
     ).length;
-    const newReq = rentals.filter(
-      (r) => r.status === "new_request" || r.status === "meeting",
-    ).length;
-    const overdueDebt = rentals.filter((r) => r.status === "overdue").reduce(
-      (s, r) => s + (r.sum ?? 0),
-      0,
-    );
-    const monthRevenue = rentals.filter(
-      (r) =>
-        r.status === "active" ||
-        r.status === "completed" ||
-        r.status === "returning",
-    )
-      .filter((r) => r.start.endsWith(".10.2026") || r.start.endsWith(".09.2026"))
+    const overdueDebt = rentals
+      .filter((r) => r.status === "overdue")
+      .reduce((s, r) => s + (r.sum ?? 0), 0);
+    const periodRevenue = rentals
+      .filter(
+        (r) =>
+          r.status === "active" ||
+          r.status === "completed" ||
+          r.status === "returning" ||
+          r.status === "overdue",
+      )
+      .filter((r) => inPeriod(r.start))
       .reduce((s, r) => s + (r.sum ?? 0), 0);
 
     return [
@@ -131,21 +149,15 @@ export function Rentals() {
         tone: returningToday > 0 ? "orange" : "neutral",
       },
       {
-        label: "Новые заявки",
-        value: String(newReq),
-        hint: newReq > 0 ? "перезвонить" : "нет",
-        tone: newReq > 0 ? "blue" : "neutral",
-      },
-      {
         label: "Долг по просрочкам",
         value: `${overdueDebt.toLocaleString("ru-RU")} ₽`,
         hint: "непогашено",
         tone: overdueDebt > 0 ? "red" : "neutral",
       },
       {
-        label: "Выручка сент–окт",
-        value: `${Math.round(monthRevenue / 1000)} тыс ₽`,
-        hint: "аренды за 2 мес.",
+        label: "Выручка",
+        value: `${Math.round(periodRevenue / 1000)} тыс ₽`,
+        hint: rangeLabel,
         tone: "purple",
       },
     ];

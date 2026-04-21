@@ -84,6 +84,29 @@ export function ClientCard({ client }: { client: Client }) {
     [rentalsForClient],
   );
 
+  /**
+   * Остаток по клиенту — сумма накопленных штрафов за просрочки.
+   * Формула: за каждый день просрочки возврата начисляется
+   * (ставка тарифа + 250 ₽). Считается по всем арендам в статусе overdue.
+   * Сегодня по демо-таймлайну — 13.10.2026.
+   */
+  const overdueBalance = useMemo(() => {
+    const today = new Date(2026, 9, 13);
+    let total = 0;
+    for (const r of rentalsForClient) {
+      if (r.status !== "overdue") continue;
+      const m = r.endPlanned.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+      if (!m) continue;
+      const end = new Date(+m[3], +m[2] - 1, +m[1]);
+      const days = Math.max(
+        0,
+        Math.round((today.getTime() - end.getTime()) / 86400000),
+      );
+      total += days * (r.rate + 250);
+    }
+    return total;
+  }, [rentalsForClient]);
+
   const handleDroppedFiles = (list: FileList) => {
     const uploaded: UploadedFile[] = [];
     for (const f of Array.from(list)) {
@@ -231,10 +254,14 @@ export function ClientCard({ client }: { client: Client }) {
               />
             </div>
             <KpiBox
-              label="Общий долг"
-              value={client.debt > 0 ? `${fmt(client.debt)} ₽` : ""}
-              hint={client.debt > 0 ? "непогашен" : "нет долгов"}
-              tone={client.debt > 0 ? "red" : "gray"}
+              label="Остаток"
+              value={overdueBalance > 0 ? `${fmt(overdueBalance)} ₽` : ""}
+              hint={
+                overdueBalance > 0
+                  ? "просрочка: тариф + 250 ₽/день"
+                  : "нет просрочек"
+              }
+              tone={overdueBalance > 0 ? "red" : "gray"}
               fill
             />
           </div>

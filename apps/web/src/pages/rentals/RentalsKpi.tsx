@@ -20,7 +20,7 @@ const TONES: Record<KpiTone, string> = {
 
 export function RentalsKpi({ items }: { items: Kpi[] }) {
   return (
-    <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+    <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
       {items.map((it) => (
         <div
           key={it.label}
