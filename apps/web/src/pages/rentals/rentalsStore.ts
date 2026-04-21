@@ -2,14 +2,17 @@ import { useMemo, useSyncExternalStore } from "react";
 import {
   RENTALS as SEED,
   type ConfirmerRole,
-  type PaymentConfirmation,
   type Rental,
   type RentalSourceChannel,
   type RentalStatus,
 } from "@/lib/mock/rentals";
 import { CLIENTS, type ClientSource } from "@/lib/mock/clients";
-import { useApiRentals } from "@/lib/api/rentals";
+import { useQuery } from "@tanstack/react-query";
+import { rentalsKeys, useApiRentals } from "@/lib/api/rentals";
 import { useApiScooters } from "@/lib/api/scooters";
+import { paymentsKeys, useApiPayments } from "@/lib/api/payments";
+import { api } from "@/lib/api";
+import { queryClient } from "@/lib/queryClient";
 import { adaptRental } from "./rentalAdapter";
 
 /** Мапим источник клиента в канал обращения по аренде */
@@ -165,25 +168,60 @@ function subscribe(fn: () => void) {
 
 /* ======================= actions ======================= */
 
+/**
+ * Все write-операции = вызов API + инвалидация кеша React Query.
+ * Сигнатуры синхронные (fire-and-forget) — UI получит свежие данные
+ * через ~200–500 мс на следующем refetch.
+ */
+
+function invAll() {
+  queryClient.invalidateQueries({ queryKey: rentalsKeys.all });
+  queryClient.invalidateQueries({ queryKey: paymentsKeys.all });
+}
+function logErr(op: string) {
+  return (e: unknown) => console.error(`[${op}]`, e);
+}
+
+/** "13.10.2026" или "13.10.2026 14:00" → ISO (MSK) */
+function ruToIso(dateRu: string, time = "12:00"): string {
+  const m = dateRu.match(/^(\d{2})\.(\d{2})\.(\d{4})(?:\s+(\d{2}:\d{2}))?$/);
+  if (!m) throw new Error(`ruToIso: не парсится ${dateRu}`);
+  return `${m[3]}-${m[2]}-${m[1]}T${m[4] ?? time}:00+03:00`;
+}
+
 export function setRentalStatus(id: number, status: RentalStatus) {
-  state.rentals = state.rentals.map((r) =>
-    r.id === id ? { ...r, status } : r,
-  );
-  emit();
+  api.patch(`/api/rentals/${id}`, { status }).then(invAll).catch(logErr("setRentalStatus"));
 }
 
 export function setRentalDamage(id: number, amount: number) {
-  state.rentals = state.rentals.map((r) =>
-    r.id === id ? { ...r, damageAmount: amount > 0 ? amount : undefined } : r,
-  );
-  emit();
+  api
+    .patch(`/api/rentals/${id}`, { damageAmount: amount > 0 ? amount : null })
+    .then(invAll)
+    .catch(logErr("setRentalDamage"));
 }
 
 export function patchRental(id: number, patch: Partial<Rental>) {
-  state.rentals = state.rentals.map((r) =>
-    r.id === id ? { ...r, ...patch } : r,
-  );
-  emit();
+  // Пропускаем большинство полей как есть; даты переводим в ISO
+  const body: Record<string, unknown> = {};
+  if (patch.status !== undefined) body.status = patch.status;
+  if (patch.note !== undefined) body.note = patch.note ?? null;
+  if (patch.rate !== undefined) body.rate = patch.rate;
+  if (patch.days !== undefined) body.days = patch.days;
+  if (patch.sum !== undefined) body.sum = patch.sum;
+  if (patch.depositReturned !== undefined) {
+    body.depositReturned = patch.depositReturned;
+  }
+  if (patch.endPlanned !== undefined) {
+    body.endPlannedAt = ruToIso(patch.endPlanned, patch.startTime);
+  }
+  if (patch.endActual !== undefined) {
+    body.endActualAt = patch.endActual ? ruToIso(patch.endActual, patch.startTime) : null;
+  }
+  if (patch.damageAmount !== undefined) {
+    body.damageAmount = patch.damageAmount ?? null;
+  }
+  if (Object.keys(body).length === 0) return;
+  api.patch(`/api/rentals/${id}`, body).then(invAll).catch(logErr("patchRental"));
 }
 
 export function confirmRentalPayment(
@@ -192,80 +230,59 @@ export function confirmRentalPayment(
   byName: string,
   contractUploaded: boolean,
 ) {
-  const confirmation: PaymentConfirmation = {
-    by: role,
-    byName,
-    at: "13.10.2026",
-  };
-  state.rentals = state.rentals.map((r) =>
-    r.id === id
-      ? { ...r, paymentConfirmed: confirmation, contractUploaded }
-      : r,
-  );
-  emit();
+  // В UI enum другой (director/admin) — маппим в серверный (boss/manager)
+  const apiRole = role === "director" ? "boss" : "manager";
+  api
+    .post(`/api/rentals/${id}/confirm-payment`, {
+      role: apiRole,
+      byName,
+      contractUploaded,
+    })
+    .then(invAll)
+    .catch(logErr("confirmRentalPayment"));
 }
 
 export function addRentalIncident(
   rentalId: number,
   data: { type: string; date: string; damage: number; note?: string },
 ): void {
-  const id = Math.max(0, ...state.incidents.map((i) => i.id)) + 1;
-  state.incidents = [
-    ...state.incidents,
-    { id, rentalId, type: data.type, date: data.date, damage: data.damage, paid: 0, note: data.note },
-  ];
-  if (data.damage > 0) {
-    state.payments = [
-      ...state.payments,
-      {
-        id: Date.now(),
-        rentalId,
-        type: "damage",
-        amount: data.damage,
-        date: data.date,
-        method: "cash",
-        paid: false,
-        note: data.note || "ущерб по инциденту",
-      },
-    ];
-  }
-  emit();
+  const [d, m, y] = data.date.split(".");
+  api
+    .post(`/api/incidents`, {
+      rentalId,
+      type: data.type,
+      occurredOn: `${y}-${m}-${d}`,
+      damage: data.damage,
+      note: data.note ?? null,
+    })
+    .then(() => {
+      queryClient.invalidateQueries({ queryKey: ["incidents"] });
+      invAll();
+    })
+    .catch(logErr("addRentalIncident"));
 }
 
 export function revertOverdue(id: number) {
-  // Сегодня по демо-таймлайну — 13.10.2026
-  const today = "13.10.2026";
-  state.rentals = state.rentals.map((r) =>
-    r.id === id && r.status === "overdue"
-      ? {
-          ...r,
-          status: "active",
-          // Просрочка «прощена» — возврат переносится на сегодня,
-          // дальше админ либо принимает возврат, либо продлевает
-          endPlanned: today,
-        }
-      : r,
-  );
-  // снимаем начисленные штрафы по этой аренде
-  state.payments = state.payments.filter(
-    (p) => !(p.rentalId === id && p.type === "fine" && !p.paid),
-  );
-  emit();
+  api
+    .post(`/api/rentals/${id}/revert-overdue`, {})
+    .then(invAll)
+    .catch(logErr("revertOverdue"));
 }
 
 export function completeRentalNoDamage(id: number, inspection: ReturnInspection) {
+  // Локально кешируем inspection (сервер хранит в returnInspections — приходит отдельным запросом, но для UI нужен synchronous hook)
   state.inspections = new Map(state.inspections).set(id, inspection);
-  state.rentals = state.rentals.map((r) =>
-    r.id === id
-      ? {
-          ...r,
-          status: "completed",
-          endActual: inspection.dateActual,
-          depositReturned: inspection.depositReturned,
-        }
-      : r,
-  );
   emit();
+  api
+    .post(`/api/rentals/${id}/complete`, {
+      dateActual: toIsoDay(inspection.dateActual),
+      conditionOk: inspection.conditionOk,
+      equipmentOk: inspection.equipmentOk,
+      depositReturned: inspection.depositReturned,
+      mileageAtReturn: inspection.mileage,
+    })
+    .then(invAll)
+    .catch(logErr("completeRentalNoDamage"));
 }
 
 export function completeRentalWithDamage(
@@ -275,140 +292,106 @@ export function completeRentalWithDamage(
   note?: string,
 ) {
   state.inspections = new Map(state.inspections).set(id, inspection);
-  state.rentals = state.rentals.map((r) =>
-    r.id === id
-      ? {
-          ...r,
-          status: "completed_damage",
-          endActual: inspection.dateActual,
-          depositReturned: inspection.depositReturned,
-        }
-      : r,
-  );
-  state.payments = [
-    ...state.payments,
-    {
-      id: Date.now(),
-      rentalId: id,
-      type: "damage",
-      amount: damageAmount,
-      date: inspection.dateActual,
-      method: "cash",
-      paid: false,
-      note: note || "ущерб зафиксирован при возврате",
-    },
-  ];
-  state.incidents = [
-    ...state.incidents,
-    {
-      id: Date.now() + 1,
-      rentalId: id,
-      type: "Ущерб при возврате",
-      date: inspection.dateActual,
-      damage: damageAmount,
-      paid: 0,
-      note,
-    },
-  ];
   emit();
-}
-
-function maybeAutoClose(rentalId: number) {
-  const rental = state.rentals.find((r) => r.id === rentalId);
-  if (!rental || rental.status !== "completed_damage") return;
-  const damageUnpaid = state.payments
-    .filter((p) => p.rentalId === rentalId && p.type === "damage" && !p.paid)
-    .reduce((s, p) => s + p.amount, 0);
-  if (damageUnpaid === 0) {
-    state.rentals = state.rentals.map((r) =>
-      r.id === rentalId ? { ...r, status: "completed" } : r,
-    );
-  }
+  api
+    .post(`/api/rentals/${id}/complete`, {
+      dateActual: toIsoDay(inspection.dateActual),
+      conditionOk: inspection.conditionOk,
+      equipmentOk: inspection.equipmentOk,
+      depositReturned: inspection.depositReturned,
+      damageAmount,
+      damageNotes: note ?? inspection.damageNotes ?? null,
+      mileageAtReturn: inspection.mileage,
+    })
+    .then(() => {
+      queryClient.invalidateQueries({ queryKey: ["incidents"] });
+      invAll();
+    })
+    .catch(logErr("completeRentalWithDamage"));
 }
 
 export function addPayment(p: Omit<Payment, "id">) {
-  state.payments = [...state.payments, { ...p, id: Date.now() }];
-  maybeAutoClose(p.rentalId);
-  emit();
+  // Payment (mock) использует date: string (DD.MM.YYYY) — конвертируем
+  const paidAt = p.paid ? ruToIso(p.date) : null;
+  api
+    .post(`/api/payments`, {
+      rentalId: p.rentalId,
+      type: p.type,
+      amount: p.amount,
+      method: p.method,
+      paid: p.paid,
+      paidAt,
+      note: p.note ?? null,
+    })
+    .then(invAll)
+    .catch(logErr("addPayment"));
 }
 
 export function markPaymentPaid(id: number, paid = true) {
-  state.payments = state.payments.map((p) =>
-    p.id === id ? { ...p, paid } : p,
-  );
-  const p = state.payments.find((x) => x.id === id);
-  if (p) maybeAutoClose(p.rentalId);
-  emit();
+  api
+    .patch(`/api/payments/${id}`, {
+      paid,
+      paidAt: paid ? new Date().toISOString() : null,
+    })
+    .then(invAll)
+    .catch(logErr("markPaymentPaid"));
 }
 
 export function addRental(r: Omit<Rental, "id">): Rental {
-  const id = Math.max(...state.rentals.map((x) => x.id), 0) + 1;
-  const next: Rental = { ...r, id };
-  state.rentals = [...state.rentals, next];
-  emit();
-  return next;
+  const body = {
+    clientId: r.clientId,
+    scooterId: r.scooterId ?? null,
+    parentRentalId: r.parentRentalId ?? null,
+    status: r.status,
+    sourceChannel: r.sourceChannel,
+    tariffPeriod: r.tariffPeriod,
+    rate: r.rate,
+    deposit: r.deposit,
+    startAt: ruToIso(r.start, r.startTime),
+    endPlannedAt: ruToIso(r.endPlanned, r.startTime),
+    days: r.days,
+    sum: r.sum,
+    paymentMethod: r.paymentMethod,
+    equipment: r.equipment,
+    note: r.note ?? null,
+  };
+  api.post(`/api/rentals`, body).then(invAll).catch(logErr("addRental"));
+  // локальный stub до возврата настоящего id
+  return { ...r, id: Date.now() };
 }
 
-/**
- * Продление аренды: закрываем текущую как completed,
- * создаём новую с той же парой клиент+скутер от даты предыдущего планового возврата.
- */
 export function extendRental(
   oldId: number,
   extraDays: number,
   newRate: number,
   newTariffPeriod: Rental["tariffPeriod"],
 ): Rental | null {
-  const old = state.rentals.find((r) => r.id === oldId);
-  if (!old) return null;
-  // закрываем старую
-  state.rentals = state.rentals.map((r) =>
-    r.id === oldId
-      ? {
-          ...r,
-          status: "completed",
-          endActual: r.endPlanned,
-          depositReturned: false, // залог переходит в новую аренду
-        }
-      : r,
-  );
-  // новая начинается там, где закончилась старая
-  const newStart = old.endPlanned;
-  const [d, m, y] = newStart.split(".").map(Number);
-  const endDate = new Date(y, m - 1, d);
-  endDate.setDate(endDate.getDate() + extraDays);
-  const dd = String(endDate.getDate()).padStart(2, "0");
-  const mm = String(endDate.getMonth() + 1).padStart(2, "0");
-  const newEnd = `${dd}.${mm}.${endDate.getFullYear()}`;
-
-  const newId = Math.max(...state.rentals.map((x) => x.id), 0) + 1;
-  const created: Rental = {
-    ...old,
-    id: newId,
-    start: newStart,
-    startTime: old.startTime,
-    endPlanned: newEnd,
-    endActual: undefined,
-    status: "active",
-    tariffPeriod: newTariffPeriod,
-    rate: newRate,
-    days: extraDays,
-    sum: newRate * extraDays,
-    contractUploaded: false,
-    paymentConfirmed: null,
-    note: `продление аренды #${String(oldId).padStart(4, "0")}`,
-    parentRentalId: oldId,
-  };
-  state.rentals = [...state.rentals, created];
-  emit();
-  return created;
+  api
+    .post(`/api/rentals/${oldId}/extend`, {
+      extraDays,
+      newRate,
+      newTariffPeriod,
+    })
+    .then(invAll)
+    .catch(logErr("extendRental"));
+  // возвращаем stub — UI в подтверждении оплаты использует id из confirmForNewId,
+  // но реальный id придёт через refetch; для MVP этого достаточно
+  return null;
 }
 
 export function toggleTask(id: number) {
-  state.tasks = state.tasks.map((t) =>
-    t.id === id ? { ...t, done: !t.done } : t,
-  );
-  emit();
+  const current = state.tasks.find((t) => t.id === id);
+  const nextDone = !(current?.done ?? false);
+  api
+    .patch(`/api/tasks/${id}`, { done: nextDone })
+    .then(() => queryClient.invalidateQueries({ queryKey: ["tasks"] }))
+    .catch(logErr("toggleTask"));
+}
+
+function toIsoDay(ru: string): string {
+  const m = ru.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  if (!m) return ru;
+  return `${m[3]}-${m[2]}-${m[1]}`;
 }
 
 /* ======================= hooks ======================= */
@@ -486,51 +469,120 @@ export function getActiveRentalByClient(
 }
 
 export function useRental(id: number | null): Rental | null {
-  const rentals = useSyncExternalStore(
-    subscribe,
-    () => state.rentals,
-    () => state.rentals,
-  );
+  const list = useRentals();
   if (id == null) return null;
-  return rentals.find((r) => r.id === id) ?? null;
+  return list.find((r) => r.id === id) ?? null;
 }
 
+/** Платежи аренды из API, адаптированные под UI-тип Payment */
 export function useRentalPayments(rentalId: number): Payment[] {
-  const payments = useSyncExternalStore(
-    subscribe,
-    () => state.payments,
-    () => state.payments,
-  );
-  return payments.filter((p) => p.rentalId === rentalId);
+  const all = useApiPayments();
+  return useMemo(() => {
+    const rows = (all.data ?? []).filter((p) => p.rentalId === rentalId);
+    return rows.map(toUiPayment);
+  }, [all.data, rentalId]);
 }
 
-/** Все платежи по цепочке аренд (родители + текущая + потомки) */
+/** Платежи по цепочке аренд (родители + текущая + потомки) */
 export function useChainPayments(rentalIds: number[]): Payment[] {
-  const payments = useSyncExternalStore(
-    subscribe,
-    () => state.payments,
-    () => state.payments,
-  );
-  const set = new Set(rentalIds);
-  return payments.filter((p) => set.has(p.rentalId));
+  const all = useApiPayments();
+  return useMemo(() => {
+    const set = new Set(rentalIds);
+    return (all.data ?? [])
+      .filter((p) => set.has(p.rentalId))
+      .map(toUiPayment);
+  }, [all.data, rentalIds]);
+}
+
+function toUiPayment(p: import("@/lib/api/payments").ApiPayment): Payment {
+  const date = p.paidAt ?? p.scheduledOn ?? p.createdAt;
+  return {
+    id: p.id,
+    rentalId: p.rentalId,
+    type: p.type,
+    amount: p.amount,
+    date: isoToRu(date),
+    method: p.method,
+    paid: p.paid,
+    note: p.note ?? undefined,
+  };
+}
+
+function isoToRu(iso: string): string {
+  const d = new Date(iso);
+  const msk = new Date(d.getTime() + 3 * 3600 * 1000);
+  const dd = String(msk.getUTCDate()).padStart(2, "0");
+  const mm = String(msk.getUTCMonth() + 1).padStart(2, "0");
+  return `${dd}.${mm}.${msk.getUTCFullYear()}`;
 }
 
 export function useRentalIncidents(rentalId: number): RentalIncident[] {
-  const incidents = useSyncExternalStore(
-    subscribe,
-    () => state.incidents,
-    () => state.incidents,
+  const q = useQuery({
+    queryKey: ["incidents", rentalId],
+    queryFn: () =>
+      api
+        .get<{ items: Array<{
+          id: number;
+          rentalId: number;
+          type: string;
+          occurredOn: string;
+          damage: number;
+          paidTowardDamage: number;
+          note: string | null;
+        }> }>(`/api/incidents?rentalId=${rentalId}`)
+        .then((r) => r.items),
+  });
+  return useMemo(
+    () =>
+      (q.data ?? []).map((i) => ({
+        id: i.id,
+        rentalId: i.rentalId,
+        type: i.type,
+        date: isoToRu(i.occurredOn),
+        damage: i.damage,
+        paid: i.paidTowardDamage,
+        note: i.note ?? undefined,
+      })),
+    [q.data],
   );
-  return incidents.filter((i) => i.rentalId === rentalId);
 }
 
 export function useRentalTasks(rentalId: number): RentalTask[] {
-  const tasks = useSyncExternalStore(
-    subscribe,
-    () => state.tasks,
-    () => state.tasks,
+  const q = useQuery({
+    queryKey: ["tasks", rentalId],
+    queryFn: () =>
+      api
+        .get<{ items: Array<{
+          id: number;
+          rentalId: number | null;
+          title: string;
+          dueAt: string;
+          done: boolean;
+        }> }>(`/api/tasks?rentalId=${rentalId}`)
+        .then((r) => r.items),
+  });
+  return useMemo(
+    () =>
+      (q.data ?? []).map((t) => ({
+        id: t.id,
+        rentalId: t.rentalId ?? rentalId,
+        title: t.title,
+        due: isoToRuWithTime(t.dueAt),
+        done: t.done,
+      })),
+    [q.data, rentalId],
   );
-  return tasks.filter((t) => t.rentalId === rentalId);
+}
+
+function isoToRuWithTime(iso: string): string {
+  const d = new Date(iso);
+  const msk = new Date(d.getTime() + 3 * 3600 * 1000);
+  const dd = String(msk.getUTCDate()).padStart(2, "0");
+  const mm = String(msk.getUTCMonth() + 1).padStart(2, "0");
+  const hh = String(msk.getUTCHours()).padStart(2, "0");
+  const mi = String(msk.getUTCMinutes()).padStart(2, "0");
+  const base = `${dd}.${mm}.${msk.getUTCFullYear()}`;
+  return hh === "00" && mi === "00" ? base : `${base} ${hh}:${mi}`;
 }
 
 export function useInspection(rentalId: number): ReturnInspection | null {

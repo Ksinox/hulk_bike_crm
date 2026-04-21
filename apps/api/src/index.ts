@@ -7,6 +7,9 @@ import { closeDb, db } from "./db/index.js";
 import { clientsRoutes } from "./routes/clients.js";
 import { scootersRoutes } from "./routes/scooters.js";
 import { rentalsRoutes } from "./routes/rentals.js";
+import { paymentsRoutes } from "./routes/payments.js";
+import { incidentsRoutes } from "./routes/incidents.js";
+import { tasksRoutes } from "./routes/tasks.js";
 
 async function bootstrap() {
   const app = Fastify({
@@ -44,6 +47,9 @@ async function bootstrap() {
   await app.register(clientsRoutes, { prefix: "/api/clients" });
   await app.register(scootersRoutes, { prefix: "/api/scooters" });
   await app.register(rentalsRoutes, { prefix: "/api/rentals" });
+  await app.register(paymentsRoutes, { prefix: "/api/payments" });
+  await app.register(incidentsRoutes, { prefix: "/api/incidents" });
+  await app.register(tasksRoutes, { prefix: "/api/tasks" });
 
   // ==== graceful shutdown ====
   const shutdown = async (signal: string) => {

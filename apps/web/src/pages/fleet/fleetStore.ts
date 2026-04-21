@@ -2,7 +2,14 @@ import { useMemo } from "react";
 import { useSyncExternalStore } from "react";
 import { FLEET, type FleetScooter, type ScooterBaseStatus } from "@/lib/mock/fleet";
 import type { UploadedFile } from "@/pages/clients/DocUpload";
-import { useApiScooters } from "@/lib/api/scooters";
+import {
+  scootersKeys,
+  useApiScooters,
+  type CreateScooterInput,
+  type PatchScooterInput,
+} from "@/lib/api/scooters";
+import { api } from "@/lib/api";
+import { queryClient } from "@/lib/queryClient";
 import { adaptScooter } from "./scooterAdapter";
 
 export type ScooterDocKind = "pts" | "sts" | "osago" | "purchase";
@@ -63,24 +70,96 @@ function subscribe(fn: () => void) {
 
 /* =================== actions =================== */
 
+/**
+ * Создание скутера. Отправляем POST и инвалидируем кеш — React Query
+ * подтянет обновлённый список.
+ */
 export function addScooter(data: Omit<FleetScooter, "id">): FleetScooter {
+  const body: CreateScooterInput = {
+    name: data.name,
+    model: data.model,
+    vin: data.vin ?? null,
+    engineNo: data.engineNo ?? null,
+    mileage: data.mileage,
+    baseStatus: data.baseStatus,
+    purchaseDate: ruToIsoDate(data.purchaseDate),
+    purchasePrice: data.purchasePrice ?? null,
+    lastOilChangeMileage: data.lastOilChangeMileage ?? null,
+    note: data.note ?? null,
+  };
+  api
+    .post(`/api/scooters`, body)
+    .then(() => {
+      queryClient.invalidateQueries({ queryKey: scootersKeys.all });
+    })
+    .catch((err) => {
+      console.error("POST /api/scooters failed:", err);
+    });
+
+  // временный stub для совместимости со старым синхронным API
   const maxBase = FLEET.reduce((m, s) => Math.max(m, s.id), 0);
-  const maxAdded = state.added.reduce((m, s) => Math.max(m, s.id), 0);
-  const id = Math.max(maxBase, maxAdded) + 1;
-  const created: FleetScooter = { ...data, id };
-  state.added = [...state.added, created];
-  state.scooters = applyPatches(FLEET, state.added, state.patches);
-  emit();
-  return created;
+  const id = Math.max(maxBase, ...state.added.map((s) => s.id)) + 10_000;
+  return { ...data, id };
 }
 
+/**
+ * Патчим скутер (пробег, VIN, статус, ущерб, дата замены масла...).
+ * Оптимистично применяем локально, потом шлём PATCH. На ошибке — откат.
+ */
 export function patchScooter(id: number, patch: Partial<FleetScooter>) {
+  const prev = state.patches.get(id);
   const next = new Map(state.patches);
-  const current = next.get(id) ?? {};
-  next.set(id, { ...current, ...patch });
+  next.set(id, { ...(prev ?? {}), ...patch });
   state.patches = next;
   state.scooters = applyPatches(FLEET, state.added, state.patches);
   emit();
+
+  const apiPatch: PatchScooterInput = {};
+  if (patch.mileage !== undefined) apiPatch.mileage = patch.mileage;
+  if (patch.vin !== undefined) apiPatch.vin = patch.vin ?? null;
+  if (patch.engineNo !== undefined) apiPatch.engineNo = patch.engineNo ?? null;
+  if (patch.baseStatus !== undefined) apiPatch.baseStatus = patch.baseStatus;
+  if (patch.purchaseDate !== undefined) {
+    apiPatch.purchaseDate = ruToIsoDate(patch.purchaseDate);
+  }
+  if (patch.purchasePrice !== undefined) {
+    apiPatch.purchasePrice = patch.purchasePrice ?? null;
+  }
+  if (patch.lastOilChangeMileage !== undefined) {
+    apiPatch.lastOilChangeMileage = patch.lastOilChangeMileage ?? null;
+  }
+  if (patch.note !== undefined) apiPatch.note = patch.note ?? null;
+
+  if (Object.keys(apiPatch).length === 0) return;
+
+  api
+    .patch(`/api/scooters/${id}`, apiPatch)
+    .then(() => {
+      queryClient.invalidateQueries({ queryKey: scootersKeys.all });
+      // после инвалидации можно снять локальный патч — API уже отдаст правду
+      const cleanup = new Map(state.patches);
+      cleanup.delete(id);
+      state.patches = cleanup;
+    })
+    .catch((err) => {
+      console.error(`PATCH /api/scooters/${id} failed:`, err);
+      // откат
+      const rollback = new Map(state.patches);
+      if (prev) rollback.set(id, prev);
+      else rollback.delete(id);
+      state.patches = rollback;
+      state.scooters = applyPatches(FLEET, state.added, state.patches);
+      emit();
+    });
+}
+
+/** "15.04.2026" → "2026-04-15" */
+function ruToIsoDate(ru?: string | null): string | null | undefined {
+  if (ru === undefined) return undefined;
+  if (ru === null || ru === "") return null;
+  const m = ru.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  if (!m) return ru;
+  return `${m[3]}-${m[2]}-${m[1]}`;
 }
 
 export function setScooterBaseStatus(id: number, status: ScooterBaseStatus) {

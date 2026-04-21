@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type { ApiClient, ListResponse } from "./types";
 
@@ -21,5 +21,55 @@ export function useApiClient(id: number | null) {
     queryKey: id == null ? clientsKeys.all : clientsKeys.byId(id),
     queryFn: () => api.get<ApiClient>(`/api/clients/${id}`),
     enabled: id != null,
+  });
+}
+
+/** Тело POST /api/clients — подмножество ApiClient */
+export type CreateClientInput = {
+  name: string;
+  phone: string;
+  extraPhone?: string | null;
+  rating?: number;
+  source?: ApiClient["source"];
+  comment?: string | null;
+  blacklisted?: boolean;
+  blacklistReason?: string | null;
+  birthDate?: string | null;
+  passportSeries?: string | null;
+  passportNumber?: string | null;
+  passportIssuedOn?: string | null;
+  passportIssuer?: string | null;
+  passportDivisionCode?: string | null;
+  passportRegistration?: string | null;
+  licenseNumber?: string | null;
+  licenseCategories?: string | null;
+  licenseIssuedOn?: string | null;
+  licenseExpiresOn?: string | null;
+};
+
+export type PatchClientInput = Partial<CreateClientInput> & {
+  unreachable?: boolean;
+};
+
+export function useCreateClient() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateClientInput) =>
+      api.post<ApiClient>("/api/clients", input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: clientsKeys.all });
+    },
+  });
+}
+
+export function usePatchClient() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { id: number; patch: PatchClientInput }) =>
+      api.patch<ApiClient>(`/api/clients/${args.id}`, args.patch),
+    onSuccess: (row) => {
+      qc.invalidateQueries({ queryKey: clientsKeys.all });
+      qc.setQueryData(clientsKeys.byId(row.id), row);
+    },
   });
 }
