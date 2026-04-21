@@ -1,6 +1,8 @@
 import { useSyncExternalStore } from "react";
 import type { UploadedFile } from "./DocUpload";
 import { CLIENTS as SEED_CLIENTS, type Client } from "@/lib/mock/clients";
+import { useApiClients } from "@/lib/api/clients";
+import { adaptClient } from "./clientAdapter";
 
 type State = {
   photos: Map<number, UploadedFile>;
@@ -133,9 +135,21 @@ export function useUnreachableSet(): Set<number> {
   );
 }
 
+/**
+ * Единственный источник клиентов в UI.
+ * Источник данных — API (Postgres). Локально через React Query кешируется.
+ * Локальные `addedClients` пока сохраняются в памяти на случай если API временно
+ * недоступен или пока не подключён POST /api/clients — но в нормальном режиме
+ * они не используются.
+ */
 export function useAllClients(): Client[] {
+  const { data } = useApiClients();
+  // подписываемся на subscribe() чтобы UI перерисовывался при изменении
+  // локальных runtime-данных (extraPhones, photos и т.д.), от которых
+  // иногда зависят вспомогательные хуки.
   useSyncExternalStore(subscribe, () => rev, () => 0);
-  return getAllClients();
+  if (!data) return state.addedClients; // пока идёт первая загрузка
+  return [...data.map(adaptClient), ...state.addedClients];
 }
 
 export function useClientPhoto(id: number): UploadedFile | null {
