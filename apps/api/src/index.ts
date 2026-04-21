@@ -4,6 +4,9 @@ import helmet from "@fastify/helmet";
 import { sql } from "drizzle-orm";
 import { config, isProd } from "./config.js";
 import { closeDb, db } from "./db/index.js";
+import { clientsRoutes } from "./routes/clients.js";
+import { scootersRoutes } from "./routes/scooters.js";
+import { rentalsRoutes } from "./routes/rentals.js";
 
 async function bootstrap() {
   const app = Fastify({
@@ -38,10 +41,9 @@ async function bootstrap() {
   });
 
   // ==== API ROUTES ====
-  // Подключение эндпоинтов добавим в следующей итерации:
-  // await app.register(clientsRoutes, { prefix: "/api/clients" });
-  // await app.register(rentalsRoutes, { prefix: "/api/rentals" });
-  // await app.register(fleetRoutes,   { prefix: "/api/scooters" });
+  await app.register(clientsRoutes, { prefix: "/api/clients" });
+  await app.register(scootersRoutes, { prefix: "/api/scooters" });
+  await app.register(rentalsRoutes, { prefix: "/api/rentals" });
 
   // ==== graceful shutdown ====
   const shutdown = async (signal: string) => {
