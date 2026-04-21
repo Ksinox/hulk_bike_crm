@@ -11,7 +11,6 @@ import {
   Repeat,
   ShieldAlert,
   Star,
-  Tag,
   User,
   XCircle,
 } from "lucide-react";
@@ -23,7 +22,6 @@ import {
   RENTAL_SOURCE_LABEL,
   STATUS_LABEL,
   STATUS_TONE,
-  TARIFF_PERIOD_LABEL,
   type Rental,
   type RentalStatus,
 } from "@/lib/mock/rentals";
@@ -40,7 +38,12 @@ import { RentalActionDialog, type ActionKind } from "./RentalActionDialog";
 import { ConfirmPaymentDialog } from "./ConfirmPaymentDialog";
 import { ExtendRentalDialog } from "./ExtendRentalDialog";
 import { RentalActionsMenu, type MenuAction } from "./RentalActionsMenu";
-import { useRental, useRentalPayments } from "./rentalsStore";
+import {
+  getRentalChainIds,
+  useChainPayments,
+  useRental,
+  useRentals,
+} from "./rentalsStore";
 import { ClientQuickView } from "@/pages/clients/ClientQuickView";
 
 type TabId = "terms" | "payments" | "return" | "incidents" | "tasks" | "docs";
@@ -152,8 +155,23 @@ export function RentalCard({ rental }: { rental: Rental }) {
     () => CLIENTS.find((c) => c.id === rental.clientId),
     [rental.clientId],
   );
-  const payments = useRentalPayments(rental.id);
+  const allRentals = useRentals();
+  const chainIds = useMemo(
+    () => getRentalChainIds(rental.id, allRentals),
+    [rental.id, allRentals],
+  );
+  const chainPayments = useChainPayments(chainIds);
   const tier = client ? ratingTier(client.rating) : null;
+
+  // Суммарные ожидаемые (аренда+залог) по всей цепочке продлений.
+  // Залог один на серию — берём только один раз.
+  const chainRentals = useMemo(
+    () => allRentals.filter((r) => chainIds.includes(r.id)),
+    [allRentals, chainIds],
+  );
+  const chainRentSum = chainRentals.reduce((s, r) => s + (r.sum || 0), 0);
+  const chainDeposit = chainRentals[0]?.deposit || DEPOSIT_AMOUNT;
+  const chainExpected = chainRentSum + chainDeposit;
 
   const startDate = parseDate(rental.start);
   const endDate = parseDate(rental.endPlanned);
@@ -163,12 +181,14 @@ export function RentalCard({ rental }: { rental: Rental }) {
   const tone = STATUS_TONE[rental.status];
   const actions = statusActions(rental.status);
 
-  // Финансы
-  const paidIn = payments
+  // Финансы — считаются по ВСЕЙ цепочке продлений
+  const paidIn = chainPayments
     .filter((p) => p.paid && p.type !== "refund")
     .reduce((s, p) => s + p.amount, 0);
-  const pending = payments.filter((p) => !p.paid).reduce((s, p) => s + p.amount, 0);
-  const expectedTotal = rental.sum + rental.deposit;
+  const pending = chainPayments
+    .filter((p) => !p.paid)
+    .reduce((s, p) => s + p.amount, 0);
+  const expectedTotal = chainExpected;
 
   const handleAction = (id: string) => {
     if (id === "extend" || id === "clone") return setExtendOpen(true);
@@ -254,18 +274,6 @@ export function RentalCard({ rental }: { rental: Rental }) {
         <span className="font-semibold text-ink-2">
           Аренда #{String(rental.id).padStart(4, "0")}
         </span>
-        {rental.rate > 0 && (
-          <>
-            <Dot />
-            <span className="inline-flex items-center gap-1 text-muted-2">
-              <Tag size={12} className="text-blue-600" />
-              {TARIFF_PERIOD_LABEL[rental.tariffPeriod]} ·{" "}
-              <span className="font-semibold text-ink-2">
-                {fmt(rental.rate)} ₽/сут
-              </span>
-            </span>
-          </>
-        )}
         {(rental.sourceChannel || client) && (
           <>
             <Dot />
@@ -397,7 +405,7 @@ export function RentalCard({ rental }: { rental: Rental }) {
           tone={paidIn >= expectedTotal ? "green" : "neutral"}
         />
         <KpiChip
-          label="Остаток"
+          label="Долг"
           value={pending > 0 ? `${fmt(pending)} ₽` : "0 ₽"}
           hint={pending > 0 ? "не оплачено" : "долгов нет"}
           tone={pending > 0 ? "red" : "gray"}

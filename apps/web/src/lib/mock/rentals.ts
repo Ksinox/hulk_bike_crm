@@ -66,6 +66,11 @@ export type Rental = {
   paymentConfirmed?: PaymentConfirmation | null;
   /** Канал обращения именно по этой аренде — откуда пришёл запрос */
   sourceChannel?: RentalSourceChannel;
+  /**
+   * Id «родителя» — предыдущей аренды в цепочке продлений.
+   * null/undefined у корневой (первой) аренды серии.
+   */
+  parentRentalId?: number;
 };
 
 /** Фиксированный залог согласно договору аренды */

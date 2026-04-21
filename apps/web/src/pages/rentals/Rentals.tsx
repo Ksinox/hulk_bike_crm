@@ -143,7 +143,7 @@ export function Rentals() {
         tone: overdue > 0 ? "red" : "neutral",
       },
       {
-        label: "Возврат сегодня",
+        label: "Возврат/продление сегодня",
         value: String(returningToday),
         hint: returningToday > 0 ? "встретить клиента" : "нет",
         tone: returningToday > 0 ? "orange" : "neutral",

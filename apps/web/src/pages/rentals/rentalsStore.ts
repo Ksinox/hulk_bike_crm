@@ -387,6 +387,7 @@ export function extendRental(
     contractUploaded: false,
     paymentConfirmed: null,
     note: `продление аренды #${String(oldId).padStart(4, "0")}`,
+    parentRentalId: oldId,
   };
   state.rentals = [...state.rentals, created];
   emit();
@@ -408,6 +409,37 @@ export function useRentals(): Rental[] {
     () => state.rentals,
     () => state.rentals,
   );
+}
+
+/**
+ * Все id аренд в одной цепочке продлений (включая саму указанную).
+ * Поднимаемся вверх по parentRentalId до корня, затем обходим всех потомков.
+ */
+export function getRentalChainIds(
+  rentalId: number,
+  rentals: Rental[],
+): number[] {
+  // Поднимаемся к корню
+  let rootId = rentalId;
+  const byId = new Map(rentals.map((r) => [r.id, r]));
+  let cursor = byId.get(rentalId);
+  while (cursor?.parentRentalId != null) {
+    const parent = byId.get(cursor.parentRentalId);
+    if (!parent) break;
+    rootId = parent.id;
+    cursor = parent;
+  }
+  // Обходим всех потомков
+  const result: number[] = [];
+  const queue = [rootId];
+  while (queue.length > 0) {
+    const id = queue.shift()!;
+    result.push(id);
+    for (const r of rentals) {
+      if (r.parentRentalId === id) queue.push(r.id);
+    }
+  }
+  return result;
 }
 
 export function useRentalsByClient(clientId: number): Rental[] {
@@ -451,6 +483,17 @@ export function useRentalPayments(rentalId: number): Payment[] {
     () => state.payments,
   );
   return payments.filter((p) => p.rentalId === rentalId);
+}
+
+/** Все платежи по цепочке аренд (родители + текущая + потомки) */
+export function useChainPayments(rentalIds: number[]): Payment[] {
+  const payments = useSyncExternalStore(
+    subscribe,
+    () => state.payments,
+    () => state.payments,
+  );
+  const set = new Set(rentalIds);
+  return payments.filter((p) => set.has(p.rentalId));
 }
 
 export function useRentalIncidents(rentalId: number): RentalIncident[] {
