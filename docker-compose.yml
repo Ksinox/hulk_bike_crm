@@ -10,8 +10,10 @@ services:
       POSTGRES_USER: hulk
       POSTGRES_PASSWORD: hulk
       POSTGRES_DB: hulk_dev
+    # Наружу даём 5433, чтобы не конфликтовать с уже установленным локально Postgres.
+    # Внутри контейнера порт 5432 по умолчанию.
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - hulk_pg_data:/var/lib/postgresql/data
     healthcheck:
