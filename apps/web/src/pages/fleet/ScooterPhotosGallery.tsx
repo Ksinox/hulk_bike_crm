@@ -48,25 +48,25 @@ export function ScooterPhotosGallery({ scooterId }: { scooterId: number }) {
   };
 
   return (
-    <section className="rounded-2xl bg-surface p-4 shadow-card-sm">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
             Фото скутера
           </div>
-          <div className="mt-0.5 font-display text-[16px] font-extrabold text-ink">
-            Галерея ({photos.length}/{MAX_PHOTOS})
-          </div>
+          <span className="text-[11px] font-semibold text-muted-2">
+            {photos.length}/{MAX_PHOTOS}
+          </span>
         </div>
         <button
           type="button"
           onClick={onPick}
           disabled={limitReached || uploadMut.isPending}
           className={cn(
-            "inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-[12px] font-semibold transition-colors",
+            "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold transition-colors",
             limitReached || uploadMut.isPending
               ? "cursor-not-allowed bg-surface-soft text-muted-2"
-              : "bg-blue-600 text-white hover:bg-blue-700",
+              : "bg-blue-50 text-blue-700 hover:bg-blue-100",
           )}
           title={
             limitReached
@@ -75,11 +75,11 @@ export function ScooterPhotosGallery({ scooterId }: { scooterId: number }) {
           }
         >
           {uploadMut.isPending ? (
-            <Loader2 size={13} className="animate-spin" />
+            <Loader2 size={12} className="animate-spin" />
           ) : (
-            <Plus size={13} />
+            <Plus size={12} />
           )}
-          Добавить фото
+          Добавить
         </button>
       </div>
 
@@ -98,20 +98,20 @@ export function ScooterPhotosGallery({ scooterId }: { scooterId: number }) {
       {photos.length === 0 ? (
         <div
           onClick={onPick}
-          className="mt-3 flex cursor-pointer flex-col items-center justify-center gap-2 rounded-[14px] border-2 border-dashed border-border bg-surface-soft/50 px-3 py-10 text-center transition-colors hover:border-blue-600/50 hover:bg-blue-50/40"
+          className="flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-[12px] border-2 border-dashed border-border bg-surface-soft/50 px-3 py-6 text-center transition-colors hover:border-blue-600/50 hover:bg-blue-50/40"
         >
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-50 text-blue-700">
-            <Camera size={18} />
+          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-50 text-blue-700">
+            <Camera size={16} />
           </div>
-          <div className="text-[13px] font-semibold text-ink-2">
+          <div className="text-[12px] font-semibold text-ink-2">
             Ни одного фото
           </div>
           <div className="text-[11px] leading-snug text-muted-2">
-            Нажмите чтобы загрузить — до {MAX_PHOTOS} штук, JPG/PNG/WEBP
+            Нажмите — до {MAX_PHOTOS} штук, JPG/PNG/WEBP
           </div>
         </div>
       ) : (
-        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+        <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-4 md:grid-cols-5">
           {photos.map((p) => (
             <div
               key={p.id}
@@ -143,7 +143,7 @@ export function ScooterPhotosGallery({ scooterId }: { scooterId: number }) {
       )}
 
       {uploadMut.isError && (
-        <div className="mt-3 rounded-[12px] bg-red-soft/60 px-3 py-2 text-[12px] text-red-ink">
+        <div className="rounded-[10px] bg-red-soft/60 px-2.5 py-1.5 text-[11px] text-red-ink">
           Не удалось загрузить: {String(uploadMut.error)}
         </div>
       )}
@@ -158,6 +158,6 @@ export function ScooterPhotosGallery({ scooterId }: { scooterId: number }) {
           onClose={() => setPreview(null)}
         />
       )}
-    </section>
+    </div>
   );
 }

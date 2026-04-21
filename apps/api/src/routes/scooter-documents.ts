@@ -5,7 +5,7 @@ import { db } from "../db/index.js";
 import { scooterDocuments } from "../db/schema.js";
 import { makeFileKey, putObject, removeObject } from "../storage/index.js";
 
-const KindEnum = z.enum(["pts", "sts", "osago", "purchase"]);
+const KindEnum = z.enum(["pts", "sts", "osago", "purchase", "photo"]);
 
 const MAX_FILE_SIZE = 15 * 1024 * 1024;
 
@@ -65,45 +65,59 @@ export async function scooterDocumentsRoutes(app: FastifyInstance) {
     const key = makeFileKey(`scooters/${scooterId}/${parsedKind.data}`, fileName);
     await putObject(key, fileBuf, mimeType);
 
-    // Если уже был документ такого типа — сохраняем в БД старый ключ для удаления
-    const [existing] = await db
-      .select()
-      .from(scooterDocuments)
-      .where(
-        and(
-          eq(scooterDocuments.scooterId, scooterId),
-          eq(scooterDocuments.kind, parsedKind.data),
-        ),
-      );
-
+    // Для kind='photo' — всегда INSERT (до 10 фото на скутер).
+    // Для остальных (ПТС/СТС/ОСАГО/договор) — один-документ-на-вид, UPDATE если уже есть.
     let row;
-    if (existing) {
-      [row] = await db
-        .update(scooterDocuments)
-        .set({
-          fileKey: key,
-          fileName,
-          mimeType,
-          size: fileBuf.length,
-          osagoValidUntil: osagoValidUntil ?? existing.osagoValidUntil,
-        })
-        .where(eq(scooterDocuments.id, existing.id))
-        .returning();
-      // удалить старый файл из хранилища
-      await removeObject(existing.fileKey).catch(() => {});
-    } else {
+    if (parsedKind.data === "photo") {
       [row] = await db
         .insert(scooterDocuments)
         .values({
           scooterId,
-          kind: parsedKind.data,
+          kind: "photo",
           fileKey: key,
           fileName,
           mimeType,
           size: fileBuf.length,
-          osagoValidUntil: osagoValidUntil ?? null,
+          osagoValidUntil: null,
         })
         .returning();
+    } else {
+      const [existing] = await db
+        .select()
+        .from(scooterDocuments)
+        .where(
+          and(
+            eq(scooterDocuments.scooterId, scooterId),
+            eq(scooterDocuments.kind, parsedKind.data),
+          ),
+        );
+      if (existing) {
+        [row] = await db
+          .update(scooterDocuments)
+          .set({
+            fileKey: key,
+            fileName,
+            mimeType,
+            size: fileBuf.length,
+            osagoValidUntil: osagoValidUntil ?? existing.osagoValidUntil,
+          })
+          .where(eq(scooterDocuments.id, existing.id))
+          .returning();
+        await removeObject(existing.fileKey).catch(() => {});
+      } else {
+        [row] = await db
+          .insert(scooterDocuments)
+          .values({
+            scooterId,
+            kind: parsedKind.data,
+            fileKey: key,
+            fileName,
+            mimeType,
+            size: fileBuf.length,
+            osagoValidUntil: osagoValidUntil ?? null,
+          })
+          .returning();
+      }
     }
 
     return reply.code(201).send(row);

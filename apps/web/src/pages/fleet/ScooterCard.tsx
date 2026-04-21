@@ -264,6 +264,12 @@ export function ScooterCard({
                 <SpecCell label="Комментарий" value={scooter.note} />
               )}
             </div>
+
+            {/* Галерея фото скутера — внутри основной карточки, под техничкой.
+                До 10 штук, клик по фото — предпросмотр модалкой. */}
+            <div className="mt-6 border-t border-border pt-5">
+              <ScooterPhotosGallery scooterId={scooter.id} />
+            </div>
           </div>
         </section>
 
@@ -450,9 +456,6 @@ export function ScooterCard({
           )}
         </aside>
       </div>
-
-      {/* ======== ГАЛЕРЕЯ ФОТО ======== */}
-      <ScooterPhotosGallery scooterId={scooter.id} />
 
       {/* ======== DIRECTOR-ONLY: ROI ======== */}
       {role === "director" && (
