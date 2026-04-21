@@ -3,6 +3,7 @@ import { Sidebar } from "./Sidebar";
 import { Dashboard } from "@/pages/dashboard/Dashboard";
 import { Clients } from "@/pages/clients/Clients";
 import { Rentals } from "@/pages/rentals/Rentals";
+import { Fleet } from "@/pages/fleet/Fleet";
 import { UpdateToast } from "./UpdateToast";
 import { TitleBar } from "./TitleBar";
 import { startWebVersionCheck } from "@/lib/version-check";
@@ -42,6 +43,8 @@ export function App() {
           <Clients />
         ) : route === "rentals" ? (
           <Rentals />
+        ) : route === "fleet" ? (
+          <Fleet />
         ) : (
           <Dashboard />
         )}
