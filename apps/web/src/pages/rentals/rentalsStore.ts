@@ -4,8 +4,36 @@ import {
   type ConfirmerRole,
   type PaymentConfirmation,
   type Rental,
+  type RentalSourceChannel,
   type RentalStatus,
 } from "@/lib/mock/rentals";
+import { CLIENTS, type ClientSource } from "@/lib/mock/clients";
+
+/** Мапим источник клиента в канал обращения по аренде */
+function deriveChannel(
+  source: ClientSource | undefined,
+): RentalSourceChannel {
+  switch (source) {
+    case "avito":
+      return "avito";
+    case "repeat":
+      return "repeat";
+    case "ref":
+      return "ref";
+    case "maps":
+      return "passing";
+    default:
+      return "other";
+  }
+}
+
+function withSourceChannel(rentals: Rental[]): Rental[] {
+  return rentals.map((r) => {
+    if (r.sourceChannel) return r;
+    const client = CLIENTS.find((c) => c.id === r.clientId);
+    return { ...r, sourceChannel: deriveChannel(client?.source) };
+  });
+}
 
 /* Платёж привязан к конкретной аренде */
 export type PaymentType = "rent" | "deposit" | "fine" | "damage" | "refund";
@@ -114,7 +142,7 @@ function seedTasks(): RentalTask[] {
 }
 
 const state: State = {
-  rentals: [...SEED],
+  rentals: withSourceChannel([...SEED]),
   payments: seedPayments(),
   incidents: seedIncidents(),
   tasks: seedTasks(),

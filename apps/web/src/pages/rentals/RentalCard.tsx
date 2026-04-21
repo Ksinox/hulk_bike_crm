@@ -20,6 +20,7 @@ import {
   DEPOSIT_AMOUNT,
   hoursOverdue,
   overdueReturnFine,
+  RENTAL_SOURCE_LABEL,
   STATUS_LABEL,
   STATUS_TONE,
   TARIFF_PERIOD_LABEL,
@@ -265,10 +266,16 @@ export function RentalCard({ rental }: { rental: Rental }) {
             </span>
           </>
         )}
-        {client && (
+        {(rental.sourceChannel || client) && (
           <>
             <Dot />
-            <span className="text-muted-2">{SOURCE_LABEL[client.source]}</span>
+            <span className="text-muted-2">
+              {rental.sourceChannel
+                ? RENTAL_SOURCE_LABEL[rental.sourceChannel]
+                : client
+                  ? SOURCE_LABEL[client.source]
+                  : ""}
+            </span>
           </>
         )}
       </div>
@@ -340,10 +347,15 @@ export function RentalCard({ rental }: { rental: Rental }) {
       )}
 
       {/* =========== KPI STRIP =========== */}
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-5">
+      <div
+        className={cn(
+          "grid gap-2 grid-cols-2 sm:grid-cols-4",
+          rental.status === "overdue" && endDate && "lg:grid-cols-5",
+        )}
+      >
         {(() => {
           let value = `${rental.days} дн`;
-          let hint = `${rental.start.slice(0, 5)} — ${rental.endPlanned.slice(0, 5)}`;
+          const hint = `${rental.start.slice(0, 5)} — ${rental.endPlanned.slice(0, 5)}`;
           let kpiTone: "neutral" | "green" | "red" | "gray" = "neutral";
           if (rental.status === "active" && daysLeft !== null) {
             if (daysLeft > 0) {
@@ -361,23 +373,27 @@ export function RentalCard({ rental }: { rental: Rental }) {
             kpiTone = "red";
           }
           return (
-            <KpiChip
-              label="Период"
-              value={value}
-              hint={hint}
-              tone={kpiTone}
-            />
+            <KpiChip label="Период" value={value} hint={hint} tone={kpiTone} />
           );
         })()}
-        <KpiChip
+        <KpiChipSplit
           label="К оплате"
-          value={rental.sum > 0 ? `${fmt(expectedTotal)} ₽` : "—"}
-          hint={`аренда ${fmt(rental.sum)} + залог ${fmt(rental.deposit || DEPOSIT_AMOUNT)}`}
+          rows={[
+            { key: "Аренда", value: `${fmt(rental.sum)} ₽` },
+            {
+              key: "Залог",
+              value: `${fmt(rental.deposit || DEPOSIT_AMOUNT)} ₽`,
+            },
+          ]}
         />
         <KpiChip
           label="Получено"
           value={`${fmt(paidIn)} ₽`}
-          hint={paidIn >= expectedTotal ? "полностью" : `${Math.round((paidIn / Math.max(1, expectedTotal)) * 100)}%`}
+          hint={
+            paidIn >= expectedTotal
+              ? "полностью"
+              : `${Math.round((paidIn / Math.max(1, expectedTotal)) * 100)}%`
+          }
           tone={paidIn >= expectedTotal ? "green" : "neutral"}
         />
         <KpiChip
@@ -386,7 +402,7 @@ export function RentalCard({ rental }: { rental: Rental }) {
           hint={pending > 0 ? "не оплачено" : "долгов нет"}
           tone={pending > 0 ? "red" : "gray"}
         />
-        {rental.status === "overdue" && endDate ? (
+        {rental.status === "overdue" && endDate && (
           (() => {
             const hrs = hoursOverdue(rental, TODAY);
             const fine = overdueReturnFine(hrs, rental.rate);
@@ -399,12 +415,6 @@ export function RentalCard({ rental }: { rental: Rental }) {
               />
             );
           })()
-        ) : (
-          <KpiChip
-            label="Ставка"
-            value={rental.rate > 0 ? `${fmt(rental.rate)} ₽` : "—"}
-            hint={TARIFF_PERIOD_LABEL[rental.tariffPeriod]}
-          />
         )}
       </div>
 
@@ -482,6 +492,46 @@ export function RentalCard({ rental }: { rental: Rental }) {
 
 function Dot() {
   return <span className="text-muted-2 opacity-60">·</span>;
+}
+
+function KpiChipSplit({
+  label,
+  rows,
+  tone = "neutral",
+}: {
+  label: string;
+  rows: { key: string; value: string }[];
+  tone?: "neutral" | "green" | "red" | "gray";
+}) {
+  return (
+    <div
+      className={cn(
+        "rounded-[12px] px-3 py-2",
+        tone === "green"
+          ? "bg-green-soft/60"
+          : tone === "red"
+            ? "bg-red-soft/60"
+            : tone === "gray"
+              ? "bg-surface-soft"
+              : "bg-blue-50",
+      )}
+    >
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-2">
+        {label}
+      </div>
+      <div className="mt-0.5 flex flex-col gap-0.5">
+        {rows.map((r) => (
+          <div
+            key={r.key}
+            className="flex items-baseline justify-between gap-2 text-[13px] font-semibold leading-tight"
+          >
+            <span className="text-muted-2">{r.key}</span>
+            <span className="tabular-nums text-ink">{r.value}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function KpiChip({

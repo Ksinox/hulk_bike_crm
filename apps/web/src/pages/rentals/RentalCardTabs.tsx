@@ -17,7 +17,6 @@ import {
   DEPOSIT_AMOUNT,
   MODEL_LABEL,
   PAYMENT_LABEL,
-  TARIFF,
   TARIFF_PERIOD_LABEL,
   type Rental,
 } from "@/lib/mock/rentals";
@@ -39,88 +38,48 @@ function fmt(n: number) {
 /* =================== Условия =================== */
 
 export function TermsTab({ rental }: { rental: Rental }) {
-  const tariffRow = TARIFF[rental.model];
   return (
-    <div className="grid gap-3 md:grid-cols-[1.2fr_1fr]">
-      {/* Левая колонка — ключевые параметры */}
-      <div className="flex flex-col gap-3">
-        <div className="overflow-hidden rounded-[14px] border border-border">
-          <table className="w-full text-[12px]">
-            <tbody>
-              <TermRow label="Скутер" value={`${rental.scooter} · ${MODEL_LABEL[rental.model]}`} />
-              <TermRow
-                label="Тариф"
-                value={`${TARIFF_PERIOD_LABEL[rental.tariffPeriod]} · ${fmt(rental.rate)} ₽/сут`}
-              />
-              <TermRow
-                label="Период"
-                value={`${rental.start} ${rental.startTime ?? "12:00"} — ${rental.endPlanned} ${rental.startTime ?? "12:00"}`}
-                hint={`${rental.days} ${daysWord(rental.days)}`}
-              />
-              <TermRow
-                label="Сумма аренды"
-                value={`${fmt(rental.sum)} ₽`}
-                hint={`${fmt(rental.rate)} × ${rental.days}`}
-                emphasize
-              />
-              <TermRow
-                label="Залог"
-                value={`${fmt(rental.deposit || DEPOSIT_AMOUNT)} ₽`}
-                hint={
-                  rental.depositReturned === true
-                    ? "возвращён клиенту"
-                    : rental.depositReturned === false
-                      ? "удержан"
-                      : "на балансе компании"
-                }
-              />
-              <TermRow
-                label="Оплата"
-                value={PAYMENT_LABEL[rental.paymentMethod]}
-              />
-              <TermRow
-                label="Экипировка"
-                value={
-                  rental.equipment.length === 0
-                    ? "не выдавалась"
-                    : rental.equipment.join(", ")
-                }
-              />
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Правая колонка — прайс тарифа */}
-      <div className="rounded-[14px] border border-border p-3">
-        <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-2">
-          Прайс · {MODEL_LABEL[rental.model]}
-        </div>
-        <div className="flex flex-col gap-1.5">
-          {(["short", "week", "month"] as const).map((p) => (
-            <div
-              key={p}
-              className={cn(
-                "flex items-center justify-between rounded-[10px] px-3 py-2 text-[12px]",
-                p === rental.tariffPeriod
-                  ? "bg-blue-50 text-blue-700"
-                  : "bg-surface-soft text-muted",
-              )}
-            >
-              <span className="font-semibold uppercase tracking-wider">
-                {TARIFF_PERIOD_LABEL[p]}
-              </span>
-              <span className="font-bold tabular-nums">
-                {fmt(tariffRow[p])} ₽/сут
-              </span>
-            </div>
-          ))}
-        </div>
-        <div className="mt-2 text-[10px] text-muted-2">
-          Действующий тариф подсвечен. Аренда оплачивается единовременно при
-          выдаче.
-        </div>
-      </div>
+    <div className="overflow-hidden rounded-[14px] border border-border">
+      <table className="w-full text-[12px]">
+        <tbody>
+          <TermRow
+            label="Скутер"
+            value={`${rental.scooter} · ${MODEL_LABEL[rental.model]}`}
+          />
+          <TermRow
+            label="Тариф"
+            value={`${TARIFF_PERIOD_LABEL[rental.tariffPeriod]} · ${fmt(rental.rate)} ₽/сут`}
+          />
+          <TermRow
+            label="Период"
+            value={`${rental.start} ${rental.startTime ?? "12:00"} — ${rental.endPlanned} ${rental.startTime ?? "12:00"}`}
+            hint={`${rental.days} ${daysWord(rental.days)}`}
+          />
+          <TermRow
+            label="Залог"
+            value={`${fmt(rental.deposit || DEPOSIT_AMOUNT)} ₽`}
+            hint={
+              rental.depositReturned === true
+                ? "возвращён клиенту"
+                : rental.depositReturned === false
+                  ? "удержан"
+                  : "на балансе компании"
+            }
+          />
+          <TermRow
+            label="Оплата"
+            value={PAYMENT_LABEL[rental.paymentMethod]}
+          />
+          <TermRow
+            label="Экипировка"
+            value={
+              rental.equipment.length === 0
+                ? "не выдавалась"
+                : rental.equipment.join(", ")
+            }
+          />
+        </tbody>
+      </table>
     </div>
   );
 }

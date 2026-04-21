@@ -12,6 +12,22 @@ export type RentalStatus =
 
 export type PaymentMethod = "cash" | "card" | "transfer";
 
+/** Канал обращения для конкретной аренды (может отличаться от канала клиента) */
+export type RentalSourceChannel =
+  | "avito"
+  | "repeat"
+  | "ref"
+  | "passing"
+  | "other";
+
+export const RENTAL_SOURCE_LABEL: Record<RentalSourceChannel, string> = {
+  avito: "авито",
+  repeat: "повторный",
+  ref: "рекомендация",
+  passing: "проходящий",
+  other: "другой",
+};
+
 export type ScooterModel = "jog" | "gear" | "honda" | "tank";
 
 export type TariffPeriod = "short" | "week" | "month";
@@ -48,6 +64,8 @@ export type Rental = {
   note?: string;
   contractUploaded?: boolean;
   paymentConfirmed?: PaymentConfirmation | null;
+  /** Канал обращения именно по этой аренде — откуда пришёл запрос */
+  sourceChannel?: RentalSourceChannel;
 };
 
 /** Фиксированный залог согласно договору аренды */
