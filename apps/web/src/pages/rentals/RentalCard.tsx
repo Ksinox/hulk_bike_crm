@@ -2,16 +2,13 @@ import { useMemo, useState } from "react";
 import {
   AlertTriangle,
   ArrowRight,
-  Bike,
   Calendar,
   CheckCircle2,
   Gavel,
-  Phone,
   Plus,
   Repeat,
   ShieldAlert,
   Star,
-  User,
   XCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -19,13 +16,12 @@ import {
   DEPOSIT_AMOUNT,
   hoursOverdue,
   overdueReturnFine,
-  RENTAL_SOURCE_LABEL,
   STATUS_LABEL,
   STATUS_TONE,
   type Rental,
   type RentalStatus,
 } from "@/lib/mock/rentals";
-import { CLIENTS, ratingTier, SOURCE_LABEL } from "@/lib/mock/clients";
+import { CLIENTS, ratingTier } from "@/lib/mock/clients";
 import {
   DocumentsTab,
   IncidentsTab,
@@ -198,95 +194,52 @@ export function RentalCard({ rental }: { rental: Rental }) {
   return (
     <div className="flex min-h-0 flex-col gap-3 rounded-2xl bg-surface p-5 shadow-card-sm">
       {/* =========== HEADER =========== */}
-      <header className="flex flex-wrap items-start gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Статус — первым */}
+      <header className="flex flex-wrap items-center gap-3">
+        <h2 className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 font-display text-[22px] font-extrabold leading-tight text-ink">
+          <span className="truncate">
+            Аренда #{String(rental.id).padStart(4, "0")}
+            {client && (
+              <>
+                {" — "}
+                <button
+                  type="button"
+                  onClick={() => setClientQuickView(true)}
+                  title="Быстрый просмотр клиента"
+                  className="rounded decoration-2 underline-offset-4 hover:underline"
+                >
+                  {client.name}
+                </button>
+              </>
+            )}
+          </span>
+          <span
+            className={cn(
+              "inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold",
+              statusChipClass(tone),
+            )}
+          >
+            {STATUS_LABEL[rental.status]}
+          </span>
+          {client && tier && (
             <span
               className={cn(
-                "inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold",
-                statusChipClass(tone),
+                "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold",
+                tier.tone === "good"
+                  ? "bg-green-soft text-green-ink"
+                  : tier.tone === "bad"
+                    ? "bg-red-soft text-red-ink"
+                    : "bg-surface-soft text-ink",
               )}
+              title={tier.label}
             >
-              {STATUS_LABEL[rental.status]}
+              <Star size={11} /> {client.rating}
             </span>
-
-            <h2 className="flex flex-wrap items-center gap-x-1 font-display text-[22px] font-extrabold leading-tight text-ink">
-              <button
-                type="button"
-                title="Карточка скутера (скоро)"
-                className="inline-flex items-center gap-1.5 rounded px-0.5 decoration-2 underline-offset-4 hover:underline"
-              >
-                <Bike size={18} className="text-ink-2" />
-                {rental.scooter}
-              </button>
-              <span className="text-muted-2">—</span>
-              {client && (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => setClientQuickView(true)}
-                    title="Быстрый просмотр клиента"
-                    className="inline-flex items-center gap-1.5 rounded px-0.5 decoration-2 underline-offset-4 hover:underline"
-                  >
-                    <User size={18} className="text-ink-2" />
-                    {client.name}
-                  </button>
-                  {tier && (
-                    <span
-                      className={cn(
-                        "ml-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold",
-                        tier.tone === "good"
-                          ? "bg-green-soft text-green-ink"
-                          : tier.tone === "bad"
-                            ? "bg-red-soft text-red-ink"
-                            : "bg-surface-soft text-ink",
-                      )}
-                      title={tier.label}
-                    >
-                      <Star size={11} /> {client.rating}
-                    </span>
-                  )}
-                </>
-              )}
-            </h2>
-          </div>
-        </div>
+          )}
+        </h2>
 
         {/* ACTIONS — одна primary + dropdown */}
         <RentalActionsMenu actions={actions} onAction={handleAction} />
       </header>
-
-      {/* Инфо-строка: телефон первым */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[12px]">
-        {client && (
-          <>
-            <a
-              href={`tel:${client.phone.replace(/\s/g, "")}`}
-              className="inline-flex items-center gap-1.5 text-[15px] font-bold tabular-nums text-ink hover:text-blue-600"
-            >
-              <Phone size={14} className="text-blue-600" />
-              {client.phone}
-            </a>
-            <Dot />
-          </>
-        )}
-        <span className="font-semibold text-ink-2">
-          Аренда #{String(rental.id).padStart(4, "0")}
-        </span>
-        {(rental.sourceChannel || client) && (
-          <>
-            <Dot />
-            <span className="text-muted-2">
-              {rental.sourceChannel
-                ? RENTAL_SOURCE_LABEL[rental.sourceChannel]
-                : client
-                  ? SOURCE_LABEL[client.source]
-                  : ""}
-            </span>
-          </>
-        )}
-      </div>
 
       {/* =========== BANNERS =========== */}
       {rental.paymentConfirmed === null && (
@@ -357,7 +310,7 @@ export function RentalCard({ rental }: { rental: Rental }) {
       {/* =========== KPI STRIP =========== */}
       <div
         className={cn(
-          "grid gap-2 grid-cols-2 sm:grid-cols-4",
+          "grid gap-3 grid-cols-2 sm:grid-cols-4",
           rental.status === "overdue" && endDate && "lg:grid-cols-5",
         )}
       >
@@ -365,68 +318,63 @@ export function RentalCard({ rental }: { rental: Rental }) {
           let label = "Срок";
           let value = `${rental.days} дн`;
           const hint = `${rental.start.slice(0, 5)} — ${rental.endPlanned.slice(0, 5)}`;
-          let kpiTone: "neutral" | "green" | "red" | "gray" = "neutral";
+          let accent: KpiAccent = "default";
           if (rental.status === "active" && daysLeft !== null) {
             if (daysLeft > 0) {
               value = `осталось ${daysLeft} дн`;
-              kpiTone = daysLeft < 2 ? "red" : "neutral";
+              accent = daysLeft < 2 ? "red" : "default";
             } else if (daysLeft === 0) {
               value = `возврат сегодня`;
-              kpiTone = "red";
+              accent = "red";
             } else {
               label = "Просрочен";
               value = `${Math.abs(daysLeft)} дн`;
-              kpiTone = "red";
+              accent = "red";
             }
           } else if (rental.status === "overdue") {
             label = "Просрочен";
-            if (daysLeft !== null && daysLeft < 0) {
-              value = `${Math.abs(daysLeft)} дн`;
-            } else {
-              value = "сегодня";
-            }
-            kpiTone = "red";
+            value =
+              daysLeft !== null && daysLeft < 0
+                ? `${Math.abs(daysLeft)} дн`
+                : "сегодня";
+            accent = "red";
           }
           return (
-            <KpiChip label={label} value={value} hint={hint} tone={kpiTone} />
+            <KpiCard label={label} value={value} hint={hint} accent={accent} />
           );
         })()}
-        <KpiChipSplit
-          label="К оплате"
-          rows={[
-            { key: "Аренда", value: `${fmt(rental.sum)} ₽` },
-            {
-              key: "Залог",
-              value: `${fmt(rental.deposit || DEPOSIT_AMOUNT)} ₽`,
-            },
-          ]}
+        <KpiCard
+          label="Эта аренда"
+          value={`${fmt(rental.sum)} ₽`}
+          hint={`+ залог: ${fmt(rental.deposit || DEPOSIT_AMOUNT)} ₽`}
         />
-        <KpiChip
-          label="Получено"
+        <KpiCard
+          label="За всё время аренды"
           value={`${fmt(paidIn)} ₽`}
+          accent={paidIn >= expectedTotal ? "blue" : "default"}
           hint={
             paidIn >= expectedTotal
-              ? "полностью"
-              : `${Math.round((paidIn / Math.max(1, expectedTotal)) * 100)}%`
+              ? "оплачено полностью"
+              : `${Math.round((paidIn / Math.max(1, expectedTotal)) * 100)}% оплачено`
           }
-          tone={paidIn >= expectedTotal ? "green" : "neutral"}
+          hintIcon={paidIn >= expectedTotal ? CheckCircle2 : undefined}
         />
-        <KpiChip
+        <KpiCard
           label="Долг"
           value={pending > 0 ? `${fmt(pending)} ₽` : "0 ₽"}
-          hint={pending > 0 ? "не оплачено" : "долгов нет"}
-          tone={pending > 0 ? "red" : "gray"}
+          hint={pending > 0 ? "не оплачено" : "нет долгов"}
+          accent={pending > 0 ? "red" : "muted"}
         />
         {rental.status === "overdue" && endDate && (
           (() => {
             const hrs = hoursOverdue(rental, TODAY);
             const fine = overdueReturnFine(hrs, rental.rate);
             return (
-              <KpiChip
+              <KpiCard
                 label="Штраф"
                 value={`${fmt(fine)} ₽`}
                 hint="300 ₽/час"
-                tone="red"
+                accent="red"
               />
             );
           })()
@@ -505,81 +453,64 @@ export function RentalCard({ rental }: { rental: Rental }) {
   );
 }
 
-function Dot() {
-  return <span className="text-muted-2 opacity-60">·</span>;
-}
+type KpiAccent = "default" | "blue" | "red" | "muted";
 
-function KpiChipSplit({
-  label,
-  rows,
-  tone = "neutral",
-}: {
-  label: string;
-  rows: { key: string; value: string }[];
-  tone?: "neutral" | "green" | "red" | "gray";
-}) {
-  return (
-    <div
-      className={cn(
-        "rounded-[12px] px-3 py-2",
-        tone === "green"
-          ? "bg-green-soft/60"
-          : tone === "red"
-            ? "bg-red-soft/60"
-            : tone === "gray"
-              ? "bg-surface-soft"
-              : "bg-blue-50",
-      )}
-    >
-      <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-2">
-        {label}
-      </div>
-      <div className="mt-0.5 flex flex-col gap-0.5">
-        {rows.map((r) => (
-          <div
-            key={r.key}
-            className="flex items-baseline justify-between gap-2 text-[13px] font-semibold leading-tight"
-          >
-            <span className="text-muted-2">{r.key}</span>
-            <span className="tabular-nums text-ink">{r.value}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function KpiChip({
+function KpiCard({
   label,
   value,
   hint,
-  tone = "neutral",
+  hintIcon: HintIcon,
+  accent = "default",
 }: {
   label: string;
   value: string;
   hint?: string;
-  tone?: "neutral" | "green" | "red" | "gray";
+  hintIcon?: React.ComponentType<{ size?: number | string; className?: string }>;
+  accent?: KpiAccent;
 }) {
   return (
     <div
       className={cn(
-        "rounded-[12px] px-3 py-2",
-        tone === "green"
-          ? "bg-green-soft/60"
-          : tone === "red"
-            ? "bg-red-soft/60"
-            : tone === "gray"
-              ? "bg-surface-soft"
-              : "bg-blue-50",
+        "rounded-[14px] border px-4 py-3",
+        accent === "muted"
+          ? "border-border bg-surface-soft/60"
+          : accent === "red"
+            ? "border-red-soft bg-red-soft/30"
+            : "border-border bg-surface",
       )}
     >
-      <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-2">
+      <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
         {label}
       </div>
-      <div className="mt-0.5 font-display text-[16px] font-extrabold leading-none text-ink">
+      <div
+        className={cn(
+          "mt-1 font-display text-[20px] font-extrabold leading-tight tabular-nums",
+          accent === "blue"
+            ? "text-blue-600"
+            : accent === "red"
+              ? "text-red-ink"
+              : accent === "muted"
+                ? "text-muted"
+                : "text-ink",
+        )}
+      >
         {value}
       </div>
-      {hint && <div className="mt-0.5 text-[10px] text-muted-2">{hint}</div>}
+      {hint && (
+        <div
+          className={cn(
+            "mt-1 inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider",
+            accent === "blue"
+              ? "text-blue-600"
+              : accent === "red"
+                ? "text-red-ink"
+                : "text-muted-2",
+          )}
+        >
+          {HintIcon && <HintIcon size={12} className="shrink-0" />}
+          {hint}
+        </div>
+      )}
     </div>
   );
 }

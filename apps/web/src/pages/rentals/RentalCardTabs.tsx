@@ -12,7 +12,6 @@ import {
   FileSignature,
   FileText,
   Gauge,
-  HardHat,
   Plus,
   Printer,
   ShieldCheck,
@@ -42,6 +41,34 @@ function fmt(n: number) {
 }
 
 /* =================== Условия =================== */
+
+/** SVG-иконка мото-шлема (в lucide нет подходящей — используем собственную) */
+function HelmetIcon({
+  size = 14,
+  className,
+}: {
+  size?: number | string;
+  className?: string;
+}) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <path d="M3 15a9 9 0 0 1 18 0v1H3v-1z" />
+      <path d="M3 16h18" />
+      <path d="M3 18h18" />
+      <path d="M15 10h4" />
+    </svg>
+  );
+}
 
 /** детерминированный фейковый пробег по номеру скутера (до появления флот-модуля) */
 function mockMileage(scooter: string): number {
@@ -109,7 +136,7 @@ export function TermsTab({ rental }: { rental: Rental }) {
             }
           />
           <InfoCell
-            icon={HardHat}
+            icon={HelmetIcon}
             label="Экипировка"
             value={
               rental.equipment.length === 0
@@ -203,7 +230,7 @@ function InfoCell({
   value,
   hint,
 }: {
-  icon: typeof Bike;
+  icon: React.ComponentType<{ size?: number | string; className?: string }>;
   label: string;
   value: string;
   hint?: string;
