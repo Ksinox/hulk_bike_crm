@@ -1,7 +1,9 @@
-import { useSyncExternalStore } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 import type { UploadedFile } from "./DocUpload";
 import { CLIENTS as SEED_CLIENTS, type Client } from "@/lib/mock/clients";
 import { useApiClients } from "@/lib/api/clients";
+import { useApiRentals } from "@/lib/api/rentals";
+import type { ApiRental } from "@/lib/api/types";
 import { adaptClient } from "./clientAdapter";
 
 type State = {
@@ -143,13 +145,48 @@ export function useUnreachableSet(): Set<number> {
  * они не используются.
  */
 export function useAllClients(): Client[] {
-  const { data } = useApiClients();
-  // подписываемся на subscribe() чтобы UI перерисовывался при изменении
-  // локальных runtime-данных (extraPhones, photos и т.д.), от которых
-  // иногда зависят вспомогательные хуки.
+  const { data: apiClients } = useApiClients();
+  const { data: apiRentals } = useApiRentals();
   useSyncExternalStore(subscribe, () => rev, () => 0);
-  if (!data) return state.addedClients; // пока идёт первая загрузка
-  return [...data.map(adaptClient), ...state.addedClients];
+
+  return useMemo(() => {
+    if (!apiClients) return state.addedClients;
+    const { rentsByClient, debtByClient } = computeStats(apiRentals ?? []);
+    const mapped = apiClients.map((a) => ({
+      ...adaptClient(a),
+      rents: rentsByClient.get(a.id) ?? 0,
+      debt: debtByClient.get(a.id) ?? 0,
+    }));
+    return [...mapped, ...state.addedClients];
+  }, [apiClients, apiRentals]);
+}
+
+/**
+ * Вычисляем для каждого клиента:
+ *   rents — число аренд в истории
+ *   debt  — сумма просрочек по формуле (тариф + 250 ₽) × дней просрочки
+ * «Сегодня» по демо-таймлайну — 13.10.2026.
+ */
+function computeStats(rentals: ApiRental[]): {
+  rentsByClient: Map<number, number>;
+  debtByClient: Map<number, number>;
+} {
+  const today = new Date(2026, 9, 13);
+  const rentsByClient = new Map<number, number>();
+  const debtByClient = new Map<number, number>();
+  for (const r of rentals) {
+    rentsByClient.set(r.clientId, (rentsByClient.get(r.clientId) ?? 0) + 1);
+    if (r.status !== "overdue") continue;
+    const end = new Date(r.endPlannedAt);
+    const diffDays = Math.max(
+      0,
+      Math.round((today.getTime() - end.getTime()) / 86_400_000),
+    );
+    if (diffDays <= 0) continue;
+    const add = diffDays * (r.rate + 250);
+    debtByClient.set(r.clientId, (debtByClient.get(r.clientId) ?? 0) + add);
+  }
+  return { rentsByClient, debtByClient };
 }
 
 export function useClientPhoto(id: number): UploadedFile | null {

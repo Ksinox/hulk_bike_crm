@@ -1,6 +1,9 @@
+import { useMemo } from "react";
 import { useSyncExternalStore } from "react";
 import { FLEET, type FleetScooter, type ScooterBaseStatus } from "@/lib/mock/fleet";
 import type { UploadedFile } from "@/pages/clients/DocUpload";
+import { useApiScooters } from "@/lib/api/scooters";
+import { adaptScooter } from "./scooterAdapter";
 
 export type ScooterDocKind = "pts" | "sts" | "osago" | "purchase";
 
@@ -118,20 +121,30 @@ export function setOsagoValidUntil(id: number, date: string | undefined) {
 
 /* =================== selectors =================== */
 
+/**
+ * Скутеры — источник API. Поверх накладываются:
+ *   • added (локально созданные в рантайме — пока не работает POST /api/scooters)
+ *   • patches (локальные правки — пока не работает PATCH /api/scooters/:id)
+ * Когда подключим мутации — added/patches уйдут, данные будут жить только в API.
+ */
 export function useFleetScooters(): FleetScooter[] {
-  return useSyncExternalStore(
-    subscribe,
-    () => state.scooters,
-    () => state.scooters,
-  );
+  const { data } = useApiScooters();
+  // подписка на локальные правки
+  useSyncExternalStore(subscribe, () => state.scooters, () => state.scooters);
+
+  return useMemo(() => {
+    const base = data ? data.map(adaptScooter) : [];
+    const all = [...base, ...state.added];
+    if (state.patches.size === 0) return all;
+    return all.map((s) => {
+      const p = state.patches.get(s.id);
+      return p ? { ...s, ...p } : s;
+    });
+  }, [data]);
 }
 
 export function useFleetScooter(id: number | null): FleetScooter | null {
-  const scooters = useSyncExternalStore(
-    subscribe,
-    () => state.scooters,
-    () => state.scooters,
-  );
+  const scooters = useFleetScooters();
   if (id == null) return null;
   return scooters.find((s) => s.id === id) ?? null;
 }

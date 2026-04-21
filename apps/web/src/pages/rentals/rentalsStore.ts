@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 import {
   RENTALS as SEED,
   type ConfirmerRole,
@@ -8,6 +8,9 @@ import {
   type RentalStatus,
 } from "@/lib/mock/rentals";
 import { CLIENTS, type ClientSource } from "@/lib/mock/clients";
+import { useApiRentals } from "@/lib/api/rentals";
+import { useApiScooters } from "@/lib/api/scooters";
+import { adaptRental } from "./rentalAdapter";
 
 /** Мапим источник клиента в канал обращения по аренде */
 function deriveChannel(
@@ -410,12 +413,21 @@ export function toggleTask(id: number) {
 
 /* ======================= hooks ======================= */
 
+/**
+ * Аренды — источник API. Локальный state.rentals используется для оптимистичных
+ * мутаций (extendRental, revertOverdue, setRentalStatus) до подключения PATCH.
+ * Когда будут мутации через API — локальный state уйдёт.
+ */
 export function useRentals(): Rental[] {
-  return useSyncExternalStore(
-    subscribe,
-    () => state.rentals,
-    () => state.rentals,
-  );
+  const { data } = useApiRentals();
+  const { data: scooters } = useApiScooters();
+  useSyncExternalStore(subscribe, () => state.rentals, () => state.rentals);
+
+  return useMemo(() => {
+    if (!data) return [];
+    const byId = new Map((scooters ?? []).map((s) => [s.id, s] as const));
+    return data.map((r) => adaptRental(r, byId));
+  }, [data, scooters]);
 }
 
 /**
