@@ -20,6 +20,7 @@ import {
 import { MODEL_LABEL, type ScooterModel } from "@/lib/mock/rentals";
 import { CLIENTS } from "@/lib/mock/clients";
 import { useRentals } from "@/pages/rentals/rentalsStore";
+import { ScooterCard } from "./ScooterCard";
 
 /** «Сегодня» по демо-таймлайну */
 const TODAY = new Date(2026, 9, 13);
@@ -68,6 +69,7 @@ export function Fleet() {
   const [modelFilter, setModelFilter] = useState<ScooterModel | "all">("all");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
 
   /** Словарь scooter → активная аренда (active / overdue / returning) */
   const rentalByScooter = useMemo(() => {
@@ -153,6 +155,20 @@ export function Fleet() {
     (currentPage - 1) * PAGE_SIZE,
     currentPage * PAGE_SIZE,
   );
+
+  // ============ ДЕТАЛЬНАЯ КАРТОЧКА ============
+  if (selectedId != null) {
+    const sel = rows.find((r) => r.scooter.id === selectedId);
+    if (sel) {
+      return (
+        <ScooterCard
+          scooter={sel.scooter}
+          status={sel.status}
+          onBack={() => setSelectedId(null)}
+        />
+      );
+    }
+  }
 
   return (
     <main className="flex min-w-0 flex-1 flex-col gap-4">
@@ -313,7 +329,11 @@ export function Fleet() {
         )}
 
         {pageRows.map((row) => (
-          <FleetRow key={row.scooter.id} row={row} />
+          <FleetRow
+            key={row.scooter.id}
+            row={row}
+            onOpen={() => setSelectedId(row.scooter.id)}
+          />
         ))}
 
         {/* pagination */}
@@ -334,16 +354,26 @@ export function Fleet() {
 
 function FleetRow({
   row,
+  onOpen,
 }: {
   row: {
     scooter: FleetScooter;
     status: ScooterDisplayStatus;
     rental?: RentalInfo;
   };
+  onOpen: () => void;
 }) {
   const { scooter, status, rental } = row;
   return (
-    <div className="grid grid-cols-[2fr_1fr_1.5fr_1.3fr_1fr_auto] items-center gap-4 border-b border-border/60 px-5 py-3.5 transition-colors last:border-b-0 hover:bg-surface-soft/40">
+    <div
+      onClick={onOpen}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") onOpen();
+      }}
+      className="grid cursor-pointer grid-cols-[2fr_1fr_1.5fr_1.3fr_1fr_auto] items-center gap-4 border-b border-border/60 px-5 py-3.5 transition-colors last:border-b-0 hover:bg-surface-soft/40"
+    >
       {/* name + model */}
       <div className="flex min-w-0 items-center gap-3">
         <ScooterAvatar model={scooter.model} />
