@@ -8,9 +8,14 @@ import { RentalsList } from "./RentalsList";
 import { RentalsKpi, type Kpi } from "./RentalsKpi";
 import { RentalCard } from "./RentalCard";
 import { useRentals } from "./rentalsStore";
+import { useUnreachableSet } from "@/pages/clients/clientStore";
 import { NewRentalModal } from "./NewRentalModal";
 
-function matchStatus(r: Rental, f: FiltersState["status"]): boolean {
+function matchStatus(
+  r: Rental,
+  f: FiltersState["status"],
+  unreachable: Set<number>,
+): boolean {
   if (f === "all") return true;
   if (f === "active") return r.status === "active";
   if (f === "overdue") return r.status === "overdue";
@@ -23,7 +28,10 @@ function matchStatus(r: Rental, f: FiltersState["status"]): boolean {
     return (
       r.status === "police" ||
       r.status === "court" ||
-      r.status === "completed_damage"
+      r.status === "completed_damage" ||
+      r.status === "overdue" ||
+      (r.damageAmount ?? 0) > 0 ||
+      unreachable.has(r.clientId)
     );
   return true;
 }
@@ -61,6 +69,7 @@ function statusRank(s: RentalStatus): number {
 
 export function Rentals() {
   const rentals = useRentals();
+  const unreachable = useUnreachableSet();
   const [filters, setFilters] = useState<FiltersState>({
     search: "",
     status: "all",
@@ -78,13 +87,15 @@ export function Rentals() {
   const filtered = useMemo(
     () =>
       rentals.filter(
-        (r) => matchStatus(r, filters.status) && matchSearch(r, filters.search),
+        (r) =>
+          matchStatus(r, filters.status, unreachable) &&
+          matchSearch(r, filters.search),
       ).sort((a, b) => {
         const sr = statusRank(a.status) - statusRank(b.status);
         if (sr !== 0) return sr;
         return b.id - a.id;
       }),
-    [filters, rentals],
+    [filters, rentals, unreachable],
   );
 
   const kpi = useMemo<Kpi[]>(() => {

@@ -6,6 +6,7 @@ import {
   Copy,
   Pencil,
   Phone,
+  PhoneOff,
   UploadCloud,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -24,7 +25,11 @@ import {
 } from "./ClientCardTabs";
 import { AddClientModal } from "./AddClientModal";
 import { SequentialNamingModal } from "./SequentialNamingModal";
-import { clientStore, useClientExtraPhone } from "./clientStore";
+import {
+  clientStore,
+  useClientExtraPhone,
+  useClientUnreachable,
+} from "./clientStore";
 import type { UploadedFile } from "./DocUpload";
 import { ClientPhoto } from "./ClientPhoto";
 import { CreateDealMenu } from "./CreateDealMenu";
@@ -69,6 +74,7 @@ export function ClientCard({ client }: { client: Client }) {
   const d = useMemo(() => getClientDetails(client), [client]);
   const tier = ratingTier(client.rating);
   const phone2 = useClientExtraPhone(client.id);
+  const unreachable = useClientUnreachable(client.id);
   const rentalsForClient = useRentalsByClient(client.id);
   const activeRental = useMemo(
     () => getActiveRentalByClient(client.id, rentalsForClient),
@@ -176,6 +182,11 @@ export function ClientCard({ client }: { client: Client }) {
                     <Ban size={12} /> Чёрный список
                   </span>
                 )}
+                {unreachable && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-orange-soft px-2 py-0.5 text-[11px] font-bold text-orange-ink">
+                    <PhoneOff size={12} /> Не выходит на связь
+                  </span>
+                )}
                 {activeRental && (
                   <button
                     type="button"
@@ -200,6 +211,26 @@ export function ClientCard({ client }: { client: Client }) {
             </div>
 
             <div className="flex shrink-0 gap-2">
+              <button
+                type="button"
+                onClick={() =>
+                  clientStore.setUnreachable(client.id, !unreachable)
+                }
+                title={
+                  unreachable
+                    ? "Снять метку «Не выходит на связь»"
+                    : "Отметить, что клиент не выходит на связь"
+                }
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-[12px] font-semibold transition-colors",
+                  unreachable
+                    ? "bg-orange-soft text-orange-ink hover:bg-orange/20"
+                    : "bg-surface-soft text-ink hover:bg-border",
+                )}
+              >
+                <PhoneOff size={13} />
+                {unreachable ? "Снять: не на связи" : "Не на связи"}
+              </button>
               <button
                 type="button"
                 onClick={() => setEditOpen(true)}

@@ -14,13 +14,15 @@ import {
 import { ClientsList } from "./ClientsList";
 import { ClientCard } from "./ClientCard";
 import { AddClientModal } from "./AddClientModal";
-import { useAllClients } from "./clientStore";
+import { useAllClients, useUnreachableSet } from "./clientStore";
 import { useRentals } from "@/pages/rentals/rentalsStore";
 
 function matchClient(
   c: Client,
   f: FiltersState,
   activeSet: Set<number>,
+  overdueSet: Set<number>,
+  unreachable: Set<number>,
 ): boolean {
   if (f.search.trim()) {
     const q = f.search.toLowerCase().trim();
@@ -41,6 +43,14 @@ function matchClient(
     if (hasActive || c.debt > 0 || c.blacklisted) return false;
   }
   if (f.status === "debt" && c.debt === 0) return false;
+  if (f.status === "issue") {
+    const isIssue =
+      unreachable.has(c.id) ||
+      overdueSet.has(c.id) ||
+      c.debt > 0 ||
+      c.blacklisted;
+    if (!isIssue) return false;
+  }
   if (f.status === "black" && !c.blacklisted) return false;
   return true;
 }
@@ -52,6 +62,7 @@ export function Clients() {
   });
   const clients = useAllClients();
   const rentals = useRentals();
+  const unreachable = useUnreachableSet();
   const activeSet = useMemo(() => {
     const set = new Set<number>();
     for (const r of rentals) {
@@ -59,6 +70,21 @@ export function Clients() {
         r.status === "active" ||
         r.status === "overdue" ||
         r.status === "returning"
+      ) {
+        set.add(r.clientId);
+      }
+    }
+    return set;
+  }, [rentals]);
+  const overdueSet = useMemo(() => {
+    const set = new Set<number>();
+    for (const r of rentals) {
+      if (
+        r.status === "overdue" ||
+        r.status === "police" ||
+        r.status === "court" ||
+        r.status === "completed_damage" ||
+        (r.damageAmount ?? 0) > 0
       ) {
         set.add(r.clientId);
       }
@@ -78,9 +104,11 @@ export function Clients() {
   const filtered = useMemo(
     () =>
       clients
-        .filter((c) => matchClient(c, filters, activeSet))
+        .filter((c) =>
+          matchClient(c, filters, activeSet, overdueSet, unreachable),
+        )
         .sort((a, b) => a.name.localeCompare(b.name, "ru")),
-    [clients, filters, activeSet],
+    [clients, filters, activeSet, overdueSet, unreachable],
   );
 
   return (

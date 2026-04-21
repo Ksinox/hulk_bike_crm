@@ -7,6 +7,8 @@ type State = {
   extraDocs: Map<number, UploadedFile[]>;
   extraPhones: Map<number, string>;
   addedClients: Client[];
+  /** id клиентов, помеченных «не выходит на связь» */
+  unreachable: Set<number>;
 };
 
 const state: State = {
@@ -14,6 +16,7 @@ const state: State = {
   extraDocs: new Map(),
   extraPhones: new Map(),
   addedClients: [],
+  unreachable: new Set(),
 };
 
 let rev = 0;
@@ -68,6 +71,22 @@ function setExtraPhone(id: number, phone: string | null) {
   emit();
 }
 
+function isUnreachable(id: number): boolean {
+  return state.unreachable.has(id);
+}
+
+function setUnreachable(id: number, on: boolean) {
+  const next = new Set(state.unreachable);
+  if (on) next.add(id);
+  else next.delete(id);
+  state.unreachable = next;
+  emit();
+}
+
+function getUnreachableSet(): Set<number> {
+  return state.unreachable;
+}
+
 function addClient(data: Omit<Client, "id">): Client {
   const maxSeed = SEED_CLIENTS.reduce((m, c) => Math.max(m, c.id), 0);
   const maxAdded = state.addedClients.reduce((m, c) => Math.max(m, c.id), 0);
@@ -90,10 +109,29 @@ export const clientStore = {
   addExtraDocs,
   getExtraPhone,
   setExtraPhone,
+  isUnreachable,
+  setUnreachable,
+  getUnreachableSet,
   addClient,
   getAllClients,
   subscribe,
 };
+
+export function useClientUnreachable(id: number): boolean {
+  return useSyncExternalStore(
+    subscribe,
+    () => state.unreachable.has(id),
+    () => false,
+  );
+}
+
+export function useUnreachableSet(): Set<number> {
+  return useSyncExternalStore(
+    subscribe,
+    () => state.unreachable,
+    () => state.unreachable,
+  );
+}
 
 export function useAllClients(): Client[] {
   useSyncExternalStore(subscribe, () => rev, () => 0);

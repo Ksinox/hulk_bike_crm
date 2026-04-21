@@ -8,8 +8,10 @@ import {
   completeRentalNoDamage,
   completeRentalWithDamage,
   revertOverdue,
+  setRentalDamage,
   setRentalStatus,
 } from "./rentalsStore";
+import { clientStore } from "@/pages/clients/clientStore";
 
 export type ActionKind =
   | "schedule"
@@ -24,7 +26,10 @@ export type ActionKind =
   | "record-damage"
   | "claim"
   | "lawyer"
-  | "addPayment";
+  | "addPayment"
+  | "set-damage"
+  | "mark-unreachable"
+  | "unmark-unreachable";
 
 const TODAY_STR = "13.10.2026";
 
@@ -169,6 +174,17 @@ export function RentalActionDialog({
         }
         break;
       }
+      case "set-damage": {
+        const amt = Number(damageAmount) || 0;
+        setRentalDamage(rental.id, amt);
+        break;
+      }
+      case "mark-unreachable":
+        clientStore.setUnreachable(rental.clientId, true);
+        break;
+      case "unmark-unreachable":
+        clientStore.setUnreachable(rental.clientId, false);
+        break;
     }
     requestClose();
   };
@@ -332,6 +348,24 @@ export function RentalActionDialog({
                   placeholder="Необязательно"
                   className="mt-1 h-9 w-full rounded-[10px] border border-border bg-surface px-3 text-[13px] text-ink outline-none focus:border-blue-600"
                 />
+              </label>
+            </div>
+          )}
+
+          {action === "set-damage" && (
+            <div className="mt-3 flex flex-col gap-2">
+              <label className="text-[12px] font-semibold text-ink">
+                Сумма ущерба, ₽
+                <input
+                  type="number"
+                  value={damageAmount}
+                  onChange={(e) => setDamageAmount(e.target.value)}
+                  placeholder="0 — убрать плашку"
+                  className="mt-1 h-9 w-full rounded-[10px] border border-border bg-surface px-3 text-[13px] text-ink outline-none focus:border-blue-600"
+                />
+                <div className="mt-0.5 text-[10px] text-muted-2">
+                  Укажите 0, чтобы снять отметку об ущербе.
+                </div>
               </label>
             </div>
           )}
@@ -612,6 +646,46 @@ function specFor(action: ActionKind, rental: Rental): Spec {
           </div>
         ),
         cta: "Зафиксировать",
+        ctaTone: "primary",
+      };
+    case "set-damage":
+      return {
+        title: rental.damageAmount
+          ? "Изменить сумму ущерба"
+          : "Зафиксировать ущерб",
+        body: (
+          <div className="text-[12px]">
+            Информативная плашка — отображается в KPI карточки аренды. Сама по
+            себе не списывает платёж, нужна чтобы видеть сумму предполагаемого
+            ущерба (клиент разбил скутер, ДТП, пропажа деталей и т. п.).
+            Оплату фиксируйте через «Принять платёж» типа «Ущерб».
+          </div>
+        ),
+        cta: "Сохранить",
+        ctaTone: "warn",
+      };
+    case "mark-unreachable":
+      return {
+        title: "Отметить: не выходит на связь",
+        body: (
+          <div className="text-[12px]">
+            Клиент <b>{"перестал отвечать"}</b> на звонки и сообщения. Ярлык
+            появится и на карточке клиента, и на всех его арендах. Такие клиенты
+            попадают под фильтр <b>Проблемные</b>.
+          </div>
+        ),
+        cta: "Отметить",
+        ctaTone: "warn",
+      };
+    case "unmark-unreachable":
+      return {
+        title: "Снять отметку «не выходит на связь»",
+        body: (
+          <div className="text-[12px]">
+            Ярлык будет убран у клиента и у всех его аренд.
+          </div>
+        ),
+        cta: "Снять",
         ctaTone: "primary",
       };
   }

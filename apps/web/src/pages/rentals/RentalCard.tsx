@@ -5,10 +5,12 @@ import {
   Calendar,
   CheckCircle2,
   Gavel,
+  PhoneOff,
   Plus,
   Repeat,
   ShieldAlert,
   Star,
+  Wrench,
   XCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -20,6 +22,7 @@ import {
   type RentalStatus,
 } from "@/lib/mock/rentals";
 import { CLIENTS, ratingTier } from "@/lib/mock/clients";
+import { useClientUnreachable } from "@/pages/clients/clientStore";
 import {
   DocumentsTab,
   IncidentsTab,
@@ -71,7 +74,28 @@ function daysBetween(a: Date, b: Date): number {
 /** Сейчас по демо-таймлайну — 13.10.2026 14:30 */
 const TODAY = new Date(2026, 9, 13, 14, 30);
 
-function statusActions(status: RentalStatus): MenuAction[] {
+function statusActions(
+  status: RentalStatus,
+  opts: { hasDamage: boolean; isUnreachable: boolean },
+): MenuAction[] {
+  const extras: MenuAction[] = [
+    {
+      id: "set-damage",
+      label: opts.hasDamage ? "Изменить ущерб" : "Зафиксировать ущерб",
+      icon: Wrench,
+      tone: "warn",
+    },
+    {
+      id: opts.isUnreachable ? "unmark-unreachable" : "mark-unreachable",
+      label: opts.isUnreachable
+        ? "Снять «не выходит на связь»"
+        : "Не выходит на связь",
+      icon: PhoneOff,
+      tone: opts.isUnreachable ? "ghost" : "warn",
+    },
+  ];
+  const withExtras = (base: MenuAction[]): MenuAction[] => [...base, ...extras];
+
   switch (status) {
     case "new_request":
       return [
@@ -84,39 +108,39 @@ function statusActions(status: RentalStatus): MenuAction[] {
         { id: "cancel", label: "Отменить", icon: XCircle, tone: "ghost" },
       ];
     case "active":
-      return [
+      return withExtras([
         { id: "extend", label: "Продлить", icon: Repeat, tone: "primary" },
         { id: "receive", label: "Принять возврат", icon: ArrowRight, tone: "ghost" },
         { id: "addPayment", label: "Принять платёж", icon: Plus, tone: "ghost" },
         { id: "incident", label: "Зафиксировать инцидент", icon: AlertTriangle, tone: "warn" },
-      ];
+      ]);
     case "overdue":
-      return [
+      return withExtras([
         { id: "receive", label: "Принять возврат", icon: ArrowRight, tone: "primary" },
         { id: "addPayment", label: "Принять платёж", icon: Plus, tone: "ghost" },
         { id: "incident", label: "Зафиксировать инцидент", icon: AlertTriangle, tone: "warn" },
         { id: "revert-overdue", label: "Снять просрочку", icon: XCircle, tone: "ghost" },
         { id: "police", label: "Подать в полицию", icon: ShieldAlert, tone: "danger" },
-      ];
+      ]);
     case "returning":
-      return [
+      return withExtras([
         { id: "complete", label: "Завершить без ущерба", icon: CheckCircle2, tone: "primary" },
         { id: "complete-damage", label: "Завершить с ущербом", icon: AlertTriangle, tone: "warn" },
-      ];
+      ]);
     case "completed":
       return [
         { id: "clone", label: "Создать аналогичную", icon: Repeat, tone: "primary" },
       ];
     case "completed_damage":
-      return [
+      return withExtras([
         { id: "record-damage", label: "Записать оплату ущерба", icon: CheckCircle2, tone: "primary" },
         { id: "claim", label: "Претензия", icon: AlertTriangle, tone: "warn" },
         { id: "lawyer", label: "Передать юристу", icon: Gavel, tone: "danger" },
-      ];
+      ]);
     case "police":
-      return [
+      return withExtras([
         { id: "lawyer", label: "Передать юристу", icon: Gavel, tone: "danger" },
-      ];
+      ]);
     default:
       return [];
   }
@@ -173,7 +197,9 @@ export function RentalCard({ rental }: { rental: Rental }) {
     startDate && endDate ? daysBetween(TODAY, endDate) : null;
 
   const tone = STATUS_TONE[rental.status];
-  const actions = statusActions(rental.status);
+  const isUnreachable = useClientUnreachable(rental.clientId);
+  const hasDamage = (rental.damageAmount ?? 0) > 0;
+  const actions = statusActions(rental.status, { hasDamage, isUnreachable });
 
   // Финансы — считаются по ВСЕЙ цепочке продлений
   const paidIn = chainPayments
@@ -218,6 +244,11 @@ export function RentalCard({ rental }: { rental: Rental }) {
           >
             {STATUS_LABEL[rental.status]}
           </span>
+          {isUnreachable && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-orange-soft px-2.5 py-1 text-[11px] font-bold text-orange-ink">
+              <PhoneOff size={11} /> Не выходит на связь
+            </span>
+          )}
           {client && tier && (
             <span
               className={cn(
@@ -300,7 +331,12 @@ export function RentalCard({ rental }: { rental: Rental }) {
       )}
 
       {/* =========== KPI STRIP =========== */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div
+        className={cn(
+          "grid grid-cols-2 gap-3 sm:grid-cols-4",
+          hasDamage && "lg:grid-cols-5",
+        )}
+      >
         {(() => {
           let label = "Срок";
           let value = `${rental.days} дн`;
@@ -369,6 +405,14 @@ export function RentalCard({ rental }: { rental: Rental }) {
             />
           );
         })()}
+        {hasDamage && (
+          <KpiCard
+            label="Сумма ущерба"
+            value={`${fmt(rental.damageAmount!)} ₽`}
+            hint="выставлено вручную"
+            accent="red"
+          />
+        )}
       </div>
 
       {rental.note && (

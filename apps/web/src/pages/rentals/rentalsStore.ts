@@ -169,6 +169,13 @@ export function setRentalStatus(id: number, status: RentalStatus) {
   emit();
 }
 
+export function setRentalDamage(id: number, amount: number) {
+  state.rentals = state.rentals.map((r) =>
+    r.id === id ? { ...r, damageAmount: amount > 0 ? amount : undefined } : r,
+  );
+  emit();
+}
+
 export function patchRental(id: number, patch: Partial<Rental>) {
   state.rentals = state.rentals.map((r) =>
     r.id === id ? { ...r, ...patch } : r,
