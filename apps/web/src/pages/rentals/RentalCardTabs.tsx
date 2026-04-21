@@ -1,15 +1,21 @@
 import { useMemo, useState } from "react";
 import {
   AlertTriangle,
+  Bike,
   Calendar,
   Check,
   CheckCircle2,
   Clock,
+  CreditCard,
   Download,
+  ExternalLink,
   FileSignature,
   FileText,
+  Gauge,
+  HardHat,
   Plus,
   Printer,
+  ShieldCheck,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -37,25 +43,61 @@ function fmt(n: number) {
 
 /* =================== Условия =================== */
 
+/** детерминированный фейковый пробег по номеру скутера (до появления флот-модуля) */
+function mockMileage(scooter: string): number {
+  const m = scooter.match(/#(\d+)/);
+  const n = m ? +m[1] : 1;
+  // ~2,000 … 18,500 км — выглядит реалистично для демо
+  return 2000 + ((n * 727) % 165) * 100;
+}
+
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  return parts.slice(0, 2).map((p) => p[0]?.toUpperCase() ?? "").join("");
+}
+
 export function TermsTab({ rental }: { rental: Rental }) {
+  const client = CLIENTS.find((c) => c.id === rental.clientId);
+  const time = rental.startTime ?? "12:00";
+  const location = "Склад \"Северный\"";
+  const mileage = mockMileage(rental.scooter);
+
   return (
-    <div className="overflow-hidden rounded-[14px] border border-border">
-      <table className="w-full text-[12px]">
-        <tbody>
-          <TermRow
-            label="Скутер"
-            value={`${rental.scooter} · ${MODEL_LABEL[rental.model]}`}
-          />
-          <TermRow
+    <div className="grid gap-3 lg:grid-cols-[1.15fr_1fr]">
+      {/* ============ ЛЕВАЯ КОЛОНКА: СКУТЕР + УСЛОВИЯ ============ */}
+      <div className="rounded-[14px] border border-border p-4">
+        <div className="flex items-start gap-4">
+          <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-ink text-white">
+            <Bike size={34} strokeWidth={1.5} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
+              Скутер
+            </div>
+            <div className="mt-0.5 text-[11px] text-muted-2">Model &amp; ID</div>
+            <div className="mt-0.5 font-display text-[18px] font-extrabold leading-tight text-ink">
+              {rental.scooter} · {MODEL_LABEL[rental.model]}
+            </div>
+            <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-surface-soft px-2.5 py-1 text-[11px] font-semibold text-ink-2">
+              <Gauge size={12} className="text-muted-2" />
+              Пробег: {fmt(mileage)} км
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-x-5 gap-y-4 sm:grid-cols-2">
+          <InfoCell
+            icon={CreditCard}
             label="Тариф"
-            value={`${TARIFF_PERIOD_LABEL[rental.tariffPeriod]} · ${fmt(rental.rate)} ₽/сут`}
+            value={`от ${TARIFF_PERIOD_LABEL[rental.tariffPeriod].replace(/^от\s+/i, "")} · ${fmt(rental.rate)} ₽/сут`}
           />
-          <TermRow
-            label="Период"
-            value={`${rental.start} ${rental.startTime ?? "12:00"} — ${rental.endPlanned} ${rental.startTime ?? "12:00"}`}
-            hint={`${rental.days} ${daysWord(rental.days)}`}
+          <InfoCell
+            icon={CreditCard}
+            label="Оплата"
+            value={PAYMENT_LABEL[rental.paymentMethod]}
           />
-          <TermRow
+          <InfoCell
+            icon={ShieldCheck}
             label="Залог"
             value={`${fmt(rental.deposit || DEPOSIT_AMOUNT)} ₽`}
             hint={
@@ -66,52 +108,123 @@ export function TermsTab({ rental }: { rental: Rental }) {
                   : "на балансе компании"
             }
           />
-          <TermRow
-            label="Оплата"
-            value={PAYMENT_LABEL[rental.paymentMethod]}
-          />
-          <TermRow
+          <InfoCell
+            icon={HardHat}
             label="Экипировка"
             value={
               rental.equipment.length === 0
                 ? "не выдавалась"
-                : rental.equipment.join(", ")
+                : rental.equipment
+                    .map(
+                      (e) => e.charAt(0).toUpperCase() + e.slice(1),
+                    )
+                    .join(", ")
             }
           />
-        </tbody>
-      </table>
+        </div>
+      </div>
+
+      {/* ============ ПРАВАЯ КОЛОНКА: ГРАФИК АРЕНДЫ ============ */}
+      <div className="flex flex-col gap-3 rounded-[14px] border border-border p-4">
+        <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
+          График аренды
+        </div>
+
+        <div className="relative pl-6">
+          <span className="absolute left-[6px] top-2 bottom-2 w-px bg-border" />
+          {/* Выдача */}
+          <div className="relative">
+            <span className="absolute -left-[22px] top-1.5 h-3 w-3 rounded-full bg-blue-600 ring-4 ring-blue-600/15" />
+            <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
+              Выдача
+            </div>
+            <div className="mt-0.5 font-display text-[15px] font-extrabold tabular-nums text-ink">
+              {rental.start} · {time}
+            </div>
+            <div className="text-[12px] text-muted">{location}</div>
+          </div>
+          {/* Возврат план */}
+          <div className="relative mt-4">
+            <span
+              className={cn(
+                "absolute -left-[22px] top-1.5 h-3 w-3 rounded-full ring-4",
+                rental.status === "overdue"
+                  ? "bg-red-ink ring-red-ink/15"
+                  : "bg-muted-2 ring-muted-2/15",
+              )}
+            />
+            <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
+              Возврат (план)
+            </div>
+            <div className="mt-0.5 font-display text-[15px] font-extrabold tabular-nums text-ink">
+              {rental.endPlanned} · {time}
+            </div>
+            <div className="text-[12px] text-muted">{location}</div>
+          </div>
+        </div>
+
+        <div className="mt-1 flex items-center justify-between border-t border-border pt-3 text-[12px]">
+          <span className="text-muted-2">Общая длительность</span>
+          <span className="font-display text-[15px] font-extrabold tabular-nums text-blue-600">
+            {rental.days} {daysWord(rental.days)}
+          </span>
+        </div>
+
+        {client && (
+          <div className="flex items-center gap-3 rounded-[12px] bg-surface-soft px-3 py-2">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-50 text-[11px] font-bold text-blue-700">
+              {initials(client.name)}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[13px] font-semibold text-ink">
+                {client.name}
+              </div>
+              <div className="truncate text-[11px] tabular-nums text-muted-2">
+                {client.phone}
+              </div>
+            </div>
+            <button
+              type="button"
+              title="Открыть карточку клиента (скоро)"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted-2 hover:bg-border hover:text-ink"
+            >
+              <ExternalLink size={14} />
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
-function TermRow({
+function InfoCell({
+  icon: Icon,
   label,
   value,
   hint,
-  emphasize,
 }: {
+  icon: typeof Bike;
   label: string;
   value: string;
   hint?: string;
-  emphasize?: boolean;
 }) {
   return (
-    <tr className="border-b border-border/60 last:border-b-0">
-      <td className="w-[130px] px-3 py-2 align-top text-[11px] font-semibold uppercase tracking-wider text-muted-2">
+    <div>
+      <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
         {label}
-      </td>
-      <td className="px-3 py-2">
-        <div
-          className={cn(
-            "font-semibold tabular-nums text-ink",
-            emphasize ? "text-[15px]" : "text-[13px]",
+      </div>
+      <div className="mt-1 flex items-start gap-2">
+        <Icon size={14} className="mt-[3px] shrink-0 text-muted-2" />
+        <div className="min-w-0">
+          <div className="text-[13px] font-semibold text-ink">{value}</div>
+          {hint && (
+            <div className="mt-0.5 text-[10px] uppercase tracking-wider text-muted-2">
+              {hint}
+            </div>
           )}
-        >
-          {value}
         </div>
-        {hint && <div className="text-[10px] text-muted-2">{hint}</div>}
-      </td>
-    </tr>
+      </div>
+    </div>
   );
 }
 
