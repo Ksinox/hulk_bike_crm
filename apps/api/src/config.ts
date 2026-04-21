@@ -22,6 +22,14 @@ export const config = {
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean),
+  s3: {
+    endpoint: process.env.S3_ENDPOINT ?? "localhost",
+    port: Number(process.env.S3_PORT ?? 9000),
+    useSSL: process.env.S3_USE_SSL === "true",
+    accessKey: process.env.S3_ACCESS_KEY ?? "hulkminio",
+    secretKey: process.env.S3_SECRET_KEY ?? "hulkminio_dev_password",
+    bucket: process.env.S3_BUCKET ?? "hulk-docs",
+  },
 } as const;
 
 export const isProd = config.env === "production";

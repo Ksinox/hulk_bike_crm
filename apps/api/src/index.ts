@@ -1,6 +1,7 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
+import multipart from "@fastify/multipart";
 import { sql } from "drizzle-orm";
 import { config, isProd } from "./config.js";
 import { closeDb, db } from "./db/index.js";
@@ -10,6 +11,10 @@ import { rentalsRoutes } from "./routes/rentals.js";
 import { paymentsRoutes } from "./routes/payments.js";
 import { incidentsRoutes } from "./routes/incidents.js";
 import { tasksRoutes } from "./routes/tasks.js";
+import { filesRoutes } from "./routes/files.js";
+import { clientDocumentsRoutes } from "./routes/client-documents.js";
+import { scooterDocumentsRoutes } from "./routes/scooter-documents.js";
+import { ensureBucket } from "./storage/index.js";
 
 async function bootstrap() {
   const app = Fastify({
@@ -24,6 +29,12 @@ async function bootstrap() {
   });
 
   await app.register(helmet, { contentSecurityPolicy: false });
+  await app.register(multipart, {
+    limits: {
+      fileSize: 15 * 1024 * 1024, // 15 МБ на файл
+      files: 1,
+    },
+  });
   await app.register(cors, {
     origin: (origin, cb) => {
       // Разрешаем запросы без Origin (curl, health-проверки, server-to-server)
@@ -50,6 +61,15 @@ async function bootstrap() {
   await app.register(paymentsRoutes, { prefix: "/api/payments" });
   await app.register(incidentsRoutes, { prefix: "/api/incidents" });
   await app.register(tasksRoutes, { prefix: "/api/tasks" });
+  await app.register(clientDocumentsRoutes, { prefix: "/api/client-documents" });
+  await app.register(scooterDocumentsRoutes, { prefix: "/api/scooter-documents" });
+  await app.register(filesRoutes, { prefix: "/api/files" });
+
+  // Проверить/создать бакет при старте (не блокируем — если MinIO
+  // не отвечает, первая загрузка файла попробует снова)
+  ensureBucket().catch((e) => {
+    app.log.warn({ err: e }, "MinIO ensureBucket failed (проверь S3_* переменные)");
+  });
 
   // ==== graceful shutdown ====
   const shutdown = async (signal: string) => {

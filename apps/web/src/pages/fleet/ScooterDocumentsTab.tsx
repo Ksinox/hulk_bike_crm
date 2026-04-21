@@ -1,80 +1,74 @@
-import { useMemo } from "react";
-import { AlertTriangle, CheckCircle2, FileText, Printer } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Download,
+  FileImage,
+  FileText,
+  Loader2,
+  Printer,
+  Trash2,
+  UploadCloud,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { FleetScooter } from "@/lib/mock/fleet";
-import { DocUpload, type UploadedFile } from "@/pages/clients/DocUpload";
 import { useRole } from "@/lib/role";
 import { MODEL_LABEL } from "@/lib/mock/rentals";
 import {
-  setOsagoValidUntil,
-  setScooterDoc,
-  useScooterDocs,
-  type ScooterDocKind,
-} from "./fleetStore";
+  fileUrl,
+  useApiScooterDocs,
+  useDeleteScooterDoc,
+  usePatchScooterDoc,
+  useUploadScooterDoc,
+  type ApiScooterDoc,
+} from "@/lib/api/documents";
 
 const TODAY = new Date(2026, 9, 13);
 
 const MONTH_RU = [
-  "янв",
-  "фев",
-  "мар",
-  "апр",
-  "май",
-  "июн",
-  "июл",
-  "авг",
-  "сен",
-  "окт",
-  "ноя",
-  "дек",
+  "янв", "фев", "мар", "апр", "май", "июн",
+  "июл", "авг", "сен", "окт", "ноя", "дек",
 ];
 
 function fmt(n: number): string {
   return n.toLocaleString("ru-RU");
 }
 
-function parseDDMM(s: string): Date | null {
-  const m = s.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
-  if (!m) return null;
-  return new Date(+m[3], +m[2] - 1, +m[1]);
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} Б`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} КБ`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
 }
 
-function dateInputToRu(iso: string): string {
-  // iso: YYYY-MM-DD
-  const [y, m, d] = iso.split("-");
-  if (!y || !m || !d) return "";
-  return `${d}.${m}.${y}`;
-}
-
-function ruToDateInput(ru?: string): string {
-  if (!ru) return "";
-  const m = ru.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
-  if (!m) return "";
-  return `${m[3]}-${m[2]}-${m[1]}`;
+function isImageMime(mime: string): boolean {
+  return mime.startsWith("image/");
 }
 
 export function ScooterDocumentsTab({ scooter }: { scooter: FleetScooter }) {
   const role = useRole();
-  const docs = useScooterDocs(scooter.id);
+  const { data: docs = [] } = useApiScooterDocs(scooter.id);
+  const uploadMut = useUploadScooterDoc(scooter.id);
+  const patchMut = usePatchScooterDoc(scooter.id);
+  const deleteMut = useDeleteScooterDoc(scooter.id);
 
+  const byKind = useMemo(() => {
+    const m = new Map<ApiScooterDoc["kind"], ApiScooterDoc>();
+    for (const d of docs) m.set(d.kind, d);
+    return m;
+  }, [docs]);
+
+  const osagoDoc = byKind.get("osago");
   const osagoInfo = useMemo(() => {
-    if (!docs.osagoValidUntil) return null;
-    const d = parseDDMM(docs.osagoValidUntil);
-    if (!d) return null;
-    const diffDays = Math.round(
-      (d.getTime() - TODAY.getTime()) / 86_400_000,
-    );
+    if (!osagoDoc?.osagoValidUntil) return null;
+    const d = new Date(osagoDoc.osagoValidUntil);
+    const diffDays = Math.round((d.getTime() - TODAY.getTime()) / 86_400_000);
     return {
-      dateRu: docs.osagoValidUntil,
+      dateRu: isoToRu(osagoDoc.osagoValidUntil),
       expired: diffDays < 0,
       soon: diffDays >= 0 && diffDays <= 30,
       daysLeft: diffDays,
     };
-  }, [docs.osagoValidUntil]);
-
-  const handleChange = (kind: ScooterDocKind) => (f: UploadedFile | null) => {
-    setScooterDoc(scooter.id, kind, f);
-  };
+  }, [osagoDoc?.osagoValidUntil]);
 
   const handleAct = (w: "open" | "print") => {
     const html = actHtml(scooter);
@@ -86,6 +80,19 @@ export function ScooterDocumentsTab({ scooter }: { scooter: FleetScooter }) {
       win.focus();
       setTimeout(() => win.print(), 250);
     }
+  };
+
+  const onPickFile = (kind: ApiScooterDoc["kind"], file: File) => {
+    const osagoValidUntil =
+      kind === "osago"
+        ? (osagoDoc?.osagoValidUntil ?? undefined)
+        : undefined;
+    uploadMut.mutate({ kind, file, osagoValidUntil });
+  };
+
+  const onDelete = (doc: ApiScooterDoc) => {
+    if (!window.confirm(`Удалить «${doc.fileName}»?`)) return;
+    deleteMut.mutate(doc.id);
   };
 
   return (
@@ -130,25 +137,31 @@ export function ScooterDocumentsTab({ scooter }: { scooter: FleetScooter }) {
           Хранимые документы
         </div>
         <div className="mt-3 grid gap-4 lg:grid-cols-2">
-          <DocSlot
+          <ServerDocSlot
             title="ПТС"
             subtitle="Паспорт транспортного средства"
-            file={docs.pts}
-            onChange={handleChange("pts")}
+            doc={byKind.get("pts")}
+            onUpload={(f) => onPickFile("pts", f)}
+            onDelete={onDelete}
+            uploading={uploadMut.isPending}
           />
-          <DocSlot
+          <ServerDocSlot
             title="СТС"
             subtitle="Свидетельство о регистрации ТС"
-            file={docs.sts}
-            onChange={handleChange("sts")}
+            doc={byKind.get("sts")}
+            onUpload={(f) => onPickFile("sts", f)}
+            onDelete={onDelete}
+            uploading={uploadMut.isPending}
           />
 
           <div className="flex flex-col gap-2">
-            <DocSlot
+            <ServerDocSlot
               title="ОСАГО"
               subtitle="Полис обязательного страхования"
-              file={docs.osago}
-              onChange={handleChange("osago")}
+              doc={osagoDoc}
+              onUpload={(f) => onPickFile("osago", f)}
+              onDelete={onDelete}
+              uploading={uploadMut.isPending}
             />
             <div className="rounded-[12px] border border-border bg-surface-soft px-3 py-2.5">
               <label className="flex flex-col gap-1.5">
@@ -157,16 +170,16 @@ export function ScooterDocumentsTab({ scooter }: { scooter: FleetScooter }) {
                 </span>
                 <input
                   type="date"
-                  value={ruToDateInput(docs.osagoValidUntil)}
-                  onChange={(e) =>
-                    setOsagoValidUntil(
-                      scooter.id,
-                      e.target.value
-                        ? dateInputToRu(e.target.value)
-                        : undefined,
-                    )
-                  }
-                  className="h-9 rounded-[8px] border border-border bg-surface px-2.5 text-[13px] text-ink outline-none focus:border-blue-600"
+                  disabled={!osagoDoc}
+                  value={osagoDoc?.osagoValidUntil ?? ""}
+                  onChange={(e) => {
+                    if (!osagoDoc) return;
+                    patchMut.mutate({
+                      id: osagoDoc.id,
+                      osagoValidUntil: e.target.value || null,
+                    });
+                  }}
+                  className="h-9 rounded-[8px] border border-border bg-surface px-2.5 text-[13px] text-ink outline-none focus:border-blue-600 disabled:opacity-50"
                 />
               </label>
               {osagoInfo && (
@@ -194,15 +207,22 @@ export function ScooterDocumentsTab({ scooter }: { scooter: FleetScooter }) {
                       : `Действует — ${osagoInfo.dateRu}`}
                 </div>
               )}
+              {!osagoDoc && (
+                <div className="mt-1.5 text-[11px] text-muted-2">
+                  Сначала загрузите файл ОСАГО — затем появится поле даты.
+                </div>
+              )}
             </div>
           </div>
 
           {role === "director" && (
-            <DocSlot
+            <ServerDocSlot
               title="Договор покупки"
               subtitle="Документ от продавца / поставщика"
-              file={docs.purchase}
-              onChange={handleChange("purchase")}
+              doc={byKind.get("purchase")}
+              onUpload={(f) => onPickFile("purchase", f)}
+              onDelete={onDelete}
+              uploading={uploadMut.isPending}
               directorOnly
             />
           )}
@@ -213,24 +233,44 @@ export function ScooterDocumentsTab({ scooter }: { scooter: FleetScooter }) {
             Договор покупки скутера доступен только в роли «Директор».
           </div>
         )}
+
+        {uploadMut.isError && (
+          <div className="mt-3 rounded-[12px] bg-red-soft/60 px-3 py-2 text-[12px] text-red-ink">
+            Не удалось загрузить файл: {String(uploadMut.error)}
+          </div>
+        )}
       </section>
     </div>
   );
 }
 
-function DocSlot({
+/**
+ * Карточка документа, который хранится на сервере.
+ * Пустое состояние — зона drag&drop для загрузки.
+ * Заполненное — превью + «Открыть» / «Скачать» / «Заменить» / «Удалить».
+ */
+function ServerDocSlot({
   title,
   subtitle,
-  file,
-  onChange,
+  doc,
+  onUpload,
+  onDelete,
+  uploading,
   directorOnly,
 }: {
   title: string;
   subtitle: string;
-  file: UploadedFile | null;
-  onChange: (next: UploadedFile | null) => void;
+  doc?: ApiScooterDoc;
+  onUpload: (f: File) => void;
+  onDelete: (doc: ApiScooterDoc) => void;
+  uploading: boolean;
   directorOnly?: boolean;
 }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [dragging, setDragging] = useState(false);
+
+  const pick = () => inputRef.current?.click();
+
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-start justify-between gap-2">
@@ -244,14 +284,126 @@ function DocSlot({
           </span>
         )}
       </div>
-      <DocUpload
-        label={title}
+
+      <input
+        ref={inputRef}
+        type="file"
         accept="image/*,application/pdf"
-        file={file}
-        onChange={onChange}
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) onUpload(f);
+          e.currentTarget.value = "";
+        }}
       />
+
+      {doc ? (
+        <div className="flex items-center gap-3 rounded-[12px] border border-border bg-surface px-3 py-2.5">
+          <a
+            href={fileUrl(doc.fileKey, { filename: doc.fileName })}
+            target="_blank"
+            rel="noreferrer"
+            className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-[10px] bg-blue-50 text-blue-700 transition-transform hover:scale-[1.04]"
+            title="Открыть"
+          >
+            {isImageMime(doc.mimeType) ? (
+              <img
+                src={fileUrl(doc.fileKey)}
+                alt=""
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              <FileText size={18} />
+            )}
+          </a>
+          <a
+            href={fileUrl(doc.fileKey, { filename: doc.fileName })}
+            target="_blank"
+            rel="noreferrer"
+            className="min-w-0 flex-1 text-left"
+          >
+            <div className="truncate text-[12px] font-semibold text-ink hover:text-blue-600">
+              {doc.fileName}
+            </div>
+            <div className="text-[11px] text-muted-2">
+              {formatSize(doc.size)}
+            </div>
+          </a>
+          <a
+            href={fileUrl(doc.fileKey, { download: true, filename: doc.fileName })}
+            className="flex h-8 w-8 items-center justify-center rounded-full text-muted-2 hover:bg-surface-soft hover:text-ink"
+            title="Скачать"
+          >
+            <Download size={14} />
+          </a>
+          <button
+            type="button"
+            onClick={pick}
+            className="flex h-8 w-8 items-center justify-center rounded-full text-muted-2 hover:bg-surface-soft hover:text-ink"
+            title="Заменить"
+          >
+            <UploadCloud size={14} />
+          </button>
+          <button
+            type="button"
+            onClick={() => onDelete(doc)}
+            className="flex h-8 w-8 items-center justify-center rounded-full text-muted-2 hover:bg-red-soft hover:text-red-ink"
+            title="Удалить"
+          >
+            <Trash2 size={14} />
+          </button>
+        </div>
+      ) : (
+        <div
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragging(true);
+          }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragging(false);
+            const f = e.dataTransfer.files?.[0];
+            if (f) onUpload(f);
+          }}
+          onClick={pick}
+          className={cn(
+            "flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-[12px] border-2 border-dashed px-3 py-6 text-center transition-colors",
+            dragging
+              ? "border-blue-600 bg-blue-50"
+              : "border-border bg-surface-soft/50 hover:border-blue-600/50 hover:bg-blue-50/40",
+          )}
+        >
+          {uploading ? (
+            <>
+              <Loader2 size={18} className="animate-spin text-blue-600" />
+              <div className="text-[12px] font-semibold text-blue-700">
+                Загрузка…
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-50 text-blue-700">
+                <UploadCloud size={16} />
+              </div>
+              <div className="text-[12px] font-semibold text-ink-2">
+                Перетащите сюда или кликните
+              </div>
+              <div className="text-[10px] text-muted-2">
+                JPG / PNG / PDF · до 15 МБ
+              </div>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
+}
+
+function isoToRu(iso: string): string {
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return iso;
+  return `${m[3]}.${m[2]}.${m[1]}`;
 }
 
 function actHtml(scooter: FleetScooter): string {
@@ -293,3 +445,6 @@ h2{font-size:13px;margin:18px 0 6px;text-transform:uppercase;letter-spacing:0.05
 </div>
 </body></html>`;
 }
+
+// suppress unused warning
+void FileImage;
