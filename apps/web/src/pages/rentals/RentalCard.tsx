@@ -14,8 +14,6 @@ import {
 import { cn } from "@/lib/utils";
 import {
   DEPOSIT_AMOUNT,
-  hoursOverdue,
-  overdueReturnFine,
   STATUS_LABEL,
   STATUS_TONE,
   type Rental,
@@ -261,21 +259,15 @@ export function RentalCard({ rental }: { rental: Rental }) {
         </div>
       )}
       {rental.status === "overdue" && endDate && (() => {
-        const hrs = hoursOverdue(rental, TODAY);
-        const fine = overdueReturnFine(hrs, rental.rate);
-        const days = Math.floor(hrs / 24);
-        const remHrs = Math.floor(hrs - days * 24);
-        const durText =
-          days > 0
-            ? `${days} дн ${remHrs} ч`
-            : `${Math.floor(hrs)} ч ${Math.round((hrs - Math.floor(hrs)) * 60)} мин`;
+        const d = Math.max(1, daysLeft !== null ? Math.abs(daysLeft) : 1);
+        const overdueDebt = d * (rental.rate + 250);
         return (
           <div className="flex items-center gap-2 rounded-[12px] bg-red-soft/70 px-3 py-2 text-[12px] text-red-ink">
             <AlertTriangle size={14} className="shrink-0" />
             <div className="min-w-0 flex-1">
-              <b>Просрочка {durText}.</b> Штраф {fmt(fine)} ₽ (300 ₽/час по
-              договору). Плановый возврат — {rental.endPlanned}{" "}
-              {rental.startTime || "12:00"}.
+              <b>Просрочка {d} дн.</b> Долг {fmt(overdueDebt)} ₽
+              (тариф {fmt(rental.rate)} ₽ + 250 ₽/день). Плановый возврат —{" "}
+              {rental.endPlanned} {rental.startTime || "12:00"}.
             </div>
           </div>
         );
@@ -308,12 +300,7 @@ export function RentalCard({ rental }: { rental: Rental }) {
       )}
 
       {/* =========== KPI STRIP =========== */}
-      <div
-        className={cn(
-          "grid gap-3 grid-cols-2 sm:grid-cols-4",
-          rental.status === "overdue" && endDate && "lg:grid-cols-5",
-        )}
-      >
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {(() => {
           let label = "Срок";
           let value = `${rental.days} дн`;
@@ -359,26 +346,29 @@ export function RentalCard({ rental }: { rental: Rental }) {
           }
           badgeIcon={paidIn >= expectedTotal ? CheckCircle2 : undefined}
         />
-        <KpiCard
-          label="Долг"
-          value={pending > 0 ? `${fmt(pending)} ₽` : "0 ₽"}
-          hint={pending > 0 ? "не оплачено" : "нет долгов"}
-          accent={pending > 0 ? "red" : "muted"}
-        />
-        {rental.status === "overdue" && endDate && (
-          (() => {
-            const hrs = hoursOverdue(rental, TODAY);
-            const fine = overdueReturnFine(hrs, rental.rate);
-            return (
-              <KpiCard
-                label="Штраф"
-                value={`${fmt(fine)} ₽`}
-                hint="300 ₽/час"
-                accent="red"
-              />
+        {(() => {
+          // Долг:
+          //  - при просрочке — (тариф + 250) × дней просрочки
+          //  - иначе — сумма неоплаченных платежей
+          let debt = pending;
+          let debtHint = pending > 0 ? "не оплачено" : "нет долгов";
+          if (rental.status === "overdue") {
+            const d = Math.max(
+              1,
+              daysLeft !== null ? Math.abs(daysLeft) : 1,
             );
-          })()
-        )}
+            debt = d * (rental.rate + 250);
+            debtHint = `${d} дн × ${fmt(rental.rate + 250)} ₽`;
+          }
+          return (
+            <KpiCard
+              label="Долг"
+              value={debt > 0 ? `${fmt(debt)} ₽` : "0 ₽"}
+              hint={debtHint}
+              accent={debt > 0 ? "red" : "muted"}
+            />
+          );
+        })()}
       </div>
 
       {rental.note && (
