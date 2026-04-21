@@ -189,7 +189,6 @@ export function Fleet() {
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <KpiTile
           label="Свободны"
-          labelEn="FREE"
           value={counters.ready}
           hint="готовы к аренде"
           icon={ShoppingBag}
@@ -202,7 +201,6 @@ export function Fleet() {
         />
         <KpiTile
           label="В аренде"
-          labelEn="IN RENT"
           value={counters.rented}
           hint="действующие договоры"
           icon={Key}
@@ -215,7 +213,6 @@ export function Fleet() {
         />
         <KpiTile
           label="На ремонте"
-          labelEn="REPAIR"
           value={counters.repair}
           hint="у мастера"
           icon={Wrench}
@@ -228,7 +225,6 @@ export function Fleet() {
         />
         <KpiTile
           label="Продаются"
-          labelEn="ON SALE"
           value={counters.for_sale}
           hint="выставлены на витрину"
           icon={Tag}
@@ -508,7 +504,6 @@ function StatusPill({ status }: { status: ScooterDisplayStatus }) {
 
 function KpiTile({
   label,
-  labelEn,
   value,
   hint,
   icon: Icon,
@@ -517,7 +512,6 @@ function KpiTile({
   onClick,
 }: {
   label: string;
-  labelEn: string;
   value: number;
   hint: string;
   icon: typeof Key;
@@ -556,9 +550,6 @@ function KpiTile({
         <div className={cn("flex h-10 w-10 items-center justify-center rounded-full", iconCls)}>
           <Icon size={18} />
         </div>
-        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
-          {labelEn}
-        </span>
       </div>
       <div
         className={cn(
