@@ -362,6 +362,7 @@ export function RentalCard({ rental }: { rental: Rental }) {
         )}
       >
         {(() => {
+          let label = "Срок";
           let value = `${rental.days} дн`;
           const hint = `${rental.start.slice(0, 5)} — ${rental.endPlanned.slice(0, 5)}`;
           let kpiTone: "neutral" | "green" | "red" | "gray" = "neutral";
@@ -373,15 +374,21 @@ export function RentalCard({ rental }: { rental: Rental }) {
               value = `возврат сегодня`;
               kpiTone = "red";
             } else {
-              value = `просрочка ${Math.abs(daysLeft)} дн`;
+              label = "Просрочен";
+              value = `${Math.abs(daysLeft)} дн`;
               kpiTone = "red";
             }
           } else if (rental.status === "overdue") {
-            value = "просрочка";
+            label = "Просрочен";
+            if (daysLeft !== null && daysLeft < 0) {
+              value = `${Math.abs(daysLeft)} дн`;
+            } else {
+              value = "сегодня";
+            }
             kpiTone = "red";
           }
           return (
-            <KpiChip label="Период" value={value} hint={hint} tone={kpiTone} />
+            <KpiChip label={label} value={value} hint={hint} tone={kpiTone} />
           );
         })()}
         <KpiChipSplit
