@@ -1,0 +1,31 @@
+node_modules
+**/node_modules
+dist
+**/dist
+.vite
+.turbo
+.cache
+*.log
+
+# локальные env-файлы
+.env
+.env.local
+**/.env
+**/.env.local
+
+# git
+.git
+.github
+
+# IDE / OS
+.idea
+.vscode
+.DS_Store
+
+# Electron
+apps/desktop
+
+# Бизнес-артефакты (локальные, не пушатся)
+Скутеры_CRM_Бизнес
+Сырые документы
+design

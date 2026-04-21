@@ -1,6 +1,12 @@
-# Локальная инфраструктура для разработки.
-# На проде (Dokploy) Postgres поднимается из шаблонов самого Dokploy,
-# этот compose — только для dev-окружения.
+# Локальный полный стек для разработки и проверки прод-сборки.
+# На Dokploy: каждый сервис деплоится отдельно (api, web, postgres из шаблона),
+# этот compose — только для dev/проверки build'ов локально.
+#
+# Команды:
+#   pnpm db:up                          — поднять только Postgres
+#   docker compose -p hulk_bike_crm up  — весь стек (postgres + api + web)
+#   docker compose -p hulk_bike_crm build       — собрать api и web
+#   docker compose -p hulk_bike_crm up --build  — пересобрать и поднять
 services:
   postgres:
     image: postgres:16-alpine
@@ -10,9 +16,8 @@ services:
       POSTGRES_USER: hulk
       POSTGRES_PASSWORD: hulk
       POSTGRES_DB: hulk_dev
-    # Наружу даём 5433, чтобы не конфликтовать с уже установленным локально Postgres.
-    # Внутри контейнера порт 5432 по умолчанию.
     ports:
+      # 5433 снаружи, чтобы не конфликтовать с локальным Postgres на 5432
       - "5433:5432"
     volumes:
       - hulk_pg_data:/var/lib/postgresql/data
@@ -21,6 +26,45 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: hulk_api
+    restart: unless-stopped
+    # profiles: если нужно запустить только postgres — profile не активируется
+    profiles: ["full"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # Внутри compose-сети Postgres доступен по имени `postgres` и порту 5432
+      DATABASE_URL: postgres://hulk:hulk@postgres:5432/hulk_dev
+      PORT: "4000"
+      HOST: "0.0.0.0"
+      NODE_ENV: production
+      CORS_ORIGINS: "http://localhost:5173,http://localhost:8080"
+    ports:
+      - "4000:4000"
+    # Перед стартом применяем миграции
+    # Перед стартом api применяем миграции (подтягивает новые таблицы/колонки)
+    command: sh -c "node dist/db/migrate.js && node dist/index.js"
+    working_dir: /app/apps/api
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        VITE_API_URL: "http://localhost:4000"
+    container_name: hulk_web
+    restart: unless-stopped
+    profiles: ["full"]
+    depends_on:
+      - api
+    ports:
+      - "8080:80"
 
 volumes:
   hulk_pg_data:
