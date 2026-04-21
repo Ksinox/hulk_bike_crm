@@ -37,8 +37,65 @@ export type FleetScooter = {
   purchaseDate?: string;
   /** цена закупа, ₽ (виден только директору) */
   purchasePrice?: number;
+  /** Пробег скутера на момент последней замены масла, км */
+  lastOilChangeMileage?: number;
+  /**
+   * Накопленные расходы на обслуживание, ₽ — ремонты, ТО, запчасти, масло.
+   * В демо-моке — просто правдоподобные цифры, дальше заполнится из истории ремонтов.
+   */
+  maintenanceCostTotal?: number;
   note?: string;
 };
+
+/**
+ * Интервал замены масла (км) по модели.
+ * Данные основаны на рекомендациях производителей:
+ * — Yamaha Jog (2T): трансмиссионное масло каждые 5 000 км
+ * — Yamaha Gear, Honda DIO (4T): моторное масло каждые 3 000 км
+ * — Tank (4T, крупная кубатура): моторное масло каждые 3 000 км
+ */
+export const OIL_INTERVAL_KM: Record<ScooterModel, number> = {
+  jog: 5_000,
+  gear: 3_000,
+  honda: 3_000,
+  tank: 3_000,
+};
+
+/**
+ * Вычисляет «следующее ТО по маслу» и остаток до него.
+ * Возвращает отрицательный remainKm, если обслуживание просрочено.
+ */
+export function oilServiceInfo(s: FleetScooter): {
+  intervalKm: number;
+  lastMileage: number;
+  nextMileage: number;
+  remainKm: number;
+  /** 0..1, 1 — пора менять / просрочка */
+  usedRatio: number;
+} {
+  const intervalKm = OIL_INTERVAL_KM[s.model];
+  // Если не задано — псевдо-случайное значение в пределах интервала+буфер,
+  // чтобы часть скутеров подошла близко к сроку, а кто-то просрочен.
+  const fallbackPartial = (s.id * 317) % (intervalKm + 900);
+  const lastMileage =
+    s.lastOilChangeMileage != null
+      ? s.lastOilChangeMileage
+      : Math.max(0, s.mileage - fallbackPartial);
+  const nextMileage = lastMileage + intervalKm;
+  const remainKm = nextMileage - s.mileage;
+  const used = Math.max(0, s.mileage - lastMileage);
+  const usedRatio = Math.min(1, used / intervalKm);
+  return { intervalKm, lastMileage, nextMileage, remainKm, usedRatio };
+}
+
+/** Детерминированные накопленные траты на обслуживание (пока моки). */
+export function maintenanceCost(s: FleetScooter): number {
+  if (s.maintenanceCostTotal != null) return s.maintenanceCostTotal;
+  // базово: 3 ₽/км эксплуатации + плавающий бонус по id
+  const base = Math.round(s.mileage * 3);
+  const variance = (s.id * 731) % 9_000;
+  return base + variance;
+}
 
 function mk(
   id: number,

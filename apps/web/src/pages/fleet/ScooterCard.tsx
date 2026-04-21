@@ -5,6 +5,7 @@ import {
   BadgeCheck,
   Bell,
   Calendar,
+  Crown,
   ImageOff,
   Info,
   Pencil,
@@ -14,10 +15,13 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
+  maintenanceCost,
+  oilServiceInfo,
   SCOOTER_STATUS_LABEL,
   type FleetScooter,
   type ScooterDisplayStatus,
 } from "@/lib/mock/fleet";
+import { useRole } from "@/lib/role";
 import { MODEL_LABEL, type ScooterModel } from "@/lib/mock/rentals";
 import { CLIENTS } from "@/lib/mock/clients";
 import { useRentals } from "@/pages/rentals/rentalsStore";
@@ -84,6 +88,7 @@ export function ScooterCard({
   onBack: () => void;
 }) {
   const rentals = useRentals();
+  const role = useRole();
   const [tab, setTab] = useState<TabId>("history");
 
   // Все аренды по этому скутеру (включая историю)
@@ -110,9 +115,38 @@ export function ScooterCard({
   const repairsCount = 0; // пока нет справочника ремонтов
   const incidentsCount = 0;
 
-  // «Топливо» — просто декоративное значение, зависящее от id (до появления телеметрии)
-  const fuelLevel = 40 + ((scooter.id * 13) % 55);
-  const nextServiceIn = 2_000 - (scooter.mileage % 2_000);
+  // Информация по замене масла — интервал зависит от модели (Jog — 5000 км, остальные — 3000 км).
+  // Рассчитывается от пробега на момент прошлой замены и текущего пробега.
+  const oil = oilServiceInfo(scooter);
+  const oilOverdue = oil.remainKm < 0;
+  const oilWarn = !oilOverdue && oil.remainKm <= 300;
+
+  // Экономика — считается по всей истории аренд этого скутера
+  const lifetimeRevenue = scooterRentals.reduce((s, r) => s + (r.sum || 0), 0);
+  const maintTotal = maintenanceCost(scooter);
+  const purchase = scooter.purchasePrice || 0;
+  const coveragePct = purchase
+    ? Math.round((lifetimeRevenue / purchase) * 100)
+    : 0;
+  const covered = coveragePct >= 100;
+  const netProfit = lifetimeRevenue - maintTotal - purchase;
+  const netMarginPct = lifetimeRevenue
+    ? Math.round(((lifetimeRevenue - maintTotal) / lifetimeRevenue) * 100)
+    : 0;
+
+  const ageMonths = monthsSincePurchase(scooter.purchaseDate);
+  const serviceLifeMonths = 36; // ожидаемая эксплуатация, мес
+  const lifeProgressPct = Math.min(
+    100,
+    Math.round((ageMonths / serviceLifeMonths) * 100),
+  );
+  const remainingMonths = Math.max(0, serviceLifeMonths - ageMonths);
+
+  // «Индекс прибыльности» 0..100 — композит: покрытие + маржа
+  const profitIndex = Math.max(
+    0,
+    Math.min(100, Math.round(coveragePct * 0.6 + netMarginPct * 0.4)),
+  );
 
   const statusPill = statusPillClass(status);
 
@@ -180,13 +214,6 @@ export function ScooterCard({
               Загрузите аватарку модели {MODEL_LABEL[scooter.model]} — появится
               здесь для всех {scooter.name.split(" ")[0]}-скутеров
             </div>
-            <button
-              type="button"
-              className="mt-2 rounded-full bg-surface px-3 py-1 text-[11px] font-semibold text-blue-600 shadow-card-sm hover:bg-blue-50"
-              title="Скоро"
-            >
-              360° осмотр
-            </button>
           </div>
 
           {/* техничка */}
@@ -237,13 +264,6 @@ export function ScooterCard({
                 value={warrantyLabel(scooter.purchaseDate)}
                 accent="blue"
               />
-              {scooter.purchasePrice && (
-                <SpecCell
-                  label="Цена закупа"
-                  value={`${fmt(scooter.purchasePrice)} ₽`}
-                  hint="видно директору"
-                />
-              )}
               {scooter.note && (
                 <SpecCell label="Комментарий" value={scooter.note} />
               )}
@@ -353,37 +373,238 @@ export function ScooterCard({
             </div>
           )}
 
-          {/* Maintenance Overview */}
+          {/* Maintenance Overview — замена масла */}
           <div className="rounded-2xl bg-surface p-5 shadow-card-sm">
-            <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
-              Обслуживание
+            <div className="flex items-center justify-between">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
+                Обслуживание
+              </div>
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-2">
+                интервал {fmt(oil.intervalKm)} км
+              </span>
             </div>
+
             <div className="mt-3 flex items-center justify-between text-[13px]">
-              <span className="text-ink-2">Топливо</span>
-              <span className="font-bold tabular-nums text-blue-600">
-                {fuelLevel}%
+              <span className="font-semibold text-ink">Замена масла</span>
+              <span
+                className={cn(
+                  "font-bold tabular-nums",
+                  oilOverdue
+                    ? "text-red-ink"
+                    : oilWarn
+                      ? "text-orange-ink"
+                      : "text-blue-600",
+                )}
+              >
+                {oilOverdue
+                  ? `просрочено на ${fmt(Math.abs(oil.remainKm))} км`
+                  : `через ${fmt(oil.remainKm)} км`}
               </span>
             </div>
             <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-surface-soft">
               <div
-                className="h-full rounded-full bg-blue-600"
-                style={{ width: `${fuelLevel}%` }}
+                className={cn(
+                  "h-full rounded-full transition-all",
+                  oilOverdue
+                    ? "bg-red-ink"
+                    : oilWarn
+                      ? "bg-orange-ink"
+                      : "bg-blue-600",
+                )}
+                style={{ width: `${Math.round(oil.usedRatio * 100)}%` }}
               />
             </div>
-            <div className="mt-4 flex items-center justify-between text-[13px]">
-              <span className="text-ink-2">Следующее ТО</span>
-              <span
-                className={cn(
-                  "font-bold tabular-nums",
-                  nextServiceIn < 500 ? "text-orange-ink" : "text-ink",
-                )}
-              >
-                через {fmt(nextServiceIn)} км
-              </span>
+
+            <div className="mt-3 grid grid-cols-2 gap-3 text-[12px]">
+              <div>
+                <div className="text-[10px] uppercase tracking-wider text-muted-2">
+                  Последняя замена
+                </div>
+                <div className="mt-0.5 font-bold tabular-nums text-ink">
+                  {fmt(oil.lastMileage)} км
+                </div>
+              </div>
+              <div>
+                <div className="text-[10px] uppercase tracking-wider text-muted-2">
+                  След. замена при
+                </div>
+                <div className="mt-0.5 font-bold tabular-nums text-ink">
+                  {fmt(oil.nextMileage)} км
+                </div>
+              </div>
             </div>
+
+            <button
+              type="button"
+              className="mt-3 inline-flex w-full items-center justify-center rounded-full border border-border bg-surface px-3 py-1.5 text-[12px] font-semibold text-ink-2 transition-colors hover:bg-surface-soft"
+              title="Скоро — откроется форма фиксации замены"
+            >
+              Зафиксировать замену
+            </button>
           </div>
         </aside>
       </div>
+
+      {/* ======== DIRECTOR-ONLY: ROI ======== */}
+      {role === "director" && (
+        <section className="relative overflow-hidden rounded-2xl bg-surface p-6 shadow-card-sm">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="min-w-0 flex items-start gap-2">
+              <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-purple-soft px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-purple-ink">
+                <Crown size={11} /> Только директору
+              </span>
+              <div>
+                <h2 className="font-display text-[22px] font-extrabold leading-tight text-ink">
+                  Окупаемость и здоровье актива
+                </h2>
+                <div className="mt-1 text-[13px] text-muted">
+                  Экономическая эффективность vs. ресурс скутера
+                </div>
+              </div>
+            </div>
+            <div className="text-right">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
+                Доход за всё время
+              </div>
+              <div
+                className={cn(
+                  "mt-1 font-display text-[28px] font-extrabold leading-none tabular-nums",
+                  covered ? "text-blue-600" : "text-ink",
+                )}
+              >
+                {fmt(lifetimeRevenue)} ₽
+              </div>
+              <div className="mt-1 text-[11px] text-muted-2">
+                по {scooterRentals.length} арендам
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-5 lg:grid-cols-[260px_1fr]">
+            {/* Donut */}
+            <div className="flex flex-col items-center gap-3 rounded-2xl bg-surface-soft p-5">
+              <Donut value={profitIndex} />
+              <div className="text-center text-[12px] leading-snug text-muted">
+                {covered
+                  ? `Скутер окупился полностью, принёс сверху ${fmt(
+                      Math.max(0, lifetimeRevenue - purchase),
+                    )} ₽`
+                  : `До окупаемости осталось ${fmt(
+                      Math.max(0, purchase - lifetimeRevenue),
+                    )} ₽`}
+              </div>
+            </div>
+
+            {/* Stats column */}
+            <div className="flex flex-col gap-5">
+              {/* Coverage */}
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[14px] font-bold text-ink">
+                    Покрытие цены закупа
+                  </span>
+                  <span
+                    className={cn(
+                      "text-[12px] font-bold",
+                      covered ? "text-blue-600" : "text-muted",
+                    )}
+                  >
+                    {coveragePct}% {covered ? "покрыто" : "пока"}
+                  </span>
+                </div>
+                <div className="mt-2 h-2 overflow-hidden rounded-full bg-surface-soft">
+                  <div
+                    className="h-full rounded-full bg-blue-600 transition-all"
+                    style={{ width: `${Math.min(100, coveragePct)}%` }}
+                  />
+                </div>
+                <div className="mt-1.5 text-[12px] text-muted-2">
+                  Цена закупа <b>{fmt(purchase)} ₽</b>
+                  {covered
+                    ? " — полностью амортизирована."
+                    : ` — осталось покрыть ${fmt(
+                        Math.max(0, purchase - lifetimeRevenue),
+                      )} ₽.`}
+                </div>
+              </div>
+
+              {/* Lifecycle */}
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[14px] font-bold text-ink">
+                    Ресурс эксплуатации
+                  </span>
+                  <span className="text-[12px] font-bold text-ink-2 tabular-nums">
+                    Месяц {ageMonths} / {serviceLifeMonths}
+                  </span>
+                </div>
+                <div className="mt-2 h-2 overflow-hidden rounded-full bg-surface-soft">
+                  <div
+                    className="h-full rounded-full bg-ink transition-all"
+                    style={{ width: `${lifeProgressPct}%` }}
+                  />
+                </div>
+                <div className="mt-1.5 text-[12px] text-muted-2">
+                  {remainingMonths > 0
+                    ? `Оставшийся ресурс — ~${remainingMonths} мес.`
+                    : "Расчётный ресурс исчерпан — рассмотрите продажу."}
+                </div>
+              </div>
+
+              {/* Mini stats */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-2xl bg-surface-soft px-4 py-3">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
+                    Расходы на обслуживание
+                  </div>
+                  <div className="mt-1 font-display text-[20px] font-extrabold tabular-nums text-ink">
+                    {fmt(maintTotal)} ₽
+                  </div>
+                </div>
+                <div className="rounded-2xl bg-surface-soft px-4 py-3">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
+                    Чистая маржа
+                  </div>
+                  <div
+                    className={cn(
+                      "mt-1 font-display text-[20px] font-extrabold tabular-nums",
+                      netMarginPct >= 50
+                        ? "text-green-ink"
+                        : netMarginPct >= 0
+                          ? "text-ink"
+                          : "text-red-ink",
+                    )}
+                  >
+                    {netMarginPct}%
+                  </div>
+                </div>
+                <div className="rounded-2xl bg-surface-soft px-4 py-3">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
+                    Цена закупа
+                  </div>
+                  <div className="mt-1 font-display text-[20px] font-extrabold tabular-nums text-ink">
+                    {fmt(purchase)} ₽
+                  </div>
+                </div>
+                <div className="rounded-2xl bg-surface-soft px-4 py-3">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
+                    Чистая прибыль
+                  </div>
+                  <div
+                    className={cn(
+                      "mt-1 font-display text-[20px] font-extrabold tabular-nums",
+                      netProfit >= 0 ? "text-green-ink" : "text-red-ink",
+                    )}
+                  >
+                    {netProfit >= 0 ? "+" : "−"}
+                    {fmt(Math.abs(netProfit))} ₽
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* ======== TABS ======== */}
       <div className="flex gap-1 border-b border-border">
@@ -458,6 +679,72 @@ function statusPillClass(status: ScooterDisplayStatus): string {
           : status === "for_sale"
             ? "bg-orange-soft text-orange-ink"
             : "bg-surface-soft text-muted";
+}
+
+function monthsSincePurchase(purchase?: string): number {
+  if (!purchase) return 0;
+  const d = parseDate(purchase);
+  if (!d) return 0;
+  // Сегодня по демо-таймлайну — 13.10.2026
+  const today = new Date(2026, 9, 13);
+  const years = today.getFullYear() - d.getFullYear();
+  const months = today.getMonth() - d.getMonth();
+  return Math.max(0, years * 12 + months);
+}
+
+function Donut({ value }: { value: number }) {
+  const size = 180;
+  const stroke = 18;
+  const r = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * r;
+  const offset = circumference * (1 - Math.max(0, Math.min(100, value)) / 100);
+  const growing = value >= 50;
+  return (
+    <div className="relative flex h-[180px] w-[180px] items-center justify-center">
+      <svg width={size} height={size}>
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          stroke="hsl(var(--border))"
+          strokeWidth={stroke}
+          fill="none"
+        />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          stroke="hsl(var(--blue))"
+          strokeWidth={stroke}
+          fill="none"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          strokeLinecap="round"
+          transform={`rotate(-90 ${size / 2} ${size / 2})`}
+          style={{ transition: "stroke-dashoffset 500ms ease" }}
+        />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
+          Индекс прибыли
+        </div>
+        <div className="mt-0.5 font-display text-[32px] font-extrabold leading-none tabular-nums text-ink">
+          {value.toFixed(1)}
+        </div>
+        <div
+          className={cn(
+            "mt-1 rounded-full px-2 py-0.5 text-[10px] font-bold",
+            growing
+              ? "bg-blue-50 text-blue-700"
+              : "bg-surface-soft text-muted",
+          )}
+        >
+          {growing ? "+" : ""}
+          {Math.round(value - 50)}% к среднему
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function reformatDate(ddmmyyyy: string): string {
