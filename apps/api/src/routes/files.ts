@@ -39,7 +39,11 @@ export async function filesRoutes(app: FastifyInstance) {
         "Content-Disposition",
         `${disposition}; filename*=UTF-8''${safe}`,
       )
-      .header("Cache-Control", "private, max-age=300");
+      .header("Cache-Control", "private, max-age=300")
+      // helmet по умолчанию ставит CORP=same-origin, что ломает <img> на
+      // соседнем поддомене web. Для файлов разрешаем cross-origin-встраивание
+      // (доступ к самому роуту по-прежнему контролирует CORS + авторизация).
+      .header("Cross-Origin-Resource-Policy", "cross-origin");
 
     return reply.send(stream);
   });
