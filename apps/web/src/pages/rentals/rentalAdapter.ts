@@ -26,6 +26,7 @@ export function adaptRental(
   return {
     id: r.id,
     clientId: r.clientId,
+    scooterId: r.scooterId ?? undefined,
     scooter: scooter?.name ?? "—",
     model: scooter?.model ?? "jog",
     start: start.date,

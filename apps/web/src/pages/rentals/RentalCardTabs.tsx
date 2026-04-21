@@ -35,6 +35,7 @@ import {
   useRentalTasks,
 } from "./rentalsStore";
 import { CLIENTS } from "@/lib/mock/clients";
+import { navigate } from "@/app/navigationStore";
 
 function fmt(n: number) {
   return n.toLocaleString("ru-RU");
@@ -100,8 +101,21 @@ export function TermsTab({
       {/* ============ ЛЕВАЯ КОЛОНКА: СКУТЕР + УСЛОВИЯ ============ */}
       <button
         type="button"
-        title="Карточка скутера (скоро)"
-        className="group rounded-[14px] border border-border p-4 text-left transition-colors hover:bg-surface-soft/60"
+        disabled={rental.scooterId == null}
+        onClick={() => {
+          if (rental.scooterId == null) return;
+          navigate({
+            route: "fleet",
+            scooterId: rental.scooterId,
+            from: { route: "rentals", rentalId: rental.id },
+          });
+        }}
+        title={
+          rental.scooterId != null
+            ? "Открыть карточку скутера"
+            : "Скутер ещё не назначен"
+        }
+        className="group rounded-[14px] border border-border p-4 text-left transition-colors hover:bg-surface-soft/60 disabled:cursor-not-allowed disabled:opacity-60"
       >
         <div className="flex items-start gap-4">
           <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-ink text-white">

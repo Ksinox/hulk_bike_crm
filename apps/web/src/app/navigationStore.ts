@@ -4,11 +4,13 @@ type NavRequest = {
   route: RouteId;
   clientId?: number;
   rentalId?: number;
+  scooterId?: number;
   /** Откуда пришли — для breadcrumb «← назад» */
   from?: {
     route: RouteId;
     rentalId?: number;
     clientId?: number;
+    scooterId?: number;
   };
 };
 
@@ -16,6 +18,7 @@ export type BackTarget = {
   route: RouteId;
   rentalId?: number;
   clientId?: number;
+  scooterId?: number;
 };
 
 const EVENT = "hulk:navigate";
@@ -30,12 +33,12 @@ export function navigate(req: NavRequest): void {
 
 /** Прочитать pending-выбор для маршрута; после чтения сбрасывается */
 export function consumePending(route: RouteId):
-  | { clientId?: number; rentalId?: number; from?: BackTarget }
+  | { clientId?: number; rentalId?: number; scooterId?: number; from?: BackTarget }
   | null {
   if (!pending || pending.route !== route) return null;
-  const { clientId, rentalId, from } = pending;
+  const { clientId, rentalId, scooterId, from } = pending;
   pending = null;
-  return { clientId, rentalId, from };
+  return { clientId, rentalId, scooterId, from };
 }
 
 /** Подписаться на события навигации (для App) */

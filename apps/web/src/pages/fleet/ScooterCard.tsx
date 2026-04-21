@@ -75,10 +75,12 @@ export function ScooterCard({
   scooter,
   status,
   onBack,
+  backLabel,
 }: {
   scooter: FleetScooter;
   status: ScooterDisplayStatus;
   onBack: () => void;
+  backLabel?: string;
 }) {
   const rentals = useRentals();
   const role = useRole();
@@ -153,10 +155,14 @@ export function ScooterCard({
         <button
           type="button"
           onClick={onBack}
-          title="Назад к списку"
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface shadow-card-sm transition-colors hover:bg-surface-soft"
+          title={backLabel ? `Назад ${backLabel}` : "Назад к списку"}
+          className={cn(
+            "inline-flex shrink-0 items-center gap-1.5 rounded-full bg-surface shadow-card-sm transition-colors hover:bg-surface-soft",
+            backLabel ? "h-10 px-3 text-[13px] font-semibold" : "h-10 w-10 justify-center",
+          )}
         >
           <ArrowLeft size={18} />
+          {backLabel}
         </button>
         <h1 className="font-display text-[32px] font-extrabold leading-none text-ink">
           {scooter.name}

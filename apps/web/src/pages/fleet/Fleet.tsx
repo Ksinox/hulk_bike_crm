@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { consumePending, navigate, type BackTarget } from "@/app/navigationStore";
 import {
   ChevronLeft,
   ChevronRight,
@@ -73,6 +74,15 @@ export function Fleet() {
   const [page, setPage] = useState(1);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [backTo, setBackTo] = useState<BackTarget | null>(null);
+
+  // Если пришли с navigate({ route: "fleet", scooterId, from: ... })
+  //   → открываем карточку + запоминаем куда вернуться
+  useEffect(() => {
+    const p = consumePending("fleet");
+    if (p?.scooterId != null) setSelectedId(p.scooterId);
+    if (p?.from) setBackTo(p.from);
+  }, []);
 
   /** Словарь scooter → активная аренда (active / overdue / returning) */
   const rentalByScooter = useMemo(() => {
@@ -167,7 +177,18 @@ export function Fleet() {
         <ScooterCard
           scooter={sel.scooter}
           status={sel.status}
-          onBack={() => setSelectedId(null)}
+          onBack={() => {
+            if (backTo?.route === "rentals") {
+              navigate({ route: "rentals", rentalId: backTo.rentalId });
+              setBackTo(null);
+            }
+            setSelectedId(null);
+          }}
+          backLabel={
+            backTo?.route === "rentals" && backTo.rentalId
+              ? `к аренде #${String(backTo.rentalId).padStart(4, "0")}`
+              : undefined
+          }
         />
       );
     }
