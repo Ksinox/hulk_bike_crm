@@ -26,7 +26,7 @@ import {
   index,
   primaryKey,
 } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 
 /* ============================================================
  * ENUMS — отражают доменные статусы из TS-типов
@@ -50,11 +50,12 @@ export const scooterModelEnum = pgEnum("scooter_model", [
 ]);
 
 export const scooterBaseStatusEnum = pgEnum("scooter_base_status", [
-  "ready",
-  "repair",
-  "buyout",
-  "for_sale",
-  "sold",
+  "ready", // «Не распределён» — только что заведён, админ ещё не решил что с ним
+  "rental_pool", // «Парк аренды» — выделен под аренду, доступен к сдаче
+  "repair", // на ремонте
+  "buyout", // передан клиенту в рассрочку (выкуп)
+  "for_sale", // выставлен на продажу
+  "sold", // продан, в обороте не участвует
 ]);
 
 export const rentalStatusEnum = pgEnum("rental_status", [
@@ -115,6 +116,7 @@ export const scooterDocKindEnum = pgEnum("scooter_doc_kind", [
   "sts", // свидетельство о регистрации
   "osago", // полис ОСАГО
   "purchase", // договор покупки (только директору)
+  "photo", // фотография скутера (дополнительно к аватарке, до 10 штук)
 ]);
 
 /* ============================================================
@@ -281,12 +283,12 @@ export const scooterDocuments = pgTable(
   },
   (t) => ({
     scooterIdx: index("scooter_documents_scooter_idx").on(t.scooterId),
-    /** Один «активный» документ каждого вида на скутер.
-     *  Замена файла — UPDATE того же ряда. */
-    scooterKindUnique: uniqueIndex("scooter_documents_scooter_kind_uq").on(
-      t.scooterId,
-      t.kind,
-    ),
+    /** Один «активный» документ каждого «официального» вида на скутер
+     *  (pts/sts/osago/purchase — их заменяем через UPDATE).
+     *  Для kind='photo' этого ограничения нет — там до 10 фото на скутер. */
+    scooterKindUnique: uniqueIndex("scooter_documents_scooter_kind_uq")
+      .on(t.scooterId, t.kind)
+      .where(sql`kind <> 'photo'`),
   }),
 );
 

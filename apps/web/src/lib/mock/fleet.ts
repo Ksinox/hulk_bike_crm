@@ -5,7 +5,8 @@ import type { ScooterModel } from "./rentals";
  * Статус «в аренде» вычисляется динамически из rentalsStore — не хранится здесь.
  */
 export type ScooterBaseStatus =
-  | "ready" // свободен, готов к аренде
+  | "ready" // «Не распределён» — только что завели, админ ещё не решил что с ним
+  | "rental_pool" // «Парк аренды» — в пуле сдачи, готов к следующей аренде
   | "repair" // на ремонте
   | "buyout" // передан клиенту в рассрочку (выкуп)
   | "for_sale" // выставлен на продажу
@@ -14,7 +15,8 @@ export type ScooterBaseStatus =
 export type ScooterDisplayStatus = ScooterBaseStatus | "rented";
 
 export const SCOOTER_STATUS_LABEL: Record<ScooterDisplayStatus, string> = {
-  ready: "Свободен",
+  ready: "Не распределён",
+  rental_pool: "Парк аренды",
   rented: "В аренде",
   repair: "Ремонт",
   buyout: "Выкуп",

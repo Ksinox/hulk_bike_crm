@@ -190,6 +190,9 @@ export function RentalCard({ rental }: { rental: Rental }) {
   const chainRentSum = chainRentals.reduce((s, r) => s + (r.sum || 0), 0);
   const chainDeposit = chainRentals[0]?.deposit || DEPOSIT_AMOUNT;
   const chainExpected = chainRentSum + chainDeposit;
+  /** Сумма дней по всей цепочке продлений (текущая + родители + потомки) */
+  const chainDaysTotal = chainRentals.reduce((s, r) => s + (r.days || 0), 0);
+  const isExtended = chainRentals.length > 1;
 
   const startDate = parseDate(rental.start);
   const endDate = parseDate(rental.endPlanned);
@@ -334,7 +337,9 @@ export function RentalCard({ rental }: { rental: Rental }) {
       <div
         className={cn(
           "grid grid-cols-2 gap-3 sm:grid-cols-4",
-          hasDamage && "lg:grid-cols-5",
+          isExtended && !hasDamage && "lg:grid-cols-5",
+          hasDamage && !isExtended && "lg:grid-cols-5",
+          hasDamage && isExtended && "lg:grid-cols-6",
         )}
       >
         {(() => {
@@ -405,6 +410,14 @@ export function RentalCard({ rental }: { rental: Rental }) {
             />
           );
         })()}
+        {isExtended && (
+          <KpiCard
+            label="Всего по сделке"
+            value={`${fmt(chainDaysTotal)} дн`}
+            hint={`${chainRentals.length} ${chainRentals.length === 1 ? "аренда" : chainRentals.length < 5 ? "аренды" : "аренд"} в серии`}
+            accent="blue"
+          />
+        )}
         {hasDamage && (
           <KpiCard
             label="Сумма ущерба"

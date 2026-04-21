@@ -139,19 +139,27 @@ async function main() {
 
   console.log(`▶ scooters: ${FLEET.length} записей`);
   await db.insert(scooters).values(
-    FLEET.map((s: FleetScooter) => ({
-      id: s.id,
-      name: s.name,
-      model: s.model as ScooterModel,
-      vin: s.vin,
-      engineNo: s.engineNo,
-      mileage: s.mileage,
-      baseStatus: s.baseStatus as ScooterBaseStatus,
-      purchaseDate: s.purchaseDate ? parseDate(s.purchaseDate) : null,
-      purchasePrice: s.purchasePrice,
-      lastOilChangeMileage: s.lastOilChangeMileage,
-      note: s.note,
-    })),
+    FLEET.map((s: FleetScooter) => {
+      // Мок был написан когда "ready" означало «в пуле аренды».
+      // В новой модели ready = «не распределён» (только что заведён),
+      // rental_pool = «в аренду-пуле». Переводим старые ready → rental_pool.
+      const baseStatus = (s.baseStatus === "ready"
+        ? "rental_pool"
+        : s.baseStatus) as ScooterBaseStatus;
+      return {
+        id: s.id,
+        name: s.name,
+        model: s.model as ScooterModel,
+        vin: s.vin,
+        engineNo: s.engineNo,
+        mileage: s.mileage,
+        baseStatus,
+        purchaseDate: s.purchaseDate ? parseDate(s.purchaseDate) : null,
+        purchasePrice: s.purchasePrice,
+        lastOilChangeMileage: s.lastOilChangeMileage,
+        note: s.note,
+      };
+    }),
   );
 
   // Маппинг: scooter name → scooter id (из базы, т.к. id 1:1 с FLEET)

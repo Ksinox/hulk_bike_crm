@@ -11,6 +11,8 @@ import { useRentals } from "./rentalsStore";
 import { useUnreachableSet } from "@/pages/clients/clientStore";
 import { NewRentalModal } from "./NewRentalModal";
 
+const TODAY_RU = "13.10.2026"; // демо-таймлайн
+
 function matchStatus(
   r: Rental,
   f: FiltersState["status"],
@@ -19,7 +21,15 @@ function matchStatus(
   if (f === "all") return true;
   if (f === "active") return r.status === "active";
   if (f === "overdue") return r.status === "overdue";
-  if (f === "returning") return r.status === "returning";
+  if (f === "return_today") {
+    // Возврат именно сегодня — плановая дата завершения = сегодняшняя дата.
+    // Учитываем активные и возвращаемые аренды.
+    const isActiveOrReturning =
+      r.status === "active" ||
+      r.status === "returning" ||
+      r.status === "overdue";
+    return isActiveOrReturning && r.endPlanned === TODAY_RU;
+  }
   if (f === "new_request")
     return r.status === "new_request" || r.status === "meeting";
   if (f === "completed")

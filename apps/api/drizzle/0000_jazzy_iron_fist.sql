@@ -5,8 +5,8 @@ CREATE TYPE "public"."payment_method" AS ENUM('cash', 'card', 'transfer');--> st
 CREATE TYPE "public"."payment_type" AS ENUM('rent', 'deposit', 'fine', 'damage', 'refund');--> statement-breakpoint
 CREATE TYPE "public"."rental_source_channel" AS ENUM('avito', 'repeat', 'ref', 'passing', 'other');--> statement-breakpoint
 CREATE TYPE "public"."rental_status" AS ENUM('new_request', 'meeting', 'active', 'overdue', 'returning', 'completed', 'completed_damage', 'cancelled', 'police', 'court');--> statement-breakpoint
-CREATE TYPE "public"."scooter_base_status" AS ENUM('ready', 'repair', 'buyout', 'for_sale', 'sold');--> statement-breakpoint
-CREATE TYPE "public"."scooter_doc_kind" AS ENUM('pts', 'sts', 'osago', 'purchase');--> statement-breakpoint
+CREATE TYPE "public"."scooter_base_status" AS ENUM('ready', 'rental_pool', 'repair', 'buyout', 'for_sale', 'sold');--> statement-breakpoint
+CREATE TYPE "public"."scooter_doc_kind" AS ENUM('pts', 'sts', 'osago', 'purchase', 'photo');--> statement-breakpoint
 CREATE TYPE "public"."scooter_model" AS ENUM('jog', 'gear', 'honda', 'tank');--> statement-breakpoint
 CREATE TYPE "public"."tariff_period" AS ENUM('short', 'week', 'month');--> statement-breakpoint
 CREATE TYPE "public"."user_role" AS ENUM('director', 'admin');--> statement-breakpoint
@@ -246,6 +246,6 @@ CREATE INDEX IF NOT EXISTS "rentals_status_idx" ON "rentals" USING btree ("statu
 CREATE INDEX IF NOT EXISTS "rentals_parent_idx" ON "rentals" USING btree ("parent_rental_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "rentals_end_planned_idx" ON "rentals" USING btree ("end_planned_at");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "scooter_documents_scooter_idx" ON "scooter_documents" USING btree ("scooter_id");--> statement-breakpoint
-CREATE UNIQUE INDEX IF NOT EXISTS "scooter_documents_scooter_kind_uq" ON "scooter_documents" USING btree ("scooter_id","kind");--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "scooter_documents_scooter_kind_uq" ON "scooter_documents" USING btree ("scooter_id","kind") WHERE kind <> 'photo';--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "scooters_model_idx" ON "scooters" USING btree ("model");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "scooters_base_status_idx" ON "scooters" USING btree ("base_status");

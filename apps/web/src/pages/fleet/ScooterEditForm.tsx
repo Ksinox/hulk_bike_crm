@@ -6,7 +6,8 @@ import { patchScooter } from "./fleetStore";
 import { useRole } from "@/lib/role";
 
 const BASE_STATUS_OPTIONS: { value: ScooterBaseStatus; label: string }[] = [
-  { value: "ready", label: "Свободен" },
+  { value: "ready", label: "Не распределён" },
+  { value: "rental_pool", label: "Парк аренды" },
   { value: "repair", label: "На ремонте" },
   { value: "buyout", label: "Передан в выкуп" },
   { value: "for_sale", label: "Выставлен на продажу" },

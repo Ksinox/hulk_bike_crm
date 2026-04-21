@@ -5,7 +5,7 @@ export type StatusFilter =
   | "all"
   | "active"
   | "overdue"
-  | "returning"
+  | "return_today"
   | "new_request"
   | "completed"
   | "issue";
@@ -19,7 +19,7 @@ const STATUS_TABS: { id: StatusFilter; label: string }[] = [
   { id: "all", label: "Все" },
   { id: "active", label: "Активные" },
   { id: "overdue", label: "Просрочка" },
-  { id: "returning", label: "Возврат" },
+  { id: "return_today", label: "Возврат сегодня" },
   { id: "new_request", label: "Новые" },
   { id: "completed", label: "Завершены" },
   { id: "issue", label: "Проблемные" },

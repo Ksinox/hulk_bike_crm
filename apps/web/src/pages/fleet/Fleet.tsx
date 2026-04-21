@@ -27,14 +27,21 @@ import { AddScooterModal } from "./AddScooterModal";
 /** «Сегодня» по демо-таймлайну */
 const TODAY = new Date(2026, 9, 13);
 
-type StatusTab = "all" | "ready" | "rented" | "repair" | "for_sale";
+type StatusTab =
+  | "all"
+  | "rental_pool"
+  | "rented"
+  | "repair"
+  | "for_sale"
+  | "ready";
 
 const TABS: { id: StatusTab; label: string }[] = [
   { id: "all", label: "Все" },
-  { id: "ready", label: "Свободные" },
+  { id: "rental_pool", label: "Парк аренды" },
   { id: "rented", label: "В аренде" },
   { id: "repair", label: "Ремонт" },
   { id: "for_sale", label: "Продаются" },
+  { id: "ready", label: "Не распределены" },
 ];
 
 const PAGE_SIZE = 10;
@@ -112,16 +119,27 @@ export function Fleet() {
   const rows = useMemo(() => {
     return FLEET.map((s) => {
       const rental = rentalByScooter.get(s.name);
+      // Если у скутера есть активная/просроченная/возвратная аренда —
+      // показываем «В аренде» независимо от базового статуса (только
+      // если базовый — rental_pool, т.е. скутер официально в пуле аренды).
       const status: ScooterDisplayStatus =
-        rental && s.baseStatus === "ready" ? "rented" : s.baseStatus;
+        rental && s.baseStatus === "rental_pool" ? "rented" : s.baseStatus;
       return { scooter: s, status, rental };
     });
   }, [FLEET, rentalByScooter]);
 
   const counters = useMemo(() => {
-    const c = { ready: 0, rented: 0, repair: 0, for_sale: 0, total: rows.length };
+    const c = {
+      ready: 0,
+      rental_pool: 0,
+      rented: 0,
+      repair: 0,
+      for_sale: 0,
+      total: rows.length,
+    };
     for (const r of rows) {
       if (r.status === "ready") c.ready++;
+      else if (r.status === "rental_pool") c.rental_pool++;
       else if (r.status === "rented") c.rented++;
       else if (r.status === "repair") c.repair++;
       else if (r.status === "for_sale") c.for_sale++;
@@ -212,14 +230,14 @@ export function Fleet() {
       {/* =========== KPI =========== */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <KpiTile
-          label="Свободны"
-          value={counters.ready}
-          hint="готовы к аренде"
+          label="Парк аренды"
+          value={counters.rental_pool}
+          hint="готовы к сдаче"
           icon={ShoppingBag}
           accent="green"
-          active={tab === "ready"}
+          active={tab === "rental_pool"}
           onClick={() => {
-            setTab("ready");
+            setTab("rental_pool");
             setPage(1);
           }}
         />

@@ -22,7 +22,7 @@ export type ApiClientDoc = ApiDoc & {
 
 export type ApiScooterDoc = ApiDoc & {
   scooterId: number;
-  kind: "pts" | "sts" | "osago" | "purchase";
+  kind: "pts" | "sts" | "osago" | "purchase" | "photo";
   osagoValidUntil: string | null;
 };
 

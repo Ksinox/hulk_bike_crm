@@ -223,7 +223,7 @@ export function TermsTab({
         </div>
 
         <div className="mt-1 flex items-center justify-between border-t border-border pt-3 text-[12px]">
-          <span className="text-muted-2">Общая длительность</span>
+          <span className="text-muted-2">Срок этой аренды</span>
           <span className="font-display text-[15px] font-extrabold tabular-nums text-blue-600">
             {rental.days} {daysWord(rental.days)}
           </span>

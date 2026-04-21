@@ -1,5 +1,5 @@
 {
-  "id": "d6b03eb1-ae81-4eb7-9467-9727ea55bf90",
+  "id": "5f4814ca-6253-44ec-b577-f2a3625c8ea7",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -1172,6 +1172,7 @@
             }
           ],
           "isUnique": true,
+          "where": "kind <> 'photo'",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -1491,6 +1492,7 @@
       "schema": "public",
       "values": [
         "ready",
+        "rental_pool",
         "repair",
         "buyout",
         "for_sale",
@@ -1504,7 +1506,8 @@
         "pts",
         "sts",
         "osago",
-        "purchase"
+        "purchase",
+        "photo"
       ]
     },
     "public.scooter_model": {

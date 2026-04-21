@@ -14,7 +14,8 @@ const MODEL_OPTIONS: { value: ScooterModel; label: string }[] = [
 ];
 
 const STATUS_OPTIONS: { value: ScooterBaseStatus; label: string }[] = [
-  { value: "ready", label: "Свободен" },
+  { value: "ready", label: "Не распределён" },
+  { value: "rental_pool", label: "Парк аренды" },
   { value: "repair", label: "На ремонте" },
   { value: "for_sale", label: "На продажу" },
 ];

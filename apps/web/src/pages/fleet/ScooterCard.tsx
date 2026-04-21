@@ -29,6 +29,7 @@ import { navigate } from "@/app/navigationStore";
 import { Topbar } from "@/pages/dashboard/Topbar";
 import { ScooterEditForm } from "./ScooterEditForm";
 import { ScooterDocumentsTab } from "./ScooterDocumentsTab";
+import { ScooterPhotosGallery } from "./ScooterPhotosGallery";
 
 type TabId = "history" | "repairs" | "incidents" | "docs";
 const TABS: { id: TabId; label: string; count?: number }[] = [
@@ -313,13 +314,15 @@ export function ScooterCard({
                 <div
                   className={cn(
                     "flex h-10 w-10 items-center justify-center rounded-full",
-                    status === "ready"
+                    status === "rental_pool"
                       ? "bg-green-soft text-green-ink"
-                      : status === "repair"
-                        ? "bg-red-soft text-red-ink"
-                        : status === "for_sale"
-                          ? "bg-orange-soft text-orange-ink"
-                          : "bg-surface-soft text-muted",
+                      : status === "ready"
+                        ? "bg-surface-soft text-muted"
+                        : status === "repair"
+                          ? "bg-red-soft text-red-ink"
+                          : status === "for_sale"
+                            ? "bg-orange-soft text-orange-ink"
+                            : "bg-surface-soft text-muted",
                   )}
                 >
                   {status === "repair" ? (
@@ -341,22 +344,26 @@ export function ScooterCard({
                 Текущий статус
               </div>
               <div className="mt-1 font-display text-[20px] font-extrabold leading-tight text-ink">
-                {status === "ready"
+                {status === "rental_pool"
                   ? "Готов к аренде"
-                  : status === "repair"
-                    ? "На ремонте"
-                    : status === "for_sale"
-                      ? "Выставлен на продажу"
-                      : status === "buyout"
-                        ? "Передан в выкуп"
-                        : "Продан"}
+                  : status === "ready"
+                    ? "Не распределён"
+                    : status === "repair"
+                      ? "На ремонте"
+                      : status === "for_sale"
+                        ? "Выставлен на продажу"
+                        : status === "buyout"
+                          ? "Передан в выкуп"
+                          : "Продан"}
               </div>
               <div className="mt-2 text-[12px] leading-relaxed text-muted">
-                {status === "ready"
-                  ? "Скутер свободен. Создайте аренду из списка клиентов или с этой карточки."
-                  : scooter.note || "—"}
+                {status === "rental_pool"
+                  ? "Скутер в пуле аренды. Создайте аренду из списка клиентов или с этой карточки."
+                  : status === "ready"
+                    ? "Скутер заведён в парк, но ещё не назначен под аренду, ремонт или продажу."
+                    : scooter.note || "—"}
               </div>
-              {status === "ready" && (
+              {status === "rental_pool" && (
                 <button
                   type="button"
                   className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-full bg-blue-600 px-4 py-2 text-[13px] font-bold text-white transition-colors hover:bg-blue-700"
@@ -368,7 +375,10 @@ export function ScooterCard({
             </div>
           )}
 
-          {/* Maintenance Overview — замена масла */}
+          {/* Maintenance Overview — замена масла.
+              Показываем только для скутеров «Парк аренды» или «В аренде»
+              (только те реально катают и нуждаются в ТО). */}
+          {(scooter.baseStatus === "rental_pool" || status === "rented") && (
           <div className="rounded-2xl bg-surface p-5 shadow-card-sm">
             <div className="flex items-center justify-between">
               <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
@@ -437,8 +447,12 @@ export function ScooterCard({
               Зафиксировать замену
             </button>
           </div>
+          )}
         </aside>
       </div>
+
+      {/* ======== ГАЛЕРЕЯ ФОТО ======== */}
+      <ScooterPhotosGallery scooterId={scooter.id} />
 
       {/* ======== DIRECTOR-ONLY: ROI ======== */}
       {role === "director" && (

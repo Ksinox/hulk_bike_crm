@@ -44,6 +44,7 @@ export type ApiClient = {
 export type ScooterModel = "jog" | "gear" | "honda" | "tank";
 export type ScooterBaseStatus =
   | "ready"
+  | "rental_pool"
   | "repair"
   | "buyout"
   | "for_sale"

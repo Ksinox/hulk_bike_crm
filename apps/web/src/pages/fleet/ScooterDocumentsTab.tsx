@@ -22,6 +22,7 @@ import {
   useUploadScooterDoc,
   type ApiScooterDoc,
 } from "@/lib/api/documents";
+import { FilePreviewModal } from "@/pages/clients/FilePreviewModal";
 
 const TODAY = new Date(2026, 9, 13);
 
@@ -50,10 +51,15 @@ export function ScooterDocumentsTab({ scooter }: { scooter: FleetScooter }) {
   const uploadMut = useUploadScooterDoc(scooter.id);
   const patchMut = usePatchScooterDoc(scooter.id);
   const deleteMut = useDeleteScooterDoc(scooter.id);
+  const [preview, setPreview] = useState<ApiScooterDoc | null>(null);
 
   const byKind = useMemo(() => {
     const m = new Map<ApiScooterDoc["kind"], ApiScooterDoc>();
-    for (const d of docs) m.set(d.kind, d);
+    // Для ПТС/СТС/ОСАГО/договора документ один — берём первый подходящий kind.
+    for (const d of docs) {
+      if (d.kind === "photo") continue;
+      m.set(d.kind, d);
+    }
     return m;
   }, [docs]);
 
@@ -143,6 +149,7 @@ export function ScooterDocumentsTab({ scooter }: { scooter: FleetScooter }) {
             doc={byKind.get("pts")}
             onUpload={(f) => onPickFile("pts", f)}
             onDelete={onDelete}
+            onPreview={setPreview}
             uploading={uploadMut.isPending}
           />
           <ServerDocSlot
@@ -151,6 +158,7 @@ export function ScooterDocumentsTab({ scooter }: { scooter: FleetScooter }) {
             doc={byKind.get("sts")}
             onUpload={(f) => onPickFile("sts", f)}
             onDelete={onDelete}
+            onPreview={setPreview}
             uploading={uploadMut.isPending}
           />
 
@@ -161,6 +169,7 @@ export function ScooterDocumentsTab({ scooter }: { scooter: FleetScooter }) {
               doc={osagoDoc}
               onUpload={(f) => onPickFile("osago", f)}
               onDelete={onDelete}
+              onPreview={setPreview}
               uploading={uploadMut.isPending}
             />
             <div className="rounded-[12px] border border-border bg-surface-soft px-3 py-2.5">
@@ -222,6 +231,7 @@ export function ScooterDocumentsTab({ scooter }: { scooter: FleetScooter }) {
               doc={byKind.get("purchase")}
               onUpload={(f) => onPickFile("purchase", f)}
               onDelete={onDelete}
+              onPreview={setPreview}
               uploading={uploadMut.isPending}
               directorOnly
             />
@@ -240,6 +250,17 @@ export function ScooterDocumentsTab({ scooter }: { scooter: FleetScooter }) {
           </div>
         )}
       </section>
+
+      {preview && (
+        <FilePreviewModal
+          file={{
+            name: preview.fileName,
+            thumbUrl: fileUrl(preview.fileKey),
+            size: preview.size,
+          }}
+          onClose={() => setPreview(null)}
+        />
+      )}
     </div>
   );
 }
@@ -255,6 +276,7 @@ function ServerDocSlot({
   doc,
   onUpload,
   onDelete,
+  onPreview,
   uploading,
   directorOnly,
 }: {
@@ -263,6 +285,7 @@ function ServerDocSlot({
   doc?: ApiScooterDoc;
   onUpload: (f: File) => void;
   onDelete: (doc: ApiScooterDoc) => void;
+  onPreview: (doc: ApiScooterDoc) => void;
   uploading: boolean;
   directorOnly?: boolean;
 }) {
@@ -299,10 +322,9 @@ function ServerDocSlot({
 
       {doc ? (
         <div className="flex items-center gap-3 rounded-[12px] border border-border bg-surface px-3 py-2.5">
-          <a
-            href={fileUrl(doc.fileKey, { filename: doc.fileName })}
-            target="_blank"
-            rel="noreferrer"
+          <button
+            type="button"
+            onClick={() => onPreview(doc)}
             className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-[10px] bg-blue-50 text-blue-700 transition-transform hover:scale-[1.04]"
             title="Открыть"
           >
@@ -315,11 +337,10 @@ function ServerDocSlot({
             ) : (
               <FileText size={18} />
             )}
-          </a>
-          <a
-            href={fileUrl(doc.fileKey, { filename: doc.fileName })}
-            target="_blank"
-            rel="noreferrer"
+          </button>
+          <button
+            type="button"
+            onClick={() => onPreview(doc)}
             className="min-w-0 flex-1 text-left"
           >
             <div className="truncate text-[12px] font-semibold text-ink hover:text-blue-600">
@@ -328,7 +349,7 @@ function ServerDocSlot({
             <div className="text-[11px] text-muted-2">
               {formatSize(doc.size)}
             </div>
-          </a>
+          </button>
           <a
             href={fileUrl(doc.fileKey, { download: true, filename: doc.fileName })}
             className="flex h-8 w-8 items-center justify-center rounded-full text-muted-2 hover:bg-surface-soft hover:text-ink"
