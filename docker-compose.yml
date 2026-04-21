@@ -1,0 +1,24 @@
+# Локальная инфраструктура для разработки.
+# На проде (Dokploy) Postgres поднимается из шаблонов самого Dokploy,
+# этот compose — только для dev-окружения.
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: hulk_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: hulk
+      POSTGRES_PASSWORD: hulk
+      POSTGRES_DB: hulk_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - hulk_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hulk -d hulk_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  hulk_pg_data:

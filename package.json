@@ -12,10 +12,19 @@
   },
   "scripts": {
     "dev": "pnpm --filter web dev",
+    "dev:api": "pnpm --filter api dev",
     "dev:desktop": "pnpm --filter desktop dev",
     "build": "pnpm --filter web build && pnpm --filter desktop build",
     "build:web": "pnpm --filter web build",
+    "build:api": "pnpm --filter api build",
     "build:desktop": "pnpm --filter desktop build",
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose down",
+    "db:logs": "docker compose logs -f postgres",
+    "db:generate": "pnpm --filter api db:generate",
+    "db:migrate": "pnpm --filter api db:migrate",
+    "db:reset": "pnpm --filter api db:reset",
+    "db:studio": "pnpm --filter api db:studio",
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck"
   }
