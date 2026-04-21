@@ -18,18 +18,23 @@ function emptyDocs(): ScooterDocs {
 }
 
 type State = {
+  /** Итоговый список = FLEET + added, сверху применены patches */
   scooters: FleetScooter[];
-  /** Патчи, накладываемые поверх мок-данных */
+  /** Скутеры, добавленные пользователем в рантайме */
+  added: FleetScooter[];
+  /** Патчи (ручные правки), накладываемые поверх базы + added */
   patches: Map<number, Partial<FleetScooter>>;
   docs: Map<number, ScooterDocs>;
 };
 
 function applyPatches(
   base: FleetScooter[],
+  added: FleetScooter[],
   patches: Map<number, Partial<FleetScooter>>,
 ): FleetScooter[] {
-  if (patches.size === 0) return base;
-  return base.map((s) => {
+  const all = [...base, ...added];
+  if (patches.size === 0) return all;
+  return all.map((s) => {
     const p = patches.get(s.id);
     return p ? { ...s, ...p } : s;
   });
@@ -37,6 +42,7 @@ function applyPatches(
 
 const state: State = {
   scooters: [...FLEET],
+  added: [],
   patches: new Map(),
   docs: new Map(),
 };
@@ -54,12 +60,23 @@ function subscribe(fn: () => void) {
 
 /* =================== actions =================== */
 
+export function addScooter(data: Omit<FleetScooter, "id">): FleetScooter {
+  const maxBase = FLEET.reduce((m, s) => Math.max(m, s.id), 0);
+  const maxAdded = state.added.reduce((m, s) => Math.max(m, s.id), 0);
+  const id = Math.max(maxBase, maxAdded) + 1;
+  const created: FleetScooter = { ...data, id };
+  state.added = [...state.added, created];
+  state.scooters = applyPatches(FLEET, state.added, state.patches);
+  emit();
+  return created;
+}
+
 export function patchScooter(id: number, patch: Partial<FleetScooter>) {
   const next = new Map(state.patches);
   const current = next.get(id) ?? {};
   next.set(id, { ...current, ...patch });
   state.patches = next;
-  state.scooters = applyPatches(FLEET, state.patches);
+  state.scooters = applyPatches(FLEET, state.added, state.patches);
   emit();
 }
 

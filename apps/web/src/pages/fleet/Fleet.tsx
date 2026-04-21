@@ -21,6 +21,7 @@ import { MODEL_LABEL, type ScooterModel } from "@/lib/mock/rentals";
 import { CLIENTS } from "@/lib/mock/clients";
 import { useRentals } from "@/pages/rentals/rentalsStore";
 import { ScooterCard } from "./ScooterCard";
+import { AddScooterModal } from "./AddScooterModal";
 
 /** «Сегодня» по демо-таймлайну */
 const TODAY = new Date(2026, 9, 13);
@@ -71,6 +72,7 @@ export function Fleet() {
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
 
   /** Словарь scooter → активная аренда (active / overdue / returning) */
   const rentalByScooter = useMemo(() => {
@@ -301,8 +303,8 @@ export function Fleet() {
 
         <button
           type="button"
+          onClick={() => setAddOpen(true)}
           className="inline-flex items-center gap-1.5 rounded-full bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-blue-700"
-          title="Доступно только директору (скоро)"
         >
           <Plus size={16} /> Добавить скутер
         </button>
@@ -345,6 +347,8 @@ export function Fleet() {
           />
         </div>
       </div>
+
+      {addOpen && <AddScooterModal onClose={() => setAddOpen(false)} />}
     </main>
   );
 }
