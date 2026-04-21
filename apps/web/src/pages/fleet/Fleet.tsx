@@ -12,11 +12,11 @@ import {
 import { Topbar } from "@/pages/dashboard/Topbar";
 import { cn } from "@/lib/utils";
 import {
-  FLEET,
   SCOOTER_STATUS_LABEL,
   type FleetScooter,
   type ScooterDisplayStatus,
 } from "@/lib/mock/fleet";
+import { useFleetScooters } from "./fleetStore";
 import { MODEL_LABEL, type ScooterModel } from "@/lib/mock/rentals";
 import { CLIENTS } from "@/lib/mock/clients";
 import { useRentals } from "@/pages/rentals/rentalsStore";
@@ -65,6 +65,7 @@ type RentalInfo = {
 
 export function Fleet() {
   const rentals = useRentals();
+  const FLEET = useFleetScooters();
   const [tab, setTab] = useState<StatusTab>("all");
   const [modelFilter, setModelFilter] = useState<ScooterModel | "all">("all");
   const [query, setQuery] = useState("");
@@ -103,7 +104,7 @@ export function Fleet() {
         rental && s.baseStatus === "ready" ? "rented" : s.baseStatus;
       return { scooter: s, status, rental };
     });
-  }, [rentalByScooter]);
+  }, [FLEET, rentalByScooter]);
 
   const counters = useMemo(() => {
     const c = { ready: 0, rented: 0, repair: 0, for_sale: 0, total: rows.length };

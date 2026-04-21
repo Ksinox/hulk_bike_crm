@@ -27,6 +27,8 @@ import { CLIENTS } from "@/lib/mock/clients";
 import { useRentals } from "@/pages/rentals/rentalsStore";
 import { navigate } from "@/app/navigationStore";
 import { Topbar } from "@/pages/dashboard/Topbar";
+import { ScooterEditForm } from "./ScooterEditForm";
+import { ScooterDocumentsTab } from "./ScooterDocumentsTab";
 
 type TabId = "history" | "repairs" | "incidents" | "docs";
 const TABS: { id: TabId; label: string; count?: number }[] = [
@@ -61,15 +63,6 @@ function parseDate(s: string): Date | null {
   return new Date(+m[3], +m[2] - 1, +m[1]);
 }
 
-function warrantyLabel(purchase?: string): string {
-  if (!purchase) return "—";
-  const d = parseDate(purchase);
-  if (!d) return "—";
-  const end = new Date(d);
-  end.setFullYear(end.getFullYear() + 2);
-  return `Активна до ${MONTH_RU[end.getMonth()]}. ${end.getFullYear()}`;
-}
-
 function initials(name: string): string {
   return name
     .split(/\s+/)
@@ -90,6 +83,7 @@ export function ScooterCard({
   const rentals = useRentals();
   const role = useRole();
   const [tab, setTab] = useState<TabId>("history");
+  const [editOpen, setEditOpen] = useState(false);
 
   // Все аренды по этому скутеру (включая историю)
   const scooterRentals = useMemo(
@@ -186,8 +180,8 @@ export function ScooterCard({
         </button>
         <button
           type="button"
+          onClick={() => setEditOpen(true)}
           className="inline-flex items-center gap-1.5 rounded-full bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-blue-700"
-          title="Скоро"
         >
           <Pencil size={14} /> Редактировать
         </button>
@@ -258,11 +252,6 @@ export function ScooterCard({
                     ? reformatDate(scooter.purchaseDate)
                     : "—"
                 }
-              />
-              <SpecCell
-                label="Гарантия"
-                value={warrantyLabel(scooter.purchaseDate)}
-                accent="blue"
               />
               {scooter.note && (
                 <SpecCell label="Комментарий" value={scooter.note} />
@@ -657,10 +646,15 @@ export function ScooterCard({
         {tab === "incidents" && (
           <Empty text="По этому скутеру не было инцидентов" />
         )}
-        {tab === "docs" && (
-          <Empty text="Документы скутера появятся после загрузки (ПТС/СТС/страховка)" />
-        )}
+        {tab === "docs" && <ScooterDocumentsTab scooter={scooter} />}
       </div>
+
+      {editOpen && (
+        <ScooterEditForm
+          scooter={scooter}
+          onClose={() => setEditOpen(false)}
+        />
+      )}
     </main>
   );
 }
