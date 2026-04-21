@@ -5,7 +5,8 @@
 - **Фронтенд:** React 19 + TypeScript + Vite 6 + Tailwind CSS 4 + shadcn/ui. Роутинг: `@tanstack/react-router`, данные: `@tanstack/react-query`, графики: `recharts`, валидация: `zod`.
 - **Десктоп:** Electron 32 + electron-builder (target: `nsis-web`) + electron-updater + electron-log.
 - **Пакетный менеджер:** pnpm (workspaces).
-- **Backend:** откладывается; сейчас дашборд работает на мок-данных из `apps/web/src/lib/mock/`.
+- **Backend:** Fastify + Drizzle + Postgres 16 + MinIO (S3). Папка `apps/api/`.
+  Web ходит в API через React Query — источник данных **БД**, не моки. Моки остались только как seed для dev-БД (`apps/api/src/seed/`).
 
 ## Dual-mode
 
@@ -22,14 +23,21 @@
 
 ## Релизы desktop
 
+**ВАЖНО — не бампать до деплоя API на сервер.**
+Web-бандл внутри Electron ходит в API по `VITE_API_URL`. Если VITE_API_URL не указывает на живой прод-API, auto-updater выкатит клиенту **пустую CRM** с ошибкой «Failed to fetch». Релиз desktop имеет смысл только после того как:
+1. API задеплоен на сервер (Dokploy) и доступен по домену (напр. `https://api.hulk-bike.ru`)
+2. В `.github/workflows/release-desktop.yml` задан `VITE_API_URL=https://api.hulk-bike.ru` на шаге сборки web
+3. Локально проверено что сборка Electron с этим env ходит на реальный API
+
+После этого:
 1. Бампнуть версию в `apps/desktop/package.json`.
-2. `git tag v0.1.1 && git push --tags`.
+2. `git tag v0.1.X && git push --tags`.
 3. GitHub Action `release-desktop.yml` соберёт установщик и опубликует Release с `latest.yml`, `*.7z`, blockmap.
 4. Установленные клиенты при следующем запуске получат уведомление об обновлении.
 
 ## Релизы web
 
-Push в `main` → GitHub Action собирает статику. Шаг деплоя на реальный хост добавим когда определимся с хостингом.
+Push в `main` → GitHub Action собирает статику. Деплой на хост — через Dokploy (см. `DEPLOY.md`).
 
 ## Язык
 
