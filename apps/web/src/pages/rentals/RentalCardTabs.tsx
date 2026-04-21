@@ -83,7 +83,13 @@ function initials(name: string): string {
   return parts.slice(0, 2).map((p) => p[0]?.toUpperCase() ?? "").join("");
 }
 
-export function TermsTab({ rental }: { rental: Rental }) {
+export function TermsTab({
+  rental,
+  onClientClick,
+}: {
+  rental: Rental;
+  onClientClick?: () => void;
+}) {
   const client = CLIENTS.find((c) => c.id === rental.clientId);
   const time = rental.startTime ?? "12:00";
   const location = "Склад \"Северный\"";
@@ -92,18 +98,30 @@ export function TermsTab({ rental }: { rental: Rental }) {
   return (
     <div className="grid gap-3 lg:grid-cols-[1.15fr_1fr]">
       {/* ============ ЛЕВАЯ КОЛОНКА: СКУТЕР + УСЛОВИЯ ============ */}
-      <div className="rounded-[14px] border border-border p-4">
+      <button
+        type="button"
+        title="Карточка скутера (скоро)"
+        className="group rounded-[14px] border border-border p-4 text-left transition-colors hover:bg-surface-soft/60"
+      >
         <div className="flex items-start gap-4">
           <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-ink text-white">
             <Bike size={34} strokeWidth={1.5} />
           </div>
           <div className="min-w-0 flex-1">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
-              Скутер
-            </div>
-            <div className="mt-0.5 text-[11px] text-muted-2">Model &amp; ID</div>
-            <div className="mt-0.5 font-display text-[18px] font-extrabold leading-tight text-ink">
-              {rental.scooter} · {MODEL_LABEL[rental.model]}
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0 flex-1">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
+                  Скутер
+                </div>
+                <div className="mt-0.5 text-[11px] text-muted-2">Model &amp; ID</div>
+                <div className="mt-0.5 font-display text-[18px] font-extrabold leading-tight text-ink">
+                  {rental.scooter} · {MODEL_LABEL[rental.model]}
+                </div>
+              </div>
+              <ExternalLink
+                size={14}
+                className="shrink-0 text-muted-2 opacity-60 transition-opacity group-hover:opacity-100"
+              />
             </div>
             <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-surface-soft px-2.5 py-1 text-[11px] font-semibold text-ink-2">
               <Gauge size={12} className="text-muted-2" />
@@ -149,7 +167,7 @@ export function TermsTab({ rental }: { rental: Rental }) {
             }
           />
         </div>
-      </div>
+      </button>
 
       {/* ============ ПРАВАЯ КОЛОНКА: ГРАФИК АРЕНДЫ ============ */}
       <div className="flex flex-col gap-3 rounded-[14px] border border-border p-4">
@@ -212,8 +230,9 @@ export function TermsTab({ rental }: { rental: Rental }) {
             </div>
             <button
               type="button"
-              title="Открыть карточку клиента (скоро)"
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted-2 hover:bg-border hover:text-ink"
+              onClick={onClientClick}
+              title="Быстрый просмотр клиента"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted-2 hover:bg-blue-50 hover:text-blue-600"
             >
               <ExternalLink size={14} />
             </button>

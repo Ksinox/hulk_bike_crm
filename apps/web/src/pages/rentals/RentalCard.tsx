@@ -322,7 +322,7 @@ export function RentalCard({ rental }: { rental: Rental }) {
           if (rental.status === "active" && daysLeft !== null) {
             if (daysLeft > 0) {
               value = `осталось ${daysLeft} дн`;
-              accent = daysLeft < 2 ? "red" : "default";
+              accent = daysLeft <= 2 ? "red" : "default";
             } else if (daysLeft === 0) {
               value = `возврат сегодня`;
               accent = "red";
@@ -354,10 +354,10 @@ export function RentalCard({ rental }: { rental: Rental }) {
           accent={paidIn >= expectedTotal ? "blue" : "default"}
           hint={
             paidIn >= expectedTotal
-              ? "оплачено полностью"
+              ? undefined
               : `${Math.round((paidIn / Math.max(1, expectedTotal)) * 100)}% оплачено`
           }
-          hintIcon={paidIn >= expectedTotal ? CheckCircle2 : undefined}
+          badgeIcon={paidIn >= expectedTotal ? CheckCircle2 : undefined}
         />
         <KpiCard
           label="Долг"
@@ -407,7 +407,12 @@ export function RentalCard({ rental }: { rental: Rental }) {
       </div>
 
       <div className="flex-1 pt-3">
-        {tab === "terms" && <TermsTab rental={rental} />}
+        {tab === "terms" && (
+          <TermsTab
+            rental={rental}
+            onClientClick={() => setClientQuickView(true)}
+          />
+        )}
         {tab === "payments" && <PaymentsTab rental={rental} />}
         {tab === "return" && <ReturnTab rental={rental} />}
         {tab === "incidents" && <IncidentsTab rental={rental} />}
@@ -460,25 +465,36 @@ function KpiCard({
   value,
   hint,
   hintIcon: HintIcon,
+  badgeIcon: BadgeIcon,
   accent = "default",
 }: {
   label: string;
   value: string;
   hint?: string;
   hintIcon?: React.ComponentType<{ size?: number | string; className?: string }>;
+  badgeIcon?: React.ComponentType<{ size?: number | string; className?: string }>;
   accent?: KpiAccent;
 }) {
   return (
     <div
       className={cn(
-        "rounded-[14px] border px-4 py-3",
+        "relative rounded-[14px] border px-4 py-3 shadow-card-sm",
         accent === "muted"
           ? "border-border bg-surface-soft/60"
           : accent === "red"
-            ? "border-red-soft bg-red-soft/30"
+            ? "border-red-soft bg-surface shadow-[0_0_16px_-2px_hsl(var(--red-ink)/0.35),0_0_0_1px_hsl(var(--red-soft))]"
             : "border-border bg-surface",
       )}
     >
+      {BadgeIcon && (
+        <BadgeIcon
+          size={18}
+          className={cn(
+            "absolute right-3 top-3 shrink-0",
+            accent === "blue" ? "text-blue-600" : "text-muted-2",
+          )}
+        />
+      )}
       <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
         {label}
       </div>
