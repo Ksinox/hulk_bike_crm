@@ -30,10 +30,8 @@ env_lines = [
     "S3_BUCKET=hulk-docs",
     f"JWT_SECRET={jwt_secret}",
     "CREATOR_UNLOCK_SEQUENCE=ksinox",
-    # Пароли для seed:users. Нужны только при разовом запуске скрипта.
-    "SEED_CREATOR_PASSWORD=Ksinox147",
-    "SEED_DIRECTOR_PASSWORD=GreatHulk2026",
-    "SEED_ADMIN_PASSWORD=Adminbike01",
+    # SEED_*_PASSWORD удалены после разового сидинга — пароли теперь лежат
+    # как bcrypt-хэши в таблице users, env-переменные больше не используются.
 ]
 
 res = api("/api/application.saveEnvironment", {
