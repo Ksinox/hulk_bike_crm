@@ -80,10 +80,10 @@ export function Login() {
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-[#0a0d14] text-white">
-      {/* ==== Едва уловимое зелёное свечение у самой нижней кромки ==== */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-0 h-[180px] overflow-hidden">
-        <div className="login-glow absolute left-1/2 bottom-[-140px] h-[260px] w-[80%] max-w-[1100px] -translate-x-1/2 rounded-[50%] bg-emerald-500/30 blur-[100px]" />
-        <div className="login-glow-sub absolute left-1/2 bottom-[-110px] h-[200px] w-[60%] max-w-[800px] -translate-x-1/2 rounded-[50%] bg-emerald-400/20 blur-[80px]" />
+      {/* ==== Едва уловимое зелёное свечение — огромный мягкий радиальный ореол, почти весь за кадром ==== */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-0 h-[60vh] overflow-visible">
+        <div className="login-glow absolute left-1/2 bottom-[-420px] h-[620px] w-[120%] max-w-[1600px] -translate-x-1/2 rounded-[50%] bg-emerald-500/35 blur-[160px]" />
+        <div className="login-glow-sub absolute left-1/2 bottom-[-360px] h-[500px] w-[90%] max-w-[1200px] -translate-x-1/2 rounded-[50%] bg-emerald-400/25 blur-[130px]" />
       </div>
 
       {/* ==== Контент — по центру экрана ==== */}
@@ -94,10 +94,10 @@ export function Login() {
             Вход в систему
           </div>
           <h1
-            className="mt-4 bg-gradient-to-b from-white via-white to-emerald-200/90 bg-clip-text font-display text-[84px] font-bold leading-[0.95] tracking-[-0.04em] text-transparent sm:text-[104px]"
+            className="mt-4 bg-gradient-to-b from-white via-white/95 to-white/40 bg-clip-text font-display text-[84px] font-bold uppercase leading-[0.95] tracking-[-0.03em] text-transparent sm:text-[104px]"
             style={{ WebkitBackgroundClip: "text" }}
           >
-            Халк&nbsp;Байк
+            ХАЛК&nbsp;БАЙК
           </h1>
         </div>
 
@@ -119,9 +119,23 @@ export function Login() {
           </div>
         )}
 
-        {/* Форма пароля */}
-        {selected && (
-          <div className="mt-6 w-full max-w-[420px] rounded-2xl border border-white/10 bg-white/[0.04] p-5 shadow-[0_8px_40px_rgba(0,0,0,0.4)] backdrop-blur-xl">
+        {unlock && (
+          <div className="mt-8 inline-flex items-center gap-2 rounded-full border border-purple-400/30 bg-purple-500/15 px-3 py-1 text-[11px] font-bold text-purple-200 backdrop-blur">
+            <Crown size={12} /> Режим creator разблокирован
+          </div>
+        )}
+      </div>
+
+      {/* ==== Модалка ввода пароля — тайлы остаются на месте ==== */}
+      {selected && (
+        <div
+          className="fixed inset-0 z-30 flex items-center justify-center px-6 login-modal-backdrop"
+          onClick={() => setSelectedId(null)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="login-modal-card w-full max-w-[420px] rounded-2xl border border-white/10 bg-white/[0.06] p-5 shadow-[0_20px_80px_rgba(0,0,0,0.6)] backdrop-blur-2xl"
+          >
             <div className="mb-3 flex items-center gap-2 text-[13px] font-semibold text-white/90">
               {selected.name}
               <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white/60">
@@ -187,14 +201,8 @@ export function Login() {
               )}
             </button>
           </div>
-        )}
-
-        {unlock && (
-          <div className="mt-8 inline-flex items-center gap-2 rounded-full border border-purple-400/30 bg-purple-500/15 px-3 py-1 text-[11px] font-bold text-purple-200 backdrop-blur">
-            <Crown size={12} /> Режим creator разблокирован
-          </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* ==== Футер (абсолютно внизу) ==== */}
       <div className="absolute inset-x-0 bottom-4 z-10 text-center text-[11px] text-white/25">
@@ -213,6 +221,23 @@ export function Login() {
         }
         .login-glow     { animation: hulkGlow 6s ease-in-out infinite; }
         .login-glow-sub { animation: hulkGlowSub 4s ease-in-out infinite; }
+
+        @keyframes hulkModalBackdrop {
+          from { opacity: 0; backdrop-filter: blur(0px); }
+          to   { opacity: 1; backdrop-filter: blur(8px); }
+        }
+        @keyframes hulkModalCard {
+          from { opacity: 0; transform: translateY(14px) scale(0.97); }
+          to   { opacity: 1; transform: translateY(0)    scale(1); }
+        }
+        .login-modal-backdrop {
+          background: rgba(10,13,20,0.55);
+          backdrop-filter: blur(8px);
+          animation: hulkModalBackdrop 220ms ease-out both;
+        }
+        .login-modal-card {
+          animation: hulkModalCard 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+        }
       `}</style>
     </div>
   );
