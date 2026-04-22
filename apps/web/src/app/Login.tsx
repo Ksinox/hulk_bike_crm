@@ -80,21 +80,22 @@ export function Login() {
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-[#0a0d14] text-white">
-      {/* ==== Живое зелёное свечение снизу ==== */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-0 h-[70vh] overflow-hidden">
-        <div className="login-glow absolute left-1/2 bottom-[-30%] h-[120%] w-[160%] -translate-x-1/2 rounded-full bg-emerald-500/25 blur-[120px]" />
-        <div className="login-glow-sub absolute left-1/2 bottom-[-10%] h-[60%] w-[80%] -translate-x-1/2 rounded-full bg-emerald-400/15 blur-[80px]" />
+      {/* ==== Едва уловимое зелёное свечение у самой нижней кромки ==== */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-0 h-[180px] overflow-hidden">
+        <div className="login-glow absolute left-1/2 bottom-[-140px] h-[260px] w-[80%] max-w-[1100px] -translate-x-1/2 rounded-[50%] bg-emerald-500/30 blur-[100px]" />
+        <div className="login-glow-sub absolute left-1/2 bottom-[-110px] h-[200px] w-[60%] max-w-[800px] -translate-x-1/2 rounded-[50%] bg-emerald-400/20 blur-[80px]" />
       </div>
 
       {/* ==== Контент — по центру экрана ==== */}
       <div className="relative z-10 flex min-h-screen flex-col items-center justify-center px-6 py-16">
         {/* Заголовок */}
         <div className="mb-14 text-center">
-          <div className="text-[12px] font-semibold uppercase tracking-[0.25em] text-white/40">
+          <div className="text-[11px] font-medium uppercase tracking-[0.3em] text-white/35">
             Вход в систему
           </div>
           <h1
-            className="mt-3 bg-gradient-to-r from-emerald-200 via-emerald-400 to-emerald-600 bg-clip-text font-display text-[88px] font-extrabold leading-[0.9] tracking-tight text-transparent drop-shadow-[0_0_40px_rgba(16,185,129,0.25)] sm:text-[112px]"
+            className="mt-4 bg-gradient-to-b from-white via-white to-emerald-200/90 bg-clip-text font-display text-[84px] font-bold leading-[0.95] tracking-[-0.04em] text-transparent sm:text-[104px]"
+            style={{ WebkitBackgroundClip: "text" }}
           >
             Халк&nbsp;Байк
           </h1>
