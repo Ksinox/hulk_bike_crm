@@ -22,6 +22,11 @@ apps/desktop/release/
 .env.local
 .env.*.local
 
+# deploy helper state (JWT secret, app ids)
+scripts/.jwt_secret
+scripts/.api_app_id
+scripts/.web_app_id
+
 # logs
 *.log
 npm-debug.log*
