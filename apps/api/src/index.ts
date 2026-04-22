@@ -14,6 +14,8 @@ import { tasksRoutes } from "./routes/tasks.js";
 import { filesRoutes } from "./routes/files.js";
 import { clientDocumentsRoutes } from "./routes/client-documents.js";
 import { scooterDocumentsRoutes } from "./routes/scooter-documents.js";
+import { authRoutes } from "./routes/auth.js";
+import authPlugin, { requireAuth } from "./auth/plugin.js";
 import { ensureBucket } from "./storage/index.js";
 
 async function bootstrap() {
@@ -28,6 +30,7 @@ async function bootstrap() {
         },
   });
 
+  await app.register(authPlugin);
   await app.register(helmet, { contentSecurityPolicy: false });
   await app.register(multipart, {
     limits: {
@@ -54,16 +57,28 @@ async function bootstrap() {
     return { ok: rows.length === 1 };
   });
 
-  // ==== API ROUTES ====
-  await app.register(clientsRoutes, { prefix: "/api/clients" });
-  await app.register(scootersRoutes, { prefix: "/api/scooters" });
-  await app.register(rentalsRoutes, { prefix: "/api/rentals" });
-  await app.register(paymentsRoutes, { prefix: "/api/payments" });
-  await app.register(incidentsRoutes, { prefix: "/api/incidents" });
-  await app.register(tasksRoutes, { prefix: "/api/tasks" });
-  await app.register(clientDocumentsRoutes, { prefix: "/api/client-documents" });
-  await app.register(scooterDocumentsRoutes, { prefix: "/api/scooter-documents" });
-  await app.register(filesRoutes, { prefix: "/api/files" });
+  // ==== AUTH ROUTES (без требования авторизации) ====
+  await app.register(authRoutes, { prefix: "/api/auth" });
+
+  // ==== PROTECTED API ROUTES ====
+  // Все нижеследующие роуты требуют авторизацию через cookie hulk_session.
+  // Файлы (стрим из MinIO) — тоже защищаем.
+  await app.register(async (protectedApp) => {
+    protectedApp.addHook("preHandler", requireAuth);
+    await protectedApp.register(clientsRoutes, { prefix: "/api/clients" });
+    await protectedApp.register(scootersRoutes, { prefix: "/api/scooters" });
+    await protectedApp.register(rentalsRoutes, { prefix: "/api/rentals" });
+    await protectedApp.register(paymentsRoutes, { prefix: "/api/payments" });
+    await protectedApp.register(incidentsRoutes, { prefix: "/api/incidents" });
+    await protectedApp.register(tasksRoutes, { prefix: "/api/tasks" });
+    await protectedApp.register(clientDocumentsRoutes, {
+      prefix: "/api/client-documents",
+    });
+    await protectedApp.register(scooterDocumentsRoutes, {
+      prefix: "/api/scooter-documents",
+    });
+    await protectedApp.register(filesRoutes, { prefix: "/api/files" });
+  });
 
   // Проверить/создать бакет при старте (не блокируем — если MinIO
   // не отвечает, первая загрузка файла попробует снова)

@@ -32,7 +32,14 @@ import { relations, sql } from "drizzle-orm";
  * ENUMS — отражают доменные статусы из TS-типов
  * ============================================================ */
 
-export const userRoleEnum = pgEnum("user_role", ["director", "admin"]);
+export const userRoleEnum = pgEnum("user_role", [
+  "creator", // Разработчик/владелец системы. Скрыт из списка тайлов,
+  //            может импёрсонить любую другую роль без пароля.
+  "director", // Владелец бизнеса. Все бизнес-права включая ROI и управление сотрудниками.
+  "admin", // Администратор. Операционка без финансов.
+  "mechanic", // Механик. Только скутеры — пробег, замены масла, ремонты. (в разработке)
+  "accountant", // Бухгалтер. Платежи, отчёты. (в разработке)
+]);
 
 export const clientSourceEnum = pgEnum("client_source", [
   "avito",
@@ -131,6 +138,9 @@ export const users = pgTable("users", {
   passwordHash: text("password_hash").notNull(),
   role: userRoleEnum("role").notNull().default("admin"),
   active: boolean("active").notNull().default(true),
+  /** Цвет тайла на экране входа: blue / purple / green / orange / pink */
+  avatarColor: text("avatar_color").notNull().default("blue"),
+  lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

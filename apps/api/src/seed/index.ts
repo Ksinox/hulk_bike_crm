@@ -13,6 +13,7 @@
  */
 
 import { sql } from "drizzle-orm";
+import bcrypt from "bcryptjs";
 import { closeDb, db } from "../db/index.js";
 import {
   clients,
@@ -21,6 +22,7 @@ import {
   rentalTasks,
   rentals,
   scooters,
+  users,
   type clientSourceEnum,
   type paymentMethodEnum,
   type paymentTypeEnum,
@@ -106,19 +108,63 @@ function deriveChannel(source: ClientSource | undefined): RentalSourceChannel {
 /* =========================== seed =========================== */
 
 async function main() {
-  if (isProd) {
-    console.error("✗ db:seed запрещён в production.");
+  // В prod разрешаем только разово, под явным флагом FORCE_SEED=1
+  if (isProd && process.env.FORCE_SEED !== "1") {
+    console.error("✗ db:seed запрещён в production без FORCE_SEED=1.");
     process.exit(1);
   }
 
   console.log("▶ Проверяем что БД пустая...");
   const existing = await db.select({ c: sql<number>`count(*)` }).from(clients);
   const n = Number(existing[0]?.c ?? 0);
-  if (n > 0) {
+  if (n > 0 && process.env.FORCE_SEED !== "1") {
     console.error(
       `✗ В таблице clients уже ${n} строк. Сначала сделай pnpm db:reset && pnpm db:migrate, потом db:seed.`,
     );
     process.exit(1);
+  }
+
+  /* ----- пользователи ----- */
+  const usersExisting = await db
+    .select({ c: sql<number>`count(*)` })
+    .from(users);
+  if (Number(usersExisting[0]?.c ?? 0) === 0) {
+    console.log("▶ users: 3 записи (Руслан / Директор / Администратор)");
+    const creatorPw = process.env.SEED_CREATOR_PASSWORD;
+    const directorPw = process.env.SEED_DIRECTOR_PASSWORD;
+    const adminPw = process.env.SEED_ADMIN_PASSWORD;
+    if (!creatorPw || !directorPw || !adminPw) {
+      console.error(
+        "✗ Не заданы SEED_CREATOR_PASSWORD / SEED_DIRECTOR_PASSWORD / SEED_ADMIN_PASSWORD в env",
+      );
+      process.exit(1);
+    }
+    const hash = (pw: string) => bcrypt.hashSync(pw, 10);
+    await db.insert(users).values([
+      {
+        name: "Руслан",
+        login: "ruslan",
+        passwordHash: hash(creatorPw),
+        role: "creator",
+        avatarColor: "purple",
+      },
+      {
+        name: "Директор",
+        login: "director",
+        passwordHash: hash(directorPw),
+        role: "director",
+        avatarColor: "blue",
+      },
+      {
+        name: "Администратор",
+        login: "admin",
+        passwordHash: hash(adminPw),
+        role: "admin",
+        avatarColor: "green",
+      },
+    ]);
+  } else {
+    console.log("▶ users: уже есть записи, пропускаем");
   }
 
   console.log(`▶ clients: ${CLIENTS.length} записей`);

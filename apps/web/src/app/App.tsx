@@ -4,16 +4,32 @@ import { Dashboard } from "@/pages/dashboard/Dashboard";
 import { Clients } from "@/pages/clients/Clients";
 import { Rentals } from "@/pages/rentals/Rentals";
 import { Fleet } from "@/pages/fleet/Fleet";
+import { Staff } from "@/pages/staff/Staff";
 import { UpdateToast } from "./UpdateToast";
 import { TitleBar } from "./TitleBar";
 import { startWebVersionCheck } from "@/lib/version-check";
 import { isElectron } from "@/platform";
 import { loadRoute, saveRoute, type RouteId } from "./route";
 import { onNavigate } from "./navigationStore";
+import { useMe } from "@/lib/api/auth";
+import { setRole } from "@/lib/role";
+import { Login } from "./Login";
 
 export function App() {
+  const { data: me, isLoading, isError } = useMe();
   const [webUpdate, setWebUpdate] = useState<string | null>(null);
   const [route, setRoute] = useState<RouteId>(() => loadRoute());
+
+  // Синхронизация роли в UI-сторе (lib/role) с реальной ролью из сессии.
+  // - director/admin: role фиксируется = me.role
+  // - creator: оставляем то что было в localStorage (может "смотреть как" director/admin)
+  useEffect(() => {
+    if (!me) return;
+    if (me.role === "director" || me.role === "admin") {
+      setRole(me.role);
+    }
+    // для creator не трогаем — пусть пользуется переключателем в Topbar
+  }, [me?.role]);
 
   useEffect(() => {
     return startWebVersionCheck((next) => setWebUpdate(next));
@@ -31,6 +47,19 @@ export function App() {
     saveRoute(id);
   };
 
+  // Пока проверяем сессию — показываем заглушку.
+  if (isLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-surface-soft text-muted">
+        Загрузка…
+      </div>
+    );
+  }
+  // Нет сессии → экран входа
+  if (isError || !me) {
+    return <Login />;
+  }
+
   return (
     <>
       <TitleBar />
@@ -45,6 +74,8 @@ export function App() {
           <Rentals />
         ) : route === "fleet" ? (
           <Fleet />
+        ) : route === "staff" ? (
+          <Staff />
         ) : (
           <Dashboard />
         )}

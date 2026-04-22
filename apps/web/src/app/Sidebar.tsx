@@ -10,6 +10,7 @@ import {
   Receipt,
   Settings,
   ShoppingBag,
+  UserCog,
   Users,
   Wallet,
   Wrench,
@@ -19,6 +20,7 @@ import { cn } from "@/lib/utils";
 import { UpdateBanner, useDesktopUpdate } from "./UpdateBanner";
 import { isElectron } from "@/platform";
 import type { RouteId } from "./route";
+import { useMe } from "@/lib/api/auth";
 
 type NavItem = {
   id: RouteId | "logout";
@@ -41,6 +43,11 @@ const mainItems: NavItem[] = [
   { id: "docs", label: "Документы", icon: FileText },
 ];
 
+/** Пункты, видимые только директору/создателю */
+const directorItems: NavItem[] = [
+  { id: "staff", label: "Сотрудники", icon: UserCog },
+];
+
 const footerItems: NavItem[] = [
   { id: "settings", label: "Настройки", icon: Settings },
   { id: "logout", label: "Выход", icon: LogOut },
@@ -53,8 +60,10 @@ export function Sidebar({
   activeId: RouteId;
   onSelect: (id: RouteId) => void;
 }) {
+  const { data: me } = useMe();
   const [expanded, setExpanded] = useState(false);
   const { phase, version } = useDesktopUpdate();
+  const canManageStaff = me?.role === "director" || me?.role === "creator";
   const [tooltip, setTooltip] = useState<{
     label: string;
     top: number;
@@ -107,7 +116,7 @@ export function Sidebar({
         </div>
 
         <div className="flex flex-col gap-1">
-          {mainItems.map((item) => (
+          {[...mainItems, ...(canManageStaff ? directorItems : [])].map((item) => (
             <NavRow
               key={item.id}
               item={item}

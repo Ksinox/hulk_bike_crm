@@ -30,6 +30,14 @@ export const config = {
     secretKey: process.env.S3_SECRET_KEY ?? "hulkminio_dev_password",
     bucket: process.env.S3_BUCKET ?? "hulk-docs",
   },
+  auth: {
+    jwtSecret:
+      process.env.JWT_SECRET ??
+      "dev-only-hulk-jwt-secret-change-me-in-production",
+    /** Комбинация клавиш для разблокировки тайла creator'а на экране входа */
+    creatorUnlockSequence:
+      process.env.CREATOR_UNLOCK_SEQUENCE ?? "ksinox",
+  },
 } as const;
 
 export const isProd = config.env === "production";

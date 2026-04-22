@@ -10,6 +10,7 @@ export type RouteId =
   | "tasks"
   | "analytics"
   | "docs"
+  | "staff"
   | "settings";
 
 const KEY = "hulk-route";

@@ -1,0 +1,69 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { api } from "@/lib/api";
+
+export type AuthRole = "creator" | "director" | "admin" | "mechanic" | "accountant";
+
+export type AuthUser = {
+  id: number;
+  name: string;
+  login: string;
+  role: AuthRole;
+  avatarColor: string;
+};
+
+export type LoginTile = {
+  id: number;
+  name: string;
+  login: string;
+  role: AuthRole;
+  avatarColor: string;
+};
+
+export const authKeys = {
+  me: ["auth", "me"] as const,
+  tiles: (unlock: string) => ["auth", "tiles", unlock] as const,
+};
+
+export function useMe() {
+  return useQuery({
+    queryKey: authKeys.me,
+    queryFn: () => api.get<AuthUser>("/api/auth/me"),
+    retry: false,
+    staleTime: 60_000,
+  });
+}
+
+export function useLoginTiles(unlock: string) {
+  return useQuery({
+    queryKey: authKeys.tiles(unlock),
+    queryFn: () => {
+      const qs = unlock ? `?unlock=${encodeURIComponent(unlock)}` : "";
+      return api
+        .get<{ items: LoginTile[] }>(`/api/auth/tiles${qs}`)
+        .then((r) => r.items);
+    },
+    staleTime: 30_000,
+  });
+}
+
+export function useLogin() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { login: string; password: string; remember: boolean }) =>
+      api.post<AuthUser>("/api/auth/login", input),
+    onSuccess: (user) => {
+      qc.setQueryData(authKeys.me, user);
+    },
+  });
+}
+
+export function useLogout() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<{ ok: true }>("/api/auth/logout", {}),
+    onSuccess: () => {
+      qc.setQueryData(authKeys.me, null);
+      qc.clear();
+    },
+  });
+}
