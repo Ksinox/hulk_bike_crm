@@ -3,7 +3,6 @@ import { Check, Search, UserPlus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { initialsOf, type Client } from "@/lib/mock/clients";
 import {
-  DEPOSIT_AMOUNT,
   MIN_RENTAL_DAYS,
   MODEL_LABEL,
   periodForDays,
@@ -627,10 +626,12 @@ export function NewRentalModal({
             </div>
             <div className="mt-3 flex items-center justify-between rounded-[10px] bg-surface-soft px-3 py-2 text-[12px]">
               <span className="text-muted">
-                Залог (фиксированный, возвращается без ущерба)
+                Залог {depositMode === "item" ? "(предмет)" : "(возвращается без ущерба)"}
               </span>
               <span className="font-bold tabular-nums text-ink">
-                {DEPOSIT_AMOUNT.toLocaleString("ru-RU")} ₽
+                {depositMode === "sum"
+                  ? `${depositSum.toLocaleString("ru-RU")} ₽`
+                  : depositItemText.trim() || "—"}
               </span>
             </div>
           </Section>
@@ -638,8 +639,7 @@ export function NewRentalModal({
 
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border bg-surface-soft px-5 py-3">
           <span className="min-w-0 flex-1 truncate text-[11px] text-muted-2">
-            После создания потребуется загрузить скан договора и подтвердить
-            оплату
+            После создания нужно подтвердить выдачу (договор, аренда, залог).
           </span>
           <div className="flex shrink-0 items-center gap-2 whitespace-nowrap">
             <button

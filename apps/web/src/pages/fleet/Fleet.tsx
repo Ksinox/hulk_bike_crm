@@ -1,16 +1,20 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { consumePending, navigate, type BackTarget } from "@/app/navigationStore";
 import {
+  Check,
   ChevronLeft,
   ChevronRight,
+  HelpCircle,
   Key,
   Layers,
+  ListFilter,
   Plus,
   Search,
   ShoppingBag,
   Tag,
   Wrench,
 } from "lucide-react";
+import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { Topbar } from "@/pages/dashboard/Topbar";
 import { cn } from "@/lib/utils";
 import {
@@ -40,15 +44,6 @@ type StatusTab =
   | "repair"
   | "for_sale"
   | "ready";
-
-const TABS: { id: StatusTab; label: string }[] = [
-  { id: "all", label: "Все" },
-  { id: "rental_pool", label: "Парк аренды" },
-  { id: "rented", label: "В аренде" },
-  { id: "repair", label: "Ремонт" },
-  { id: "for_sale", label: "Продаются" },
-  { id: "ready", label: "Не распределены" },
-];
 
 const PAGE_SIZE = 10;
 
@@ -83,7 +78,11 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
   const FLEET = useFleetScooters();
   const { data: apiClients } = useApiClients();
   const [tab, setTab] = useState<StatusTab>("all");
-  const [modelFilter, setModelFilter] = useState<ScooterModel | "all">("all");
+  /**
+   * Набор id моделей из каталога для фильтра (мульти-выбор).
+   * Пустой = фильтр выключен (все модели).
+   */
+  const [modelIdsFilter, setModelIdsFilter] = useState<Set<number>>(new Set());
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -159,7 +158,10 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
     return rows
       .filter((r) => {
         if (tab !== "all" && r.status !== tab) return false;
-        if (modelFilter !== "all" && r.scooter.model !== modelFilter)
+        if (
+          modelIdsFilter.size > 0 &&
+          (r.scooter.modelId == null || !modelIdsFilter.has(r.scooter.modelId))
+        )
           return false;
         if (q.text) {
           const ok =
@@ -186,7 +188,7 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
         if (r !== 0) return r;
         return a.scooter.name.localeCompare(b.scooter.name, "ru");
       });
-  }, [rows, tab, modelFilter, query]);
+  }, [rows, tab, modelIdsFilter, query]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
@@ -234,7 +236,7 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
       )}
 
       {/* =========== KPI =========== */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
         <KpiTile
           label="Всего скутеров"
           value={counters.total}
@@ -272,6 +274,18 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
           }}
         />
         <KpiTile
+          label="Не распределены"
+          value={counters.ready}
+          hint="нужно решить куда"
+          icon={HelpCircle}
+          accent="slate"
+          active={tab === "ready"}
+          onClick={() => {
+            setTab("ready");
+            setPage(1);
+          }}
+        />
+        <KpiTile
           label="На ремонте"
           value={counters.repair}
           hint="у мастера"
@@ -297,51 +311,9 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
         />
       </div>
 
-      {/* =========== FILTERS =========== */}
+      {/* =========== Поиск + фильтр моделей + добавить =========== */}
       <div className="flex flex-wrap items-center gap-3">
-        <div className="inline-flex rounded-full bg-surface p-0.5 shadow-card-sm">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => {
-                setTab(t.id);
-                setPage(1);
-              }}
-              className={cn(
-                "rounded-full px-4 py-1.5 text-[13px] font-semibold transition-colors",
-                tab === t.id
-                  ? "bg-blue-50 text-blue-700"
-                  : "text-muted hover:text-ink",
-              )}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="inline-flex rounded-full bg-surface-soft p-0.5">
-          {(["all", "jog", "gear", "tank"] as const).map((m) => (
-            <button
-              key={m}
-              type="button"
-              onClick={() => {
-                setModelFilter(m);
-                setPage(1);
-              }}
-              className={cn(
-                "rounded-full px-3 py-1 text-[12px] font-semibold transition-colors",
-                modelFilter === m
-                  ? "bg-white text-ink shadow-card-sm"
-                  : "text-muted hover:text-ink",
-              )}
-            >
-              {m === "all" ? "Все модели" : MODEL_LABEL[m]}
-            </button>
-          ))}
-        </div>
-
-        <div className="relative min-w-[220px] flex-1">
+        <div className="relative min-w-[240px] flex-1">
           <Search
             size={16}
             className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-2"
@@ -354,8 +326,17 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
               setPage(1);
             }}
             placeholder="Имя (Jog #42) или VIN"
-            className="h-9 w-full rounded-full bg-surface pl-9 pr-3 text-[13px] text-ink shadow-card-sm outline-none placeholder:text-muted-2 focus:ring-2 focus:ring-blue-100"
+            className="h-9 w-full rounded-full bg-surface pl-9 pr-12 text-[13px] text-ink shadow-card-sm outline-none placeholder:text-muted-2 focus:ring-2 focus:ring-blue-100"
           />
+          <div className="absolute right-1 top-1/2 -translate-y-1/2">
+            <ModelFilterDropdown
+              value={modelIdsFilter}
+              onChange={(next) => {
+                setModelIdsFilter(next);
+                setPage(1);
+              }}
+            />
+          </div>
         </div>
 
         <button
@@ -719,5 +700,119 @@ function PagerBtn({
     >
       {children}
     </button>
+  );
+}
+
+/**
+ * Иконка фильтра моделей в поиске + всплывающий чек-лист моделей из каталога.
+ * Выбор — мульти (Set<id>); клик вне или Esc закрывает.
+ */
+function ModelFilterDropdown({
+  value,
+  onChange,
+}: {
+  value: Set<number>;
+  onChange: (next: Set<number>) => void;
+}) {
+  const { data: models = [] } = useApiScooterModels();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onClick = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("mousedown", onClick);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("mousedown", onClick);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const toggle = (id: number) => {
+    const next = new Set(value);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    onChange(next);
+  };
+
+  const activeCount = value.size;
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        title={activeCount > 0 ? `Фильтр моделей: ${activeCount} выбрано` : "Фильтр моделей"}
+        className={cn(
+          "flex h-7 w-7 items-center justify-center rounded-full transition-colors",
+          activeCount > 0
+            ? "bg-blue-600 text-white"
+            : "bg-surface-soft text-muted-2 hover:bg-blue-50 hover:text-blue-700",
+        )}
+      >
+        <ListFilter size={14} />
+        {activeCount > 0 && (
+          <span className="absolute -right-1 -top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red px-1 text-[9px] font-bold text-white">
+            {activeCount}
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full z-50 mt-1.5 w-[240px] overflow-hidden rounded-xl bg-surface shadow-card-lg ring-1 ring-border">
+          <div className="border-b border-border bg-surface-soft px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-muted-2">
+            Фильтр по моделям
+          </div>
+          <div className="max-h-[260px] overflow-y-auto py-1">
+            {models.length === 0 ? (
+              <div className="px-3 py-3 text-[12px] text-muted">
+                Каталог пуст
+              </div>
+            ) : (
+              models.map((m) => {
+                const on = value.has(m.id);
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => toggle(m.id)}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] transition-colors hover:bg-surface-soft"
+                  >
+                    <span
+                      className={cn(
+                        "flex h-4 w-4 shrink-0 items-center justify-center rounded border",
+                        on
+                          ? "border-blue-600 bg-blue-600 text-white"
+                          : "border-border bg-white",
+                      )}
+                    >
+                      {on && <Check size={10} strokeWidth={3} />}
+                    </span>
+                    <span className="flex-1 truncate">{m.name}</span>
+                  </button>
+                );
+              })
+            )}
+          </div>
+          {activeCount > 0 && (
+            <div className="flex justify-end border-t border-border bg-surface-soft px-3 py-2">
+              <button
+                type="button"
+                onClick={() => onChange(new Set())}
+                className="text-[11px] font-semibold text-muted-2 hover:text-red-ink"
+              >
+                Сбросить
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
