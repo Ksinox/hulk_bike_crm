@@ -5,6 +5,9 @@ import { db } from "../db/index.js";
 import { scooterModels } from "../db/schema.js";
 import { requireRole } from "../auth/plugin.js";
 import { logActivity } from "../services/activityLog.js";
+import { makeFileKey, putObject, removeObject } from "../storage/index.js";
+
+const MAX_AVATAR = 5 * 1024 * 1024; // 5 МБ
 
 const staffOnly = requireRole("director", "admin");
 
@@ -105,6 +108,11 @@ export async function scooterModelsRoutes(app: FastifyInstance) {
         .where(eq(scooterModels.id, id));
       if (!existing) return reply.code(404).send({ error: "not found" });
 
+      // удалим аватарку из MinIO если была
+      if (existing.avatarKey) {
+        await removeObject(existing.avatarKey).catch(() => null);
+      }
+
       await db.delete(scooterModels).where(eq(scooterModels.id, id));
       await logActivity(req, {
         entity: "model",
@@ -113,6 +121,80 @@ export async function scooterModelsRoutes(app: FastifyInstance) {
         summary: `Удалена модель «${existing.name}»`,
       });
       return { ok: true };
+    },
+  );
+
+  /**
+   * POST /api/scooter-models/:id/avatar (multipart)
+   * Поле file — картинка (JPG/PNG/WEBP, до 5 МБ).
+   * Кладёт в MinIO, обновляет avatarKey/avatarFileName, старую удаляет.
+   */
+  app.post<{ Params: { id: string } }>(
+    "/:id/avatar",
+    { preHandler: staffOnly },
+    async (req, reply) => {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
+
+      const [existing] = await db
+        .select()
+        .from(scooterModels)
+        .where(eq(scooterModels.id, id));
+      if (!existing) return reply.code(404).send({ error: "not found" });
+
+      const parts = req.parts({ limits: { fileSize: MAX_AVATAR, files: 1 } });
+      let fileBuf: Buffer | null = null;
+      let fileName = "avatar";
+      let mimeType = "application/octet-stream";
+      for await (const part of parts) {
+        if (part.type === "file") {
+          fileBuf = await part.toBuffer();
+          fileName = part.filename;
+          mimeType = part.mimetype;
+        }
+      }
+      if (!fileBuf) return reply.code(400).send({ error: "file required" });
+      if (!/^image\//.test(mimeType))
+        return reply.code(400).send({ error: "only images" });
+
+      const key = makeFileKey(`models/${id}`, fileName);
+      await putObject(key, fileBuf, mimeType);
+
+      // удаляем старую
+      if (existing.avatarKey && existing.avatarKey !== key) {
+        await removeObject(existing.avatarKey).catch(() => null);
+      }
+
+      const [updated] = await db
+        .update(scooterModels)
+        .set({ avatarKey: key, avatarFileName: fileName, updatedAt: new Date() })
+        .where(eq(scooterModels.id, id))
+        .returning();
+      return updated;
+    },
+  );
+
+  /** DELETE /api/scooter-models/:id/avatar — снять аватарку. */
+  app.delete<{ Params: { id: string } }>(
+    "/:id/avatar",
+    { preHandler: staffOnly },
+    async (req, reply) => {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
+      const [existing] = await db
+        .select()
+        .from(scooterModels)
+        .where(eq(scooterModels.id, id));
+      if (!existing) return reply.code(404).send({ error: "not found" });
+      if (existing.avatarKey) {
+        await removeObject(existing.avatarKey).catch(() => null);
+      }
+      const [updated] = await db
+        .update(scooterModels)
+        .set({ avatarKey: null, avatarFileName: null, updatedAt: new Date() })
+        .where(eq(scooterModels.id, id))
+        .returning();
+      return updated;
     },
   );
 }

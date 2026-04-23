@@ -14,6 +14,7 @@ export function adaptScooter(a: ApiScooter): FleetScooter {
     id: a.id,
     name: a.name,
     model: a.model,
+    modelId: a.modelId ?? undefined,
     mileage: a.mileage,
     baseStatus: a.baseStatus,
     vin: a.vin ?? undefined,

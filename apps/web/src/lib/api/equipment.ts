@@ -62,3 +62,32 @@ export function useDeleteEquipment() {
     onSuccess: () => qc.invalidateQueries({ queryKey: equipmentKeys.all }),
   });
 }
+
+export function useUploadEquipmentAvatar() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (args: { id: number; file: File }) => {
+      const fd = new FormData();
+      fd.append("file", args.file, args.file.name);
+      const base =
+        import.meta.env.VITE_API_URL?.replace(/\/$/, "") ??
+        "http://localhost:4000";
+      const res = await fetch(
+        `${base}/api/equipment/${args.id}/avatar`,
+        { method: "POST", credentials: "include", body: fd },
+      );
+      if (!res.ok) throw new Error(`upload failed: ${res.status}`);
+      return (await res.json()) as ApiEquipmentItem;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: equipmentKeys.all }),
+  });
+}
+
+export function useDeleteEquipmentAvatar() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) =>
+      api.delete<ApiEquipmentItem>(`/api/equipment/${id}/avatar`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: equipmentKeys.all }),
+  });
+}

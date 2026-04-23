@@ -35,6 +35,9 @@ import {
   useRentalTasks,
 } from "./rentalsStore";
 import { useApiClients } from "@/lib/api/clients";
+import { useApiScooters } from "@/lib/api/scooters";
+import { useApiScooterModels } from "@/lib/api/scooter-models";
+import { fileUrl } from "@/lib/files";
 import { navigate } from "@/app/navigationStore";
 
 function fmt(n: number) {
@@ -119,9 +122,8 @@ export function TermsTab({
         className="group rounded-[14px] border border-border p-4 text-left transition-colors hover:bg-surface-soft/60 disabled:cursor-not-allowed disabled:opacity-60"
       >
         <div className="flex items-start gap-4">
-          <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-ink text-white">
-            <Bike size={34} strokeWidth={1.5} />
-          </div>
+          <ScooterThumb rental={rental} />
+
           <div className="min-w-0 flex-1">
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0 flex-1">
@@ -1099,3 +1101,36 @@ function Metric({
 void useMemo;
 void Plus;
 void X;
+
+/**
+ * Превью скутера в блоке «СКУТЕР» на вкладке «Условия».
+ * Если у модели есть аватарка — показываем её. Иначе — иконку Bike.
+ */
+function ScooterThumb({ rental }: { rental: Rental }) {
+  const { data: scooters = [] } = useApiScooters();
+  const { data: models = [] } = useApiScooterModels();
+  const sc = rental.scooterId != null
+    ? scooters.find((s) => s.id === rental.scooterId)
+    : null;
+  const model = sc?.modelId != null
+    ? models.find((m) => m.id === sc.modelId)
+    : models.find((m) => m.name.toLowerCase().includes(rental.model));
+  const avatarSrc = fileUrl(model?.avatarKey);
+
+  if (avatarSrc) {
+    return (
+      <div className="h-20 w-20 shrink-0 overflow-hidden rounded-full bg-surface-soft">
+        <img
+          src={avatarSrc}
+          alt={model?.name ?? ""}
+          className="h-full w-full object-cover"
+        />
+      </div>
+    );
+  }
+  return (
+    <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-ink text-white">
+      <Bike size={34} strokeWidth={1.5} />
+    </div>
+  );
+}

@@ -73,3 +73,37 @@ export function useDeleteScooterModel() {
     },
   });
 }
+
+/** Загрузить аватарку модели (multipart). */
+export function useUploadScooterModelAvatar() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (args: { id: number; file: File }) => {
+      const fd = new FormData();
+      fd.append("file", args.file, args.file.name);
+      const base =
+        import.meta.env.VITE_API_URL?.replace(/\/$/, "") ??
+        "http://localhost:4000";
+      const res = await fetch(
+        `${base}/api/scooter-models/${args.id}/avatar`,
+        { method: "POST", credentials: "include", body: fd },
+      );
+      if (!res.ok) throw new Error(`upload failed: ${res.status}`);
+      return (await res.json()) as ApiScooterModel;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: scooterModelsKeys.all });
+    },
+  });
+}
+
+export function useDeleteScooterModelAvatar() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) =>
+      api.delete<ApiScooterModel>(`/api/scooter-models/${id}/avatar`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: scooterModelsKeys.all });
+    },
+  });
+}

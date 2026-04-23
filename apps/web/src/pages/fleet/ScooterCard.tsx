@@ -35,6 +35,8 @@ import { useArchiveScooter } from "@/lib/api/scooters";
 import { useMe } from "@/lib/api/auth";
 import { Archive, Loader2 } from "lucide-react";
 import { ApiError } from "@/lib/api";
+import { useApiScooterModels } from "@/lib/api/scooter-models";
+import { fileUrl } from "@/lib/files";
 
 type TabId = "history" | "repairs" | "incidents" | "docs";
 const TABS: { id: TabId; label: string; count?: number }[] = [
@@ -242,16 +244,7 @@ export function ScooterCard({
         {/* ========== ЛЕВЫЙ БЛОК: ФОТО + ТЕХНИЧКА ========== */}
         <section className="grid gap-0 overflow-hidden rounded-2xl bg-surface shadow-card-sm md:grid-cols-[260px_1fr]">
           {/* фото */}
-          <div className="relative flex min-h-[320px] flex-col items-center justify-center gap-2 bg-surface-soft p-5 text-muted-2 md:border-r md:border-border">
-            <div className="flex h-24 w-24 items-center justify-center rounded-full bg-surface text-muted-2 shadow-card-sm">
-              <ImageOff size={36} strokeWidth={1.5} />
-            </div>
-            <div className="text-[13px] font-semibold text-ink-2">Нет фото</div>
-            <div className="max-w-[180px] text-center text-[11px] leading-snug text-muted-2">
-              Загрузите аватарку модели {MODEL_LABEL[scooter.model]} — появится
-              здесь для всех {scooter.name.split(" ")[0]}-скутеров
-            </div>
-          </div>
+          <ScooterPhotoArea scooter={scooter} />
 
           {/* техничка */}
           <div className="flex flex-col gap-0 p-6">
@@ -958,3 +951,49 @@ function daysWord(n: number): string {
 
 // Type gymnastics
 export type { ScooterModel };
+
+/**
+ * Фото-область в шапке карточки скутера.
+ * Приоритет: 1) загруженное фото скутера (первое из ScooterPhotos) —
+ *            2) аватарка модели (scooter_models.avatarKey) —
+ *            3) заглушка «Нет фото».
+ */
+function ScooterPhotoArea({ scooter }: { scooter: FleetScooter }) {
+  const { data: models = [] } = useApiScooterModels();
+  // Ищем модель по modelId (новый FK); если нет — по совпадению названия с enum
+  const model = scooter.modelId
+    ? models.find((m) => m.id === scooter.modelId)
+    : models.find((m) => m.name.toLowerCase().includes(scooter.model));
+  const modelAvatar = fileUrl(model?.avatarKey);
+
+  return (
+    <div className="relative flex min-h-[320px] flex-col items-center justify-center gap-2 bg-surface-soft p-5 text-muted-2 md:border-r md:border-border">
+      {modelAvatar ? (
+        <>
+          <div className="relative h-40 w-40 overflow-hidden rounded-2xl bg-white shadow-card-sm">
+            <img
+              src={modelAvatar}
+              alt={model?.name ?? ""}
+              className="h-full w-full object-cover"
+            />
+          </div>
+          <div className="mt-1 text-[12px] font-semibold text-ink-2">
+            {model?.name ?? MODEL_LABEL[scooter.model]}
+          </div>
+          <div className="text-[10px] text-muted-2">аватарка модели</div>
+        </>
+      ) : (
+        <>
+          <div className="flex h-24 w-24 items-center justify-center rounded-full bg-surface text-muted-2 shadow-card-sm">
+            <ImageOff size={36} strokeWidth={1.5} />
+          </div>
+          <div className="text-[13px] font-semibold text-ink-2">Нет фото</div>
+          <div className="max-w-[200px] text-center text-[11px] leading-snug text-muted-2">
+            Загрузите аватарку модели {MODEL_LABEL[scooter.model]} в
+            «Гараж → Модели» — она появится здесь для всех скутеров этой модели
+          </div>
+        </>
+      )}
+    </div>
+  );
+}

@@ -31,6 +31,8 @@ export type FleetScooter = {
   /** отображаемое имя: «Jog #07» */
   name: string;
   model: ScooterModel;
+  /** FK на scooter_models — источник аватарки/тарифов */
+  modelId?: number;
   /** пробег в км */
   mileage: number;
   /** базовый статус — без учёта текущих аренд */

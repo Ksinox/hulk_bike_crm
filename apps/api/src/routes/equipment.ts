@@ -5,6 +5,9 @@ import { db } from "../db/index.js";
 import { equipmentItems } from "../db/schema.js";
 import { requireRole } from "../auth/plugin.js";
 import { logActivity } from "../services/activityLog.js";
+import { makeFileKey, putObject, removeObject } from "../storage/index.js";
+
+const MAX_AVATAR = 5 * 1024 * 1024;
 
 const staffOnly = requireRole("director", "admin");
 
@@ -100,6 +103,10 @@ export async function equipmentRoutes(app: FastifyInstance) {
         .where(eq(equipmentItems.id, id));
       if (!existing) return reply.code(404).send({ error: "not found" });
 
+      if (existing.avatarKey) {
+        await removeObject(existing.avatarKey).catch(() => null);
+      }
+
       await db.delete(equipmentItems).where(eq(equipmentItems.id, id));
       await logActivity(req, {
         entity: "equipment",
@@ -108,6 +115,72 @@ export async function equipmentRoutes(app: FastifyInstance) {
         summary: `Удалена экипировка «${existing.name}»`,
       });
       return { ok: true };
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    "/:id/avatar",
+    { preHandler: staffOnly },
+    async (req, reply) => {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
+      const [existing] = await db
+        .select()
+        .from(equipmentItems)
+        .where(eq(equipmentItems.id, id));
+      if (!existing) return reply.code(404).send({ error: "not found" });
+
+      const parts = req.parts({ limits: { fileSize: MAX_AVATAR, files: 1 } });
+      let fileBuf: Buffer | null = null;
+      let fileName = "avatar";
+      let mimeType = "application/octet-stream";
+      for await (const part of parts) {
+        if (part.type === "file") {
+          fileBuf = await part.toBuffer();
+          fileName = part.filename;
+          mimeType = part.mimetype;
+        }
+      }
+      if (!fileBuf) return reply.code(400).send({ error: "file required" });
+      if (!/^image\//.test(mimeType))
+        return reply.code(400).send({ error: "only images" });
+
+      const key = makeFileKey(`equipment/${id}`, fileName);
+      await putObject(key, fileBuf, mimeType);
+
+      if (existing.avatarKey && existing.avatarKey !== key) {
+        await removeObject(existing.avatarKey).catch(() => null);
+      }
+
+      const [updated] = await db
+        .update(equipmentItems)
+        .set({ avatarKey: key, avatarFileName: fileName, updatedAt: new Date() })
+        .where(eq(equipmentItems.id, id))
+        .returning();
+      return updated;
+    },
+  );
+
+  app.delete<{ Params: { id: string } }>(
+    "/:id/avatar",
+    { preHandler: staffOnly },
+    async (req, reply) => {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
+      const [existing] = await db
+        .select()
+        .from(equipmentItems)
+        .where(eq(equipmentItems.id, id));
+      if (!existing) return reply.code(404).send({ error: "not found" });
+      if (existing.avatarKey) {
+        await removeObject(existing.avatarKey).catch(() => null);
+      }
+      const [updated] = await db
+        .update(equipmentItems)
+        .set({ avatarKey: null, avatarFileName: null, updatedAt: new Date() })
+        .where(eq(equipmentItems.id, id))
+        .returning();
+      return updated;
     },
   );
 }

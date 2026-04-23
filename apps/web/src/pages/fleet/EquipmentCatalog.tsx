@@ -5,10 +5,14 @@ import {
   useApiEquipment,
   useCreateEquipment,
   useDeleteEquipment,
+  useDeleteEquipmentAvatar,
   usePatchEquipment,
+  useUploadEquipmentAvatar,
   type ApiEquipmentItem,
   type CreateEquipmentInput,
 } from "@/lib/api/equipment";
+import { fileUrl } from "@/lib/files";
+import { AvatarUpload } from "./AvatarUpload";
 
 export function EquipmentCatalog() {
   const { data: items = [], isLoading } = useApiEquipment();
@@ -80,8 +84,12 @@ function EquipmentCard({
   return (
     <div className="relative rounded-2xl bg-surface p-4 shadow-card-sm">
       <div className="flex items-start gap-3">
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-purple-soft text-purple-ink">
-          <Package size={22} />
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-purple-soft text-purple-ink">
+          {item.avatarKey ? (
+            <img src={fileUrl(item.avatarKey) ?? ""} alt="" className="h-full w-full object-cover" />
+          ) : (
+            <Package size={22} />
+          )}
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
@@ -197,6 +205,13 @@ function EquipmentFormModal({
           </button>
         </div>
         <div className="flex flex-col gap-4 px-5 py-5">
+          {isEdit && <EquipAvatarEditor item={initial} />}
+          {!isEdit && (
+            <div className="rounded-[10px] bg-surface-soft px-3 py-2 text-[11px] text-muted-2">
+              Аватарку можно будет загрузить после создания — откройте позицию снова кнопкой «Изменить».
+            </div>
+          )}
+
           <div>
             <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-2">
               Название
@@ -288,6 +303,25 @@ function EquipmentFormModal({
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function EquipAvatarEditor({ item }: { item: ApiEquipmentItem }) {
+  const uploadMut = useUploadEquipmentAvatar();
+  const deleteMut = useDeleteEquipmentAvatar();
+  return (
+    <div>
+      <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-2">
+        Аватарка
+      </div>
+      <AvatarUpload
+        avatarKey={item.avatarKey}
+        uploading={uploadMut.isPending}
+        removing={deleteMut.isPending}
+        onUpload={(file) => uploadMut.mutateAsync({ id: item.id, file })}
+        onRemove={() => deleteMut.mutateAsync(item.id)}
+      />
     </div>
   );
 }

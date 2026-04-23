@@ -5,10 +5,14 @@ import {
   useApiScooterModels,
   useCreateScooterModel,
   useDeleteScooterModel,
+  useDeleteScooterModelAvatar,
   usePatchScooterModel,
+  useUploadScooterModelAvatar,
   type ApiScooterModel,
   type CreateModelInput,
 } from "@/lib/api/scooter-models";
+import { fileUrl } from "@/lib/files";
+import { AvatarUpload } from "./AvatarUpload";
 
 export function ModelsCatalog() {
   const { data: items = [], isLoading } = useApiScooterModels();
@@ -76,11 +80,16 @@ function ModelCard({
     if (!confirm(`Удалить модель «${model.name}»?`)) return;
     del.mutate(model.id);
   };
+  const avatarSrc = fileUrl(model.avatarKey);
   return (
     <div className="relative rounded-2xl bg-surface p-4 shadow-card-sm">
       <div className="flex items-start gap-3">
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-700">
-          <Tag size={22} />
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-blue-50 text-blue-700">
+          {avatarSrc ? (
+            <img src={avatarSrc} alt="" className="h-full w-full object-cover" />
+          ) : (
+            <Tag size={22} />
+          )}
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
@@ -190,6 +199,14 @@ function ModelFormModal({
           </button>
         </div>
         <div className="flex flex-col gap-4 px-5 py-5">
+          {isEdit && <AvatarEditor model={initial} />}
+          {!isEdit && (
+            <div className="rounded-[10px] bg-surface-soft px-3 py-2 text-[11px] text-muted-2">
+              Аватарку модели можно будет загрузить после создания — откройте её
+              снова кнопкой «Изменить».
+            </div>
+          )}
+
           <Field label="Название">
             <input
               type="text"
@@ -262,6 +279,28 @@ function ModelFormModal({
             </button>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function AvatarEditor({ model }: { model: ApiScooterModel }) {
+  const uploadMut = useUploadScooterModelAvatar();
+  const deleteMut = useDeleteScooterModelAvatar();
+  return (
+    <div>
+      <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-2">
+        Аватарка
+      </div>
+      <AvatarUpload
+        avatarKey={model.avatarKey}
+        uploading={uploadMut.isPending}
+        removing={deleteMut.isPending}
+        onUpload={(file) => uploadMut.mutateAsync({ id: model.id, file })}
+        onRemove={() => deleteMut.mutateAsync(model.id)}
+      />
+      <div className="mt-1 text-[11px] text-muted-2">
+        Эта картинка показывается в карточке скутера и в блоке «Скутер» при аренде.
       </div>
     </div>
   );
