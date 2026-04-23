@@ -11,6 +11,13 @@ import { useUnreachableSet } from "@/pages/clients/clientStore";
 import { NewRentalModal } from "./NewRentalModal";
 import { useApiClients } from "@/lib/api/clients";
 import type { ApiClient } from "@/lib/api/types";
+import {
+  matchId,
+  matchPhone,
+  matchScooterName,
+  matchText,
+  normalizeQuery,
+} from "@/lib/search";
 
 /** Сегодня в формате DD.MM.YYYY (локальное время) */
 function todayRu(): string {
@@ -54,14 +61,13 @@ function matchStatus(
 
 function matchSearch(r: Rental, q: string, clients: ApiClient[]): boolean {
   if (!q.trim()) return true;
-  const needle = q.toLowerCase().trim();
+  const query = normalizeQuery(q);
   const client = clients.find((c) => c.id === r.clientId);
-  if (client && client.name.toLowerCase().includes(needle)) return true;
-  if (client && client.phone.replace(/\D/g, "").includes(needle.replace(/\D/g, ""))) {
-    if (needle.replace(/\D/g, "").length > 0) return true;
-  }
-  if (r.scooter.toLowerCase().includes(needle)) return true;
-  if (String(r.id).includes(needle)) return true;
+
+  if (matchText(client?.name, query)) return true;
+  if (matchPhone(client?.phone, query)) return true;
+  if (matchScooterName(r.scooter, query)) return true;
+  if (matchId(r.id, query)) return true;
   return false;
 }
 

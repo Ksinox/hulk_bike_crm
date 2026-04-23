@@ -20,6 +20,11 @@ import {
 import { useFleetScooters } from "./fleetStore";
 import { MODEL_LABEL, type ScooterModel } from "@/lib/mock/rentals";
 import { useApiClients } from "@/lib/api/clients";
+import {
+  matchScooterName,
+  matchText,
+  normalizeQuery,
+} from "@/lib/search";
 import { useRentals } from "@/pages/rentals/rentalsStore";
 import { ScooterCard } from "./ScooterCard";
 import { AddScooterModal } from "./AddScooterModal";
@@ -149,16 +154,17 @@ export function Fleet() {
   }, [rows]);
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = normalizeQuery(query);
     return rows
       .filter((r) => {
         if (tab !== "all" && r.status !== tab) return false;
         if (modelFilter !== "all" && r.scooter.model !== modelFilter)
           return false;
-        if (q) {
-          const name = r.scooter.name.toLowerCase();
-          const vin = r.scooter.vin?.toLowerCase() ?? "";
-          if (!name.includes(q) && !vin.includes(q)) return false;
+        if (q.text) {
+          const ok =
+            matchScooterName(r.scooter.name, q) ||
+            matchText(r.scooter.vin ?? undefined, q);
+          if (!ok) return false;
         }
         return true;
       })

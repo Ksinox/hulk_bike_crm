@@ -16,6 +16,12 @@ import { ClientCard } from "./ClientCard";
 import { AddClientModal } from "./AddClientModal";
 import { useAllClients, useUnreachableSet } from "./clientStore";
 import { useRentals } from "@/pages/rentals/rentalsStore";
+import {
+  matchId,
+  matchPhone as matchPhoneQ,
+  matchText,
+  normalizeQuery,
+} from "@/lib/search";
 
 function matchClient(
   c: Client,
@@ -25,13 +31,12 @@ function matchClient(
   unreachable: Set<number>,
 ): boolean {
   if (f.search.trim()) {
-    const q = f.search.toLowerCase().trim();
-    const qDigits = q.replace(/[^\d+]/g, "");
-    const matchName = c.name.toLowerCase().includes(q);
-    const matchPhone =
-      qDigits.length > 0 &&
-      c.phone.replace(/[^\d+]/g, "").includes(qDigits);
-    if (!matchName && !matchPhone) return false;
+    const query = normalizeQuery(f.search);
+    const ok =
+      matchText(c.name, query) ||
+      matchPhoneQ(c.phone, query) ||
+      matchId(c.id, query);
+    if (!ok) return false;
   }
   const hasActive = activeSet.has(c.id);
   if (f.status === "active") {

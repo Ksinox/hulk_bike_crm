@@ -5,7 +5,6 @@ import {
   ChevronDown,
   Crown,
   LogOut,
-  Search,
   Settings,
   ShieldCheck,
   User as UserIcon,
@@ -14,6 +13,7 @@ import {
 import { cn } from "@/lib/utils";
 import { setRole, useRole, type UserRole } from "@/lib/role";
 import { useLogout, useMe } from "@/lib/api/auth";
+import { GlobalSearch } from "./GlobalSearch";
 
 export function Topbar() {
   const { data: me } = useMe();
@@ -51,19 +51,7 @@ export function Topbar() {
 
   return (
     <div className="flex items-center gap-3 rounded-xl bg-surface px-4 py-2.5 shadow-card-sm">
-      <div
-        className="flex min-w-[280px] cursor-not-allowed items-center gap-2.5 rounded-full border border-transparent bg-surface-soft px-3.5 py-2 opacity-70"
-        title="Поиск — скоро"
-      >
-        <Search size={16} className="text-muted-2" />
-        <input
-          type="text"
-          placeholder="Поиск — скоро"
-          disabled
-          className="w-full cursor-not-allowed border-0 bg-transparent text-sm text-muted-2 outline-none placeholder:text-muted-2"
-        />
-        <SoonPill />
-      </div>
+      <GlobalSearch />
       <div className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1.5 text-[13px] font-semibold text-blue-700">
         <Calendar size={14} />
         {formatTodayRu()}
@@ -259,15 +247,6 @@ function IconBtn({
     >
       {children}
     </button>
-  );
-}
-
-/** Маленькая серая плашка "скоро". */
-function SoonPill() {
-  return (
-    <span className="ml-auto shrink-0 rounded-full bg-muted-2/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-muted-2">
-      скоро
-    </span>
   );
 }
 
