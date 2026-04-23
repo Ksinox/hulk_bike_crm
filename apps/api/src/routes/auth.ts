@@ -131,6 +131,92 @@ export async function authRoutes(app: FastifyInstance) {
     },
   );
 
+  /**
+   * PATCH /api/auth/me
+   * body: { name?: string, avatarColor?: string }
+   * Позволяет авторизованному юзеру менять своё отображаемое имя и цвет аватара.
+   */
+  app.patch(
+    "/me",
+    { preHandler: requireAuth },
+    async (req, reply) => {
+      const Body = z
+        .object({
+          name: z.string().trim().min(1).max(100).optional(),
+          avatarColor: z
+            .enum(["blue", "green", "orange", "pink", "purple"])
+            .optional(),
+        })
+        .strict();
+      const parsed = Body.safeParse(req.body);
+      if (!parsed.success) {
+        return reply
+          .code(400)
+          .send({ error: "validation", issues: parsed.error.issues });
+      }
+      const patch: Record<string, unknown> = {};
+      if (parsed.data.name !== undefined) patch.name = parsed.data.name;
+      if (parsed.data.avatarColor !== undefined)
+        patch.avatarColor = parsed.data.avatarColor;
+      if (Object.keys(patch).length === 0) return reply.send({ ok: true });
+
+      const [updated] = await db
+        .update(users)
+        .set(patch)
+        .where(eq(users.id, req.user.userId))
+        .returning({
+          id: users.id,
+          name: users.name,
+          login: users.login,
+          role: users.role,
+          avatarColor: users.avatarColor,
+        });
+      return updated;
+    },
+  );
+
+  /**
+   * POST /api/auth/change-password
+   * body: { currentPassword, newPassword }
+   * Меняет свой пароль. Требует подтверждения текущим паролем.
+   */
+  app.post(
+    "/change-password",
+    { preHandler: requireAuth },
+    async (req, reply) => {
+      const Body = z
+        .object({
+          currentPassword: z.string().min(1).max(200),
+          newPassword: z.string().min(6).max(200),
+        })
+        .strict();
+      const parsed = Body.safeParse(req.body);
+      if (!parsed.success) {
+        return reply
+          .code(400)
+          .send({ error: "validation", issues: parsed.error.issues });
+      }
+      const { currentPassword, newPassword } = parsed.data;
+
+      const [row] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, req.user.userId));
+      if (!row) return reply.code(401).send({ error: "user deleted" });
+
+      const ok = await bcrypt.compare(currentPassword, row.passwordHash);
+      if (!ok)
+        return reply.code(403).send({ error: "current password is wrong" });
+
+      const hash = await bcrypt.hash(newPassword, 12);
+      await db
+        .update(users)
+        .set({ passwordHash: hash })
+        .where(eq(users.id, row.id));
+      return { ok: true };
+    },
+  );
+
   // Suppress unused import warning
   void ne;
 }

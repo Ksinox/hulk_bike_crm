@@ -8,18 +8,21 @@ import {
   Settings,
   ShieldCheck,
   User as UserIcon,
+  UserCog,
   Wrench,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { setRole, useRole, type UserRole } from "@/lib/role";
 import { useLogout, useMe } from "@/lib/api/auth";
 import { GlobalSearch } from "./GlobalSearch";
+import { ProfileModal } from "./ProfileModal";
 
 export function Topbar() {
   const { data: me } = useMe();
   const logoutMut = useLogout();
   const role = useRole();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Создатель может переключаться между ролями на лету для тестирования UI
@@ -96,6 +99,17 @@ export function Topbar() {
             <div className="border-t border-border">
               <button
                 type="button"
+                onClick={() => {
+                  setMenuOpen(false);
+                  setProfileOpen(true);
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] text-ink-2 transition-colors hover:bg-surface-soft hover:text-ink"
+              >
+                <UserCog size={14} />
+                Профиль и пароль
+              </button>
+              <button
+                type="button"
                 onClick={handleLogout}
                 className="flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] text-ink-2 transition-colors hover:bg-surface-soft hover:text-red-ink"
               >
@@ -106,6 +120,7 @@ export function Topbar() {
           </div>
         )}
       </div>
+      {profileOpen && <ProfileModal onClose={() => setProfileOpen(false)} />}
     </div>
   );
 }

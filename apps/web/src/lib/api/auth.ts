@@ -67,3 +67,26 @@ export function useLogout() {
     },
   });
 }
+
+export type UpdateMeInput = {
+  name?: string;
+  avatarColor?: "blue" | "green" | "orange" | "pink" | "purple";
+};
+
+export function useUpdateMe() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: UpdateMeInput) =>
+      api.patch<AuthUser>("/api/auth/me", input),
+    onSuccess: (user) => {
+      qc.setQueryData(authKeys.me, user);
+    },
+  });
+}
+
+export function useChangePassword() {
+  return useMutation({
+    mutationFn: (input: { currentPassword: string; newPassword: string }) =>
+      api.post<{ ok: true }>("/api/auth/change-password", input),
+  });
+}
