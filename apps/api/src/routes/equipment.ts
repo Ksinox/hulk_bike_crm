@@ -1,0 +1,113 @@
+import type { FastifyInstance } from "fastify";
+import { eq } from "drizzle-orm";
+import { z } from "zod";
+import { db } from "../db/index.js";
+import { equipmentItems } from "../db/schema.js";
+import { requireRole } from "../auth/plugin.js";
+import { logActivity } from "../services/activityLog.js";
+
+const staffOnly = requireRole("director", "admin");
+
+const Body = z
+  .object({
+    name: z.string().trim().min(1).max(100),
+    avatarKey: z.string().optional().nullable(),
+    avatarFileName: z.string().optional().nullable(),
+    quickPick: z.boolean().optional(),
+    price: z.number().int().min(0).max(1_000_000).optional(),
+    isFree: z.boolean().optional(),
+    note: z.string().nullable().optional(),
+  })
+  .strict();
+
+export async function equipmentRoutes(app: FastifyInstance) {
+  app.get("/", async () => {
+    const rows = await db.select().from(equipmentItems).orderBy(equipmentItems.id);
+    return { items: rows };
+  });
+
+  app.post("/", { preHandler: staffOnly }, async (req, reply) => {
+    const parsed = Body.safeParse(req.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: "validation", issues: parsed.error.issues });
+    }
+    const data = parsed.data;
+    const [dup] = await db
+      .select({ id: equipmentItems.id })
+      .from(equipmentItems)
+      .where(eq(equipmentItems.name, data.name));
+    if (dup) return reply.code(409).send({ error: "name already exists" });
+
+    const [row] = await db
+      .insert(equipmentItems)
+      .values({
+        name: data.name,
+        avatarKey: data.avatarKey ?? null,
+        avatarFileName: data.avatarFileName ?? null,
+        quickPick: data.quickPick ?? true,
+        price: data.price ?? 0,
+        isFree: data.isFree ?? true,
+        note: data.note ?? null,
+      })
+      .returning();
+    if (!row) return reply.code(500).send({ error: "insert failed" });
+
+    await logActivity(req, {
+      entity: "equipment",
+      entityId: row.id,
+      action: "created",
+      summary: `Добавлена экипировка «${row.name}»`,
+    });
+    return row;
+  });
+
+  app.patch<{ Params: { id: string } }>(
+    "/:id",
+    { preHandler: staffOnly },
+    async (req, reply) => {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
+      const parsed = Body.partial().safeParse(req.body);
+      if (!parsed.success) {
+        return reply.code(400).send({ error: "validation", issues: parsed.error.issues });
+      }
+      const [updated] = await db
+        .update(equipmentItems)
+        .set({ ...parsed.data, updatedAt: new Date() })
+        .where(eq(equipmentItems.id, id))
+        .returning();
+      if (!updated) return reply.code(404).send({ error: "not found" });
+
+      await logActivity(req, {
+        entity: "equipment",
+        entityId: id,
+        action: "updated",
+        summary: `Изменена экипировка «${updated.name}»`,
+      });
+      return updated;
+    },
+  );
+
+  app.delete<{ Params: { id: string } }>(
+    "/:id",
+    { preHandler: staffOnly },
+    async (req, reply) => {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
+      const [existing] = await db
+        .select()
+        .from(equipmentItems)
+        .where(eq(equipmentItems.id, id));
+      if (!existing) return reply.code(404).send({ error: "not found" });
+
+      await db.delete(equipmentItems).where(eq(equipmentItems.id, id));
+      await logActivity(req, {
+        entity: "equipment",
+        entityId: id,
+        action: "deleted",
+        summary: `Удалена экипировка «${existing.name}»`,
+      });
+      return { ok: true };
+    },
+  );
+}

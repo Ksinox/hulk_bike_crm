@@ -3,11 +3,13 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/index.js";
 import {
+  clients,
   payments,
   rentals,
   returnInspections,
   scooters,
 } from "../db/schema.js";
+import { logActivity } from "../services/activityLog.js";
 
 const RentalStatusEnum = z.enum([
   "new_request",
@@ -22,6 +24,16 @@ const RentalStatusEnum = z.enum([
   "court",
 ]);
 
+/** Снимок экипировки на момент аренды — { itemId?, name, price, free }. */
+const EquipmentJsonItem = z
+  .object({
+    itemId: z.number().int().positive().optional().nullable(),
+    name: z.string().min(1).max(100),
+    price: z.number().int().min(0).max(1_000_000).default(0),
+    free: z.boolean().default(true),
+  })
+  .strict();
+
 const CreateRentalBody = z
   .object({
     clientId: z.number().int().positive(),
@@ -33,13 +45,19 @@ const CreateRentalBody = z
       .optional(),
     tariffPeriod: z.enum(["short", "week", "month"]),
     rate: z.number().int().positive(),
+    /** Сумма залога в ₽. 0 если неденежный. */
     deposit: z.number().int().min(0).optional(),
+    /** Описание предмета, если залог неденежный */
+    depositItem: z.string().max(200).optional().nullable(),
     startAt: z.string(), // ISO
     endPlannedAt: z.string(),
     days: z.number().int().positive(),
     sum: z.number().int().min(0),
     paymentMethod: z.enum(["cash", "card", "transfer"]),
+    /** Legacy список строк. Желательно присылать equipmentJson. */
     equipment: z.array(z.string()).optional(),
+    /** Новый формат экипировки — снимок из каталога */
+    equipmentJson: z.array(EquipmentJsonItem).optional(),
     note: z.string().optional().nullable(),
   })
   .strict();
@@ -53,6 +71,9 @@ const PatchRentalBody = z
     damageAmount: z.number().int().min(0).optional().nullable(),
     depositReturned: z.boolean().optional().nullable(),
     contractUploaded: z.boolean().optional(),
+    confirmContractSigned: z.boolean().optional(),
+    confirmRentPaid: z.boolean().optional(),
+    confirmDepositReceived: z.boolean().optional(),
     paymentConfirmedBy: z
       .enum(["boss", "manager"])
       .optional()
@@ -63,6 +84,9 @@ const PatchRentalBody = z
     rate: z.number().int().positive().optional(),
     days: z.number().int().positive().optional(),
     sum: z.number().int().min(0).optional(),
+    deposit: z.number().int().min(0).optional(),
+    depositItem: z.string().max(200).nullable().optional(),
+    equipmentJson: z.array(EquipmentJsonItem).optional(),
   })
   .strict();
 
@@ -78,6 +102,30 @@ const CompleteBody = z
   })
   .strict();
 
+const ConfirmPaymentBody = z
+  .object({
+    role: z.enum(["boss", "manager"]),
+    byName: z.string().min(1),
+    contractSigned: z.boolean(),
+    rentPaid: z.boolean(),
+    depositReceived: z.boolean(),
+  })
+  .strict();
+
+async function summaryForRental(rentalId: number): Promise<string> {
+  const [r] = await db.select().from(rentals).where(eq(rentals.id, rentalId));
+  if (!r) return `#${rentalId}`;
+  const [cl] = await db
+    .select({ name: clients.name })
+    .from(clients)
+    .where(eq(clients.id, r.clientId));
+  const [sc] =
+    r.scooterId != null
+      ? await db.select({ name: scooters.name }).from(scooters).where(eq(scooters.id, r.scooterId))
+      : [];
+  return `#${r.id} · ${cl?.name ?? "—"}${sc?.name ? " · " + sc.name : ""}`;
+}
+
 export async function rentalsRoutes(app: FastifyInstance) {
   app.get("/", async () => {
     const rows = await db.select().from(rentals).orderBy(desc(rentals.id));
@@ -86,15 +134,12 @@ export async function rentalsRoutes(app: FastifyInstance) {
 
   app.get<{ Params: { id: string } }>("/:id", async (req, reply) => {
     const id = Number(req.params.id);
-    if (!Number.isFinite(id)) {
-      return reply.code(400).send({ error: "bad id" });
-    }
+    if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
     const [row] = await db.select().from(rentals).where(eq(rentals.id, id));
     if (!row) return reply.code(404).send({ error: "not found" });
     return row;
   });
 
-  // POST /api/rentals
   app.post("/", async (req, reply) => {
     const parsed = CreateRentalBody.safeParse(req.body);
     if (!parsed.success) {
@@ -114,33 +159,46 @@ export async function rentalsRoutes(app: FastifyInstance) {
         tariffPeriod: d.tariffPeriod,
         rate: d.rate,
         deposit: d.deposit ?? 2000,
+        depositItem: d.depositItem ?? null,
         startAt: new Date(d.startAt),
         endPlannedAt: new Date(d.endPlannedAt),
         days: d.days,
         sum: d.sum,
         paymentMethod: d.paymentMethod,
         equipment: d.equipment ?? [],
+        equipmentJson: (d.equipmentJson ?? []) as unknown as object,
         note: d.note ?? null,
       })
       .returning();
+    if (!row) return reply.code(500).send({ error: "insert failed" });
+
+    const summary = await summaryForRental(row.id);
+    await logActivity(req, {
+      entity: "rental",
+      entityId: row.id,
+      action: "created",
+      summary: `Создана аренда ${summary}`,
+    });
     return reply.code(201).send(row);
   });
 
-  // PATCH /api/rentals/:id — универсальные изменения
   app.patch<{ Params: { id: string } }>("/:id", async (req, reply) => {
     const id = Number(req.params.id);
-    if (!Number.isFinite(id)) {
-      return reply.code(400).send({ error: "bad id" });
-    }
+    if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
     const parsed = PatchRentalBody.safeParse(req.body);
     if (!parsed.success) {
       return reply
         .code(400)
         .send({ error: "validation", issues: parsed.error.issues });
     }
+    const [before] = await db.select().from(rentals).where(eq(rentals.id, id));
+    if (!before) return reply.code(404).send({ error: "not found" });
+
     const patch: Record<string, unknown> = { ...parsed.data };
-    if (parsed.data.endPlannedAt) patch.endPlannedAt = new Date(parsed.data.endPlannedAt);
-    if (parsed.data.endActualAt) patch.endActualAt = new Date(parsed.data.endActualAt);
+    if (parsed.data.endPlannedAt)
+      patch.endPlannedAt = new Date(parsed.data.endPlannedAt);
+    if (parsed.data.endActualAt)
+      patch.endActualAt = new Date(parsed.data.endActualAt);
     if (parsed.data.paymentConfirmedAt) {
       patch.paymentConfirmedAt = new Date(parsed.data.paymentConfirmedAt);
     }
@@ -151,6 +209,23 @@ export async function rentalsRoutes(app: FastifyInstance) {
       .where(eq(rentals.id, id))
       .returning();
     if (!row) return reply.code(404).send({ error: "not found" });
+
+    const summary = await summaryForRental(id);
+    if (parsed.data.status && parsed.data.status !== before.status) {
+      await logActivity(req, {
+        entity: "rental",
+        entityId: id,
+        action: "status_changed",
+        summary: `Аренда ${summary}: ${before.status} → ${row.status}`,
+      });
+    } else {
+      await logActivity(req, {
+        entity: "rental",
+        entityId: id,
+        action: "updated",
+        summary: `Изменена аренда ${summary}`,
+      });
+    }
     return row;
   });
 
@@ -159,11 +234,8 @@ export async function rentalsRoutes(app: FastifyInstance) {
     "/:id/revert-overdue",
     async (req, reply) => {
       const id = Number(req.params.id);
-      if (!Number.isFinite(id)) {
-        return reply.code(400).send({ error: "bad id" });
-      }
-      // сегодня по демо-таймлайну; в реальном проде — now()
-      const today = new Date(2026, 9, 13, 12, 0, 0);
+      if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
+      const today = new Date();
       const [row] = await db
         .update(rentals)
         .set({
@@ -178,7 +250,6 @@ export async function rentalsRoutes(app: FastifyInstance) {
           .code(409)
           .send({ error: "rental is not overdue or does not exist" });
       }
-      // снимаем неоплаченные fine-платежи
       await db
         .delete(payments)
         .where(
@@ -188,28 +259,29 @@ export async function rentalsRoutes(app: FastifyInstance) {
             eq(payments.paid, false),
           ),
         );
+
+      const summary = await summaryForRental(id);
+      await logActivity(req, {
+        entity: "rental",
+        entityId: id,
+        action: "revert_overdue",
+        summary: `Просрочка снята с аренды ${summary}`,
+      });
       return row;
     },
   );
 
-  // POST /api/rentals/:id/complete — завершение возврата (без ущерба или с)
   app.post<{ Params: { id: string } }>(
     "/:id/complete",
     async (req, reply) => {
       const id = Number(req.params.id);
-      if (!Number.isFinite(id)) {
-        return reply.code(400).send({ error: "bad id" });
-      }
+      if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
       const parsed = CompleteBody.safeParse(req.body);
-      if (!parsed.success) {
-        return reply
-          .code(400)
-          .send({ error: "validation", issues: parsed.error.issues });
-      }
+      if (!parsed.success)
+        return reply.code(400).send({ error: "validation", issues: parsed.error.issues });
       const d = parsed.data;
       const withDamage = (d.damageAmount ?? 0) > 0 || !d.conditionOk;
 
-      // ----- в одной транзакции: обновить rental + записать inspection + (если ущерб) payment/incident
       const result = await db.transaction(async (tx) => {
         const [r] = await tx
           .update(rentals)
@@ -261,18 +333,24 @@ export async function rentalsRoutes(app: FastifyInstance) {
         return r;
       });
 
+      const summary = await summaryForRental(id);
+      await logActivity(req, {
+        entity: "rental",
+        entityId: id,
+        action: "completed",
+        summary: withDamage
+          ? `Завершена аренда ${summary} с ущербом ${d.damageAmount ?? 0} ₽`
+          : `Завершена аренда ${summary}`,
+      });
       return result;
     },
   );
 
-  // POST /api/rentals/:id/extend — продление (создаёт дочернюю аренду)
   app.post<{ Params: { id: string } }>(
     "/:id/extend",
     async (req, reply) => {
       const id = Number(req.params.id);
-      if (!Number.isFinite(id)) {
-        return reply.code(400).send({ error: "bad id" });
-      }
+      if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
       const schema = z
         .object({
           extraDays: z.number().int().positive(),
@@ -281,32 +359,24 @@ export async function rentalsRoutes(app: FastifyInstance) {
         })
         .strict();
       const parsed = schema.safeParse(req.body);
-      if (!parsed.success) {
-        return reply
-          .code(400)
-          .send({ error: "validation", issues: parsed.error.issues });
-      }
+      if (!parsed.success)
+        return reply.code(400).send({ error: "validation", issues: parsed.error.issues });
       const d = parsed.data;
 
       const result = await db.transaction(async (tx) => {
-        const [old] = await tx
-          .select()
-          .from(rentals)
-          .where(eq(rentals.id, id));
+        const [old] = await tx.select().from(rentals).where(eq(rentals.id, id));
         if (!old) throw new Error("not found");
 
-        // закрываем старую
         await tx
           .update(rentals)
           .set({
             status: "completed",
             endActualAt: old.endPlannedAt,
-            depositReturned: false, // залог остаётся в серии
+            depositReturned: false,
             updatedAt: sql`now()`,
           })
           .where(eq(rentals.id, id));
 
-        // новая начинается где закончилась старая
         const newStart = old.endPlannedAt;
         const newEnd = new Date(newStart.getTime() + d.extraDays * 86_400_000);
 
@@ -321,60 +391,115 @@ export async function rentalsRoutes(app: FastifyInstance) {
             tariffPeriod: d.newTariffPeriod,
             rate: d.newRate,
             deposit: old.deposit,
+            depositItem: old.depositItem,
             startAt: newStart,
             endPlannedAt: newEnd,
             days: d.extraDays,
             sum: d.newRate * d.extraDays,
             paymentMethod: old.paymentMethod,
             equipment: old.equipment,
+            equipmentJson: old.equipmentJson as unknown as object,
             note: `продление аренды #${String(old.id).padStart(4, "0")}`,
           })
           .returning();
         return child;
       });
 
+      if (result) {
+        const summary = await summaryForRental(result.id);
+        await logActivity(req, {
+          entity: "rental",
+          entityId: result.id,
+          action: "extended",
+          summary: `Продление аренды ${summary} на ${d.extraDays} дн`,
+        });
+      }
       return reply.code(201).send(result);
     },
   );
 
-  // POST /api/rentals/:id/confirm-payment — подтверждение оплаты + флаг контракта
+  /**
+   * POST /api/rentals/:id/confirm-payment
+   * Новый чеклист: contractSigned, rentPaid, depositReceived.
+   * Подтвердить можно с неотмеченными, но в activity_log попадёт предупреждение.
+   */
   app.post<{ Params: { id: string } }>(
     "/:id/confirm-payment",
     async (req, reply) => {
       const id = Number(req.params.id);
-      if (!Number.isFinite(id)) {
-        return reply.code(400).send({ error: "bad id" });
-      }
-      const schema = z
-        .object({
-          role: z.enum(["boss", "manager"]),
-          byName: z.string().min(1),
-          contractUploaded: z.boolean(),
-        })
-        .strict();
-      const parsed = schema.safeParse(req.body);
-      if (!parsed.success) {
-        return reply
-          .code(400)
-          .send({ error: "validation", issues: parsed.error.issues });
-      }
+      if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
+
+      const parsed = ConfirmPaymentBody.safeParse(req.body);
+      if (!parsed.success)
+        return reply.code(400).send({ error: "validation", issues: parsed.error.issues });
       const d = parsed.data;
+
+      const [before] = await db.select().from(rentals).where(eq(rentals.id, id));
+      if (!before) return reply.code(404).send({ error: "not found" });
+
       const [row] = await db
         .update(rentals)
         .set({
           paymentConfirmedBy: d.role,
           paymentConfirmedByName: d.byName,
           paymentConfirmedAt: new Date(),
-          contractUploaded: d.contractUploaded,
+          confirmContractSigned: d.contractSigned,
+          confirmRentPaid: d.rentPaid,
+          confirmDepositReceived: d.depositReceived,
           updatedAt: sql`now()`,
         })
         .where(eq(rentals.id, id))
         .returning();
       if (!row) return reply.code(404).send({ error: "not found" });
+
+      const summary = await summaryForRental(id);
+      const missing: string[] = [];
+      if (!d.contractSigned) missing.push("договор не подписан");
+      if (!d.rentPaid) missing.push("сумма аренды не получена");
+      if (!d.depositReceived) missing.push("залог не получен");
+
+      await logActivity(req, {
+        entity: "rental",
+        entityId: id,
+        action: "confirmed_payment",
+        summary:
+          missing.length === 0
+            ? `Подтверждена выдача аренды ${summary} (${d.byName})`
+            : `Подтверждена выдача ${summary} (${d.byName}) — ВНИМАНИЕ: ${missing.join(", ")}`,
+        meta: {
+          contractSigned: d.contractSigned,
+          rentPaid: d.rentPaid,
+          depositReceived: d.depositReceived,
+        },
+      });
+
+      // Если что-то «догаличили» потом — пишем отдельные записи
+      if (before.confirmContractSigned === false && d.contractSigned) {
+        await logActivity(req, {
+          entity: "rental",
+          entityId: id,
+          action: "contract_signed_later",
+          summary: `Договор по аренде ${summary} подписан (отметил ${d.byName})`,
+        });
+      }
+      if (before.confirmRentPaid === false && d.rentPaid) {
+        await logActivity(req, {
+          entity: "rental",
+          entityId: id,
+          action: "rent_paid_later",
+          summary: `Аренда ${summary} — сумма получена (отметил ${d.byName})`,
+        });
+      }
+      if (before.confirmDepositReceived === false && d.depositReceived) {
+        await logActivity(req, {
+          entity: "rental",
+          entityId: id,
+          action: "deposit_received_later",
+          summary: `Аренда ${summary} — залог получен (отметил ${d.byName})`,
+        });
+      }
+
       return row;
     },
   );
-
-  // suppress unused warning
-  void scooters;
 }

@@ -3,6 +3,7 @@ import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/index.js";
 import { clients } from "../db/schema.js";
+import { logActivity } from "../services/activityLog.js";
 
 const ClientSourceEnum = z.enum(["avito", "repeat", "ref", "maps", "other"]);
 
@@ -69,6 +70,14 @@ export async function clientsRoutes(app: FastifyInstance) {
         rating: parsed.data.rating ?? 80,
       })
       .returning();
+    if (!row) return reply.code(500).send({ error: "insert failed" });
+
+    await logActivity(req, {
+      entity: "client",
+      entityId: row.id,
+      action: "created",
+      summary: `Добавлен клиент ${row.name}`,
+    });
     return reply.code(201).send(row);
   });
 
@@ -88,6 +97,13 @@ export async function clientsRoutes(app: FastifyInstance) {
       .where(eq(clients.id, id))
       .returning();
     if (!row) return reply.code(404).send({ error: "not found" });
+
+    await logActivity(req, {
+      entity: "client",
+      entityId: id,
+      action: "updated",
+      summary: `Изменён клиент ${row.name}`,
+    });
     return row;
   });
 }

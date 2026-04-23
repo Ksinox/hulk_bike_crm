@@ -16,7 +16,8 @@
     "db:studio": "drizzle-kit studio",
     "db:reset": "tsx src/db/reset.ts",
     "db:seed": "tsx src/seed/index.ts",
-    "db:seed:users": "tsx src/seed/users-only.ts"
+    "db:seed:users": "tsx src/seed/users-only.ts",
+    "db:seed:catalogs": "tsx src/seed/catalogs.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",

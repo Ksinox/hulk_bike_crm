@@ -25,6 +25,7 @@ import {
   uniqueIndex,
   index,
   primaryKey,
+  jsonb,
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 
@@ -63,6 +64,7 @@ export const scooterBaseStatusEnum = pgEnum("scooter_base_status", [
   "buyout", // передан клиенту в рассрочку (выкуп)
   "for_sale", // выставлен на продажу
   "sold", // продан, в обороте не участвует
+  "disassembly", // «В разборке» — на запчасти, из оборота выведен, но учитывается
 ]);
 
 export const rentalStatusEnum = pgEnum("rental_status", [
@@ -251,7 +253,14 @@ export const scooters = pgTable(
     id: bigserial("id", { mode: "number" }).primaryKey(),
     /** Отображаемое имя: «Jog #07». Уникально в пределах парка. */
     name: text("name").notNull().unique(),
+    /** Модель как enum — legacy, оставлено для совместимости. */
     model: scooterModelEnum("model").notNull(),
+    /**
+     * Новый FK на каталог моделей (scooter_models). Источник тарифов и
+     * аватарки. Nullable на время миграции данных — новые скутеры
+     * создаются только через modelId, старые досовместимы через enum.
+     */
+    modelId: bigint("model_id", { mode: "number" }),
     vin: text("vin").unique(),
     engineNo: text("engine_no"),
     mileage: integer("mileage").notNull().default(0),
@@ -264,6 +273,19 @@ export const scooters = pgTable(
     /** Пробег на момент последней замены масла, км */
     lastOilChangeMileage: integer("last_oil_change_mileage"),
     note: text("note"),
+    /**
+     * Перемещён в архив (soft-delete). В обычных списках не отображается,
+     * но история аренд сохраняется. Можно восстановить или удалить навсегда.
+     */
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    archivedBy: text("archived_by"),
+    /**
+     * Помечен к окончательному удалению — через 7 дней будет физически удалён
+     * фоновой задачей (и вместе с ним документы). До истечения срока можно
+     * отменить (set deleted_at = null, archived_at = now()).
+     */
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    deletedBy: text("deleted_by"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -273,7 +295,9 @@ export const scooters = pgTable(
   },
   (t) => ({
     modelIdx: index("scooters_model_idx").on(t.model),
+    modelFkIdx: index("scooters_model_id_idx").on(t.modelId),
     baseStatusIdx: index("scooters_base_status_idx").on(t.baseStatus),
+    archivedIdx: index("scooters_archived_idx").on(t.archivedAt),
   }),
 );
 
@@ -340,7 +364,13 @@ export const rentals = pgTable(
     // Тариф и финансы
     tariffPeriod: tariffPeriodEnum("tariff_period").notNull(),
     rate: integer("rate").notNull(), // ₽ / сут
+    /**
+     * Сумма залога в ₽. 0 если залог неденежный — тогда в depositItem
+     * хранится описание предмета (например «паспорт», «iPhone»).
+     */
     deposit: integer("deposit").notNull().default(2000),
+    /** Описание предмета, если залог неденежный. null → залог деньгами. */
+    depositItem: text("deposit_item"),
     depositReturned: boolean("deposit_returned"),
 
     // Период (timestamptz — время важно: 12:00 по договору)
@@ -364,7 +394,23 @@ export const rentals = pgTable(
       withTimezone: true,
     }),
 
+    /** Legacy: массив названий. Оставлен для совместимости. */
     equipment: text("equipment").array().notNull().default([]),
+    /**
+     * Новый формат: массив объектов { itemId?, name, price, free }.
+     * itemId — ссылка на equipment_items.id (если выбран из каталога),
+     * name и price — снимок на момент аренды (если каталог изменят позже).
+     * free=true → цена в итоговую сумму не входит.
+     */
+    equipmentJson: jsonb("equipment_json").notNull().default([]),
+    /** Чеклист подтверждения выдачи — заполняется кнопкой «Подтвердить» */
+    confirmContractSigned: boolean("confirm_contract_signed")
+      .notNull()
+      .default(false),
+    confirmRentPaid: boolean("confirm_rent_paid").notNull().default(false),
+    confirmDepositReceived: boolean("confirm_deposit_received")
+      .notNull()
+      .default(false),
 
     /** Сумма ущерба, выставлена вручную (ДТП, поломка). null — ущерба нет. */
     damageAmount: integer("damage_amount"),
@@ -515,6 +561,144 @@ export const clientsRelations = relations(clients, ({ many }) => ({
   rentals: many(rentals),
   tasks: many(rentalTasks),
 }));
+
+/* ============================================================
+ * scooter_models — каталог моделей скутеров
+ *
+ * Вручную заполняет владелец: название, аватарка, тарифы, быстрый выбор.
+ * Тарифы подтягиваются в аренду в зависимости от выбранного скутера.
+ * ============================================================ */
+
+export const scooterModels = pgTable(
+  "scooter_models",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    name: text("name").notNull().unique(),
+    /** Ключ файла в MinIO, fileName оригинала — для рендера аватарки */
+    avatarKey: text("avatar_key"),
+    avatarFileName: text("avatar_file_name"),
+    /**
+     * true → показывается в быстром пикере при создании аренды.
+     * Обычно 4 самых частых моделей отмечены true, остальное ищется
+     * через строку поиска.
+     */
+    quickPick: boolean("quick_pick").notNull().default(false),
+    /** Ставки ₽/сут по периодам аренды */
+    shortRate: integer("short_rate").notNull().default(1300), // 1–3 дня
+    weekRate: integer("week_rate").notNull().default(500), // 7–29 дней
+    monthRate: integer("month_rate").notNull().default(400), // 30+ дней
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    quickPickIdx: index("scooter_models_quick_pick_idx").on(t.quickPick),
+  }),
+);
+
+/* ============================================================
+ * equipment_items — каталог экипировки (шлем, замок, цепь, багажник, …)
+ *
+ * Каждая позиция имеет цену и флаг «бесплатно». Если free=true — цена
+ * в итог аренды не добавляется. При создании модели аренды из каталога
+ * берётся снимок (цена замораживается в equipmentJson аренды).
+ * ============================================================ */
+
+export const equipmentItems = pgTable(
+  "equipment_items",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    name: text("name").notNull().unique(),
+    avatarKey: text("avatar_key"),
+    avatarFileName: text("avatar_file_name"),
+    quickPick: boolean("quick_pick").notNull().default(true),
+    /** Цена за всю аренду (не за сутки) */
+    price: integer("price").notNull().default(0),
+    /** true → бесплатно, цена игнорируется при расчёте суммы аренды */
+    isFree: boolean("is_free").notNull().default(true),
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+);
+
+/* ============================================================
+ * scooter_maintenance — журнал обслуживания скутеров
+ *
+ * Реальные расходы по конкретному скутеру: замена масла, ремонт,
+ * покупка запчастей. Агрегируется в карточке скутера.
+ * ============================================================ */
+
+export const scooterMaintenance = pgTable(
+  "scooter_maintenance",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    scooterId: bigint("scooter_id", { mode: "number" })
+      .notNull()
+      .references(() => scooters.id, { onDelete: "cascade" }),
+    /** Тип работы: oil (замена масла) / repair (ремонт) / parts (запчасти) / other */
+    kind: text("kind").notNull().default("other"),
+    /** Дата работы */
+    performedOn: date("performed_on").notNull(),
+    /** Сумма расходов в ₽ */
+    amount: integer("amount").notNull().default(0),
+    /** Пробег на момент работы, км — опционально (важно для ТО) */
+    mileage: integer("mileage"),
+    note: text("note"),
+    createdBy: text("created_by"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    scooterIdx: index("scooter_maintenance_scooter_idx").on(t.scooterId),
+    dateIdx: index("scooter_maintenance_date_idx").on(t.performedOn),
+  }),
+);
+
+/* ============================================================
+ * activity_log — журнал действий пользователей
+ *
+ * Логируем создание/редактирование/удаление ключевых сущностей
+ * (клиенты, скутеры, аренды, платежи, сотрудники). Показывается в
+ * ленте «Последние действия» на дашборде для всех активных ролей.
+ * ============================================================ */
+
+export const activityLog = pgTable(
+  "activity_log",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    /** Кто сделал. Nullable если действие системное (seed, миграции). */
+    userId: bigint("user_id", { mode: "number" }),
+    userName: text("user_name").notNull().default("система"),
+    userRole: text("user_role"),
+    /** Категория — для группировки в UI */
+    entity: text("entity").notNull(), // 'client' | 'scooter' | 'rental' | 'payment' | 'user' | 'model' | 'equipment' | 'maintenance'
+    entityId: bigint("entity_id", { mode: "number" }),
+    /** Глагол действия — 'created' / 'updated' / 'deleted' / 'archived' / 'restored' / 'confirmed_payment' / … */
+    action: text("action").notNull(),
+    /** Человекочитаемое описание, уже собранное на бэке */
+    summary: text("summary").notNull(),
+    /** Доп данные в свободной форме (diff, доп. контекст) */
+    meta: jsonb("meta"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    createdIdx: index("activity_log_created_idx").on(t.createdAt),
+    entityIdx: index("activity_log_entity_idx").on(t.entity, t.entityId),
+    userIdx: index("activity_log_user_idx").on(t.userId),
+  }),
+);
 
 export const clientDocumentsRelations = relations(
   clientDocuments,

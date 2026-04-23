@@ -22,6 +22,13 @@
       "when": 1776941374113,
       "tag": "0002_white_shinko_yamashiro",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1776971153179,
+      "tag": "0003_curious_khan",
+      "breakpoints": true
     }
   ]
 }

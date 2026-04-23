@@ -16,6 +16,10 @@ import { clientDocumentsRoutes } from "./routes/client-documents.js";
 import { scooterDocumentsRoutes } from "./routes/scooter-documents.js";
 import { authRoutes } from "./routes/auth.js";
 import { usersRoutes } from "./routes/users.js";
+import { scooterModelsRoutes } from "./routes/scooter-models.js";
+import { equipmentRoutes } from "./routes/equipment.js";
+import { scooterMaintenanceRoutes } from "./routes/scooter-maintenance.js";
+import { activityRoutes } from "./routes/activity.js";
 import authPlugin, { requireAuth } from "./auth/plugin.js";
 import { ensureBucket } from "./storage/index.js";
 
@@ -81,6 +85,14 @@ async function bootstrap() {
     await protectedApp.register(filesRoutes, { prefix: "/api/files" });
     // Сотрудники (защита на уровне конкретных роутов — только director/creator)
     await protectedApp.register(usersRoutes, { prefix: "/api/users" });
+    // Каталоги
+    await protectedApp.register(scooterModelsRoutes, { prefix: "/api/scooter-models" });
+    await protectedApp.register(equipmentRoutes, { prefix: "/api/equipment" });
+    await protectedApp.register(scooterMaintenanceRoutes, {
+      prefix: "/api/scooter-maintenance",
+    });
+    // Журнал действий
+    await protectedApp.register(activityRoutes, { prefix: "/api/activity" });
   });
 
   // Проверить/создать бакет при старте (не блокируем — если MinIO
