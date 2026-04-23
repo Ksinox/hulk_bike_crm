@@ -77,7 +77,7 @@ type RentalInfo = {
   isLate: boolean;
 };
 
-export function Fleet() {
+export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
   const rentals = useRentals();
   const FLEET = useFleetScooters();
   const { data: apiClients } = useApiClients();
@@ -219,20 +219,18 @@ export function Fleet() {
     }
   }
 
-  return (
-    <main className="flex min-w-0 flex-1 flex-col gap-4">
-      <Topbar />
+  const Root: React.ElementType = embedded ? "div" : "main";
 
-      <header className="flex items-center justify-between gap-3">
-        <div className="flex items-baseline gap-3">
+  return (
+    <Root className="flex min-w-0 flex-1 flex-col gap-4">
+      {!embedded && <Topbar />}
+      {!embedded && (
+        <header className="flex items-center justify-between gap-3">
           <h1 className="font-display text-[34px] font-extrabold leading-none text-ink">
             Парк скутеров
           </h1>
-          <span className="rounded-full bg-surface-soft px-3 py-1 text-[13px] font-semibold text-muted">
-            {counters.total} в парке
-          </span>
-        </div>
-      </header>
+        </header>
+      )}
 
       {/* =========== KPI =========== */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -395,7 +393,7 @@ export function Fleet() {
       </div>
 
       {addOpen && <AddScooterModal onClose={() => setAddOpen(false)} />}
-    </main>
+    </Root>
   );
 }
 

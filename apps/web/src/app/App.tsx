@@ -3,7 +3,7 @@ import { Sidebar } from "./Sidebar";
 import { Dashboard } from "@/pages/dashboard/Dashboard";
 import { Clients } from "@/pages/clients/Clients";
 import { Rentals } from "@/pages/rentals/Rentals";
-import { Fleet } from "@/pages/fleet/Fleet";
+import { Garage } from "@/pages/fleet/Garage";
 import { Staff } from "@/pages/staff/Staff";
 import { UpdateToast } from "./UpdateToast";
 import { TitleBar } from "./TitleBar";
@@ -80,7 +80,7 @@ export function App() {
         ) : route === "rentals" ? (
           <Rentals />
         ) : route === "fleet" ? (
-          <Fleet />
+          <Garage />
         ) : route === "staff" ? (
           <Staff />
         ) : (
