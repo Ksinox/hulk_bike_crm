@@ -14,12 +14,12 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
-  maintenanceCost,
   oilServiceInfo,
   SCOOTER_STATUS_LABEL,
   type FleetScooter,
   type ScooterDisplayStatus,
 } from "@/lib/mock/fleet";
+import { useScooterMaintenance } from "@/lib/api/scooter-maintenance";
 import { useRole } from "@/lib/role";
 import { MODEL_LABEL, type ScooterModel } from "@/lib/mock/rentals";
 import { useApiClients } from "@/lib/api/clients";
@@ -149,32 +149,44 @@ export function ScooterCard({
   const oilOverdue = oil.remainKm < 0;
   const oilWarn = !oilOverdue && oil.remainKm <= 300;
 
-  // Экономика — считается по всей истории аренд этого скутера
+  // Экономика — считается по реальным данным: сумма аренд + записи обслуживания из API.
   const lifetimeRevenue = scooterRentals.reduce((s, r) => s + (r.sum || 0), 0);
-  const maintTotal = maintenanceCost(scooter);
+  const { data: maintenanceRows = [] } = useScooterMaintenance(scooter.id);
+  const maintTotal = maintenanceRows.reduce((s, m) => s + (m.amount || 0), 0);
+
   const purchase = scooter.purchasePrice || 0;
-  const coveragePct = purchase
+  const hasPurchasePrice = purchase > 0;
+  const hasPurchaseDate = !!scooter.purchaseDate;
+
+  // Покрытие цены закупа — только если цена указана
+  const coveragePct = hasPurchasePrice
     ? Math.round((lifetimeRevenue / purchase) * 100)
-    : 0;
-  const covered = coveragePct >= 100;
+    : null;
+  const covered = (coveragePct ?? 0) >= 100;
+
+  // Чистая прибыль: все аренды − обслуживание − закуп (если указан)
   const netProfit = lifetimeRevenue - maintTotal - purchase;
   const netMarginPct = lifetimeRevenue
     ? Math.round(((lifetimeRevenue - maintTotal) / lifetimeRevenue) * 100)
     : 0;
 
-  const ageMonths = monthsSincePurchase(scooter.purchaseDate);
-  const serviceLifeMonths = 36; // ожидаемая эксплуатация, мес
-  const lifeProgressPct = Math.min(
-    100,
-    Math.round((ageMonths / serviceLifeMonths) * 100),
-  );
+  const ageMonths = hasPurchaseDate
+    ? monthsSincePurchase(scooter.purchaseDate)
+    : 0;
+  const serviceLifeMonths = 36; // ожидаемая эксплуатация, мес (типовая для скутеров)
+  const lifeProgressPct = hasPurchaseDate
+    ? Math.min(100, Math.round((ageMonths / serviceLifeMonths) * 100))
+    : 0;
   const remainingMonths = Math.max(0, serviceLifeMonths - ageMonths);
 
-  // «Индекс прибыльности» 0..100 — композит: покрытие + маржа
-  const profitIndex = Math.max(
-    0,
-    Math.min(100, Math.round(coveragePct * 0.6 + netMarginPct * 0.4)),
-  );
+  // «Индекс прибыли» 0..100 — композит покрытия + маржи. Если нет закупа — null.
+  const profitIndex =
+    coveragePct != null
+      ? Math.max(
+          0,
+          Math.min(100, Math.round(coveragePct * 0.6 + netMarginPct * 0.4)),
+        )
+      : null;
 
   const statusPill = statusPillClass(status);
 
@@ -501,7 +513,9 @@ export function ScooterCard({
                   Окупаемость и здоровье актива
                 </h2>
                 <div className="mt-1 text-[13px] text-muted">
-                  Экономическая эффективность vs. ресурс скутера
+                  {hasPurchasePrice
+                    ? "Экономическая эффективность vs. ресурс скутера"
+                    : "Укажите цену закупа чтобы увидеть окупаемость и прибыль"}
                 </div>
               </div>
             </div>
@@ -518,24 +532,59 @@ export function ScooterCard({
                 {fmt(lifetimeRevenue)} ₽
               </div>
               <div className="mt-1 text-[11px] text-muted-2">
-                по {scooterRentals.length} арендам
+                по {scooterRentals.length} {plural(scooterRentals.length, ["аренде", "арендам", "арендам"])}
               </div>
             </div>
           </div>
 
+          {/* Подсказки-плашки что именно нужно ввести */}
+          {(!hasPurchasePrice || !hasPurchaseDate) && (
+            <div className="mt-4 flex flex-col gap-2">
+              {!hasPurchasePrice && (
+                <RoiHint
+                  title="Укажите цену закупа"
+                  hint="Без этого невозможно посчитать окупаемость и чистую прибыль."
+                  action="Открыть редактирование"
+                  onAction={() => setEditOpen(true)}
+                />
+              )}
+              {!hasPurchaseDate && (
+                <RoiHint
+                  title="Укажите дату покупки"
+                  hint="Нужна для расчёта ресурса эксплуатации (по умолчанию 36 месяцев)."
+                  action="Открыть редактирование"
+                  onAction={() => setEditOpen(true)}
+                />
+              )}
+            </div>
+          )}
+
           <div className="mt-5 grid gap-5 lg:grid-cols-[260px_1fr]">
             {/* Donut */}
             <div className="flex flex-col items-center gap-3 rounded-2xl bg-surface-soft p-5">
-              <Donut value={profitIndex} />
-              <div className="text-center text-[12px] leading-snug text-muted">
-                {covered
-                  ? `Скутер окупился полностью, принёс сверху ${fmt(
-                      Math.max(0, lifetimeRevenue - purchase),
-                    )} ₽`
-                  : `До окупаемости осталось ${fmt(
-                      Math.max(0, purchase - lifetimeRevenue),
-                    )} ₽`}
-              </div>
+              {profitIndex != null ? (
+                <>
+                  <Donut value={profitIndex} />
+                  <div className="text-center text-[12px] leading-snug text-muted">
+                    {covered
+                      ? `Скутер окупился, принёс сверху ${fmt(
+                          Math.max(0, lifetimeRevenue - purchase),
+                        )} ₽`
+                      : `До окупаемости осталось ${fmt(
+                          Math.max(0, purchase - lifetimeRevenue),
+                        )} ₽`}
+                  </div>
+                </>
+              ) : (
+                <div className="flex h-[220px] flex-col items-center justify-center gap-2 text-center">
+                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-surface text-muted-2">
+                    <Info size={22} />
+                  </div>
+                  <div className="text-[12px] text-muted-2">
+                    Индекс прибыли появится после указания цены закупа
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Stats column */}
@@ -546,28 +595,44 @@ export function ScooterCard({
                   <span className="text-[14px] font-bold text-ink">
                     Покрытие цены закупа
                   </span>
-                  <span
-                    className={cn(
-                      "text-[12px] font-bold",
-                      covered ? "text-blue-600" : "text-muted",
-                    )}
-                  >
-                    {coveragePct}% {covered ? "покрыто" : "пока"}
-                  </span>
+                  {coveragePct != null ? (
+                    <span
+                      className={cn(
+                        "text-[12px] font-bold",
+                        covered ? "text-blue-600" : "text-muted",
+                      )}
+                    >
+                      {coveragePct}% {covered ? "покрыто" : "пока"}
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setEditOpen(true)}
+                      className="text-[12px] font-bold text-blue-600 hover:underline"
+                    >
+                      указать цену →
+                    </button>
+                  )}
                 </div>
                 <div className="mt-2 h-2 overflow-hidden rounded-full bg-surface-soft">
                   <div
                     className="h-full rounded-full bg-blue-600 transition-all"
-                    style={{ width: `${Math.min(100, coveragePct)}%` }}
+                    style={{ width: `${Math.min(100, coveragePct ?? 0)}%` }}
                   />
                 </div>
                 <div className="mt-1.5 text-[12px] text-muted-2">
-                  Цена закупа <b>{fmt(purchase)} ₽</b>
-                  {covered
-                    ? " — полностью амортизирована."
-                    : ` — осталось покрыть ${fmt(
-                        Math.max(0, purchase - lifetimeRevenue),
-                      )} ₽.`}
+                  {hasPurchasePrice ? (
+                    <>
+                      Цена закупа <b>{fmt(purchase)} ₽</b>
+                      {covered
+                        ? " — полностью амортизирована."
+                        : ` — осталось покрыть ${fmt(
+                            Math.max(0, purchase - lifetimeRevenue),
+                          )} ₽.`}
+                    </>
+                  ) : (
+                    <>Цена закупа не указана.</>
+                  )}
                 </div>
               </div>
 
@@ -577,9 +642,19 @@ export function ScooterCard({
                   <span className="text-[14px] font-bold text-ink">
                     Ресурс эксплуатации
                   </span>
-                  <span className="text-[12px] font-bold text-ink-2 tabular-nums">
-                    Месяц {ageMonths} / {serviceLifeMonths}
-                  </span>
+                  {hasPurchaseDate ? (
+                    <span className="text-[12px] font-bold text-ink-2 tabular-nums">
+                      Месяц {ageMonths} / {serviceLifeMonths}
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setEditOpen(true)}
+                      className="text-[12px] font-bold text-blue-600 hover:underline"
+                    >
+                      указать дату →
+                    </button>
+                  )}
                 </div>
                 <div className="mt-2 h-2 overflow-hidden rounded-full bg-surface-soft">
                   <div
@@ -588,22 +663,35 @@ export function ScooterCard({
                   />
                 </div>
                 <div className="mt-1.5 text-[12px] text-muted-2">
-                  {remainingMonths > 0
-                    ? `Оставшийся ресурс — ~${remainingMonths} мес.`
-                    : "Расчётный ресурс исчерпан — рассмотрите продажу."}
+                  {!hasPurchaseDate
+                    ? "Дата покупки не указана."
+                    : remainingMonths > 0
+                      ? `Оставшийся ресурс — ~${remainingMonths} мес. (типовой срок 36 мес).`
+                      : "Расчётный ресурс исчерпан — рассмотрите продажу."}
                 </div>
               </div>
 
               {/* Mini stats */}
               <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-2xl bg-surface-soft px-4 py-3">
-                  <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
+                <button
+                  type="button"
+                  onClick={() => setTab("repairs")}
+                  className="rounded-2xl bg-surface-soft px-4 py-3 text-left transition-colors hover:bg-blue-50"
+                  title="Открыть вкладку «Ремонты» для добавления/редактирования расходов"
+                >
+                  <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-muted-2">
                     Расходы на обслуживание
+                    <span className="text-blue-600">{maintenanceRows.length} зап.</span>
                   </div>
                   <div className="mt-1 font-display text-[20px] font-extrabold tabular-nums text-ink">
                     {fmt(maintTotal)} ₽
                   </div>
-                </div>
+                  {maintenanceRows.length === 0 && (
+                    <div className="mt-1 text-[11px] text-muted-2">
+                      нажмите чтобы добавить первую запись →
+                    </div>
+                  )}
+                </button>
                 <div className="rounded-2xl bg-surface-soft px-4 py-3">
                   <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
                     Чистая маржа
@@ -618,29 +706,53 @@ export function ScooterCard({
                           : "text-red-ink",
                     )}
                   >
-                    {netMarginPct}%
+                    {lifetimeRevenue > 0 ? `${netMarginPct}%` : "—"}
+                  </div>
+                  <div className="mt-1 text-[11px] text-muted-2">
+                    {lifetimeRevenue > 0
+                      ? "(доход − обслуживание) / доход"
+                      : "появится после первой аренды"}
                   </div>
                 </div>
-                <div className="rounded-2xl bg-surface-soft px-4 py-3">
+                <button
+                  type="button"
+                  onClick={() => setEditOpen(true)}
+                  className="rounded-2xl bg-surface-soft px-4 py-3 text-left transition-colors hover:bg-blue-50"
+                  title="Редактировать цену закупа"
+                >
                   <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
                     Цена закупа
                   </div>
                   <div className="mt-1 font-display text-[20px] font-extrabold tabular-nums text-ink">
-                    {fmt(purchase)} ₽
+                    {hasPurchasePrice ? `${fmt(purchase)} ₽` : "—"}
                   </div>
-                </div>
+                  {!hasPurchasePrice && (
+                    <div className="mt-1 text-[11px] text-blue-600">
+                      нажмите чтобы указать →
+                    </div>
+                  )}
+                </button>
                 <div className="rounded-2xl bg-surface-soft px-4 py-3">
                   <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
                     Чистая прибыль
                   </div>
-                  <div
-                    className={cn(
-                      "mt-1 font-display text-[20px] font-extrabold tabular-nums",
-                      netProfit >= 0 ? "text-green-ink" : "text-red-ink",
-                    )}
-                  >
-                    {netProfit >= 0 ? "+" : "−"}
-                    {fmt(Math.abs(netProfit))} ₽
+                  {hasPurchasePrice || maintTotal > 0 ? (
+                    <div
+                      className={cn(
+                        "mt-1 font-display text-[20px] font-extrabold tabular-nums",
+                        netProfit >= 0 ? "text-green-ink" : "text-red-ink",
+                      )}
+                    >
+                      {netProfit >= 0 ? "+" : "−"}
+                      {fmt(Math.abs(netProfit))} ₽
+                    </div>
+                  ) : (
+                    <div className="mt-1 font-display text-[20px] font-extrabold text-muted-2">
+                      —
+                    </div>
+                  )}
+                  <div className="mt-1 text-[11px] text-muted-2">
+                    доход − обслуживание − закуп
                   </div>
                 </div>
               </div>
@@ -1006,6 +1118,47 @@ function ScooterPhotoArea({ scooter }: { scooter: FleetScooter }) {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+/** Pluralize русских существительных: (1, [шт, штуки, штук]) */
+function plural(n: number, forms: [string, string, string]): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return forms[0];
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return forms[1];
+  return forms[2];
+}
+
+/** Подсказка-плашка в блоке ROI: «укажите Х, без этого не работает Y». */
+function RoiHint({
+  title,
+  hint,
+  action,
+  onAction,
+}: {
+  title: string;
+  hint: string;
+  action: string;
+  onAction: () => void;
+}) {
+  return (
+    <div className="flex items-start gap-3 rounded-xl border border-amber-400/30 bg-amber-50 px-3 py-2.5">
+      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-amber-200 text-amber-800">
+        <Info size={13} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="text-[13px] font-bold text-amber-900">{title}</div>
+        <div className="text-[11px] text-amber-900/80">{hint}</div>
+      </div>
+      <button
+        type="button"
+        onClick={onAction}
+        className="shrink-0 rounded-full bg-amber-600 px-3 py-1 text-[11px] font-bold text-white hover:bg-amber-700"
+      >
+        {action}
+      </button>
     </div>
   );
 }
