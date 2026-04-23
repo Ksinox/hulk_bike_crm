@@ -3,7 +3,6 @@ import {
   ArrowLeft,
   ArrowRight,
   BadgeCheck,
-  Bell,
   Calendar,
   Crown,
   ImageOff,
@@ -30,6 +29,12 @@ import { Topbar } from "@/pages/dashboard/Topbar";
 import { ScooterEditForm } from "./ScooterEditForm";
 import { ScooterDocumentsTab } from "./ScooterDocumentsTab";
 import { ScooterPhotosGallery } from "./ScooterPhotosGallery";
+import { ScooterStatusModal } from "./ScooterStatusModal";
+import { MaintenanceTab } from "./MaintenanceTab";
+import { useArchiveScooter } from "@/lib/api/scooters";
+import { useMe } from "@/lib/api/auth";
+import { Archive, Loader2 } from "lucide-react";
+import { ApiError } from "@/lib/api";
 
 type TabId = "history" | "repairs" | "incidents" | "docs";
 const TABS: { id: TabId; label: string; count?: number }[] = [
@@ -88,6 +93,27 @@ export function ScooterCard({
   const role = useRole();
   const [tab, setTab] = useState<TabId>("history");
   const [editOpen, setEditOpen] = useState(false);
+  const [statusOpen, setStatusOpen] = useState(false);
+  const { data: me } = useMe();
+  const canArchive = me?.role === "director" || me?.role === "creator";
+  const archiveMut = useArchiveScooter();
+
+  const doArchive = async () => {
+    if (!confirm(`Перенести «${scooter.name}» в архив?`)) return;
+    try {
+      await archiveMut.mutateAsync(scooter.id);
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) {
+        alert(
+          "У скутера есть активная аренда. Сначала завершите/отмените её, затем попробуйте снова.",
+        );
+      } else if (e instanceof ApiError && e.status === 403) {
+        alert("Перенос в архив доступен только директору и создателю.");
+      } else {
+        alert("Не удалось отправить в архив.");
+      }
+    }
+  };
 
   // Все аренды по этому скутеру (включая историю)
   const scooterRentals = useMemo(
@@ -181,8 +207,8 @@ export function ScooterCard({
         <div className="flex-1" />
         <button
           type="button"
+          onClick={() => setStatusOpen(true)}
           className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-4 py-2 text-[13px] font-semibold text-ink-2 transition-colors hover:bg-surface-soft"
-          title="Скоро"
         >
           <RefreshCcw size={14} /> Изменить статус
         </button>
@@ -193,13 +219,22 @@ export function ScooterCard({
         >
           <Pencil size={14} /> Редактировать
         </button>
-        <button
-          type="button"
-          className="flex h-10 w-10 items-center justify-center rounded-full bg-surface text-muted shadow-card-sm hover:text-ink"
-          title="Уведомления"
-        >
-          <Bell size={18} />
-        </button>
+        {canArchive && (
+          <button
+            type="button"
+            onClick={doArchive}
+            disabled={archiveMut.isPending}
+            title="Перенести в архив"
+            className="inline-flex items-center gap-1.5 rounded-full border border-red-400/30 bg-red-soft px-3 py-2 text-[12px] font-bold text-red-ink transition-colors hover:bg-red hover:text-white"
+          >
+            {archiveMut.isPending ? (
+              <Loader2 size={13} className="animate-spin" />
+            ) : (
+              <Archive size={13} />
+            )}
+            В архив
+          </button>
+        )}
       </header>
 
       {/* ======== MAIN GRID ======== */}
@@ -664,9 +699,7 @@ export function ScooterCard({
         {tab === "history" && (
           <HistoryTab rentals={scooterRentals} currentId={activeRental?.id} />
         )}
-        {tab === "repairs" && (
-          <Empty text="По этому скутеру не зафиксировано ремонтов" />
-        )}
+        {tab === "repairs" && <MaintenanceTab scooterId={scooter.id} />}
         {tab === "incidents" && (
           <Empty text="По этому скутеру не было инцидентов" />
         )}
@@ -677,6 +710,12 @@ export function ScooterCard({
         <ScooterEditForm
           scooter={scooter}
           onClose={() => setEditOpen(false)}
+        />
+      )}
+      {statusOpen && (
+        <ScooterStatusModal
+          scooter={scooter as unknown as import("@/lib/api/types").ApiScooter}
+          onClose={() => setStatusOpen(false)}
         />
       )}
     </main>
@@ -703,8 +742,7 @@ function monthsSincePurchase(purchase?: string): number {
   if (!purchase) return 0;
   const d = parseDate(purchase);
   if (!d) return 0;
-  // Сегодня по демо-таймлайну — 13.10.2026
-  const today = new Date(2026, 9, 13);
+  const today = new Date();
   const years = today.getFullYear() - d.getFullYear();
   const months = today.getMonth() - d.getMonth();
   return Math.max(0, years * 12 + months);
