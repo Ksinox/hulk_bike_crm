@@ -8,6 +8,7 @@ import {
   type ApiMaintenance,
   type MaintenanceKind,
 } from "@/lib/api/scooter-maintenance";
+import { confirmDialog, toast } from "@/lib/toast";
 
 const KIND_LABEL: Record<MaintenanceKind, string> = {
   oil: "Замена масла",
@@ -92,9 +93,14 @@ export function MaintenanceTab({
 
 function MaintRow({ m }: { m: ApiMaintenance }) {
   const del = useDeleteMaintenance();
-  const onDel = () => {
-    if (!confirm("Удалить запись?")) return;
-    del.mutate(m.id);
+  const onDel = async () => {
+    const ok = await confirmDialog({
+      title: "Удалить запись обслуживания?",
+      message: "Запись и сумма будут удалены из истории скутера.",
+      confirmText: "Удалить",
+      danger: true,
+    });
+    if (ok) del.mutate(m.id);
   };
   return (
     <div className="flex items-center gap-3 border-b border-border px-4 py-3 last:border-b-0">
@@ -159,7 +165,7 @@ function MaintenanceAddModal({
       });
       onClose();
     } catch {
-      alert("Не удалось сохранить");
+      toast.error("Не удалось сохранить запись");
     }
   };
 

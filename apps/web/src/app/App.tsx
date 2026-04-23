@@ -15,6 +15,7 @@ import { useMe } from "@/lib/api/auth";
 import { setRole } from "@/lib/role";
 import { Login } from "./Login";
 import { ForceChangePassword } from "./ForceChangePassword";
+import { ToastContainer, ConfirmContainer } from "@/lib/toast";
 
 export function App() {
   const { data: me, isLoading, isError } = useMe();
@@ -96,6 +97,8 @@ export function App() {
           />
         )}
       </div>
+      <ToastContainer />
+      <ConfirmContainer />
     </>
   );
 }

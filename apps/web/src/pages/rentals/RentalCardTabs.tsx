@@ -39,6 +39,7 @@ import { useApiScooters } from "@/lib/api/scooters";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { fileUrl } from "@/lib/files";
 import { navigate } from "@/app/navigationStore";
+import { toast } from "@/lib/toast";
 
 function fmt(n: number) {
   return n.toLocaleString("ru-RU");
@@ -107,8 +108,9 @@ export function TermsTab({
         type="button"
         onClick={() => {
           if (rental.scooterId == null) {
-            alert(
-              "Скутер ещё не привязан к этой аренде. Отредактируйте аренду и укажите скутер.",
+            toast.warn(
+              "Скутер не привязан",
+              "Откройте «Действия → Изменить аренду» и выберите скутер.",
             );
             return;
           }

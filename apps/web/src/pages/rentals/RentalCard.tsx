@@ -43,6 +43,8 @@ import {
   useRentals,
 } from "./rentalsStore";
 import { ClientQuickView } from "@/pages/clients/ClientQuickView";
+import { RentalEditModal } from "./RentalEditModal";
+import { Pencil } from "lucide-react";
 
 type TabId = "terms" | "payments" | "return" | "incidents" | "tasks" | "docs";
 
@@ -166,6 +168,7 @@ function statusChipClass(tone: string): string {
 export function RentalCard({ rental }: { rental: Rental }) {
   const [tab, setTab] = useState<TabId>("terms");
   const [action, setAction] = useState<ActionKind | null>(null);
+  const [editRentalOpen, setEditRentalOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [extendOpen, setExtendOpen] = useState(false);
   const [confirmForNewId, setConfirmForNewId] = useState<number | null>(null);
@@ -206,7 +209,12 @@ export function RentalCard({ rental }: { rental: Rental }) {
   const tone = STATUS_TONE[rental.status];
   const isUnreachable = useClientUnreachable(rental.clientId);
   const hasDamage = (rental.damageAmount ?? 0) > 0;
-  const actions = statusActions(rental.status, { hasDamage, isUnreachable });
+  // К любому статусу добавляем «Изменить аренду» — доступно всем ролям, пишется в activity log
+  const baseActions = statusActions(rental.status, { hasDamage, isUnreachable });
+  const actions: MenuAction[] = [
+    { id: "edit", label: "Изменить аренду", icon: Pencil, tone: "ghost" },
+    ...baseActions,
+  ];
 
   // Финансы — считаются по ВСЕЙ цепочке продлений
   const paidIn = chainPayments
@@ -219,6 +227,7 @@ export function RentalCard({ rental }: { rental: Rental }) {
 
   const handleAction = (id: string) => {
     if (id === "extend" || id === "clone") return setExtendOpen(true);
+    if (id === "edit") return setEditRentalOpen(true);
     setAction(id as ActionKind);
   };
 
@@ -476,6 +485,12 @@ export function RentalCard({ rental }: { rental: Rental }) {
           rental={rental}
           action={action}
           onClose={() => setAction(null)}
+        />
+      )}
+      {editRentalOpen && (
+        <RentalEditModal
+          rental={rental}
+          onClose={() => setEditRentalOpen(false)}
         />
       )}
       {confirmOpen && (

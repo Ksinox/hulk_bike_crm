@@ -13,6 +13,7 @@ import {
 } from "@/lib/api/equipment";
 import { fileUrl } from "@/lib/files";
 import { AvatarUpload } from "./AvatarUpload";
+import { confirmDialog } from "@/lib/toast";
 
 export function EquipmentCatalog() {
   const { data: items = [], isLoading } = useApiEquipment();
@@ -77,9 +78,14 @@ function EquipmentCard({
   onEdit: () => void;
 }) {
   const del = useDeleteEquipment();
-  const onDelete = () => {
-    if (!confirm(`Удалить «${item.name}»?`)) return;
-    del.mutate(item.id);
+  const onDelete = async () => {
+    const ok = await confirmDialog({
+      title: `Удалить «${item.name}»?`,
+      message: "Позиция пропадёт из каталога экипировки.",
+      confirmText: "Удалить",
+      danger: true,
+    });
+    if (ok) del.mutate(item.id);
   };
   return (
     <div className="relative rounded-2xl bg-surface p-4 shadow-card-sm">

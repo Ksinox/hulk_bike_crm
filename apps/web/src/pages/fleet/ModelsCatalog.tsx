@@ -13,6 +13,7 @@ import {
 } from "@/lib/api/scooter-models";
 import { fileUrl } from "@/lib/files";
 import { AvatarUpload } from "./AvatarUpload";
+import { confirmDialog } from "@/lib/toast";
 
 export function ModelsCatalog() {
   const { data: items = [], isLoading } = useApiScooterModels();
@@ -76,9 +77,15 @@ function ModelCard({
   onEdit: () => void;
 }) {
   const del = useDeleteScooterModel();
-  const onDelete = () => {
-    if (!confirm(`Удалить модель «${model.name}»?`)) return;
-    del.mutate(model.id);
+  const onDelete = async () => {
+    const ok = await confirmDialog({
+      title: `Удалить модель «${model.name}»?`,
+      message:
+        "Модель пропадёт из каталога. Скутеры, которые на неё ссылаются, потеряют привязку к тарифам.",
+      confirmText: "Удалить модель",
+      danger: true,
+    });
+    if (ok) del.mutate(model.id);
   };
   const avatarSrc = fileUrl(model.avatarKey);
   return (

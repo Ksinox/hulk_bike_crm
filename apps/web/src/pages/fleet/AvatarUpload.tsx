@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { ImagePlus, Loader2, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fileUrl } from "@/lib/files";
+import { confirmDialog, toast } from "@/lib/toast";
 
 /**
  * Универсальный загрузчик аватарки для каталогов (модели, экипировка).
@@ -31,11 +32,11 @@ export function AvatarUpload({
   const handleFile = async (f: File | null) => {
     if (!f) return;
     if (!f.type.startsWith("image/")) {
-      alert("Нужна картинка (JPG / PNG / WEBP)");
+      toast.error("Нужна картинка", "Формат JPG / PNG / WEBP");
       return;
     }
     if (f.size > 5 * 1024 * 1024) {
-      alert("Файл больше 5 МБ");
+      toast.error("Файл слишком большой", "Максимум 5 МБ");
       return;
     }
     // локальный preview до ответа сервера
@@ -109,8 +110,14 @@ export function AvatarUpload({
         {url && onRemove && (
           <button
             type="button"
-            onClick={() => {
-              if (!confirm("Удалить аватарку?")) return;
+            onClick={async () => {
+              const ok = await confirmDialog({
+                title: "Удалить аватарку?",
+                message: "Файл будет удалён. Можно будет загрузить новую.",
+                confirmText: "Удалить",
+                danger: true,
+              });
+              if (!ok) return;
               onRemove();
             }}
             disabled={removing}

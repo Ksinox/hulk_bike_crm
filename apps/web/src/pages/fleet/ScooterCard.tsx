@@ -38,6 +38,7 @@ import { ApiError } from "@/lib/api";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { fileUrl } from "@/lib/files";
 import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
+import { toast, confirmDialog } from "@/lib/toast";
 
 type TabId = "history" | "repairs" | "incidents" | "docs";
 const TABS: { id: TabId; label: string; count?: number }[] = [
@@ -103,18 +104,30 @@ export function ScooterCard({
   const archiveMut = useArchiveScooter();
 
   const doArchive = async () => {
-    if (!confirm(`Перенести «${scooter.name}» в архив?`)) return;
+    const ok = await confirmDialog({
+      title: `Перенести «${scooter.name}» в архив?`,
+      message:
+        "Скутер пропадёт из основного списка. История аренд сохранится, восстановить можно в любой момент.",
+      confirmText: "В архив",
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await archiveMut.mutateAsync(scooter.id);
+      toast.success(`«${scooter.name}» перенесён в архив`);
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) {
-        alert(
-          "У скутера есть активная аренда. Сначала завершите/отмените её, затем попробуйте снова.",
+        toast.error(
+          "Скутер сейчас в аренде",
+          "Сначала завершите или отмените активную аренду, затем попробуйте снова.",
         );
       } else if (e instanceof ApiError && e.status === 403) {
-        alert("Перенос в архив доступен только директору и создателю.");
+        toast.error(
+          "Недостаточно прав",
+          "Перенос в архив доступен только директору и создателю.",
+        );
       } else {
-        alert("Не удалось отправить в архив.");
+        toast.error("Не удалось отправить в архив");
       }
     }
   };

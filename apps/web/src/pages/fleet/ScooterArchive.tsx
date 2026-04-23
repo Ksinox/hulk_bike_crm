@@ -8,6 +8,7 @@ import {
   useRestoreScooter,
 } from "@/lib/api/scooters";
 import type { ApiScooter } from "@/lib/api/types";
+import { confirmDialog } from "@/lib/toast";
 
 export function ScooterArchive() {
   const { data: items = [], isLoading } = useApiScootersArchived();
@@ -66,18 +67,23 @@ function ArchiveRow({
   const restore = useRestoreScooter();
   const purge = usePurgeScooter();
 
-  const onRestore = () => {
-    if (!confirm(`Вернуть «${s.name}» из архива?`)) return;
-    restore.mutate(s.id);
+  const onRestore = async () => {
+    const ok = await confirmDialog({
+      title: `Вернуть «${s.name}» из архива?`,
+      message: "Скутер появится в основном списке парка.",
+      confirmText: "Вернуть",
+    });
+    if (ok) restore.mutate(s.id);
   };
-  const onPurge = () => {
-    if (
-      !confirm(
-        `Пометить «${s.name}» к удалению? Через 7 дней скутер будет удалён навсегда. До истечения срока можно отменить кнопкой «Восстановить».`,
-      )
-    )
-      return;
-    purge.mutate(s.id);
+  const onPurge = async () => {
+    const ok = await confirmDialog({
+      title: `Удалить «${s.name}» навсегда?`,
+      message:
+        "Через 7 дней скутер будет физически удалён вместе с документами. До истечения срока можно отменить кнопкой «Восстановить».",
+      confirmText: "Удалить",
+      danger: true,
+    });
+    if (ok) purge.mutate(s.id);
   };
 
   const markedForDelete = !!s.deletedAt;
