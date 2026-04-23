@@ -48,12 +48,14 @@ export type ScooterBaseStatus =
   | "repair"
   | "buyout"
   | "for_sale"
-  | "sold";
+  | "sold"
+  | "disassembly";
 
 export type ApiScooter = {
   id: number;
   name: string;
   model: ScooterModel;
+  modelId: number | null;
   vin: string | null;
   engineNo: string | null;
   mileage: number;
@@ -62,6 +64,10 @@ export type ApiScooter = {
   purchasePrice: number | null;
   lastOilChangeMileage: number | null;
   note: string | null;
+  archivedAt: string | null;
+  archivedBy: string | null;
+  deletedAt: string | null;
+  deletedBy: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -88,6 +94,13 @@ export type RentalSourceChannel =
 export type TariffPeriod = "short" | "week" | "month";
 export type PaymentMethod = "cash" | "card" | "transfer";
 
+export type RentalEquipmentItem = {
+  itemId?: number | null;
+  name: string;
+  price: number;
+  free: boolean;
+};
+
 export type ApiRental = {
   id: number;
   clientId: number;
@@ -98,6 +111,7 @@ export type ApiRental = {
   tariffPeriod: TariffPeriod;
   rate: number;
   deposit: number;
+  depositItem: string | null;
   depositReturned: boolean | null;
   startAt: string; // ISO
   endPlannedAt: string;
@@ -106,10 +120,14 @@ export type ApiRental = {
   sum: number;
   paymentMethod: PaymentMethod;
   contractUploaded: boolean;
+  confirmContractSigned: boolean;
+  confirmRentPaid: boolean;
+  confirmDepositReceived: boolean;
   paymentConfirmedBy: "boss" | "manager" | null;
   paymentConfirmedByName: string | null;
   paymentConfirmedAt: string | null;
   equipment: string[];
+  equipmentJson: RentalEquipmentItem[];
   damageAmount: number | null;
   note: string | null;
   createdAt: string;

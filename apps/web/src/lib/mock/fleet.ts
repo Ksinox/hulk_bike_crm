@@ -10,7 +10,8 @@ export type ScooterBaseStatus =
   | "repair" // на ремонте
   | "buyout" // передан клиенту в рассрочку (выкуп)
   | "for_sale" // выставлен на продажу
-  | "sold"; // продан, в обороте не участвует
+  | "sold" // продан, в обороте не участвует
+  | "disassembly"; // «В разборке» — на запчасти, учитывается в парке
 
 export type ScooterDisplayStatus = ScooterBaseStatus | "rented";
 
@@ -22,6 +23,7 @@ export const SCOOTER_STATUS_LABEL: Record<ScooterDisplayStatus, string> = {
   buyout: "Выкуп",
   for_sale: "Продаётся",
   sold: "Продан",
+  disassembly: "В разборке",
 };
 
 export type FleetScooter = {

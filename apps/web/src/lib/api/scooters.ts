@@ -27,6 +27,8 @@ export function useApiScooter(id: number | null) {
 export type CreateScooterInput = {
   name: string;
   model: ApiScooter["model"];
+  /** FK на scooter_models — источник тарифов/аватарки */
+  modelId?: number | null;
   vin?: string | null;
   engineNo?: string | null;
   mileage?: number;
@@ -58,6 +60,49 @@ export function usePatchScooter() {
     onSuccess: (row) => {
       qc.invalidateQueries({ queryKey: scootersKeys.all });
       qc.setQueryData(scootersKeys.byId(row.id), row);
+    },
+  });
+}
+
+/** Архивированные скутеры (скрыты из основного списка). */
+export function useApiScootersArchived() {
+  return useQuery({
+    queryKey: [...scootersKeys.all, "archived"] as const,
+    queryFn: () =>
+      api
+        .get<ListResponse<ApiScooter>>("/api/scooters/archived")
+        .then((r) => r.items),
+  });
+}
+
+export function useArchiveScooter() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api.delete<ApiScooter>(`/api/scooters/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: scootersKeys.all });
+    },
+  });
+}
+
+export function useRestoreScooter() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) =>
+      api.post<ApiScooter>(`/api/scooters/${id}/restore`, {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: scootersKeys.all });
+    },
+  });
+}
+
+export function usePurgeScooter() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) =>
+      api.post<ApiScooter>(`/api/scooters/${id}/purge`, {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: scootersKeys.all });
     },
   });
 }
