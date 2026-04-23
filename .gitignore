@@ -71,3 +71,4 @@ Thumbs.db
 *.deb
 *.rpm
 scripts/.dokploy_token
+scripts/.projects.json

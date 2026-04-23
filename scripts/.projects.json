@@ -1,9 +1,0 @@
-﻿python : HTTP 404 /api/project.all: {"message":"Not found","code":"NOT_FOUND","data":{"code":"NOT_FOUND","httpStatus":4
-04,"zodError":null}}
-At line:1 char:72
-+ ... aw).Trim(); python scripts/dokploy.py call "/api/project.all" 2>&1 |  ...
-+                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    + CategoryInfo          : NotSpecified: (HTTP 404 /api/p...odError":null}}:String) [], RemoteException
-    + FullyQualifiedErrorId : NativeCommandError
- 
-null
