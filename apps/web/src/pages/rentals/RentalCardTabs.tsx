@@ -105,9 +105,13 @@ export function TermsTab({
       {/* ============ ЛЕВАЯ КОЛОНКА: СКУТЕР + УСЛОВИЯ ============ */}
       <button
         type="button"
-        disabled={rental.scooterId == null}
         onClick={() => {
-          if (rental.scooterId == null) return;
+          if (rental.scooterId == null) {
+            alert(
+              "Скутер ещё не привязан к этой аренде. Отредактируйте аренду и укажите скутер.",
+            );
+            return;
+          }
           navigate({
             route: "fleet",
             scooterId: rental.scooterId,
@@ -119,7 +123,7 @@ export function TermsTab({
             ? "Открыть карточку скутера"
             : "Скутер ещё не назначен"
         }
-        className="group rounded-[14px] border border-border p-4 text-left transition-colors hover:bg-surface-soft/60 disabled:cursor-not-allowed disabled:opacity-60"
+        className="group rounded-[14px] border border-border p-4 text-left transition-colors hover:bg-surface-soft/60"
       >
         <div className="flex items-start gap-4">
           <ScooterThumb rental={rental} />

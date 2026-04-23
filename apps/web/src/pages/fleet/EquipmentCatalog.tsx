@@ -310,13 +310,16 @@ function EquipmentFormModal({
 function EquipAvatarEditor({ item }: { item: ApiEquipmentItem }) {
   const uploadMut = useUploadEquipmentAvatar();
   const deleteMut = useDeleteEquipmentAvatar();
+  // Читаем живой avatarKey из кеша React Query — props stale после upload/delete
+  const { data: all = [] } = useApiEquipment();
+  const live = all.find((x) => x.id === item.id) ?? item;
   return (
     <div>
       <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-2">
         Аватарка
       </div>
       <AvatarUpload
-        avatarKey={item.avatarKey}
+        avatarKey={live.avatarKey}
         uploading={uploadMut.isPending}
         removing={deleteMut.isPending}
         onUpload={(file) => uploadMut.mutateAsync({ id: item.id, file })}

@@ -287,13 +287,18 @@ function ModelFormModal({
 function AvatarEditor({ model }: { model: ApiScooterModel }) {
   const uploadMut = useUploadScooterModelAvatar();
   const deleteMut = useDeleteScooterModelAvatar();
+  // Читаем актуальное состояние из кеша React Query, а не из props — иначе
+  // после upload preview исчезнет, но avatarKey в props будет stale → url=null →
+  // кнопка «Удалить» пропадёт.
+  const { data: models = [] } = useApiScooterModels();
+  const live = models.find((m) => m.id === model.id) ?? model;
   return (
     <div>
       <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-2">
         Аватарка
       </div>
       <AvatarUpload
-        avatarKey={model.avatarKey}
+        avatarKey={live.avatarKey}
         uploading={uploadMut.isPending}
         removing={deleteMut.isPending}
         onUpload={(file) => uploadMut.mutateAsync({ id: model.id, file })}
