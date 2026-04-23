@@ -20,7 +20,6 @@ import { cn } from "@/lib/utils";
 import { UpdateBanner, useDesktopUpdate } from "./UpdateBanner";
 import { isElectron } from "@/platform";
 import type { RouteId } from "./route";
-import { useMe } from "@/lib/api/auth";
 
 type NavItem = {
   id: RouteId | "logout";
@@ -34,6 +33,7 @@ const mainItems: NavItem[] = [
   { id: "clients", label: "Клиенты", icon: Users, ready: true },
   { id: "rentals", label: "Аренды", icon: Bike, ready: true },
   { id: "fleet", label: "Скутеры", icon: ShoppingBag, ready: true },
+  { id: "staff", label: "Сотрудники", icon: UserCog },
   { id: "rassrochki", label: "Рассрочки", icon: Receipt },
   { id: "sales", label: "Продажи", icon: Wallet },
   { id: "service", label: "Ремонты", icon: Wrench },
@@ -41,11 +41,6 @@ const mainItems: NavItem[] = [
   { id: "tasks", label: "Задачи", icon: ClipboardCheck },
   { id: "analytics", label: "Аналитика", icon: BarChart3 },
   { id: "docs", label: "Документы", icon: FileText },
-];
-
-/** Пункты, видимые только директору/создателю */
-const directorItems: NavItem[] = [
-  { id: "staff", label: "Сотрудники", icon: UserCog },
 ];
 
 const footerItems: NavItem[] = [
@@ -60,10 +55,8 @@ export function Sidebar({
   activeId: RouteId;
   onSelect: (id: RouteId) => void;
 }) {
-  const { data: me } = useMe();
   const [expanded, setExpanded] = useState(false);
   const { phase, version } = useDesktopUpdate();
-  const canManageStaff = me?.role === "director" || me?.role === "creator";
   const [tooltip, setTooltip] = useState<{
     label: string;
     top: number;
@@ -116,7 +109,7 @@ export function Sidebar({
         </div>
 
         <div className="flex flex-col gap-1">
-          {[...mainItems, ...(canManageStaff ? directorItems : [])].map((item) => (
+          {mainItems.map((item) => (
             <NavRow
               key={item.id}
               item={item}

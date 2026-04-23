@@ -1,6 +1,6 @@
 import { useMemo, useSyncExternalStore } from "react";
 import type { UploadedFile } from "./DocUpload";
-import { CLIENTS as SEED_CLIENTS, type Client } from "@/lib/mock/clients";
+import { type Client } from "@/lib/mock/clients";
 import {
   clientsKeys,
   useApiClients,
@@ -142,14 +142,13 @@ function addClient(data: Omit<Client, "id">): Client {
     });
 
   // локальный stub для мгновенного возврата из функции (старый API)
-  const maxSeed = SEED_CLIENTS.reduce((m, c) => Math.max(m, c.id), 0);
   const maxAdded = state.addedClients.reduce((m, c) => Math.max(m, c.id), 0);
-  const id = Math.max(maxSeed, maxAdded) + 10_000; // tmp — не пересечётся с API
+  const id = maxAdded + Date.now(); // tmp id — не пересечётся с API
   return { ...data, id };
 }
 
 function getAllClients(): Client[] {
-  return [...SEED_CLIENTS, ...state.addedClients];
+  return [...state.addedClients];
 }
 
 export const clientStore = {
@@ -218,13 +217,12 @@ export function useAllClients(): Client[] {
  * Вычисляем для каждого клиента:
  *   rents — число аренд в истории
  *   debt  — сумма просрочек по формуле (тариф + 250 ₽) × дней просрочки
- * «Сегодня» по демо-таймлайну — 13.10.2026.
  */
 function computeStats(rentals: ApiRental[]): {
   rentsByClient: Map<number, number>;
   debtByClient: Map<number, number>;
 } {
-  const today = new Date(2026, 9, 13);
+  const today = new Date();
   const rentsByClient = new Map<number, number>();
   const debtByClient = new Map<number, number>();
   for (const r of rentals) {

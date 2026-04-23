@@ -1,23 +1,24 @@
 import { useMemo, useState } from "react";
-import { Minus, Plus } from "lucide-react";
+import { Bike, Minus, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
-import {
-  mockPark,
-  scootStatusLabel,
-  type ParkItem,
-  type ScootModel,
-  type ScootStatus,
-} from "@/lib/mock/dashboard";
 import { Card } from "./KpiCard";
+import { useApiRentals } from "@/lib/api/rentals";
+import { useApiScooters } from "@/lib/api/scooters";
+import type { ApiScooter, ScooterModel } from "@/lib/api/types";
+import type { DashboardMetrics } from "./useDashboardMetrics";
 
-type ModelFilter = "all" | ScootModel;
-type StatusFilter = "all" | ScootStatus;
+/** Статус плитки — производный от baseStatus скутера + активной аренды. */
+type TileStatus = "rented" | "overdue" | "free" | "repair" | "for_sale" | "sold";
+
+type ModelFilter = "all" | ScooterModel;
+type StatusFilter = "all" | TileStatus;
 
 const MODEL_CHIPS: { id: ModelFilter; label: string }[] = [
   { id: "all", label: "Все модели" },
-  { id: "Yamaha Jog", label: "Jog" },
-  { id: "Yamaha Gear", label: "Gear" },
-  { id: "Tank", label: "Tank" },
+  { id: "jog", label: "Jog" },
+  { id: "gear", label: "Gear" },
+  { id: "honda", label: "Honda" },
+  { id: "tank", label: "Tank" },
 ];
 
 const STATUS_CHIPS: { id: StatusFilter; label: string; swatch: string }[] = [
@@ -26,55 +27,103 @@ const STATUS_CHIPS: { id: StatusFilter; label: string; swatch: string }[] = [
   { id: "overdue", label: "просрочка", swatch: "hsl(var(--red))" },
   { id: "free", label: "свободен", swatch: "hsl(var(--border-strong))" },
   { id: "repair", label: "ремонт", swatch: "hsl(var(--orange))" },
-  { id: "rassrochka", label: "рассрочка", swatch: "hsl(var(--purple))" },
+  { id: "for_sale", label: "продажа", swatch: "hsl(var(--purple))" },
   { id: "sold", label: "продан", swatch: "hsl(var(--border))" },
 ];
 
-function countBy<K extends string>(items: ParkItem[], pick: (p: ParkItem) => K) {
-  return items.reduce<Record<K, number>>(
-    (acc, p) => {
-      const k = pick(p);
-      acc[k] = (acc[k] ?? 0) + 1;
-      return acc;
-    },
-    {} as Record<K, number>,
-  );
-}
+const STATUS_LABEL: Record<TileStatus, string> = {
+  rented: "в аренде",
+  overdue: "просрочен",
+  free: "свободен",
+  repair: "в ремонте",
+  for_sale: "на продаже",
+  sold: "продан",
+};
 
-export function ParkPanel({ className }: { className?: string }) {
+export function ParkPanel({
+  className,
+  metrics,
+}: {
+  className?: string;
+  metrics: DashboardMetrics;
+}) {
+  const scootersQ = useApiScooters();
+  const rentalsQ = useApiRentals();
   const [model, setModel] = useState<ModelFilter>("all");
   const [status, setStatus] = useState<StatusFilter>("all");
   const [cols, setCols] = useState(12);
 
-  const modelCounts = useMemo(
-    () => countBy(mockPark, (p) => p.model),
-    [],
-  );
-  const statusCounts = useMemo(
-    () => countBy(mockPark, (p) => p.status),
-    [],
-  );
-  const total = mockPark.length;
+  const tiles = useMemo(() => {
+    const scooters = scootersQ.data ?? [];
+    const rentals = rentalsQ.data ?? [];
 
-  const filtered = mockPark;
+    const activeByScooter = new Map<number, "active" | "overdue">();
+    rentals.forEach((r) => {
+      if (r.scooterId == null) return;
+      if (r.status === "active") activeByScooter.set(r.scooterId, "active");
+      if (r.status === "overdue") activeByScooter.set(r.scooterId, "overdue");
+    });
+
+    return scooters.map((s) => ({
+      id: s.id,
+      name: s.name,
+      model: s.model,
+      status: computeTileStatus(s, activeByScooter.get(s.id)),
+    }));
+  }, [scootersQ.data, rentalsQ.data]);
+
+  const modelCounts = useMemo(() => {
+    const acc: Record<string, number> = {};
+    tiles.forEach((t) => (acc[t.model] = (acc[t.model] ?? 0) + 1));
+    return acc;
+  }, [tiles]);
+
+  const statusCounts = useMemo(() => {
+    const acc: Record<string, number> = {};
+    tiles.forEach((t) => (acc[t.status] = (acc[t.status] ?? 0) + 1));
+    return acc;
+  }, [tiles]);
+
+  const total = tiles.length;
+  const park = metrics.park;
+
+  if (total === 0) {
+    return (
+      <Card className={className}>
+        <div className="flex h-full min-h-[240px] flex-col items-center justify-center gap-3 text-center">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-surface-soft text-muted-2">
+            <Bike size={26} />
+          </div>
+          <div>
+            <div className="text-[15px] font-bold text-ink">Парк пока пустой</div>
+            <div className="mt-1 text-[13px] text-muted">
+              Добавьте первый скутер на странице «Скутеры»
+            </div>
+          </div>
+        </div>
+      </Card>
+    );
+  }
 
   return (
     <Card className={className}>
       <div className="mb-3.5 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
           <h2 className="m-0 text-[20px] font-bold tracking-[-0.01em]">
-            Парк · 54 скутера
+            Парк · {total} {plural(total, ["скутер", "скутера", "скутеров"])}
           </h2>
           <div className="flex gap-4 text-xs text-muted">
             <span>
-              загружен <b className="text-ink font-bold">70%</b>
+              загружено <b className="text-ink font-bold">{metrics.loadPercent}%</b>
             </span>
             <span>
-              свободно <b className="text-ink font-bold">10</b>
+              свободно <b className="text-ink font-bold">{park.ready}</b>
             </span>
-            <span>
-              в ремонте <b className="text-ink font-bold">3</b>
-            </span>
+            {park.inRepair > 0 && (
+              <span>
+                в ремонте <b className="text-ink font-bold">{park.inRepair}</b>
+              </span>
+            )}
           </div>
         </div>
         <ChipRow>
@@ -133,15 +182,15 @@ export function ParkPanel({ className }: { className?: string }) {
         className="grid gap-1.5"
         style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}
       >
-        {filtered.map((s) => {
+        {tiles.map((s) => {
           const modelMatch = model === "all" || s.model === model;
           if (!modelMatch) return null;
           const statusMatch = status === "all" || s.status === status;
-          const num = s.name.split("#")[1] ?? "";
+          const num = s.name.split("#")[1] ?? s.name;
           return (
             <div
-              key={s.name}
-              title={`${s.name} · ${scootStatusLabel[s.status]}`}
+              key={s.id}
+              title={`${s.name} · ${STATUS_LABEL[s.status]}`}
               className={cn(
                 "group relative flex aspect-square cursor-pointer flex-col items-center justify-center rounded-[10px] border border-transparent text-[11px] font-semibold transition-all hover:-translate-y-0.5 hover:z-10 hover:shadow-card",
                 tileClass(s.status),
@@ -157,7 +206,20 @@ export function ParkPanel({ className }: { className?: string }) {
   );
 }
 
-function tileClass(s: ScootStatus): string {
+function computeTileStatus(
+  s: ApiScooter,
+  activeKind: "active" | "overdue" | undefined,
+): TileStatus {
+  if (s.baseStatus === "sold") return "sold";
+  if (s.baseStatus === "for_sale" || s.baseStatus === "buyout")
+    return "for_sale";
+  if (s.baseStatus === "repair") return "repair";
+  if (activeKind === "overdue") return "overdue";
+  if (activeKind === "active") return "rented";
+  return "free";
+}
+
+function tileClass(s: TileStatus): string {
   switch (s) {
     case "rented":
       return "bg-blue text-white";
@@ -167,11 +229,19 @@ function tileClass(s: ScootStatus): string {
       return "bg-surface-soft text-ink border-border";
     case "repair":
       return "bg-orange text-white";
-    case "rassrochka":
+    case "for_sale":
       return "bg-purple text-white";
     case "sold":
       return "bg-border text-muted";
   }
+}
+
+function plural(n: number, forms: [string, string, string]): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return forms[0];
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return forms[1];
+  return forms[2];
 }
 
 export function ChipRow({

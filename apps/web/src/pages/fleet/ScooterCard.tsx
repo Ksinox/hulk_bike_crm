@@ -23,7 +23,7 @@ import {
 } from "@/lib/mock/fleet";
 import { useRole } from "@/lib/role";
 import { MODEL_LABEL, type ScooterModel } from "@/lib/mock/rentals";
-import { CLIENTS } from "@/lib/mock/clients";
+import { useApiClients } from "@/lib/api/clients";
 import { useRentals } from "@/pages/rentals/rentalsStore";
 import { navigate } from "@/app/navigationStore";
 import { Topbar } from "@/pages/dashboard/Topbar";
@@ -84,6 +84,7 @@ export function ScooterCard({
   backLabel?: string;
 }) {
   const rentals = useRentals();
+  const { data: apiClients } = useApiClients();
   const role = useRole();
   const [tab, setTab] = useState<TabId>("history");
   const [editOpen, setEditOpen] = useState(false);
@@ -106,7 +107,7 @@ export function ScooterCard({
   );
 
   const activeClient = activeRental
-    ? CLIENTS.find((c) => c.id === activeRental.clientId)
+    ? apiClients?.find((c) => c.id === activeRental.clientId) ?? null
     : null;
 
   const repairsCount = 0; // пока нет справочника ремонтов
@@ -813,6 +814,7 @@ function HistoryTab({
   rentals: ReturnType<typeof useRentals>;
   currentId?: number;
 }) {
+  const { data: apiClients } = useApiClients();
   const STATUS_LABEL: Record<string, { label: string; tone: string }> = {
     active: { label: "Идёт", tone: "bg-blue-50 text-blue-700" },
     overdue: { label: "Просрочка", tone: "bg-red-soft text-red-ink" },
@@ -851,7 +853,7 @@ function HistoryTab({
         <span />
       </div>
       {sorted.map((r) => {
-        const client = CLIENTS.find((c) => c.id === r.clientId);
+        const client = apiClients?.find((c) => c.id === r.clientId);
         const s = STATUS_LABEL[r.status] ?? STATUS_LABEL.completed;
         const isCurrent = r.id === currentId;
         return (

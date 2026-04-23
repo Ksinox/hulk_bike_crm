@@ -70,3 +70,4 @@ Thumbs.db
 *.snap
 *.deb
 *.rpm
+scripts/.dokploy_token

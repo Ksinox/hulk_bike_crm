@@ -34,7 +34,7 @@ import {
   useRentalPayments,
   useRentalTasks,
 } from "./rentalsStore";
-import { CLIENTS } from "@/lib/mock/clients";
+import { useApiClients } from "@/lib/api/clients";
 import { navigate } from "@/app/navigationStore";
 
 function fmt(n: number) {
@@ -91,7 +91,8 @@ export function TermsTab({
   rental: Rental;
   onClientClick?: () => void;
 }) {
-  const client = CLIENTS.find((c) => c.id === rental.clientId);
+  const { data: apiClients } = useApiClients();
+  const client = apiClients?.find((c) => c.id === rental.clientId);
   const time = rental.startTime ?? "12:00";
   const location = "Склад \"Северный\"";
   const mileage = mockMileage(rental.scooter);
@@ -812,7 +813,8 @@ type GeneratedDoc = {
 };
 
 export function DocumentsTab({ rental }: { rental: Rental }) {
-  const client = CLIENTS.find((c) => c.id === rental.clientId);
+  const { data: apiClients } = useApiClients();
+  const client = apiClients?.find((c) => c.id === rental.clientId);
   const [generated, setGenerated] = useState<GeneratedDoc[]>([]);
 
   const doGenerate = (type: DocType) => {

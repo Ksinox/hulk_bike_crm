@@ -21,8 +21,9 @@ import {
   type Rental,
   type RentalStatus,
 } from "@/lib/mock/rentals";
-import { CLIENTS, ratingTier } from "@/lib/mock/clients";
+import { ratingTier } from "@/lib/mock/clients";
 import { useClientUnreachable } from "@/pages/clients/clientStore";
+import { useApiClients } from "@/lib/api/clients";
 import {
   DocumentsTab,
   IncidentsTab,
@@ -169,9 +170,10 @@ export function RentalCard({ rental }: { rental: Rental }) {
   const [clientQuickView, setClientQuickView] = useState(false);
   const newRental = useRental(confirmForNewId);
 
+  const { data: apiClients } = useApiClients();
   const client = useMemo(
-    () => CLIENTS.find((c) => c.id === rental.clientId),
-    [rental.clientId],
+    () => apiClients?.find((c) => c.id === rental.clientId),
+    [rental.clientId, apiClients],
   );
   const allRentals = useRentals();
   const chainIds = useMemo(

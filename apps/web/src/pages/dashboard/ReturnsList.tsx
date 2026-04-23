@@ -1,22 +1,11 @@
-import {
-  mockReturns,
-  returnStatusLabel,
-  type ReturnItem,
-  type ReturnStatus,
-} from "@/lib/mock/dashboard";
+import { Check } from "lucide-react";
 import { Card } from "./KpiCard";
 import { StatusPill } from "./StatusPill";
-
-const TONE: Record<ReturnStatus, "active" | "late" | "soon" | "done"> = {
-  active: "active",
-  late: "late",
-  soon: "soon",
-  done: "done",
-};
+import type { ReturnItem } from "./useDashboardMetrics";
 
 export function ReturnsList({
   className,
-  items = mockReturns.slice(0, 5),
+  items = [],
 }: {
   className?: string;
   items?: ReturnItem[];
@@ -27,33 +16,52 @@ export function ReturnsList({
         <h3 className="m-0 text-base font-bold tracking-[-0.005em]">
           Сегодня возвращают
         </h3>
-        <StatusPill tone="active">{mockReturns.length}</StatusPill>
+        {items.length > 0 && <StatusPill tone="active">{items.length}</StatusPill>}
       </div>
       <div className="mb-1.5 text-xs text-muted">
-        возврат в ближайшие 2 дня
+        {items.length > 0
+          ? "возврат в течение дня"
+          : "на сегодня возвратов не запланировано"}
       </div>
-      <div>
-        {items.map((r, i) => (
-          <div
-            key={i}
-            className="flex cursor-pointer items-center gap-2.5 border-b border-border py-2.5 last:border-b-0 hover:-mx-2 hover:rounded-[10px] hover:bg-surface-soft hover:px-2"
-          >
-            <ClientAvatar initials={r.initials} />
-            <div className="min-w-0 flex-1">
-              <div className="text-[13px] font-semibold text-ink">
-                {r.client}
+      {items.length === 0 ? (
+        <EmptyState />
+      ) : (
+        <div>
+          {items.slice(0, 5).map((r) => {
+            const initials = initialsOf(r.clientName);
+            const when = formatTime(r.endPlannedAt);
+            return (
+              <div
+                key={r.rentalId}
+                className="flex cursor-pointer items-center gap-2.5 border-b border-border py-2.5 last:border-b-0 hover:-mx-2 hover:rounded-[10px] hover:bg-surface-soft hover:px-2"
+              >
+                <ClientAvatar initials={initials} />
+                <div className="min-w-0 flex-1">
+                  <div className="text-[13px] font-semibold text-ink truncate">
+                    {r.clientName}
+                  </div>
+                  <div className="text-xs text-muted truncate">
+                    {r.scooterName} · {when}
+                  </div>
+                </div>
+                <StatusPill tone="active">{when}</StatusPill>
               </div>
-              <div className="text-xs text-muted">
-                {r.scooter} · {r.when}
-              </div>
-            </div>
-            <StatusPill tone={TONE[r.status]}>
-              {returnStatusLabel[r.status]}
-            </StatusPill>
-          </div>
-        ))}
-      </div>
+            );
+          })}
+        </div>
+      )}
     </Card>
+  );
+}
+
+function EmptyState() {
+  return (
+    <div className="flex items-center gap-2.5 px-0.5 py-1.5">
+      <div className="flex h-8 w-8 items-center justify-center rounded-[10px] bg-green-soft text-green-ink">
+        <Check size={16} strokeWidth={2.5} />
+      </div>
+      <div className="text-[13px] font-semibold text-ink">Возвратов не запланировано</div>
+    </div>
   );
 }
 
@@ -75,4 +83,18 @@ export function ClientAvatar({
       {initials}
     </div>
   );
+}
+
+function initialsOf(name: string): string {
+  return (name || "")
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase() ?? "")
+    .join("") || "?";
+}
+
+function formatTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
 }

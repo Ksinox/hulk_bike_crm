@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { Plus } from "lucide-react";
 import { Topbar } from "@/pages/dashboard/Topbar";
 import { type Rental, type RentalStatus } from "@/lib/mock/rentals";
-import { CLIENTS } from "@/lib/mock/clients";
 import { RentalsFilters, type FiltersState } from "./RentalsFilters";
 import { RentalsList } from "./RentalsList";
 import { RentalsKpi, type Kpi } from "./RentalsKpi";
@@ -10,13 +9,20 @@ import { RentalCard } from "./RentalCard";
 import { useRentals } from "./rentalsStore";
 import { useUnreachableSet } from "@/pages/clients/clientStore";
 import { NewRentalModal } from "./NewRentalModal";
+import { useApiClients } from "@/lib/api/clients";
+import type { ApiClient } from "@/lib/api/types";
 
-const TODAY_RU = "13.10.2026"; // демо-таймлайн
+/** Сегодня в формате DD.MM.YYYY (локальное время) */
+function todayRu(): string {
+  const d = new Date();
+  return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}`;
+}
 
 function matchStatus(
   r: Rental,
   f: FiltersState["status"],
   unreachable: Set<number>,
+  today: string,
 ): boolean {
   if (f === "all") return true;
   if (f === "active") return r.status === "active";
@@ -28,7 +34,7 @@ function matchStatus(
       r.status === "active" ||
       r.status === "returning" ||
       r.status === "overdue";
-    return isActiveOrReturning && r.endPlanned === TODAY_RU;
+    return isActiveOrReturning && r.endPlanned === today;
   }
   if (f === "new_request")
     return r.status === "new_request" || r.status === "meeting";
@@ -46,10 +52,10 @@ function matchStatus(
   return true;
 }
 
-function matchSearch(r: Rental, q: string): boolean {
+function matchSearch(r: Rental, q: string, clients: ApiClient[]): boolean {
   if (!q.trim()) return true;
   const needle = q.toLowerCase().trim();
-  const client = CLIENTS.find((c) => c.id === r.clientId);
+  const client = clients.find((c) => c.id === r.clientId);
   if (client && client.name.toLowerCase().includes(needle)) return true;
   if (client && client.phone.replace(/\D/g, "").includes(needle.replace(/\D/g, ""))) {
     if (needle.replace(/\D/g, "").length > 0) return true;
@@ -80,6 +86,8 @@ function statusRank(s: RentalStatus): number {
 export function Rentals() {
   const rentals = useRentals();
   const unreachable = useUnreachableSet();
+  const { data: apiClients } = useApiClients();
+  const today = todayRu();
   const [filters, setFilters] = useState<FiltersState>({
     search: "",
     status: "all",
@@ -98,14 +106,14 @@ export function Rentals() {
     () =>
       rentals.filter(
         (r) =>
-          matchStatus(r, filters.status, unreachable) &&
-          matchSearch(r, filters.search),
+          matchStatus(r, filters.status, unreachable, today) &&
+          matchSearch(r, filters.search, apiClients ?? []),
       ).sort((a, b) => {
         const sr = statusRank(a.status) - statusRank(b.status);
         if (sr !== 0) return sr;
         return b.id - a.id;
       }),
-    [filters, rentals, unreachable],
+    [filters, rentals, unreachable, apiClients, today],
   );
 
   const kpi = useMemo<Kpi[]>(() => {

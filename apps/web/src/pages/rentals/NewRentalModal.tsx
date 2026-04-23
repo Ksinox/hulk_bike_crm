@@ -13,13 +13,25 @@ import {
   type Rental,
   type ScooterModel,
 } from "@/lib/mock/rentals";
-import { mockPark, type ScootStatus } from "@/lib/mock/dashboard";
 import { addRental, useRentals } from "./rentalsStore";
 import { useAllClients } from "@/pages/clients/clientStore";
 import { AddClientModal } from "@/pages/clients/AddClientModal";
+import { useApiScooters } from "@/lib/api/scooters";
 
-const TODAY_STR = "13.10.2026";
 const EQUIPMENT = ["шлем", "держатель", "замок"];
+
+/** Сегодня в формате DD.MM.YYYY (локальное время). */
+function todayRuDate(): string {
+  const d = new Date();
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  return `${dd}.${mm}.${d.getFullYear()}`;
+}
+
+function currentHHMM(): string {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
 
 type ActiveScooterName = Set<string>;
 
@@ -59,6 +71,7 @@ export function NewRentalModal({
 }) {
   const rentals = useRentals();
   const allClients = useAllClients();
+  const { data: apiScooters } = useApiScooters();
   const blocked = activeScooters(rentals);
   const [closing, setClosing] = useState(false);
 
@@ -67,8 +80,8 @@ export function NewRentalModal({
   const [clientOpen, setClientOpen] = useState(false);
   const [newClientOpen, setNewClientOpen] = useState(false);
   const [scooterName, setScooterName] = useState<string | null>(null);
-  const [start, setStart] = useState(TODAY_STR);
-  const [startTime, setStartTime] = useState("14:30");
+  const [start, setStart] = useState(() => todayRuDate());
+  const [startTime, setStartTime] = useState(() => currentHHMM());
   const [days, setDays] = useState(14);
   const [equipment, setEquipment] = useState<string[]>(["шлем"]);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
@@ -127,14 +140,17 @@ export function NewRentalModal({
 
   const availableScooters = useMemo(
     () =>
-      mockPark.filter(
-        (s) =>
-          !blocked.has(s.name) &&
-          s.status !== ("repair" as ScootStatus) &&
-          s.status !== ("sold" as ScootStatus) &&
-          s.status !== ("rassrochka" as ScootStatus),
-      ),
-    [blocked],
+      (apiScooters ?? [])
+        .filter(
+          (s) =>
+            !blocked.has(s.name) &&
+            s.baseStatus !== "repair" &&
+            s.baseStatus !== "sold" &&
+            s.baseStatus !== "buyout" &&
+            s.baseStatus !== "for_sale",
+        )
+        .map((s) => ({ name: s.name, model: s.model })),
+    [apiScooters, blocked],
   );
 
   const handleSave = () => {

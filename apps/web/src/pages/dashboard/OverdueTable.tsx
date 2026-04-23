@@ -1,23 +1,25 @@
 import { useState } from "react";
 import { Check, ChevronRight, Phone } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { mockOverdue, type OverdueItem } from "@/lib/mock/dashboard";
 import { Card } from "./KpiCard";
 import { StatusPill } from "./StatusPill";
 import { ClientAvatar } from "./ReturnsList";
+import { formatRub, type OverdueItem } from "./useDashboardMetrics";
 
 export function OverdueTable({
   className,
+  items = [],
   showPhoneColumn = false,
   compactHeader = false,
 }: {
   className?: string;
+  items?: OverdueItem[];
   showPhoneColumn?: boolean;
   compactHeader?: boolean;
 }) {
-  const sorted = [...mockOverdue].sort((a, b) => b.days - a.days);
+  const sorted = [...items].sort((a, b) => b.daysOverdue - a.daysOverdue);
   const top = sorted.slice(0, 5);
-  const total = mockOverdue.length;
+  const total = items.length;
 
   return (
     <Card className={className}>
@@ -57,9 +59,9 @@ export function OverdueTable({
             </tr>
           </thead>
           <tbody>
-            {top.map((o, i) => (
+            {top.map((o) => (
               <OverdueRow
-                key={i}
+                key={o.rentalId}
                 item={o}
                 showPhoneColumn={showPhoneColumn}
               />
@@ -78,31 +80,32 @@ function OverdueRow({
   item: OverdueItem;
   showPhoneColumn: boolean;
 }) {
+  const initials = initialsOf(o.clientName);
   return (
     <tr className="cursor-pointer group">
       <Td overdue>
         <div className="flex items-center gap-2.5">
-          <ClientAvatar initials={o.initials} variant="red" />
+          <ClientAvatar initials={initials} variant="red" />
           <div>
-            <div className="font-semibold">{o.client}</div>
-            <div className="text-[11px] text-muted">{o.phone}</div>
+            <div className="font-semibold">{o.clientName}</div>
+            <div className="text-[11px] text-muted">{o.clientPhone}</div>
           </div>
         </div>
       </Td>
-      <Td overdue>{o.scooter}</Td>
+      <Td overdue>{o.scooterName}</Td>
       <Td overdue>
-        <span className="font-bold text-red-ink">{o.debt}</span>
+        <span className="font-bold text-red-ink">{formatRub(o.debt)} ₽</span>
       </Td>
       <Td overdue>
-        <StatusPill tone="late">{o.days} дн</StatusPill>
+        <StatusPill tone="late">{o.daysOverdue} дн</StatusPill>
       </Td>
       {showPhoneColumn ? (
         <Td overdue>
-          <span className="text-[13px] text-muted">{o.phone}</span>
+          <span className="text-[13px] text-muted">{o.clientPhone}</span>
         </Td>
       ) : (
         <Td overdue>
-          <CopyBtn phone={o.phone} />
+          <CopyBtn phone={o.clientPhone} />
         </Td>
       )}
     </tr>
@@ -147,6 +150,14 @@ function EmptyState() {
       </div>
     </div>
   );
+}
+
+function initialsOf(name: string): string {
+  return (name || "")
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase() ?? "")
+    .join("") || "?";
 }
 
 export function Th({

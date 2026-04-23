@@ -5,12 +5,9 @@ import {
   STATUS_TONE,
   type Rental,
 } from "@/lib/mock/rentals";
-import { CLIENTS, initialsOf } from "@/lib/mock/clients";
+import { initialsOf } from "@/lib/mock/clients";
 import { useClientPhoto } from "@/pages/clients/clientStore";
-
-function clientById(id: number) {
-  return CLIENTS.find((c) => c.id === id);
-}
+import { useApiClients } from "@/lib/api/clients";
 
 function fmt(n: number) {
   return n.toLocaleString("ru-RU");
@@ -98,7 +95,8 @@ function RentalRow({
   active: boolean;
   onSelect: (id: number) => void;
 }) {
-  const c = clientById(r.clientId);
+  const { data: apiClients } = useApiClients();
+  const c = apiClients?.find((x) => x.id === r.clientId);
   const photo = useClientPhoto(r.clientId);
   const tone = STATUS_TONE[r.status];
   const isIssue =

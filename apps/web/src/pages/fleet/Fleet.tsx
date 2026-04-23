@@ -19,7 +19,7 @@ import {
 } from "@/lib/mock/fleet";
 import { useFleetScooters } from "./fleetStore";
 import { MODEL_LABEL, type ScooterModel } from "@/lib/mock/rentals";
-import { CLIENTS } from "@/lib/mock/clients";
+import { useApiClients } from "@/lib/api/clients";
 import { useRentals } from "@/pages/rentals/rentalsStore";
 import { ScooterCard } from "./ScooterCard";
 import { AddScooterModal } from "./AddScooterModal";
@@ -75,6 +75,7 @@ type RentalInfo = {
 export function Fleet() {
   const rentals = useRentals();
   const FLEET = useFleetScooters();
+  const { data: apiClients } = useApiClients();
   const [tab, setTab] = useState<StatusTab>("all");
   const [modelFilter, setModelFilter] = useState<ScooterModel | "all">("all");
   const [query, setQuery] = useState("");
@@ -102,7 +103,7 @@ export function Fleet() {
       ) {
         continue;
       }
-      const client = CLIENTS.find((c) => c.id === r.clientId);
+      const client = apiClients?.find((c) => c.id === r.clientId);
       const end = parseDate(r.endPlanned);
       map.set(r.scooter, {
         rentalId: r.id,
@@ -113,7 +114,7 @@ export function Fleet() {
       });
     }
     return map;
-  }, [rentals]);
+  }, [rentals, apiClients]);
 
   /** Итоговый displayStatus по каждому скутеру */
   const rows = useMemo(() => {

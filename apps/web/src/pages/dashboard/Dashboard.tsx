@@ -11,9 +11,15 @@ import { TasksList } from "./TasksList";
 import { ActivityFeed } from "./ActivityFeed";
 import { ClassicKpi, CLASSIC_KPI_ICONS } from "./ClassicKpi";
 import { loadView, saveView, type DashboardView } from "./view";
+import {
+  formatRub,
+  useDashboardMetrics,
+  type DashboardMetrics,
+} from "./useDashboardMetrics";
 
 export function Dashboard() {
   const [view, setView] = useState<DashboardView>(() => loadView());
+  const metrics = useDashboardMetrics();
 
   const onViewChange = (v: DashboardView) => {
     setView(v);
@@ -23,107 +29,184 @@ export function Dashboard() {
   return (
     <main className="flex min-w-0 flex-1 flex-col gap-4">
       <Topbar />
-      <Greeting view={view} onViewChange={onViewChange} />
-      {view === "park" ? <ParkVariant /> : <ClassicVariant />}
+      <Greeting view={view} onViewChange={onViewChange} metrics={metrics} />
+      {view === "park" ? (
+        <ParkVariant metrics={metrics} />
+      ) : (
+        <ClassicVariant metrics={metrics} />
+      )}
     </main>
   );
 }
 
-function ParkVariant() {
+function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
   return (
     <div className="grid auto-rows-[minmax(120px,auto)] grid-cols-12 gap-4">
       <div className="col-span-3">
         <KpiCard
           blue
           title="Поступит сегодня"
-          value="+14 600"
+          value={metrics.todayIncoming > 0 ? `+${formatRub(metrics.todayIncoming)}` : "0"}
           unit="₽"
-          delta={{ tone: "up", label: "+18%" }}
-          foot={<span>к пн · 12 платежей</span>}
+          delta={
+            metrics.todayIncomingDelta != null
+              ? {
+                  tone: metrics.todayIncomingDelta >= 0 ? "up" : "down",
+                  label: `${metrics.todayIncomingDelta >= 0 ? "+" : ""}${metrics.todayIncomingDelta}%`,
+                }
+              : undefined
+          }
+          foot={
+            <span>
+              {metrics.todayIncomingCount > 0
+                ? `${metrics.todayIncomingCount} ${plural(metrics.todayIncomingCount, ["платёж", "платежа", "платежей"])}`
+                : "платежей на сегодня нет"}
+            </span>
+          }
         />
       </div>
       <div className="col-span-3">
         <KpiCard
           title="Просрочено"
-          value="3"
-          valueTone="red"
-          delta={{ tone: "down", label: "+1" }}
-          foot={<span>со вчера · долг 7 400 ₽</span>}
+          value={String(metrics.overdueCount)}
+          valueTone={metrics.overdueCount > 0 ? "red" : undefined}
+          delta={
+            metrics.overdueDeltaFromYesterday > 0
+              ? {
+                  tone: "down",
+                  label: `+${metrics.overdueDeltaFromYesterday}`,
+                }
+              : undefined
+          }
+          foot={
+            <span>
+              {metrics.overdueCount > 0
+                ? `долг ${formatRub(metrics.overdueSum)} ₽`
+                : "нет просрочек"}
+            </span>
+          }
         />
       </div>
       <div className="col-span-3">
         <KpiCard
           title="Активных аренд"
-          value="38"
-          unit="/ 54"
-          foot={<span>70% загрузка парка</span>}
+          value={String(metrics.activeRentalsCount)}
+          unit={metrics.fleetTotal > 0 ? `/ ${metrics.fleetTotal}` : undefined}
+          foot={
+            <span>
+              {metrics.fleetTotal > 0
+                ? `${metrics.loadPercent}% загрузка парка`
+                : "парк пока пустой"}
+            </span>
+          }
         />
       </div>
       <div className="col-span-3">
         <KpiCard
           title="Задач на сегодня"
-          value="7"
-          delta={{ tone: "down", label: "2 просрочены" }}
-          foot={<span>5 новых</span>}
+          value={String(metrics.tasksToday)}
+          foot={<span className="text-muted-2">раздел задач — скоро</span>}
         />
       </div>
 
-      <ParkPanel className="col-span-8 row-span-2" />
-      <RevenueCard className="col-span-4" />
-      <ReturnsList className="col-span-4" />
+      <ParkPanel className="col-span-8 row-span-2" metrics={metrics} />
+      <RevenueCard className="col-span-4" metrics={metrics} />
+      <ReturnsList className="col-span-4" items={metrics.returnsToday} />
 
-      <OverdueTable className="col-span-8" />
+      <OverdueTable className="col-span-8" items={metrics.overdue} />
       <TasksList className="col-span-4" />
       <ActivityFeed className="col-span-8" />
     </div>
   );
 }
 
-function ClassicVariant() {
+function ClassicVariant({ metrics }: { metrics: DashboardMetrics }) {
   return (
     <div className="grid auto-rows-[minmax(120px,auto)] grid-cols-12 gap-4">
       <ClassicKpi
         className="col-span-3"
         title="Поступит сегодня"
-        value="14 600"
+        value={metrics.todayIncoming > 0 ? formatRub(metrics.todayIncoming) : "0"}
         unit="₽"
         icon={CLASSIC_KPI_ICONS.money}
         iconTone="green"
-        delta={{ tone: "up", label: "+18%" }}
-        foot={<span>к пн</span>}
+        delta={
+          metrics.todayIncomingDelta != null
+            ? {
+                tone: metrics.todayIncomingDelta >= 0 ? "up" : "down",
+                label: `${metrics.todayIncomingDelta >= 0 ? "+" : ""}${metrics.todayIncomingDelta}%`,
+              }
+            : undefined
+        }
+        foot={
+          <span>
+            {metrics.todayIncomingCount > 0
+              ? `${metrics.todayIncomingCount} ${plural(metrics.todayIncomingCount, ["платёж", "платежа", "платежей"])}`
+              : "нет платежей"}
+          </span>
+        }
       />
       <ClassicKpi
         className="col-span-3"
         title="Просрочено"
-        value="3"
-        valueRed
+        value={String(metrics.overdueCount)}
+        valueRed={metrics.overdueCount > 0}
         icon={CLASSIC_KPI_ICONS.alert}
         iconTone="red"
-        delta={{ tone: "down", label: "+1" }}
-        foot={<span>со вчера</span>}
+        delta={
+          metrics.overdueDeltaFromYesterday > 0
+            ? { tone: "down", label: `+${metrics.overdueDeltaFromYesterday}` }
+            : undefined
+        }
+        foot={
+          <span>
+            {metrics.overdueCount > 0
+              ? `долг ${formatRub(metrics.overdueSum)} ₽`
+              : "нет просрочек"}
+          </span>
+        }
       />
       <ClassicKpi
         className="col-span-3"
         title="Активных аренд"
-        value="38"
-        unit="/54"
+        value={String(metrics.activeRentalsCount)}
+        unit={metrics.fleetTotal > 0 ? `/${metrics.fleetTotal}` : undefined}
         icon={CLASSIC_KPI_ICONS.rent}
         iconTone="blue"
-        foot={<span>70% загрузка</span>}
+        foot={
+          <span>
+            {metrics.fleetTotal > 0
+              ? `${metrics.loadPercent}% загрузка`
+              : "парк пустой"}
+          </span>
+        }
       />
       <ClassicKpi
         className="col-span-3"
         title="Задач на сегодня"
-        value="7"
+        value={String(metrics.tasksToday)}
         icon={CLASSIC_KPI_ICONS.tasks}
         iconTone="orange"
-        delta={{ tone: "down", label: "2 просрочены" }}
+        foot={<span className="text-muted-2">скоро</span>}
       />
 
-      <ReturnsTable className="col-span-8" />
+      <ReturnsTable className="col-span-8" items={metrics.returnsToday} />
       <TasksList className="col-span-4" />
-      <OverdueTable className="col-span-8" showPhoneColumn compactHeader />
+      <OverdueTable
+        className="col-span-8"
+        items={metrics.overdue}
+        showPhoneColumn
+        compactHeader
+      />
       <ActivityFeed className="col-span-4" compact />
     </div>
   );
+}
+
+function plural(n: number, forms: [string, string, string]): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return forms[0];
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return forms[1];
+  return forms[2];
 }

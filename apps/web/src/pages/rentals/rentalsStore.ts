@@ -1,12 +1,9 @@
 import { useMemo, useSyncExternalStore } from "react";
 import {
-  RENTALS as SEED,
   type ConfirmerRole,
   type Rental,
-  type RentalSourceChannel,
   type RentalStatus,
 } from "@/lib/mock/rentals";
-import { CLIENTS, type ClientSource } from "@/lib/mock/clients";
 import { useQuery } from "@tanstack/react-query";
 import { rentalsKeys, useApiRentals } from "@/lib/api/rentals";
 import { useApiScooters } from "@/lib/api/scooters";
@@ -14,32 +11,6 @@ import { paymentsKeys, useApiPayments } from "@/lib/api/payments";
 import { api } from "@/lib/api";
 import { queryClient } from "@/lib/queryClient";
 import { adaptRental } from "./rentalAdapter";
-
-/** Мапим источник клиента в канал обращения по аренде */
-function deriveChannel(
-  source: ClientSource | undefined,
-): RentalSourceChannel {
-  switch (source) {
-    case "avito":
-      return "avito";
-    case "repeat":
-      return "repeat";
-    case "ref":
-      return "ref";
-    case "maps":
-      return "passing";
-    default:
-      return "other";
-  }
-}
-
-function withSourceChannel(rentals: Rental[]): Rental[] {
-  return rentals.map((r) => {
-    if (r.sourceChannel) return r;
-    const client = CLIENTS.find((c) => c.id === r.clientId);
-    return { ...r, sourceChannel: deriveChannel(client?.source) };
-  });
-}
 
 /* Платёж привязан к конкретной аренде */
 export type PaymentType = "rent" | "deposit" | "fine" | "damage" | "refund";
@@ -90,68 +61,16 @@ type State = {
   inspections: Map<number, ReturnInspection>;
 };
 
-function seedPayments(): Payment[] {
-  const p: Payment[] = [];
-  let pid = 1000;
-  for (const r of SEED) {
-    if (r.sum > 0 && (r.status === "active" || r.status === "completed" || r.status === "returning" || r.status === "overdue" || r.status === "completed_damage")) {
-      p.push({
-        id: pid++, rentalId: r.id, type: "rent", amount: r.sum, date: r.start,
-        method: r.paymentMethod, paid: true, note: "оплата аренды",
-      });
-      p.push({
-        id: pid++, rentalId: r.id, type: "deposit", amount: r.deposit || 2000,
-        date: r.start, method: r.paymentMethod, paid: true, note: "залог",
-      });
-    }
-    if (r.status === "overdue") {
-      p.push({
-        id: pid++, rentalId: r.id, type: "fine", amount: 200, date: r.endPlanned,
-        method: "cash", paid: false, note: "штраф за просрочку (200 ₽/день)",
-      });
-    }
-    if (r.status === "completed_damage") {
-      p.push({
-        id: pid++, rentalId: r.id, type: "damage", amount: 3200, date: r.endActual || r.endPlanned,
-        method: "cash", paid: false, note: "ущерб по возврату не погашен",
-      });
-    }
-    if (r.status === "completed" && r.depositReturned) {
-      p.push({
-        id: pid++, rentalId: r.id, type: "refund", amount: r.deposit || 2000,
-        date: r.endActual || r.endPlanned, method: r.paymentMethod, paid: true,
-        note: "возврат залога",
-      });
-    }
-  }
-  return p;
-}
-
-function seedIncidents(): RentalIncident[] {
-  return [
-    { id: 1, rentalId: 150, type: "Просрочка возврата", date: "23.04.2026", damage: 3200, paid: 0, note: "штраф за 3 дня просрочки" },
-    { id: 2, rentalId: 160, type: "Невозврат скутера", date: "15.04.2026", damage: 45000, paid: 0, note: "скутер не возвращён, заявление в ОВД" },
-    { id: 3, rentalId: 160, type: "ДТП", date: "13.04.2026", damage: 18000, paid: 0, note: "повредил передний фонарь и крыло" },
-  ];
-}
-
-function seedTasks(): RentalTask[] {
-  return [
-    { id: 1, rentalId: 121, title: "Встретить клиента и принять Gear #18", due: "13.10.2026 14:00", done: false },
-    { id: 2, rentalId: 140, title: "Осмотр Gear #01 по возврату", due: "13.10.2026 14:00", done: false },
-    { id: 3, rentalId: 180, title: "Встреча с Щербаковым Глебом, привезёт паспорт", due: "14.10.2026 11:00", done: false },
-    { id: 4, rentalId: 181, title: "Встреча с Лаврентьевым И., Gear #17", due: "14.10.2026 16:30", done: false },
-    { id: 5, rentalId: 130, title: "Позвонить Волковой А. по просрочке Jog #04", due: "13.10.2026", done: false },
-    { id: 6, rentalId: 131, title: "Звонок по Gear #06 (Рубцов)", due: "13.10.2026", done: false },
-    { id: 7, rentalId: 150, title: "Передать юристу — ущерб Кузнецов С.", due: "15.10.2026", done: false },
-  ];
-}
-
+/**
+ * Сиды удалены — аренды/платежи/инциденты/задачи приходят с API.
+ * `state` остался только как кеш для mutation-side-effects (inspections)
+ * и временный «оптимистичный» буфер.
+ */
 const state: State = {
-  rentals: withSourceChannel([...SEED]),
-  payments: seedPayments(),
-  incidents: seedIncidents(),
-  tasks: seedTasks(),
+  rentals: [],
+  payments: [],
+  incidents: [],
+  tasks: [],
   inspections: new Map(),
 };
 
@@ -445,12 +364,11 @@ export function getRentalChainIds(
 }
 
 export function useRentalsByClient(clientId: number): Rental[] {
-  const rentals = useSyncExternalStore(
-    subscribe,
-    () => state.rentals,
-    () => state.rentals,
+  const rentals = useRentals();
+  return useMemo(
+    () => rentals.filter((r) => r.clientId === clientId),
+    [rentals, clientId],
   );
-  return rentals.filter((r) => r.clientId === clientId);
 }
 
 export function getActiveRentalByClient(

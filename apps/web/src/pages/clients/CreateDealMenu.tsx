@@ -7,7 +7,6 @@ import {
   Wrench,
   type LucideIcon,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
 import type { Client } from "@/lib/mock/clients";
 
 type DealType = "rental" | "installment" | "sale" | "repair";
@@ -69,10 +68,9 @@ export function CreateDealMenu({ client }: { client: Client }) {
     };
   }, [open]);
 
-  const handlePick = (type: DealType) => {
+  const handlePick = (_type: DealType) => {
+    // Пока не реализовано — все пункты помечены «скоро», кнопки не кликабельны.
     setOpen(false);
-    // TODO: открыть форму создания сделки с выбранным типом
-    console.log("Create deal:", type, "for client", client.id);
   };
 
   return (
@@ -97,44 +95,25 @@ export function CreateDealMenu({ client }: { client: Client }) {
           </div>
           <div className="py-1">
             {DEAL_TYPES.map((dt) => {
-              const blocked = client.blacklisted && dt.blockIfBlacklisted;
               const Icon = dt.icon;
               return (
                 <button
                   key={dt.id}
                   type="button"
-                  disabled={blocked}
+                  disabled
                   onClick={() => handlePick(dt.id)}
-                  title={
-                    blocked
-                      ? "Клиент в чёрном списке — нельзя"
-                      : undefined
-                  }
-                  className={cn(
-                    "flex w-full items-start gap-3 px-3 py-2.5 text-left transition-colors",
-                    blocked
-                      ? "cursor-not-allowed opacity-45"
-                      : "hover:bg-blue-50",
-                  )}
+                  title="Скоро появится"
+                  className="flex w-full cursor-not-allowed items-start gap-3 px-3 py-2.5 text-left opacity-55"
                 >
-                  <div
-                    className={cn(
-                      "flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]",
-                      blocked
-                        ? "bg-surface-soft text-muted-2"
-                        : "bg-blue-50 text-blue-700",
-                    )}
-                  >
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-surface-soft text-muted-2">
                     <Icon size={16} />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="text-[13px] font-semibold text-ink">
+                    <div className="flex items-center gap-2 text-[13px] font-semibold text-ink">
                       {dt.label}
-                      {blocked && (
-                        <span className="ml-2 text-[10px] font-semibold uppercase tracking-wider text-red-ink">
-                          заблокирован
-                        </span>
-                      )}
+                      <span className="rounded-full bg-surface-soft px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-muted-2">
+                        скоро
+                      </span>
                     </div>
                     <div className="mt-0.5 text-[11px] text-muted">
                       {dt.hint}

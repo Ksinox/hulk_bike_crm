@@ -51,31 +51,34 @@ export function Topbar() {
 
   return (
     <div className="flex items-center gap-3 rounded-xl bg-surface px-4 py-2.5 shadow-card-sm">
-      <div className="flex min-w-[280px] items-center gap-2.5 rounded-full border border-transparent bg-surface-soft px-3.5 py-2 transition-colors focus-within:border-blue focus-within:bg-white">
+      <div
+        className="flex min-w-[280px] cursor-not-allowed items-center gap-2.5 rounded-full border border-transparent bg-surface-soft px-3.5 py-2 opacity-70"
+        title="Поиск — скоро"
+      >
         <Search size={16} className="text-muted-2" />
         <input
           type="text"
-          placeholder="Поиск: клиент, скутер, № договора…"
-          className="w-full border-0 bg-transparent text-sm text-ink outline-none placeholder:text-muted-2"
+          placeholder="Поиск — скоро"
+          disabled
+          className="w-full cursor-not-allowed border-0 bg-transparent text-sm text-muted-2 outline-none placeholder:text-muted-2"
         />
+        <SoonPill />
       </div>
       <div className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1.5 text-[13px] font-semibold text-blue-700">
         <Calendar size={14} />
-        Сегодня, пн 13 окт
+        {formatTodayRu()}
       </div>
       <div className="flex-1" />
 
       {isCreator && <CreatorViewSwitcher current={role} onChange={setRole} />}
 
-      <IconBtn aria-label="Настройки">
+      <IconBtn aria-label="Настройки — скоро" title="Настройки — скоро" disabled>
         <Settings size={18} />
+        <SoonDot />
       </IconBtn>
-      <IconBtn aria-label="Уведомления">
+      <IconBtn aria-label="Уведомления — скоро" title="Уведомления — скоро" disabled>
         <Bell size={18} />
-        <span
-          className="absolute h-2 w-2 rounded-full border-2 border-surface bg-red"
-          style={{ top: 8, right: 9 }}
-        />
+        <SoonDot />
       </IconBtn>
 
       <div className="relative" ref={menuRef}>
@@ -237,17 +240,54 @@ function avatarGradient(color?: string): string {
 
 function IconBtn({
   children,
+  className,
+  disabled,
   ...rest
 }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
     <button
       type="button"
-      className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-surface-soft text-ink-2 transition-colors hover:bg-blue-50 hover:text-blue-600"
+      disabled={disabled}
+      className={cn(
+        "relative flex h-10 w-10 items-center justify-center rounded-xl bg-surface-soft text-ink-2 transition-colors",
+        disabled
+          ? "cursor-not-allowed opacity-60"
+          : "hover:bg-blue-50 hover:text-blue-600",
+        className,
+      )}
       {...rest}
     >
       {children}
     </button>
   );
+}
+
+/** Маленькая серая плашка "скоро". */
+function SoonPill() {
+  return (
+    <span className="ml-auto shrink-0 rounded-full bg-muted-2/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-muted-2">
+      скоро
+    </span>
+  );
+}
+
+/** Точка-индикатор "скоро" в углу круглой кнопки. */
+function SoonDot() {
+  return (
+    <span
+      className="absolute rounded-full border-2 border-surface bg-muted-2/70"
+      style={{ top: 6, right: 6, height: 8, width: 8 }}
+    />
+  );
+}
+
+/** Сегодня — на русском. Пример: "Сегодня, чт 23 апр". */
+function formatTodayRu(): string {
+  const d = new Date();
+  const wd = d.toLocaleDateString("ru-RU", { weekday: "short" });
+  const day = d.getDate();
+  const mon = d.toLocaleDateString("ru-RU", { month: "short" }).replace(".", "");
+  return `Сегодня, ${wd} ${day} ${mon}`;
 }
 
 // suppress unused warning

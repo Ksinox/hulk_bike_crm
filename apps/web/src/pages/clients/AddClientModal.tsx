@@ -2,12 +2,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { X, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
-  CLIENTS,
   getClientDetails,
   SOURCE_LABEL,
   type Client,
   type ClientSource,
 } from "@/lib/mock/clients";
+import { useApiClients } from "@/lib/api/clients";
 import {
   DocUpload,
   DocUploadMulti,
@@ -110,12 +110,10 @@ function validateNumber(v: string): string | null {
   return null;
 }
 
-function findDuplicate(phone: string): Client | null {
+function findDuplicateIn(phone: string, pool: { id: number; name: string; phone: string }[]): { id: number; name: string; phone: string } | null {
   const digits = phone.replace(/\D/g, "");
   if (digits.length !== 11) return null;
-  return (
-    CLIENTS.find((c) => c.phone.replace(/\D/g, "") === digits) ?? null
-  );
+  return pool.find((c) => c.phone.replace(/\D/g, "") === digits) ?? null;
 }
 
 function formatPhone(v: string): string {
@@ -225,11 +223,17 @@ export function AddClientModal({
     [f],
   );
 
+  const { data: apiClients } = useApiClients();
   const duplicate = useMemo(() => {
-    const d = findDuplicate(f.phone);
+    const pool = (apiClients ?? []).map((c) => ({
+      id: c.id,
+      name: c.name,
+      phone: c.phone,
+    }));
+    const d = findDuplicateIn(f.phone, pool);
     if (d && editing && d.id === editing.id) return null;
     return d;
-  }, [f.phone, editing]);
+  }, [f.phone, editing, apiClients]);
 
   const required = [
     errors.name,
