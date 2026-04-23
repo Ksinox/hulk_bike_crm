@@ -17,8 +17,8 @@ import { addRental, useRentals } from "./rentalsStore";
 import { useAllClients } from "@/pages/clients/clientStore";
 import { AddClientModal } from "@/pages/clients/AddClientModal";
 import { useApiScooters } from "@/lib/api/scooters";
-
-const EQUIPMENT = ["шлем", "держатель", "замок"];
+import { useApiScooterModels } from "@/lib/api/scooter-models";
+import { useApiEquipment } from "@/lib/api/equipment";
 
 /** Сегодня в формате DD.MM.YYYY (локальное время). */
 function todayRuDate(): string {
@@ -72,6 +72,8 @@ export function NewRentalModal({
   const rentals = useRentals();
   const allClients = useAllClients();
   const { data: apiScooters } = useApiScooters();
+  const { data: modelsCatalog = [] } = useApiScooterModels();
+  const { data: equipmentCatalog = [] } = useApiEquipment();
   const blocked = activeScooters(rentals);
   const [closing, setClosing] = useState(false);
 
@@ -83,9 +85,15 @@ export function NewRentalModal({
   const [start, setStart] = useState(() => todayRuDate());
   const [startTime, setStartTime] = useState(() => currentHHMM());
   const [days, setDays] = useState(14);
-  const [equipment, setEquipment] = useState<string[]>(["шлем"]);
+  /** Выбранные позиции экипировки — id из equipment_items каталога */
+  const [equipmentIds, setEquipmentIds] = useState<number[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
   const [note, setNote] = useState("");
+
+  /** Залог: режим — сумма или предмет */
+  const [depositMode, setDepositMode] = useState<"sum" | "item">("sum");
+  const [depositSum, setDepositSum] = useState<number>(2000);
+  const [depositItemText, setDepositItemText] = useState<string>("");
 
   const requestClose = () => {
     if (closing) return;
@@ -110,10 +118,46 @@ export function NewRentalModal({
     [clientId, allClients],
   );
 
+  /** Скутер, выбранный для аренды (из списка API) */
+  const selectedScooter = useMemo(
+    () => (apiScooters ?? []).find((s) => s.name === scooterName) ?? null,
+    [apiScooters, scooterName],
+  );
+
   const model: ScooterModel = scooterName ? modelOfScooter(scooterName) : "jog";
+
+  /**
+   * Ставка ₽/сутки:
+   * 1. Если у скутера modelId → берём ставки из каталога моделей.
+   * 2. Иначе fallback на legacy TARIFF по enum-модели.
+   */
   const period = periodForDays(days);
-  const rate = TARIFF[model][period];
-  const sum = rate * days;
+  const modelFromCatalog = useMemo(
+    () =>
+      selectedScooter?.modelId
+        ? modelsCatalog.find((m) => m.id === selectedScooter.modelId) ?? null
+        : null,
+    [selectedScooter, modelsCatalog],
+  );
+  const rate = useMemo(() => {
+    if (modelFromCatalog) {
+      if (period === "short") return modelFromCatalog.shortRate;
+      if (period === "week") return modelFromCatalog.weekRate;
+      return modelFromCatalog.monthRate;
+    }
+    return TARIFF[model][period];
+  }, [modelFromCatalog, period, model]);
+
+  /** Сумма аренды — rate*days + платная экипировка */
+  const equipmentSelected = useMemo(
+    () => equipmentCatalog.filter((e) => equipmentIds.includes(e.id)),
+    [equipmentCatalog, equipmentIds],
+  );
+  const equipmentExtra = equipmentSelected.reduce(
+    (s, e) => s + (e.isFree ? 0 : e.price),
+    0,
+  );
+  const sum = rate * days + equipmentExtra;
   const endPlanned = addDays(start, days);
 
   const blacklistedClient = !!client?.blacklisted;
@@ -138,16 +182,18 @@ export function NewRentalModal({
       .slice(0, 6);
   }, [clientQuery, allClients]);
 
+  /**
+   * В аренду можно отдавать ТОЛЬКО скутеры со статусом 'rental_pool'
+   * (выделенные владельцем в парк аренды).
+   */
   const availableScooters = useMemo(
     () =>
       (apiScooters ?? [])
         .filter(
           (s) =>
             !blocked.has(s.name) &&
-            s.baseStatus !== "repair" &&
-            s.baseStatus !== "sold" &&
-            s.baseStatus !== "buyout" &&
-            s.baseStatus !== "for_sale",
+            s.baseStatus === "rental_pool" &&
+            !s.archivedAt,
         )
         .map((s) => ({ name: s.name, model: s.model })),
     [apiScooters, blocked],
@@ -155,8 +201,19 @@ export function NewRentalModal({
 
   const handleSave = () => {
     if (!canSave || !scooterName) return;
+
+    // equipmentJson отправляем через rentalsStore в API (он прокинет в equipmentJson)
+    const equipmentJson = equipmentSelected.map((e) => ({
+      itemId: e.id,
+      name: e.name,
+      price: e.isFree ? 0 : e.price,
+      free: e.isFree,
+    }));
+    const equipmentLegacyNames = equipmentSelected.map((e) => e.name);
+
     const created = addRental({
       clientId: clientId!,
+      scooterId: selectedScooter?.id,
       scooter: scooterName,
       model,
       start,
@@ -167,13 +224,15 @@ export function NewRentalModal({
       rate,
       days,
       sum,
-      deposit: DEPOSIT_AMOUNT,
-      equipment,
+      deposit: depositMode === "sum" ? depositSum : 0,
+      depositItem: depositMode === "item" ? depositItemText.trim() || null : null,
+      equipment: equipmentLegacyNames,
+      equipmentJson,
       paymentMethod,
       note: note.trim() || undefined,
       contractUploaded: false,
       paymentConfirmed: null,
-    });
+    } as Parameters<typeof addRental>[0]);
     onCreated?.(created);
     requestClose();
   };
@@ -421,36 +480,111 @@ export function NewRentalModal({
             </div>
           </Section>
 
-          {/* 4 Экипировка и оплата */}
-          <Section num={4} title="Экипировка и оплата">
+          {/* 4 Экипировка + залог + оплата */}
+          <Section num={4} title="Экипировка, залог и оплата">
             <div>
               <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-2">
-                Выданная экипировка
+                Выданная экипировка {equipmentExtra > 0 && (
+                  <span className="text-blue-700">+{equipmentExtra}₽</span>
+                )}
               </div>
-              <div className="flex flex-wrap gap-1.5">
-                {EQUIPMENT.map((e) => {
-                  const on = equipment.includes(e);
-                  return (
-                    <button
-                      key={e}
-                      type="button"
-                      onClick={() =>
-                        setEquipment((prev) =>
-                          on ? prev.filter((x) => x !== e) : [...prev, e],
-                        )
-                      }
-                      className={cn(
-                        "inline-flex items-center gap-1 rounded-full px-3 py-1 text-[12px] font-semibold transition-colors",
-                        on
-                          ? "bg-blue-600 text-white"
-                          : "bg-surface-soft text-muted hover:bg-border",
-                      )}
-                    >
-                      {on && <Check size={11} />} {e}
-                    </button>
-                  );
-                })}
+              {equipmentCatalog.length === 0 ? (
+                <div className="text-[12px] text-muted">
+                  Каталог пуст — добавьте позиции в «Гараж → Экипировка».
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-1.5">
+                  {equipmentCatalog
+                    .filter((e) => e.quickPick)
+                    .map((e) => {
+                      const on = equipmentIds.includes(e.id);
+                      return (
+                        <button
+                          key={e.id}
+                          type="button"
+                          onClick={() =>
+                            setEquipmentIds((prev) =>
+                              on ? prev.filter((x) => x !== e.id) : [...prev, e.id],
+                            )
+                          }
+                          title={e.isFree ? "бесплатно" : `+${e.price}₽`}
+                          className={cn(
+                            "inline-flex items-center gap-1 rounded-full px-3 py-1 text-[12px] font-semibold transition-colors",
+                            on
+                              ? "bg-blue-600 text-white"
+                              : "bg-surface-soft text-muted hover:bg-border",
+                          )}
+                        >
+                          {on && <Check size={11} />} {e.name}
+                          {!e.isFree && (
+                            <span className="opacity-70">+{e.price}₽</span>
+                          )}
+                        </button>
+                      );
+                    })}
+                </div>
+              )}
+            </div>
+
+            <div className="mt-3">
+              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-2">
+                Залог
               </div>
+              <div className="mb-2 inline-flex rounded-full bg-surface-soft p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setDepositMode("sum")}
+                  className={cn(
+                    "rounded-full px-3 py-1 text-[12px] font-semibold transition-colors",
+                    depositMode === "sum"
+                      ? "bg-ink text-white"
+                      : "text-muted hover:text-ink",
+                  )}
+                >
+                  Сумма
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDepositMode("item")}
+                  className={cn(
+                    "rounded-full px-3 py-1 text-[12px] font-semibold transition-colors",
+                    depositMode === "item"
+                      ? "bg-ink text-white"
+                      : "text-muted hover:text-ink",
+                  )}
+                >
+                  Предмет
+                </button>
+              </div>
+              {depositMode === "sum" ? (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    value={depositSum}
+                    onChange={(e) =>
+                      setDepositSum(Math.max(0, Number(e.target.value) || 0))
+                    }
+                    className="h-9 w-40 rounded-[10px] border border-border bg-surface px-3 text-[13px] outline-none focus:border-blue-600"
+                  />
+                  <span className="text-[12px] text-muted-2">₽</span>
+                  <button
+                    type="button"
+                    onClick={() => setDepositSum(2000)}
+                    className="inline-flex items-center gap-1 rounded-full bg-surface-soft px-3 py-1 text-[11px] font-semibold text-ink-2 hover:bg-blue-50 hover:text-blue-700"
+                  >
+                    2000₽
+                  </button>
+                </div>
+              ) : (
+                <input
+                  type="text"
+                  value={depositItemText}
+                  onChange={(e) => setDepositItemText(e.target.value)}
+                  maxLength={200}
+                  placeholder="Например: паспорт, iPhone, ключи от квартиры"
+                  className="h-9 w-full rounded-[10px] border border-border bg-surface px-3 text-[13px] outline-none focus:border-blue-600"
+                />
+              )}
             </div>
             <div className="mt-3">
               <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-2">

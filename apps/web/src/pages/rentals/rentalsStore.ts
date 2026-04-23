@@ -256,8 +256,13 @@ export function markPaymentPaid(id: number, paid = true) {
     .catch(logErr("markPaymentPaid"));
 }
 
-export function addRental(r: Omit<Rental, "id">): Rental {
-  const body = {
+export function addRental(
+  r: Omit<Rental, "id"> & {
+    depositItem?: string | null;
+    equipmentJson?: { itemId?: number | null; name: string; price: number; free: boolean }[];
+  },
+): Rental {
+  const body: Record<string, unknown> = {
     clientId: r.clientId,
     scooterId: r.scooterId ?? null,
     parentRentalId: r.parentRentalId ?? null,
@@ -266,16 +271,17 @@ export function addRental(r: Omit<Rental, "id">): Rental {
     tariffPeriod: r.tariffPeriod,
     rate: r.rate,
     deposit: r.deposit,
+    depositItem: r.depositItem ?? null,
     startAt: ruToIso(r.start, r.startTime),
     endPlannedAt: ruToIso(r.endPlanned, r.startTime),
     days: r.days,
     sum: r.sum,
     paymentMethod: r.paymentMethod,
     equipment: r.equipment,
+    equipmentJson: r.equipmentJson ?? [],
     note: r.note ?? null,
   };
   api.post(`/api/rentals`, body).then(invAll).catch(logErr("addRental"));
-  // локальный stub до возврата настоящего id
   return { ...r, id: Date.now() };
 }
 
