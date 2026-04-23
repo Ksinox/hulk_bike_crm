@@ -140,6 +140,14 @@ export const users = pgTable("users", {
   active: boolean("active").notNull().default(true),
   /** Цвет тайла на экране входа: blue / purple / green / orange / pink */
   avatarColor: text("avatar_color").notNull().default("blue"),
+  /**
+   * true → при ближайшем входе юзер обязан поменять пароль, до смены
+   * фронт показывает блокирующую модалку и не пускает в CRM.
+   * Ставим при создании / при сбросе пароля creator'ом/director'ом.
+   */
+  mustChangePassword: boolean("must_change_password")
+    .notNull()
+    .default(false),
   lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()

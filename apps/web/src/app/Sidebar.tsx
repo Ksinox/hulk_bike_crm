@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 import { UpdateBanner, useDesktopUpdate } from "./UpdateBanner";
 import { isElectron } from "@/platform";
 import type { RouteId } from "./route";
+import { useMe } from "@/lib/api/auth";
 
 type NavItem = {
   id: RouteId | "logout";
@@ -28,20 +29,23 @@ type NavItem = {
   ready?: boolean;
 };
 
-const mainItems: NavItem[] = [
-  { id: "dashboard", label: "Дашборд", icon: Home, ready: true },
-  { id: "clients", label: "Клиенты", icon: Users, ready: true },
-  { id: "rentals", label: "Аренды", icon: Bike, ready: true },
-  { id: "fleet", label: "Скутеры", icon: ShoppingBag, ready: true },
-  { id: "staff", label: "Сотрудники", icon: UserCog },
-  { id: "rassrochki", label: "Рассрочки", icon: Receipt },
-  { id: "sales", label: "Продажи", icon: Wallet },
-  { id: "service", label: "Ремонты", icon: Wrench },
-  { id: "incidents", label: "Инциденты", icon: CircleAlert },
-  { id: "tasks", label: "Задачи", icon: ClipboardCheck },
-  { id: "analytics", label: "Аналитика", icon: BarChart3 },
-  { id: "docs", label: "Документы", icon: FileText },
-];
+function buildMainItems(canManageStaff: boolean): NavItem[] {
+  return [
+    { id: "dashboard", label: "Дашборд", icon: Home, ready: true },
+    { id: "clients", label: "Клиенты", icon: Users, ready: true },
+    { id: "rentals", label: "Аренды", icon: Bike, ready: true },
+    { id: "fleet", label: "Скутеры", icon: ShoppingBag, ready: true },
+    // «Сотрудники» — доступны только creator/director, у остальных бейдж «скоро»
+    { id: "staff", label: "Сотрудники", icon: UserCog, ready: canManageStaff },
+    { id: "rassrochki", label: "Рассрочки", icon: Receipt },
+    { id: "sales", label: "Продажи", icon: Wallet },
+    { id: "service", label: "Ремонты", icon: Wrench },
+    { id: "incidents", label: "Инциденты", icon: CircleAlert },
+    { id: "tasks", label: "Задачи", icon: ClipboardCheck },
+    { id: "analytics", label: "Аналитика", icon: BarChart3 },
+    { id: "docs", label: "Документы", icon: FileText },
+  ];
+}
 
 const footerItems: NavItem[] = [
   { id: "settings", label: "Настройки", icon: Settings },
@@ -57,6 +61,9 @@ export function Sidebar({
 }) {
   const [expanded, setExpanded] = useState(false);
   const { phase, version } = useDesktopUpdate();
+  const { data: me } = useMe();
+  const canManageStaff = me?.role === "creator" || me?.role === "director";
+  const mainItems = buildMainItems(canManageStaff);
   const [tooltip, setTooltip] = useState<{
     label: string;
     top: number;

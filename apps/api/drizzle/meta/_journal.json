@@ -15,6 +15,13 @@
       "when": 1776887162161,
       "tag": "0001_clumsy_patriot",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1776941374113,
+      "tag": "0002_white_shinko_yamashiro",
+      "breakpoints": true
     }
   ]
 }

@@ -14,6 +14,7 @@ import { onNavigate } from "./navigationStore";
 import { useMe } from "@/lib/api/auth";
 import { setRole } from "@/lib/role";
 import { Login } from "./Login";
+import { ForceChangePassword } from "./ForceChangePassword";
 
 export function App() {
   const { data: me, isLoading, isError } = useMe();
@@ -58,6 +59,12 @@ export function App() {
   // Нет сессии → экран входа
   if (isError || !me) {
     return <Login />;
+  }
+
+  // Юзер обязан сменить пароль (создан/сброшен creator'ом или director'ом).
+  // Показываем блокирующий экран — пока не поменяет, в CRM не пускаем.
+  if (me.mustChangePassword) {
+    return <ForceChangePassword />;
   }
 
   return (

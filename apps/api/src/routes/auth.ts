@@ -123,6 +123,7 @@ export async function authRoutes(app: FastifyInstance) {
           login: users.login,
           role: users.role,
           avatarColor: users.avatarColor,
+          mustChangePassword: users.mustChangePassword,
         })
         .from(users)
         .where(eq(users.id, u.userId));
@@ -211,7 +212,7 @@ export async function authRoutes(app: FastifyInstance) {
       const hash = await bcrypt.hash(newPassword, 12);
       await db
         .update(users)
-        .set({ passwordHash: hash })
+        .set({ passwordHash: hash, mustChangePassword: false })
         .where(eq(users.id, row.id));
       return { ok: true };
     },

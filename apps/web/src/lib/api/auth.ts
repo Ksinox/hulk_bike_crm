@@ -9,6 +9,8 @@ export type AuthUser = {
   login: string;
   role: AuthRole;
   avatarColor: string;
+  /** true — при ближайшем входе обязан сменить пароль, UI блокирует работу до смены */
+  mustChangePassword?: boolean;
 };
 
 export type LoginTile = {

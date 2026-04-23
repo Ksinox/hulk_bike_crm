@@ -15,6 +15,7 @@ import { filesRoutes } from "./routes/files.js";
 import { clientDocumentsRoutes } from "./routes/client-documents.js";
 import { scooterDocumentsRoutes } from "./routes/scooter-documents.js";
 import { authRoutes } from "./routes/auth.js";
+import { usersRoutes } from "./routes/users.js";
 import authPlugin, { requireAuth } from "./auth/plugin.js";
 import { ensureBucket } from "./storage/index.js";
 
@@ -78,6 +79,8 @@ async function bootstrap() {
       prefix: "/api/scooter-documents",
     });
     await protectedApp.register(filesRoutes, { prefix: "/api/files" });
+    // Сотрудники (защита на уровне конкретных роутов — только director/creator)
+    await protectedApp.register(usersRoutes, { prefix: "/api/users" });
   });
 
   // Проверить/создать бакет при старте (не блокируем — если MinIO
