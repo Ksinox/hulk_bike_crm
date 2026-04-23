@@ -147,15 +147,18 @@ export function confirmRentalPayment(
   id: number,
   role: ConfirmerRole,
   byName: string,
-  contractUploaded: boolean,
+  contractSigned: boolean,
+  rentPaid: boolean,
+  depositReceived: boolean,
 ) {
-  // В UI enum другой (director/admin) — маппим в серверный (boss/manager)
   const apiRole = role === "director" ? "boss" : "manager";
   api
     .post(`/api/rentals/${id}/confirm-payment`, {
       role: apiRole,
       byName,
-      contractUploaded,
+      contractSigned,
+      rentPaid,
+      depositReceived,
     })
     .then(invAll)
     .catch(logErr("confirmRentalPayment"));

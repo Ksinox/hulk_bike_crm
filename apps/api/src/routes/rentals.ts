@@ -452,6 +452,50 @@ export async function rentalsRoutes(app: FastifyInstance) {
         .returning();
       if (!row) return reply.code(404).send({ error: "not found" });
 
+      // Автосоздаём платёж по аренде (если ещё не зафиксирован и галка «получено»).
+      if (d.rentPaid && !before.confirmRentPaid) {
+        const [hasRent] = await db
+          .select({ id: payments.id })
+          .from(payments)
+          .where(and(eq(payments.rentalId, id), eq(payments.type, "rent")))
+          .limit(1);
+        if (!hasRent) {
+          await db.insert(payments).values({
+            rentalId: id,
+            type: "rent",
+            amount: row.sum,
+            method: row.paymentMethod,
+            paid: true,
+            paidAt: new Date(),
+            note: "оплата аренды (подтверждена при выдаче)",
+          });
+        }
+      }
+      // Залог (если денежный и галка «залог получен»)
+      if (
+        d.depositReceived &&
+        !before.confirmDepositReceived &&
+        row.deposit > 0 &&
+        !row.depositItem
+      ) {
+        const [hasDep] = await db
+          .select({ id: payments.id })
+          .from(payments)
+          .where(and(eq(payments.rentalId, id), eq(payments.type, "deposit")))
+          .limit(1);
+        if (!hasDep) {
+          await db.insert(payments).values({
+            rentalId: id,
+            type: "deposit",
+            amount: row.deposit,
+            method: row.paymentMethod,
+            paid: true,
+            paidAt: new Date(),
+            note: "залог (получен при выдаче)",
+          });
+        }
+      }
+
       const summary = await summaryForRental(id);
       const missing: string[] = [];
       if (!d.contractSigned) missing.push("договор не подписан");

@@ -8,7 +8,14 @@ import type { ApiScooter, ScooterModel } from "@/lib/api/types";
 import type { DashboardMetrics } from "./useDashboardMetrics";
 
 /** Статус плитки — производный от baseStatus скутера + активной аренды. */
-type TileStatus = "rented" | "overdue" | "free" | "repair" | "for_sale" | "sold";
+type TileStatus =
+  | "rented"
+  | "overdue"
+  | "free"
+  | "repair"
+  | "for_sale"
+  | "sold"
+  | "disassembly";
 
 type ModelFilter = "all" | ScooterModel;
 type StatusFilter = "all" | TileStatus;
@@ -28,6 +35,7 @@ const STATUS_CHIPS: { id: StatusFilter; label: string; swatch: string }[] = [
   { id: "free", label: "свободен", swatch: "hsl(var(--border-strong))" },
   { id: "repair", label: "ремонт", swatch: "hsl(var(--orange))" },
   { id: "for_sale", label: "продажа", swatch: "hsl(var(--purple))" },
+  { id: "disassembly", label: "разборка", swatch: "hsl(var(--ink))" },
   { id: "sold", label: "продан", swatch: "hsl(var(--border))" },
 ];
 
@@ -38,6 +46,7 @@ const STATUS_LABEL: Record<TileStatus, string> = {
   repair: "в ремонте",
   for_sale: "на продаже",
   sold: "продан",
+  disassembly: "в разборке",
 };
 
 export function ParkPanel({
@@ -211,6 +220,7 @@ function computeTileStatus(
   activeKind: "active" | "overdue" | undefined,
 ): TileStatus {
   if (s.baseStatus === "sold") return "sold";
+  if (s.baseStatus === "disassembly") return "disassembly";
   if (s.baseStatus === "for_sale" || s.baseStatus === "buyout")
     return "for_sale";
   if (s.baseStatus === "repair") return "repair";
@@ -231,6 +241,8 @@ function tileClass(s: TileStatus): string {
       return "bg-orange text-white";
     case "for_sale":
       return "bg-purple text-white";
+    case "disassembly":
+      return "bg-ink text-white";
     case "sold":
       return "bg-border text-muted";
   }

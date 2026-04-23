@@ -4,6 +4,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Key,
+  Layers,
   Plus,
   Search,
   ShoppingBag,
@@ -233,7 +234,19 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
       )}
 
       {/* =========== KPI =========== */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+        <KpiTile
+          label="Всего скутеров"
+          value={counters.total}
+          hint="в парке (кроме архива)"
+          icon={Layers}
+          accent="slate"
+          active={tab === "all"}
+          onClick={() => {
+            setTab("all");
+            setPage(1);
+          }}
+        />
         <KpiTile
           label="Парк аренды"
           value={counters.rental_pool}
@@ -564,7 +577,7 @@ function KpiTile({
   value: number;
   hint: string;
   icon: typeof Key;
-  accent: "green" | "blue" | "red" | "violet";
+  accent: "green" | "blue" | "red" | "violet" | "slate";
   active: boolean;
   onClick: () => void;
 }) {
@@ -575,7 +588,9 @@ function KpiTile({
         ? "bg-blue-50 text-blue-700"
         : accent === "red"
           ? "bg-red-soft text-red-ink"
-          : "bg-purple-soft text-purple-ink";
+          : accent === "slate"
+            ? "bg-ink text-white"
+            : "bg-purple-soft text-purple-ink";
   const valueCls =
     accent === "green"
       ? "text-green-ink"
@@ -583,7 +598,9 @@ function KpiTile({
         ? "text-blue-700"
         : accent === "red"
           ? "text-red-ink"
-          : "text-purple-ink";
+          : accent === "slate"
+            ? "text-ink"
+            : "text-purple-ink";
   return (
     <button
       type="button"

@@ -10,6 +10,7 @@ import { useRentals } from "./rentalsStore";
 import { useUnreachableSet } from "@/pages/clients/clientStore";
 import { NewRentalModal } from "./NewRentalModal";
 import { useApiClients } from "@/lib/api/clients";
+import { useApiScooters } from "@/lib/api/scooters";
 import type { ApiClient } from "@/lib/api/types";
 import {
   matchId,
@@ -93,6 +94,11 @@ export function Rentals() {
   const rentals = useRentals();
   const unreachable = useUnreachableSet();
   const { data: apiClients } = useApiClients();
+  const { data: apiScooters = [] } = useApiScooters();
+  // Пул скутеров, пригодных к сдаче в аренду — только 'rental_pool'
+  const rentalPoolSize = apiScooters.filter(
+    (s) => s.baseStatus === "rental_pool" && !s.archivedAt,
+  ).length;
   const today = todayRu();
   const [filters, setFilters] = useState<FiltersState>({
     search: "",
@@ -119,7 +125,7 @@ export function Rentals() {
         if (sr !== 0) return sr;
         return b.id - a.id;
       }),
-    [filters, rentals, unreachable, apiClients, today],
+    [filters, rentals, unreachable, apiClients, today, rentalPoolSize],
   );
 
   const kpi = useMemo<Kpi[]>(() => {
@@ -167,7 +173,7 @@ export function Rentals() {
     return [
       {
         label: "Активных",
-        value: `${active} / 54`,
+        value: rentalPoolSize > 0 ? `${active} / ${rentalPoolSize}` : String(active),
         hint: "идут сейчас",
         tone: "green",
       },
