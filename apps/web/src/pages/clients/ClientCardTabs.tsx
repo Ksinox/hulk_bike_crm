@@ -29,8 +29,7 @@ function fmt(n: number): string {
 
 /* =================== Аренды =================== */
 
-/** Сегодня по демо-таймлайну — 13.10.2026 */
-const TODAY_DEMO = new Date(2026, 9, 13);
+const TODAY_DEMO = new Date();
 
 function parseDate(s: string): Date | null {
   const m = s.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);

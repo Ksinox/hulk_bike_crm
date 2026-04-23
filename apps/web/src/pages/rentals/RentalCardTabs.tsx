@@ -690,9 +690,11 @@ function InlineIncidentForm({
         <button
           type="button"
           onClick={() => {
+            const d = new Date();
+            const todayStr = `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}`;
             addRentalIncident(rentalId, {
               type,
-              date: "13.10.2026",
+              date: todayStr,
               damage: Number(amount) || 0,
               note,
             });
@@ -709,13 +711,13 @@ function InlineIncidentForm({
 
 /* =================== Задачи =================== */
 
-/** Определение просрочки задачи — простое сравнение со «сегодня» демо-дата 13.10.2026 */
+/** Определение просрочки задачи — сравнение со «сегодня» */
 function isTaskOverdue(due: string, done: boolean): boolean {
   if (done) return false;
   const m = due.match(/^(\d{2})\.(\d{2})\.(\d{4})/);
   if (!m) return false;
   const due0 = new Date(+m[3], +m[2] - 1, +m[1], 23, 59);
-  return Date.now() > due0.getTime() ? false : false || due0 < new Date(2026, 9, 13);
+  return due0.getTime() < Date.now();
 }
 
 export function TasksTab({ rental }: { rental: Rental }) {

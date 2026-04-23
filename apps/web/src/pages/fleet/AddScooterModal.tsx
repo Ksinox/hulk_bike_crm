@@ -20,7 +20,10 @@ const STATUS_OPTIONS: { value: ScooterBaseStatus; label: string }[] = [
   { value: "for_sale", label: "На продажу" },
 ];
 
-const TODAY_RU = "13.10.2026"; // демо-таймлайн
+function todayRu(): string {
+  const d = new Date();
+  return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}`;
+}
 
 /** Подобрать свободный номер в серии «Jog #NN», «Gear #NN», «Tank #NN» */
 function suggestNextNumber(
@@ -50,7 +53,7 @@ export function AddScooterModal({ onClose }: { onClose: () => void }) {
   const [mileage, setMileage] = useState("0");
   const [vin, setVin] = useState("");
   const [engineNo, setEngineNo] = useState("");
-  const [purchaseDate, setPurchaseDate] = useState(toDateInput(TODAY_RU));
+  const [purchaseDate, setPurchaseDate] = useState(toDateInput(todayRu()));
   const [purchasePrice, setPurchasePrice] = useState("");
   const [status, setStatus] = useState<ScooterBaseStatus>("ready");
   const [note, setNote] = useState("");

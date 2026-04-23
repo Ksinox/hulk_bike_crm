@@ -130,8 +130,7 @@ export function Rentals() {
 
   const kpi = useMemo<Kpi[]>(() => {
     // Отчётный период — с 14-го прошлого месяца по 14-е текущего.
-    // Сегодня по демо-таймлайну: 13.10.2026 → период 14.09.2026 — 14.10.2026.
-    const today = new Date(2026, 9, 13);
+    const today = new Date();
     const y = today.getFullYear();
     const m = today.getMonth();
     const d = today.getDate();
@@ -154,7 +153,7 @@ export function Rentals() {
     const returningToday = rentals.filter(
       (r) =>
         r.status === "returning" ||
-        (r.status === "active" && r.endPlanned === "13.10.2026"),
+        (r.status === "active" && r.endPlanned === todayRu()),
     ).length;
     const overdueDebt = rentals
       .filter((r) => r.status === "overdue")

@@ -31,7 +31,10 @@ export type ActionKind =
   | "mark-unreachable"
   | "unmark-unreachable";
 
-const TODAY_STR = "13.10.2026";
+function todayStr(): string {
+  const d = new Date();
+  return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}`;
+}
 
 type Spec = {
   title: string;
@@ -107,7 +110,7 @@ export function RentalActionDialog({
         break;
       case "complete":
         completeRentalNoDamage(rental.id, {
-          dateActual: TODAY_STR,
+          dateActual: todayStr(),
           conditionOk: returnOk,
           equipmentOk,
           depositReturned: depositBack,
@@ -117,7 +120,7 @@ export function RentalActionDialog({
         completeRentalWithDamage(
           rental.id,
           {
-            dateActual: TODAY_STR,
+            dateActual: todayStr(),
             conditionOk: false,
             equipmentOk,
             depositReturned: depositBack,
@@ -136,7 +139,7 @@ export function RentalActionDialog({
       case "incident":
         addRentalIncident(rental.id, {
           type: incidentType,
-          date: TODAY_STR,
+          date: todayStr(),
           damage: Number(damageAmount) || 0,
           note: damageNote,
         });
@@ -148,7 +151,7 @@ export function RentalActionDialog({
             rentalId: rental.id,
             type: "damage",
             amount: amt,
-            date: TODAY_STR,
+            date: todayStr(),
             method: "cash",
             paid: true,
             note: "частичная оплата ущерба",
@@ -166,7 +169,7 @@ export function RentalActionDialog({
             rentalId: rental.id,
             type: payType,
             amount: amt,
-            date: TODAY_STR,
+            date: todayStr(),
             method: payMethod,
             paid: true,
             note: payNote.trim() || undefined,

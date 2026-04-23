@@ -24,7 +24,7 @@ import {
 } from "@/lib/api/documents";
 import { FilePreviewModal } from "@/pages/clients/FilePreviewModal";
 
-const TODAY = new Date(2026, 9, 13);
+const TODAY = new Date();
 
 const MONTH_RU = [
   "янв", "фев", "мар", "апр", "май", "июн",
@@ -428,7 +428,7 @@ function isoToRu(iso: string): string {
 }
 
 function actHtml(scooter: FleetScooter): string {
-  const today = new Date(2026, 9, 13);
+  const today = new Date();
   const dateStr = `${String(today.getDate()).padStart(2, "0")} ${MONTH_RU[today.getMonth()]} ${today.getFullYear()}`;
   return `<!doctype html><html><head><meta charset="utf-8"><title>Акт приёма-передачи ${scooter.name}</title>
 <style>body{font-family:Inter,sans-serif;padding:40px;color:#111}

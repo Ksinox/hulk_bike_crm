@@ -72,8 +72,10 @@ function daysBetween(a: Date, b: Date): number {
   return Math.round((bD - aD) / 86400000);
 }
 
-/** Сейчас по демо-таймлайну — 13.10.2026 14:30 */
-const TODAY = new Date(2026, 9, 13, 14, 30);
+/** Текущая дата/время — пересоздаётся при каждом рендере компонента */
+function now(): Date {
+  return new Date();
+}
 
 function statusActions(
   status: RentalStatus,
@@ -199,7 +201,7 @@ export function RentalCard({ rental }: { rental: Rental }) {
   const startDate = parseDate(rental.start);
   const endDate = parseDate(rental.endPlanned);
   const daysLeft =
-    startDate && endDate ? daysBetween(TODAY, endDate) : null;
+    startDate && endDate ? daysBetween(now(), endDate) : null;
 
   const tone = STATUS_TONE[rental.status];
   const isUnreachable = useClientUnreachable(rental.clientId);

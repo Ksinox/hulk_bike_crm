@@ -94,10 +94,9 @@ export function ClientCard({ client }: { client: Client }) {
    * Остаток по клиенту — сумма накопленных штрафов за просрочки.
    * Формула: за каждый день просрочки возврата начисляется
    * (ставка тарифа + 250 ₽). Считается по всем арендам в статусе overdue.
-   * Сегодня по демо-таймлайну — 13.10.2026.
    */
   const overdueBalance = useMemo(() => {
-    const today = new Date(2026, 9, 13);
+    const today = new Date();
     let total = 0;
     for (const r of rentalsForClient) {
       if (r.status !== "overdue") continue;

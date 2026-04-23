@@ -31,7 +31,7 @@ import { ScooterCard } from "./ScooterCard";
 import { AddScooterModal } from "./AddScooterModal";
 
 /** «Сегодня» по демо-таймлайну */
-const TODAY = new Date(2026, 9, 13);
+const TODAY = new Date();
 
 type StatusTab =
   | "all"
