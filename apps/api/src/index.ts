@@ -47,6 +47,10 @@ async function bootstrap() {
     origin: (origin, cb) => {
       // Разрешаем запросы без Origin (curl, health-проверки, server-to-server)
       if (!origin) return cb(null, true);
+      // Electron-приложение грузит бандл через file:// — Chromium шлёт
+      // Origin: null. Разрешаем, иначе авто-обновлённый .exe не сможет
+      // обращаться к API.
+      if (origin === "null") return cb(null, true);
       if (config.corsOrigins.includes(origin)) return cb(null, true);
       return cb(new Error(`CORS: origin ${origin} не разрешён`), false);
     },

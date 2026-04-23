@@ -81,11 +81,15 @@ export async function authRoutes(app: FastifyInstance) {
     const token = app.jwt.sign(payload, {
       expiresIn: remember ? "30d" : "12h",
     });
+    const isProd = !["development", "test"].includes(process.env.NODE_ENV ?? "");
     reply
       .setCookie(SESSION_COOKIE, token, {
         httpOnly: true,
-        secure: !["development", "test"].includes(process.env.NODE_ENV ?? ""),
-        sameSite: "lax",
+        secure: isProd,
+        // Для Electron (origin=null, cross-site к api.*) куку с sameSite=lax
+        // браузер не пошлёт обратно. В prod выставляем none+secure — работает
+        // и для web (crm.hulkbike.ru), и для десктопа.
+        sameSite: isProd ? "none" : "lax",
         path: "/",
         maxAge,
       })

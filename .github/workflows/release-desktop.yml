@@ -27,6 +27,11 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build web
+        env:
+          # ОБЯЗАТЕЛЬНО: указываем адрес прод-API, иначе Electron-бандл
+          # зашивает дефолт http://localhost:4000 и при запуске у клиента
+          # fetch падает → пустой экран входа (тайлы не загружаются).
+          VITE_API_URL: https://api.hulkbike.ru
         run: pnpm --filter web build
 
       - name: Build electron main
