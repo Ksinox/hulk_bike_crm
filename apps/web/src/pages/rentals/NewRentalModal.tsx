@@ -65,9 +65,12 @@ function addDays(base: string, days: number): string {
 export function NewRentalModal({
   onClose,
   onCreated,
+  preselectedScooterName,
 }: {
   onClose: () => void;
   onCreated?: (rental: Rental) => void;
+  /** Если задан — откроется с уже выбранным скутером. Используется из карточки скутера. */
+  preselectedScooterName?: string;
 }) {
   const rentals = useRentals();
   const allClients = useAllClients();
@@ -81,7 +84,9 @@ export function NewRentalModal({
   const [clientQuery, setClientQuery] = useState("");
   const [clientOpen, setClientOpen] = useState(false);
   const [newClientOpen, setNewClientOpen] = useState(false);
-  const [scooterName, setScooterName] = useState<string | null>(null);
+  const [scooterName, setScooterName] = useState<string | null>(
+    preselectedScooterName ?? null,
+  );
   const [start, setStart] = useState(() => todayRuDate());
   const [startTime, setStartTime] = useState(() => currentHHMM());
   const [days, setDays] = useState(14);

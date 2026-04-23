@@ -37,6 +37,7 @@ import { Archive, Loader2 } from "lucide-react";
 import { ApiError } from "@/lib/api";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { fileUrl } from "@/lib/files";
+import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
 
 type TabId = "history" | "repairs" | "incidents" | "docs";
 const TABS: { id: TabId; label: string; count?: number }[] = [
@@ -96,6 +97,7 @@ export function ScooterCard({
   const [tab, setTab] = useState<TabId>("history");
   const [editOpen, setEditOpen] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
+  const [newRentalOpen, setNewRentalOpen] = useState(false);
   const { data: me } = useMe();
   const canArchive = me?.role === "director" || me?.role === "creator";
   const archiveMut = useArchiveScooter();
@@ -401,8 +403,8 @@ export function ScooterCard({
               {status === "rental_pool" && (
                 <button
                   type="button"
+                  onClick={() => setNewRentalOpen(true)}
                   className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-full bg-blue-600 px-4 py-2 text-[13px] font-bold text-white transition-colors hover:bg-blue-700"
-                  title="Скоро"
                 >
                   Оформить аренду <ArrowRight size={14} />
                 </button>
@@ -709,6 +711,16 @@ export function ScooterCard({
         <ScooterStatusModal
           scooter={scooter as unknown as import("@/lib/api/types").ApiScooter}
           onClose={() => setStatusOpen(false)}
+        />
+      )}
+      {newRentalOpen && (
+        <NewRentalModal
+          preselectedScooterName={scooter.name}
+          onClose={() => setNewRentalOpen(false)}
+          onCreated={(r) => {
+            setNewRentalOpen(false);
+            navigate({ route: "rentals", rentalId: r.id });
+          }}
         />
       )}
     </main>

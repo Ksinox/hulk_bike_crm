@@ -3,15 +3,18 @@ import { Bike, Minus, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Card } from "./KpiCard";
 import { useApiRentals } from "@/lib/api/rentals";
-import { useApiScooters } from "@/lib/api/scooters";
+import { useApiScooters, usePatchScooter } from "@/lib/api/scooters";
 import type { ApiScooter, ScooterModel } from "@/lib/api/types";
 import type { DashboardMetrics } from "./useDashboardMetrics";
+import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
+import { navigate } from "@/app/navigationStore";
 
 /** Статус плитки — производный от baseStatus скутера + активной аренды. */
 type TileStatus =
   | "rented"
   | "overdue"
-  | "free"
+  | "ready" // не распределён (baseStatus=ready)
+  | "pool" // в парке аренды, свободен к сдаче (baseStatus=rental_pool, без активной аренды)
   | "repair"
   | "for_sale"
   | "sold"
@@ -30,9 +33,10 @@ const MODEL_CHIPS: { id: ModelFilter; label: string }[] = [
 
 const STATUS_CHIPS: { id: StatusFilter; label: string; swatch: string }[] = [
   { id: "all", label: "всё", swatch: "hsl(var(--muted))" },
-  { id: "rented", label: "аренда", swatch: "hsl(var(--blue))" },
+  { id: "rented", label: "в аренде", swatch: "hsl(var(--blue))" },
   { id: "overdue", label: "просрочка", swatch: "hsl(var(--red))" },
-  { id: "free", label: "свободен", swatch: "hsl(var(--border-strong))" },
+  { id: "pool", label: "парк аренды", swatch: "hsl(var(--green))" },
+  { id: "ready", label: "не распределён", swatch: "hsl(var(--border-strong))" },
   { id: "repair", label: "ремонт", swatch: "hsl(var(--orange))" },
   { id: "for_sale", label: "продажа", swatch: "hsl(var(--purple))" },
   { id: "disassembly", label: "разборка", swatch: "hsl(var(--ink))" },
@@ -42,7 +46,8 @@ const STATUS_CHIPS: { id: StatusFilter; label: string; swatch: string }[] = [
 const STATUS_LABEL: Record<TileStatus, string> = {
   rented: "в аренде",
   overdue: "просрочен",
-  free: "свободен",
+  ready: "не распределён",
+  pool: "парк аренды",
   repair: "в ремонте",
   for_sale: "на продаже",
   sold: "продан",
@@ -58,9 +63,14 @@ export function ParkPanel({
 }) {
   const scootersQ = useApiScooters();
   const rentalsQ = useApiRentals();
+  const patchScooter = usePatchScooter();
   const [model, setModel] = useState<ModelFilter>("all");
   const [status, setStatus] = useState<StatusFilter>("all");
   const [cols, setCols] = useState(12);
+  /** Открыта форма «Оформить аренду», с преднабранным скутером */
+  const [newRentalFor, setNewRentalFor] = useState<string | null>(null);
+  /** Открыт диалог «Распределить скутер» (поменять статус у 'ready') */
+  const [reassignFor, setReassignFor] = useState<ApiScooter | null>(null);
 
   const tiles = useMemo(() => {
     const scooters = scootersQ.data ?? [];
@@ -73,11 +83,23 @@ export function ParkPanel({
       if (r.status === "overdue") activeByScooter.set(r.scooterId, "overdue");
     });
 
+    const activeRentalByScooter = new Map<number, number>();
+    rentals.forEach((r) => {
+      if (r.scooterId == null) return;
+      if (
+        r.status === "active" ||
+        r.status === "overdue" ||
+        r.status === "returning"
+      )
+        activeRentalByScooter.set(r.scooterId, r.id);
+    });
+
     return scooters.map((s) => ({
       id: s.id,
       name: s.name,
       model: s.model,
       status: computeTileStatus(s, activeByScooter.get(s.id)),
+      rentalId: activeRentalByScooter.get(s.id) ?? null,
     }));
   }, [scootersQ.data, rentalsQ.data]);
 
@@ -196,10 +218,31 @@ export function ParkPanel({
           if (!modelMatch) return null;
           const statusMatch = status === "all" || s.status === status;
           const num = s.name.split("#")[1] ?? s.name;
+          const handleClick = () => {
+            // Клик в зависимости от статуса — разные операционные действия
+            if (s.status === "rented" || s.status === "overdue") {
+              if (s.rentalId != null)
+                navigate({ route: "rentals", rentalId: s.rentalId });
+              return;
+            }
+            if (s.status === "pool") {
+              setNewRentalFor(s.name);
+              return;
+            }
+            if (s.status === "ready") {
+              const full = scootersQ.data?.find((x) => x.id === s.id);
+              if (full) setReassignFor(full);
+              return;
+            }
+            // repair / for_sale / sold / disassembly — открываем карточку
+            navigate({ route: "fleet", scooterId: s.id });
+          };
           return (
-            <div
+            <button
+              type="button"
               key={s.id}
-              title={`${s.name} · ${STATUS_LABEL[s.status]}`}
+              onClick={handleClick}
+              title={`${s.name} · ${STATUS_LABEL[s.status]} — клик: ${hintFor(s.status)}`}
               className={cn(
                 "group relative flex aspect-square cursor-pointer flex-col items-center justify-center rounded-[10px] border border-transparent text-[11px] font-semibold transition-all hover:-translate-y-0.5 hover:z-10 hover:shadow-card",
                 tileClass(s.status),
@@ -207,11 +250,117 @@ export function ParkPanel({
               )}
             >
               {num}
-            </div>
+            </button>
           );
         })}
       </div>
+
+      {newRentalFor && (
+        <NewRentalModal
+          preselectedScooterName={newRentalFor}
+          onClose={() => setNewRentalFor(null)}
+          onCreated={(r) => {
+            setNewRentalFor(null);
+            navigate({ route: "rentals", rentalId: r.id });
+          }}
+        />
+      )}
+
+      {reassignFor && (
+        <ReassignDialog
+          scooter={reassignFor}
+          onClose={() => setReassignFor(null)}
+          onPick={async (next) => {
+            await patchScooter.mutateAsync({
+              id: reassignFor.id,
+              patch: { baseStatus: next },
+            });
+            setReassignFor(null);
+          }}
+        />
+      )}
     </Card>
+  );
+}
+
+function hintFor(s: TileStatus): string {
+  switch (s) {
+    case "rented":
+    case "overdue":
+      return "открыть карточку аренды";
+    case "pool":
+      return "оформить аренду";
+    case "ready":
+      return "распределить скутер";
+    default:
+      return "открыть карточку скутера";
+  }
+}
+
+/**
+ * Диалог «распределить» скутер из статуса «Не распределён» — задать ему
+ * следующий baseStatus. Простая альтернатива полному пикеру статусов.
+ */
+function ReassignDialog({
+  scooter,
+  onClose,
+  onPick,
+}: {
+  scooter: ApiScooter;
+  onClose: () => void;
+  onPick: (next: ApiScooter["baseStatus"]) => void | Promise<void>;
+}) {
+  const options: {
+    id: ApiScooter["baseStatus"];
+    label: string;
+    hint: string;
+  }[] = [
+    { id: "rental_pool", label: "В парк аренды", hint: "Готов к сдаче в аренду" },
+    { id: "repair", label: "На ремонт", hint: "Обслуживание, ремонт" },
+    { id: "for_sale", label: "На продажу", hint: "Выставить к продаже" },
+    { id: "disassembly", label: "В разборку", hint: "На запчасти" },
+  ];
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-ink/55 p-6 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="mt-24 w-full max-w-[420px] overflow-hidden rounded-2xl bg-surface shadow-card-lg"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="border-b border-border bg-surface-soft px-5 py-3">
+          <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
+            Распределить скутер
+          </div>
+          <div className="text-[15px] font-bold text-ink">{scooter.name}</div>
+        </div>
+        <div className="flex flex-col gap-1 px-3 py-3">
+          {options.map((o) => (
+            <button
+              key={o.id}
+              type="button"
+              onClick={() => onPick(o.id)}
+              className="flex items-start gap-2.5 rounded-xl px-3 py-2.5 text-left hover:bg-surface-soft"
+            >
+              <div className="flex-1">
+                <div className="text-[13px] font-bold text-ink">{o.label}</div>
+                <div className="text-[11px] text-muted">{o.hint}</div>
+              </div>
+            </button>
+          ))}
+        </div>
+        <div className="flex justify-end border-t border-border bg-surface-soft px-5 py-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full bg-surface px-4 py-2 text-[13px] font-semibold hover:bg-border"
+          >
+            Отмена
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -226,7 +375,9 @@ function computeTileStatus(
   if (s.baseStatus === "repair") return "repair";
   if (activeKind === "overdue") return "overdue";
   if (activeKind === "active") return "rented";
-  return "free";
+  // Теперь различаем «не распределён» и «парк аренды свободен»
+  if (s.baseStatus === "rental_pool") return "pool";
+  return "ready";
 }
 
 function tileClass(s: TileStatus): string {
@@ -235,8 +386,10 @@ function tileClass(s: TileStatus): string {
       return "bg-blue text-white";
     case "overdue":
       return "bg-red text-white";
-    case "free":
-      return "bg-surface-soft text-ink border-border";
+    case "pool":
+      return "bg-green text-white";
+    case "ready":
+      return "bg-surface-soft text-muted-2 border-border";
     case "repair":
       return "bg-orange text-white";
     case "for_sale":
