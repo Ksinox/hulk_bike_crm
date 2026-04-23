@@ -76,7 +76,7 @@ export async function clientsRoutes(app: FastifyInstance) {
       entity: "client",
       entityId: row.id,
       action: "created",
-      summary: `Добавлен клиент ${row.name}`,
+      summary: `Добавлен клиент «${row.name}» · ${row.phone}`,
     });
     return reply.code(201).send(row);
   });
@@ -98,11 +98,23 @@ export async function clientsRoutes(app: FastifyInstance) {
       .returning();
     if (!row) return reply.code(404).send({ error: "not found" });
 
+    // Отдельные сообщения для значимых флагов
+    let summary = `Обновлена карточка клиента «${row.name}»`;
+    if (parsed.data.blacklisted === true) {
+      summary = `Клиент «${row.name}» добавлен в чёрный список${parsed.data.blacklistReason ? `: ${parsed.data.blacklistReason}` : ""}`;
+    } else if (parsed.data.blacklisted === false) {
+      summary = `Клиент «${row.name}» убран из чёрного списка`;
+    } else if (parsed.data.unreachable === true) {
+      summary = `Клиент «${row.name}» помечен «не выходит на связь»`;
+    } else if (parsed.data.unreachable === false) {
+      summary = `С клиентом «${row.name}» снова на связи`;
+    }
+
     await logActivity(req, {
       entity: "client",
       entityId: id,
       action: "updated",
-      summary: `Изменён клиент ${row.name}`,
+      summary,
     });
     return row;
   });

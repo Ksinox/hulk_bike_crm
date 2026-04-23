@@ -30,13 +30,18 @@ type NavItem = {
 };
 
 function buildMainItems(canManageStaff: boolean): NavItem[] {
-  return [
+  const items: NavItem[] = [
     { id: "dashboard", label: "Дашборд", icon: Home, ready: true },
     { id: "clients", label: "Клиенты", icon: Users, ready: true },
     { id: "rentals", label: "Аренды", icon: Bike, ready: true },
     { id: "fleet", label: "Гараж", icon: ShoppingBag, ready: true },
-    // «Сотрудники» — доступны только creator/director, у остальных бейдж «скоро»
-    { id: "staff", label: "Сотрудники", icon: UserCog, ready: canManageStaff },
+  ];
+  // «Сотрудники» — полностью скрыты для admin/mechanic/accountant.
+  // Показываются только director/creator.
+  if (canManageStaff) {
+    items.push({ id: "staff", label: "Сотрудники", icon: UserCog, ready: true });
+  }
+  items.push(
     { id: "rassrochki", label: "Рассрочки", icon: Receipt },
     { id: "sales", label: "Продажи", icon: Wallet },
     { id: "service", label: "Ремонты", icon: Wrench },
@@ -44,7 +49,8 @@ function buildMainItems(canManageStaff: boolean): NavItem[] {
     { id: "tasks", label: "Задачи", icon: ClipboardCheck },
     { id: "analytics", label: "Аналитика", icon: BarChart3 },
     { id: "docs", label: "Документы", icon: FileText },
-  ];
+  );
+  return items;
 }
 
 const footerItems: NavItem[] = [

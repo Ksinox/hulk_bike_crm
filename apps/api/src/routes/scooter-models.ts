@@ -5,6 +5,7 @@ import { db } from "../db/index.js";
 import { scooterModels } from "../db/schema.js";
 import { requireRole } from "../auth/plugin.js";
 import { logActivity } from "../services/activityLog.js";
+import { diffFields } from "../services/activityMessages.js";
 import { makeFileKey, putObject, removeObject } from "../storage/index.js";
 
 const MAX_AVATAR = 5 * 1024 * 1024; // 5 МБ
@@ -62,7 +63,7 @@ export async function scooterModelsRoutes(app: FastifyInstance) {
       entity: "model",
       entityId: row.id,
       action: "created",
-      summary: `Добавлена модель «${row.name}»`,
+      summary: `Создана модель «${row.name}» · тарифы ${row.shortRate}/${row.weekRate}/${row.monthRate} ₽ за сутки`,
     });
 
     return row;
@@ -79,6 +80,12 @@ export async function scooterModelsRoutes(app: FastifyInstance) {
         return reply.code(400).send({ error: "validation", issues: parsed.error.issues });
       }
 
+      const [before] = await db
+        .select()
+        .from(scooterModels)
+        .where(eq(scooterModels.id, id));
+      if (!before) return reply.code(404).send({ error: "not found" });
+
       const [updated] = await db
         .update(scooterModels)
         .set({ ...parsed.data, updatedAt: new Date() })
@@ -86,11 +93,33 @@ export async function scooterModelsRoutes(app: FastifyInstance) {
         .returning();
       if (!updated) return reply.code(404).send({ error: "not found" });
 
+      // Собираем человечный список что именно поменяли
+      const changes = diffFields(
+        before as unknown as Record<string, unknown>,
+        updated as unknown as Record<string, unknown>,
+        {
+          name: "название",
+          shortRate: "тариф 1–3 дня",
+          weekRate: "тариф за неделю",
+          monthRate: "тариф за месяц",
+          quickPick: "быстрый выбор",
+          note: "примечание",
+        },
+      );
+      let summary: string;
+      if (before.name !== updated.name) {
+        summary = `Модель «${before.name}» переименована в «${updated.name}»`;
+      } else if (changes.length === 0) {
+        summary = `Модель «${updated.name}» сохранена без изменений`;
+      } else {
+        summary = `В модели «${updated.name}» обновлено: ${changes.join(", ")}`;
+      }
+
       await logActivity(req, {
         entity: "model",
         entityId: id,
         action: "updated",
-        summary: `Изменена модель «${updated.name}»`,
+        summary,
       });
       return updated;
     },
@@ -170,6 +199,14 @@ export async function scooterModelsRoutes(app: FastifyInstance) {
         .set({ avatarKey: key, avatarFileName: fileName, updatedAt: new Date() })
         .where(eq(scooterModels.id, id))
         .returning();
+      await logActivity(req, {
+        entity: "model",
+        entityId: id,
+        action: "avatar_uploaded",
+        summary: existing.avatarKey
+          ? `Заменена аватарка модели «${existing.name}»`
+          : `Загружена аватарка модели «${existing.name}»`,
+      });
       return updated;
     },
   );
@@ -194,6 +231,14 @@ export async function scooterModelsRoutes(app: FastifyInstance) {
         .set({ avatarKey: null, avatarFileName: null, updatedAt: new Date() })
         .where(eq(scooterModels.id, id))
         .returning();
+      if (existing.avatarKey) {
+        await logActivity(req, {
+          entity: "model",
+          entityId: id,
+          action: "avatar_deleted",
+          summary: `Удалена аватарка модели «${existing.name}»`,
+        });
+      }
       return updated;
     },
   );

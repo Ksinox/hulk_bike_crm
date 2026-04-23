@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "../db/index.js";
 import { scooterMaintenance, scooters, users } from "../db/schema.js";
 import { logActivity } from "../services/activityLog.js";
+import { maintenanceKindLabel } from "../services/activityMessages.js";
 
 const KindEnum = z.enum(["oil", "repair", "parts", "other"]);
 
@@ -64,7 +65,7 @@ export async function scooterMaintenanceRoutes(app: FastifyInstance) {
       entity: "maintenance",
       entityId: row.id,
       action: "created",
-      summary: `Запись обслуживания для ${sc.name}: ${row.kind}, ${row.amount} ₽`,
+      summary: `${sc.name}: ${maintenanceKindLabel(row.kind)} на ${row.amount.toLocaleString("ru-RU")} ₽${row.note ? ` — ${row.note}` : ""}`,
       meta: { scooterId },
     });
 

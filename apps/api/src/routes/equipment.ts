@@ -5,6 +5,7 @@ import { db } from "../db/index.js";
 import { equipmentItems } from "../db/schema.js";
 import { requireRole } from "../auth/plugin.js";
 import { logActivity } from "../services/activityLog.js";
+import { diffFields } from "../services/activityMessages.js";
 import { makeFileKey, putObject, removeObject } from "../storage/index.js";
 
 const MAX_AVATAR = 5 * 1024 * 1024;
@@ -59,7 +60,9 @@ export async function equipmentRoutes(app: FastifyInstance) {
       entity: "equipment",
       entityId: row.id,
       action: "created",
-      summary: `Добавлена экипировка «${row.name}»`,
+      summary: row.isFree
+        ? `Создана экипировка «${row.name}» (бесплатно)`
+        : `Создана экипировка «${row.name}» · ${row.price} ₽`,
     });
     return row;
   });
@@ -74,6 +77,12 @@ export async function equipmentRoutes(app: FastifyInstance) {
       if (!parsed.success) {
         return reply.code(400).send({ error: "validation", issues: parsed.error.issues });
       }
+      const [before] = await db
+        .select()
+        .from(equipmentItems)
+        .where(eq(equipmentItems.id, id));
+      if (!before) return reply.code(404).send({ error: "not found" });
+
       const [updated] = await db
         .update(equipmentItems)
         .set({ ...parsed.data, updatedAt: new Date() })
@@ -81,11 +90,31 @@ export async function equipmentRoutes(app: FastifyInstance) {
         .returning();
       if (!updated) return reply.code(404).send({ error: "not found" });
 
+      const changes = diffFields(
+        before as unknown as Record<string, unknown>,
+        updated as unknown as Record<string, unknown>,
+        {
+          name: "название",
+          price: "цена",
+          isFree: "бесплатно/платно",
+          quickPick: "быстрый выбор",
+          note: "примечание",
+        },
+      );
+      let summary: string;
+      if (before.name !== updated.name) {
+        summary = `Экипировка «${before.name}» переименована в «${updated.name}»`;
+      } else if (changes.length === 0) {
+        summary = `Экипировка «${updated.name}» сохранена без изменений`;
+      } else {
+        summary = `В экипировке «${updated.name}» обновлено: ${changes.join(", ")}`;
+      }
+
       await logActivity(req, {
         entity: "equipment",
         entityId: id,
         action: "updated",
-        summary: `Изменена экипировка «${updated.name}»`,
+        summary,
       });
       return updated;
     },
@@ -157,6 +186,14 @@ export async function equipmentRoutes(app: FastifyInstance) {
         .set({ avatarKey: key, avatarFileName: fileName, updatedAt: new Date() })
         .where(eq(equipmentItems.id, id))
         .returning();
+      await logActivity(req, {
+        entity: "equipment",
+        entityId: id,
+        action: "avatar_uploaded",
+        summary: existing.avatarKey
+          ? `Заменена аватарка экипировки «${existing.name}»`
+          : `Загружена аватарка экипировки «${existing.name}»`,
+      });
       return updated;
     },
   );
@@ -180,6 +217,14 @@ export async function equipmentRoutes(app: FastifyInstance) {
         .set({ avatarKey: null, avatarFileName: null, updatedAt: new Date() })
         .where(eq(equipmentItems.id, id))
         .returning();
+      if (existing.avatarKey) {
+        await logActivity(req, {
+          entity: "equipment",
+          entityId: id,
+          action: "avatar_deleted",
+          summary: `Удалена аватарка экипировки «${existing.name}»`,
+        });
+      }
       return updated;
     },
   );

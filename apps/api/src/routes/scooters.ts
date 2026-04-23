@@ -5,6 +5,7 @@ import { db } from "../db/index.js";
 import { rentals, scooters, users } from "../db/schema.js";
 import { requireRole } from "../auth/plugin.js";
 import { logActivity } from "../services/activityLog.js";
+import { scooterStatusLabel } from "../services/activityMessages.js";
 
 const ScooterModelEnum = z.enum(["jog", "gear", "honda", "tank"]);
 const ScooterBaseStatusEnum = z.enum([
@@ -127,7 +128,7 @@ export async function scootersRoutes(app: FastifyInstance) {
       .returning();
     if (!row) return reply.code(404).send({ error: "not found" });
 
-    // Если сменился статус — отдельным summary
+    // Если сменился статус — отдельным summary с русскими лейблами
     const statusChanged =
       parsed.data.baseStatus && parsed.data.baseStatus !== before.baseStatus;
     await logActivity(req, {
@@ -135,8 +136,8 @@ export async function scootersRoutes(app: FastifyInstance) {
       entityId: id,
       action: statusChanged ? "status_changed" : "updated",
       summary: statusChanged
-        ? `Статус ${row.name}: ${before.baseStatus} → ${row.baseStatus}`
-        : `Изменён скутер «${row.name}»`,
+        ? `Статус ${row.name}: «${scooterStatusLabel(before.baseStatus)}» → «${scooterStatusLabel(row.baseStatus)}»`
+        : `Отредактированы данные скутера ${row.name}`,
       meta: { before, after: row },
     });
     return row;

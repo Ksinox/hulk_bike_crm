@@ -10,6 +10,7 @@ import {
   scooters,
 } from "../db/schema.js";
 import { logActivity } from "../services/activityLog.js";
+import { rentalStatusLabel } from "../services/activityMessages.js";
 
 const RentalStatusEnum = z.enum([
   "new_request",
@@ -216,14 +217,14 @@ export async function rentalsRoutes(app: FastifyInstance) {
         entity: "rental",
         entityId: id,
         action: "status_changed",
-        summary: `Аренда ${summary}: ${before.status} → ${row.status}`,
+        summary: `Аренда ${summary}: «${rentalStatusLabel(before.status)}» → «${rentalStatusLabel(row.status)}»`,
       });
     } else {
       await logActivity(req, {
         entity: "rental",
         entityId: id,
         action: "updated",
-        summary: `Изменена аренда ${summary}`,
+        summary: `Отредактирована аренда ${summary}`,
       });
     }
     return row;
@@ -339,8 +340,8 @@ export async function rentalsRoutes(app: FastifyInstance) {
         entityId: id,
         action: "completed",
         summary: withDamage
-          ? `Завершена аренда ${summary} с ущербом ${d.damageAmount ?? 0} ₽`
-          : `Завершена аренда ${summary}`,
+          ? `Завершена аренда ${summary} · зафиксирован ущерб ${(d.damageAmount ?? 0).toLocaleString("ru-RU")} ₽`
+          : `Завершена аренда ${summary} · без ущерба, залог ${d.depositReturned ? "возвращён клиенту" : "удержан"}`,
       });
       return result;
     },
@@ -508,8 +509,8 @@ export async function rentalsRoutes(app: FastifyInstance) {
         action: "confirmed_payment",
         summary:
           missing.length === 0
-            ? `Подтверждена выдача аренды ${summary} (${d.byName})`
-            : `Подтверждена выдача ${summary} (${d.byName}) — ВНИМАНИЕ: ${missing.join(", ")}`,
+            ? `Подтверждена выдача аренды ${summary}: договор подписан, аренда оплачена, залог получен`
+            : `Подтверждена выдача аренды ${summary} с замечаниями: ${missing.join(", ")}`,
         meta: {
           contractSigned: d.contractSigned,
           rentPaid: d.rentPaid,
@@ -517,29 +518,41 @@ export async function rentalsRoutes(app: FastifyInstance) {
         },
       });
 
-      // Если что-то «догаличили» потом — пишем отдельные записи
-      if (before.confirmContractSigned === false && d.contractSigned) {
+      // Если что-то «дозакрыли» позже подтверждения — отдельные записи
+      if (
+        before.paymentConfirmedAt &&
+        before.confirmContractSigned === false &&
+        d.contractSigned
+      ) {
         await logActivity(req, {
           entity: "rental",
           entityId: id,
           action: "contract_signed_later",
-          summary: `Договор по аренде ${summary} подписан (отметил ${d.byName})`,
+          summary: `По аренде ${summary} довезли подписанный договор`,
         });
       }
-      if (before.confirmRentPaid === false && d.rentPaid) {
+      if (
+        before.paymentConfirmedAt &&
+        before.confirmRentPaid === false &&
+        d.rentPaid
+      ) {
         await logActivity(req, {
           entity: "rental",
           entityId: id,
           action: "rent_paid_later",
-          summary: `Аренда ${summary} — сумма получена (отметил ${d.byName})`,
+          summary: `По аренде ${summary} поступила оплата аренды`,
         });
       }
-      if (before.confirmDepositReceived === false && d.depositReceived) {
+      if (
+        before.paymentConfirmedAt &&
+        before.confirmDepositReceived === false &&
+        d.depositReceived
+      ) {
         await logActivity(req, {
           entity: "rental",
           entityId: id,
           action: "deposit_received_later",
-          summary: `Аренда ${summary} — залог получен (отметил ${d.byName})`,
+          summary: `По аренде ${summary} получен залог`,
         });
       }
 
