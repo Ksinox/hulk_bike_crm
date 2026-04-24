@@ -128,16 +128,17 @@ function checkbox(checked: boolean): string {
 const CSS = `
 <style>
   /*
-   * @page { margin: 0 } в Chromium убирает стандартные колонтитулы
-   * браузера (URL и заголовок), которые он дорисовывает сам при печати.
-   * Поля документа делаем через padding у body.
+   * Поля страницы при печати — нормальные, чтобы текст не прилипал
+   * к краям и к разрывам страниц. Колонтитулы браузера (дата и заголовок
+   * из <title>) остаются. URL в колонтитуле показывается как about:srcdoc
+   * потому что документ грузится через iframe srcDoc (safer для
+   * документооборота: клиент не видит адрес нашей CRM).
    */
-  @page { size: A4 portrait; margin: 0; }
+  @page { size: A4 portrait; margin: 16mm 14mm; }
   html, body { margin: 0; padding: 0; background: #fff; }
   body {
     font-family: "Times New Roman", Times, serif;
     font-size: 11pt; color: #000; line-height: 1.4;
-    padding: 18mm 16mm;
   }
   h1 { font-size: 14pt; text-align: center; margin: 0 0 4pt; page-break-after: avoid; }
   h2 { font-size: 12pt; margin: 10pt 0 4pt; page-break-after: avoid; }
