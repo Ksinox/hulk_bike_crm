@@ -196,7 +196,13 @@ export function Rentals() {
       },
       {
         label: "Выручка",
-        value: `${Math.round(periodRevenue / 1000)} тыс ₽`,
+        // До 10 000 ₽ показываем полной суммой — чтобы 1 800 ₽ не
+        // превращались в «2 тыс» из-за Math.round(1.8). Выше — сокращаем
+        // до «тыс» для компактности бейджа.
+        value:
+          periodRevenue >= 10_000
+            ? `${Math.round(periodRevenue / 1000)} тыс ₽`
+            : `${periodRevenue.toLocaleString("ru-RU")} ₽`,
         hint: rangeLabel,
         tone: "purple",
       },
