@@ -29,6 +29,7 @@ export function DocumentPreviewModal({
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [iframeReady, setIframeReady] = useState(false);
+  const [htmlContent, setHtmlContent] = useState<string | null>(null);
   const [printing, setPrinting] = useState(false);
   const [downloading, setDownloading] = useState(false);
 
@@ -40,13 +41,48 @@ export function DocumentPreviewModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  /**
+   * Загружаем HTML через fetch и кладём в iframe через srcdoc.
+   * Это делает iframe same-origin с нашей CRM, и iframe.contentWindow.print()
+   * работает без блокировки браузером (кросс-оригин iframe не даёт вызывать print).
+   */
+  useEffect(() => {
+    let cancelled = false;
+    setIframeReady(false);
+    setHtmlContent(null);
+    fetch(htmlUrl, { credentials: "include" })
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`status ${r.status}`);
+        return r.text();
+      })
+      .then((text) => {
+        if (!cancelled) setHtmlContent(text);
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          toast.error(
+            "Не удалось загрузить документ",
+            (e as Error).message ?? "",
+          );
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [htmlUrl]);
+
   const handlePrint = () => {
     const ifr = iframeRef.current;
-    if (!ifr || !ifr.contentWindow) return;
+    if (!ifr || !ifr.contentWindow) {
+      toast.warn("Документ ещё не загрузился", "Подождите секунду");
+      return;
+    }
     setPrinting(true);
     try {
       ifr.contentWindow.focus();
       ifr.contentWindow.print();
+    } catch {
+      /* noop — диалог печати может уже быть открыт */
     } finally {
       setTimeout(() => setPrinting(false), 600);
     }
@@ -156,18 +192,20 @@ export function DocumentPreviewModal({
 
         {/* Iframe preview */}
         <div className="relative flex-1 overflow-hidden bg-surface-soft">
-          {!iframeReady && (
+          {(!iframeReady || !htmlContent) && (
             <div className="absolute inset-0 flex items-center justify-center text-muted">
               <Loader2 size={24} className="animate-spin" />
             </div>
           )}
-          <iframe
-            ref={iframeRef}
-            src={htmlUrl}
-            title={title}
-            onLoad={() => setIframeReady(true)}
-            className="h-full min-h-[70vh] w-full bg-white"
-          />
+          {htmlContent && (
+            <iframe
+              ref={iframeRef}
+              srcDoc={htmlContent}
+              title={title}
+              onLoad={() => setIframeReady(true)}
+              className="h-full min-h-[70vh] w-full bg-white"
+            />
+          )}
         </div>
       </div>
     </div>
