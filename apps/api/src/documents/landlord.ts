@@ -13,6 +13,6 @@ export const LANDLORD = {
   passportDivisionCode: "230-040",
   registrationAddress: "г. Краснодар, ул. Бульварное кольцо, д. 7, кв. 59",
   phone: "+7 (962) 859-08-29",
-  inn: "", // TODO: указать ИНН
+  inn: "233912335607",
   city: "г. Краснодар",
 };

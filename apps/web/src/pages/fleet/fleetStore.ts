@@ -118,6 +118,9 @@ export function patchScooter(id: number, patch: Partial<FleetScooter>) {
   if (patch.mileage !== undefined) apiPatch.mileage = patch.mileage;
   if (patch.vin !== undefined) apiPatch.vin = patch.vin ?? null;
   if (patch.engineNo !== undefined) apiPatch.engineNo = patch.engineNo ?? null;
+  if (patch.frameNumber !== undefined) apiPatch.frameNumber = patch.frameNumber ?? null;
+  if (patch.year !== undefined) apiPatch.year = patch.year ?? null;
+  if (patch.color !== undefined) apiPatch.color = patch.color ?? null;
   if (patch.baseStatus !== undefined) apiPatch.baseStatus = patch.baseStatus;
   if (patch.purchaseDate !== undefined) {
     apiPatch.purchaseDate = ruToIsoDate(patch.purchaseDate);

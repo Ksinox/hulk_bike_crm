@@ -1,10 +1,10 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import HTMLtoDOCX from "html-to-docx";
 import {
   DOCUMENT_LABEL,
   loadBundle,
   renderDocumentHtml,
+  renderDocumentHtmlForWord,
   type DocumentType,
 } from "../documents/render.js";
 import { logActivity } from "../services/activityLog.js";
@@ -42,10 +42,8 @@ export async function rentalDocumentsRoutes(app: FastifyInstance) {
     const bundle = await loadBundle(id);
     if (!bundle) return reply.code(404).send({ error: "rental not found" });
 
-    const html = renderDocumentHtml(type, bundle);
     const format = req.query.format === "docx" ? "docx" : "html";
 
-    // Лог действия — что именно сформировали
     await logActivity(req, {
       entity: "rental",
       entityId: id,
@@ -55,35 +53,26 @@ export async function rentalDocumentsRoutes(app: FastifyInstance) {
     });
 
     if (format === "html") {
+      const html = renderDocumentHtml(type, bundle);
       reply.header("Content-Type", "text/html; charset=utf-8");
       return reply.send(html);
     }
 
-    // docx
-    const buffer = (await HTMLtoDOCX(html, undefined, {
-      orientation: "portrait",
-      margins: { top: 720, right: 720, bottom: 720, left: 720 },
-      font: "Times New Roman",
-      fontSize: 22, // half-points
-    })) as Buffer | Blob;
-
-    // html-to-docx может вернуть Blob в браузерном сборе или Buffer на node
-    const buf =
-      buffer instanceof Buffer
-        ? buffer
-        : Buffer.from(await (buffer as Blob).arrayBuffer());
-
-    const filename = `${docFilename(type, id)}.docx`;
+    /**
+     * Word-версия: отдаём HTML с MIME application/msword и расширением .doc.
+     * Этот формат (HTML-Word) Word открывает как обычный документ, сохраняет
+     * форматирование, можно редактировать и печатать. Выбрали вместо .docx
+     * потому что конвертеры HTML→DOCX в Node нестабильны на сложной вёрстке.
+     */
+    const wordHtml = renderDocumentHtmlForWord(type, bundle);
+    const filename = `${docFilename(type, id)}.doc`;
     reply
-      .header(
-        "Content-Type",
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      )
+      .header("Content-Type", "application/msword; charset=utf-8")
       .header(
         "Content-Disposition",
         `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
       );
-    return reply.send(buf);
+    return reply.send(wordHtml);
   });
 }
 

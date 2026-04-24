@@ -39,6 +39,12 @@ export type FleetScooter = {
   baseStatus: ScooterBaseStatus;
   vin?: string;
   engineNo?: string;
+  /** № рамы / шасси — для актов приёма-передачи */
+  frameNumber?: string;
+  /** год выпуска — для договоров */
+  year?: number;
+  /** цвет — для актов */
+  color?: string;
   /** дата покупки, DD.MM.YYYY */
   purchaseDate?: string;
   /** цена закупа, ₽ (виден только директору) */

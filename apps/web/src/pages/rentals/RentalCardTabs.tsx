@@ -39,6 +39,7 @@ import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { fileUrl } from "@/lib/files";
 import { navigate } from "@/app/navigationStore";
 import { toast } from "@/lib/toast";
+import { DocumentPreviewModal } from "./DocumentPreviewModal";
 
 function fmt(n: number) {
   return n.toLocaleString("ru-RU");
@@ -828,6 +829,7 @@ const DOC_META: Record<
 export function DocumentsTab({ rental }: { rental: Rental }) {
   const API_BASE =
     import.meta.env.VITE_API_URL?.replace(/\/$/, "") ?? "http://localhost:4000";
+  const [preview, setPreview] = useState<DocType | null>(null);
 
   const previewUrl = (type: DocType) =>
     `${API_BASE}/api/rentals/${rental.id}/document/${type}?format=html`;
@@ -835,29 +837,27 @@ export function DocumentsTab({ rental }: { rental: Rental }) {
     `${API_BASE}/api/rentals/${rental.id}/document/${type}?format=docx`;
 
   const openPreview = (type: DocType) => {
-    // Открываем в новой вкладке. Сервер отдаёт HTML с встроенной кнопкой печати.
-    window.open(previewUrl(type), "_blank", "width=860,height=1000");
-    toast.info(
-      `Открыт ${DOC_META[type].title.toLowerCase()}`,
-      "Внутри — кнопка «Печать», или Ctrl+P и «Сохранить как PDF».",
-    );
+    setPreview(type);
   };
 
-  const downloadDocx = async (type: DocType) => {
+  const downloadWord = async (type: DocType) => {
     try {
-      toast.info("Генерируем Word…", "Займёт несколько секунд");
+      toast.info("Генерируем Word…", "Займёт секунду");
       const res = await fetch(downloadUrl(type), { credentials: "include" });
       if (!res.ok) throw new Error(`status ${res.status}`);
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${DOC_META[type].title} ${String(rental.id).padStart(4, "0")}.docx`;
+      a.download = `${DOC_META[type].title} ${String(rental.id).padStart(4, "0")}.doc`;
       document.body.appendChild(a);
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-      toast.success("Word-файл скачан", "Можно открыть и при необходимости подкорректировать.");
+      toast.success(
+        "Word-файл скачан",
+        "Можно открыть в Word и подкорректировать.",
+      );
     } catch (e) {
       toast.error(
         "Не удалось сформировать документ",
@@ -869,10 +869,10 @@ export function DocumentsTab({ rental }: { rental: Rental }) {
   return (
     <div className="flex flex-col gap-3">
       <div className="rounded-[10px] bg-blue-50 px-3 py-2 text-[12px] text-blue-900">
-        Поля документа автоматически заполняются данными клиента, скутера и
-        аренды. <b>Предпросмотр</b> открывается в новой вкладке — там можно
-        сразу распечатать или сохранить как PDF. <b>Скачать Word</b> —
-        получите .docx, который можно подкорректировать в Word перед печатью.
+        Поля документа подставляются автоматически из карточки клиента и
+        скутера. <b>Предпросмотр</b> открывается прямо здесь — сверху кнопки
+        «Печать» и «Скачать Word». PDF получается из диалога печати
+        («Сохранить как PDF»).
       </div>
 
       <div className="grid items-stretch gap-2 md:grid-cols-2 xl:grid-cols-4">
@@ -908,11 +908,11 @@ export function DocumentsTab({ rental }: { rental: Rental }) {
                   onClick={() => openPreview(t)}
                   className="inline-flex items-center justify-center gap-1.5 rounded-[10px] bg-ink py-1.5 text-[12px] font-bold text-white hover:bg-blue-600"
                 >
-                  <FileText size={12} /> Предпросмотр · печать
+                  <FileText size={12} /> Открыть документ
                 </button>
                 <button
                   type="button"
-                  onClick={() => downloadDocx(t)}
+                  onClick={() => downloadWord(t)}
                   className="inline-flex items-center justify-center gap-1.5 rounded-[10px] bg-surface-soft py-1.5 text-[12px] font-semibold text-ink-2 hover:bg-blue-50 hover:text-blue-700"
                 >
                   <Download size={12} /> Скачать Word
@@ -927,6 +927,16 @@ export function DocumentsTab({ rental }: { rental: Rental }) {
         Подписанные и отсканированные документы можно прикрепить к аренде
         через «Документы» (скоро появится кнопка загрузки).
       </div>
+
+      {preview && (
+        <DocumentPreviewModal
+          title={DOC_META[preview].title}
+          htmlUrl={previewUrl(preview)}
+          docxUrl={downloadUrl(preview)}
+          docxFilename={`${DOC_META[preview].title} ${String(rental.id).padStart(4, "0")}.doc`}
+          onClose={() => setPreview(null)}
+        />
+      )}
     </div>
   );
 }

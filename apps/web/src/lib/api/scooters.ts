@@ -31,6 +31,9 @@ export type CreateScooterInput = {
   modelId?: number | null;
   vin?: string | null;
   engineNo?: string | null;
+  frameNumber?: string | null;
+  year?: number | null;
+  color?: string | null;
   mileage?: number;
   baseStatus?: ApiScooter["baseStatus"];
   purchaseDate?: string | null;

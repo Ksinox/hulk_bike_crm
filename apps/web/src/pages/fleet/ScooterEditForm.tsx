@@ -27,6 +27,11 @@ export function ScooterEditForm({
   const [mileage, setMileage] = useState(String(scooter.mileage));
   const [vin, setVin] = useState(scooter.vin ?? "");
   const [engineNo, setEngineNo] = useState(scooter.engineNo ?? "");
+  const [frameNumber, setFrameNumber] = useState(scooter.frameNumber ?? "");
+  const [year, setYear] = useState(
+    scooter.year != null ? String(scooter.year) : "",
+  );
+  const [color, setColor] = useState(scooter.color ?? "");
   const [baseStatus, setBaseStatus] = useState<ScooterBaseStatus>(
     scooter.baseStatus,
   );
@@ -51,10 +56,14 @@ export function ScooterEditForm({
   }, []);
 
   const handleSave = () => {
+    const yearNum = Number(year);
     const patch: Partial<FleetScooter> = {
       mileage: Number(mileage) || 0,
       vin: vin.trim() || undefined,
       engineNo: engineNo.trim() || undefined,
+      frameNumber: frameNumber.trim() || undefined,
+      year: Number.isFinite(yearNum) && yearNum > 0 ? yearNum : undefined,
+      color: color.trim() || undefined,
       baseStatus,
       note: note.trim() || undefined,
     };
@@ -132,6 +141,42 @@ export function ScooterEditForm({
                 className="h-10 w-full rounded-[10px] border border-border bg-surface px-3 font-mono text-[13px] text-ink outline-none focus:border-blue-600"
               />
             </Field>
+
+            <Field
+              label="Номер рамы / шасси"
+              hint={<span className="text-[10px] text-muted-2">указывается в актах</span>}
+            >
+              <input
+                type="text"
+                value={frameNumber}
+                onChange={(e) => setFrameNumber(e.target.value)}
+                placeholder="SA36J-605232"
+                className="h-10 w-full rounded-[10px] border border-border bg-surface px-3 font-mono text-[13px] text-ink outline-none focus:border-blue-600"
+              />
+            </Field>
+
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Год выпуска">
+                <input
+                  type="number"
+                  value={year}
+                  onChange={(e) => setYear(e.target.value)}
+                  placeholder="2020"
+                  min={1980}
+                  max={2100}
+                  className="h-10 w-full rounded-[10px] border border-border bg-surface px-3 text-[13px] text-ink outline-none focus:border-blue-600"
+                />
+              </Field>
+              <Field label="Цвет">
+                <input
+                  type="text"
+                  value={color}
+                  onChange={(e) => setColor(e.target.value)}
+                  placeholder="Серебристый"
+                  className="h-10 w-full rounded-[10px] border border-border bg-surface px-3 text-[13px] text-ink outline-none focus:border-blue-600"
+                />
+              </Field>
+            </div>
 
             <Field label="Статус">
               <div className="grid grid-cols-2 gap-1.5">
