@@ -13,20 +13,13 @@ import type { ApiScooter, ScooterBaseStatus } from "@/lib/api/types";
 import { navigate } from "@/app/navigationStore";
 import { toast } from "@/lib/toast";
 import { ApiError } from "@/lib/api";
+import { SCOOTER_BASE_STATUS_OPTIONS } from "./scooterStatusOptions";
 
-const OPTIONS: { id: ScooterBaseStatus; label: string; hint: string }[] = [
-  { id: "ready", label: "Не распределён", hint: "Свежий, ещё не решено что с ним" },
-  { id: "rental_pool", label: "Парк аренды", hint: "Готов к сдаче в аренду" },
-  { id: "repair", label: "Ремонт", hint: "Находится на обслуживании" },
-  { id: "buyout", label: "Выкуп", hint: "В рассрочку у клиента" },
-  { id: "for_sale", label: "На продаже", hint: "Выставлен к продаже" },
-  { id: "sold", label: "Продан", hint: "Из оборота выбыл" },
-  {
-    id: "disassembly",
-    label: "В разборке",
-    hint: "Пошёл на запчасти, учитывается в парке",
-  },
-];
+const OPTIONS = SCOOTER_BASE_STATUS_OPTIONS.map((o) => ({
+  id: o.value,
+  label: o.label,
+  hint: o.hint,
+}));
 
 export function ScooterStatusModal({
   scooter,

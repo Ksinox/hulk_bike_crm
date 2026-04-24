@@ -4,15 +4,9 @@ import { cn } from "@/lib/utils";
 import type { FleetScooter, ScooterBaseStatus } from "@/lib/mock/fleet";
 import { patchScooter } from "./fleetStore";
 import { useRole } from "@/lib/role";
+import { SCOOTER_BASE_STATUS_OPTIONS } from "./scooterStatusOptions";
 
-const BASE_STATUS_OPTIONS: { value: ScooterBaseStatus; label: string }[] = [
-  { value: "ready", label: "Не распределён" },
-  { value: "rental_pool", label: "Парк аренды" },
-  { value: "repair", label: "На ремонте" },
-  { value: "buyout", label: "Передан в выкуп" },
-  { value: "for_sale", label: "Выставлен на продажу" },
-  { value: "sold", label: "Продан" },
-];
+const BASE_STATUS_OPTIONS = SCOOTER_BASE_STATUS_OPTIONS;
 
 export function ScooterEditForm({
   scooter,

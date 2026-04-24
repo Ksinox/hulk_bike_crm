@@ -1,38 +1,32 @@
 import { useEffect, useMemo, useState } from "react";
 import { Check, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { MODEL_LABEL, type ScooterModel } from "@/lib/mock/rentals";
+import type { ScooterModel } from "@/lib/mock/rentals";
 import type { ScooterBaseStatus } from "@/lib/mock/fleet";
 import { addScooter, useFleetScooters } from "./fleetStore";
 import { useRole } from "@/lib/role";
-
-const MODEL_OPTIONS: { value: ScooterModel; label: string }[] = [
-  { value: "jog", label: MODEL_LABEL.jog },
-  { value: "gear", label: MODEL_LABEL.gear },
-  { value: "tank", label: MODEL_LABEL.tank },
-  { value: "honda", label: MODEL_LABEL.honda },
-];
-
-const STATUS_OPTIONS: { value: ScooterBaseStatus; label: string }[] = [
-  { value: "ready", label: "Не распределён" },
-  { value: "rental_pool", label: "Парк аренды" },
-  { value: "repair", label: "На ремонте" },
-  { value: "for_sale", label: "На продажу" },
-];
+import {
+  ModelPicker,
+  modelEnumFromName,
+  scooterPrefixFromModelName,
+} from "./ModelPicker";
+import { useApiScooterModels } from "@/lib/api/scooter-models";
+import { SCOOTER_BASE_STATUS_OPTIONS } from "./scooterStatusOptions";
 
 function todayRu(): string {
   const d = new Date();
   return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}`;
 }
 
-/** Подобрать свободный номер в серии «Jog #NN», «Gear #NN», «Tank #NN» */
-function suggestNextNumber(
-  model: ScooterModel,
-  scooters: { name: string; model: ScooterModel }[],
+/** Подобрать свободный номер в серии для заданного префикса ("Jog", "Gear"). */
+function suggestNextNumberByPrefix(
+  prefix: string,
+  scooters: { name: string }[],
 ): number {
   const used = new Set<number>();
+  const prefLow = prefix.toLowerCase();
   for (const s of scooters) {
-    if (s.model !== model) continue;
+    if (!s.name.toLowerCase().startsWith(prefLow)) continue;
     const m = s.name.match(/#(\d+)/);
     if (m) used.add(+m[1]);
   }
@@ -44,12 +38,32 @@ function suggestNextNumber(
 export function AddScooterModal({ onClose }: { onClose: () => void }) {
   const role = useRole();
   const scooters = useFleetScooters();
+  const { data: models = [] } = useApiScooterModels();
   const [closing, setClosing] = useState(false);
 
-  const [model, setModel] = useState<ScooterModel>("jog");
-  const [number, setNumber] = useState<string>(
-    String(suggestNextNumber("jog", scooters)),
+  // Выбираем модель по умолчанию: первая quickPick, иначе первая из списка
+  const defaultModel = useMemo(
+    () => models.find((m) => m.quickPick) ?? models[0] ?? null,
+    [models],
   );
+  const [modelId, setModelId] = useState<number | null>(null);
+  const [modelName, setModelName] = useState<string>("");
+  // Когда модели подгрузились — проставляем дефолт (один раз)
+  useEffect(() => {
+    if (modelId == null && defaultModel) {
+      setModelId(defaultModel.id);
+      setModelName(defaultModel.name);
+    }
+  }, [defaultModel, modelId]);
+
+  const scooterPrefix = modelName
+    ? scooterPrefixFromModelName(modelName)
+    : "Jog";
+  const legacyModel: ScooterModel = modelName
+    ? modelEnumFromName(modelName)
+    : "jog";
+
+  const [number, setNumber] = useState<string>("");
   const [mileage, setMileage] = useState("0");
   const [vin, setVin] = useState("");
   const [engineNo, setEngineNo] = useState("");
@@ -58,20 +72,20 @@ export function AddScooterModal({ onClose }: { onClose: () => void }) {
   const [status, setStatus] = useState<ScooterBaseStatus>("ready");
   const [note, setNote] = useState("");
 
-  // при смене модели — пересчитать подсказку по номеру, если пользователь сам ничего не менял
+  // при смене префикса модели — пересчитать подсказку по номеру, если пользователь сам ничего не менял
   const [numberTouched, setNumberTouched] = useState(false);
   const suggested = useMemo(
-    () => suggestNextNumber(model, scooters),
-    [model, scooters],
+    () => suggestNextNumberByPrefix(scooterPrefix, scooters),
+    [scooterPrefix, scooters],
   );
   useEffect(() => {
     if (!numberTouched) setNumber(String(suggested));
   }, [suggested, numberTouched]);
 
-  const name = `${prefix(model)} #${String(number || "1").padStart(2, "0")}`;
+  const name = `${scooterPrefix} #${String(number || "1").padStart(2, "0")}`;
   const nameTaken = scooters.some((s) => s.name === name);
 
-  const canSave = !!number && !nameTaken;
+  const canSave = !!number && !nameTaken && modelId != null;
 
   const requestClose = () => {
     if (closing) return;
@@ -92,7 +106,8 @@ export function AddScooterModal({ onClose }: { onClose: () => void }) {
     if (!canSave) return;
     addScooter({
       name,
-      model,
+      model: legacyModel,
+      modelId: modelId ?? undefined,
       mileage: Number(mileage) || 0,
       baseStatus: status,
       vin: vin.trim() || undefined,
@@ -143,23 +158,14 @@ export function AddScooterModal({ onClose }: { onClose: () => void }) {
         <div className="flex-1 overflow-y-auto px-5 py-4">
           <div className="flex flex-col gap-4">
             <Field label="Модель">
-              <div className="grid grid-cols-2 gap-1.5">
-                {MODEL_OPTIONS.map((o) => (
-                  <button
-                    key={o.value}
-                    type="button"
-                    onClick={() => setModel(o.value)}
-                    className={cn(
-                      "rounded-[10px] border px-3 py-2 text-left text-[13px] font-semibold transition-colors",
-                      model === o.value
-                        ? "border-blue-600 bg-blue-50 text-blue-700"
-                        : "border-border bg-surface text-ink-2 hover:border-blue-600/50",
-                    )}
-                  >
-                    {o.label}
-                  </button>
-                ))}
-              </div>
+              <ModelPicker
+                value={modelId}
+                onChange={(id, m) => {
+                  setModelId(id);
+                  setModelName(m.name);
+                  setNumberTouched(false);
+                }}
+              />
             </Field>
 
             <Field
@@ -255,8 +261,8 @@ export function AddScooterModal({ onClose }: { onClose: () => void }) {
             )}
 
             <Field label="Стартовый статус">
-              <div className="grid grid-cols-3 gap-1.5">
-                {STATUS_OPTIONS.map((o) => (
+              <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+                {SCOOTER_BASE_STATUS_OPTIONS.map((o) => (
                   <button
                     key={o.value}
                     type="button"
@@ -267,6 +273,7 @@ export function AddScooterModal({ onClose }: { onClose: () => void }) {
                         ? "border-blue-600 bg-blue-50 text-blue-700"
                         : "border-border bg-surface text-ink-2 hover:border-blue-600/50",
                     )}
+                    title={o.hint}
                   >
                     {o.label}
                   </button>
@@ -340,21 +347,8 @@ function Field({
   );
 }
 
-function prefix(model: ScooterModel): string {
-  switch (model) {
-    case "jog":
-      return "Jog";
-    case "gear":
-      return "Gear";
-    case "tank":
-      return "Tank";
-    case "honda":
-      return "Honda";
-  }
-}
-
 function statusLabel(s: ScooterBaseStatus): string {
-  return STATUS_OPTIONS.find((o) => o.value === s)?.label ?? s;
+  return SCOOTER_BASE_STATUS_OPTIONS.find((o) => o.value === s)?.label ?? s;
 }
 
 function toDateInput(ru: string): string {
