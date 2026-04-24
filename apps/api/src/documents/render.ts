@@ -127,38 +127,39 @@ function checkbox(checked: boolean): string {
 
 const CSS = `
 <style>
-  @page { size: A4; margin: 18mm 16mm; }
+  /*
+   * @page { margin: 0 } в Chromium убирает стандартные колонтитулы
+   * браузера (URL и заголовок), которые он дорисовывает сам при печати.
+   * Поля документа делаем через padding у body.
+   */
+  @page { size: A4 portrait; margin: 0; }
   html, body { margin: 0; padding: 0; background: #fff; }
-  body { font-family: "Times New Roman", Times, serif; font-size: 11pt; color: #000; line-height: 1.4; }
-  h1 { font-size: 14pt; text-align: center; margin: 0 0 4pt; }
-  h2 { font-size: 12pt; margin: 10pt 0 4pt; }
+  body {
+    font-family: "Times New Roman", Times, serif;
+    font-size: 11pt; color: #000; line-height: 1.4;
+    padding: 18mm 16mm;
+  }
+  h1 { font-size: 14pt; text-align: center; margin: 0 0 4pt; page-break-after: avoid; }
+  h2 { font-size: 12pt; margin: 10pt 0 4pt; page-break-after: avoid; }
   .subtitle { text-align: center; font-size: 10pt; color: #444; margin-bottom: 12pt; }
   .meta-row { display: flex; justify-content: space-between; margin-bottom: 10pt; font-size: 10pt; }
   ol { padding-left: 18pt; }
   li { margin-bottom: 3pt; }
   .para { margin: 6pt 0; text-align: justify; }
-  .sig { margin-top: 24pt; display: flex; justify-content: space-between; gap: 20pt; }
+  /* Подписи и таблицы не должны разрываться между страницами */
+  .sig { margin-top: 24pt; display: flex; justify-content: space-between; gap: 20pt; page-break-inside: avoid; }
   .sig > div { width: 48%; }
   .sig .line { border-bottom: 1px solid #000; height: 28pt; margin-bottom: 2pt; }
   .small { font-size: 9.5pt; }
-  table { width: 100%; border-collapse: collapse; margin-top: 8pt; }
+  table { width: 100%; border-collapse: collapse; margin-top: 8pt; page-break-inside: avoid; }
+  tr { page-break-inside: avoid; }
   td, th { border: 1px solid #000; padding: 6pt; vertical-align: top; font-size: 10.5pt; }
   .equipment-list { list-style: none; padding-left: 0; }
   .equipment-list li { padding: 2pt 0; }
-  .print-only { display: none; }
-  @media print { .no-print { display: none !important; } }
-  .top-actions {
-    position: sticky; top: 0;
-    background: #0a0d14; color: #fff; padding: 8pt 12pt;
-    display: flex; gap: 8pt; align-items: center; justify-content: space-between;
-    font-family: system-ui, sans-serif;
-  }
-  .top-actions button {
-    background: #fff; color: #000; border: 0; border-radius: 999px;
-    padding: 6pt 14pt; font-weight: 600; cursor: pointer;
-  }
-  .top-actions button.ghost { background: transparent; color: #fff; border: 1px solid rgba(255,255,255,.4); }
-  .wrap { max-width: 780px; margin: 0 auto; padding: 24pt; background: #fff; }
+  .keep-together { page-break-inside: avoid; }
+  /* Экранная обёртка (в iframe для preview), при печати — прозрачно */
+  .wrap { background: #fff; }
+  @media screen { body { background: #f5f5f5; } .wrap { margin: 0 auto; padding: 16pt; max-width: 820px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); } }
 </style>
 `;
 
