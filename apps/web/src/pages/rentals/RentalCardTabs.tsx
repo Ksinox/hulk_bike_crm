@@ -13,7 +13,6 @@ import {
   FileText,
   Gauge,
   Plus,
-  Printer,
   ShieldCheck,
   X,
 } from "lucide-react";
@@ -794,210 +793,140 @@ export function TasksTab({ rental }: { rental: Rental }) {
 
 /* =================== Документы =================== */
 
-type DocType = "contract" | "issue_act" | "return_act";
+type DocType = "contract" | "act_transfer" | "act_return" | "purchase_deposit";
 
 const DOC_META: Record<
   DocType,
-  { title: string; subtitle: string; icon: typeof FileSignature }
+  { title: string; subtitle: string; icon: typeof FileSignature; badge: string }
 > = {
   contract: {
-    title: "Договор аренды",
-    subtitle: "PDF с реквизитами клиента и условиями аренды",
+    title: "Договор проката",
+    subtitle: "Основной договор проката скутера с условиями и ответственностью",
     icon: FileSignature,
+    badge: "Приложение",
   },
-  issue_act: {
-    title: "Акт выдачи скутера",
-    subtitle: "Состояние скутера, пробег, залог",
+  act_transfer: {
+    title: "Акт приёма-передачи",
+    subtitle: "Приложение №1 — подписывается клиентом при выдаче скутера",
     icon: FileText,
+    badge: "№1",
   },
-  return_act: {
-    title: "Акт возврата скутера",
-    subtitle: "Осмотр и итоговый расчёт по аренде",
+  act_return: {
+    title: "Акт возврата",
+    subtitle: "Приложение №2 — подписывается при возврате, фиксирует повреждения",
     icon: FileText,
+    badge: "№2",
   },
-};
-
-type GeneratedDoc = {
-  type: DocType;
-  createdAt: string;
+  purchase_deposit: {
+    title: "Договор задатка",
+    subtitle: "Если клиент решил выкупить скутер — фиксируем задаток",
+    icon: FileText,
+    badge: "Выкуп",
+  },
 };
 
 export function DocumentsTab({ rental }: { rental: Rental }) {
-  const { data: apiClients } = useApiClients();
-  const client = apiClients?.find((c) => c.id === rental.clientId);
-  const [generated, setGenerated] = useState<GeneratedDoc[]>([]);
+  const API_BASE =
+    import.meta.env.VITE_API_URL?.replace(/\/$/, "") ?? "http://localhost:4000";
 
-  const doGenerate = (type: DocType) => {
-    setGenerated((prev) => [
-      { type, createdAt: new Date().toLocaleString("ru-RU") },
-      ...prev,
-    ]);
+  const previewUrl = (type: DocType) =>
+    `${API_BASE}/api/rentals/${rental.id}/document/${type}?format=html`;
+  const downloadUrl = (type: DocType) =>
+    `${API_BASE}/api/rentals/${rental.id}/document/${type}?format=docx`;
+
+  const openPreview = (type: DocType) => {
+    // Открываем в новой вкладке. Сервер отдаёт HTML с встроенной кнопкой печати.
+    window.open(previewUrl(type), "_blank", "width=860,height=1000");
+    toast.info(
+      `Открыт ${DOC_META[type].title.toLowerCase()}`,
+      "Внутри — кнопка «Печать», или Ctrl+P и «Сохранить как PDF».",
+    );
   };
 
-  const docHtml = (type: DocType) => {
-    const meta = DOC_META[type];
-    return `<!doctype html><html><head><meta charset="utf-8"><title>${meta.title}</title>
-    <style>body{font-family:Inter,sans-serif;padding:40px;color:#111}
-    h1{font-size:22px;margin:0 0 6px}
-    h2{font-size:15px;margin:20px 0 8px;text-transform:uppercase;letter-spacing:0.05em;color:#666}
-    .row{display:flex;gap:8px;padding:4px 0}
-    .row b{min-width:180px;color:#666;font-weight:500}
-    .signs{margin-top:60px;display:flex;gap:40px}
-    .sign{flex:1}
-    .sign .line{border-bottom:1px solid #000;height:30px;margin-top:20px}
-    .sign .lbl{font-size:12px;color:#666}
-    </style></head><body>
-    <h1>${meta.title}</h1>
-    <div>Договор № ${String(rental.id).padStart(4, "0")} · ${new Date().toLocaleDateString("ru-RU")}</div>
-
-    <h2>Арендодатель</h2>
-    <div class="row"><b>Организация</b>ИП Халк Байк</div>
-
-    <h2>Клиент</h2>
-    <div class="row"><b>ФИО</b>${client?.name ?? "—"}</div>
-    <div class="row"><b>Телефон</b>${client?.phone ?? "—"}</div>
-
-    <h2>Объект аренды</h2>
-    <div class="row"><b>Скутер</b>${rental.scooter} · ${MODEL_LABEL[rental.model]}</div>
-    <div class="row"><b>Тариф</b>${TARIFF_PERIOD_LABEL[rental.tariffPeriod]} · ${rental.rate} ₽/сут</div>
-
-    <h2>Условия</h2>
-    <div class="row"><b>Период</b>${rental.start} ${rental.startTime ?? "12:00"} — ${rental.endPlanned} ${rental.startTime ?? "12:00"}</div>
-    <div class="row"><b>Срок</b>${rental.days} дн.</div>
-    <div class="row"><b>Сумма аренды</b>${rental.sum.toLocaleString("ru-RU")} ₽</div>
-    <div class="row"><b>Залог</b>${(rental.deposit || DEPOSIT_AMOUNT).toLocaleString("ru-RU")} ₽</div>
-    ${rental.equipment.length > 0 ? `<div class="row"><b>Экипировка</b>${rental.equipment.join(", ")}</div>` : ""}
-
-    <div class="signs">
-      <div class="sign"><div class="line"></div><div class="lbl">Арендодатель / подпись, дата</div></div>
-      <div class="sign"><div class="line"></div><div class="lbl">Клиент / подпись, дата</div></div>
-    </div>
-    </body></html>`;
-  };
-
-  const openDoc = (type: DocType) => {
-    const w = window.open("", "_blank", "width=820,height=1000");
-    if (!w) return;
-    w.document.write(docHtml(type));
-    w.document.close();
-  };
-
-  const handlePrint = (type: DocType) => {
-    const w = window.open("", "_blank", "width=820,height=1000");
-    if (!w) return;
-    w.document.write(docHtml(type));
-    w.document.close();
-    w.focus();
-    setTimeout(() => w.print(), 250);
-  };
-
-  const handleDownload = (type: DocType) => {
-    const blob = new Blob([docHtml(type)], { type: "text/html;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${DOC_META[type].title} · аренда ${String(rental.id).padStart(4, "0")}.html`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
+  const downloadDocx = async (type: DocType) => {
+    try {
+      toast.info("Генерируем Word…", "Займёт несколько секунд");
+      const res = await fetch(downloadUrl(type), { credentials: "include" });
+      if (!res.ok) throw new Error(`status ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${DOC_META[type].title} ${String(rental.id).padStart(4, "0")}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success("Word-файл скачан", "Можно открыть и при необходимости подкорректировать.");
+    } catch (e) {
+      toast.error(
+        "Не удалось сформировать документ",
+        (e as Error).message ?? "",
+      );
+    }
   };
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="grid items-stretch gap-2 sm:grid-cols-3">
+      <div className="rounded-[10px] bg-blue-50 px-3 py-2 text-[12px] text-blue-900">
+        Поля документа автоматически заполняются данными клиента, скутера и
+        аренды. <b>Предпросмотр</b> открывается в новой вкладке — там можно
+        сразу распечатать или сохранить как PDF. <b>Скачать Word</b> —
+        получите .docx, который можно подкорректировать в Word перед печатью.
+      </div>
+
+      <div className="grid items-stretch gap-2 md:grid-cols-2 xl:grid-cols-4">
         {(Object.keys(DOC_META) as DocType[]).map((t) => {
           const meta = DOC_META[t];
           const Icon = meta.icon;
           return (
             <div
               key={t}
-              className="flex h-full flex-col gap-3 rounded-[14px] border border-border p-3"
+              className="flex h-full flex-col gap-3 rounded-[14px] border border-border bg-surface p-3"
             >
               <div className="flex items-start gap-2">
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-blue-50 text-blue-700">
                   <Icon size={16} />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="text-[13px] font-semibold leading-tight text-ink">
-                    {meta.title}
+                  <div className="flex items-center gap-1.5">
+                    <div className="text-[13px] font-semibold leading-tight text-ink">
+                      {meta.title}
+                    </div>
+                    <span className="rounded-full bg-surface-soft px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-muted-2">
+                      {meta.badge}
+                    </span>
                   </div>
                 </div>
               </div>
               <div className="flex-1 text-[11px] leading-snug text-muted-2">
                 {meta.subtitle}
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  doGenerate(t);
-                  openDoc(t);
-                }}
-                className="rounded-[10px] bg-blue-600 py-1.5 text-[12px] font-semibold text-white hover:bg-blue-700"
-              >
-                Сформировать
-              </button>
+              <div className="flex flex-col gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => openPreview(t)}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-[10px] bg-ink py-1.5 text-[12px] font-bold text-white hover:bg-blue-600"
+                >
+                  <FileText size={12} /> Предпросмотр · печать
+                </button>
+                <button
+                  type="button"
+                  onClick={() => downloadDocx(t)}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-[10px] bg-surface-soft py-1.5 text-[12px] font-semibold text-ink-2 hover:bg-blue-50 hover:text-blue-700"
+                >
+                  <Download size={12} /> Скачать Word
+                </button>
+              </div>
             </div>
           );
         })}
       </div>
 
-      {generated.length > 0 && (
-        <div>
-          <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-2">
-            Сформированные документы
-          </div>
-          <div className="overflow-hidden rounded-[14px] border border-border">
-            <table className="w-full text-[12px]">
-              <thead className="bg-surface-soft text-left text-[11px] font-semibold uppercase tracking-wider text-muted-2">
-                <tr>
-                  <th className="px-3 py-2">Документ</th>
-                  <th className="px-3 py-2">Создан</th>
-                  <th className="px-3 py-2 text-right">Действия</th>
-                </tr>
-              </thead>
-              <tbody>
-                {generated.map((g, i) => (
-                  <tr key={i} className="border-t border-border/60">
-                    <td className="px-3 py-2 font-semibold text-ink">
-                      {DOC_META[g.type].title}
-                    </td>
-                    <td className="px-3 py-2 text-muted-2 tabular-nums">
-                      {g.createdAt}
-                    </td>
-                    <td className="px-3 py-2">
-                      <div className="flex justify-end gap-1">
-                        <button
-                          type="button"
-                          onClick={() => openDoc(g.type)}
-                          className="inline-flex items-center gap-1 rounded-full bg-surface-soft px-2.5 py-1 text-[11px] font-semibold text-ink-2 hover:bg-border"
-                          title="Просмотр"
-                        >
-                          <FileText size={11} /> Открыть
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDownload(g.type)}
-                          className="inline-flex items-center gap-1 rounded-full bg-surface-soft px-2.5 py-1 text-[11px] font-semibold text-ink-2 hover:bg-border"
-                        >
-                          <Download size={11} /> Скачать
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handlePrint(g.type)}
-                          className="inline-flex items-center gap-1 rounded-full bg-surface-soft px-2.5 py-1 text-[11px] font-semibold text-ink-2 hover:bg-border"
-                        >
-                          <Printer size={11} /> Печать
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+      <div className="text-[11px] text-muted-2">
+        Подписанные и отсканированные документы можно прикрепить к аренде
+        через «Документы» (скоро появится кнопка загрузки).
+      </div>
     </div>
   );
 }

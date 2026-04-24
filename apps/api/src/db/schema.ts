@@ -263,6 +263,12 @@ export const scooters = pgTable(
     modelId: bigint("model_id", { mode: "number" }),
     vin: text("vin").unique(),
     engineNo: text("engine_no"),
+    /** Номер рамы/шасси — в договоре идёт отдельной строкой от VIN */
+    frameNumber: text("frame_number"),
+    /** Год выпуска — для договора проката */
+    year: integer("year"),
+    /** Цвет — для договора */
+    color: text("color"),
     mileage: integer("mileage").notNull().default(0),
     baseStatus: scooterBaseStatusEnum("base_status")
       .notNull()

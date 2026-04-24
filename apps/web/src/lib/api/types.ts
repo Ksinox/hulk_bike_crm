@@ -58,6 +58,9 @@ export type ApiScooter = {
   modelId: number | null;
   vin: string | null;
   engineNo: string | null;
+  frameNumber: string | null;
+  year: number | null;
+  color: string | null;
   mileage: number;
   baseStatus: ScooterBaseStatus;
   purchaseDate: string | null;

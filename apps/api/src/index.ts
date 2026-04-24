@@ -20,6 +20,7 @@ import { scooterModelsRoutes } from "./routes/scooter-models.js";
 import { equipmentRoutes } from "./routes/equipment.js";
 import { scooterMaintenanceRoutes } from "./routes/scooter-maintenance.js";
 import { activityRoutes } from "./routes/activity.js";
+import { rentalDocumentsRoutes } from "./routes/rental-documents.js";
 import authPlugin, { requireAuth } from "./auth/plugin.js";
 import { ensureBucket } from "./storage/index.js";
 
@@ -97,6 +98,8 @@ async function bootstrap() {
     });
     // Журнал действий
     await protectedApp.register(activityRoutes, { prefix: "/api/activity" });
+    // Генерация документов по аренде (договор, акты)
+    await protectedApp.register(rentalDocumentsRoutes, { prefix: "/api" });
   });
 
   // Проверить/создать бакет при старте (не блокируем — если MinIO
