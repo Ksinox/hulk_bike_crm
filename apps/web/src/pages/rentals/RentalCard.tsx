@@ -195,7 +195,6 @@ export function RentalCard({ rental }: { rental: Rental }) {
     [allRentals, chainIds],
   );
   const chainRentSum = chainRentals.reduce((s, r) => s + (r.sum || 0), 0);
-  const chainDeposit = chainRentals[0]?.deposit || DEPOSIT_AMOUNT;
   // Выручка по цепочке — только аренды без залога. Залог — возвратный,
   // он не наш доход (кроме случая, когда списан на покрытие ущерба —
   // тогда создаётся отдельный платёж типа 'damage').
