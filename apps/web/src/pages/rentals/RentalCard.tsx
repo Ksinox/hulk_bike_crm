@@ -385,19 +385,21 @@ export function RentalCard({ rental }: { rental: Rental }) {
           );
         })()}
         <KpiCard
-          label="Стоимость аренды"
+          label="Эта аренда"
           value={`${fmt(rental.sum)} ₽`}
           hint={`+ залог: ${fmt(rental.deposit || DEPOSIT_AMOUNT)} ₽`}
         />
         <KpiCard
-          label="Получено от клиента"
+          label="За всё время аренды"
           value={`${fmt(paidIn)} ₽`}
           accent={paidIn >= expectedTotal ? "blue" : "default"}
           hint={
             paidIn >= expectedTotal
-              ? "полностью оплачено"
+              ? isExtended
+                ? "оплачено с учётом продлений"
+                : "полностью оплачено"
               : expectedTotal > 0
-                ? `${Math.round((paidIn / Math.max(1, expectedTotal)) * 100)}% от ${fmt(expectedTotal)} ₽`
+                ? `${Math.round((paidIn / Math.max(1, expectedTotal)) * 100)}% от ${fmt(expectedTotal)} ₽ по цепочке`
                 : "платежей ещё не было"
           }
           badgeIcon={paidIn >= expectedTotal ? CheckCircle2 : undefined}

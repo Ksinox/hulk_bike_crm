@@ -54,7 +54,16 @@ export async function rentalDocumentsRoutes(app: FastifyInstance) {
 
     if (format === "html") {
       const html = renderDocumentHtml(type, bundle);
-      reply.header("Content-Type", "text/html; charset=utf-8");
+      // Убираем X-Frame-Options, выставленный helmet'ом, чтобы CRM (другой
+      // поддомен crm.hulkbike.ru) могла встроить документ в iframe. Это
+      // безопасно: документ — чистый HTML без JS и форм, clickjacking-угрозы нет.
+      reply
+        .header("Content-Type", "text/html; charset=utf-8")
+        .removeHeader("X-Frame-Options")
+        .header(
+          "Content-Security-Policy",
+          "frame-ancestors 'self' https://crm.hulkbike.ru https://crm.104-128-128-96.sslip.io",
+        );
       return reply.send(html);
     }
 
