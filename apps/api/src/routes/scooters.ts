@@ -124,6 +124,31 @@ export async function scootersRoutes(app: FastifyInstance) {
     const [before] = await db.select().from(scooters).where(eq(scooters.id, id));
     if (!before) return reply.code(404).send({ error: "not found" });
 
+    // Нельзя менять baseStatus у скутера, находящегося в активной аренде.
+    // Сначала нужно закрыть аренду (завершить / отменить).
+    if (
+      parsed.data.baseStatus &&
+      parsed.data.baseStatus !== before.baseStatus
+    ) {
+      const active = await db
+        .select({ id: rentals.id })
+        .from(rentals)
+        .where(
+          and(
+            eq(rentals.scooterId, id),
+            sql`${rentals.status} IN ('active', 'overdue', 'returning')`,
+          ),
+        );
+      if (active.length > 0) {
+        return reply.code(409).send({
+          error: "scooter_has_active_rental",
+          message:
+            "Сначала завершите активную аренду, затем меняйте статус скутера",
+          rentalIds: active.map((r) => r.id),
+        });
+      }
+    }
+
     const [row] = await db
       .update(scooters)
       .set({ ...parsed.data, updatedAt: sql`now()` })

@@ -8,6 +8,8 @@ import type { ApiScooter, ScooterModel } from "@/lib/api/types";
 import type { DashboardMetrics } from "./useDashboardMetrics";
 import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
 import { navigate } from "@/app/navigationStore";
+import { ApiError } from "@/lib/api";
+import { toast } from "@/lib/toast";
 
 /** Статус плитки — производный от baseStatus скутера + активной аренды. */
 type TileStatus =
@@ -271,11 +273,22 @@ export function ParkPanel({
           scooter={reassignFor}
           onClose={() => setReassignFor(null)}
           onPick={async (next) => {
-            await patchScooter.mutateAsync({
-              id: reassignFor.id,
-              patch: { baseStatus: next },
-            });
-            setReassignFor(null);
+            try {
+              await patchScooter.mutateAsync({
+                id: reassignFor.id,
+                patch: { baseStatus: next },
+              });
+              setReassignFor(null);
+            } catch (e) {
+              if (e instanceof ApiError && e.status === 409) {
+                toast.error(
+                  "Нельзя менять статус",
+                  "У скутера активная аренда. Сначала завершите её.",
+                );
+              } else {
+                toast.error("Не удалось сохранить статус");
+              }
+            }
           }}
         />
       )}
