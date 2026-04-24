@@ -1,12 +1,9 @@
 import { useEffect, useState } from "react";
 import { Check, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { FleetScooter, ScooterBaseStatus } from "@/lib/mock/fleet";
+import type { FleetScooter } from "@/lib/mock/fleet";
 import { patchScooter } from "./fleetStore";
 import { useRole } from "@/lib/role";
-import { SCOOTER_BASE_STATUS_OPTIONS } from "./scooterStatusOptions";
-
-const BASE_STATUS_OPTIONS = SCOOTER_BASE_STATUS_OPTIONS;
 
 export function ScooterEditForm({
   scooter,
@@ -26,9 +23,6 @@ export function ScooterEditForm({
     scooter.year != null ? String(scooter.year) : "",
   );
   const [color, setColor] = useState(scooter.color ?? "");
-  const [baseStatus, setBaseStatus] = useState<ScooterBaseStatus>(
-    scooter.baseStatus,
-  );
   const [note, setNote] = useState(scooter.note ?? "");
   const [purchasePrice, setPurchasePrice] = useState(
     scooter.purchasePrice != null ? String(scooter.purchasePrice) : "",
@@ -58,7 +52,6 @@ export function ScooterEditForm({
       frameNumber: frameNumber.trim() || undefined,
       year: Number.isFinite(yearNum) && yearNum > 0 ? yearNum : undefined,
       color: color.trim() || undefined,
-      baseStatus,
       note: note.trim() || undefined,
     };
     if (role === "director") {
@@ -171,30 +164,6 @@ export function ScooterEditForm({
                 />
               </Field>
             </div>
-
-            <Field label="Статус">
-              <div className="grid grid-cols-2 gap-1.5">
-                {BASE_STATUS_OPTIONS.map((o) => (
-                  <button
-                    key={o.value}
-                    type="button"
-                    onClick={() => setBaseStatus(o.value)}
-                    className={cn(
-                      "rounded-[10px] border px-3 py-2 text-[12px] font-semibold transition-colors",
-                      baseStatus === o.value
-                        ? "border-blue-600 bg-blue-50 text-blue-700"
-                        : "border-border bg-surface text-ink-2 hover:border-blue-600/50",
-                    )}
-                  >
-                    {o.label}
-                  </button>
-                ))}
-              </div>
-              <p className="mt-1.5 text-[11px] text-muted-2">
-                Если скутер сейчас в активной аренде, статус «В аренде»
-                выставляется автоматически, независимо от выбранного здесь.
-              </p>
-            </Field>
 
             {role === "director" && (
               <Field
