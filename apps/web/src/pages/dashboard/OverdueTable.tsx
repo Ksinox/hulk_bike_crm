@@ -21,6 +21,27 @@ export function OverdueTable({
   const top = sorted.slice(0, 5);
   const total = items.length;
 
+  // Компактный режим: когда просрочек нет — одна тонкая полоса вместо
+  // полноразмерной карточки. Экономит место на дашборде.
+  if (total === 0) {
+    return (
+      <div
+        className={cn(
+          "flex items-center gap-2.5 rounded-2xl border border-border bg-surface px-4 py-2.5 shadow-card",
+          className,
+        )}
+      >
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-green-soft text-green-ink">
+          <Check size={14} strokeWidth={2.5} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="text-[13px] font-bold text-ink">Просроченные платежи</div>
+          <div className="text-[11px] text-muted">В данный момент просрочек нет</div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <Card className={className}>
       <div className="mb-2.5 flex items-center justify-between">
@@ -35,19 +56,14 @@ export function OverdueTable({
           >
             Просроченные платежи
           </h3>
-          {total > 0 && <StatusPill tone="late">{total}</StatusPill>}
+          <StatusPill tone="late">{total}</StatusPill>
         </div>
-        {total > 0 && (
-          <button className="inline-flex items-center gap-1.5 rounded-[10px] bg-surface-soft px-3 py-1.5 text-xs font-semibold text-ink-2 transition-colors hover:bg-blue-50 hover:text-blue-700">
-            Все долги <ChevronRight size={12} strokeWidth={2.2} />
-          </button>
-        )}
+        <button className="inline-flex items-center gap-1.5 rounded-[10px] bg-surface-soft px-3 py-1.5 text-xs font-semibold text-ink-2 transition-colors hover:bg-blue-50 hover:text-blue-700">
+          Все долги <ChevronRight size={12} strokeWidth={2.2} />
+        </button>
       </div>
 
-      {total === 0 ? (
-        <EmptyState />
-      ) : (
-        <table className="w-full border-separate border-spacing-0 text-[13px]">
+      <table className="w-full border-separate border-spacing-0 text-[13px]">
           <thead>
             <tr>
               <Th style={{ width: "34%" }}>Клиент</Th>
@@ -66,9 +82,8 @@ export function OverdueTable({
                 showPhoneColumn={showPhoneColumn}
               />
             ))}
-          </tbody>
-        </table>
-      )}
+        </tbody>
+      </table>
     </Card>
   );
 }
@@ -136,19 +151,6 @@ function CopyBtn({ phone }: { phone: string }) {
       {copied ? <Check size={12} strokeWidth={2.5} /> : <Phone size={12} />}
       {copied ? "Скопировано" : "Позвонить"}
     </button>
-  );
-}
-
-function EmptyState() {
-  return (
-    <div className="flex items-center gap-2.5 px-0.5 py-1.5">
-      <div className="flex h-8 w-8 items-center justify-center rounded-[10px] bg-green-soft text-green-ink">
-        <Check size={16} strokeWidth={2.5} />
-      </div>
-      <div className="text-[13px] font-semibold text-ink">
-        Просроченных платежей нет
-      </div>
-    </div>
   );
 }
 
