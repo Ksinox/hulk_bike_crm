@@ -80,22 +80,39 @@ export function RevenueCard({
             {isEmpty ? "0" : formatRub(total)}
             <span className="ml-1 text-[18px] font-bold text-white/70">₽</span>
           </div>
-          <div className="mt-1.5 flex items-center gap-1.5 text-xs text-white/80">
-            {!isEmpty && period === "month" && metrics.revenueMonthCount > 0 && (
-              <DeltaPill
-                blue
-                tone={up ? "up" : "down"}
-                label={`${metrics.revenueMonthCount} ${plural(metrics.revenueMonthCount, ["платёж", "платежа", "платежей"])}`}
-              />
-            )}
-            {isEmpty && (
-              <span className="text-white/70">
-                {period === "day"
-                  ? "сегодня платежей не было"
-                  : period === "week"
-                    ? "за неделю нет поступлений"
-                    : "в этом месяце платежей не было"}
-              </span>
+          <div className="mt-1.5 flex flex-col gap-0.5 text-xs text-white/80">
+            <div className="flex items-center gap-1.5">
+              {!isEmpty && period === "month" && metrics.revenueMonthCount > 0 && (
+                <DeltaPill
+                  blue
+                  tone={up ? "up" : "down"}
+                  label={`${metrics.revenueMonthCount} ${plural(metrics.revenueMonthCount, ["платёж", "платежа", "платежей"])}`}
+                />
+              )}
+              {isEmpty && (
+                <span className="text-white/70">
+                  {period === "day"
+                    ? "сегодня платежей не было"
+                    : period === "week"
+                      ? "за неделю нет поступлений"
+                      : "в этом месяце платежей не было"}
+                </span>
+              )}
+            </div>
+            {period === "month" && metrics.revenueExpected > 0 && (
+              <div className="flex items-center gap-1.5 text-[11px] text-white/80">
+                <span className="inline-flex items-center gap-1 rounded-full bg-white/15 px-2 py-0.5 font-bold">
+                  +{formatRub(metrics.revenueExpected)} ₽ ожидается
+                </span>
+                <span className="text-white/60">
+                  {metrics.revenueExpectedCount}{" "}
+                  {plural(metrics.revenueExpectedCount, [
+                    "аренда без подтв. оплаты",
+                    "аренды без подтв. оплаты",
+                    "аренд без подтв. оплаты",
+                  ])}
+                </span>
+              </div>
             )}
           </div>
         </div>

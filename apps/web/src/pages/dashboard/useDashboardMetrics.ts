@@ -50,8 +50,15 @@ export type DashboardMetrics = {
   overdue: OverdueItem[];
 
   // Выручка — для графика (пока только агрегаты за месяц)
-  revenueMonth: number;
+  revenueMonth: number; // реально получено (подтверждённые платежи)
   revenueMonthCount: number;
+  /**
+   * Ожидаемая выручка — суммы аренд этого месяца, по которым платёж ещё
+   * не зафиксирован. Это «то, что должно прийти, но админ забыл нажать
+   * Подтвердить оплату». Помогает не смотреть на 0 при живых арендах.
+   */
+  revenueExpected: number;
+  revenueExpectedCount: number;
   // Платежи по дням текущего месяца (для спарклайн-графика)
   revenueByDay: { date: string; sum: number }[];
 };
@@ -167,9 +174,23 @@ export function useDashboardMetrics(): DashboardMetrics {
       (r) => r.status === "active" || r.status === "overdue",
     ).length;
 
-    const fleetTotal = scooters.length;
+    // fleetTotal — скутеры которые потенциально могут быть в парке аренды.
+    // Sold / buyout — выбыли из оборота, их в знаменатель загрузки не включаем,
+    // иначе загрузка будет искусственно занижена.
+    const inCirculationStatuses = new Set([
+      "ready",
+      "rental_pool",
+      "repair",
+      "disassembly",
+    ]);
+    const fleetTotal = scooters.filter((s) =>
+      inCirculationStatuses.has(s.baseStatus),
+    ).length;
+    // Эффективный знаменатель загрузки — max(статичный парк, активные аренды),
+    // чтобы при редких проскальзываниях статусов не получить >100%.
+    const denom = Math.max(fleetTotal, activeRentalsCount);
     const loadPercent =
-      fleetTotal > 0 ? Math.round((activeRentalsCount / fleetTotal) * 100) : 0;
+      denom > 0 ? Math.round((activeRentalsCount / denom) * 100) : 0;
 
     // ===== Парк по статусам
     const park = {
@@ -205,11 +226,36 @@ export function useDashboardMetrics(): DashboardMetrics {
       .sort((a, b) => a.endPlannedAt.localeCompare(b.endPlannedAt));
 
     // ===== Выручка за месяц
+    // В выручку НЕ включаем залоги — это возвратные деньги, не доход.
+    // Считаем только тип 'rent', 'damage', 'fine' и прочие «заработки».
     const monthPayments = payments.filter(
-      (p) => p.paid && p.paidAt && new Date(p.paidAt) >= monthStart,
+      (p) =>
+        p.paid &&
+        p.paidAt &&
+        new Date(p.paidAt) >= monthStart &&
+        p.type !== "deposit",
     );
     const revenueMonth = monthPayments.reduce((s, p) => s + p.amount, 0);
     const revenueMonthCount = monthPayments.length;
+
+    // ===== Ожидаемая выручка — аренды этого месяца без зафиксированного rent-платежа.
+    // Это случаи когда скутер уже выдан клиенту (active/overdue/returning/returned),
+    // но админ ещё не прошёл чеклист «Подтвердить оплату». Деньги в кассе
+    // есть, а в системе — нет. Показываем отдельной строкой чтобы сразу
+    // видеть «хвост» и закрыть его в пару кликов.
+    const rentPaymentsByRentalId = new Set(
+      payments.filter((p) => p.type === "rent").map((p) => p.rentalId),
+    );
+    const expectedRentals = rentals.filter((r) => {
+      if (!["active", "overdue", "returning", "returned"].includes(r.status))
+        return false;
+      // Берём аренды, начавшиеся в этом месяце
+      const start = new Date(r.startAt);
+      if (start < monthStart) return false;
+      return !rentPaymentsByRentalId.has(r.id);
+    });
+    const revenueExpected = expectedRentals.reduce((s, r) => s + r.sum, 0);
+    const revenueExpectedCount = expectedRentals.length;
 
     // ===== Платежи по дням месяца — для графика
     const byDayMap = new Map<string, number>();
@@ -246,6 +292,8 @@ export function useDashboardMetrics(): DashboardMetrics {
       overdue,
       revenueMonth,
       revenueMonthCount,
+      revenueExpected,
+      revenueExpectedCount,
       revenueByDay,
     };
   }, [clientsQ.data, rentalsQ.data, scootersQ.data, paymentsQ.data, isLoading]);
