@@ -59,7 +59,8 @@ export function ForceChangePassword() {
     try {
       await logoutMut.mutateAsync();
     } finally {
-      window.location.href = "/";
+      // см. комментарий в Topbar.handleLogout — в Electron "/" ломает экран
+      window.location.reload();
     }
   };
 

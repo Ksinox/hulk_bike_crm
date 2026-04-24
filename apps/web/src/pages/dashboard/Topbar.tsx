@@ -42,7 +42,11 @@ export function Topbar() {
     try {
       await logoutMut.mutateAsync();
     } finally {
-      window.location.href = "/";
+      // В Electron страница загружена из file:///.../index.html —
+      // переход на "/" уводит в корень ФС и даёт белый экран.
+      // reload() одинаково работает и в вебе, и в .exe: после выхода
+      // useMe вернёт null и приложение отрисует Login.
+      window.location.reload();
     }
   };
 

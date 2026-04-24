@@ -72,7 +72,8 @@ export function Login() {
         password,
         remember,
       });
-      window.location.href = "/";
+      // см. комментарий в Topbar.handleLogout — в Electron "/" ломает экран
+      window.location.reload();
     } catch {
       setErrorMsg("Неверный пароль. Попробуйте ещё раз.");
     }
