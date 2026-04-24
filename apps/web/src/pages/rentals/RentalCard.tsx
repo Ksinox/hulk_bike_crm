@@ -196,7 +196,10 @@ export function RentalCard({ rental }: { rental: Rental }) {
   );
   const chainRentSum = chainRentals.reduce((s, r) => s + (r.sum || 0), 0);
   const chainDeposit = chainRentals[0]?.deposit || DEPOSIT_AMOUNT;
-  const chainExpected = chainRentSum + chainDeposit;
+  // Выручка по цепочке — только аренды без залога. Залог — возвратный,
+  // он не наш доход (кроме случая, когда списан на покрытие ущерба —
+  // тогда создаётся отдельный платёж типа 'damage').
+  const chainExpected = chainRentSum;
   /** Сумма дней по всей цепочке продлений (текущая + родители + потомки) */
   const chainDaysTotal = chainRentals.reduce((s, r) => s + (r.days || 0), 0);
   const isExtended = chainRentals.length > 1;
@@ -216,12 +219,15 @@ export function RentalCard({ rental }: { rental: Rental }) {
     ...baseActions,
   ];
 
-  // Финансы — считаются по ВСЕЙ цепочке продлений
+  // Финансы — считаются по ВСЕЙ цепочке продлений.
+  // В «Получено от клиента» (paidIn) НЕ включаем депозит — он возвратный
+  // и не является заработком. Если депозит был списан в ущерб, отдельный
+  // платёж типа 'damage' создаётся в модалке возврата — он сюда попадёт.
   const paidIn = chainPayments
-    .filter((p) => p.paid && p.type !== "refund")
+    .filter((p) => p.paid && p.type !== "refund" && p.type !== "deposit")
     .reduce((s, p) => s + p.amount, 0);
   const pending = chainPayments
-    .filter((p) => !p.paid)
+    .filter((p) => !p.paid && p.type !== "deposit")
     .reduce((s, p) => s + p.amount, 0);
   const expectedTotal = chainExpected;
 
