@@ -385,18 +385,20 @@ export function RentalCard({ rental }: { rental: Rental }) {
           );
         })()}
         <KpiCard
-          label="Эта аренда"
+          label="Стоимость аренды"
           value={`${fmt(rental.sum)} ₽`}
           hint={`+ залог: ${fmt(rental.deposit || DEPOSIT_AMOUNT)} ₽`}
         />
         <KpiCard
-          label="За всё время аренды"
+          label="Получено от клиента"
           value={`${fmt(paidIn)} ₽`}
           accent={paidIn >= expectedTotal ? "blue" : "default"}
           hint={
             paidIn >= expectedTotal
-              ? undefined
-              : `${Math.round((paidIn / Math.max(1, expectedTotal)) * 100)}% оплачено`
+              ? "полностью оплачено"
+              : expectedTotal > 0
+                ? `${Math.round((paidIn / Math.max(1, expectedTotal)) * 100)}% от ${fmt(expectedTotal)} ₽`
+                : "платежей ещё не было"
           }
           badgeIcon={paidIn >= expectedTotal ? CheckCircle2 : undefined}
         />
@@ -473,7 +475,12 @@ export function RentalCard({ rental }: { rental: Rental }) {
             onClientClick={() => setClientQuickView(true)}
           />
         )}
-        {tab === "payments" && <PaymentsTab rental={rental} />}
+        {tab === "payments" && (
+          <PaymentsTab
+            rental={rental}
+            onAddPayment={() => setAction("addPayment")}
+          />
+        )}
         {tab === "return" && <ReturnTab rental={rental} />}
         {tab === "incidents" && <IncidentsTab rental={rental} />}
         {tab === "tasks" && <TasksTab rental={rental} />}

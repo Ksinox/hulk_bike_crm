@@ -324,7 +324,13 @@ const PAYMENT_TYPE_TONE: Record<string, string> = {
   refund: "bg-green-soft text-green-ink",
 };
 
-export function PaymentsTab({ rental }: { rental: Rental }) {
+export function PaymentsTab({
+  rental,
+  onAddPayment,
+}: {
+  rental: Rental;
+  onAddPayment?: () => void;
+}) {
   const payments = useRentalPayments(rental.id);
   const paid = payments.filter((p) => p.paid).reduce((s, p) => s + (p.type === "refund" ? -p.amount : p.amount), 0);
   const unpaid = payments.filter((p) => !p.paid).reduce((s, p) => s + p.amount, 0);
@@ -336,22 +342,50 @@ export function PaymentsTab({ rental }: { rental: Rental }) {
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-        <MiniStat label="Получено" value={`${fmt(paid)} ₽`} tone="green" />
-        <MiniStat
-          label="Ожидается"
-          value={`${fmt(unpaid)} ₽`}
-          tone={unpaid > 0 ? "red" : "neutral"}
-        />
-        <MiniStat
-          label="Баланс"
-          value={`${fmt(paid - unpaid)} ₽`}
-          tone={paid - unpaid >= 0 ? "green" : "red"}
-        />
+      <div className="flex items-center justify-between">
+        <div className="grid flex-1 grid-cols-2 gap-2 sm:grid-cols-3">
+          <MiniStat label="Получено" value={`${fmt(paid)} ₽`} tone="green" />
+          <MiniStat
+            label="Ожидается"
+            value={`${fmt(unpaid)} ₽`}
+            tone={unpaid > 0 ? "red" : "neutral"}
+          />
+          <MiniStat
+            label="Баланс"
+            value={`${fmt(paid - unpaid)} ₽`}
+            tone={paid - unpaid >= 0 ? "green" : "red"}
+          />
+        </div>
+        {onAddPayment && (
+          <button
+            type="button"
+            onClick={onAddPayment}
+            className="ml-3 inline-flex items-center gap-1.5 rounded-full bg-ink px-4 py-2 text-[12px] font-bold text-white hover:bg-blue-600"
+          >
+            <Plus size={13} /> Принять платёж
+          </button>
+        )}
       </div>
 
       {payments.length === 0 ? (
-        <Empty text="По аренде ещё не было платежей" />
+        <div className="flex flex-col items-center justify-center gap-3 rounded-[14px] border border-dashed border-border bg-surface-soft py-8 text-center">
+          <div className="text-[13px] font-semibold text-ink">
+            По аренде ещё не было платежей
+          </div>
+          <div className="max-w-[360px] text-[11px] text-muted-2">
+            Платёж создастся автоматически когда вы <b>подтвердите оплату</b>{" "}
+            в шапке аренды, либо можно <b>добавить вручную</b> кнопкой выше.
+          </div>
+          {onAddPayment && (
+            <button
+              type="button"
+              onClick={onAddPayment}
+              className="inline-flex items-center gap-1.5 rounded-full bg-ink px-4 py-1.5 text-[12px] font-bold text-white hover:bg-blue-600"
+            >
+              <Plus size={12} /> Добавить платёж
+            </button>
+          )}
+        </div>
       ) : (
         <div className="overflow-hidden rounded-[14px] border border-border">
           <table className="w-full text-[13px]">
