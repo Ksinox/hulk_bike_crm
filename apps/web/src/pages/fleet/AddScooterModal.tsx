@@ -67,6 +67,11 @@ export function AddScooterModal({ onClose }: { onClose: () => void }) {
   const [mileage, setMileage] = useState("0");
   const [vin, setVin] = useState("");
   const [engineNo, setEngineNo] = useState("");
+  // Эти поля нужны для подгрузки в акт приёма-передачи —
+  // без них в документе остаются пустые подчёркивания.
+  const [frameNumber, setFrameNumber] = useState("");
+  const [year, setYear] = useState("");
+  const [color, setColor] = useState("");
   const [purchaseDate, setPurchaseDate] = useState(toDateInput(todayRu()));
   const [purchasePrice, setPurchasePrice] = useState("");
   const [status, setStatus] = useState<ScooterBaseStatus>("ready");
@@ -112,6 +117,11 @@ export function AddScooterModal({ onClose }: { onClose: () => void }) {
       baseStatus: status,
       vin: vin.trim() || undefined,
       engineNo: engineNo.trim() || undefined,
+      frameNumber: frameNumber.trim() || undefined,
+      year: Number.isFinite(Number(year)) && Number(year) > 0
+        ? Number(year)
+        : undefined,
+      color: color.trim() || undefined,
       purchaseDate: purchaseDate ? fromDateInput(purchaseDate) : undefined,
       purchasePrice:
         role === "director" && purchasePrice
@@ -216,6 +226,39 @@ export function AddScooterModal({ onClose }: { onClose: () => void }) {
                   onChange={(e) => setEngineNo(e.target.value)}
                   placeholder="E-1234"
                   className="h-10 w-full rounded-[10px] border border-border bg-surface px-3 font-mono text-[13px] text-ink outline-none focus:border-blue-600"
+                />
+              </Field>
+            </div>
+
+            <Field label="Номер рамы / шасси">
+              <input
+                type="text"
+                value={frameNumber}
+                onChange={(e) => setFrameNumber(e.target.value)}
+                placeholder="SA36J-605232"
+                className="h-10 w-full rounded-[10px] border border-border bg-surface px-3 font-mono text-[13px] text-ink outline-none focus:border-blue-600"
+              />
+            </Field>
+
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Год выпуска">
+                <input
+                  type="number"
+                  value={year}
+                  onChange={(e) => setYear(e.target.value)}
+                  placeholder="2020"
+                  min={1980}
+                  max={2100}
+                  className="h-10 w-full rounded-[10px] border border-border bg-surface px-3 text-[13px] text-ink outline-none focus:border-blue-600"
+                />
+              </Field>
+              <Field label="Цвет">
+                <input
+                  type="text"
+                  value={color}
+                  onChange={(e) => setColor(e.target.value)}
+                  placeholder="Серебристый"
+                  className="h-10 w-full rounded-[10px] border border-border bg-surface px-3 text-[13px] text-ink outline-none focus:border-blue-600"
                 />
               </Field>
             </div>

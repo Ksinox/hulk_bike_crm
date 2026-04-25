@@ -88,7 +88,9 @@ export function NewRentalModal({
   );
   const [start, setStart] = useState(() => todayRuDate());
   const [startTime, setStartTime] = useState(() => currentHHMM());
-  const [days, setDays] = useState(14);
+  // 7 дней — самый популярный период проката (тариф «неделя»),
+  // ставим дефолтом, чтобы оператор не правил каждый раз.
+  const [days, setDays] = useState(7);
   /** Выбранные позиции экипировки — id из equipment_items каталога */
   const [equipmentIds, setEquipmentIds] = useState<number[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
@@ -143,7 +145,7 @@ export function NewRentalModal({
         : null,
     [selectedScooter, modelsCatalog],
   );
-  const rate = useMemo(() => {
+  const computedRate = useMemo(() => {
     if (modelFromCatalog) {
       if (period === "short") return modelFromCatalog.shortRate;
       if (period === "week") return modelFromCatalog.weekRate;
@@ -152,15 +154,35 @@ export function NewRentalModal({
     return TARIFF[model][period];
   }, [modelFromCatalog, period, model]);
 
-  /** Сумма аренды — rate*days + платная экипировка */
+  /**
+   * Произвольный тариф — позволяет оператору вручную задать ставку и
+   * количество дней, не привязываясь к short/week/month. Полезно для
+   * нестандартных договорённостей: «10 суток по 700₽ / неделя за 4000₽».
+   */
+  const [customMode, setCustomMode] = useState(false);
+  const [customRate, setCustomRate] = useState<string>("");
+  const rate = customMode
+    ? Math.max(0, Number(customRate) || 0)
+    : computedRate;
+
+  /**
+   * Сумма аренды.
+   * Платная экипировка считается ЗА СУТКИ и плюсуется к стоимости каждых
+   * суток: 500₽/сут + шлем 50₽/сут = 550₽/сут × N дней.
+   * Поле `price` экипировки трактуется как стоимость в сутки (а не за весь
+   * период) — так договорились с заказчиком, это типовая практика проката.
+   */
   const equipmentSelected = useMemo(
     () => equipmentCatalog.filter((e) => equipmentIds.includes(e.id)),
     [equipmentCatalog, equipmentIds],
   );
-  const equipmentExtra = equipmentSelected.reduce(
+  /** Доплата за экипировку за СУТКИ (один день). */
+  const equipmentPerDay = equipmentSelected.reduce(
     (s, e) => s + (e.isFree ? 0 : e.price),
     0,
   );
+  /** Доплата за экипировку за ВЕСЬ период аренды. */
+  const equipmentExtra = equipmentPerDay * days;
   const sum = rate * days + equipmentExtra;
   const endPlanned = addDays(start, days);
 
@@ -444,7 +466,7 @@ export function NewRentalModal({
                   className="mt-1 h-9 w-full rounded-[10px] border border-border bg-surface px-3 text-[13px] text-ink outline-none focus:border-blue-600"
                 />
                 <div className="mt-1 text-[10px] text-muted-2">
-                  минимум {MIN_RENTAL_DAYS} дня
+                  минимум {MIN_RENTAL_DAYS} {MIN_RENTAL_DAYS === 1 ? "сутки" : "суток"}
                 </div>
               </label>
             </div>
@@ -454,7 +476,7 @@ export function NewRentalModal({
                   key={p}
                   className={cn(
                     "rounded-[10px] px-3 py-2 text-[11px]",
-                    p === period
+                    !customMode && p === period
                       ? "bg-blue-50 text-blue-700"
                       : "bg-surface-soft text-muted",
                   )}
@@ -468,6 +490,30 @@ export function NewRentalModal({
                 </div>
               ))}
             </div>
+            <div className="mt-3 flex items-center gap-2 rounded-[10px] border border-border bg-surface-soft p-2">
+              <label className="flex cursor-pointer items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={customMode}
+                  onChange={(e) => setCustomMode(e.target.checked)}
+                  className="h-4 w-4 cursor-pointer accent-blue-600"
+                />
+                <span className="text-[12px] font-semibold">Произвольный тариф</span>
+              </label>
+              {customMode && (
+                <div className="ml-auto flex items-center gap-2">
+                  <span className="text-[11px] text-muted-2">Ставка, ₽/сут</span>
+                  <input
+                    type="number"
+                    min={0}
+                    value={customRate}
+                    onChange={(e) => setCustomRate(e.target.value)}
+                    placeholder="800"
+                    className="h-8 w-24 rounded-[8px] border border-border bg-surface px-2 text-[12px] tabular-nums text-ink outline-none focus:border-blue-600"
+                  />
+                </div>
+              )}
+            </div>
             <div className="mt-3 grid grid-cols-3 gap-2 text-[13px]">
               <Calc label="Ставка" value={`${rate} ₽/сут`} />
               <Calc
@@ -478,10 +524,33 @@ export function NewRentalModal({
               <Calc
                 label="Итог"
                 value={`${sum.toLocaleString("ru-RU")} ₽`}
-                hint={`${rate} × ${days}`}
+                hint={
+                  equipmentPerDay > 0
+                    ? `(${rate}+${equipmentPerDay}) × ${days}`
+                    : `${rate} × ${days}`
+                }
                 emphasize
               />
             </div>
+            {equipmentPerDay > 0 && (
+              <div className="mt-2 rounded-[10px] bg-blue-50 px-3 py-2 text-[12px] text-blue-700">
+                Платная экипировка добавляет{" "}
+                <b>+{equipmentPerDay} ₽/сут</b> · {" "}
+                <b>+{equipmentExtra.toLocaleString("ru-RU")} ₽</b> выручки
+                за {days} {plural(days, ["день", "дня", "дней"])}
+                {equipmentSelected.filter((e) => !e.isFree).length > 0 && (
+                  <>
+                    {" "}
+                    (
+                    {equipmentSelected
+                      .filter((e) => !e.isFree)
+                      .map((e) => `${e.name} +${e.price} ₽`)
+                      .join(", ")}
+                    )
+                  </>
+                )}
+              </div>
+            )}
           </Section>
 
           {/* 4 Экипировка + залог + оплата */}
@@ -767,4 +836,12 @@ function Calc({
       {hint && <div className="text-[10px] text-muted-2">{hint}</div>}
     </div>
   );
+}
+
+function plural(n: number, forms: [string, string, string]): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return forms[0];
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return forms[1];
+  return forms[2];
 }

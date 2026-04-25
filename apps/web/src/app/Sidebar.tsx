@@ -34,7 +34,7 @@ function buildMainItems(canManageStaff: boolean): NavItem[] {
     { id: "dashboard", label: "Дашборд", icon: Home, ready: true },
     { id: "clients", label: "Клиенты", icon: Users, ready: true },
     { id: "rentals", label: "Аренды", icon: Bike, ready: true },
-    { id: "fleet", label: "Гараж", icon: ShoppingBag, ready: true },
+    { id: "fleet", label: "Скутеры", icon: ShoppingBag, ready: true },
   ];
   // «Сотрудники» — полностью скрыты для admin/mechanic/accountant.
   // Показываются только director/creator.

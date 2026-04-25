@@ -15,6 +15,11 @@ export type ApiClient = {
   extraPhone: string | null;
   rating: number;
   source: ClientSource;
+  /** Свой источник, если предустановленные варианты не подошли. */
+  sourceCustom: string | null;
+  /** Иностранный гражданин — паспорт в свободной форме. */
+  isForeigner: boolean;
+  passportRaw: string | null;
   addedOn: string; // YYYY-MM-DD
   comment: string | null;
 

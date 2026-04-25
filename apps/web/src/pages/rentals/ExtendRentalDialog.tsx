@@ -115,7 +115,7 @@ export function ExtendRentalDialog({
               className="mt-1 h-9 w-full rounded-[10px] border border-border bg-surface px-3 text-[13px] text-ink outline-none focus:border-blue-600"
             />
             <div className="mt-1 text-[10px] text-muted-2">
-              минимум {MIN_RENTAL_DAYS} дня — тариф пересчитается автоматически
+              минимум {MIN_RENTAL_DAYS} {MIN_RENTAL_DAYS === 1 ? "сутки" : "суток"} — тариф пересчитается автоматически
             </div>
           </label>
 

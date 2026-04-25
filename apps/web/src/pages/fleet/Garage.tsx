@@ -51,7 +51,7 @@ export function Garage() {
 
       <div className="flex items-center gap-3">
         <h1 className="font-display text-[34px] font-extrabold leading-none text-ink">
-          Гараж
+          Скутеры
         </h1>
       </div>
 

@@ -31,6 +31,9 @@ export type CreateClientInput = {
   extraPhone?: string | null;
   rating?: number;
   source?: ApiClient["source"];
+  sourceCustom?: string | null;
+  isForeigner?: boolean;
+  passportRaw?: string | null;
   comment?: string | null;
   blacklisted?: boolean;
   blacklistReason?: string | null;

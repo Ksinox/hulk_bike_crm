@@ -15,6 +15,11 @@ const CreateClientBody = z
     extraPhone: z.string().max(30).optional().nullable(),
     rating: z.number().int().min(0).max(100).optional(),
     source: ClientSourceEnum.optional(),
+    /** Если предустановленные варианты не подходят — текст руками. */
+    sourceCustom: z.string().max(100).optional().nullable(),
+    /** Иностранный гражданин — паспорт в свободной форме. */
+    isForeigner: z.boolean().optional(),
+    passportRaw: z.string().max(2000).optional().nullable(),
     comment: z.string().max(500).optional().nullable(),
     blacklisted: z.boolean().optional(),
     blacklistReason: z.string().optional().nullable(),

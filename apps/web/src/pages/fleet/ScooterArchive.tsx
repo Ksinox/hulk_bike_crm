@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Archive, Bike, RotateCcw, Trash2, TriangleAlert } from "lucide-react";
+import { Archive, Bike, RotateCcw, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useMe } from "@/lib/api/auth";
 import {
@@ -30,11 +30,7 @@ export function ScooterArchive() {
       <div className="text-[13px] text-muted">
         {isLoading
           ? "Загрузка…"
-          : `${items.length} в архиве${
-              items.some((x) => x.deletedAt)
-                ? " · часть помечена к удалению (7 дней)"
-                : ""
-            }`}
+          : `${items.length} в архиве — хранятся бессрочно. Удалить позицию навсегда может только директор.`}
       </div>
 
       {archived.length === 0 && !isLoading && (
@@ -79,21 +75,17 @@ function ArchiveRow({
     const ok = await confirmDialog({
       title: `Удалить «${s.name}» навсегда?`,
       message:
-        "Через 7 дней скутер будет физически удалён вместе с документами. До истечения срока можно отменить кнопкой «Восстановить».",
-      confirmText: "Удалить",
+        "Скутер будет физически удалён вместе с документами и историей. Операция необратима.",
+      confirmText: "Удалить навсегда",
       danger: true,
     });
     if (ok) purge.mutate(s.id);
   };
 
-  const markedForDelete = !!s.deletedAt;
-  const daysLeft = s.deletedAt ? daysUntilPurge(s.deletedAt) : null;
-
   return (
     <div
       className={cn(
         "flex items-center gap-3 rounded-xl bg-surface p-3 shadow-card-sm",
-        markedForDelete && "ring-1 ring-red-400/40 bg-red-soft/40",
       )}
     >
       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-surface-soft text-muted-2">
@@ -102,17 +94,10 @@ function ArchiveRow({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2 text-[14px] font-semibold">
           {s.name}
-          {markedForDelete && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-red-soft px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-ink">
-              <TriangleAlert size={10} />
-              удаление через {daysLeft} дн
-            </span>
-          )}
         </div>
         <div className="mt-0.5 text-[11px] text-muted">
           {s.archivedBy ?? "система"} ·{" "}
           {s.archivedAt ? formatDate(s.archivedAt) : "—"}
-          {s.deletedAt && <> · помечен к удалению {formatDate(s.deletedAt)}</>}
         </div>
       </div>
       <div className="flex gap-1">
@@ -125,12 +110,12 @@ function ArchiveRow({
         >
           <RotateCcw size={13} /> Восстановить
         </button>
-        {canManage && !markedForDelete && (
+        {canManage && (
           <button
             type="button"
             onClick={onPurge}
             disabled={purge.isPending}
-            title="Удалить навсегда (через 7 дней)"
+            title="Удалить навсегда"
             className="inline-flex items-center gap-1.5 rounded-lg bg-red-soft px-3 py-1.5 text-[12px] font-semibold text-red-ink hover:bg-red hover:text-white"
           >
             <Trash2 size={13} /> Удалить
@@ -139,12 +124,6 @@ function ArchiveRow({
       </div>
     </div>
   );
-}
-
-function daysUntilPurge(deletedAtIso: string): number {
-  const delAt = new Date(deletedAtIso).getTime();
-  const deadline = delAt + 7 * 24 * 3600 * 1000;
-  return Math.max(0, Math.ceil((deadline - Date.now()) / 86_400_000));
 }
 
 function formatDate(iso: string): string {

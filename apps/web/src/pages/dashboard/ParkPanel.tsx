@@ -36,10 +36,10 @@ const MODEL_CHIPS: { id: ModelFilter; label: string }[] = [
 
 const STATUS_CHIPS: { id: StatusFilter; label: string; swatch: string }[] = [
   { id: "all", label: "всё", swatch: "hsl(var(--muted))" },
-  { id: "rented", label: "в аренде", swatch: "hsl(var(--blue))" },
+  { id: "rented", label: "активная аренда", swatch: "hsl(var(--blue))" },
   { id: "overdue", label: "просрочка", swatch: "hsl(var(--red))" },
   { id: "returning", label: "на возврате", swatch: "hsl(var(--purple))" },
-  { id: "pool", label: "парк аренды", swatch: "hsl(var(--green))" },
+  { id: "pool", label: "готов к аренде", swatch: "hsl(var(--green))" },
   { id: "ready", label: "не распределён", swatch: "hsl(var(--border-strong))" },
   { id: "repair", label: "ремонт", swatch: "hsl(var(--orange))" },
   { id: "for_sale", label: "продажа", swatch: "hsl(var(--purple))" },
@@ -48,11 +48,11 @@ const STATUS_CHIPS: { id: StatusFilter; label: string; swatch: string }[] = [
 ];
 
 const STATUS_LABEL: Record<TileStatus, string> = {
-  rented: "в аренде",
+  rented: "активная аренда",
   overdue: "просрочен",
   returning: "на возврате",
   ready: "не распределён",
-  pool: "парк аренды",
+  pool: "готов к аренде",
   repair: "в ремонте",
   for_sale: "на продаже",
   sold: "продан",

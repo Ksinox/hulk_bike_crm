@@ -244,10 +244,10 @@ export async function scootersRoutes(app: FastifyInstance) {
   );
 
   /**
-   * POST /api/scooters/:id/purge — пометить к окончательному удалению.
-   * Ставит deleted_at=now(). Через 7 дней фоновой задачей физически удалится
-   * (задача пока не написана — покажем UI грацпериода и оставим).
-   * До истечения 7 дней можно отменить через /restore.
+   * POST /api/scooters/:id/purge — немедленное физическое удаление.
+   * По решению заказчика: архив бессрочный, но директор может в любой
+   * момент удалить позицию вручную сразу, без grace-периода 7 дней.
+   * Восстановление невозможно — операция необратимая.
    */
   app.post<{ Params: { id: string } }>(
     "/:id/purge",
@@ -260,19 +260,15 @@ export async function scootersRoutes(app: FastifyInstance) {
       if (!sc.archivedAt)
         return reply.code(400).send({ error: "must be archived first" });
 
-      const by = (await currentUserName(req.user?.userId)) ?? "система";
-      const [row] = await db
-        .update(scooters)
-        .set({ deletedAt: sql`now()`, deletedBy: by })
-        .where(eq(scooters.id, id))
-        .returning();
+      const name = sc.name;
+      await db.delete(scooters).where(eq(scooters.id, id));
       await logActivity(req, {
         entity: "scooter",
         entityId: id,
-        action: "purge_scheduled",
-        summary: `Скутер «${sc.name}» помечен к удалению (можно отменить 7 дней)`,
+        action: "deleted",
+        summary: `Скутер «${name}» удалён из архива навсегда`,
       });
-      return row;
+      return reply.code(204).send();
     },
   );
 }

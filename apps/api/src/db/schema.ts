@@ -175,6 +175,21 @@ export const clients = pgTable(
     extraPhone: text("extra_phone"),
     rating: integer("rating").notNull().default(80), // 0..100, стартовое 80
     source: clientSourceEnum("source").notNull().default("other"),
+    /**
+     * Произвольный источник, если ни один из enum-вариантов не подходит.
+     * Когда заполнено — UI показывает эту строку вместо лейбла enum.
+     * source при этом ставится в 'other'.
+     */
+    sourceCustom: text("source_custom"),
+
+    /**
+     * Иностранный гражданин — у него «свободная форма» паспортных данных,
+     * потому что у него нет привычной нам серии/номера/кода подразделения.
+     * Вся информация в `passportRaw` (произвольный текст). Структурные
+     * поля выше при этом могут быть пустыми.
+     */
+    isForeigner: boolean("is_foreigner").notNull().default(false),
+    passportRaw: text("passport_raw"),
     addedOn: date("added_on").notNull().defaultNow(),
     comment: text("comment"),
 

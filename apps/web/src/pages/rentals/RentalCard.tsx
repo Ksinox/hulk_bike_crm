@@ -120,22 +120,24 @@ function statusActions(
     case "active":
       return withExtras([
         { id: "extend", label: "Продлить", icon: Repeat, tone: "primary" },
-        { id: "receive", label: "Принять возврат", icon: ArrowRight, tone: "ghost" },
+        { id: "complete", label: "Завершить аренду", icon: ArrowRight, tone: "ghost" },
         { id: "addPayment", label: "Принять платёж", icon: Plus, tone: "ghost" },
         { id: "incident", label: "Зафиксировать инцидент", icon: AlertTriangle, tone: "warn" },
       ]);
     case "overdue":
       return withExtras([
-        { id: "receive", label: "Принять возврат", icon: ArrowRight, tone: "primary" },
+        { id: "complete", label: "Завершить аренду", icon: ArrowRight, tone: "primary" },
         { id: "addPayment", label: "Принять платёж", icon: Plus, tone: "ghost" },
         { id: "incident", label: "Зафиксировать инцидент", icon: AlertTriangle, tone: "warn" },
         { id: "revert-overdue", label: "Снять просрочку", icon: XCircle, tone: "ghost" },
         { id: "police", label: "Подать в полицию", icon: ShieldAlert, tone: "danger" },
       ]);
     case "returning":
+      // Единое окно завершения. Чек-лист (экипировка/состояние) +
+      // галка «Есть ущерб?» внутри одного диалога — пользователь
+      // решает прямо там, без отдельных кнопок «без ущерба / с ущербом».
       return withExtras([
-        { id: "complete", label: "Завершить без ущерба", icon: CheckCircle2, tone: "primary" },
-        { id: "complete-damage", label: "Завершить с ущербом", icon: AlertTriangle, tone: "warn" },
+        { id: "complete", label: "Завершить аренду", icon: CheckCircle2, tone: "primary" },
       ]);
     case "completed":
       return [

@@ -83,8 +83,8 @@ export type Rental = {
 /** Фиксированный залог согласно договору аренды */
 export const DEPOSIT_AMOUNT = 2000;
 
-/** Минимальный срок аренды — по минимальному тарифу «3-7 дней» */
-export const MIN_RENTAL_DAYS = 3;
+/** Минимальный срок аренды — 1 сутки (тариф «1–3 дня» по 1300₽). */
+export const MIN_RENTAL_DAYS = 1;
 
 export const MODEL_LABEL: Record<ScooterModel, string> = {
   jog: "Yamaha Jog",
@@ -105,14 +105,14 @@ export const TARIFF: Record<ScooterModel, Record<TariffPeriod, number>> = {
 };
 
 export const TARIFF_PERIOD_LABEL: Record<TariffPeriod, string> = {
-  short: "3–7 дней",
-  week: "от 7 дней",
+  short: "1–3 дня",
+  week: "4–29 дней",
   month: "от 30 дней",
 };
 
 /** Определяет тарифный период по количеству дней */
 export function periodForDays(days: number): TariffPeriod {
-  if (days < 7) return "short";
+  if (days <= 3) return "short";
   if (days < 30) return "week";
   return "month";
 }

@@ -123,11 +123,20 @@ function getUnreachableSet(): Set<number> {
  * Функция синхронная — возвращает stub с временным id; реальный id/объект
  * прилетит следующим обновлением useApiClients.
  */
-function addClient(data: Omit<Client, "id">): Client {
+function addClient(
+  data: Omit<Client, "id"> & {
+    sourceCustom?: string | null;
+    isForeigner?: boolean;
+    passportRaw?: string | null;
+  },
+): Client {
   const body: CreateClientInput = {
     name: data.name,
     phone: data.phone,
     source: data.source,
+    sourceCustom: data.sourceCustom ?? null,
+    isForeigner: data.isForeigner ?? false,
+    passportRaw: data.passportRaw ?? null,
     rating: data.rating,
     comment: data.comment,
     blacklisted: data.blacklisted,

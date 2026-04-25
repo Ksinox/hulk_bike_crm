@@ -250,9 +250,9 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
           }}
         />
         <KpiTile
-          label="Парк аренды"
+          label="Готов к аренде"
           value={counters.rental_pool}
-          hint="готовы к сдаче"
+          hint="свободны, можно выдавать"
           icon={ShoppingBag}
           accent="green"
           active={tab === "rental_pool"}
@@ -262,7 +262,7 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
           }}
         />
         <KpiTile
-          label="В аренде"
+          label="Активная аренда"
           value={counters.rented}
           hint="действующие договоры"
           icon={Key}

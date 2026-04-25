@@ -17,8 +17,8 @@ export type ScooterDisplayStatus = ScooterBaseStatus | "rented";
 
 export const SCOOTER_STATUS_LABEL: Record<ScooterDisplayStatus, string> = {
   ready: "Не распределён",
-  rental_pool: "Парк аренды",
-  rented: "В аренде",
+  rental_pool: "Готов к аренде",
+  rented: "Активная аренда",
   repair: "Ремонт",
   buyout: "Выкуп",
   for_sale: "Продаётся",

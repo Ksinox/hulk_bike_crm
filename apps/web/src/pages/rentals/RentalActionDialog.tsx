@@ -64,6 +64,9 @@ export function RentalActionDialog({
   const [returnOk, setReturnOk] = useState(true);
   const [equipmentOk, setEquipmentOk] = useState(true);
   const [depositBack, setDepositBack] = useState(true);
+  // Единый сценарий «Завершить аренду» — галка «Есть ущерб?»
+  // включает блок суммы и описания. Без галки — обычное завершение.
+  const [hasDamage, setHasDamage] = useState(false);
 
   // Для инцидента посреди аренды
   const [incidentType, setIncidentType] = useState("ДТП");
@@ -89,7 +92,114 @@ export function RentalActionDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const spec: Spec = specFor(action, rental);
+  const spec: Spec = (() => {
+    if (action === "complete") {
+      const isInspectionStep =
+        rental.status === "active" || rental.status === "overdue";
+      // Шаг 1: пользователь жмёт «Завершить аренду» — переводим в режим
+      // приёма (returning). Это позволяет вернуться к чек-листу позже,
+      // если приём прерывается (что-то надо уточнить, клиент уехал и т.п.).
+      if (isInspectionStep) {
+        return {
+          title: "Завершить аренду — начать приём",
+          body: (
+            <div className="space-y-3">
+              <div className="flex items-start gap-2 rounded-[10px] bg-blue-50 px-3 py-2 text-[12px] text-blue-700">
+                <Check size={14} className="mt-0.5 shrink-0" />
+                <span>
+                  Клиент привёз скутер. Откроется режим осмотра — заполните
+                  чек-лист в табе «Возврат» и затем подтвердите завершение
+                  с галкой «Есть ущерб», если что-то нашли.
+                </span>
+              </div>
+            </div>
+          ),
+          cta: "Начать приём",
+          ctaTone: "primary",
+        };
+      }
+      // Шаг 2: уже returning — единое окно с чек-листом и галкой ущерба.
+      return {
+        title: "Завершить аренду",
+        body: (
+          <div className="space-y-3">
+            <div className="rounded-[10px] border border-border bg-surface-soft p-3">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-2 mb-2">
+                Чек-лист приёма
+              </div>
+              <div className="space-y-1.5 text-[13px]">
+                <Checkline
+                  checked={equipmentOk}
+                  onChange={setEquipmentOk}
+                  label="Экипировка возвращена в полном объёме"
+                />
+                <Checkline
+                  checked={returnOk}
+                  onChange={setReturnOk}
+                  label="Состояние скутера в порядке"
+                />
+                <Checkline
+                  checked={depositBack}
+                  onChange={setDepositBack}
+                  label="Залог возвращён клиенту"
+                />
+              </div>
+            </div>
+
+            <label className="flex items-start gap-2 rounded-[10px] border border-border bg-surface-soft p-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={hasDamage}
+                onChange={(e) => setHasDamage(e.target.checked)}
+                className="mt-0.5 h-4 w-4 cursor-pointer accent-orange"
+              />
+              <div className="flex-1">
+                <div className="text-[13px] font-bold text-ink">Есть ущерб?</div>
+                <div className="text-[11px] text-muted">
+                  Отметьте, если при осмотре нашли повреждения. Появятся поля для
+                  суммы и описания, ущерб создаст платёж типа «damage».
+                </div>
+              </div>
+            </label>
+
+            {hasDamage && (
+              <div className="space-y-2 rounded-[10px] border border-orange/30 bg-orange-soft/40 p-3">
+                <div className="flex items-center gap-2 text-[12px] font-bold text-orange-ink">
+                  <AlertTriangle size={14} /> Фиксация ущерба
+                </div>
+                <div>
+                  <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-2">
+                    Сумма ущерба, ₽
+                  </label>
+                  <input
+                    type="number"
+                    value={damageAmount}
+                    onChange={(e) => setDamageAmount(e.target.value)}
+                    className="mt-1 h-9 w-full rounded-[10px] border border-border bg-surface px-3 text-[13px] tabular-nums outline-none focus:border-blue-600"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-2">
+                    Описание повреждений
+                  </label>
+                  <textarea
+                    value={damageNote}
+                    onChange={(e) => setDamageNote(e.target.value)}
+                    rows={2}
+                    placeholder="Например: разбит пластик передней панели, царапина на сиденье"
+                    className="mt-1 w-full resize-y rounded-[10px] border border-border bg-surface px-3 py-2 text-[13px] outline-none focus:border-blue-600"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        ),
+        cta: hasDamage ? "Завершить с ущербом" : "Завершить аренду",
+        ctaTone: hasDamage ? "warn" : "primary",
+      };
+    }
+    return specFor(action, rental);
+  })();
 
   const handleConfirm = () => {
     switch (action) {
@@ -109,14 +219,35 @@ export function RentalActionDialog({
         revertOverdue(rental.id);
         break;
       case "complete":
-        completeRentalNoDamage(rental.id, {
-          dateActual: todayStr(),
-          conditionOk: returnOk,
-          equipmentOk,
-          depositReturned: depositBack,
-        });
+        // Если в active/overdue → переводим в returning (фиксируем что
+        // скутер привезли). Если уже в returning → закрываем сделку,
+        // решая вопрос ущерба галкой внутри окна.
+        if (rental.status === "active" || rental.status === "overdue") {
+          setRentalStatus(rental.id, "returning");
+        } else if (hasDamage) {
+          completeRentalWithDamage(
+            rental.id,
+            {
+              dateActual: todayStr(),
+              conditionOk: false,
+              equipmentOk,
+              depositReturned: depositBack,
+              damageNotes: damageNote,
+            },
+            Number(damageAmount) || 0,
+            damageNote,
+          );
+        } else {
+          completeRentalNoDamage(rental.id, {
+            dateActual: todayStr(),
+            conditionOk: returnOk,
+            equipmentOk,
+            depositReturned: depositBack,
+          });
+        }
         break;
       case "complete-damage":
+        // Legacy путь, оставлен для совместимости, но из UI больше не вызывается.
         completeRentalWithDamage(
           rental.id,
           {
@@ -692,4 +823,29 @@ function specFor(action: ActionKind, rental: Rental): Spec {
         ctaTone: "primary",
       };
   }
+}
+
+/** Строка чек-листа с галкой — для единого окна «Завершить аренду». */
+function Checkline({
+  checked,
+  onChange,
+  label,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  label: string;
+}) {
+  return (
+    <label className="flex cursor-pointer items-center gap-2">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="h-4 w-4 cursor-pointer accent-blue-600"
+      />
+      <span className={cn("text-[13px]", checked ? "text-ink" : "text-muted")}>
+        {label}
+      </span>
+    </label>
+  );
 }

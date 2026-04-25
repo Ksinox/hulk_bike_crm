@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { X, AlertTriangle } from "lucide-react";
+import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   getClientDetails,
@@ -14,6 +14,7 @@ import {
   type UploadedFile,
 } from "./DocUpload";
 import { clientStore } from "./clientStore";
+import { toast } from "@/lib/toast";
 
 const SOURCE_OPTIONS: { id: ClientSource; label: string }[] = [
   { id: "avito", label: SOURCE_LABEL.avito },
@@ -23,12 +24,24 @@ const SOURCE_OPTIONS: { id: ClientSource; label: string }[] = [
   { id: "other", label: SOURCE_LABEL.other },
 ];
 
+/**
+ * Спец-значение источника для выбора «свой вариант» — UI откроет
+ * текстовое поле для произвольного источника. В DB сохраним как
+ * source='other' + sourceCustom='<текст>'.
+ */
+type SourceChoice = ClientSource | "" | "custom";
+
 type Form = {
   name: string;
   phone: string;
   phone2: string;
   birth: string;
-  source: ClientSource;
+  source: SourceChoice;
+  sourceCustom: string;
+  /** Гражданство: РФ → строгая форма паспорта; иностранец → свободная. */
+  isForeigner: boolean;
+  /** Произвольное описание паспорта для иностранца. */
+  passportRaw: string;
 
   passSer: string;
   passNum: string;
@@ -56,7 +69,10 @@ const EMPTY: Form = {
   phone: "",
   phone2: "",
   birth: "",
-  source: "avito",
+  source: "",
+  sourceCustom: "",
+  isForeigner: false,
+  passportRaw: "",
   passSer: "",
   passNum: "",
   passIssuer: "",
@@ -116,6 +132,28 @@ function findDuplicateIn(phone: string, pool: { id: number; name: string; phone:
   return pool.find((c) => c.phone.replace(/\D/g, "") === digits) ?? null;
 }
 
+/**
+ * Автоформат даты ДД.ММ.ГГГГ — точки расставляются автоматически
+ * по мере ввода. Принимает любую строку, оставляет только цифры
+ * и расставляет точки после 2 и 4 цифр.
+ */
+function formatDateRu(v: string): string {
+  const d = v.replace(/\D/g, "").slice(0, 8);
+  if (d.length <= 2) return d;
+  if (d.length <= 4) return `${d.slice(0, 2)}.${d.slice(2)}`;
+  return `${d.slice(0, 2)}.${d.slice(2, 4)}.${d.slice(4)}`;
+}
+
+/**
+ * Автоформат кода подразделения паспорта XXX-XXX —
+ * тире после 3 цифр.
+ */
+function formatDivisionCode(v: string): string {
+  const d = v.replace(/\D/g, "").slice(0, 6);
+  if (d.length <= 3) return d;
+  return `${d.slice(0, 3)}-${d.slice(3)}`;
+}
+
 function formatPhone(v: string): string {
   const digits = v.replace(/\D/g, "").slice(0, 11);
   if (digits.length === 0) return "";
@@ -149,6 +187,9 @@ function initialForm(editing: Client | null): Form {
     phone2: clientStore.getExtraPhone(editing.id) ?? "",
     birth: d.birth === "—" ? "" : d.birth,
     source: editing.source,
+    sourceCustom: "",
+    isForeigner: false,
+    passportRaw: "",
     passSer: d.passport.ser === "—" ? "" : d.passport.ser,
     passNum:
       d.passport.num === "—" ? "" : d.passport.num.replace(/\s/g, ""),
@@ -213,8 +254,21 @@ export function AddClientModal({
       name: validateName(f.name),
       phone: validatePhone(f.phone),
       birth: validateBirth(f.birth),
-      passSer: validateSeries(f.passSer),
-      passNum: validateNumber(f.passNum),
+      // Для иностранца паспорт в свободной форме — структурные поля не валидируем.
+      passSer: f.isForeigner ? null : validateSeries(f.passSer),
+      passNum: f.isForeigner ? null : validateNumber(f.passNum),
+      passportRaw:
+        f.isForeigner && f.passportRaw.trim().length === 0
+          ? "Опишите документ"
+          : null,
+      source:
+        !f.source
+          ? "Выберите источник"
+          : null,
+      sourceCustom:
+        f.source === "custom" && f.sourceCustom.trim().length === 0
+          ? "Укажите свой вариант"
+          : null,
       blReason:
         f.blacklisted && f.blReason.trim().length === 0
           ? "Укажите причину"
@@ -241,6 +295,9 @@ export function AddClientModal({
     errors.birth,
     errors.passSer,
     errors.passNum,
+    errors.passportRaw,
+    errors.source,
+    errors.sourceCustom,
   ];
   const ok = required.filter((e) => e === null).length;
   const total = required.length;
@@ -351,15 +408,10 @@ export function AddClientModal({
                 onBlur={() => markTouched("phone")}
                 className={inputClass(showErr("phone"))}
               />
-              {duplicate && (
-                <div className="mt-2 flex items-center gap-2 rounded-[10px] bg-orange-soft/70 px-3 py-2 text-[12px] text-orange-ink">
-                  <AlertTriangle size={14} />
-                  <span>
-                    Клиент с таким телефоном уже есть:{" "}
-                    <b>{duplicate.name}</b>
-                  </span>
-                </div>
-              )}
+              {/* Подсказку об уже существующем клиенте не показываем
+                  во время заполнения — это новый клиент по определению.
+                  Дубль ловим на сохранении и блокируем со стилизованной
+                  ошибкой, чтобы не было случайных дублей. */}
             </Field>
 
             <Field
@@ -387,33 +439,106 @@ export function AddClientModal({
                 <input
                   id="f-birth"
                   type="text"
+                  inputMode="numeric"
                   value={f.birth}
                   placeholder="ДД.ММ.ГГГГ"
                   maxLength={10}
-                  onChange={(e) => set("birth", e.target.value)}
+                  onChange={(e) => set("birth", formatDateRu(e.target.value))}
                   onBlur={() => markTouched("birth")}
                   className={inputClass(showErr("birth"))}
                 />
               </Field>
-              <Field label="Источник" htmlFor="f-source">
+              <Field
+                label="Источник"
+                required
+                error={showErr("source")}
+                htmlFor="f-source"
+              >
                 <select
                   id="f-source"
                   value={f.source}
-                  onChange={(e) => set("source", e.target.value as ClientSource)}
-                  className={inputClass(null)}
+                  onChange={(e) =>
+                    set("source", e.target.value as SourceChoice)
+                  }
+                  className={inputClass(showErr("source"))}
                 >
+                  <option value="" disabled>
+                    Выберите источник…
+                  </option>
                   {SOURCE_OPTIONS.map((s) => (
                     <option key={s.id} value={s.id}>
                       {s.label}
                     </option>
                   ))}
+                  <option value="custom">Свой вариант…</option>
                 </select>
+                {f.source === "custom" && (
+                  <input
+                    type="text"
+                    value={f.sourceCustom}
+                    onChange={(e) => set("sourceCustom", e.target.value)}
+                    placeholder="Откуда узнал о нас"
+                    className={cn(
+                      inputClass(showErr("sourceCustom")),
+                      "mt-1.5",
+                    )}
+                  />
+                )}
               </Field>
             </Row>
           </Section>
 
           {/* Section 2 — Паспорт */}
           <Section num={2} title="Паспортные данные" badge="для договора">
+            <div className="mb-3 flex items-center gap-2 rounded-[10px] border border-border bg-surface-soft p-2">
+              <button
+                type="button"
+                onClick={() => set("isForeigner", false)}
+                className={cn(
+                  "flex-1 rounded-[8px] px-3 py-1.5 text-[12px] font-semibold transition-colors",
+                  !f.isForeigner
+                    ? "bg-blue-600 text-white"
+                    : "text-muted hover:text-ink",
+                )}
+              >
+                Гражданин РФ
+              </button>
+              <button
+                type="button"
+                onClick={() => set("isForeigner", true)}
+                className={cn(
+                  "flex-1 rounded-[8px] px-3 py-1.5 text-[12px] font-semibold transition-colors",
+                  f.isForeigner
+                    ? "bg-blue-600 text-white"
+                    : "text-muted hover:text-ink",
+                )}
+              >
+                Иностранный гражданин
+              </button>
+            </div>
+
+            {f.isForeigner ? (
+              <Field
+                label="Документ удостоверяющий личность"
+                hint={
+                  <span className="text-[10px] text-muted-2">
+                    в свободной форме — серия/номер паспорта, гражданство, кем
+                    выдан, дата
+                  </span>
+                }
+                htmlFor="f-praw"
+              >
+                <textarea
+                  id="f-praw"
+                  rows={4}
+                  value={f.passportRaw}
+                  onChange={(e) => set("passportRaw", e.target.value)}
+                  placeholder="Например: Паспорт гражданина Узбекистана AB1234567, выдан МВД Респ. Узбекистан 12.03.2019, действителен до 12.03.2029"
+                  className="w-full resize-y rounded-[10px] border border-border bg-surface px-3 py-2 text-[13px] outline-none focus:border-blue-600"
+                />
+              </Field>
+            ) : (
+            <>
             <Row>
               <Field
                 label="Серия"
@@ -471,10 +596,11 @@ export function AddClientModal({
                 <input
                   id="f-pdate"
                   type="text"
+                  inputMode="numeric"
                   value={f.passDate}
                   placeholder="ДД.ММ.ГГГГ"
                   maxLength={10}
-                  onChange={(e) => set("passDate", e.target.value)}
+                  onChange={(e) => set("passDate", formatDateRu(e.target.value))}
                   className={inputClass(null)}
                 />
               </Field>
@@ -482,10 +608,11 @@ export function AddClientModal({
                 <input
                   id="f-pcode"
                   type="text"
+                  inputMode="numeric"
                   value={f.passCode}
                   placeholder="000-000"
                   maxLength={7}
-                  onChange={(e) => set("passCode", e.target.value)}
+                  onChange={(e) => set("passCode", formatDivisionCode(e.target.value))}
                   className={inputClass(null)}
                 />
               </Field>
@@ -504,6 +631,8 @@ export function AddClientModal({
                 onChange={(v) => set("passportRegFile", v)}
               />
             </div>
+            </>
+            )}
           </Section>
 
           {/* Section 3 — Адрес */}
@@ -645,17 +774,37 @@ export function AddClientModal({
                 type="button"
                 disabled={!canSave}
                 onClick={() => {
+                  if (!editing && duplicate) {
+                    toast.error(
+                      "Такой клиент уже есть",
+                      `«${duplicate.name}» с этим номером уже в базе. Откройте его карточку, не создавайте дубль.`,
+                    );
+                    return;
+                  }
                   if (editing) {
                     clientStore.setPhoto(editing.id, f.photoFile);
                     clientStore.setExtraPhone(editing.id, f.phone2 || null);
                   } else {
+                    // Если выбран «свой вариант» — отправляем
+                    // source='other' + sourceCustom='<текст>'.
+                    const finalSource: ClientSource =
+                      f.source === "custom" || f.source === ""
+                        ? "other"
+                        : (f.source as ClientSource);
+                    const finalSourceCustom =
+                      f.source === "custom" ? f.sourceCustom.trim() : null;
                     const created = clientStore.addClient({
                       name: f.name.trim(),
                       phone: f.phone,
                       rating: 68,
                       rents: 0,
                       debt: 0,
-                      source: f.source,
+                      source: finalSource,
+                      sourceCustom: finalSourceCustom,
+                      isForeigner: f.isForeigner,
+                      passportRaw: f.isForeigner
+                        ? f.passportRaw.trim() || null
+                        : null,
                       added: "13.10.26",
                       blacklisted: f.blacklisted || undefined,
                       comment: f.blReason || undefined,
@@ -732,7 +881,7 @@ function Field({
 }: {
   label: string;
   required?: boolean;
-  hint?: string;
+  hint?: React.ReactNode;
   error?: string | null;
   htmlFor?: string;
   children: React.ReactNode;
