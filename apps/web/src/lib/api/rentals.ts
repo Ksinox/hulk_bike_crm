@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type { ApiRental, ListResponse } from "./types";
 
@@ -21,5 +21,21 @@ export function useApiRental(id: number | null) {
     queryKey: id == null ? rentalsKeys.all : rentalsKeys.byId(id),
     queryFn: () => api.get<ApiRental>(`/api/rentals/${id}`),
     enabled: id != null,
+  });
+}
+
+/**
+ * Физическое удаление аренды. Сервер сам решит, можно ли —
+ * вернёт 409 если есть подтверждённые платежи или статус «выдана».
+ */
+export function useDeleteRental() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api.delete<void>(`/api/rentals/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: rentalsKeys.all });
+      qc.invalidateQueries({ queryKey: ["scooters"] });
+      qc.invalidateQueries({ queryKey: ["activity"] });
+    },
   });
 }

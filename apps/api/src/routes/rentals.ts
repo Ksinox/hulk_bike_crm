@@ -149,6 +149,43 @@ export async function rentalsRoutes(app: FastifyInstance) {
         .send({ error: "validation", issues: parsed.error.issues });
     }
     const d = parsed.data;
+
+    // Аренда в статусе «выдана» обязана иметь скутер. Иначе в системе
+    // появляются «призраки» — аренды без скутера, которые раздувают
+    // счётчик «активных» и не имеют физического смысла.
+    const issuedStatuses = new Set(["active", "overdue", "returning"]);
+    if (d.status && issuedStatuses.has(d.status) && !d.scooterId) {
+      return reply.code(400).send({
+        error: "scooter_required",
+        message: "Для аренды в статусе «выдана» обязателен скутер.",
+      });
+    }
+
+    // Блокируем выдачу скутера, по которому уже есть открытая аренда.
+    // Открытая = active / overdue / returning. Скутер занят, пока возврат
+    // не подтверждён — иначе один скутер окажется одновременно у двух
+    // клиентов в учёте, и парк-метрики будут врать.
+    if (d.scooterId) {
+      const openRentals = await db
+        .select({ id: rentals.id, status: rentals.status })
+        .from(rentals)
+        .where(
+          and(
+            eq(rentals.scooterId, d.scooterId),
+            sql`${rentals.status} IN ('active', 'overdue', 'returning')`,
+          ),
+        );
+      if (openRentals.length > 0) {
+        const r = openRentals[0]!;
+        return reply.code(409).send({
+          error: "scooter_busy",
+          message: `Скутер ещё в открытой аренде #${String(r.id).padStart(4, "0")} (${rentalStatusLabel(r.status)}). Сначала закройте её.`,
+          rentalId: r.id,
+          rentalStatus: r.status,
+        });
+      }
+    }
+
     const [row] = await db
       .insert(rentals)
       .values({
@@ -228,6 +265,73 @@ export async function rentalsRoutes(app: FastifyInstance) {
       });
     }
     return row;
+  });
+
+  /**
+   * DELETE /api/rentals/:id
+   * Физическое удаление аренды. Только creator/director.
+   *
+   * Разрешено только для «безвредных» состояний:
+   *   - аренды без скутера (черновики/заявки),
+   *   - статусы new_request / cancelled,
+   *   - и ТОЛЬКО если по аренде нет ни одного подтверждённого платежа
+   *     (финансовый учёт не должен страдать от удалений).
+   *
+   * Если эти условия не выполняются — возвращаем 409 с подсказкой
+   * перевести аренду в cancelled через PATCH (это safe-альтернатива).
+   */
+  app.delete<{ Params: { id: string } }>("/:id", async (req, reply) => {
+    if (req.user.role !== "creator" && req.user.role !== "director") {
+      return reply.code(403).send({ error: "forbidden" });
+    }
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
+
+    const [row] = await db.select().from(rentals).where(eq(rentals.id, id));
+    if (!row) return reply.code(404).send({ error: "not found" });
+
+    const allowedStatuses = new Set([
+      "new_request",
+      "meeting",
+      "cancelled",
+    ]);
+    const canDelete = !row.scooterId || allowedStatuses.has(row.status);
+    if (!canDelete) {
+      return reply.code(409).send({
+        error: "rental_in_progress",
+        message:
+          "Удалить можно только аренду без скутера или в статусах «заявка»/«встреча»/«отменена». Активную аренду переведите в «Отменена».",
+      });
+    }
+
+    const paidPayments = await db
+      .select({ id: payments.id })
+      .from(payments)
+      .where(and(eq(payments.rentalId, id), eq(payments.paid, true)))
+      .limit(1);
+    if (paidPayments.length > 0) {
+      return reply.code(409).send({
+        error: "has_paid_payments",
+        message:
+          "По аренде есть подтверждённые платежи — физическое удаление запрещено для сохранности учёта. Используйте «Отменить аренду».",
+      });
+    }
+
+    // Подчищаем все запланированные/неоплаченные платежи и инспекции возврата,
+    // потом удаляем саму аренду.
+    await db.delete(payments).where(eq(payments.rentalId, id));
+    await db
+      .delete(returnInspections)
+      .where(eq(returnInspections.rentalId, id));
+    await db.delete(rentals).where(eq(rentals.id, id));
+
+    await logActivity(req, {
+      entity: "rental",
+      entityId: id,
+      action: "deleted",
+      summary: `Удалена аренда #${String(id).padStart(4, "0")}`,
+    });
+    return reply.code(204).send();
   });
 
   // POST /api/rentals/:id/revert-overdue — снять просрочку

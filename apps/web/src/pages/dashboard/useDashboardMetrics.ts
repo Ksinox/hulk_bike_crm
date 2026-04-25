@@ -170,8 +170,12 @@ export function useDashboardMetrics(): DashboardMetrics {
     });
 
     // ===== Активные аренды / загрузка парка
+    // Считаем активной только аренду со скутером — иначе «призрачные»
+    // аренды без scooterId раздувают счётчик и расходятся с парком.
     const activeRentalsCount = rentals.filter(
-      (r) => r.status === "active" || r.status === "overdue",
+      (r) =>
+        (r.status === "active" || r.status === "overdue") &&
+        r.scooterId != null,
     ).length;
 
     // fleetTotal — скутеры которые потенциально могут быть в парке аренды.

@@ -44,7 +44,12 @@ import {
 } from "./rentalsStore";
 import { ClientQuickView } from "@/pages/clients/ClientQuickView";
 import { RentalEditModal } from "./RentalEditModal";
-import { Pencil } from "lucide-react";
+import { Pencil, Trash2 } from "lucide-react";
+import { useDeleteRental } from "@/lib/api/rentals";
+import { useMe } from "@/lib/api/auth";
+import { confirmDialog } from "@/lib/toast";
+import { toast } from "@/lib/toast";
+import { ApiError } from "@/lib/api";
 
 type TabId = "terms" | "payments" | "return" | "incidents" | "tasks" | "docs";
 
@@ -174,6 +179,8 @@ export function RentalCard({ rental }: { rental: Rental }) {
   const [confirmForNewId, setConfirmForNewId] = useState<number | null>(null);
   const [clientQuickView, setClientQuickView] = useState(false);
   const newRental = useRental(confirmForNewId);
+  const { data: me } = useMe();
+  const deleteRental = useDeleteRental();
 
   const { data: apiClients } = useApiClients();
   const client = useMemo(
@@ -213,9 +220,27 @@ export function RentalCard({ rental }: { rental: Rental }) {
   const hasDamage = (rental.damageAmount ?? 0) > 0;
   // К любому статусу добавляем «Изменить аренду» — доступно всем ролям, пишется в activity log
   const baseActions = statusActions(rental.status, { hasDamage, isUnreachable });
+  // Удалять может только директор/создатель и только «безвредные» аренды.
+  // Сервер всё равно проверит — UI просто не показывает кнопку, когда
+  // удаление заведомо запрещено.
+  const canDelete =
+    (me?.role === "director" || me?.role === "creator") &&
+    (!rental.scooter ||
+      rental.status === "new_request" ||
+      rental.status === "cancelled");
   const actions: MenuAction[] = [
     { id: "edit", label: "Изменить аренду", icon: Pencil, tone: "ghost" },
     ...baseActions,
+    ...(canDelete
+      ? [
+          {
+            id: "delete",
+            label: "Удалить аренду",
+            icon: Trash2,
+            tone: "danger" as const,
+          },
+        ]
+      : []),
   ];
 
   // Финансы — считаются по ВСЕЙ цепочке продлений.
@@ -230,9 +255,31 @@ export function RentalCard({ rental }: { rental: Rental }) {
     .reduce((s, p) => s + p.amount, 0);
   const expectedTotal = chainExpected;
 
-  const handleAction = (id: string) => {
+  const handleAction = async (id: string) => {
     if (id === "extend" || id === "clone") return setExtendOpen(true);
     if (id === "edit") return setEditRentalOpen(true);
+    if (id === "delete") {
+      const ok = await confirmDialog({
+        title: "Удалить аренду?",
+        message: `Аренда #${String(rental.id).padStart(4, "0")} будет удалена без возможности восстановления. Связанные неоплаченные платежи и записи возврата тоже удалятся.`,
+        confirmText: "Удалить",
+        cancelText: "Отмена",
+        danger: true,
+      });
+      if (!ok) return;
+      try {
+        await deleteRental.mutateAsync(rental.id);
+        toast.success("Аренда удалена", `#${String(rental.id).padStart(4, "0")}`);
+      } catch (e) {
+        if (e instanceof ApiError) {
+          const body = e.body as { message?: string } | null;
+          toast.error("Не удалось удалить", body?.message ?? "Попробуйте ещё раз");
+        } else {
+          toast.error("Не удалось удалить", (e as Error).message ?? "");
+        }
+      }
+      return;
+    }
     setAction(id as ActionKind);
   };
 

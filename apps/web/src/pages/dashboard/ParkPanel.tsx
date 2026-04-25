@@ -15,6 +15,7 @@ import { toast } from "@/lib/toast";
 type TileStatus =
   | "rented"
   | "overdue"
+  | "returning" // на возврате — физически у клиента или в процессе приёма
   | "ready" // не распределён (baseStatus=ready)
   | "pool" // в парке аренды, свободен к сдаче (baseStatus=rental_pool, без активной аренды)
   | "repair"
@@ -37,6 +38,7 @@ const STATUS_CHIPS: { id: StatusFilter; label: string; swatch: string }[] = [
   { id: "all", label: "всё", swatch: "hsl(var(--muted))" },
   { id: "rented", label: "в аренде", swatch: "hsl(var(--blue))" },
   { id: "overdue", label: "просрочка", swatch: "hsl(var(--red))" },
+  { id: "returning", label: "на возврате", swatch: "hsl(var(--purple))" },
   { id: "pool", label: "парк аренды", swatch: "hsl(var(--green))" },
   { id: "ready", label: "не распределён", swatch: "hsl(var(--border-strong))" },
   { id: "repair", label: "ремонт", swatch: "hsl(var(--orange))" },
@@ -48,6 +50,7 @@ const STATUS_CHIPS: { id: StatusFilter; label: string; swatch: string }[] = [
 const STATUS_LABEL: Record<TileStatus, string> = {
   rented: "в аренде",
   overdue: "просрочен",
+  returning: "на возврате",
   ready: "не распределён",
   pool: "парк аренды",
   repair: "в ремонте",
@@ -78,11 +81,21 @@ export function ParkPanel({
     const scooters = scootersQ.data ?? [];
     const rentals = rentalsQ.data ?? [];
 
-    const activeByScooter = new Map<number, "active" | "overdue">();
+    // Скутер «занят» (числится в аренде на дашборде) пока существует
+    // открытая аренда — active / overdue / returning. Возврат тоже
+    // «занятость», потому что физически скутер ещё не принят и решение
+    // по нему не вынесено (ущерб? состояние? залог?). До закрытия аренды
+    // он не свободен.
+    const activeByScooter = new Map<
+      number,
+      "active" | "overdue" | "returning"
+    >();
     rentals.forEach((r) => {
       if (r.scooterId == null) return;
       if (r.status === "active") activeByScooter.set(r.scooterId, "active");
       if (r.status === "overdue") activeByScooter.set(r.scooterId, "overdue");
+      if (r.status === "returning")
+        activeByScooter.set(r.scooterId, "returning");
     });
 
     const activeRentalByScooter = new Map<number, number>();
@@ -222,7 +235,11 @@ export function ParkPanel({
           const num = s.name.split("#")[1] ?? s.name;
           const handleClick = () => {
             // Клик в зависимости от статуса — разные операционные действия
-            if (s.status === "rented" || s.status === "overdue") {
+            if (
+              s.status === "rented" ||
+              s.status === "overdue" ||
+              s.status === "returning"
+            ) {
               if (s.rentalId != null)
                 navigate({ route: "rentals", rentalId: s.rentalId });
               return;
@@ -300,6 +317,7 @@ function hintFor(s: TileStatus): string {
   switch (s) {
     case "rented":
     case "overdue":
+    case "returning":
       return "открыть карточку аренды";
     case "pool":
       return "оформить аренду";
@@ -379,14 +397,17 @@ function ReassignDialog({
 
 function computeTileStatus(
   s: ApiScooter,
-  activeKind: "active" | "overdue" | undefined,
+  activeKind: "active" | "overdue" | "returning" | undefined,
 ): TileStatus {
   if (s.baseStatus === "sold") return "sold";
   if (s.baseStatus === "disassembly") return "disassembly";
   if (s.baseStatus === "for_sale" || s.baseStatus === "buyout")
     return "for_sale";
   if (s.baseStatus === "repair") return "repair";
+  // Открытая аренда «бьёт» baseStatus — пока есть активная/просроченная/
+  // на возврате аренда, скутер не свободен, что бы ни было записано в БД.
   if (activeKind === "overdue") return "overdue";
+  if (activeKind === "returning") return "returning";
   if (activeKind === "active") return "rented";
   // Теперь различаем «не распределён» и «парк аренды свободен»
   if (s.baseStatus === "rental_pool") return "pool";
@@ -399,6 +420,8 @@ function tileClass(s: TileStatus): string {
       return "bg-blue text-white";
     case "overdue":
       return "bg-red text-white";
+    case "returning":
+      return "bg-purple text-white";
     case "pool":
       return "bg-green text-white";
     case "ready":

@@ -148,7 +148,11 @@ export function Rentals() {
       return dt >= periodStart && dt < periodEnd;
     };
 
-    const active = rentals.filter((r) => r.status === "active").length;
+    // Активная аренда без скутера — это «призрак» (артефакт старых данных
+    // или неправильно созданная заявка). Не считаем её — иначе бейдж
+    // расходится с дашбордом и физическим положением парка.
+    const active = rentals.filter((r) => r.status === "active" && r.scooter)
+      .length;
     const overdue = rentals.filter((r) => r.status === "overdue").length;
     const returningToday = rentals.filter(
       (r) =>
@@ -219,8 +223,8 @@ export function Rentals() {
             Аренды
           </h1>
           <span className="rounded-full bg-surface-soft px-3 py-1 text-[13px] font-semibold text-muted">
-            {rentals.filter((r) => r.status === "active").length} активных из{" "}
-            {rentals.length}
+            {rentals.filter((r) => r.status === "active" && r.scooter).length}{" "}
+            активных из {rentals.length}
           </span>
         </div>
         <button
