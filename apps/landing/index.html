@@ -2047,14 +2047,18 @@ revealTargets.forEach(el => io.observe(el));
   const waLink = name =>
     `https://wa.me/${WA_PHONE}?text=${encodeURIComponent('Привет! Хочу арендовать ' + name)}`;
 
-  fetch(apiUrl.replace(/\/+$/, '') + '/api/public/scooter-models', {
-    credentials: 'omit',
-  })
-    .then(r => r.ok ? r.json() : Promise.reject(new Error('http ' + r.status)))
+  const showEmpty = (text) => {
+    empty.hidden = false;
+    if (text) empty.textContent = text;
+  };
+
+  const endpoint = apiUrl.replace(/\/+$/, '') + '/api/public/scooter-models';
+  fetch(endpoint, { credentials: 'omit' })
+    .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
     .then(data => {
       const items = Array.isArray(data && data.items) ? data.items : [];
       if (items.length === 0) {
-        empty.hidden = false;
+        showEmpty('В CRM пока нет моделей с аватарками. Зайди в Серия → Модели и загрузи фото.');
         return;
       }
       const frag = document.createDocumentFragment();
@@ -2089,8 +2093,9 @@ revealTargets.forEach(el => io.observe(el));
       mountBuybackStage(items, apiUrl);
     })
     .catch(err => {
-      console.warn('[landing] не смог загрузить модели:', err);
-      empty.hidden = false;
+      console.warn('[landing] не смог загрузить модели:', err, 'endpoint:', endpoint);
+      const msg = (err && err.message) ? err.message : String(err);
+      showEmpty('Не получается загрузить модели из CRM. Браузер сказал: «' + msg + '». Адрес: ' + endpoint);
     });
 
   function mountBuybackStage(items, apiUrl) {
