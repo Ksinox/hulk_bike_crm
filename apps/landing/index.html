@@ -2030,9 +2030,11 @@ revealTargets.forEach(el => io.observe(el));
 /* ============ ПАРК: подгружаем модели из CRM ============ */
 (function loadScooters() {
   const meta = document.querySelector('meta[name="api-url"]');
-  const raw = meta ? meta.getAttribute('content') : '';
-  // Если плейсхолдер не заменён (dev без docker) — fallback на локальный API.
-  const apiUrl = (!raw || raw === '__API_URL__') ? 'http://localhost:4000' : raw;
+  const raw = meta ? (meta.getAttribute('content') || '').trim() : '';
+  // Прод-сборка подменяет __API_URL__ на реальный домен через sed (см. Dockerfile).
+  // Если в content валидный http(s):// — используем; иначе dev-fallback.
+  // ВАЖНО: не сравнивать со строкой-sentinel — sed подменит её тоже.
+  const apiUrl = /^https?:\/\//.test(raw) ? raw : 'http://localhost:4000';
 
   const tpl = document.getElementById('scooterCardTpl');
   const scroll = document.getElementById('parkScroll');
