@@ -1,0 +1,10 @@
+{
+  "name": "landing",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Публичный лендинг hulkbike.ru — статический HTML + JS, тянет модели из CRM API",
+  "scripts": {
+    "dev": "npx --yes serve -l 5180 -n .",
+    "preview": "npx --yes serve -l 5180 -n ."
+  }
+}

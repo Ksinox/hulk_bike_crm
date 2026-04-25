@@ -4,7 +4,7 @@
 
 ## Архитектура в проде
 
-Три независимых сервиса в одном Dokploy-проекте:
+Четыре независимых сервиса в одном Dokploy-проекте:
 
 ```
 ┌─────────────┐        ┌──────────┐        ┌────────────┐
@@ -12,13 +12,24 @@
 │  (nginx)    │  CORS  │ (node)   │        │            │
 │  :80        │        │  :4000   │        │   :5432    │
 └─────────────┘        └──────────┘        └────────────┘
-     ▲                      ▲
-     │                      │
- crm.hulk.ru          api.hulk.ru    (Traefik + Let's Encrypt от Dokploy)
+     ▲                  ▲      ▲
+     │                  │      │
+ crm.hulk.ru     api.hulk.ru   │       (Traefik + Let's Encrypt от Dokploy)
+                                │
+                       ┌─────────────┐
+                       │   landing   │
+                       │   (nginx)   │
+                       │   :80       │
+                       └─────────────┘
+                              ▲
+                              │
+                         hulkbike.ru
 ```
 
-- **web** — статика из `apps/web/dist`, раздаётся nginx.
+- **web** — CRM-фронт (статика из `apps/web/dist`, nginx) — для сотрудников.
+- **landing** — публичный сайт `hulkbike.ru` (статика из `apps/landing/`, nginx) — для клиентов.
 - **api** — Fastify, ходит в Postgres, отвечает на `/api/*` и `/health`.
+  Лендинг ходит в `/api/public/*` без авторизации — только модели с аватаркой.
 - **postgres** — из шаблонов самого Dokploy (не из нашего репо).
 
 ## Сначала — проверка локально через docker-compose
@@ -115,6 +126,40 @@ VITE_API_URL=https://api.hulk-bike.ru
 
 **Deploy**.
 
+### 4b. Landing (`hulkbike.ru`)
+
+Публичный лендинг для клиентов — отдельный сервис, тот же репо.
+
+**+ Add Service → Application → Git Provider**:
+- Provider: GitHub, тот же репо
+- Branch: `main`
+- Build Type: **Dockerfile**
+- Build Path: `/`
+- Dockerfile Path: `apps/landing/Dockerfile`
+
+**Build Arguments**:
+```
+API_URL=https://api.hulk-bike.ru
+```
+(подставляется в `<meta name="api-url">` при сборке — лендинг знает, куда ходить за моделями)
+
+**Domains**:
+- Host: `hulkbike.ru` (и при желании `www.hulkbike.ru` отдельным правилом)
+- Port: `80`
+- HTTPS: включить
+
+**Не забыть про CORS** — добавить лендинг в env api-сервиса:
+```
+CORS_ORIGINS=https://crm.hulk-bike.ru,https://hulkbike.ru
+```
+После этого пере-deploy api.
+
+**Deploy**.
+
+Лендинг подтягивает только модели из CRM с заполненной аватаркой. Цены
+обновляются автоматически — если в `Серия → Модели` поменяли тариф,
+карточка на сайте подтянет новое значение при следующей загрузке.
+
 ### 5. Первый seed (разово)
 
 После первой успешной миграции зайди в shell api-контейнера (в Dokploy UI есть Terminal) и запусти:
@@ -162,12 +207,17 @@ VITE_API_URL=https://api.hulk-bike.ru
 | `PORT` | `4000` | порт api |
 | `HOST` | `0.0.0.0` | интерфейс |
 | `NODE_ENV` | `production` | режим |
-| `CORS_ORIGINS` | `https://crm.hulk-bike.ru` | через запятую, домены web |
+| `CORS_ORIGINS` | `https://crm.hulk-bike.ru,https://hulkbike.ru` | через запятую, домены web и лендинга |
 
 ### WEB (`apps/web`)
 | Build arg | Пример | Описание |
 | --- | --- | --- |
 | `VITE_API_URL` | `https://api.hulk-bike.ru` | адрес API, впекается в JS |
+
+### LANDING (`apps/landing`)
+| Build arg | Пример | Описание |
+| --- | --- | --- |
+| `API_URL` | `https://api.hulk-bike.ru` | адрес API, подставляется в `<meta name="api-url">` |
 
 ## Что пока НЕ работает в прод-режиме
 

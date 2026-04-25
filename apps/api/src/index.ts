@@ -21,6 +21,7 @@ import { equipmentRoutes } from "./routes/equipment.js";
 import { scooterMaintenanceRoutes } from "./routes/scooter-maintenance.js";
 import { activityRoutes } from "./routes/activity.js";
 import { rentalDocumentsRoutes } from "./routes/rental-documents.js";
+import { publicRoutes } from "./routes/public.js";
 import authPlugin, { requireAuth } from "./auth/plugin.js";
 import { ensureBucket } from "./storage/index.js";
 
@@ -69,6 +70,11 @@ async function bootstrap() {
 
   // ==== AUTH ROUTES (без требования авторизации) ====
   await app.register(authRoutes, { prefix: "/api/auth" });
+
+  // ==== PUBLIC ROUTES (без авторизации) ====
+  // Раздаются на лендинг hulkbike.ru. Только то, что безопасно
+  // показывать клиентам (модели с аватарками + сами аватарки).
+  await app.register(publicRoutes, { prefix: "/api/public" });
 
   // ==== PROTECTED API ROUTES ====
   // Все нижеследующие роуты требуют авторизацию через cookie hulk_session.
