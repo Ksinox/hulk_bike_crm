@@ -21,6 +21,12 @@ const Body = z
     shortRate: z.number().int().min(0).max(1_000_000).optional(),
     weekRate: z.number().int().min(0).max(1_000_000).optional(),
     monthRate: z.number().int().min(0).max(1_000_000).optional(),
+    /** Технические характеристики — для лендинга */
+    maxSpeedKmh: z.number().int().min(0).max(400).nullable().optional(),
+    tankVolumeL: z.union([z.number().min(0).max(99), z.string().regex(/^\d+(\.\d{1,2})?$/)])
+      .nullable()
+      .optional(),
+    coolingType: z.enum(["air", "liquid"]).nullable().optional(),
     note: z.string().nullable().optional(),
   })
   .strict();
@@ -54,6 +60,10 @@ export async function scooterModelsRoutes(app: FastifyInstance) {
         shortRate: data.shortRate ?? 1300,
         weekRate: data.weekRate ?? 500,
         monthRate: data.monthRate ?? 400,
+        maxSpeedKmh: data.maxSpeedKmh ?? null,
+        // Drizzle для numeric ждёт строку
+        tankVolumeL: data.tankVolumeL == null ? null : String(data.tankVolumeL),
+        coolingType: data.coolingType ?? null,
         note: data.note ?? null,
       })
       .returning();
@@ -86,9 +96,14 @@ export async function scooterModelsRoutes(app: FastifyInstance) {
         .where(eq(scooterModels.id, id));
       if (!before) return reply.code(404).send({ error: "not found" });
 
+      // Подготавливаем patch: numeric требует string-репрезентацию
+      const patch: Record<string, unknown> = { ...parsed.data, updatedAt: new Date() };
+      if ("tankVolumeL" in patch) {
+        patch.tankVolumeL = patch.tankVolumeL == null ? null : String(patch.tankVolumeL);
+      }
       const [updated] = await db
         .update(scooterModels)
-        .set({ ...parsed.data, updatedAt: new Date() })
+        .set(patch)
         .where(eq(scooterModels.id, id))
         .returning();
       if (!updated) return reply.code(404).send({ error: "not found" });
@@ -103,6 +118,9 @@ export async function scooterModelsRoutes(app: FastifyInstance) {
           weekRate: "тариф за неделю",
           monthRate: "тариф за месяц",
           quickPick: "быстрый выбор",
+          maxSpeedKmh: "макс. скорость",
+          tankVolumeL: "объём бака",
+          coolingType: "тип охлаждения",
           note: "примечание",
         },
       );

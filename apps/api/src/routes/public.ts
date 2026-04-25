@@ -26,6 +26,9 @@ export async function publicRoutes(app: FastifyInstance) {
         shortRate: scooterModels.shortRate,
         weekRate: scooterModels.weekRate,
         monthRate: scooterModels.monthRate,
+        maxSpeedKmh: scooterModels.maxSpeedKmh,
+        tankVolumeL: scooterModels.tankVolumeL,
+        coolingType: scooterModels.coolingType,
         note: scooterModels.note,
       })
       .from(scooterModels)
@@ -40,6 +43,8 @@ export async function publicRoutes(app: FastifyInstance) {
     return {
       items: rows.map((r) => ({
         ...r,
+        // Drizzle отдаёт numeric строкой — на лендинге удобнее число.
+        tankVolumeL: r.tankVolumeL == null ? null : Number(r.tankVolumeL),
         avatarUrl: `/api/public/scooter-models/${r.id}/avatar`,
       })),
     };

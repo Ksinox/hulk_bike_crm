@@ -852,8 +852,76 @@ input[type="range"]::-moz-range-track {
   width: 100%;
   height: 100%;
   object-fit: contain;
-  padding: 14px;
-  filter: drop-shadow(0 8px 18px rgba(0,0,0,0.45));
+  padding: 10px;
+  filter: drop-shadow(0 10px 22px rgba(0,0,0,0.55));
+}
+
+/* -------- Бейджи поверх фото скутера -------- */
+.scooter-img .meta-badge {
+  position: absolute;
+  top: 12px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: rgba(8, 8, 8, 0.55);
+  backdrop-filter: blur(10px) saturate(1.4);
+  -webkit-backdrop-filter: blur(10px) saturate(1.4);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-pill);
+  font-family: var(--font-mono);
+  line-height: 1;
+  letter-spacing: 0.04em;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 4px 14px rgba(0, 0, 0, 0.35);
+}
+.meta-badge--speed { left: 12px; }
+.meta-badge--speed .num {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  text-shadow: 0 0 8px rgba(197, 255, 61, 0.35);
+}
+.meta-badge--speed .unit {
+  font-size: 9.5px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.5);
+  letter-spacing: 0.08em;
+}
+.meta-badge--cooling { right: 12px; }
+.meta-badge--cooling .label {
+  font-size: 9.5px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.85);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.meta-badge--cooling svg { color: rgba(255, 255, 255, 0.7); }
+.meta-badge--cooling.is-liquid svg { color: #7CC4FF; }
+
+/* -------- Mono-строка с объёмом бака под названием -------- */
+.scooter-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 18px;
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: rgba(255, 255, 255, 0.55);
+}
+.scooter-meta strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.scooter-meta svg {
+  flex: none;
+  color: var(--accent-dark);
+  opacity: 0.85;
 }
 .park-empty {
   flex: 1 1 100%;
@@ -1281,19 +1349,17 @@ footer .brand { justify-content: center; margin-bottom: 10px; font-size: 16px; }
   .included-item { border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); }
   .included-item:nth-child(2n) { border-right: none; }
   .included-item:nth-last-child(-n+2) { border-bottom: none; }
-  /* Парк: на больших экранах — гибкая сетка под количество моделей */
+  /* Парк: 3 крупные карточки в ряд, 5 моделей встают в две строки 3+2 */
   .park-scroll {
-    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-    gap: 22px;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
   }
   .park-empty { grid-column: 1 / -1; }
+  /* Фото скутера на десктопе становится «постером» */
+  .scooter-img { aspect-ratio: 5 / 4; }
 }
 @media (min-width: 1280px) {
   .wrap, .nav-inner { max-width: 1240px; }
-  .park-scroll {
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 20px;
-  }
 }
 </style>
 </head>
@@ -1566,19 +1632,36 @@ footer .brand { justify-content: center; margin-bottom: 10px; font-size: 16px; }
       <div class="scooter-card">
         <div class="scooter-img">
           <img class="scooter-photo" alt="" loading="lazy" decoding="async">
+          <!-- Слот скорости (top-left). Скрыт пока не пришли данные. -->
+          <div class="meta-badge meta-badge--speed js-speed-badge" hidden>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#C5FF3D" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M5 17 A8 8 0 1 1 19 17"/>
+              <path d="M5 17 l-1.5 1" opacity="0.5"/>
+              <path d="M19 17 l1.5 1" opacity="0.5"/>
+              <path d="M12 6 v-1.5" opacity="0.5"/>
+              <line x1="12" y1="13" x2="16.5" y2="9"/>
+              <circle cx="12" cy="13" r="1.4" fill="#C5FF3D" stroke="none"/>
+            </svg>
+            <span class="num js-speed-num"></span>
+            <span class="unit">КМ/Ч</span>
+          </div>
+          <!-- Слот охлаждения (top-right). is-liquid → синяя капля. Скрыт по умолчанию. -->
+          <div class="meta-badge meta-badge--cooling js-cooling-badge" hidden>
+            <span class="js-cooling-icon" aria-hidden="true"></span>
+            <span class="label js-cooling-label"></span>
+          </div>
         </div>
         <div class="scooter-body">
           <h3 class="scooter-name"></h3>
           <div class="scooter-tag"></div>
-          <div class="specs-row">
-            <div class="spec">
-              <div class="s-label">1–3 дня</div>
-              <div class="s-val js-short-rate"></div>
-            </div>
-            <div class="spec">
-              <div class="s-label">От 30 дней</div>
-              <div class="s-val js-month-rate"></div>
-            </div>
+          <div class="scooter-meta js-tank" hidden>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="6" y="7" width="11" height="13" rx="1.5"/>
+              <path d="M9 7 V5 h5 V7"/>
+              <path d="M17 11 h2 v3 a2 2 0 0 1 -2 2"/>
+              <line x1="9" y1="13" x2="14" y2="13" opacity="0.5"/>
+            </svg>
+            <span>Бак <strong class="js-tank-val"></strong></span>
           </div>
           <div class="price-row">
             <span class="price-from">от</span>
@@ -2063,6 +2146,21 @@ revealTargets.forEach(el => io.observe(el));
         showEmpty('В CRM пока нет моделей с аватарками. Зайди в Серия → Модели и загрузи фото.');
         return;
       }
+      const COOLING_LABEL = { air: 'Воздушное', liquid: 'Жидкостное' };
+      // SVG-иконки охлаждения (поток воздуха / капля)
+      const COOLING_ICON = {
+        air: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9 H13 a3 3 0 1 0 -3 -3"/><path d="M3 13 H17 a3.5 3.5 0 1 1 -3.5 3.5"/><path d="M3 17 H9"/></svg>',
+        liquid: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 C 7.5 11 6.5 14.5 6.5 16.5 a5.5 5.5 0 0 0 11 0 c0-2-1-5.5-5.5-13z"/><path d="M9.5 16.5 a2.5 2.5 0 0 0 2.5 2.5" opacity="0.55"/></svg>',
+      };
+      const fmtTank = v => {
+        if (v == null) return null;
+        const n = Number(v);
+        if (!Number.isFinite(n)) return null;
+        // 5.0 → "5 л", 5.5 → "5,5 л"
+        const s = Number.isInteger(n) ? String(n) : n.toFixed(1).replace('.', ',');
+        return s + ' л';
+      };
+
       const frag = document.createDocumentFragment();
       for (const m of items) {
         const node = tpl.content.firstElementChild.cloneNode(true);
@@ -2076,8 +2174,27 @@ revealTargets.forEach(el => io.observe(el));
         } else {
           tag.remove();
         }
-        node.querySelector('.js-short-rate').textContent = fmt(m.shortRate) + ' ₽';
-        node.querySelector('.js-month-rate').textContent = fmt(m.monthRate) + ' ₽';
+        // Бейдж скорости — только если значение есть
+        if (m.maxSpeedKmh != null && m.maxSpeedKmh > 0) {
+          const sb = node.querySelector('.js-speed-badge');
+          sb.querySelector('.js-speed-num').textContent = String(m.maxSpeedKmh);
+          sb.hidden = false;
+        }
+        // Бейдж охлаждения — только если значение есть
+        if (m.coolingType === 'air' || m.coolingType === 'liquid') {
+          const cb = node.querySelector('.js-cooling-badge');
+          cb.querySelector('.js-cooling-icon').innerHTML = COOLING_ICON[m.coolingType];
+          cb.querySelector('.js-cooling-label').textContent = COOLING_LABEL[m.coolingType];
+          if (m.coolingType === 'liquid') cb.classList.add('is-liquid');
+          cb.hidden = false;
+        }
+        // Объём бака
+        const tank = fmtTank(m.tankVolumeL);
+        if (tank) {
+          const tn = node.querySelector('.js-tank');
+          tn.querySelector('.js-tank-val').textContent = tank;
+          tn.hidden = false;
+        }
         node.querySelector('.js-price').textContent = fmt(m.monthRate);
         node.querySelector('.js-cta').href = waLink(m.name);
         frag.appendChild(node);

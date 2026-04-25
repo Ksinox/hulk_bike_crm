@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 
+export type CoolingType = "air" | "liquid";
+
 export type ApiScooterModel = {
   id: number;
   name: string;
@@ -10,6 +12,11 @@ export type ApiScooterModel = {
   shortRate: number;
   weekRate: number;
   monthRate: number;
+  /** Технические характеристики — отображаются на лендинге. */
+  maxSpeedKmh: number | null;
+  /** numeric(4,1) — Drizzle отдаёт строкой, на странице удобнее держать строку */
+  tankVolumeL: string | null;
+  coolingType: CoolingType | null;
   note: string | null;
   createdAt: string;
   updatedAt: string;
@@ -23,6 +30,9 @@ export type CreateModelInput = {
   shortRate?: number;
   weekRate?: number;
   monthRate?: number;
+  maxSpeedKmh?: number | null;
+  tankVolumeL?: string | number | null;
+  coolingType?: CoolingType | null;
   note?: string | null;
 };
 

@@ -156,6 +156,13 @@ function ModelFormModal({
   const [weekRate, setWeekRate] = useState(initial?.weekRate ?? 500);
   const [monthRate, setMonthRate] = useState(initial?.monthRate ?? 400);
   const [quickPick, setQuickPick] = useState(initial?.quickPick ?? false);
+  const [maxSpeedKmh, setMaxSpeedKmh] = useState<string>(
+    initial?.maxSpeedKmh != null ? String(initial.maxSpeedKmh) : "",
+  );
+  const [tankVolumeL, setTankVolumeL] = useState<string>(initial?.tankVolumeL ?? "");
+  const [coolingType, setCoolingType] = useState<"" | "air" | "liquid">(
+    initial?.coolingType ?? "",
+  );
   const [note, setNote] = useState(initial?.note ?? "");
   const [err, setErr] = useState<string | null>(null);
 
@@ -164,12 +171,24 @@ function ModelFormModal({
 
   const submit = async () => {
     setErr(null);
+    const speedNum = maxSpeedKmh.trim() ? Number(maxSpeedKmh) : null;
+    const tankStr = tankVolumeL.trim().replace(",", ".");
+    const tankNum = tankStr ? Number(tankStr) : null;
     const body: CreateModelInput = {
       name: name.trim(),
       shortRate,
       weekRate,
       monthRate,
       quickPick,
+      maxSpeedKmh:
+        speedNum != null && Number.isFinite(speedNum) && speedNum >= 0
+          ? Math.round(speedNum)
+          : null,
+      tankVolumeL:
+        tankNum != null && Number.isFinite(tankNum) && tankNum >= 0
+          ? tankStr
+          : null,
+      coolingType: coolingType || null,
       note: note.trim() || null,
     };
     try {
@@ -235,6 +254,49 @@ function ModelFormModal({
             <Field label="Месяц+, ₽/сут">
               <RateInput value={monthRate} onChange={setMonthRate} />
             </Field>
+          </div>
+
+          <div className="rounded-[10px] border border-border bg-surface-soft px-3 py-3">
+            <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-2">
+              Технические характеристики · показываются на лендинге
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <Field label="Макс, км/ч">
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  max={400}
+                  value={maxSpeedKmh}
+                  onChange={(e) => setMaxSpeedKmh(e.target.value)}
+                  placeholder="60"
+                  className="h-10 w-full rounded-[10px] border border-border bg-white px-3 text-[14px] outline-none focus:border-blue"
+                />
+              </Field>
+              <Field label="Бак, л">
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={tankVolumeL}
+                  onChange={(e) => setTankVolumeL(e.target.value)}
+                  placeholder="5.5"
+                  className="h-10 w-full rounded-[10px] border border-border bg-white px-3 text-[14px] outline-none focus:border-blue"
+                />
+              </Field>
+              <Field label="Охлаждение">
+                <select
+                  value={coolingType}
+                  onChange={(e) =>
+                    setCoolingType(e.target.value as "" | "air" | "liquid")
+                  }
+                  className="h-10 w-full rounded-[10px] border border-border bg-white px-2 text-[14px] outline-none focus:border-blue"
+                >
+                  <option value="">—</option>
+                  <option value="air">Воздушное</option>
+                  <option value="liquid">Жидкостное</option>
+                </select>
+              </Field>
+            </div>
           </div>
 
           <label className="flex cursor-pointer items-center gap-2 text-[13px] text-ink">

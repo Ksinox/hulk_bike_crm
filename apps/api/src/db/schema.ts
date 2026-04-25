@@ -26,6 +26,7 @@ import {
   index,
   primaryKey,
   jsonb,
+  numeric,
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 
@@ -593,6 +594,13 @@ export const scooterModels = pgTable(
     shortRate: integer("short_rate").notNull().default(1300), // 1–3 дня
     weekRate: integer("week_rate").notNull().default(500), // 7–29 дней
     monthRate: integer("month_rate").notNull().default(400), // 30+ дней
+    /** Технические характеристики — показываются на лендинге.
+     * Все необязательные: модель без них на лендинг попадёт всё равно
+     * (фильтр там только по наличию аватарки), но без бейджей. */
+    maxSpeedKmh: integer("max_speed_kmh"),
+    tankVolumeL: numeric("tank_volume_l", { precision: 4, scale: 1 }),
+    /** 'air' (воздушное) | 'liquid' (жидкостное) */
+    coolingType: text("cooling_type"),
     note: text("note"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
