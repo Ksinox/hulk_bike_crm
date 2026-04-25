@@ -26,6 +26,11 @@ apps/desktop/release/
 scripts/.jwt_secret
 scripts/.api_app_id
 scripts/.web_app_id
+scripts/.landing_app_id
+
+# локальная отладка лендинга — кэш аватарок и dev-only seed
+apps/landing/.preview-cache/
+apps/api/src/seed/dev-models.ts
 
 # logs
 *.log
