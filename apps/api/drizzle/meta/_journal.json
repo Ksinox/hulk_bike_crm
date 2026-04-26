@@ -64,6 +64,13 @@
       "when": 1777191785814,
       "tag": "0008_sticky_living_mummy",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1777193434424,
+      "tag": "0009_yielding_thena",
+      "breakpoints": true
     }
   ]
 }

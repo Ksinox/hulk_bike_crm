@@ -28,6 +28,7 @@ export async function publicRoutes(app: FastifyInstance) {
         monthRate: scooterModels.monthRate,
         maxSpeedKmh: scooterModels.maxSpeedKmh,
         tankVolumeL: scooterModels.tankVolumeL,
+        fuelLPer100Km: scooterModels.fuelLPer100Km,
         coolingType: scooterModels.coolingType,
         note: scooterModels.note,
       })
@@ -45,6 +46,7 @@ export async function publicRoutes(app: FastifyInstance) {
         ...r,
         // Drizzle отдаёт numeric строкой — на лендинге удобнее число.
         tankVolumeL: r.tankVolumeL == null ? null : Number(r.tankVolumeL),
+        fuelLPer100Km: r.fuelLPer100Km == null ? null : Number(r.fuelLPer100Km),
         avatarUrl: `/api/public/scooter-models/${r.id}/avatar`,
       })),
     };

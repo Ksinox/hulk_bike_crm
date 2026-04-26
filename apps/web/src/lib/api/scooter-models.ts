@@ -16,6 +16,8 @@ export type ApiScooterModel = {
   maxSpeedKmh: number | null;
   /** numeric(4,1) — Drizzle отдаёт строкой, на странице удобнее держать строку */
   tankVolumeL: string | null;
+  /** numeric(4,2), л на 100 км */
+  fuelLPer100Km: string | null;
   coolingType: CoolingType | null;
   note: string | null;
   createdAt: string;
@@ -32,6 +34,7 @@ export type CreateModelInput = {
   monthRate?: number;
   maxSpeedKmh?: number | null;
   tankVolumeL?: string | number | null;
+  fuelLPer100Km?: string | number | null;
   coolingType?: CoolingType | null;
   note?: string | null;
 };

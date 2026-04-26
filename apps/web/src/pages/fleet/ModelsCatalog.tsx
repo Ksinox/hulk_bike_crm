@@ -160,6 +160,9 @@ function ModelFormModal({
     initial?.maxSpeedKmh != null ? String(initial.maxSpeedKmh) : "",
   );
   const [tankVolumeL, setTankVolumeL] = useState<string>(initial?.tankVolumeL ?? "");
+  const [fuelLPer100Km, setFuelLPer100Km] = useState<string>(
+    initial?.fuelLPer100Km ?? "",
+  );
   const [coolingType, setCoolingType] = useState<"" | "air" | "liquid">(
     initial?.coolingType ?? "",
   );
@@ -174,6 +177,8 @@ function ModelFormModal({
     const speedNum = maxSpeedKmh.trim() ? Number(maxSpeedKmh) : null;
     const tankStr = tankVolumeL.trim().replace(",", ".");
     const tankNum = tankStr ? Number(tankStr) : null;
+    const fuelStr = fuelLPer100Km.trim().replace(",", ".");
+    const fuelNum = fuelStr ? Number(fuelStr) : null;
     const body: CreateModelInput = {
       name: name.trim(),
       shortRate,
@@ -187,6 +192,10 @@ function ModelFormModal({
       tankVolumeL:
         tankNum != null && Number.isFinite(tankNum) && tankNum >= 0
           ? tankStr
+          : null,
+      fuelLPer100Km:
+        fuelNum != null && Number.isFinite(fuelNum) && fuelNum >= 0
+          ? fuelStr
           : null,
       coolingType: coolingType || null,
       note: note.trim() || null,
@@ -260,7 +269,7 @@ function ModelFormModal({
             <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-2">
               Технические характеристики · показываются на лендинге
             </div>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2">
               <Field label="Макс, км/ч">
                 <input
                   type="number"
@@ -280,6 +289,16 @@ function ModelFormModal({
                   value={tankVolumeL}
                   onChange={(e) => setTankVolumeL(e.target.value)}
                   placeholder="5.5"
+                  className="h-10 w-full rounded-[10px] border border-border bg-white px-3 text-[14px] outline-none focus:border-blue"
+                />
+              </Field>
+              <Field label="Расход, л/100 км">
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={fuelLPer100Km}
+                  onChange={(e) => setFuelLPer100Km(e.target.value)}
+                  placeholder="1.5"
                   className="h-10 w-full rounded-[10px] border border-border bg-white px-3 text-[14px] outline-none focus:border-blue"
                 />
               </Field>

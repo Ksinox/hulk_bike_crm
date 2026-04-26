@@ -26,6 +26,9 @@ const Body = z
     tankVolumeL: z.union([z.number().min(0).max(99), z.string().regex(/^\d+(\.\d{1,2})?$/)])
       .nullable()
       .optional(),
+    fuelLPer100Km: z.union([z.number().min(0).max(99), z.string().regex(/^\d+(\.\d{1,2})?$/)])
+      .nullable()
+      .optional(),
     coolingType: z.enum(["air", "liquid"]).nullable().optional(),
     note: z.string().nullable().optional(),
   })
@@ -63,6 +66,7 @@ export async function scooterModelsRoutes(app: FastifyInstance) {
         maxSpeedKmh: data.maxSpeedKmh ?? null,
         // Drizzle для numeric ждёт строку
         tankVolumeL: data.tankVolumeL == null ? null : String(data.tankVolumeL),
+        fuelLPer100Km: data.fuelLPer100Km == null ? null : String(data.fuelLPer100Km),
         coolingType: data.coolingType ?? null,
         note: data.note ?? null,
       })
@@ -101,6 +105,9 @@ export async function scooterModelsRoutes(app: FastifyInstance) {
       if ("tankVolumeL" in patch) {
         patch.tankVolumeL = patch.tankVolumeL == null ? null : String(patch.tankVolumeL);
       }
+      if ("fuelLPer100Km" in patch) {
+        patch.fuelLPer100Km = patch.fuelLPer100Km == null ? null : String(patch.fuelLPer100Km);
+      }
       const [updated] = await db
         .update(scooterModels)
         .set(patch)
@@ -120,6 +127,7 @@ export async function scooterModelsRoutes(app: FastifyInstance) {
           quickPick: "быстрый выбор",
           maxSpeedKmh: "макс. скорость",
           tankVolumeL: "объём бака",
+          fuelLPer100Km: "расход топлива",
           coolingType: "тип охлаждения",
           note: "примечание",
         },

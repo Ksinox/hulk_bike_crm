@@ -622,6 +622,8 @@ export const scooterModels = pgTable(
      * (фильтр там только по наличию аватарки), но без бейджей. */
     maxSpeedKmh: integer("max_speed_kmh"),
     tankVolumeL: numeric("tank_volume_l", { precision: 4, scale: 1 }),
+    /** Расход топлива, л на 100 км (например 1.50). */
+    fuelLPer100Km: numeric("fuel_l_per_100km", { precision: 4, scale: 2 }),
     /** 'air' (воздушное) | 'liquid' (жидкостное) */
     coolingType: text("cooling_type"),
     note: text("note"),

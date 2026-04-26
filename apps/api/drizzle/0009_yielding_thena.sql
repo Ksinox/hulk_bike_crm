@@ -1,0 +1,1 @@
+ALTER TABLE "scooter_models" ADD COLUMN "fuel_l_per_100km" numeric(4, 2);
