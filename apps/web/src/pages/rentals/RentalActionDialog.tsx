@@ -18,6 +18,7 @@ export type ActionKind =
   | "activate"
   | "cancel"
   | "receive"
+  | "cancel-return"
   | "revert-overdue"
   | "complete"
   | "complete-damage"
@@ -229,6 +230,11 @@ export function RentalActionDialog({
         break;
       case "receive":
         setRentalStatus(rental.id, "returning");
+        break;
+      case "cancel-return":
+        // Откат: пользователь случайно нажал «Завершить аренду», скутер
+        // ещё у клиента, ничего не возвращали. Возвращаем в активный режим.
+        setRentalStatus(rental.id, "active");
         break;
       case "revert-overdue":
         revertOverdue(rental.id);
@@ -683,6 +689,19 @@ function specFor(action: ActionKind, rental: Rental): Spec {
           </div>
         ),
         cta: "Начать приём возврата",
+        ctaTone: "primary",
+      };
+    case "cancel-return":
+      return {
+        title: "Отменить возврат",
+        body: (
+          <div className="text-[12px]">
+            Аренда вернётся в статус <b>Активна</b>. Используйте если случайно
+            нажали «Завершить аренду» — скутер фактически у клиента, никаких
+            изменений по возврату не было.
+          </div>
+        ),
+        cta: "Отменить возврат",
         ctaTone: "primary",
       };
     case "revert-overdue":
