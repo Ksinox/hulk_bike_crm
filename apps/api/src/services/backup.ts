@@ -94,6 +94,29 @@ export async function runBackup(): Promise<{
   return { key, sizeBytes: gz.length, rows: totalRows };
 }
 
+/** Скачивает последний бэкап из MinIO. Возвращает gzip-буфер или null. */
+export async function downloadLatestBackup(): Promise<Buffer | null> {
+  await ensureBackupBucket();
+  const keys: string[] = await new Promise((resolve, reject) => {
+    const out: string[] = [];
+    const stream = s3.listObjectsV2(BACKUP_BUCKET, "backups/", true);
+    stream.on("data", (obj) => {
+      if (obj.name) out.push(obj.name);
+    });
+    stream.on("end", () => resolve(out.sort().reverse())); // свежие сверху
+    stream.on("error", reject);
+  });
+  const latest = keys[0];
+  if (!latest) return null;
+
+  const stream = await s3.getObject(BACKUP_BUCKET, latest);
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) {
+    chunks.push(chunk as Buffer);
+  }
+  return Buffer.concat(chunks);
+}
+
 /** Проверяет был ли уже бэкап сегодня. */
 export async function hasBackupForToday(): Promise<boolean> {
   await ensureBackupBucket();

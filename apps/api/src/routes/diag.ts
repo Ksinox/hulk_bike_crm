@@ -136,4 +136,49 @@ export async function diagRoutes(app: FastifyInstance) {
       });
     }
   });
+
+  /**
+   * GET /api/_diag/backup-download?token=XXX — отдаёт свежий дамп БД
+   * как .json.gz файл. Используется GitHub Actions для off-site бэкапа.
+   *
+   * Авторизация — через query-param token (сравнивается с env BACKUP_TOKEN).
+   * Cookie-сессия не подходит, потому что GitHub Action не залогинен.
+   * Если BACKUP_TOKEN не задан — endpoint не активен (503).
+   */
+  app.get<{ Querystring: { token?: string } }>(
+    "/backup-download",
+    { preValidation: (_req, _reply, done) => done() }, // skip auth
+    async (req, reply) => {
+      const expected = process.env.BACKUP_TOKEN;
+      if (!expected) {
+        return reply.code(503).send({ error: "backup_token_not_configured" });
+      }
+      if (req.query.token !== expected) {
+        return reply.code(401).send({ error: "bad_token" });
+      }
+
+      const { runBackup, downloadLatestBackup } = await import(
+        "../services/backup.js"
+      );
+      // Сначала убедимся что свежий дамп существует. Если за сегодня
+      // ещё нет — сделаем прямо сейчас, чтобы не отдавать вчерашний.
+      try {
+        await runBackup();
+      } catch {
+        // если runBackup упал — попробуем хотя бы отдать последний из MinIO
+      }
+      const buf = await downloadLatestBackup();
+      if (!buf) {
+        return reply.code(500).send({ error: "no_backup_available" });
+      }
+      const today = new Date().toISOString().slice(0, 10);
+      reply
+        .header("Content-Type", "application/gzip")
+        .header(
+          "Content-Disposition",
+          `attachment; filename="hulk-backup-${today}.json.gz"`,
+        );
+      return reply.send(buf);
+    },
+  );
 }

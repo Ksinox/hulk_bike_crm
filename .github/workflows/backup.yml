@@ -1,0 +1,55 @@
+name: Backup DB
+
+# Off-site бэкап БД: раз в сутки качает дамп с прода и сохраняет
+# как GitHub Artifact (хранится 90 дней). Это копия НЕЗАВИСИМАЯ от
+# нашего сервера — если VPS упадёт/заблокируют, данные доступны
+# через GitHub Web UI: Actions → этот workflow → Artifacts.
+#
+# Триггер: каждый день в 02:00 UTC (05:00 МСК).
+# Можно также запустить вручную через workflow_dispatch.
+
+on:
+  schedule:
+    # cron: minute hour day month weekday
+    - cron: "0 2 * * *"
+  workflow_dispatch: # ручной запуск из GitHub UI
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Download fresh DB dump from API
+        env:
+          API_BASE: https://api.hulkbike.ru
+          # Секрет нужно создать: GitHub repo → Settings → Secrets → Actions
+          # → New secret → Name: BACKUP_TOKEN, Value: <тот же что в env API>
+          BACKUP_TOKEN: ${{ secrets.BACKUP_TOKEN }}
+        run: |
+          if [ -z "$BACKUP_TOKEN" ]; then
+            echo "::error::BACKUP_TOKEN secret не задан в repo settings"
+            exit 1
+          fi
+          DATE=$(date -u +%Y-%m-%d)
+          OUT="hulk-backup-${DATE}.json.gz"
+          echo "Качаю дамп с ${API_BASE}/api/_diag/backup-download"
+          HTTP_CODE=$(curl -sw "%{http_code}" -o "$OUT" \
+            "${API_BASE}/api/_diag/backup-download?token=${BACKUP_TOKEN}")
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::HTTP $HTTP_CODE — дамп не скачан"
+            cat "$OUT"
+            exit 1
+          fi
+          SIZE=$(stat -c%s "$OUT")
+          echo "✓ Скачано: $OUT ($SIZE байт)"
+          if [ "$SIZE" -lt 100 ]; then
+            echo "::error::Файл подозрительно маленький ($SIZE байт) — возможно ошибка"
+            exit 1
+          fi
+
+      - name: Upload as artifact (хранится 90 дней)
+        uses: actions/upload-artifact@v4
+        with:
+          name: hulk-backup-${{ github.run_id }}
+          path: hulk-backup-*.json.gz
+          retention-days: 90
