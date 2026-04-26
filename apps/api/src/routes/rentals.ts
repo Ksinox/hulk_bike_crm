@@ -207,13 +207,14 @@ export async function rentalsRoutes(app: FastifyInstance) {
       }
     }
 
+    const initialStatus = d.status ?? "new_request";
     const [row] = await db
       .insert(rentals)
       .values({
         clientId: d.clientId,
         scooterId: d.scooterId ?? null,
         parentRentalId: d.parentRentalId ?? null,
-        status: d.status ?? "new_request",
+        status: initialStatus,
         sourceChannel: d.sourceChannel ?? null,
         tariffPeriod: d.tariffPeriod,
         rate: d.rate,
@@ -230,6 +231,24 @@ export async function rentalsRoutes(app: FastifyInstance) {
       })
       .returning();
     if (!row) return reply.code(500).send({ error: "insert failed" });
+
+    // Авто-платёж за аренду: если статус сразу «выдана» (active/overdue/
+    // returning), значит клиент уже оплатил при выдаче — фиксируем платёж
+    // как paid. Раньше платёж создавался отдельным шагом «Подтвердить
+    // оплату», но этот функционал убран по решению заказчика: «если
+    // аренда есть — значит оплачена».
+    const issued = ["active", "overdue", "returning"].includes(initialStatus);
+    if (issued && row.sum > 0) {
+      await db.insert(payments).values({
+        rentalId: row.id,
+        type: "rent",
+        amount: row.sum,
+        method: row.paymentMethod,
+        paid: true,
+        paidAt: new Date(),
+        note: "оплата аренды (автоматически при создании)",
+      });
+    }
 
     const summary = await summaryForRental(row.id);
     await logActivity(req, {
@@ -628,6 +647,20 @@ export async function rentalsRoutes(app: FastifyInstance) {
             note: `продление аренды #${String(old.id).padStart(4, "0")}`,
           })
           .returning();
+
+        // Авто-платёж за продление — продлили = оплатили (тот же подход
+        // что и в POST /api/rentals: убираем шаг «подтвердить оплату»).
+        if (child && child.sum > 0) {
+          await tx.insert(payments).values({
+            rentalId: child.id,
+            type: "rent",
+            amount: child.sum,
+            method: child.paymentMethod,
+            paid: true,
+            paidAt: new Date(),
+            note: "оплата продления (автоматически)",
+          });
+        }
         return child;
       });
 

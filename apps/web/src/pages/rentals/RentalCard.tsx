@@ -305,7 +305,10 @@ export function RentalCard({ rental }: { rental: Rental }) {
   const pending = chainPayments
     .filter((p) => !p.paid && p.type !== "deposit")
     .reduce((s, p) => s + p.amount, 0);
-  const expectedTotal = chainExpected;
+  // chainExpected больше не используется в UI карточки (убрали «X% по
+  // цепочке»). Оставляем переменную для будущих метрик/отчётов —
+  // void чтобы линтер не ругался.
+  void chainExpected;
 
   const handleAction = async (id: string) => {
     if (id === "extend" || id === "clone") return setExtendOpen(true);
@@ -546,17 +549,13 @@ export function RentalCard({ rental }: { rental: Rental }) {
         <KpiCard
           label="За всё время аренды"
           value={`${fmt(paidIn)} ₽`}
-          accent={paidIn >= expectedTotal ? "blue" : "default"}
+          accent={paidIn > 0 ? "blue" : "default"}
           hint={
-            paidIn >= expectedTotal
-              ? isExtended
-                ? "оплачено с учётом продлений"
-                : "полностью оплачено"
-              : expectedTotal > 0
-                ? `${Math.round((paidIn / Math.max(1, expectedTotal)) * 100)}% от ${fmt(expectedTotal)} ₽ по цепочке`
-                : "платежей ещё не было"
+            isExtended
+              ? `за ${chainRentals.length} ${pluralRental(chainRentals.length)} (без залога)`
+              : "сумма аренды без залога"
           }
-          badgeIcon={paidIn >= expectedTotal ? CheckCircle2 : undefined}
+          badgeIcon={paidIn > 0 ? CheckCircle2 : undefined}
         />
         {(() => {
           // Долг:
@@ -757,5 +756,14 @@ function KpiCard({
       )}
     </div>
   );
+}
+
+function pluralRental(n: number): string {
+  const a = Math.abs(n);
+  const n10 = a % 10;
+  const n100 = a % 100;
+  if (n10 === 1 && n100 !== 11) return "аренду";
+  if (n10 >= 2 && n10 <= 4 && (n100 < 10 || n100 >= 20)) return "аренды";
+  return "аренд";
 }
 
