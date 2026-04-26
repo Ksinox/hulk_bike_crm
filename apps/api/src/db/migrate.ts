@@ -1,53 +1,34 @@
 import postgres from "postgres";
-import { drizzle } from "drizzle-orm/postgres-js";
-import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { config } from "../config.js";
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 
 /**
- * Прогоняет SQL-миграции из папки ./drizzle.
+ * Миграции БД — идемпотентный SQL apply.
  *
  * Запускается:
  *   • локально — `pnpm --filter api db:migrate`
  *   • на Dokploy — pre-launch перед `node dist/index.js`
  *
- * УСТОЙЧИВОСТЬ К РАССИНХРОНУ:
- *   Если drizzle-журнал миграций разошёлся с фактической схемой
- *   (например миграция применялась через прошлые сборки, потом её
- *   пересоздавали с другим хешем), стандартный `migrate()` падает —
- *   и контейнер на Dokploy уходит в restart loop, API становится 502.
+ * Почему НЕ drizzle-migrator:
+ *   Drizzle ведёт собственный журнал в __drizzle_migrations. Если ALTER TABLE
+ *   падает на середине, журнал уже соврал что «применено». При следующем
+ *   запуске drizzle думает «ничего делать не нужно», а реальная схема
+ *   рассинхронизирована — API падает 500 на любых SELECT.
  *
- *   Чтобы не лежать на проде: если основной migrate бросает
- *   «уже существует / уже применена», переходим в self-healing режим —
- *   читаем .sql файлы и применяем по statement, ловя ошибки 42701
- *   (column already exists), 42710 (object already exists), 42P07
- *   (relation already exists), 42P16 (invalid table definition).
- *   Эти ошибки означают что нужное состояние уже есть → продолжаем.
+ *   Мы используем idempotent apply: каждая миграция накатывается всегда,
+ *   но errors кодов 42701/42710/42P07 (already exists) игнорируются.
+ *   Любая другая ошибка прокидывается и провалит startup — Docker
+ *   рестартанёт, в логах будет понятная причина.
  */
 async function main() {
-  const migrationClient = postgres(config.databaseUrl, { max: 1 });
-  const db = drizzle(migrationClient);
+  const client = postgres(config.databaseUrl, { max: 1 });
 
-  console.log("▶ Применяем миграции (drizzle migrator)...");
-  try {
-    await migrate(db, { migrationsFolder: "./drizzle" });
-    console.log("✓ Drizzle migrator прошёл без ошибок.");
-  } catch (e) {
-    const msg = (e as Error).message ?? String(e);
-    console.warn("⚠ Штатная миграция упала:", msg);
-    console.warn("  Идём дальше в self-healing.");
-  }
-
-  // ВСЕГДА прогоняем self-healing после drizzle, не доверяя его журналу.
-  // Drizzle помечает миграцию как применённую, даже если ALTER TABLE упал
-  // на середине — журнал и реальная схема расходятся. Self-healing
-  // идемпотентно догоняет недостающее (ADD COLUMN IF NOT EXISTS-style).
-  console.log("▶ Self-healing: добиваем недостающие statements...");
-  await applyMigrationsIdempotent(migrationClient);
+  console.log("▶ Idempotent migration apply...");
+  await applyMigrationsIdempotent(client);
   console.log("✓ Миграции применены.");
 
-  await migrationClient.end();
+  await client.end();
 }
 
 /**
@@ -61,14 +42,15 @@ async function applyMigrationsIdempotent(
   const dir = path.resolve("./drizzle");
   const files = (await readdir(dir))
     .filter((f) => f.endsWith(".sql"))
-    .sort(); // 0000_*, 0001_*, ... — лексикографически совпадает с порядком
+    .sort();
 
   // Коды ошибок, которые означают «состояние уже есть, идём дальше»
   const benignCodes = new Set([
     "42701", // duplicate_column
-    "42710", // duplicate_object
+    "42710", // duplicate_object (enum value, etc)
     "42P07", // duplicate_table
-    "23505", // unique_violation (запись уже в журнале миграций)
+    "23505", // unique_violation
+    "42P16", // invalid_table_definition (если ALTER уже применён)
   ]);
 
   for (const file of files) {
@@ -80,22 +62,27 @@ async function applyMigrationsIdempotent(
       .map((s) => s.trim())
       .filter((s) => s.length > 0);
 
+    let appliedCount = 0;
+    let skippedCount = 0;
     for (const stmt of statements) {
       try {
         await sql.unsafe(stmt);
+        appliedCount++;
       } catch (e) {
         const code = (e as { code?: string }).code;
         if (code && benignCodes.has(code)) {
-          // Идемпотентно — пропускаем
-          console.log(`  · ${file}: пропущено (${code})`);
+          skippedCount++;
           continue;
         }
-        // Реальная ошибка — пробрасываем
         console.error(`  ✗ ${file}: ${(e as Error).message}`);
         throw e;
       }
     }
-    console.log(`  ✓ ${file}`);
+    if (appliedCount > 0 || skippedCount > 0) {
+      console.log(
+        `  ${file}: ${appliedCount} applied, ${skippedCount} skipped (already done)`,
+      );
+    }
   }
 }
 

@@ -60,12 +60,33 @@ async function bootstrap() {
   });
 
   // ==== health ====
-  app.get("/health", async () => ({ ok: true, env: config.env }));
-
-  // Проверка что DB отвечает и схема применена
-  app.get("/health/db", async () => {
-    const rows = await db.execute(sql`select 1 as ok`);
-    return { ok: rows.length === 1 };
+  // Глубокий healthcheck: проверяем что БД отвечает И что ключевые
+  // колонки на месте (по одной строке из таблиц с недавно добавленными
+  // колонками). Если схема рассинхронизирована — здесь упадёт 500,
+  // и Dokploy/Docker не отметит контейнер healthy → НЕ переключит
+  // трафик на сломанный билд. Старый рабочий контейнер останется живым.
+  app.get("/health", async (_req, reply) => {
+    try {
+      // Проверяем колонки введённые недавними миграциями.
+      // Если хоть одной нет — миграция не накатилась, контейнер unhealthy.
+      await db.execute(sql`
+        SELECT
+          (SELECT count(*) FROM clients WHERE source_custom IS NULL OR source_custom IS NOT NULL) AS c1,
+          (SELECT count(*) FROM rentals WHERE archived_at IS NULL OR archived_at IS NOT NULL) AS c2,
+          (SELECT count(*) FROM scooter_models WHERE active = true OR active = false) AS c3,
+          (SELECT count(*) FROM scooter_models WHERE day_rate >= 0) AS c4
+        LIMIT 1
+      `);
+      return { ok: true, env: config.env };
+    } catch (e) {
+      reply.code(503);
+      return {
+        ok: false,
+        env: config.env,
+        error: "schema_check_failed",
+        message: (e as Error).message ?? "unknown",
+      };
+    }
   });
 
   // ==== AUTH ROUTES (без требования авторизации) ====

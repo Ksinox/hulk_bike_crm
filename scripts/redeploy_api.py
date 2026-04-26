@@ -95,14 +95,34 @@ def main() -> int:
 
     log(f"Канарейка: GET {CANARY_PATH}")
     code = http_status(f"{API_BASE}{CANARY_PATH}")
-    if code == 401:
-        log("OK: канарейка 401 — свежий код задеплоен")
-        return 0
     if code == 404:
         log("FAIL: канарейка 404 — Docker layer cache не сбросился, контейнер на старом коде")
         log("      Действие: открой Dokploy UI → hulk-api → Stop, потом Deploy")
         return 1
-    log(f"WARN: канарейка вернула {code} (ожидалось 401). Если код свежий — поправь CANARY_PATH.")
+    if code != 401:
+        log(f"WARN: канарейка вернула {code} (ожидалось 401). Если код свежий — поправь CANARY_PATH.")
+
+    # Smoke-тест: проверяем что таблицы реально читаются (БД-схема жива).
+    # Глубокий /health выше уже это проверил, но дополнительно дёрнем
+    # ключевые маршруты — если они 500, значит schema-rebuild не помог
+    # и нужно вмешательство руками.
+    log("Smoke-тест: ключевые ресурсы должны быть 401, не 500")
+    smoke_paths = ["/api/clients", "/api/scooter-models", "/api/rentals"]
+    failures: list[str] = []
+    for p in smoke_paths:
+        c = http_status(f"{API_BASE}{p}")
+        if c == 500:
+            failures.append(f"{p}: 500")
+        elif c not in (200, 401, 403):
+            log(f"  WARN {p}: {c}")
+    if failures:
+        log("FAIL: схема БД рассинхронизирована, ресурсы падают 500:")
+        for f in failures:
+            log(f"  · {f}")
+        log("  Действие: применить недостающие ALTER TABLE через")
+        log("    psql в контейнере hulk-postgres (см. apps/api/drizzle/*.sql)")
+        return 1
+    log("OK: smoke-тест прошёл, схема БД консистентна")
     return 0
 
 

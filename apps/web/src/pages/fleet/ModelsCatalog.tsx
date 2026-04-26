@@ -96,25 +96,20 @@ function ModelCard({
         isInactive && "opacity-70",
       )}
     >
-      {/* Тёмный фото-блок (как на лендинге): aspect 4/3, glow-фон,
-          фотография «вырывается» — приподнята и слегка увеличена,
-          часть скутера визуально торчит над карточкой. */}
-      <div
-        className="relative aspect-[4/3] overflow-visible rounded-t-2xl"
-        style={{
-          background:
-            "radial-gradient(circle at 50% 65%, rgba(197, 255, 61, 0.22), transparent 55%), linear-gradient(135deg, #1E1E1E, #101010)",
-        }}
-      >
+      {/* Светлый фото-блок: белый фон, без glow. Берём с лендинга только
+          форму карточки и крупность аватарки — фотография крупная, на
+          прозрачном фоне, слегка приподнята так что часть скутера
+          визуально торчит над карточкой. */}
+      <div className="relative aspect-[4/3] overflow-visible rounded-t-2xl bg-white">
         {avatarSrc ? (
           <img
             src={avatarSrc}
             alt={model.name}
-            className="absolute inset-0 h-full w-full object-contain p-2 drop-shadow-[0_18px_24px_rgba(0,0,0,0.4)] transition-transform duration-200 group-hover:scale-110"
+            className="absolute inset-0 h-full w-full object-contain p-2 drop-shadow-[0_12px_18px_rgba(15,23,42,0.18)] transition-transform duration-200 group-hover:scale-110"
             style={{ transform: "translateY(-6%) scale(1.18)" }}
           />
         ) : (
-          <div className="flex h-full w-full items-center justify-center text-blue-300/60">
+          <div className="flex h-full w-full items-center justify-center text-muted-2">
             <Tag size={48} strokeWidth={1.5} />
           </div>
         )}
