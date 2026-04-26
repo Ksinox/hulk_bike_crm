@@ -1115,7 +1115,7 @@ function ScooterPhotoArea({ scooter }: { scooter: FleetScooter }) {
           <img
             src={modelAvatar}
             alt={model?.name ?? ""}
-            className="-mt-12 h-[36rem] w-auto max-w-none object-contain drop-shadow-[0_18px_24px_rgba(15,23,42,0.18)]"
+            className="-mt-8 h-[28rem] w-auto max-w-none object-contain drop-shadow-[0_18px_24px_rgba(15,23,42,0.18)]"
           />
           <div className="text-[15px] font-bold text-ink">
             {model?.name ?? MODEL_LABEL[scooter.model]}
