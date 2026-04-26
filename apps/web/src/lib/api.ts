@@ -13,19 +13,33 @@ export class ApiError extends Error {
   readonly status: number;
   readonly body: unknown;
   constructor(status: number, body: unknown) {
-    super(`API ${status}`);
+    // Если сервер вернул { message: "..." } — используем его текстом
+    // ошибки, чтобы тосты показывали человеческое сообщение, а не «API 400».
+    const b = body as { message?: string; error?: string } | null;
+    const msg =
+      (b && typeof b.message === "string" && b.message) ||
+      (b && typeof b.error === "string" && b.error) ||
+      `API ${status}`;
+    super(msg);
     this.status = status;
     this.body = body;
   }
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  // Content-Type ставим только когда реально шлём тело. Иначе Fastify
+  // ругается FST_ERR_CTP_EMPTY_JSON_BODY на DELETE без body, и мы
+  // получаем 400 вместо нормального ответа.
+  const hasBody = init?.body != null;
+  const headers: Record<string, string> = {
+    ...((init?.headers as Record<string, string>) ?? {}),
+  };
+  if (hasBody && !headers["Content-Type"]) {
+    headers["Content-Type"] = "application/json";
+  }
   const res = await fetch(`${BASE}${path}`, {
     ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {}),
-    },
+    headers,
     credentials: "include",
   });
   if (!res.ok) {
