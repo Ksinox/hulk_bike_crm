@@ -12,7 +12,8 @@ import {
   type Rental,
   type ScooterModel,
 } from "@/lib/mock/rentals";
-import { addRental, useRentals } from "./rentalsStore";
+import { addRental, addRentalAsync, useRentals } from "./rentalsStore";
+import { toast } from "@/lib/toast";
 import { useAllClients } from "@/pages/clients/clientStore";
 import { AddClientModal } from "@/pages/clients/AddClientModal";
 import { useApiScooters } from "@/lib/api/scooters";
@@ -196,20 +197,49 @@ export function NewRentalModal({
     scooterName != null &&
     days > 0;
 
+  // Множество клиентов с открытой арендой (active/overdue/returning).
+  // Им нельзя выдавать новую — пока не закрыли предыдущую.
+  const busyClientIds = useMemo(() => {
+    const set = new Set<number>();
+    for (const r of rentals) {
+      if (
+        r.status === "active" ||
+        r.status === "overdue" ||
+        r.status === "returning"
+      ) {
+        set.add(r.clientId);
+      }
+    }
+    return set;
+  }, [rentals]);
+
+  /**
+   * Список клиентов в дропдауне.
+   *  - Если поле пустое (или 1 символ) — показываем ВСЕХ доступных
+   *    (не в ЧС, без открытой аренды). Скролл, лимит 100. Чтобы быстро
+   *    выбрать повторного клиента не вспоминая имя.
+   *  - Если есть текст — фильтруем по имени или телефону.
+   */
   const filteredClients = useMemo(() => {
     const q = clientQuery.trim().toLowerCase();
-    if (q.length < 2) return [];
     const qDigits = q.replace(/\D/g, "");
-    return allClients
+    const base = allClients
       .filter((c) => !c.blacklisted)
+      .filter((c) => !busyClientIds.has(c.id));
+    if (q.length < 2) {
+      return [...base]
+        .sort((a, b) => a.name.localeCompare(b.name, "ru"))
+        .slice(0, 100);
+    }
+    return base
       .filter(
         (c) =>
           c.name.toLowerCase().includes(q) ||
           (qDigits.length > 0 &&
             c.phone.replace(/\D/g, "").includes(qDigits)),
       )
-      .slice(0, 6);
-  }, [clientQuery, allClients]);
+      .slice(0, 50);
+  }, [clientQuery, allClients, busyClientIds]);
 
   /**
    * В аренду можно отдавать ТОЛЬКО скутеры со статусом 'rental_pool'
@@ -246,8 +276,11 @@ export function NewRentalModal({
     );
   }, [apiScooters, blocked]);
 
-  const handleSave = () => {
-    if (!canSave || !scooterName) return;
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    if (!canSave || !scooterName || saving) return;
+    setSaving(true);
 
     // equipmentJson отправляем через rentalsStore в API (он прокинет в equipmentJson)
     const equipmentJson = equipmentSelected.map((e) => ({
@@ -258,30 +291,43 @@ export function NewRentalModal({
     }));
     const equipmentLegacyNames = equipmentSelected.map((e) => e.name);
 
-    const created = addRental({
-      clientId: clientId!,
-      scooterId: selectedScooter?.id,
-      scooter: scooterName,
-      model,
-      start,
-      startTime,
-      endPlanned,
-      status: "active",
-      tariffPeriod: period,
-      rate,
-      days,
-      sum,
-      deposit: depositMode === "sum" ? depositSum : 0,
-      depositItem: depositMode === "item" ? depositItemText.trim() || null : null,
-      equipment: equipmentLegacyNames,
-      equipmentJson,
-      paymentMethod,
-      note: note.trim() || undefined,
-      contractUploaded: false,
-      paymentConfirmed: null,
-    } as Parameters<typeof addRental>[0]);
-    onCreated?.(created);
-    requestClose();
+    try {
+      // ASYNC: ждём реальный ID из API. Stub-id (Date.now()) не подходит,
+      // потому что родитель сразу открывает превью документа по ID,
+      // а API не знает таких локальных ID — отдаст 404, превью повиснет.
+      const created = await addRentalAsync({
+        clientId: clientId!,
+        scooterId: selectedScooter?.id,
+        scooter: scooterName,
+        model,
+        start,
+        startTime,
+        endPlanned,
+        status: "active",
+        tariffPeriod: period,
+        rate,
+        days,
+        sum,
+        deposit: depositMode === "sum" ? depositSum : 0,
+        depositItem:
+          depositMode === "item" ? depositItemText.trim() || null : null,
+        equipment: equipmentLegacyNames,
+        equipmentJson,
+        paymentMethod,
+        note: note.trim() || undefined,
+        contractUploaded: false,
+        paymentConfirmed: null,
+      } as Parameters<typeof addRental>[0]);
+      onCreated?.(created);
+      requestClose();
+    } catch (e) {
+      toast.error(
+        "Не удалось создать аренду",
+        (e as Error).message ?? "Попробуйте ещё раз",
+      );
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -344,17 +390,23 @@ export function NewRentalModal({
                         setClientOpen(true);
                       }}
                       onFocus={() => setClientOpen(true)}
-                      placeholder="Начните вводить имя или телефон (минимум 2 символа)…"
+                      placeholder="Кликните для списка или начните печатать имя/телефон…"
                       className="h-9 w-full rounded-[10px] border border-border bg-surface pl-9 pr-3 text-[13px] text-ink outline-none focus:border-blue-600"
                     />
-                    {clientOpen && clientQuery.trim().length >= 2 && (
-                      <div className="absolute left-0 right-0 top-full z-30 mt-1 max-h-[260px] animate-toast-in overflow-y-auto rounded-[10px] border border-border bg-surface shadow-card-lg">
+                    {clientOpen && (
+                      <div className="absolute left-0 right-0 top-full z-30 mt-1 max-h-[320px] animate-toast-in overflow-y-auto rounded-[10px] border border-border bg-surface shadow-card-lg">
                         {filteredClients.length === 0 ? (
                           <div className="px-3 py-4 text-center text-[12px] text-muted">
                             не найдено — создайте нового
                           </div>
                         ) : (
-                          filteredClients.map((c) => (
+                          <>
+                          {clientQuery.trim().length < 2 && (
+                            <div className="sticky top-0 border-b border-border bg-surface-soft px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-2">
+                              Свободные клиенты ({filteredClients.length})
+                            </div>
+                          )}
+                          {filteredClients.map((c) => (
                             <button
                               key={c.id}
                               type="button"
@@ -379,7 +431,8 @@ export function NewRentalModal({
                                 {c.rating}
                               </span>
                             </button>
-                          ))
+                          ))}
+                          </>
                         )}
                       </div>
                     )}

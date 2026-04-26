@@ -266,13 +266,48 @@ export function markPaymentPaid(id: number, paid = true) {
     .catch(logErr("markPaymentPaid"));
 }
 
+/**
+ * Создание аренды.
+ *
+ * SYNC-вариант: сразу возвращает Rental со stub-id (Date.now()).
+ *   Используется когда нужен мгновенный фидбек, реальный id не критичен
+ *   (например показать в списке оптимистично, обновится после invAll).
+ *
+ * ASYNC-вариант (addRentalAsync): возвращает Promise<Rental> с РЕАЛЬНЫМ
+ *   id из API. Используется когда дальше нужно работать с ID на сервере
+ *   (открыть превью документа, продлить и т.п.). Stub-id не подходит:
+ *   /api/rentals/{stub_id}/document/... вернёт 404.
+ */
 export function addRental(
   r: Omit<Rental, "id"> & {
     depositItem?: string | null;
     equipmentJson?: { itemId?: number | null; name: string; price: number; free: boolean }[];
   },
 ): Rental {
-  const body: Record<string, unknown> = {
+  const body = buildRentalBody(r);
+  api.post(`/api/rentals`, body).then(invAll).catch(logErr("addRental"));
+  return { ...r, id: Date.now() };
+}
+
+export async function addRentalAsync(
+  r: Omit<Rental, "id"> & {
+    depositItem?: string | null;
+    equipmentJson?: { itemId?: number | null; name: string; price: number; free: boolean }[];
+  },
+): Promise<Rental> {
+  const body = buildRentalBody(r);
+  const created = await api.post<{ id: number }>(`/api/rentals`, body);
+  invAll();
+  return { ...r, id: created.id };
+}
+
+function buildRentalBody(
+  r: Omit<Rental, "id"> & {
+    depositItem?: string | null;
+    equipmentJson?: { itemId?: number | null; name: string; price: number; free: boolean }[];
+  },
+): Record<string, unknown> {
+  return {
     clientId: r.clientId,
     scooterId: r.scooterId ?? null,
     parentRentalId: r.parentRentalId ?? null,
@@ -291,8 +326,6 @@ export function addRental(
     equipmentJson: r.equipmentJson ?? [],
     note: r.note ?? null,
   };
-  api.post(`/api/rentals`, body).then(invAll).catch(logErr("addRental"));
-  return { ...r, id: Date.now() };
 }
 
 export function extendRental(

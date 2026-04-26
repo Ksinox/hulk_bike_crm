@@ -773,7 +773,7 @@ export function AddClientModal({
               <button
                 type="button"
                 disabled={!canSave}
-                onClick={() => {
+                onClick={async () => {
                   if (!editing && duplicate) {
                     toast.error(
                       "Такой клиент уже есть",
@@ -784,16 +784,23 @@ export function AddClientModal({
                   if (editing) {
                     clientStore.setPhoto(editing.id, f.photoFile);
                     clientStore.setExtraPhone(editing.id, f.phone2 || null);
-                  } else {
-                    // Если выбран «свой вариант» — отправляем
-                    // source='other' + sourceCustom='<текст>'.
-                    const finalSource: ClientSource =
-                      f.source === "custom" || f.source === ""
-                        ? "other"
-                        : (f.source as ClientSource);
-                    const finalSourceCustom =
-                      f.source === "custom" ? f.sourceCustom.trim() : null;
-                    const created = clientStore.addClient({
+                    requestClose();
+                    return;
+                  }
+                  // Если выбран «свой вариант» — отправляем
+                  // source='other' + sourceCustom='<текст>'.
+                  const finalSource: ClientSource =
+                    f.source === "custom" || f.source === ""
+                      ? "other"
+                      : (f.source as ClientSource);
+                  const finalSourceCustom =
+                    f.source === "custom" ? f.sourceCustom.trim() : null;
+                  try {
+                    // Async: ждём реальный id из API. Иначе onCreated
+                    // получит stub-id, и если консьюмер сразу шлёт его
+                    // в API (например, привязывает к новой аренде) —
+                    // получим 400 «client not found».
+                    const created = await clientStore.addClientAsync({
                       name: f.name.trim(),
                       phone: f.phone,
                       rating: 68,
@@ -812,8 +819,13 @@ export function AddClientModal({
                     if (f.photoFile) clientStore.setPhoto(created.id, f.photoFile);
                     if (f.phone2) clientStore.setExtraPhone(created.id, f.phone2);
                     onCreated?.(created);
+                    requestClose();
+                  } catch (e) {
+                    toast.error(
+                      "Не удалось создать клиента",
+                      (e as Error).message ?? "",
+                    );
                   }
-                  requestClose();
                 }}
                 className={cn(
                   "rounded-full px-4 py-1.5 text-[12px] font-semibold transition-colors",

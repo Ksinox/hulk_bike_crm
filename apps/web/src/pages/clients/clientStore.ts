@@ -118,10 +118,9 @@ function getUnreachableSet(): Set<number> {
 }
 
 /**
- * Создание клиента. Отправляем POST и инвалидируем кеш — React Query заново
- * подтянет список, новый клиент появится в UI.
- * Функция синхронная — возвращает stub с временным id; реальный id/объект
- * прилетит следующим обновлением useApiClients.
+ * Создание клиента (sync). Возвращает stub с временным id; реальный id
+ * прилетает следующим обновлением useApiClients. Используется только
+ * там где id не нужен сразу.
  */
 function addClient(
   data: Omit<Client, "id"> & {
@@ -130,7 +129,47 @@ function addClient(
     passportRaw?: string | null;
   },
 ): Client {
-  const body: CreateClientInput = {
+  const body = buildCreateBody(data);
+  api
+    .post(`/api/clients`, body)
+    .then(() => {
+      queryClient.invalidateQueries({ queryKey: clientsKeys.all });
+    })
+    .catch((err) => {
+      console.error("POST /api/clients failed:", err);
+    });
+  const maxAdded = state.addedClients.reduce((m, c) => Math.max(m, c.id), 0);
+  const id = maxAdded + Date.now();
+  return { ...data, id };
+}
+
+/**
+ * Создание клиента с ожиданием реального id из API. Используется когда
+ * сразу нужен ID на сервере — например, чтобы привязать только что
+ * созданного клиента к создаваемой аренде. Stub-id здесь не подходит:
+ * аренда уйдёт в API с несуществующим clientId → 400.
+ */
+async function addClientAsync(
+  data: Omit<Client, "id"> & {
+    sourceCustom?: string | null;
+    isForeigner?: boolean;
+    passportRaw?: string | null;
+  },
+): Promise<Client> {
+  const body = buildCreateBody(data);
+  const created = await api.post<{ id: number }>(`/api/clients`, body);
+  queryClient.invalidateQueries({ queryKey: clientsKeys.all });
+  return { ...data, id: created.id };
+}
+
+function buildCreateBody(
+  data: Omit<Client, "id"> & {
+    sourceCustom?: string | null;
+    isForeigner?: boolean;
+    passportRaw?: string | null;
+  },
+): CreateClientInput {
+  return {
     name: data.name,
     phone: data.phone,
     source: data.source,
@@ -141,19 +180,6 @@ function addClient(
     comment: data.comment,
     blacklisted: data.blacklisted,
   };
-  api
-    .post(`/api/clients`, body)
-    .then(() => {
-      queryClient.invalidateQueries({ queryKey: clientsKeys.all });
-    })
-    .catch((err) => {
-      console.error("POST /api/clients failed:", err);
-    });
-
-  // локальный stub для мгновенного возврата из функции (старый API)
-  const maxAdded = state.addedClients.reduce((m, c) => Math.max(m, c.id), 0);
-  const id = maxAdded + Date.now(); // tmp id — не пересечётся с API
-  return { ...data, id };
 }
 
 function getAllClients(): Client[] {
@@ -172,6 +198,7 @@ export const clientStore = {
   setUnreachable,
   getUnreachableSet,
   addClient,
+  addClientAsync,
   getAllClients,
   subscribe,
 };

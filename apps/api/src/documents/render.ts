@@ -89,6 +89,26 @@ function fmtMoney(n: number | null | undefined, withCents = true): string {
   const s = Math.abs(Math.round(n)).toLocaleString("ru-RU");
   return withCents ? `${s},00` : s;
 }
+/**
+ * Человеческое имя модели для документов. Берём model.name если есть,
+ * иначе fallback на legacy enum scooter.model (Yamaha Jog / Gear / Honda /
+ * Tank). Подчёркивания только если ничего нет вообще.
+ */
+function modelDisplayName(
+  scooter: { model: string } | null,
+  model: { name: string } | null,
+): string | null {
+  if (model?.name) return model.name;
+  if (!scooter?.model) return null;
+  const map: Record<string, string> = {
+    jog: "Yamaha Jog",
+    gear: "Yamaha Gear",
+    honda: "Honda Dio",
+    tank: "Tank T150",
+  };
+  return map[scooter.model] ?? scooter.model;
+}
+
 function orDash(v: string | number | null | undefined, dashes = "___________"): string {
   if (v == null || v === "") return dashes;
   return String(v);
@@ -402,7 +422,7 @@ ${TOOLBAR}
   </div>
 
   <div class="para">
-    Марка, модель: <b>${orDash(model?.name, "________")}</b><br>
+    Марка, модель: <b>${orDash(modelDisplayName(scooter, model), "________")}</b><br>
     Наименование (тип ТС): Скутер<br>
     Категория ТС: М<br>
     Год выпуска: <b>${orDash(scooter?.year, "______")}</b><br>
@@ -487,7 +507,7 @@ ${TOOLBAR}
   <h2>2.</h2>
   <div class="para">Транспортное средство представляет собой скутер (далее — «скутер»), идентифицируемый следующими параметрами:</div>
   <ul>
-    <li>Марка, модель: <b>${orDash(model?.name, "________")}</b></li>
+    <li>Марка, модель: <b>${orDash(modelDisplayName(scooter, model), "________")}</b></li>
     <li>Идентификационный номер (VIN) / № шасси/рамы: <b>${orDash(scooter?.frameNumber ?? scooter?.vin, "_________________")}</b></li>
     <li>Год выпуска: <b>${orDash(scooter?.year, "_______")}</b></li>
     <li>Номер двигателя: <b>${orDash(scooter?.engineNo, "_______________")}</b></li>
