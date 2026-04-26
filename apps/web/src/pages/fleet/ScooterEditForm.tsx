@@ -1,9 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Check, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { FleetScooter } from "@/lib/mock/fleet";
+import type { ScooterModel } from "@/lib/mock/rentals";
 import { patchScooter } from "./fleetStore";
 import { useRole } from "@/lib/role";
+import { useApiScooterModels } from "@/lib/api/scooter-models";
+import {
+  ModelPicker,
+  modelEnumFromName,
+  scooterPrefixFromModelName,
+} from "./ModelPicker";
 
 export function ScooterEditForm({
   scooter,
@@ -14,6 +21,41 @@ export function ScooterEditForm({
 }) {
   const role = useRole();
   const [closing, setClosing] = useState(false);
+  const { data: models = [] } = useApiScooterModels();
+
+  // Модель: новый modelId (из каталога) + legacy enum для совместимости
+  // со старыми экранами/тарифами (jog/gear/honda/tank).
+  const [modelId, setModelId] = useState<number | null>(
+    scooter.modelId ?? null,
+  );
+  const [modelName, setModelName] = useState<string>(() => {
+    if (scooter.modelId) {
+      const m = models.find((x) => x.id === scooter.modelId);
+      if (m) return m.name;
+    }
+    // fallback: пытаемся найти по enum модели
+    const fallback = models.find((x) =>
+      x.name.toLowerCase().includes(scooter.model),
+    );
+    return fallback?.name ?? "";
+  });
+
+  // Когда подгрузился каталог моделей — синхронизируем modelName
+  useEffect(() => {
+    if (models.length === 0) return;
+    if (modelId != null && !modelName) {
+      const m = models.find((x) => x.id === modelId);
+      if (m) setModelName(m.name);
+    } else if (modelId == null && !modelName) {
+      const m = models.find((x) =>
+        x.name.toLowerCase().includes(scooter.model),
+      );
+      if (m) {
+        setModelId(m.id);
+        setModelName(m.name);
+      }
+    }
+  }, [models, modelId, modelName, scooter.model]);
 
   const [mileage, setMileage] = useState(String(scooter.mileage));
   const [engineNo, setEngineNo] = useState(scooter.engineNo ?? "");
@@ -47,8 +89,25 @@ export function ScooterEditForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Если поменяли модель — пересчитываем имя скутера: «Jog #02» → «Gear #02».
+  // Номер в серии (часть после #) сохраняется. Если префикс не поменялся —
+  // имя остаётся прежним.
+  const newName = useMemo(() => {
+    if (!modelName) return scooter.name;
+    const newPrefix = scooterPrefixFromModelName(modelName);
+    const numMatch = scooter.name.match(/#(\d+)/);
+    const num = numMatch ? numMatch[1] : "";
+    if (!num) return scooter.name;
+    const candidate = `${newPrefix} #${num}`;
+    return candidate === scooter.name ? scooter.name : candidate;
+  }, [modelName, scooter.name]);
+  const nameChanged = newName !== scooter.name;
+
   const handleSave = () => {
     const yearNum = Number(year);
+    const newLegacyModel: ScooterModel = modelName
+      ? modelEnumFromName(modelName)
+      : scooter.model;
     const patch: Partial<FleetScooter> = {
       mileage: Number(mileage) || 0,
       // Поддерживаем оба поля (vin/frameNumber) одинаковыми — они про
@@ -60,6 +119,12 @@ export function ScooterEditForm({
       year: Number.isFinite(yearNum) && yearNum > 0 ? yearNum : undefined,
       color: color.trim() || undefined,
       note: note.trim() || undefined,
+      // Смена модели: пишем и legacy-enum (для тарифов / шаблонов где
+      // ещё не перешли на modelId), и FK на каталог моделей. Имя скутера
+      // тоже синхронизируем с новым префиксом, если оно меняется.
+      model: newLegacyModel,
+      modelId: modelId ?? undefined,
+      name: newName,
     };
     if (role === "director") {
       const n = Number(purchasePrice);
@@ -106,6 +171,29 @@ export function ScooterEditForm({
         {/* body */}
         <div className="flex-1 overflow-y-auto px-5 py-4">
           <div className="flex flex-col gap-4">
+            <Field
+              label="Модель"
+              hint={
+                nameChanged ? (
+                  <span className="text-[10px] font-bold text-amber-700">
+                    имя станет «{newName}»
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-muted-2">
+                    тарифы пересчитаются по этой модели
+                  </span>
+                )
+              }
+            >
+              <ModelPicker
+                value={modelId}
+                onChange={(id, m) => {
+                  setModelId(id);
+                  setModelName(m.name);
+                }}
+              />
+            </Field>
+
             <Field label="Пробег, км">
               <input
                 type="number"
