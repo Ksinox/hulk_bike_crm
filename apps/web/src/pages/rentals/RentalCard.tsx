@@ -664,12 +664,15 @@ export function RentalCard({ rental }: { rental: Rental }) {
           rental={rental}
           onClose={() => setExtendOpen(false)}
           onExtended={(r) => {
-            // После успешного продления — переключаем фокус на новую
-            // аренду (продление). Иначе родительская уходит в архив,
-            // selectedId «зависает» на ней, карточка показывает заглушку
-            // «Выберите аренду из списка». Решение через navigate —
-            // Rentals читает pending и подменяет selectedId.
-            navigate({ route: "rentals", rentalId: r.id });
+            // После продления:
+            //   • переключаем фокус на новую аренду (Rentals → onNavigate)
+            //   • просим открыть превью документа с новыми датами для
+            //     печати (флаг openContract).
+            navigate({
+              route: "rentals",
+              rentalId: r.id,
+              openContract: true,
+            });
           }}
         />
       )}

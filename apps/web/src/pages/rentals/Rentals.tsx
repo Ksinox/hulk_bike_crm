@@ -150,6 +150,11 @@ export function Rentals() {
     return onNavigate((req) => {
       if (req.route === "rentals" && req.rentalId != null) {
         setSelectedId(req.rentalId);
+        // openContract=true приходит при продлении — сразу открываем
+        // превью документа с новыми датами для печати.
+        if (req.openContract) {
+          setAutoDocRentalId(req.rentalId);
+        }
       }
     });
   }, []);

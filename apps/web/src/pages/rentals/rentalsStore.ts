@@ -342,9 +342,29 @@ export function extendRental(
     })
     .then(invAll)
     .catch(logErr("extendRental"));
-  // возвращаем stub — UI в подтверждении оплаты использует id из confirmForNewId,
-  // но реальный id придёт через refetch; для MVP этого достаточно
   return null;
+}
+
+/**
+ * Async-вариант продления. Возвращает реальный объект новой аренды
+ * с id из API. Используется когда нужно сразу:
+ *   • переключить selectedId в Rentals (через navigate)
+ *   • открыть превью документа договор+акт
+ * Без этого navigate шёл на null, фокус переключиться не мог,
+ * карточка показывала «Выберите аренду из списка».
+ */
+export async function extendRentalAsync(
+  oldId: number,
+  extraDays: number,
+  newRate: number,
+  newTariffPeriod: Rental["tariffPeriod"],
+): Promise<{ id: number }> {
+  const created = await api.post<{ id: number }>(
+    `/api/rentals/${oldId}/extend`,
+    { extraDays, newRate, newTariffPeriod },
+  );
+  invAll();
+  return created;
 }
 
 export function toggleTask(id: number) {

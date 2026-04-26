@@ -5,6 +5,12 @@ type NavRequest = {
   clientId?: number;
   rentalId?: number;
   scooterId?: number;
+  /**
+   * Открыть превью договора+акта по аренде сразу после перехода.
+   * Используется при продлении: оператор продлил → видим новую карточку
+   * + сразу всплывает документ с новыми датами для печати.
+   */
+  openContract?: boolean;
   /** Откуда пришли — для breadcrumb «← назад» */
   from?: {
     route: RouteId;

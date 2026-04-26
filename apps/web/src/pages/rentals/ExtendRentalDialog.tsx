@@ -9,7 +9,8 @@ import {
   TARIFF_PERIOD_LABEL,
   type Rental,
 } from "@/lib/mock/rentals";
-import { extendRental } from "./rentalsStore";
+import { extendRentalAsync } from "./rentalsStore";
+import { toast } from "@/lib/toast";
 
 function fmt(n: number) {
   return n.toLocaleString("ru-RU");
@@ -55,10 +56,32 @@ export function ExtendRentalDialog({
     return `${dd}.${mm}.${dt.getFullYear()}`;
   }, [rental.endPlanned, days]);
 
-  const handleExtend = () => {
-    const created = extendRental(rental.id, days, rate, period);
-    if (created) onExtended?.(created);
-    requestClose();
+  const [saving, setSaving] = useState(false);
+  const handleExtend = async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      // Ждём реальный id новой аренды-продления — нужен сразу для
+      // navigate на новую карточку и для авто-открытия документа.
+      const created = await extendRentalAsync(rental.id, days, rate, period);
+      onExtended?.({
+        ...rental,
+        id: created.id,
+        days,
+        rate,
+        sum: rate * days,
+        endPlanned: newEndPlanned,
+        parentRentalId: rental.id,
+      } as Rental);
+      requestClose();
+    } catch (e) {
+      toast.error(
+        "Не удалось продлить",
+        (e as Error).message ?? "Попробуйте ещё раз",
+      );
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
