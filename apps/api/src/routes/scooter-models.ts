@@ -18,6 +18,7 @@ const Body = z
     avatarKey: z.string().optional().nullable(),
     avatarFileName: z.string().optional().nullable(),
     quickPick: z.boolean().optional(),
+    active: z.boolean().optional(),
     dayRate: z.number().int().min(0).max(1_000_000).optional(),
     shortRate: z.number().int().min(0).max(1_000_000).optional(),
     weekRate: z.number().int().min(0).max(1_000_000).optional(),
@@ -61,6 +62,7 @@ export async function scooterModelsRoutes(app: FastifyInstance) {
         avatarKey: data.avatarKey ?? null,
         avatarFileName: data.avatarFileName ?? null,
         quickPick: data.quickPick ?? false,
+        active: data.active ?? true,
         dayRate: data.dayRate ?? 1300,
         shortRate: data.shortRate ?? 700,
         weekRate: data.weekRate ?? 500,
@@ -123,6 +125,7 @@ export async function scooterModelsRoutes(app: FastifyInstance) {
         updated as unknown as Record<string, unknown>,
         {
           name: "название",
+          active: "активна",
           dayRate: "тариф 1–2 дня",
           shortRate: "тариф 3–6 дней",
           weekRate: "тариф 7–29 дней",

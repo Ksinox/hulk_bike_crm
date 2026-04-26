@@ -32,7 +32,15 @@ function matchStatus(
   unreachable: Set<number>,
   today: string,
 ): boolean {
-  if (f === "all") return true;
+  // На вкладке «Все» показываем только живые аренды. Завершённые и
+  // отменённые — это история, ей место в архиве. Завершённая аренда
+  // авто-уезжает в архив (см. /complete в API), но если фронт вдруг
+  // получит её до архивации — всё равно скрываем.
+  const isFinished =
+    r.status === "completed" ||
+    r.status === "completed_damage" ||
+    r.status === "cancelled";
+  if (f === "all") return !isFinished;
   if (f === "active") return r.status === "active";
   if (f === "overdue") return r.status === "overdue";
   if (f === "return_today") {

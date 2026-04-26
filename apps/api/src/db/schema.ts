@@ -613,6 +613,13 @@ export const scooterModels = pgTable(
      * через строку поиска.
      */
     quickPick: boolean("quick_pick").notNull().default(false),
+    /**
+     * Активна ли модель в системе. false → модель не показывается
+     * на лендинге и в выборах CRM (выбор скутера в форме новой аренды,
+     * фильтры и т.п.). Используется когда модель временно «выведена
+     * из обращения», но удалять её нельзя — за ней есть история.
+     */
+    active: boolean("active").notNull().default(true),
     /** Ставки ₽/сут по периодам аренды */
     dayRate: integer("day_rate").notNull().default(1300), // 1–2 дня
     shortRate: integer("short_rate").notNull().default(700), // 3–6 дней

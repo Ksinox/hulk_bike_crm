@@ -20,12 +20,21 @@ export function ModelPicker({
   value: number | null;
   onChange: (modelId: number, model: ApiScooterModel) => void;
 }) {
-  const { data: models = [], isLoading } = useApiScooterModels();
+  const { data: allModels = [], isLoading } = useApiScooterModels();
   const [query, setQuery] = useState("");
   const [focused, setFocused] = useState(false);
 
+  // Видимый список — только активные модели. Неактивная модель в БД
+  // остаётся для истории, но в выборах CRM не показывается.
+  // Если value указывает на неактивную (старая запись) — не теряем
+  // её, чтобы пользователь мог её увидеть в форме.
+  const models = useMemo(
+    () => allModels.filter((m) => m.active || m.id === value),
+    [allModels, value],
+  );
+
   const quickPick = useMemo(
-    () => models.filter((m) => m.quickPick),
+    () => models.filter((m) => m.quickPick && m.active),
     [models],
   );
 

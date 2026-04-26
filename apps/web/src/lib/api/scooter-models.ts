@@ -9,6 +9,12 @@ export type ApiScooterModel = {
   avatarKey: string | null;
   avatarFileName: string | null;
   quickPick: boolean;
+  /**
+   * false → модель не показывается на лендинге и в выборах CRM
+   * (форма аренды, фильтры). Используется когда модели временно нет,
+   * а удалять нельзя из-за истории.
+   */
+  active: boolean;
   /** ₽/сут на коротком прокате 1–2 дня */
   dayRate: number;
   /** ₽/сут на тарифе 3–6 дней */
@@ -34,6 +40,7 @@ export type CreateModelInput = {
   avatarKey?: string | null;
   avatarFileName?: string | null;
   quickPick?: boolean;
+  active?: boolean;
   dayRate?: number;
   shortRate?: number;
   weekRate?: number;

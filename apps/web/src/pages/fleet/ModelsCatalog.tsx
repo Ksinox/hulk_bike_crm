@@ -100,11 +100,21 @@ function ModelCard({
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
-            <div className="truncate text-[15px] font-bold text-ink">
+            <div
+              className={cn(
+                "truncate text-[15px] font-bold",
+                model.active ? "text-ink" : "text-muted-2",
+              )}
+            >
               {model.name}
             </div>
-            {model.quickPick && (
+            {model.quickPick && model.active && (
               <Star size={12} className="text-amber-500 fill-amber-400" />
+            )}
+            {!model.active && (
+              <span className="rounded-full bg-surface-soft px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-muted-2">
+                не активна
+              </span>
             )}
           </div>
           <div className="mt-1 text-[11px] text-muted-2">
@@ -158,6 +168,10 @@ function ModelFormModal({
   const [weekRate, setWeekRate] = useState(initial?.weekRate ?? 500);
   const [monthRate, setMonthRate] = useState(initial?.monthRate ?? 400);
   const [quickPick, setQuickPick] = useState(initial?.quickPick ?? false);
+  // active=true по умолчанию для новой модели. Если редактируем —
+  // берём текущее значение. false означает «модель в систему добавлена,
+  // но временно не используется» — её скрывают везде в CRM и на лендинге.
+  const [active, setActive] = useState(initial?.active ?? true);
   const [maxSpeedKmh, setMaxSpeedKmh] = useState<string>(
     initial?.maxSpeedKmh != null ? String(initial.maxSpeedKmh) : "",
   );
@@ -188,6 +202,7 @@ function ModelFormModal({
       weekRate,
       monthRate,
       quickPick,
+      active,
       maxSpeedKmh:
         speedNum != null && Number.isFinite(speedNum) && speedNum >= 0
           ? Math.round(speedNum)
@@ -324,15 +339,36 @@ function ModelFormModal({
             </div>
           </div>
 
-          <label className="flex cursor-pointer items-center gap-2 text-[13px] text-ink">
-            <input
-              type="checkbox"
-              checked={quickPick}
-              onChange={(e) => setQuickPick(e.target.checked)}
-              className="h-4 w-4 accent-blue-600"
-            />
-            Отображать в быстром выборе при создании аренды
-          </label>
+          <div className="space-y-2">
+            <label className="flex cursor-pointer items-center gap-2 text-[13px] text-ink">
+              <input
+                type="checkbox"
+                checked={active}
+                onChange={(e) => setActive(e.target.checked)}
+                className="h-4 w-4 accent-blue-600"
+              />
+              <span>
+                Активна
+                <span className="ml-1.5 text-[11px] text-muted-2">
+                  · показывать на лендинге и в выборе скутера. Снимите если
+                  модели сейчас в обороте нет.
+                </span>
+              </span>
+            </label>
+
+            <label className="flex cursor-pointer items-center gap-2 text-[13px] text-ink">
+              <input
+                type="checkbox"
+                checked={quickPick}
+                onChange={(e) => setQuickPick(e.target.checked)}
+                disabled={!active}
+                className="h-4 w-4 accent-blue-600 disabled:opacity-40"
+              />
+              <span className={!active ? "text-muted-2" : ""}>
+                Отображать в быстром выборе при создании аренды
+              </span>
+            </label>
+          </div>
 
           <Field label="Примечание">
             <textarea

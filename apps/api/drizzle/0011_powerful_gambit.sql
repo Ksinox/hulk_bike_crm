@@ -1,0 +1,1 @@
+ALTER TABLE "scooter_models" ADD COLUMN "active" boolean DEFAULT true NOT NULL;

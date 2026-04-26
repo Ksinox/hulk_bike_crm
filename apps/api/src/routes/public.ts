@@ -37,6 +37,8 @@ export async function publicRoutes(app: FastifyInstance) {
         and(
           isNotNull(scooterModels.avatarKey),
           ne(scooterModels.avatarKey, ""),
+          // Неактивные модели на лендинге не показываем
+          eq(scooterModels.active, true),
         ),
       )
       .orderBy(scooterModels.id);

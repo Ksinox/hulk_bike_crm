@@ -78,6 +78,13 @@
       "when": 1777197919220,
       "tag": "0010_busy_sentinels",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1777203026648,
+      "tag": "0011_powerful_gambit",
+      "breakpoints": true
     }
   ]
 }

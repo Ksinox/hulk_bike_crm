@@ -521,18 +521,28 @@ function ScooterAvatar({ model }: { model: ScooterModel }) {
 }
 
 function StatusPill({ status }: { status: ScooterDisplayStatus }) {
+  // Цвета должны соответствовать KPI-тайлам сверху страницы:
+  //   Готов к аренде (rental_pool) — green
+  //   Активная аренда (rented)     — blue
+  //   Не распределён (ready)       — slate (тёмно-серый)
+  //   На ремонте (repair)          — red
+  //   Продаются (for_sale, buyout) — violet
+  //   В разборке (disassembly)     — ink
+  //   Продан (sold)                — muted
   const cls =
-    status === "ready"
+    status === "rental_pool"
       ? "bg-green-soft text-green-ink"
       : status === "rented"
         ? "bg-blue-50 text-blue-700"
-        : status === "repair"
-          ? "bg-red-soft text-red-ink"
-          : status === "buyout"
-            ? "bg-purple-soft text-purple-ink"
-            : status === "for_sale"
-              ? "bg-orange-soft text-orange-ink"
-              : "bg-surface-soft text-muted";
+        : status === "ready"
+          ? "bg-ink/10 text-ink"
+          : status === "repair"
+            ? "bg-red-soft text-red-ink"
+            : status === "buyout" || status === "for_sale"
+              ? "bg-purple-soft text-purple-ink"
+              : status === "disassembly"
+                ? "bg-ink text-white"
+                : "bg-surface-soft text-muted";
   return (
     <span
       className={cn(

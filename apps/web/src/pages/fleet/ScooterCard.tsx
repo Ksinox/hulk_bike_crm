@@ -25,7 +25,6 @@ import { MODEL_LABEL, type ScooterModel } from "@/lib/mock/rentals";
 import { useApiClients } from "@/lib/api/clients";
 import { useRentals } from "@/pages/rentals/rentalsStore";
 import { navigate } from "@/app/navigationStore";
-import { Topbar } from "@/pages/dashboard/Topbar";
 import { ScooterEditForm } from "./ScooterEditForm";
 import { ScooterDocumentsTab } from "./ScooterDocumentsTab";
 import { ScooterPhotosGallery } from "./ScooterPhotosGallery";
@@ -205,7 +204,7 @@ export function ScooterCard({
 
   return (
     <main className="flex min-w-0 flex-1 flex-col gap-4">
-      <Topbar />
+      {/* Topbar здесь не рендерим — он уже в шапке Garage (родительский). */}
 
       {/* ======== HEADER ======== */}
       <header className="flex flex-wrap items-center gap-3">
@@ -1104,17 +1103,21 @@ function ScooterPhotoArea({ scooter }: { scooter: FleetScooter }) {
   const modelAvatar = fileUrl(model?.avatarKey);
 
   return (
-    <div className="relative flex min-h-[320px] flex-col items-center justify-center gap-2 bg-surface-soft p-5 text-muted-2 md:border-r md:border-border">
+    <div className="relative flex min-h-[320px] flex-col items-center justify-end gap-2 overflow-visible bg-surface-soft p-5 pb-4 text-muted-2 md:border-r md:border-border">
       {modelAvatar ? (
         <>
-          <div className="relative h-40 w-40 overflow-hidden rounded-2xl bg-white shadow-card-sm">
-            <img
-              src={modelAvatar}
-              alt={model?.name ?? ""}
-              className="h-full w-full object-cover"
-            />
-          </div>
-          <div className="mt-1 text-[12px] font-semibold text-ink-2">
+          {/*
+            Скутер на прозрачном PNG — рамку рисовать не нужно. Картинку
+            делаем крупной и слегка приподнимаем «над» карточкой за счёт
+            scale + отрицательного отступа сверху, чтобы колесо/руль
+            визуально вылезали за пределы фото-блока (как на лендинге).
+          */}
+          <img
+            src={modelAvatar}
+            alt={model?.name ?? ""}
+            className="-mt-6 h-56 w-auto max-w-full object-contain drop-shadow-[0_18px_24px_rgba(15,23,42,0.18)]"
+          />
+          <div className="text-[13px] font-bold text-ink">
             {model?.name ?? MODEL_LABEL[scooter.model]}
           </div>
           <div className="text-[10px] text-muted-2">аватарка модели</div>
