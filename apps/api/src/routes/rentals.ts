@@ -3,6 +3,7 @@ import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/index.js";
 import {
+  activityLog,
   clients,
   payments,
   rentals,
@@ -359,6 +360,76 @@ export async function rentalsRoutes(app: FastifyInstance) {
         summary: `Аренда #${String(id).padStart(4, "0")} восстановлена из архива`,
       });
       return row;
+    },
+  );
+
+  /**
+   * DELETE /api/rentals/:id/purge — ХАРДКОРНОЕ физическое удаление.
+   * Только для creator. Удаляет аренду + все связанные платежи +
+   * инспекции возврата + ВСЕ записи activity_log по этой аренде —
+   * т.е. в системе не остаётся вообще никакого следа. Сам факт
+   * удаления тоже НЕ логируется (по требованию заказчика).
+   *
+   * Операция необратимая. Использовать осознанно.
+   */
+  app.delete<{ Params: { id: string } }>(
+    "/:id/purge",
+    async (req, reply) => {
+      if (req.user.role !== "creator") {
+        return reply.code(403).send({ error: "creator_only" });
+      }
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id))
+        return reply.code(400).send({ error: "bad id" });
+
+      const [row] = await db.select().from(rentals).where(eq(rentals.id, id));
+      if (!row) return reply.code(404).send({ error: "not found" });
+
+      // Чистим в обратном порядке зависимостей:
+      // 1. activity_log — все записи про эту аренду
+      // 2. payments
+      // 3. return_inspections
+      // 4. сама аренда
+      // Дочерние аренды-продления (parentRentalId = id) тоже зачищаем —
+      // иначе останутся осиротевшие записи.
+      const childIds = (
+        await db
+          .select({ id: rentals.id })
+          .from(rentals)
+          .where(eq(rentals.parentRentalId, id))
+      ).map((c) => c.id);
+      const allIds = [id, ...childIds];
+
+      for (const rid of allIds) {
+        await db
+          .delete(activityLog)
+          .where(
+            and(
+              eq(activityLog.entity, "rental"),
+              eq(activityLog.entityId, rid),
+            ),
+          );
+        await db.delete(payments).where(eq(payments.rentalId, rid));
+        await db
+          .delete(returnInspections)
+          .where(eq(returnInspections.rentalId, rid));
+      }
+      // Дочерние сначала (FK), потом сама
+      if (childIds.length > 0) {
+        await db
+          .delete(rentals)
+          .where(
+            sql`${rentals.id} IN (${sql.join(
+              childIds.map((c) => sql`${c}`),
+              sql`, `,
+            )})`,
+          );
+      }
+      await db.delete(rentals).where(eq(rentals.id, id));
+
+      // Сознательно НЕ пишем activity_log про purge — заказчик попросил
+      // «нигде инфа не запишется».
+      return reply.code(204).send();
     },
   );
 

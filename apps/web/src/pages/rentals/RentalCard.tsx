@@ -45,7 +45,11 @@ import {
 import { ClientQuickView } from "@/pages/clients/ClientQuickView";
 import { RentalEditModal } from "./RentalEditModal";
 import { Pencil, Trash2, RotateCcw } from "lucide-react";
-import { useDeleteRental, useUnarchiveRental } from "@/lib/api/rentals";
+import {
+  useDeleteRental,
+  usePurgeRental,
+  useUnarchiveRental,
+} from "@/lib/api/rentals";
 import { useMe } from "@/lib/api/auth";
 import { confirmDialog } from "@/lib/toast";
 import { toast } from "@/lib/toast";
@@ -184,7 +188,9 @@ export function RentalCard({ rental }: { rental: Rental }) {
   const { data: me } = useMe();
   const deleteRental = useDeleteRental();
   const unarchiveRental = useUnarchiveRental();
+  const purgeRental = usePurgeRental();
   const isArchived = !!rental.archivedAt;
+  const isCreator = me?.role === "creator";
 
   const { data: apiClients } = useApiClients();
   const client = useMemo(
@@ -254,21 +260,31 @@ export function RentalCard({ rental }: { rental: Rental }) {
     icon: RotateCcw,
     tone: "primary",
   };
+  // Жёсткое удаление — ТОЛЬКО для creator, без следов в БД и активити-логе.
+  const purgeAction: MenuAction = {
+    id: "purge",
+    label: "Удалить навсегда (без следа)",
+    icon: Trash2,
+    tone: "danger",
+  };
   const actions: MenuAction[] = isArchived
-    ? canDelete
-      ? [restoreAction]
-      : []
+    ? [
+        ...(canDelete ? [restoreAction] : []),
+        ...(isCreator ? [purgeAction] : []),
+      ]
     : completeAction
       ? [
           completeAction,
           editAction,
           ...actionsWithoutComplete,
           ...(canDelete ? [deleteAction] : []),
+          ...(isCreator ? [purgeAction] : []),
         ]
       : [
           editAction,
           ...actionsWithoutComplete,
           ...(canDelete ? [deleteAction] : []),
+          ...(isCreator ? [purgeAction] : []),
         ];
 
   // Финансы — считаются по ВСЕЙ цепочке продлений.
@@ -295,6 +311,36 @@ export function RentalCard({ rental }: { rental: Rental }) {
         );
       } catch (e) {
         toast.error("Не удалось восстановить", (e as Error).message ?? "");
+      }
+      return;
+    }
+    if (id === "purge") {
+      const ok = await confirmDialog({
+        title: "Удалить аренду НАВСЕГДА?",
+        message: `Аренда #${String(rental.id).padStart(4, "0")}, все её платежи, инспекции возврата и записи активности будут УДАЛЕНЫ ИЗ БД. Никакого следа не останется. Операция необратима. Использовать только когда точно нужно стереть данные.`,
+        confirmText: "Стереть навсегда",
+        cancelText: "Отмена",
+        danger: true,
+      });
+      if (!ok) return;
+      try {
+        await purgeRental.mutateAsync(rental.id);
+        toast.success(
+          "Аренда стёрта без следа",
+          `#${String(rental.id).padStart(4, "0")}`,
+        );
+      } catch (e) {
+        if (e instanceof ApiError) {
+          const body = e.body as { error?: string } | null;
+          if (body?.error === "creator_only") {
+            toast.error(
+              "Запрещено",
+              "Только создатель системы может стирать данные без следа.",
+            );
+            return;
+          }
+        }
+        toast.error("Не удалось удалить", (e as Error).message ?? "");
       }
       return;
     }

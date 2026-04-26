@@ -27,6 +27,22 @@ export function useApiRentalsArchived() {
   });
 }
 
+/**
+ * Хардкорное физическое удаление (только creator). Без следов в БД,
+ * без записи в activity_log. Операция необратимая.
+ */
+export function usePurgeRental() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api.delete<void>(`/api/rentals/${id}/purge`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: rentalsKeys.all });
+      qc.invalidateQueries({ queryKey: ["scooters"] });
+      qc.invalidateQueries({ queryKey: ["activity"] });
+    },
+  });
+}
+
 /** Восстановление аренды из архива. */
 export function useUnarchiveRental() {
   const qc = useQueryClient();
