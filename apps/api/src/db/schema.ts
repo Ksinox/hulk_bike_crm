@@ -439,6 +439,14 @@ export const rentals = pgTable(
 
     note: text("note"),
 
+    /**
+     * Архив (soft-delete). Удалённая аренда уходит сюда — не показывается
+     * в основных списках, но историю клиента и платежи не теряем. Может
+     * быть восстановлена директором.
+     */
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+    archivedBy: text("archived_by"),
+
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

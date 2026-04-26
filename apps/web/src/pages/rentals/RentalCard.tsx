@@ -44,8 +44,8 @@ import {
 } from "./rentalsStore";
 import { ClientQuickView } from "@/pages/clients/ClientQuickView";
 import { RentalEditModal } from "./RentalEditModal";
-import { Pencil, Trash2 } from "lucide-react";
-import { useDeleteRental } from "@/lib/api/rentals";
+import { Pencil, Trash2, RotateCcw } from "lucide-react";
+import { useDeleteRental, useUnarchiveRental } from "@/lib/api/rentals";
 import { useMe } from "@/lib/api/auth";
 import { confirmDialog } from "@/lib/toast";
 import { toast } from "@/lib/toast";
@@ -183,6 +183,8 @@ export function RentalCard({ rental }: { rental: Rental }) {
   const newRental = useRental(confirmForNewId);
   const { data: me } = useMe();
   const deleteRental = useDeleteRental();
+  const unarchiveRental = useUnarchiveRental();
+  const isArchived = !!rental.archivedAt;
 
   const { data: apiClients } = useApiClients();
   const client = useMemo(
@@ -220,30 +222,54 @@ export function RentalCard({ rental }: { rental: Rental }) {
   const tone = STATUS_TONE[rental.status];
   const isUnreachable = useClientUnreachable(rental.clientId);
   const hasDamage = (rental.damageAmount ?? 0) > 0;
-  // К любому статусу добавляем «Изменить аренду» — доступно всем ролям, пишется в activity log
   const baseActions = statusActions(rental.status, { hasDamage, isUnreachable });
-  // Удалять может только директор/создатель и только «безвредные» аренды.
-  // Сервер всё равно проверит — UI просто не показывает кнопку, когда
-  // удаление заведомо запрещено.
-  const canDelete =
-    (me?.role === "director" || me?.role === "creator") &&
-    (!rental.scooter ||
-      rental.status === "new_request" ||
-      rental.status === "cancelled");
-  const actions: MenuAction[] = [
-    { id: "edit", label: "Изменить аренду", icon: Pencil, tone: "ghost" },
-    ...baseActions,
-    ...(canDelete
+  // «Завершить аренду» — должна быть главной кнопкой в шапке (primary).
+  // Если она доступна для статуса — ставим её первой, а «Изменить» уходит
+  // во вторичные действия в дропдауне.
+  const completeAction = baseActions.find((a) => a.id === "complete");
+  const actionsWithoutComplete = baseActions.filter((a) => a.id !== "complete");
+  const editAction: MenuAction = {
+    id: "edit",
+    label: "Изменить аренду",
+    icon: Pencil,
+    tone: "ghost",
+  };
+  // «Удалить» — только директор/создатель, но БЕЗ условий (soft-delete = архив).
+  const canDelete = me?.role === "director" || me?.role === "creator";
+  const deleteAction: MenuAction = {
+    id: "delete",
+    label: "Удалить аренду",
+    icon: Trash2,
+    tone: "danger",
+  };
+
+  // Состав меню действий:
+  //  1. primary — completeAction если есть, иначе editAction
+  //  2. далее — остальные действия по статусу + edit (если не primary)
+  //  3. в конце — delete (опасная операция)
+  // Для архивных аренд показываем только «Восстановить».
+  const restoreAction: MenuAction = {
+    id: "unarchive",
+    label: "Восстановить из архива",
+    icon: RotateCcw,
+    tone: "primary",
+  };
+  const actions: MenuAction[] = isArchived
+    ? canDelete
+      ? [restoreAction]
+      : []
+    : completeAction
       ? [
-          {
-            id: "delete",
-            label: "Удалить аренду",
-            icon: Trash2,
-            tone: "danger" as const,
-          },
+          completeAction,
+          editAction,
+          ...actionsWithoutComplete,
+          ...(canDelete ? [deleteAction] : []),
         ]
-      : []),
-  ];
+      : [
+          editAction,
+          ...actionsWithoutComplete,
+          ...(canDelete ? [deleteAction] : []),
+        ];
 
   // Финансы — считаются по ВСЕЙ цепочке продлений.
   // В «Получено от клиента» (paidIn) НЕ включаем депозит — он возвратный
@@ -260,10 +286,22 @@ export function RentalCard({ rental }: { rental: Rental }) {
   const handleAction = async (id: string) => {
     if (id === "extend" || id === "clone") return setExtendOpen(true);
     if (id === "edit") return setEditRentalOpen(true);
+    if (id === "unarchive") {
+      try {
+        await unarchiveRental.mutateAsync(rental.id);
+        toast.success(
+          "Аренда восстановлена",
+          `#${String(rental.id).padStart(4, "0")}`,
+        );
+      } catch (e) {
+        toast.error("Не удалось восстановить", (e as Error).message ?? "");
+      }
+      return;
+    }
     if (id === "delete") {
       const ok = await confirmDialog({
         title: "Удалить аренду?",
-        message: `Аренда #${String(rental.id).padStart(4, "0")} будет удалена без возможности восстановления. Связанные неоплаченные платежи и записи возврата тоже удалятся.`,
+        message: `Аренда #${String(rental.id).padStart(4, "0")} будет перемещена в архив. Историю клиента и платежи система сохранит. Восстановить аренду можно из архива на этой же странице.`,
         confirmText: "Удалить",
         cancelText: "Отмена",
         danger: true,
@@ -341,7 +379,26 @@ export function RentalCard({ rental }: { rental: Rental }) {
       </header>
 
       {/* =========== BANNERS =========== */}
-      {rental.paymentConfirmed === null && (
+      {isArchived && (
+        <div className="flex items-center gap-2 rounded-[12px] bg-surface-soft px-3 py-2 text-[12px] text-muted ring-1 ring-inset ring-border">
+          <Trash2 size={14} className="shrink-0" />
+          <div className="min-w-0 flex-1">
+            <b>Аренда в архиве.</b> Удалена{" "}
+            {rental.archivedBy ? `пользователем ${rental.archivedBy}` : ""}
+            {rental.archivedAt
+              ? ` ${new Date(rental.archivedAt).toLocaleString("ru-RU", {
+                  day: "2-digit",
+                  month: "2-digit",
+                  year: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}`
+              : ""}
+            . Восстановите через меню действий, если удаление было ошибкой.
+          </div>
+        </div>
+      )}
+      {!isArchived && rental.paymentConfirmed === null && (
         <div className="flex items-center gap-2 rounded-[12px] bg-blue-50 px-3 py-2 text-[12px] text-blue-700 ring-1 ring-inset ring-blue-600/20">
           <AlertTriangle size={14} className="shrink-0" />
           <div className="min-w-0 flex-1">

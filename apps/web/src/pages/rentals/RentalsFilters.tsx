@@ -8,7 +8,8 @@ export type StatusFilter =
   | "return_today"
   | "new_request"
   | "completed"
-  | "issue";
+  | "issue"
+  | "archived";
 
 export type FiltersState = {
   search: string;
@@ -23,6 +24,7 @@ const STATUS_TABS: { id: StatusFilter; label: string }[] = [
   { id: "new_request", label: "Новые" },
   { id: "completed", label: "Завершены" },
   { id: "issue", label: "Проблемные" },
+  { id: "archived", label: "Архив" },
 ];
 
 export function RentalsFilters({

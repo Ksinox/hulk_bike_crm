@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/index.js";
 import {
@@ -8,6 +8,7 @@ import {
   rentals,
   returnInspections,
   scooters,
+  users as usersTable,
 } from "../db/schema.js";
 import { logActivity } from "../services/activityLog.js";
 import { rentalStatusLabel } from "../services/activityMessages.js";
@@ -128,8 +129,26 @@ async function summaryForRental(rentalId: number): Promise<string> {
 }
 
 export async function rentalsRoutes(app: FastifyInstance) {
+  // Основной список — без архива.
   app.get("/", async () => {
-    const rows = await db.select().from(rentals).orderBy(desc(rentals.id));
+    const rows = await db
+      .select()
+      .from(rentals)
+      .where(isNull(rentals.archivedAt))
+      .orderBy(desc(rentals.id));
+    return { items: rows };
+  });
+
+  /**
+   * Список архива — удалённые аренды. Видны для истории клиента,
+   * могут быть восстановлены директором/создателем.
+   */
+  app.get("/archived", async () => {
+    const rows = await db
+      .select()
+      .from(rentals)
+      .where(isNotNull(rentals.archivedAt))
+      .orderBy(desc(rentals.archivedAt));
     return { items: rows };
   });
 
@@ -269,16 +288,13 @@ export async function rentalsRoutes(app: FastifyInstance) {
 
   /**
    * DELETE /api/rentals/:id
-   * Физическое удаление аренды. Только creator/director.
+   * Soft-delete: аренда уходит в архив (archivedAt = now()).
+   * История клиента и платежи сохраняются, но в основных списках
+   * аренда не показывается. Восстановить можно через POST /:id/unarchive.
    *
-   * Разрешено только для «безвредных» состояний:
-   *   - аренды без скутера (черновики/заявки),
-   *   - статусы new_request / cancelled,
-   *   - и ТОЛЬКО если по аренде нет ни одного подтверждённого платежа
-   *     (финансовый учёт не должен страдать от удалений).
-   *
-   * Если эти условия не выполняются — возвращаем 409 с подсказкой
-   * перевести аренду в cancelled через PATCH (это safe-альтернатива).
+   * Доступно только creator/director. Удаляется ВНЕ ЗАВИСИМОСТИ от статуса
+   * аренды — это сознательное решение заказчика, ответственность за
+   * корректность учёта на нём. Активная аренда удалится тоже.
    */
   app.delete<{ Params: { id: string } }>("/:id", async (req, reply) => {
     if (req.user.role !== "creator" && req.user.role !== "director") {
@@ -289,50 +305,62 @@ export async function rentalsRoutes(app: FastifyInstance) {
 
     const [row] = await db.select().from(rentals).where(eq(rentals.id, id));
     if (!row) return reply.code(404).send({ error: "not found" });
-
-    const allowedStatuses = new Set([
-      "new_request",
-      "meeting",
-      "cancelled",
-    ]);
-    const canDelete = !row.scooterId || allowedStatuses.has(row.status);
-    if (!canDelete) {
-      return reply.code(409).send({
-        error: "rental_in_progress",
-        message:
-          "Удалить можно только аренду без скутера или в статусах «заявка»/«встреча»/«отменена». Активную аренду переведите в «Отменена».",
-      });
+    if (row.archivedAt) {
+      return reply.code(409).send({ error: "already_archived" });
     }
 
-    const paidPayments = await db
-      .select({ id: payments.id })
-      .from(payments)
-      .where(and(eq(payments.rentalId, id), eq(payments.paid, true)))
-      .limit(1);
-    if (paidPayments.length > 0) {
-      return reply.code(409).send({
-        error: "has_paid_payments",
-        message:
-          "По аренде есть подтверждённые платежи — физическое удаление запрещено для сохранности учёта. Используйте «Отменить аренду».",
-      });
-    }
-
-    // Подчищаем все запланированные/неоплаченные платежи и инспекции возврата,
-    // потом удаляем саму аренду.
-    await db.delete(payments).where(eq(payments.rentalId, id));
+    const [u] = await db
+      .select({ name: usersTable.name })
+      .from(usersTable)
+      .where(eq(usersTable.id, req.user.userId));
+    const by = u?.name ?? "система";
     await db
-      .delete(returnInspections)
-      .where(eq(returnInspections.rentalId, id));
-    await db.delete(rentals).where(eq(rentals.id, id));
+      .update(rentals)
+      .set({ archivedAt: sql`now()`, archivedBy: by })
+      .where(eq(rentals.id, id));
 
     await logActivity(req, {
       entity: "rental",
       entityId: id,
-      action: "deleted",
-      summary: `Удалена аренда #${String(id).padStart(4, "0")}`,
+      action: "archived",
+      summary: `Аренда #${String(id).padStart(4, "0")} перемещена в архив`,
     });
     return reply.code(204).send();
   });
+
+  /**
+   * POST /api/rentals/:id/unarchive — вернуть аренду из архива.
+   * Сбрасывает archivedAt/archivedBy.
+   */
+  app.post<{ Params: { id: string } }>(
+    "/:id/unarchive",
+    async (req, reply) => {
+      if (req.user.role !== "creator" && req.user.role !== "director") {
+        return reply.code(403).send({ error: "forbidden" });
+      }
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id))
+        return reply.code(400).send({ error: "bad id" });
+
+      const [row] = await db
+        .update(rentals)
+        .set({ archivedAt: null, archivedBy: null })
+        .where(and(eq(rentals.id, id), isNotNull(rentals.archivedAt)))
+        .returning();
+      if (!row)
+        return reply
+          .code(404)
+          .send({ error: "not found or not archived" });
+
+      await logActivity(req, {
+        entity: "rental",
+        entityId: id,
+        action: "unarchived",
+        summary: `Аренда #${String(id).padStart(4, "0")} восстановлена из архива`,
+      });
+      return row;
+    },
+  );
 
   // POST /api/rentals/:id/revert-overdue — снять просрочку
   app.post<{ Params: { id: string } }>(

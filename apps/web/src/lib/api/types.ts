@@ -138,6 +138,9 @@ export type ApiRental = {
   equipmentJson: RentalEquipmentItem[];
   damageAmount: number | null;
   note: string | null;
+  /** Архив (soft-delete). null если активна. */
+  archivedAt: string | null;
+  archivedBy: string | null;
   createdAt: string;
   updatedAt: string;
 };

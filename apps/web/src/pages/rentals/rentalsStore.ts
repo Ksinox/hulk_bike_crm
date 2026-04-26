@@ -5,7 +5,11 @@ import {
   type RentalStatus,
 } from "@/lib/mock/rentals";
 import { useQuery } from "@tanstack/react-query";
-import { rentalsKeys, useApiRentals } from "@/lib/api/rentals";
+import {
+  rentalsKeys,
+  useApiRentals,
+  useApiRentalsArchived,
+} from "@/lib/api/rentals";
 import { useApiScooters } from "@/lib/api/scooters";
 import { paymentsKeys, useApiPayments } from "@/lib/api/payments";
 import { api } from "@/lib/api";
@@ -333,6 +337,18 @@ export function useRentals(): Rental[] {
   const { data } = useApiRentals();
   const { data: scooters } = useApiScooters();
   useSyncExternalStore(subscribe, () => state.rentals, () => state.rentals);
+
+  return useMemo(() => {
+    if (!data) return [];
+    const byId = new Map((scooters ?? []).map((s) => [s.id, s] as const));
+    return data.map((r) => adaptRental(r, byId));
+  }, [data, scooters]);
+}
+
+/** Архивные аренды (soft-deleted). Используется во вкладке «Архив». */
+export function useArchivedRentals(): Rental[] {
+  const { data } = useApiRentalsArchived();
+  const { data: scooters } = useApiScooters();
 
   return useMemo(() => {
     if (!data) return [];

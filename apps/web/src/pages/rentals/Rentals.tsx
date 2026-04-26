@@ -6,7 +6,7 @@ import { RentalsFilters, type FiltersState } from "./RentalsFilters";
 import { RentalsList } from "./RentalsList";
 import { RentalsKpi, type Kpi } from "./RentalsKpi";
 import { RentalCard } from "./RentalCard";
-import { useRentals } from "./rentalsStore";
+import { useRentals, useArchivedRentals } from "./rentalsStore";
 import { useUnreachableSet } from "@/pages/clients/clientStore";
 import { NewRentalModal } from "./NewRentalModal";
 import { useApiClients } from "@/lib/api/clients";
@@ -57,6 +57,7 @@ function matchStatus(
       (r.damageAmount ?? 0) > 0 ||
       unreachable.has(r.clientId)
     );
+  if (f === "archived") return true; // данные приходят из useArchivedRentals
   return true;
 }
 
@@ -91,7 +92,8 @@ function statusRank(s: RentalStatus): number {
 }
 
 export function Rentals() {
-  const rentals = useRentals();
+  const activeRentals = useRentals();
+  const archivedList = useArchivedRentals();
   const unreachable = useUnreachableSet();
   const { data: apiClients } = useApiClients();
   const { data: apiScooters = [] } = useApiScooters();
@@ -106,6 +108,10 @@ export function Rentals() {
   });
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [newOpen, setNewOpen] = useState(false);
+
+  // Если выбрана вкладка «Архив» — берём архивный список, иначе обычный.
+  const rentals =
+    filters.status === "archived" ? archivedList : activeRentals;
 
   useEffect(() => {
     if (selectedId != null) return;

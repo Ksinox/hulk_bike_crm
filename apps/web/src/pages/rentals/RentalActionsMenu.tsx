@@ -55,17 +55,25 @@ export function RentalActionsMenu({
           ? "bg-red-soft text-red-ink hover:bg-red/20"
           : "bg-surface-soft text-ink-2 hover:bg-border";
 
+  // Primary-кнопку с тоном "primary" (например «Завершить аренду»)
+  // делаем визуально крупнее — это основное действие на карточке.
+  const primarySizeCls =
+    primary.tone === "primary"
+      ? "px-4 py-2 text-[13px]"
+      : "px-3 py-1.5 text-[12px]";
+
   return (
     <div ref={ref} className="relative inline-flex items-center gap-1.5">
       <button
         type="button"
         onClick={() => onAction(primary.id)}
         className={cn(
-          "inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-[12px] font-semibold transition-colors whitespace-nowrap",
+          "inline-flex items-center gap-1.5 rounded-full font-semibold transition-colors whitespace-nowrap",
+          primarySizeCls,
           primaryToneCls,
         )}
       >
-        <PrimaryIcon size={13} />
+        <PrimaryIcon size={primary.tone === "primary" ? 14 : 13} />
         {primary.label}
       </button>
 

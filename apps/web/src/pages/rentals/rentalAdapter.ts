@@ -57,5 +57,7 @@ export function adaptRental(
         : null,
     damageAmount: r.damageAmount ?? undefined,
     parentRentalId: r.parentRentalId ?? undefined,
+    archivedAt: r.archivedAt ?? null,
+    archivedBy: r.archivedBy ?? null,
   };
 }

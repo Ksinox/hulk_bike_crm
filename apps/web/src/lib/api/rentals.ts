@@ -16,6 +16,29 @@ export function useApiRentals() {
   });
 }
 
+/** Архивные (soft-deleted) аренды — для вкладки «Архив». */
+export function useApiRentalsArchived() {
+  return useQuery({
+    queryKey: [...rentalsKeys.all, "archived"] as const,
+    queryFn: () =>
+      api
+        .get<ListResponse<ApiRental>>("/api/rentals/archived")
+        .then((r) => r.items),
+  });
+}
+
+/** Восстановление аренды из архива. */
+export function useUnarchiveRental() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) =>
+      api.post<ApiRental>(`/api/rentals/${id}/unarchive`, {}),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: rentalsKeys.all });
+    },
+  });
+}
+
 export function useApiRental(id: number | null) {
   return useQuery({
     queryKey: id == null ? rentalsKeys.all : rentalsKeys.byId(id),

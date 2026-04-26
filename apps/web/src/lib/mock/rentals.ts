@@ -73,6 +73,9 @@ export type Rental = {
   parentRentalId?: number;
   /** Числовой id связанного скутера (из fleet) — заполняется адаптером API */
   scooterId?: number;
+  /** ISO-дата архивации (soft-delete). null/undefined если активна. */
+  archivedAt?: string | null;
+  archivedBy?: string | null;
   /**
    * Сумма ущерба по аренде, ₽ — выставляется вручную администратором
    * (например после ДТП или повреждения скутера). 0/undefined — ущерба нет.
