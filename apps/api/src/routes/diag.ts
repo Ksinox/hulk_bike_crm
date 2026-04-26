@@ -116,4 +116,24 @@ export async function diagRoutes(app: FastifyInstance) {
     }
     return { applied: results.filter((r) => r.ok).length, results };
   });
+
+  /**
+   * POST /api/_diag/backup — ручной запуск бэкапа БД в MinIO.
+   * Сохраняет в hulk-backups/backups/YYYY-MM-DD.json.gz.
+   */
+  app.post("/backup", async (req, reply) => {
+    if (req.user.role !== "creator") {
+      return reply.code(403).send({ error: "creator_only" });
+    }
+    const { runBackup } = await import("../services/backup.js");
+    try {
+      const result = await runBackup();
+      return { ok: true, ...result };
+    } catch (e) {
+      return reply.code(500).send({
+        ok: false,
+        error: (e as Error).message ?? "backup_failed",
+      });
+    }
+  });
 }

@@ -155,6 +155,10 @@ async function bootstrap() {
 
   await app.listen({ port: config.port, host: config.host });
   app.log.info(`🐎 Халк Байк API слушает на ${config.host}:${config.port}`);
+
+  // Бэкапы БД: раз в сутки JSON.gz в MinIO. Не блокирует старт.
+  const { scheduleDailyBackup } = await import("./services/backup.js");
+  scheduleDailyBackup();
 }
 
 bootstrap().catch((err) => {

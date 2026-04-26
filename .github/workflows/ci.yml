@@ -1,0 +1,100 @@
+name: CI
+
+# Lightweight CI: на каждый push в main билдит web + api и прогоняет
+# миграции на временной Postgres-копии. Если фейл — красный значок
+# в GitHub + email. НЕ блокирует push на прод (Dokploy autoDeploy
+# работает параллельно). Цель — раннее обнаружение TS/SQL ошибок.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: hulk
+          POSTGRES_PASSWORD: hulk_test
+          POSTGRES_DB: hulk_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build web
+        run: pnpm --filter web build
+
+      - name: Build api
+        run: pnpm --filter api build
+
+      - name: Run migrations on temp Postgres
+        env:
+          DATABASE_URL: postgres://hulk:hulk_test@localhost:5432/hulk_ci
+          NODE_ENV: test
+          # Минимальные значения чтобы config.ts не падал
+          PORT: "4000"
+          HOST: "0.0.0.0"
+          JWT_SECRET: "ci-test-secret-not-real"
+          S3_ENDPOINT: "localhost"
+          S3_PORT: "9000"
+          S3_USE_SSL: "false"
+          S3_ACCESS_KEY: "ci"
+          S3_SECRET_KEY: "ci"
+          S3_BUCKET: "ci"
+          CORS_ORIGINS: "http://localhost:5173"
+        working-directory: apps/api
+        run: node dist/db/migrate.js
+
+      - name: Smoke-test API startup (5s window)
+        env:
+          DATABASE_URL: postgres://hulk:hulk_test@localhost:5432/hulk_ci
+          NODE_ENV: test
+          PORT: "4000"
+          HOST: "127.0.0.1"
+          JWT_SECRET: "ci-test-secret-not-real"
+          S3_ENDPOINT: "localhost"
+          S3_PORT: "9000"
+          S3_USE_SSL: "false"
+          S3_ACCESS_KEY: "ci"
+          S3_SECRET_KEY: "ci"
+          S3_BUCKET: "ci"
+          CORS_ORIGINS: "http://localhost:5173"
+        working-directory: apps/api
+        # Стартуем API в фоне, ждём 5 секунд, проверяем /health=200
+        # и убиваем процесс. Если не поднялся — exit 1.
+        run: |
+          node dist/index.js &
+          API_PID=$!
+          sleep 5
+          if curl -sf -o /dev/null http://127.0.0.1:4000/health; then
+            echo "✓ /health = 200"
+            kill $API_PID 2>/dev/null || true
+            exit 0
+          else
+            echo "✗ /health не отвечает 200"
+            kill $API_PID 2>/dev/null || true
+            exit 1
+          fi
