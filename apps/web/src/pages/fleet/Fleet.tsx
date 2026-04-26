@@ -87,15 +87,13 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
    */
   const [modelIdsFilter, setModelIdsFilter] = useState<Set<number>>(new Set());
   /**
-   * Сортировка списка скутеров.
-   *  - "default" — по статусу (готовые сверху, потом аренды, ремонт и т.п.),
-   *    внутри статуса по имени.
-   *  - "num_desc" — по номеру в серии от большего к меньшему (Jog #14 → #02 → #01).
-   *  - "num_asc"  — наоборот (Jog #01 → #02 → #14).
+   * Сортировка списка скутеров строго по номеру в серии. Фильтрация
+   * по статусу делается вкладками сверху, поэтому первичная сортировка
+   * — это номер. Переключатель меняет направление: ↓ или ↑.
+   *  - "desc" — Jog #14 → Jog #02 → Jog #01 (по умолчанию)
+   *  - "asc"  — Jog #01 → Jog #02 → Jog #14
    */
-  const [sortMode, setSortMode] = useState<"default" | "num_desc" | "num_asc">(
-    "default",
-  );
+  const [sortDir, setSortDir] = useState<"desc" | "asc">("desc");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -205,34 +203,16 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
         return true;
       })
       .sort((a, b) => {
-        // Сортировка по номеру в серии (Jog #14 → #02 → #01 или наоборот).
-        // Полезно когда выбран фильтр по конкретной модели — видишь
-        // последовательность номеров.
-        if (sortMode === "num_desc" || sortMode === "num_asc") {
-          const numA = parseScooterNumber(a.scooter.name);
-          const numB = parseScooterNumber(b.scooter.name);
-          const diff = sortMode === "num_desc" ? numB - numA : numA - numB;
-          if (diff !== 0) return diff;
-          return a.scooter.name.localeCompare(b.scooter.name, "ru");
-        }
-        // По умолчанию — по статусу, внутри статуса по имени
-        const rank = (s: ScooterDisplayStatus) =>
-          s === "ready"
-            ? 0
-            : s === "rented"
-              ? 1
-              : s === "repair"
-                ? 2
-                : s === "for_sale"
-                  ? 3
-                  : s === "buyout"
-                    ? 4
-                    : 5;
-        const r = rank(a.status) - rank(b.status);
-        if (r !== 0) return r;
+        // Сортировка по номеру в серии. Фильтрация по статусу — вкладками
+        // сверху, поэтому здесь только номер. Внутри одинаковых номеров
+        // (вдруг разные модели имеют #02) — сравниваем имя.
+        const numA = parseScooterNumber(a.scooter.name);
+        const numB = parseScooterNumber(b.scooter.name);
+        const diff = sortDir === "desc" ? numB - numA : numA - numB;
+        if (diff !== 0) return diff;
         return a.scooter.name.localeCompare(b.scooter.name, "ru");
       });
-  }, [rows, tab, modelIdsFilter, selectedLegacyModels, query, sortMode]);
+  }, [rows, tab, modelIdsFilter, selectedLegacyModels, query, sortDir]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
@@ -373,7 +353,7 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
             className="h-9 w-full rounded-full bg-surface pl-9 pr-12 text-[13px] text-ink shadow-card-sm outline-none placeholder:text-muted-2 focus:ring-2 focus:ring-blue-100"
           />
           <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1">
-            <SortDropdown value={sortMode} onChange={setSortMode} />
+            <SortToggle value={sortDir} onChange={setSortDir} />
             <ModelFilterDropdown
               value={modelIdsFilter}
               onChange={(next) => {
@@ -882,82 +862,29 @@ function parseScooterNumber(name: string): number {
 }
 
 /**
- * Дропдаун выбора режима сортировки списка скутеров.
- * Показывает иконку текущего режима + список вариантов при клике.
+ * Простой переключатель направления сортировки по номеру.
+ * Один клик меняет ↓ на ↑ и наоборот. Иконка показывает текущее направление.
  */
-function SortDropdown({
+function SortToggle({
   value,
   onChange,
 }: {
-  value: "default" | "num_desc" | "num_asc";
-  onChange: (v: "default" | "num_desc" | "num_asc") => void;
+  value: "desc" | "asc";
+  onChange: (v: "desc" | "asc") => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const onDocClick = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
-  }, []);
-
-  const Icon =
-    value === "num_desc"
-      ? ArrowDownNarrowWide
-      : value === "num_asc"
-        ? ArrowUpNarrowWide
-        : ListFilter;
-
+  const Icon = value === "desc" ? ArrowDownNarrowWide : ArrowUpNarrowWide;
   const label =
-    value === "num_desc"
-      ? "По номеру ↓"
-      : value === "num_asc"
-        ? "По номеру ↑"
-        : "По умолчанию";
-
+    value === "desc"
+      ? "По номеру: от большего к меньшему. Клик — переключить."
+      : "По номеру: от меньшего к большему. Клик — переключить.";
   return (
-    <div ref={ref} className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        title={`Сортировка: ${label}`}
-        className={cn(
-          "flex h-7 w-7 items-center justify-center rounded-full transition-colors",
-          value !== "default"
-            ? "bg-blue-600 text-white"
-            : "bg-surface-soft text-muted hover:text-ink",
-        )}
-      >
-        <Icon size={14} />
-      </button>
-      {open && (
-        <div className="absolute right-0 top-full z-30 mt-1 w-[180px] rounded-xl border border-border bg-surface p-1 shadow-card-lg">
-          {(
-            [
-              { id: "default", label: "По умолчанию" },
-              { id: "num_desc", label: "По номеру ↓" },
-              { id: "num_asc", label: "По номеру ↑" },
-            ] as const
-          ).map((opt) => (
-            <button
-              key={opt.id}
-              type="button"
-              onClick={() => {
-                onChange(opt.id);
-                setOpen(false);
-              }}
-              className={cn(
-                "flex w-full items-center justify-between rounded-lg px-3 py-1.5 text-left text-[12px] font-semibold transition-colors hover:bg-surface-soft",
-                value === opt.id ? "text-blue-700" : "text-ink",
-              )}
-            >
-              {opt.label}
-              {value === opt.id && <Check size={12} />}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
+    <button
+      type="button"
+      onClick={() => onChange(value === "desc" ? "asc" : "desc")}
+      title={label}
+      className="flex h-7 w-7 items-center justify-center rounded-full bg-surface-soft text-muted-2 transition-colors hover:bg-blue-50 hover:text-blue-700"
+    >
+      <Icon size={14} />
+    </button>
   );
 }

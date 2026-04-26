@@ -57,6 +57,12 @@ export function ScooterEditForm({
     }
   }, [models, modelId, modelName, scooter.model]);
 
+  // Номер в серии: парсим из текущего имени «Jog #02» → "02".
+  // Сохраняем строкой чтобы не терять ведущий ноль.
+  const initialNumber =
+    scooter.name.match(/#(\d+)/)?.[1] ?? "";
+  const [number, setNumber] = useState(initialNumber);
+
   const [mileage, setMileage] = useState(String(scooter.mileage));
   const [engineNo, setEngineNo] = useState(scooter.engineNo ?? "");
   // Номер рамы / шасси — он же VIN. Если в БД лежит legacy-VIN без
@@ -89,18 +95,18 @@ export function ScooterEditForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Если поменяли модель — пересчитываем имя скутера: «Jog #02» → «Gear #02».
-  // Номер в серии (часть после #) сохраняется. Если префикс не поменялся —
-  // имя остаётся прежним.
+  // Имя скутера = «префикс модели» + «# номер». Меняется при смене модели
+  // ИЛИ при смене номера в серии. Номер пользователь правит руками
+  // (например при перенумерации парка), префикс — автоматически от модели.
   const newName = useMemo(() => {
-    if (!modelName) return scooter.name;
-    const newPrefix = scooterPrefixFromModelName(modelName);
-    const numMatch = scooter.name.match(/#(\d+)/);
-    const num = numMatch ? numMatch[1] : "";
-    if (!num) return scooter.name;
-    const candidate = `${newPrefix} #${num}`;
-    return candidate === scooter.name ? scooter.name : candidate;
-  }, [modelName, scooter.name]);
+    const prefix = modelName
+      ? scooterPrefixFromModelName(modelName)
+      : (scooter.name.split(" ")[0] ?? "Scooter");
+    const num = number.trim();
+    if (!num) return scooter.name; // пустой номер — не пересобираем
+    const padded = /^\d+$/.test(num) && num.length === 1 ? `0${num}` : num;
+    return `${prefix} #${padded}`;
+  }, [modelName, number, scooter.name]);
   const nameChanged = newName !== scooter.name;
 
   const handleSave = () => {
@@ -191,6 +197,26 @@ export function ScooterEditForm({
                   setModelId(id);
                   setModelName(m.name);
                 }}
+              />
+            </Field>
+
+            <Field
+              label="Номер в серии"
+              hint={
+                <span className="text-[10px] text-muted-2">
+                  как будет в имени: «{newName}»
+                </span>
+              }
+            >
+              <input
+                type="text"
+                inputMode="numeric"
+                value={number}
+                onChange={(e) =>
+                  setNumber(e.target.value.replace(/\D/g, "").slice(0, 4))
+                }
+                placeholder="01"
+                className="h-10 w-full rounded-[10px] border border-border bg-surface px-3 text-[14px] font-semibold tabular-nums text-ink outline-none focus:border-blue-600"
               />
             </Field>
 
