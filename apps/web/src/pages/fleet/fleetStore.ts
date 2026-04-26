@@ -147,8 +147,20 @@ export function patchScooter(id: number, patch: Partial<FleetScooter>) {
       cleanup.delete(id);
       state.patches = cleanup;
     })
-    .catch((err) => {
+    .catch(async (err) => {
       console.error(`PATCH /api/scooters/${id} failed:`, err);
+      // Показываем тост с реальным текстом ошибки — иначе пользователь
+      // видит просто откат без понимания причины (так и было: смена
+      // модели падала молча, юзер думал «ничего не происходит»).
+      try {
+        const { toast } = await import("@/lib/toast");
+        const msg =
+          (err as { message?: string })?.message ||
+          "Не удалось сохранить изменения";
+        toast.error("Ошибка сохранения", msg);
+      } catch {
+        /* toast не загрузился — игнорируем */
+      }
       // откат
       const rollback = new Map(state.patches);
       if (prev) rollback.set(id, prev);
@@ -214,8 +226,14 @@ export function setOsagoValidUntil(id: number, date: string | undefined) {
  */
 export function useFleetScooters(): FleetScooter[] {
   const { data } = useApiScooters();
-  // подписка на локальные правки
-  useSyncExternalStore(subscribe, () => state.scooters, () => state.scooters);
+  // Подписка на локальные правки. state.scooters пересоздаётся на каждое
+  // изменение patches/added через applyPatches → reference меняется →
+  // useSyncExternalStore триггерит re-render.
+  const localScooters = useSyncExternalStore(
+    subscribe,
+    () => state.scooters,
+    () => state.scooters,
+  );
 
   return useMemo(() => {
     const base = data ? data.map(adaptScooter) : [];
@@ -225,7 +243,11 @@ export function useFleetScooters(): FleetScooter[] {
       const p = state.patches.get(s.id);
       return p ? { ...s, ...p } : s;
     });
-  }, [data]);
+    // Зависим от localScooters тоже — чтобы пересборка происходила
+    // при ЛЮБОМ изменении локального state (patches/added), не только
+    // при обновлении data из API. Без этого optimistic-апдейт в UI
+    // не отображался: useMemo возвращал старое закешированное значение.
+  }, [data, localScooters]);
 }
 
 export function useFleetScooter(id: number | null): FleetScooter | null {

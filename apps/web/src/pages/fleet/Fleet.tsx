@@ -77,6 +77,7 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
   const rentals = useRentals();
   const FLEET = useFleetScooters();
   const { data: apiClients } = useApiClients();
+  const { data: apiModels = [] } = useApiScooterModels();
   const [tab, setTab] = useState<StatusTab>("all");
   /**
    * Набор id моделей из каталога для фильтра (мульти-выбор).
@@ -153,16 +154,36 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
     return c;
   }, [rows]);
 
+  // Для каждого выбранного modelId вычисляем legacy enum (jog/gear/honda/tank)
+  // — нужно для фильтрации старых скутеров, у которых modelId ещё не проставлен.
+  const selectedLegacyModels = useMemo(() => {
+    const set = new Set<string>();
+    for (const id of modelIdsFilter) {
+      const m = apiModels.find((x) => x.id === id);
+      if (!m) continue;
+      const lower = m.name.toLowerCase();
+      if (lower.includes("jog")) set.add("jog");
+      else if (lower.includes("gear")) set.add("gear");
+      else if (lower.includes("honda")) set.add("honda");
+      else if (lower.includes("tank")) set.add("tank");
+    }
+    return set;
+  }, [modelIdsFilter, apiModels]);
+
   const filtered = useMemo(() => {
     const q = normalizeQuery(query);
     return rows
       .filter((r) => {
         if (tab !== "all" && r.status !== tab) return false;
-        if (
-          modelIdsFilter.size > 0 &&
-          (r.scooter.modelId == null || !modelIdsFilter.has(r.scooter.modelId))
-        )
-          return false;
+        // Фильтр по моделям: пропускаем если совпал FK (modelId) ИЛИ
+        // legacy-enum (model). У старых скутеров modelId=null — они
+        // должны находиться по enum.
+        if (modelIdsFilter.size > 0) {
+          const byId =
+            r.scooter.modelId != null && modelIdsFilter.has(r.scooter.modelId);
+          const byEnum = selectedLegacyModels.has(r.scooter.model);
+          if (!byId && !byEnum) return false;
+        }
         if (q.text) {
           const ok =
             matchScooterName(r.scooter.name, q) ||
