@@ -372,8 +372,11 @@ export async function rentalsRoutes(app: FastifyInstance) {
    *
    * Операция необратимая. Использовать осознанно.
    */
+  // ВАЖНО: путь /purge/:id (а не /:id/purge) — иначе Fastify radix tree
+  // конфликтует с уже объявленным DELETE /:id и второй маршрут не
+  // регистрируется (молча). Префикс «purge/» делает путь статичным.
   app.delete<{ Params: { id: string } }>(
-    "/:id/purge",
+    "/purge/:id",
     async (req, reply) => {
       if (req.user.role !== "creator") {
         return reply.code(403).send({ error: "creator_only" });

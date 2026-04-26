@@ -34,7 +34,7 @@ export function useApiRentalsArchived() {
 export function usePurgeRental() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: number) => api.delete<void>(`/api/rentals/${id}/purge`),
+    mutationFn: (id: number) => api.delete<void>(`/api/rentals/purge/${id}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: rentalsKeys.all });
       qc.invalidateQueries({ queryKey: ["scooters"] });
