@@ -32,14 +32,20 @@ async function main() {
   console.log("▶ Применяем миграции (drizzle migrator)...");
   try {
     await migrate(db, { migrationsFolder: "./drizzle" });
-    console.log("✓ Миграции применены штатно.");
+    console.log("✓ Drizzle migrator прошёл без ошибок.");
   } catch (e) {
     const msg = (e as Error).message ?? String(e);
     console.warn("⚠ Штатная миграция упала:", msg);
-    console.warn("  Переходим в self-healing режим (idempotent SQL).");
-    await applyMigrationsIdempotent(migrationClient);
-    console.log("✓ Self-healing миграции завершены.");
+    console.warn("  Идём дальше в self-healing.");
   }
+
+  // ВСЕГДА прогоняем self-healing после drizzle, не доверяя его журналу.
+  // Drizzle помечает миграцию как применённую, даже если ALTER TABLE упал
+  // на середине — журнал и реальная схема расходятся. Self-healing
+  // идемпотентно догоняет недостающее (ADD COLUMN IF NOT EXISTS-style).
+  console.log("▶ Self-healing: добиваем недостающие statements...");
+  await applyMigrationsIdempotent(migrationClient);
+  console.log("✓ Миграции применены.");
 
   await migrationClient.end();
 }
