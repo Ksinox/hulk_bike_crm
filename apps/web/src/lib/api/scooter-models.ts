@@ -9,8 +9,13 @@ export type ApiScooterModel = {
   avatarKey: string | null;
   avatarFileName: string | null;
   quickPick: boolean;
+  /** ₽/сут на коротком прокате 1–2 дня */
+  dayRate: number;
+  /** ₽/сут на тарифе 3–6 дней */
   shortRate: number;
+  /** ₽/сут на тарифе 7–29 дней */
   weekRate: number;
+  /** ₽/сут на длинном тарифе 30+ дней */
   monthRate: number;
   /** Технические характеристики — отображаются на лендинге. */
   maxSpeedKmh: number | null;
@@ -29,6 +34,7 @@ export type CreateModelInput = {
   avatarKey?: string | null;
   avatarFileName?: string | null;
   quickPick?: boolean;
+  dayRate?: number;
   shortRate?: number;
   weekRate?: number;
   monthRate?: number;

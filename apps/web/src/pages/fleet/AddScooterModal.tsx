@@ -65,10 +65,11 @@ export function AddScooterModal({ onClose }: { onClose: () => void }) {
 
   const [number, setNumber] = useState<string>("");
   const [mileage, setMileage] = useState("0");
-  const [vin, setVin] = useState("");
   const [engineNo, setEngineNo] = useState("");
-  // Эти поля нужны для подгрузки в акт приёма-передачи —
-  // без них в документе остаются пустые подчёркивания.
+  // Номер рамы / шасси — он же VIN. Отдельного поля VIN не держим:
+  // на скутере это всегда одна и та же маркировка, в шаблоны актов
+  // и договоров она подставляется и под подпись «VIN», и под «номер
+  // шасси» из этого поля.
   const [frameNumber, setFrameNumber] = useState("");
   const [year, setYear] = useState("");
   const [color, setColor] = useState("");
@@ -115,7 +116,9 @@ export function AddScooterModal({ onClose }: { onClose: () => void }) {
       modelId: modelId ?? undefined,
       mileage: Number(mileage) || 0,
       baseStatus: status,
-      vin: vin.trim() || undefined,
+      // VIN = номер рамы/шасси — одно и то же поле.
+      // В addScooter store пишем оба значения для совместимости.
+      vin: frameNumber.trim() || undefined,
       engineNo: engineNo.trim() || undefined,
       frameNumber: frameNumber.trim() || undefined,
       year: Number.isFinite(Number(year)) && Number(year) > 0
@@ -209,13 +212,20 @@ export function AddScooterModal({ onClose }: { onClose: () => void }) {
             </Field>
 
             <div className="grid grid-cols-2 gap-3">
-              <Field label="VIN">
+              <Field
+                label="Номер рамы / шасси (VIN)"
+                hint={
+                  <span className="text-[10px] text-muted-2">
+                    подставляется в акты и договоры
+                  </span>
+                }
+              >
                 <input
                   type="text"
-                  value={vin}
-                  onChange={(e) => setVin(e.target.value.toUpperCase())}
-                  placeholder="JH2KF12..."
-                  maxLength={17}
+                  value={frameNumber}
+                  onChange={(e) => setFrameNumber(e.target.value.toUpperCase())}
+                  placeholder="SA36J-605232"
+                  maxLength={20}
                   className="h-10 w-full rounded-[10px] border border-border bg-surface px-3 font-mono text-[13px] text-ink outline-none focus:border-blue-600"
                 />
               </Field>
@@ -229,16 +239,6 @@ export function AddScooterModal({ onClose }: { onClose: () => void }) {
                 />
               </Field>
             </div>
-
-            <Field label="Номер рамы / шасси">
-              <input
-                type="text"
-                value={frameNumber}
-                onChange={(e) => setFrameNumber(e.target.value)}
-                placeholder="SA36J-605232"
-                className="h-10 w-full rounded-[10px] border border-border bg-surface px-3 font-mono text-[13px] text-ink outline-none focus:border-blue-600"
-              />
-            </Field>
 
             <div className="grid grid-cols-2 gap-3">
               <Field label="Год выпуска">

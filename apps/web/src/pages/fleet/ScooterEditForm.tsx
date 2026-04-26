@@ -16,9 +16,13 @@ export function ScooterEditForm({
   const [closing, setClosing] = useState(false);
 
   const [mileage, setMileage] = useState(String(scooter.mileage));
-  const [vin, setVin] = useState(scooter.vin ?? "");
   const [engineNo, setEngineNo] = useState(scooter.engineNo ?? "");
-  const [frameNumber, setFrameNumber] = useState(scooter.frameNumber ?? "");
+  // Номер рамы / шасси — он же VIN. Если в БД лежит legacy-VIN без
+  // frameNumber, инициализируем им (одно физическое значение, разные
+  // имена полей для совместимости со старыми записями и шаблонами).
+  const [frameNumber, setFrameNumber] = useState(
+    scooter.frameNumber ?? scooter.vin ?? "",
+  );
   const [year, setYear] = useState(
     scooter.year != null ? String(scooter.year) : "",
   );
@@ -47,7 +51,10 @@ export function ScooterEditForm({
     const yearNum = Number(year);
     const patch: Partial<FleetScooter> = {
       mileage: Number(mileage) || 0,
-      vin: vin.trim() || undefined,
+      // Поддерживаем оба поля (vin/frameNumber) одинаковыми — они про
+      // один и тот же номер. Шаблоны документов читают frameNumber,
+      // а где остался vin — будет совпадать.
+      vin: frameNumber.trim() || undefined,
       engineNo: engineNo.trim() || undefined,
       frameNumber: frameNumber.trim() || undefined,
       year: Number.isFinite(yearNum) && yearNum > 0 ? yearNum : undefined,
@@ -108,17 +115,6 @@ export function ScooterEditForm({
               />
             </Field>
 
-            <Field label="VIN номер">
-              <input
-                type="text"
-                value={vin}
-                onChange={(e) => setVin(e.target.value.toUpperCase())}
-                placeholder="JH2KF12..."
-                maxLength={17}
-                className="h-10 w-full rounded-[10px] border border-border bg-surface px-3 font-mono text-[13px] text-ink outline-none focus:border-blue-600"
-              />
-            </Field>
-
             <Field label="Номер двигателя">
               <input
                 type="text"
@@ -130,13 +126,17 @@ export function ScooterEditForm({
             </Field>
 
             <Field
-              label="Номер рамы / шасси"
-              hint={<span className="text-[10px] text-muted-2">указывается в актах</span>}
+              label="Номер рамы / шасси (VIN)"
+              hint={
+                <span className="text-[10px] text-muted-2">
+                  подставляется в акты и договоры под подпись «VIN»
+                </span>
+              }
             >
               <input
                 type="text"
                 value={frameNumber}
-                onChange={(e) => setFrameNumber(e.target.value)}
+                onChange={(e) => setFrameNumber(e.target.value.toUpperCase())}
                 placeholder="SA36J-605232"
                 className="h-10 w-full rounded-[10px] border border-border bg-surface px-3 font-mono text-[13px] text-ink outline-none focus:border-blue-600"
               />

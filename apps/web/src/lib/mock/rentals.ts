@@ -30,7 +30,17 @@ export const RENTAL_SOURCE_LABEL: Record<RentalSourceChannel, string> = {
 
 export type ScooterModel = "jog" | "gear" | "honda" | "tank";
 
-export type TariffPeriod = "short" | "week" | "month";
+/**
+ * UI-периоды тарифа.
+ *  - "day" → 1–2 дня (dayRate)
+ *  - "short" → 3–6 дней (shortRate)
+ *  - "week" → 7–29 дней (weekRate)
+ *  - "month" → 30+ дней (monthRate)
+ *
+ * В БД enum = short/week/month. На сохранении период "day" мапится в "short"
+ * (это всё ещё короткий прокат), а ставка берётся из dayRate модели.
+ */
+export type TariffPeriod = "day" | "short" | "week" | "month";
 
 export type ConfirmerRole = "admin" | "director";
 
@@ -101,21 +111,23 @@ export const MODEL_LABEL: Record<ScooterModel, string> = {
  * Источник: 02_структурированные_знания/03_процесс_аренды.md
  */
 export const TARIFF: Record<ScooterModel, Record<TariffPeriod, number>> = {
-  honda: { short: 400, week: 350, month: 300 },
-  jog: { short: 600, week: 500, month: 400 },
-  gear: { short: 700, week: 600, month: 500 },
-  tank: { short: 700, week: 700, month: 700 },
+  honda: { day: 1300, short: 400, week: 350, month: 300 },
+  jog: { day: 1300, short: 600, week: 500, month: 400 },
+  gear: { day: 1300, short: 700, week: 600, month: 500 },
+  tank: { day: 1300, short: 700, week: 700, month: 700 },
 };
 
 export const TARIFF_PERIOD_LABEL: Record<TariffPeriod, string> = {
-  short: "1–3 дня",
-  week: "4–29 дней",
-  month: "от 30 дней",
+  day: "1–2 дня",
+  short: "3–6 дней",
+  week: "7–29 дней",
+  month: "30+ дней",
 };
 
 /** Определяет тарифный период по количеству дней */
 export function periodForDays(days: number): TariffPeriod {
-  if (days <= 3) return "short";
+  if (days <= 2) return "day";
+  if (days <= 6) return "short";
   if (days < 30) return "week";
   return "month";
 }

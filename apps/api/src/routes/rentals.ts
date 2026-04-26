@@ -494,11 +494,24 @@ export async function rentalsRoutes(app: FastifyInstance) {
             endActualAt: new Date(`${d.dateActual}T12:00:00+03:00`),
             depositReturned: d.depositReturned,
             damageAmount: d.damageAmount ?? null,
+            // Завершённая аренда автоматически уходит в архив, чтобы
+            // не засорять основной список. Доступна на вкладке «Архив».
+            archivedAt: sql`now()`,
             updatedAt: sql`now()`,
           })
           .where(eq(rentals.id, id))
           .returning();
         if (!r) throw new Error("not found");
+
+        // Скутер возвращается в парк аренды — становится доступным
+        // для следующей аренды. Если был ущерб и нужен ремонт — оператор
+        // отдельно переводит в "repair" через карточку скутера.
+        if (r.scooterId) {
+          await tx
+            .update(scooters)
+            .set({ baseStatus: "rental_pool", updatedAt: sql`now()` })
+            .where(eq(scooters.id, r.scooterId));
+        }
 
         await tx
           .insert(returnInspections)
@@ -577,6 +590,9 @@ export async function rentalsRoutes(app: FastifyInstance) {
             status: "completed",
             endActualAt: old.endPlannedAt,
             depositReturned: false,
+            // Закрытая «материнская» аренда уезжает в архив. Связь
+            // (parentRentalId у потомка) сохраняется — историю не теряем.
+            archivedAt: sql`now()`,
             updatedAt: sql`now()`,
           })
           .where(eq(rentals.id, id));

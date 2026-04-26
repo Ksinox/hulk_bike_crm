@@ -41,6 +41,11 @@ type Spec = {
   body: React.ReactNode;
   cta: string;
   ctaTone: "primary" | "warn" | "danger";
+  /**
+   * Если true — кнопка CTA заблокирована (например, не пройден
+   * чек-лист). При нажатии не вызывается handleConfirm.
+   */
+  blocked?: boolean;
 };
 
 function fmt(n: number) {
@@ -96,10 +101,33 @@ export function RentalActionDialog({
     if (action === "complete") {
       const isInspectionStep =
         rental.status === "active" || rental.status === "overdue";
+      // Чек-лист выдачи должен быть пройден. Если выдача не была
+      // подтверждена (договор не подписан / оплата не получена / залог
+      // не получен) — завершать аренду нельзя.
+      const issueConfirmed = rental.paymentConfirmed != null;
+
       // Шаг 1: пользователь жмёт «Завершить аренду» — переводим в режим
       // приёма (returning). Это позволяет вернуться к чек-листу позже,
       // если приём прерывается (что-то надо уточнить, клиент уехал и т.п.).
       if (isInspectionStep) {
+        if (!issueConfirmed) {
+          return {
+            title: "Сначала подтвердите выдачу",
+            body: (
+              <div className="flex items-start gap-2 rounded-[10px] bg-orange-soft/70 px-3 py-2 text-[12px] text-orange-ink">
+                <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+                <span>
+                  Завершить аренду нельзя — чек-лист выдачи не пройден.
+                  Откройте «Подтвердить оплату» и проставьте галки
+                  «Договор подписан», «Оплата получена», «Залог получен».
+                </span>
+              </div>
+            ),
+            cta: "Закрыть",
+            ctaTone: "primary",
+            blocked: true,
+          };
+        }
         return {
           title: "Завершить аренду — начать приём",
           body: (
@@ -196,6 +224,12 @@ export function RentalActionDialog({
         ),
         cta: hasDamage ? "Завершить с ущербом" : "Завершить аренду",
         ctaTone: hasDamage ? "warn" : "primary",
+        // Чек-лист обязателен. При ущербе галка «Состояние ОК» естественно
+        // не нужна (ущерб = не ок), но экипировку и залог всё равно
+        // подтверждаем. Без ущерба — все три галки.
+        blocked: hasDamage
+          ? !equipmentOk || !depositBack
+          : !equipmentOk || !returnOk || !depositBack,
       };
     }
     return specFor(action, rental);
@@ -568,12 +602,19 @@ export function RentalActionDialog({
           </button>
           <button
             type="button"
-            onClick={handleConfirm}
+            onClick={spec.blocked ? requestClose : handleConfirm}
+            disabled={spec.blocked}
             className={cn(
               "inline-flex items-center gap-1 rounded-full px-4 py-1.5 text-[12px] font-semibold transition-colors",
-              spec.ctaTone === "primary" && "bg-blue-600 text-white hover:bg-blue-700",
-              spec.ctaTone === "warn" && "bg-orange text-white hover:bg-orange-ink",
-              spec.ctaTone === "danger" && "bg-red text-white hover:bg-red-ink",
+              spec.blocked
+                ? "cursor-not-allowed bg-surface-soft text-muted-2"
+                : spec.ctaTone === "primary"
+                  ? "bg-blue-600 text-white hover:bg-blue-700"
+                  : spec.ctaTone === "warn"
+                    ? "bg-orange text-white hover:bg-orange-ink"
+                    : spec.ctaTone === "danger"
+                      ? "bg-red text-white hover:bg-red-ink"
+                      : "",
             )}
           >
             <Check size={13} /> {spec.cta}

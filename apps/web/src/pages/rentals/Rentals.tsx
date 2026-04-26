@@ -157,8 +157,15 @@ export function Rentals() {
     // Активная аренда без скутера — это «призрак» (артефакт старых данных
     // или неправильно созданная заявка). Не считаем её — иначе бейдж
     // расходится с дашбордом и физическим положением парка.
-    const active = rentals.filter((r) => r.status === "active" && r.scooter)
-      .length;
+    // Аренды в returning тоже считаем активными — скутер всё ещё у клиента
+    // или принимается, сделка не закрыта. Overdue тоже сюда.
+    const active = rentals.filter(
+      (r) =>
+        (r.status === "active" ||
+          r.status === "overdue" ||
+          r.status === "returning") &&
+        r.scooter,
+    ).length;
     const overdue = rentals.filter((r) => r.status === "overdue").length;
     const returningToday = rentals.filter(
       (r) =>
@@ -182,7 +189,7 @@ export function Rentals() {
     return [
       {
         label: "Активных",
-        value: rentalPoolSize > 0 ? `${active} / ${rentalPoolSize}` : String(active),
+        value: String(active),
         hint: "идут сейчас",
         tone: "green",
       },
@@ -229,8 +236,16 @@ export function Rentals() {
             Аренды
           </h1>
           <span className="rounded-full bg-surface-soft px-3 py-1 text-[13px] font-semibold text-muted">
-            {rentals.filter((r) => r.status === "active" && r.scooter).length}{" "}
-            активных из {rentals.length}
+            {
+              rentals.filter(
+                (r) =>
+                  (r.status === "active" ||
+                    r.status === "overdue" ||
+                    r.status === "returning") &&
+                  r.scooter,
+              ).length
+            }{" "}
+            активных
           </span>
         </div>
         <button

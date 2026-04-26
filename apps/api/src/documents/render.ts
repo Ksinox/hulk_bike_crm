@@ -484,10 +484,9 @@ ${TOOLBAR}
   <div class="para">Транспортное средство представляет собой скутер (далее — «скутер»), идентифицируемый следующими параметрами:</div>
   <ul>
     <li>Марка, модель: <b>${orDash(model?.name ?? scooter?.name, "________")}</b></li>
-    <li>Идентификационный номер (VIN): <b>${orDash(scooter?.vin, "_________________")}</b></li>
+    <li>Идентификационный номер (VIN) / № шасси/рамы: <b>${orDash(scooter?.frameNumber ?? scooter?.vin, "_________________")}</b></li>
     <li>Год выпуска: <b>${orDash(scooter?.year, "_______")}</b></li>
     <li>Номер двигателя: <b>${orDash(scooter?.engineNo, "_______________")}</b></li>
-    <li>Номер шасси/рамы: <b>${orDash(scooter?.frameNumber, "_______________")}</b></li>
     <li>Цвет: <b>${orDash(scooter?.color, "__________")}</b></li>
   </ul>
 

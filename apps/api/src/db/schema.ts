@@ -614,7 +614,8 @@ export const scooterModels = pgTable(
      */
     quickPick: boolean("quick_pick").notNull().default(false),
     /** Ставки ₽/сут по периодам аренды */
-    shortRate: integer("short_rate").notNull().default(1300), // 1–3 дня
+    dayRate: integer("day_rate").notNull().default(1300), // 1–2 дня
+    shortRate: integer("short_rate").notNull().default(700), // 3–6 дней
     weekRate: integer("week_rate").notNull().default(500), // 7–29 дней
     monthRate: integer("month_rate").notNull().default(400), // 30+ дней
     /** Технические характеристики — показываются на лендинге.

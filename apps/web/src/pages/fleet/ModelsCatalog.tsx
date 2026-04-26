@@ -108,8 +108,9 @@ function ModelCard({
             )}
           </div>
           <div className="mt-1 text-[11px] text-muted-2">
-            1-3 дня: <b className="text-ink">{model.shortRate}₽</b> · неделя:{" "}
-            <b className="text-ink">{model.weekRate}₽</b> · месяц:{" "}
+            1–2 дн: <b className="text-ink">{model.dayRate}₽</b> · 3–6 дн:{" "}
+            <b className="text-ink">{model.shortRate}₽</b> · 7–29 дн:{" "}
+            <b className="text-ink">{model.weekRate}₽</b> · 30+ дн:{" "}
             <b className="text-ink">{model.monthRate}₽</b>
           </div>
           {model.note && (
@@ -152,7 +153,8 @@ function ModelFormModal({
   const patchMut = usePatchScooterModel();
 
   const [name, setName] = useState(initial?.name ?? "");
-  const [shortRate, setShortRate] = useState(initial?.shortRate ?? 1300);
+  const [dayRate, setDayRate] = useState(initial?.dayRate ?? 1300);
+  const [shortRate, setShortRate] = useState(initial?.shortRate ?? 700);
   const [weekRate, setWeekRate] = useState(initial?.weekRate ?? 500);
   const [monthRate, setMonthRate] = useState(initial?.monthRate ?? 400);
   const [quickPick, setQuickPick] = useState(initial?.quickPick ?? false);
@@ -181,6 +183,7 @@ function ModelFormModal({
     const fuelNum = fuelStr ? Number(fuelStr) : null;
     const body: CreateModelInput = {
       name: name.trim(),
+      dayRate,
       shortRate,
       weekRate,
       monthRate,
@@ -253,14 +256,17 @@ function ModelFormModal({
             />
           </Field>
 
-          <div className="grid grid-cols-3 gap-2">
-            <Field label="1-3 дня, ₽/сут">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <Field label="1–2 дня, ₽/сут">
+              <RateInput value={dayRate} onChange={setDayRate} />
+            </Field>
+            <Field label="3–6 дней, ₽/сут">
               <RateInput value={shortRate} onChange={setShortRate} />
             </Field>
-            <Field label="Неделя, ₽/сут">
+            <Field label="7–29 дней, ₽/сут">
               <RateInput value={weekRate} onChange={setWeekRate} />
             </Field>
-            <Field label="Месяц+, ₽/сут">
+            <Field label="30+ дней, ₽/сут">
               <RateInput value={monthRate} onChange={setMonthRate} />
             </Field>
           </div>

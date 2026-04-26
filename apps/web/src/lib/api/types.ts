@@ -99,7 +99,11 @@ export type RentalSourceChannel =
   | "passing"
   | "other";
 
-export type TariffPeriod = "short" | "week" | "month";
+/**
+ * UI-периоды. В БД хранится только short/week/month — "day" мапится в "short"
+ * перед отправкой на сервер (см. rentalsStore.createRental).
+ */
+export type TariffPeriod = "day" | "short" | "week" | "month";
 export type PaymentMethod = "cash" | "card" | "transfer";
 
 export type RentalEquipmentItem = {

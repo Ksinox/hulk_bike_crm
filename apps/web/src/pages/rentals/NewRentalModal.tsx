@@ -83,6 +83,8 @@ export function NewRentalModal({
   const [clientQuery, setClientQuery] = useState("");
   const [clientOpen, setClientOpen] = useState(false);
   const [newClientOpen, setNewClientOpen] = useState(false);
+  // Фильтр по модели в селекторе скутеров — пустая строка = все модели.
+  const [scooterModelFilter, setScooterModelFilter] = useState<string>("");
   const [scooterName, setScooterName] = useState<string | null>(
     preselectedScooterName ?? null,
   );
@@ -147,6 +149,7 @@ export function NewRentalModal({
   );
   const computedRate = useMemo(() => {
     if (modelFromCatalog) {
+      if (period === "day") return modelFromCatalog.dayRate;
       if (period === "short") return modelFromCatalog.shortRate;
       if (period === "week") return modelFromCatalog.weekRate;
       return modelFromCatalog.monthRate;
@@ -219,11 +222,29 @@ export function NewRentalModal({
           (s) =>
             !blocked.has(s.name) &&
             s.baseStatus === "rental_pool" &&
-            !s.archivedAt,
+            !s.archivedAt &&
+            (scooterModelFilter === "" || s.model === scooterModelFilter),
         )
         .map((s) => ({ name: s.name, model: s.model })),
-    [apiScooters, blocked],
+    [apiScooters, blocked, scooterModelFilter],
   );
+
+  /** Список моделей с количеством свободных скутеров — для чипов фильтра. */
+  const modelChips = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const s of apiScooters ?? []) {
+      if (
+        blocked.has(s.name) ||
+        s.baseStatus !== "rental_pool" ||
+        s.archivedAt
+      )
+        continue;
+      counts.set(s.model, (counts.get(s.model) ?? 0) + 1);
+    }
+    return Array.from(counts.entries()).sort((a, b) =>
+      a[0].localeCompare(b[0]),
+    );
+  }, [apiScooters, blocked]);
 
   const handleSave = () => {
     if (!canSave || !scooterName) return;
@@ -406,6 +427,38 @@ export function NewRentalModal({
                 <X size={14} className="text-muted-2" />
               </button>
             ) : (
+              <>
+              {modelChips.length > 1 && (
+                <div className="mb-2 flex flex-wrap gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setScooterModelFilter("")}
+                    className={cn(
+                      "rounded-full px-2.5 py-1 text-[11px] font-semibold transition-colors",
+                      scooterModelFilter === ""
+                        ? "bg-ink text-white"
+                        : "bg-surface-soft text-muted-2 hover:text-ink",
+                    )}
+                  >
+                    Все ({availableScooters.length})
+                  </button>
+                  {modelChips.map(([m, count]) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setScooterModelFilter(m)}
+                      className={cn(
+                        "rounded-full px-2.5 py-1 text-[11px] font-semibold transition-colors",
+                        scooterModelFilter === m
+                          ? "bg-ink text-white"
+                          : "bg-surface-soft text-muted-2 hover:text-ink",
+                      )}
+                    >
+                      {MODEL_LABEL[m as ScooterModel] ?? m} ({count})
+                    </button>
+                  ))}
+                </div>
+              )}
               <div className="flex max-h-[160px] flex-wrap gap-1.5 overflow-y-auto rounded-[10px] border border-border p-2">
                 {availableScooters.length === 0 ? (
                   <div className="w-full py-4 text-center text-[12px] text-muted">
@@ -424,6 +477,7 @@ export function NewRentalModal({
                   ))
                 )}
               </div>
+              </>
             )}
           </Section>
 
@@ -470,26 +524,47 @@ export function NewRentalModal({
                 </div>
               </label>
             </div>
-            <div className="mt-3 grid grid-cols-3 gap-2">
-              {(["short", "week", "month"] as const).map((p) => (
-                <div
-                  key={p}
-                  className={cn(
-                    "rounded-[10px] px-3 py-2 text-[11px]",
-                    !customMode && p === period
-                      ? "bg-blue-50 text-blue-700"
-                      : "bg-surface-soft text-muted",
-                  )}
-                >
-                  <div className="font-semibold uppercase tracking-wider">
-                    {TARIFF_PERIOD_LABEL[p]}
-                  </div>
-                  <div className="mt-0.5 tabular-nums">
-                    {TARIFF[model][p]} ₽/сут
-                  </div>
-                </div>
-              ))}
-            </div>
+            {/*
+              Тарифы показываем только когда выбран конкретный скутер —
+              ставки берутся из его модели (modelFromCatalog).
+              До выбора показывать «эталонную сетку TARIFF» нет смысла:
+              у каждой модели свои цены, общий прайс вводит в заблуждение.
+            */}
+            {selectedScooter && modelFromCatalog && (
+              <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {(["day", "short", "week", "month"] as const).map((p) => {
+                  const rateP =
+                    p === "day"
+                      ? modelFromCatalog.dayRate
+                      : p === "short"
+                        ? modelFromCatalog.shortRate
+                        : p === "week"
+                          ? modelFromCatalog.weekRate
+                          : modelFromCatalog.monthRate;
+                  return (
+                    <div
+                      key={p}
+                      className={cn(
+                        "rounded-[10px] px-3 py-2 text-[11px]",
+                        !customMode && p === period
+                          ? "bg-blue-50 text-blue-700"
+                          : "bg-surface-soft text-muted",
+                      )}
+                    >
+                      <div className="font-semibold uppercase tracking-wider">
+                        {TARIFF_PERIOD_LABEL[p]}
+                      </div>
+                      <div className="mt-0.5 tabular-nums">{rateP} ₽/сут</div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {!selectedScooter && (
+              <div className="mt-3 rounded-[10px] bg-surface-soft px-3 py-2 text-[12px] text-muted-2">
+                Выберите скутер выше — тарифы подтянутся из его модели.
+              </div>
+            )}
             <div className="mt-3 flex items-center gap-2 rounded-[10px] border border-border bg-surface-soft p-2">
               <label className="flex cursor-pointer items-center gap-2">
                 <input
