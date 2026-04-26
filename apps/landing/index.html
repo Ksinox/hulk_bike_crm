@@ -951,72 +951,76 @@ input[type="range"]::-moz-range-track {
   text-align: center;
 }
 
-/* Карточка «Аренда с выкупом»: центральная аватарка меняется каждые 2 сек,
-   все остальные модели крутятся сзади заблюренными по орбите. */
-.scooter-card-static {
-  /* Орбита внутри карточки — не выпускаем */
-  overflow: hidden;
-}
+/* Карточка «Аренда с выкупом»: одна аватарка плавно (cross-fade) перетекает
+   в следующую модель каждые ~3 сек. Без орбиты — спокойнее, фокусируем
+   внимание на самом скутере и теглайне «Станет твоим» сверху. */
 .scooter-card-static .scooter-img {
   position: relative;
   overflow: hidden;
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
 }
-/* Активная аватарка в карусели не должна торчать как обычная
-   карточка — она в орбитальном контексте. */
+/* Активная аватарка в карточке выкупа — собственный transform,
+   не наследуется от обычной .scooter-photo. */
 .scooter-card-static:hover .scooter-photo,
 .scooter-card-static .scooter-photo {
   transform: none;
 }
-.buyback-orbit {
+/* Стек из двух кадров — один сверху другого, переключаются opacity */
+.buyback-stack {
   position: absolute;
   inset: 0;
-  pointer-events: none;
-  animation: buybackOrbit 16s linear infinite;
   z-index: 1;
 }
-.buyback-orbit .orb-img {
-  position: absolute;
-  top: 50%; left: 50%;
-  width: 30%;
-  aspect-ratio: 1;
-  margin: -15% 0 0 -15%;
-  filter: blur(3px) opacity(0.5);
-}
-.buyback-orbit .orb-img img {
-  width: 100%; height: 100%;
-  object-fit: contain;
-}
-@keyframes buybackOrbit {
-  to { transform: rotate(360deg); }
-}
-.buyback-active {
+.buyback-frame {
   position: absolute;
   inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 2;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  /* Тот же масштаб что у обычных карточек — большая героическая
+     аватарка, торчит за верхний край img-зоны. */
+  transform: translateY(-2%) scale(1.30);
+  transform-origin: 50% 50%;
+  filter: drop-shadow(0 18px 30px rgba(0, 0, 0, 0.55));
+  opacity: 0;
+  transition: opacity 0.95s cubic-bezier(0.4, 0, 0.2, 1);
   pointer-events: none;
 }
-.buyback-active img {
-  width: 62%;
-  height: 62%;
-  object-fit: contain;
-  filter: drop-shadow(0 10px 22px rgba(0,0,0,0.55));
-  transition: opacity 0.35s ease, transform 0.35s ease;
+.buyback-frame.is-active { opacity: 1; }
+
+/* Бейдж «Станет твоим» — сверху по центру карточки выкупа,
+   акцентным лаймом, более заметный чем обычные мета-бейджи. */
+.buyback-tagline {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  background: rgba(8, 8, 8, 0.6);
+  backdrop-filter: blur(10px) saturate(1.4);
+  -webkit-backdrop-filter: blur(10px) saturate(1.4);
+  border: 1px solid rgba(197, 255, 61, 0.32);
+  border-radius: var(--radius-pill);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent);
+  text-shadow: 0 0 10px rgba(197, 255, 61, 0.45);
+  white-space: nowrap;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 6px 18px rgba(0, 0, 0, 0.45),
+    0 0 24px rgba(197, 255, 61, 0.12);
 }
-.buyback-active img.is-leaving {
-  opacity: 0;
-  transform: scale(0.82) rotate(-12deg);
-}
-.buyback-active img.is-entering {
-  opacity: 0;
-  transform: scale(1.12) rotate(8deg);
-}
+
 @media (prefers-reduced-motion: reduce) {
-  .buyback-orbit { animation: none; }
-  .buyback-active img { transition: none; }
+  .buyback-frame { transition: none; }
 }
 .scooter-cool-badge {
   position: absolute;
@@ -1705,7 +1709,8 @@ footer .brand { justify-content: center; margin-bottom: 10px; font-size: 16px; }
 
     <div class="scooter-card scooter-card-static">
       <div class="scooter-img">
-        <div class="scooter-cool-badge">ВЫКУП</div>
+        <!-- Содержимое (бейдж «Станет твоим» + кроссфейд аватарок)
+             монтирует JS из mountBuybackStage, когда придут модели. -->
       </div>
       <div class="scooter-body">
         <h3>Аренда с выкупом</h3>
@@ -2251,57 +2256,62 @@ revealTargets.forEach(el => io.observe(el));
     if (!stage) return;
     const base = apiUrl.replace(/\/+$/, '');
 
-    // Сохраняем существующий бейдж ВЫКУП, всё остальное чистим
-    const badge = stage.querySelector('.scooter-cool-badge');
+    // Полная очистка — старая карточка содержала статичный «ВЫКУП»-бейдж.
     stage.innerHTML = '';
-    if (badge) stage.appendChild(badge);
 
-    // Орбита: все аватарки по кругу, заблюренные, крутятся вместе с контейнером
-    const orbit = document.createElement('div');
-    orbit.className = 'buyback-orbit';
-    const N = items.length;
-    const radius = 38; // % от размера карточки
-    for (let i = 0; i < N; i++) {
-      const angle = (i / N) * 360;
-      const orb = document.createElement('div');
-      orb.className = 'orb-img';
-      orb.style.transform = `rotate(${angle}deg) translate(${radius}%) rotate(${-angle}deg)`;
-      const img = document.createElement('img');
-      img.src = base + items[i].avatarUrl;
-      img.alt = '';
-      img.loading = 'lazy';
-      img.decoding = 'async';
-      orb.appendChild(img);
-      orbit.appendChild(orb);
-    }
-    stage.appendChild(orbit);
+    // Бейдж сверху по центру
+    const tag = document.createElement('div');
+    tag.className = 'buyback-tagline';
+    tag.textContent = 'Станет твоим';
+    stage.appendChild(tag);
 
-    // Активная аватарка в центре — меняется каждые 2 сек
-    const active = document.createElement('div');
-    active.className = 'buyback-active';
-    const activeImg = document.createElement('img');
-    activeImg.src = base + items[0].avatarUrl;
-    activeImg.alt = items[0].name;
-    activeImg.decoding = 'async';
-    active.appendChild(activeImg);
-    stage.appendChild(active);
+    // Стек из двух <img> — кроссфейд между текущим и следующим скутером.
+    const stack = document.createElement('div');
+    stack.className = 'buyback-stack';
 
-    if (N === 1) return; // ротировать нечего
+    const frameA = new Image();
+    frameA.className = 'buyback-frame is-active';
+    frameA.decoding = 'async';
+    frameA.src = base + items[0].avatarUrl;
+    frameA.alt = items[0].name;
+
+    const frameB = new Image();
+    frameB.className = 'buyback-frame';
+    frameB.decoding = 'async';
+
+    stack.appendChild(frameA);
+    stack.appendChild(frameB);
+    stage.appendChild(stack);
+
+    if (items.length === 1) return; // ротировать нечего
 
     let idx = 0;
+    let active = frameA;
+    let standby = frameB;
     setInterval(() => {
-      idx = (idx + 1) % N;
-      activeImg.classList.add('is-leaving');
-      setTimeout(() => {
-        activeImg.src = base + items[idx].avatarUrl;
-        activeImg.alt = items[idx].name;
-        activeImg.classList.remove('is-leaving');
-        activeImg.classList.add('is-entering');
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => activeImg.classList.remove('is-entering'));
-        });
-      }, 380);
-    }, 2000);
+      idx = (idx + 1) % items.length;
+      const next = items[idx];
+      const swap = () => {
+        standby.classList.add('is-active');
+        active.classList.remove('is-active');
+        const tmp = active; active = standby; standby = tmp;
+      };
+      // Сначала загрузим картинку в скрытый слой, потом переключим opacity —
+      // чтобы во время cross-fade оба слоя были полностью отрендерены.
+      standby.alt = next.name;
+      if (standby.src.endsWith(next.avatarUrl)) {
+        swap();
+      } else {
+        const onReady = () => { standby.removeEventListener('load', onReady); swap(); };
+        standby.addEventListener('load', onReady, { once: true });
+        standby.src = base + next.avatarUrl;
+        // если уже в кеше — load может не сработать
+        if (standby.complete && standby.naturalWidth > 0) {
+          standby.removeEventListener('load', onReady);
+          swap();
+        }
+      }
+    }, 2800);
   }
 })();
 </script>
