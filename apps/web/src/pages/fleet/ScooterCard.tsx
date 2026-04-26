@@ -1103,21 +1103,21 @@ function ScooterPhotoArea({ scooter }: { scooter: FleetScooter }) {
   const modelAvatar = fileUrl(model?.avatarKey);
 
   return (
-    <div className="relative flex min-h-[320px] flex-col items-center justify-end gap-2 overflow-visible bg-surface-soft p-5 pb-4 text-muted-2 md:border-r md:border-border">
+    <div className="relative flex min-h-[480px] flex-col items-center justify-end gap-2 overflow-visible bg-surface-soft p-5 pb-4 text-muted-2 md:border-r md:border-border">
       {modelAvatar ? (
         <>
           {/*
-            Скутер на прозрачном PNG — рамку рисовать не нужно. Картинку
-            делаем крупной и слегка приподнимаем «над» карточкой за счёт
-            scale + отрицательного отступа сверху, чтобы колесо/руль
-            визуально вылезали за пределы фото-блока (как на лендинге).
+            Скутер на прозрачном PNG — рамку не рисуем. По требованию
+            заказчика аватарка ~2.5× от прежнего размера (h-56 → h-[36rem])
+            чтобы скутер визуально доминировал и колесо/руль выходили
+            за границы фото-блока, как на лендинге.
           */}
           <img
             src={modelAvatar}
             alt={model?.name ?? ""}
-            className="-mt-6 h-56 w-auto max-w-full object-contain drop-shadow-[0_18px_24px_rgba(15,23,42,0.18)]"
+            className="-mt-12 h-[36rem] w-auto max-w-none object-contain drop-shadow-[0_18px_24px_rgba(15,23,42,0.18)]"
           />
-          <div className="text-[13px] font-bold text-ink">
+          <div className="text-[15px] font-bold text-ink">
             {model?.name ?? MODEL_LABEL[scooter.model]}
           </div>
           <div className="text-[10px] text-muted-2">аватарка модели</div>

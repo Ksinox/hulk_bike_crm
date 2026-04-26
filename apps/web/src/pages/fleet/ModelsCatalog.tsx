@@ -46,7 +46,7 @@ export function ModelsCatalog() {
         </button>
       </div>
 
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {sorted.map((m) => (
           <ModelCard key={m.id} model={m} onEdit={() => setEditing(m)} />
         ))}
@@ -88,51 +88,57 @@ function ModelCard({
     if (ok) del.mutate(model.id);
   };
   const avatarSrc = fileUrl(model.avatarKey);
+  const isInactive = model.active === false;
   return (
-    <div className="relative rounded-2xl bg-surface p-4 shadow-card-sm">
-      <div className="flex items-start gap-3">
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-blue-50 text-blue-700">
-          {avatarSrc ? (
-            <img src={avatarSrc} alt="" className="h-full w-full object-cover" />
-          ) : (
-            <Tag size={22} />
-          )}
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
-            <div
-              className={cn(
-                "truncate text-[15px] font-bold",
-                model.active ? "text-ink" : "text-muted-2",
-              )}
-            >
-              {model.name}
-            </div>
-            {model.quickPick && model.active && (
-              <Star size={12} className="text-amber-500 fill-amber-400" />
-            )}
-            {!model.active && (
-              <span className="rounded-full bg-surface-soft px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-muted-2">
-                не активна
-              </span>
-            )}
+    <div
+      className={cn(
+        "group relative flex w-full flex-col overflow-visible rounded-2xl border border-border bg-surface shadow-card-sm transition-transform hover:-translate-y-1",
+        isInactive && "opacity-70",
+      )}
+    >
+      {/* Тёмный фото-блок (как на лендинге): aspect 4/3, glow-фон,
+          фотография «вырывается» — приподнята и слегка увеличена,
+          часть скутера визуально торчит над карточкой. */}
+      <div
+        className="relative aspect-[4/3] overflow-visible rounded-t-2xl"
+        style={{
+          background:
+            "radial-gradient(circle at 50% 65%, rgba(197, 255, 61, 0.22), transparent 55%), linear-gradient(135deg, #1E1E1E, #101010)",
+        }}
+      >
+        {avatarSrc ? (
+          <img
+            src={avatarSrc}
+            alt={model.name}
+            className="absolute inset-0 h-full w-full object-contain p-2 drop-shadow-[0_18px_24px_rgba(0,0,0,0.4)] transition-transform duration-200 group-hover:scale-110"
+            style={{ transform: "translateY(-6%) scale(1.18)" }}
+          />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center text-blue-300/60">
+            <Tag size={48} strokeWidth={1.5} />
           </div>
-          <div className="mt-1 text-[11px] text-muted-2">
-            1–2 дн: <b className="text-ink">{model.dayRate}₽</b> · 3–6 дн:{" "}
-            <b className="text-ink">{model.shortRate}₽</b> · 7–29 дн:{" "}
-            <b className="text-ink">{model.weekRate}₽</b> · 30+ дн:{" "}
-            <b className="text-ink">{model.monthRate}₽</b>
+        )}
+
+        {/* Top-left: бейдж quickPick */}
+        {model.quickPick && model.active !== false && (
+          <div className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-amber-400/95 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-950 shadow">
+            <Star size={10} className="fill-amber-950" /> быстрый
           </div>
-          {model.note && (
-            <div className="mt-1 text-[11px] text-muted truncate">{model.note}</div>
-          )}
-        </div>
-        <div className="flex flex-col gap-1">
+        )}
+        {/* Top-right: бейдж «не активна» */}
+        {isInactive && (
+          <div className="absolute right-2 top-2 rounded-full bg-white/95 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-muted shadow">
+            не активна
+          </div>
+        )}
+
+        {/* Кнопки управления — поверх фото, видны при hover */}
+        <div className="absolute right-2 bottom-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
           <button
             type="button"
             onClick={onEdit}
             title="Изменить"
-            className="flex h-7 w-7 items-center justify-center rounded-lg bg-surface-soft text-ink-2 hover:bg-blue-50 hover:text-blue-700"
+            className="flex h-7 w-7 items-center justify-center rounded-lg bg-white text-ink shadow hover:bg-blue-50 hover:text-blue-700"
           >
             <Pencil size={13} />
           </button>
@@ -141,11 +147,40 @@ function ModelCard({
             onClick={onDelete}
             title="Удалить"
             disabled={del.isPending}
-            className="flex h-7 w-7 items-center justify-center rounded-lg bg-surface-soft text-muted-2 hover:bg-red-soft hover:text-red-ink"
+            className="flex h-7 w-7 items-center justify-center rounded-lg bg-white text-muted shadow hover:bg-red-soft hover:text-red-ink"
           >
             <Trash2 size={13} />
           </button>
         </div>
+      </div>
+
+      {/* Body карточки — как на лендинге */}
+      <div className="relative z-10 flex flex-col gap-2 rounded-b-2xl bg-surface p-4">
+        <div
+          className={cn(
+            "truncate text-[16px] font-bold",
+            isInactive ? "text-muted-2" : "text-ink",
+          )}
+        >
+          {model.name}
+        </div>
+        <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] text-muted-2">
+          <span>
+            1–2 дн: <b className="text-ink">{model.dayRate}₽</b>
+          </span>
+          <span>
+            3–6 дн: <b className="text-ink">{model.shortRate}₽</b>
+          </span>
+          <span>
+            7–29 дн: <b className="text-ink">{model.weekRate}₽</b>
+          </span>
+          <span>
+            30+ дн: <b className="text-ink">{model.monthRate}₽</b>
+          </span>
+        </div>
+        {model.note && (
+          <div className="text-[11px] text-muted line-clamp-2">{model.note}</div>
+        )}
       </div>
     </div>
   );
@@ -225,8 +260,15 @@ function ModelFormModal({
         await createMut.mutateAsync(body);
       }
       onClose();
-    } catch {
-      setErr("Не удалось сохранить. Возможно имя уже занято.");
+    } catch (e) {
+      // Показываем реальную ошибку сервера (через ApiError.message — туда
+      // попадает body.message / body.error). Так понятно, в чём беда:
+      // имя занято / валидация / доступ запрещён.
+      const fallback =
+        isEdit
+          ? "Не удалось сохранить изменения."
+          : "Не удалось создать модель. Возможно имя уже занято.";
+      setErr((e as Error)?.message || fallback);
     }
   };
 
