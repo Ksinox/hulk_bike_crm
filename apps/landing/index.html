@@ -322,13 +322,6 @@ header.nav {
 }
 .hero-frame.is-active { opacity: 1; }
 
-/* Бейджи на hero-сцене (скорость, расход, цена) скрыты на мобиле —
-   stage там за текстом. На десктопе включаются. */
-.hero-meta-badge,
-.hero-price-stack {
-  display: none;
-}
-
 @media (min-width: 1024px) {
   /* На десктопе hero — двухколоночный grid: текст слева доминирует,
      stage сдвинут левее своего grid-кола, заходит за текст. */
@@ -359,97 +352,9 @@ header.nav {
     width: auto; height: auto;
   }
   .hero-frame { transform: translateY(2%) scale(1.55); }
-
-  /* Бейджи скорости / расхода — над фотографией в углах */
-  .hero-meta-badge {
-    position: absolute;
-    z-index: 4;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 7px 12px;
-    background: rgba(8, 8, 8, 0.6);
-    backdrop-filter: blur(10px) saturate(1.4);
-    -webkit-backdrop-filter: blur(10px) saturate(1.4);
-    border: 1px solid rgba(255, 255, 255, 0.07);
-    border-radius: var(--radius-pill);
-    font-family: var(--font-mono);
-    line-height: 1;
-    letter-spacing: 0.04em;
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.05),
-      0 4px 14px rgba(0, 0, 0, 0.35);
-    pointer-events: none;
-  }
-  .hero-meta-badge .num {
-    font-size: 14px; font-weight: 600; color: var(--accent);
-    text-shadow: 0 0 8px rgba(197, 255, 61, 0.35);
-  }
-  .hero-meta-badge .unit {
-    font-size: 9.5px; font-weight: 500;
-    color: rgba(255, 255, 255, 0.5);
-    letter-spacing: 0.08em;
-  }
-  .hero-meta-badge--speed { top: 14px; left: 14px; }
-  .hero-meta-badge--fuel  { top: 14px; right: 14px; }
-
-  /* Стек двух карточек цены — кроссфейд синхронно со скутером (та же
-     длительность 1.6s). При смене модели цена не «дёргается», а плавно
-     перетекает одновременно с фотографией. */
-  .hero-price-stack {
-    display: block;
-    position: absolute;
-    bottom: 14px; left: 14px;
-    z-index: 4;
-    pointer-events: none;
-  }
-  .hpb-card {
-    position: absolute;
-    bottom: 0; left: 0;
-    display: inline-flex;
-    flex-direction: column;
-    gap: 2px;
-    padding: 9px 14px;
-    background: rgba(8, 8, 8, 0.62);
-    backdrop-filter: blur(10px) saturate(1.4);
-    -webkit-backdrop-filter: blur(10px) saturate(1.4);
-    border: 1px solid rgba(197, 255, 61, 0.32);
-    border-radius: var(--radius);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.06),
-      0 6px 18px rgba(0, 0, 0, 0.45),
-      0 0 24px rgba(197, 255, 61, 0.12);
-    opacity: 0;
-    transition: opacity 1.6s cubic-bezier(0.4, 0, 0.2, 1);
-    white-space: nowrap;
-  }
-  .hpb-card.is-active { opacity: 1; }
-  .hpb-card .hpb-name {
-    font-family: var(--font-display);
-    font-weight: 700;
-    font-size: 12px;
-    letter-spacing: 0.04em;
-    color: rgba(255, 255, 255, 0.92);
-  }
-  .hpb-card .hpb-price {
-    display: inline-flex;
-    align-items: baseline;
-    gap: 4px;
-    font-family: var(--font-mono);
-    font-size: 10px;
-    letter-spacing: 0.06em;
-    color: rgba(255, 255, 255, 0.5);
-  }
-  .hpb-card .hpb-price strong {
-    font-size: 17px;
-    font-weight: 700;
-    color: var(--accent);
-    text-shadow: 0 0 10px rgba(197, 255, 61, 0.4);
-    letter-spacing: 0;
-  }
 }
 @media (prefers-reduced-motion: reduce) {
-  .hero-frame, .hpb-card { transition: none; }
+  .hero-frame { transition: none; }
 }
 .scooter-stage::before {
   content: '';
@@ -2488,7 +2393,10 @@ revealTargets.forEach(el => io.observe(el));
 
     stage.innerHTML = '';
 
-    // 1. Стек двух <img> для кроссфейда фотографий
+    // Только стек двух <img> для кроссфейда фотографий — без бейджей
+    // (скорость/расход/цена убраны из Hero, чтобы цена не путалась с
+    // заголовком «скутер, который платит сам за себя»; технические
+    // характеристики остаются в карточках Парка ниже).
     const stack = document.createElement('div');
     stack.className = 'hero-stack';
     const frameA = new Image();
@@ -2503,90 +2411,19 @@ revealTargets.forEach(el => io.observe(el));
     stack.appendChild(frameB);
     stage.appendChild(stack);
 
-    // 2. Бейджи скорости/расхода — отдельный слой над фото (показываются
-    //    только на десктопе, на мобиле скрыты CSS'ом). Текст обновляется
-    //    в момент пересечения активной/неактивной картинки (середина fade'а).
-    const speedBadge = document.createElement('div');
-    speedBadge.className = 'hero-meta-badge hero-meta-badge--speed';
-    speedBadge.innerHTML =
-      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#C5FF3D" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">' +
-      '<path d="M5 17 A8 8 0 1 1 19 17"/><line x1="12" y1="13" x2="16.5" y2="9"/>' +
-      '<circle cx="12" cy="13" r="1.4" fill="#C5FF3D" stroke="none"/></svg>' +
-      '<span class="num js-speed-n"></span><span class="unit">КМ/Ч</span>';
-    const fuelBadge = document.createElement('div');
-    fuelBadge.className = 'hero-meta-badge hero-meta-badge--fuel';
-    fuelBadge.innerHTML =
-      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#C5FF3D" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">' +
-      '<path d="M6 21 V8 a1 1 0 0 1 1 -1 h6 a1 1 0 0 1 1 1 V21"/>' +
-      '<path d="M6 12 h8" opacity="0.5"/>' +
-      '<path d="M14 11 h2 l1 1 v6 a1.5 1.5 0 0 0 3 0 V8 l-2 -2"/></svg>' +
-      '<span class="num js-fuel-n"></span><span class="unit">Л/100</span>';
-    stage.appendChild(speedBadge);
-    stage.appendChild(fuelBadge);
-    const speedNum = speedBadge.querySelector('.js-speed-n');
-    const fuelNum = fuelBadge.querySelector('.js-fuel-n');
-
-    // 3. Стек двух карточек с ценой — синхронный кроссфейд с фотографией
-    const priceStack = document.createElement('div');
-    priceStack.className = 'hero-price-stack';
-    const cardHTML =
-      '<span class="hpb-name"></span>' +
-      '<span class="hpb-price">от <strong></strong> ₽/день</span>';
-    const cardA = document.createElement('div');
-    cardA.className = 'hpb-card is-active';
-    cardA.innerHTML = cardHTML;
-    const cardB = document.createElement('div');
-    cardB.className = 'hpb-card';
-    cardB.innerHTML = cardHTML;
-    priceStack.appendChild(cardA);
-    priceStack.appendChild(cardB);
-    stage.appendChild(priceStack);
-
-    const fillCard = (card, m) => {
-      card.querySelector('.hpb-name').textContent = m.name;
-      card.querySelector('.hpb-price strong').textContent = fmt(m.monthRate);
-    };
-    const fmtNum = (v) => {
-      if (v == null) return null;
-      const n = Number(v);
-      if (!Number.isFinite(n)) return null;
-      return Number.isInteger(n) ? String(n) : n.toFixed(1).replace('.', ',');
-    };
-    const renderMeta = (m) => {
-      const speedTxt = fmtNum(m.maxSpeedKmh);
-      if (speedTxt) { speedNum.textContent = speedTxt; speedBadge.style.display = ''; }
-      else speedBadge.style.display = 'none';
-      const fuelTxt = fmtNum(m.fuelLPer100Km);
-      if (fuelTxt) { fuelNum.textContent = fuelTxt; fuelBadge.style.display = ''; }
-      else fuelBadge.style.display = 'none';
-    };
-
-    fillCard(cardA, items[0]);
-    renderMeta(items[0]);
-
     if (items.length === 1) return;
 
     let idx = 0;
     let activeFrame = frameA;
     let standbyFrame = frameB;
-    let activeCard = cardA;
-    let standbyCard = cardB;
 
     setInterval(() => {
       idx = (idx + 1) % items.length;
       const next = items[idx];
       const swap = () => {
-        // Заполняем standby-карточку и переключаем оба слоя одновременно
-        fillCard(standbyCard, next);
         standbyFrame.classList.add('is-active');
         activeFrame.classList.remove('is-active');
-        standbyCard.classList.add('is-active');
-        activeCard.classList.remove('is-active');
-        // Скорость/расход меняем посередине кроссфейда — глаз не заметит
-        setTimeout(() => renderMeta(next), 800);
-        // Меняем местами
-        const tmpF = activeFrame; activeFrame = standbyFrame; standbyFrame = tmpF;
-        const tmpC = activeCard; activeCard = standbyCard; standbyCard = tmpC;
+        const tmp = activeFrame; activeFrame = standbyFrame; standbyFrame = tmp;
       };
       standbyFrame.alt = next.name;
       if (standbyFrame.src.endsWith(next.avatarUrl)) {
