@@ -347,11 +347,12 @@ header.nav {
     max-width: none;
     margin: 0;
     opacity: 1;
-    border: 1px solid var(--border);
     overflow: visible;
-    background:
-      radial-gradient(circle at 50% 55%, rgba(197, 255, 61, 0.25), transparent 55%),
-      linear-gradient(135deg, #1A1A1A, #0E0E0E);
+    /* На десктопе убираем рамку и подложку: остаётся только сам
+       скутер и его фоновое свечение — чище, без «стеклянного квадрата». */
+    border: none;
+    background: transparent;
+    border-radius: 0;
   }
   .scooter-stage::before {
     inset: 15% 15%;
