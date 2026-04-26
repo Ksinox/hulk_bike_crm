@@ -6,6 +6,7 @@ import { RentalsFilters, type FiltersState } from "./RentalsFilters";
 import { RentalsList } from "./RentalsList";
 import { RentalsKpi, type Kpi } from "./RentalsKpi";
 import { RentalCard } from "./RentalCard";
+import { DocumentPreviewModal } from "./DocumentPreviewModal";
 import { useRentals, useArchivedRentals } from "./rentalsStore";
 import { useUnreachableSet } from "@/pages/clients/clientStore";
 import { NewRentalModal } from "./NewRentalModal";
@@ -116,6 +117,12 @@ export function Rentals() {
   });
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [newOpen, setNewOpen] = useState(false);
+  /**
+   * После создания аренды — автоматически открываем превью документа
+   * «Договор + акт». Сценарий: оператор создал → сразу нажал «Печать» →
+   * подписал с клиентом. Сократили путь оформления.
+   */
+  const [autoDocRentalId, setAutoDocRentalId] = useState<number | null>(null);
 
   // Если выбрана вкладка «Архив» — берём архивный список, иначе обычный.
   const rentals =
@@ -295,9 +302,48 @@ export function Rentals() {
       {newOpen && (
         <NewRentalModal
           onClose={() => setNewOpen(false)}
-          onCreated={(r) => setSelectedId(r.id)}
+          onCreated={(r) => {
+            setSelectedId(r.id);
+            setAutoDocRentalId(r.id);
+          }}
+        />
+      )}
+
+      {autoDocRentalId != null && (
+        <AutoContractPreview
+          rentalId={autoDocRentalId}
+          onClose={() => setAutoDocRentalId(null)}
         />
       )}
     </main>
+  );
+}
+
+/**
+ * Автоматическое превью договора+акта после создания аренды.
+ * Грузит свежий документ с API и сразу даёт кнопку «Печать».
+ * Используется в Rentals при onCreated — оператор не должен искать
+ * документ в табе «Документы», всё под рукой.
+ */
+function AutoContractPreview({
+  rentalId,
+  onClose,
+}: {
+  rentalId: number;
+  onClose: () => void;
+}) {
+  const API_BASE =
+    import.meta.env.VITE_API_URL?.replace(/\/$/, "") ?? "http://localhost:4000";
+  const htmlUrl = `${API_BASE}/api/rentals/${rentalId}/document/contract_full`;
+  const docxUrl = `${API_BASE}/api/rentals/${rentalId}/document/contract_full?format=docx`;
+  const id = String(rentalId).padStart(4, "0");
+  return (
+    <DocumentPreviewModal
+      title={`Договор + Акт по аренде #${id}`}
+      htmlUrl={htmlUrl}
+      docxUrl={docxUrl}
+      docxFilename={`Договор_и_акт_${id}.doc`}
+      onClose={onClose}
+    />
   );
 }

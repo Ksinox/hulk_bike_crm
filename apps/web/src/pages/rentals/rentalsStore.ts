@@ -134,6 +134,9 @@ export function patchRental(id: number, patch: Partial<Rental>) {
   if (patch.depositReturned !== undefined) {
     body.depositReturned = patch.depositReturned;
   }
+  if (patch.start !== undefined) {
+    body.startAt = ruToIso(patch.start, patch.startTime);
+  }
   if (patch.endPlanned !== undefined) {
     body.endPlannedAt = ruToIso(patch.endPlanned, patch.startTime);
   }

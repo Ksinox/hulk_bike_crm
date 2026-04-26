@@ -87,12 +87,13 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
    */
   const [modelIdsFilter, setModelIdsFilter] = useState<Set<number>>(new Set());
   /**
-   * Сортировка списка скутеров строго по номеру в серии. Фильтрация
-   * по статусу делается вкладками сверху, поэтому первичная сортировка
-   * — это номер. Переключатель меняет направление: ↓ или ↑.
-   *  - "desc" — Jog #14 → Jog #02 → Jog #01 (по умолчанию)
-   *  - "asc"  — Jog #01 → Jog #02 → Jog #14
+   * Сортировка списка скутеров.
+   *  - by: "number" — по номеру в серии (Jog #14 → #02 → #01)
+   *  - by: "mileage" — по пробегу (км)
+   * Кликом на заголовок «Пробег» переключаем by и направление.
+   * Переключателем рядом с фильтром моделей — только направление.
    */
+  const [sortBy, setSortBy] = useState<"number" | "mileage">("number");
   const [sortDir, setSortDir] = useState<"desc" | "asc">("desc");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
@@ -203,16 +204,30 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
         return true;
       })
       .sort((a, b) => {
-        // Сортировка по номеру в серии. Фильтрация по статусу — вкладками
-        // сверху, поэтому здесь только номер. Внутри одинаковых номеров
-        // (вдруг разные модели имеют #02) — сравниваем имя.
+        if (sortBy === "mileage") {
+          const diff =
+            sortDir === "desc"
+              ? b.scooter.mileage - a.scooter.mileage
+              : a.scooter.mileage - b.scooter.mileage;
+          if (diff !== 0) return diff;
+          return a.scooter.name.localeCompare(b.scooter.name, "ru");
+        }
+        // by: number
         const numA = parseScooterNumber(a.scooter.name);
         const numB = parseScooterNumber(b.scooter.name);
         const diff = sortDir === "desc" ? numB - numA : numA - numB;
         if (diff !== 0) return diff;
         return a.scooter.name.localeCompare(b.scooter.name, "ru");
       });
-  }, [rows, tab, modelIdsFilter, selectedLegacyModels, query, sortDir]);
+  }, [
+    rows,
+    tab,
+    modelIdsFilter,
+    selectedLegacyModels,
+    query,
+    sortBy,
+    sortDir,
+  ]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
@@ -380,7 +395,27 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
           <span>Статус</span>
           <span>Текущий клиент</span>
           <span>Дата возврата</span>
-          <span className="text-right">Пробег</span>
+          <button
+            type="button"
+            onClick={() => {
+              if (sortBy === "mileage") {
+                setSortDir((d) => (d === "desc" ? "asc" : "desc"));
+              } else {
+                setSortBy("mileage");
+                setSortDir("desc");
+              }
+            }}
+            className={cn(
+              "flex items-center justify-end gap-1 text-right transition-colors hover:text-ink",
+              sortBy === "mileage" && "text-blue-700",
+            )}
+            title="Сортировать по пробегу"
+          >
+            Пробег
+            {sortBy === "mileage" && (
+              <span className="text-[10px]">{sortDir === "desc" ? "↓" : "↑"}</span>
+            )}
+          </button>
           <span />
         </div>
 

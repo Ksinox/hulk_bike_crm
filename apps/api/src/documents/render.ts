@@ -10,13 +10,15 @@ import { clients, rentals, scooterModels, scooters } from "../db/schema.js";
 import { LANDLORD } from "./landlord.js";
 
 export type DocumentType =
-  | "contract" // Договор проката скутера
+  | "contract" // Договор проката скутера (только сам договор)
+  | "contract_full" // Договор + акт приёма-передачи на одной странице
   | "act_transfer" // Приложение №1 — Акт приёма-передачи (выдача)
   | "act_return" // Приложение №2 — Акт возврата
-  | "purchase_deposit"; // Договор задатка при купле-продаже
+  | "purchase_deposit"; // Legacy, оставлено для совместимости старых ссылок
 
 export const DOCUMENT_LABEL: Record<DocumentType, string> = {
   contract: "Договор проката",
+  contract_full: "Договор + Акт приёма-передачи",
   act_transfer: "Акт приёма-передачи (выдача)",
   act_return: "Акт возврата",
   purchase_deposit: "Договор задатка (выкуп)",
@@ -647,6 +649,8 @@ export function renderDocumentHtml(type: DocumentType, bundle: Bundle): string {
   switch (type) {
     case "contract":
       return tplContract(bundle);
+    case "contract_full":
+      return tplContractFull(bundle);
     case "act_transfer":
       return tplActTransfer(bundle);
     case "act_return":
@@ -654,6 +658,30 @@ export function renderDocumentHtml(type: DocumentType, bundle: Bundle): string {
     case "purchase_deposit":
       return tplPurchaseDeposit(bundle);
   }
+}
+
+/**
+ * Договор проката + Акт приёма-передачи в одном документе. Между ними —
+ * жёсткий разрыв страницы. Удобно: нажал «Печать» — получил оба листа
+ * сразу, не надо генерировать дважды.
+ *
+ * Реализация: берём готовые HTML обоих шаблонов, извлекаем только
+ * содержимое <body>...</body> у акта, вставляем после контента договора
+ * с page-break-before: always.
+ */
+function tplContractFull(b: Bundle): string {
+  const contractHtml = tplContract(b);
+  const actHtml = tplActTransfer(b);
+
+  // Извлекаем тело акта (без <html><head><body>)
+  const actBodyMatch = actHtml.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+  const actInner = actBodyMatch ? actBodyMatch[1] : actHtml;
+
+  // Вставляем перед закрывающим </body> договора разделитель + содержимое акта
+  return contractHtml.replace(
+    "</body>",
+    `<div style="page-break-before: always"></div>${actInner}</body>`,
+  );
 }
 
 /**

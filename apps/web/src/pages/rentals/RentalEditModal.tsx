@@ -29,6 +29,10 @@ export function RentalEditModal({
   // Изначальные значения
   const initialScooterId = rental.scooterId ?? null;
   const [scooterId, setScooterId] = useState<number | null>(initialScooterId);
+  // Дата выдачи скутера. Полезно при ошибке оформления (выдали 22-го,
+  // а в системе записали 26-е). Формат DD.MM.YYYY.
+  const [startDate, setStartDate] = useState(rental.start);
+  const [startTime, setStartTime] = useState(rental.startTime ?? "14:00");
   const [endPlanned, setEndPlanned] = useState(rental.endPlanned); // DD.MM.YYYY
   const [endTime, setEndTime] = useState(rental.startTime ?? "12:00");
   const [rate, setRate] = useState<number>(rental.rate);
@@ -65,6 +69,8 @@ export function RentalEditModal({
 
   const dirty =
     scooterId !== initialScooterId ||
+    startDate !== rental.start ||
+    startTime !== (rental.startTime ?? "14:00") ||
     endPlanned !== rental.endPlanned ||
     rate !== rental.rate ||
     days !== rental.days ||
@@ -87,6 +93,7 @@ export function RentalEditModal({
 
       // Остальные поля через стандартный хелпер
       const patch: Partial<Rental> = {};
+      if (startDate !== rental.start) patch.start = startDate;
       if (endPlanned !== rental.endPlanned) patch.endPlanned = endPlanned;
       if (rate !== rental.rate) patch.rate = rate;
       if (days !== rental.days) {
@@ -96,8 +103,8 @@ export function RentalEditModal({
       if ((note ?? "") !== (rental.note ?? "")) {
         patch.note = note.trim() || undefined;
       }
-      // startTime используется для конвертации endPlanned в ISO
-      patch.startTime = endTime;
+      // startTime используется для конвертации start/endPlanned в ISO
+      patch.startTime = startTime;
       if (Object.keys(patch).length > 0) {
         patchRental(rental.id, patch);
       }
@@ -171,6 +178,27 @@ export function RentalEditModal({
               </select>
             )}
           </Field>
+
+          <div className="grid grid-cols-[1.3fr_1fr] gap-2">
+            <Field label="Дата выдачи (ДД.ММ.ГГГГ)">
+              <input
+                type="text"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                placeholder="22.04.2026"
+                className="h-10 w-full rounded-[10px] border border-border bg-white px-3 font-mono text-[14px] outline-none focus:border-blue"
+              />
+            </Field>
+            <Field label="Время">
+              <input
+                type="text"
+                value={startTime}
+                onChange={(e) => setStartTime(e.target.value)}
+                placeholder="14:30"
+                className="h-10 w-full rounded-[10px] border border-border bg-white px-3 font-mono text-[14px] outline-none focus:border-blue"
+              />
+            </Field>
+          </div>
 
           <div className="grid grid-cols-[1.3fr_1fr] gap-2">
             <Field label="Плановый возврат (ДД.ММ.ГГГГ)">

@@ -11,6 +11,7 @@ import { logActivity } from "../services/activityLog.js";
 
 const TypeEnum = z.enum([
   "contract",
+  "contract_full",
   "act_transfer",
   "act_return",
   "purchase_deposit",
@@ -88,6 +89,7 @@ export async function rentalDocumentsRoutes(app: FastifyInstance) {
 function docFilename(type: DocumentType, rentalId: number): string {
   const map: Record<DocumentType, string> = {
     contract: `Договор_проката_№${rentalId}`,
+    contract_full: `Договор_проката_и_акт_№${rentalId}`,
     act_transfer: `Акт_приёма-передачи_№${rentalId}`,
     act_return: `Акт_возврата_№${rentalId}`,
     purchase_deposit: `Договор_задатка_№${rentalId}`,

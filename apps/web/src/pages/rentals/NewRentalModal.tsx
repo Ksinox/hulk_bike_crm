@@ -440,7 +440,7 @@ export function NewRentalModal({
                         : "bg-surface-soft text-muted-2 hover:text-ink",
                     )}
                   >
-                    Все ({availableScooters.length})
+                    Все ({modelChips.reduce((s, [, c]) => s + c, 0)})
                   </button>
                   {modelChips.map(([m, count]) => (
                     <button
@@ -579,10 +579,12 @@ export function NewRentalModal({
                 <div className="ml-auto flex items-center gap-2">
                   <span className="text-[11px] text-muted-2">Ставка, ₽/сут</span>
                   <input
-                    type="number"
-                    min={0}
+                    type="text"
+                    inputMode="numeric"
                     value={customRate}
-                    onChange={(e) => setCustomRate(e.target.value)}
+                    onChange={(e) =>
+                      setCustomRate(e.target.value.replace(/\D/g, "").slice(0, 6))
+                    }
                     placeholder="800"
                     className="h-8 w-24 rounded-[8px] border border-border bg-surface px-2 text-[12px] tabular-nums text-ink outline-none focus:border-blue-600"
                   />

@@ -69,6 +69,7 @@ const PatchRentalBody = z
   .object({
     status: RentalStatusEnum.optional(),
     scooterId: z.number().int().positive().optional().nullable(),
+    startAt: z.string().optional(),
     endPlannedAt: z.string().optional(),
     endActualAt: z.string().optional().nullable(),
     damageAmount: z.number().int().min(0).optional().nullable(),
@@ -253,6 +254,8 @@ export async function rentalsRoutes(app: FastifyInstance) {
     if (!before) return reply.code(404).send({ error: "not found" });
 
     const patch: Record<string, unknown> = { ...parsed.data };
+    if (parsed.data.startAt)
+      patch.startAt = new Date(parsed.data.startAt);
     if (parsed.data.endPlannedAt)
       patch.endPlannedAt = new Date(parsed.data.endPlannedAt);
     if (parsed.data.endActualAt)

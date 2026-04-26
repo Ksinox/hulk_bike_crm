@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { Download, FileText, Loader2, Printer, X } from "lucide-react";
+import {
+  Download,
+  FileText,
+  Loader2,
+  Printer,
+  RefreshCw,
+  X,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
 
@@ -32,6 +39,15 @@ export function DocumentPreviewModal({
   const [htmlContent, setHtmlContent] = useState<string | null>(null);
   const [printing, setPrinting] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  /**
+   * Cache-buster: при каждом ре-рендере с новым reloadKey fetch перезапускается
+   * (URL уникален), и сервер возвращает свежий HTML с актуальными данными
+   * клиента/скутера. Кнопка «Обновить» в шапке ставит новый Date.now().
+   *
+   * Это решение для случая «поменяли паспорт клиента, а превью договора
+   * показывает старое»: один клик и видно свежий документ.
+   */
+  const [reloadKey, setReloadKey] = useState<number>(() => Date.now());
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -50,7 +66,11 @@ export function DocumentPreviewModal({
     let cancelled = false;
     setIframeReady(false);
     setHtmlContent(null);
-    fetch(htmlUrl, { credentials: "include" })
+    // Прибавляем reloadKey к URL — для cache-bust и принудительного fetch
+    // при нажатии «Обновить». Сервер не кеширует (документы динамические).
+    const sep = htmlUrl.includes("?") ? "&" : "?";
+    const url = `${htmlUrl}${sep}_ts=${reloadKey}`;
+    fetch(url, { credentials: "include" })
       .then(async (r) => {
         if (!r.ok) throw new Error(`status ${r.status}`);
         return r.text();
@@ -69,7 +89,7 @@ export function DocumentPreviewModal({
     return () => {
       cancelled = true;
     };
-  }, [htmlUrl]);
+  }, [htmlUrl, reloadKey]);
 
   const handlePrint = () => {
     const ifr = iframeRef.current;
@@ -140,6 +160,14 @@ export function DocumentPreviewModal({
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setReloadKey(Date.now())}
+              title="Перегенерировать превью со свежими данными клиента/скутера"
+              className="inline-flex items-center gap-1.5 rounded-full bg-surface px-3 py-2 text-[12px] font-semibold text-muted-2 transition-colors hover:bg-blue-50 hover:text-blue-700"
+            >
+              <RefreshCw size={13} /> Обновить
+            </button>
             <button
               type="button"
               onClick={handlePrint}

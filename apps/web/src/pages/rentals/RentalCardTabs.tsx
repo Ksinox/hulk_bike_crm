@@ -828,35 +828,25 @@ export function TasksTab({ rental }: { rental: Rental }) {
 
 /* =================== Документы =================== */
 
-type DocType = "contract" | "act_transfer" | "act_return" | "purchase_deposit";
+type DocType = "contract_full" | "act_return";
 
 const DOC_META: Record<
   DocType,
   { title: string; subtitle: string; icon: typeof FileSignature; badge: string }
 > = {
-  contract: {
-    title: "Договор проката",
-    subtitle: "Основной договор проката скутера с условиями и ответственностью",
+  contract_full: {
+    title: "Договор проката + Акт приёма-передачи",
+    subtitle:
+      "Один файл, две страницы. Договор + акт выдачи скутера — печатается одной кнопкой.",
     icon: FileSignature,
-    badge: "Приложение",
-  },
-  act_transfer: {
-    title: "Акт приёма-передачи",
-    subtitle: "Приложение №1 — подписывается клиентом при выдаче скутера",
-    icon: FileText,
-    badge: "№1",
+    badge: "Основной",
   },
   act_return: {
     title: "Акт возврата",
-    subtitle: "Приложение №2 — подписывается при возврате, фиксирует повреждения",
+    subtitle:
+      "Подписывается при возврате скутера. Фиксирует пробег, состояние, ущерб.",
     icon: FileText,
-    badge: "№2",
-  },
-  purchase_deposit: {
-    title: "Договор задатка",
-    subtitle: "Если клиент решил выкупить скутер — фиксируем задаток",
-    icon: FileText,
-    badge: "Выкуп",
+    badge: "При возврате",
   },
 };
 
