@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import {
   AlertTriangle,
+  ArrowRight,
   Bike,
   Calendar,
   Check,
@@ -12,6 +13,7 @@ import {
   FileSignature,
   FileText,
   Gauge,
+  History,
   Plus,
   ShieldCheck,
   X,
@@ -298,12 +300,16 @@ function InfoCell({
 }
 
 function daysWord(n: number): string {
+  return pluralRu(n, ["день", "дня", "дней"]);
+}
+
+function pluralRu(n: number, forms: [string, string, string]): string {
   const a = Math.abs(n);
   const n10 = a % 10;
   const n100 = a % 100;
-  if (n10 === 1 && n100 !== 11) return "день";
-  if (n10 >= 2 && n10 <= 4 && (n100 < 10 || n100 >= 20)) return "дня";
-  return "дней";
+  if (n10 === 1 && n100 !== 11) return forms[0];
+  if (n10 >= 2 && n10 <= 4 && (n100 < 10 || n100 >= 20)) return forms[1];
+  return forms[2];
 }
 
 /* =================== Платежи =================== */
@@ -1100,6 +1106,142 @@ function ScooterThumb({ rental }: { rental: Rental }) {
   return (
     <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-ink text-white">
       <Bike size={34} strokeWidth={1.5} />
+    </div>
+  );
+}
+
+/* =================== История аренды =================== */
+
+/**
+ * Показывает всю цепочку этой аренды: исходную + все продления
+ * (parentRentalId → child). Для каждой записи — даты, тариф, сумма,
+ * экипировка. Текущая аренда подсвечена.
+ *
+ * Полезно операторам которые продлевали аренду несколько раз и хотят
+ * увидеть всю историю клиента в одном месте.
+ */
+export function HistoryTab({
+  rental,
+  chainRentals,
+}: {
+  rental: Rental;
+  chainRentals: Rental[];
+}) {
+  // Сортируем по дате выдачи (старые сверху → новые снизу)
+  const ordered = useMemo(
+    () =>
+      [...chainRentals].sort((a, b) =>
+        a.start.split(".").reverse().join("").localeCompare(
+          b.start.split(".").reverse().join(""),
+        ),
+      ),
+    [chainRentals],
+  );
+
+  if (ordered.length === 0) {
+    return (
+      <div className="rounded-2xl bg-surface p-6 text-center text-[13px] text-muted shadow-card-sm">
+        <History size={24} className="mx-auto mb-2 text-muted-2" />
+        Нет данных по истории.
+      </div>
+    );
+  }
+
+  if (ordered.length === 1) {
+    return (
+      <div className="rounded-2xl bg-surface p-6 text-center text-[13px] text-muted shadow-card-sm">
+        <History size={24} className="mx-auto mb-2 text-muted-2" />
+        Это первичная аренда. Продлений ещё не было — здесь появится
+        список, как только клиент решит продлить.
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="text-[12px] text-muted-2 px-1">
+        Цепочка из {ordered.length}{" "}
+        {pluralRu(ordered.length, ["аренды", "аренд", "аренд"])} — суммарно{" "}
+        <b className="text-ink">
+          {ordered.reduce((s, r) => s + (r.days ?? 0), 0)}{" "}
+          {pluralRu(
+            ordered.reduce((s, r) => s + (r.days ?? 0), 0),
+            ["день", "дня", "дней"],
+          )}
+        </b>
+        ,{" "}
+        <b className="text-ink">
+          {ordered
+            .reduce((s, r) => s + (r.sum ?? 0), 0)
+            .toLocaleString("ru-RU")}{" "}
+          ₽
+        </b>{" "}
+        за всё время
+      </div>
+
+      {ordered.map((r, idx) => {
+        const isCurrent = r.id === rental.id;
+        const isFirst = idx === 0;
+        const equipmentList =
+          (r.equipment?.length ?? 0) > 0 ? r.equipment.join(", ") : null;
+        return (
+          <div
+            key={r.id}
+            className={cn(
+              "rounded-2xl bg-surface p-4 shadow-card-sm",
+              isCurrent && "ring-2 ring-blue-600/50",
+            )}
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-700 text-[12px] font-bold">
+                {idx + 1}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[14px] font-bold text-ink">
+                    Аренда #{String(r.id).padStart(4, "0")}
+                  </span>
+                  {isFirst && (
+                    <span className="rounded-full bg-surface-soft px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-muted">
+                      первичная
+                    </span>
+                  )}
+                  {!isFirst && (
+                    <span className="rounded-full bg-purple-soft px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-purple-ink">
+                      продление
+                    </span>
+                  )}
+                  {isCurrent && (
+                    <span className="rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
+                      сейчас открыта
+                    </span>
+                  )}
+                </div>
+                <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-muted">
+                  <Calendar size={11} />
+                  {r.start} <ArrowRight size={10} /> {r.endPlanned}
+                  <span className="text-muted-2">·</span>
+                  <span className="font-semibold text-ink">
+                    {r.days} {pluralRu(r.days, ["день", "дня", "дней"])}
+                  </span>
+                  <span className="text-muted-2">·</span>
+                  <span>
+                    {r.rate} ₽/сут × {r.days} ={" "}
+                    <b className="text-ink">
+                      {(r.sum ?? 0).toLocaleString("ru-RU")} ₽
+                    </b>
+                  </span>
+                </div>
+                {equipmentList && (
+                  <div className="mt-1 text-[11px] text-muted">
+                    Экипировка: {equipmentList}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

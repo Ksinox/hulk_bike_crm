@@ -101,33 +101,14 @@ export function RentalActionDialog({
     if (action === "complete") {
       const isInspectionStep =
         rental.status === "active" || rental.status === "overdue";
-      // Чек-лист выдачи должен быть пройден. Если выдача не была
-      // подтверждена (договор не подписан / оплата не получена / залог
-      // не получен) — завершать аренду нельзя.
-      const issueConfirmed = rental.paymentConfirmed != null;
+      // Чек-лист подтверждения выдачи убран по решению заказчика —
+      // аренда сразу полностью оформлена при создании, никаких
+      // блокировок «сначала подтвердите оплату».
 
       // Шаг 1: пользователь жмёт «Завершить аренду» — переводим в режим
       // приёма (returning). Это позволяет вернуться к чек-листу позже,
       // если приём прерывается (что-то надо уточнить, клиент уехал и т.п.).
       if (isInspectionStep) {
-        if (!issueConfirmed) {
-          return {
-            title: "Сначала подтвердите выдачу",
-            body: (
-              <div className="flex items-start gap-2 rounded-[10px] bg-orange-soft/70 px-3 py-2 text-[12px] text-orange-ink">
-                <AlertTriangle size={14} className="mt-0.5 shrink-0" />
-                <span>
-                  Завершить аренду нельзя — чек-лист выдачи не пройден.
-                  Откройте «Подтвердить оплату» и проставьте галки
-                  «Договор подписан», «Оплата получена», «Залог получен».
-                </span>
-              </div>
-            ),
-            cta: "Закрыть",
-            ctaTone: "primary",
-            blocked: true,
-          };
-        }
         return {
           title: "Завершить аренду — начать приём",
           body: (

@@ -373,21 +373,15 @@ function tplAct(b: Bundle, kind: "transfer" | "return"): string {
     kind === "transfer" ? rental.startAt : rental.endActualAt ?? rental.endPlannedAt,
   );
 
+  // Экипировка для акта — только то что реально оформлено в аренде.
+  // Раньше печатался стандартный список (Шлем/Цепь/Замок) с галочками
+  // напротив выданных — это запутывало клиента: «зачем тут всё это, если
+  // мне выдали только шлем?». Теперь — только список фактически выданного.
   const equipmentRows = (rental.equipmentJson ?? []) as Array<{
     name: string;
     free: boolean;
     price: number;
   }>;
-  const equipmentSet = new Set(equipmentRows.map((e) => e.name.toLowerCase()));
-  const STANDARD = [
-    "Зарядка",
-    "Держатель телефона",
-    "Увеличенный багажник",
-    "Шлем",
-    "Цепь",
-    "Резинка",
-    "Муфты",
-  ];
 
   return `<!doctype html><html lang="ru"><head><meta charset="utf-8">
 <title>${subtitle} по договору №${contractNumber}</title>${CSS}</head><body>
@@ -408,7 +402,7 @@ ${TOOLBAR}
   </div>
 
   <div class="para">
-    Марка, модель: <b>${orDash(model?.name ?? scooter?.name, "________")}</b><br>
+    Марка, модель: <b>${orDash(model?.name, "________")}</b><br>
     Наименование (тип ТС): Скутер<br>
     Категория ТС: М<br>
     Год выпуска: <b>${orDash(scooter?.year, "______")}</b><br>
@@ -423,12 +417,20 @@ ${TOOLBAR}
   <div class="para">
     ${kind === "transfer" ? "Одновременно со Скутером Арендодатель передал, а Арендатор принял" : "Одновременно со Скутером возвращены"} следующие запасные части, аксессуары, дополнительное оборудование:
   </div>
-  <ul class="equipment-list">
-    ${STANDARD.map(
-      (item) =>
-        `<li>${checkbox(equipmentSet.has(item.toLowerCase()))} ${item}</li>`,
-    ).join("")}
-  </ul>
+  ${
+    equipmentRows.length === 0
+      ? `<div class="para small"><i>Дополнительное оборудование не выдавалось.</i></div>`
+      : `<ul class="equipment-list">${equipmentRows
+          .map(
+            (e) =>
+              `<li>${checkbox(true)} ${e.name}${
+                !e.free && e.price > 0
+                  ? ` <span class="small">(оплачено: ${e.price} ₽/сут)</span>`
+                  : ""
+              }</li>`,
+          )
+          .join("")}</ul>`
+  }
 
   ${
     kind === "return"
@@ -485,7 +487,7 @@ ${TOOLBAR}
   <h2>2.</h2>
   <div class="para">Транспортное средство представляет собой скутер (далее — «скутер»), идентифицируемый следующими параметрами:</div>
   <ul>
-    <li>Марка, модель: <b>${orDash(model?.name ?? scooter?.name, "________")}</b></li>
+    <li>Марка, модель: <b>${orDash(model?.name, "________")}</b></li>
     <li>Идентификационный номер (VIN) / № шасси/рамы: <b>${orDash(scooter?.frameNumber ?? scooter?.vin, "_________________")}</b></li>
     <li>Год выпуска: <b>${orDash(scooter?.year, "_______")}</b></li>
     <li>Номер двигателя: <b>${orDash(scooter?.engineNo, "_______________")}</b></li>

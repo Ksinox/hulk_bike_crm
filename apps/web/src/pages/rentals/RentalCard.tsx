@@ -24,8 +24,10 @@ import {
 import { ratingTier } from "@/lib/mock/clients";
 import { useClientUnreachable } from "@/pages/clients/clientStore";
 import { useApiClients } from "@/lib/api/clients";
+import { navigate } from "@/app/navigationStore";
 import {
   DocumentsTab,
+  HistoryTab,
   IncidentsTab,
   PaymentsTab,
   ReturnTab,
@@ -33,13 +35,11 @@ import {
   TermsTab,
 } from "./RentalCardTabs";
 import { RentalActionDialog, type ActionKind } from "./RentalActionDialog";
-import { ConfirmPaymentDialog } from "./ConfirmPaymentDialog";
 import { ExtendRentalDialog } from "./ExtendRentalDialog";
 import { RentalActionsMenu, type MenuAction } from "./RentalActionsMenu";
 import {
   getRentalChainIds,
   useChainPayments,
-  useRental,
   useRentals,
 } from "./rentalsStore";
 import { ClientQuickView } from "@/pages/clients/ClientQuickView";
@@ -55,10 +55,18 @@ import { confirmDialog } from "@/lib/toast";
 import { toast } from "@/lib/toast";
 import { ApiError } from "@/lib/api";
 
-type TabId = "terms" | "payments" | "return" | "incidents" | "tasks" | "docs";
+type TabId =
+  | "terms"
+  | "history"
+  | "payments"
+  | "return"
+  | "incidents"
+  | "tasks"
+  | "docs";
 
 const TABS: { id: TabId; label: string }[] = [
   { id: "terms", label: "Условия" },
+  { id: "history", label: "История" },
   { id: "payments", label: "Платежи" },
   { id: "return", label: "Возврат" },
   { id: "incidents", label: "Инциденты" },
@@ -180,11 +188,8 @@ export function RentalCard({ rental }: { rental: Rental }) {
   const [tab, setTab] = useState<TabId>("terms");
   const [action, setAction] = useState<ActionKind | null>(null);
   const [editRentalOpen, setEditRentalOpen] = useState(false);
-  const [confirmOpen, setConfirmOpen] = useState(false);
   const [extendOpen, setExtendOpen] = useState(false);
-  const [confirmForNewId, setConfirmForNewId] = useState<number | null>(null);
   const [clientQuickView, setClientQuickView] = useState(false);
-  const newRental = useRental(confirmForNewId);
   const { data: me } = useMe();
   const deleteRental = useDeleteRental();
   const unarchiveRental = useUnarchiveRental();
@@ -444,24 +449,13 @@ export function RentalCard({ rental }: { rental: Rental }) {
           </div>
         </div>
       )}
-      {!isArchived && rental.paymentConfirmed === null && (
-        <div className="flex items-center gap-2 rounded-[12px] bg-blue-50 px-3 py-2 text-[12px] text-blue-700 ring-1 ring-inset ring-blue-600/20">
-          <AlertTriangle size={14} className="shrink-0" />
-          <div className="min-w-0 flex-1">
-            <b>Требуется:</b>{" "}
-            {rental.contractUploaded
-              ? "подтверждение оплаты"
-              : "скан договора и подтверждение оплаты"}
-          </div>
-          <button
-            type="button"
-            onClick={() => setConfirmOpen(true)}
-            className="shrink-0 rounded-full bg-blue-600 px-3 py-1 text-[11px] font-semibold text-white hover:bg-blue-700"
-          >
-            Подтвердить
-          </button>
-        </div>
-      )}
+      {/*
+        Баннер «Требуется подтверждение выдачи» убран по решению заказчика.
+        Аренда сразу считается полностью оформленной — оператор подписывает
+        договор на месте и нажимает «Создать», CRM не должна добавлять
+        лишний шаг подтверждения. Если позже нужно вернуть учёт «договор
+        получен» — это будет отдельный лёгкий чекбокс, не блокирующий поток.
+      */}
       {rental.status === "overdue" && endDate && (() => {
         const d = Math.max(1, daysLeft !== null ? Math.abs(daysLeft) : 1);
         const overdueDebt = d * (rental.rate + 250);
@@ -634,6 +628,9 @@ export function RentalCard({ rental }: { rental: Rental }) {
             onClientClick={() => setClientQuickView(true)}
           />
         )}
+        {tab === "history" && (
+          <HistoryTab rental={rental} chainRentals={chainRentals} />
+        )}
         {tab === "payments" && (
           <PaymentsTab
             rental={rental}
@@ -659,23 +656,19 @@ export function RentalCard({ rental }: { rental: Rental }) {
           onClose={() => setEditRentalOpen(false)}
         />
       )}
-      {confirmOpen && (
-        <ConfirmPaymentDialog
-          rental={rental}
-          onClose={() => setConfirmOpen(false)}
-        />
-      )}
+      {/* ConfirmPaymentDialog больше не используется — функционал убран. */}
       {extendOpen && (
         <ExtendRentalDialog
           rental={rental}
           onClose={() => setExtendOpen(false)}
-          onExtended={(r) => setConfirmForNewId(r.id)}
-        />
-      )}
-      {confirmForNewId != null && newRental && (
-        <ConfirmPaymentDialog
-          rental={newRental}
-          onClose={() => setConfirmForNewId(null)}
+          onExtended={(r) => {
+            // После успешного продления — переключаем фокус на новую
+            // аренду (продление). Иначе родительская уходит в архив,
+            // selectedId «зависает» на ней, карточка показывает заглушку
+            // «Выберите аренду из списка». Решение через navigate —
+            // Rentals читает pending и подменяет selectedId.
+            navigate({ route: "rentals", rentalId: r.id });
+          }}
         />
       )}
 

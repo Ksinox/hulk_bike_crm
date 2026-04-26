@@ -7,6 +7,7 @@ import { RentalsList } from "./RentalsList";
 import { RentalsKpi, type Kpi } from "./RentalsKpi";
 import { RentalCard } from "./RentalCard";
 import { DocumentPreviewModal } from "./DocumentPreviewModal";
+import { consumePending, onNavigate } from "@/app/navigationStore";
 import { useRentals, useArchivedRentals } from "./rentalsStore";
 import { useUnreachableSet } from "@/pages/clients/clientStore";
 import { NewRentalModal } from "./NewRentalModal";
@@ -130,9 +131,27 @@ export function Rentals() {
 
   useEffect(() => {
     if (selectedId != null) return;
+    // Если пришли через navigate({route:"rentals", rentalId}) — выберем
+    // именно эту аренду. Иначе первую активную.
+    const p = consumePending("rentals");
+    if (p?.rentalId != null) {
+      setSelectedId(p.rentalId);
+      return;
+    }
     const first = rentals.find((r) => r.status === "active");
     setSelectedId(first?.id ?? rentals[0]?.id ?? null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Слушаем навигацию: если уже на странице аренд, и кто-то вызвал
+  // navigate({route:"rentals", rentalId: X}) (например после продления
+  // в RentalCard), — переключаем фокус на X.
+  useEffect(() => {
+    return onNavigate((req) => {
+      if (req.route === "rentals" && req.rentalId != null) {
+        setSelectedId(req.rentalId);
+      }
+    });
   }, []);
 
   const filtered = useMemo(
