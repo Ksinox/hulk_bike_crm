@@ -33,7 +33,7 @@ DOKPLOY_BASE = os.environ.get("DOKPLOY_BASE", "http://104.128.128.96:3000")
 TOKEN = os.environ.get("DOKPLOY_TOKEN")
 APP_ID = os.environ.get("HULK_API_APP_ID", "FwVBgT4JUmmsTt5lT14G8")
 API_BASE = os.environ.get("HULK_API_BASE", "https://api.hulkbike.ru")
-CANARY_PATH = os.environ.get("CANARY_PATH", "/api/rentals/archived")
+CANARY_PATH = os.environ.get("CANARY_PATH", "/api/_diag/counts")
 HEALTH_TIMEOUT = int(os.environ.get("HEALTH_TIMEOUT", "300"))
 
 

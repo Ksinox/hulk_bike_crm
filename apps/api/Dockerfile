@@ -47,4 +47,7 @@ EXPOSE 4000
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=15s \
   CMD node -e "fetch('http://127.0.0.1:' + (process.env.PORT || 4000) + '/health').then(r => r.ok ? 0 : process.exit(1)).catch(() => process.exit(1))"
 
-CMD ["node", "dist/index.js"]
+# Запуск: сначала миграции (self-healing), потом API.
+# Используем sh -c в exec-форме CMD — tini корректно проксирует
+# сигналы, а shell интерпретирует && между командами.
+CMD ["sh", "-c", "node dist/db/migrate.js && node dist/index.js"]
