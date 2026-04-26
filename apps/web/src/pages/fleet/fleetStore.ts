@@ -115,6 +115,9 @@ export function patchScooter(id: number, patch: Partial<FleetScooter>) {
   emit();
 
   const apiPatch: PatchScooterInput = {};
+  if (patch.name !== undefined) apiPatch.name = patch.name;
+  if (patch.model !== undefined) apiPatch.model = patch.model;
+  if (patch.modelId !== undefined) apiPatch.modelId = patch.modelId ?? null;
   if (patch.mileage !== undefined) apiPatch.mileage = patch.mileage;
   if (patch.vin !== undefined) apiPatch.vin = patch.vin ?? null;
   if (patch.engineNo !== undefined) apiPatch.engineNo = patch.engineNo ?? null;
