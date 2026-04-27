@@ -21,6 +21,8 @@ import { equipmentRoutes } from "./routes/equipment.js";
 import { scooterMaintenanceRoutes } from "./routes/scooter-maintenance.js";
 import { activityRoutes } from "./routes/activity.js";
 import { rentalDocumentsRoutes } from "./routes/rental-documents.js";
+import { priceListRoutes } from "./routes/price-list.js";
+import { damageReportsRoutes } from "./routes/damage-reports.js";
 import { publicRoutes } from "./routes/public.js";
 import authPlugin, { requireAuth } from "./auth/plugin.js";
 import { ensureBucket } from "./storage/index.js";
@@ -130,6 +132,12 @@ async function bootstrap() {
     await protectedApp.register(diagRoutes, { prefix: "/api/_diag" });
     // Генерация документов по аренде (договор, акты)
     await protectedApp.register(rentalDocumentsRoutes, { prefix: "/api" });
+    // Прейскурант (справочник цен)
+    await protectedApp.register(priceListRoutes, { prefix: "/api/price-list" });
+    // Акты о повреждениях
+    await protectedApp.register(damageReportsRoutes, {
+      prefix: "/api/damage-reports",
+    });
   });
 
   // Проверить/создать бакет при старте (не блокируем — если MinIO

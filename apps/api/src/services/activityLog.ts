@@ -20,7 +20,10 @@ export type ActivityEntity =
   | "model"
   | "equipment"
   | "maintenance"
-  | "incident";
+  | "incident"
+  | "price_group"
+  | "price_item"
+  | "damage_report";
 
 export type ActivityInput = {
   entity: ActivityEntity;

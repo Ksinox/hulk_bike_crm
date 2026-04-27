@@ -4,6 +4,7 @@ import {
   Ban,
   Check,
   Copy,
+  FileText,
   Pencil,
   Phone,
   PhoneOff,
@@ -236,6 +237,23 @@ export function ClientCard({ client }: { client: Client }) {
                 className="inline-flex items-center gap-1 rounded-full bg-surface-soft px-3 py-1.5 text-[12px] font-semibold text-ink transition-colors hover:bg-border"
               >
                 <Pencil size={13} /> Редактировать
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const base =
+                    import.meta.env.VITE_API_URL?.replace(/\/$/, "") ??
+                    "http://localhost:4000";
+                  window.open(
+                    `${base}/api/clients/${client.id}/statement?format=html`,
+                    "_blank",
+                    "noopener",
+                  );
+                }}
+                className="inline-flex items-center gap-1 rounded-full bg-surface-soft px-3 py-1.5 text-[12px] font-semibold text-ink transition-colors hover:bg-border"
+                title="Финансовая выписка по клиенту — для суда / претензий"
+              >
+                <FileText size={13} /> Выписка
               </button>
               <CreateDealMenu client={client} />
             </div>

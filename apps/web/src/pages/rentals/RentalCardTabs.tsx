@@ -42,6 +42,8 @@ import { fileUrl } from "@/lib/files";
 import { navigate } from "@/app/navigationStore";
 import { toast } from "@/lib/toast";
 import { DocumentPreviewModal } from "./DocumentPreviewModal";
+import { PriceListView } from "./PriceListView";
+import { useDamageReports } from "@/lib/api/damage-reports";
 
 function fmt(n: number) {
   return n.toLocaleString("ru-RU");
@@ -857,6 +859,41 @@ const DOC_META: Record<
 };
 
 export function DocumentsTab({ rental }: { rental: Rental }) {
+  const [subTab, setSubTab] = useState<"print" | "price">("print");
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="inline-flex w-fit rounded-[10px] bg-surface-soft p-1">
+        <button
+          type="button"
+          onClick={() => setSubTab("print")}
+          className={cn(
+            "rounded-[8px] px-3 py-1 text-[12px] font-semibold transition",
+            subTab === "print"
+              ? "bg-white text-ink shadow-sm"
+              : "text-muted-2 hover:text-ink",
+          )}
+        >
+          Документы для печати
+        </button>
+        <button
+          type="button"
+          onClick={() => setSubTab("price")}
+          className={cn(
+            "rounded-[8px] px-3 py-1 text-[12px] font-semibold transition",
+            subTab === "price"
+              ? "bg-white text-ink shadow-sm"
+              : "text-muted-2 hover:text-ink",
+          )}
+        >
+          Прейскурант
+        </button>
+      </div>
+      {subTab === "print" ? <PrintDocumentsView rental={rental} /> : <PriceListView />}
+    </div>
+  );
+}
+
+function PrintDocumentsView({ rental }: { rental: Rental }) {
   const API_BASE =
     import.meta.env.VITE_API_URL?.replace(/\/$/, "") ?? "http://localhost:4000";
   const [preview, setPreview] = useState<DocType | null>(null);
@@ -953,6 +990,8 @@ export function DocumentsTab({ rental }: { rental: Rental }) {
         })}
       </div>
 
+      <DamageReportCard rental={rental} />
+
       <div className="text-[11px] text-muted-2">
         Подписанные и отсканированные документы можно прикрепить к аренде
         через «Документы» (скоро появится кнопка загрузки).
@@ -965,6 +1004,82 @@ export function DocumentsTab({ rental }: { rental: Rental }) {
           docxUrl={downloadUrl(preview)}
           docxFilename={`${DOC_META[preview].title} ${String(rental.id).padStart(4, "0")}.doc`}
           onClose={() => setPreview(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+/** Карточка «Акт о повреждениях» — показывает кнопки если по аренде есть акты. */
+function DamageReportCard({ rental }: { rental: Rental }) {
+  const reports = useDamageReports(rental.id).data ?? [];
+  const [previewId, setPreviewId] = useState<number | null>(null);
+  const API_BASE =
+    import.meta.env.VITE_API_URL?.replace(/\/$/, "") ?? "http://localhost:4000";
+
+  if (reports.length === 0) {
+    return (
+      <div className="rounded-[14px] border border-dashed border-border bg-surface-soft/40 p-3 text-[12px] text-muted-2">
+        <b>Акт о повреждениях</b> — будет доступен здесь после фиксации ущерба
+        по аренде. Зафиксировать ущерб можно через меню «Действия → Зафиксировать
+        ущерб».
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-[14px] border border-border bg-surface p-3">
+      <div className="mb-2 flex items-center gap-2">
+        <AlertTriangle size={14} className="text-amber-600" />
+        <div className="text-[13px] font-semibold text-ink">
+          Акты о повреждениях ({reports.length})
+        </div>
+      </div>
+      <div className="flex flex-col gap-1.5">
+        {reports.map((r) => {
+          const downloadUrl = `${API_BASE}/api/damage-reports/${r.id}/document?format=docx`;
+          return (
+            <div
+              key={r.id}
+              className="flex flex-wrap items-center gap-2 rounded-[10px] border border-border bg-surface-soft px-3 py-2"
+            >
+              <div className="min-w-0 flex-1">
+                <div className="text-[13px] font-semibold text-ink">
+                  Акт #{r.id} от{" "}
+                  {new Date(r.createdAt).toLocaleDateString("ru-RU")}
+                </div>
+                <div className="text-[11px] text-muted-2">
+                  Сумма {r.total.toLocaleString("ru-RU")} ₽ · долг{" "}
+                  <span className={r.debt > 0 ? "text-red-600" : "text-green-600"}>
+                    {r.debt.toLocaleString("ru-RU")} ₽
+                  </span>{" "}
+                  · {r.items.length} поз.
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewId(r.id)}
+                className="inline-flex items-center gap-1.5 rounded-[8px] bg-ink px-3 py-1 text-[12px] font-bold text-white hover:bg-blue-600"
+              >
+                <FileText size={12} /> Открыть
+              </button>
+              <a
+                href={downloadUrl}
+                className="inline-flex items-center gap-1.5 rounded-[8px] bg-white px-3 py-1 text-[12px] font-semibold text-ink-2 hover:bg-blue-50 hover:text-blue-700"
+              >
+                <Download size={12} /> Word
+              </a>
+            </div>
+          );
+        })}
+      </div>
+      {previewId != null && (
+        <DocumentPreviewModal
+          title={`Акт о повреждениях #${previewId}`}
+          htmlUrl={`${API_BASE}/api/damage-reports/${previewId}/document?format=html`}
+          docxUrl={`${API_BASE}/api/damage-reports/${previewId}/document?format=docx`}
+          docxFilename={`Акт о повреждениях ${String(previewId).padStart(4, "0")}.doc`}
+          onClose={() => setPreviewId(null)}
         />
       )}
     </div>

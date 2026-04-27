@@ -85,6 +85,20 @@
       "when": 1777203026648,
       "tag": "0011_powerful_gambit",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1777282553369,
+      "tag": "0012_late_toxin",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1777287854572,
+      "tag": "0013_next_serpent_society",
+      "breakpoints": true
     }
   ]
 }

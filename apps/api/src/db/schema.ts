@@ -484,6 +484,19 @@ export const payments = pgTable(
     /** Дата, на которую начислен (для fine/рент-рассрочки) */
     scheduledOn: date("scheduled_on"),
     note: text("note"),
+    /**
+     * Кто принял деньги (для отчётности и судебных выписок).
+     * Заполняется автоматически = текущий пользователь при создании платежа.
+     */
+    receivedByUserId: bigint("received_by_user_id", { mode: "number" }).references(
+      () => users.id,
+      { onDelete: "set null" },
+    ),
+    /**
+     * Привязка платежа к конкретному акту о повреждениях (для type=damage).
+     * Чтобы по акту считать остаток долга = total - depositCovered - sum(payments).
+     */
+    damageReportId: bigint("damage_report_id", { mode: "number" }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -835,3 +848,162 @@ export const returnInspectionsRelations = relations(
     }),
   }),
 );
+
+/* ============================================================
+ * Прейскурант — справочник цен на запчасти / штрафы / экипировку.
+ * Используется при фиксации ущерба (мультивыбор → автосумма).
+ * Структура: группы (Детали / Штрафы / Повреждения / Экипировка)
+ * + позиции с одной или двумя ценами (для Деталей: Gear / Jog).
+ * ============================================================ */
+
+export const priceGroups = pgTable(
+  "price_groups",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    name: text("name").notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+    /**
+     * Привязка группы к конкретной модели скутера. NULL = группа общая
+     * (Штрафы, Экипировка, Повреждения — применимы ко всем).
+     * Используется при фиксации ущерба для авто-фильтра позиций по модели аренды.
+     */
+    scooterModelId: bigint("scooter_model_id", { mode: "number" }).references(
+      () => scooterModels.id,
+      { onDelete: "set null" },
+    ),
+    /**
+     * Legacy: true → у позиций две колонки цен (Gear / Jog).
+     * В новых группах не используем — переходим на одна группа = одна модель.
+     */
+    hasTwoPrices: boolean("has_two_prices").notNull().default(false),
+    priceALabel: text("price_a_label").notNull().default("Цена"),
+    priceBLabel: text("price_b_label"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    modelIdx: index("price_groups_model_idx").on(t.scooterModelId),
+  }),
+);
+
+export const priceItems = pgTable(
+  "price_items",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    groupId: bigint("group_id", { mode: "number" })
+      .notNull()
+      .references(() => priceGroups.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    /** Цена в ₽. Nullable если для конкретной модели позиция не применяется. */
+    priceA: integer("price_a"),
+    priceB: integer("price_b"),
+    sortOrder: integer("sort_order").notNull().default(0),
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    groupIdx: index("price_items_group_idx").on(t.groupId),
+  }),
+);
+
+export const priceGroupsRelations = relations(priceGroups, ({ many }) => ({
+  items: many(priceItems),
+}));
+
+export const priceItemsRelations = relations(priceItems, ({ one }) => ({
+  group: one(priceGroups, {
+    fields: [priceItems.groupId],
+    references: [priceGroups.id],
+  }),
+}));
+
+/* ============================================================
+ * damage_reports — акт о повреждениях по аренде.
+ * Создаётся при фиксации ущерба. Иммутабельный snapshot цен:
+ * если позже прейскурант меняется — старый акт остаётся как был.
+ *
+ * Долг по акту = total - depositCovered - sum(payments[type=damage]).
+ * Когда долг = 0, аренду можно архивировать.
+ * ============================================================ */
+export const damageReports = pgTable(
+  "damage_reports",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    rentalId: bigint("rental_id", { mode: "number" })
+      .notNull()
+      .references(() => rentals.id, { onDelete: "cascade" }),
+    createdByUserId: bigint("created_by_user_id", { mode: "number" }).references(
+      () => users.id,
+      { onDelete: "set null" },
+    ),
+    /** Итоговая сумма по всем позициям с учётом скидок и количества. */
+    total: integer("total").notNull().default(0),
+    /** Сколько зачли из залога клиента. От 0 до min(total, deposit). */
+    depositCovered: integer("deposit_covered").notNull().default(0),
+    /** Произвольный комментарий к акту (например, обстоятельства). */
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    rentalIdx: index("damage_reports_rental_idx").on(t.rentalId),
+  }),
+);
+
+export const damageReportItems = pgTable(
+  "damage_report_items",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    reportId: bigint("report_id", { mode: "number" })
+      .notNull()
+      .references(() => damageReports.id, { onDelete: "cascade" }),
+    /** Источник из прейскуранта (nullable — если позицию позже удалили). */
+    priceItemId: bigint("price_item_id", { mode: "number" }).references(
+      () => priceItems.id,
+      { onDelete: "set null" },
+    ),
+    /** Snapshot имени позиции на момент создания акта. */
+    name: text("name").notNull(),
+    /** Цена из прейскуранта на момент создания акта. */
+    originalPrice: integer("original_price").notNull(),
+    /** Фактическая цена за единицу (после скидки). */
+    finalPrice: integer("final_price").notNull(),
+    quantity: integer("quantity").notNull().default(1),
+    comment: text("comment"),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    reportIdx: index("damage_report_items_report_idx").on(t.reportId),
+  }),
+);
+
+export const damageReportsRelations = relations(damageReports, ({ many, one }) => ({
+  items: many(damageReportItems),
+  rental: one(rentals, {
+    fields: [damageReports.rentalId],
+    references: [rentals.id],
+  }),
+}));
+
+export const damageReportItemsRelations = relations(damageReportItems, ({ one }) => ({
+  report: one(damageReports, {
+    fields: [damageReportItems.reportId],
+    references: [damageReports.id],
+  }),
+}));

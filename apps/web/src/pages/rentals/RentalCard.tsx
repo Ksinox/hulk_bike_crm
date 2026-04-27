@@ -36,6 +36,10 @@ import {
 } from "./RentalCardTabs";
 import { RentalActionDialog, type ActionKind } from "./RentalActionDialog";
 import { ExtendRentalDialog } from "./ExtendRentalDialog";
+import { DamageReportDialog } from "./DamageReportDialog";
+import { DamageReportPaymentDialog } from "./DamageReportPaymentDialog";
+import { DocumentPreviewModal } from "./DocumentPreviewModal";
+import { useDamageReports } from "@/lib/api/damage-reports";
 import { RentalActionsMenu, type MenuAction } from "./RentalActionsMenu";
 import {
   getRentalChainIds,
@@ -192,6 +196,9 @@ export function RentalCard({ rental }: { rental: Rental }) {
   const [action, setAction] = useState<ActionKind | null>(null);
   const [editRentalOpen, setEditRentalOpen] = useState(false);
   const [extendOpen, setExtendOpen] = useState(false);
+  const [damageOpen, setDamageOpen] = useState(false);
+  const [paymentReportId, setPaymentReportId] = useState<number | null>(null);
+  const [previewDamageId, setPreviewDamageId] = useState<number | null>(null);
   const [clientQuickView, setClientQuickView] = useState(false);
   const { data: me } = useMe();
   const deleteRental = useDeleteRental();
@@ -235,7 +242,17 @@ export function RentalCard({ rental }: { rental: Rental }) {
 
   const tone = STATUS_TONE[rental.status];
   const isUnreachable = useClientUnreachable(rental.clientId);
-  const hasDamage = (rental.damageAmount ?? 0) > 0;
+  // Акты о повреждениях по аренде (для блока «Долг по ущербу» и кнопок).
+  const damageReports = useDamageReports(rental.id);
+  const reports = damageReports.data ?? [];
+  const totalDebt = reports.reduce((s, r) => s + r.debt, 0);
+  const reportWithDebt = reports.find((r) => r.debt > 0) ?? null;
+  const reportLatest =
+    reports.length > 0 ? reports[reports.length - 1]! : null;
+  // hasDamage учитывает и старое поле rental.damageAmount (legacy),
+  // и реальные акты о повреждениях по аренде (новый поток).
+  const hasDamage =
+    (rental.damageAmount ?? 0) > 0 || reports.length > 0;
   const baseActions = statusActions(rental.status, { hasDamage, isUnreachable });
   // «Завершить аренду» — должна быть главной кнопкой в шапке (primary).
   // Если она доступна для статуса — ставим её первой, а «Изменить» уходит
@@ -313,6 +330,19 @@ export function RentalCard({ rental }: { rental: Rental }) {
   const handleAction = async (id: string) => {
     if (id === "extend" || id === "clone") return setExtendOpen(true);
     if (id === "edit") return setEditRentalOpen(true);
+    if (id === "set-damage") {
+      setDamageOpen(true);
+      return;
+    }
+    if (id === "record-damage") {
+      const r = reportWithDebt ?? reportLatest;
+      if (!r) {
+        toast.info("Нет акта", "Сначала зафиксируйте ущерб");
+        return;
+      }
+      setPaymentReportId(r.id);
+      return;
+    }
     if (id === "unarchive") {
       try {
         await unarchiveRental.mutateAsync(rental.id);
@@ -485,7 +515,44 @@ export function RentalCard({ rental }: { rental: Rental }) {
           </span>
         </div>
       )}
-      {rental.status === "completed_damage" && (
+      {/* Блок «Долг по ущербу» — показывается если по аренде есть акты с долгом. */}
+      {totalDebt > 0 && reportWithDebt && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-[12px] border-2 border-red-500 bg-red-soft/70 px-3 py-2 text-[13px] text-red-ink">
+          <div className="flex items-start gap-2">
+            <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+            <div className="min-w-0">
+              <div className="font-bold">
+                Долг по ущербу:{" "}
+                <span className="tabular-nums">{fmt(totalDebt)} ₽</span>
+              </div>
+              <div className="text-[11px] opacity-80">
+                Всего по акту {fmt(reportWithDebt.total)} ₽, зачтено из залога{" "}
+                {fmt(reportWithDebt.depositCovered)} ₽
+                {reportWithDebt.paidSum > 0
+                  ? `, оплачено ${fmt(reportWithDebt.paidSum)} ₽`
+                  : ""}
+                .
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setPaymentReportId(reportWithDebt.id)}
+            className="inline-flex items-center gap-1.5 rounded-[10px] bg-red-600 px-3 py-2 text-[12px] font-bold text-white hover:bg-red-700"
+          >
+            <Plus size={12} /> Внести платёж
+          </button>
+        </div>
+      )}
+      {totalDebt === 0 && reports.length > 0 && (
+        <div className="flex items-center gap-2 rounded-[12px] bg-green-soft/70 px-3 py-2 text-[12px] text-green-ink">
+          <CheckCircle2 size={14} className="shrink-0" />
+          <span>
+            <b>Ущерб полностью оплачен.</b> Аренду можно архивировать.
+          </span>
+        </div>
+      )}
+      {rental.status === "completed_damage" && reports.length === 0 && (
         <div className="flex items-center gap-2 rounded-[12px] bg-red-soft/70 px-3 py-2 text-[12px] text-red-ink">
           <AlertTriangle size={14} className="shrink-0" />
           <span>
@@ -684,7 +751,56 @@ export function RentalCard({ rental }: { rental: Rental }) {
           from={{ route: "rentals", rentalId: rental.id }}
         />
       )}
+
+      {damageOpen && (
+        <DamageReportDialog
+          rental={rental}
+          onClose={() => setDamageOpen(false)}
+          onCreated={(reportId) => {
+            // После создания акта — открываем превью для печати.
+            setDamageOpen(false);
+            setPreviewDamageId(reportId);
+          }}
+        />
+      )}
+
+      {previewDamageId != null && (
+        <DamageDocumentPreview
+          reportId={previewDamageId}
+          onClose={() => setPreviewDamageId(null)}
+        />
+      )}
+
+      {paymentReportId != null && (
+        <DamageReportPaymentDialog
+          reportId={paymentReportId}
+          onClose={() => setPaymentReportId(null)}
+        />
+      )}
     </div>
+  );
+}
+
+/** Превью акта о повреждениях для печати. */
+function DamageDocumentPreview({
+  reportId,
+  onClose,
+}: {
+  reportId: number;
+  onClose: () => void;
+}) {
+  const base =
+    import.meta.env.VITE_API_URL?.replace(/\/$/, "") ?? "http://localhost:4000";
+  const htmlUrl = `${base}/api/damage-reports/${reportId}/document?format=html`;
+  const docxUrl = `${base}/api/damage-reports/${reportId}/document?format=docx`;
+  return (
+    <DocumentPreviewModal
+      title={`Акт о повреждениях #${reportId}`}
+      htmlUrl={htmlUrl}
+      docxUrl={docxUrl}
+      docxFilename={`Акт о повреждениях ${String(reportId).padStart(4, "0")}.doc`}
+      onClose={onClose}
+    />
   );
 }
 
