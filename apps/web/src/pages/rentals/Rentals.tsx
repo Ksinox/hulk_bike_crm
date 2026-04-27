@@ -13,6 +13,8 @@ import { useUnreachableSet } from "@/pages/clients/clientStore";
 import { NewRentalModal } from "./NewRentalModal";
 import { useApiClients } from "@/lib/api/clients";
 import { useApiScooters } from "@/lib/api/scooters";
+import { useApiPayments } from "@/lib/api/payments";
+import { revenueFromPayments } from "@/lib/revenue";
 import type { ApiClient } from "@/lib/api/types";
 import {
   matchId,
@@ -106,6 +108,7 @@ export function Rentals() {
   const archivedList = useArchivedRentals();
   const unreachable = useUnreachableSet();
   const { data: apiClients } = useApiClients();
+  const { data: payments } = useApiPayments();
   const { data: apiScooters = [] } = useApiScooters();
   // Пул скутеров, пригодных к сдаче в аренду — только 'rental_pool'
   const rentalPoolSize = apiScooters.filter(
@@ -186,12 +189,6 @@ export function Rentals() {
     periodStart.setMonth(periodStart.getMonth() - 1);
     const monthNames = ["янв","фев","мар","апр","май","июн","июл","авг","сен","окт","ноя","дек"];
     const rangeLabel = `${String(periodStart.getDate()).padStart(2,"0")} ${monthNames[periodStart.getMonth()]} — ${String(periodEnd.getDate()).padStart(2,"0")} ${monthNames[periodEnd.getMonth()]}`;
-    const inPeriod = (dateStr: string) => {
-      const m2 = dateStr.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
-      if (!m2) return false;
-      const dt = new Date(+m2[3], +m2[2] - 1, +m2[1]);
-      return dt >= periodStart && dt < periodEnd;
-    };
 
     // Активная аренда без скутера — это «призрак» (артефакт старых данных
     // или неправильно созданная заявка). Не считаем её — иначе бейдж
@@ -214,16 +211,15 @@ export function Rentals() {
     const overdueDebt = rentals
       .filter((r) => r.status === "overdue")
       .reduce((s, r) => s + (r.sum ?? 0), 0);
-    const periodRevenue = rentals
-      .filter(
-        (r) =>
-          r.status === "active" ||
-          r.status === "completed" ||
-          r.status === "returning" ||
-          r.status === "overdue",
-      )
-      .filter((r) => inPeriod(r.start))
-      .reduce((s, r) => s + (r.sum ?? 0), 0);
+    // Выручка считается по фактическим платежам (paid=true, type!='deposit'),
+    // а не по rental.sum — иначе при продлении (parent rental архивируется
+    // и фильтр его исключает) сумма «теряется». Та же формула что в
+    // useDashboardMetrics, через общую функцию revenueFromPayments.
+    const periodRevenue = revenueFromPayments(
+      payments ?? [],
+      periodStart,
+      periodEnd,
+    );
 
     return [
       {
@@ -252,18 +248,14 @@ export function Rentals() {
       },
       {
         label: "Выручка",
-        // До 10 000 ₽ показываем полной суммой — чтобы 1 800 ₽ не
-        // превращались в «2 тыс» из-за Math.round(1.8). Выше — сокращаем
-        // до «тыс» для компактности бейджа.
-        value:
-          periodRevenue >= 10_000
-            ? `${Math.round(periodRevenue / 1000)} тыс ₽`
-            : `${periodRevenue.toLocaleString("ru-RU")} ₽`,
+        // Точная сумма без округления — заказчик специально просил, в
+        // бухгалтерии «33 тыс» вместо «33 400» создаёт путаницу.
+        value: `${periodRevenue.toLocaleString("ru-RU")} ₽`,
         hint: rangeLabel,
         tone: "purple",
       },
     ];
-  }, [rentals]);
+  }, [rentals, payments]);
 
   return (
     <main className="flex min-w-0 flex-1 flex-col gap-4">

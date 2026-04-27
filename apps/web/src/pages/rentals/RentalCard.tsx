@@ -45,6 +45,7 @@ import {
   getRentalChainIds,
   useChainPayments,
   useRentals,
+  useArchivedRentals,
 } from "./rentalsStore";
 import { ClientQuickView } from "@/pages/clients/ClientQuickView";
 import { RentalEditModal } from "./RentalEditModal";
@@ -212,13 +213,29 @@ export function RentalCard({ rental }: { rental: Rental }) {
     () => apiClients?.find((c) => c.id === rental.clientId),
     [rental.clientId, apiClients],
   );
-  const allRentals = useRentals();
+  // ВАЖНО: для построения цепочки продлений берём И активные И архивные
+  // аренды. При продлении parent rental уходит в архив, и без archivedRentals
+  // мы бы потеряли его платежи в расчёте «За всё время».
+  const activeRentals = useRentals();
+  const archivedRentals = useArchivedRentals();
+  const allRentals = useMemo(
+    () => [...activeRentals, ...archivedRentals],
+    [activeRentals, archivedRentals],
+  );
   const chainIds = useMemo(
     () => getRentalChainIds(rental.id, allRentals),
     [rental.id, allRentals],
   );
   const chainPayments = useChainPayments(chainIds);
   const tier = client ? ratingTier(client.rating) : null;
+
+  // Корневая (первая) аренда цепочки — её start показываем в шапке
+  // карточки как «оригинальную» дату выдачи, даже если сейчас открыто
+  // продление (child).
+  const rootRental = useMemo(
+    () => allRentals.find((r) => chainIds[0] === r.id) ?? rental,
+    [allRentals, chainIds, rental],
+  );
 
   // Суммарные ожидаемые (аренда+залог) по всей цепочке продлений.
   // Залог один на серию — берём только один раз.
@@ -581,8 +598,15 @@ export function RentalCard({ rental }: { rental: Rental }) {
       >
         {(() => {
           let label = "Срок";
-          let value = `${rental.days} дн`;
-          const hint = `${rental.start.slice(0, 5)} — ${rental.endPlanned.slice(0, 5)}`;
+          // Если аренда продлевалась — общий срок = сумма дней по всей цепочке
+          // (от первой выдачи до текущего планового конца), иначе rental.days.
+          const totalDays = isExtended
+            ? chainRentals.reduce((s, r) => s + (r.days || 0), 0)
+            : rental.days;
+          let value = `${totalDays} дн`;
+          // В hint показываем диапазон от ROOT-старта (первая выдача) до
+          // текущего планового конца, чтобы было видно реальный период проката.
+          const hint = `${rootRental.start.slice(0, 5)} — ${rental.endPlanned.slice(0, 5)}`;
           let accent: KpiAccent = "default";
           if (rental.status === "active" && daysLeft !== null) {
             if (daysLeft > 0) {
@@ -731,15 +755,11 @@ export function RentalCard({ rental }: { rental: Rental }) {
           rental={rental}
           onClose={() => setExtendOpen(false)}
           onExtended={(r) => {
-            // После продления:
-            //   • переключаем фокус на новую аренду (Rentals → onNavigate)
-            //   • просим открыть превью документа с новыми датами для
-            //     печати (флаг openContract).
-            navigate({
-              route: "rentals",
-              rentalId: r.id,
-              openContract: true,
-            });
+            // После продления просто переключаем фокус на новую аренду.
+            // Договор НЕ открываем — заказчик подтвердил, что при продлении
+            // новый договор не печатается (это та же аренда, просто с
+            // расширенным сроком и доплатой).
+            navigate({ route: "rentals", rentalId: r.id });
           }}
         />
       )}

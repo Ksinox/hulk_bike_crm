@@ -5,8 +5,10 @@ import {
   formatRub,
   type DashboardMetrics,
 } from "./useDashboardMetrics";
+import { RevenueRentalsList, type RevenuePeriod } from "./RevenueRentalsList";
+import { ExpandRevenueButton, RevenueListModal } from "./RevenueListModal";
 
-type Period = "day" | "week" | "month";
+type Period = RevenuePeriod;
 
 const TABS: { id: Period; label: string }[] = [
   { id: "day", label: "День" },
@@ -22,6 +24,7 @@ export function RevenueCard({
   metrics: DashboardMetrics;
 }) {
   const [period, setPeriod] = useState<Period>("month");
+  const [fullscreen, setFullscreen] = useState(false);
 
   const { total, chart, labels } = useMemo(() => {
     const byDay = metrics.revenueByDay;
@@ -116,22 +119,25 @@ export function RevenueCard({
             )}
           </div>
         </div>
-        <div className="inline-flex rounded-full bg-white/15 p-0.5">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => setPeriod(t.id)}
-              className={cn(
-                "rounded-full px-3 py-1 text-xs font-semibold transition-colors",
-                period === t.id
-                  ? "bg-white text-blue-700"
-                  : "bg-transparent text-white/75 hover:text-white",
-              )}
-            >
-              {t.label}
-            </button>
-          ))}
+        <div className="flex items-center gap-2">
+          <div className="inline-flex rounded-full bg-white/15 p-0.5">
+            {TABS.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setPeriod(t.id)}
+                className={cn(
+                  "rounded-full px-3 py-1 text-xs font-semibold transition-colors",
+                  period === t.id
+                    ? "bg-white text-blue-700"
+                    : "bg-transparent text-white/75 hover:text-white",
+                )}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+          <ExpandRevenueButton onClick={() => setFullscreen(true)} />
         </div>
       </div>
       <div className="mt-4 flex h-20 items-end gap-1">
@@ -155,6 +161,28 @@ export function RevenueCard({
           );
         })}
       </div>
+
+      {/* Список аренд за выбранный период — внутри той же Card, но на белой
+          плашке для контраста с синим фоном. Скролл внутри (max-height ~280px),
+          кнопка «На весь экран» в шапке Card открывает модалку. */}
+      <div className="mt-4 -mx-4 -mb-4 rounded-b-[16px] bg-white px-4 pb-4 pt-3">
+        <div className="mb-2 flex items-center justify-between text-[12px] font-semibold uppercase tracking-wider text-muted-2">
+          <span>
+            Аренды за{" "}
+            {period === "day" ? "сегодня" : period === "week" ? "неделю" : "месяц"}
+          </span>
+        </div>
+        <div className="max-h-[280px] overflow-y-auto">
+          <RevenueRentalsList period={period} />
+        </div>
+      </div>
+
+      {fullscreen && (
+        <RevenueListModal
+          initialPeriod={period}
+          onClose={() => setFullscreen(false)}
+        />
+      )}
     </Card>
   );
 }

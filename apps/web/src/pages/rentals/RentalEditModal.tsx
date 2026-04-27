@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
@@ -36,9 +36,46 @@ export function RentalEditModal({
   const [endPlanned, setEndPlanned] = useState(rental.endPlanned); // DD.MM.YYYY
   const [endTime, setEndTime] = useState(rental.startTime ?? "12:00");
   const [rate, setRate] = useState<number>(rental.rate);
-  const [days, setDays] = useState<number>(rental.days);
+  // «Дней» инициализируем из реальной разницы дат, а не из rental.days,
+  // потому что rental.days может расходиться (например, endPlanned руками
+  // двигали уже после создания). Если разница невалидна — fallback на rental.days.
+  const initialDays = computeDaysBetween(rental.start, rental.endPlanned) ?? rental.days;
+  const [days, setDays] = useState<number>(initialDays);
   const [note, setNote] = useState<string>(rental.note ?? "");
   const [saving, setSaving] = useState(false);
+
+  // Защита от циклических обновлений: один useEffect пересчитывает дни из
+  // дат, другой — даты из дней. Чтобы они не запускали друг друга бесконечно,
+  // помечаем кто инициировал последнее изменение.
+  const lastChanged = useRef<"dates" | "days" | "init">("init");
+
+  // Если изменили даты (start или endPlanned) — пересчитываем «Дней».
+  useEffect(() => {
+    if (lastChanged.current === "days") {
+      lastChanged.current = "init";
+      return;
+    }
+    const d = computeDaysBetween(startDate, endPlanned);
+    if (d != null && d !== days) {
+      lastChanged.current = "dates";
+      setDays(d);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startDate, endPlanned]);
+
+  // Если изменили «Дней» — пересчитываем endPlanned.
+  useEffect(() => {
+    if (lastChanged.current === "dates") {
+      lastChanged.current = "init";
+      return;
+    }
+    const newEnd = addDaysToDDMMYYYY(startDate, days);
+    if (newEnd && newEnd !== endPlanned) {
+      lastChanged.current = "days";
+      setEndPlanned(newEnd);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [days]);
 
   const scooterOptions = useMemo(
     () =>
@@ -284,6 +321,48 @@ export function RentalEditModal({
       </div>
     </div>
   );
+}
+
+/** Парсит «DD.MM.YYYY» в Date или null если формат битый. */
+function parseDDMMYYYY(s: string): Date | null {
+  const m = /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/.exec(s.trim());
+  if (!m) return null;
+  const dd = Number(m[1]);
+  const mm = Number(m[2]);
+  const yyyy = Number(m[3]);
+  if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return null;
+  const d = new Date(yyyy, mm - 1, dd);
+  if (
+    d.getFullYear() !== yyyy ||
+    d.getMonth() !== mm - 1 ||
+    d.getDate() !== dd
+  ) {
+    return null;
+  }
+  return d;
+}
+
+function fmtDDMMYYYY(d: Date): string {
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  return `${dd}.${mm}.${d.getFullYear()}`;
+}
+
+/** Вычисляет количество дней между двумя датами в формате DD.MM.YYYY. */
+function computeDaysBetween(startStr: string, endStr: string): number | null {
+  const s = parseDDMMYYYY(startStr);
+  const e = parseDDMMYYYY(endStr);
+  if (!s || !e) return null;
+  const diff = Math.round((e.getTime() - s.getTime()) / 86_400_000);
+  return diff > 0 ? diff : null;
+}
+
+/** Прибавляет N дней к строке DD.MM.YYYY и возвращает новую строку. */
+function addDaysToDDMMYYYY(startStr: string, days: number): string | null {
+  const s = parseDDMMYYYY(startStr);
+  if (!s) return null;
+  const e = new Date(s.getTime() + days * 86_400_000);
+  return fmtDDMMYYYY(e);
 }
 
 function Field({
