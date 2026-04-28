@@ -5,8 +5,9 @@ import {
   formatRub,
   type DashboardMetrics,
 } from "./useDashboardMetrics";
-import { RevenueRentalsList, type RevenuePeriod } from "./RevenueRentalsList";
+import { RevenueRentalsList, type RevenuePeriod, periodWindow } from "./RevenueRentalsList";
 import { ExpandRevenueButton, RevenueListModal } from "./RevenueListModal";
+import { useApiPayments } from "@/lib/api/payments";
 
 type Period = RevenuePeriod;
 
@@ -25,98 +26,163 @@ export function RevenueCard({
 }) {
   const [period, setPeriod] = useState<Period>("month");
   const [fullscreen, setFullscreen] = useState(false);
+  /** Выбранный день фильтра (YYYY-MM-DD) или null = весь период. */
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
 
-  const { total, chart, labels } = useMemo(() => {
-    const byDay = metrics.revenueByDay;
+  const { data: payments = [] } = useApiPayments();
+
+  const { total, chart, paymentsCount } = useMemo(() => {
     const today = new Date();
+    const win = periodWindow(period);
 
-    if (period === "month") {
+    // Все платежи в окне периода (paid, не залог/возврат). Та же
+    // формула что в списке аренд внизу — суммы совпадут.
+    const inWindow = payments.filter((p) => {
+      if (!p.paid) return false;
+      if (p.type === "deposit" || p.type === "refund") return false;
+      if (!p.paidAt) return false;
+      const t = new Date(p.paidAt).getTime();
+      return t >= win.start.getTime() && t < win.end.getTime();
+    });
+    const totalSum = inWindow.reduce((s, p) => s + p.amount, 0);
+
+    // Группировка по дням (YYYY-MM-DD) для столбцов графика.
+    const byDay = new Map<string, { sum: number; count: number }>();
+    for (const p of inWindow) {
+      const d = (p.paidAt ?? "").slice(0, 10);
+      if (!d) continue;
+      const cur = byDay.get(d) ?? { sum: 0, count: 0 };
+      cur.sum += p.amount;
+      cur.count += 1;
+      byDay.set(d, cur);
+    }
+
+    // Строим столбцы по выбранному периоду.
+    type Bar = { date: string; label: string; sum: number; count: number };
+    const bars: Bar[] = [];
+
+    if (period === "day") {
+      // Один столбик за сегодня (вечером сравним с другими — в будущем
+      // можно разбить по часам, пока показываем только один большой).
+      const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+      const v = byDay.get(todayStr) ?? { sum: 0, count: 0 };
+      bars.push({
+        date: todayStr,
+        label: today.toLocaleDateString("ru-RU", { day: "2-digit", month: "short" }),
+        sum: v.sum,
+        count: v.count,
+      });
+    } else if (period === "week") {
+      // 7 дней начиная с понедельника текущей недели.
+      for (let i = 0; i < 7; i++) {
+        const d = new Date(win.start.getTime() + i * 86_400_000);
+        const ds = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+        const v = byDay.get(ds) ?? { sum: 0, count: 0 };
+        bars.push({
+          date: ds,
+          label: d.toLocaleDateString("ru-RU", { weekday: "short" }),
+          sum: v.sum,
+          count: v.count,
+        });
+      }
+    } else {
+      // month — все дни от 1-го до последнего дня текущего месяца.
       const daysInMonth = new Date(
         today.getFullYear(),
         today.getMonth() + 1,
         0,
       ).getDate();
-      const arr: number[] = Array(daysInMonth).fill(0);
-      const lbls: string[] = [];
-      for (let i = 0; i < daysInMonth; i++) {
-        const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(i + 1).padStart(2, "0")}`;
-        const found = byDay.find((x) => x.date === dateStr);
-        arr[i] = found?.sum ?? 0;
-        lbls.push(String(i + 1));
+      for (let i = 1; i <= daysInMonth; i++) {
+        const ds = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(i).padStart(2, "0")}`;
+        const v = byDay.get(ds) ?? { sum: 0, count: 0 };
+        bars.push({
+          date: ds,
+          label: String(i),
+          sum: v.sum,
+          count: v.count,
+        });
       }
-      return { total: metrics.revenueMonth, chart: arr, labels: lbls };
     }
 
-    if (period === "week") {
-      const arr: number[] = Array(7).fill(0);
-      const lbls: string[] = [];
-      for (let i = 6; i >= 0; i--) {
-        const d = new Date(today);
-        d.setDate(d.getDate() - i);
-        const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-        const found = byDay.find((x) => x.date === dateStr);
-        arr[6 - i] = found?.sum ?? 0;
-        lbls.push(d.toLocaleDateString("ru-RU", { weekday: "short" }));
-      }
-      return { total: arr.reduce((s, v) => s + v, 0), chart: arr, labels: lbls };
-    }
+    return {
+      total: totalSum,
+      chart: bars,
+      paymentsCount: inWindow.length,
+    };
+  }, [period, payments]);
 
-    // day — тот же период, но показываем час… тут упрощение: показываем последние 12 часов с нулями
-    const arr: number[] = Array(12).fill(0);
-    const lbls: string[] = [];
-    for (let i = 11; i >= 0; i--) {
-      lbls.push(`${23 - i}:00`);
-    }
-    return { total: metrics.todayIncoming, chart: arr, labels: lbls };
-  }, [period, metrics]);
+  // Если выбран день — сумма для верхнего числа считается по этому дню,
+  // иначе по всему периоду.
+  const selectedBar = selectedDay
+    ? chart.find((b) => b.date === selectedDay) ?? null
+    : null;
+  const displayTotal = selectedBar ? selectedBar.sum : total;
+  const displayCount = selectedBar ? selectedBar.count : paymentsCount;
 
-  const up = true;
-  const max = Math.max(...chart, 1);
-  const isEmpty = total === 0;
+  const max = Math.max(...chart.map((b) => b.sum), 1);
+  const isEmpty = displayTotal === 0;
 
   return (
     <Card blue className={className}>
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-[13px] font-medium text-white/80">Выручка</div>
+          <div className="text-[13px] font-medium text-white/80">
+            Выручка
+            {selectedBar && (
+              <span className="ml-2 rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider">
+                за {formatBarDate(selectedBar.date)} ·{" "}
+                <button
+                  type="button"
+                  onClick={() => setSelectedDay(null)}
+                  className="underline underline-offset-2 hover:text-white"
+                >
+                  сбросить
+                </button>
+              </span>
+            )}
+          </div>
           <div className="mt-2 font-display text-[28px] font-extrabold tabular-nums">
-            {isEmpty ? "0" : formatRub(total)}
+            {isEmpty ? "0" : formatRub(displayTotal)}
             <span className="ml-1 text-[18px] font-bold text-white/70">₽</span>
           </div>
           <div className="mt-1.5 flex flex-col gap-0.5 text-xs text-white/80">
             <div className="flex items-center gap-1.5">
-              {!isEmpty && period === "month" && metrics.revenueMonthCount > 0 && (
+              {!isEmpty && displayCount > 0 && (
                 <DeltaPill
                   blue
-                  tone={up ? "up" : "down"}
-                  label={`${metrics.revenueMonthCount} ${plural(metrics.revenueMonthCount, ["платёж", "платежа", "платежей"])}`}
+                  tone="up"
+                  label={`${displayCount} ${plural(displayCount, ["платёж", "платежа", "платежей"])}`}
                 />
               )}
               {isEmpty && (
                 <span className="text-white/70">
-                  {period === "day"
-                    ? "сегодня платежей не было"
-                    : period === "week"
-                      ? "за неделю нет поступлений"
-                      : "в этом месяце платежей не было"}
+                  {selectedBar
+                    ? "в этот день платежей не было"
+                    : period === "day"
+                      ? "сегодня платежей не было"
+                      : period === "week"
+                        ? "за неделю нет поступлений"
+                        : "в этом месяце платежей не было"}
                 </span>
               )}
             </div>
-            {period === "month" && metrics.revenueExpected > 0 && (
-              <div className="flex items-center gap-1.5 text-[11px] text-white/80">
-                <span className="inline-flex items-center gap-1 rounded-full bg-white/15 px-2 py-0.5 font-bold">
-                  +{formatRub(metrics.revenueExpected)} ₽ ожидается
-                </span>
-                <span className="text-white/60">
-                  {metrics.revenueExpectedCount}{" "}
-                  {plural(metrics.revenueExpectedCount, [
-                    "аренда без подтв. оплаты",
-                    "аренды без подтв. оплаты",
-                    "аренд без подтв. оплаты",
-                  ])}
-                </span>
-              </div>
-            )}
+            {!selectedBar &&
+              period === "month" &&
+              metrics.revenueExpected > 0 && (
+                <div className="flex items-center gap-1.5 text-[11px] text-white/80">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-white/15 px-2 py-0.5 font-bold">
+                    +{formatRub(metrics.revenueExpected)} ₽ ожидается
+                  </span>
+                  <span className="text-white/60">
+                    {metrics.revenueExpectedCount}{" "}
+                    {plural(metrics.revenueExpectedCount, [
+                      "аренда без подтв. оплаты",
+                      "аренды без подтв. оплаты",
+                      "аренд без подтв. оплаты",
+                    ])}
+                  </span>
+                </div>
+              )}
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -125,7 +191,10 @@ export function RevenueCard({
               <button
                 key={t.id}
                 type="button"
-                onClick={() => setPeriod(t.id)}
+                onClick={() => {
+                  setPeriod(t.id);
+                  setSelectedDay(null);
+                }}
                 className={cn(
                   "rounded-full px-3 py-1 text-xs font-semibold transition-colors",
                   period === t.id
@@ -140,40 +209,89 @@ export function RevenueCard({
           <ExpandRevenueButton onClick={() => setFullscreen(true)} />
         </div>
       </div>
+
+      {/* График — каждый столбик кликабельный. При наведении — tooltip
+          с датой / суммой / кол-вом платежей. По клику — фильтрует список
+          аренд снизу по выбранному дню (повторный клик снимает фильтр). */}
       <div className="mt-4 flex h-20 items-end gap-1">
-        {chart.map((v, i) => {
-          const isLast = i === chart.length - 1;
+        {chart.map((b) => {
+          const isSelected = b.date === selectedDay;
+          const heightPx = Math.max((b.sum / max) * 80, b.sum > 0 ? 2 : 1);
+          const showLabel =
+            chart.length <= 7 ||
+            chart.indexOf(b) % Math.ceil(chart.length / 10) === 0;
           return (
-            <div key={i} className="relative flex-1">
+            <button
+              key={b.date}
+              type="button"
+              onClick={() =>
+                setSelectedDay(isSelected ? null : b.date)
+              }
+              title={tooltipText(b)}
+              className="group relative flex flex-1 cursor-pointer flex-col-reverse items-stretch focus:outline-none"
+            >
               <div
                 className={cn(
-                  "w-full rounded-t",
-                  isLast ? "bg-white" : "bg-white/40",
+                  "w-full rounded-t transition-colors",
+                  isSelected
+                    ? "bg-white"
+                    : b.sum > 0
+                      ? "bg-white/55 group-hover:bg-white"
+                      : "bg-white/20",
                 )}
-                style={{ height: `${Math.max((v / max) * 80, isEmpty ? 0 : 1)}px` }}
+                style={{ height: `${heightPx}px` }}
               />
-              {labels[i] && i % Math.ceil(chart.length / 8) === 0 && (
+              {/* Лейбл под столбиком */}
+              {showLabel && (
                 <span className="absolute left-1/2 top-full -translate-x-1/2 pt-1 text-[9px] font-medium text-white/60">
-                  {labels[i]}
+                  {b.label}
                 </span>
               )}
-            </div>
+              {/* Tooltip — простой div поверх. Появляется только при hover. */}
+              {b.sum > 0 && (
+                <div className="pointer-events-none absolute -top-2 left-1/2 z-10 hidden -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-[8px] bg-ink px-2.5 py-1.5 text-[11px] font-semibold text-white shadow-lg group-hover:block">
+                  <div className="text-white/70">
+                    {formatBarDate(b.date)}
+                  </div>
+                  <div className="font-bold tabular-nums">
+                    {formatRub(b.sum)} ₽
+                  </div>
+                  <div className="text-[10px] text-white/70">
+                    {b.count} {plural(b.count, ["платёж", "платежа", "платежей"])}
+                  </div>
+                </div>
+              )}
+            </button>
           );
         })}
       </div>
 
       {/* Список аренд за выбранный период — внутри той же Card, но на белой
-          плашке для контраста с синим фоном. Скролл внутри (max-height ~280px),
-          кнопка «На весь экран» в шапке Card открывает модалку. */}
+          плашке. Если выбран день в графике — список фильтруется по нему. */}
       <div className="mt-4 -mx-4 -mb-4 rounded-b-[16px] bg-white px-4 pb-4 pt-3">
         <div className="mb-2 flex items-center justify-between text-[12px] font-semibold uppercase tracking-wider text-muted-2">
           <span>
             Аренды за{" "}
-            {period === "day" ? "сегодня" : period === "week" ? "неделю" : "месяц"}
+            {selectedBar
+              ? formatBarDate(selectedBar.date)
+              : period === "day"
+                ? "сегодня"
+                : period === "week"
+                  ? "неделю"
+                  : "месяц"}
           </span>
+          {selectedBar && (
+            <button
+              type="button"
+              onClick={() => setSelectedDay(null)}
+              className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-blue-700 hover:bg-blue-100"
+            >
+              сбросить фильтр
+            </button>
+          )}
         </div>
         <div className="max-h-[280px] overflow-y-auto">
-          <RevenueRentalsList period={period} />
+          <RevenueRentalsList period={period} dayFilter={selectedDay} />
         </div>
       </div>
 
@@ -193,4 +311,19 @@ function plural(n: number, forms: [string, string, string]): string {
   if (mod10 === 1 && mod100 !== 11) return forms[0];
   if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return forms[1];
   return forms[2];
+}
+
+/** Форматирует «2026-04-28» → «28 апр, вт». */
+function formatBarDate(iso: string): string {
+  const d = new Date(iso + "T00:00:00");
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString("ru-RU", {
+    day: "2-digit",
+    month: "short",
+    weekday: "short",
+  });
+}
+
+function tooltipText(b: { date: string; sum: number; count: number }): string {
+  return `${formatBarDate(b.date)}: ${b.sum.toLocaleString("ru-RU")} ₽ · ${b.count} платежей`;
 }

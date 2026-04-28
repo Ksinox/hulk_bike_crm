@@ -111,14 +111,19 @@ export function PriceListView() {
         </div>
       )}
 
-      {groups.map((g) => (
-        <PriceGroupCard
-          key={g.id}
-          group={g}
-          canEdit={canEdit}
-          modelOptions={models.data ?? []}
-        />
-      ))}
+      {/* Группы в 2 колонки на широком экране — Yamaha Gear и Yamaha Jog
+          стоят рядом, дальше остальные группы тоже в 2 колонки. Это
+          компактнее и в скролл влезает больше. На мобильном — 1 колонка. */}
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+        {groups.map((g) => (
+          <PriceGroupCard
+            key={g.id}
+            group={g}
+            canEdit={canEdit}
+            modelOptions={models.data ?? []}
+          />
+        ))}
+      </div>
 
       {canEdit && !empty && (
         <div className="flex flex-wrap items-center gap-2">

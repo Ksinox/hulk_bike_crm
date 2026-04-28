@@ -77,10 +77,14 @@ export function RevenueRentalsList({
   period,
   onRowClick,
   compact = true,
+  dayFilter,
 }: {
   period: RevenuePeriod;
   onRowClick?: (rentalId: number) => void;
   compact?: boolean;
+  /** Если задано (YYYY-MM-DD) — фильтруем платежи по этому дню,
+   *  иначе берём всё окно периода. */
+  dayFilter?: string | null;
 }) {
   const { data: activeRentals = [] } = useApiRentals();
   const { data: archivedRentals = [] } = useApiRentalsArchived();
@@ -94,7 +98,16 @@ export function RevenueRentalsList({
   const { data: clients = [] } = useApiClients();
   const { data: scooters = [] } = useApiScooters();
 
-  const { start, end } = periodWindow(period);
+  // Если задан dayFilter (YYYY-MM-DD) — окно сужается до этого дня.
+  // Иначе — стандартное окно периода (день/неделя/месяц).
+  const { start, end } = useMemo(() => {
+    if (dayFilter) {
+      const d = new Date(dayFilter + "T00:00:00");
+      const dayEnd = new Date(d.getTime() + 86_400_000);
+      return { start: d, end: dayEnd };
+    }
+    return periodWindow(period);
+  }, [period, dayFilter]);
 
   const rows = useMemo(() => {
     // 1. Берём все платежи В ОКНЕ периода (paid, не залог, не возврат).
