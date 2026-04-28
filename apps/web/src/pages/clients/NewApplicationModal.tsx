@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Bell, Check, Clock, Trash2, X } from "lucide-react";
+import { Bell, Check, Clock, Trash2, User, X } from "lucide-react";
 import {
   applicationFileUrl,
   type ApiApplication,
@@ -7,17 +7,25 @@ import {
 } from "@/lib/api/clientApplications";
 
 /**
- * Полноэкранная модалка «Новая заявка».
+ * Полноэкранная карточка-«личное дело» новой заявки.
  *
- * Показывается автоматически когда `NewApplicationDetector` находит
- * заявку, которую менеджер ещё не видел. Поверх любой страницы CRM —
- * блокирует backdrop, чтобы менеджер не пропустил.
+ * Layout:
+ *  ┌─────────────────────────────────────┐
+ *  │ [портрет]  ФИО, телефон, ДР…        │  верхний блок: фото-селфи
+ *  │            гражданство              │  слева, основная инфа справа
+ *  ├─────────────────────────────────────┤
+ *  │ Паспорт: серия/номер/выдан…         │
+ *  │ Адрес проживания                    │
+ *  ├─────────────────────────────────────┤
+ *  │ [Паспорт] [Прописка] [Права]        │  фото документов плитками
+ *  └─────────────────────────────────────┘
+ *  [Это спам]                [Позже] [Оформить сейчас]
  *
- * Кнопки:
- *  • «Оформить сейчас» — открывает AddClientModal с предзаполненными
- *    полями + перенос фото (через convert API).
- *  • «Позже» — модалка закрывается, заявка помечается viewed.
- *  • «Это спам» — заявка удаляется (с confirm).
+ * Все фото кликабельны — открываются на 90vh в lightbox.
+ *
+ * Cross-origin картинки: web на crm.hulkbike.ru, API на api.hulkbike.ru.
+ * Чтобы <img> отдавал cookie hulk_session, нужен crossOrigin="use-credentials"
+ * + сервер с CORS credentials:true (уже настроено в apps/api/src/index.ts).
  */
 
 type Props = {
@@ -30,7 +38,7 @@ type Props = {
 const KIND_LABEL: Record<ApplicationFileKind, string> = {
   passport_main: "Паспорт",
   passport_reg: "Прописка",
-  license: "Права",
+  license: "Водительское",
   selfie: "Селфи",
 };
 
@@ -60,10 +68,11 @@ export function NewApplicationModal({
   };
 
   const fileKinds = new Set(application.files.map((f) => f.kind));
+  const hasSelfie = fileKinds.has("selfie");
 
   return (
     <div className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-ink/60 p-4 backdrop-blur-sm sm:p-8">
-      <div className="my-6 w-full max-w-2xl rounded-2xl bg-surface shadow-2xl">
+      <div className="my-6 w-full max-w-3xl rounded-2xl bg-surface shadow-2xl">
         <header className="flex items-center gap-3 border-b border-border bg-amber-50 px-6 py-4">
           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-500 text-white">
             <Bell size={20} />
@@ -76,84 +85,120 @@ export function NewApplicationModal({
           </div>
         </header>
 
-        <div className="space-y-4 px-6 py-5">
-          <Section title="Контакты">
-            <Row label="ФИО" value={application.name} />
-            <Row label="Телефон" value={application.phone} />
-            {application.extraPhone && (
-              <Row label="Доп. телефон" value={application.extraPhone} />
-            )}
-            <Row label="Дата рождения" value={formatDate(application.birthDate)} />
-            <Row
-              label="Гражданство"
-              value={application.isForeigner ? "Иностранец" : "Россия"}
+        {/* Личное дело: портрет (селфи) + инфа справа */}
+        <div className="grid gap-5 px-6 py-5 sm:grid-cols-[180px_1fr]">
+          <div className="flex flex-col gap-2">
+            <Portrait
+              applicationId={application.id}
+              hasSelfie={hasSelfie}
+              onZoom={() => hasSelfie && setZoomed("selfie")}
             />
-          </Section>
+            <div className="text-center text-[11px] text-muted">
+              {hasSelfie ? "Нажмите для увеличения" : "Селфи не приложено"}
+            </div>
+          </div>
 
-          <Section title="Документ">
-            {application.isForeigner ? (
-              <Row label="Описание" value={application.passportRaw} multiline />
-            ) : (
-              <>
-                <Row
-                  label="Паспорт"
-                  value={
-                    application.passportSeries && application.passportNumber
-                      ? `${application.passportSeries} ${application.passportNumber}`
-                      : null
-                  }
-                />
-                <Row label="Кем выдан" value={application.passportIssuer} multiline />
-                <Row
-                  label="Дата выдачи"
-                  value={formatDate(application.passportIssuedOn)}
-                />
-                {application.passportDivisionCode && (
-                  <Row
-                    label="Код подразделения"
-                    value={application.passportDivisionCode}
-                  />
+          <div className="space-y-4">
+            <div>
+              <div className="text-[20px] font-bold text-ink">
+                {application.name || "Имя не указано"}
+              </div>
+              <div className="text-[13px] text-muted">
+                {application.phone || "Телефон не указан"}
+                {application.extraPhone && (
+                  <span> · доп. {application.extraPhone}</span>
                 )}
+              </div>
+            </div>
+
+            <Section>
+              <Row
+                label="Дата рождения"
+                value={formatDate(application.birthDate)}
+              />
+              <Row
+                label="Гражданство"
+                value={application.isForeigner ? "Иностранец" : "Россия"}
+              />
+            </Section>
+
+            <Section title="Документ">
+              {application.isForeigner ? (
                 <Row
-                  label="Регистрация"
-                  value={application.passportRegistration}
+                  label="Описание"
+                  value={application.passportRaw}
                   multiline
                 />
-              </>
-            )}
-          </Section>
+              ) : (
+                <>
+                  <Row
+                    label="Паспорт"
+                    value={
+                      application.passportSeries && application.passportNumber
+                        ? `${application.passportSeries} ${application.passportNumber}`
+                        : null
+                    }
+                  />
+                  <Row
+                    label="Кем выдан"
+                    value={application.passportIssuer}
+                    multiline
+                  />
+                  <Row
+                    label="Дата выдачи"
+                    value={formatDate(application.passportIssuedOn)}
+                  />
+                  {application.passportDivisionCode && (
+                    <Row
+                      label="Код подразделения"
+                      value={application.passportDivisionCode}
+                    />
+                  )}
+                  <Row
+                    label="Регистрация"
+                    value={application.passportRegistration}
+                    multiline
+                  />
+                </>
+              )}
+            </Section>
 
-          <Section title="Адрес проживания">
-            <Row
-              label="Адрес"
-              value={
-                application.sameAddress
-                  ? "Совпадает с регистрацией"
-                  : application.liveAddress
-              }
-              multiline
-            />
-          </Section>
+            <Section title="Адрес проживания">
+              <Row
+                label="Адрес"
+                value={
+                  application.sameAddress
+                    ? "Совпадает с регистрацией"
+                    : application.liveAddress
+                }
+                multiline
+              />
+            </Section>
+          </div>
+        </div>
 
-          <Section title={`Фото (${application.files.length} из 4)`}>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {(
-                ["passport_main", "passport_reg", "license", "selfie"] as const
-              ).map((k) => (
-                <PhotoTile
-                  key={k}
-                  applicationId={application.id}
-                  kind={k}
-                  label={KIND_LABEL[k]}
-                  hasFile={fileKinds.has(k)}
-                  onZoom={() => setZoomed(k)}
-                />
-              ))}
+        {/* Документы внизу — большие плитки */}
+        <div className="border-t border-border px-6 py-5">
+          <div className="mb-3 flex items-baseline justify-between">
+            <div className="text-[12px] font-semibold uppercase tracking-wide text-muted">
+              Фото документов
             </div>
-            <div className="mt-2 text-[11px] text-muted-2">
-              Нажмите на фото для увеличения
+            <div className="text-[11px] text-muted-2">
+              {application.files.length} из 4 загружено · нажмите для увеличения
             </div>
-          </Section>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            {(["passport_main", "passport_reg", "license"] as const).map((k) => (
+              <DocumentTile
+                key={k}
+                applicationId={application.id}
+                kind={k}
+                label={KIND_LABEL[k]}
+                hasFile={fileKinds.has(k)}
+                onZoom={() => setZoomed(k)}
+              />
+            ))}
+          </div>
         </div>
 
         <footer className="flex flex-col gap-2 border-t border-border bg-surface-soft px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
@@ -202,6 +247,7 @@ export function NewApplicationModal({
           <img
             src={applicationFileUrl(application.id, zoomed)}
             alt={KIND_LABEL[zoomed]}
+            crossOrigin="use-credentials"
             className="max-h-[90vh] max-w-full rounded-lg object-contain"
             onClick={(e) => e.stopPropagation()}
           />
@@ -211,19 +257,58 @@ export function NewApplicationModal({
   );
 }
 
+// ─── helpers ──────────────────────────────────────────────────────────────
+
+function Portrait({
+  applicationId,
+  hasSelfie,
+  onZoom,
+}: {
+  applicationId: number;
+  hasSelfie: boolean;
+  onZoom: () => void;
+}) {
+  if (!hasSelfie) {
+    return (
+      <div className="flex aspect-square w-full items-center justify-center rounded-2xl border-2 border-dashed border-border bg-surface-soft text-muted">
+        <User size={48} />
+      </div>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={onZoom}
+      className="group aspect-square w-full overflow-hidden rounded-2xl border border-border bg-surface-soft transition-transform hover:scale-[1.02] hover:border-ink"
+      title="Открыть селфи"
+    >
+      <img
+        src={applicationFileUrl(applicationId, "selfie")}
+        alt="Селфи"
+        crossOrigin="use-credentials"
+        className="h-full w-full object-cover transition-opacity group-hover:opacity-90"
+      />
+    </button>
+  );
+}
+
 function Section({
   title,
   children,
 }: {
-  title: string;
+  title?: string;
   children: React.ReactNode;
 }) {
   return (
     <div>
-      <div className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-muted">
-        {title}
+      {title && (
+        <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted">
+          {title}
+        </div>
+      )}
+      <div className="rounded-xl border border-border bg-white p-3">
+        {children}
       </div>
-      <div className="rounded-xl border border-border bg-white p-3">{children}</div>
     </div>
   );
 }
@@ -240,7 +325,7 @@ function Row({
   if (multiline) {
     return (
       <div className="border-b border-border py-2 last:border-0">
-        <div className="text-[12px] uppercase tracking-wide text-muted">
+        <div className="text-[11px] uppercase tracking-wide text-muted">
           {label}
         </div>
         <div className="mt-0.5 text-[14px] text-ink">{value || "—"}</div>
@@ -249,7 +334,7 @@ function Row({
   }
   return (
     <div className="flex items-baseline justify-between gap-3 border-b border-border py-2 last:border-0">
-      <span className="text-[12px] uppercase tracking-wide text-muted">
+      <span className="text-[11px] uppercase tracking-wide text-muted">
         {label}
       </span>
       <span className="text-right text-[14px] font-medium text-ink">
@@ -259,7 +344,7 @@ function Row({
   );
 }
 
-function PhotoTile({
+function DocumentTile({
   applicationId,
   kind,
   label,
@@ -274,29 +359,30 @@ function PhotoTile({
 }) {
   if (!hasFile) {
     return (
-      <div className="flex aspect-square flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-border bg-surface-soft text-[11px] text-muted-2">
-        <span>{label}</span>
+      <div className="flex aspect-[3/2] flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-border bg-surface-soft p-2 text-center text-[11px] text-muted-2">
+        <span className="font-semibold">{label}</span>
         <span>не загружено</span>
       </div>
     );
   }
-  const url = applicationFileUrl(applicationId, kind);
   return (
     <button
       type="button"
       onClick={onZoom}
-      className="group overflow-hidden rounded-lg border border-border bg-surface-soft text-left transition-transform hover:scale-[1.02] hover:border-ink"
+      className="group flex aspect-[3/2] flex-col overflow-hidden rounded-xl border border-border bg-surface-soft text-left transition-transform hover:scale-[1.02] hover:border-ink"
       title={`Открыть «${label}»`}
     >
-      <img
-        src={url}
-        alt={label}
-        className="aspect-square w-full object-cover transition-opacity group-hover:opacity-90"
-        onError={(e) => {
-          (e.currentTarget as HTMLImageElement).style.display = "none";
-        }}
-      />
-      <div className="px-2 py-1 text-[11px] font-medium text-ink">{label}</div>
+      <div className="relative flex-1 overflow-hidden">
+        <img
+          src={applicationFileUrl(applicationId, kind)}
+          alt={label}
+          crossOrigin="use-credentials"
+          className="h-full w-full object-cover transition-opacity group-hover:opacity-90"
+        />
+      </div>
+      <div className="bg-white px-2 py-1 text-[11px] font-semibold text-ink">
+        {label}
+      </div>
     </button>
   );
 }

@@ -167,7 +167,11 @@ export async function clientApplicationsRoutes(app: FastifyInstance) {
       reply
         .header("Content-Type", meta.mimeType)
         .header("Content-Length", meta.size)
-        .header("Cache-Control", "private, max-age=300");
+        .header("Cache-Control", "private, max-age=300")
+        // helmet по умолчанию ставит CORP: same-origin → блокирует <img>
+        // на crm.hulkbike.ru (web) при загрузке с api.hulkbike.ru (api).
+        // Разрешаем cross-origin — браузер поверит CORS-заголовкам.
+        .header("Cross-Origin-Resource-Policy", "cross-origin");
       return reply.send(stream);
     },
   );
