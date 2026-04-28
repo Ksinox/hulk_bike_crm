@@ -826,15 +826,36 @@ function convertToTiptapFriendlyHtml(html: string): string {
   // Прочие <b>...</b> внутри текста (не префиксы) — оставляем как есть,
   // Tiptap их распознаёт как bold mark.
 
-  // .para и .meta-row тоже могут встречаться — упрощаем в простые p.
+  // === Конвертация всех известных <div class="X">…</div> в <p>.
+  // Tiptap не любит произвольные div'ы внутри документа — пилюли
+  // начинают «уезжать» в чужие блоки при wrap. Берём конкретный div
+  // с классом и заменяем парой <p>...</p> через non-greedy match.
+  // Безопасно т.к. в наших шаблонах нет вложенных div одного класса.
+  const divToP: Array<[string, string]> = [
+    ["para", '<p style="text-align: justify">'],
+    [
+      "subtitle",
+      '<p style="text-align: center; font-size: 11pt; margin: 6pt 0">',
+    ],
+    ["meta-row", '<p style="text-align: justify">'],
+    ["para small", '<p style="text-align: justify; font-size: 10pt">'],
+    ["para keep-together", '<p style="text-align: justify">'],
+    ["keep-together", '<p>'],
+  ];
+  for (const [cls, openTag] of divToP) {
+    const escaped = cls.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re = new RegExp(
+      `<div class="${escaped}">([\\s\\S]*?)</div>`,
+      "g",
+    );
+    out = out.replace(re, `${openTag}$1</p>`);
+  }
+
+  // Подчищаем оставшиеся `<div class="...">…</div>` — конвертим в обычный
+  // <p> чтобы Tiptap их корректно отрисовал.
   out = out.replace(
-    /<div class="para">/g,
-    '<p style="text-align: justify">',
-  );
-  out = out.replace(/<\/div>(?=\s*<(?:p|h\d|ul|ol|table)\b)/g, "</p>");
-  out = out.replace(
-    /<div class="meta-row">/g,
-    '<p style="display: flex; justify-content: space-between">',
+    /<div class="[^"]*"[^>]*>([\s\S]*?)<\/div>/g,
+    "<p>$1</p>",
   );
 
   return out;

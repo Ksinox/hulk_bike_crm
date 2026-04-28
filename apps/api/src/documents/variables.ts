@@ -533,5 +533,33 @@ export function replaceFixtureWithPlaceholders(html: string): string {
     out = out.split(marker).join(pill(key));
   }
 
+  // === Убираем дублирующие подписи перед пилюлями ===
+  // clientBlock() и landlordBlock() в render.ts формируют блоки вида
+  // «Дата рождения 12.10.2004. Паспорт серия 0325 номер 514208. ...» —
+  // т.е. перед каждым значением идёт поясняющее слово. Само значение
+  // мы заменили на пилюлю (внутри которой уже есть label «Дата рождения»),
+  // поэтому слова перед пилюлей становятся ДУБЛЕМ. Вычищаем их регексом —
+  // редактор показывает чистый текст.
+  const dropPrefixes: Array<[RegExp, string]> = [
+    [/Дата рождения\s+(<span data-var="client\.birthDate")/g, "$1"],
+    [/Паспорт серия\s+(<span data-var="client\.passportSeries")/g, "$1"],
+    [/(?:номер|№)\s+(<span data-var="client\.passportNumber")/g, "$1"],
+    [/Дата выдачи\s+(<span data-var="client\.passportIssuedOn")/g, "$1"],
+    [/Кем выдан:?\s+(<span data-var="client\.passportIssuer")/g, "$1"],
+    [/Код подразделения\s+(<span data-var="client\.passportDivisionCode")/g, "$1"],
+    [/Зарегистрирован:?\s+(<span data-var="client\.passportRegistration")/g, "$1"],
+    [/Тел\.\s*(<span data-var="client\.phone")/g, "$1"],
+    // Аналогично для landlord.* — landlordBlock ставит те же подписи.
+    [/паспорт серия\s+(<span data-var="landlord\.passportSeries")/gi, "$1"],
+    [/(?:номер|№)\s+(<span data-var="landlord\.passportNumber")/g, "$1"],
+    [/выдан\s+(<span data-var="landlord\.passportIssuedOn")/g, "$1"],
+    [/код подразделения\s+(<span data-var="landlord\.passportDivisionCode")/gi, "$1"],
+    [/Зарегистрирован:?\s+(<span data-var="landlord\.registrationAddress")/g, "$1"],
+    [/Тел\.\s*(<span data-var="landlord\.phone")/g, "$1"],
+  ];
+  for (const [re, replacement] of dropPrefixes) {
+    out = out.replace(re, replacement);
+  }
+
   return out;
 }

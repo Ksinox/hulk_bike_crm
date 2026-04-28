@@ -6,7 +6,7 @@ import { Table } from "@tiptap/extension-table";
 import { TableRow } from "@tiptap/extension-table-row";
 import { TableCell } from "@tiptap/extension-table-cell";
 import { TableHeader } from "@tiptap/extension-table-header";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Bold,
   Italic,
@@ -75,7 +75,13 @@ export function TemplateEditor({
     [flatCatalog],
   );
 
+  // Tick для принудительного ре-рендера toolbar при изменении выделения
+  // или transaction'а — иначе editor.isActive(...) показывает stale state.
+  const [, forceRerender] = useState(0);
+
   const editor = useEditor({
+    onSelectionUpdate: () => forceRerender((t) => t + 1),
+    onTransaction: () => forceRerender((t) => t + 1),
     extensions: [
       // Отключаем стандартные heading и paragraph в StarterKit и
       // заменяем на наши расширенные версии (с сохранением class/style).
