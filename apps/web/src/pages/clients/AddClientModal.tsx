@@ -196,7 +196,15 @@ function docToUploaded(
 
 function initialForm(editing: Client | null): Form {
   if (!editing) return EMPTY;
+  // Лог удобен на проде в DevTools, чтобы увидеть какие поля реально
+  // прилетели из API в форму редактирования. Если editing.passport*
+  // пустые — значит adaptClient/useApiClients не пробросил их (или
+  // user смотрит старый bundle до hard-reload).
+  // eslint-disable-next-line no-console
+  console.info("[initialForm] editing:", editing);
   const d = getClientDetails(editing);
+  // eslint-disable-next-line no-console
+  console.info("[initialForm] details:", d);
   const sameAddr =
     d.liveAddr === "совпадает с регистрацией" || d.liveAddr === d.regAddr;
   return {
