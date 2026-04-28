@@ -1,4 +1,4 @@
-import { Node, mergeAttributes } from "@tiptap/core";
+import { Node } from "@tiptap/core";
 
 /**
  * Tiptap node для переменной — отображается в редакторе как «пилюля»
@@ -43,18 +43,25 @@ export const VariableNode = Node.create({
     ];
   },
 
-  renderHTML({ HTMLAttributes, node }) {
+  renderHTML({ node }) {
     const attrs = node.attrs as { varKey: string; varLabel: string };
     // В пилюле показываем человеческое название («ФИО арендатора»),
     // а технический ключ хранится только в data-var. Так пользователь
     // не видит формул вроде {{client.passportSeries}} — только понятный
     // русский текст.
+    //
+    // Атрибуты собираем явно (data-var → data-label → class) вместо
+    // mergeAttributes, чтобы порядок был стабильным. Регекс на бекенде
+    // (substituteVariables) теперь терпим к любому порядку, но детерми-
+    // нированный вывод упрощает любые будущие парсеры/тесты.
     const display = attrs.varLabel?.trim() || attrs.varKey;
     return [
       "span",
-      mergeAttributes(HTMLAttributes, {
+      {
+        "data-var": attrs.varKey,
+        "data-label": attrs.varLabel,
         class: "tpl-var",
-      }),
+      },
       display,
     ];
   },

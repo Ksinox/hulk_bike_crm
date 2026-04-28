@@ -1,4 +1,5 @@
 import { useEditor, EditorContent } from "@tiptap/react";
+import { Extension } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import Underline from "@tiptap/extension-underline";
 import TextAlign from "@tiptap/extension-text-align";
@@ -33,8 +34,32 @@ import {
   useApiVariableCatalog,
   type VariableDescriptor,
 } from "@/lib/api/document-templates";
-import { useMemo } from "react";
 import "./editor.css";
+
+/**
+ * Tab внутри редактора шаблонов открывает то же `@`-меню переменных —
+ * чтобы пользователю не нужно было набирать собачку руками.
+ *
+ * Реализовано как программный `@`-триггер: вставляем символ `@` в текущую
+ * позицию курсора, Mention extension сам подхватывает его и поднимает
+ * popup. При выборе пункта Mention.command удаляет диапазон от `@` до
+ * курсора и подставляет VariableNode, поэтому `@` в тексте не остаётся.
+ *
+ * Внутри таблицы Tab сохраняет штатное поведение (переход между
+ * ячейками) — наш handler возвращает false, событие проваливается дальше
+ * к табличному расширению.
+ */
+const VariableTabTrigger = Extension.create({
+  name: "variableTabTrigger",
+  addKeyboardShortcuts() {
+    return {
+      Tab: ({ editor }) => {
+        if (editor.isActive("table")) return false;
+        return editor.chain().focus().insertContent("@").run();
+      },
+    };
+  },
+});
 
 export type TemplateEditorHandle = {
   getHtml: () => string;
@@ -61,19 +86,23 @@ export function TemplateEditor({
   onChange?: (html: string) => void;
   editorRef?: React.MutableRefObject<TemplateEditorHandle | null>;
 }) {
-  // Каталог переменных нужен для @-меню (mention extension).
-  // Получаем синхронно, при первом рендере он ещё может быть пустым —
-  // suggestion использует функцию-геттер, которая каждый раз заглядывает
-  // в актуальный caталог.
+  // Каталог переменных нужен для @-меню (mention extension). Грузится
+  // асинхронно через React Query, на первом рендере пуст — поэтому
+  // используем настоящий useRef со стабильной ссылкой и обновляем
+  // его .current в useEffect когда данные приходят. Замыкание в
+  // createVariableMention видит этот же объект и читает актуальный
+  // массив на каждом вызове items().
+  //
+  // ВАЖНО: useEditor.extensions фиксируется один раз при монтировании
+  // (Tiptap не пересоздаёт расширения при изменении props), так что
+  // обычный useMemo({ current: flatCatalog }, [flatCatalog]) тут не
+  // работал — extension всегда видел исходный объект с пустым current.
   const catalogQ = useApiVariableCatalog();
-  const flatCatalog: VariableDescriptor[] = useMemo(() => {
+  const flatCatalogRef = useRef<VariableDescriptor[]>([]);
+  useEffect(() => {
     const groups = catalogQ.data ?? [];
-    return groups.flatMap((g) => g.variables);
+    flatCatalogRef.current = groups.flatMap((g) => g.variables);
   }, [catalogQ.data]);
-  const flatCatalogRef = useMemo(
-    () => ({ current: flatCatalog }),
-    [flatCatalog],
-  );
 
   // Tick для принудительного ре-рендера toolbar при изменении выделения
   // или transaction'а — иначе editor.isActive(...) показывает stale state.
@@ -103,6 +132,7 @@ export function TemplateEditor({
       TableCell,
       VariableNode,
       createVariableMention(() => flatCatalogRef.current),
+      VariableTabTrigger,
     ],
     content: initialHtml || "<p></p>",
     onUpdate: ({ editor }) => {

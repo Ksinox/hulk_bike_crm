@@ -292,8 +292,13 @@ export function resolveVariable(key: string, b: Bundle): string {
  * шаблон документа.
  */
 export function substituteVariables(html: string, b: Bundle): string {
-  // Сначала <span data-var="...">...</span>
-  const spanRe = /<span\s+data-var="([^"]+)"[^>]*>[\s\S]*?<\/span>/g;
+  // Сначала <span ... data-var="...">...</span>
+  // Регекс терпим к любому порядку атрибутов: Tiptap при сериализации
+  // через mergeAttributes может ставить class="tpl-var" раньше data-var,
+  // поэтому жёсткое `<span\s+data-var=` пропускало плашки. VariableNode
+  // имеет atom: true — внутри плашки нет вложенных span, non-greedy
+  // `[\s\S]*?` корректно остановится на ближайшем `</span>`.
+  const spanRe = /<span\b[^>]*?\bdata-var="([^"]+)"[^>]*>[\s\S]*?<\/span>/gi;
   let out = html.replace(spanRe, (_match, key: string) =>
     escapeForHtml(resolveVariable(key, b)),
   );
