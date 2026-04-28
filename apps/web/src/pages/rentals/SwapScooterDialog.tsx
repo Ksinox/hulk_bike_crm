@@ -5,7 +5,7 @@ import { toast } from "@/lib/toast";
 import { useApiScooters } from "@/lib/api/scooters";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { useSwapScooter } from "@/lib/api/rentals";
-import type { Rental } from "@/lib/mock/rentals";
+import { MODEL_LABEL, type Rental } from "@/lib/mock/rentals";
 
 type OldStatus = "rental_pool" | "repair";
 
@@ -67,35 +67,46 @@ export function SwapScooterDialog({
       )
       .filter((s) => {
         if (!q) return true;
-        const m = models.find((mo) => mo.id === s.modelId);
-        const hay = `${s.name} ${m?.name ?? ""}`.toLowerCase();
+        // Имя модели для поиска: приоритет — связь по FK, fallback —
+        // enum-метка из MODEL_LABEL (всегда заполнена при создании скутера).
+        const linked = models.find((mo) => mo.id === s.modelId);
+        const label = linked?.name ?? MODEL_LABEL[s.model] ?? "";
+        const hay = `${s.name} ${label}`.toLowerCase();
         return hay.includes(q);
       });
   }, [scooters, models, search, rental.scooterId]);
 
-  // Группируем по модели для красивых блоков плиток
+  // Группируем по enum-полю s.model — оно заполнено всегда (при создании
+  // скутера модель обязательна). Поле modelId — это опциональная FK на
+  // справочник scooter_models, у части скутеров она пустая. Если FK всё-таки
+  // проставлена — берём более точное название из справочника (например
+  // «Yamaha Jog 80cc» вместо просто «Yamaha Jog»).
   const byModel = useMemo(() => {
-    const map = new Map<number | null, typeof available>();
+    const map = new Map<string, typeof available>();
     for (const s of available) {
-      const key = s.modelId ?? null;
+      const key = s.model; // enum: jog/gear/honda/tank
       const arr = map.get(key) ?? [];
       arr.push(s);
       map.set(key, arr);
     }
-    // sort scooters внутри модели по имени
     for (const arr of map.values()) {
       arr.sort((a, b) => a.name.localeCompare(b.name, "ru"));
     }
-    // Сортируем модели — сначала с большим количеством, затем по имени
     return Array.from(map.entries())
-      .map(([modelId, items]) => ({
-        modelId,
-        modelName:
-          modelId == null
-            ? "Без модели"
-            : models.find((m) => m.id === modelId)?.name ?? "Модель неизвестна",
-        items,
-      }))
+      .map(([modelEnum, items]) => {
+        // Если у всех скутеров группы одинаковая FK на scooter_models —
+        // используем её красивое имя. Иначе — fallback на MODEL_LABEL.
+        const firstModelId = items[0]?.modelId;
+        const sameFk =
+          firstModelId != null &&
+          items.every((it) => it.modelId === firstModelId);
+        const linked = sameFk
+          ? models.find((m) => m.id === firstModelId)
+          : null;
+        const modelName =
+          linked?.name ?? MODEL_LABEL[modelEnum as keyof typeof MODEL_LABEL] ?? modelEnum;
+        return { modelEnum, modelName, items };
+      })
       .sort((a, b) => {
         if (b.items.length !== a.items.length)
           return b.items.length - a.items.length;
@@ -262,7 +273,7 @@ export function SwapScooterDialog({
           ) : (
             <div className="flex flex-col gap-4">
               {byModel.map((group) => (
-                <div key={group.modelId ?? "none"}>
+                <div key={group.modelEnum}>
                   <div className="mb-2 flex items-baseline gap-2">
                     <div className="text-[12px] font-bold text-ink">
                       {group.modelName}
@@ -314,11 +325,12 @@ export function SwapScooterDialog({
                 {scooters.find((x) => x.id === selectedId)?.name ?? "—"}
               </b>{" "}
               ·{" "}
-              {models.find(
-                (m) =>
-                  m.id ===
-                  scooters.find((x) => x.id === selectedId)?.modelId,
-              )?.name ?? "модель"}
+              {(() => {
+                const sel = scooters.find((x) => x.id === selectedId);
+                if (!sel) return "модель";
+                const linked = models.find((m) => m.id === sel.modelId);
+                return linked?.name ?? MODEL_LABEL[sel.model] ?? "модель";
+              })()}
             </div>
           ) : (
             <div className="mb-2 text-[11px] text-muted-2">
