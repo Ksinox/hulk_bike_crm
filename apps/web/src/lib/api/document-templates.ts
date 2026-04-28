@@ -60,6 +60,21 @@ export function useApiDocumentTemplateByKey(key: string | null) {
   });
 }
 
+/** Запрашивает «голый» системный шаблон (с пилюлями переменных) для редактора. */
+export function useSystemTemplateDefault(type: string | null) {
+  return useQuery({
+    enabled: !!type,
+    queryKey: [...documentTemplatesKeys.all, "system-default", type ?? ""],
+    staleTime: 5 * 60 * 1000,
+    queryFn: () =>
+      api
+        .get<{ html: string }>(
+          `/api/document-templates/system-default?type=${encodeURIComponent(type ?? "")}`,
+        )
+        .then((r) => r.html),
+  });
+}
+
 export function useApiVariableCatalog() {
   return useQuery({
     queryKey: documentTemplatesKeys.variables(),

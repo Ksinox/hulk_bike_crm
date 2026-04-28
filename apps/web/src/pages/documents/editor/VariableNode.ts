@@ -44,13 +44,18 @@ export const VariableNode = Node.create({
   },
 
   renderHTML({ HTMLAttributes, node }) {
-    const key = (node.attrs as { varKey: string }).varKey;
+    const attrs = node.attrs as { varKey: string; varLabel: string };
+    // В пилюле показываем человеческое название («ФИО арендатора»),
+    // а технический ключ хранится только в data-var. Так пользователь
+    // не видит формул вроде {{client.passportSeries}} — только понятный
+    // русский текст.
+    const display = attrs.varLabel?.trim() || attrs.varKey;
     return [
       "span",
       mergeAttributes(HTMLAttributes, {
         class: "tpl-var",
       }),
-      `{{${key}}}`,
+      display,
     ];
   },
 

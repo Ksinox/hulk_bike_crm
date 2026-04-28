@@ -124,12 +124,13 @@ export function VariablesSidebar({
                       onClick={() => onInsert(v)}
                       onDragStart={(e) => {
                         // Передаём данные переменной через DataTransfer.
-                        // Tiptap parseHTML спарсит <span data-var=...>
-                        // в наш VariableNode. Текст {{key}} — fallback
-                        // если drop в обычное textarea.
-                        const html = `<span data-var="${escape(v.key)}" data-label="${escape(v.label)}" class="tpl-var">{{${v.key}}}</span>`;
+                        // Внутри пилюли — РУССКОЕ название (label), технический
+                        // ключ — только в data-var. Tiptap parseHTML спарсит
+                        // <span data-var=...> в наш VariableNode и извлечёт
+                        // и varKey и varLabel из атрибутов.
+                        const html = `<span data-var="${escape(v.key)}" data-label="${escape(v.label)}" class="tpl-var">${escape(v.label)}</span>`;
                         e.dataTransfer.setData("text/html", html);
-                        e.dataTransfer.setData("text/plain", `{{${v.key}}}`);
+                        e.dataTransfer.setData("text/plain", v.label);
                         e.dataTransfer.effectAllowed = "copy";
                       }}
                       title={`Вставить в редактор: ${v.label}`}

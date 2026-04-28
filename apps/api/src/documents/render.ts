@@ -692,7 +692,11 @@ function pluralRu(n: number, forms: [string, string, string]): string {
 /* ============ точка входа ============ */
 
 import { documentTemplates } from "../db/schema.js";
-import { substituteVariables } from "./variables.js";
+import {
+  makeFixtureBundle,
+  replaceFixtureWithPlaceholders,
+  substituteVariables,
+} from "./variables.js";
 
 /**
  * Если в БД есть пользовательский override для данного типа документа —
@@ -736,12 +740,15 @@ const TITLES: Record<DocumentType, string> = {
 export async function renderDocumentHtml(
   type: DocumentType,
   bundle: Bundle,
+  opts?: { skipOverride?: boolean },
 ): Promise<string> {
   // 1. Если есть пользовательский override — используем его + подстановка.
-  const override = await getOverrideHtml(type);
-  if (override) {
-    const substituted = substituteVariables(override, bundle);
-    return wrapAsPage(TITLES[type], substituted);
+  if (!opts?.skipOverride) {
+    const override = await getOverrideHtml(type);
+    if (override) {
+      const substituted = substituteVariables(override, bundle);
+      return wrapAsPage(TITLES[type], substituted);
+    }
   }
   // 2. Иначе — системный шаблон (хардкод).
   switch (type) {
@@ -756,6 +763,27 @@ export async function renderDocumentHtml(
     case "purchase_deposit":
       return tplPurchaseDeposit(bundle);
   }
+}
+
+/**
+ * Генерирует HTML «голого» системного шаблона для редактора —
+ * с пилюлями переменных вместо реальных значений. Используется в
+ * /api/document-templates/system-default endpoint при первом открытии
+ * редактирования системного шаблона: пользователь видит весь оригинал
+ * договора с пилюлями переменных и может править/удалять/добавлять.
+ */
+export async function renderSystemTemplateForEditor(
+  type: DocumentType,
+): Promise<string> {
+  const fixtureBundle = makeFixtureBundle();
+  const html = await renderDocumentHtml(type, fixtureBundle, {
+    skipOverride: true,
+  });
+  // Извлекаем body из готовой HTML-страницы — в редактор сохраняем
+  // только содержимое, без <html><head><body> обвязки.
+  const bodyMatch = html.match(/<div class="wrap">([\s\S]*?)<\/div>\s*<\/body>/);
+  const inner = bodyMatch ? bodyMatch[1] : html;
+  return replaceFixtureWithPlaceholders(inner ?? "");
 }
 
 /**

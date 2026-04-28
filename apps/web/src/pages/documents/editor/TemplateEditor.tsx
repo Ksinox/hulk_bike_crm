@@ -27,6 +27,12 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { VariableNode } from "./VariableNode";
+import { createVariableMention } from "./createVariableMention";
+import {
+  useApiVariableCatalog,
+  type VariableDescriptor,
+} from "@/lib/api/document-templates";
+import { useMemo } from "react";
 import "./editor.css";
 
 export type TemplateEditorHandle = {
@@ -54,6 +60,20 @@ export function TemplateEditor({
   onChange?: (html: string) => void;
   editorRef?: React.MutableRefObject<TemplateEditorHandle | null>;
 }) {
+  // Каталог переменных нужен для @-меню (mention extension).
+  // Получаем синхронно, при первом рендере он ещё может быть пустым —
+  // suggestion использует функцию-геттер, которая каждый раз заглядывает
+  // в актуальный caталог.
+  const catalogQ = useApiVariableCatalog();
+  const flatCatalog: VariableDescriptor[] = useMemo(() => {
+    const groups = catalogQ.data ?? [];
+    return groups.flatMap((g) => g.variables);
+  }, [catalogQ.data]);
+  const flatCatalogRef = useMemo(
+    () => ({ current: flatCatalog }),
+    [flatCatalog],
+  );
+
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -70,6 +90,7 @@ export function TemplateEditor({
       TableHeader,
       TableCell,
       VariableNode,
+      createVariableMention(() => flatCatalogRef.current),
     ],
     content: initialHtml || "<p></p>",
     onUpdate: ({ editor }) => {

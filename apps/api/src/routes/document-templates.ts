@@ -6,6 +6,10 @@ import { documentTemplates } from "../db/schema.js";
 import { logActivity } from "../services/activityLog.js";
 import { requireRole } from "../auth/plugin.js";
 import { VARIABLE_CATALOG } from "../documents/variables.js";
+import {
+  renderSystemTemplateForEditor,
+  type DocumentType,
+} from "../documents/render.js";
 
 /**
  * Пользовательские шаблоны документов (overrides системных + custom).
@@ -41,6 +45,23 @@ function getUserId(req: FastifyRequest): number | null {
 export async function documentTemplatesRoutes(app: FastifyInstance) {
   /** Каталог переменных для UI sidebar редактора. */
   app.get("/variables", async () => ({ groups: VARIABLE_CATALOG }));
+
+  /**
+   * Возвращает HTML системного шаблона с пилюлями переменных вместо
+   * реальных значений — стартовая точка при «Редактировать» из таба
+   * «Шаблоны документов» когда у пользователя ещё нет своего override.
+   */
+  app.get<{ Querystring: { type?: string } }>(
+    "/system-default",
+    async (req, reply) => {
+      const allowed = ["contract", "contract_full", "act_transfer", "act_return", "purchase_deposit"];
+      const t = req.query.type ?? "";
+      if (!allowed.includes(t))
+        return reply.code(400).send({ error: "bad type" });
+      const html = await renderSystemTemplateForEditor(t as DocumentType);
+      return { html };
+    },
+  );
 
   app.get("/", async () => {
     const rows = await db

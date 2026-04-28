@@ -297,3 +297,226 @@ function escapeForHtml(s: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
 }
+
+/** Экранирует значение для использования внутри атрибута HTML. */
+function escapeAttr(s: string): string {
+  return escapeForHtml(s).replace(/"/g, "&quot;");
+}
+
+/**
+ * Делает «фикстура»-Bundle где каждое поле имеет уникальное значение —
+ * специальный маркер. После прогона через системный шаблон договора в
+ * HTML появятся эти маркеры; их потом заменяем на пилюли <span data-var>
+ * через replaceFixtureWithPlaceholders() ниже. Это даёт «голый» шаблон
+ * для редактора (с переменными вместо подставленных значений).
+ *
+ * Уникальные даты подобраны не пересекающимися — чтобы fmtDateRu/Short
+ * выдавали разные строки для разных полей (client.birthDate ≠
+ * client.passportIssuedOn ≠ rental.startAt и т.д.).
+ */
+export function makeFixtureBundle(): Bundle {
+  // Каждой дате — свой день, чтобы строки 01.01.1990, 02.02.1990 и т.д.
+  // не сталкивались. Важно для replaceFixtureWithPlaceholders.
+  const dt = (m: number, d: number, h = 12, mm = 0) =>
+    new Date(`1990-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}T${String(h).padStart(2, "0")}:${String(mm).padStart(2, "0")}:00.000Z`);
+
+  return {
+    rental: {
+      id: 1234567,
+      clientId: 0,
+      scooterId: 0,
+      parentRentalId: null,
+      status: "active",
+      startAt: dt(3, 3, 9, 0),
+      endPlannedAt: dt(4, 4, 9, 0),
+      endActualAt: null,
+      tariffPeriod: "week",
+      rate: 5555,
+      days: 4242,
+      sum: 7777777,
+      deposit: 8888888,
+      depositReturned: false,
+      depositItem: null,
+      paymentMethod: "cash",
+      paymentConfirmed: false,
+      paymentConfirmedAt: null,
+      paymentConfirmerRole: null,
+      damageAmount: 0,
+      paidTowardDamage: 0,
+      sourceChannel: null,
+      note: null,
+      archivedAt: null,
+      archivedBy: null,
+      contractNumber: null,
+      equipmentJson: null,
+      confirmDepositReceived: false,
+      createdAt: dt(1, 1),
+      updatedAt: dt(1, 2),
+    } as unknown as Bundle["rental"],
+    client: {
+      id: 0,
+      name: "__PH_clientName__",
+      phone: "__PH_clientPhone__",
+      extraPhone: null,
+      birthDate: dt(5, 5).toISOString().slice(0, 10),
+      passportSeries: "__PH_clientPassSeries__",
+      passportNumber: "__PH_clientPassNumber__",
+      passportIssuedOn: dt(6, 6).toISOString().slice(0, 10),
+      passportIssuer: "__PH_clientPassIssuer__",
+      passportDivisionCode: "__PH_clientPassDivCode__",
+      passportRegistration: "__PH_clientPassReg__",
+      rating: 0,
+      sourceCustom: null,
+      source: null,
+      sourceUpdatedAt: null,
+      tags: null,
+      notes: null,
+      addressActual: null,
+      mustChangePassword: false,
+      createdAt: dt(1, 1),
+      updatedAt: dt(1, 2),
+    } as unknown as Bundle["client"],
+    scooter: {
+      id: 0,
+      name: "__PH_scooterName__",
+      modelId: 0,
+      model: "gear",
+      mileage: 1234567,
+      baseStatus: "rental_pool",
+      vin: "__PH_scooterVin__",
+      engineNo: "__PH_scooterEngineNo__",
+      frameNumber: "__PH_scooterFrameNumber__",
+      year: 1989,
+      color: "__PH_scooterColor__",
+      plate: "__PH_scooterPlate__",
+      purchasePrice: 9999999,
+      avatarKey: null,
+      archivedAt: null,
+      createdAt: dt(1, 1),
+      updatedAt: dt(1, 2),
+    } as unknown as Bundle["scooter"],
+    model: {
+      id: 0,
+      name: "__PH_modelName__",
+      avatarKey: null,
+      avatarFileName: null,
+      quickPick: false,
+      active: true,
+      dayRate: 0,
+      shortRate: 0,
+      weekRate: 0,
+      monthRate: 0,
+      maxSpeedKmh: null,
+      tankVolumeL: null,
+      fuelLPer100Km: null,
+      coolingType: null,
+      note: null,
+      createdAt: dt(1, 1),
+      updatedAt: dt(1, 2),
+    } as unknown as Bundle["model"],
+  };
+}
+
+/**
+ * После рендера системного шаблона на fixture-bundle проходим регексом
+ * по HTML и заменяем все маркеры/специальные значения на пилюли
+ * <span data-var="X.Y" class="tpl-var">{{X.Y}}</span>.
+ *
+ * Замены упорядочены так, чтобы более длинные/специфичные шли первыми
+ * (например «8 888 888» — депозит, не пересекается с другими цифрами).
+ */
+export function replaceFixtureWithPlaceholders(html: string): string {
+  // Ищем человеческое название переменной по ключу — чтобы внутри пилюли
+  // отображалось «Серия паспорта», а не {{client.passportSeries}}.
+  const labelByKey = new Map<string, string>();
+  for (const g of VARIABLE_CATALOG) {
+    for (const v of g.variables) {
+      labelByKey.set(v.key, v.label);
+    }
+  }
+  const pill = (key: string) => {
+    const label = labelByKey.get(key) ?? key;
+    return `<span data-var="${key}" data-label="${escapeAttr(label)}" class="tpl-var">${escapeForHtml(label)}</span>`;
+  };
+
+  // Текстовые маркеры — простой replaceAll.
+  const textMap: Record<string, string> = {
+    "__PH_clientName__": "client.name",
+    "__PH_clientPhone__": "client.phone",
+    "__PH_clientPassSeries__": "client.passportSeries",
+    "__PH_clientPassNumber__": "client.passportNumber",
+    "__PH_clientPassIssuer__": "client.passportIssuer",
+    "__PH_clientPassDivCode__": "client.passportDivisionCode",
+    "__PH_clientPassReg__": "client.passportRegistration",
+    "__PH_scooterName__": "scooter.name",
+    "__PH_scooterVin__": "scooter.frameNumber",
+    "__PH_scooterEngineNo__": "scooter.engineNo",
+    "__PH_scooterFrameNumber__": "scooter.frameNumber",
+    "__PH_scooterColor__": "scooter.color",
+    "__PH_scooterPlate__": "scooter.frameNumber",
+    "__PH_modelName__": "model.name",
+  };
+
+  let out = html;
+  for (const [marker, key] of Object.entries(textMap)) {
+    out = out.split(marker).join(pill(key));
+  }
+
+  // Численные маркеры — частоты «4 242», «5 555», «7 777 777», «8 888 888»,
+  // «9 999 999», «1 234 567», «1989» — типичны и могут пересечься с другими
+  // цифрами. Делаем замену с учётом возможных пробелов между разрядами
+  // (toLocaleString ставит non-breaking space).
+  const numericMap: Array<[string, string]> = [
+    ["1234567", "rental.id"],          // rental.id (без форматирования)
+    ["1 234 567", "scooter.mileage"], // mileage
+    ["1 234 567", "scooter.mileage"],
+    ["9 999 999", "scooter.purchasePrice"],
+    ["9 999 999", "scooter.purchasePrice"],
+    ["8 888 888", "rental.deposit"],
+    ["8 888 888", "rental.deposit"],
+    ["7 777 777", "rental.sum"],
+    ["7 777 777", "rental.sum"],
+    ["5 555", "rental.rate"],
+    ["5 555", "rental.rate"],
+    ["4 242", "rental.days"],
+    ["4 242", "rental.days"],
+    ["38 885", "rental.weeklyAmount"], // 5555*7=38885
+    ["38 885", "rental.weeklyAmount"],
+    ["1989", "scooter.year"],
+  ];
+  for (const [marker, key] of numericMap) {
+    out = out.split(marker).join(pill(key));
+  }
+
+  // Денежные «прописью» — moneyWords(7777777) даёт длинную фразу «Семь миллионов...»
+  // Их сложно надёжно ловить regex. Оставляем как есть в тексте — пользователь
+  // увидит дублирующее представление и сам заменит на нужную переменную через
+  // sidebar (rental.sumWords / depositWords / scooter.purchasePriceWords).
+
+  // Даты — порядок важен (длинные форматы раньше, чтобы не сожрало "03.03"
+  // от "03.03.1990г." при раннем match).
+  const dateMap: Array<[string, string]> = [
+    ["03.03.90г.", "rental.startDateShort"],
+    ["04.04.90г.", "rental.endDateShort"],
+    ["05.05.90г.", "client.birthDate"],
+    ["06.06.90г.", "client.passportIssuedOn"],
+    ["03.03.1990", "rental.startDate"],
+    ["04.04.1990", "rental.endDate"],
+    ["05.05.1990", "client.birthDate"],
+    ["06.06.1990", "client.passportIssuedOn"],
+  ];
+  for (const [marker, key] of dateMap) {
+    out = out.split(marker).join(pill(key));
+  }
+
+  // Время (МСК) — fmtTimeMsk прибавляет 3ч к UTC. dt(3,3,9,0) = 09:00 UTC = 12:00 МСК.
+  const timeMap: Array<[string, string]> = [
+    ["12:00", "rental.startTime"],
+    // endPlannedAt тоже 09:00 UTC = 12:00 МСК — совпадает; берём один.
+  ];
+  for (const [marker, key] of timeMap) {
+    out = out.split(marker).join(pill(key));
+  }
+
+  return out;
+}

@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, Eye, Save, Trash2, Loader2 } from "lucide-react";
+import { ArrowLeft, Eye, Save, Trash2, Loader2, PanelRightOpen, PanelRightClose } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
 import {
   useApiDocumentTemplateByKey,
   useDeleteDocumentTemplate,
   useSaveDocumentTemplate,
+  useSystemTemplateDefault,
   type VariableDescriptor,
   type VariableGroup,
 } from "@/lib/api/document-templates";
@@ -15,19 +16,21 @@ import {
 } from "./TemplateEditor";
 import { VariablesSidebar } from "./VariablesSidebar";
 
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
-
 /**
  * Полноэкранная страница редактирования одного шаблона.
  *
- * Загружает существующий пользовательский override (если есть) или
- * системный default (берём через initialFallbackHtml).
- * При изменениях — debounced auto-save (1.5 сек после последнего ввода).
+ * Источники начального содержимого (по приоритету):
+ *   1. Пользовательский override из БД (если есть)
+ *   2. initialFallbackHtml prop
+ *   3. Системный шаблон по умолчанию (через API
+ *      /document-templates/system-default) — для системных templateKey
+ *      типа contract_full / act_return
+ *   4. Пустой редактор с подсказкой
+ *
+ * Layout: справа выезжает sidebar с переменными (поверх редактора, не
+ * сжимая его). Кнопка «Переменные» в шапке закрывает/открывает.
+ *
+ * Auto-save через 1.5 сек после ввода.
  */
 export function TemplateEditorPage({
   templateKey,
@@ -42,6 +45,14 @@ export function TemplateEditorPage({
   onBack: () => void;
 }) {
   const existing = useApiDocumentTemplateByKey(templateKey);
+  // Авто-загрузка системного шаблона если в БД нет override.
+  // Применяется только для системных typeKey — custom-* шаблоны
+  // не имеют system default.
+  const isSystemKey = ["contract", "contract_full", "act_transfer", "act_return", "purchase_deposit"].includes(templateKey);
+  const systemDefault = useSystemTemplateDefault(
+    isSystemKey && existing.isFetched && !existing.data ? templateKey : null,
+  );
+
   const save = useSaveDocumentTemplate();
   const remove = useDeleteDocumentTemplate();
 
@@ -51,28 +62,46 @@ export function TemplateEditorPage({
   const [savingState, setSavingState] = useState<
     "idle" | "saving" | "saved" | "error"
   >("idle");
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
-  // Загрузка начального содержимого: либо override из БД, либо fallback,
-  // либо пустой редактор. Главное чтобы bodyHtml перестал быть null —
-  // иначе зависает на «Загружаем шаблон…».
+  // Загрузка начального содержимого (override → fallback → system → empty).
   useEffect(() => {
     if (existing.data) {
       setBodyHtml(existing.data.body);
       setSavedHtml(existing.data.body);
-    } else if (existing.isFetched && !existing.data) {
-      // Шаблона в БД нет — стартуем с fallback (системный текст) или с пустого.
-      const startHtml =
-        initialFallbackHtml ??
-        `<h1>${escapeHtml(templateName)}</h1>` +
-          `<p style="color:#666;font-size:11pt">Скопируйте сюда текст реального документа и проставьте переменные через сайдбар слева. При генерации документа из карточки аренды переменные подставятся автоматически.</p>`;
-      setBodyHtml(startHtml);
+      return;
+    }
+    if (existing.isFetched && !existing.data) {
+      // 1. initialFallbackHtml (если parent передал)
+      if (initialFallbackHtml != null) {
+        setBodyHtml(initialFallbackHtml);
+        setSavedHtml(null);
+        return;
+      }
+      // 2. systemDefault (если системный key и загружено)
+      if (systemDefault.data != null) {
+        setBodyHtml(systemDefault.data);
+        setSavedHtml(null);
+        return;
+      }
+      // 3. Если ещё ждём system default — не делаем пока ничего (loader)
+      if (isSystemKey && (systemDefault.isLoading || !systemDefault.isFetched)) {
+        return;
+      }
+      // 4. Совсем пусто — стартовая страница
+      setBodyHtml(
+        `<p style="color:#666;font-size:11pt">Скопируйте сюда текст реального документа и проставьте переменные через сайдбар. При генерации документа из карточки аренды переменные подставятся автоматически.</p>`,
+      );
       setSavedHtml(null);
     }
   }, [
     existing.data,
     existing.isFetched,
     initialFallbackHtml,
-    templateName,
+    isSystemKey,
+    systemDefault.data,
+    systemDefault.isFetched,
+    systemDefault.isLoading,
   ]);
 
   // Debounced auto-save.
@@ -94,7 +123,6 @@ export function TemplateEditorPage({
         });
         setSavedHtml(bodyHtml);
         setSavingState("saved");
-        // Через 1.5с скрываем «Сохранено».
         window.setTimeout(() => setSavingState("idle"), 1500);
       } catch (e) {
         setSavingState("error");
@@ -112,26 +140,14 @@ export function TemplateEditorPage({
   };
 
   const insertGroup = (g: VariableGroup) => {
-    if (!editorRef.current) return;
-    // Вставляем все переменные группы в одну строку через запятую как
-    // быстрый старт для блока реквизитов. Пользователь потом сам
-    // отредактирует разделители.
-    g.variables.forEach((v, i) => {
-      editorRef.current!.insertVariable(v.key, v.label);
-      if (i < g.variables.length - 1) {
-        // Разделитель между переменными — запятая с пробелом.
-        // Реализуется через прямой DOM, но проще через отдельный
-        // insertVariable + ничего особенного. Tiptap сам поставит пробел.
-      }
-    });
+    g.variables.forEach((v) =>
+      editorRef.current?.insertVariable(v.key, v.label),
+    );
   };
 
   const onResetToSystem = async () => {
     if (!existing.data) {
-      toast.info(
-        "Уже системный",
-        "Это шаблон по умолчанию — нечего сбрасывать",
-      );
+      toast.info("Уже системный", "Это шаблон по умолчанию — нечего сбрасывать");
       return;
     }
     if (
@@ -148,15 +164,6 @@ export function TemplateEditorPage({
       toast.error("Не удалось сбросить", (e as Error).message ?? "");
     }
   };
-
-  const previewUrl = (() => {
-    // Превью пользовательского шаблона делаем через тот же endpoint
-    // что и обычный документ — он сам подхватит override при следующем
-    // открытии. Но открыть превью можно только если в БД есть запись —
-    // иначе показываем системный.
-    return null;
-  });
-  void previewUrl;
 
   if (existing.isLoading || bodyHtml == null) {
     return (
@@ -178,11 +185,11 @@ export function TemplateEditorPage({
             <ArrowLeft size={14} /> Назад
           </button>
           <div>
-            <div className="text-[14px] font-bold text-ink">
-              {templateName}
-            </div>
+            <div className="text-[14px] font-bold text-ink">{templateName}</div>
             <div className="text-[11px] text-muted-2">
-              {existing.data ? "пользовательская версия" : "системный по умолчанию"}
+              {existing.data
+                ? "пользовательская версия"
+                : "системный по умолчанию (правки сохранятся как override)"}
             </div>
           </div>
         </div>
@@ -218,17 +225,25 @@ export function TemplateEditorPage({
               <Trash2 size={12} /> Сбросить к системному
             </button>
           )}
+          <button
+            type="button"
+            onClick={() => setSidebarOpen((v) => !v)}
+            className="inline-flex items-center gap-1.5 rounded-[8px] bg-white px-3 py-1.5 text-[12px] font-semibold text-ink-2 hover:bg-border"
+            title={sidebarOpen ? "Скрыть переменные" : "Показать переменные"}
+          >
+            {sidebarOpen ? (
+              <PanelRightClose size={14} />
+            ) : (
+              <PanelRightOpen size={14} />
+            )}
+            Переменные
+          </button>
         </div>
       </div>
 
-      <div className="grid gap-3 lg:grid-cols-[260px_1fr]">
-        <div className="lg:max-h-[80vh] lg:overflow-y-auto">
-          <VariablesSidebar
-            onInsert={insertVariable}
-            onInsertGroup={insertGroup}
-          />
-        </div>
-        <div>
+      {/* Контейнер с двумя зонами: основной редактор слева, drawer справа */}
+      <div className="relative flex gap-3">
+        <div className="min-w-0 flex-1">
           <TemplateEditor
             initialHtml={bodyHtml}
             onChange={setBodyHtml}
@@ -243,6 +258,18 @@ export function TemplateEditorPage({
             </span>
           </div>
         </div>
+
+        {sidebarOpen && (
+          <aside
+            className="sticky top-3 hidden h-[calc(100vh-100px)] w-[300px] shrink-0 self-start overflow-y-auto rounded-[12px] border border-border bg-white p-3 shadow-card-sm lg:block"
+            aria-label="Переменные"
+          >
+            <VariablesSidebar
+              onInsert={insertVariable}
+              onInsertGroup={insertGroup}
+            />
+          </aside>
+        )}
       </div>
     </div>
   );
