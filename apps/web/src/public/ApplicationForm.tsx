@@ -14,6 +14,12 @@ import {
 } from "./applicationDraft";
 import { PhotoUpload } from "./PhotoUpload";
 import {
+  LicenseSample,
+  PassportMainSample,
+  PassportRegSample,
+  SelfieSample,
+} from "./PhotoSamples";
+import {
   dateRuToIso,
   formatDateRu,
   formatDivisionCode,
@@ -28,20 +34,48 @@ import {
 } from "./formatters";
 
 /**
- * Публичная форма анкеты клиента.
+ * Публичная форма анкеты клиента (как Google Forms, постоянная ссылка #/apply).
  *
- * Открывается по ссылке вида https://crm.hulk-bike.ru/apply без авторизации.
- * Постоянная ссылка — каждый заход = новая заявка (как Google Forms).
+ * Шаги (для гражданина РФ):
+ *   1. contact          — ФИО, телефон, ДР, гражданство
+ *   2. passport         — серия/номер/выдан/код/регистрация
+ *   3. address          — адрес проживания
+ *   4. photo:passport_main
+ *   5. photo:passport_reg
+ *   6. photo:license
+ *   7. photo:selfie
+ *   8. confirm          — подтверждение и согласие на ПДн
  *
- * Поток:
- *  Step 1 — контакты (ФИО, телефон, доп. телефон, ДР, гражданство)
- *  Step 2 — паспорт (РФ: серия+номер+выдан+код+регистрация; иностранец: passportRaw)
- *  Step 3 — адрес проживания
- *  Step 4 — 4 фото (паспорт главный, паспорт прописка, ВУ, селфи)
- *  Step 5 — подтверждение, согласие на ПДн, отправка
+ * Для иностранца шаг 5 (прописка) пропускается.
  *
- * Черновик автосохраняется в localStorage и через PATCH на сервер.
+ * Каждый фото-шаг занимает отдельный экран с образцом сверху, кнопками
+ * «Сфотографировать» / «Из галереи» и auto-advance к следующему шагу
+ * после успешной загрузки. Менеджер ведёт клиента «за руку».
  */
+
+type StepId =
+  | "contact"
+  | "passport"
+  | "address"
+  | "photo_passport_main"
+  | "photo_passport_reg"
+  | "photo_license"
+  | "photo_selfie"
+  | "confirm";
+
+function getSteps(isForeigner: boolean): StepId[] {
+  const all: StepId[] = [
+    "contact",
+    "passport",
+    "address",
+    "photo_passport_main",
+    "photo_passport_reg",
+    "photo_license",
+    "photo_selfie",
+    "confirm",
+  ];
+  return isForeigner ? all.filter((s) => s !== "photo_passport_reg") : all;
+}
 
 type FormState = {
   // Контакты
@@ -55,7 +89,7 @@ type FormState = {
   passportRaw: string;
   passSer: string;
   passNum: string;
-  passDate: string; // ДД.ММ.ГГГГ
+  passDate: string;
   passIssuer: string;
   passCode: string;
   passRegistration: string;
@@ -64,10 +98,10 @@ type FormState = {
   sameAddress: boolean;
   liveAddress: string;
 
-  // Согласие на ПДн (чекбокс на step 5)
+  // Согласие
   agreedPdn: boolean;
 
-  // Honeypot — реальный клиент не видит, бот заполнит
+  // Honeypot
   honeypot: string;
 };
 
@@ -84,13 +118,13 @@ const EMPTY: FormState = {
   passIssuer: "",
   passCode: "",
   passRegistration: "",
-  sameAddress: true,
+  // По требованию пользователя: «галочка совпадает с адресом регистрации
+  // по умолчанию отжата» — клиент сам решит, ставить или нет.
+  sameAddress: false,
   liveAddress: "",
   agreedPdn: false,
   honeypot: "",
 };
-
-const TOTAL_STEPS = 5;
 
 function fieldsFromState(s: FormState): ApplicationFields {
   return {
@@ -128,7 +162,7 @@ function stateFromFields(f: ApplicationFields): Partial<FormState> {
     passIssuer: f.passportIssuer ?? "",
     passCode: f.passportDivisionCode ?? "",
     passRegistration: f.passportRegistration ?? "",
-    sameAddress: f.sameAddress ?? true,
+    sameAddress: f.sameAddress ?? false,
     liveAddress: f.liveAddress ?? "",
   };
 }
@@ -145,11 +179,15 @@ export function ApplicationForm() {
   const [submitted, setSubmitted] = useState(false);
   const [missingFields, setMissingFields] = useState<string[]>([]);
 
+  const steps = useMemo(() => getSteps(form.isForeigner), [form.isForeigner]);
+  const totalSteps = steps.length;
+  const currentStepId: StepId = steps[Math.min(step - 1, totalSteps - 1)];
+
   const setField = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
 
-  // Восстановление черновика при mount
+  // Восстановление черновика
   useEffect(() => {
     const draft = loadDraft();
     if (draft) {
@@ -158,11 +196,13 @@ export function ApplicationForm() {
       setToken(draft.uploadToken);
       setTokenExpiresAt(draft.expiresAt);
       setUploaded(new Set(draft.uploadedKinds));
-      setStep(Math.min(draft.step ?? 1, TOTAL_STEPS));
+      // step может оказаться вне диапазона если isForeigner поменялся —
+      // clamp по факту перед рендером.
+      setStep(Math.max(1, draft.step ?? 1));
     }
   }, []);
 
-  // Автосохранение черновика в localStorage (debounced)
+  // Авто-сохранение черновика
   const saveTimerRef = useRef<number | null>(null);
   useEffect(() => {
     if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
@@ -183,7 +223,6 @@ export function ApplicationForm() {
     };
   }, [form, appId, token, tokenExpiresAt, uploaded, step]);
 
-  /** Обеспечить наличие черновика на сервере: создаёт новый или обновляет существующий. */
   const ensureDraft = async (): Promise<{ id: number; tok: string }> => {
     const fields = fieldsFromState(form);
     if (appId && token) {
@@ -192,7 +231,6 @@ export function ApplicationForm() {
         return { id: appId, tok: token };
       } catch (e) {
         if (e instanceof ApiError && e.status === 401) {
-          // токен истёк — сбрасываем и создаём новый черновик
           setAppId(null);
           setToken(null);
           setTokenExpiresAt(null);
@@ -209,13 +247,13 @@ export function ApplicationForm() {
     return { id: created.applicationId, tok: created.uploadToken };
   };
 
-  // Step transitions ─────────────────────────────────────────────────────
-  const canNextStep1 =
+  // Валидация по шагам (для not-photo)
+  const canNextContact =
     !validateName(form.name) &&
     !validatePhone(form.phone) &&
     !validateBirth(form.birth);
 
-  const canNextStep2 = form.isForeigner
+  const canNextPassport = form.isForeigner
     ? form.passportRaw.trim().length > 0
     : !validateSeries(form.passSer) &&
       !validatePassportNumber(form.passNum) &&
@@ -223,27 +261,48 @@ export function ApplicationForm() {
       !!dateRuToIso(form.passDate) &&
       form.passRegistration.trim().length > 0;
 
-  const canNextStep3 = form.sameAddress || form.liveAddress.trim().length > 0;
+  const canNextAddress = form.sameAddress || form.liveAddress.trim().length > 0;
 
-  const canNextStep4 = form.isForeigner
-    ? uploaded.has("passport_main") &&
-      uploaded.has("license") &&
-      uploaded.has("selfie")
-    : uploaded.has("passport_main") &&
-      uploaded.has("passport_reg") &&
-      uploaded.has("license") &&
-      uploaded.has("selfie");
+  const canSubmit =
+    form.agreedPdn &&
+    canNextContact &&
+    canNextPassport &&
+    canNextAddress &&
+    uploaded.has("passport_main") &&
+    uploaded.has("license") &&
+    uploaded.has("selfie") &&
+    (form.isForeigner || uploaded.has("passport_reg"));
 
-  const canSubmit = form.agreedPdn && canNextStep1 && canNextStep2 && canNextStep3 && canNextStep4;
+  const canStepForward = (): boolean => {
+    switch (currentStepId) {
+      case "contact":
+        return canNextContact;
+      case "passport":
+        return canNextPassport;
+      case "address":
+        return canNextAddress;
+      case "photo_passport_main":
+        return uploaded.has("passport_main");
+      case "photo_passport_reg":
+        return uploaded.has("passport_reg");
+      case "photo_license":
+        return uploaded.has("license");
+      case "photo_selfie":
+        return uploaded.has("selfie");
+      case "confirm":
+        return true;
+    }
+  };
 
   const goNext = async () => {
     setError(null);
     setBusy(true);
     try {
-      // Перед переходом на следующий шаг — синкаем поля с сервером
-      // (или создаём черновик если ещё нет)
-      await ensureDraft();
-      setStep((s) => Math.min(s + 1, TOTAL_STEPS));
+      // Не PATCHим если на фото-шаге (там файлы уже на сервере, поля не менялись)
+      if (!currentStepId.startsWith("photo_")) {
+        await ensureDraft();
+      }
+      setStep((s) => Math.min(s + 1, totalSteps));
     } catch (e) {
       if (e instanceof ApiError && e.status === 429) {
         setError("Слишком частые запросы. Подождите минуту и попробуйте снова.");
@@ -260,6 +319,11 @@ export function ApplicationForm() {
     setStep((s) => Math.max(s - 1, 1));
   };
 
+  // Auto-advance после успешной загрузки фото на фото-шаге
+  const advanceFromPhoto = () => {
+    setStep((s) => Math.min(s + 1, totalSteps));
+  };
+
   const submit = async () => {
     if (!appId || !token) {
       setError("Черновик не создан. Перезагрузите страницу.");
@@ -270,7 +334,6 @@ export function ApplicationForm() {
     setBusy(true);
     setMissingFields([]);
     try {
-      // Финальный sync полей перед submit
       await applicationApi.patch(appId, token, fieldsFromState(form));
       await applicationApi.submit(appId, token);
       clearDraft();
@@ -286,7 +349,9 @@ export function ApplicationForm() {
           }
         }
         if (e.status === 401) {
-          setError("Сессия истекла. Перезагрузите страницу и заполните заявку заново.");
+          setError(
+            "Сессия истекла. Перезагрузите страницу и заполните заявку заново.",
+          );
           return;
         }
       }
@@ -300,6 +365,11 @@ export function ApplicationForm() {
     return <SuccessScreen />;
   }
 
+  const isPhotoStep = currentStepId.startsWith("photo_");
+  const photoKind = isPhotoStep
+    ? (currentStepId.replace("photo_", "") as FileKind)
+    : null;
+
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="mx-auto flex min-h-screen max-w-md flex-col px-4 py-6">
@@ -311,23 +381,29 @@ export function ApplicationForm() {
           <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-200">
             <div
               className="h-full bg-emerald-600 transition-all"
-              style={{ width: `${(step / TOTAL_STEPS) * 100}%` }}
+              style={{ width: `${(step / totalSteps) * 100}%` }}
             />
           </div>
           <div className="mt-1 text-[12px] text-slate-500">
-            Шаг {step} из {TOTAL_STEPS}
+            Шаг {step} из {totalSteps}
           </div>
         </header>
 
         <main className="flex-1">
-          {step === 1 && <Step1 form={form} setField={setField} />}
-          {step === 2 && <Step2 form={form} setField={setField} />}
-          {step === 3 && <Step3 form={form} setField={setField} />}
-          {step === 4 && (
-            <Step4
+          {currentStepId === "contact" && (
+            <Step1 form={form} setField={setField} />
+          )}
+          {currentStepId === "passport" && (
+            <Step2 form={form} setField={setField} />
+          )}
+          {currentStepId === "address" && (
+            <Step3 form={form} setField={setField} />
+          )}
+          {isPhotoStep && photoKind && (
+            <PhotoStep
+              kind={photoKind}
               applicationId={appId}
               uploadToken={token}
-              isForeigner={form.isForeigner}
               uploaded={uploaded}
               onUploaded={(k) =>
                 setUploaded((prev) => {
@@ -343,10 +419,11 @@ export function ApplicationForm() {
                   return next;
                 })
               }
+              onAdvance={advanceFromPhoto}
             />
           )}
-          {step === 5 && (
-            <Step5
+          {currentStepId === "confirm" && (
+            <Confirm
               form={form}
               setField={setField}
               missingFields={missingFields}
@@ -368,22 +445,24 @@ export function ApplicationForm() {
                 onClick={goBack}
                 disabled={busy}
                 className="inline-flex h-12 items-center justify-center gap-1.5 rounded-xl border border-slate-300 bg-white px-4 text-[14px] font-semibold text-slate-700 disabled:opacity-50"
+                aria-label="Назад"
               >
                 <ArrowLeft size={16} /> Назад
               </button>
             )}
-            {step < TOTAL_STEPS && (
+            {/* На фото-шаге Продолжить НЕ показываем — auto-advance после загрузки */}
+            {!isPhotoStep && currentStepId !== "confirm" && (
               <button
                 type="button"
                 onClick={goNext}
-                disabled={busy || !canStepForward(step, { canNextStep1, canNextStep2, canNextStep3, canNextStep4 })}
+                disabled={busy || !canStepForward()}
                 className="inline-flex h-12 flex-1 items-center justify-center gap-1.5 rounded-xl bg-slate-900 px-4 text-[14px] font-semibold text-white disabled:opacity-50"
               >
                 {busy ? "Сохраняем…" : "Продолжить"}
                 <ArrowRight size={16} />
               </button>
             )}
-            {step === TOTAL_STEPS && (
+            {currentStepId === "confirm" && (
               <button
                 type="button"
                 onClick={submit}
@@ -395,6 +474,7 @@ export function ApplicationForm() {
               </button>
             )}
           </div>
+          {/* Honeypot — невидимое поле для ботов */}
           <input
             type="text"
             name="company_website"
@@ -403,7 +483,12 @@ export function ApplicationForm() {
             tabIndex={-1}
             autoComplete="off"
             aria-hidden="true"
-            style={{ position: "absolute", left: -9999, opacity: 0, pointerEvents: "none" }}
+            style={{
+              position: "absolute",
+              left: -9999,
+              opacity: 0,
+              pointerEvents: "none",
+            }}
           />
         </footer>
       </div>
@@ -411,25 +496,7 @@ export function ApplicationForm() {
   );
 }
 
-// Helpers ──────────────────────────────────────────────────────────────────
-
-function canStepForward(
-  step: number,
-  flags: {
-    canNextStep1: boolean;
-    canNextStep2: boolean;
-    canNextStep3: boolean;
-    canNextStep4: boolean;
-  },
-): boolean {
-  if (step === 1) return flags.canNextStep1;
-  if (step === 2) return flags.canNextStep2;
-  if (step === 3) return flags.canNextStep3;
-  if (step === 4) return flags.canNextStep4;
-  return true;
-}
-
-// Steps ────────────────────────────────────────────────────────────────────
+// ─────────────────────────── Steps ───────────────────────────
 
 function FieldLabel({
   children,
@@ -503,7 +570,9 @@ function Step1({
           value={form.extraPhone}
           onChange={(e) => setField("extraPhone", formatPhone(e.target.value))}
         />
-        <div className="mt-1 text-[12px] text-slate-500">Если есть — телефон супруги, родителей, друга.</div>
+        <div className="mt-1 text-[12px] text-slate-500">
+          Если есть — телефон супруги, родителей, друга.
+        </div>
       </div>
 
       <div>
@@ -563,7 +632,8 @@ function Step2({
       <div className="space-y-4">
         <h1 className="text-[22px] font-bold text-slate-900">Документ</h1>
         <p className="text-[14px] text-slate-600">
-          Опишите ваш документ, удостоверяющий личность: название, серия и номер, страна, дата выдачи. Менеджер потом сверит данные с фото.
+          Опишите ваш документ, удостоверяющий личность: название, серия и
+          номер, страна, дата выдачи. Менеджер потом сверит данные с фото.
         </p>
         <div>
           <FieldLabel required>Описание документа</FieldLabel>
@@ -676,18 +746,7 @@ function Step3({
         По какому адресу вы живёте сейчас. Может отличаться от прописки.
       </p>
 
-      <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-300 bg-white p-3">
-        <input
-          type="checkbox"
-          className="mt-0.5 h-5 w-5"
-          checked={form.sameAddress}
-          onChange={(e) => setField("sameAddress", e.target.checked)}
-        />
-        <span className="text-[14px] text-slate-800">
-          Совпадает с {form.isForeigner ? "адресом регистрации" : "адресом по паспорту"}
-        </span>
-      </label>
-
+      {/* Поле адреса показывается всегда, кроме случая когда чекбокс активен */}
       {!form.sameAddress && (
         <div>
           <FieldLabel required>Фактический адрес</FieldLabel>
@@ -699,24 +758,70 @@ function Step3({
           />
         </div>
       )}
+
+      {/* Чекбокс — НИЖЕ поля, по умолчанию отжат (см. EMPTY) */}
+      <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-300 bg-white p-3">
+        <input
+          type="checkbox"
+          className="mt-0.5 h-5 w-5 flex-shrink-0"
+          checked={form.sameAddress}
+          onChange={(e) => setField("sameAddress", e.target.checked)}
+        />
+        <span className="text-[14px] text-slate-800">
+          Совпадает с{" "}
+          {form.isForeigner ? "адресом регистрации" : "адресом по паспорту"}
+        </span>
+      </label>
     </div>
   );
 }
 
-function Step4({
+const PHOTO_STEP_META: Record<
+  FileKind,
+  { title: string; hint: string; sample: React.ReactNode; facing: "user" | "environment" }
+> = {
+  passport_main: {
+    title: "Паспорт — главный разворот",
+    hint: "Страница с фотографией и личными данными. Весь разворот должен быть в кадре, без бликов.",
+    sample: <PassportMainSample />,
+    facing: "environment",
+  },
+  passport_reg: {
+    title: "Паспорт — страница с пропиской",
+    hint: "Сфотографируйте страницу со штампом регистрации. Адрес должен быть читаем целиком.",
+    sample: <PassportRegSample />,
+    facing: "environment",
+  },
+  license: {
+    title: "Водительское удостоверение",
+    hint: "Лицевая сторона ВУ — категории, фото и срок действия должны быть видны.",
+    sample: <LicenseSample />,
+    facing: "environment",
+  },
+  selfie: {
+    title: "Селфи с паспортом",
+    hint: "Расположите лицо в овальной рамке (как в Uber/Я.Такси) и держите паспорт у подбородка. Глаза открыты, очки лучше снять.",
+    sample: <SelfieSample />,
+    facing: "user",
+  },
+};
+
+function PhotoStep({
+  kind,
   applicationId,
   uploadToken,
-  isForeigner,
   uploaded,
   onUploaded,
   onRemoved,
+  onAdvance,
 }: {
+  kind: FileKind;
   applicationId: number | null;
   uploadToken: string | null;
-  isForeigner: boolean;
   uploaded: Set<FileKind>;
   onUploaded: (k: FileKind) => void;
   onRemoved: (k: FileKind) => void;
+  onAdvance: () => void;
 }) {
   if (!applicationId || !uploadToken) {
     return (
@@ -725,66 +830,25 @@ function Step4({
       </div>
     );
   }
+  const meta = PHOTO_STEP_META[kind];
   return (
-    <div className="space-y-4">
-      <h1 className="text-[22px] font-bold text-slate-900">Фото документов</h1>
-      <p className="text-[14px] text-slate-600">
-        Чёткие фото, чтобы менеджер видел все данные. Можно фотографировать прямо с телефона.
-      </p>
-
-      <PhotoUpload
-        applicationId={applicationId}
-        uploadToken={uploadToken}
-        kind="passport_main"
-        label="Паспорт — главный разворот"
-        hint="С фотографией и личными данными"
-        required
-        uploaded={uploaded.has("passport_main")}
-        onUploaded={() => onUploaded("passport_main")}
-        onRemoved={() => onRemoved("passport_main")}
-      />
-
-      {!isForeigner && (
-        <PhotoUpload
-          applicationId={applicationId}
-          uploadToken={uploadToken}
-          kind="passport_reg"
-          label="Паспорт — страница с пропиской"
-          required
-          uploaded={uploaded.has("passport_reg")}
-          onUploaded={() => onUploaded("passport_reg")}
-          onRemoved={() => onRemoved("passport_reg")}
-        />
-      )}
-
-      <PhotoUpload
-        applicationId={applicationId}
-        uploadToken={uploadToken}
-        kind="license"
-        label="Водительское удостоверение"
-        hint="Фото лицевой стороны"
-        required
-        uploaded={uploaded.has("license")}
-        onUploaded={() => onUploaded("license")}
-        onRemoved={() => onRemoved("license")}
-      />
-
-      <PhotoUpload
-        applicationId={applicationId}
-        uploadToken={uploadToken}
-        kind="selfie"
-        label="Селфи с паспортом"
-        hint="Держите паспорт рядом с лицом"
-        required
-        uploaded={uploaded.has("selfie")}
-        onUploaded={() => onUploaded("selfie")}
-        onRemoved={() => onRemoved("selfie")}
-      />
-    </div>
+    <PhotoUpload
+      applicationId={applicationId}
+      uploadToken={uploadToken}
+      kind={kind}
+      title={meta.title}
+      hint={meta.hint}
+      sample={meta.sample}
+      cameraFacing={meta.facing}
+      uploaded={uploaded.has(kind)}
+      onUploaded={() => onUploaded(kind)}
+      onRemoved={() => onRemoved(kind)}
+      onAdvance={onAdvance}
+    />
   );
 }
 
-function Step5({
+function Confirm({
   form,
   setField,
   missingFields,
@@ -797,7 +861,8 @@ function Step5({
     <div className="space-y-4">
       <h1 className="text-[22px] font-bold text-slate-900">Подтверждение</h1>
       <p className="text-[14px] text-slate-600">
-        Проверьте данные перед отправкой. После отправки изменить не получится — менеджер свяжется с вами для уточнений.
+        Проверьте данные перед отправкой. После отправки изменить не получится —
+        менеджер свяжется с вами для уточнений.
       </p>
 
       <div className="space-y-2 rounded-xl border border-slate-200 bg-white p-4 text-[14px]">
@@ -825,7 +890,8 @@ function Step5({
 
       {missingFields.length > 0 && (
         <div className="rounded-xl bg-red-50 p-3 text-[13px] text-red-700">
-          Не заполнены поля: {missingFields.join(", ")}. Вернитесь назад и проверьте.
+          Не заполнены поля: {missingFields.join(", ")}. Вернитесь назад и
+          проверьте.
         </div>
       )}
 
@@ -837,7 +903,8 @@ function Step5({
           onChange={(e) => setField("agreedPdn", e.target.checked)}
         />
         <span className="text-[13px] text-slate-700">
-          Я согласен(а) на обработку моих персональных данных Халк Байк в целях оформления договора аренды транспортного средства.
+          Я согласен(а) на обработку моих персональных данных Халк Байк в целях
+          оформления договора аренды транспортного средства.
         </span>
       </label>
     </div>
@@ -868,7 +935,8 @@ function SuccessScreen() {
           Заявка отправлена!
         </h1>
         <p className="mt-3 text-[14px] text-slate-600">
-          Менеджер Халк Байк свяжется с вами по указанному телефону, чтобы согласовать время приезда и оформить аренду.
+          Менеджер Халк Байк свяжется с вами по указанному телефону, чтобы
+          согласовать время приезда и оформить аренду.
         </p>
         <div className="mt-8 rounded-xl bg-white p-4 text-[13px] text-slate-700 shadow-sm">
           Эту страницу можно закрыть.
