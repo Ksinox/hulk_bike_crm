@@ -8,6 +8,7 @@ import {
   getRentalChainIds,
   useRentals,
   useArchivedRentals,
+  useChainPayments,
 } from "./rentalsStore";
 import { useApiScooters } from "@/lib/api/scooters";
 import { useDeleteRental } from "@/lib/api/rentals";
@@ -59,10 +60,26 @@ export function RentalEditModal({
     () =>
       chainIds
         .map((id) => allRentals.find((r) => r.id === id))
-        .filter((r): r is Rental => !!r),
+        .filter((r): r is Rental => !!r)
+        // Скрываем вручную удалённые связки (archivedBy != null).
+        // Авто-архивные родители при продлении (archivedBy == null) остаются.
+        .filter((r) => !r.archivedBy),
     [chainIds, allRentals],
   );
   const hasChain = chainRentals.length > 1;
+
+  // Сводные метрики по живым связкам — для отображения в шапке модалки.
+  // При сохранении/удалении они обновляются реактивно через react-query.
+  const liveChainIds = useMemo(
+    () => chainRentals.map((r) => r.id),
+    [chainRentals],
+  );
+  const chainPays = useChainPayments(liveChainIds);
+  const chainDays = chainRentals.reduce((s, r) => s + (r.days || 0), 0);
+  const chainSum = chainRentals.reduce((s, r) => s + (r.sum || 0), 0);
+  const chainPaid = chainPays
+    .filter((p) => p.paid && p.type !== "refund" && p.type !== "deposit")
+    .reduce((s, p) => s + p.amount, 0);
 
   // Текущая связка для редактирования
   const [currentId, setCurrentId] = useState<number>(rental.id);
@@ -146,6 +163,34 @@ export function RentalEditModal({
           </button>
         </div>
 
+        {/* Сводка по серии — обновляется на лету при правке/удалении связок. */}
+        <div className="grid grid-cols-3 gap-2 border-b border-border bg-white px-5 py-3 text-center">
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
+              За всё время
+            </div>
+            <div className="font-display text-[18px] font-extrabold tabular-nums text-blue-600">
+              {chainPaid.toLocaleString("ru-RU")} ₽
+            </div>
+          </div>
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
+              Дней в серии
+            </div>
+            <div className="font-display text-[18px] font-extrabold tabular-nums text-ink">
+              {chainDays}
+            </div>
+          </div>
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
+              План аренды
+            </div>
+            <div className="font-display text-[18px] font-extrabold tabular-nums text-ink">
+              {chainSum.toLocaleString("ru-RU")} ₽
+            </div>
+          </div>
+        </div>
+
         {hasChain && (
           <div className="border-b border-border bg-surface-soft/50 px-5 py-3">
             <div className="mb-2 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-2">
@@ -227,7 +272,11 @@ export function RentalEditModal({
         <RentalEditForm
           key={currentRental.id}
           rental={currentRental}
-          onSaved={requestClose}
+          // После сохранения модалка НЕ закрывается — пользователь может
+          // продолжить править эту связку или переключиться на другую.
+          // Цифры в карточке аренды и в списке связок обновятся
+          // автоматически через инвалидацию react-query.
+          onSaved={() => {}}
           onCancel={requestClose}
         />
       </div>

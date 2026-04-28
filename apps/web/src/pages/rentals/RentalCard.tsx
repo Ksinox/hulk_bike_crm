@@ -208,9 +208,22 @@ export function RentalCard({ rental }: { rental: Rental }) {
     () => [...activeRentals, ...archivedRentals],
     [activeRentals, archivedRentals],
   );
-  const chainIds = useMemo(
+  // Полная цепочка (включая авто-архивных родителей и вручную удалённые
+  // связки) — нужна, чтобы найти rootRental.
+  const chainIdsFull = useMemo(
     () => getRentalChainIds(rental.id, allRentals),
     [rental.id, allRentals],
+  );
+  // Активные связки цепочки (для метрик): исключаем сегменты, удалённые
+  // вручную (archivedBy != null). Авто-архивные родители при продлении
+  // (archivedBy == null) остаются в расчётах.
+  const chainIds = useMemo(
+    () =>
+      chainIdsFull.filter((id) => {
+        const r = allRentals.find((x) => x.id === id);
+        return !r || !r.archivedBy;
+      }),
+    [chainIdsFull, allRentals],
   );
   const chainPayments = useChainPayments(chainIds);
   const tier = client ? ratingTier(client.rating) : null;
@@ -219,8 +232,8 @@ export function RentalCard({ rental }: { rental: Rental }) {
   // карточки как «оригинальную» дату выдачи, даже если сейчас открыто
   // продление (child).
   const rootRental = useMemo(
-    () => allRentals.find((r) => chainIds[0] === r.id) ?? rental,
-    [allRentals, chainIds, rental],
+    () => allRentals.find((r) => chainIdsFull[0] === r.id) ?? rental,
+    [allRentals, chainIdsFull, rental],
   );
 
   // Суммарные ожидаемые (аренда+залог) по всей цепочке продлений.
