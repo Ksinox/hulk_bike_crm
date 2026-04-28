@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import {
   AlertTriangle,
   ArrowRight,
+  ArrowLeftRight,
   Calendar,
   CheckCircle2,
   PhoneOff,
@@ -34,10 +35,14 @@ import {
 } from "./RentalCardTabs";
 import { RentalActionDialog, type ActionKind } from "./RentalActionDialog";
 import { ExtendRentalDialog } from "./ExtendRentalDialog";
+import { SwapScooterDialog } from "./SwapScooterDialog";
 import { DamageReportDialog } from "./DamageReportDialog";
 import { DamageReportPaymentDialog } from "./DamageReportPaymentDialog";
 import { DocumentPreviewModal } from "./DocumentPreviewModal";
-import { useDamageReports } from "@/lib/api/damage-reports";
+import {
+  useDamageReports,
+  useDamageAgreement,
+} from "@/lib/api/damage-reports";
 import { RentalActionsMenu, type MenuAction } from "./RentalActionsMenu";
 import {
   getRentalChainIds,
@@ -127,11 +132,13 @@ function statusActions(
       return withExtras([
         { id: "extend", label: "Продлить", icon: Repeat, tone: "primary" },
         { id: "complete", label: "Завершить аренду", icon: ArrowRight, tone: "ghost" },
+        { id: "swap-scooter", label: "Заменить скутер", icon: ArrowLeftRight, tone: "ghost" },
         { id: "addPayment", label: "Принять платёж", icon: Plus, tone: "ghost" },
       ]);
     case "overdue":
       return withExtras([
         { id: "complete", label: "Завершить аренду", icon: ArrowRight, tone: "primary" },
+        { id: "swap-scooter", label: "Заменить скутер", icon: ArrowLeftRight, tone: "ghost" },
         { id: "addPayment", label: "Принять платёж", icon: Plus, tone: "ghost" },
         { id: "revert-overdue", label: "Снять просрочку", icon: XCircle, tone: "ghost" },
         { id: "police", label: "Подать в полицию", icon: ShieldAlert, tone: "danger" },
@@ -154,6 +161,11 @@ function statusActions(
       return withExtras([
         { id: "resume-damage", label: "Возобновить аренду", icon: RotateCcw, tone: "primary" },
         { id: "claim", label: "Досудебная претензия", icon: AlertTriangle, tone: "warn" },
+      ]);
+    case "problem":
+      return withExtras([
+        { id: "claim", label: "Распечатать претензию", icon: AlertTriangle, tone: "warn" },
+        { id: "resume-damage", label: "Возобновить аренду", icon: RotateCcw, tone: "ghost" },
       ]);
     case "police":
       return withExtras([]);
@@ -186,6 +198,9 @@ export function RentalCard({ rental }: { rental: Rental }) {
   const [paymentReportId, setPaymentReportId] = useState<number | null>(null);
   const [previewDamageId, setPreviewDamageId] = useState<number | null>(null);
   const [previewClaimId, setPreviewClaimId] = useState<number | null>(null);
+  const [swapOpen, setSwapOpen] = useState(false);
+  const [swapActTransferId, setSwapActTransferId] = useState<number | null>(null);
+  const damageAgreement = useDamageAgreement();
   const [clientQuickView, setClientQuickView] = useState(false);
   const { data: me } = useMe();
   const deleteRental = useDeleteRental();
@@ -265,10 +280,9 @@ export function RentalCard({ rental }: { rental: Rental }) {
   const reportWithDebt = reports.find((r) => r.debt > 0) ?? null;
   const reportLatest =
     reports.length > 0 ? reports[reports.length - 1]! : null;
-  // hasDamage учитывает и старое поле rental.damageAmount (legacy),
-  // и реальные акты о повреждениях по аренде (новый поток).
-  const hasDamage =
-    (rental.damageAmount ?? 0) > 0 || reports.length > 0;
+  // v0.2.75: hasDamage опирается только на формальные акты о повреждениях.
+  // Старое поле rental.damageAmount больше не учитываем — в UI его нет.
+  const hasDamage = reports.length > 0;
   const baseActions = statusActions(rental.status, { hasDamage, isUnreachable });
   // «Завершить аренду» — должна быть главной кнопкой в шапке (primary).
   // Если она доступна для статуса — ставим её первой, а «Изменить» уходит
@@ -400,6 +414,14 @@ export function RentalCard({ rental }: { rental: Rental }) {
         return;
       }
       setPreviewClaimId(r.id);
+      return;
+    }
+    if (id === "swap-scooter") {
+      if (!rental.scooterId) {
+        toast.info("Нет скутера", "К аренде не привязан скутер");
+        return;
+      }
+      setSwapOpen(true);
       return;
     }
     if (id === "record-damage") {
@@ -612,36 +634,88 @@ export function RentalCard({ rental }: { rental: Rental }) {
               <Plus size={12} /> Внести платёж
             </button>
           </div>
-          {/* Реакция клиента на акт */}
+          {/* Реакция клиента на акт. После выбора — отображаем бейдж. */}
           <div className="flex flex-wrap items-center gap-2 border-t border-red-300 pt-2 text-[12px]">
             <span className="text-ink-2">Реакция клиента:</span>
-            <button
-              type="button"
-              onClick={async () => {
-                const ok = await confirmDialog({
-                  title: "Клиент согласен с ущербом?",
-                  message:
-                    "Долг останется на аренде, клиент будет погашать постепенно через «Внести платёж». Скутер не возвращается клиенту до полного погашения.",
-                  confirmText: "Да, согласен",
-                  cancelText: "Отмена",
-                });
-                if (!ok) return;
-                toast.success(
-                  "Принято",
-                  "Долг остаётся на аренде. Принимайте платежи постепенно.",
-                );
-              }}
-              className="inline-flex items-center gap-1.5 rounded-[10px] border border-green-500 bg-white px-3 py-1.5 text-[12px] font-bold text-green-700 hover:bg-green-50"
-            >
-              <ThumbsUp size={12} /> Согласен — будет платить
-            </button>
-            <button
-              type="button"
-              onClick={() => setPreviewClaimId(reportWithDebt.id)}
-              className="inline-flex items-center gap-1.5 rounded-[10px] border border-red-500 bg-white px-3 py-1.5 text-[12px] font-bold text-red-700 hover:bg-red-50"
-            >
-              <ThumbsDown size={12} /> Не согласен — претензия
-            </button>
+            {reportWithDebt.clientAgreement === "agreed" && (
+              <span className="inline-flex items-center gap-1.5 rounded-[10px] bg-green-soft px-3 py-1.5 text-[12px] font-bold text-green-ink">
+                <ThumbsUp size={12} /> Согласен — гасит долг через платежи
+              </span>
+            )}
+            {reportWithDebt.clientAgreement === "disputed" && (
+              <>
+                <span className="inline-flex items-center gap-1.5 rounded-[10px] bg-red-soft px-3 py-1.5 text-[12px] font-bold text-red-ink">
+                  <ThumbsDown size={12} /> Не согласен — претензия отправлена
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPreviewClaimId(reportWithDebt.id)}
+                  className="inline-flex items-center gap-1.5 rounded-[10px] border border-red-500 bg-white px-3 py-1.5 text-[12px] font-bold text-red-700 hover:bg-red-50"
+                >
+                  Распечатать снова
+                </button>
+              </>
+            )}
+            {reportWithDebt.clientAgreement === "pending" && (
+              <>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const ok = await confirmDialog({
+                      title: "Клиент согласен с ущербом?",
+                      message:
+                        "Долг останется на аренде, клиент будет погашать постепенно через «Внести платёж». Аренда останется активной.",
+                      confirmText: "Да, согласен",
+                      cancelText: "Отмена",
+                    });
+                    if (!ok) return;
+                    try {
+                      await damageAgreement.mutateAsync({
+                        reportId: reportWithDebt.id,
+                        agreement: "agreed",
+                      });
+                      toast.success(
+                        "Принято",
+                        "Долг остаётся на аренде. Принимайте платежи постепенно.",
+                      );
+                    } catch (e) {
+                      toast.error("Не удалось", (e as Error).message ?? "");
+                    }
+                  }}
+                  disabled={damageAgreement.isPending}
+                  className="inline-flex items-center gap-1.5 rounded-[10px] border border-green-500 bg-white px-3 py-1.5 text-[12px] font-bold text-green-700 hover:bg-green-50 disabled:opacity-50"
+                >
+                  <ThumbsUp size={12} /> Согласен — будет платить
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const ok = await confirmDialog({
+                      title: "Клиент НЕ согласен?",
+                      message:
+                        "Аренда будет отмечена как «Проблемная», откроется превью досудебной претензии. Никаких продлений и замен с этого момента не делаем.",
+                      confirmText: "Да, не согласен",
+                      cancelText: "Отмена",
+                      danger: true,
+                    });
+                    if (!ok) return;
+                    try {
+                      await damageAgreement.mutateAsync({
+                        reportId: reportWithDebt.id,
+                        agreement: "disputed",
+                      });
+                      setPreviewClaimId(reportWithDebt.id);
+                    } catch (e) {
+                      toast.error("Не удалось", (e as Error).message ?? "");
+                    }
+                  }}
+                  disabled={damageAgreement.isPending}
+                  className="inline-flex items-center gap-1.5 rounded-[10px] border border-red-500 bg-white px-3 py-1.5 text-[12px] font-bold text-red-700 hover:bg-red-50 disabled:opacity-50"
+                >
+                  <ThumbsDown size={12} /> Не согласен — претензия
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -675,9 +749,7 @@ export function RentalCard({ rental }: { rental: Rental }) {
       <div
         className={cn(
           "grid grid-cols-2 gap-3 sm:grid-cols-4",
-          isExtended && !hasDamage && "lg:grid-cols-5",
-          hasDamage && !isExtended && "lg:grid-cols-5",
-          hasDamage && isExtended && "lg:grid-cols-6",
+          isExtended && "lg:grid-cols-5",
         )}
       >
         {(() => {
@@ -733,18 +805,32 @@ export function RentalCard({ rental }: { rental: Rental }) {
           badgeIcon={paidIn > 0 ? CheckCircle2 : undefined}
         />
         {(() => {
-          // Долг:
-          //  - при просрочке — (тариф + 250) × дней просрочки
-          //  - иначе — сумма неоплаченных платежей
-          let debt = pending;
-          let debtHint = pending > 0 ? "не оплачено" : "нет долгов";
+          // Долг = аренда (просрочка/неоплата) + долг по актам ущерба.
+          //  - при просрочке аренды — (тариф + 250) × дней просрочки
+          //  - иначе — сумма неоплаченных rent-платежей
+          //  - плюс totalDebt из всех damage_reports (фактический долг по актам)
+          let rentDebt = pending;
+          let rentDebtHint = "";
           if (rental.status === "overdue") {
             const d = Math.max(
               1,
               daysLeft !== null ? Math.abs(daysLeft) : 1,
             );
-            debt = d * (rental.rate + 250);
-            debtHint = `${d} дн × ${fmt(rental.rate + 250)} ₽`;
+            rentDebt = d * (rental.rate + 250);
+            rentDebtHint = `просрочка ${d} дн × ${fmt(rental.rate + 250)} ₽`;
+          } else if (pending > 0) {
+            rentDebtHint = "не оплачена аренда";
+          }
+          const debt = rentDebt + totalDebt;
+          let debtHint: string;
+          if (debt === 0) {
+            debtHint = "нет долгов";
+          } else if (rentDebt > 0 && totalDebt > 0) {
+            debtHint = `${rentDebtHint} + ущерб ${fmt(totalDebt)} ₽`;
+          } else if (totalDebt > 0) {
+            debtHint = "по акту повреждений";
+          } else {
+            debtHint = rentDebtHint;
           }
           return (
             <KpiCard
@@ -761,14 +847,6 @@ export function RentalCard({ rental }: { rental: Rental }) {
             value={`${fmt(chainDaysTotal)} дн`}
             hint={`${chainRentals.length} ${chainRentals.length === 1 ? "аренда" : chainRentals.length < 5 ? "аренды" : "аренд"} в серии`}
             accent="blue"
-          />
-        )}
-        {hasDamage && (
-          <KpiCard
-            label="Сумма ущерба"
-            value={`${fmt(rental.damageAmount ?? 0)} ₽`}
-            hint="выставлено вручную"
-            accent="red"
           />
         )}
       </div>
@@ -854,6 +932,29 @@ export function RentalCard({ rental }: { rental: Rental }) {
         />
       )}
 
+      {swapOpen && (
+        <SwapScooterDialog
+          rental={rental}
+          onClose={() => setSwapOpen(false)}
+          onSwapped={(newId) => {
+            setSwapOpen(false);
+            // Сразу открываем превью акта приёма-передачи для НОВОЙ связки —
+            // оператор печатает только эту страницу (привязка к договору
+            // сохранена за корнем цепочки).
+            setSwapActTransferId(newId);
+            // Переключаем фокус карточки на новую связку.
+            navigate({ route: "rentals", rentalId: newId });
+          }}
+        />
+      )}
+
+      {swapActTransferId != null && (
+        <ActTransferPreview
+          rentalId={swapActTransferId}
+          onClose={() => setSwapActTransferId(null)}
+        />
+      )}
+
       {damageOpen && (
         <DamageReportDialog
           rental={rental}
@@ -901,6 +1002,29 @@ export function RentalCard({ rental }: { rental: Rental }) {
         />
       )}
     </div>
+  );
+}
+
+/** Превью акта приёма-передачи для свежей (после замены) связки. */
+function ActTransferPreview({
+  rentalId,
+  onClose,
+}: {
+  rentalId: number;
+  onClose: () => void;
+}) {
+  const base =
+    import.meta.env.VITE_API_URL?.replace(/\/$/, "") ?? "http://localhost:4000";
+  const htmlUrl = `${base}/api/rentals/${rentalId}/document/act_transfer?format=html`;
+  const docxUrl = `${base}/api/rentals/${rentalId}/document/act_transfer?format=docx`;
+  return (
+    <DocumentPreviewModal
+      title="Акт приёма-передачи (новый скутер)"
+      htmlUrl={htmlUrl}
+      docxUrl={docxUrl}
+      docxFilename={`Акт приёма-передачи ${String(rentalId).padStart(4, "0")}.doc`}
+      onClose={onClose}
+    />
   );
 }
 

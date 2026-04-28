@@ -66,9 +66,10 @@ function matchStatus(
     return (
       r.status === "police" ||
       r.status === "court" ||
+      r.status === "problem" ||
+      // legacy: до v0.2.75 при создании акта аренда уходила в completed_damage,
+      // теперь оставляем как есть для существующих записей (новые → 'problem').
       r.status === "completed_damage" ||
-      r.status === "overdue" ||
-      (r.damageAmount ?? 0) > 0 ||
       unreachable.has(r.clientId)
     );
   if (f === "archived") return true; // данные приходят из useArchivedRentals
@@ -93,6 +94,7 @@ const STATUS_ORDER: RentalStatus[] = [
   "meeting",
   "new_request",
   "active",
+  "problem",
   "completed_damage",
   "police",
   "court",

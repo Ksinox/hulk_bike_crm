@@ -29,6 +29,8 @@ export type ApiDamagePayment = {
   createdAt: string;
 };
 
+export type DamageClientAgreement = "pending" | "agreed" | "disputed";
+
 export type ApiDamageReport = {
   id: number;
   rentalId: number;
@@ -36,6 +38,8 @@ export type ApiDamageReport = {
   total: number;
   depositCovered: number;
   note: string | null;
+  /** v0.2.75: реакция клиента на акт после печати. */
+  clientAgreement: DamageClientAgreement;
   createdAt: string;
   updatedAt: string;
   items: ApiDamageReportItem[];
@@ -127,6 +131,26 @@ export function useDeleteDamageReport() {
     mutationFn: (id: number) =>
       api.delete<{ ok: true }>(`/api/damage-reports/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: damageReportsKeys.all }),
+  });
+}
+
+/** Установить реакцию клиента на акт (agreed/disputed). v0.2.75. */
+export function useDamageAgreement() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: {
+      reportId: number;
+      agreement: "agreed" | "disputed";
+    }) =>
+      api.post<ApiDamageReport>(
+        `/api/damage-reports/${args.reportId}/agreement`,
+        { agreement: args.agreement },
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: damageReportsKeys.all });
+      qc.invalidateQueries({ queryKey: ["rentals"] });
+      qc.invalidateQueries({ queryKey: ["activity"] });
+    },
   });
 }
 

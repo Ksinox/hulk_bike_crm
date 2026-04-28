@@ -79,6 +79,9 @@ export const rentalStatusEnum = pgEnum("rental_status", [
   "cancelled",
   "police",
   "court",
+  // v0.2.75: «Проблемная» — клиент не согласен с актом о повреждениях,
+  // отправлена досудебная претензия. Аренда не продолжается.
+  "problem",
 ]);
 
 export const rentalSourceChannelEnum = pgEnum("rental_source_channel", [
@@ -951,6 +954,14 @@ export const damageReports = pgTable(
     depositCovered: integer("deposit_covered").notNull().default(0),
     /** Произвольный комментарий к акту (например, обстоятельства). */
     note: text("note"),
+    /**
+     * Реакция клиента на акт после печати. v0.2.75.
+     *  - 'pending' — акт создан, реакции ещё нет.
+     *  - 'agreed' — клиент согласен платить, аренда продолжается.
+     *  - 'disputed' — клиент не согласен, печатается претензия,
+     *    аренда переводится в статус 'problem'.
+     */
+    clientAgreement: text("client_agreement").notNull().default("pending"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

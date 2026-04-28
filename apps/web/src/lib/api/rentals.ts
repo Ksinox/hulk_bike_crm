@@ -67,6 +67,32 @@ export function useApiRental(id: number | null) {
  * Физическое удаление аренды. Сервер сам решит, можно ли —
  * вернёт 409 если есть подтверждённые платежи или статус «выдана».
  */
+/**
+ * v0.2.75: замена скутера в аренде.
+ * Создаёт child-связку с новым скутером, старая уходит в архив (как при extend).
+ * Старый скутер переводится в `repair`, срок аренды (endPlannedAt) сохраняется.
+ */
+export function useSwapScooter() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: {
+      rentalId: number;
+      newScooterId: number;
+      reason?: string;
+    }) =>
+      api.post<ApiRental>(`/api/rentals/${args.rentalId}/swap-scooter`, {
+        newScooterId: args.newScooterId,
+        ...(args.reason ? { reason: args.reason } : {}),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: rentalsKeys.all });
+      qc.invalidateQueries({ queryKey: ["scooters"] });
+      qc.invalidateQueries({ queryKey: ["payments"] });
+      qc.invalidateQueries({ queryKey: ["activity"] });
+    },
+  });
+}
+
 export function useDeleteRental() {
   const qc = useQueryClient();
   return useMutation({

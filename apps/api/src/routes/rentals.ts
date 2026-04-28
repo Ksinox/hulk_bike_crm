@@ -25,6 +25,7 @@ const RentalStatusEnum = z.enum([
   "cancelled",
   "police",
   "court",
+  "problem",
 ]);
 
 /** Снимок экипировки на момент аренды — { itemId?, name, price, free }. */
@@ -708,6 +709,117 @@ export async function rentalsRoutes(app: FastifyInstance) {
           entityId: result.id,
           action: "extended",
           summary: `Продление аренды ${summary} на ${d.extraDays} дн`,
+        });
+      }
+      return reply.code(201).send(result);
+    },
+  );
+
+  /**
+   * POST /api/rentals/:id/swap-scooter — замена скутера на лету.
+   * v0.2.75. Создаёт новую связку (parentRentalId = old.id) с другим скутером,
+   * старый закрывается и архивируется (как при extend), старый скутер уходит
+   * в repair. Срок аренды (endPlannedAt) сохраняется. Привязка к договору —
+   * к корневой связке цепочки.
+   */
+  app.post<{ Params: { id: string } }>(
+    "/:id/swap-scooter",
+    async (req, reply) => {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id))
+        return reply.code(400).send({ error: "bad id" });
+      const schema = z
+        .object({
+          newScooterId: z.number().int().positive(),
+          /** Опциональный комментарий к причине замены. */
+          reason: z.string().max(500).optional(),
+        })
+        .strict();
+      const parsed = schema.safeParse(req.body);
+      if (!parsed.success)
+        return reply
+          .code(400)
+          .send({ error: "validation", issues: parsed.error.issues });
+      const d = parsed.data;
+
+      const result = await db.transaction(async (tx) => {
+        const [old] = await tx.select().from(rentals).where(eq(rentals.id, id));
+        if (!old) throw new Error("not found");
+        if (old.status !== "active" && old.status !== "overdue") {
+          throw new Error("rental not active");
+        }
+        // Проверим, что новый скутер существует и в rental_pool.
+        const [newScooter] = await tx
+          .select()
+          .from(scooters)
+          .where(eq(scooters.id, d.newScooterId));
+        if (!newScooter) throw new Error("new scooter not found");
+        if (newScooter.baseStatus !== "rental_pool") {
+          throw new Error("new scooter not in rental_pool");
+        }
+
+        const now = new Date();
+        // Закрываем текущую связку — как при extend.
+        await tx
+          .update(rentals)
+          .set({
+            status: "completed",
+            endActualAt: now,
+            depositReturned: false,
+            archivedAt: sql`now()`,
+            updatedAt: sql`now()`,
+          })
+          .where(eq(rentals.id, id));
+
+        // Старый скутер — в ремонт.
+        if (old.scooterId) {
+          await tx
+            .update(scooters)
+            .set({ baseStatus: "repair", updatedAt: sql`now()` })
+            .where(eq(scooters.id, old.scooterId));
+        }
+
+        // Срок не сдвигаем — клиент платит за изначально согласованный период.
+        const endPlanned = old.endPlannedAt;
+        // Дни до конца аренды (минимум 1, чтобы избежать 0/отриц.).
+        const msLeft = endPlanned.getTime() - now.getTime();
+        const days = Math.max(1, Math.ceil(msLeft / 86_400_000));
+        const sum = old.rate * days;
+
+        const [child] = await tx
+          .insert(rentals)
+          .values({
+            clientId: old.clientId,
+            scooterId: d.newScooterId,
+            parentRentalId: old.id,
+            status: "active",
+            sourceChannel: old.sourceChannel,
+            tariffPeriod: old.tariffPeriod,
+            rate: old.rate,
+            deposit: old.deposit,
+            depositItem: old.depositItem,
+            startAt: now,
+            endPlannedAt: endPlanned,
+            days,
+            sum,
+            paymentMethod: old.paymentMethod,
+            equipment: old.equipment,
+            equipmentJson: old.equipmentJson as unknown as object,
+            note: d.reason
+              ? `замена скутера: ${d.reason}`
+              : `замена скутера #${String(old.id).padStart(4, "0")}`,
+          })
+          .returning();
+        return child;
+      });
+
+      if (result) {
+        await logActivity(req, {
+          entity: "rental",
+          entityId: result.id,
+          action: "scooter_swapped",
+          summary: `Замена скутера в аренде #${String(id).padStart(4, "0")} — новая связка #${String(result.id).padStart(4, "0")}`,
+          meta: { fromRentalId: id, newScooterId: d.newScooterId },
         });
       }
       return reply.code(201).send(result);

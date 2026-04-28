@@ -8,6 +8,7 @@ export type RentalStatus =
   | "completed_damage"
   | "police"
   | "court"
+  | "problem"
   | "cancelled";
 
 export type PaymentMethod = "cash" | "card" | "transfer";
@@ -179,6 +180,7 @@ export const STATUS_LABEL: Record<RentalStatus, string> = {
   completed_damage: "Завершена с ущербом",
   police: "Полиция",
   court: "Суд",
+  problem: "Проблемная",
   cancelled: "Отменена",
 };
 
@@ -195,6 +197,7 @@ export const STATUS_TONE: Record<
   completed_damage: "red",
   police: "red",
   court: "purple",
+  problem: "red",
   cancelled: "gray",
 };
 
