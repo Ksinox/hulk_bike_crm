@@ -99,6 +99,13 @@
       "when": 1777287854572,
       "tag": "0013_next_serpent_society",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1777400000000,
+      "tag": "0014_price_damage_v2",
+      "breakpoints": true
     }
   ]
 }

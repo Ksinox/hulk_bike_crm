@@ -1,12 +1,10 @@
 import { useMemo } from "react";
 import { cn } from "@/lib/utils";
-import { useApiRentals } from "@/lib/api/rentals";
+import { useApiRentals, useApiRentalsArchived } from "@/lib/api/rentals";
 import { useApiPayments } from "@/lib/api/payments";
 import { useApiClients } from "@/lib/api/clients";
 import { useApiScooters } from "@/lib/api/scooters";
 import { navigate } from "@/app/navigationStore";
-import { revenueFromPayments } from "@/lib/revenue";
-
 export type RevenuePeriod = "day" | "week" | "month";
 
 /**
@@ -84,7 +82,14 @@ export function RevenueRentalsList({
   onRowClick?: (rentalId: number) => void;
   compact?: boolean;
 }) {
-  const { data: rentals = [] } = useApiRentals();
+  const { data: activeRentals = [] } = useApiRentals();
+  const { data: archivedRentals = [] } = useApiRentalsArchived();
+  // Включаем archived parents — иначе для проплаченных продлений
+  // имя клиента/скутер ничьи, а сумма попадает в выручку.
+  const rentals = useMemo(
+    () => [...activeRentals, ...archivedRentals],
+    [activeRentals, archivedRentals],
+  );
   const { data: payments = [] } = useApiPayments();
   const { data: clients = [] } = useApiClients();
   const { data: scooters = [] } = useApiScooters();
@@ -92,31 +97,49 @@ export function RevenueRentalsList({
   const { start, end } = periodWindow(period);
 
   const rows = useMemo(() => {
-    const inWindow = rentals.filter((r) => {
-      if (!r.startAt) return false;
-      const t = new Date(r.startAt).getTime();
+    // 1. Берём все платежи В ОКНЕ периода (paid, не залог, не возврат).
+    //    Это ровно то, что суммируется в верхней цифре «Выручка».
+    const paymentsInWindow = payments.filter((p) => {
+      if (!p.paid) return false;
+      if (p.type === "deposit" || p.type === "refund") return false;
+      if (!p.paidAt) return false;
+      const t = new Date(p.paidAt).getTime();
       return t >= start.getTime() && t < end.getTime();
     });
-    return inWindow
-      .map((r) => {
-        const client = clients.find((c) => c.id === r.clientId);
-        const scooter = scooters.find((s) => s.id === r.scooterId);
-        const paidForRental = revenueFromPayments(
-          payments.filter((p) => p.rentalId === r.id),
-        );
+
+    // 2. Группируем по rentalId — для каждой аренды считаем сколько
+    //    она принесла в этом окне. Так список синхронизируется с
+    //    верхней цифрой: сумма строк = выручка за период.
+    const sumByRentalId = new Map<number, number>();
+    const lastPaidAtByRentalId = new Map<number, string>();
+    for (const p of paymentsInWindow) {
+      sumByRentalId.set(p.rentalId, (sumByRentalId.get(p.rentalId) ?? 0) + p.amount);
+      const prev = lastPaidAtByRentalId.get(p.rentalId);
+      if (!prev || (p.paidAt && p.paidAt > prev)) {
+        lastPaidAtByRentalId.set(p.rentalId, p.paidAt!);
+      }
+    }
+
+    return Array.from(sumByRentalId.entries())
+      .map(([rentalId, paidInWindow]) => {
+        const r = rentals.find((rr) => rr.id === rentalId);
+        const client = r ? clients.find((c) => c.id === r.clientId) : undefined;
+        const scooter = r ? scooters.find((s) => s.id === r.scooterId) : undefined;
         return {
-          id: r.id,
-          startAt: r.startAt,
+          id: rentalId,
+          startAt: r?.startAt ?? lastPaidAtByRentalId.get(rentalId) ?? "",
+          paidAt: lastPaidAtByRentalId.get(rentalId) ?? "",
           clientName: client?.name ?? "—",
           scooterName: scooter?.name ?? "—",
-          plannedSum: r.sum ?? 0,
-          paidSum: paidForRental,
-          status: r.status,
+          plannedSum: r?.sum ?? 0,
+          paidSum: paidInWindow,
+          status: r?.status ?? "completed",
         };
       })
       .sort(
         (a, b) =>
-          new Date(b.startAt).getTime() - new Date(a.startAt).getTime(),
+          new Date(b.paidAt || b.startAt).getTime() -
+          new Date(a.paidAt || a.startAt).getTime(),
       );
   }, [rentals, payments, clients, scooters, start, end]);
 
