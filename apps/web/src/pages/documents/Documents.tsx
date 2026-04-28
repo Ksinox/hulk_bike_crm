@@ -58,7 +58,7 @@ export function Documents() {
         </span>
       </header>
 
-      <div className="inline-flex w-fit rounded-[10px] bg-surface-soft p-1">
+      <div className="inline-flex w-fit rounded-2xl border border-slate-200/60 bg-white/70 p-1 shadow-sm backdrop-blur">
         {TABS.map((t) => {
           const Icon = t.icon;
           return (
@@ -67,10 +67,10 @@ export function Documents() {
               type="button"
               onClick={() => setTab(t.id)}
               className={cn(
-                "inline-flex items-center gap-1.5 rounded-[8px] px-3 py-1.5 text-[13px] font-semibold transition",
+                "inline-flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-[13px] font-semibold transition",
                 tab === t.id
-                  ? "bg-white text-ink shadow-sm"
-                  : "text-muted-2 hover:text-ink",
+                  ? "bg-gradient-to-br from-slate-900 to-slate-700 text-white shadow-sm"
+                  : "text-muted-2 hover:bg-slate-100 hover:text-ink",
               )}
             >
               <Icon size={13} />
@@ -149,12 +149,31 @@ const TEMPLATES: TemplateMeta[] = [
   },
 ];
 
+/** Цветовые токены для бейджей и иконок-кружочков карточек. */
 const BADGE_TONE_CLASSES: Record<TemplateMeta["badgeTone"], string> = {
   blue: "bg-blue-50 text-blue-700",
   amber: "bg-amber-50 text-amber-700",
   green: "bg-green-soft text-green-ink",
   red: "bg-red-soft text-red-ink",
   purple: "bg-purple-soft text-purple-ink",
+};
+
+/** Тонкие градиенты для иконок-капель в шапке карточек. */
+const ICON_GRADIENT: Record<TemplateMeta["badgeTone"], string> = {
+  blue: "bg-gradient-to-br from-blue-400 to-blue-600 text-white shadow-blue-200/60",
+  amber: "bg-gradient-to-br from-amber-400 to-orange-500 text-white shadow-amber-200/60",
+  green: "bg-gradient-to-br from-emerald-400 to-emerald-600 text-white shadow-emerald-200/60",
+  red: "bg-gradient-to-br from-rose-400 to-red-600 text-white shadow-red-200/60",
+  purple: "bg-gradient-to-br from-violet-400 to-purple-600 text-white shadow-purple-200/60",
+};
+
+/** Декоративная цветная полоска сверху карточки. */
+const TOP_ACCENT: Record<TemplateMeta["badgeTone"], string> = {
+  blue: "from-blue-500 via-sky-400 to-indigo-400",
+  amber: "from-amber-500 via-orange-400 to-yellow-400",
+  green: "from-emerald-500 via-green-400 to-teal-400",
+  red: "from-rose-500 via-red-400 to-orange-400",
+  purple: "from-violet-500 via-purple-400 to-fuchsia-400",
 };
 
 /** Какие шаблоны можно редактировать через Tiptap (override системного). */
@@ -206,54 +225,72 @@ function TemplatesGallery() {
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="rounded-[10px] bg-blue-50 px-3 py-2 text-[12px] text-blue-900">
-        Здесь собраны все системные шаблоны документов CRM. Каждый можно
-        открыть как <b>образец</b> (превью на реальной аренде) или{" "}
-        <b>редактировать</b> — текст подменится в редакторе и при
-        генерации документа подставятся реальные данные. Чтобы добавить
-        свой шаблон — кнопка <b>«+ Добавить документ»</b> ниже.
-      </div>
-
-      <AddDocumentBar
-        onCreateEmpty={() => setEditing({ kind: "new", initialHtml: "<p></p>" })}
-        onImport={(html) => setEditing({ kind: "new", initialHtml: html })}
-      />
-
-      {customs.length > 0 && (
-        <div className="flex flex-col gap-2">
-          <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
-            Мои документы ({customs.length})
-          </div>
-          <div className="grid items-stretch gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {customs.map((c) => (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() => setEditing({ kind: "custom", id: c.id })}
-                className="flex flex-col items-start gap-1 rounded-[14px] border border-border bg-surface p-4 text-left hover:border-blue-400 hover:bg-blue-50"
-              >
-                <div className="text-[13px] font-bold text-ink">{c.name}</div>
-                <div className="text-[11px] text-muted-2">
-                  обновлён{" "}
-                  {new Date(c.updatedAt).toLocaleString("ru-RU", {
-                    day: "2-digit",
-                    month: "short",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </div>
-                <div className="mt-2 text-[11px] font-semibold text-blue-700">
-                  Открыть в редакторе →
-                </div>
-              </button>
-            ))}
+      <div className="flex items-start gap-3 rounded-2xl border border-blue-100/80 bg-gradient-to-br from-blue-50/80 to-indigo-50/40 p-4 text-[12.5px] leading-relaxed text-blue-900">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-blue-600 shadow-sm">
+          <FileSignature size={15} strokeWidth={2.2} />
+        </div>
+        <div className="min-w-0">
+          <div className="font-bold text-blue-950">Шаблоны документов CRM</div>
+          <div className="mt-0.5 text-blue-900/80">
+            Каждый можно открыть как <b>образец</b> (превью на реальной аренде)
+            или <b>редактировать</b> — текст подменится в редакторе и при
+            генерации документа подставятся реальные данные. Чтобы добавить
+            свой шаблон — карточка <b>«+ Добавить шаблон»</b> в разделе ниже.
           </div>
         </div>
-      )}
-
-      <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
-        Системные шаблоны
       </div>
+
+      {/* Зона «Мои шаблоны»: карточки custom-шаблонов + интерактивная
+          dropzone-карточка «+ Добавить» в той же сетке. Клик по dropzone
+          открывает пустой редактор; перетаскивание файла на dropzone
+          импортирует .docx/.md/.html/.txt и открывает в редакторе. */}
+      <SectionHeading
+        label="Мои шаблоны"
+        count={customs.length}
+        hint="Кастомные документы — клик чтобы открыть в редакторе"
+      />
+      <div className="grid items-stretch gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {customs.map((c) => (
+          <button
+            key={c.id}
+            type="button"
+            onClick={() => setEditing({ kind: "custom", id: c.id })}
+            className="group relative flex flex-col items-start gap-2 overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-5 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md"
+          >
+            <div className="absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-blue-500 via-sky-400 to-indigo-400" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-slate-700 to-slate-900 text-white shadow-sm">
+              <FileText size={18} strokeWidth={2.2} />
+            </div>
+            <div className="text-[14px] font-bold leading-tight tracking-tight text-ink">
+              {c.name}
+            </div>
+            <div className="text-[11px] text-muted-2">
+              обновлён{" "}
+              {new Date(c.updatedAt).toLocaleString("ru-RU", {
+                day: "2-digit",
+                month: "short",
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </div>
+            <div className="mt-auto inline-flex items-center gap-1 text-[11px] font-semibold text-blue-700 transition-transform group-hover:translate-x-0.5">
+              Открыть в редакторе →
+            </div>
+          </button>
+        ))}
+        <AddTemplateDropzone
+          onCreateEmpty={() =>
+            setEditing({ kind: "new", initialHtml: "<p></p>" })
+          }
+          onImport={(html) => setEditing({ kind: "new", initialHtml: html })}
+        />
+      </div>
+
+      <SectionHeading
+        label="Системные шаблоны"
+        count={TEMPLATES.length}
+        hint="Базовые документы CRM — образец и редактирование"
+      />
 
       <div className="grid items-stretch gap-3 md:grid-cols-2 xl:grid-cols-3">
         {TEMPLATES.map((t) => {
@@ -261,28 +298,40 @@ function TemplatesGallery() {
           const disabled =
             (t.kind === "rental" || t.kind === "damage" || t.kind === "statement") &&
             !sampleRental;
+          const overridden = hasOverride(t.id);
           return (
             <div
               key={t.id}
-              className="flex h-full flex-col gap-3 rounded-[14px] border border-border bg-surface p-4"
+              className={cn(
+                "group relative flex h-full flex-col gap-3 overflow-hidden rounded-2xl border bg-white p-5 transition-all duration-200",
+                "border-slate-200/80 shadow-sm hover:-translate-y-0.5 hover:shadow-md",
+                overridden && "ring-1 ring-amber-200",
+              )}
             >
-              <div className="flex items-start gap-2">
+              {/* Тонкая цветная полоска сверху — определяет тип документа */}
+              <div
+                className={cn(
+                  "absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r",
+                  TOP_ACCENT[t.badgeTone],
+                )}
+              />
+              <div className="flex items-start gap-3">
                 <div
                   className={cn(
-                    "flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px]",
-                    BADGE_TONE_CLASSES[t.badgeTone],
+                    "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl shadow-sm transition-transform group-hover:scale-105",
+                    ICON_GRADIENT[t.badgeTone],
                   )}
                 >
-                  <Icon size={18} />
+                  <Icon size={20} strokeWidth={2.2} />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5">
-                    <div className="text-[14px] font-bold leading-tight text-ink">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <h3 className="text-[14px] font-bold leading-tight tracking-tight text-ink">
                       {t.title}
-                    </div>
+                    </h3>
                     <span
                       className={cn(
-                        "rounded-full px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider",
+                        "rounded-full px-2 py-0.5 text-[9.5px] font-bold uppercase tracking-wider",
                         BADGE_TONE_CLASSES[t.badgeTone],
                       )}
                     >
@@ -291,20 +340,20 @@ function TemplatesGallery() {
                   </div>
                 </div>
               </div>
-              <div className="flex-1 text-[12px] leading-snug text-muted-2">
+              <p className="flex-1 text-[12.5px] leading-relaxed text-muted-2">
                 {t.subtitle}
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <div className="grid grid-cols-2 gap-1.5">
+              </p>
+              <div className="flex flex-col gap-2">
+                <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
                     disabled={disabled || isLoading}
                     onClick={() => setPreviewing(t)}
                     className={cn(
-                      "inline-flex items-center justify-center gap-1.5 rounded-[10px] py-2 text-[12px] font-bold transition-colors",
+                      "inline-flex items-center justify-center gap-1.5 rounded-xl py-2 text-[12px] font-semibold transition",
                       disabled
-                        ? "cursor-not-allowed bg-surface-soft text-muted-2"
-                        : "bg-surface-soft text-ink hover:bg-blue-50 hover:text-blue-700",
+                        ? "cursor-not-allowed bg-slate-50 text-muted-2"
+                        : "bg-slate-100 text-ink hover:bg-slate-200/70 active:scale-[.98]",
                     )}
                     title={
                       disabled
@@ -312,37 +361,36 @@ function TemplatesGallery() {
                         : "Посмотреть пример документа на реальной аренде"
                     }
                   >
-                    <FileText size={12} /> Образец
+                    <FileText size={13} /> Образец
                   </button>
                   {EDITABLE_KEYS.has(t.id) ? (
                     <button
                       type="button"
                       onClick={() => setEditing({ kind: "system", meta: t })}
-                      className="inline-flex items-center justify-center gap-1.5 rounded-[10px] bg-ink py-2 text-[12px] font-bold text-white transition-colors hover:bg-blue-600"
+                      className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-br from-slate-900 to-slate-700 py-2 text-[12px] font-semibold text-white shadow-sm transition hover:from-blue-600 hover:to-blue-700 hover:shadow active:scale-[.98]"
                       title="Открыть в редакторе шаблонов"
                     >
-                      <Pencil size={12} />{" "}
-                      {hasOverride(t.id) ? "Редактировать" : "Редактировать"}
+                      <Pencil size={13} /> Редактировать
                     </button>
                   ) : (
                     <button
                       type="button"
                       disabled
-                      className="inline-flex cursor-not-allowed items-center justify-center gap-1.5 rounded-[10px] bg-surface-soft py-2 text-[12px] font-bold text-muted-2"
+                      className="inline-flex cursor-not-allowed items-center justify-center gap-1.5 rounded-xl bg-slate-50 py-2 text-[12px] font-semibold text-muted-2"
                       title="Редактирование этого шаблона будет доступно в следующих релизах — он генерируется программно с переменным числом строк (позиции ущерба / список платежей)."
                     >
-                      <Pencil size={12} /> Редактировать
+                      <Pencil size={13} /> Редактировать
                     </button>
                   )}
                 </div>
-                <div className="flex items-center justify-between text-[10px] text-muted-2">
+                <div className="flex items-center justify-between text-[10.5px]">
                   <span>
-                    {hasOverride(t.id) ? (
-                      <span className="font-bold text-amber-700">
-                        Изменён вами
+                    {overridden ? (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 font-bold text-amber-700">
+                        ● Изменён вами
                       </span>
                     ) : (
-                      "системный по умолчанию"
+                      <span className="text-muted-2">системный по умолчанию</span>
                     )}
                   </span>
                   <span className="font-semibold text-muted">
@@ -429,13 +477,49 @@ function TemplatePreview({
   );
 }
 
+/** Элегантный заголовок секции с цифрой и подсказкой. */
+function SectionHeading({
+  label,
+  count,
+  hint,
+}: {
+  label: string;
+  count?: number;
+  hint?: string;
+}) {
+  return (
+    <div className="mt-2 flex items-end justify-between gap-2">
+      <div className="flex items-baseline gap-2">
+        <h2 className="text-[13px] font-bold uppercase tracking-[0.08em] text-ink">
+          {label}
+        </h2>
+        {count != null && count > 0 && (
+          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10.5px] font-bold tabular-nums text-muted">
+            {count}
+          </span>
+        )}
+      </div>
+      {hint && (
+        <div className="text-[11px] italic text-muted-2">{hint}</div>
+      )}
+    </div>
+  );
+}
+
 /**
- * Панель «Добавить документ» — две кнопки:
- *  - «Создать пустой» → открывает чистый редактор для нового шаблона
- *  - «Импорт из файла» → загружает .docx/.md/.html/.txt, конвертирует
- *    в HTML и открывает в редакторе
+ * Карточка-dropzone «+ Добавить шаблон» — встаёт в сетку «Мои шаблоны».
+ *
+ * Поведение:
+ *  - Клик по карточке → открывает пустой редактор (создание нового шаблона)
+ *  - Drag-and-drop файла на карточку → импортирует .docx/.md/.html/.txt
+ *    и открывает в редакторе
+ *  - Кнопка «Загрузить файл» внутри карточки — альтернатива drop'у через
+ *    нативный файловый диалог
+ *
+ * Визуально: gradient dashed border blue, при ховере/drag — выразительная
+ * подсветка с пульсацией.
  */
-function AddDocumentBar({
+function AddTemplateDropzone({
   onCreateEmpty,
   onImport,
 }: {
@@ -443,8 +527,9 @@ function AddDocumentBar({
   onImport: (html: string) => void;
 }) {
   const [importing, setImporting] = useState(false);
+  const [dragActive, setDragActive] = useState(false);
 
-  const onFile = async (file: File | null) => {
+  const handleFile = async (file: File | null) => {
     if (!file) return;
     setImporting(true);
     try {
@@ -452,7 +537,7 @@ function AddDocumentBar({
       onImport(html);
       toast.success(
         "Файл загружен в редактор",
-        `«${file.name}» — теперь можно расставить переменные через сайдбар.`,
+        `«${file.name}» — теперь расставьте переменные через сайдбар.`,
       );
     } catch (e) {
       toast.error("Не удалось импортировать", (e as Error).message ?? "");
@@ -462,41 +547,80 @@ function AddDocumentBar({
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-[12px] border border-dashed border-blue-300 bg-blue-50/40 p-3">
-      <span className="text-[12px] font-semibold text-ink">
-        Добавить новый документ:
-      </span>
-      <button
-        type="button"
-        onClick={onCreateEmpty}
-        className="inline-flex items-center gap-1.5 rounded-[10px] bg-ink px-3 py-1.5 text-[12px] font-bold text-white hover:bg-blue-600"
-      >
-        <Plus size={12} /> Создать пустой
-      </button>
-      <label
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onCreateEmpty}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") onCreateEmpty();
+      }}
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
+        if (!dragActive) setDragActive(true);
+      }}
+      onDragLeave={() => setDragActive(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setDragActive(false);
+        const file = e.dataTransfer.files?.[0];
+        if (file) void handleFile(file);
+      }}
+      className={cn(
+        "group relative flex h-full min-h-[200px] cursor-pointer flex-col items-center justify-center gap-2.5 overflow-hidden rounded-2xl border-2 border-dashed p-5 text-center transition-all duration-200 focus:outline-none",
+        dragActive
+          ? "scale-[1.01] border-blue-500 bg-gradient-to-br from-blue-100 to-indigo-100 shadow-lg ring-4 ring-blue-200/60"
+          : "border-blue-300 bg-gradient-to-br from-blue-50/60 to-indigo-50/40 hover:-translate-y-0.5 hover:border-blue-400 hover:shadow-md",
+        importing && "cursor-wait opacity-70",
+      )}
+      title="Кликните чтобы создать пустой шаблон, или перетащите Word/Markdown/HTML файл"
+    >
+      {/* Декоративные капли в углах для жизни */}
+      <div className="pointer-events-none absolute -right-6 -top-6 h-20 w-20 rounded-full bg-blue-300/20 blur-2xl transition-all group-hover:bg-blue-400/30" />
+      <div className="pointer-events-none absolute -bottom-6 -left-6 h-20 w-20 rounded-full bg-indigo-300/20 blur-2xl transition-all group-hover:bg-indigo-400/30" />
+
+      <div
         className={cn(
-          "inline-flex cursor-pointer items-center gap-1.5 rounded-[10px] bg-white px-3 py-1.5 text-[12px] font-bold text-blue-700 ring-1 ring-blue-200 hover:bg-blue-50",
-          importing && "cursor-wait opacity-60",
+          "relative flex h-14 w-14 items-center justify-center rounded-2xl shadow-md transition-all duration-300",
+          dragActive
+            ? "scale-110 bg-gradient-to-br from-blue-500 to-indigo-600 text-white"
+            : "bg-gradient-to-br from-blue-100 to-indigo-100 text-blue-600 group-hover:scale-110 group-hover:from-blue-500 group-hover:to-indigo-600 group-hover:text-white",
         )}
-        title="Загрузить .docx (Word), .md (Markdown), .html или .txt"
       >
-        <Upload size={12} />
-        {importing ? "Загружаем…" : "Импорт из файла (Word / MD / HTML)"}
+        {importing ? (
+          <div className="h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+        ) : (
+          <Plus size={26} strokeWidth={2.5} />
+        )}
+      </div>
+      <div className="relative text-[15px] font-bold tracking-tight text-ink">
+        {importing
+          ? "Загружаем файл…"
+          : dragActive
+            ? "Отпустите файл здесь"
+            : "Добавить шаблон"}
+      </div>
+      <div className="relative max-w-[260px] text-[11.5px] leading-relaxed text-muted-2">
+        Кликни чтобы создать <b className="text-ink">пустой</b>, или{" "}
+        <b className="text-ink">перетащи</b> сюда файл —<br />
+        Word, Markdown, HTML или TXT
+      </div>
+      <label
+        className="relative mt-1 inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-[11px] font-semibold text-blue-700 shadow-sm ring-1 ring-blue-200 transition hover:bg-blue-50 hover:shadow"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <Upload size={12} /> Выбрать файл
         <input
           type="file"
           accept=".docx,.md,.markdown,.html,.htm,.txt"
           className="hidden"
           onChange={(e) => {
-            void onFile(e.target.files?.[0] ?? null);
-            e.target.value = ""; // позволить перевыбрать тот же файл
+            void handleFile(e.target.files?.[0] ?? null);
+            e.target.value = "";
           }}
           disabled={importing}
         />
       </label>
-      <span className="text-[10px] text-muted-2">
-        Поддерживаются: .docx, .md, .html, .txt. Сохраняются заголовки,
-        списки, таблицы, форматирование.
-      </span>
     </div>
   );
 }
