@@ -69,18 +69,14 @@
   outline: none;
 }
 
-.tpl-editor-content .ProseMirror {
-  outline: none;
-  min-height: 400px;
-}
-
 /* WYSIWYG-стили: редактор должен выглядеть как Word — заголовки крупно
-   и жирно, тело Times New Roman, отступы как в финальном документе. */
-.tpl-editor-content .ProseMirror p {
+   и жирно, тело Times New Roman, отступы как в финальном документе.
+   ВАЖНО: Tiptap кладёт класс `tpl-editor-content` НА САМ ProseMirror div
+   (не на parent), поэтому селекторы — без вложенности `.tpl-editor-content X`. */
+.tpl-editor-content p {
   margin: 0.4em 0;
-  text-align: justify;
 }
-.tpl-editor-content .ProseMirror h1 {
+.tpl-editor-content h1 {
   font-size: 16pt !important;
   text-align: center !important;
   margin: 18pt 0 8pt !important;
@@ -88,7 +84,7 @@
   line-height: 1.3 !important;
   color: #111;
 }
-.tpl-editor-content .ProseMirror h2 {
+.tpl-editor-content h2 {
   font-size: 13pt !important;
   text-align: center !important;
   margin: 14pt 0 6pt !important;
@@ -96,69 +92,62 @@
   line-height: 1.3 !important;
   color: #111;
 }
-.tpl-editor-content .ProseMirror h3 {
+.tpl-editor-content h3 {
   font-size: 12pt !important;
   margin: 10pt 0 4pt !important;
   font-weight: 700 !important;
   color: #111;
 }
-.tpl-editor-content .ProseMirror b,
-.tpl-editor-content .ProseMirror strong {
+.tpl-editor-content b,
+.tpl-editor-content strong {
   font-weight: 700;
 }
-.tpl-editor-content .ProseMirror i,
-.tpl-editor-content .ProseMirror em {
+.tpl-editor-content i,
+.tpl-editor-content em {
   font-style: italic;
 }
-.tpl-editor-content .ProseMirror u {
+.tpl-editor-content u {
   text-decoration: underline;
 }
-.tpl-editor-content .ProseMirror ul,
-.tpl-editor-content .ProseMirror ol {
+.tpl-editor-content ul,
+.tpl-editor-content ol {
   padding-left: 1.5em;
   margin: 0.4em 0;
 }
-.tpl-editor-content .ProseMirror li {
+.tpl-editor-content li {
   margin: 2pt 0;
 }
-.tpl-editor-content .ProseMirror blockquote {
+.tpl-editor-content blockquote {
   border-left: 3px solid #d1d5db;
   padding-left: 12pt;
   margin: 8pt 0;
   color: #4b5563;
   font-style: italic;
 }
-.tpl-editor-content .ProseMirror hr {
+.tpl-editor-content hr {
   border: none;
   border-top: 1px solid #d1d5db;
   margin: 16pt 0;
 }
 
-/* Стили для нумерованных пунктов договора в редакторе. Дублируют
-   логику CSS из render.ts, но с маленькими подстройками для редактора
-   (он чуть уже чем A4 страница). */
-.tpl-editor-content .ProseMirror p.cl,
-.tpl-editor-content .ProseMirror p.cl2 {
+/* Нумерованные пункты договора (если class сохранён). */
+.tpl-editor-content p.cl,
+.tpl-editor-content p.cl2 {
   text-align: justify;
   margin: 4pt 0;
   line-height: 1.5;
 }
-.tpl-editor-content .ProseMirror p.cl  { padding-left: 0; }
-.tpl-editor-content .ProseMirror p.cl2 { padding-left: 26pt; }
-.tpl-editor-content .ProseMirror p.subhead {
+.tpl-editor-content p.cl  { padding-left: 0; }
+.tpl-editor-content p.cl2 { padding-left: 26pt; }
+.tpl-editor-content p.subhead {
   margin: 10pt 0 4pt;
   font-weight: 600;
 }
-/* Между жирным префиксом «1.1.» и текстом — фиксированный отступ. */
-.tpl-editor-content .ProseMirror p.cl > strong:first-child,
-.tpl-editor-content .ProseMirror p.cl > b:first-child,
-.tpl-editor-content .ProseMirror p.cl2 > strong:first-child,
-.tpl-editor-content .ProseMirror p.cl2 > b:first-child {
+.tpl-editor-content p.cl > strong:first-child,
+.tpl-editor-content p.cl > b:first-child,
+.tpl-editor-content p.cl2 > strong:first-child,
+.tpl-editor-content p.cl2 > b:first-child {
   margin-right: 8pt;
-}
-/* Заголовки центрируются (как в финальном документе) если не указано иначе. */
-.tpl-editor-content .ProseMirror h2[style*="text-align: justify"] {
-  text-align: justify !important;
 }
 
 /* Пилюля переменной — синий бейдж который выделяется в тексте */
@@ -187,27 +176,27 @@
 }
 
 /* Tables в редакторе */
-.tpl-editor-content .ProseMirror table {
+.tpl-editor-contenttable {
   border-collapse: collapse;
   width: 100%;
   margin: 1em 0;
   table-layout: fixed;
 }
 
-.tpl-editor-content .ProseMirror table td,
-.tpl-editor-content .ProseMirror table th {
+.tpl-editor-contenttable td,
+.tpl-editor-contenttable th {
   border: 1px solid #d1d5db;
   padding: 4px 8px;
   vertical-align: top;
   position: relative;
 }
 
-.tpl-editor-content .ProseMirror table th {
+.tpl-editor-contenttable th {
   background: #f3f4f6;
   font-weight: 600;
 }
 
-.tpl-editor-content .ProseMirror .selectedCell {
+.tpl-editor-content.selectedCell {
   background: rgba(59, 130, 246, 0.1);
 }
 

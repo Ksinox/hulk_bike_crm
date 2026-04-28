@@ -783,7 +783,61 @@ export async function renderSystemTemplateForEditor(
   // только содержимое, без <html><head><body> обвязки.
   const bodyMatch = html.match(/<div class="wrap">([\s\S]*?)<\/div>\s*<\/body>/);
   const inner = bodyMatch ? bodyMatch[1] : html;
-  return replaceFixtureWithPlaceholders(inner ?? "");
+  const withVars = replaceFixtureWithPlaceholders(inner ?? "");
+  // Превращаем class-based HTML в чистый Tiptap-формат с inline-стилями —
+  // так Tiptap при парсинге сохранит вёрстку независимо от CSS.
+  return convertToTiptapFriendlyHtml(withVars);
+}
+
+/**
+ * Превращает наш «бумажный» HTML договора (с p.cl/p.cl2/p.subhead) в
+ * Tiptap-friendly HTML с inline-стилями. После этого Tiptap при
+ * setContent сохранит вёрстку — отступы, центрирование заголовков,
+ * правильный hanging indent через nbsp.
+ */
+function convertToTiptapFriendlyHtml(html: string): string {
+  let out = html;
+
+  // p.subhead → жирный параграф с увеличенным верхним margin.
+  out = out.replace(
+    /<p class="subhead">/g,
+    '<p style="margin-top: 14pt; margin-bottom: 4pt; font-weight: 600">',
+  );
+
+  // p.cl2 (X.Y.Z) — с отступом слева 26pt + два nbsp между номером и текстом.
+  out = out.replace(
+    /<p class="cl2">/g,
+    '<p style="margin-left: 26pt; text-align: justify">',
+  );
+
+  // p.cl (X.Y) — без отступа слева, justify, два nbsp.
+  out = out.replace(
+    /<p class="cl">/g,
+    '<p style="text-align: justify">',
+  );
+
+  // После каждого жирного префикса в начале параграфа ставим NBSP-пробелы.
+  // Уже sed'ом убран обычный пробел после </b>; вставляем три nbsp.
+  out = out.replace(
+    /(<p[^>]*>)\s*<b>([^<]+)<\/b>(?!&nbsp;)/g,
+    "$1<strong>$2</strong>   ",
+  );
+
+  // Прочие <b>...</b> внутри текста (не префиксы) — оставляем как есть,
+  // Tiptap их распознаёт как bold mark.
+
+  // .para и .meta-row тоже могут встречаться — упрощаем в простые p.
+  out = out.replace(
+    /<div class="para">/g,
+    '<p style="text-align: justify">',
+  );
+  out = out.replace(/<\/div>(?=\s*<(?:p|h\d|ul|ol|table)\b)/g, "</p>");
+  out = out.replace(
+    /<div class="meta-row">/g,
+    '<p style="display: flex; justify-content: space-between">',
+  );
+
+  return out;
 }
 
 /**
