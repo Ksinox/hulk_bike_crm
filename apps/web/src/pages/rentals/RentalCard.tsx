@@ -66,7 +66,8 @@ const TABS: { id: TabId; label: string }[] = [
   { id: "docs", label: "Документы" },
 ];
 
-function fmt(n: number): string {
+function fmt(n: number | null | undefined): string {
+  if (n == null || Number.isNaN(n)) return "0";
   return n.toLocaleString("ru-RU");
 }
 
@@ -667,7 +668,7 @@ export function RentalCard({ rental }: { rental: Rental }) {
         {hasDamage && (
           <KpiCard
             label="Сумма ущерба"
-            value={`${fmt(rental.damageAmount!)} ₽`}
+            value={`${fmt(rental.damageAmount ?? 0)} ₽`}
             hint="выставлено вручную"
             accent="red"
           />

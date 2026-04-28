@@ -47,7 +47,8 @@ import { toast } from "@/lib/toast";
 import { DocumentPreviewModal } from "./DocumentPreviewModal";
 import { useDamageReports } from "@/lib/api/damage-reports";
 
-function fmt(n: number) {
+function fmt(n: number | null | undefined) {
+  if (n == null || Number.isNaN(n)) return "0";
   return n.toLocaleString("ru-RU");
 }
 

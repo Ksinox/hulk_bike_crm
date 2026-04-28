@@ -16,6 +16,11 @@ import {
   renderDamageHtml,
   renderDamageHtmlForWord,
 } from "../documents/damage-document.js";
+import {
+  loadClaimBundle,
+  renderClaimHtml,
+  renderClaimHtmlForWord,
+} from "../documents/claim-document.js";
 
 /**
  * Акты о повреждениях.
@@ -336,6 +341,40 @@ export async function damageReportsRoutes(app: FastifyInstance) {
     }
     const wordHtml = await renderDamageHtmlForWord(bundle);
     const filename = `Акт о повреждениях ${String(id).padStart(4, "0")}.doc`;
+    reply
+      .header("Content-Type", "application/msword; charset=utf-8")
+      .header(
+        "Content-Disposition",
+        `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
+      );
+    return reply.send(wordHtml);
+  });
+
+  /** Досудебная претензия по акту — отдельный документ для случая
+   *  когда клиент не согласен с актом. */
+  app.get<{
+    Params: { id: string };
+    Querystring: { format?: string };
+  }>("/:id/claim", async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id))
+      return reply.code(400).send({ error: "bad id" });
+    const bundle = await loadClaimBundle(id);
+    if (!bundle) return reply.code(404).send({ error: "not found" });
+    const format = req.query.format === "docx" ? "docx" : "html";
+    if (format === "html") {
+      const html = await renderClaimHtml(bundle);
+      reply
+        .header("Content-Type", "text/html; charset=utf-8")
+        .removeHeader("X-Frame-Options")
+        .header(
+          "Content-Security-Policy",
+          "frame-ancestors 'self' https://crm.hulkbike.ru https://crm.104-128-128-96.sslip.io",
+        );
+      return reply.send(html);
+    }
+    const wordHtml = await renderClaimHtmlForWord(bundle);
+    const filename = `Досудебная претензия ${String(id).padStart(4, "0")}.doc`;
     reply
       .header("Content-Type", "application/msword; charset=utf-8")
       .header(

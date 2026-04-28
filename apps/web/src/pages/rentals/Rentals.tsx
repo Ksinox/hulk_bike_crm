@@ -15,6 +15,7 @@ import { useApiClients } from "@/lib/api/clients";
 import { useApiScooters } from "@/lib/api/scooters";
 import { useApiPayments } from "@/lib/api/payments";
 import { revenueFromPayments } from "@/lib/revenue";
+import { ErrorBoundary } from "@/app/ErrorBoundary";
 import type { ApiClient } from "@/lib/api/types";
 import {
   matchId,
@@ -312,7 +313,13 @@ export function Rentals() {
               </div>
             );
           }
-          return <RentalCard rental={selected} />;
+          return (
+            <ErrorBoundary
+              key={selected.id}
+            >
+              <RentalCard rental={selected} />
+            </ErrorBoundary>
+          );
         })()}
       </div>
 
