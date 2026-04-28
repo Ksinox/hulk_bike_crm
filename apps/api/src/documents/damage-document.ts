@@ -11,6 +11,7 @@ import {
   clients,
   damageReportItems,
   damageReports,
+  documentTemplates,
   payments,
   rentals,
   scooterModels,
@@ -18,6 +19,7 @@ import {
   users,
 } from "../db/schema.js";
 import { LANDLORD } from "./landlord.js";
+import { resolveVariable } from "./variables.js";
 
 type DamageBundle = {
   report: typeof damageReports.$inferSelect;
@@ -155,7 +157,137 @@ const CSS = `
 </style>
 `;
 
-export function renderDamageHtml(b: DamageBundle): string {
+/**
+ * Сборка контекста damage.* переменных для подстановки в override-шаблон.
+ * Возвращает map { 'damage.itemsTable': '<table>...</table>', ... }.
+ * Используется substituteDamageVariables ниже.
+ */
+function buildDamageContext(b: DamageBundle): Record<string, string> {
+  const { report, items, damagePayments } = b;
+  const total = report.total;
+  const deposit = report.depositCovered;
+  const paid = damagePayments
+    .filter((p) => p.paid)
+    .reduce((s, p) => s + p.amount, 0);
+  const debt = Math.max(0, total - deposit - paid);
+
+  const rows = items
+    .map((it, i) => {
+      const sum = it.finalPrice * it.quantity;
+      const discount =
+        it.originalPrice > it.finalPrice
+          ? Math.round(
+              ((it.originalPrice - it.finalPrice) / it.originalPrice) * 100,
+            )
+          : 0;
+      const priceCell =
+        discount > 0
+          ? `<span style="text-decoration: line-through; color:#666">${fmtMoney(it.originalPrice)}</span> <b>${fmtMoney(it.finalPrice)}</b><br><span class="small">скидка −${discount}%</span>`
+          : `${fmtMoney(it.finalPrice)}`;
+      return `
+        <tr>
+          <td class="center">${i + 1}</td>
+          <td>
+            <b>${escape(it.name)}</b>
+            ${it.comment ? `<br><span class="small">${escape(it.comment)}</span>` : ""}
+          </td>
+          <td class="center">${it.quantity}</td>
+          <td class="num">${priceCell}</td>
+          <td class="num"><b>${fmtMoney(sum)}</b></td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  const itemsTable = `<table class="items">
+    <thead>
+      <tr>
+        <th style="width:32pt">№</th>
+        <th>Позиция / описание</th>
+        <th style="width:40pt">Кол.</th>
+        <th style="width:90pt">Цена, ₽</th>
+        <th style="width:90pt">Сумма, ₽</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rows}
+      <tr class="total-row">
+        <td colspan="4" style="text-align:right">ИТОГО:</td>
+        <td class="num">${fmtMoney(total)} ₽</td>
+      </tr>
+    </tbody>
+  </table>`;
+
+  return {
+    "damage.reportNumber": String(report.id).padStart(4, "0"),
+    "damage.reportDate": fmtDateRu(report.createdAt),
+    "damage.itemsTable": itemsTable,
+    "damage.total": fmtMoney(total),
+    "damage.totalWords": "—", // TODO: можно подключить moneyWords из variables.ts
+    "damage.depositCovered": fmtMoney(deposit),
+    "damage.paidSum": fmtMoney(paid),
+    "damage.debt": fmtMoney(debt),
+    "damage.note": report.note ? escape(report.note) : "",
+  };
+}
+
+/**
+ * Подставляет переменные в override-шаблон акта о повреждениях.
+ * Поддерживает обычные переменные (client.*, scooter.*, rental.*,
+ * landlord.*) через resolveVariable + специальные damage.* через
+ * dynamic context.
+ */
+function substituteDamageVariables(
+  html: string,
+  b: DamageBundle,
+): string {
+  const ctx = buildDamageContext(b);
+  // Bundle для resolveVariable — нужны rental, client, scooter, model.
+  const bundle = {
+    rental: b.rental,
+    client: b.client,
+    scooter: b.scooter,
+    model: b.model,
+  } as Parameters<typeof resolveVariable>[1];
+
+  // Сначала <span data-var="X.Y">...</span> — сохраняем форматирование пилюль.
+  const spanRe = /<span\s+data-var="([^"]+)"[^>]*>[\s\S]*?<\/span>/g;
+  let out = html.replace(spanRe, (_match, key: string) => {
+    if (key in ctx) return ctx[key] ?? "";
+    return resolveVariable(key, bundle);
+  });
+  // Простые {{X.Y}} метки.
+  const mustacheRe = /\{\{\s*([\w.]+)\s*\}\}/g;
+  out = out.replace(mustacheRe, (_m, key: string) => {
+    if (key in ctx) return ctx[key] ?? "";
+    return resolveVariable(key, bundle);
+  });
+  return out;
+}
+
+/**
+ * Главная функция рендера акта. Если в БД есть пользовательский
+ * override (templateKey='damage') — использует его и подставляет
+ * переменные. Иначе — системный хардкод.
+ */
+export async function renderDamageHtml(b: DamageBundle): Promise<string> {
+  const [override] = await db
+    .select()
+    .from(documentTemplates)
+    .where(eq(documentTemplates.templateKey, "damage"));
+  if (override) {
+    const body = substituteDamageVariables(override.body, b);
+    return `<!doctype html><html lang="ru"><head><meta charset="utf-8">
+<title>Акт о повреждениях № ${String(b.report.id).padStart(4, "0")}</title>${CSS}</head><body>
+<div class="wrap">
+${body}
+</div>
+</body></html>`;
+  }
+  return renderDamageHtmlSystem(b);
+}
+
+function renderDamageHtmlSystem(b: DamageBundle): string {
   const { report, rental, client, scooter, model, items, damagePayments } = b;
   const reportNo = String(report.id).padStart(4, "0");
   const reportDate = fmtDateRu(report.createdAt);
@@ -339,8 +471,82 @@ function escape(s: string | null | undefined): string {
     .replace(/"/g, "&quot;");
 }
 
-export function renderDamageHtmlForWord(b: DamageBundle): string {
-  const html = renderDamageHtml(b);
+/**
+ * Возвращает HTML системного шаблона акта о повреждениях с пилюлями
+ * переменных — для редактора шаблонов. Используется в endpoint
+ * GET /api/document-templates/system-default?type=damage.
+ *
+ * Поскольку акт сильно динамичный (таблица позиций имеет переменное
+ * число строк), мы НЕ генерируем его на fixture-bundle и потом replace —
+ * вместо этого собираем шаблон руками с пилюлями <span data-var="...">
+ * вместо мест где должны быть значения.
+ */
+export function renderDamageSystemForEditor(): string {
+  // Хелпер для пилюли с правильным русским label.
+  const pill = (key: string, label: string) =>
+    `<span data-var="${key}" data-label="${label}" class="tpl-var">${label}</span>`;
+
+  return `
+<h1>АКТ О ПОВРЕЖДЕНИЯХ № ${pill("damage.reportNumber", "Номер акта")}</h1>
+<p class="subtitle">по договору проката Скутера № ${pill("rental.id", "Номер договора")} от ${pill("rental.startDate", "Дата выдачи")}</p>
+
+<div class="meta-row">
+  <span>${pill("landlord.city", "Город")}</span>
+  <span>дата составления: ${pill("damage.reportDate", "Дата составления акта")}</span>
+</div>
+
+<p class="para">
+  Мы, нижеподписавшиеся, гражданин РФ <b>${pill("landlord.fullName", "ФИО арендодателя")}</b>, именуемый далее «Арендодатель», с одной стороны, и гражданин РФ <b>${pill("client.name", "ФИО арендатора")}</b>, тел. ${pill("client.phone", "Телефон")}, именуемый далее «Арендатор», с другой стороны, составили настоящий Акт о том, что при возврате Скутера ${pill("model.name", "Модель")}, № рамы ${pill("scooter.frameNumber", "Номер рамы")}, переданного по договору проката от ${pill("rental.startDate", "Дата выдачи")} (срок аренды до ${pill("rental.endDate", "Плановая дата возврата")}), обнаружены следующие повреждения и недостачи:
+</p>
+
+<p>${pill("damage.itemsTable", "Таблица позиций (вся таблица)")}</p>
+
+<div class="summary">
+  <table>
+    <tr>
+      <td class="lbl">Сумма по акту</td>
+      <td class="val">${pill("damage.total", "Итого по акту, ₽")} ₽</td>
+    </tr>
+    <tr>
+      <td class="lbl">Зачёт из залога (залог арендатора ${pill("rental.deposit", "Залог, ₽")} ₽)</td>
+      <td class="val">− ${pill("damage.depositCovered", "Зачёт из залога, ₽")} ₽</td>
+    </tr>
+    <tr>
+      <td class="lbl">Уплачено арендатором по акту</td>
+      <td class="val">− ${pill("damage.paidSum", "Уплачено по акту, ₽")} ₽</td>
+    </tr>
+    <tr class="total-final">
+      <td class="lbl"><b>К ДОПЛАТЕ:</b></td>
+      <td class="val">${pill("damage.debt", "К доплате (остаток долга), ₽")} ₽</td>
+    </tr>
+  </table>
+</div>
+
+<p class="para" style="margin-top:14pt">
+  С перечнем повреждений, расчётом стоимости устранения и итоговой суммой к доплате <b>СОГЛАСЕН</b>:
+</p>
+
+<div class="sig">
+  <div>
+    <div class="line"></div>
+    <div>Арендатор: ${pill("client.name", "ФИО арендатора")}</div>
+    <div class="small">подпись / расшифровка</div>
+  </div>
+  <div>
+    <div class="line"></div>
+    <div>Арендодатель: ${pill("landlord.fullName", "ФИО арендодателя")}</div>
+    <div class="small">подпись / расшифровка</div>
+  </div>
+</div>
+
+<p class="small" style="margin-top:18pt">
+  Акт составлен в двух экземплярах, имеющих равную юридическую силу, по одному для каждой из сторон.
+</p>
+`;
+}
+
+export async function renderDamageHtmlForWord(b: DamageBundle): Promise<string> {
+  const html = await renderDamageHtml(b);
   const stripped = html.replace(/@page\s*\{[^}]*\}/g, "");
   return stripped.replace(
     '<html lang="ru">',

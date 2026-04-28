@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, Eye, Save, Trash2, Loader2, PanelRightOpen, PanelRightClose } from "lucide-react";
+import { ArrowLeft, Eye, Save, Trash2, Loader2, PanelRightOpen, PanelRightClose, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
 import {
@@ -45,12 +45,13 @@ export function TemplateEditorPage({
   onBack: () => void;
 }) {
   const existing = useApiDocumentTemplateByKey(templateKey);
-  // Авто-загрузка системного шаблона если в БД нет override.
-  // Применяется только для системных typeKey — custom-* шаблоны
-  // не имеют system default.
-  const isSystemKey = ["contract", "contract_full", "act_transfer", "act_return", "purchase_deposit"].includes(templateKey);
+  // Системный шаблон загружаем всегда для системных templateKey —
+  // он нужен и как initial если override нет, и для кнопки «Применить
+  // системный» которая позволяет затереть устаревший override актуальным
+  // текстом из текущей версии CRM.
+  const isSystemKey = ["contract", "contract_full", "act_transfer", "act_return", "purchase_deposit", "damage"].includes(templateKey);
   const systemDefault = useSystemTemplateDefault(
-    isSystemKey && existing.isFetched && !existing.data ? templateKey : null,
+    isSystemKey ? templateKey : null,
   );
 
   const save = useSaveDocumentTemplate();
@@ -215,6 +216,32 @@ export function TemplateEditorPage({
               <span className="text-red-600">Ошибка</span>
             )}
           </span>
+          {/* «Применить системный» — затирает текущее содержимое редактора
+              свежим системным шаблоном (без удаления override из БД до
+              сохранения). Полезно когда хочется получить актуальную версию
+              шаблона из новой версии CRM, перетереть свой устаревший override. */}
+          {isSystemKey && systemDefault.data && (
+            <button
+              type="button"
+              onClick={() => {
+                if (
+                  !window.confirm(
+                    "Заменить текущее содержимое редактора актуальным системным шаблоном? Текущие правки в редакторе будут потеряны.",
+                  )
+                )
+                  return;
+                setBodyHtml(systemDefault.data ?? "");
+                toast.success(
+                  "Применён системный шаблон",
+                  "Изменения автоматически сохранятся через 1.5 сек.",
+                );
+              }}
+              className="inline-flex items-center gap-1.5 rounded-[8px] bg-white px-3 py-1.5 text-[12px] font-semibold text-blue-700 hover:bg-blue-50"
+              title="Затереть содержимое редактора актуальным системным шаблоном"
+            >
+              <RotateCcw size={12} /> Применить системный
+            </button>
+          )}
           {existing.data && (
             <button
               type="button"

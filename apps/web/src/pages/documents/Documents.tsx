@@ -157,7 +157,7 @@ const BADGE_TONE_CLASSES: Record<TemplateMeta["badgeTone"], string> = {
 };
 
 /** Какие шаблоны можно редактировать через Tiptap (override системного). */
-const EDITABLE_KEYS = new Set(["contract_full", "act_return"]);
+const EDITABLE_KEYS = new Set(["contract_full", "act_return", "damage"]);
 
 function TemplatesGallery() {
   const { data: rentals = [], isLoading } = useApiRentals();

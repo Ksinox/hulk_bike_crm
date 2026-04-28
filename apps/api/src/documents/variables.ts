@@ -79,6 +79,21 @@ export const VARIABLE_CATALOG: VariableGroup[] = [
     ],
   },
   {
+    id: "damage",
+    label: "Акт о повреждениях",
+    variables: [
+      { key: "damage.reportNumber", label: "Номер акта" },
+      { key: "damage.reportDate", label: "Дата составления акта" },
+      { key: "damage.itemsTable", label: "Таблица позиций (вся таблица)" },
+      { key: "damage.total", label: "Итого по акту, ₽" },
+      { key: "damage.totalWords", label: "Итого прописью" },
+      { key: "damage.depositCovered", label: "Зачёт из залога, ₽" },
+      { key: "damage.paidSum", label: "Уплачено по акту, ₽" },
+      { key: "damage.debt", label: "К доплате (остаток долга), ₽" },
+      { key: "damage.note", label: "Комментарий к акту" },
+    ],
+  },
+  {
     id: "rental",
     label: "Аренда",
     variables: [

@@ -56,10 +56,19 @@ export async function documentTemplatesRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const allowed = ["contract", "contract_full", "act_transfer", "act_return", "purchase_deposit"];
       const t = req.query.type ?? "";
-      if (!allowed.includes(t))
-        return reply.code(400).send({ error: "bad type" });
-      const html = await renderSystemTemplateForEditor(t as DocumentType);
-      return { html };
+      if (allowed.includes(t)) {
+        const html = await renderSystemTemplateForEditor(t as DocumentType);
+        return { html };
+      }
+      // Шаблон «Акт о повреждениях» — отдельный путь, потому что damage
+      // живёт вне DocumentType (он генерируется через damage-document.ts).
+      if (t === "damage") {
+        const { renderDamageSystemForEditor } = await import(
+          "../documents/damage-document.js"
+        );
+        return { html: renderDamageSystemForEditor() };
+      }
+      return reply.code(400).send({ error: "bad type" });
     },
   );
 

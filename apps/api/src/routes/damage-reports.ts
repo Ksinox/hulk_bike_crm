@@ -324,7 +324,7 @@ export async function damageReportsRoutes(app: FastifyInstance) {
     if (!bundle) return reply.code(404).send({ error: "not found" });
     const format = req.query.format === "docx" ? "docx" : "html";
     if (format === "html") {
-      const html = renderDamageHtml(bundle);
+      const html = await renderDamageHtml(bundle);
       reply
         .header("Content-Type", "text/html; charset=utf-8")
         .removeHeader("X-Frame-Options")
@@ -334,7 +334,7 @@ export async function damageReportsRoutes(app: FastifyInstance) {
         );
       return reply.send(html);
     }
-    const wordHtml = renderDamageHtmlForWord(bundle);
+    const wordHtml = await renderDamageHtmlForWord(bundle);
     const filename = `Акт о повреждениях ${String(id).padStart(4, "0")}.doc`;
     reply
       .header("Content-Type", "application/msword; charset=utf-8")
