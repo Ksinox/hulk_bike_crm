@@ -89,10 +89,11 @@ async function authorizeByToken(applicationId: number, token: string | undefined
 
 export async function publicApplicationsRoutes(app: FastifyInstance) {
   /* POST /api/public/applications
-   * Создаёт черновик. Honeypot-поле непустое → возвращаем фейк-id (бот не поймёт). */
+   * Создаёт черновик. Honeypot-поле непустое → возвращаем фейк-id (бот не поймёт).
+   * Лимит на IP щедрый: за NAT/Wi-Fi точкой кафе/офиса могут быть десятки клиентов. */
   app.post<{ Body: unknown }>(
     "/applications",
-    { config: { rateLimit: { max: 5, timeWindow: "1 hour" } } },
+    { config: { rateLimit: { max: 60, timeWindow: "1 hour" } } },
     async (req, reply) => {
       const parsed = ApplicationFieldsBody.safeParse(req.body ?? {});
       if (!parsed.success) {
@@ -140,7 +141,7 @@ export async function publicApplicationsRoutes(app: FastifyInstance) {
    * Только status='draft' (после submit правки запрещены). */
   app.patch<{ Params: { id: string }; Body: unknown }>(
     "/applications/:id",
-    { config: { rateLimit: { max: 60, timeWindow: "1 hour" } } },
+    { config: { rateLimit: { max: 240, timeWindow: "1 hour" } } },
     async (req, reply) => {
       const id = Number(req.params.id);
       if (!Number.isFinite(id) || id <= 0) {
@@ -177,7 +178,7 @@ export async function publicApplicationsRoutes(app: FastifyInstance) {
    * Загрузка одного файла (kind + file). Если файл этого kind уже есть — старый удаляется. */
   app.post<{ Params: { id: string } }>(
     "/applications/:id/files",
-    { config: { rateLimit: { max: 30, timeWindow: "1 hour" } } },
+    { config: { rateLimit: { max: 120, timeWindow: "1 hour" } } },
     async (req, reply) => {
       const id = Number(req.params.id);
       if (!Number.isFinite(id) || id <= 0) {
@@ -279,7 +280,7 @@ export async function publicApplicationsRoutes(app: FastifyInstance) {
    * Удалить ранее загруженный файл (для перезагрузки). */
   app.delete<{ Params: { id: string; kind: string } }>(
     "/applications/:id/files/:kind",
-    { config: { rateLimit: { max: 30, timeWindow: "1 hour" } } },
+    { config: { rateLimit: { max: 60, timeWindow: "1 hour" } } },
     async (req, reply) => {
       const id = Number(req.params.id);
       if (!Number.isFinite(id) || id <= 0) {
@@ -325,7 +326,7 @@ export async function publicApplicationsRoutes(app: FastifyInstance) {
    * После успеха: status='new', uploadToken обнуляется (правки запрещены). */
   app.post<{ Params: { id: string } }>(
     "/applications/:id/submit",
-    { config: { rateLimit: { max: 5, timeWindow: "1 hour" } } },
+    { config: { rateLimit: { max: 30, timeWindow: "1 hour" } } },
     async (req, reply) => {
       const id = Number(req.params.id);
       if (!Number.isFinite(id) || id <= 0) {
