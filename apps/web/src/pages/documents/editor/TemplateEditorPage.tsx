@@ -66,7 +66,16 @@ export function TemplateEditorPage({
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   // Загрузка начального содержимого (override → fallback → system → empty).
+  // ВАЖНО: грузим только ОДИН РАЗ. После того как bodyHtml задан, любые
+  // последующие изменения existing.data (refetch после mutate, focus
+  // refetch React Query, reconnect) НЕ должны перезаписывать локальное
+  // состояние — иначе авто-сохранение конфликтует с refetch'ем и
+  // пользователь видит как удалённые из шаблона плашки «возвращаются»:
+  // удалил пилюлю → onChange → bodyHtml без неё → save timer ждёт 1.5с
+  // → за это время refetch вернёт старое значение из БД (с пилюлей)
+  // → setBodyHtml(старое) → редактор перезаписывается.
   useEffect(() => {
+    if (bodyHtml != null) return;
     if (existing.data) {
       setBodyHtml(existing.data.body);
       setSavedHtml(existing.data.body);
@@ -96,6 +105,7 @@ export function TemplateEditorPage({
       setSavedHtml(null);
     }
   }, [
+    bodyHtml,
     existing.data,
     existing.isFetched,
     initialFallbackHtml,

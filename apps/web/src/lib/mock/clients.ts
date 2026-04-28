@@ -11,6 +11,21 @@ export type Client = {
   added: string;
   blacklisted?: boolean;
   comment?: string;
+  // Опциональные «сырые» поля из API — нужны UI-форме редактирования
+  // и карточке клиента, чтобы не показывать прочерки когда данные есть
+  // в БД. Заполняются adaptClient'ом из ApiClient. Для legacy моков
+  // остаются undefined.
+  extraPhone?: string | null;
+  birthDate?: string | null; // ISO YYYY-MM-DD
+  passportSeries?: string | null;
+  passportNumber?: string | null;
+  passportIssuedOn?: string | null; // ISO YYYY-MM-DD
+  passportIssuer?: string | null;
+  passportDivisionCode?: string | null;
+  passportRegistration?: string | null;
+  isForeigner?: boolean;
+  passportRaw?: string | null;
+  blacklistReason?: string | null;
 };
 
 export type RentalStatus = "active" | "done" | "overdue";
@@ -269,6 +284,20 @@ const RICH: Record<number, ClientDetails> = {
   },
 };
 
+/** "2003-10-11" → "11.10.2003"; пустое/невалидное → "—" */
+function isoDateToRuFull(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return iso;
+  return `${m[3]}.${m[2]}.${m[1]}`;
+}
+
+function orDash(v: string | null | undefined): string {
+  if (v == null) return "—";
+  const t = String(v).trim();
+  return t === "" ? "—" : t;
+}
+
 export function getClientDetails(c: Client): ClientDetails {
   if (RICH[c.id]) return RICH[c.id];
 
@@ -298,14 +327,24 @@ export function getClientDetails(c: Client): ClientDetails {
       ]
     : [];
 
+  // Если клиент пришёл из API (adaptClient проставил поля) — возвращаем
+  // реальные данные. Иначе (legacy mock) — прочерки как раньше.
   return {
-    birth: "—",
-    regAddr: "—",
-    liveAddr: "—",
-    passport: { ser: "—", num: "—", issuer: "—", date: "—", code: "—" },
+    birth: isoDateToRuFull(c.birthDate),
+    regAddr: orDash(c.passportRegistration),
+    liveAddr: orDash(c.passportRegistration),
+    passport: {
+      ser: orDash(c.passportSeries),
+      num: orDash(c.passportNumber),
+      issuer: orDash(c.passportIssuer),
+      date: isoDateToRuFull(c.passportIssuedOn),
+      code: orDash(c.passportDivisionCode),
+    },
     docs: { passport_main: null, passport_reg: null, license: null },
     origVerified: null,
-    blReason: c.blacklisted ? c.comment || "Причина не указана" : null,
+    blReason: c.blacklisted
+      ? c.blacklistReason || c.comment || "Причина не указана"
+      : null,
     blDate: c.blacklisted ? c.added : null,
     blBy: c.blacklisted ? "Директор" : null,
     stats: { total: c.rents, active: c.rents, dtp: 0 },

@@ -14,6 +14,10 @@ function isoToRu(iso: string): string {
  * `rents` и `debt` в реальной модели вычисляемые (denormalized).
  * Сейчас возвращаем 0 — в ближайшей итерации подсчитаем из аренд.
  * Влияет на: счётчик «N аренд» в списке + фильтр «С долгом».
+ *
+ * Паспортные данные/адрес/дата рождения/extraPhone пробрасываются
+ * as-is — нужны UI-форме редактирования и карточке клиента, чтобы
+ * показывать реальные данные из БД, а не прочерки от mock-фоллбэка.
  */
 export function adaptClient(a: ApiClient): Client {
   return {
@@ -27,5 +31,16 @@ export function adaptClient(a: ApiClient): Client {
     added: isoToRu(a.addedOn),
     blacklisted: a.blacklisted,
     comment: a.comment ?? undefined,
+    extraPhone: a.extraPhone,
+    birthDate: a.birthDate,
+    passportSeries: a.passportSeries,
+    passportNumber: a.passportNumber,
+    passportIssuedOn: a.passportIssuedOn,
+    passportIssuer: a.passportIssuer,
+    passportDivisionCode: a.passportDivisionCode,
+    passportRegistration: a.passportRegistration,
+    isForeigner: a.isForeigner,
+    passportRaw: a.passportRaw,
+    blacklistReason: a.blacklistReason,
   };
 }

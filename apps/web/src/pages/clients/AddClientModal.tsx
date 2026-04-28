@@ -202,7 +202,7 @@ function initialForm(editing: Client | null): Form {
   return {
     name: editing.name,
     phone: editing.phone,
-    phone2: clientStore.getExtraPhone(editing.id) ?? "",
+    phone2: editing.extraPhone ?? clientStore.getExtraPhone(editing.id) ?? "",
     birth: d.birth === "—" ? "" : d.birth,
     source: editing.source,
     sourceCustom: "",
