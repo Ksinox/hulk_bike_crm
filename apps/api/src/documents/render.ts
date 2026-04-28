@@ -586,34 +586,36 @@ ${TOOLBAR}
   <div class="para"><b>Арендатор:</b> ${clientBlock(client)}</div>
   <div class="para"><b>Арендодатель:</b> ${landlordBlock()}</div>
 
-  <div class="para">составили настоящий акт о нижеследующем:</div>
-
   <div class="para">
-    Арендодатель забрал у Арендатора скутер <b>${orDash(modelDisplayName(prevScooter ?? null, prevModel ?? null), "________")}</b>${prevScooter?.name ? ` (внутренний номер ${prevScooter.name})` : ""}, переданный ранее по Акту приёма-передачи к Договору № ${contractNumber} от ${fmtDateRu(rental.startAt)} г., и передал во временное пользование Арендатору другой скутер.
+    составили настоящий акт о нижеследующем: Арендодатель забрал у Арендатора скутер, переданный ранее по Акту приёма-передачи к Договору № ${contractNumber} от ${fmtDateRu(rental.startAt)} г., и передал во временное пользование Арендатору другой скутер.
   </div>
 
-  <div class="para"><b>Причина замены:</b> ${orDash(swapReason ?? null, "________________________________")}</div>
-
-  <div class="para"><b>Возвращённый скутер:</b><br>
-    Марка, модель: <b>${orDash(modelDisplayName(prevScooter ?? null, prevModel ?? null), "________")}</b><br>
-    Год выпуска: <b>${orDash(prevScooter?.year, "______")}</b><br>
-    № двигателя: <b>${orDash(prevScooter?.engineNo, "______________")}</b><br>
-    № шасси (рама): <b>${orDash(prevScooter?.frameNumber ?? prevScooter?.vin, "______________")}</b><br>
-    Цвет: <b>${orDash(prevScooter?.color, "____________")}</b><br>
-    ${prevScooter?.name ? "Внутренний номер: " + prevScooter.name : ""}<br>
-    Пробег на момент возврата: <b>${orDash(prevScooter?.mileage != null ? `${prevScooter.mileage} км` : null, "______ км")}</b>
-  </div>
-
-  <div class="para"><b>Переданный (новый) скутер:</b><br>
-    Марка, модель: <b>${orDash(modelDisplayName(scooter, model), "________")}</b><br>
-    Год выпуска: <b>${orDash(scooter?.year, "______")}</b><br>
-    № двигателя: <b>${orDash(scooter?.engineNo, "______________")}</b><br>
-    № шасси (рама): <b>${orDash(scooter?.frameNumber ?? scooter?.vin, "______________")}</b><br>
-    Цвет: <b>${orDash(scooter?.color, "____________")}</b><br>
-    ${scooter?.name ? "Внутренний номер: " + scooter.name : ""}<br>
-    Пробег на момент выдачи: <b>${orDash(scooter?.mileage != null ? `${scooter.mileage} км` : null, "______ км")}</b><br>
-    Техническое состояние скутера: зафиксировано посредством фото-видео фиксации и отправлено в общий чат в мессенджере «WhatsApp»
-  </div>
+  <table style="width: 100%; border: 0; border-collapse: collapse; margin-top: 6pt; page-break-inside: avoid">
+    <tr>
+      <td style="width: 50%; border: 0; padding: 0 8pt 0 0; vertical-align: top; font-size: 10.5pt">
+        <div style="font-weight: bold; margin-bottom: 4pt">Возвращённый скутер</div>
+        Марка, модель: <b>${orDash(modelDisplayName(prevScooter ?? null, prevModel ?? null), "________")}</b><br>
+        Год выпуска: <b>${orDash(prevScooter?.year, "______")}</b><br>
+        № двигателя: <b>${orDash(prevScooter?.engineNo, "______________")}</b><br>
+        № шасси (рама): <b>${orDash(prevScooter?.frameNumber ?? prevScooter?.vin, "______________")}</b><br>
+        Цвет: <b>${orDash(prevScooter?.color, "____________")}</b><br>
+        ${prevScooter?.name ? "Внутренний номер: <b>" + prevScooter.name + "</b><br>" : ""}
+        Пробег на момент возврата: <b>${orDash(prevScooter?.mileage != null ? `${prevScooter.mileage} км` : null, "______ км")}</b>
+        <div style="margin-top: 8pt"><b>Причина замены:</b> ${orDash(swapReason ?? null, "________________________________")}</div>
+      </td>
+      <td style="width: 50%; border: 0; padding: 0 0 0 8pt; vertical-align: top; font-size: 10.5pt">
+        <div style="font-weight: bold; margin-bottom: 4pt">Переданный (новый) скутер</div>
+        Марка, модель: <b>${orDash(modelDisplayName(scooter, model), "________")}</b><br>
+        Год выпуска: <b>${orDash(scooter?.year, "______")}</b><br>
+        № двигателя: <b>${orDash(scooter?.engineNo, "______________")}</b><br>
+        № шасси (рама): <b>${orDash(scooter?.frameNumber ?? scooter?.vin, "______________")}</b><br>
+        Цвет: <b>${orDash(scooter?.color, "____________")}</b><br>
+        ${scooter?.name ? "Внутренний номер: <b>" + scooter.name + "</b><br>" : ""}
+        Пробег на момент выдачи: <b>${orDash(scooter?.mileage != null ? `${scooter.mileage} км` : null, "______ км")}</b>
+        <div style="margin-top: 8pt; font-size: 9.5pt">Техническое состояние скутера зафиксировано посредством фото-видео фиксации и отправлено в общий чат в мессенджере «WhatsApp».</div>
+      </td>
+    </tr>
+  </table>
 
   <div class="para">
     Одновременно со Скутером Арендодатель передал, а Арендатор принял следующие запасные части, аксессуары, дополнительное оборудование:
