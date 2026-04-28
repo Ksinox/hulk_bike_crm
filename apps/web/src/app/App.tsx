@@ -17,6 +17,7 @@ import { setRole } from "@/lib/role";
 import { Login } from "./Login";
 import { ForceChangePassword } from "./ForceChangePassword";
 import { ToastContainer, ConfirmContainer } from "@/lib/toast";
+import { NewApplicationDetector } from "@/pages/clients/NewApplicationDetector";
 
 export function App() {
   const { data: me, isLoading, isError } = useMe();
@@ -100,6 +101,7 @@ export function App() {
           />
         )}
       </div>
+      <NewApplicationDetector />
       <ToastContainer />
       <ConfirmContainer />
     </>

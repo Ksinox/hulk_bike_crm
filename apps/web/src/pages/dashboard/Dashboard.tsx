@@ -10,6 +10,7 @@ import { OverdueTable } from "./OverdueTable";
 import { TasksList } from "./TasksList";
 import { ActivityFeed } from "./ActivityFeed";
 import { ClassicKpi, CLASSIC_KPI_ICONS } from "./ClassicKpi";
+import { NewApplicationsWidget } from "./NewApplicationsWidget";
 import { loadView, saveView, type DashboardView } from "./view";
 import {
   formatRub,
@@ -120,6 +121,7 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
           <ActivityFeed />
         </div>
         <div className="col-span-4 flex flex-col gap-4">
+          <NewApplicationsWidget />
           <RevenueCard metrics={metrics} />
           <ReturnsList items={metrics.returnsToday} />
           <TasksList />
@@ -199,6 +201,7 @@ function ClassicVariant({ metrics }: { metrics: DashboardMetrics }) {
         foot={<span className="text-muted-2">скоро</span>}
       />
 
+      <NewApplicationsWidget className="col-span-12" />
       <ReturnsTable className="col-span-8" items={metrics.returnsToday} />
       <TasksList className="col-span-4" />
       <OverdueTable
