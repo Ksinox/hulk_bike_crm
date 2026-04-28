@@ -555,9 +555,10 @@ export async function rentalsRoutes(app: FastifyInstance) {
             endActualAt: new Date(`${d.dateActual}T12:00:00+03:00`),
             depositReturned: d.depositReturned,
             damageAmount: d.damageAmount ?? null,
-            // Завершённая аренда автоматически уходит в архив, чтобы
-            // не засорять основной список. Доступна на вкладке «Архив».
-            archivedAt: sql`now()`,
+            // Аренда без ущерба сразу уходит в архив (не засоряет
+            // активный список). С ущербом — НЕ архивируется, остаётся
+            // в активных как «проблемная» пока долг не будет погашен.
+            archivedAt: withDamage ? null : sql`now()`,
             updatedAt: sql`now()`,
           })
           .where(eq(rentals.id, id))

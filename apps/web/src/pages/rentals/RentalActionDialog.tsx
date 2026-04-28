@@ -57,10 +57,15 @@ export function RentalActionDialog({
   rental,
   action,
   onClose,
+  onOpenDamage,
 }: {
   rental: Rental;
   action: ActionKind;
   onClose: () => void;
+  /** Вызывается когда при «Завершить» обнаружен ущерб (галочка
+   *  «Состояние скутера в порядке» НЕ стоит) — parent открывает
+   *  DamageReportDialog. */
+  onOpenDamage?: () => void;
 }) {
   const [closing, setClosing] = useState(false);
 
@@ -70,9 +75,10 @@ export function RentalActionDialog({
   const [returnOk, setReturnOk] = useState(true);
   const [equipmentOk, setEquipmentOk] = useState(true);
   const [depositBack, setDepositBack] = useState(true);
-  // Единый сценарий «Завершить аренду» — галка «Есть ущерб?»
-  // включает блок суммы и описания. Без галки — обычное завершение.
-  const [hasDamage, setHasDamage] = useState(false);
+  // Legacy-флаг для action="complete-damage" — в новом flow «Завершить»
+  // ущерб открывается через onOpenDamage callback, без чекбокса.
+  const [hasDamage] = useState(false);
+  void hasDamage;
 
   // Для инцидента посреди аренды
   const [incidentType, setIncidentType] = useState("ДТП");
@@ -100,35 +106,11 @@ export function RentalActionDialog({
 
   const spec: Spec = (() => {
     if (action === "complete") {
-      const isInspectionStep =
-        rental.status === "active" || rental.status === "overdue";
-      // Чек-лист подтверждения выдачи убран по решению заказчика —
-      // аренда сразу полностью оформлена при создании, никаких
-      // блокировок «сначала подтвердите оплату».
-
-      // Шаг 1: пользователь жмёт «Завершить аренду» — переводим в режим
-      // приёма (returning). Это позволяет вернуться к чек-листу позже,
-      // если приём прерывается (что-то надо уточнить, клиент уехал и т.п.).
-      if (isInspectionStep) {
-        return {
-          title: "Завершить аренду — начать приём",
-          body: (
-            <div className="space-y-3">
-              <div className="flex items-start gap-2 rounded-[10px] bg-blue-50 px-3 py-2 text-[12px] text-blue-700">
-                <Check size={14} className="mt-0.5 shrink-0" />
-                <span>
-                  Клиент привёз скутер. Откроется режим осмотра — заполните
-                  чек-лист в табе «Возврат» и затем подтвердите завершение
-                  с галкой «Есть ущерб», если что-то нашли.
-                </span>
-              </div>
-            </div>
-          ),
-          cta: "Начать приём",
-          ctaTone: "primary",
-        };
-      }
-      // Шаг 2: уже returning — единое окно с чек-листом и галкой ущерба.
+      // Единое окно завершения — без двухшагового перехода через
+      // returning. Чек-лист с тремя пунктами. Если «Состояние скутера
+      // в порядке» НЕ отмечено — при сабмите вместо завершения
+      // открывается окно «Зафиксировать ущерб» (через onOpenDamage).
+      const damaged = !returnOk;
       return {
         title: "Завершить аренду",
         body: (
@@ -156,23 +138,19 @@ export function RentalActionDialog({
               </div>
             </div>
 
-            <label className="flex items-start gap-2 rounded-[10px] border border-border bg-surface-soft p-3 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={hasDamage}
-                onChange={(e) => setHasDamage(e.target.checked)}
-                className="mt-0.5 h-4 w-4 cursor-pointer accent-orange"
-              />
-              <div className="flex-1">
-                <div className="text-[13px] font-bold text-ink">Есть ущерб?</div>
-                <div className="text-[11px] text-muted">
-                  Отметьте, если при осмотре нашли повреждения. Появятся поля для
-                  суммы и описания, ущерб создаст платёж типа «damage».
-                </div>
+            {damaged && (
+              <div className="flex items-start gap-2 rounded-[10px] border border-orange/40 bg-orange-soft/40 p-3 text-[12px] text-orange-ink">
+                <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+                <span>
+                  Состояние скутера не в порядке — после нажатия откроется
+                  окно <b>«Зафиксировать ущерб»</b>: выберешь повреждения из
+                  прейскуранта, рассчитаешь сумму и зачёт залога. Аренда
+                  останется активной до полного погашения долга.
+                </span>
               </div>
-            </label>
+            )}
 
-            {hasDamage && (
+            {false && (
               <div className="space-y-2 rounded-[10px] border border-orange/30 bg-orange-soft/40 p-3">
                 <div className="flex items-center gap-2 text-[12px] font-bold text-orange-ink">
                   <AlertTriangle size={14} /> Фиксация ущерба
@@ -240,12 +218,18 @@ export function RentalActionDialog({
         revertOverdue(rental.id);
         break;
       case "complete":
-        // Если в active/overdue → переводим в returning (фиксируем что
-        // скутер привезли). Если уже в returning → закрываем сделку,
-        // решая вопрос ущерба галкой внутри окна.
-        if (rental.status === "active" || rental.status === "overdue") {
-          setRentalStatus(rental.id, "returning");
-        } else if (hasDamage) {
+        // Единое окно завершения — без двухшагового перехода через
+        // returning. Если «Состояние не в порядке» — закрываем этот
+        // диалог и открываем «Зафиксировать ущерб» (parent через
+        // onOpenDamage). Если всё в порядке — обычное завершение.
+        if (!returnOk) {
+          // Закрываем диалог чек-листа и просим parent открыть damage.
+          if (onOpenDamage) {
+            onOpenDamage();
+            requestClose();
+            return;
+          }
+          // Fallback если parent не передал callback — старая логика.
           completeRentalWithDamage(
             rental.id,
             {
@@ -253,15 +237,15 @@ export function RentalActionDialog({
               conditionOk: false,
               equipmentOk,
               depositReturned: depositBack,
-              damageNotes: damageNote,
+              damageNotes: "",
             },
-            Number(damageAmount) || 0,
-            damageNote,
+            0,
+            "",
           );
         } else {
           completeRentalNoDamage(rental.id, {
             dateActual: todayStr(),
-            conditionOk: returnOk,
+            conditionOk: true,
             equipmentOk,
             depositReturned: depositBack,
           });

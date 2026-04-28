@@ -28,9 +28,6 @@ import { navigate } from "@/app/navigationStore";
 import {
   DocumentsTab,
   HistoryTab,
-  IncidentsTab,
-  PaymentsTab,
-  ReturnTab,
   TasksTab,
   TermsTab,
 } from "./RentalCardTabs";
@@ -60,21 +57,11 @@ import { confirmDialog } from "@/lib/toast";
 import { toast } from "@/lib/toast";
 import { ApiError } from "@/lib/api";
 
-type TabId =
-  | "terms"
-  | "history"
-  | "payments"
-  | "return"
-  | "incidents"
-  | "tasks"
-  | "docs";
+type TabId = "terms" | "history" | "tasks" | "docs";
 
 const TABS: { id: TabId; label: string }[] = [
   { id: "terms", label: "Условия" },
   { id: "history", label: "История" },
-  { id: "payments", label: "Платежи" },
-  { id: "return", label: "Возврат" },
-  { id: "incidents", label: "Инциденты" },
   { id: "tasks", label: "Задачи" },
   { id: "docs", label: "Документы" },
 ];
@@ -139,13 +126,11 @@ function statusActions(
         { id: "extend", label: "Продлить", icon: Repeat, tone: "primary" },
         { id: "complete", label: "Завершить аренду", icon: ArrowRight, tone: "ghost" },
         { id: "addPayment", label: "Принять платёж", icon: Plus, tone: "ghost" },
-        { id: "incident", label: "Зафиксировать инцидент", icon: AlertTriangle, tone: "warn" },
       ]);
     case "overdue":
       return withExtras([
         { id: "complete", label: "Завершить аренду", icon: ArrowRight, tone: "primary" },
         { id: "addPayment", label: "Принять платёж", icon: Plus, tone: "ghost" },
-        { id: "incident", label: "Зафиксировать инцидент", icon: AlertTriangle, tone: "warn" },
         { id: "revert-overdue", label: "Снять просрочку", icon: XCircle, tone: "ghost" },
         { id: "police", label: "Подать в полицию", icon: ShieldAlert, tone: "danger" },
       ]);
@@ -724,14 +709,6 @@ export function RentalCard({ rental }: { rental: Rental }) {
         {tab === "history" && (
           <HistoryTab rental={rental} chainRentals={chainRentals} />
         )}
-        {tab === "payments" && (
-          <PaymentsTab
-            rental={rental}
-            onAddPayment={() => setAction("addPayment")}
-          />
-        )}
-        {tab === "return" && <ReturnTab rental={rental} />}
-        {tab === "incidents" && <IncidentsTab rental={rental} />}
         {tab === "tasks" && <TasksTab rental={rental} />}
         {tab === "docs" && <DocumentsTab rental={rental} />}
       </div>
@@ -741,6 +718,12 @@ export function RentalCard({ rental }: { rental: Rental }) {
           rental={rental}
           action={action}
           onClose={() => setAction(null)}
+          onOpenDamage={() => {
+            // Закрытие RentalActionDialog уже происходит у себя —
+            // мы только открываем damage окно.
+            setAction(null);
+            setDamageOpen(true);
+          }}
         />
       )}
       {editRentalOpen && (
