@@ -111,6 +111,7 @@ export function RentalEditModal({
     endPlanned !== rental.endPlanned ||
     rate !== rental.rate ||
     days !== rental.days ||
+    rate * days !== rental.sum ||
     (note ?? "") !== (rental.note ?? "");
 
   const submit = async () => {
@@ -128,15 +129,17 @@ export function RentalEditModal({
         });
       }
 
-      // Остальные поля через стандартный хелпер
+      // Остальные поля через стандартный хелпер.
+      // Сумму всегда пересчитываем как rate × days и отсылаем если она
+      // отличается от сохранённой — иначе при смене дат/тарифа/дней
+      // сумма аренды и связанный платёж rent остаются старыми, и в
+      // карточке «За всё время» сумма «не пересчитывается».
       const patch: Partial<Rental> = {};
       if (startDate !== rental.start) patch.start = startDate;
       if (endPlanned !== rental.endPlanned) patch.endPlanned = endPlanned;
       if (rate !== rental.rate) patch.rate = rate;
-      if (days !== rental.days) {
-        patch.days = days;
-        patch.sum = newSum;
-      }
+      if (days !== rental.days) patch.days = days;
+      if (newSum !== rental.sum) patch.sum = newSum;
       if ((note ?? "") !== (rental.note ?? "")) {
         patch.note = note.trim() || undefined;
       }

@@ -290,6 +290,42 @@ export async function rentalsRoutes(app: FastifyInstance) {
       .returning();
     if (!row) return reply.code(404).send({ error: "not found" });
 
+    // Синхронизация платежа аренды: если в PATCH пришла новая sum
+    // и она отличается от старой — обновляем связанный платёж rent
+    // (или создаём новый если был оплачен ранее, а сейчас нет).
+    // Без этого «За всё время» в карточке остаётся со старой суммой,
+    // и сумма «прибавляется» вместо пересчёта.
+    if (
+      parsed.data.sum !== undefined &&
+      parsed.data.sum !== before.sum
+    ) {
+      const existingRent = await db
+        .select()
+        .from(payments)
+        .where(and(eq(payments.rentalId, id), eq(payments.type, "rent")));
+      if (existingRent.length > 0) {
+        // Обновляем самый ранний rent-платёж (обычно он один на аренду).
+        const target = existingRent[0]!;
+        await db
+          .update(payments)
+          .set({ amount: parsed.data.sum })
+          .where(eq(payments.id, target.id));
+      } else if (parsed.data.sum > 0) {
+        // Платежа не было — создадим, если статус активен/завершён.
+        const activeStatuses = ["active", "overdue", "returning", "completed"];
+        if (activeStatuses.includes(row.status)) {
+          await db.insert(payments).values({
+            rentalId: id,
+            type: "rent",
+            amount: parsed.data.sum,
+            method: row.paymentMethod ?? "cash",
+            paid: true,
+            paidAt: new Date(),
+          });
+        }
+      }
+    }
+
     const summary = await summaryForRental(id);
     if (parsed.data.status && parsed.data.status !== before.status) {
       await logActivity(req, {

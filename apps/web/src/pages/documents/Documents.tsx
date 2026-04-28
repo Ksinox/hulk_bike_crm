@@ -16,6 +16,7 @@ import { PriceListView } from "@/pages/rentals/PriceListView";
 import { DocumentPreviewModal } from "@/pages/rentals/DocumentPreviewModal";
 import { useApiRentals } from "@/lib/api/rentals";
 import { TemplateEditorPage } from "./editor/TemplateEditorPage";
+import { CustomTemplateEditor } from "./editor/CustomTemplateEditor";
 import { useApiDocumentTemplates } from "@/lib/api/document-templates";
 
 type DocsTab = "templates" | "price" | "editor";
@@ -155,24 +156,40 @@ const BADGE_TONE_CLASSES: Record<TemplateMeta["badgeTone"], string> = {
   purple: "bg-purple-soft text-purple-ink",
 };
 
+/** Какие шаблоны можно редактировать через Tiptap (override системного). */
+const EDITABLE_KEYS = new Set(["contract_full", "act_return"]);
+
 function TemplatesGallery() {
   const { data: rentals = [], isLoading } = useApiRentals();
+  const { data: overrides = [] } = useApiDocumentTemplates();
   const [previewing, setPreviewing] = useState<TemplateMeta | null>(null);
+  const [editing, setEditing] = useState<TemplateMeta | null>(null);
+
+  // Если открыт редактор — показываем его на полный экран таба.
+  if (editing) {
+    return (
+      <TemplateEditorPage
+        templateKey={editing.id}
+        templateName={editing.title}
+        onBack={() => setEditing(null)}
+      />
+    );
+  }
 
   // Берём первую попавшуюся аренду как «образцовую» для превью.
   // Приоритет: с реально заполненной парой клиент+скутер.
   const sampleRental = rentals.find((r) => r.scooterId && r.clientId) ?? rentals[0];
+  const hasOverride = (key: string) =>
+    overrides.some((o) => o.templateKey === key);
 
   return (
     <div className="flex flex-col gap-3">
       <div className="rounded-[10px] bg-blue-50 px-3 py-2 text-[12px] text-blue-900">
         Здесь собраны все системные шаблоны документов CRM. Каждый можно
-        открыть как <b>образец</b> — увидишь готовый вид документа на
-        реальных данных.{" "}
-        <span className="text-blue-700">
-          В следующих релизах появится возможность редактировать тексты
-          шаблонов прямо здесь.
-        </span>
+        открыть как <b>образец</b> (превью на реальной аренде) или{" "}
+        <b>редактировать</b> — текст подменится в редакторе и при
+        генерации документа подставятся реальные данные. Для создания
+        нового шаблона с нуля — таб <b>«Редактор шаблонов»</b>.
       </div>
 
       <div className="grid items-stretch gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -215,32 +232,62 @@ function TemplatesGallery() {
                 {t.subtitle}
               </div>
               <div className="flex flex-col gap-1.5">
-                <button
-                  type="button"
-                  disabled={disabled || isLoading}
-                  onClick={() => setPreviewing(t)}
-                  className={cn(
-                    "inline-flex items-center justify-center gap-1.5 rounded-[10px] py-2 text-[12px] font-bold transition-colors",
-                    disabled
-                      ? "cursor-not-allowed bg-surface-soft text-muted-2"
-                      : "bg-ink text-white hover:bg-blue-600",
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    disabled={disabled || isLoading}
+                    onClick={() => setPreviewing(t)}
+                    className={cn(
+                      "inline-flex items-center justify-center gap-1.5 rounded-[10px] py-2 text-[12px] font-bold transition-colors",
+                      disabled
+                        ? "cursor-not-allowed bg-surface-soft text-muted-2"
+                        : "bg-surface-soft text-ink hover:bg-blue-50 hover:text-blue-700",
+                    )}
+                    title={
+                      disabled
+                        ? "Сначала создайте аренду — образец нельзя посмотреть на пустой БД"
+                        : "Посмотреть пример документа на реальной аренде"
+                    }
+                  >
+                    <FileText size={12} /> Образец
+                  </button>
+                  {EDITABLE_KEYS.has(t.id) ? (
+                    <button
+                      type="button"
+                      onClick={() => setEditing(t)}
+                      className="inline-flex items-center justify-center gap-1.5 rounded-[10px] bg-ink py-2 text-[12px] font-bold text-white transition-colors hover:bg-blue-600"
+                      title="Открыть в редакторе шаблонов"
+                    >
+                      <Pencil size={12} />{" "}
+                      {hasOverride(t.id) ? "Редактировать" : "Редактировать"}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled
+                      className="inline-flex cursor-not-allowed items-center justify-center gap-1.5 rounded-[10px] bg-surface-soft py-2 text-[12px] font-bold text-muted-2"
+                      title="Редактирование этого шаблона будет доступно в следующих релизах — он генерируется программно с переменным числом строк (позиции ущерба / список платежей)."
+                    >
+                      <Pencil size={12} /> Редактировать
+                    </button>
                   )}
-                  title={
-                    disabled
-                      ? "Сначала создайте аренду — образец нельзя посмотреть на пустой БД"
-                      : undefined
-                  }
-                >
-                  <FileText size={12} /> Посмотреть образец
-                </button>
+                </div>
                 <div className="flex items-center justify-between text-[10px] text-muted-2">
-                  <span>где используется:</span>
+                  <span>
+                    {hasOverride(t.id) ? (
+                      <span className="font-bold text-amber-700">
+                        Изменён вами
+                      </span>
+                    ) : (
+                      "системный по умолчанию"
+                    )}
+                  </span>
                   <span className="font-semibold text-muted">
                     {t.kind === "rental"
-                      ? "карточка аренды"
+                      ? "из аренды"
                       : t.kind === "damage"
-                        ? "при фиксации ущерба"
-                        : "карточка клиента"}
+                        ? "из ущерба"
+                        : "из клиента"}
                   </span>
                 </div>
               </div>
@@ -319,120 +366,18 @@ function TemplatePreview({
   );
 }
 
-/* =================== Редактор шаблонов =================== */
+/* =================== Редактор шаблонов: чистый редактор =================== */
 
-type TemplateBucket = {
-  key: string;
-  name: string;
-  description: string;
-  icon: typeof FileText;
-  tone: TemplateMeta["badgeTone"];
-};
-
-const EDITABLE_TEMPLATES: TemplateBucket[] = [
-  {
-    key: "contract_full",
-    name: "Договор + Акт приёма-передачи",
-    description:
-      "Двухстраничный документ при выдаче. Можно редактировать любые формулировки, добавлять/удалять пункты и вставлять переменные клиента/скутера/аренды.",
-    icon: FileSignature,
-    tone: "blue",
-  },
-  {
-    key: "act_return",
-    name: "Акт возврата",
-    description:
-      "Подписывается при возврате скутера. Фиксирует пробег, состояние, отметки о повреждениях и наличие/возврат экипировки.",
-    icon: FileText,
-    tone: "purple",
-  },
-];
-
+/**
+ * Таб «Редактор шаблонов» — открывается чистый редактор для создания
+ * НОВОГО шаблона с нуля (тип kind=custom). Туда можно вставить свой
+ * текст из реального документа и проставить переменные.
+ *
+ * Чтобы редактировать ГОТОВЫЕ системные шаблоны (договор, акт возврата) —
+ * пользуемся табом «Шаблоны документов» → кнопка «Редактировать».
+ */
 function EditorPlaceholder() {
-  const { data: templates = [] } = useApiDocumentTemplates();
-  const [editing, setEditing] = useState<TemplateBucket | null>(null);
-
-  if (editing) {
-    return (
-      <TemplateEditorPage
-        templateKey={editing.key}
-        templateName={editing.name}
-        onBack={() => setEditing(null)}
-      />
-    );
-  }
-
-  const hasOverride = (key: string) =>
-    templates.some((t) => t.templateKey === key);
-
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="rounded-[10px] bg-blue-50 px-3 py-2 text-[12px] text-blue-900">
-        Здесь можно редактировать тексты системных шаблонов договоров.
-        Отредактированный шаблон автоматически применяется при генерации
-        документов из карточек аренды. Можно вставлять переменные через
-        панель слева (drag-and-drop или клик), форматировать текст и
-        работать с таблицами.
-      </div>
-      <div className="grid items-stretch gap-3 md:grid-cols-2">
-        {EDITABLE_TEMPLATES.map((t) => {
-          const Icon = t.icon;
-          const overridden = hasOverride(t.key);
-          return (
-            <div
-              key={t.key}
-              className="flex h-full flex-col gap-3 rounded-[14px] border border-border bg-surface p-4"
-            >
-              <div className="flex items-start gap-2">
-                <div
-                  className={cn(
-                    "flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px]",
-                    BADGE_TONE_CLASSES[t.tone],
-                  )}
-                >
-                  <Icon size={18} />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5">
-                    <div className="text-[14px] font-bold leading-tight text-ink">
-                      {t.name}
-                    </div>
-                    {overridden ? (
-                      <span className="rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-700">
-                        Изменён
-                      </span>
-                    ) : (
-                      <span className="rounded-full bg-surface-soft px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-muted-2">
-                        Системный
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-              <div className="flex-1 text-[12px] leading-snug text-muted-2">
-                {t.description}
-              </div>
-              <button
-                type="button"
-                onClick={() => setEditing(t)}
-                className="inline-flex items-center justify-center gap-1.5 rounded-[10px] bg-ink py-2 text-[12px] font-bold text-white hover:bg-blue-600"
-              >
-                <Pencil size={12} />{" "}
-                {overridden ? "Открыть редактор" : "Редактировать"}
-              </button>
-            </div>
-          );
-        })}
-      </div>
-      <div className="rounded-[10px] bg-surface-soft px-3 py-2 text-[11px] text-muted-2">
-        💡 Совет: начни с открытия «Договор + Акт» — он самый часто
-        используемый. Слева ты увидишь все доступные переменные, сгруппированные
-        по сущностям (Клиент / Арендодатель / Скутер / Аренда). Перетащи их в
-        нужные места текста — при генерации документа подставятся реальные
-        данные конкретной аренды.
-      </div>
-    </div>
-  );
+  return <CustomTemplateEditor />;
 }
 
 /* Кнопка скачивания Word — на будущее, пока используем DocumentPreviewModal. */

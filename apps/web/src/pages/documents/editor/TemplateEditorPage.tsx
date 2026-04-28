@@ -15,6 +15,13 @@ import {
 } from "./TemplateEditor";
 import { VariablesSidebar } from "./VariablesSidebar";
 
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 /**
  * Полноэкранная страница редактирования одного шаблона.
  *
@@ -45,20 +52,28 @@ export function TemplateEditorPage({
     "idle" | "saving" | "saved" | "error"
   >("idle");
 
-  // Загрузка начального содержимого: либо override из БД, либо fallback.
+  // Загрузка начального содержимого: либо override из БД, либо fallback,
+  // либо пустой редактор. Главное чтобы bodyHtml перестал быть null —
+  // иначе зависает на «Загружаем шаблон…».
   useEffect(() => {
     if (existing.data) {
       setBodyHtml(existing.data.body);
       setSavedHtml(existing.data.body);
-    } else if (
-      existing.isFetched &&
-      !existing.data &&
-      initialFallbackHtml != null
-    ) {
-      setBodyHtml(initialFallbackHtml);
-      setSavedHtml(null); // ещё не сохранено — это default
+    } else if (existing.isFetched && !existing.data) {
+      // Шаблона в БД нет — стартуем с fallback (системный текст) или с пустого.
+      const startHtml =
+        initialFallbackHtml ??
+        `<h1>${escapeHtml(templateName)}</h1>` +
+          `<p style="color:#666;font-size:11pt">Скопируйте сюда текст реального документа и проставьте переменные через сайдбар слева. При генерации документа из карточки аренды переменные подставятся автоматически.</p>`;
+      setBodyHtml(startHtml);
+      setSavedHtml(null);
     }
-  }, [existing.data, existing.isFetched, initialFallbackHtml]);
+  }, [
+    existing.data,
+    existing.isFetched,
+    initialFallbackHtml,
+    templateName,
+  ]);
 
   // Debounced auto-save.
   const saveTimerRef = useRef<number | null>(null);
