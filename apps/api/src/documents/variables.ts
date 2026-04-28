@@ -94,6 +94,27 @@ export const VARIABLE_CATALOG: VariableGroup[] = [
     ],
   },
   {
+    id: "prevScooter",
+    label: "Предыдущий скутер (замена)",
+    variables: [
+      { key: "prevModel.name", label: "Модель (Yamaha Gear / Jog)" },
+      { key: "prevScooter.name", label: "Внутренний номер (Gear #22)" },
+      { key: "prevScooter.frameNumber", label: "Номер рамы / шасси" },
+      { key: "prevScooter.engineNo", label: "Номер двигателя" },
+      { key: "prevScooter.year", label: "Год выпуска" },
+      { key: "prevScooter.color", label: "Цвет" },
+      { key: "prevScooter.mileage", label: "Пробег, км" },
+    ],
+  },
+  {
+    id: "swap",
+    label: "Замена",
+    variables: [
+      { key: "swap.reason", label: "Причина замены" },
+      { key: "swap.date", label: "Дата замены" },
+    ],
+  },
+  {
     id: "rental",
     label: "Аренда",
     variables: [
@@ -234,6 +255,42 @@ export function resolveVariable(key: string, b: Bundle): string {
     if (prop === "mileage") return scooter?.mileage != null ? String(scooter.mileage) : "—";
     const v = (scooter as unknown as Record<string, unknown> | null)?.[prop];
     return v != null && v !== "" ? String(v) : "—";
+  }
+
+  // prevScooter.* — старый скутер до замены (читается из rental.parentRentalId)
+  if (key.startsWith("prevScooter.")) {
+    const prop = key.slice("prevScooter.".length);
+    const ps = b.prevScooter ?? null;
+    if (prop === "mileage")
+      return ps?.mileage != null ? String(ps.mileage) : "—";
+    const v = (ps as unknown as Record<string, unknown> | null)?.[prop];
+    return v != null && v !== "" ? String(v) : "—";
+  }
+
+  // prevModel.* — модель старого скутера
+  if (key.startsWith("prevModel.")) {
+    const prop = key.slice("prevModel.".length);
+    if (prop === "name") {
+      if (b.prevModel?.name) return b.prevModel.name;
+      const map: Record<string, string> = {
+        jog: "Yamaha Jog",
+        gear: "Yamaha Gear",
+        honda: "Honda Dio",
+        tank: "Tank T150",
+      };
+      return map[b.prevScooter?.model ?? ""] ?? "—";
+    }
+    const v = (b.prevModel as unknown as Record<string, unknown> | null)?.[prop];
+    return v != null ? String(v) : "—";
+  }
+
+  // swap.* — параметры замены скутера
+  if (key.startsWith("swap.")) {
+    const prop = key.slice("swap.".length);
+    if (prop === "reason") return b.swapReason ?? "—";
+    if (prop === "date")
+      return fmtDateRu(rental.startAt); // дата замены = startAt новой связки
+    return "—";
   }
 
   // rental.*
@@ -438,6 +495,63 @@ export function makeFixtureBundle(): Bundle {
 }
 
 /**
+ * Расширение фикстуры для шаблона act_swap. Помимо обычной аренды
+ * добавляет prevScooter/prevModel с уникальными маркерами и swapReason —
+ * чтобы их потом можно было поймать regex'ом и превратить в плашки.
+ */
+export function makeSwapFixtureBundle(): Bundle {
+  const base = makeFixtureBundle();
+  const dt = (m: number, d: number, h = 12, mm = 0) =>
+    new Date(`1990-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}T${String(h).padStart(2, "0")}:${String(mm).padStart(2, "0")}:00.000Z`);
+  return {
+    ...base,
+    rental: {
+      ...base.rental,
+      parentRentalId: 9999999, // фикция, чтобы template-логика «это child аренда» включалась
+    } as unknown as Bundle["rental"],
+    prevScooter: {
+      id: 0,
+      name: "__PH_prevScooterName__",
+      modelId: 0,
+      model: "jog",
+      mileage: 7654321,
+      baseStatus: "repair",
+      vin: "__PH_prevScooterVin__",
+      engineNo: "__PH_prevScooterEngineNo__",
+      frameNumber: "__PH_prevScooterFrameNumber__",
+      year: 1985,
+      color: "__PH_prevScooterColor__",
+      plate: "__PH_prevScooterPlate__",
+      purchasePrice: 0,
+      avatarKey: null,
+      archivedAt: null,
+      createdAt: dt(1, 1),
+      updatedAt: dt(1, 2),
+    } as unknown as Bundle["scooter"],
+    prevModel: {
+      id: 0,
+      name: "__PH_prevModelName__",
+      avatarKey: null,
+      avatarFileName: null,
+      quickPick: false,
+      active: true,
+      dayRate: 0,
+      shortRate: 0,
+      weekRate: 0,
+      monthRate: 0,
+      maxSpeedKmh: null,
+      tankVolumeL: null,
+      fuelLPer100Km: null,
+      coolingType: null,
+      note: null,
+      createdAt: dt(1, 1),
+      updatedAt: dt(1, 2),
+    } as unknown as Bundle["model"],
+    swapReason: "__PH_swapReason__",
+  };
+}
+
+/**
  * После рендера системного шаблона на fixture-bundle проходим регексом
  * по HTML и заменяем все маркеры/специальные значения на пилюли
  * <span data-var="X.Y" class="tpl-var">{{X.Y}}</span>.
@@ -475,6 +589,15 @@ export function replaceFixtureWithPlaceholders(html: string): string {
     "__PH_scooterColor__": "scooter.color",
     "__PH_scooterPlate__": "scooter.frameNumber",
     "__PH_modelName__": "model.name",
+    // act_swap-фикстура: предыдущий скутер + причина замены.
+    "__PH_prevScooterName__": "prevScooter.name",
+    "__PH_prevScooterVin__": "prevScooter.frameNumber",
+    "__PH_prevScooterEngineNo__": "prevScooter.engineNo",
+    "__PH_prevScooterFrameNumber__": "prevScooter.frameNumber",
+    "__PH_prevScooterColor__": "prevScooter.color",
+    "__PH_prevScooterPlate__": "prevScooter.frameNumber",
+    "__PH_prevModelName__": "prevModel.name",
+    "__PH_swapReason__": "swap.reason",
   };
 
   let out = html;
@@ -503,6 +626,10 @@ export function replaceFixtureWithPlaceholders(html: string): string {
     ["38 885", "rental.weeklyAmount"], // 5555*7=38885
     ["38 885", "rental.weeklyAmount"],
     ["1989", "scooter.year"],
+    // act_swap фикстура
+    ["7 654 321", "prevScooter.mileage"],
+    ["7654321", "prevScooter.mileage"],
+    ["1985", "prevScooter.year"],
   ];
   for (const [marker, key] of numericMap) {
     out = out.split(marker).join(pill(key));

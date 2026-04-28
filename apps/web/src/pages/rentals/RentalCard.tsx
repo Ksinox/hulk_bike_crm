@@ -1017,7 +1017,10 @@ export function RentalCard({ rental }: { rental: Rental }) {
   );
 }
 
-/** Превью акта приёма-передачи для свежей (после замены) связки. */
+/** Превью акта приёма-передачи и замены скутера (после замены).
+ *  Открывается из SwapScooterDialog по кнопке «Заменить и распечатать
+ *  акт» — использует новый шаблон act_swap, в котором есть блок про
+ *  возвращённый скутер, причину замены и переданный новый скутер. */
 function ActTransferPreview({
   rentalId,
   onClose,
@@ -1027,14 +1030,14 @@ function ActTransferPreview({
 }) {
   const base =
     import.meta.env.VITE_API_URL?.replace(/\/$/, "") ?? "http://localhost:4000";
-  const htmlUrl = `${base}/api/rentals/${rentalId}/document/act_transfer?format=html`;
-  const docxUrl = `${base}/api/rentals/${rentalId}/document/act_transfer?format=docx`;
+  const htmlUrl = `${base}/api/rentals/${rentalId}/document/act_swap?format=html`;
+  const docxUrl = `${base}/api/rentals/${rentalId}/document/act_swap?format=docx`;
   return (
     <DocumentPreviewModal
-      title="Акт приёма-передачи (новый скутер)"
+      title="Акт приёма-передачи и замены скутера"
       htmlUrl={htmlUrl}
       docxUrl={docxUrl}
-      docxFilename={`Акт приёма-передачи ${String(rentalId).padStart(4, "0")}.doc`}
+      docxFilename={`Акт замены скутера ${String(rentalId).padStart(4, "0")}.doc`}
       onClose={onClose}
     />
   );

@@ -100,7 +100,7 @@ type TemplateMeta = {
    *  'damage') или client-based ('statement'). */
   kind: "rental" | "damage" | "statement";
   /** Тип документа в API (только для rental-based). */
-  rentalType?: "contract_full" | "act_return";
+  rentalType?: "contract_full" | "act_return" | "act_swap";
 };
 
 const TEMPLATES: TemplateMeta[] = [
@@ -125,6 +125,17 @@ const TEMPLATES: TemplateMeta[] = [
     icon: FileText,
     kind: "rental",
     rentalType: "act_return",
+  },
+  {
+    id: "act_swap",
+    title: "Акт приёма-передачи и замены скутера",
+    subtitle:
+      "Подкрепляется к действующему договору при замене скутера (ремонт, продажа, рассрочка). Содержит данные о возвращённом и о новом скутере, причину замены — подписывается клиентом.",
+    badge: "При замене",
+    badgeTone: "green",
+    icon: FileText,
+    kind: "rental",
+    rentalType: "act_swap",
   },
   {
     id: "damage",
@@ -152,7 +163,12 @@ const TEMPLATES: TemplateMeta[] = [
 // все одного нейтрального тона.
 
 /** Какие шаблоны можно редактировать через Tiptap (override системного). */
-const EDITABLE_KEYS = new Set(["contract_full", "act_return", "damage"]);
+const EDITABLE_KEYS = new Set([
+  "contract_full",
+  "act_return",
+  "act_swap",
+  "damage",
+]);
 
 function TemplatesGallery() {
   const { data: rentals = [], isLoading } = useApiRentals();

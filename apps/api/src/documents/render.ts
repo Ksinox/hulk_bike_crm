@@ -14,6 +14,7 @@ export type DocumentType =
   | "contract_full" // Договор + акт приёма-передачи на одной странице
   | "act_transfer" // Приложение №1 — Акт приёма-передачи (выдача)
   | "act_return" // Приложение №2 — Акт возврата
+  | "act_swap" // Акт приёма-передачи и замены скутера
   | "purchase_deposit"; // Legacy, оставлено для совместимости старых ссылок
 
 export const DOCUMENT_LABEL: Record<DocumentType, string> = {
@@ -21,6 +22,7 @@ export const DOCUMENT_LABEL: Record<DocumentType, string> = {
   contract_full: "Договор + Акт приёма-передачи",
   act_transfer: "Акт приёма-передачи (выдача)",
   act_return: "Акт возврата",
+  act_swap: "Акт приёма-передачи и замены скутера",
   purchase_deposit: "Договор задатка (выкуп)",
 };
 
@@ -29,6 +31,13 @@ export type Bundle = {
   client: typeof clients.$inferSelect;
   scooter: typeof scooters.$inferSelect | null;
   model: typeof scooterModels.$inferSelect | null;
+  /** Скутер из родительской аренды до замены (rental.parentRentalId).
+   *  null когда замена не производилась. Заполняется loadBundle. */
+  prevScooter?: typeof scooters.$inferSelect | null;
+  prevModel?: typeof scooterModels.$inferSelect | null;
+  /** Краткая причина замены, извлекаем из rental.note (формат
+   *  «замена скутера: <причина>»). null если note пустой. */
+  swapReason?: string | null;
 };
 
 export async function loadBundle(rentalId: number): Promise<Bundle | null> {
@@ -60,7 +69,39 @@ export async function loadBundle(rentalId: number): Promise<Bundle | null> {
       }
     }
   }
-  return { rental, client, scooter, model };
+  // Если эта аренда — child от замены скутера, подтягиваем предыдущий
+  // скутер для шаблона act_swap.
+  let prevScooter: typeof scooters.$inferSelect | null = null;
+  let prevModel: typeof scooterModels.$inferSelect | null = null;
+  let swapReason: string | null = null;
+  if (rental.parentRentalId != null) {
+    const [parent] = await db
+      .select()
+      .from(rentals)
+      .where(eq(rentals.id, rental.parentRentalId));
+    if (parent && parent.scooterId != null) {
+      const [s] = await db
+        .select()
+        .from(scooters)
+        .where(eq(scooters.id, parent.scooterId));
+      if (s) {
+        prevScooter = s;
+        if (s.modelId != null) {
+          const [m] = await db
+            .select()
+            .from(scooterModels)
+            .where(eq(scooterModels.id, s.modelId));
+          if (m) prevModel = m;
+        }
+      }
+    }
+    // Парсим «замена скутера: <причина>» из rental.note. Префикс
+    // ставит endpoint /swap-scooter в apps/api/src/routes/rentals.ts.
+    const note = rental.note ?? "";
+    const m = note.match(/замена скутера:\s*(.+)$/iu);
+    swapReason = m && m[1] ? m[1].trim() : note.trim() || null;
+  }
+  return { rental, client, scooter, model, prevScooter, prevModel, swapReason };
 }
 
 /* ============ helpers ============ */
@@ -509,6 +550,116 @@ ${TOOLBAR}
 </body></html>`;
 }
 
+/**
+ * Акт приёма-передачи и замены скутера. Подкрепляется к действующему
+ * договору как доп. лист, когда производится замена скутера в рамках
+ * аренды (по любой причине: ремонт, продажа, рассрочка, неисправность).
+ *
+ * Структура копирует обычный акт передачи (tplAct, kind=transfer), но
+ * добавляет сверху короткий блок «забран старый, передан новый, причина»
+ * — данные про prevScooter и swapReason тянутся из bundle.parentRentalId.
+ */
+function tplActSwap(b: Bundle): string {
+  const { rental, client, scooter, model, prevScooter, prevModel, swapReason } =
+    b;
+  const contractNumber = rental.parentRentalId
+    ? String(rental.parentRentalId)
+    : String(rental.id);
+  const swapDate = fmtDateRu(rental.startAt);
+  const equipmentRows = (rental.equipmentJson ?? []) as Array<{
+    name: string;
+    free: boolean;
+    price: number;
+  }>;
+
+  return `<!doctype html><html lang="ru"><head><meta charset="utf-8">
+<title>Акт приёма-передачи и замены скутера по договору №${contractNumber}</title>${CSS}</head><body>
+${TOOLBAR}
+<div class="wrap">
+  <div class="subtitle"><b>Приложение</b><br>К договору № ${contractNumber} от ${fmtDateRu(rental.startAt)} г.</div>
+  <h1>Акт приёма-передачи и замены скутера</h1>
+  <div class="meta-row">
+    <span>${LANDLORD.city}</span>
+    <span>${swapDate}</span>
+  </div>
+
+  <div class="para"><b>Арендатор:</b> ${clientBlock(client)}</div>
+  <div class="para"><b>Арендодатель:</b> ${landlordBlock()}</div>
+
+  <div class="para">составили настоящий акт о нижеследующем:</div>
+
+  <div class="para">
+    Арендодатель забрал у Арендатора скутер <b>${orDash(modelDisplayName(prevScooter ?? null, prevModel ?? null), "________")}</b>${prevScooter?.name ? ` (внутренний номер ${prevScooter.name})` : ""}, переданный ранее по Акту приёма-передачи к Договору № ${contractNumber} от ${fmtDateRu(rental.startAt)} г., и передал во временное пользование Арендатору другой скутер.
+  </div>
+
+  <div class="para"><b>Причина замены:</b> ${orDash(swapReason ?? null, "________________________________")}</div>
+
+  <div class="para"><b>Возвращённый скутер:</b><br>
+    Марка, модель: <b>${orDash(modelDisplayName(prevScooter ?? null, prevModel ?? null), "________")}</b><br>
+    Год выпуска: <b>${orDash(prevScooter?.year, "______")}</b><br>
+    № двигателя: <b>${orDash(prevScooter?.engineNo, "______________")}</b><br>
+    № шасси (рама): <b>${orDash(prevScooter?.frameNumber ?? prevScooter?.vin, "______________")}</b><br>
+    Цвет: <b>${orDash(prevScooter?.color, "____________")}</b><br>
+    ${prevScooter?.name ? "Внутренний номер: " + prevScooter.name : ""}<br>
+    Пробег на момент возврата: <b>${orDash(prevScooter?.mileage != null ? `${prevScooter.mileage} км` : null, "______ км")}</b>
+  </div>
+
+  <div class="para"><b>Переданный (новый) скутер:</b><br>
+    Марка, модель: <b>${orDash(modelDisplayName(scooter, model), "________")}</b><br>
+    Год выпуска: <b>${orDash(scooter?.year, "______")}</b><br>
+    № двигателя: <b>${orDash(scooter?.engineNo, "______________")}</b><br>
+    № шасси (рама): <b>${orDash(scooter?.frameNumber ?? scooter?.vin, "______________")}</b><br>
+    Цвет: <b>${orDash(scooter?.color, "____________")}</b><br>
+    ${scooter?.name ? "Внутренний номер: " + scooter.name : ""}<br>
+    Пробег на момент выдачи: <b>${orDash(scooter?.mileage != null ? `${scooter.mileage} км` : null, "______ км")}</b><br>
+    Техническое состояние скутера: зафиксировано посредством фото-видео фиксации и отправлено в общий чат в мессенджере «WhatsApp»
+  </div>
+
+  <div class="para">
+    Одновременно со Скутером Арендодатель передал, а Арендатор принял следующие запасные части, аксессуары, дополнительное оборудование:
+  </div>
+  ${
+    equipmentRows.length === 0
+      ? `<div class="para small"><i>Дополнительное оборудование не выдавалось.</i></div>`
+      : `<ul class="equipment-list">${equipmentRows
+          .map(
+            (e) =>
+              `<li>${checkbox(true)} ${e.name}${
+                !e.free && e.price > 0
+                  ? ` <span class="small">(оплачено: ${e.price} ₽/сут)</span>`
+                  : ""
+              }</li>`,
+          )
+          .join("")}</ul>`
+  }
+
+  <div class="para">Идентификационные номера сверены, комплектность проверена.<br>
+    Претензий к Арендодателю, в том числе имущественных, Арендатор не имеет.<br>
+    Все остальные условия Договора № ${contractNumber} остаются без изменений.
+  </div>
+
+  <table style="width: 100%; margin-top: 24pt; border: 0; border-collapse: collapse; page-break-inside: avoid">
+    <tr>
+      <td style="width: 50%; border: 0; padding: 0 8pt 0 0; vertical-align: top">
+        <div style="border-bottom: 1px solid #000; height: 28pt; margin-bottom: 2pt"></div>
+        <div style="font-size: 9.5pt">
+          Арендодатель скутер принял и передал<br>
+          (подпись / расшифровка) — ${LANDLORD.fullName}
+        </div>
+      </td>
+      <td style="width: 50%; border: 0; padding: 0 0 0 8pt; vertical-align: top">
+        <div style="border-bottom: 1px solid #000; height: 28pt; margin-bottom: 2pt"></div>
+        <div style="font-size: 9.5pt">
+          Арендатор скутер передал и принял<br>
+          (подпись / расшифровка) — ${client.name}
+        </div>
+      </td>
+    </tr>
+  </table>
+</div>
+</body></html>`;
+}
+
 function tplPurchaseDeposit(b: Bundle): string {
   const { rental, client, scooter, model } = b;
   const today = fmtDateRu(new Date());
@@ -696,6 +847,7 @@ function pluralRu(n: number, forms: [string, string, string]): string {
 import { documentTemplates } from "../db/schema.js";
 import {
   makeFixtureBundle,
+  makeSwapFixtureBundle,
   replaceFixtureWithPlaceholders,
   substituteVariables,
 } from "./variables.js";
@@ -736,6 +888,7 @@ const TITLES: Record<DocumentType, string> = {
   contract_full: "Договор + Акт приёма-передачи",
   act_transfer: "Акт приёма-передачи",
   act_return: "Акт возврата",
+  act_swap: "Акт приёма-передачи и замены скутера",
   purchase_deposit: "Договор задатка",
 };
 
@@ -762,6 +915,8 @@ export async function renderDocumentHtml(
       return tplActTransfer(bundle);
     case "act_return":
       return tplActReturn(bundle);
+    case "act_swap":
+      return tplActSwap(bundle);
     case "purchase_deposit":
       return tplPurchaseDeposit(bundle);
   }
@@ -777,7 +932,10 @@ export async function renderDocumentHtml(
 export async function renderSystemTemplateForEditor(
   type: DocumentType,
 ): Promise<string> {
-  const fixtureBundle = makeFixtureBundle();
+  // Для act_swap нужна расширенная фикстура с prevScooter/prevModel/
+  // swapReason — иначе плашки этих переменных не появятся в шаблоне.
+  const fixtureBundle =
+    type === "act_swap" ? makeSwapFixtureBundle() : makeFixtureBundle();
   const html = await renderDocumentHtml(type, fixtureBundle, {
     skipOverride: true,
   });

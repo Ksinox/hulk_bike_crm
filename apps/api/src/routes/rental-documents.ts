@@ -14,6 +14,7 @@ const TypeEnum = z.enum([
   "contract_full",
   "act_transfer",
   "act_return",
+  "act_swap",
   "purchase_deposit",
 ]);
 
@@ -92,6 +93,7 @@ function docFilename(type: DocumentType, rentalId: number): string {
     contract_full: `Договор_проката_и_акт_№${rentalId}`,
     act_transfer: `Акт_приёма-передачи_№${rentalId}`,
     act_return: `Акт_возврата_№${rentalId}`,
+    act_swap: `Акт_замены_скутера_№${rentalId}`,
     purchase_deposit: `Договор_задатка_№${rentalId}`,
   };
   return map[type];

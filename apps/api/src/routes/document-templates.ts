@@ -54,7 +54,7 @@ export async function documentTemplatesRoutes(app: FastifyInstance) {
   app.get<{ Querystring: { type?: string } }>(
     "/system-default",
     async (req, reply) => {
-      const allowed = ["contract", "contract_full", "act_transfer", "act_return", "purchase_deposit"];
+      const allowed = ["contract", "contract_full", "act_transfer", "act_return", "act_swap", "purchase_deposit"];
       const t = req.query.type ?? "";
       if (allowed.includes(t)) {
         const html = await renderSystemTemplateForEditor(t as DocumentType);

@@ -49,7 +49,7 @@ export function TemplateEditorPage({
   // он нужен и как initial если override нет, и для кнопки «Применить
   // системный» которая позволяет затереть устаревший override актуальным
   // текстом из текущей версии CRM.
-  const isSystemKey = ["contract", "contract_full", "act_transfer", "act_return", "purchase_deposit", "damage"].includes(templateKey);
+  const isSystemKey = ["contract", "contract_full", "act_transfer", "act_return", "act_swap", "purchase_deposit", "damage"].includes(templateKey);
   const systemDefault = useSystemTemplateDefault(
     isSystemKey ? templateKey : null,
   );
