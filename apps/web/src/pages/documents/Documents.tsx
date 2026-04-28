@@ -4,10 +4,11 @@ import {
   FileSignature,
   FileText,
   Pencil,
+  Plus,
+  Upload,
   Receipt,
   Tags,
   Wallet,
-  Wrench,
   AlertTriangle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -18,13 +19,14 @@ import { useApiRentals } from "@/lib/api/rentals";
 import { TemplateEditorPage } from "./editor/TemplateEditorPage";
 import { CustomTemplateEditor } from "./editor/CustomTemplateEditor";
 import { useApiDocumentTemplates } from "@/lib/api/document-templates";
+import { importFileToHtml } from "./editor/importFile";
+import { toast } from "@/lib/toast";
 
-type DocsTab = "templates" | "price" | "editor";
+type DocsTab = "templates" | "price";
 
 const TABS: { id: DocsTab; label: string; icon: typeof FileText }[] = [
   { id: "templates", label: "Шаблоны документов", icon: FileSignature },
   { id: "price", label: "Прейскурант", icon: Tags },
-  { id: "editor", label: "Редактор шаблонов", icon: Wrench },
 ];
 
 /**
@@ -81,7 +83,6 @@ export function Documents() {
       <section className="flex min-h-0 flex-1 flex-col rounded-2xl bg-surface p-5 shadow-card-sm">
         {tab === "templates" && <TemplatesGallery />}
         {tab === "price" && <PriceListView />}
-        {tab === "editor" && <EditorPlaceholder />}
       </section>
     </main>
   );
@@ -163,24 +164,45 @@ function TemplatesGallery() {
   const { data: rentals = [], isLoading } = useApiRentals();
   const { data: overrides = [] } = useApiDocumentTemplates();
   const [previewing, setPreviewing] = useState<TemplateMeta | null>(null);
-  const [editing, setEditing] = useState<TemplateMeta | null>(null);
+  /** Что открыто в редакторе:
+   *  - { kind:'system', meta } — редактируем системный шаблон
+   *  - { kind:'custom', id }    — редактируем существующий custom-шаблон
+   *  - { kind:'new', initialHtml } — создаём новый custom (опц. из импорта)
+   */
+  const [editing, setEditing] = useState<
+    | { kind: "system"; meta: TemplateMeta }
+    | { kind: "custom"; id: number }
+    | { kind: "new"; initialHtml: string }
+    | null
+  >(null);
 
-  // Если открыт редактор — показываем его на полный экран таба.
-  if (editing) {
+  // Если открыт редактор — показываем его.
+  if (editing?.kind === "system") {
     return (
       <TemplateEditorPage
-        templateKey={editing.id}
-        templateName={editing.title}
+        templateKey={editing.meta.id}
+        templateName={editing.meta.title}
+        onBack={() => setEditing(null)}
+      />
+    );
+  }
+  if (editing?.kind === "custom" || editing?.kind === "new") {
+    return (
+      <CustomTemplateEditor
+        existingId={editing.kind === "custom" ? editing.id : null}
+        initialHtmlForNew={
+          editing.kind === "new" ? editing.initialHtml : undefined
+        }
         onBack={() => setEditing(null)}
       />
     );
   }
 
   // Берём первую попавшуюся аренду как «образцовую» для превью.
-  // Приоритет: с реально заполненной парой клиент+скутер.
   const sampleRental = rentals.find((r) => r.scooterId && r.clientId) ?? rentals[0];
   const hasOverride = (key: string) =>
-    overrides.some((o) => o.templateKey === key);
+    overrides.some((o) => o.templateKey === key && o.kind === "override");
+  const customs = overrides.filter((t) => t.kind === "custom");
 
   return (
     <div className="flex flex-col gap-3">
@@ -188,8 +210,49 @@ function TemplatesGallery() {
         Здесь собраны все системные шаблоны документов CRM. Каждый можно
         открыть как <b>образец</b> (превью на реальной аренде) или{" "}
         <b>редактировать</b> — текст подменится в редакторе и при
-        генерации документа подставятся реальные данные. Для создания
-        нового шаблона с нуля — таб <b>«Редактор шаблонов»</b>.
+        генерации документа подставятся реальные данные. Чтобы добавить
+        свой шаблон — кнопка <b>«+ Добавить документ»</b> ниже.
+      </div>
+
+      <AddDocumentBar
+        onCreateEmpty={() => setEditing({ kind: "new", initialHtml: "<p></p>" })}
+        onImport={(html) => setEditing({ kind: "new", initialHtml: html })}
+      />
+
+      {customs.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
+            Мои документы ({customs.length})
+          </div>
+          <div className="grid items-stretch gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {customs.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => setEditing({ kind: "custom", id: c.id })}
+                className="flex flex-col items-start gap-1 rounded-[14px] border border-border bg-surface p-4 text-left hover:border-blue-400 hover:bg-blue-50"
+              >
+                <div className="text-[13px] font-bold text-ink">{c.name}</div>
+                <div className="text-[11px] text-muted-2">
+                  обновлён{" "}
+                  {new Date(c.updatedAt).toLocaleString("ru-RU", {
+                    day: "2-digit",
+                    month: "short",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </div>
+                <div className="mt-2 text-[11px] font-semibold text-blue-700">
+                  Открыть в редакторе →
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
+        Системные шаблоны
       </div>
 
       <div className="grid items-stretch gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -254,7 +317,7 @@ function TemplatesGallery() {
                   {EDITABLE_KEYS.has(t.id) ? (
                     <button
                       type="button"
-                      onClick={() => setEditing(t)}
+                      onClick={() => setEditing({ kind: "system", meta: t })}
                       className="inline-flex items-center justify-center gap-1.5 rounded-[10px] bg-ink py-2 text-[12px] font-bold text-white transition-colors hover:bg-blue-600"
                       title="Открыть в редакторе шаблонов"
                     >
@@ -366,18 +429,76 @@ function TemplatePreview({
   );
 }
 
-/* =================== Редактор шаблонов: чистый редактор =================== */
-
 /**
- * Таб «Редактор шаблонов» — открывается чистый редактор для создания
- * НОВОГО шаблона с нуля (тип kind=custom). Туда можно вставить свой
- * текст из реального документа и проставить переменные.
- *
- * Чтобы редактировать ГОТОВЫЕ системные шаблоны (договор, акт возврата) —
- * пользуемся табом «Шаблоны документов» → кнопка «Редактировать».
+ * Панель «Добавить документ» — две кнопки:
+ *  - «Создать пустой» → открывает чистый редактор для нового шаблона
+ *  - «Импорт из файла» → загружает .docx/.md/.html/.txt, конвертирует
+ *    в HTML и открывает в редакторе
  */
-function EditorPlaceholder() {
-  return <CustomTemplateEditor />;
+function AddDocumentBar({
+  onCreateEmpty,
+  onImport,
+}: {
+  onCreateEmpty: () => void;
+  onImport: (html: string) => void;
+}) {
+  const [importing, setImporting] = useState(false);
+
+  const onFile = async (file: File | null) => {
+    if (!file) return;
+    setImporting(true);
+    try {
+      const html = await importFileToHtml(file);
+      onImport(html);
+      toast.success(
+        "Файл загружен в редактор",
+        `«${file.name}» — теперь можно расставить переменные через сайдбар.`,
+      );
+    } catch (e) {
+      toast.error("Не удалось импортировать", (e as Error).message ?? "");
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-[12px] border border-dashed border-blue-300 bg-blue-50/40 p-3">
+      <span className="text-[12px] font-semibold text-ink">
+        Добавить новый документ:
+      </span>
+      <button
+        type="button"
+        onClick={onCreateEmpty}
+        className="inline-flex items-center gap-1.5 rounded-[10px] bg-ink px-3 py-1.5 text-[12px] font-bold text-white hover:bg-blue-600"
+      >
+        <Plus size={12} /> Создать пустой
+      </button>
+      <label
+        className={cn(
+          "inline-flex cursor-pointer items-center gap-1.5 rounded-[10px] bg-white px-3 py-1.5 text-[12px] font-bold text-blue-700 ring-1 ring-blue-200 hover:bg-blue-50",
+          importing && "cursor-wait opacity-60",
+        )}
+        title="Загрузить .docx (Word), .md (Markdown), .html или .txt"
+      >
+        <Upload size={12} />
+        {importing ? "Загружаем…" : "Импорт из файла (Word / MD / HTML)"}
+        <input
+          type="file"
+          accept=".docx,.md,.markdown,.html,.htm,.txt"
+          className="hidden"
+          onChange={(e) => {
+            void onFile(e.target.files?.[0] ?? null);
+            e.target.value = ""; // позволить перевыбрать тот же файл
+          }}
+          disabled={importing}
+        />
+      </label>
+      <span className="text-[10px] text-muted-2">
+        Поддерживаются: .docx, .md, .html, .txt. Сохраняются заголовки,
+        списки, таблицы, форматирование.
+      </span>
+    </div>
+  );
 }
 
 /* Кнопка скачивания Word — на будущее, пока используем DocumentPreviewModal. */

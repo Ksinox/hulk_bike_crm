@@ -74,11 +74,65 @@
   min-height: 400px;
 }
 
-.tpl-editor-content .ProseMirror p { margin: 0.4em 0; }
-.tpl-editor-content .ProseMirror h1 { font-size: 18pt; text-align: center; margin: 0.6em 0 0.3em; font-weight: bold; }
-.tpl-editor-content .ProseMirror h2 { font-size: 13pt; text-align: center; margin: 0.8em 0 0.4em; font-weight: bold; }
+/* WYSIWYG-стили: редактор должен выглядеть как Word — заголовки крупно
+   и жирно, тело Times New Roman, отступы как в финальном документе. */
+.tpl-editor-content .ProseMirror p {
+  margin: 0.4em 0;
+  text-align: justify;
+}
+.tpl-editor-content .ProseMirror h1 {
+  font-size: 16pt !important;
+  text-align: center !important;
+  margin: 18pt 0 8pt !important;
+  font-weight: 700 !important;
+  line-height: 1.3 !important;
+  color: #111;
+}
+.tpl-editor-content .ProseMirror h2 {
+  font-size: 13pt !important;
+  text-align: center !important;
+  margin: 14pt 0 6pt !important;
+  font-weight: 700 !important;
+  line-height: 1.3 !important;
+  color: #111;
+}
+.tpl-editor-content .ProseMirror h3 {
+  font-size: 12pt !important;
+  margin: 10pt 0 4pt !important;
+  font-weight: 700 !important;
+  color: #111;
+}
+.tpl-editor-content .ProseMirror b,
+.tpl-editor-content .ProseMirror strong {
+  font-weight: 700;
+}
+.tpl-editor-content .ProseMirror i,
+.tpl-editor-content .ProseMirror em {
+  font-style: italic;
+}
+.tpl-editor-content .ProseMirror u {
+  text-decoration: underline;
+}
 .tpl-editor-content .ProseMirror ul,
-.tpl-editor-content .ProseMirror ol { padding-left: 1.5em; }
+.tpl-editor-content .ProseMirror ol {
+  padding-left: 1.5em;
+  margin: 0.4em 0;
+}
+.tpl-editor-content .ProseMirror li {
+  margin: 2pt 0;
+}
+.tpl-editor-content .ProseMirror blockquote {
+  border-left: 3px solid #d1d5db;
+  padding-left: 12pt;
+  margin: 8pt 0;
+  color: #4b5563;
+  font-style: italic;
+}
+.tpl-editor-content .ProseMirror hr {
+  border: none;
+  border-top: 1px solid #d1d5db;
+  margin: 16pt 0;
+}
 
 /* Пилюля переменной — синий бейдж который выделяется в тексте */
 .tpl-var {

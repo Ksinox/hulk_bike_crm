@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Save, Plus, Loader2 } from "lucide-react";
+import { Save, Loader2 } from "lucide-react";
 import { toast } from "@/lib/toast";
 import {
   useApiDocumentTemplates,
@@ -13,133 +13,59 @@ import { TemplateEditor, type TemplateEditorHandle } from "./TemplateEditor";
 import { VariablesSidebar } from "./VariablesSidebar";
 
 /**
- * Таб «Редактор шаблонов» — для создания пользовательских шаблонов
- * с нуля. Чистый редактор + сайдбар переменных + сохранение под
- * собственным именем (kind='custom').
+ * Редактор пользовательских (custom) шаблонов. Принимает либо id
+ * существующего шаблона, либо initialHtmlForNew для нового.
  *
- * Системные шаблоны (договор, акт возврата) редактируются из таба
- * «Шаблоны документов» — там у каждой карточки своя кнопка «Редактировать».
+ * Системные шаблоны (договор, акт возврата, акт ущерба) редактируются
+ * через TemplateEditorPage из карточек таба «Шаблоны документов».
  */
-export function CustomTemplateEditor() {
+export function CustomTemplateEditor({
+  existingId,
+  initialHtmlForNew,
+  onBack,
+}: {
+  existingId: number | null;
+  initialHtmlForNew?: string;
+  onBack: () => void;
+}) {
   const all = useApiDocumentTemplates();
   const customs = (all.data ?? []).filter((t) => t.kind === "custom");
+  const existing = existingId
+    ? customs.find((t) => t.id === existingId) ?? null
+    : null;
 
-  const [activeId, setActiveId] = useState<number | "new" | null>(null);
-
-  if (activeId === null) {
-    // Стартовый экран — список существующих custom-шаблонов + кнопка
-    // «Создать новый шаблон». Если нет ни одного — сразу пустое состояние
-    // с большой кнопкой создания.
-    return (
-      <CustomList
-        items={customs}
-        onCreate={() => setActiveId("new")}
-        onOpen={(id) => setActiveId(id)}
-        loading={all.isLoading}
-      />
-    );
-  }
-
-  // Редактор активен — открыт пустой (для new) или загружен существующий.
-  return (
-    <CustomEditor
-      key={String(activeId)}
-      existing={
-        activeId === "new"
-          ? null
-          : customs.find((t) => t.id === activeId) ?? null
-      }
-      onBack={() => setActiveId(null)}
-    />
-  );
-}
-
-function CustomList({
-  items,
-  onCreate,
-  onOpen,
-  loading,
-}: {
-  items: ApiDocumentTemplate[];
-  onCreate: () => void;
-  onOpen: (id: number) => void;
-  loading: boolean;
-}) {
-  if (loading) {
+  if (all.isLoading) {
     return (
       <div className="flex items-center justify-center gap-2 py-10 text-muted-2">
-        <Loader2 size={14} className="animate-spin" /> Загружаем список…
+        <Loader2 size={14} className="animate-spin" /> Загружаем…
       </div>
     );
   }
+
   return (
-    <div className="flex flex-col gap-3">
-      <div className="rounded-[10px] bg-amber-50 px-3 py-2 text-[12px] text-amber-900">
-        Здесь создаются <b>новые</b> пользовательские шаблоны с нуля.
-        Можно скопировать текст реального документа и проставить
-        переменные через сайдбар. Чтобы редактировать существующие
-        системные шаблоны (договор, акт возврата) — пользуйся вкладкой{" "}
-        <b>«Шаблоны документов»</b> → кнопка «Редактировать» на нужной
-        карточке.
-      </div>
-
-      <button
-        type="button"
-        onClick={onCreate}
-        className="inline-flex w-fit items-center gap-2 rounded-[10px] bg-ink px-4 py-2 text-[13px] font-bold text-white hover:bg-blue-600"
-      >
-        <Plus size={14} /> Создать новый шаблон
-      </button>
-
-      {items.length > 0 && (
-        <div className="flex flex-col gap-2">
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-2">
-            Мои шаблоны ({items.length})
-          </div>
-          <div className="flex flex-col divide-y divide-border rounded-[12px] border border-border bg-surface">
-            {items.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => onOpen(t.id)}
-                className="flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-surface-soft"
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-[14px] font-bold text-ink">
-                    {t.name}
-                  </div>
-                  <div className="text-[11px] text-muted-2">
-                    обновлён{" "}
-                    {new Date(t.updatedAt).toLocaleString("ru-RU", {
-                      day: "2-digit",
-                      month: "short",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </div>
-                </div>
-                <span className="text-[11px] font-semibold text-blue-700">
-                  Редактировать →
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
+    <CustomEditor
+      key={String(existingId ?? "new")}
+      existing={existing}
+      initialHtmlForNew={initialHtmlForNew}
+      onBack={onBack}
+    />
   );
 }
 
 function CustomEditor({
   existing,
+  initialHtmlForNew,
   onBack,
 }: {
   existing: ApiDocumentTemplate | null;
+  initialHtmlForNew?: string;
   onBack: () => void;
 }) {
   const editorRef = useRef<TemplateEditorHandle | null>(null);
-  const [name, setName] = useState(existing?.name ?? "Новый шаблон");
-  const [body, setBody] = useState(existing?.body ?? "<p></p>");
+  const [name, setName] = useState(existing?.name ?? "Новый документ");
+  const [body, setBody] = useState(
+    existing?.body ?? initialHtmlForNew ?? "<p></p>",
+  );
   const save = useSaveDocumentTemplate();
   const remove = useDeleteDocumentTemplate();
   const [savedAt, setSavedAt] = useState<Date | null>(null);
