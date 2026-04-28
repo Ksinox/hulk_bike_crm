@@ -781,9 +781,30 @@ export async function renderSystemTemplateForEditor(
   });
   // Извлекаем body из готовой HTML-страницы — в редактор сохраняем
   // только содержимое, без <html><head><body> обвязки.
-  const bodyMatch = html.match(/<div class="wrap">([\s\S]*?)<\/div>\s*<\/body>/);
-  const inner = bodyMatch ? bodyMatch[1] : html;
-  const withVars = replaceFixtureWithPlaceholders(inner ?? "");
+  //
+  // ВАЖНО: tplContractFull и подобные шаблоны имеют ДВА (или больше)
+  // <div class="wrap">…</div> блока, разделённых page-break div'ом
+  // (договор + акт приёма-передачи). Простой non-greedy regex брал
+  // от первого `<div class="wrap">` до последнего `</div></body>` — и
+  // захватывал в group 1 «закрывающий </div> первого wrap + page-break
+  // + открывающий <div class="wrap"> второго», без своего </div>.
+  // Структура ломалась, .wrap и .sig у второго блока не работали.
+  //
+  // Здесь мы вылавливаем каждый wrap-блок отдельно через while-цикл
+  // и склеиваем их обратно с разделителем page-break. Так оба блока
+  // (договор и акт) попадают в редактор как валидный HTML, со всеми
+  // своими внутренними элементами.
+  const wrapRe = /<div class="wrap">([\s\S]*?)<\/div>\s*(?=<div\s+style="page-break-before:|<\/body>)/g;
+  const wraps: string[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = wrapRe.exec(html)) !== null) {
+    wraps.push(m[1] ?? "");
+  }
+  const inner =
+    wraps.length > 0
+      ? wraps.join('<div style="page-break-before: always"></div>')
+      : html;
+  const withVars = replaceFixtureWithPlaceholders(inner);
   // Превращаем class-based HTML в чистый Tiptap-формат с inline-стилями —
   // так Tiptap при парсинге сохранит вёрстку независимо от CSS.
   return convertToTiptapFriendlyHtml(withVars);
