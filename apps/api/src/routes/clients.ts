@@ -13,7 +13,7 @@ import {
 const ClientSourceEnum = z.enum(["avito", "repeat", "ref", "maps", "other"]);
 
 /** Поля, которые можно прислать при создании клиента. */
-const CreateClientBody = z
+export const CreateClientBody = z
   .object({
     name: z.string().min(1).max(200),
     phone: z.string().min(1).max(30),

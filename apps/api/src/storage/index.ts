@@ -61,6 +61,21 @@ export async function removeObject(key: string): Promise<void> {
   await s3.removeObject(config.s3.bucket, key);
 }
 
+/**
+ * Скопировать объект внутри бакета. Используется при конверте заявки в клиента:
+ * файл из applications/{appId}/{kind}/... переезжает в clients/{clientId}/{kind}/...
+ * без перекачки через память.
+ */
+export async function copyObject(fromKey: string, toKey: string): Promise<void> {
+  await ensureBucket();
+  // minio SDK ожидает source в формате `/{bucket}/{key}` — со слэшем впереди.
+  await s3.copyObject(
+    config.s3.bucket,
+    toKey,
+    `/${config.s3.bucket}/${fromKey}`,
+  );
+}
+
 /** Метаданные файла */
 export async function statObject(key: string): Promise<{
   size: number;

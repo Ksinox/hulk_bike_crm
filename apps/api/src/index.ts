@@ -25,8 +25,11 @@ import { priceListRoutes } from "./routes/price-list.js";
 import { damageReportsRoutes } from "./routes/damage-reports.js";
 import { documentTemplatesRoutes } from "./routes/document-templates.js";
 import { publicRoutes } from "./routes/public.js";
+import { publicApplicationsRoutes } from "./routes/public-applications.js";
+import { clientApplicationsRoutes } from "./routes/client-applications.js";
 import authPlugin, { requireAuth } from "./auth/plugin.js";
 import { ensureBucket } from "./storage/index.js";
+import rateLimit from "@fastify/rate-limit";
 
 async function bootstrap() {
   const app = Fastify({
@@ -42,6 +45,13 @@ async function bootstrap() {
 
   await app.register(authPlugin);
   await app.register(helmet, { contentSecurityPolicy: false });
+  // Rate-limit плагин: глобально выключен, лимиты включаются точечно
+  // в конкретных роутах (только публичные эндпоинты заявок).
+  await app.register(rateLimit, {
+    global: false,
+    max: 30,
+    timeWindow: "1 hour",
+  });
   await app.register(multipart, {
     limits: {
       fileSize: 15 * 1024 * 1024, // 15 МБ на файл
@@ -77,7 +87,8 @@ async function bootstrap() {
           (SELECT count(*) FROM clients WHERE source_custom IS NULL OR source_custom IS NOT NULL) AS c1,
           (SELECT count(*) FROM rentals WHERE archived_at IS NULL OR archived_at IS NOT NULL) AS c2,
           (SELECT count(*) FROM scooter_models WHERE active = true OR active = false) AS c3,
-          (SELECT count(*) FROM scooter_models WHERE day_rate >= 0) AS c4
+          (SELECT count(*) FROM scooter_models WHERE day_rate >= 0) AS c4,
+          (SELECT count(*) FROM client_applications WHERE status::text IS NOT NULL) AS c5
         LIMIT 1
       `);
       return { ok: true, env: config.env };
@@ -99,6 +110,9 @@ async function bootstrap() {
   // Раздаются на лендинг hulkbike.ru. Только то, что безопасно
   // показывать клиентам (модели с аватарками + сами аватарки).
   await app.register(publicRoutes, { prefix: "/api/public" });
+  // Публичные заявки клиентов (анкета по постоянной ссылке /apply).
+  // Все эндпоинты с rate-limit per-IP, защищены X-Upload-Token.
+  await app.register(publicApplicationsRoutes, { prefix: "/api/public" });
 
   // ==== PROTECTED API ROUTES ====
   // Все нижеследующие роуты требуют авторизацию через cookie hulk_session.
@@ -113,6 +127,10 @@ async function bootstrap() {
     await protectedApp.register(tasksRoutes, { prefix: "/api/tasks" });
     await protectedApp.register(clientDocumentsRoutes, {
       prefix: "/api/client-documents",
+    });
+    // Список публичных заявок (для менеджеров) + конвертация заявки в клиента
+    await protectedApp.register(clientApplicationsRoutes, {
+      prefix: "/api/client-applications",
     });
     await protectedApp.register(scooterDocumentsRoutes, {
       prefix: "/api/scooter-documents",
