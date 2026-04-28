@@ -5,6 +5,7 @@ import {
   clientsKeys,
   useApiClients,
   type CreateClientInput,
+  type PatchClientInput,
 } from "@/lib/api/clients";
 import { useApiRentals } from "@/lib/api/rentals";
 import type { ApiRental } from "@/lib/api/types";
@@ -118,17 +119,35 @@ function getUnreachableSet(): Set<number> {
 }
 
 /**
+ * Расширение для CREATE/PATCH — наряду с базовыми полями Client принимаем
+ * паспортные данные/адреса/ВУ, чтобы они попадали в API. Без этого фронт
+ * молча терял всё что заполнила форма редактирования карточки клиента.
+ */
+type ClientExtras = {
+  sourceCustom?: string | null;
+  isForeigner?: boolean;
+  passportRaw?: string | null;
+  extraPhone?: string | null;
+  birthDate?: string | null;
+  passportSeries?: string | null;
+  passportNumber?: string | null;
+  passportIssuedOn?: string | null;
+  passportIssuer?: string | null;
+  passportDivisionCode?: string | null;
+  passportRegistration?: string | null;
+  licenseNumber?: string | null;
+  licenseCategories?: string | null;
+  licenseIssuedOn?: string | null;
+  licenseExpiresOn?: string | null;
+  blacklistReason?: string | null;
+};
+
+/**
  * Создание клиента (sync). Возвращает stub с временным id; реальный id
  * прилетает следующим обновлением useApiClients. Используется только
  * там где id не нужен сразу.
  */
-function addClient(
-  data: Omit<Client, "id"> & {
-    sourceCustom?: string | null;
-    isForeigner?: boolean;
-    passportRaw?: string | null;
-  },
-): Client {
+function addClient(data: Omit<Client, "id"> & ClientExtras): Client {
   const body = buildCreateBody(data);
   api
     .post(`/api/clients`, body)
@@ -150,11 +169,7 @@ function addClient(
  * аренда уйдёт в API с несуществующим clientId → 400.
  */
 async function addClientAsync(
-  data: Omit<Client, "id"> & {
-    sourceCustom?: string | null;
-    isForeigner?: boolean;
-    passportRaw?: string | null;
-  },
+  data: Omit<Client, "id"> & ClientExtras,
 ): Promise<Client> {
   const body = buildCreateBody(data);
   const created = await api.post<{ id: number }>(`/api/clients`, body);
@@ -162,16 +177,27 @@ async function addClientAsync(
   return { ...data, id: created.id };
 }
 
+/**
+ * Сохраняет правки клиента в API (PATCH). В отличие от создания —
+ * принимает только PATCH-поля и пробрасывает их as-is. Возвращает
+ * обновлённую запись и инвалидирует список клиентов.
+ */
+async function patchClientAsync(
+  id: number,
+  patch: PatchClientInput,
+): Promise<void> {
+  await api.patch(`/api/clients/${id}`, patch);
+  queryClient.invalidateQueries({ queryKey: clientsKeys.all });
+  queryClient.invalidateQueries({ queryKey: clientsKeys.byId(id) });
+}
+
 function buildCreateBody(
-  data: Omit<Client, "id"> & {
-    sourceCustom?: string | null;
-    isForeigner?: boolean;
-    passportRaw?: string | null;
-  },
+  data: Omit<Client, "id"> & ClientExtras,
 ): CreateClientInput {
   return {
     name: data.name,
     phone: data.phone,
+    extraPhone: data.extraPhone ?? null,
     source: data.source,
     sourceCustom: data.sourceCustom ?? null,
     isForeigner: data.isForeigner ?? false,
@@ -179,6 +205,18 @@ function buildCreateBody(
     rating: data.rating,
     comment: data.comment,
     blacklisted: data.blacklisted,
+    blacklistReason: data.blacklistReason ?? null,
+    birthDate: data.birthDate ?? null,
+    passportSeries: data.passportSeries ?? null,
+    passportNumber: data.passportNumber ?? null,
+    passportIssuedOn: data.passportIssuedOn ?? null,
+    passportIssuer: data.passportIssuer ?? null,
+    passportDivisionCode: data.passportDivisionCode ?? null,
+    passportRegistration: data.passportRegistration ?? null,
+    licenseNumber: data.licenseNumber ?? null,
+    licenseCategories: data.licenseCategories ?? null,
+    licenseIssuedOn: data.licenseIssuedOn ?? null,
+    licenseExpiresOn: data.licenseExpiresOn ?? null,
   };
 }
 
@@ -199,6 +237,7 @@ export const clientStore = {
   getUnreachableSet,
   addClient,
   addClientAsync,
+  patchClientAsync,
   getAllClients,
   subscribe,
 };

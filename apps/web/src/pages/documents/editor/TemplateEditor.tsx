@@ -40,14 +40,22 @@ import "./editor.css";
  * Tab внутри редактора шаблонов открывает то же `@`-меню переменных —
  * чтобы пользователю не нужно было набирать собачку руками.
  *
- * Реализовано как программный `@`-триггер: вставляем символ `@` в текущую
- * позицию курсора, Mention extension сам подхватывает его и поднимает
- * popup. При выборе пункта Mention.command удаляет диапазон от `@` до
- * курсора и подставляет VariableNode, поэтому `@` в тексте не остаётся.
+ * Подход: программный `@`-триггер. Вставляем символ `@` в текущую
+ * позицию курсора, Mention extension сам поднимает popup. При выборе
+ * пункта Mention.command удаляет диапазон от `@` до курсора и
+ * подставляет VariableNode, так что в тексте `@` не остаётся.
+ *
+ * Тонкость: tiptap-suggestion триггерится только когда `@` стоит после
+ * пробела/начала параграфа (иначе его считают частью слова —
+ * «email@example»). Если перед курсором обычная буква — добавляем
+ * пробел перед `@`, чтобы suggestion поднялся. Этот пробел остаётся
+ * на месте после выбора (Mention.command удаляет только сам `@`),
+ * что выглядит естественно: переменная отделена от предыдущего слова
+ * пробелом.
  *
  * Внутри таблицы Tab сохраняет штатное поведение (переход между
- * ячейками) — наш handler возвращает false, событие проваливается дальше
- * к табличному расширению.
+ * ячейками) — наш handler возвращает false, событие проваливается
+ * дальше к табличному расширению.
  */
 const VariableTabTrigger = Extension.create({
   name: "variableTabTrigger",
@@ -55,7 +63,26 @@ const VariableTabTrigger = Extension.create({
     return {
       Tab: ({ editor }) => {
         if (editor.isActive("table")) return false;
-        return editor.chain().focus().insertContent("@").run();
+        const { state } = editor;
+        const { from, empty } = state.selection;
+        // Если выделен диапазон — заменяем его на `@` без префикса.
+        if (!empty) {
+          return editor.chain().focus().insertContent("@").run();
+        }
+        const $pos = state.doc.resolve(from);
+        const startOfParent = $pos.start($pos.depth);
+        // Берём один символ слева. Если курсор в начале параграфа —
+        // префикс не нужен.
+        let needsSpace = false;
+        if (from > startOfParent) {
+          const prev = state.doc.textBetween(from - 1, from, "\n", "\n");
+          needsSpace = prev !== "" && !/\s/.test(prev);
+        }
+        return editor
+          .chain()
+          .focus()
+          .insertContent(needsSpace ? " @" : "@")
+          .run();
       },
     };
   },

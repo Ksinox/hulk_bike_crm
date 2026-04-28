@@ -133,6 +133,24 @@ function findDuplicateIn(phone: string, pool: { id: number; name: string; phone:
 }
 
 /**
+ * ДД.ММ.ГГГГ → ISO YYYY-MM-DD для столбцов date в Postgres.
+ * Если строка пустая или невалидная — возвращаем null,
+ * Drizzle/Zod примет это как «поле не заполнено».
+ */
+function dateRuToIso(s: string): string | null {
+  const m = s.trim().match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  if (!m) return null;
+  const [, d, mo, y] = m;
+  return `${y}-${mo}-${d}`;
+}
+
+/** Trim + null если пусто — чтобы не отправлять "" в API. */
+function nullableTrim(s: string): string | null {
+  const t = s.trim();
+  return t === "" ? null : t;
+}
+
+/**
  * Автоформат даты ДД.ММ.ГГГГ — точки расставляются автоматически
  * по мере ввода. Принимает любую строку, оставляет только цифры
  * и расставляет точки после 2 и 4 цифр.
@@ -781,12 +799,6 @@ export function AddClientModal({
                     );
                     return;
                   }
-                  if (editing) {
-                    clientStore.setPhoto(editing.id, f.photoFile);
-                    clientStore.setExtraPhone(editing.id, f.phone2 || null);
-                    requestClose();
-                    return;
-                  }
                   // Если выбран «свой вариант» — отправляем
                   // source='other' + sourceCustom='<текст>'.
                   const finalSource: ClientSource =
@@ -795,6 +807,61 @@ export function AddClientModal({
                       : (f.source as ClientSource);
                   const finalSourceCustom =
                     f.source === "custom" ? f.sourceCustom.trim() : null;
+                  // Паспорт + адрес + дата рождения — общие для CREATE и PATCH.
+                  // Для иностранца паспортные поля не строгие (форма скрывает
+                  // их и заполняется passportRaw), поэтому отправляем null.
+                  const passportFields = f.isForeigner
+                    ? {
+                        birthDate: dateRuToIso(f.birth),
+                        passportSeries: null,
+                        passportNumber: null,
+                        passportIssuedOn: null,
+                        passportIssuer: null,
+                        passportDivisionCode: null,
+                        passportRegistration: nullableTrim(f.regAddr),
+                      }
+                    : {
+                        birthDate: dateRuToIso(f.birth),
+                        passportSeries: nullableTrim(f.passSer),
+                        passportNumber: nullableTrim(f.passNum),
+                        passportIssuedOn: dateRuToIso(f.passDate),
+                        passportIssuer: nullableTrim(f.passIssuer),
+                        passportDivisionCode: nullableTrim(f.passCode),
+                        passportRegistration: nullableTrim(f.regAddr),
+                      };
+
+                  if (editing) {
+                    try {
+                      await clientStore.patchClientAsync(editing.id, {
+                        name: f.name.trim(),
+                        phone: f.phone,
+                        extraPhone: nullableTrim(f.phone2),
+                        source: finalSource,
+                        sourceCustom: finalSourceCustom,
+                        isForeigner: f.isForeigner,
+                        passportRaw: f.isForeigner
+                          ? nullableTrim(f.passportRaw)
+                          : null,
+                        blacklisted: f.blacklisted,
+                        blacklistReason: f.blacklisted
+                          ? nullableTrim(f.blReason)
+                          : null,
+                        ...passportFields,
+                      });
+                      clientStore.setPhoto(editing.id, f.photoFile);
+                      clientStore.setExtraPhone(
+                        editing.id,
+                        f.phone2 || null,
+                      );
+                      requestClose();
+                    } catch (e) {
+                      toast.error(
+                        "Не удалось сохранить клиента",
+                        (e as Error).message ?? "",
+                      );
+                    }
+                    return;
+                  }
                   try {
                     // Async: ждём реальный id из API. Иначе onCreated
                     // получит stub-id, и если консьюмер сразу шлёт его
@@ -803,6 +870,7 @@ export function AddClientModal({
                     const created = await clientStore.addClientAsync({
                       name: f.name.trim(),
                       phone: f.phone,
+                      extraPhone: nullableTrim(f.phone2),
                       rating: 68,
                       rents: 0,
                       debt: 0,
@@ -814,7 +882,11 @@ export function AddClientModal({
                         : null,
                       added: "13.10.26",
                       blacklisted: f.blacklisted || undefined,
+                      blacklistReason: f.blacklisted
+                        ? nullableTrim(f.blReason)
+                        : null,
                       comment: f.blReason || undefined,
+                      ...passportFields,
                     });
                     if (f.photoFile) clientStore.setPhoto(created.id, f.photoFile);
                     if (f.phone2) clientStore.setExtraPhone(created.id, f.phone2);
