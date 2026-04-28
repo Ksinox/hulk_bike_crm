@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeftRight, Loader2, Search, Wrench, X, ParkingSquare } from "lucide-react";
+import { ArrowLeftRight, Check, Loader2, Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
 import { useApiScooters } from "@/lib/api/scooters";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { useSwapScooter } from "@/lib/api/rentals";
 import { MODEL_LABEL, type Rental } from "@/lib/mock/rentals";
+import { SCOOTER_BASE_STATUS_OPTIONS } from "@/pages/fleet/scooterStatusOptions";
+import type { ScooterBaseStatus } from "@/lib/api/types";
 
-type OldStatus = "rental_pool" | "repair";
+type OldStatus = ScooterBaseStatus;
 
 /**
  * Замена скутера в аренде. v0.2.76 — переработан UX.
@@ -135,11 +137,12 @@ export function SwapScooterDialog({
         );
         return;
       }
+      const statusLabel =
+        SCOOTER_BASE_STATUS_OPTIONS.find((o) => o.value === oldStatus)
+          ?.label ?? oldStatus;
       toast.success(
         "Скутер заменён",
-        oldStatus === "repair"
-          ? "Старый отправлен в ремонт. Печатайте акт."
-          : "Старый возвращён в парк. Печатайте акт.",
+        `Старый → «${statusLabel}». Печатайте акт приёма-передачи.`,
       );
       const newId = created.id;
       requestClose();
@@ -185,61 +188,51 @@ export function SwapScooterDialog({
           </button>
         </div>
 
-        {/* OLD SCOOTER STATUS CHOICE */}
-        <div className="grid grid-cols-2 gap-2 border-b border-border bg-surface-soft/40 px-5 py-3">
-          <div className="col-span-2 mb-1 text-[11px] font-bold uppercase tracking-wider text-muted-2">
+        {/* OLD SCOOTER STATUS CHOICE — полный picker как в ScooterStatusModal */}
+        <div className="border-b border-border bg-surface-soft/40 px-5 py-3">
+          <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-muted-2">
             Куда деть текущий скутер ({rental.scooter})
           </div>
-          <button
-            type="button"
-            onClick={() => setOldStatus("rental_pool")}
-            className={cn(
-              "flex items-start gap-2 rounded-[10px] border px-3 py-2 text-left transition-colors",
-              oldStatus === "rental_pool"
-                ? "border-green-500 bg-green-soft/60"
-                : "border-border bg-white hover:border-green-300",
-            )}
-          >
-            <ParkingSquare
-              size={16}
-              className={cn(
-                "mt-0.5 shrink-0",
-                oldStatus === "rental_pool" ? "text-green-700" : "text-muted-2",
-              )}
-            />
-            <div className="min-w-0">
-              <div className="text-[13px] font-bold text-ink">
-                Готов к аренде
-              </div>
-              <div className="mt-0.5 text-[11px] text-muted-2">
-                Скутер свободен — другой клиент может взять его сразу.
-              </div>
-            </div>
-          </button>
-          <button
-            type="button"
-            onClick={() => setOldStatus("repair")}
-            className={cn(
-              "flex items-start gap-2 rounded-[10px] border px-3 py-2 text-left transition-colors",
-              oldStatus === "repair"
-                ? "border-orange-500 bg-orange-soft/60"
-                : "border-border bg-white hover:border-orange-300",
-            )}
-          >
-            <Wrench
-              size={16}
-              className={cn(
-                "mt-0.5 shrink-0",
-                oldStatus === "repair" ? "text-orange-700" : "text-muted-2",
-              )}
-            />
-            <div className="min-w-0">
-              <div className="text-[13px] font-bold text-ink">В ремонт</div>
-              <div className="mt-0.5 text-[11px] text-muted-2">
-                Скутер уходит из оборота — нужно починить перед сдачей.
-              </div>
-            </div>
-          </button>
+          <div className="flex flex-col gap-1">
+            {SCOOTER_BASE_STATUS_OPTIONS.map((o) => {
+              const active = o.value === oldStatus;
+              return (
+                <button
+                  key={o.value}
+                  type="button"
+                  onClick={() => setOldStatus(o.value)}
+                  className={cn(
+                    "flex items-start gap-2.5 rounded-xl px-3 py-2 text-left transition-colors",
+                    active
+                      ? "bg-blue-50 ring-1 ring-inset ring-blue-600/40"
+                      : "hover:bg-white",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full",
+                      active
+                        ? "bg-blue-600 text-white"
+                        : "border border-border bg-white",
+                    )}
+                  >
+                    {active && <Check size={12} strokeWidth={3} />}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div
+                      className={cn(
+                        "text-[13px] font-bold",
+                        active ? "text-blue-700" : "text-ink",
+                      )}
+                    >
+                      {o.label}
+                    </div>
+                    <div className="text-[11px] text-muted">{o.hint}</div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {/* SEARCH */}

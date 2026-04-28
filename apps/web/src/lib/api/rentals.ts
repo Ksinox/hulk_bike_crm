@@ -78,7 +78,14 @@ export function useSwapScooter() {
     mutationFn: (args: {
       rentalId: number;
       newScooterId: number;
-      oldScooterStatus?: "rental_pool" | "repair";
+      oldScooterStatus?:
+        | "ready"
+        | "rental_pool"
+        | "repair"
+        | "buyout"
+        | "for_sale"
+        | "sold"
+        | "disassembly";
       reason?: string;
     }) =>
       api.post<ApiRental>(`/api/rentals/${args.rentalId}/swap-scooter`, {

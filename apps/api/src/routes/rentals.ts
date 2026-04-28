@@ -732,11 +732,22 @@ export async function rentalsRoutes(app: FastifyInstance) {
         .object({
           newScooterId: z.number().int().positive(),
           /**
-           * Куда деть старый скутер: 'rental_pool' (готов к аренде, кто-то
-           * другой может его взять) или 'repair' (на ремонт). По умолчанию
-           * 'repair' — самый частый сценарий замены.
+           * Куда деть старый скутер — любой из 7 baseStatus (см.
+           * SCOOTER_BASE_STATUS_OPTIONS на фронте). Чаще всего это
+           * 'repair' (на ремонт) или 'rental_pool' (свободен), но
+           * допускаем и редкие сценарии: продажа, разборка и т.д.
            */
-          oldScooterStatus: z.enum(["rental_pool", "repair"]).default("repair"),
+          oldScooterStatus: z
+            .enum([
+              "ready",
+              "rental_pool",
+              "repair",
+              "buyout",
+              "for_sale",
+              "sold",
+              "disassembly",
+            ])
+            .default("repair"),
           /** Опциональный комментарий к причине замены. */
           reason: z.string().max(500).optional(),
         })
