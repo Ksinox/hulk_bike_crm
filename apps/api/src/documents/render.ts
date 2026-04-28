@@ -487,22 +487,24 @@ ${TOOLBAR}
     Арендатор обязуется возместить Арендодателю расходы на устранение повреждений, полученных при эксплуатации скутера, в размере _______________________ рублей.
   </div>
 
-  <div class="sig">
-    <div>
-      <div class="line"></div>
-      <div class="small">
-        ${kind === "transfer" ? "Арендодатель транспортное средство передал" : "Арендодатель транспортное средство получил"}<br>
-        (подпись / расшифровка) — ${LANDLORD.fullName}
-      </div>
-    </div>
-    <div>
-      <div class="line"></div>
-      <div class="small">
-        ${kind === "transfer" ? "Арендатор транспортное средство получил" : "Арендатор транспортное средство передал"}<br>
-        (подпись / расшифровка) — ${client.name}
-      </div>
-    </div>
-  </div>
+  <table style="width: 100%; margin-top: 24pt; border: 0; border-collapse: collapse; page-break-inside: avoid">
+    <tr>
+      <td style="width: 50%; border: 0; padding: 0 8pt 0 0; vertical-align: top">
+        <div style="border-bottom: 1px solid #000; height: 28pt; margin-bottom: 2pt"></div>
+        <div style="font-size: 9.5pt">
+          ${kind === "transfer" ? "Арендодатель транспортное средство передал" : "Арендодатель транспортное средство получил"}<br>
+          (подпись / расшифровка) — ${LANDLORD.fullName}
+        </div>
+      </td>
+      <td style="width: 50%; border: 0; padding: 0 0 0 8pt; vertical-align: top">
+        <div style="border-bottom: 1px solid #000; height: 28pt; margin-bottom: 2pt"></div>
+        <div style="font-size: 9.5pt">
+          ${kind === "transfer" ? "Арендатор транспортное средство получил" : "Арендатор транспортное средство передал"}<br>
+          (подпись / расшифровка) — ${client.name}
+        </div>
+      </td>
+    </tr>
+  </table>
 </div>
 </body></html>`;
 }
