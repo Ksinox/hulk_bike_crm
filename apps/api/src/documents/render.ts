@@ -183,13 +183,32 @@ const CSS = `
   /* Нумерованные пункты договора с жёсткой текстовой нумерацией
    * (надёжно работает и в HTML-preview, и в Word при экспорте).
    * .cl  — пункт 1-го уровня (1.1, 1.2, ...)
-   * .cl2 — пункт 2-го уровня (3.1.1, 6.3.1, ...) — отступ больше
+   * .cl2 — пункт 2-го уровня (2.3.17, 3.1.1, 6.3.1, ...) — отступ больше
    * Префикс <b>X.Y.</b> или <b>X.Y.Z.</b> жирный, текст после — обычный.
+   *
+   * text-align: left (НЕ justify) — иначе пробел между номером и
+   * текстом растягивается, и номер «отрывается» от текста.
+   * Hanging indent делаем через padding-left + text-indent: -N.
+   * min-width у <b> резервирует место под длинные номера типа «2.3.17.».
    */
-  p.cl, p.cl2 { margin: 4pt 0 4pt 0; text-align: justify; page-break-inside: avoid; }
-  p.cl  { padding-left: 22pt; text-indent: -22pt; }
-  p.cl2 { padding-left: 44pt; text-indent: -22pt; }
-  p.cl > b, p.cl2 > b { display: inline-block; min-width: 22pt; }
+  p.cl, p.cl2 {
+    margin: 4pt 0;
+    text-align: left;
+    page-break-inside: avoid;
+    line-height: 1.4;
+  }
+  p.cl  { padding-left: 32pt; text-indent: -32pt; }
+  p.cl2 { padding-left: 64pt; text-indent: -38pt; }
+  p.cl > b:first-child {
+    display: inline-block;
+    min-width: 28pt;
+    font-weight: 600;
+  }
+  p.cl2 > b:first-child {
+    display: inline-block;
+    min-width: 36pt;
+    font-weight: 600;
+  }
   /* Подзаголовок-абзац (например «2.1. Арендодатель обязан:») */
   p.subhead { margin: 6pt 0 4pt 0; }
   /* Экранная обёртка (в iframe для preview), при печати — прозрачно */
