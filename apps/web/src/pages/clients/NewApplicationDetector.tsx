@@ -3,7 +3,6 @@ import { toast } from "@/lib/toast";
 import {
   useApplications,
   useDeleteApplication,
-  useMarkApplicationViewed,
   type ApiApplication,
 } from "@/lib/api/clientApplications";
 import { NewApplicationModal } from "./NewApplicationModal";
@@ -19,10 +18,12 @@ import { applicationToFormInit } from "./applicationConvert";
  * открывает AddClientModal с предзаполненными полями + applicationId
  * (после save AddClientModal вызовет convert API).
  *
- * «Просмотренное» хранится в localStorage с TTL 24 ч, чтобы при F5 не
- * показывать ту же заявку повторно. Если менеджер захочет всё-таки
- * увидеть её снова — может почистить localStorage или вернуться к ней
- * через список «Новые заявки» в /clients.
+ * «Позже» НЕ меняет статус заявки — она остаётся 'new', продолжает
+ * выглядеть как новая в списке /clients и пульсировать в виджете
+ * дашборда. Локально (через localStorage seenIds, TTL 24 ч) текущему
+ * менеджеру эта заявка больше не всплывает автомодалкой в этой сессии,
+ * но другие менеджеры её увидят как новую. Чтобы убрать заявку — нужно
+ * её оформить или удалить как спам.
  */
 
 const SEEN_KEY = "hulk-seen-applications";
@@ -61,7 +62,6 @@ export function NewApplicationDetector() {
   const [seen, setSeen] = useState<Set<number>>(() => loadSeen());
   const [activeApp, setActiveApp] = useState<ApiApplication | null>(null);
   const [convertingApp, setConvertingApp] = useState<ApiApplication | null>(null);
-  const markViewed = useMarkApplicationViewed();
   const deleteApp = useDeleteApplication();
 
   // Список заявок-кандидатов для показа модалки: status='new' и не в seen
@@ -88,15 +88,16 @@ export function NewApplicationDetector() {
 
   const handleLater = () => {
     if (!activeApp) return;
+    // «Позже» — заявка остаётся 'new', только локально перестаёт всплывать
+    // в этой сессии. Виджет на дашборде продолжит пульсировать, в /clients
+    // строка заявки будет видна с amber-меткой «новая».
     markSeen(activeApp.id);
-    markViewed.mutate(activeApp.id);
     setActiveApp(null);
   };
 
   const handleConvert = () => {
     if (!activeApp) return;
     markSeen(activeApp.id);
-    markViewed.mutate(activeApp.id);
     setConvertingApp(activeApp);
     setActiveApp(null);
   };

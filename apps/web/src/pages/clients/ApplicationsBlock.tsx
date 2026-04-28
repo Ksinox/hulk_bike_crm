@@ -5,7 +5,6 @@ import { toast } from "@/lib/toast";
 import {
   useApplications,
   useDeleteApplication,
-  useMarkApplicationViewed,
   type ApiApplication,
 } from "@/lib/api/clientApplications";
 import { AddClientModal } from "./AddClientModal";
@@ -32,13 +31,13 @@ export function ApplicationsBlock() {
   const [open, setOpen] = useState(true);
   const [viewing, setViewing] = useState<ApiApplication | null>(null);
   const [converting, setConverting] = useState<ApiApplication | null>(null);
-  const markViewed = useMarkApplicationViewed();
   const deleteApp = useDeleteApplication();
 
   if (total === 0) return null;
 
   const openForReview = (a: ApiApplication) => {
-    if (a.status === "new") markViewed.mutate(a.id);
+    // Просмотр заявки НЕ меняет её статус — она остаётся 'new' пока
+    // менеджер не оформит её или не удалит как спам.
     setViewing(a);
   };
 
