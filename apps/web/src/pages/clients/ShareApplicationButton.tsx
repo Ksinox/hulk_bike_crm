@@ -11,9 +11,14 @@ import { toast } from "@/lib/toast";
  * Max — копируется в буфер (нет стандартного share-link).
  */
 
+// Используем hash-route (#/apply): vite собирает бандл с base: "./",
+// и на path /apply скрипты бы грузились с /apply/assets/... → 404.
+// Hash оставляет pathname = "/" и не ломает загрузку бандла.
 const PUBLIC_FORM_URL =
   (import.meta.env.VITE_PUBLIC_FORM_URL as string | undefined) ??
-  (typeof window !== "undefined" ? `${window.location.origin}/apply` : "/apply");
+  (typeof window !== "undefined"
+    ? `${window.location.origin}/#/apply`
+    : "/#/apply");
 
 const SHARE_TEXT = `Здравствуйте! Для оформления аренды скутера в Халк Байк заполните, пожалуйста, короткую анкету: ${PUBLIC_FORM_URL}`;
 
