@@ -137,24 +137,70 @@ export function TermsTab({
     ? chainRentals.reduce((s, r) => s + (r.days || 0), 0)
     : rental.days;
 
-  // История скутеров в цепочке: проходим связки в порядке chain (от корня
-  // к текущему) и собираем уникальные scooterId. Те, что отличаются от
-  // текущего, считаем «прошлыми скутерами этой аренды».
-  const scooterHistory = useMemo(() => {
+  // История скутеров в цепочке. Возвращает массив ВСЕХ уникальных скутеров
+  // в порядке появления в цепочке (включая текущий) — для рендера в виде
+  // «X → Y → Z(текущий)» с tooltip на каждом (причина замены).
+  //
+  //   reason для X = note той связки, которая пришла на смену (т.е. где
+  //   scooterId впервые отличается от X). У note формат:
+  //     "замена скутера: <reason>"  (если пользователь указал)
+  //     "замена скутера #NNNN"      (фоллбек)
+  const scooterChain = useMemo(() => {
     const ordered = chainIds
       .map((id) => chainRentals.find((r) => r.id === id))
       .filter((r): r is Rental => !!r);
-    const seen = new Set<number>();
-    const out: { rentalId: number; scooterId: number; scooter: string }[] = [];
+    type Item = {
+      scooterId: number;
+      scooter: string;
+      /** id связки, в которой скутер был активен (последняя такая). */
+      lastRentalId: number;
+      /** id связки, ставшей причиной отказа от этого скутера. */
+      replacedByRentalId: number | null;
+      /** Очищенная причина замены (без префикса). */
+      reason: string | null;
+      isCurrent: boolean;
+    };
+    const items: Item[] = [];
+    let prev: Rental | null = null;
     for (const r of ordered) {
       if (r.scooterId == null) continue;
-      if (r.scooterId === rental.scooterId) continue;
-      if (seen.has(r.scooterId)) continue;
-      seen.add(r.scooterId);
-      out.push({ rentalId: r.id, scooterId: r.scooterId, scooter: r.scooter });
+      if (prev && prev.scooterId === r.scooterId) {
+        // Это просто продление (тот же скутер) — обновляем lastRentalId
+        // у текущего items[items.length-1].
+        const last = items[items.length - 1];
+        if (last) last.lastRentalId = r.id;
+      } else {
+        // Новый скутер в цепочке — это либо самый первый, либо замена.
+        // Если это замена (prev != null && отличается scooterId) —
+        // у предыдущего пункта истории мы записываем replacedByRentalId
+        // и парсим reason из note текущей связки.
+        if (prev && items.length > 0) {
+          const last = items[items.length - 1];
+          last.replacedByRentalId = r.id;
+          last.reason = parseSwapReason(r.note ?? null);
+        }
+        items.push({
+          scooterId: r.scooterId,
+          scooter: r.scooter,
+          lastRentalId: r.id,
+          replacedByRentalId: null,
+          reason: null,
+          isCurrent: false,
+        });
+      }
+      prev = r;
     }
-    return out;
-  }, [chainIds, chainRentals, rental.scooterId]);
+    if (items.length > 0) {
+      items[items.length - 1]!.isCurrent = true;
+    }
+    return items;
+  }, [chainIds, chainRentals]);
+
+  // Только «прошлые» (не текущий) — для блока «Ранее в этой аренде».
+  const scooterHistory = useMemo(
+    () => scooterChain.filter((x) => !x.isCurrent),
+    [scooterChain],
+  );
 
   // Признак «текущий скутер — замена» (предыдущая связка в цепочке имела
   // другой скутер). Проверяем по parentRentalId, чтобы текст «Скутер
@@ -306,32 +352,62 @@ export function TermsTab({
         </div>
       </div>
 
-      {/* История скутеров: предыдущие в этой аренде. Кликабельно — открывает
-          карточку скутера в парке (там же видно, у кого ещё он был). */}
+      {/* История скутеров: предыдущие в этой аренде. Каждый скутер —
+          мини-аватарка с моделью; стрелка между ними показывает порядок
+          замен; на hover виден reason (что случилось со скутером). */}
       {scooterHistory.length > 0 && (
         <div className="rounded-[12px] border border-dashed border-border bg-surface-soft/40 px-3 py-2">
-          <div className="mb-1.5 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-2">
+          <div className="mb-2 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-2">
             <History size={11} /> Ранее в этой аренде
           </div>
-          <div className="flex flex-wrap gap-1.5">
-            {scooterHistory.map((s) => (
-              <button
-                key={s.scooterId}
-                type="button"
-                onClick={() =>
-                  navigate({
-                    route: "fleet",
-                    scooterId: s.scooterId,
-                    from: { route: "rentals", rentalId: rental.id },
-                  })
-                }
-                title={`Скутер был в этой аренде. Связка #${String(s.rentalId).padStart(4, "0")}. Клик → история скутера.`}
-                className="inline-flex items-center gap-1.5 rounded-[8px] border border-border bg-white px-2 py-1 text-[12px] hover:border-blue-400 hover:bg-blue-50"
-              >
-                <Bike size={11} className="text-muted-2" />
-                <span className="font-semibold text-ink">{s.scooter}</span>
-                <ExternalLink size={10} className="text-muted-2" />
-              </button>
+          <div className="flex flex-wrap items-center gap-2">
+            {scooterChain.map((s, i) => (
+              <div key={`${s.scooterId}-${i}`} className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    navigate({
+                      route: "fleet",
+                      scooterId: s.scooterId,
+                      from: { route: "rentals", rentalId: rental.id },
+                    })
+                  }
+                  title={
+                    s.isCurrent
+                      ? `${s.scooter} — текущий. Клик → карточка скутера.`
+                      : `${s.scooter}${s.reason ? `\nЗамена: ${s.reason}` : "\nПричина замены не указана"}\nКлик → карточка скутера.`
+                  }
+                  className={cn(
+                    "flex items-center gap-2 rounded-[10px] border bg-white px-2 py-1 text-[12px] transition-colors",
+                    s.isCurrent
+                      ? "border-blue-500 ring-1 ring-blue-200"
+                      : "border-border hover:border-blue-400 hover:bg-blue-50",
+                  )}
+                >
+                  <SwapHistoryAvatar scooterId={s.scooterId} />
+                  <div className="flex flex-col items-start">
+                    <span className="font-semibold leading-tight text-ink">
+                      {s.scooter}
+                    </span>
+                    {s.isCurrent ? (
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600">
+                        текущий
+                      </span>
+                    ) : s.reason ? (
+                      <span className="max-w-[180px] truncate text-[10px] text-muted-2">
+                        {s.reason}
+                      </span>
+                    ) : (
+                      <span className="text-[10px] italic text-muted-2/70">
+                        причина не указана
+                      </span>
+                    )}
+                  </div>
+                </button>
+                {i < scooterChain.length - 1 && (
+                  <ArrowRight size={14} className="shrink-0 text-muted-2" />
+                )}
+              </div>
             ))}
           </div>
         </div>
@@ -1324,6 +1400,56 @@ function Metric({
 void useMemo;
 void Plus;
 void X;
+
+/**
+ * Парсит note замены скутера. Возвращает причину или null.
+ * Формат note задаётся в API (rentals.ts swap-scooter):
+ *   "замена скутера: <reason>" или "замена скутера #NNNN".
+ */
+function parseSwapReason(note: string | null): string | null {
+  if (!note) return null;
+  const m = /^замена скутера:\s*(.+)$/i.exec(note.trim());
+  return m ? m[1]!.trim() : null;
+}
+
+/**
+ * Маленькая круглая аватарка скутера для блока «Ранее в этой аренде».
+ * Использует ту же модель и тот же fileUrl что и большой ScooterThumb.
+ */
+function SwapHistoryAvatar({ scooterId }: { scooterId: number }) {
+  const { data: scooters = [] } = useApiScooters();
+  const { data: models = [] } = useApiScooterModels();
+  const sc = scooters.find((s) => s.id === scooterId);
+  if (!sc) {
+    return (
+      <div className="flex h-7 w-7 items-center justify-center rounded-full bg-surface-soft text-muted-2">
+        <Bike size={12} />
+      </div>
+    );
+  }
+  const model = sc.modelId
+    ? models.find((m) => m.id === sc.modelId)
+    : models.find((m) =>
+        m.name.toLowerCase().includes(sc.model.toLowerCase()),
+      );
+  const avatarSrc = fileUrl(model?.avatarKey);
+  if (avatarSrc) {
+    return (
+      <div className="h-7 w-7 shrink-0 overflow-hidden rounded-full bg-surface-soft">
+        <img
+          src={avatarSrc}
+          alt={model?.name ?? sc.name}
+          className="h-full w-full object-cover"
+        />
+      </div>
+    );
+  }
+  return (
+    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-ink text-white">
+      <Bike size={12} strokeWidth={1.5} />
+    </div>
+  );
+}
 
 /**
  * Превью скутера в блоке «СКУТЕР» на вкладке «Условия».

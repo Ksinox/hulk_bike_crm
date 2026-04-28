@@ -944,12 +944,12 @@ export function RentalCard({ rental }: { rental: Rental }) {
           onClose={() => setSwapOpen(false)}
           onSwapped={(newId) => {
             setSwapOpen(false);
-            // Сразу открываем превью акта приёма-передачи для НОВОЙ связки —
-            // оператор печатает только эту страницу (привязка к договору
-            // сохранена за корнем цепочки).
+            // Открываем превью акта приёма-передачи для НОВОЙ связки.
+            // ВАЖНО: НЕ переключаем фокус на новую связку прямо сейчас —
+            // <ErrorBoundary key={selected.id}> в Rentals.tsx ремаунтит
+            // RentalCard при смене selectedId, и swapActTransferId теряется.
+            // Поэтому навигация — ТОЛЬКО при закрытии превью (см. ниже).
             setSwapActTransferId(newId);
-            // Переключаем фокус карточки на новую связку.
-            navigate({ route: "rentals", rentalId: newId });
           }}
         />
       )}
@@ -957,7 +957,13 @@ export function RentalCard({ rental }: { rental: Rental }) {
       {swapActTransferId != null && (
         <ActTransferPreview
           rentalId={swapActTransferId}
-          onClose={() => setSwapActTransferId(null)}
+          onClose={() => {
+            const newId = swapActTransferId;
+            setSwapActTransferId(null);
+            // После закрытия превью — переключаем карточку на новую
+            // связку, чтобы оператор увидел итог замены.
+            navigate({ route: "rentals", rentalId: newId });
+          }}
         />
       )}
 
