@@ -5,7 +5,7 @@ import { type Rental, type RentalStatus } from "@/lib/mock/rentals";
 import { RentalsFilters, type FiltersState } from "./RentalsFilters";
 import { RentalsList } from "./RentalsList";
 import { RentalsKpi, type Kpi } from "./RentalsKpi";
-import { RentalCard } from "./RentalCard";
+import { RentalCard, ActTransferPreview } from "./RentalCard";
 import { DocumentPreviewModal } from "./DocumentPreviewModal";
 import { consumePending, onNavigate } from "@/app/navigationStore";
 import { useRentals, useArchivedRentals } from "./rentalsStore";
@@ -131,6 +131,15 @@ export function Rentals() {
    * подписал с клиентом. Сократили путь оформления.
    */
   const [autoDocRentalId, setAutoDocRentalId] = useState<number | null>(null);
+  /**
+   * После замены скутера — открываем превью акта замены поверх карточки.
+   * State хранится здесь, а не в RentalCard, потому что после успешного
+   * свапа старая аренда архивируется и пропадает из useApiRentals →
+   * <ErrorBoundary key={selected.id}> ремаунтит RentalCard, и локальный
+   * state потерялся бы (превью никогда не открылось бы). На этом уровне
+   * state переживает любые ремаунты карточки.
+   */
+  const [swapActPreviewId, setSwapActPreviewId] = useState<number | null>(null);
 
   // Если выбрана вкладка «Архив» — берём архивный список, иначе обычный.
   const rentals =
@@ -319,11 +328,29 @@ export function Rentals() {
             <ErrorBoundary
               key={selected.id}
             >
-              <RentalCard rental={selected} />
+              <RentalCard
+                rental={selected}
+                onSwapped={(newId) => {
+                  // Свап успешен: одновременно (1) переключаем фокус
+                  // на новую связку — старая ушла в архив и пропадёт
+                  // из списка, (2) поднимаем превью акта замены поверх
+                  // карточки. RentalCard ремаунтится с key=newId, но
+                  // превью живёт в state Rentals и переживает ремаунт.
+                  setSelectedId(newId);
+                  setSwapActPreviewId(newId);
+                }}
+              />
             </ErrorBoundary>
           );
         })()}
       </div>
+
+      {swapActPreviewId != null && (
+        <ActTransferPreview
+          rentalId={swapActPreviewId}
+          onClose={() => setSwapActPreviewId(null)}
+        />
+      )}
 
       {newOpen && (
         <NewRentalModal

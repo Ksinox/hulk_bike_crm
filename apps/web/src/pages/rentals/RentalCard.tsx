@@ -185,7 +185,17 @@ function statusChipClass(tone: string): string {
             : "bg-surface-soft text-muted";
 }
 
-export function RentalCard({ rental }: { rental: Rental }) {
+export function RentalCard({
+  rental,
+  onSwapped,
+}: {
+  rental: Rental;
+  /** Callback в Rentals при успешной замене скутера. Rentals переключает
+   *  selectedId на новую связку и поднимает превью акта замены поверх
+   *  карточки — иначе при ремаунте RentalCard локальный state превью
+   *  терялся, и превью никогда не показывалось. */
+  onSwapped?: (newRentalId: number) => void;
+}) {
   const [tab, setTab] = useState<TabId>("terms");
   const [action, setAction] = useState<ActionKind | null>(null);
   const [editRentalOpen, setEditRentalOpen] = useState(false);
@@ -196,7 +206,6 @@ export function RentalCard({ rental }: { rental: Rental }) {
   const [previewDamageId, setPreviewDamageId] = useState<number | null>(null);
   const [previewClaimId, setPreviewClaimId] = useState<number | null>(null);
   const [swapOpen, setSwapOpen] = useState(false);
-  const [swapActTransferId, setSwapActTransferId] = useState<number | null>(null);
   const damageAgreement = useDamageAgreement();
   const [clientQuickView, setClientQuickView] = useState(false);
   const { data: me } = useMe();
@@ -944,25 +953,12 @@ export function RentalCard({ rental }: { rental: Rental }) {
           onClose={() => setSwapOpen(false)}
           onSwapped={(newId) => {
             setSwapOpen(false);
-            // Открываем превью акта приёма-передачи для НОВОЙ связки.
-            // ВАЖНО: НЕ переключаем фокус на новую связку прямо сейчас —
-            // <ErrorBoundary key={selected.id}> в Rentals.tsx ремаунтит
-            // RentalCard при смене selectedId, и swapActTransferId теряется.
-            // Поэтому навигация — ТОЛЬКО при закрытии превью (см. ниже).
-            setSwapActTransferId(newId);
-          }}
-        />
-      )}
-
-      {swapActTransferId != null && (
-        <ActTransferPreview
-          rentalId={swapActTransferId}
-          onClose={() => {
-            const newId = swapActTransferId;
-            setSwapActTransferId(null);
-            // После закрытия превью — переключаем карточку на новую
-            // связку, чтобы оператор увидел итог замены.
-            navigate({ route: "rentals", rentalId: newId });
+            // Сообщаем родительскому Rentals о свапе. Rentals одновременно
+            // переключит selectedId на newId и поднимет превью акта замены
+            // в собственном state — там оно переживает ремаунт RentalCard.
+            // Если onSwapped не передан (изолированное использование) —
+            // просто остаёмся на старой карточке без превью.
+            onSwapped?.(newId);
           }}
         />
       )}
@@ -1020,8 +1016,10 @@ export function RentalCard({ rental }: { rental: Rental }) {
 /** Превью акта приёма-передачи и замены скутера (после замены).
  *  Открывается из SwapScooterDialog по кнопке «Заменить и распечатать
  *  акт» — использует новый шаблон act_swap, в котором есть блок про
- *  возвращённый скутер, причину замены и переданный новый скутер. */
-function ActTransferPreview({
+ *  возвращённый скутер, причину замены и переданный новый скутер.
+ *  Экспортируется чтобы Rentals.tsx мог рендерить превью у себя поверх
+ *  любой карточки (см. RentalCard.onSwapped). */
+export function ActTransferPreview({
   rentalId,
   onClose,
 }: {
