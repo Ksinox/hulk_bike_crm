@@ -55,7 +55,7 @@ import {
 import { useMe } from "@/lib/api/auth";
 import { confirmDialog } from "@/lib/toast";
 import { toast } from "@/lib/toast";
-import { ApiError } from "@/lib/api";
+import { ApiError, api } from "@/lib/api";
 
 type TabId = "terms" | "history" | "tasks" | "docs";
 
@@ -151,8 +151,8 @@ function statusActions(
       ];
     case "completed_damage":
       return withExtras([
-        { id: "record-damage", label: "Записать оплату ущерба", icon: CheckCircle2, tone: "primary" },
-        { id: "claim", label: "Претензия", icon: AlertTriangle, tone: "warn" },
+        { id: "resume-damage", label: "Возобновить аренду", icon: RotateCcw, tone: "primary" },
+        { id: "claim", label: "Досудебная претензия", icon: AlertTriangle, tone: "warn" },
         { id: "lawyer", label: "Передать юристу", icon: Gavel, tone: "danger" },
       ]);
     case "police":
@@ -333,6 +333,43 @@ export function RentalCard({ rental }: { rental: Rental }) {
   const handleAction = async (id: string) => {
     if (id === "extend" || id === "clone") return setExtendOpen(true);
     if (id === "edit") return setEditRentalOpen(true);
+    if (id === "resume-damage") {
+      // Возобновление аренды с ущербом — возвращает её в active. Если
+      // долг по акту ещё есть — спрашиваем подтверждение (часто
+      // продолжаем работать с клиентом который согласен платить).
+      const debtSum = reports.reduce((s, r) => s + r.debt, 0);
+      const msg =
+        debtSum > 0
+          ? `У клиента ещё висит долг по ущербу ${debtSum.toLocaleString("ru-RU")} ₽. Возобновить аренду? Долг останется на клиенте, скутер вернётся в активный статус.`
+          : `Долг по ущербу погашен. Возобновить аренду? Скутер вернётся в активный статус, аренда — в active.`;
+      const ok = await confirmDialog({
+        title: "Возобновить аренду?",
+        message: msg,
+        confirmText: "Возобновить",
+        cancelText: "Отмена",
+      });
+      if (!ok) return;
+      try {
+        await api.patch(`/api/rentals/${rental.id}`, { status: "active" });
+        // Скутер обратно в rental_pool если был в repair после damage.
+        if (rental.scooterId) {
+          try {
+            await api.patch(`/api/scooters/${rental.scooterId}`, {
+              baseStatus: "rental_pool",
+            });
+          } catch {
+            /* не критично если не получилось */
+          }
+        }
+        toast.success(
+          "Аренда возобновлена",
+          "Скутер активен, можно продолжить работу с клиентом.",
+        );
+      } catch (e) {
+        toast.error("Не удалось возобновить", (e as Error).message ?? "");
+      }
+      return;
+    }
     if (id === "set-damage") {
       setDamageOpen(true);
       return;
