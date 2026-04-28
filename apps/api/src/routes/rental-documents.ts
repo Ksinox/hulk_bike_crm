@@ -54,7 +54,7 @@ export async function rentalDocumentsRoutes(app: FastifyInstance) {
     });
 
     if (format === "html") {
-      const html = renderDocumentHtml(type, bundle);
+      const html = await renderDocumentHtml(type, bundle);
       // Убираем X-Frame-Options, выставленный helmet'ом, чтобы CRM (другой
       // поддомен crm.hulkbike.ru) могла встроить документ в iframe. Это
       // безопасно: документ — чистый HTML без JS и форм, clickjacking-угрозы нет.
@@ -74,7 +74,7 @@ export async function rentalDocumentsRoutes(app: FastifyInstance) {
      * форматирование, можно редактировать и печатать. Выбрали вместо .docx
      * потому что конвертеры HTML→DOCX в Node нестабильны на сложной вёрстке.
      */
-    const wordHtml = renderDocumentHtmlForWord(type, bundle);
+    const wordHtml = await renderDocumentHtmlForWord(type, bundle);
     const filename = `${docFilename(type, id)}.doc`;
     reply
       .header("Content-Type", "application/msword; charset=utf-8")

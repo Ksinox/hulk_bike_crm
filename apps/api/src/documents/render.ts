@@ -24,7 +24,7 @@ export const DOCUMENT_LABEL: Record<DocumentType, string> = {
   purchase_deposit: "Договор задатка (выкуп)",
 };
 
-type Bundle = {
+export type Bundle = {
   rental: typeof rentals.$inferSelect;
   client: typeof clients.$inferSelect;
   scooter: typeof scooters.$inferSelect | null;
@@ -691,7 +691,59 @@ function pluralRu(n: number, forms: [string, string, string]): string {
 
 /* ============ точка входа ============ */
 
-export function renderDocumentHtml(type: DocumentType, bundle: Bundle): string {
+import { documentTemplates } from "../db/schema.js";
+import { substituteVariables } from "./variables.js";
+
+/**
+ * Если в БД есть пользовательский override для данного типа документа —
+ * берём его HTML, подставляем в него значения переменных и возвращаем
+ * как готовый документ. Иначе — системный (хардкод) шаблон.
+ */
+async function getOverrideHtml(
+  type: DocumentType,
+): Promise<string | null> {
+  const [row] = await db
+    .select()
+    .from(documentTemplates)
+    .where(eq(documentTemplates.templateKey, type));
+  if (!row) return null;
+  return row.body;
+}
+
+/**
+ * Оборачивает HTML тела (без <html><body>) в полноценную страницу с
+ * нашими CSS — так пользовательские шаблоны печатаются с теми же
+ * стилями (Times New Roman, поля, нумерация .cl/.cl2 и т.д.).
+ */
+function wrapAsPage(title: string, body: string): string {
+  return `<!doctype html><html lang="ru"><head><meta charset="utf-8">
+<title>${title}</title>${CSS}</head><body>
+${TOOLBAR}
+<div class="wrap">
+${body}
+</div>
+</body></html>`;
+}
+
+const TITLES: Record<DocumentType, string> = {
+  contract: "Договор проката",
+  contract_full: "Договор + Акт приёма-передачи",
+  act_transfer: "Акт приёма-передачи",
+  act_return: "Акт возврата",
+  purchase_deposit: "Договор задатка",
+};
+
+export async function renderDocumentHtml(
+  type: DocumentType,
+  bundle: Bundle,
+): Promise<string> {
+  // 1. Если есть пользовательский override — используем его + подстановка.
+  const override = await getOverrideHtml(type);
+  if (override) {
+    const substituted = substituteVariables(override, bundle);
+    return wrapAsPage(TITLES[type], substituted);
+  }
+  // 2. Иначе — системный шаблон (хардкод).
   switch (type) {
     case "contract":
       return tplContract(bundle);
@@ -736,11 +788,11 @@ function tplContractFull(b: Bundle): string {
  * страницы. Используем спец namespace office/word чтобы Word понял что
  * это его формат.
  */
-export function renderDocumentHtmlForWord(
+export async function renderDocumentHtmlForWord(
   type: DocumentType,
   bundle: Bundle,
-): string {
-  const full = renderDocumentHtml(type, bundle);
+): Promise<string> {
+  const full = await renderDocumentHtml(type, bundle);
   // Удаляем тулбар (он внутри .no-print) и @page — Word их не понимает
   const stripped = full
     .replace(/<div class="top-actions[\s\S]*?<\/div>\s*<div class="wrap">/, "<div>")

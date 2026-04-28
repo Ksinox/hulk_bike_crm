@@ -1007,3 +1007,42 @@ export const damageReportItemsRelations = relations(damageReportItems, ({ one })
     references: [damageReports.id],
   }),
 }));
+
+/* ============================================================
+ * document_templates — пользовательские шаблоны документов.
+ *
+ * Системные шаблоны (договор, акт возврата, акт повреждений, выписка)
+ * хардкодятся в render.ts. Эта таблица — для пользовательских правок:
+ *  - kind='override' — оверрайд для системного templateKey (contract_full,
+ *    act_return, damage, statement). При рендере если есть override —
+ *    используется он, иначе системный.
+ *  - kind='custom'   — самостоятельный пользовательский шаблон, не
+ *    привязан к существующему типу. templateKey уникальный.
+ *
+ * body — HTML строка с <span data-var="path.to.value">{{var}}</span>
+ * пилюлями переменных. При рендере подставляются реальные значения.
+ * ============================================================ */
+export const documentTemplates = pgTable(
+  "document_templates",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    templateKey: text("template_key").notNull(),
+    /** override (для системного шаблона) | custom (новый пользовательский) */
+    kind: text("kind").notNull().default("override"),
+    name: text("name").notNull(),
+    /** HTML с пилюлями <span data-var="..."> для переменных */
+    body: text("body").notNull(),
+    createdByUserId: bigint("created_by_user_id", {
+      mode: "number",
+    }).references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    keyIdx: index("document_templates_key_idx").on(t.templateKey),
+  }),
+);

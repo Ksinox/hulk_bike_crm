@@ -23,7 +23,8 @@ export type ActivityEntity =
   | "incident"
   | "price_group"
   | "price_item"
-  | "damage_report";
+  | "damage_report"
+  | "document_template";
 
 export type ActivityInput = {
   entity: ActivityEntity;

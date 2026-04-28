@@ -3,6 +3,7 @@ import {
   Download,
   FileSignature,
   FileText,
+  Pencil,
   Receipt,
   Tags,
   Wallet,
@@ -14,6 +15,8 @@ import { Topbar } from "@/pages/dashboard/Topbar";
 import { PriceListView } from "@/pages/rentals/PriceListView";
 import { DocumentPreviewModal } from "@/pages/rentals/DocumentPreviewModal";
 import { useApiRentals } from "@/lib/api/rentals";
+import { TemplateEditorPage } from "./editor/TemplateEditorPage";
+import { useApiDocumentTemplates } from "@/lib/api/document-templates";
 
 type DocsTab = "templates" | "price" | "editor";
 
@@ -316,25 +319,117 @@ function TemplatePreview({
   );
 }
 
-/* =================== Заглушка редактора =================== */
+/* =================== Редактор шаблонов =================== */
+
+type TemplateBucket = {
+  key: string;
+  name: string;
+  description: string;
+  icon: typeof FileText;
+  tone: TemplateMeta["badgeTone"];
+};
+
+const EDITABLE_TEMPLATES: TemplateBucket[] = [
+  {
+    key: "contract_full",
+    name: "Договор + Акт приёма-передачи",
+    description:
+      "Двухстраничный документ при выдаче. Можно редактировать любые формулировки, добавлять/удалять пункты и вставлять переменные клиента/скутера/аренды.",
+    icon: FileSignature,
+    tone: "blue",
+  },
+  {
+    key: "act_return",
+    name: "Акт возврата",
+    description:
+      "Подписывается при возврате скутера. Фиксирует пробег, состояние, отметки о повреждениях и наличие/возврат экипировки.",
+    icon: FileText,
+    tone: "purple",
+  },
+];
 
 function EditorPlaceholder() {
+  const { data: templates = [] } = useApiDocumentTemplates();
+  const [editing, setEditing] = useState<TemplateBucket | null>(null);
+
+  if (editing) {
+    return (
+      <TemplateEditorPage
+        templateKey={editing.key}
+        templateName={editing.name}
+        onBack={() => setEditing(null)}
+      />
+    );
+  }
+
+  const hasOverride = (key: string) =>
+    templates.some((t) => t.templateKey === key);
+
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-3 py-16 text-center">
-      <Wrench size={36} className="text-muted-2" />
-      <div className="text-[16px] font-bold text-ink">
-        Редактор шаблонов — в разработке
+    <div className="flex flex-col gap-3">
+      <div className="rounded-[10px] bg-blue-50 px-3 py-2 text-[12px] text-blue-900">
+        Здесь можно редактировать тексты системных шаблонов договоров.
+        Отредактированный шаблон автоматически применяется при генерации
+        документов из карточек аренды. Можно вставлять переменные через
+        панель слева (drag-and-drop или клик), форматировать текст и
+        работать с таблицами.
       </div>
-      <div className="max-w-[520px] text-[12px] text-muted-2">
-        В следующих релизах здесь появится визуальный редактор договоров
-        с возможностью drag-and-drop переменных (клиент, скутер, аренда),
-        вставки таблиц, отката изменений и автосохранения. Можно будет
-        отредактировать существующие шаблоны или создать свои.
+      <div className="grid items-stretch gap-3 md:grid-cols-2">
+        {EDITABLE_TEMPLATES.map((t) => {
+          const Icon = t.icon;
+          const overridden = hasOverride(t.key);
+          return (
+            <div
+              key={t.key}
+              className="flex h-full flex-col gap-3 rounded-[14px] border border-border bg-surface p-4"
+            >
+              <div className="flex items-start gap-2">
+                <div
+                  className={cn(
+                    "flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px]",
+                    BADGE_TONE_CLASSES[t.tone],
+                  )}
+                >
+                  <Icon size={18} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <div className="text-[14px] font-bold leading-tight text-ink">
+                      {t.name}
+                    </div>
+                    {overridden ? (
+                      <span className="rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-700">
+                        Изменён
+                      </span>
+                    ) : (
+                      <span className="rounded-full bg-surface-soft px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-muted-2">
+                        Системный
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div className="flex-1 text-[12px] leading-snug text-muted-2">
+                {t.description}
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditing(t)}
+                className="inline-flex items-center justify-center gap-1.5 rounded-[10px] bg-ink py-2 text-[12px] font-bold text-white hover:bg-blue-600"
+              >
+                <Pencil size={12} />{" "}
+                {overridden ? "Открыть редактор" : "Редактировать"}
+              </button>
+            </div>
+          );
+        })}
       </div>
       <div className="rounded-[10px] bg-surface-soft px-3 py-2 text-[11px] text-muted-2">
-        А пока — посмотри{" "}
-        <span className="font-semibold text-ink">«Шаблоны документов»</span>{" "}
-        и проверь, как выглядят все 4 шаблона на реальных данных.
+        💡 Совет: начни с открытия «Договор + Акт» — он самый часто
+        используемый. Слева ты увидишь все доступные переменные, сгруппированные
+        по сущностям (Клиент / Арендодатель / Скутер / Аренда). Перетащи их в
+        нужные места текста — при генерации документа подставятся реальные
+        данные конкретной аренды.
       </div>
     </div>
   );

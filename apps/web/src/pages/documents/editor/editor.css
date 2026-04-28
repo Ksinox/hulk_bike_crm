@@ -1,0 +1,203 @@
+/* Стили редактора Tiptap для шаблонов документов. */
+
+.tpl-editor-wrap {
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 12px;
+  background: white;
+  overflow: hidden;
+}
+
+.tpl-editor-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 8px;
+  border-bottom: 1px solid var(--color-border, #e5e7eb);
+  background: #f9fafb;
+}
+
+.tpl-editor-toolbar button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #4b5563;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background 120ms;
+}
+
+.tpl-editor-toolbar button:hover {
+  background: #e5e7eb;
+  color: #111827;
+}
+
+.tpl-editor-toolbar button.is-active {
+  background: #1f2937;
+  color: white;
+}
+
+.tpl-editor-toolbar button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.tpl-editor-toolbar .sep {
+  width: 1px;
+  background: #d1d5db;
+  margin: 4px 4px;
+}
+
+.tpl-editor-content {
+  padding: 16px 20px;
+  min-height: 400px;
+  max-height: 70vh;
+  overflow-y: auto;
+  font-family: "Times New Roman", Times, serif;
+  font-size: 12pt;
+  line-height: 1.5;
+  color: #111827;
+}
+
+.tpl-editor-content:focus {
+  outline: none;
+}
+
+.tpl-editor-content .ProseMirror {
+  outline: none;
+  min-height: 400px;
+}
+
+.tpl-editor-content .ProseMirror p { margin: 0.4em 0; }
+.tpl-editor-content .ProseMirror h1 { font-size: 18pt; text-align: center; margin: 0.6em 0 0.3em; font-weight: bold; }
+.tpl-editor-content .ProseMirror h2 { font-size: 13pt; text-align: center; margin: 0.8em 0 0.4em; font-weight: bold; }
+.tpl-editor-content .ProseMirror ul,
+.tpl-editor-content .ProseMirror ol { padding-left: 1.5em; }
+
+/* Пилюля переменной — синий бейдж который выделяется в тексте */
+.tpl-var {
+  display: inline-block;
+  padding: 1px 8px;
+  margin: 0 1px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  border-radius: 6px;
+  font-size: 0.92em;
+  font-weight: 500;
+  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+  white-space: nowrap;
+  user-select: none;
+  cursor: grab;
+}
+
+.tpl-var:hover {
+  background: #bfdbfe;
+}
+
+.tpl-var.ProseMirror-selectednode {
+  background: #93c5fd;
+  outline: 2px solid #2563eb;
+}
+
+/* Tables в редакторе */
+.tpl-editor-content .ProseMirror table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1em 0;
+  table-layout: fixed;
+}
+
+.tpl-editor-content .ProseMirror table td,
+.tpl-editor-content .ProseMirror table th {
+  border: 1px solid #d1d5db;
+  padding: 4px 8px;
+  vertical-align: top;
+  position: relative;
+}
+
+.tpl-editor-content .ProseMirror table th {
+  background: #f3f4f6;
+  font-weight: 600;
+}
+
+.tpl-editor-content .ProseMirror .selectedCell {
+  background: rgba(59, 130, 246, 0.1);
+}
+
+/* Sidebar переменных */
+.tpl-vars-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tpl-vars-group {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  overflow: hidden;
+  background: white;
+}
+
+.tpl-vars-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  background: #f9fafb;
+  cursor: pointer;
+  user-select: none;
+  border: none;
+  width: 100%;
+  text-align: left;
+}
+
+.tpl-vars-group-header:hover {
+  background: #f3f4f6;
+}
+
+.tpl-vars-group-list {
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  gap: 2px;
+}
+
+.tpl-var-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #1f2937;
+  cursor: grab;
+  background: white;
+  border: none;
+  text-align: left;
+  width: 100%;
+}
+
+.tpl-var-item:hover {
+  background: #eff6ff;
+}
+
+.tpl-var-item .key {
+  font-family: ui-monospace, monospace;
+  font-size: 10px;
+  color: #6b7280;
+  margin-left: auto;
+}
+
+.tpl-saving-indicator {
+  font-size: 11px;
+  color: #6b7280;
+}
+
+.tpl-saving-indicator.saved { color: #059669; }
+.tpl-saving-indicator.saving { color: #d97706; }
