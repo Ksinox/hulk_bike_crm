@@ -14,6 +14,8 @@ import {
 import { ClientsList } from "./ClientsList";
 import { ClientCard } from "./ClientCard";
 import { AddClientModal } from "./AddClientModal";
+import { ShareApplicationButton } from "./ShareApplicationButton";
+import { ApplicationsBlock } from "./ApplicationsBlock";
 import { useAllClients, useUnreachableSet } from "./clientStore";
 import { useRentals } from "@/pages/rentals/rentalsStore";
 import {
@@ -145,15 +147,20 @@ export function Clients() {
             {clients.length} клиентов
           </span>
         </div>
-        <button
-          type="button"
-          onClick={() => setAddOpen(true)}
-          className="inline-flex items-center gap-1.5 rounded-full bg-ink px-4 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-ink-2"
-        >
-          <Plus size={16} />
-          Добавить клиента
-        </button>
+        <div className="flex items-center gap-2">
+          <ShareApplicationButton />
+          <button
+            type="button"
+            onClick={() => setAddOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-full bg-ink px-4 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-ink-2"
+          >
+            <Plus size={16} />
+            Добавить клиента
+          </button>
+        </div>
       </header>
+
+      <ApplicationsBlock />
 
       <ClientsFilters value={filters} onChange={setFilters} />
 

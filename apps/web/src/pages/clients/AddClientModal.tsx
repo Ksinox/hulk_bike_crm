@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { X } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import {
   getClientDetails,
@@ -7,7 +8,9 @@ import {
   type Client,
   type ClientSource,
 } from "@/lib/mock/clients";
-import { useApiClients } from "@/lib/api/clients";
+import { useApiClients, clientsKeys } from "@/lib/api/clients";
+import { applicationsKeys } from "@/lib/api/clientApplications";
+import { api } from "@/lib/api";
 import {
   DocUpload,
   DocUploadMulti,
@@ -15,6 +18,7 @@ import {
 } from "./DocUpload";
 import { clientStore } from "./clientStore";
 import { toast } from "@/lib/toast";
+import type { ApplicationFormInit } from "./applicationConvert";
 
 const SOURCE_OPTIONS: { id: ClientSource; label: string }[] = [
   { id: "avito", label: SOURCE_LABEL.avito },
@@ -240,13 +244,42 @@ export function AddClientModal({
   editing,
   onClose,
   onCreated,
+  applicationId,
+  initialData,
 }: {
   editing?: Client | null;
   onClose: () => void;
   onCreated?: (client: Client) => void;
+  /** Если задан — после save вызвать convert API и удалить заявку. */
+  applicationId?: number;
+  /** Предзаполненные поля из публичной заявки (мерджатся в EMPTY). */
+  initialData?: ApplicationFormInit;
 }) {
   const isEdit = !!editing;
-  const [f, setF] = useState<Form>(() => initialForm(editing ?? null));
+  const qc = useQueryClient();
+  const [f, setF] = useState<Form>(() => {
+    const base = initialForm(editing ?? null);
+    if (!editing && initialData) {
+      return {
+        ...base,
+        name: initialData.name || base.name,
+        phone: initialData.phone || base.phone,
+        phone2: initialData.phone2 || base.phone2,
+        birth: initialData.birth || base.birth,
+        isForeigner: initialData.isForeigner,
+        passportRaw: initialData.passportRaw || base.passportRaw,
+        passSer: initialData.passSer || base.passSer,
+        passNum: initialData.passNum || base.passNum,
+        passIssuer: initialData.passIssuer || base.passIssuer,
+        passDate: initialData.passDate || base.passDate,
+        passCode: initialData.passCode || base.passCode,
+        regAddr: initialData.regAddr || base.regAddr,
+        sameAddr: initialData.sameAddr,
+        liveAddr: initialData.liveAddr || base.liveAddr,
+      };
+    }
+    return base;
+  });
   const [closing, setClosing] = useState(false);
   const [touched, setTouched] = useState<Record<string, boolean>>(() =>
     isEdit
@@ -887,6 +920,44 @@ export function AddClientModal({
                     } catch (e) {
                       toast.error(
                         "Не удалось сохранить клиента",
+                        (e as Error).message ?? "",
+                      );
+                    }
+                    return;
+                  }
+                  // Если открыты из заявки — идём через convert API:
+                  // он создаёт клиента + переносит файлы из заявки в client_documents
+                  // + удаляет саму заявку. Один атомарный запрос.
+                  if (applicationId) {
+                    try {
+                      const created = await api.post<{ id: number; name: string; phone: string }>(
+                        `/api/client-applications/${applicationId}/convert`,
+                        {
+                          name: f.name.trim(),
+                          phone: f.phone,
+                          extraPhone: nullableTrim(f.phone2),
+                          source: finalSource,
+                          sourceCustom: finalSourceCustom,
+                          isForeigner: f.isForeigner,
+                          passportRaw: f.isForeigner
+                            ? nullableTrim(f.passportRaw)
+                            : null,
+                          blacklisted: f.blacklisted,
+                          blacklistReason: f.blacklisted
+                            ? nullableTrim(f.blReason)
+                            : null,
+                          ...passportFields,
+                        },
+                      );
+                      qc.invalidateQueries({ queryKey: clientsKeys.all });
+                      qc.invalidateQueries({ queryKey: applicationsKeys.all });
+                      onCreated?.({
+                        ...(created as unknown as Client),
+                      });
+                      requestClose();
+                    } catch (e) {
+                      toast.error(
+                        "Не удалось оформить клиента из заявки",
                         (e as Error).message ?? "",
                       );
                     }
