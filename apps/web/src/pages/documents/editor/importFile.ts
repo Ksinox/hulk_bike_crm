@@ -21,7 +21,35 @@ export async function importFileToHtml(file: File): Promise<string> {
   if (name.endsWith(".docx")) {
     const arrayBuffer = await file.arrayBuffer();
     try {
-      const result = await mammoth.convertToHtml({ arrayBuffer });
+      // styleMap расширяет стандартный набор сопоставлений Word-стилей
+      // → HTML тегам. Включаем всё что обычно встречается в договорах:
+      // заголовки, выделения, списки, таблицы.
+      const result = await mammoth.convertToHtml(
+        { arrayBuffer },
+        {
+          styleMap: [
+            "p[style-name='Heading 1'] => h1:fresh",
+            "p[style-name='Heading 2'] => h2:fresh",
+            "p[style-name='Heading 3'] => h3:fresh",
+            "p[style-name='Title'] => h1.title:fresh",
+            "p[style-name='Subtitle'] => h2.subtitle:fresh",
+            "r[style-name='Strong'] => strong",
+            "r[style-name='Emphasis'] => em",
+            "p[style-name='Quote'] => blockquote:fresh",
+            "p[style-name='Intense Quote'] => blockquote:fresh",
+            "p[style-name='List Paragraph'] => p.list-paragraph",
+            "b => strong",
+            "i => em",
+            "u => u",
+          ],
+          // Включаем все картинки как base64 — пусть пользователь решит
+          // оставить или удалить. Без этого они теряются.
+          convertImage: mammoth.images.imgElement(async (image) => {
+            const buffer = await image.read("base64");
+            return { src: `data:${image.contentType};base64,${buffer}` };
+          }),
+        },
+      );
       return result.value || "<p>Документ пустой.</p>";
     } catch (e) {
       throw new Error(

@@ -178,16 +178,14 @@ export function DamageReportDialog({
 
   const create = useCreateDamageReport();
 
-  const valid =
-    selected.length > 0 &&
-    selected.every((s) => s.comment && s.comment.trim().length > 0);
+  // Минимальная валидация: должна быть выбрана хотя бы одна позиция.
+  // Комментарии «где конкретно» опциональны — необязательно их заполнять,
+  // чтобы создать акт.
+  const valid = selected.length > 0;
 
   const onSubmit = async () => {
     if (!valid) {
-      toast.error(
-        "Заполните комментарии",
-        "По каждой позиции нужен комментарий — где конкретно повреждение.",
-      );
+      toast.error("Не выбрано ни одной позиции", "Кликните на позицию слева");
       return;
     }
     try {
@@ -509,13 +507,8 @@ export function DamageReportDialog({
                           onChange={(e) =>
                             patchSel(s.uid, { comment: e.target.value })
                           }
-                          placeholder="Где конкретно повреждение (обязательно)"
-                          className={cn(
-                            "mt-1.5 w-full rounded-[8px] border bg-white px-2 py-1 text-[12px] outline-none",
-                            !s.comment || !s.comment.trim()
-                              ? "border-red-soft focus:border-red-500"
-                              : "border-border focus:border-blue-600",
-                          )}
+                          placeholder="Где конкретно повреждение (необязательно)"
+                          className="mt-1.5 w-full rounded-[8px] border border-border bg-white px-2 py-1 text-[12px] outline-none focus:border-blue-600"
                         />
                       </div>
                     );

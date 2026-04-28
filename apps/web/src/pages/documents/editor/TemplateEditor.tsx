@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { VariableNode } from "./VariableNode";
+import { ParagraphWithStyle, HeadingWithStyle } from "./extensions";
 import { createVariableMention } from "./createVariableMention";
 import {
   useApiVariableCatalog,
@@ -76,9 +77,14 @@ export function TemplateEditor({
 
   const editor = useEditor({
     extensions: [
+      // Отключаем стандартные heading и paragraph в StarterKit и
+      // заменяем на наши расширенные версии (с сохранением class/style).
       StarterKit.configure({
-        heading: { levels: [1, 2, 3] },
+        heading: false,
+        paragraph: false,
       }),
+      ParagraphWithStyle,
+      HeadingWithStyle.configure({ levels: [1, 2, 3] }),
       Underline,
       TextAlign.configure({
         types: ["heading", "paragraph"],

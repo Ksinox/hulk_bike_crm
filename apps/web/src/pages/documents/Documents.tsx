@@ -6,7 +6,6 @@ import {
   Pencil,
   Plus,
   Upload,
-  Receipt,
   Tags,
   Wallet,
   AlertTriangle,
@@ -149,32 +148,8 @@ const TEMPLATES: TemplateMeta[] = [
   },
 ];
 
-/** Цветовые токены для бейджей и иконок-кружочков карточек. */
-const BADGE_TONE_CLASSES: Record<TemplateMeta["badgeTone"], string> = {
-  blue: "bg-blue-50 text-blue-700",
-  amber: "bg-amber-50 text-amber-700",
-  green: "bg-green-soft text-green-ink",
-  red: "bg-red-soft text-red-ink",
-  purple: "bg-purple-soft text-purple-ink",
-};
-
-/** Тонкие градиенты для иконок-капель в шапке карточек. */
-const ICON_GRADIENT: Record<TemplateMeta["badgeTone"], string> = {
-  blue: "bg-gradient-to-br from-blue-400 to-blue-600 text-white shadow-blue-200/60",
-  amber: "bg-gradient-to-br from-amber-400 to-orange-500 text-white shadow-amber-200/60",
-  green: "bg-gradient-to-br from-emerald-400 to-emerald-600 text-white shadow-emerald-200/60",
-  red: "bg-gradient-to-br from-rose-400 to-red-600 text-white shadow-red-200/60",
-  purple: "bg-gradient-to-br from-violet-400 to-purple-600 text-white shadow-purple-200/60",
-};
-
-/** Декоративная цветная полоска сверху карточки. */
-const TOP_ACCENT: Record<TemplateMeta["badgeTone"], string> = {
-  blue: "from-blue-500 via-sky-400 to-indigo-400",
-  amber: "from-amber-500 via-orange-400 to-yellow-400",
-  green: "from-emerald-500 via-green-400 to-teal-400",
-  red: "from-rose-500 via-red-400 to-orange-400",
-  purple: "from-violet-500 via-purple-400 to-fuchsia-400",
-};
+// Минималистичный дизайн — без цветовых акцентов на карточках,
+// все одного нейтрального тона.
 
 /** Какие шаблоны можно редактировать через Tiptap (override системного). */
 const EDITABLE_KEYS = new Set(["contract_full", "act_return", "damage"]);
@@ -303,119 +278,78 @@ function TemplatesGallery() {
             <div
               key={t.id}
               className={cn(
-                "group relative flex h-full flex-col gap-3 overflow-hidden rounded-2xl border bg-white p-5 transition-all duration-200",
-                "border-slate-200/80 shadow-sm hover:-translate-y-0.5 hover:shadow-md",
-                overridden && "ring-1 ring-amber-200",
+                "group flex h-full flex-col gap-3 rounded-xl border bg-white p-4 transition-colors",
+                "border-slate-200 hover:border-slate-300",
+                overridden && "border-slate-300",
               )}
             >
-              {/* Тонкая цветная полоска сверху — определяет тип документа */}
-              <div
-                className={cn(
-                  "absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r",
-                  TOP_ACCENT[t.badgeTone],
-                )}
-              />
               <div className="flex items-start gap-3">
-                <div
-                  className={cn(
-                    "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl shadow-sm transition-transform group-hover:scale-105",
-                    ICON_GRADIENT[t.badgeTone],
-                  )}
-                >
-                  <Icon size={20} strokeWidth={2.2} />
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
+                  <Icon size={16} strokeWidth={1.8} />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <h3 className="text-[14px] font-bold leading-tight tracking-tight text-ink">
-                      {t.title}
-                    </h3>
-                    <span
-                      className={cn(
-                        "rounded-full px-2 py-0.5 text-[9.5px] font-bold uppercase tracking-wider",
-                        BADGE_TONE_CLASSES[t.badgeTone],
-                      )}
-                    >
-                      {t.badge}
-                    </span>
-                  </div>
-                </div>
-              </div>
-              <p className="flex-1 text-[12.5px] leading-relaxed text-muted-2">
-                {t.subtitle}
-              </p>
-              <div className="flex flex-col gap-2">
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    disabled={disabled || isLoading}
-                    onClick={() => setPreviewing(t)}
-                    className={cn(
-                      "inline-flex items-center justify-center gap-1.5 rounded-xl py-2 text-[12px] font-semibold transition",
-                      disabled
-                        ? "cursor-not-allowed bg-slate-50 text-muted-2"
-                        : "bg-slate-100 text-ink hover:bg-slate-200/70 active:scale-[.98]",
-                    )}
-                    title={
-                      disabled
-                        ? "Сначала создайте аренду — образец нельзя посмотреть на пустой БД"
-                        : "Посмотреть пример документа на реальной аренде"
-                    }
-                  >
-                    <FileText size={13} /> Образец
-                  </button>
-                  {EDITABLE_KEYS.has(t.id) ? (
-                    <button
-                      type="button"
-                      onClick={() => setEditing({ kind: "system", meta: t })}
-                      className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-br from-slate-900 to-slate-700 py-2 text-[12px] font-semibold text-white shadow-sm transition hover:from-blue-600 hover:to-blue-700 hover:shadow active:scale-[.98]"
-                      title="Открыть в редакторе шаблонов"
-                    >
-                      <Pencil size={13} /> Редактировать
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      disabled
-                      className="inline-flex cursor-not-allowed items-center justify-center gap-1.5 rounded-xl bg-slate-50 py-2 text-[12px] font-semibold text-muted-2"
-                      title="Редактирование этого шаблона будет доступно в следующих релизах — он генерируется программно с переменным числом строк (позиции ущерба / список платежей)."
-                    >
-                      <Pencil size={13} /> Редактировать
-                    </button>
-                  )}
-                </div>
-                <div className="flex items-center justify-between text-[10.5px]">
-                  <span>
-                    {overridden ? (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 font-bold text-amber-700">
-                        ● Изменён вами
-                      </span>
-                    ) : (
-                      <span className="text-muted-2">системный по умолчанию</span>
-                    )}
-                  </span>
-                  <span className="font-semibold text-muted">
+                  <h3 className="text-[14px] font-semibold leading-tight tracking-tight text-slate-900">
+                    {t.title}
+                  </h3>
+                  <div className="mt-0.5 text-[11px] text-slate-500">
                     {t.kind === "rental"
                       ? "из аренды"
                       : t.kind === "damage"
                         ? "из ущерба"
                         : "из клиента"}
-                  </span>
+                  </div>
                 </div>
+                {overridden && (
+                  <span className="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+                    Изменён
+                  </span>
+                )}
+              </div>
+              <p className="flex-1 text-[12.5px] leading-relaxed text-slate-600">
+                {t.subtitle}
+              </p>
+              <div className="flex gap-2 border-t border-slate-100 pt-3">
+                <button
+                  type="button"
+                  disabled={disabled || isLoading}
+                  onClick={() => setPreviewing(t)}
+                  className={cn(
+                    "inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border py-1.5 text-[12px] font-medium transition",
+                    disabled
+                      ? "cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400"
+                      : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50",
+                  )}
+                  title={
+                    disabled
+                      ? "Сначала создайте аренду — образец нельзя посмотреть на пустой БД"
+                      : "Посмотреть пример документа на реальной аренде"
+                  }
+                >
+                  <FileText size={12} /> Образец
+                </button>
+                {EDITABLE_KEYS.has(t.id) ? (
+                  <button
+                    type="button"
+                    onClick={() => setEditing({ kind: "system", meta: t })}
+                    className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-900 bg-slate-900 py-1.5 text-[12px] font-medium text-white transition hover:bg-slate-800"
+                    title="Открыть в редакторе шаблонов"
+                  >
+                    <Pencil size={12} /> Редактировать
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    disabled
+                    className="inline-flex flex-1 cursor-not-allowed items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 py-1.5 text-[12px] font-medium text-slate-400"
+                    title="Редактирование этого шаблона будет доступно в следующих релизах — он генерируется программно с переменным числом строк."
+                  >
+                    <Pencil size={12} /> Редактировать
+                  </button>
+                )}
               </div>
             </div>
           );
         })}
-
-        {/* Будущие шаблоны — карточка-плейсхолдер */}
-        <div className="flex h-full flex-col items-center justify-center gap-2 rounded-[14px] border border-dashed border-border p-4 text-center">
-          <Receipt size={20} className="text-muted-2" />
-          <div className="text-[12px] font-semibold text-ink">
-            Здесь появятся ваши шаблоны
-          </div>
-          <div className="text-[11px] text-muted-2">
-            Добавите свои документы в редакторе (скоро)
-          </div>
-        </div>
       </div>
 
       {previewing && sampleRental && (

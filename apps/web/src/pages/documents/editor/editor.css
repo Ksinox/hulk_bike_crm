@@ -134,6 +134,33 @@
   margin: 16pt 0;
 }
 
+/* Стили для нумерованных пунктов договора в редакторе. Дублируют
+   логику CSS из render.ts, но с маленькими подстройками для редактора
+   (он чуть уже чем A4 страница). */
+.tpl-editor-content .ProseMirror p.cl,
+.tpl-editor-content .ProseMirror p.cl2 {
+  text-align: justify;
+  margin: 4pt 0;
+  line-height: 1.5;
+}
+.tpl-editor-content .ProseMirror p.cl  { padding-left: 0; }
+.tpl-editor-content .ProseMirror p.cl2 { padding-left: 26pt; }
+.tpl-editor-content .ProseMirror p.subhead {
+  margin: 10pt 0 4pt;
+  font-weight: 600;
+}
+/* Между жирным префиксом «1.1.» и текстом — фиксированный отступ. */
+.tpl-editor-content .ProseMirror p.cl > strong:first-child,
+.tpl-editor-content .ProseMirror p.cl > b:first-child,
+.tpl-editor-content .ProseMirror p.cl2 > strong:first-child,
+.tpl-editor-content .ProseMirror p.cl2 > b:first-child {
+  margin-right: 8pt;
+}
+/* Заголовки центрируются (как в финальном документе) если не указано иначе. */
+.tpl-editor-content .ProseMirror h2[style*="text-align: justify"] {
+  text-align: justify !important;
+}
+
 /* Пилюля переменной — синий бейдж который выделяется в тексте */
 .tpl-var {
   display: inline-block;
