@@ -19,10 +19,6 @@ RUN corepack enable
 
 ARG VITE_API_URL
 ENV VITE_API_URL=$VITE_API_URL
-# Увеличиваем heap для tsc+vite билда — на дешёвом VPS Node по умолчанию
-# берёт ~512MB и крашится с «JavaScript heap out of memory» когда
-# tiptap+ProseMirror+1800 модулей собираются одновременно.
-ENV NODE_OPTIONS=--max-old-space-size=2048
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/web/package.json ./apps/web/package.json
