@@ -115,13 +115,25 @@ export function TemplateEditor({
     },
   });
 
-  // Если initialHtml меняется (загружен другой шаблон) — обновляем content.
+  // Когда parent передаёт ДРУГОЙ initialHtml (другой шаблон) — заменяем
+  // содержимое редактора. НО: parent тоже получает onChange с текущим
+  // HTML из редактора и кладёт его в bodyHtml, что приводит к новому
+  // initialHtml → бесконечный круг + сброс курсора.
+  // Поэтому сравниваем не только с lastInitialRef, но и с текущим
+  // editor.getHTML() — если они совпадают, ничего не делаем (значит это
+  // эхо нашего же onChange).
   const lastInitialRef = useRef(initialHtml);
   useEffect(() => {
-    if (editor && initialHtml !== lastInitialRef.current) {
+    if (!editor) return;
+    if (initialHtml === lastInitialRef.current) return;
+    if (initialHtml === editor.getHTML()) {
+      // Это просто эхо нашего onChange — обновляем ref, но содержимое
+      // уже соответствует prop'у и трогать редактор не надо.
       lastInitialRef.current = initialHtml;
-      editor.commands.setContent(initialHtml || "<p></p>", { emitUpdate: false });
+      return;
     }
+    lastInitialRef.current = initialHtml;
+    editor.commands.setContent(initialHtml || "<p></p>", { emitUpdate: false });
   }, [editor, initialHtml]);
 
   // Экспортируем API через ref.

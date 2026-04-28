@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
-import { Save, Loader2 } from "lucide-react";
+import { Save, Loader2, PanelRightOpen, PanelRightClose } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
 import {
   useApiDocumentTemplates,
@@ -69,6 +70,7 @@ function CustomEditor({
   const save = useSaveDocumentTemplate();
   const remove = useDeleteDocumentTemplate();
   const [savedAt, setSavedAt] = useState<Date | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   const insertVariable = (v: VariableDescriptor) =>
     editorRef.current?.insertVariable(v.key, v.label);
@@ -165,21 +167,44 @@ function CustomEditor({
             )}{" "}
             Сохранить
           </button>
+          <button
+            type="button"
+            onClick={() => setSidebarOpen((v) => !v)}
+            className="inline-flex items-center gap-1.5 rounded-[8px] bg-white px-3 py-1.5 text-[12px] font-semibold text-ink-2 hover:bg-border"
+            title={sidebarOpen ? "Скрыть переменные" : "Показать переменные"}
+          >
+            {sidebarOpen ? (
+              <PanelRightClose size={14} />
+            ) : (
+              <PanelRightOpen size={14} />
+            )}
+            Переменные
+          </button>
         </div>
       </div>
 
-      <div className="grid gap-3 lg:grid-cols-[260px_1fr]">
-        <div className="lg:max-h-[80vh] lg:overflow-y-auto">
-          <VariablesSidebar
-            onInsert={insertVariable}
-            onInsertGroup={insertGroup}
+      {/* Двухколоночный layout: редактор слева занимает основное
+          пространство, sidebar переменных — справа как drawer (не сжимает
+          редактор, прячется по кнопке). Аналогично TemplateEditorPage. */}
+      <div className={cn("relative flex gap-3")}>
+        <div className="min-w-0 flex-1">
+          <TemplateEditor
+            initialHtml={body}
+            onChange={setBody}
+            editorRef={editorRef}
           />
         </div>
-        <TemplateEditor
-          initialHtml={body}
-          onChange={setBody}
-          editorRef={editorRef}
-        />
+        {sidebarOpen && (
+          <aside
+            className="sticky top-3 hidden h-[calc(100vh-100px)] w-[300px] shrink-0 self-start overflow-y-auto rounded-[12px] border border-border bg-white p-3 shadow-card-sm lg:block"
+            aria-label="Переменные"
+          >
+            <VariablesSidebar
+              onInsert={insertVariable}
+              onInsertGroup={insertGroup}
+            />
+          </aside>
+        )}
       </div>
     </div>
   );
