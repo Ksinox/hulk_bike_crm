@@ -2,7 +2,6 @@ import { useMemo, useState } from "react";
 import {
   AlertTriangle,
   ArrowRight,
-  ArrowLeftRight,
   Calendar,
   CheckCircle2,
   PhoneOff,
@@ -132,13 +131,11 @@ function statusActions(
       return withExtras([
         { id: "extend", label: "Продлить", icon: Repeat, tone: "primary" },
         { id: "complete", label: "Завершить аренду", icon: ArrowRight, tone: "ghost" },
-        { id: "swap-scooter", label: "Заменить скутер", icon: ArrowLeftRight, tone: "ghost" },
         { id: "addPayment", label: "Принять платёж", icon: Plus, tone: "ghost" },
       ]);
     case "overdue":
       return withExtras([
         { id: "complete", label: "Завершить аренду", icon: ArrowRight, tone: "primary" },
-        { id: "swap-scooter", label: "Заменить скутер", icon: ArrowLeftRight, tone: "ghost" },
         { id: "addPayment", label: "Принять платёж", icon: Plus, tone: "ghost" },
         { id: "revert-overdue", label: "Снять просрочку", icon: XCircle, tone: "ghost" },
         { id: "police", label: "Подать в полицию", icon: ShieldAlert, tone: "danger" },
@@ -414,14 +411,6 @@ export function RentalCard({ rental }: { rental: Rental }) {
         return;
       }
       setPreviewClaimId(r.id);
-      return;
-    }
-    if (id === "swap-scooter") {
-      if (!rental.scooterId) {
-        toast.info("Нет скутера", "К аренде не привязан скутер");
-        return;
-      }
-      setSwapOpen(true);
       return;
     }
     if (id === "record-damage") {
@@ -881,6 +870,23 @@ export function RentalCard({ rental }: { rental: Rental }) {
           <TermsTab
             rental={rental}
             onClientClick={() => setClientQuickView(true)}
+            onSwapScooter={() => {
+              if (!rental.scooterId) {
+                toast.info("Нет скутера", "К аренде не привязан скутер");
+                return;
+              }
+              if (
+                rental.status !== "active" &&
+                rental.status !== "overdue"
+              ) {
+                toast.info(
+                  "Нельзя заменить",
+                  "Замена скутера доступна только для активных аренд",
+                );
+                return;
+              }
+              setSwapOpen(true);
+            }}
           />
         )}
         {tab === "history" && (

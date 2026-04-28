@@ -853,6 +853,28 @@ export function AddClientModal({
                         editing.id,
                         f.phone2 || null,
                       );
+                      // Список заполненных полей — короткий чек, что
+                      // реально ушло в API. Без этого пользователь
+                      // не уверен, прошло ли сохранение.
+                      const filled: string[] = [];
+                      if (passportFields.passportSeries) filled.push("серия");
+                      if (passportFields.passportNumber) filled.push("номер");
+                      if (passportFields.passportIssuedOn)
+                        filled.push("дата выдачи");
+                      if (passportFields.passportIssuer)
+                        filled.push("кем выдан");
+                      if (passportFields.passportDivisionCode)
+                        filled.push("код подр.");
+                      if (passportFields.passportRegistration)
+                        filled.push("адрес рег.");
+                      if (passportFields.birthDate)
+                        filled.push("дата рожд.");
+                      toast.success(
+                        "Клиент сохранён",
+                        filled.length > 0
+                          ? `Обновлено: ${filled.join(", ")}.`
+                          : "Изменения переданы на сервер.",
+                      );
                       requestClose();
                     } catch (e) {
                       toast.error(

@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, Trash2, X, Link2, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { api } from "@/lib/api";
 import { toast, confirmDialog } from "@/lib/toast";
 import {
   patchRental,
@@ -10,7 +9,6 @@ import {
   useArchivedRentals,
   useChainPayments,
 } from "./rentalsStore";
-import { useApiScooters } from "@/lib/api/scooters";
 import { useDeleteRental } from "@/lib/api/rentals";
 import type { Rental } from "@/lib/mock/rentals";
 
@@ -297,10 +295,9 @@ function RentalEditForm({
   onSaved: () => void;
   onCancel: () => void;
 }) {
-  const { data: scooters = [] } = useApiScooters();
-
-  const initialScooterId = rental.scooterId ?? null;
-  const [scooterId, setScooterId] = useState<number | null>(initialScooterId);
+  // Скутер сюда не подкручивается. Замена скутера — отдельный flow через
+  // карточку «Условия» (кнопка «Заменить скутер»), который создаёт новую
+  // связку. Здесь меняются только параметры: даты, тариф, дни, заметка.
   const [startDate, setStartDate] = useState(rental.start);
   const [startTime, setStartTime] = useState(rental.startTime ?? "14:00");
   const [endPlanned, setEndPlanned] = useState(rental.endPlanned);
@@ -340,20 +337,7 @@ function RentalEditForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [days]);
 
-  const scooterOptions = useMemo(
-    () =>
-      scooters
-        .filter(
-          (s) =>
-            !s.archivedAt &&
-            (s.baseStatus === "rental_pool" || s.id === initialScooterId),
-        )
-        .sort((a, b) => a.name.localeCompare(b.name, "ru")),
-    [scooters, initialScooterId],
-  );
-
   const dirty =
-    scooterId !== initialScooterId ||
     startDate !== rental.start ||
     startTime !== (rental.startTime ?? "14:00") ||
     endPlanned !== rental.endPlanned ||
@@ -367,10 +351,6 @@ function RentalEditForm({
     setSaving(true);
     try {
       const newSum = rate * days;
-
-      if (scooterId !== initialScooterId) {
-        await api.patch(`/api/rentals/${rental.id}`, { scooterId });
-      }
 
       const patch: Partial<Rental> = {};
       if (startDate !== rental.start) patch.start = startDate;
@@ -401,29 +381,11 @@ function RentalEditForm({
   return (
     <>
       <div className="flex flex-col gap-4 px-5 py-5">
-        <Field label="Скутер">
-          {scooterOptions.length === 0 ? (
-            <div className="text-[12px] text-muted">
-              Нет доступных скутеров (статус «Парк аренды»). Отправьте скутер
-              в парк аренды из карточки скутера.
-            </div>
-          ) : (
-            <select
-              value={scooterId ?? ""}
-              onChange={(e) =>
-                setScooterId(e.target.value ? Number(e.target.value) : null)
-              }
-              className="h-10 w-full rounded-[10px] border border-border bg-white px-3 text-[14px] outline-none focus:border-blue"
-            >
-              <option value="">— не выбран —</option>
-              {scooterOptions.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
-          )}
-        </Field>
+        <div className="rounded-[10px] bg-blue-50 px-3 py-2 text-[12px] text-blue-700">
+          Замена скутера — отдельная операция. Откройте вкладку{" "}
+          <b>«Условия»</b> и нажмите «Заменить скутер» рядом с карточкой
+          скутера.
+        </div>
 
         <div className="grid grid-cols-[1.3fr_1fr] gap-2">
           <Field label="Дата выдачи (ДД.ММ.ГГГГ)">

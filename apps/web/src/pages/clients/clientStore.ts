@@ -181,14 +181,26 @@ async function addClientAsync(
  * Сохраняет правки клиента в API (PATCH). В отличие от создания —
  * принимает только PATCH-поля и пробрасывает их as-is. Возвращает
  * обновлённую запись и инвалидирует список клиентов.
+ *
+ * Возвращает ApiClient с актуальными значениями из БД — так вызывающая
+ * сторона может сразу показать пользователю что реально сохранилось
+ * (и не зависеть от refetch'а React Query).
  */
-async function patchClientAsync(
+async function patchClientAsync<T = unknown>(
   id: number,
   patch: PatchClientInput,
-): Promise<void> {
-  await api.patch(`/api/clients/${id}`, patch);
+): Promise<T> {
+  // Лог удобен на проде в DevTools, чтобы быстро увидеть payload и
+  // ответ если пользователь жалуется «не сохранилось». Тяжёлых данных
+  // тут нет — паспортные поля.
+  // eslint-disable-next-line no-console
+  console.info("[patchClient] →", id, patch);
+  const updated = await api.patch<T>(`/api/clients/${id}`, patch);
+  // eslint-disable-next-line no-console
+  console.info("[patchClient] ←", updated);
   queryClient.invalidateQueries({ queryKey: clientsKeys.all });
   queryClient.invalidateQueries({ queryKey: clientsKeys.byId(id) });
+  return updated;
 }
 
 function buildCreateBody(

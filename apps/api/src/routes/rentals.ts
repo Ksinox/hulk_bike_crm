@@ -731,6 +731,12 @@ export async function rentalsRoutes(app: FastifyInstance) {
       const schema = z
         .object({
           newScooterId: z.number().int().positive(),
+          /**
+           * Куда деть старый скутер: 'rental_pool' (готов к аренде, кто-то
+           * другой может его взять) или 'repair' (на ремонт). По умолчанию
+           * 'repair' — самый частый сценарий замены.
+           */
+          oldScooterStatus: z.enum(["rental_pool", "repair"]).default("repair"),
           /** Опциональный комментарий к причине замены. */
           reason: z.string().max(500).optional(),
         })
@@ -771,11 +777,11 @@ export async function rentalsRoutes(app: FastifyInstance) {
           })
           .where(eq(rentals.id, id));
 
-        // Старый скутер — в ремонт.
+        // Старый скутер — в выбранный оператором статус (rental_pool/repair).
         if (old.scooterId) {
           await tx
             .update(scooters)
-            .set({ baseStatus: "repair", updatedAt: sql`now()` })
+            .set({ baseStatus: d.oldScooterStatus, updatedAt: sql`now()` })
             .where(eq(scooters.id, old.scooterId));
         }
 

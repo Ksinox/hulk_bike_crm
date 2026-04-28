@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import {
   AlertTriangle,
+  ArrowLeftRight,
   ArrowRight,
   Bike,
   Calendar,
@@ -98,9 +99,12 @@ function initials(name: string): string {
 export function TermsTab({
   rental,
   onClientClick,
+  onSwapScooter,
 }: {
   rental: Rental;
   onClientClick?: () => void;
+  /** Открыть диалог замены скутера. Если undefined — кнопка не показана. */
+  onSwapScooter?: () => void;
 }) {
   const { data: apiClients } = useApiClients();
   const client = apiClients?.find((c) => c.id === rental.clientId);
@@ -133,50 +137,128 @@ export function TermsTab({
     ? chainRentals.reduce((s, r) => s + (r.days || 0), 0)
     : rental.days;
 
+  // История скутеров в цепочке: проходим связки в порядке chain (от корня
+  // к текущему) и собираем уникальные scooterId. Те, что отличаются от
+  // текущего, считаем «прошлыми скутерами этой аренды».
+  const scooterHistory = useMemo(() => {
+    const ordered = chainIds
+      .map((id) => chainRentals.find((r) => r.id === id))
+      .filter((r): r is Rental => !!r);
+    const seen = new Set<number>();
+    const out: { rentalId: number; scooterId: number; scooter: string }[] = [];
+    for (const r of ordered) {
+      if (r.scooterId == null) continue;
+      if (r.scooterId === rental.scooterId) continue;
+      if (seen.has(r.scooterId)) continue;
+      seen.add(r.scooterId);
+      out.push({ rentalId: r.id, scooterId: r.scooterId, scooter: r.scooter });
+    }
+    return out;
+  }, [chainIds, chainRentals, rental.scooterId]);
+
+  // Признак «текущий скутер — замена» (предыдущая связка в цепочке имела
+  // другой скутер). Проверяем по parentRentalId, чтобы текст «Скутер
+  // заменён» появился именно на child-связке после swap.
+  const isReplacement = useMemo(() => {
+    if (rental.parentRentalId == null) return false;
+    const parent = allRentals.find((r) => r.id === rental.parentRentalId);
+    if (!parent || parent.scooterId == null) return false;
+    return parent.scooterId !== rental.scooterId;
+  }, [rental.parentRentalId, rental.scooterId, allRentals]);
+
   return (
     <div className="grid gap-3 lg:grid-cols-[1.15fr_1fr]">
       {/* ============ ЛЕВАЯ КОЛОНКА: СКУТЕР + УСЛОВИЯ ============ */}
-      <button
-        type="button"
-        onClick={() => {
-          if (rental.scooterId == null) {
-            toast.warn(
-              "Скутер не привязан",
-              "Откройте «Действия → Изменить аренду» и выберите скутер.",
-            );
-            return;
-          }
-          navigate({
-            route: "fleet",
-            scooterId: rental.scooterId,
-            from: { route: "rentals", rentalId: rental.id },
-          });
-        }}
-        title={
-          rental.scooterId != null
-            ? "Открыть карточку скутера"
-            : "Скутер ещё не назначен"
-        }
+      <div className="flex flex-col gap-2">
+      <div
         className="group rounded-[14px] border border-border p-4 text-left transition-colors hover:bg-surface-soft/60"
       >
         <div className="flex items-start gap-4">
-          <ScooterThumb rental={rental} />
+          <button
+            type="button"
+            onClick={() => {
+              if (rental.scooterId == null) {
+                toast.warn(
+                  "Скутер не привязан",
+                  "Откройте «Изменить аренду» — там можно настроить параметры аренды.",
+                );
+                return;
+              }
+              navigate({
+                route: "fleet",
+                scooterId: rental.scooterId,
+                from: { route: "rentals", rentalId: rental.id },
+              });
+            }}
+            title={
+              rental.scooterId != null
+                ? "Открыть карточку скутера"
+                : "Скутер ещё не назначен"
+            }
+            className="shrink-0"
+          >
+            <ScooterThumb rental={rental} />
+          </button>
 
           <div className="min-w-0 flex-1">
             <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0 flex-1">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
-                  Скутер
+              <button
+                type="button"
+                onClick={() => {
+                  if (rental.scooterId == null) return;
+                  navigate({
+                    route: "fleet",
+                    scooterId: rental.scooterId,
+                    from: { route: "rentals", rentalId: rental.id },
+                  });
+                }}
+                className="min-w-0 flex-1 text-left"
+              >
+                <div className="flex items-center gap-2">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
+                    Скутер
+                  </div>
+                  {isReplacement && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-blue-700">
+                      <ArrowLeftRight size={9} /> Замена
+                    </span>
+                  )}
                 </div>
                 <div className="mt-0.5 text-[11px] text-muted-2">Model &amp; ID</div>
                 <div className="mt-0.5 font-display text-[18px] font-extrabold leading-tight text-ink">
                   {rental.scooter} · {MODEL_LABEL[rental.model]}
                 </div>
+              </button>
+              <div className="flex shrink-0 items-center gap-1">
+                {onSwapScooter && rental.scooterId != null && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSwapScooter();
+                    }}
+                    title="Заменить скутер на другой"
+                    className="inline-flex items-center gap-1 rounded-[8px] border border-blue-500 bg-white px-2 py-1 text-[11px] font-bold text-blue-700 hover:bg-blue-50"
+                  >
+                    <ArrowLeftRight size={11} /> Заменить
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (rental.scooterId == null) return;
+                    navigate({
+                      route: "fleet",
+                      scooterId: rental.scooterId,
+                      from: { route: "rentals", rentalId: rental.id },
+                    });
+                  }}
+                  title="Открыть карточку скутера"
+                  className="rounded-[6px] p-1 text-muted-2 hover:bg-surface-soft hover:text-ink"
+                >
+                  <ExternalLink size={14} />
+                </button>
               </div>
-              <ExternalLink
-                size={14}
-                className="shrink-0 text-muted-2 opacity-60 transition-opacity group-hover:opacity-100"
-              />
             </div>
             <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-surface-soft px-2.5 py-1 text-[11px] font-semibold text-ink-2">
               <Gauge size={12} className="text-muted-2" />
@@ -222,7 +304,39 @@ export function TermsTab({
             }
           />
         </div>
-      </button>
+      </div>
+
+      {/* История скутеров: предыдущие в этой аренде. Кликабельно — открывает
+          карточку скутера в парке (там же видно, у кого ещё он был). */}
+      {scooterHistory.length > 0 && (
+        <div className="rounded-[12px] border border-dashed border-border bg-surface-soft/40 px-3 py-2">
+          <div className="mb-1.5 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-2">
+            <History size={11} /> Ранее в этой аренде
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {scooterHistory.map((s) => (
+              <button
+                key={s.scooterId}
+                type="button"
+                onClick={() =>
+                  navigate({
+                    route: "fleet",
+                    scooterId: s.scooterId,
+                    from: { route: "rentals", rentalId: rental.id },
+                  })
+                }
+                title={`Скутер был в этой аренде. Связка #${String(s.rentalId).padStart(4, "0")}. Клик → история скутера.`}
+                className="inline-flex items-center gap-1.5 rounded-[8px] border border-border bg-white px-2 py-1 text-[12px] hover:border-blue-400 hover:bg-blue-50"
+              >
+                <Bike size={11} className="text-muted-2" />
+                <span className="font-semibold text-ink">{s.scooter}</span>
+                <ExternalLink size={10} className="text-muted-2" />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      </div>
 
       {/* ============ ПРАВАЯ КОЛОНКА: ГРАФИК АРЕНДЫ ============ */}
       <div className="flex flex-col gap-3 rounded-[14px] border border-border p-4">

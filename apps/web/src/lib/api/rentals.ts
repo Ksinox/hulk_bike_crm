@@ -78,10 +78,12 @@ export function useSwapScooter() {
     mutationFn: (args: {
       rentalId: number;
       newScooterId: number;
+      oldScooterStatus?: "rental_pool" | "repair";
       reason?: string;
     }) =>
       api.post<ApiRental>(`/api/rentals/${args.rentalId}/swap-scooter`, {
         newScooterId: args.newScooterId,
+        oldScooterStatus: args.oldScooterStatus ?? "repair",
         ...(args.reason ? { reason: args.reason } : {}),
       }),
     onSuccess: () => {

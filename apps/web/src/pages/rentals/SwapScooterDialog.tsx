@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeftRight, Loader2, Search, X } from "lucide-react";
+import { ArrowLeftRight, Loader2, Search, Wrench, X, ParkingSquare } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
 import { useApiScooters } from "@/lib/api/scooters";
@@ -7,13 +7,19 @@ import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { useSwapScooter } from "@/lib/api/rentals";
 import type { Rental } from "@/lib/mock/rentals";
 
+type OldStatus = "rental_pool" | "repair";
+
 /**
- * Замена скутера в аренде. v0.2.75.
+ * Замена скутера в аренде. v0.2.76 — переработан UX.
  *
- * Создаёт новую связку (parentRentalId = текущая) с другим скутером.
- * Текущая связка закрывается, старый скутер уходит в ремонт. После
- * успеха — родитель открывает превью акта приёма-передачи (act_transfer)
- * для новой связки, чтобы оператор сразу распечатал.
+ *  - Сверху выбор: куда деть старый скутер (готов к аренде / в ремонт).
+ *  - В середине плитки доступных скутеров (как на дашборде), сгруппированы
+ *    по моделям. Зелёные = свободные в парке.
+ *  - Снизу опциональная причина и кнопка «Заменить».
+ *
+ * Создаётся новая связка (parentRentalId = id текущей) с новым скутером,
+ * текущая связка закрывается, срок аренды (endPlannedAt) сохраняется.
+ * После успеха родитель открывает превью акта приёма-передачи для новой связки.
  */
 export function SwapScooterDialog({
   rental,
@@ -22,13 +28,13 @@ export function SwapScooterDialog({
 }: {
   rental: Rental;
   onClose: () => void;
-  /** Передаём id новой связки — родитель откроет превью акта. */
   onSwapped: (newRentalId: number) => void;
 }) {
   const [closing, setClosing] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [reason, setReason] = useState("");
   const [search, setSearch] = useState("");
+  const [oldStatus, setOldStatus] = useState<OldStatus>("repair");
 
   const requestClose = () => {
     if (closing) return;
@@ -49,6 +55,7 @@ export function SwapScooterDialog({
   const { data: models = [] } = useApiScooterModels();
   const swap = useSwapScooter();
 
+  // Доступные скутеры — только из парка аренды, исключая текущий.
   const available = useMemo(() => {
     const q = search.trim().toLowerCase();
     return scooters
@@ -63,19 +70,51 @@ export function SwapScooterDialog({
         const m = models.find((mo) => mo.id === s.modelId);
         const hay = `${s.name} ${m?.name ?? ""}`.toLowerCase();
         return hay.includes(q);
-      })
-      .sort((a, b) => a.name.localeCompare(b.name, "ru"));
+      });
   }, [scooters, models, search, rental.scooterId]);
+
+  // Группируем по модели для красивых блоков плиток
+  const byModel = useMemo(() => {
+    const map = new Map<number | null, typeof available>();
+    for (const s of available) {
+      const key = s.modelId ?? null;
+      const arr = map.get(key) ?? [];
+      arr.push(s);
+      map.set(key, arr);
+    }
+    // sort scooters внутри модели по имени
+    for (const arr of map.values()) {
+      arr.sort((a, b) => a.name.localeCompare(b.name, "ru"));
+    }
+    // Сортируем модели — сначала с большим количеством, затем по имени
+    return Array.from(map.entries())
+      .map(([modelId, items]) => ({
+        modelId,
+        modelName:
+          modelId == null
+            ? "Без модели"
+            : models.find((m) => m.id === modelId)?.name ?? "Модель неизвестна",
+        items,
+      }))
+      .sort((a, b) => {
+        if (b.items.length !== a.items.length)
+          return b.items.length - a.items.length;
+        return a.modelName.localeCompare(b.modelName, "ru");
+      });
+  }, [available, models]);
+
+  const totalCount = available.length;
 
   const submit = async () => {
     if (!selectedId) {
-      toast.error("Не выбран скутер", "Кликните на скутер из списка");
+      toast.error("Не выбран скутер", "Выберите плитку из парка аренды");
       return;
     }
     try {
       const created = await swap.mutateAsync({
         rentalId: rental.id,
         newScooterId: selectedId,
+        oldScooterStatus: oldStatus,
         reason: reason.trim() || undefined,
       });
       if (!created || typeof created.id !== "number") {
@@ -87,7 +126,9 @@ export function SwapScooterDialog({
       }
       toast.success(
         "Скутер заменён",
-        "Старый отправлен в ремонт. Печатайте акт приёма-передачи.",
+        oldStatus === "repair"
+          ? "Старый отправлен в ремонт. Печатайте акт."
+          : "Старый возвращён в парк. Печатайте акт.",
       );
       const newId = created.id;
       requestClose();
@@ -107,11 +148,12 @@ export function SwapScooterDialog({
     >
       <div
         className={cn(
-          "flex w-full max-w-[640px] max-h-[88vh] flex-col overflow-hidden rounded-2xl bg-surface shadow-card-lg",
+          "flex w-full max-w-[820px] max-h-[92vh] flex-col overflow-hidden rounded-2xl bg-surface shadow-card-lg",
           closing ? "animate-modal-out" : "animate-modal-in",
         )}
         onClick={(e) => e.stopPropagation()}
       >
+        {/* HEADER */}
         <div className="flex items-center gap-3 border-b border-border bg-surface-soft px-5 py-3">
           <ArrowLeftRight size={18} className="text-blue-600" />
           <div className="min-w-0 flex-1">
@@ -120,7 +162,7 @@ export function SwapScooterDialog({
               {String(rental.id).padStart(4, "0")}
             </div>
             <div className="text-[12px] text-muted-2">
-              {rental.scooter} → выберите новый из парка аренды
+              текущий: {rental.scooter} → выберите новый из парка аренды
             </div>
           </div>
           <button
@@ -132,79 +174,170 @@ export function SwapScooterDialog({
           </button>
         </div>
 
-        <div className="border-b border-border p-3">
-          <div className="relative">
-            <Search
-              size={14}
-              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-2"
+        {/* OLD SCOOTER STATUS CHOICE */}
+        <div className="grid grid-cols-2 gap-2 border-b border-border bg-surface-soft/40 px-5 py-3">
+          <div className="col-span-2 mb-1 text-[11px] font-bold uppercase tracking-wider text-muted-2">
+            Куда деть текущий скутер ({rental.scooter})
+          </div>
+          <button
+            type="button"
+            onClick={() => setOldStatus("rental_pool")}
+            className={cn(
+              "flex items-start gap-2 rounded-[10px] border px-3 py-2 text-left transition-colors",
+              oldStatus === "rental_pool"
+                ? "border-green-500 bg-green-soft/60"
+                : "border-border bg-white hover:border-green-300",
+            )}
+          >
+            <ParkingSquare
+              size={16}
+              className={cn(
+                "mt-0.5 shrink-0",
+                oldStatus === "rental_pool" ? "text-green-700" : "text-muted-2",
+              )}
             />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Поиск по имени или модели..."
-              className="h-9 w-full rounded-[10px] border border-border bg-surface pl-9 pr-3 text-[13px] outline-none focus:border-blue-600"
+            <div className="min-w-0">
+              <div className="text-[13px] font-bold text-ink">
+                Готов к аренде
+              </div>
+              <div className="mt-0.5 text-[11px] text-muted-2">
+                Скутер свободен — другой клиент может взять его сразу.
+              </div>
+            </div>
+          </button>
+          <button
+            type="button"
+            onClick={() => setOldStatus("repair")}
+            className={cn(
+              "flex items-start gap-2 rounded-[10px] border px-3 py-2 text-left transition-colors",
+              oldStatus === "repair"
+                ? "border-orange-500 bg-orange-soft/60"
+                : "border-border bg-white hover:border-orange-300",
+            )}
+          >
+            <Wrench
+              size={16}
+              className={cn(
+                "mt-0.5 shrink-0",
+                oldStatus === "repair" ? "text-orange-700" : "text-muted-2",
+              )}
             />
+            <div className="min-w-0">
+              <div className="text-[13px] font-bold text-ink">В ремонт</div>
+              <div className="mt-0.5 text-[11px] text-muted-2">
+                Скутер уходит из оборота — нужно починить перед сдачей.
+              </div>
+            </div>
+          </button>
+        </div>
+
+        {/* SEARCH */}
+        <div className="border-b border-border px-5 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
+              Парк аренды · {totalCount} {pluralUnit(totalCount)}
+            </div>
+            <div className="relative flex-1 max-w-[280px]">
+              <Search
+                size={14}
+                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-2"
+              />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Поиск..."
+                className="h-8 w-full rounded-[8px] border border-border bg-surface pl-8 pr-3 text-[12px] outline-none focus:border-blue-600"
+              />
+            </div>
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-3 py-2">
-          {available.length === 0 ? (
-            <div className="rounded-[10px] border border-dashed border-border p-6 text-center text-[12px] text-muted-2">
-              Нет доступных скутеров в парке аренды.
+        {/* TILE GRID */}
+        <div className="flex-1 overflow-y-auto px-5 py-3">
+          {totalCount === 0 ? (
+            <div className="rounded-[10px] border border-dashed border-border p-8 text-center text-[12px] text-muted-2">
+              Нет доступных скутеров в парке аренды
+              {search ? " по этому запросу" : ""}.
             </div>
           ) : (
-            <div className="flex flex-col gap-1.5">
-              {available.map((s) => {
-                const m = models.find((mo) => mo.id === s.modelId);
-                const isSel = selectedId === s.id;
-                return (
-                  <button
-                    key={s.id}
-                    type="button"
-                    onClick={() => setSelectedId(s.id)}
-                    className={cn(
-                      "flex items-center gap-3 rounded-[10px] border px-3 py-2 text-left text-[13px]",
-                      isSel
-                        ? "border-blue-500 bg-blue-50"
-                        : "border-border bg-white hover:border-blue-300",
-                    )}
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="font-semibold text-ink">{s.name}</div>
-                      <div className="text-[11px] text-muted-2">
-                        {m?.name ?? "модель не указана"}
-                      </div>
+            <div className="flex flex-col gap-4">
+              {byModel.map((group) => (
+                <div key={group.modelId ?? "none"}>
+                  <div className="mb-2 flex items-baseline gap-2">
+                    <div className="text-[12px] font-bold text-ink">
+                      {group.modelName}
                     </div>
-                    {isSel && (
-                      <span className="rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
-                        Выбран
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
+                    <div className="text-[11px] text-muted-2">
+                      {group.items.length} {pluralUnit(group.items.length)}
+                    </div>
+                  </div>
+                  <div
+                    className="grid gap-1.5"
+                    style={{
+                      gridTemplateColumns:
+                        "repeat(auto-fill, minmax(54px, 1fr))",
+                    }}
+                  >
+                    {group.items.map((s) => {
+                      const isSel = selectedId === s.id;
+                      const num = s.name.split("#")[1] ?? s.name;
+                      return (
+                        <button
+                          key={s.id}
+                          type="button"
+                          onClick={() => setSelectedId(s.id)}
+                          title={s.name}
+                          className={cn(
+                            "flex aspect-square cursor-pointer flex-col items-center justify-center rounded-[10px] border-2 text-[12px] font-bold transition-all hover:-translate-y-0.5",
+                            isSel
+                              ? "border-blue-600 bg-blue-50 text-blue-700 shadow-card"
+                              : "border-green-500/40 bg-green-soft/60 text-green-ink hover:border-green-500",
+                          )}
+                        >
+                          {num}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>
 
+        {/* BOTTOM */}
         <div className="border-t border-border bg-surface-soft px-5 py-3">
-          <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-muted-2">
-            Причина замены (необязательно)
-          </div>
+          {selectedId ? (
+            <div className="mb-2 rounded-[8px] bg-blue-50 px-3 py-2 text-[12px] text-blue-700">
+              Выбран:{" "}
+              <b>
+                {scooters.find((x) => x.id === selectedId)?.name ?? "—"}
+              </b>{" "}
+              ·{" "}
+              {models.find(
+                (m) =>
+                  m.id ===
+                  scooters.find((x) => x.id === selectedId)?.modelId,
+              )?.name ?? "модель"}
+            </div>
+          ) : (
+            <div className="mb-2 text-[11px] text-muted-2">
+              Кликните на плитку чтобы выбрать новый скутер.
+            </div>
+          )}
           <input
             value={reason}
             onChange={(e) => setReason(e.target.value)}
-            placeholder="например: ремонт после повреждения"
-            className="h-9 w-full rounded-[10px] border border-border bg-white px-3 text-[13px] outline-none focus:border-blue-600"
+            placeholder="Причина замены (необязательно)"
+            className="h-9 w-full rounded-[10px] border border-border bg-white px-3 text-[12px] outline-none focus:border-blue-600"
           />
-          <div className="mt-2 text-[11px] text-muted-2">
-            Старый скутер уйдёт в <b>ремонт</b>, срок аренды (плановый возврат)
-            сохранится. После замены откроется превью акта приёма-передачи
-            для нового скутера.
+          <div className="mt-1.5 text-[11px] text-muted-2">
+            Срок аренды (плановый возврат) сохранится. После замены откроется
+            превью акта приёма-передачи для нового скутера.
           </div>
         </div>
 
-        <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-2">
+        <div className="flex items-center justify-end gap-2 border-t border-border bg-white px-4 py-2">
           <button
             type="button"
             onClick={requestClose}
@@ -225,4 +358,13 @@ export function SwapScooterDialog({
       </div>
     </div>
   );
+}
+
+function pluralUnit(n: number): string {
+  const a = Math.abs(n);
+  const n10 = a % 10;
+  const n100 = a % 100;
+  if (n10 === 1 && n100 !== 11) return "скутер";
+  if (n10 >= 2 && n10 <= 4 && (n100 < 10 || n100 >= 20)) return "скутера";
+  return "скутеров";
 }
