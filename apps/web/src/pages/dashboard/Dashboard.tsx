@@ -7,7 +7,6 @@ import { RevenueCard } from "./RevenueCard";
 import { ReturnsList } from "./ReturnsList";
 import { ReturnsTable } from "./ReturnsTable";
 import { OverdueTable } from "./OverdueTable";
-import { TasksList } from "./TasksList";
 import { ActivityFeed } from "./ActivityFeed";
 import { ClassicKpi, CLASSIC_KPI_ICONS } from "./ClassicKpi";
 import { NewApplicationsWidget } from "./NewApplicationsWidget";
@@ -103,11 +102,7 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
         />
       </div>
       <div className="col-span-3">
-        <KpiCard
-          title="Задач на сегодня"
-          value={String(metrics.tasksToday)}
-          foot={<span className="text-muted-2">раздел задач — скоро</span>}
-        />
+        <NewApplicationsWidget />
       </div>
 
       {/* Главная двухколоночная зона — левая и правая колонки независимы
@@ -121,10 +116,8 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
           <ActivityFeed />
         </div>
         <div className="col-span-4 flex flex-col gap-4">
-          <NewApplicationsWidget />
           <RevenueCard metrics={metrics} />
           <ReturnsList items={metrics.returnsToday} />
-          <TasksList />
         </div>
       </div>
     </div>
@@ -192,25 +185,16 @@ function ClassicVariant({ metrics }: { metrics: DashboardMetrics }) {
           </span>
         }
       />
-      <ClassicKpi
-        className="col-span-3"
-        title="Задач на сегодня"
-        value={String(metrics.tasksToday)}
-        icon={CLASSIC_KPI_ICONS.tasks}
-        iconTone="orange"
-        foot={<span className="text-muted-2">скоро</span>}
-      />
+      <NewApplicationsWidget className="col-span-3" />
 
-      <NewApplicationsWidget className="col-span-12" />
       <ReturnsTable className="col-span-8" items={metrics.returnsToday} />
-      <TasksList className="col-span-4" />
+      <ActivityFeed className="col-span-4" compact />
       <OverdueTable
-        className="col-span-8"
+        className="col-span-12"
         items={metrics.overdue}
         showPhoneColumn
         compactHeader
       />
-      <ActivityFeed className="col-span-4" compact />
     </div>
   );
 }

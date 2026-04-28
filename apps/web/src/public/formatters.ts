@@ -19,11 +19,63 @@ export function formatPhone(v: string): string {
   return parts.join("");
 }
 
+/**
+ * Автоформат даты ДД.ММ.ГГГГ с защитой от невозможных значений.
+ *  - День: блокируется ввод первой цифры > 3 (нет дней 40+).
+ *  - Месяц: блокируется первая цифра > 1 (нет 13-го месяца).
+ *  - Если уже введено `31` дня и сверху подбирается 2-я цифра > 1 (т.е. дату
+ *    32 не получить), просто дропаем последнюю цифру.
+ *  - Год: не валидируем диапазон побуквенно (он определяется только на
+ *    4-й цифре), но `validateBirth`/`validateDate` отбракуют невалидные
+ *    комбинации (несуществующая дата, будущая дата, < 1900 и т.п.).
+ */
 export function formatDateRu(v: string): string {
-  const d = v.replace(/\D/g, "").slice(0, 8);
-  if (d.length <= 2) return d;
-  if (d.length <= 4) return `${d.slice(0, 2)}.${d.slice(2)}`;
-  return `${d.slice(0, 2)}.${d.slice(2, 4)}.${d.slice(4)}`;
+  const raw = v.replace(/\D/g, "").slice(0, 8);
+  let out = "";
+
+  // День
+  if (raw.length >= 1) {
+    const d1 = raw[0];
+    if (parseInt(d1, 10) > 3) {
+      // первая цифра дня не может быть > 3 — игнорируем
+      return "";
+    }
+    out = d1;
+  }
+  if (raw.length >= 2) {
+    const dd = raw.slice(0, 2);
+    const ddNum = parseInt(dd, 10);
+    if (ddNum < 1 || ddNum > 31) {
+      // 00 или 32-39 — отбрасываем 2-ю цифру
+      return out;
+    }
+    out = dd;
+  }
+
+  // Месяц
+  if (raw.length >= 3) {
+    const m1 = raw[2];
+    if (parseInt(m1, 10) > 1) {
+      // первая цифра месяца > 1 невозможна — игнор
+      return out;
+    }
+    out = `${out}.${m1}`;
+  }
+  if (raw.length >= 4) {
+    const mm = raw.slice(2, 4);
+    const mmNum = parseInt(mm, 10);
+    if (mmNum < 1 || mmNum > 12) {
+      return out;
+    }
+    out = `${raw.slice(0, 2)}.${mm}`;
+  }
+
+  // Год
+  if (raw.length >= 5) {
+    out = `${raw.slice(0, 2)}.${raw.slice(2, 4)}.${raw.slice(4)}`;
+  }
+
+  return out;
 }
 
 export function formatDivisionCode(v: string): string {
@@ -68,15 +120,50 @@ export function validatePhone(v: string): string | null {
   return null;
 }
 
-export function validateBirth(v: string): string | null {
+/** Проверяет что строка ДД.ММ.ГГГГ описывает реальную календарную дату. */
+function parseAndCheckDate(v: string): Date | null {
   const m = v.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
-  if (!m) return "Формат ДД.ММ.ГГГГ";
+  if (!m) return null;
   const [, d, mo, y] = m;
-  const date = new Date(Number(y), Number(mo) - 1, Number(d));
+  const dn = Number(d);
+  const mn = Number(mo);
+  const yn = Number(y);
+  const date = new Date(yn, mn - 1, dn);
+  // new Date(2000, 1, 30) автоматически переедет на 1 марта — ловим это.
+  if (
+    date.getFullYear() !== yn ||
+    date.getMonth() !== mn - 1 ||
+    date.getDate() !== dn
+  ) {
+    return null;
+  }
+  return date;
+}
+
+export function validateBirth(v: string): string | null {
+  const date = parseAndCheckDate(v);
+  if (!date) {
+    if (v.length < 10) return "Формат ДД.ММ.ГГГГ";
+    return "Такой даты не существует";
+  }
   const today = new Date();
   const age = today.getFullYear() - date.getFullYear();
+  if (date > today) return "Дата рождения в будущем";
   if (age < 18) return "Должно быть 18 лет или больше";
-  if (age > 100) return "Проверьте дату рождения";
+  if (age > 100) return "Проверьте год рождения";
+  return null;
+}
+
+/** Валидация даты выдачи паспорта/ВУ — не в будущем, не раньше 1900. */
+export function validatePastDate(v: string): string | null {
+  const date = parseAndCheckDate(v);
+  if (!date) {
+    if (v.length < 10) return "Формат ДД.ММ.ГГГГ";
+    return "Такой даты не существует";
+  }
+  const today = new Date();
+  if (date > today) return "Дата в будущем";
+  if (date.getFullYear() < 1900) return "Слишком ранняя дата";
   return null;
 }
 

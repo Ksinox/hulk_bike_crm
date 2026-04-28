@@ -31,7 +31,8 @@ const FileKindEnum = z.enum([
 ]);
 type AppFileKind = z.infer<typeof FileKindEnum>;
 
-/** Маппинг kind заявки → kind в client_documents + title */
+/** Маппинг kind заявки → kind в client_documents + title.
+ *  Селфи становится главным фото клиента (аватаркой). */
 const FILE_KIND_MAP: Record<
   AppFileKind,
   { kind: "photo" | "passport" | "license" | "extra"; title: string }
@@ -39,7 +40,7 @@ const FILE_KIND_MAP: Record<
   passport_main: { kind: "passport", title: "Паспорт (главный разворот)" },
   passport_reg: { kind: "passport", title: "Паспорт (прописка)" },
   license: { kind: "license", title: "Водительское удостоверение" },
-  selfie: { kind: "extra", title: "Селфи с паспортом" },
+  selfie: { kind: "photo", title: "Селфи" },
 };
 
 /** Body для convert — поля клиента + флаги «оставить файл этого вида». */

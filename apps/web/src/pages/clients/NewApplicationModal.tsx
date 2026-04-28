@@ -1,8 +1,9 @@
-import { useEffect } from "react";
-import { Bell, Check, Clock, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Bell, Check, Clock, Trash2, X } from "lucide-react";
 import {
   applicationFileUrl,
   type ApiApplication,
+  type ApplicationFileKind,
 } from "@/lib/api/clientApplications";
 
 /**
@@ -26,19 +27,31 @@ type Props = {
   onDelete: () => void;
 };
 
+const KIND_LABEL: Record<ApplicationFileKind, string> = {
+  passport_main: "Паспорт",
+  passport_reg: "Прописка",
+  license: "Права",
+  selfie: "Селфи",
+};
+
 export function NewApplicationModal({
   application,
   onConvertNow,
   onLater,
   onDelete,
 }: Props) {
+  const [zoomed, setZoomed] = useState<ApplicationFileKind | null>(null);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onLater();
+      if (e.key === "Escape") {
+        if (zoomed) setZoomed(null);
+        else onLater();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onLater]);
+  }, [onLater, zoomed]);
 
   const handleDelete = () => {
     if (window.confirm("Удалить заявку как спам? Действие необратимо.")) {
@@ -124,30 +137,21 @@ export function NewApplicationModal({
 
           <Section title={`Фото (${application.files.length} из 4)`}>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              <PhotoTile
-                applicationId={application.id}
-                kind="passport_main"
-                label="Паспорт"
-                hasFile={fileKinds.has("passport_main")}
-              />
-              <PhotoTile
-                applicationId={application.id}
-                kind="passport_reg"
-                label="Прописка"
-                hasFile={fileKinds.has("passport_reg")}
-              />
-              <PhotoTile
-                applicationId={application.id}
-                kind="license"
-                label="Права"
-                hasFile={fileKinds.has("license")}
-              />
-              <PhotoTile
-                applicationId={application.id}
-                kind="selfie"
-                label="Селфи"
-                hasFile={fileKinds.has("selfie")}
-              />
+              {(
+                ["passport_main", "passport_reg", "license", "selfie"] as const
+              ).map((k) => (
+                <PhotoTile
+                  key={k}
+                  applicationId={application.id}
+                  kind={k}
+                  label={KIND_LABEL[k]}
+                  hasFile={fileKinds.has(k)}
+                  onZoom={() => setZoomed(k)}
+                />
+              ))}
+            </div>
+            <div className="mt-2 text-[11px] text-muted-2">
+              Нажмите на фото для увеличения
             </div>
           </Section>
         </div>
@@ -178,6 +182,31 @@ export function NewApplicationModal({
           </div>
         </footer>
       </div>
+
+      {zoomed && (
+        <div
+          className="fixed inset-0 z-[110] flex items-center justify-center bg-black/90 p-4"
+          onClick={() => setZoomed(null)}
+        >
+          <button
+            type="button"
+            className="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
+            onClick={(e) => {
+              e.stopPropagation();
+              setZoomed(null);
+            }}
+            title="Закрыть (Esc)"
+          >
+            <X size={20} />
+          </button>
+          <img
+            src={applicationFileUrl(application.id, zoomed)}
+            alt={KIND_LABEL[zoomed]}
+            className="max-h-[90vh] max-w-full rounded-lg object-contain"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -235,11 +264,13 @@ function PhotoTile({
   kind,
   label,
   hasFile,
+  onZoom,
 }: {
   applicationId: number;
-  kind: "passport_main" | "passport_reg" | "license" | "selfie";
+  kind: ApplicationFileKind;
   label: string;
   hasFile: boolean;
+  onZoom: () => void;
 }) {
   if (!hasFile) {
     return (
@@ -251,17 +282,22 @@ function PhotoTile({
   }
   const url = applicationFileUrl(applicationId, kind);
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-surface-soft">
+    <button
+      type="button"
+      onClick={onZoom}
+      className="group overflow-hidden rounded-lg border border-border bg-surface-soft text-left transition-transform hover:scale-[1.02] hover:border-ink"
+      title={`Открыть «${label}»`}
+    >
       <img
         src={url}
         alt={label}
-        className="aspect-square w-full object-cover"
+        className="aspect-square w-full object-cover transition-opacity group-hover:opacity-90"
         onError={(e) => {
           (e.currentTarget as HTMLImageElement).style.display = "none";
         }}
       />
       <div className="px-2 py-1 text-[11px] font-medium text-ink">{label}</div>
-    </div>
+    </button>
   );
 }
 

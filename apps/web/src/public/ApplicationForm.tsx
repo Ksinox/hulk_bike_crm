@@ -29,6 +29,7 @@ import {
   validateBirth,
   validateName,
   validatePassportNumber,
+  validatePastDate,
   validatePhone,
   validateSeries,
 } from "./formatters";
@@ -258,7 +259,7 @@ export function ApplicationForm() {
     : !validateSeries(form.passSer) &&
       !validatePassportNumber(form.passNum) &&
       form.passIssuer.trim().length > 0 &&
-      !!dateRuToIso(form.passDate) &&
+      !validatePastDate(form.passDate) &&
       form.passRegistration.trim().length > 0;
 
   const canNextAddress = form.sameAddress || form.liveAddress.trim().length > 0;
@@ -695,6 +696,11 @@ function Step2({
           value={form.passDate}
           onChange={(e) => setField("passDate", formatDateRu(e.target.value))}
         />
+        {form.passDate.length >= 10 && validatePastDate(form.passDate) && (
+          <div className="mt-1 text-[12px] text-red-600">
+            {validatePastDate(form.passDate)}
+          </div>
+        )}
       </div>
 
       <div>
@@ -799,8 +805,8 @@ const PHOTO_STEP_META: Record<
     facing: "environment",
   },
   selfie: {
-    title: "Селфи с паспортом",
-    hint: "Расположите лицо в овальной рамке (как в Uber/Я.Такси) и держите паспорт у подбородка. Глаза открыты, очки лучше снять.",
+    title: "Селфи",
+    hint: "Расположите лицо в овальной рамке (как в Uber/Я.Такси). Глаза открыты, очки лучше снять, волосы не закрывают лицо.",
     sample: <SelfieSample />,
     facing: "user",
   },

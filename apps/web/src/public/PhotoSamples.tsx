@@ -122,33 +122,34 @@ export function LicenseSample() {
 export function SelfieSample() {
   return (
     <svg
-      viewBox="0 0 240 200"
-      className="h-auto w-full max-w-[260px]"
+      viewBox="0 0 240 240"
+      className="h-auto w-full max-w-[240px]"
       role="img"
-      aria-label="Селфи с паспортом — рамка лица"
+      aria-label="Селфи — лицо в рамке"
     >
-      {/* Фон-кадр (как видоискатель) */}
-      <rect x="4" y="4" width="232" height="192" rx="12" fill="#0f172a" />
-      {/* Углы рамки кадра — как у телефонной камеры */}
+      {/* Фон-видоискатель */}
+      <rect x="4" y="4" width="232" height="232" rx="12" fill="#0f172a" />
+      {/* Уголки рамки кадра — как у телефонной камеры */}
       <g stroke="#fff" strokeWidth="3" fill="none">
         <path d="M16 28 L16 16 L28 16" />
         <path d="M212 16 L224 16 L224 28" />
-        <path d="M224 172 L224 184 L212 184" />
-        <path d="M28 184 L16 184 L16 172" />
+        <path d="M224 212 L224 224 L212 224" />
+        <path d="M28 224 L16 224 L16 212" />
       </g>
       {/* Овальная рамка для лица — как в Uber/Я.Такси */}
-      <ellipse cx="120" cy="80" rx="46" ry="58" fill="none" stroke="#fbbf24" strokeWidth="2.5" strokeDasharray="6 4" />
+      <ellipse
+        cx="120"
+        cy="120"
+        rx="68"
+        ry="84"
+        fill="none"
+        stroke="#fbbf24"
+        strokeWidth="3"
+        strokeDasharray="8 5"
+      />
       {/* Силуэт лица внутри овала */}
-      <circle cx="120" cy="68" r="18" fill="#94a3b8" />
-      <path d="M92 124 q28 -32 56 0" fill="#94a3b8" />
-      {/* Паспорт в руке — рядом с подбородком */}
-      <g transform="translate(70 138) rotate(-8)">
-        <rect width="100" height="40" rx="3" fill="#fff" stroke="#fbbf24" strokeWidth="1.5" />
-        <rect x="6" y="6" width="22" height="28" rx="1" fill="#cbd5e1" />
-        <line x1="34" y1="12" x2="92" y2="12" stroke="#94a3b8" strokeWidth="1.5" />
-        <line x1="34" y1="20" x2="86" y2="20" stroke="#94a3b8" strokeWidth="1.5" />
-        <line x1="34" y1="28" x2="92" y2="28" stroke="#94a3b8" strokeWidth="1.5" />
-      </g>
+      <circle cx="120" cy="100" r="26" fill="#94a3b8" />
+      <path d="M82 174 q38 -42 76 0" fill="#94a3b8" />
     </svg>
   );
 }
