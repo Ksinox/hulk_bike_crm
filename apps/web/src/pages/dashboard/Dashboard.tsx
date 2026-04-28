@@ -109,13 +109,22 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
         />
       </div>
 
-      <ParkPanel className="col-span-8 row-span-2" metrics={metrics} />
-      <RevenueCard className="col-span-4" metrics={metrics} />
-      <ReturnsList className="col-span-4" items={metrics.returnsToday} />
-
-      <OverdueTable className="col-span-8" items={metrics.overdue} />
-      <TasksList className="col-span-4" />
-      <ActivityFeed className="col-span-8" />
+      {/* Главная двухколоночная зона — левая и правая колонки независимы
+          по высоте. Если RevenueCard справа разворачивается со списком
+          аренд — ParkPanel слева остаётся той же высоты, не растягивается.
+          items-start гарантирует что флексы не растягиваются друг под друга. */}
+      <div className="col-span-12 grid auto-rows-[minmax(120px,max-content)] grid-cols-12 items-start gap-4">
+        <div className="col-span-8 flex flex-col gap-4">
+          <ParkPanel metrics={metrics} />
+          <OverdueTable items={metrics.overdue} />
+          <ActivityFeed />
+        </div>
+        <div className="col-span-4 flex flex-col gap-4">
+          <RevenueCard metrics={metrics} />
+          <ReturnsList items={metrics.returnsToday} />
+          <TasksList />
+        </div>
+      </div>
     </div>
   );
 }

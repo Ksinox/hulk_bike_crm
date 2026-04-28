@@ -15,7 +15,7 @@ export type RouteId =
 
 const KEY = "hulk-route";
 
-const READY: RouteId[] = ["dashboard", "clients", "rentals", "fleet"];
+const READY: RouteId[] = ["dashboard", "clients", "rentals", "fleet", "docs"];
 
 export function loadRoute(): RouteId {
   try {

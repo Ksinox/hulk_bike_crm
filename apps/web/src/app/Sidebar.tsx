@@ -48,7 +48,7 @@ function buildMainItems(canManageStaff: boolean): NavItem[] {
     { id: "incidents", label: "Инциденты", icon: CircleAlert },
     { id: "tasks", label: "Задачи", icon: ClipboardCheck },
     { id: "analytics", label: "Аналитика", icon: BarChart3 },
-    { id: "docs", label: "Документы", icon: FileText },
+    { id: "docs", label: "Документы", icon: FileText, ready: true },
   );
   return items;
 }

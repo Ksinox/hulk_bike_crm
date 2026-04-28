@@ -28,11 +28,14 @@ import {
 } from "@/lib/mock/rentals";
 import {
   addRentalIncident,
+  getRentalChainIds,
   markPaymentPaid,
   toggleTask,
+  useArchivedRentals,
   useInspection,
   useRentalIncidents,
   useRentalPayments,
+  useRentals,
   useRentalTasks,
 } from "./rentalsStore";
 import { useApiClients } from "@/lib/api/clients";
@@ -42,7 +45,6 @@ import { fileUrl } from "@/lib/files";
 import { navigate } from "@/app/navigationStore";
 import { toast } from "@/lib/toast";
 import { DocumentPreviewModal } from "./DocumentPreviewModal";
-import { PriceListView } from "./PriceListView";
 import { useDamageReports } from "@/lib/api/damage-reports";
 
 function fmt(n: number) {
@@ -104,6 +106,31 @@ export function TermsTab({
   const time = rental.startTime ?? "12:00";
   const location = "Склад \"Северный\"";
   const mileage = mockMileage(rental.scooter);
+
+  // Корневая (первая) аренда цепочки — её start показываем как «дату
+  // выдачи». Текущая (последняя в цепочке) аренда даёт endPlanned. Так
+  // график показывает реальный период проката, а не отрезок одного
+  // продления.
+  const activeRentals = useRentals();
+  const archivedRentals = useArchivedRentals();
+  const allRentals = useMemo(
+    () => [...activeRentals, ...archivedRentals],
+    [activeRentals, archivedRentals],
+  );
+  const chainIds = useMemo(
+    () => getRentalChainIds(rental.id, allRentals),
+    [rental.id, allRentals],
+  );
+  const chainRentals = useMemo(
+    () => allRentals.filter((r) => chainIds.includes(r.id)),
+    [allRentals, chainIds],
+  );
+  const rootRental =
+    chainRentals.find((r) => r.id === chainIds[0]) ?? rental;
+  const isExtended = chainRentals.length > 1;
+  const totalDays = isExtended
+    ? chainRentals.reduce((s, r) => s + (r.days || 0), 0)
+    : rental.days;
 
   return (
     <div className="grid gap-3 lg:grid-cols-[1.15fr_1fr]">
@@ -204,18 +231,27 @@ export function TermsTab({
 
         <div className="relative pl-6">
           <span className="absolute left-[6px] top-2 bottom-2 w-px bg-border" />
-          {/* Выдача */}
+          {/* Выдача — дата ПЕРВОЙ выдачи (root цепочки), а не текущего
+              отрезка продления. Если аренда продлевалась — это самое
+              раннее число, когда клиент впервые получил скутер. */}
           <div className="relative">
             <span className="absolute -left-[22px] top-1.5 h-3 w-3 rounded-full bg-blue-600 ring-4 ring-blue-600/15" />
             <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
               Выдача
             </div>
             <div className="mt-0.5 font-display text-[15px] font-extrabold tabular-nums text-ink">
-              {rental.start} · {time}
+              {rootRental.start} · {rootRental.startTime ?? "12:00"}
             </div>
             <div className="text-[12px] text-muted">{location}</div>
+            {isExtended && (
+              <div className="text-[10px] text-muted-2">
+                первая выдача в серии из {chainRentals.length} аренд
+              </div>
+            )}
           </div>
-          {/* Возврат план */}
+          {/* Возврат план — endPlanned ТЕКУЩЕЙ (последней в цепочке)
+              аренды. Если есть продления — это «до какого числа сейчас
+              продлено». */}
           <div className="relative mt-4">
             <span
               className={cn(
@@ -236,11 +272,21 @@ export function TermsTab({
         </div>
 
         <div className="mt-1 flex items-center justify-between border-t border-border pt-3 text-[12px]">
-          <span className="text-muted-2">Срок этой аренды</span>
+          <span className="text-muted-2">
+            {isExtended ? "Всего по сделке" : "Срок этой аренды"}
+          </span>
           <span className="font-display text-[15px] font-extrabold tabular-nums text-blue-600">
-            {rental.days} {daysWord(rental.days)}
+            {totalDays} {daysWord(totalDays)}
           </span>
         </div>
+        {isExtended && (
+          <div className="flex items-center justify-between text-[11px]">
+            <span className="text-muted-2">Текущий период (продление)</span>
+            <span className="font-semibold tabular-nums text-ink-2">
+              {rental.days} {daysWord(rental.days)}
+            </span>
+          </div>
+        )}
 
         {client && (
           <div className="flex items-center gap-3 rounded-[12px] bg-surface-soft px-3 py-2">
@@ -859,38 +905,10 @@ const DOC_META: Record<
 };
 
 export function DocumentsTab({ rental }: { rental: Rental }) {
-  const [subTab, setSubTab] = useState<"print" | "price">("print");
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="inline-flex w-fit rounded-[10px] bg-surface-soft p-1">
-        <button
-          type="button"
-          onClick={() => setSubTab("print")}
-          className={cn(
-            "rounded-[8px] px-3 py-1 text-[12px] font-semibold transition",
-            subTab === "print"
-              ? "bg-white text-ink shadow-sm"
-              : "text-muted-2 hover:text-ink",
-          )}
-        >
-          Документы для печати
-        </button>
-        <button
-          type="button"
-          onClick={() => setSubTab("price")}
-          className={cn(
-            "rounded-[8px] px-3 py-1 text-[12px] font-semibold transition",
-            subTab === "price"
-              ? "bg-white text-ink shadow-sm"
-              : "text-muted-2 hover:text-ink",
-          )}
-        >
-          Прейскурант
-        </button>
-      </div>
-      {subTab === "print" ? <PrintDocumentsView rental={rental} /> : <PriceListView />}
-    </div>
-  );
+  // Прейскурант теперь живёт в глобальном разделе «Документы» в боковом
+  // сайдбаре (он же общий справочник, не привязан к конкретной аренде).
+  // Здесь оставляем только документы для печати по этой аренде.
+  return <PrintDocumentsView rental={rental} />;
 }
 
 function PrintDocumentsView({ rental }: { rental: Rental }) {

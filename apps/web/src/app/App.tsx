@@ -3,6 +3,7 @@ import { Sidebar } from "./Sidebar";
 import { Dashboard } from "@/pages/dashboard/Dashboard";
 import { Clients } from "@/pages/clients/Clients";
 import { Rentals } from "@/pages/rentals/Rentals";
+import { Documents } from "@/pages/documents/Documents";
 import { Garage } from "@/pages/fleet/Garage";
 import { Staff } from "@/pages/staff/Staff";
 import { UpdateToast } from "./UpdateToast";
@@ -84,6 +85,8 @@ export function App() {
           <Garage />
         ) : route === "staff" ? (
           <Staff />
+        ) : route === "docs" ? (
+          <Documents />
         ) : (
           <Dashboard />
         )}
