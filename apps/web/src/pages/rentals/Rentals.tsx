@@ -40,10 +40,11 @@ function matchStatus(
   // отменённые — это история, ей место в архиве. Завершённая аренда
   // авто-уезжает в архив (см. /complete в API), но если фронт вдруг
   // получит её до архивации — всё равно скрываем.
+  // completed_damage НЕ считается finished — это «проблемная» активная
+  // аренда у которой висит долг по акту. Она остаётся в активном списке
+  // пока долг не погашен.
   const isFinished =
-    r.status === "completed" ||
-    r.status === "completed_damage" ||
-    r.status === "cancelled";
+    r.status === "completed" || r.status === "cancelled";
   if (f === "all") return !isFinished;
   if (f === "active") return r.status === "active";
   if (f === "overdue") return r.status === "overdue";

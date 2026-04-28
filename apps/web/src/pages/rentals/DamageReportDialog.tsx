@@ -203,15 +203,29 @@ export function DamageReportDialog({
         note: note.trim() || null,
         sendScooterToRepair: sendToRepair,
       });
+      // Safety: API мог вернуть некорректный объект — защищаемся от null.
+      if (!created || typeof created.id !== "number") {
+        toast.error(
+          "Акт создан, но превью недоступно",
+          "Откройте акт через таб «Документы» в карточке аренды",
+        );
+        requestClose();
+        return;
+      }
       toast.success(
         "Акт создан",
-        `Сумма ${fmt(created.total)} ₽${
+        `Сумма ${fmt(created.total ?? 0)} ₽${
           sendToRepair ? ", скутер отправлен в ремонт" : ""
         }`,
       );
-      onCreated?.(created.id);
+      // Закрываем сначала диалог. Превью открывается в parent через
+      // onCreated после небольшой задержки чтобы избежать race condition
+      // с одновременным unmount этого компонента.
+      const reportId = created.id;
       requestClose();
+      window.setTimeout(() => onCreated?.(reportId), 200);
     } catch (e) {
+      console.error("create damage report failed", e);
       toast.error("Не удалось создать акт", (e as Error).message ?? "");
     }
   };
