@@ -1,20 +1,25 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, X } from "lucide-react";
+import { Loader2, Trash2, X, Link2, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
-import { toast } from "@/lib/toast";
-import { patchRental } from "./rentalsStore";
+import { toast, confirmDialog } from "@/lib/toast";
+import {
+  patchRental,
+  getRentalChainIds,
+  useRentals,
+  useArchivedRentals,
+} from "./rentalsStore";
 import { useApiScooters } from "@/lib/api/scooters";
+import { useDeleteRental } from "@/lib/api/rentals";
 import type { Rental } from "@/lib/mock/rentals";
 
 /**
- * Редактирование существующей аренды. Разрешено director/admin/creator.
- * Основные изменения, которые реально нужны в операционке:
- *   • привязать скутер (если не был выбран на момент создания)
- *   • сдвинуть плановую дату возврата
- *   • скорректировать тариф / сумму / заметку
- *   • сменить статус
- * Все изменения логируются в activity_log с указанием автора.
+ * Редактирование существующей аренды + связок (продлений).
+ *
+ * Если у аренды есть цепочка (parent + child-продления), сверху появляется
+ * список «связок». Можно переключаться между ними — форма ниже редактирует
+ * выбранную связку. Каждую связку можно удалить, если у неё нет более
+ * поздних продлений (иначе нарушится цепочка).
  */
 export function RentalEditModal({
   rental,
@@ -23,33 +28,243 @@ export function RentalEditModal({
   rental: Rental;
   onClose: () => void;
 }) {
-  const { data: scooters = [] } = useApiScooters();
   const [closing, setClosing] = useState(false);
+  const requestClose = () => {
+    if (closing) return;
+    setClosing(true);
+    window.setTimeout(onClose, 160);
+  };
 
-  // Изначальные значения
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") requestClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // === Цепочка продлений ===
+  const activeRentals = useRentals();
+  const archivedRentals = useArchivedRentals();
+  const allRentals = useMemo(
+    () => [...activeRentals, ...archivedRentals],
+    [activeRentals, archivedRentals],
+  );
+  const chainIds = useMemo(
+    () => getRentalChainIds(rental.id, allRentals),
+    [rental.id, allRentals],
+  );
+  const chainRentals = useMemo(
+    () =>
+      chainIds
+        .map((id) => allRentals.find((r) => r.id === id))
+        .filter((r): r is Rental => !!r),
+    [chainIds, allRentals],
+  );
+  const hasChain = chainRentals.length > 1;
+
+  // Текущая связка для редактирования
+  const [currentId, setCurrentId] = useState<number>(rental.id);
+  const currentRental =
+    chainRentals.find((r) => r.id === currentId) ?? rental;
+
+  const deleteRental = useDeleteRental();
+
+  /** У этой связки есть более поздние продления, ссылающиеся на неё? */
+  const hasChildren = (id: number): boolean =>
+    allRentals.some((r) => r.parentRentalId === id);
+
+  const onDeleteSegment = async (segId: number) => {
+    if (hasChildren(segId)) {
+      toast.error(
+        "Нельзя удалить",
+        "У этой связки есть более поздние продления. Сначала удалите их.",
+      );
+      return;
+    }
+    const ok = await confirmDialog({
+      title: "Удалить связку?",
+      message: `Связка #${String(segId).padStart(4, "0")} будет перемещена в архив. Если это была единственная связка — вся аренда уйдёт в архив.`,
+      confirmText: "Удалить",
+      cancelText: "Отмена",
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await deleteRental.mutateAsync(segId);
+      toast.success("Связка удалена", `#${String(segId).padStart(4, "0")}`);
+      // Если удалили текущую — переключимся на оставшуюся ближайшую.
+      if (segId === currentId) {
+        const remaining = chainRentals.filter((r) => r.id !== segId);
+        if (remaining.length === 0) {
+          requestClose();
+        } else {
+          setCurrentId(remaining[remaining.length - 1]!.id);
+        }
+      }
+    } catch (e) {
+      toast.error("Не удалось удалить", (e as Error).message ?? "");
+    }
+  };
+
+  return (
+    <div
+      className={cn(
+        "fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-ink/55 p-6 backdrop-blur-sm",
+        closing ? "animate-backdrop-out" : "animate-backdrop-in",
+      )}
+      onClick={requestClose}
+    >
+      <div
+        className={cn(
+          "mt-12 w-full max-w-[560px] overflow-hidden rounded-2xl bg-surface shadow-card-lg",
+          closing ? "animate-modal-out" : "animate-modal-in",
+        )}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-border bg-surface-soft px-5 py-3">
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-2">
+              Изменить аренду
+            </div>
+            <div className="text-[15px] font-bold text-ink">
+              Аренда #{String(rental.id).padStart(4, "0")}
+              {hasChain && (
+                <span className="ml-2 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-bold text-blue-700">
+                  серия из {chainRentals.length}
+                </span>
+              )}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={requestClose}
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-2 hover:bg-white hover:text-ink"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        {hasChain && (
+          <div className="border-b border-border bg-surface-soft/50 px-5 py-3">
+            <div className="mb-2 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-2">
+              <Link2 size={12} /> Связки серии
+            </div>
+            <div className="flex flex-col gap-1">
+              {chainRentals.map((seg, idx) => {
+                const isActive = seg.id === currentId;
+                const segHasChildren = hasChildren(seg.id);
+                const isRoot = seg.parentRentalId == null;
+                return (
+                  <div
+                    key={seg.id}
+                    className={cn(
+                      "group flex items-center gap-2 rounded-[10px] border px-2.5 py-1.5 text-[12px]",
+                      isActive
+                        ? "border-blue-500 bg-blue-50"
+                        : "border-border bg-white hover:border-blue-300",
+                    )}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setCurrentId(seg.id)}
+                      className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                    >
+                      <span
+                        className={cn(
+                          "rounded-full px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider",
+                          isRoot
+                            ? "bg-green-soft text-green-ink"
+                            : "bg-purple-soft text-purple-ink",
+                        )}
+                      >
+                        {isRoot ? "Базовая" : `Продл. ${idx}`}
+                      </span>
+                      <span className="font-mono font-semibold text-ink">
+                        #{String(seg.id).padStart(4, "0")}
+                      </span>
+                      <span className="text-muted-2">
+                        {seg.start.slice(0, 5)} → {seg.endPlanned.slice(0, 5)}
+                      </span>
+                      <span className="text-muted-2">· {seg.days} дн</span>
+                      <span className="ml-auto font-semibold tabular-nums text-ink">
+                        {seg.sum.toLocaleString("ru-RU")} ₽
+                      </span>
+                      {isActive && (
+                        <ChevronRight size={12} className="text-blue-600" />
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onDeleteSegment(seg.id)}
+                      disabled={segHasChildren || deleteRental.isPending}
+                      title={
+                        segHasChildren
+                          ? "У этой связки есть продления — удалите их сначала"
+                          : "Удалить связку"
+                      }
+                      className={cn(
+                        "rounded-[6px] p-1",
+                        segHasChildren
+                          ? "cursor-not-allowed text-muted-2 opacity-30"
+                          : "text-muted-2 hover:bg-red-soft hover:text-red-600",
+                      )}
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="mt-2 text-[11px] text-muted-2">
+              Кликните по связке, чтобы её отредактировать. Удаление возможно
+              только для последней связки в цепочке.
+            </div>
+          </div>
+        )}
+
+        <RentalEditForm
+          key={currentRental.id}
+          rental={currentRental}
+          onSaved={requestClose}
+          onCancel={requestClose}
+        />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Внутренняя форма правки одной связки. Ключуется по rental.id чтобы
+ * перемонтироваться (и сбросить локальное состояние) при смене связки.
+ */
+function RentalEditForm({
+  rental,
+  onSaved,
+  onCancel,
+}: {
+  rental: Rental;
+  onSaved: () => void;
+  onCancel: () => void;
+}) {
+  const { data: scooters = [] } = useApiScooters();
+
   const initialScooterId = rental.scooterId ?? null;
   const [scooterId, setScooterId] = useState<number | null>(initialScooterId);
-  // Дата выдачи скутера. Полезно при ошибке оформления (выдали 22-го,
-  // а в системе записали 26-е). Формат DD.MM.YYYY.
   const [startDate, setStartDate] = useState(rental.start);
   const [startTime, setStartTime] = useState(rental.startTime ?? "14:00");
-  const [endPlanned, setEndPlanned] = useState(rental.endPlanned); // DD.MM.YYYY
+  const [endPlanned, setEndPlanned] = useState(rental.endPlanned);
   const [endTime, setEndTime] = useState(rental.startTime ?? "12:00");
   const [rate, setRate] = useState<number>(rental.rate);
-  // «Дней» инициализируем из реальной разницы дат, а не из rental.days,
-  // потому что rental.days может расходиться (например, endPlanned руками
-  // двигали уже после создания). Если разница невалидна — fallback на rental.days.
-  const initialDays = computeDaysBetween(rental.start, rental.endPlanned) ?? rental.days;
+  const initialDays =
+    computeDaysBetween(rental.start, rental.endPlanned) ?? rental.days;
   const [days, setDays] = useState<number>(initialDays);
   const [note, setNote] = useState<string>(rental.note ?? "");
   const [saving, setSaving] = useState(false);
 
-  // Защита от циклических обновлений: один useEffect пересчитывает дни из
-  // дат, другой — даты из дней. Чтобы они не запускали друг друга бесконечно,
-  // помечаем кто инициировал последнее изменение.
   const lastChanged = useRef<"dates" | "days" | "init">("init");
 
-  // Если изменили даты (start или endPlanned) — пересчитываем «Дней».
   useEffect(() => {
     if (lastChanged.current === "days") {
       lastChanged.current = "init";
@@ -63,7 +278,6 @@ export function RentalEditModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [startDate, endPlanned]);
 
-  // Если изменили «Дней» — пересчитываем endPlanned.
   useEffect(() => {
     if (lastChanged.current === "dates") {
       lastChanged.current = "init";
@@ -89,21 +303,6 @@ export function RentalEditModal({
     [scooters, initialScooterId],
   );
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") requestClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const requestClose = () => {
-    if (closing) return;
-    setClosing(true);
-    window.setTimeout(onClose, 160);
-  };
-
   const dirty =
     scooterId !== initialScooterId ||
     startDate !== rental.start ||
@@ -118,22 +317,12 @@ export function RentalEditModal({
     if (saving) return;
     setSaving(true);
     try {
-      // Готовим PATCH: новая сумма = rate * days (если поменяли)
       const newSum = rate * days;
 
-      // scooterId меняется отдельным PATCH, т.к. patchRental из Rental-типа
-      // не умеет в scooterId. Делаем прямо через API.
       if (scooterId !== initialScooterId) {
-        await api.patch(`/api/rentals/${rental.id}`, {
-          scooterId,
-        });
+        await api.patch(`/api/rentals/${rental.id}`, { scooterId });
       }
 
-      // Остальные поля через стандартный хелпер.
-      // Сумму всегда пересчитываем как rate × days и отсылаем если она
-      // отличается от сохранённой — иначе при смене дат/тарифа/дней
-      // сумма аренды и связанный платёж rent остаются старыми, и в
-      // карточке «За всё время» сумма «не пересчитывается».
       const patch: Partial<Rental> = {};
       if (startDate !== rental.start) patch.start = startDate;
       if (endPlanned !== rental.endPlanned) patch.endPlanned = endPlanned;
@@ -143,17 +332,16 @@ export function RentalEditModal({
       if ((note ?? "") !== (rental.note ?? "")) {
         patch.note = note.trim() || undefined;
       }
-      // startTime используется для конвертации start/endPlanned в ISO
       patch.startTime = startTime;
       if (Object.keys(patch).length > 0) {
         patchRental(rental.id, patch);
       }
 
       toast.success(
-        "Аренда изменена",
+        "Связка изменена",
         "Запись добавлена в журнал действий на дашборде.",
       );
-      requestClose();
+      onSaved();
     } catch (e) {
       toast.error("Не удалось сохранить", (e as Error).message ?? "");
     } finally {
@@ -162,167 +350,142 @@ export function RentalEditModal({
   };
 
   return (
-    <div
-      className={cn(
-        "fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-ink/55 p-6 backdrop-blur-sm",
-        closing ? "animate-backdrop-out" : "animate-backdrop-in",
-      )}
-      onClick={requestClose}
-    >
-      <div
-        className={cn(
-          "mt-16 w-full max-w-[520px] overflow-hidden rounded-2xl bg-surface shadow-card-lg",
-          closing ? "animate-modal-out" : "animate-modal-in",
-        )}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between border-b border-border bg-surface-soft px-5 py-3">
-          <div>
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-2">
-              Изменить аренду
+    <>
+      <div className="flex flex-col gap-4 px-5 py-5">
+        <Field label="Скутер">
+          {scooterOptions.length === 0 ? (
+            <div className="text-[12px] text-muted">
+              Нет доступных скутеров (статус «Парк аренды»). Отправьте скутер
+              в парк аренды из карточки скутера.
             </div>
-            <div className="text-[15px] font-bold text-ink">
-              Аренда #{String(rental.id).padStart(4, "0")}
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={requestClose}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-2 hover:bg-white hover:text-ink"
-          >
-            <X size={16} />
-          </button>
-        </div>
+          ) : (
+            <select
+              value={scooterId ?? ""}
+              onChange={(e) =>
+                setScooterId(e.target.value ? Number(e.target.value) : null)
+              }
+              className="h-10 w-full rounded-[10px] border border-border bg-white px-3 text-[14px] outline-none focus:border-blue"
+            >
+              <option value="">— не выбран —</option>
+              {scooterOptions.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          )}
+        </Field>
 
-        <div className="flex flex-col gap-4 px-5 py-5">
-          <Field label="Скутер">
-            {scooterOptions.length === 0 ? (
-              <div className="text-[12px] text-muted">
-                Нет доступных скутеров (статус «Парк аренды»). Отправьте
-                скутер в парк аренды из карточки скутера.
-              </div>
-            ) : (
-              <select
-                value={scooterId ?? ""}
-                onChange={(e) =>
-                  setScooterId(e.target.value ? Number(e.target.value) : null)
-                }
-                className="h-10 w-full rounded-[10px] border border-border bg-white px-3 text-[14px] outline-none focus:border-blue"
-              >
-                <option value="">— не выбран —</option>
-                {scooterOptions.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </select>
-            )}
-          </Field>
-
-          <div className="grid grid-cols-[1.3fr_1fr] gap-2">
-            <Field label="Дата выдачи (ДД.ММ.ГГГГ)">
-              <input
-                type="text"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                placeholder="22.04.2026"
-                className="h-10 w-full rounded-[10px] border border-border bg-white px-3 font-mono text-[14px] outline-none focus:border-blue"
-              />
-            </Field>
-            <Field label="Время">
-              <input
-                type="text"
-                value={startTime}
-                onChange={(e) => setStartTime(e.target.value)}
-                placeholder="14:30"
-                className="h-10 w-full rounded-[10px] border border-border bg-white px-3 font-mono text-[14px] outline-none focus:border-blue"
-              />
-            </Field>
-          </div>
-
-          <div className="grid grid-cols-[1.3fr_1fr] gap-2">
-            <Field label="Плановый возврат (ДД.ММ.ГГГГ)">
-              <input
-                type="text"
-                value={endPlanned}
-                onChange={(e) => setEndPlanned(e.target.value)}
-                placeholder="26.04.2026"
-                className="h-10 w-full rounded-[10px] border border-border bg-white px-3 font-mono text-[14px] outline-none focus:border-blue"
-              />
-            </Field>
-            <Field label="Время">
-              <input
-                type="text"
-                value={endTime}
-                onChange={(e) => setEndTime(e.target.value)}
-                placeholder="14:30"
-                className="h-10 w-full rounded-[10px] border border-border bg-white px-3 font-mono text-[14px] outline-none focus:border-blue"
-              />
-            </Field>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2">
-            <Field label="Тариф, ₽/сут">
-              <input
-                type="number"
-                value={rate}
-                onChange={(e) => setRate(Math.max(0, Number(e.target.value) || 0))}
-                className="h-10 w-full rounded-[10px] border border-border bg-white px-3 text-[14px] outline-none focus:border-blue"
-              />
-            </Field>
-            <Field label="Дней">
-              <input
-                type="number"
-                value={days}
-                onChange={(e) => setDays(Math.max(1, Number(e.target.value) || 1))}
-                className="h-10 w-full rounded-[10px] border border-border bg-white px-3 text-[14px] outline-none focus:border-blue"
-              />
-            </Field>
-          </div>
-
-          <div className="rounded-[10px] bg-surface-soft px-3 py-2 text-[12px] text-muted">
-            Новая сумма: <b className="text-ink">{(rate * days).toLocaleString("ru-RU")} ₽</b>
-          </div>
-
-          <Field label="Заметка">
-            <textarea
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              rows={2}
-              className="w-full rounded-[10px] border border-border bg-white px-3 py-2 text-[13px] outline-none focus:border-blue"
+        <div className="grid grid-cols-[1.3fr_1fr] gap-2">
+          <Field label="Дата выдачи (ДД.ММ.ГГГГ)">
+            <input
+              type="text"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              placeholder="22.04.2026"
+              className="h-10 w-full rounded-[10px] border border-border bg-white px-3 font-mono text-[14px] outline-none focus:border-blue"
             />
           </Field>
-
-          <div className="text-[11px] text-muted-2">
-            Изменения фиксируются в журнале действий с указанием автора.
-          </div>
+          <Field label="Время">
+            <input
+              type="text"
+              value={startTime}
+              onChange={(e) => setStartTime(e.target.value)}
+              placeholder="14:30"
+              className="h-10 w-full rounded-[10px] border border-border bg-white px-3 font-mono text-[14px] outline-none focus:border-blue"
+            />
+          </Field>
         </div>
 
-        <div className="flex justify-end gap-2 border-t border-border bg-surface-soft px-5 py-3">
-          <button
-            type="button"
-            onClick={requestClose}
-            className="rounded-full bg-surface px-4 py-2 text-[13px] font-semibold text-ink-2 hover:bg-border"
-          >
-            Отмена
-          </button>
-          <button
-            type="button"
-            onClick={submit}
-            disabled={!dirty || saving}
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-bold transition-colors",
-              !dirty || saving
-                ? "cursor-not-allowed bg-surface text-muted-2"
-                : "bg-ink text-white hover:bg-blue-600",
-            )}
-          >
-            {saving && <Loader2 size={14} className="animate-spin" />}
-            Сохранить
-          </button>
+        <div className="grid grid-cols-[1.3fr_1fr] gap-2">
+          <Field label="Плановый возврат (ДД.ММ.ГГГГ)">
+            <input
+              type="text"
+              value={endPlanned}
+              onChange={(e) => setEndPlanned(e.target.value)}
+              placeholder="26.04.2026"
+              className="h-10 w-full rounded-[10px] border border-border bg-white px-3 font-mono text-[14px] outline-none focus:border-blue"
+            />
+          </Field>
+          <Field label="Время">
+            <input
+              type="text"
+              value={endTime}
+              onChange={(e) => setEndTime(e.target.value)}
+              placeholder="14:30"
+              className="h-10 w-full rounded-[10px] border border-border bg-white px-3 font-mono text-[14px] outline-none focus:border-blue"
+            />
+          </Field>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="Тариф, ₽/сут">
+            <input
+              type="number"
+              value={rate}
+              onChange={(e) =>
+                setRate(Math.max(0, Number(e.target.value) || 0))
+              }
+              className="h-10 w-full rounded-[10px] border border-border bg-white px-3 text-[14px] outline-none focus:border-blue"
+            />
+          </Field>
+          <Field label="Дней">
+            <input
+              type="number"
+              value={days}
+              onChange={(e) =>
+                setDays(Math.max(1, Number(e.target.value) || 1))
+              }
+              className="h-10 w-full rounded-[10px] border border-border bg-white px-3 text-[14px] outline-none focus:border-blue"
+            />
+          </Field>
+        </div>
+
+        <div className="rounded-[10px] bg-surface-soft px-3 py-2 text-[12px] text-muted">
+          Новая сумма по этой связке:{" "}
+          <b className="text-ink">
+            {(rate * days).toLocaleString("ru-RU")} ₽
+          </b>
+        </div>
+
+        <Field label="Заметка">
+          <textarea
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            rows={2}
+            className="w-full rounded-[10px] border border-border bg-white px-3 py-2 text-[13px] outline-none focus:border-blue"
+          />
+        </Field>
+
+        <div className="text-[11px] text-muted-2">
+          Изменения фиксируются в журнале действий с указанием автора.
         </div>
       </div>
-    </div>
+
+      <div className="flex justify-end gap-2 border-t border-border bg-surface-soft px-5 py-3">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="rounded-full bg-surface px-4 py-2 text-[13px] font-semibold text-ink-2 hover:bg-border"
+        >
+          Отмена
+        </button>
+        <button
+          type="button"
+          onClick={submit}
+          disabled={!dirty || saving}
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-bold transition-colors",
+            !dirty || saving
+              ? "cursor-not-allowed bg-surface text-muted-2"
+              : "bg-ink text-white hover:bg-blue-600",
+          )}
+        >
+          {saving && <Loader2 size={14} className="animate-spin" />}
+          Сохранить
+        </button>
+      </div>
+    </>
   );
 }
 
@@ -351,7 +514,6 @@ function fmtDDMMYYYY(d: Date): string {
   return `${dd}.${mm}.${d.getFullYear()}`;
 }
 
-/** Вычисляет количество дней между двумя датами в формате DD.MM.YYYY. */
 function computeDaysBetween(startStr: string, endStr: string): number | null {
   const s = parseDDMMYYYY(startStr);
   const e = parseDDMMYYYY(endStr);
@@ -360,7 +522,6 @@ function computeDaysBetween(startStr: string, endStr: string): number | null {
   return diff > 0 ? diff : null;
 }
 
-/** Прибавляет N дней к строке DD.MM.YYYY и возвращает новую строку. */
 function addDaysToDDMMYYYY(startStr: string, days: number): string | null {
   const s = parseDDMMYYYY(startStr);
   if (!s) return null;

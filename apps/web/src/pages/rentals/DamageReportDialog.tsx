@@ -21,6 +21,8 @@ import {
 } from "@/lib/api/price-list";
 import {
   useCreateDamageReport,
+  usePatchDamageReport,
+  type ApiDamageReport,
   type CreateDamageItem,
 } from "@/lib/api/damage-reports";
 import { useApiScooters } from "@/lib/api/scooters";
@@ -47,13 +49,17 @@ type Selected = CreateDamageItem & {
  */
 export function DamageReportDialog({
   rental,
+  existing,
   onClose,
   onCreated,
 }: {
   rental: Rental;
+  /** Существующий акт — если передан, диалог работает в режиме редактирования. */
+  existing?: ApiDamageReport | null;
   onClose: () => void;
   onCreated?: (reportId: number) => void;
 }) {
+  const isEdit = !!existing;
   const [closing, setClosing] = useState(false);
   const requestClose = () => {
     if (closing) return;
@@ -105,10 +111,15 @@ export function DamageReportDialog({
   const needsFallback =
     scooterModelId != null && ownGroups.length === 0 && otherModelGroups.length > 0;
 
+  // Показываем ВСЕ группы прейскуранта — модельные текущей аренды
+  // первыми, затем fallback (если выбран), затем общие (Штрафы /
+  // Повреждения / Экипировка), затем группы под другие модели (на
+  // случай если оператор хочет взять цену из чужой группы).
   const visibleGroups = [
     ...ownGroups,
     ...fallbackGroups,
     ...generalGroups,
+    ...otherModelGroups.filter((g) => g.scooterModelId !== fallbackModelId),
   ];
 
   const [openGroups, setOpenGroups] = useState<Set<number>>(new Set());
@@ -127,7 +138,20 @@ export function DamageReportDialog({
     !searchLower || it.name.toLowerCase().includes(searchLower);
 
   // === Корзина «выбранных позиций» ===
-  const [selected, setSelected] = useState<Selected[]>([]);
+  const [selected, setSelected] = useState<Selected[]>(() => {
+    if (existing?.items?.length) {
+      return existing.items.map((it, i) => ({
+        uid: `existing-${it.id}-${i}`,
+        priceItemId: it.priceItemId,
+        name: it.name,
+        originalPrice: it.originalPrice,
+        finalPrice: it.finalPrice,
+        quantity: it.quantity,
+        comment: it.comment ?? "",
+      }));
+    }
+    return [];
+  });
 
   const addItem = (g: ApiPriceGroup, it: ApiPriceItem) => {
     // Для legacy двух-колоночных групп берём приоритетно цену по модели аренды.
@@ -165,18 +189,25 @@ export function DamageReportDialog({
   );
 
   // === Зачёт из залога ===
+  // Залог-предмет: rental.deposit === 0 — деньгами зачитывать нечего, предмет
+  // удерживается у нас до полного покрытия долга (информационный режим).
+  const depositIsItem = (rental.deposit ?? 0) <= 0;
   const depositMax = Math.min(rental.deposit ?? 0, total);
-  const [depositCovered, setDepositCovered] = useState(0);
+  const [depositCovered, setDepositCovered] = useState(
+    existing?.depositCovered ?? 0,
+  );
   useEffect(() => {
     // Если итог уменьшился ниже текущего зачёта — ужмём.
     setDepositCovered((c) => Math.min(c, depositMax));
   }, [depositMax]);
   const debt = Math.max(0, total - depositCovered);
 
-  const [sendToRepair, setSendToRepair] = useState(true);
-  const [note, setNote] = useState("");
+  const [sendToRepair, setSendToRepair] = useState(!isEdit);
+  const [note, setNote] = useState(existing?.note ?? "");
 
   const create = useCreateDamageReport();
+  const patch = usePatchDamageReport();
+  const isPending = create.isPending || patch.isPending;
 
   // Минимальная валидация: должна быть выбрана хотя бы одна позиция.
   // Комментарии «где конкретно» опциональны — необязательно их заполнять,
@@ -189,20 +220,30 @@ export function DamageReportDialog({
       return;
     }
     try {
-      const created = await create.mutateAsync({
-        rentalId: rental.id,
-        items: selected.map((s) => ({
-          priceItemId: s.priceItemId ?? null,
-          name: s.name,
-          originalPrice: s.originalPrice,
-          finalPrice: s.finalPrice,
-          quantity: s.quantity,
-          comment: s.comment ?? null,
-        })),
-        depositCovered,
-        note: note.trim() || null,
-        sendScooterToRepair: sendToRepair,
-      });
+      const items = selected.map((s) => ({
+        priceItemId: s.priceItemId ?? null,
+        name: s.name,
+        originalPrice: s.originalPrice,
+        finalPrice: s.finalPrice,
+        quantity: s.quantity,
+        comment: s.comment ?? null,
+      }));
+      const created = isEdit
+        ? await patch.mutateAsync({
+            id: existing!.id,
+            patch: {
+              items,
+              depositCovered,
+              note: note.trim() || null,
+            },
+          })
+        : await create.mutateAsync({
+            rentalId: rental.id,
+            items,
+            depositCovered,
+            note: note.trim() || null,
+            sendScooterToRepair: sendToRepair,
+          });
       // Safety: API мог вернуть некорректный объект — защищаемся от null.
       if (!created || typeof created.id !== "number") {
         toast.error(
@@ -213,9 +254,9 @@ export function DamageReportDialog({
         return;
       }
       toast.success(
-        "Акт создан",
+        isEdit ? "Акт обновлён" : "Акт создан",
         `Сумма ${fmt(created.total ?? 0)} ₽${
-          sendToRepair ? ", скутер отправлен в ремонт" : ""
+          !isEdit && sendToRepair ? ", скутер отправлен в ремонт" : ""
         }`,
       );
       // Закрываем сначала диалог. Превью открывается в parent через
@@ -225,8 +266,11 @@ export function DamageReportDialog({
       requestClose();
       window.setTimeout(() => onCreated?.(reportId), 200);
     } catch (e) {
-      console.error("create damage report failed", e);
-      toast.error("Не удалось создать акт", (e as Error).message ?? "");
+      console.error("damage report submit failed", e);
+      toast.error(
+        isEdit ? "Не удалось сохранить акт" : "Не удалось создать акт",
+        (e as Error).message ?? "",
+      );
     }
   };
 
@@ -251,7 +295,7 @@ export function DamageReportDialog({
           <AlertTriangle size={18} className="text-amber-600" />
           <div className="min-w-0 flex-1">
             <div className="text-[15px] font-semibold text-ink">
-              Зафиксировать ущерб — аренда #
+              {isEdit ? "Изменить акт" : "Зафиксировать ущерб"} — аренда #
               {String(rental.id).padStart(4, "0")}
             </div>
             <div className="text-[12px] text-muted-2">
@@ -539,26 +583,49 @@ export function DamageReportDialog({
                   {fmt(total)} ₽
                 </span>
               </div>
-              <div className="flex items-center justify-between gap-2 text-[13px]">
-                <span className="text-muted-2">
-                  Зачесть из залога (макс {fmt(rental.deposit ?? 0)} ₽)
-                </span>
-                <input
-                  type="number"
-                  min={0}
-                  max={depositMax}
-                  value={depositCovered}
-                  onChange={(e) =>
-                    setDepositCovered(
-                      Math.max(
-                        0,
-                        Math.min(depositMax, Number(e.target.value) || 0),
-                      ),
-                    )
-                  }
-                  className="w-[100px] rounded-[8px] border border-border bg-white px-2 py-1 text-right text-[13px] tabular-nums"
-                />
-              </div>
+              {depositIsItem ? (
+                <div className="rounded-[10px] border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-900">
+                  <b>Залог — предмет</b>, не деньги. Удерживайте предмет до
+                  полного покрытия долга — деньгами зачитывать нечего.
+                </div>
+              ) : (
+                <div className="flex flex-wrap items-center justify-between gap-2 text-[13px]">
+                  <span className="text-muted-2">
+                    Зачесть из залога (макс {fmt(rental.deposit ?? 0)} ₽)
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setDepositCovered(depositMax)}
+                      className={cn(
+                        "rounded-[8px] border px-2 py-1 text-[12px] font-semibold",
+                        depositCovered === depositMax && depositMax > 0
+                          ? "border-blue-500 bg-blue-50 text-blue-700"
+                          : "border-border bg-white text-ink-2 hover:border-blue-400",
+                      )}
+                      disabled={depositMax <= 0}
+                      title="Зачесть весь возможный залог"
+                    >
+                      Весь залог
+                    </button>
+                    <input
+                      type="number"
+                      min={0}
+                      max={depositMax}
+                      value={depositCovered}
+                      onChange={(e) =>
+                        setDepositCovered(
+                          Math.max(
+                            0,
+                            Math.min(depositMax, Number(e.target.value) || 0),
+                          ),
+                        )
+                      }
+                      className="w-[100px] rounded-[8px] border border-border bg-white px-2 py-1 text-right text-[13px] tabular-nums"
+                    />
+                  </div>
+                </div>
+              )}
               <div className="flex items-center justify-between text-[14px] font-bold">
                 <span className="text-ink">К доплате (долг)</span>
                 <span
@@ -577,15 +644,17 @@ export function DamageReportDialog({
                 rows={2}
                 className="rounded-[8px] border border-border bg-white px-2 py-1 text-[12px] outline-none focus:border-blue-600"
               />
-              <label className="inline-flex items-center gap-2 text-[12px] text-ink-2">
-                <input
-                  type="checkbox"
-                  checked={sendToRepair}
-                  onChange={(e) => setSendToRepair(e.target.checked)}
-                />
-                <Wrench size={12} className="text-muted-2" />
-                Отправить скутер в ремонт после сохранения
-              </label>
+              {!isEdit && (
+                <label className="inline-flex items-center gap-2 text-[12px] text-ink-2">
+                  <input
+                    type="checkbox"
+                    checked={sendToRepair}
+                    onChange={(e) => setSendToRepair(e.target.checked)}
+                  />
+                  <Wrench size={12} className="text-muted-2" />
+                  Отправить скутер в ремонт после сохранения
+                </label>
+              )}
             </div>
 
             <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-2">
@@ -598,11 +667,15 @@ export function DamageReportDialog({
               </button>
               <button
                 type="button"
-                disabled={!valid || create.isPending}
+                disabled={!valid || isPending}
                 onClick={onSubmit}
                 className="rounded-[10px] bg-red-600 px-4 py-2 text-[13px] font-bold text-white hover:bg-red-700 disabled:opacity-50"
               >
-                {create.isPending ? "Сохраняем…" : "Создать акт о повреждениях"}
+                {isPending
+                  ? "Сохраняем…"
+                  : isEdit
+                    ? "Сохранить изменения"
+                    : "Создать акт о повреждениях"}
               </button>
             </div>
           </div>

@@ -4,8 +4,9 @@ import {
   ArrowRight,
   Calendar,
   CheckCircle2,
-  Gavel,
   PhoneOff,
+  ThumbsDown,
+  ThumbsUp,
   Plus,
   Repeat,
   ShieldAlert,
@@ -153,12 +154,9 @@ function statusActions(
       return withExtras([
         { id: "resume-damage", label: "Возобновить аренду", icon: RotateCcw, tone: "primary" },
         { id: "claim", label: "Досудебная претензия", icon: AlertTriangle, tone: "warn" },
-        { id: "lawyer", label: "Передать юристу", icon: Gavel, tone: "danger" },
       ]);
     case "police":
-      return withExtras([
-        { id: "lawyer", label: "Передать юристу", icon: Gavel, tone: "danger" },
-      ]);
+      return withExtras([]);
     default:
       return [];
   }
@@ -184,8 +182,10 @@ export function RentalCard({ rental }: { rental: Rental }) {
   const [editRentalOpen, setEditRentalOpen] = useState(false);
   const [extendOpen, setExtendOpen] = useState(false);
   const [damageOpen, setDamageOpen] = useState(false);
+  const [editingReportId, setEditingReportId] = useState<number | null>(null);
   const [paymentReportId, setPaymentReportId] = useState<number | null>(null);
   const [previewDamageId, setPreviewDamageId] = useState<number | null>(null);
+  const [previewClaimId, setPreviewClaimId] = useState<number | null>(null);
   const [clientQuickView, setClientQuickView] = useState(false);
   const { data: me } = useMe();
   const deleteRental = useDeleteRental();
@@ -371,7 +371,22 @@ export function RentalCard({ rental }: { rental: Rental }) {
       return;
     }
     if (id === "set-damage") {
-      setDamageOpen(true);
+      // Если уже есть акт — открываем последний для редактирования.
+      const last = reportLatest;
+      if (last) {
+        setEditingReportId(last.id);
+      } else {
+        setDamageOpen(true);
+      }
+      return;
+    }
+    if (id === "claim") {
+      const r = reportWithDebt ?? reportLatest;
+      if (!r) {
+        toast.info("Нет акта", "Сначала зафиксируйте ущерб");
+        return;
+      }
+      setPreviewClaimId(r.id);
       return;
     }
     if (id === "record-damage") {
@@ -557,31 +572,64 @@ export function RentalCard({ rental }: { rental: Rental }) {
       )}
       {/* Блок «Долг по ущербу» — показывается если по аренде есть акты с долгом. */}
       {totalDebt > 0 && reportWithDebt && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-[12px] border-2 border-red-500 bg-red-soft/70 px-3 py-2 text-[13px] text-red-ink">
-          <div className="flex items-start gap-2">
-            <AlertTriangle size={16} className="mt-0.5 shrink-0" />
-            <div className="min-w-0">
-              <div className="font-bold">
-                Долг по ущербу:{" "}
-                <span className="tabular-nums">{fmt(totalDebt)} ₽</span>
-              </div>
-              <div className="text-[11px] opacity-80">
-                Всего по акту {fmt(reportWithDebt.total)} ₽, зачтено из залога{" "}
-                {fmt(reportWithDebt.depositCovered)} ₽
-                {reportWithDebt.paidSum > 0
-                  ? `, оплачено ${fmt(reportWithDebt.paidSum)} ₽`
-                  : ""}
-                .
+        <div className="flex flex-col gap-2 rounded-[12px] border-2 border-red-500 bg-red-soft/70 px-3 py-2 text-[13px] text-red-ink">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-start gap-2">
+              <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+              <div className="min-w-0">
+                <div className="font-bold">
+                  Долг по ущербу:{" "}
+                  <span className="tabular-nums">{fmt(totalDebt)} ₽</span>
+                </div>
+                <div className="text-[11px] opacity-80">
+                  Всего по акту {fmt(reportWithDebt.total)} ₽, зачтено из залога{" "}
+                  {fmt(reportWithDebt.depositCovered)} ₽
+                  {reportWithDebt.paidSum > 0
+                    ? `, оплачено ${fmt(reportWithDebt.paidSum)} ₽`
+                    : ""}
+                  .
+                </div>
               </div>
             </div>
+            <button
+              type="button"
+              onClick={() => setPaymentReportId(reportWithDebt.id)}
+              className="inline-flex items-center gap-1.5 rounded-[10px] bg-red-600 px-3 py-2 text-[12px] font-bold text-white hover:bg-red-700"
+            >
+              <Plus size={12} /> Внести платёж
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={() => setPaymentReportId(reportWithDebt.id)}
-            className="inline-flex items-center gap-1.5 rounded-[10px] bg-red-600 px-3 py-2 text-[12px] font-bold text-white hover:bg-red-700"
-          >
-            <Plus size={12} /> Внести платёж
-          </button>
+          {/* Реакция клиента на акт */}
+          <div className="flex flex-wrap items-center gap-2 border-t border-red-300 pt-2 text-[12px]">
+            <span className="text-ink-2">Реакция клиента:</span>
+            <button
+              type="button"
+              onClick={async () => {
+                const ok = await confirmDialog({
+                  title: "Клиент согласен с ущербом?",
+                  message:
+                    "Долг останется на аренде, клиент будет погашать постепенно через «Внести платёж». Скутер не возвращается клиенту до полного погашения.",
+                  confirmText: "Да, согласен",
+                  cancelText: "Отмена",
+                });
+                if (!ok) return;
+                toast.success(
+                  "Принято",
+                  "Долг остаётся на аренде. Принимайте платежи постепенно.",
+                );
+              }}
+              className="inline-flex items-center gap-1.5 rounded-[10px] border border-green-500 bg-white px-3 py-1.5 text-[12px] font-bold text-green-700 hover:bg-green-50"
+            >
+              <ThumbsUp size={12} /> Согласен — будет платить
+            </button>
+            <button
+              type="button"
+              onClick={() => setPreviewClaimId(reportWithDebt.id)}
+              className="inline-flex items-center gap-1.5 rounded-[10px] border border-red-500 bg-white px-3 py-1.5 text-[12px] font-bold text-red-700 hover:bg-red-50"
+            >
+              <ThumbsDown size={12} /> Не согласен — претензия
+            </button>
+          </div>
         </div>
       )}
       {totalDebt === 0 && reports.length > 0 && (
@@ -805,10 +853,31 @@ export function RentalCard({ rental }: { rental: Rental }) {
         />
       )}
 
+      {editingReportId != null &&
+        (() => {
+          const r = reports.find((x) => x.id === editingReportId);
+          if (!r) return null;
+          return (
+            <DamageReportDialog
+              rental={rental}
+              existing={r}
+              onClose={() => setEditingReportId(null)}
+              onCreated={() => setEditingReportId(null)}
+            />
+          );
+        })()}
+
       {previewDamageId != null && (
         <DamageDocumentPreview
           reportId={previewDamageId}
           onClose={() => setPreviewDamageId(null)}
+        />
+      )}
+
+      {previewClaimId != null && (
+        <ClaimDocumentPreview
+          reportId={previewClaimId}
+          onClose={() => setPreviewClaimId(null)}
         />
       )}
 
@@ -819,6 +888,29 @@ export function RentalCard({ rental }: { rental: Rental }) {
         />
       )}
     </div>
+  );
+}
+
+/** Превью досудебной претензии для печати. */
+function ClaimDocumentPreview({
+  reportId,
+  onClose,
+}: {
+  reportId: number;
+  onClose: () => void;
+}) {
+  const base =
+    import.meta.env.VITE_API_URL?.replace(/\/$/, "") ?? "http://localhost:4000";
+  const htmlUrl = `${base}/api/damage-reports/${reportId}/claim?format=html`;
+  const docxUrl = `${base}/api/damage-reports/${reportId}/claim?format=docx`;
+  return (
+    <DocumentPreviewModal
+      title={`Досудебная претензия #${reportId}`}
+      htmlUrl={htmlUrl}
+      docxUrl={docxUrl}
+      docxFilename={`Досудебная претензия ${String(reportId).padStart(4, "0")}.doc`}
+      onClose={onClose}
+    />
   );
 }
 
