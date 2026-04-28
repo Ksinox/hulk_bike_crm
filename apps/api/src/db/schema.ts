@@ -124,6 +124,23 @@ export const clientDocKindEnum = pgEnum("client_doc_kind", [
   "extra", // прочее (селфи, доп. документы, скриншоты переписок)
 ]);
 
+export const clientApplicationStatusEnum = pgEnum("client_application_status", [
+  "draft", // клиент начал заполнять, ещё не нажал «Отправить»
+  "new", // отправлено, ждёт менеджера; виджет на дашборде «пульсирует»
+  "viewed", // менеджер открыл — пульсация спадает, заявка ещё в списке
+  "cancelled", // менеджер пометил как фейк/спам
+]);
+
+export const clientApplicationFileKindEnum = pgEnum(
+  "client_application_file_kind",
+  [
+    "passport_main", // главный разворот паспорта (фото с лицом)
+    "passport_reg", // разворот с пропиской
+    "license", // фото водительского удостоверения
+    "selfie", // селфи с паспортом в руке
+  ],
+);
+
 export const scooterDocKindEnum = pgEnum("scooter_doc_kind", [
   "pts", // паспорт транспортного средства
   "sts", // свидетельство о регистрации
@@ -1018,6 +1035,114 @@ export const damageReportItemsRelations = relations(damageReportItems, ({ one })
     references: [damageReports.id],
   }),
 }));
+
+/* ============================================================
+ * client_applications — публичные заявки клиентов (как Google Forms).
+ *
+ * Постоянная ссылка вида https://crm.hulk-bike.ru/apply открывает
+ * форму без авторизации. Каждый заход = новая заявка.
+ * Поля зеркалят `clients`, кроме менеджерских (source, blacklist*, license*).
+ * Менеджер при «Оформить» создаёт клиента и переносит файлы.
+ * ============================================================ */
+
+export const clientApplications = pgTable(
+  "client_applications",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    status: clientApplicationStatusEnum("status").notNull().default("draft"),
+
+    // Поля как в clients (всё nullable — черновик может быть неполным)
+    name: text("name"),
+    phone: text("phone"),
+    extraPhone: text("extra_phone"),
+    isForeigner: boolean("is_foreigner").notNull().default(false),
+    passportRaw: text("passport_raw"),
+    birthDate: date("birth_date"),
+    passportSeries: text("passport_series"),
+    passportNumber: text("passport_number"),
+    passportIssuedOn: date("passport_issued_on"),
+    passportIssuer: text("passport_issuer"),
+    passportDivisionCode: text("passport_division_code"),
+    passportRegistration: text("passport_registration"),
+    /** Адрес проживания (если отличается от регистрации). При convert
+     *  если != passportRegistration, складываем в clients.comment. */
+    liveAddress: text("live_address"),
+    /** Если true, liveAddress = passportRegistration (поле скрыто в UI). */
+    sameAddress: boolean("same_address").notNull().default(true),
+
+    // Аудит / токен
+    /** Короткий random для PATCH/file-операций до submit. После submit — null. */
+    uploadToken: text("upload_token"),
+    uploadTokenExpiresAt: timestamp("upload_token_expires_at", {
+      withTimezone: true,
+    }),
+    /** Когда менеджер впервые открыл (mark-viewed) — для подсветки. */
+    viewedAt: timestamp("viewed_at", { withTimezone: true }),
+    /** Когда клиент нажал Submit. До этого row — draft. */
+    submittedAt: timestamp("submitted_at", { withTimezone: true }),
+    userAgent: text("user_agent"),
+    ipAddress: text("ip_address"),
+    /** Honeypot: должно быть пустым. Если есть значение — спам, в БД не пишем. */
+    honeypot: text("honeypot"),
+
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    statusIdx: index("client_applications_status_idx").on(t.status),
+    createdIdx: index("client_applications_created_idx").on(t.createdAt),
+    tokenIdx: index("client_applications_token_idx").on(t.uploadToken),
+  }),
+);
+
+export const clientApplicationFiles = pgTable(
+  "client_application_files",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    applicationId: bigint("application_id", { mode: "number" })
+      .notNull()
+      .references(() => clientApplications.id, { onDelete: "cascade" }),
+    kind: clientApplicationFileKindEnum("kind").notNull(),
+    fileKey: text("file_key").notNull(),
+    fileName: text("file_name").notNull(),
+    mimeType: text("mime_type").notNull(),
+    size: integer("size").notNull(),
+    uploadedAt: timestamp("uploaded_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    applicationIdx: index("client_application_files_application_idx").on(
+      t.applicationId,
+    ),
+    /** Один активный файл каждого kind на заявку (перезагрузка через DELETE+POST) */
+    appKindUnique: uniqueIndex("client_application_files_app_kind_uq").on(
+      t.applicationId,
+      t.kind,
+    ),
+  }),
+);
+
+export const clientApplicationsRelations = relations(
+  clientApplications,
+  ({ many }) => ({
+    files: many(clientApplicationFiles),
+  }),
+);
+
+export const clientApplicationFilesRelations = relations(
+  clientApplicationFiles,
+  ({ one }) => ({
+    application: one(clientApplications, {
+      fields: [clientApplicationFiles.applicationId],
+      references: [clientApplications.id],
+    }),
+  }),
+);
 
 /* ============================================================
  * document_templates — пользовательские шаблоны документов.
