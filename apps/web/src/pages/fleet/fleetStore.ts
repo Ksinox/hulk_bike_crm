@@ -78,8 +78,12 @@ export function addScooter(data: Omit<FleetScooter, "id">): FleetScooter {
   const body: CreateScooterInput = {
     name: data.name,
     model: data.model,
+    modelId: data.modelId ?? null,
     vin: data.vin ?? null,
     engineNo: data.engineNo ?? null,
+    frameNumber: data.frameNumber ?? null,
+    year: data.year ?? null,
+    color: data.color ?? null,
     mileage: data.mileage,
     baseStatus: data.baseStatus,
     purchaseDate: ruToIsoDate(data.purchaseDate),
