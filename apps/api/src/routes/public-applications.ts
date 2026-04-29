@@ -53,13 +53,17 @@ const FileKindEnum = z.enum([
   "selfie",
 ]);
 
+/** Принимаем только изображения. PDF убран — менеджеру неудобно
+ *  смотреть документы как PDF в модалке заявки. На клиенте HEIC уже
+ *  конвертируется в JPEG (PhotoUpload), но оставляем в whitelist на
+ *  случай если конверсия упала и клиент льёт оригинал. */
 const ALLOWED_MIME = new Set([
   "image/jpeg",
   "image/jpg",
   "image/png",
+  "image/webp",
   "image/heic",
   "image/heif",
-  "application/pdf",
 ]);
 
 const TOKEN_TTL_HOURS = 24;

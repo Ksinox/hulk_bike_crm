@@ -1,17 +1,57 @@
 import { useEffect, useRef, useState } from "react";
+import imageCompression from "browser-image-compression";
 import { Camera, Check, FolderOpen, RotateCw } from "lucide-react";
 import { ApiError, applicationApi, type FileKind } from "./applicationApi";
 
+/**
+ * Принимаем только изображения. PDF убран — был случай когда клиент
+ * приложил pdf и менеджер не мог посмотреть в браузере.
+ *
+ * HEIC принимаем — конвертируем в JPEG локально через heic2any (~2.4 MB
+ * lazy-chunk, грузится только если файл реально HEIC).
+ */
 const ALLOWED_MIME = [
   "image/jpeg",
   "image/jpg",
   "image/png",
+  "image/webp",
   "image/heic",
   "image/heif",
-  "application/pdf",
 ];
 
-const MAX_SIZE_MB = 15;
+/** Лимит на исходный файл (после ресайза/сжатия будет сильно меньше). */
+const MAX_RAW_SIZE_MB = 25;
+
+/**
+ * Параметры сжатия. Цель — минимально потерять качество для
+ * читабельности паспорта/прав, но не таскать в MinIO 5+ МБ снимки
+ * с iPhone «как есть».
+ */
+const COMPRESSION_OPTIONS = {
+  maxSizeMB: 1.5, // итоговый файл ≤ 1.5 МБ
+  maxWidthOrHeight: 2048, // длинная сторона ≤ 2048px (читаемо для документов)
+  useWebWorker: true,
+  fileType: "image/jpeg" as const,
+  initialQuality: 0.85,
+};
+
+/** Конвертация HEIC/HEIF в JPEG. Lazy import — пакет тяжёлый (2.4 МБ). */
+async function maybeConvertHeic(file: File): Promise<File> {
+  const isHeic =
+    /\.(heic|heif)$/i.test(file.name) ||
+    file.type === "image/heic" ||
+    file.type === "image/heif";
+  if (!isHeic) return file;
+  const { default: heic2any } = await import("heic2any");
+  const result = await heic2any({
+    blob: file,
+    toType: "image/jpeg",
+    quality: 0.85,
+  });
+  const blob = Array.isArray(result) ? result[0] : result;
+  const newName = file.name.replace(/\.(heic|heif)$/i, ".jpg");
+  return new File([blob], newName, { type: "image/jpeg" });
+}
 
 type Props = {
   applicationId: number;
@@ -56,38 +96,55 @@ export function PhotoUpload(props: Props) {
     };
   }, [previewUrl]);
 
-  const onFile = async (file: File) => {
+  const onFile = async (rawFile: File) => {
     setError(null);
-    if (!ALLOWED_MIME.includes(file.type.toLowerCase())) {
-      setError("Только JPEG, PNG, HEIC или PDF");
+    // Базовая проверка — иногда mime приходит пустой (особенно с HEIC).
+    // Тогда смотрим на расширение.
+    const lowerName = rawFile.name.toLowerCase();
+    const isImageByName = /\.(jpe?g|png|webp|heic|heif)$/i.test(lowerName);
+    if (!ALLOWED_MIME.includes(rawFile.type.toLowerCase()) && !isImageByName) {
+      setError("Только изображения: JPEG, PNG, HEIC. PDF не поддерживается.");
       return;
     }
-    if (file.size > MAX_SIZE_MB * 1024 * 1024) {
-      setError(`Файл больше ${MAX_SIZE_MB} МБ`);
+    if (rawFile.size > MAX_RAW_SIZE_MB * 1024 * 1024) {
+      setError(`Файл больше ${MAX_RAW_SIZE_MB} МБ — слишком тяжёлый`);
       return;
     }
 
-    if (
-      file.type.startsWith("image/") &&
-      file.type !== "image/heic" &&
-      file.type !== "image/heif"
-    ) {
+    setBusy(true);
+    try {
+      // 1. HEIC/HEIF от iPhone → JPEG (через heic2any, lazy-chunk)
+      let file = await maybeConvertHeic(rawFile);
+
+      // 2. Сжатие+ресайз до ~2048px / 1.5 МБ. Пропускаем если файл уже
+      //    маленький (не теряем качество впустую).
+      if (file.size > 500 * 1024) {
+        try {
+          const compressed = await imageCompression(file, COMPRESSION_OPTIONS);
+          // image-compression иногда возвращает Blob вместо File —
+          // нормализуем чтобы FormData взял имя.
+          file = new File(
+            [compressed],
+            file.name.replace(/\.(png|webp)$/i, ".jpg"),
+            { type: compressed.type || "image/jpeg" },
+          );
+        } catch {
+          // Если сжатие упало (битый файл, нехватка памяти на телефоне) —
+          // льём оригинал. Лучше так чем не загрузить вообще.
+        }
+      }
+
+      // 3. Превью
       const url = URL.createObjectURL(file);
       setPreviewUrl((prev) => {
         if (prev) URL.revokeObjectURL(prev);
         return url;
       });
-    } else {
-      setPreviewUrl(null);
-    }
 
-    setBusy(true);
-    try {
+      // 4. Аплоад
       await applicationApi.uploadFile(applicationId, uploadToken, kind, file);
       props.onUploaded();
       // Auto-advance — клиент идёт по форме «за руку», без лишних нажатий.
-      // Небольшая задержка чтобы успел увидеть «загружено» и не было ощущения
-      // что кнопка проскочила.
       window.setTimeout(() => props.onAdvance(), 600);
     } catch (e) {
       if (e instanceof ApiError) {
@@ -168,7 +225,7 @@ export function PhotoUpload(props: Props) {
       <input
         ref={galleryInputRef}
         type="file"
-        accept="image/jpeg,image/jpg,image/png,image/heic,image/heif,application/pdf"
+        accept="image/jpeg,image/jpg,image/png,image/webp,image/heic,image/heif"
         className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0];
@@ -187,7 +244,7 @@ export function PhotoUpload(props: Props) {
             className="flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-slate-900 text-[15px] font-semibold text-white disabled:opacity-50"
           >
             <Camera size={20} />
-            {busy ? "Загружаем…" : "Сфотографировать"}
+            {busy ? "Обрабатываем фото…" : "Сфотографировать"}
           </button>
           <button
             type="button"
