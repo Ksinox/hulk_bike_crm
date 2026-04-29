@@ -8,7 +8,11 @@ import { RentalsKpi, type Kpi } from "./RentalsKpi";
 import { RentalCard, ActTransferPreview } from "./RentalCard";
 import { DocumentPreviewModal } from "./DocumentPreviewModal";
 import { consumePending, onNavigate } from "@/app/navigationStore";
-import { useRentals, useArchivedRentals } from "./rentalsStore";
+import {
+  getRentalChainIds,
+  useRentals,
+  useArchivedRentals,
+} from "./rentalsStore";
 import { useUnreachableSet } from "@/pages/clients/clientStore";
 import { NewRentalModal } from "./NewRentalModal";
 import { useApiClients } from "@/lib/api/clients";
@@ -174,6 +178,30 @@ export function Rentals() {
       }
     });
   }, []);
+
+  // Если выбранная связка пропала из активных (например, удалили её
+  // через RentalEditModal или она ушла в архив) — пробуем переключить
+  // фокус на любую другую active-связку из той же цепочки. Так карточка
+  // не «закрывается» из-за удаления одной из замен/продлений: пользователь
+  // продолжает видеть аренду на свежей живой связке. Если в цепочке
+  // вообще не осталось active — selectedId остаётся прежним и колонка
+  // показывает «Выберите аренду» (это уже корректное поведение для
+  // целиком закрытой/архивной аренды).
+  useEffect(() => {
+    if (selectedId == null) return;
+    if (activeRentals.find((r) => r.id === selectedId)) return;
+    const all = [...activeRentals, ...archivedList];
+    if (!all.find((r) => r.id === selectedId)) return;
+    const chainIds = getRentalChainIds(selectedId, all);
+    const activeInChain = activeRentals.filter((r) => chainIds.includes(r.id));
+    if (activeInChain.length > 0) {
+      // Берём самую свежую (наибольший id) — обычно это «голова» цепочки.
+      const head = activeInChain.reduce((acc, r) =>
+        r.id > acc.id ? r : acc,
+      );
+      setSelectedId(head.id);
+    }
+  }, [selectedId, activeRentals, archivedList]);
 
   const filtered = useMemo(
     () =>

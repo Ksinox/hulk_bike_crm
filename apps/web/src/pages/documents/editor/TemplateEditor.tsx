@@ -1,5 +1,6 @@
 import { useEditor, EditorContent } from "@tiptap/react";
 import { Extension } from "@tiptap/core";
+import { TabVariablePopup } from "./TabVariablePopup";
 import StarterKit from "@tiptap/starter-kit";
 import Underline from "@tiptap/extension-underline";
 import TextAlign from "@tiptap/extension-text-align";
@@ -37,52 +38,34 @@ import {
 import "./editor.css";
 
 /**
- * Tab внутри редактора шаблонов открывает то же `@`-меню переменных —
- * чтобы пользователю не нужно было набирать собачку руками.
+ * Tab внутри редактора шаблонов открывает собственный popup переменных
+ * (TabVariablePopup) — независимый от Mention extension. Раньше пробовали
+ * программно вставлять `@` чтобы Mention поднял свой popup, но
+ * @tiptap/suggestion plugin часто не активировался (зависит от позиции
+ * курсора и regex match по тексту), и пользователь видел голый `@` в
+ * тексте, а в финальном документе на этом месте оставался текст метки
+ * вместо подставленного значения.
  *
- * Подход: программный `@`-триггер. Вставляем символ `@` в текущую
- * позицию курсора, Mention extension сам поднимает popup. При выборе
- * пункта Mention.command удаляет диапазон от `@` до курсора и
- * подставляет VariableNode, так что в тексте `@` не остаётся.
- *
- * Тонкость: tiptap-suggestion триггерится только когда `@` стоит после
- * пробела/начала параграфа (иначе его считают частью слова —
- * «email@example»). Если перед курсором обычная буква — добавляем
- * пробел перед `@`, чтобы suggestion поднялся. Этот пробел остаётся
- * на месте после выбора (Mention.command удаляет только сам `@`),
- * что выглядит естественно: переменная отделена от предыдущего слова
- * пробелом.
+ * Теперь: на Tab открываем portal-popup рядом с курсором, при выборе
+ * сами вставляем VariableNode через editor.chain. Гарантировано
+ * корректные `data-var`/`data-label` атрибуты, substituteVariables
+ * на бекенде их находит без сюрпризов.
  *
  * Внутри таблицы Tab сохраняет штатное поведение (переход между
- * ячейками) — наш handler возвращает false, событие проваливается
- * дальше к табличному расширению.
+ * ячейками) — handler возвращает false, событие пропускается дальше.
  */
-const VariableTabTrigger = Extension.create({
+const VariableTabTrigger = Extension.create<{
+  onTabRequest: () => boolean;
+}>({
   name: "variableTabTrigger",
+  addOptions() {
+    return { onTabRequest: () => false };
+  },
   addKeyboardShortcuts() {
     return {
       Tab: ({ editor }) => {
         if (editor.isActive("table")) return false;
-        const { state } = editor;
-        const { from, empty } = state.selection;
-        // Если выделен диапазон — заменяем его на `@` без префикса.
-        if (!empty) {
-          return editor.chain().focus().insertContent("@").run();
-        }
-        const $pos = state.doc.resolve(from);
-        const startOfParent = $pos.start($pos.depth);
-        // Берём один символ слева. Если курсор в начале параграфа —
-        // префикс не нужен.
-        let needsSpace = false;
-        if (from > startOfParent) {
-          const prev = state.doc.textBetween(from - 1, from, "\n", "\n");
-          needsSpace = prev !== "" && !/\s/.test(prev);
-        }
-        return editor
-          .chain()
-          .focus()
-          .insertContent(needsSpace ? " @" : "@")
-          .run();
+        return this.options.onTabRequest();
       },
     };
   },
@@ -135,6 +118,21 @@ export function TemplateEditor({
   // или transaction'а — иначе editor.isActive(...) показывает stale state.
   const [, forceRerender] = useState(0);
 
+  // Состояние popup-меню переменных по Tab. anchor — координаты viewport
+  // у позиции курсора, чтобы рендерить popup рядом. Позицию запоминаем
+  // на момент Tab-нажатия и больше не двигаем (иначе при наборе текста
+  // в input popup будет прыгать).
+  const [tabPopup, setTabPopup] = useState<
+    | { anchor: { left: number; top: number } }
+    | null
+  >(null);
+
+  // Ref на editor instance чтобы VariableTabTrigger (фиксируется один
+  // раз при монтировании useEditor) мог брать актуальное состояние
+  // курсора и считать координаты для popup. Сам editor мы получим
+  // ниже — и привяжем его в useEffect.
+  const editorRefInternal = useRef<ReturnType<typeof useEditor> | null>(null);
+
   const editor = useEditor({
     onSelectionUpdate: () => forceRerender((t) => t + 1),
     onTransaction: () => forceRerender((t) => t + 1),
@@ -159,7 +157,21 @@ export function TemplateEditor({
       TableCell,
       VariableNode,
       createVariableMention(() => flatCatalogRef.current),
-      VariableTabTrigger,
+      VariableTabTrigger.configure({
+        onTabRequest: () => {
+          // editor доступен в замыкании setTabPopup. Считаем координаты
+          // курсора через ProseMirror coordsAtPos. Если editor ещё не
+          // готов — отдаём false (Tab пройдёт штатно).
+          const ed = editorRefInternal.current;
+          if (!ed) return false;
+          const { from } = ed.state.selection;
+          const coords = ed.view.coordsAtPos(from);
+          setTabPopup({
+            anchor: { left: coords.left, top: coords.bottom + 4 },
+          });
+          return true;
+        },
+      }),
     ],
     content: initialHtml || "<p></p>",
     onUpdate: ({ editor }) => {
@@ -171,6 +183,13 @@ export function TemplateEditor({
       },
     },
   });
+
+  // Привязываем editor к внутреннему ref сразу после создания, чтобы
+  // VariableTabTrigger мог считать координаты курсора (он зафиксирован
+  // в useEditor и не имеет прямого доступа к editor через замыкание).
+  useEffect(() => {
+    editorRefInternal.current = editor;
+  }, [editor]);
 
   // Когда parent передаёт ДРУГОЙ initialHtml (другой шаблон) — заменяем
   // содержимое редактора. НО: parent тоже получает onChange с текущим
@@ -397,6 +416,31 @@ export function TemplateEditor({
       </div>
 
       <EditorContent editor={editor} />
+
+      {tabPopup && (
+        <TabVariablePopup
+          items={flatCatalogRef.current}
+          anchor={tabPopup.anchor}
+          onPick={(v) => {
+            setTabPopup(null);
+            editor
+              .chain()
+              .focus()
+              .insertContent({
+                type: "variable",
+                attrs: { varKey: v.key, varLabel: v.label },
+              })
+              .insertContent(" ")
+              .run();
+          }}
+          onClose={() => {
+            setTabPopup(null);
+            // Возвращаем фокус в редактор, чтобы пользователь мог
+            // продолжить набор текста сразу.
+            editor.commands.focus();
+          }}
+        />
+      )}
     </div>
   );
 }
