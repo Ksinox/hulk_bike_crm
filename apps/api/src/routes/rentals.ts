@@ -406,6 +406,34 @@ export async function rentalsRoutes(app: FastifyInstance) {
       .set({ archivedAt: sql`now()`, archivedBy: by })
       .where(eq(rentals.id, id));
 
+    // Если удаляемая связка БЫЛА «головой» цепочки (т.е. больше не было
+    // потомков) и у неё есть родитель, который ушёл в архив автоматически
+    // (archivedBy == null — авто-архив при extend / legacy swap) — нужно
+    // его возродить. Иначе после удаления head у пользователя в active
+    // нет ни одной связки этой аренды, и карточка «пропадает». Бизнес-
+    // логика: если новая связка отменена, старая снова становится head.
+    const hadChildren = await db
+      .select({ id: rentals.id })
+      .from(rentals)
+      .where(eq(rentals.parentRentalId, id));
+    if (hadChildren.length === 0 && row.parentRentalId != null) {
+      const [parent] = await db
+        .select()
+        .from(rentals)
+        .where(eq(rentals.id, row.parentRentalId));
+      if (parent && parent.archivedBy == null && parent.archivedAt != null) {
+        await db
+          .update(rentals)
+          .set({
+            archivedAt: null,
+            endActualAt: null,
+            status: "active",
+            updatedAt: sql`now()`,
+          })
+          .where(eq(rentals.id, parent.id));
+      }
+    }
+
     await logActivity(req, {
       entity: "rental",
       entityId: id,
@@ -439,15 +467,84 @@ export async function rentalsRoutes(app: FastifyInstance) {
         .from(scooterSwaps)
         .where(eq(scooterSwaps.id, sid));
       if (!row) return reply.code(404).send({ error: "not found" });
+
+      // Проверяем, последняя ли это запись в истории замен этой аренды.
+      // Если последняя — отменяем замену: текущий scooterId аренды
+      // возвращаем на prevScooterId, текущий скутер уходит в rental_pool
+      // (был в repair после свапа). Старшие записи не трогаем — пользователь
+      // их удаляет как «чистку истории», физически возврат к более ранним
+      // состояниям не делаем.
+      const [latest] = await db
+        .select({ id: scooterSwaps.id })
+        .from(scooterSwaps)
+        .where(eq(scooterSwaps.rentalId, row.rentalId))
+        .orderBy(desc(scooterSwaps.swapAt))
+        .limit(1);
+      const isLatest = latest?.id === sid;
+      let revertedTo: number | null = null;
+      if (isLatest && row.prevScooterId != null) {
+        const [rental] = await db
+          .select()
+          .from(rentals)
+          .where(eq(rentals.id, row.rentalId));
+        if (rental) {
+          // Старый (текущий) скутер аренды — снова свободен.
+          if (rental.scooterId != null) {
+            await db
+              .update(scooters)
+              .set({ baseStatus: "rental_pool", updatedAt: sql`now()` })
+              .where(eq(scooters.id, rental.scooterId));
+          }
+          // Возвращаем prev на аренду.
+          await db
+            .update(rentals)
+            .set({
+              scooterId: row.prevScooterId,
+              updatedAt: sql`now()`,
+            })
+            .where(eq(rentals.id, row.rentalId));
+          revertedTo = row.prevScooterId;
+        }
+      }
+
+      // Если был payment swap_fee на эту замену — удаляем его (доплата
+      // отменяется вместе с самой заменой). Привязки swap_fee→scooter_swaps
+      // у нас нет, поэтому ищем последний неоплаченный swap_fee аренды.
+      if (isLatest && row.feeAmount > 0) {
+        const [feePayment] = await db
+          .select()
+          .from(payments)
+          .where(
+            and(
+              eq(payments.rentalId, row.rentalId),
+              eq(payments.type, "swap_fee"),
+              eq(payments.paid, false),
+            ),
+          )
+          .orderBy(desc(payments.createdAt))
+          .limit(1);
+        if (feePayment) {
+          await db.delete(payments).where(eq(payments.id, feePayment.id));
+        }
+      }
+
       await db.delete(scooterSwaps).where(eq(scooterSwaps.id, sid));
       await logActivity(req, {
         entity: "rental",
         entityId: row.rentalId,
         action: "scooter_swap_deleted",
-        summary: `Удалена запись о замене скутера в аренде #${String(row.rentalId).padStart(4, "0")}`,
-        meta: { swapId: sid, prevScooterId: row.prevScooterId, newScooterId: row.newScooterId },
+        summary: isLatest
+          ? `Отменена замена в аренде #${String(row.rentalId).padStart(4, "0")} — скутер возвращён к предыдущему`
+          : `Удалена запись о замене из истории #${String(row.rentalId).padStart(4, "0")}`,
+        meta: {
+          swapId: sid,
+          prevScooterId: row.prevScooterId,
+          newScooterId: row.newScooterId,
+          revertedTo,
+          isLatest,
+        },
       });
-      return reply.code(204).send();
+      return reply.code(200).send({ revertedTo, isLatest });
     },
   );
 
