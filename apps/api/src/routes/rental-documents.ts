@@ -59,8 +59,15 @@ export async function rentalDocumentsRoutes(app: FastifyInstance) {
       // Убираем X-Frame-Options, выставленный helmet'ом, чтобы CRM (другой
       // поддомен crm.hulkbike.ru) могла встроить документ в iframe. Это
       // безопасно: документ — чистый HTML без JS и форм, clickjacking-угрозы нет.
+      // Cache-Control: no-store — документ собирается из живых данных
+      // (rental/client/scooter/model), и кэш промежуточных прокси/браузера
+      // мог показывать устаревшую версию (старый паспорт, старый пробег).
+      // Каждое нажатие «Просмотреть» = свежая выборка из БД.
       reply
         .header("Content-Type", "text/html; charset=utf-8")
+        .header("Cache-Control", "no-store, no-cache, must-revalidate")
+        .header("Pragma", "no-cache")
+        .header("Expires", "0")
         .removeHeader("X-Frame-Options")
         .header(
           "Content-Security-Policy",
@@ -79,6 +86,9 @@ export async function rentalDocumentsRoutes(app: FastifyInstance) {
     const filename = `${docFilename(type, id)}.doc`;
     reply
       .header("Content-Type", "application/msword; charset=utf-8")
+      .header("Cache-Control", "no-store, no-cache, must-revalidate")
+      .header("Pragma", "no-cache")
+      .header("Expires", "0")
       .header(
         "Content-Disposition",
         `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
