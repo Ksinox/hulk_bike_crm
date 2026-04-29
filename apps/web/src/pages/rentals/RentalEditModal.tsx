@@ -110,9 +110,24 @@ export function RentalEditModal({
   const isRootSegment = (seg: Rental): boolean =>
     seg.parentRentalId == null;
 
-  /** Замена скутера vs обычное продление — отличаем по note. */
-  const isSwap = (seg: Rental): boolean =>
-    /замена скутера/i.test(seg.note ?? "");
+  /**
+   * Замена скутера vs обычное продление. Раньше определяли по тексту
+   * note ("замена скутера: ..." vs "продление ..."), но в legacy
+   * данных встречалось расхождение: scooterId фактически менялся, а
+   * note был "продление" — модалка считала это продлением, хотя в
+   * блоке «Ранее в этой аренде» (вкладка Условия) логика считала
+   * замену по фактическому scooterId. Из-за этого UI рассинхронился.
+   *
+   * Теперь — единая логика: ЗАМЕНА = scooterId отличается от предка
+   * в цепочке. Если scooter тот же — продление. Опираемся на factual
+   * data, а не на маркер в note.
+   */
+  const isSwap = (seg: Rental): boolean => {
+    if (seg.parentRentalId == null) return false;
+    const parent = allRentals.find((r) => r.id === seg.parentRentalId);
+    if (!parent) return /замена скутера/i.test(seg.note ?? "");
+    return parent.scooterId !== seg.scooterId;
+  };
 
   const onDeleteSwap = async (swapId: number) => {
     const ok = await confirmDialog({
