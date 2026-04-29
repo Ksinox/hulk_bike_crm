@@ -416,6 +416,29 @@ export async function rentalsRoutes(app: FastifyInstance) {
   });
 
   /**
+   * GET /api/rentals/:id/scooter-swaps
+   *
+   * Возвращает историю замен скутера в этой аренде (из таблицы
+   * scooter_swaps, заполняется новым in-place /swap-scooter). UI
+   * вкладки «Условия» использует это для блока «Ранее в этой аренде».
+   * Сортировка: от старых к новым (по swapAt).
+   */
+  app.get<{ Params: { id: string } }>(
+    "/:id/scooter-swaps",
+    async (req, reply) => {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id))
+        return reply.code(400).send({ error: "bad id" });
+      const rows = await db
+        .select()
+        .from(scooterSwaps)
+        .where(eq(scooterSwaps.rentalId, id))
+        .orderBy(scooterSwaps.swapAt);
+      return { items: rows };
+    },
+  );
+
+  /**
    * POST /api/rentals/:id/reset-chain
    *
    * Жёсткая «очистка» аренды — оставляет в цепочке только корневую

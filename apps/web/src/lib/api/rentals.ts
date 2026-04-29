@@ -28,6 +28,36 @@ export function useApiRentalsArchived() {
 }
 
 /**
+ * История замен скутера в одной аренде (из таблицы scooter_swaps).
+ * Заполняется in-place через /swap-scooter — нужен для блока
+ * «Ранее в этой аренде» во вкладке «Условия» карточки аренды.
+ */
+export type ApiScooterSwap = {
+  id: number;
+  rentalId: number;
+  prevScooterId: number | null;
+  newScooterId: number;
+  swapAt: string;
+  reason: string | null;
+  feeAmount: number;
+  createdByUserId: number | null;
+  createdAt: string;
+};
+
+export function useApiScooterSwaps(rentalId: number | null) {
+  return useQuery({
+    enabled: rentalId != null,
+    queryKey: [...rentalsKeys.all, "swaps", rentalId ?? 0] as const,
+    queryFn: () =>
+      api
+        .get<{ items: ApiScooterSwap[] }>(
+          `/api/rentals/${rentalId}/scooter-swaps`,
+        )
+        .then((r) => r.items),
+  });
+}
+
+/**
  * Сброс цепочки аренды до базовой связки. Только creator.
  * Удаляет ВСЕ потомки корня (продления + замены), оставляет только
  * первоначальную связку. Корень разархивируется. Операция необратима.

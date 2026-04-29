@@ -41,6 +41,7 @@ import {
 } from "./rentalsStore";
 import { useApiClients } from "@/lib/api/clients";
 import { useApiScooters } from "@/lib/api/scooters";
+import { useApiScooterSwaps } from "@/lib/api/rentals";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { fileUrl } from "@/lib/files";
 import { navigate } from "@/app/navigationStore";
@@ -126,8 +127,15 @@ export function TermsTab({
     () => getRentalChainIds(rental.id, allRentals),
     [rental.id, allRentals],
   );
+  // Скрываем вручную удалённые связки (archivedBy != null) — синхронно
+  // с RentalEditModal. Когда пользователь удаляет ЗАМЕНУ или ПРОДЛЕНИЕ
+  // через «Изменить», она пропадает из всех агрегатов карточки:
+  // блок «Ранее в этой аренде», итоги цепочки, история и т.д.
   const chainRentals = useMemo(
-    () => allRentals.filter((r) => chainIds.includes(r.id)),
+    () =>
+      allRentals
+        .filter((r) => chainIds.includes(r.id))
+        .filter((r) => !r.archivedBy),
     [allRentals, chainIds],
   );
   const rootRental =
@@ -145,6 +153,14 @@ export function TermsTab({
   //   scooterId впервые отличается от X). У note формат:
   //     "замена скутера: <reason>"  (если пользователь указал)
   //     "замена скутера #NNNN"      (фоллбек)
+  // История in-place замен — после рефакторинга свап перестал плодить
+  // child rentals и пишется в отдельную таблицу scooter_swaps. Чтобы в
+  // блоке «Ранее в этой аренде» показывались и старые (legacy chain),
+  // и новые (in-place) замены — подгружаем оба источника.
+  const swapsQ = useApiScooterSwaps(rental.id);
+  const swaps = swapsQ.data ?? [];
+  const { data: apiScooters = [] } = useApiScooters();
+
   const scooterChain = useMemo(() => {
     const ordered = chainIds
       .map((id) => chainRentals.find((r) => r.id === id))
@@ -190,11 +206,35 @@ export function TermsTab({
       }
       prev = r;
     }
+    // In-place замены из scooter_swaps: добавляем prev-скутеры которые
+    // ещё не попали в items через цепочку (новый рефакторинг свапа
+    // НЕ создаёт child rental, поэтому prev живёт только в swaps).
+    // Сортировка swaps по swapAt — самые ранние сверху.
+    const sortedSwaps = [...swaps].sort((a, b) =>
+      a.swapAt.localeCompare(b.swapAt),
+    );
+    for (const swap of sortedSwaps) {
+      if (swap.prevScooterId == null) continue;
+      if (items.some((it) => it.scooterId === swap.prevScooterId)) continue;
+      const sc = apiScooters.find((s) => s.id === swap.prevScooterId);
+      if (!sc) continue;
+      // Вставляем перед последним «текущим». В простейшем случае —
+      // в начало списка (все prev — это старее, чем current).
+      const insertIdx = Math.max(0, items.length - 1);
+      items.splice(insertIdx, 0, {
+        scooterId: sc.id,
+        scooter: sc.name,
+        lastRentalId: rental.id,
+        replacedByRentalId: rental.id,
+        reason: swap.reason,
+        isCurrent: false,
+      });
+    }
     if (items.length > 0) {
       items[items.length - 1]!.isCurrent = true;
     }
     return items;
-  }, [chainIds, chainRentals]);
+  }, [chainIds, chainRentals, swaps, apiScooters, rental.id]);
 
   // Только «прошлые» (не текущий) — для блока «Ранее в этой аренде».
   const scooterHistory = useMemo(
@@ -1073,7 +1113,7 @@ export function TasksTab({ rental }: { rental: Rental }) {
 
 /* =================== Документы =================== */
 
-type DocType = "contract_full" | "act_return";
+type DocType = "contract_full" | "act_return" | "act_swap";
 
 const DOC_META: Record<
   DocType,
@@ -1092,6 +1132,13 @@ const DOC_META: Record<
       "Подписывается при возврате скутера. Фиксирует пробег, состояние, ущерб.",
     icon: FileText,
     badge: "При возврате",
+  },
+  act_swap: {
+    title: "Акт приёма-передачи и замены скутера",
+    subtitle:
+      "Печатается при замене скутера в рамках действующей аренды. Содержит данные старого и нового скутера + причину замены.",
+    icon: ArrowLeftRight,
+    badge: "При замене",
   },
 };
 
