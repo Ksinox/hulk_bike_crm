@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "@/lib/toast";
 import {
   useApplications,
@@ -64,6 +64,20 @@ export function NewApplicationDetector() {
   const [convertingApp, setConvertingApp] = useState<ApiApplication | null>(null);
   const deleteApp = useDeleteApplication();
 
+  // Звук уведомления. Браузерная autoplay policy блокирует Audio до
+  // первого user-interaction — после первого клика менеджера в CRM
+  // звук уже разрешён, и работает на все последующие заявки.
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  if (audioRef.current === null && typeof window !== "undefined") {
+    audioRef.current = new Audio("/sounds/new-application.mp3");
+    audioRef.current.preload = "auto";
+    audioRef.current.volume = 0.6;
+  }
+
+  // ID, для которых мы уже играли звук в этой сессии (чтобы не зацикливать
+  // на каждом polling-tick пока пользователь не разобрался с заявкой).
+  const playedFor = useRef<Set<number>>(new Set());
+
   // Список заявок-кандидатов для показа модалки: status='new' и не в seen
   const pending = useMemo(
     () => items.filter((a) => a.status === "new" && !seen.has(a.id)),
@@ -74,7 +88,17 @@ export function NewApplicationDetector() {
   useEffect(() => {
     if (activeApp || convertingApp) return;
     if (pending.length === 0) return;
-    setActiveApp(pending[0]);
+    const next = pending[0];
+    setActiveApp(next);
+    // Играем звук только один раз для конкретной заявки.
+    if (audioRef.current && !playedFor.current.has(next.id)) {
+      playedFor.current.add(next.id);
+      audioRef.current.currentTime = 0;
+      audioRef.current.play().catch(() => {
+        // autoplay blocked — пользователь ещё не взаимодействовал со страницей.
+        // Звук сыграет на следующих заявках после первого клика.
+      });
+    }
   }, [pending, activeApp, convertingApp]);
 
   const markSeen = (id: number) => {

@@ -167,7 +167,12 @@ export async function clientApplicationsRoutes(app: FastifyInstance) {
       reply
         .header("Content-Type", meta.mimeType)
         .header("Content-Length", meta.size)
-        .header("Cache-Control", "private, max-age=300")
+        // fileKey содержит UUID — файл не меняется до удаления заявки.
+        // Поэтому кешируем агрессивно (24 ч + immutable), чтобы повторное
+        // открытие модалки заявки не дёргало MinIO заново.
+        .header("Cache-Control", "private, max-age=86400, immutable")
+        // ETag на основе ключа MinIO — браузер сам делает 304 при revalidation.
+        .header("ETag", `"${file.fileKey}"`)
         // helmet по умолчанию ставит CORP: same-origin → блокирует <img>
         // на crm.hulkbike.ru (web) при загрузке с api.hulkbike.ru (api).
         // Разрешаем cross-origin — браузер поверит CORS-заголовкам.
