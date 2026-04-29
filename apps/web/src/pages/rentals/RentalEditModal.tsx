@@ -79,16 +79,25 @@ export function RentalEditModal({
     () => getRentalChainIds(rental.id, allRentals),
     [rental.id, allRentals],
   );
-  const chainRentals = useMemo(
-    () =>
-      chainIds
-        .map((id) => allRentals.find((r) => r.id === id))
-        .filter((r): r is Rental => !!r)
-        // Скрываем вручную удалённые связки (archivedBy != null).
-        // Авто-архивные родители при продлении (archivedBy == null) остаются.
-        .filter((r) => !r.archivedBy),
-    [chainIds, allRentals],
-  );
+  const chainRentals = useMemo(() => {
+    // Доп. защита от дублей по id: даже если getRentalChainIds сейчас
+    // дедуплицирует, allRentals = active + archived и в момент
+    // рассогласованного refetch'а одна связка может присутствовать в
+    // обоих списках. Берём первую попавшуюся версию каждого id.
+    const seen = new Set<number>();
+    const out: Rental[] = [];
+    for (const id of chainIds) {
+      if (seen.has(id)) continue;
+      const r = allRentals.find((x) => x.id === id);
+      if (!r) continue;
+      // Скрываем вручную удалённые связки (archivedBy != null).
+      // Авто-архивные родители при продлении (archivedBy == null) остаются.
+      if (r.archivedBy) continue;
+      seen.add(id);
+      out.push(r);
+    }
+    return out;
+  }, [chainIds, allRentals]);
   const hasChain = chainRentals.length > 1;
 
   // Сводные метрики по живым связкам — для отображения в шапке модалки.

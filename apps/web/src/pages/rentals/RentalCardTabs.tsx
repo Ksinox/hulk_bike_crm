@@ -131,13 +131,21 @@ export function TermsTab({
   // с RentalEditModal. Когда пользователь удаляет ЗАМЕНУ или ПРОДЛЕНИЕ
   // через «Изменить», она пропадает из всех агрегатов карточки:
   // блок «Ранее в этой аренде», итоги цепочки, история и т.д.
-  const chainRentals = useMemo(
-    () =>
-      allRentals
-        .filter((r) => chainIds.includes(r.id))
-        .filter((r) => !r.archivedBy),
-    [allRentals, chainIds],
-  );
+  // Дополнительно дедуплицируем по id — allRentals = active + archived,
+  // в момент рассогласованного refetch'а связка может оказаться в
+  // обоих списках, и без дедупликации в UI плодились дубли.
+  const chainRentals = useMemo(() => {
+    const seen = new Set<number>();
+    const out: Rental[] = [];
+    for (const r of allRentals) {
+      if (!chainIds.includes(r.id)) continue;
+      if (seen.has(r.id)) continue;
+      if (r.archivedBy) continue;
+      seen.add(r.id);
+      out.push(r);
+    }
+    return out;
+  }, [allRentals, chainIds]);
   const rootRental =
     chainRentals.find((r) => r.id === chainIds[0]) ?? rental;
   const isExtended = chainRentals.length > 1;

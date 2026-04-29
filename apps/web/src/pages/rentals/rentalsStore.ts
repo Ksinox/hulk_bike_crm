@@ -431,14 +431,21 @@ export function getRentalChainIds(
     rootId = parent.id;
     cursor = parent;
   }
-  // Обходим всех потомков
+  // Обходим всех потомков. visited защищает от дублей: если в rentals
+  // одна и та же связка пришла дважды (например из active + archived
+  // во время рассогласованных refetch'ей React Query), её id попадал
+  // бы в result несколько раз — и в RentalEditModal появлялись бы
+  // визуальные дубли «ПРОДЛ. N #0024» с разными метками.
   const result: number[] = [];
+  const visited = new Set<number>();
   const queue = [rootId];
   while (queue.length > 0) {
     const id = queue.shift()!;
+    if (visited.has(id)) continue;
+    visited.add(id);
     result.push(id);
     for (const r of rentals) {
-      if (r.parentRentalId === id) queue.push(r.id);
+      if (r.parentRentalId === id && !visited.has(r.id)) queue.push(r.id);
     }
   }
   return result;
