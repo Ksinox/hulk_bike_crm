@@ -84,12 +84,47 @@ export function formatDivisionCode(v: string): string {
   return `${d.slice(0, 3)}-${d.slice(3)}`;
 }
 
-/** ДД.ММ.ГГГГ → ISO YYYY-MM-DD. null если невалидно. */
+/**
+ * Раскрывает 2-значный год в 4-значный по правилу:
+ *  - если ≤ текущего короткого (напр. 26 при 2026 г.) → 20XX
+ *  - иначе → 19XX
+ *
+ * Гарантирует что дата НЕ окажется в будущем для разумных
+ * случаев (типа `15.01.27` сейчас даст 1927, не 2027).
+ */
+export function expandYear2to4(yy: number): number {
+  const currentYearShort = new Date().getFullYear() % 100;
+  if (yy <= currentYearShort) return 2000 + yy;
+  return 1900 + yy;
+}
+
+/** Полная ли дата введена — 8 или 10 знаков с правильным форматом. */
+export function isCompleteDate(s: string): boolean {
+  return (
+    /^\d{2}\.\d{2}\.\d{2}$/.test(s) || /^\d{2}\.\d{2}\.\d{4}$/.test(s)
+  );
+}
+
+/**
+ * ДД.ММ.ГГГГ или ДД.ММ.ГГ → ISO YYYY-MM-DD. null если невалидно.
+ * 2-значный год раскрывается через expandYear2to4.
+ */
 export function dateRuToIso(s: string): string | null {
-  const m = s.trim().match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
-  if (!m) return null;
-  const [, d, mo, y] = m;
-  return `${y}-${mo}-${d}`;
+  const trimmed = s.trim();
+  // 4-значный год
+  let m = trimmed.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  if (m) {
+    const [, d, mo, y] = m;
+    return `${y}-${mo}-${d}`;
+  }
+  // 2-значный год
+  m = trimmed.match(/^(\d{2})\.(\d{2})\.(\d{2})$/);
+  if (m) {
+    const [, d, mo, yy] = m;
+    const fullYear = expandYear2to4(parseInt(yy, 10));
+    return `${fullYear}-${mo}-${d}`;
+  }
+  return null;
 }
 
 /** ISO YYYY-MM-DD → ДД.ММ.ГГГГ для отображения. */
@@ -120,11 +155,13 @@ export function validatePhone(v: string): string | null {
   return null;
 }
 
-/** Проверяет что строка ДД.ММ.ГГГГ описывает реальную календарную дату. */
+/** Проверяет что строка ДД.ММ.ГГГГ или ДД.ММ.ГГ описывает реальную дату. */
 function parseAndCheckDate(v: string): Date | null {
-  const m = v.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  const iso = dateRuToIso(v);
+  if (!iso) return null;
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!m) return null;
-  const [, d, mo, y] = m;
+  const [, y, mo, d] = m;
   const dn = Number(d);
   const mn = Number(mo);
   const yn = Number(y);
@@ -143,7 +180,7 @@ function parseAndCheckDate(v: string): Date | null {
 export function validateBirth(v: string): string | null {
   const date = parseAndCheckDate(v);
   if (!date) {
-    if (v.length < 10) return "Формат ДД.ММ.ГГГГ";
+    if (!isCompleteDate(v)) return "Формат ДД.ММ.ГГ или ДД.ММ.ГГГГ";
     return "Такой даты не существует";
   }
   const today = new Date();
@@ -158,7 +195,7 @@ export function validateBirth(v: string): string | null {
 export function validatePastDate(v: string): string | null {
   const date = parseAndCheckDate(v);
   if (!date) {
-    if (v.length < 10) return "Формат ДД.ММ.ГГГГ";
+    if (!isCompleteDate(v)) return "Формат ДД.ММ.ГГ или ДД.ММ.ГГГГ";
     return "Такой даты не существует";
   }
   const today = new Date();

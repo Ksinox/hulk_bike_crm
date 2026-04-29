@@ -24,6 +24,7 @@ import {
   formatDateRu,
   formatDivisionCode,
   formatPhone,
+  isCompleteDate,
   isoToDateRu,
   nullableTrim,
   validateBirth,
@@ -586,12 +587,12 @@ function Step1({
           maxLength={10}
           onChange={(e) => setField("birth", formatDateRu(e.target.value))}
         />
-        {form.birth.length > 0 && form.birth.length < 10 && (
+        {form.birth.length > 0 && !isCompleteDate(form.birth) && (
           <div className="mt-1 text-[12px] text-amber-600">
-            Введите год полностью — 4 цифры (например, 1990)
+            Введите дату полностью — например 02.11.94 или 02.11.1994
           </div>
         )}
-        {form.birth.length >= 10 && birthErr && (
+        {isCompleteDate(form.birth) && birthErr && (
           <div className="mt-1 text-[12px] text-red-600">{birthErr}</div>
         )}
       </div>
@@ -703,12 +704,12 @@ function Step2({
           maxLength={10}
           onChange={(e) => setField("passDate", formatDateRu(e.target.value))}
         />
-        {form.passDate.length > 0 && form.passDate.length < 10 && (
+        {form.passDate.length > 0 && !isCompleteDate(form.passDate) && (
           <div className="mt-1 text-[12px] text-amber-600">
-            Введите год полностью — 4 цифры (например, 2024)
+            Введите дату полностью — например 15.01.25 или 15.01.2025
           </div>
         )}
-        {form.passDate.length >= 10 && validatePastDate(form.passDate) && (
+        {isCompleteDate(form.passDate) && validatePastDate(form.passDate) && (
           <div className="mt-1 text-[12px] text-red-600">
             {validatePastDate(form.passDate)}
           </div>

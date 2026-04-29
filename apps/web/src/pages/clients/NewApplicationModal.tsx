@@ -1,8 +1,18 @@
 import { useEffect, useState } from "react";
-import { Bell, Check, Clock, Trash2, User, X } from "lucide-react";
+import {
+  AlertCircle,
+  Bell,
+  Check,
+  Clock,
+  ExternalLink,
+  Trash2,
+  User,
+  X,
+} from "lucide-react";
 import {
   applicationFileUrl,
   type ApiApplication,
+  type ApplicationFile,
   type ApplicationFileKind,
 } from "@/lib/api/clientApplications";
 
@@ -90,7 +100,7 @@ export function NewApplicationModal({
           <div className="flex flex-col gap-2">
             <Portrait
               applicationId={application.id}
-              hasSelfie={hasSelfie}
+              file={application.files.find((f) => f.kind === "selfie") ?? null}
               onZoom={() => hasSelfie && setZoomed("selfie")}
             />
             <div className="text-center text-[11px] text-muted">
@@ -194,7 +204,7 @@ export function NewApplicationModal({
                 applicationId={application.id}
                 kind={k}
                 label={KIND_LABEL[k]}
-                hasFile={fileKinds.has(k)}
+                file={application.files.find((f) => f.kind === k) ?? null}
                 onZoom={() => setZoomed(k)}
               />
             ))}
@@ -244,12 +254,11 @@ export function NewApplicationModal({
           >
             <X size={20} />
           </button>
-          <img
-            src={applicationFileUrl(application.id, zoomed)}
-            alt={KIND_LABEL[zoomed]}
-            crossOrigin="use-credentials"
-            className="max-h-[90vh] max-w-full rounded-lg object-contain"
-            onClick={(e) => e.stopPropagation()}
+          <ZoomImage
+            applicationId={application.id}
+            kind={zoomed}
+            file={application.files.find((f) => f.kind === zoomed) ?? null}
+            label={KIND_LABEL[zoomed]}
           />
         </div>
       )}
@@ -261,18 +270,30 @@ export function NewApplicationModal({
 
 function Portrait({
   applicationId,
-  hasSelfie,
+  file,
   onZoom,
 }: {
   applicationId: number;
-  hasSelfie: boolean;
+  file: ApplicationFile | null;
   onZoom: () => void;
 }) {
-  if (!hasSelfie) {
+  const [broken, setBroken] = useState(false);
+
+  if (!file) {
     return (
       <div className="flex aspect-square w-full items-center justify-center rounded-2xl border-2 border-dashed border-border bg-surface-soft text-muted">
         <User size={48} />
       </div>
+    );
+  }
+  if (broken) {
+    return (
+      <BrokenPlaceholder
+        applicationId={applicationId}
+        kind="selfie"
+        file={file}
+        aspect="aspect-square"
+      />
     );
   }
   return (
@@ -287,6 +308,7 @@ function Portrait({
         alt="Селфи"
         crossOrigin="use-credentials"
         className="h-full w-full object-cover transition-opacity group-hover:opacity-90"
+        onError={() => setBroken(true)}
       />
     </button>
   );
@@ -348,20 +370,37 @@ function DocumentTile({
   applicationId,
   kind,
   label,
-  hasFile,
+  file,
   onZoom,
 }: {
   applicationId: number;
   kind: ApplicationFileKind;
   label: string;
-  hasFile: boolean;
+  file: ApplicationFile | null;
   onZoom: () => void;
 }) {
-  if (!hasFile) {
+  const [broken, setBroken] = useState(false);
+
+  if (!file) {
     return (
       <div className="flex aspect-[3/2] flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-border bg-surface-soft p-2 text-center text-[11px] text-muted-2">
         <span className="font-semibold">{label}</span>
         <span>не загружено</span>
+      </div>
+    );
+  }
+  if (broken) {
+    return (
+      <div className="flex aspect-[3/2] flex-col overflow-hidden rounded-xl border border-amber-300 bg-amber-50">
+        <BrokenPlaceholder
+          applicationId={applicationId}
+          kind={kind}
+          file={file}
+          aspect="flex-1"
+        />
+        <div className="bg-white px-2 py-1 text-[11px] font-semibold text-ink">
+          {label}
+        </div>
       </div>
     );
   }
@@ -378,12 +417,111 @@ function DocumentTile({
           alt={label}
           crossOrigin="use-credentials"
           className="h-full w-full object-cover transition-opacity group-hover:opacity-90"
+          onError={() => setBroken(true)}
         />
       </div>
       <div className="bg-white px-2 py-1 text-[11px] font-semibold text-ink">
         {label}
       </div>
     </button>
+  );
+}
+
+/** Большое фото в lightbox с onError-fallback. */
+function ZoomImage({
+  applicationId,
+  kind,
+  file,
+  label,
+}: {
+  applicationId: number;
+  kind: ApplicationFileKind;
+  file: ApplicationFile | null;
+  label: string;
+}) {
+  const [broken, setBroken] = useState(false);
+  const url = applicationFileUrl(applicationId, kind);
+  if (broken && file) {
+    const ext = (file.fileName.split(".").pop() ?? "").toUpperCase();
+    const sizeKb = Math.round(file.size / 1024);
+    return (
+      <div
+        className="rounded-2xl bg-white p-8 text-center"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <AlertCircle size={48} className="mx-auto text-amber-500" />
+        <div className="mt-3 text-[16px] font-semibold text-ink">
+          {label} не отображается в браузере
+        </div>
+        <div className="mt-1 text-[13px] text-muted">
+          Файл: {file.fileName} · {ext || file.mimeType} · {sizeKb} КБ
+        </div>
+        <div className="mt-2 text-[12px] text-muted-2">
+          Скорее всего формат HEIC/HEIF (с iPhone) — не отображается в Chrome.
+        </div>
+        <a
+          href={url}
+          target="_blank"
+          rel="noreferrer"
+          className="mt-5 inline-flex items-center gap-1.5 rounded-full bg-ink px-4 py-2 text-[13px] font-semibold text-white hover:bg-ink-2"
+        >
+          <ExternalLink size={14} /> Открыть в новой вкладке
+        </a>
+      </div>
+    );
+  }
+  return (
+    <img
+      src={url}
+      alt={label}
+      crossOrigin="use-credentials"
+      className="max-h-[90vh] max-w-full rounded-lg object-contain"
+      onClick={(e) => e.stopPropagation()}
+      onError={() => setBroken(true)}
+    />
+  );
+}
+
+/**
+ * Плейсхолдер на случай если <img> упал onError. Показывает причину
+ * (формат файла и размер) + кнопку «Открыть в новой вкладке» —
+ * браузер скачает или откроет встроенным просмотрщиком.
+ */
+function BrokenPlaceholder({
+  applicationId,
+  kind,
+  file,
+  aspect,
+}: {
+  applicationId: number;
+  kind: ApplicationFileKind;
+  file: ApplicationFile;
+  aspect: string;
+}) {
+  const url = applicationFileUrl(applicationId, kind);
+  const ext = (file.fileName.split(".").pop() ?? "").toUpperCase();
+  const sizeKb = Math.round(file.size / 1024);
+  return (
+    <div
+      className={`${aspect} flex w-full flex-col items-center justify-center gap-1.5 bg-amber-50 p-3 text-center`}
+    >
+      <AlertCircle size={20} className="text-amber-600" />
+      <div className="text-[11px] font-semibold text-amber-800">
+        Не отображается
+      </div>
+      <div className="text-[10px] text-amber-700">
+        {ext || file.mimeType} · {sizeKb} КБ
+      </div>
+      <a
+        href={url}
+        target="_blank"
+        rel="noreferrer"
+        onClick={(e) => e.stopPropagation()}
+        className="mt-0.5 inline-flex items-center gap-1 rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-ink hover:bg-amber-100"
+      >
+        <ExternalLink size={10} /> Открыть
+      </a>
+    </div>
   );
 }
 
