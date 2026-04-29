@@ -412,25 +412,80 @@ export async function rentalsRoutes(app: FastifyInstance) {
     // его возродить. Иначе после удаления head у пользователя в active
     // нет ни одной связки этой аренды, и карточка «пропадает». Бизнес-
     // логика: если новая связка отменена, старая снова становится head.
+    //
+    // ВАЖНО: возрождать родителя ИМЕЕТ СМЫСЛ только если в цепочке
+    // вообще не осталось ни одной active-связки (archivedAt IS NULL).
+    // Иначе bulk-delete нескольких head'ов подряд возродит сразу
+    // несколько предков → у клиента появятся 2-3 active-аренды в одной
+    // серии, что нарушает инвариант «одна active на цепочку».
     const hadChildren = await db
       .select({ id: rentals.id })
       .from(rentals)
       .where(eq(rentals.parentRentalId, id));
     if (hadChildren.length === 0 && row.parentRentalId != null) {
-      const [parent] = await db
-        .select()
-        .from(rentals)
-        .where(eq(rentals.id, row.parentRentalId));
-      if (parent && parent.archivedBy == null && parent.archivedAt != null) {
-        await db
-          .update(rentals)
-          .set({
-            archivedAt: null,
-            endActualAt: null,
-            status: "active",
-            updatedAt: sql`now()`,
-          })
-          .where(eq(rentals.id, parent.id));
+      // Поднимаемся к корню цепочки.
+      let rootId = id;
+      let parentCursor: number | null = row.parentRentalId;
+      let safety = 100;
+      while (parentCursor != null && safety-- > 0) {
+        const [p] = await db
+          .select()
+          .from(rentals)
+          .where(eq(rentals.id, parentCursor));
+        if (!p) break;
+        rootId = p.id;
+        parentCursor = p.parentRentalId;
+      }
+      // BFS вниз по дереву, собираем все id цепочки.
+      const chainIds = new Set<number>([rootId]);
+      const queue: number[] = [rootId];
+      while (queue.length > 0) {
+        const cur = queue.shift()!;
+        const kids = await db
+          .select({ id: rentals.id })
+          .from(rentals)
+          .where(eq(rentals.parentRentalId, cur));
+        for (const k of kids) {
+          if (!chainIds.has(k.id)) {
+            chainIds.add(k.id);
+            queue.push(k.id);
+          }
+        }
+      }
+      // Есть ли в цепочке (кроме самой удаляемой) хоть одна active-связка?
+      const otherIds = [...chainIds].filter((cid) => cid !== id);
+      let hasOtherActive = false;
+      if (otherIds.length > 0) {
+        const otherActive = await db
+          .select({ id: rentals.id })
+          .from(rentals)
+          .where(
+            and(
+              sql`${rentals.id} IN (${sql.join(
+                otherIds.map((x) => sql`${x}`),
+                sql`, `,
+              )})`,
+              isNull(rentals.archivedAt),
+            ),
+          );
+        hasOtherActive = otherActive.length > 0;
+      }
+      if (!hasOtherActive) {
+        const [parent] = await db
+          .select()
+          .from(rentals)
+          .where(eq(rentals.id, row.parentRentalId));
+        if (parent && parent.archivedBy == null && parent.archivedAt != null) {
+          await db
+            .update(rentals)
+            .set({
+              archivedAt: null,
+              endActualAt: null,
+              status: "active",
+              updatedAt: sql`now()`,
+            })
+            .where(eq(rentals.id, parent.id));
+        }
       }
     }
 
