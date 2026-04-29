@@ -4,20 +4,15 @@ import { Camera, Check, FolderOpen, RotateCw } from "lucide-react";
 import { ApiError, applicationApi, type FileKind } from "./applicationApi";
 
 /**
- * Принимаем только изображения. PDF убран — был случай когда клиент
- * приложил pdf и менеджер не мог посмотреть в браузере.
+ * Фильтрация форматов — через атрибут `accept` на <input>: системный
+ * picker просто не покажет PDF/MP3/EXE и т.п. Дополнительной валидации
+ * с сообщением «не тот формат» в UI нет — она избыточна, картинку
+ * иначе и не выберешь. Если каким-то образом не-image всё-таки дойдёт
+ * до сервера — сервер ответит 415 и UI покажет общую ошибку загрузки.
  *
- * HEIC принимаем — конвертируем в JPEG локально через heic2any (~2.4 MB
- * lazy-chunk, грузится только если файл реально HEIC).
+ * HEIC принимаем — конвертируем в JPEG локально через heic2any
+ * (~2.4 MB lazy-chunk, грузится только если файл реально HEIC).
  */
-const ALLOWED_MIME = [
-  "image/jpeg",
-  "image/jpg",
-  "image/png",
-  "image/webp",
-  "image/heic",
-  "image/heif",
-];
 
 /** Лимит на исходный файл (после ресайза/сжатия будет сильно меньше). */
 const MAX_RAW_SIZE_MB = 25;
@@ -98,14 +93,6 @@ export function PhotoUpload(props: Props) {
 
   const onFile = async (rawFile: File) => {
     setError(null);
-    // Базовая проверка — иногда mime приходит пустой (особенно с HEIC).
-    // Тогда смотрим на расширение.
-    const lowerName = rawFile.name.toLowerCase();
-    const isImageByName = /\.(jpe?g|png|webp|heic|heif)$/i.test(lowerName);
-    if (!ALLOWED_MIME.includes(rawFile.type.toLowerCase()) && !isImageByName) {
-      setError("Только изображения: JPEG, PNG, HEIC. PDF не поддерживается.");
-      return;
-    }
     if (rawFile.size > MAX_RAW_SIZE_MB * 1024 * 1024) {
       setError(`Файл больше ${MAX_RAW_SIZE_MB} МБ — слишком тяжёлый`);
       return;

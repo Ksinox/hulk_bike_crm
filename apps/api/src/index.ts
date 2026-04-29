@@ -88,7 +88,8 @@ async function bootstrap() {
           (SELECT count(*) FROM rentals WHERE archived_at IS NULL OR archived_at IS NOT NULL) AS c2,
           (SELECT count(*) FROM scooter_models WHERE active = true OR active = false) AS c3,
           (SELECT count(*) FROM scooter_models WHERE day_rate >= 0) AS c4,
-          (SELECT count(*) FROM client_applications WHERE status::text IS NOT NULL) AS c5
+          (SELECT count(*) FROM client_applications WHERE status::text IS NOT NULL) AS c5,
+          (SELECT count(*) FROM scooter_models WHERE avatar_thumb_key IS NULL OR avatar_thumb_key IS NOT NULL) AS c6
         LIMIT 1
       `);
       return { ok: true, env: config.env };

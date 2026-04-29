@@ -641,9 +641,13 @@ export const scooterModels = pgTable(
   {
     id: bigserial("id", { mode: "number" }).primaryKey(),
     name: text("name").notNull().unique(),
-    /** Ключ файла в MinIO, fileName оригинала — для рендера аватарки */
+    /** Ключ оригинального файла аватарки в MinIO + имя файла. */
     avatarKey: text("avatar_key"),
     avatarFileName: text("avatar_file_name"),
+    /** Ключ кропнутой миниатюры (≤512px JPEG) — используется в плитках/списках,
+     *  чтобы не дёргать оригинал при каждом рендере. */
+    avatarThumbKey: text("avatar_thumb_key"),
+    avatarThumbFileName: text("avatar_thumb_file_name"),
     /**
      * true → показывается в быстром пикере при создании аренды.
      * Обычно 4 самых частых моделей отмечены true, остальное ищется
@@ -699,6 +703,8 @@ export const equipmentItems = pgTable(
     name: text("name").notNull().unique(),
     avatarKey: text("avatar_key"),
     avatarFileName: text("avatar_file_name"),
+    avatarThumbKey: text("avatar_thumb_key"),
+    avatarThumbFileName: text("avatar_thumb_file_name"),
     quickPick: boolean("quick_pick").notNull().default(true),
     /** Цена за всю аренду (не за сутки) */
     price: integer("price").notNull().default(0),

@@ -159,31 +159,59 @@ export async function equipmentRoutes(app: FastifyInstance) {
         .where(eq(equipmentItems.id, id));
       if (!existing) return reply.code(404).send({ error: "not found" });
 
-      const parts = req.parts({ limits: { fileSize: MAX_AVATAR, files: 1 } });
+      // Принимаем оригинал (file) и опциональную миниатюру (thumb) от
+      // ImageCropDialog на клиенте.
+      const parts = req.parts({ limits: { fileSize: MAX_AVATAR, files: 2 } });
       let fileBuf: Buffer | null = null;
       let fileName = "avatar";
       let mimeType = "application/octet-stream";
+      let thumbBuf: Buffer | null = null;
+      let thumbName = "avatar-thumb";
+      let thumbMime = "image/jpeg";
       for await (const part of parts) {
         if (part.type === "file") {
-          fileBuf = await part.toBuffer();
-          fileName = part.filename;
-          mimeType = part.mimetype;
+          if (part.fieldname === "thumb") {
+            thumbBuf = await part.toBuffer();
+            thumbName = part.filename || thumbName;
+            thumbMime = part.mimetype || thumbMime;
+          } else {
+            fileBuf = await part.toBuffer();
+            fileName = part.filename;
+            mimeType = part.mimetype;
+          }
         }
       }
       if (!fileBuf) return reply.code(400).send({ error: "file required" });
       if (!/^image\//.test(mimeType))
         return reply.code(400).send({ error: "only images" });
+      if (thumbBuf && !/^image\//.test(thumbMime))
+        return reply.code(400).send({ error: "thumb must be image" });
 
       const key = makeFileKey(`equipment/${id}`, fileName);
       await putObject(key, fileBuf, mimeType);
 
+      let thumbKey: string | null = null;
+      if (thumbBuf) {
+        thumbKey = makeFileKey(`equipment/${id}/thumb`, thumbName);
+        await putObject(thumbKey, thumbBuf, thumbMime);
+      }
+
       if (existing.avatarKey && existing.avatarKey !== key) {
         await removeObject(existing.avatarKey).catch(() => null);
+      }
+      if (existing.avatarThumbKey && existing.avatarThumbKey !== thumbKey) {
+        await removeObject(existing.avatarThumbKey).catch(() => null);
       }
 
       const [updated] = await db
         .update(equipmentItems)
-        .set({ avatarKey: key, avatarFileName: fileName, updatedAt: new Date() })
+        .set({
+          avatarKey: key,
+          avatarFileName: fileName,
+          avatarThumbKey: thumbKey,
+          avatarThumbFileName: thumbBuf ? thumbName : null,
+          updatedAt: new Date(),
+        })
         .where(eq(equipmentItems.id, id))
         .returning();
       await logActivity(req, {
@@ -212,9 +240,18 @@ export async function equipmentRoutes(app: FastifyInstance) {
       if (existing.avatarKey) {
         await removeObject(existing.avatarKey).catch(() => null);
       }
+      if (existing.avatarThumbKey) {
+        await removeObject(existing.avatarThumbKey).catch(() => null);
+      }
       const [updated] = await db
         .update(equipmentItems)
-        .set({ avatarKey: null, avatarFileName: null, updatedAt: new Date() })
+        .set({
+          avatarKey: null,
+          avatarFileName: null,
+          avatarThumbKey: null,
+          avatarThumbFileName: null,
+          updatedAt: new Date(),
+        })
         .where(eq(equipmentItems.id, id))
         .returning();
       if (existing.avatarKey) {

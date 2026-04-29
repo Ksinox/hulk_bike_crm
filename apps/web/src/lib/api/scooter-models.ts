@@ -8,6 +8,9 @@ export type ApiScooterModel = {
   name: string;
   avatarKey: string | null;
   avatarFileName: string | null;
+  /** Кропнутая миниатюра (≤512px JPEG) — для плиток/списков. */
+  avatarThumbKey: string | null;
+  avatarThumbFileName: string | null;
   quickPick: boolean;
   /**
    * false → модель не показывается на лендинге и в выборах CRM
@@ -100,13 +103,22 @@ export function useDeleteScooterModel() {
   });
 }
 
-/** Загрузить аватарку модели (multipart). */
+/**
+ * Загрузить аватарку модели (multipart).
+ *  - file  — оригинал (после ресайза/сжатия на клиенте)
+ *  - thumb — опционально, кропнутая миниатюра 512×512 от ImageCropDialog
+ */
 export function useUploadScooterModelAvatar() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (args: { id: number; file: File }) => {
+    mutationFn: async (args: { id: number; file: Blob; thumb?: Blob }) => {
       const fd = new FormData();
-      fd.append("file", args.file, args.file.name);
+      const fileName =
+        args.file instanceof File ? args.file.name : "avatar.jpg";
+      fd.append("file", args.file, fileName);
+      if (args.thumb) {
+        fd.append("thumb", args.thumb, "thumb.jpg");
+      }
       const base =
         import.meta.env.VITE_API_URL?.replace(/\/$/, "") ??
         "http://localhost:4000";

@@ -326,10 +326,14 @@ function EquipAvatarEditor({ item }: { item: ApiEquipmentItem }) {
       </div>
       <AvatarUpload
         avatarKey={live.avatarKey}
+        avatarThumbKey={live.avatarThumbKey}
         uploading={uploadMut.isPending}
         removing={deleteMut.isPending}
-        onUpload={(file) => uploadMut.mutateAsync({ id: item.id, file })}
+        onUpload={({ full, thumb }) =>
+          uploadMut.mutateAsync({ id: item.id, file: full, thumb })
+        }
         onRemove={() => deleteMut.mutateAsync(item.id)}
+        cropTitle={`Кропнуть аватарку «${item.name}»`}
       />
     </div>
   );

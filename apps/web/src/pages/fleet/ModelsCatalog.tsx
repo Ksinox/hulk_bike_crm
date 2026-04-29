@@ -466,10 +466,14 @@ function AvatarEditor({ model }: { model: ApiScooterModel }) {
       </div>
       <AvatarUpload
         avatarKey={live.avatarKey}
+        avatarThumbKey={live.avatarThumbKey}
         uploading={uploadMut.isPending}
         removing={deleteMut.isPending}
-        onUpload={(file) => uploadMut.mutateAsync({ id: model.id, file })}
+        onUpload={({ full, thumb }) =>
+          uploadMut.mutateAsync({ id: model.id, file: full, thumb })
+        }
         onRemove={() => deleteMut.mutateAsync(model.id)}
+        cropTitle={`Кропнуть аватарку «${model.name}»`}
       />
       <div className="mt-1 text-[11px] text-muted-2">
         Эта картинка показывается в карточке скутера и в блоке «Скутер» при аренде.

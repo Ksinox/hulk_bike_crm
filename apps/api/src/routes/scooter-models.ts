@@ -187,8 +187,11 @@ export async function scooterModelsRoutes(app: FastifyInstance) {
 
   /**
    * POST /api/scooter-models/:id/avatar (multipart)
-   * Поле file — картинка (JPG/PNG/WEBP, до 5 МБ).
-   * Кладёт в MinIO, обновляет avatarKey/avatarFileName, старую удаляет.
+   * Поля:
+   *   • file  — оригинал (JPG/PNG/WEBP, до 5 МБ).
+   *   • thumb — опционально, кропнутая миниатюра (генерируется на клиенте
+   *             через ImageCropDialog). Если есть — кладём отдельно
+   *             в MinIO и сохраняем avatarThumbKey/avatarThumbFileName.
    */
   app.post<{ Params: { id: string } }>(
     "/:id/avatar",
@@ -203,32 +206,59 @@ export async function scooterModelsRoutes(app: FastifyInstance) {
         .where(eq(scooterModels.id, id));
       if (!existing) return reply.code(404).send({ error: "not found" });
 
-      const parts = req.parts({ limits: { fileSize: MAX_AVATAR, files: 1 } });
+      // Принимаем до двух файлов: основной (file) и миниатюру (thumb).
+      const parts = req.parts({ limits: { fileSize: MAX_AVATAR, files: 2 } });
       let fileBuf: Buffer | null = null;
       let fileName = "avatar";
       let mimeType = "application/octet-stream";
+      let thumbBuf: Buffer | null = null;
+      let thumbName = "avatar-thumb";
+      let thumbMime = "image/jpeg";
       for await (const part of parts) {
         if (part.type === "file") {
-          fileBuf = await part.toBuffer();
-          fileName = part.filename;
-          mimeType = part.mimetype;
+          if (part.fieldname === "thumb") {
+            thumbBuf = await part.toBuffer();
+            thumbName = part.filename || thumbName;
+            thumbMime = part.mimetype || thumbMime;
+          } else {
+            fileBuf = await part.toBuffer();
+            fileName = part.filename;
+            mimeType = part.mimetype;
+          }
         }
       }
       if (!fileBuf) return reply.code(400).send({ error: "file required" });
       if (!/^image\//.test(mimeType))
         return reply.code(400).send({ error: "only images" });
+      if (thumbBuf && !/^image\//.test(thumbMime))
+        return reply.code(400).send({ error: "thumb must be image" });
 
       const key = makeFileKey(`models/${id}`, fileName);
       await putObject(key, fileBuf, mimeType);
 
-      // удаляем старую
+      let thumbKey: string | null = null;
+      if (thumbBuf) {
+        thumbKey = makeFileKey(`models/${id}/thumb`, thumbName);
+        await putObject(thumbKey, thumbBuf, thumbMime);
+      }
+
+      // Удаляем старые ключи (и оригинал и старую миниатюру).
       if (existing.avatarKey && existing.avatarKey !== key) {
         await removeObject(existing.avatarKey).catch(() => null);
+      }
+      if (existing.avatarThumbKey && existing.avatarThumbKey !== thumbKey) {
+        await removeObject(existing.avatarThumbKey).catch(() => null);
       }
 
       const [updated] = await db
         .update(scooterModels)
-        .set({ avatarKey: key, avatarFileName: fileName, updatedAt: new Date() })
+        .set({
+          avatarKey: key,
+          avatarFileName: fileName,
+          avatarThumbKey: thumbKey,
+          avatarThumbFileName: thumbBuf ? thumbName : null,
+          updatedAt: new Date(),
+        })
         .where(eq(scooterModels.id, id))
         .returning();
       await logActivity(req, {
@@ -258,9 +288,18 @@ export async function scooterModelsRoutes(app: FastifyInstance) {
       if (existing.avatarKey) {
         await removeObject(existing.avatarKey).catch(() => null);
       }
+      if (existing.avatarThumbKey) {
+        await removeObject(existing.avatarThumbKey).catch(() => null);
+      }
       const [updated] = await db
         .update(scooterModels)
-        .set({ avatarKey: null, avatarFileName: null, updatedAt: new Date() })
+        .set({
+          avatarKey: null,
+          avatarFileName: null,
+          avatarThumbKey: null,
+          avatarThumbFileName: null,
+          updatedAt: new Date(),
+        })
         .where(eq(scooterModels.id, id))
         .returning();
       if (existing.avatarKey) {
