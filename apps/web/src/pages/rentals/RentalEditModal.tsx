@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Loader2, Trash2, X, Link2, ChevronRight } from "lucide-react";
+import {
+  ArrowLeftRight,
+  ChevronRight,
+  Link2,
+  Loader2,
+  Trash2,
+  X,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast, confirmDialog } from "@/lib/toast";
 import {
@@ -9,7 +16,12 @@ import {
   useArchivedRentals,
   useChainPayments,
 } from "./rentalsStore";
-import { useDeleteRental } from "@/lib/api/rentals";
+import {
+  useApiScooterSwaps,
+  useDeleteRental,
+  useDeleteScooterSwap,
+} from "@/lib/api/rentals";
+import { useApiScooters } from "@/lib/api/scooters";
 import type { Rental } from "@/lib/mock/rentals";
 
 /**
@@ -85,6 +97,14 @@ export function RentalEditModal({
     chainRentals.find((r) => r.id === currentId) ?? rental;
 
   const deleteRental = useDeleteRental();
+  // История in-place замен скутера для этой аренды (свапы пишутся
+  // в scooter_swaps после рефакторинга /swap-scooter). Их нужно
+  // показать в модалке отдельной секцией, чтобы можно было синхронно
+  // с карточкой удалить лишние замены.
+  const swapsQ = useApiScooterSwaps(rental.id);
+  const swaps = swapsQ.data ?? [];
+  const { data: apiScooters = [] } = useApiScooters();
+  const deleteSwap = useDeleteScooterSwap();
 
   /** Это «базовая» (корневая) связка цепочки? — её удалять нельзя. */
   const isRootSegment = (seg: Rental): boolean =>
@@ -93,6 +113,24 @@ export function RentalEditModal({
   /** Замена скутера vs обычное продление — отличаем по note. */
   const isSwap = (seg: Rental): boolean =>
     /замена скутера/i.test(seg.note ?? "");
+
+  const onDeleteSwap = async (swapId: number) => {
+    const ok = await confirmDialog({
+      title: "Удалить запись о замене?",
+      message:
+        "Запись из истории замен скутера будет удалена. Текущий скутер аренды не изменится — это очистка истории. Документы (акт замены) после этого тоже не увидят эту запись.",
+      confirmText: "Удалить",
+      cancelText: "Отмена",
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await deleteSwap.mutateAsync(swapId);
+      toast.success("Запись о замене удалена", "");
+    } catch (e) {
+      toast.error("Не удалось удалить", (e as Error).message ?? "");
+    }
+  };
 
   const onDeleteSegment = async (segId: number) => {
     const seg = chainRentals.find((r) => r.id === segId);
@@ -296,6 +334,70 @@ export function RentalEditModal({
               Кликните по связке, чтобы её отредактировать. Удалить можно
               любую связку кроме базовой; потомки переподцепятся к
               предыдущей.
+            </div>
+          </div>
+        )}
+
+        {swaps.length > 0 && (
+          <div className="border-b border-border bg-surface-soft/50 px-5 py-3">
+            <div className="mb-2 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-2">
+              <ArrowLeftRight size={12} /> Замены скутера ({swaps.length})
+            </div>
+            <div className="flex flex-col gap-1">
+              {swaps.map((swap) => {
+                const prev = apiScooters.find(
+                  (s) => s.id === swap.prevScooterId,
+                );
+                const next = apiScooters.find(
+                  (s) => s.id === swap.newScooterId,
+                );
+                const dt = new Date(swap.swapAt);
+                const dtStr = `${String(dt.getDate()).padStart(2, "0")}.${String(dt.getMonth() + 1).padStart(2, "0")}.${dt.getFullYear()}`;
+                return (
+                  <div
+                    key={swap.id}
+                    className="group flex items-center gap-2 rounded-[10px] border border-border bg-white px-2.5 py-1.5 text-[12px]"
+                  >
+                    <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-800">
+                      Замена
+                    </span>
+                    <span className="font-semibold text-ink">
+                      {prev?.name ?? `#${swap.prevScooterId ?? "?"}`}
+                    </span>
+                    <span className="text-muted-2">→</span>
+                    <span className="font-semibold text-ink">
+                      {next?.name ?? `#${swap.newScooterId}`}
+                    </span>
+                    {swap.reason && (
+                      <span
+                        className="ml-1 truncate text-muted-2"
+                        title={swap.reason}
+                      >
+                        · {swap.reason}
+                      </span>
+                    )}
+                    <span className="ml-auto text-muted-2">{dtStr}</span>
+                    {swap.feeAmount > 0 && (
+                      <span className="font-semibold tabular-nums text-amber-700">
+                        +{swap.feeAmount.toLocaleString("ru-RU")} ₽
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => onDeleteSwap(swap.id)}
+                      disabled={deleteSwap.isPending}
+                      title="Удалить запись о замене"
+                      className="rounded-[6px] p-1 text-muted-2 hover:bg-red-soft hover:text-red-600"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="mt-2 text-[11px] text-muted-2">
+              Это история in-place замен скутера в этой аренде. Удаление
+              чистит запись истории — текущий скутер аренды не меняется.
             </div>
           </div>
         )}

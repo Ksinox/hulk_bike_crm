@@ -416,6 +416,42 @@ export async function rentalsRoutes(app: FastifyInstance) {
   });
 
   /**
+   * DELETE /api/rentals/scooter-swaps/:swapId — удаляет одну запись
+   * замены скутера из scooter_swaps. Используется когда оператор хочет
+   * почистить лишние замены вручную через «Изменить аренду». Сама
+   * аренда не трогается, scooterId не возвращается на старый — просто
+   * чистим историю. Доступ — creator/director.
+   *
+   * Путь /scooter-swaps/:swapId статичный (без /:id перед ним), чтобы
+   * Fastify radix tree не путал его с DELETE /:id.
+   */
+  app.delete<{ Params: { swapId: string } }>(
+    "/scooter-swaps/:swapId",
+    async (req, reply) => {
+      if (req.user.role !== "creator" && req.user.role !== "director") {
+        return reply.code(403).send({ error: "forbidden" });
+      }
+      const sid = Number(req.params.swapId);
+      if (!Number.isFinite(sid))
+        return reply.code(400).send({ error: "bad id" });
+      const [row] = await db
+        .select()
+        .from(scooterSwaps)
+        .where(eq(scooterSwaps.id, sid));
+      if (!row) return reply.code(404).send({ error: "not found" });
+      await db.delete(scooterSwaps).where(eq(scooterSwaps.id, sid));
+      await logActivity(req, {
+        entity: "rental",
+        entityId: row.rentalId,
+        action: "scooter_swap_deleted",
+        summary: `Удалена запись о замене скутера в аренде #${String(row.rentalId).padStart(4, "0")}`,
+        meta: { swapId: sid, prevScooterId: row.prevScooterId, newScooterId: row.newScooterId },
+      });
+      return reply.code(204).send();
+    },
+  );
+
+  /**
    * GET /api/rentals/:id/scooter-swaps
    *
    * Возвращает историю замен скутера в этой аренде (из таблицы

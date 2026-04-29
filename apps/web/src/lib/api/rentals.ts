@@ -57,6 +57,18 @@ export function useApiScooterSwaps(rentalId: number | null) {
   });
 }
 
+/** Удаляет одну запись scooter_swap (из «Замены скутера» в RentalEditModal). */
+export function useDeleteScooterSwap() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (swapId: number) =>
+      api.delete<void>(`/api/rentals/scooter-swaps/${swapId}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: rentalsKeys.all });
+    },
+  });
+}
+
 /**
  * Сброс цепочки аренды до базовой связки. Только creator.
  * Удаляет ВСЕ потомки корня (продления + замены), оставляет только

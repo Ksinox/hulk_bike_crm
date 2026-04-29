@@ -368,8 +368,29 @@ export function RentalCard({
   const paidIn = chainPayments
     .filter((p) => p.paid && p.type !== "refund" && p.type !== "deposit")
     .reduce((s, p) => s + p.amount, 0);
+  // pending (плашка «Долг») — суммируем неоплаченные платежи ТОЛЬКО
+  // по полностью активным связкам цепочки (archivedAt == null).
+  // Auto-archived родители (после extend) могли оставить orphan-платежи
+  // от старой логики — они задолженности не отражают, бизнес-периодически
+  // закрыты следующей связкой. Без этого фильтра карточка показывала
+  // фантомный долг типа 3000 ₽ при полностью оплаченной активной аренде.
+  const activeRentalIdsForPending = useMemo(
+    () =>
+      new Set(
+        allRentals
+          .filter(
+            (r) =>
+              chainIds.includes(r.id) &&
+              !r.archivedBy &&
+              r.archivedAt == null,
+          )
+          .map((r) => r.id),
+      ),
+    [allRentals, chainIds],
+  );
   const pending = chainPayments
     .filter((p) => !p.paid && p.type !== "deposit")
+    .filter((p) => activeRentalIdsForPending.has(p.rentalId))
     .reduce((s, p) => s + p.amount, 0);
   // chainExpected больше не используется в UI карточки (убрали «X% по
   // цепочке»). Оставляем переменную для будущих метрик/отчётов —
