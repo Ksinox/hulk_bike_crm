@@ -583,8 +583,14 @@ function Step1({
           placeholder="ДД.ММ.ГГГГ"
           inputMode="numeric"
           value={form.birth}
+          maxLength={10}
           onChange={(e) => setField("birth", formatDateRu(e.target.value))}
         />
+        {form.birth.length > 0 && form.birth.length < 10 && (
+          <div className="mt-1 text-[12px] text-amber-600">
+            Введите год полностью — 4 цифры (например, 1990)
+          </div>
+        )}
         {form.birth.length >= 10 && birthErr && (
           <div className="mt-1 text-[12px] text-red-600">{birthErr}</div>
         )}
@@ -694,8 +700,14 @@ function Step2({
           placeholder="ДД.ММ.ГГГГ"
           inputMode="numeric"
           value={form.passDate}
+          maxLength={10}
           onChange={(e) => setField("passDate", formatDateRu(e.target.value))}
         />
+        {form.passDate.length > 0 && form.passDate.length < 10 && (
+          <div className="mt-1 text-[12px] text-amber-600">
+            Введите год полностью — 4 цифры (например, 2024)
+          </div>
+        )}
         {form.passDate.length >= 10 && validatePastDate(form.passDate) && (
           <div className="mt-1 text-[12px] text-red-600">
             {validatePastDate(form.passDate)}
