@@ -24,6 +24,19 @@ import {
 import { useApiScooters } from "@/lib/api/scooters";
 import type { Rental } from "@/lib/mock/rentals";
 
+/** Унифицированный пункт «замена скутера» в модалке. Объединяет два
+ *  источника: legacy-связку с другим scooterId vs предка и запись
+ *  in-place свапа из scooter_swaps. */
+type SwapItem = {
+  kind: "rental" | "swap";
+  id: number;
+  prevScooterId: number | null;
+  newScooterId: number;
+  reason: string | null;
+  swapAt: string;
+  feeAmount: number;
+};
+
 /**
  * Редактирование существующей аренды + связок (продлений).
  *
@@ -147,6 +160,80 @@ export function RentalEditModal({
     }
   };
 
+  // Множественный выбор для batch-удаления продлений и замен.
+  // Ключ: "rental:N" — id связки, "swap:N" — id записи scooter_swaps.
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  const toggleKey = (key: string) => {
+    setSelectedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+  const clearSelection = () => setSelectedKeys(new Set());
+
+  /**
+   * Массовое удаление выбранных продлений и замен.
+   * Выполняется ПОСЛЕДОВАТЕЛЬНО — чтобы revert логика DELETE
+   * /scooter-swaps работала корректно (она опирается на «последняя ли
+   * запись» — при параллельных запросах будет race condition).
+   * Связки (rentals) удаляются после свапов: меньше шансов потерять
+   * head-связку до возрождения родителя.
+   */
+  const bulkDelete = async () => {
+    const keys = [...selectedKeys];
+    if (keys.length === 0) return;
+    const ok = await confirmDialog({
+      title: `Удалить выбранные (${keys.length})?`,
+      message:
+        "Выбранные связки и записи о заменах будут удалены. Связки уйдут в архив, замены отменят возврат скутера. Операция применится последовательно.",
+      confirmText: "Удалить",
+      cancelText: "Отмена",
+      danger: true,
+    });
+    if (!ok) return;
+    const swapIds = keys
+      .filter((k) => k.startsWith("swap:"))
+      .map((k) => Number(k.slice("swap:".length)));
+    const rentalIds = keys
+      .filter((k) => k.startsWith("rental:"))
+      .map((k) => Number(k.slice("rental:".length)));
+
+    let failed = 0;
+    // Сначала свапы — у них есть revert, удаляем последовательно
+    // от новых к старым (чтобы каждое удаление было «последним»).
+    const swapIdsOrdered = [...swapIds].sort((a, b) => b - a);
+    for (const sid of swapIdsOrdered) {
+      try {
+        await deleteSwap.mutateAsync(sid);
+      } catch {
+        failed++;
+      }
+    }
+    // Потом связки — от head к корню (по убыванию id).
+    const rentalIdsOrdered = [...rentalIds].sort((a, b) => b - a);
+    for (const rid of rentalIdsOrdered) {
+      try {
+        await deleteRental.mutateAsync(rid);
+      } catch {
+        failed++;
+      }
+    }
+    clearSelection();
+    if (failed > 0) {
+      toast.error(
+        "Удалено частично",
+        `Не удалось удалить ${failed} элементов из ${keys.length}.`,
+      );
+    } else {
+      toast.success(
+        "Удалено",
+        `Снято ${keys.length} ${keys.length === 1 ? "элемент" : "элементов"}.`,
+      );
+    }
+  };
+
   const onDeleteSegment = async (segId: number) => {
     const seg = chainRentals.find((r) => r.id === segId);
     if (seg && isRootSegment(seg)) {
@@ -255,36 +342,54 @@ export function RentalEditModal({
           </div>
         </div>
 
+        {/* Bulk-actions bar — появляется когда что-то выбрано чекбоксами. */}
+        {selectedKeys.size > 0 && (
+          <div className="flex items-center gap-3 border-b border-amber-200 bg-amber-50 px-5 py-2 text-[12px]">
+            <span className="font-semibold text-amber-900">
+              Выбрано: {selectedKeys.size}
+            </span>
+            <button
+              type="button"
+              onClick={clearSelection}
+              className="text-amber-800 underline hover:text-amber-900"
+            >
+              сбросить
+            </button>
+            <button
+              type="button"
+              onClick={bulkDelete}
+              disabled={deleteRental.isPending || deleteSwap.isPending}
+              className="ml-auto inline-flex items-center gap-1 rounded-full bg-red-600 px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+            >
+              <Trash2 size={12} /> Удалить выбранные
+            </button>
+          </div>
+        )}
+
         {hasChain && (
           <div className="border-b border-border bg-surface-soft/50 px-5 py-3">
             <div className="mb-2 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-2">
-              <Link2 size={12} /> Связки серии
+              <Link2 size={12} /> Связки серии (продления)
             </div>
             <div className="flex flex-col gap-1">
               {(() => {
-                // Считаем порядковые номера ОТДЕЛЬНО для продлений и
-                // замен — чтобы клиенту было понятно «3-е продление»,
-                // «2-я замена», а не «связка №7 в общем списке».
+                // В этой секции только настоящие продления (scooterId
+                // не менялся) + базовая. Замены (legacy и in-place)
+                // ниже в общей секции «Замены скутера».
+                const ordered = chainRentals.filter(
+                  (seg) => isRootSegment(seg) || !isSwap(seg),
+                );
                 let extIdx = 0;
-                let swapIdx = 0;
-                return chainRentals.map((seg) => {
+                return ordered.map((seg) => {
                   const isActive = seg.id === currentId;
                   const isRoot = isRootSegment(seg);
-                  const swap = !isRoot && isSwap(seg);
-                  if (!isRoot) {
-                    if (swap) swapIdx++;
-                    else extIdx++;
-                  }
-                  const label = isRoot
-                    ? "Базовая"
-                    : swap
-                      ? `Замена ${swapIdx}`
-                      : `Продл. ${extIdx}`;
+                  if (!isRoot) extIdx++;
+                  const label = isRoot ? "Базовая" : `Продл. ${extIdx}`;
                   const tone = isRoot
                     ? "bg-green-soft text-green-ink"
-                    : swap
-                      ? "bg-amber-100 text-amber-800"
-                      : "bg-purple-soft text-purple-ink";
+                    : "bg-purple-soft text-purple-ink";
+                  const checkKey = `rental:${seg.id}`;
+                  const checked = selectedKeys.has(checkKey);
                   return (
                     <div
                       key={seg.id}
@@ -295,6 +400,15 @@ export function RentalEditModal({
                           : "border-border bg-white hover:border-blue-300",
                       )}
                     >
+                      {!isRoot && (
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleKey(checkKey)}
+                          title="Отметить для массового удаления"
+                          className="h-3.5 w-3.5 cursor-pointer accent-red-600"
+                        />
+                      )}
                       <button
                         type="button"
                         onClick={() => setCurrentId(seg.id)}
@@ -346,76 +460,143 @@ export function RentalEditModal({
               })()}
             </div>
             <div className="mt-2 text-[11px] text-muted-2">
-              Кликните по связке, чтобы её отредактировать. Удалить можно
-              любую связку кроме базовой; потомки переподцепятся к
-              предыдущей.
+              Кликните по связке, чтобы её отредактировать. Чекбоксом
+              отметьте несколько — для массового удаления.
             </div>
           </div>
         )}
 
-        {swaps.length > 0 && (
-          <div className="border-b border-border bg-surface-soft/50 px-5 py-3">
-            <div className="mb-2 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-2">
-              <ArrowLeftRight size={12} /> Замены скутера ({swaps.length})
-            </div>
-            <div className="flex flex-col gap-1">
-              {swaps.map((swap) => {
-                const prev = apiScooters.find(
-                  (s) => s.id === swap.prevScooterId,
-                );
-                const next = apiScooters.find(
-                  (s) => s.id === swap.newScooterId,
-                );
-                const dt = new Date(swap.swapAt);
-                const dtStr = `${String(dt.getDate()).padStart(2, "0")}.${String(dt.getMonth() + 1).padStart(2, "0")}.${dt.getFullYear()}`;
-                return (
-                  <div
-                    key={swap.id}
-                    className="group flex items-center gap-2 rounded-[10px] border border-border bg-white px-2.5 py-1.5 text-[12px]"
-                  >
-                    <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-800">
-                      Замена
-                    </span>
-                    <span className="font-semibold text-ink">
-                      {prev?.name ?? `#${swap.prevScooterId ?? "?"}`}
-                    </span>
-                    <span className="text-muted-2">→</span>
-                    <span className="font-semibold text-ink">
-                      {next?.name ?? `#${swap.newScooterId}`}
-                    </span>
-                    {swap.reason && (
-                      <span
-                        className="ml-1 truncate text-muted-2"
-                        title={swap.reason}
-                      >
-                        · {swap.reason}
-                      </span>
-                    )}
-                    <span className="ml-auto text-muted-2">{dtStr}</span>
-                    {swap.feeAmount > 0 && (
-                      <span className="font-semibold tabular-nums text-amber-700">
-                        +{swap.feeAmount.toLocaleString("ru-RU")} ₽
-                      </span>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => onDeleteSwap(swap.id)}
-                      disabled={deleteSwap.isPending}
-                      title="Удалить запись о замене"
-                      className="rounded-[6px] p-1 text-muted-2 hover:bg-red-soft hover:text-red-600"
+        {(() => {
+          // Объединённая секция «Замены скутера»:
+          //  - legacy замены: связки цепочки, у которых scooterId
+          //    отличается от scooterId предка (старая архитектура,
+          //    где свап создавал child rental);
+          //  - in-place замены: записи из таблицы scooter_swaps
+          //    (новая архитектура).
+          // Обе с одинаковым UI и checkbox для bulk-delete. Тип SwapItem
+          // вынесен на module-scope (vite/babel плохо переваривает
+          // локальные type-decl внутри JSX-IIFE).
+          const legacyItems: SwapItem[] = chainRentals
+            .filter((seg) => !isRootSegment(seg) && isSwap(seg))
+            .map((seg) => {
+              const parent = allRentals.find(
+                (r) => r.id === seg.parentRentalId,
+              );
+              return {
+                kind: "rental" as const,
+                id: seg.id,
+                prevScooterId: parent?.scooterId ?? null,
+                newScooterId: seg.scooterId ?? 0,
+                reason:
+                  /замена скутера:\s*(.+)$/iu.exec(seg.note ?? "")?.[1] ??
+                  null,
+                swapAt: seg.start,
+                feeAmount: 0,
+              };
+            });
+          const inplaceItems: SwapItem[] = swaps.map((s) => ({
+            kind: "swap" as const,
+            id: s.id,
+            prevScooterId: s.prevScooterId,
+            newScooterId: s.newScooterId,
+            reason: s.reason,
+            swapAt: s.swapAt,
+            feeAmount: s.feeAmount,
+          }));
+          const all = [...legacyItems, ...inplaceItems].sort((a, b) =>
+            a.swapAt.localeCompare(b.swapAt),
+          );
+          if (all.length === 0) return null;
+          return (
+            <div className="border-b border-border bg-surface-soft/50 px-5 py-3">
+              <div className="mb-2 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-2">
+                <ArrowLeftRight size={12} /> Замены скутера ({all.length})
+              </div>
+              <div className="flex flex-col gap-1">
+                {all.map((it) => {
+                  const prev = apiScooters.find(
+                    (s) => s.id === it.prevScooterId,
+                  );
+                  const next = apiScooters.find(
+                    (s) => s.id === it.newScooterId,
+                  );
+                  const dtSrc = it.swapAt;
+                  const dt = /^\d{2}\.\d{2}\.\d{4}$/.test(dtSrc)
+                    ? dtSrc
+                    : (() => {
+                        const d = new Date(dtSrc);
+                        return Number.isNaN(d.getTime())
+                          ? dtSrc
+                          : `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}`;
+                      })();
+                  const checkKey = `${it.kind}:${it.id}`;
+                  const checked = selectedKeys.has(checkKey);
+                  const onClickDelete = () => {
+                    if (it.kind === "swap") {
+                      onDeleteSwap(it.id);
+                    } else {
+                      onDeleteSegment(it.id);
+                    }
+                  };
+                  return (
+                    <div
+                      key={`${it.kind}-${it.id}`}
+                      className="group flex items-center gap-2 rounded-[10px] border border-border bg-white px-2.5 py-1.5 text-[12px]"
                     >
-                      <Trash2 size={12} />
-                    </button>
-                  </div>
-                );
-              })}
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleKey(checkKey)}
+                        title="Отметить для массового удаления"
+                        className="h-3.5 w-3.5 cursor-pointer accent-red-600"
+                      />
+                      <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-800">
+                        Замена
+                      </span>
+                      <span className="font-semibold text-ink">
+                        {prev?.name ?? `#${it.prevScooterId ?? "?"}`}
+                      </span>
+                      <span className="text-muted-2">→</span>
+                      <span className="font-semibold text-ink">
+                        {next?.name ?? `#${it.newScooterId}`}
+                      </span>
+                      {it.reason && (
+                        <span
+                          className="ml-1 truncate text-muted-2"
+                          title={it.reason}
+                        >
+                          · {it.reason}
+                        </span>
+                      )}
+                      <span className="ml-auto text-muted-2">{dt}</span>
+                      {it.feeAmount > 0 && (
+                        <span className="font-semibold tabular-nums text-amber-700">
+                          +{it.feeAmount.toLocaleString("ru-RU")} ₽
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={onClickDelete}
+                        disabled={
+                          deleteSwap.isPending || deleteRental.isPending
+                        }
+                        title="Удалить замену"
+                        className="rounded-[6px] p-1 text-muted-2 hover:bg-red-soft hover:text-red-600"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="mt-2 text-[11px] text-muted-2">
+                История замен скутера в этой аренде. Удаление чистит запись
+                истории — для последней записи также возвращает предыдущий
+                скутер на аренду.
+              </div>
             </div>
-            <div className="mt-2 text-[11px] text-muted-2">
-              Это история in-place замен скутера в этой аренде. Удаление
-              чистит запись истории — текущий скутер аренды не меняется.
-            </div>
-          </div>
-        )}
+          );
+        })()}
 
         <RentalEditForm
           key={currentRental.id}
