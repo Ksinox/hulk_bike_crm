@@ -381,7 +381,11 @@ export async function rentalsRoutes(app: FastifyInstance) {
 
     const [row] = await db.select().from(rentals).where(eq(rentals.id, id));
     if (!row) return reply.code(404).send({ error: "not found" });
-    if (row.archivedAt) {
+    // Различаем «уже удалена вручную» (archivedBy != null) и «авто-архив»
+    // (archivedAt != null, archivedBy == null — связка ушла в архив при
+    // extend/swap старой архитектуры). Второе — нормальная связка цепочки,
+    // её должно быть можно убрать из цепочки через кнопку «удалить».
+    if (row.archivedBy) {
       return reply.code(409).send({ error: "already_archived" });
     }
 
