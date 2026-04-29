@@ -116,6 +116,17 @@ const TEMPLATES: TemplateMeta[] = [
     rentalType: "contract_full",
   },
   {
+    id: "act_return",
+    title: "Акт возврата",
+    subtitle:
+      "Подписывается при окончательном возврате скутера в конце аренды. Фиксирует пробег, состояние, отметку о повреждениях и наличие/возврат экипировки. Открывается из карточки аренды → вкладка «Документы».",
+    badge: "При возврате",
+    badgeTone: "purple",
+    icon: FileText,
+    kind: "rental",
+    rentalType: "act_return",
+  },
+  {
     id: "act_swap",
     title: "Акт приёма-передачи и замены скутера",
     subtitle:
