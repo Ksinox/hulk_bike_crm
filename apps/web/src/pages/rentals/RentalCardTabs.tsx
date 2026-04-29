@@ -1556,6 +1556,8 @@ export function HistoryTab({
       {ordered.map((r, idx) => {
         const isCurrent = r.id === rental.id;
         const isFirst = idx === 0;
+        const isSwap =
+          !isFirst && /замена скутера/i.test(r.note ?? "");
         const equipmentList =
           (r.equipment?.length ?? 0) > 0 ? r.equipment.join(", ") : null;
         return (
@@ -1580,9 +1582,14 @@ export function HistoryTab({
                       первичная
                     </span>
                   )}
-                  {!isFirst && (
+                  {!isFirst && !isSwap && (
                     <span className="rounded-full bg-purple-soft px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-purple-ink">
                       продление
+                    </span>
+                  )}
+                  {isSwap && (
+                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-800">
+                      замена
                     </span>
                   )}
                   {isCurrent && (

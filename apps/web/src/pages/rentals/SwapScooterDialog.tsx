@@ -147,19 +147,17 @@ export function SwapScooterDialog({
       return;
     }
     try {
-      const created = await swap.mutateAsync({
+      const updated = await swap.mutateAsync({
         rentalId: rental.id,
         newScooterId: selectedId,
         oldScooterStatus: oldStatus,
         reason: reason.trim(),
       });
-      if (!created || typeof created.id !== "number") {
-        toast.error(
-          "Не удалось создать связку",
-          "API вернул некорректный ответ",
-        );
-        return;
-      }
+      // Замена теперь in-place: API меняет scooterId в текущей аренде,
+      // новой связки не создаётся. Возвращается обновлённый rental
+      // с тем же id. Для совместимости с onSwapped (ожидает rentalId
+      // для превью акта) передаём rental.id — превью покажет акт замены
+      // именно для этой аренды.
       const statusLabel =
         SCOOTER_BASE_STATUS_OPTIONS.find((o) => o.value === oldStatus)?.label ??
         oldStatus;
@@ -167,9 +165,9 @@ export function SwapScooterDialog({
         "Скутер заменён",
         `Старый → «${statusLabel}». Печатайте акт приёма-передачи.`,
       );
-      const newId = created.id;
+      const previewId = updated?.id ?? rental.id;
       requestClose();
-      window.setTimeout(() => onSwapped(newId), 200);
+      window.setTimeout(() => onSwapped(previewId), 200);
     } catch (e) {
       toast.error("Не удалось заменить", (e as Error).message ?? "");
     }

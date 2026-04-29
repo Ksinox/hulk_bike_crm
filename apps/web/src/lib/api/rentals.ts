@@ -28,6 +28,28 @@ export function useApiRentalsArchived() {
 }
 
 /**
+ * Сброс цепочки аренды до базовой связки. Только creator.
+ * Удаляет ВСЕ потомки корня (продления + замены), оставляет только
+ * первоначальную связку. Корень разархивируется. Операция необратима.
+ */
+export function useResetRentalChain() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (rentalId: number) =>
+      api.post<{ rootId: number; removed: number }>(
+        `/api/rentals/${rentalId}/reset-chain`,
+        {},
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: rentalsKeys.all });
+      qc.invalidateQueries({ queryKey: ["scooters"] });
+      qc.invalidateQueries({ queryKey: ["payments"] });
+      qc.invalidateQueries({ queryKey: ["activity"] });
+    },
+  });
+}
+
+/**
  * Хардкорное физическое удаление (только creator). Без следов в БД,
  * без записи в activity_log. Операция необратимая.
  */

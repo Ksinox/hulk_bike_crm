@@ -9,8 +9,24 @@ import {
   rentals,
   returnInspections,
   scooters,
+  scooterModels,
+  scooterSwaps,
   users as usersTable,
 } from "../db/schema.js";
+
+/**
+ * Возвращает ставку модели за период аренды. Используется при свапе
+ * на другую модель чтобы посчитать доплату.
+ */
+function pickRateByPeriod(
+  model: typeof scooterModels.$inferSelect,
+  period: "short" | "week" | "month",
+): number | null {
+  if (period === "short") return model.shortRate ?? model.dayRate ?? null;
+  if (period === "week") return model.weekRate ?? null;
+  if (period === "month") return model.monthRate ?? null;
+  return null;
+}
 import { logActivity } from "../services/activityLog.js";
 import { rentalStatusLabel } from "../services/activityMessages.js";
 
@@ -374,6 +390,13 @@ export async function rentalsRoutes(app: FastifyInstance) {
       .from(usersTable)
       .where(eq(usersTable.id, req.user.userId));
     const by = u?.name ?? "система";
+    // Сшиваем цепочку: дети удаляемой связки переподцепляются к её
+    // родителю. Иначе при удалении mid-chain потомки осиротеют —
+    // getRentalChainIds их потеряет, цепочка разорвётся.
+    await db
+      .update(rentals)
+      .set({ parentRentalId: row.parentRentalId, updatedAt: sql`now()` })
+      .where(eq(rentals.parentRentalId, id));
     await db
       .update(rentals)
       .set({ archivedAt: sql`now()`, archivedBy: by })
@@ -387,6 +410,122 @@ export async function rentalsRoutes(app: FastifyInstance) {
     });
     return reply.code(204).send();
   });
+
+  /**
+   * POST /api/rentals/:id/reset-chain
+   *
+   * Жёсткая «очистка» аренды — оставляет в цепочке только корневую
+   * (базовую) связку, физически удаляет всех её потомков (продления и
+   * замены) вместе с платежами, инспекциями возврата, swap-записями
+   * и activity_log. Корень разархивируется и status сбрасывается в
+   * active. Используется когда оператор перенакручивал замены/продления
+   * и хочет вернуться к чистому состоянию.
+   *
+   * Доступ — только creator. Операция необратима.
+   */
+  app.post<{ Params: { id: string } }>(
+    "/:id/reset-chain",
+    async (req, reply) => {
+      if (req.user.role !== "creator") {
+        return reply.code(403).send({ error: "creator_only" });
+      }
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id))
+        return reply.code(400).send({ error: "bad id" });
+
+      const [start] = await db
+        .select()
+        .from(rentals)
+        .where(eq(rentals.id, id));
+      if (!start) return reply.code(404).send({ error: "not found" });
+
+      // Поднимаемся к корню цепочки (обходим parentRentalId до конца).
+      // Защита от циклов через лимит итераций — на проде ситуация
+      // невозможна, но если БД повреждена не висим вечно.
+      let rootId = start.id;
+      let parentId = start.parentRentalId;
+      let safety = 100;
+      while (parentId != null && safety-- > 0) {
+        const [parent] = await db
+          .select()
+          .from(rentals)
+          .where(eq(rentals.id, parentId));
+        if (!parent) break;
+        rootId = parent.id;
+        parentId = parent.parentRentalId;
+      }
+
+      // BFS вниз — собираем все id потомков корня.
+      const allIds: number[] = [rootId];
+      const queue: number[] = [rootId];
+      while (queue.length > 0) {
+        const head = queue.shift()!;
+        const kids = await db
+          .select({ id: rentals.id })
+          .from(rentals)
+          .where(eq(rentals.parentRentalId, head));
+        for (const k of kids) {
+          allIds.push(k.id);
+          queue.push(k.id);
+        }
+      }
+      const descendantIds = allIds.filter((x) => x !== rootId);
+
+      // Чистим всё что висит на потомках (и на корне — activity_log).
+      const inList = (ids: number[]) =>
+        sql.join(
+          ids.map((x) => sql`${x}`),
+          sql`, `,
+        );
+      for (const rid of allIds) {
+        await db
+          .delete(activityLog)
+          .where(
+            and(
+              eq(activityLog.entity, "rental"),
+              eq(activityLog.entityId, rid),
+            ),
+          );
+      }
+      if (descendantIds.length > 0) {
+        await db
+          .delete(payments)
+          .where(sql`${payments.rentalId} IN (${inList(descendantIds)})`);
+        await db
+          .delete(returnInspections)
+          .where(sql`${returnInspections.rentalId} IN (${inList(descendantIds)})`);
+        await db
+          .delete(scooterSwaps)
+          .where(sql`${scooterSwaps.rentalId} IN (${inList(descendantIds)})`);
+        await db
+          .delete(rentals)
+          .where(sql`${rentals.id} IN (${inList(descendantIds)})`);
+      }
+      // swap-записи самого корня тоже стираем — историю замен сбрасываем.
+      await db.delete(scooterSwaps).where(eq(scooterSwaps.rentalId, rootId));
+      // Корень — разархивируем и возвращаем в active.
+      await db
+        .update(rentals)
+        .set({
+          archivedAt: null,
+          archivedBy: null,
+          endActualAt: null,
+          status: "active",
+          updatedAt: sql`now()`,
+        })
+        .where(eq(rentals.id, rootId));
+
+      await logActivity(req, {
+        entity: "rental",
+        entityId: rootId,
+        action: "chain_reset",
+        summary: `Сброс цепочки аренды #${String(rootId).padStart(4, "0")} — удалено связок: ${descendantIds.length}`,
+        meta: { removedRentalIds: descendantIds },
+      });
+
+      return reply.code(200).send({ rootId, removed: descendantIds.length });
+    },
+  );
 
   /**
    * POST /api/rentals/:id/unarchive — вернуть аренду из архива.
@@ -776,70 +915,103 @@ export async function rentalsRoutes(app: FastifyInstance) {
         }
 
         const now = new Date();
-        // Закрываем текущую связку — как при extend.
+        const prevScooterId = old.scooterId;
+
+        // === Замена in-place ===
+        // Раньше создавали child rental с parentRentalId — но это плодило
+        // фантомные «продления» в цепочке после каждого свапа: 9 замен
+        // = 9 новых связок, расчёт долга и срока врал. Теперь меняем
+        // scooterId прямо в текущей связке. История замен — в отдельной
+        // таблице scooter_swaps. Условия аренды (rate, days, sum,
+        // endPlannedAt) НЕ трогаем — клиент платит за тот же период.
+        await tx
+          .update(rentals)
+          .set({ scooterId: d.newScooterId, updatedAt: sql`now()` })
+          .where(eq(rentals.id, id));
+
+        // Старый скутер — в выбранный оператором статус (rental_pool/repair).
+        if (prevScooterId) {
+          await tx
+            .update(scooters)
+            .set({ baseStatus: d.oldScooterStatus, updatedAt: sql`now()` })
+            .where(eq(scooters.id, prevScooterId));
+        }
+
+        // Доплата за смену модели — если у нового скутера ставка выше.
+        // Считаем по тарифу аренды и оставшимся дням до endPlannedAt.
+        // Если ставки равны или новая ниже — нулевая разница, payment
+        // не создаём.
+        let feeAmount = 0;
+        if (newScooter.modelId != null) {
+          const [newModel] = await tx
+            .select()
+            .from(scooterModels)
+            .where(eq(scooterModels.id, newScooter.modelId));
+          if (newModel) {
+            const newRate = pickRateByPeriod(newModel, old.tariffPeriod);
+            if (newRate != null && newRate > old.rate) {
+              const msLeft = old.endPlannedAt.getTime() - now.getTime();
+              const daysLeft = Math.max(1, Math.ceil(msLeft / 86_400_000));
+              feeAmount = (newRate - old.rate) * daysLeft;
+            }
+          }
+        }
+
+        // Запись в журнал замен — нужна шаблону act_swap.
+        await tx.insert(scooterSwaps).values({
+          rentalId: id,
+          prevScooterId,
+          newScooterId: d.newScooterId,
+          swapAt: now,
+          reason: d.reason ?? null,
+          feeAmount,
+          createdByUserId: req.user.userId,
+        });
+
+        // Если разница есть — выставляем доплату как payment 'swap_fee',
+        // не paid. Попадает в плашку «Долг» через chainPayments.
+        if (feeAmount > 0) {
+          await tx.insert(payments).values({
+            rentalId: id,
+            type: "swap_fee",
+            amount: feeAmount,
+            method: old.paymentMethod,
+            paid: false,
+            note: d.reason
+              ? `доплата за замену модели: ${d.reason}`
+              : `доплата за замену модели`,
+          });
+        }
+
+        // Note аренды — для отображения в карточке.
         await tx
           .update(rentals)
           .set({
-            status: "completed",
-            endActualAt: now,
-            depositReturned: false,
-            archivedAt: sql`now()`,
+            note: d.reason
+              ? `замена скутера: ${d.reason}`
+              : `замена скутера`,
             updatedAt: sql`now()`,
           })
           .where(eq(rentals.id, id));
 
-        // Старый скутер — в выбранный оператором статус (rental_pool/repair).
-        if (old.scooterId) {
-          await tx
-            .update(scooters)
-            .set({ baseStatus: d.oldScooterStatus, updatedAt: sql`now()` })
-            .where(eq(scooters.id, old.scooterId));
-        }
-
-        // Срок не сдвигаем — клиент платит за изначально согласованный период.
-        const endPlanned = old.endPlannedAt;
-        // Дни до конца аренды (минимум 1, чтобы избежать 0/отриц.).
-        const msLeft = endPlanned.getTime() - now.getTime();
-        const days = Math.max(1, Math.ceil(msLeft / 86_400_000));
-        const sum = old.rate * days;
-
-        const [child] = await tx
-          .insert(rentals)
-          .values({
-            clientId: old.clientId,
-            scooterId: d.newScooterId,
-            parentRentalId: old.id,
-            status: "active",
-            sourceChannel: old.sourceChannel,
-            tariffPeriod: old.tariffPeriod,
-            rate: old.rate,
-            deposit: old.deposit,
-            depositItem: old.depositItem,
-            startAt: now,
-            endPlannedAt: endPlanned,
-            days,
-            sum,
-            paymentMethod: old.paymentMethod,
-            equipment: old.equipment,
-            equipmentJson: old.equipmentJson as unknown as object,
-            note: d.reason
-              ? `замена скутера: ${d.reason}`
-              : `замена скутера #${String(old.id).padStart(4, "0")}`,
-          })
-          .returning();
-        return child;
+        return { rentalId: id, feeAmount };
       });
 
-      if (result) {
-        await logActivity(req, {
-          entity: "rental",
-          entityId: result.id,
-          action: "scooter_swapped",
-          summary: `Замена скутера в аренде #${String(id).padStart(4, "0")} — новая связка #${String(result.id).padStart(4, "0")}`,
-          meta: { fromRentalId: id, newScooterId: d.newScooterId },
-        });
-      }
-      return reply.code(201).send(result);
+      await logActivity(req, {
+        entity: "rental",
+        entityId: id,
+        action: "scooter_swapped",
+        summary: `Замена скутера в аренде #${String(id).padStart(4, "0")}${result.feeAmount > 0 ? ` (доплата ${result.feeAmount} ₽)` : ""}`,
+        meta: { newScooterId: d.newScooterId, feeAmount: result.feeAmount },
+      });
+
+      // Возвращаем актуальную аренду — фронту удобно показать обновлённый
+      // scooterId без отдельного refetch.
+      const [updated] = await db
+        .select()
+        .from(rentals)
+        .where(eq(rentals.id, id));
+      return reply.code(200).send(updated);
     },
   );
 

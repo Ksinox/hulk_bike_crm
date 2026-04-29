@@ -51,10 +51,11 @@ import {
 } from "./rentalsStore";
 import { ClientQuickView } from "@/pages/clients/ClientQuickView";
 import { RentalEditModal } from "./RentalEditModal";
-import { Pencil, Trash2, RotateCcw } from "lucide-react";
+import { Eraser, Pencil, Trash2, RotateCcw } from "lucide-react";
 import {
   useDeleteRental,
   usePurgeRental,
+  useResetRentalChain,
   useUnarchiveRental,
 } from "@/lib/api/rentals";
 import { useMe } from "@/lib/api/auth";
@@ -212,6 +213,7 @@ export function RentalCard({
   const deleteRental = useDeleteRental();
   const unarchiveRental = useUnarchiveRental();
   const purgeRental = usePurgeRental();
+  const resetChain = useResetRentalChain();
   const isArchived = !!rental.archivedAt;
   const isCreator = me?.role === "creator";
 
@@ -328,6 +330,17 @@ export function RentalCard({
     icon: Trash2,
     tone: "danger",
   };
+  // «Очистить все действия» — ТОЛЬКО creator. Удаляет всех потомков
+  // базовой связки (продления + замены) физически, плюс связанные
+  // платежи/инспекции/swaps/activity_log. Корень разархивируется и
+  // возвращается в active. Используется когда оператор перенакрутил
+  // и нужно вернуться к чистому состоянию.
+  const resetChainAction: MenuAction = {
+    id: "reset-chain",
+    label: "Очистить все действия по этой аренде",
+    icon: Eraser,
+    tone: "danger",
+  };
   const actions: MenuAction[] = isArchived
     ? [
         ...(canDelete ? [restoreAction] : []),
@@ -339,13 +352,13 @@ export function RentalCard({
           editAction,
           ...actionsWithoutComplete,
           ...(canDelete ? [deleteAction] : []),
-          ...(isCreator ? [purgeAction] : []),
+          ...(isCreator ? [resetChainAction, purgeAction] : []),
         ]
       : [
           editAction,
           ...actionsWithoutComplete,
           ...(canDelete ? [deleteAction] : []),
-          ...(isCreator ? [purgeAction] : []),
+          ...(isCreator ? [resetChainAction, purgeAction] : []),
         ];
 
   // Финансы — считаются по ВСЕЙ цепочке продлений.
@@ -470,6 +483,36 @@ export function RentalCard({
           }
         }
         toast.error("Не удалось удалить", (e as Error).message ?? "");
+      }
+      return;
+    }
+    if (id === "reset-chain") {
+      const ok = await confirmDialog({
+        title: "Очистить все действия?",
+        message: `Все продления и замены по аренде #${String(rental.id).padStart(4, "0")} будут УДАЛЕНЫ ИЗ БД (вместе с платежами и историей замен). Останется только базовая связка, она вернётся в активный статус. Операция необратима — используйте когда нужно вернуться к чистому состоянию.`,
+        confirmText: "Очистить",
+        cancelText: "Отмена",
+        danger: true,
+      });
+      if (!ok) return;
+      try {
+        const res = await resetChain.mutateAsync(rental.id);
+        toast.success(
+          "Цепочка очищена",
+          `Удалено связок: ${res.removed}. Базовая #${String(res.rootId).padStart(4, "0")} активна.`,
+        );
+      } catch (e) {
+        if (e instanceof ApiError) {
+          const body = e.body as { error?: string } | null;
+          if (body?.error === "creator_only") {
+            toast.error(
+              "Запрещено",
+              "Только создатель системы может очищать цепочку.",
+            );
+            return;
+          }
+        }
+        toast.error("Не удалось очистить", (e as Error).message ?? "");
       }
       return;
     }

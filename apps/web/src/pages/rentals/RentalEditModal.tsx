@@ -86,21 +86,26 @@ export function RentalEditModal({
 
   const deleteRental = useDeleteRental();
 
-  /** У этой связки есть более поздние продления, ссылающиеся на неё? */
-  const hasChildren = (id: number): boolean =>
-    allRentals.some((r) => r.parentRentalId === id);
+  /** Это «базовая» (корневая) связка цепочки? — её удалять нельзя. */
+  const isRootSegment = (seg: Rental): boolean =>
+    seg.parentRentalId == null;
+
+  /** Замена скутера vs обычное продление — отличаем по note. */
+  const isSwap = (seg: Rental): boolean =>
+    /замена скутера/i.test(seg.note ?? "");
 
   const onDeleteSegment = async (segId: number) => {
-    if (hasChildren(segId)) {
+    const seg = chainRentals.find((r) => r.id === segId);
+    if (seg && isRootSegment(seg)) {
       toast.error(
-        "Нельзя удалить",
-        "У этой связки есть более поздние продления. Сначала удалите их.",
+        "Нельзя удалить базовую",
+        "Базовую связку удалить нельзя — на ней держится вся цепочка. Удалите аренду целиком через меню «Действия» или используйте «Очистить все действия».",
       );
       return;
     }
     const ok = await confirmDialog({
       title: "Удалить связку?",
-      message: `Связка #${String(segId).padStart(4, "0")} будет перемещена в архив. Если это была единственная связка — вся аренда уйдёт в архив.`,
+      message: `Связка #${String(segId).padStart(4, "0")} будет перемещена в архив. Её потомки переподцепятся к предыдущей связке цепочки.`,
       confirmText: "Удалить",
       cancelText: "Отмена",
       danger: true,
@@ -109,13 +114,21 @@ export function RentalEditModal({
     try {
       await deleteRental.mutateAsync(segId);
       toast.success("Связка удалена", `#${String(segId).padStart(4, "0")}`);
-      // Если удалили текущую — переключимся на оставшуюся ближайшую.
+      // Если удалили текущую — переключимся на ближайшего ПРЕДКА в
+      // цепочке (parentRentalId), а не закрываем модалку. Так оператор
+      // продолжает работать с теми же данными.
       if (segId === currentId) {
+        const removed = chainRentals.find((r) => r.id === segId);
+        const parentId = removed?.parentRentalId ?? null;
         const remaining = chainRentals.filter((r) => r.id !== segId);
-        if (remaining.length === 0) {
-          requestClose();
+        const nextActive =
+          (parentId != null && remaining.find((r) => r.id === parentId)) ||
+          remaining[remaining.length - 1] ||
+          null;
+        if (nextActive) {
+          setCurrentId(nextActive.id);
         } else {
-          setCurrentId(remaining[remaining.length - 1]!.id);
+          requestClose();
         }
       }
     } catch (e) {
@@ -195,74 +208,94 @@ export function RentalEditModal({
               <Link2 size={12} /> Связки серии
             </div>
             <div className="flex flex-col gap-1">
-              {chainRentals.map((seg, idx) => {
-                const isActive = seg.id === currentId;
-                const segHasChildren = hasChildren(seg.id);
-                const isRoot = seg.parentRentalId == null;
-                return (
-                  <div
-                    key={seg.id}
-                    className={cn(
-                      "group flex items-center gap-2 rounded-[10px] border px-2.5 py-1.5 text-[12px]",
-                      isActive
-                        ? "border-blue-500 bg-blue-50"
-                        : "border-border bg-white hover:border-blue-300",
-                    )}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => setCurrentId(seg.id)}
-                      className="flex min-w-0 flex-1 items-center gap-2 text-left"
+              {(() => {
+                // Считаем порядковые номера ОТДЕЛЬНО для продлений и
+                // замен — чтобы клиенту было понятно «3-е продление»,
+                // «2-я замена», а не «связка №7 в общем списке».
+                let extIdx = 0;
+                let swapIdx = 0;
+                return chainRentals.map((seg) => {
+                  const isActive = seg.id === currentId;
+                  const isRoot = isRootSegment(seg);
+                  const swap = !isRoot && isSwap(seg);
+                  if (!isRoot) {
+                    if (swap) swapIdx++;
+                    else extIdx++;
+                  }
+                  const label = isRoot
+                    ? "Базовая"
+                    : swap
+                      ? `Замена ${swapIdx}`
+                      : `Продл. ${extIdx}`;
+                  const tone = isRoot
+                    ? "bg-green-soft text-green-ink"
+                    : swap
+                      ? "bg-amber-100 text-amber-800"
+                      : "bg-purple-soft text-purple-ink";
+                  return (
+                    <div
+                      key={seg.id}
+                      className={cn(
+                        "group flex items-center gap-2 rounded-[10px] border px-2.5 py-1.5 text-[12px]",
+                        isActive
+                          ? "border-blue-500 bg-blue-50"
+                          : "border-border bg-white hover:border-blue-300",
+                      )}
                     >
-                      <span
-                        className={cn(
-                          "rounded-full px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider",
+                      <button
+                        type="button"
+                        onClick={() => setCurrentId(seg.id)}
+                        className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                      >
+                        <span
+                          className={cn(
+                            "rounded-full px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider",
+                            tone,
+                          )}
+                        >
+                          {label}
+                        </span>
+                        <span className="font-mono font-semibold text-ink">
+                          #{String(seg.id).padStart(4, "0")}
+                        </span>
+                        <span className="text-muted-2">
+                          {seg.start.slice(0, 5)} → {seg.endPlanned.slice(0, 5)}
+                        </span>
+                        <span className="text-muted-2">· {seg.days} дн</span>
+                        <span className="ml-auto font-semibold tabular-nums text-ink">
+                          {seg.sum.toLocaleString("ru-RU")} ₽
+                        </span>
+                        {isActive && (
+                          <ChevronRight size={12} className="text-blue-600" />
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onDeleteSegment(seg.id)}
+                        disabled={isRoot || deleteRental.isPending}
+                        title={
                           isRoot
-                            ? "bg-green-soft text-green-ink"
-                            : "bg-purple-soft text-purple-ink",
+                            ? "Базовую связку удалить нельзя"
+                            : "Удалить связку"
+                        }
+                        className={cn(
+                          "rounded-[6px] p-1",
+                          isRoot
+                            ? "cursor-not-allowed text-muted-2 opacity-30"
+                            : "text-muted-2 hover:bg-red-soft hover:text-red-600",
                         )}
                       >
-                        {isRoot ? "Базовая" : `Продл. ${idx}`}
-                      </span>
-                      <span className="font-mono font-semibold text-ink">
-                        #{String(seg.id).padStart(4, "0")}
-                      </span>
-                      <span className="text-muted-2">
-                        {seg.start.slice(0, 5)} → {seg.endPlanned.slice(0, 5)}
-                      </span>
-                      <span className="text-muted-2">· {seg.days} дн</span>
-                      <span className="ml-auto font-semibold tabular-nums text-ink">
-                        {seg.sum.toLocaleString("ru-RU")} ₽
-                      </span>
-                      {isActive && (
-                        <ChevronRight size={12} className="text-blue-600" />
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onDeleteSegment(seg.id)}
-                      disabled={segHasChildren || deleteRental.isPending}
-                      title={
-                        segHasChildren
-                          ? "У этой связки есть продления — удалите их сначала"
-                          : "Удалить связку"
-                      }
-                      className={cn(
-                        "rounded-[6px] p-1",
-                        segHasChildren
-                          ? "cursor-not-allowed text-muted-2 opacity-30"
-                          : "text-muted-2 hover:bg-red-soft hover:text-red-600",
-                      )}
-                    >
-                      <Trash2 size={12} />
-                    </button>
-                  </div>
-                );
-              })}
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  );
+                });
+              })()}
             </div>
             <div className="mt-2 text-[11px] text-muted-2">
-              Кликните по связке, чтобы её отредактировать. Удаление возможно
-              только для последней связки в цепочке.
+              Кликните по связке, чтобы её отредактировать. Удалить можно
+              любую связку кроме базовой; потомки переподцепятся к
+              предыдущей.
             </div>
           </div>
         )}
@@ -270,6 +303,13 @@ export function RentalEditModal({
         <RentalEditForm
           key={currentRental.id}
           rental={currentRental}
+          // Если правим НЕ базовую связку — нижняя граница даты выдачи =
+          // дата выдачи базовой. Базовую можно править свободно.
+          minStartDate={
+            currentRental.parentRentalId == null
+              ? null
+              : chainRentals[0]?.start ?? null
+          }
           // После сохранения модалка НЕ закрывается — пользователь может
           // продолжить править эту связку или переключиться на другую.
           // Цифры в карточке аренды и в списке связок обновятся
@@ -288,10 +328,15 @@ export function RentalEditModal({
  */
 function RentalEditForm({
   rental,
+  minStartDate,
   onSaved,
   onCancel,
 }: {
   rental: Rental;
+  /** Запрет ставить дату выдачи раньше указанной (формат ДД.ММ.ГГГГ).
+   *  Используется для не-базовых связок: их дата выдачи не может быть
+   *  раньше даты выдачи базовой связки цепочки. */
+  minStartDate?: string | null;
   onSaved: () => void;
   onCancel: () => void;
 }) {
@@ -346,8 +391,24 @@ function RentalEditForm({
     rate * days !== rental.sum ||
     (note ?? "") !== (rental.note ?? "");
 
+  // Проверка нижней границы даты выдачи (для не-базовых связок).
+  const startTooEarly = (() => {
+    if (!minStartDate) return false;
+    const min = parseDDMMYYYY(minStartDate);
+    const cur = parseDDMMYYYY(startDate);
+    if (!min || !cur) return false;
+    return cur.getTime() < min.getTime();
+  })();
+
   const submit = async () => {
     if (saving) return;
+    if (startTooEarly) {
+      toast.error(
+        "Дата выдачи слишком ранняя",
+        `Не может быть раньше базовой связки (${minStartDate}). Если хотите сместить начало аренды — правьте базовую связку.`,
+      );
+      return;
+    }
     setSaving(true);
     try {
       const newSum = rate * days;
@@ -394,8 +455,18 @@ function RentalEditForm({
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
               placeholder="22.04.2026"
-              className="h-10 w-full rounded-[10px] border border-border bg-white px-3 font-mono text-[14px] outline-none focus:border-blue"
+              className={cn(
+                "h-10 w-full rounded-[10px] border bg-white px-3 font-mono text-[14px] outline-none",
+                startTooEarly
+                  ? "border-red-500 focus:border-red-500"
+                  : "border-border focus:border-blue",
+              )}
             />
+            {startTooEarly && (
+              <div className="mt-1 text-[11px] text-red-600">
+                Не раньше базовой связки ({minStartDate}).
+              </div>
+            )}
           </Field>
           <Field label="Время">
             <input
@@ -484,7 +555,7 @@ function RentalEditForm({
         <button
           type="button"
           onClick={submit}
-          disabled={!dirty || saving}
+          disabled={!dirty || saving || startTooEarly}
           className={cn(
             "inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-bold transition-colors",
             !dirty || saving

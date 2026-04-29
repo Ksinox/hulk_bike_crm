@@ -110,6 +110,10 @@ export const paymentTypeEnum = pgEnum("payment_type", [
   "fine",
   "damage",
   "refund",
+  /** Доплата за замену скутера на другую модель — разница тарифов
+   *  × оставшиеся дни. Создаётся автоматически при /swap-scooter
+   *  если ставка нового скутера выше. */
+  "swap_fee",
 ]);
 
 export const paymentConfirmerRoleEnum = pgEnum("payment_confirmer_role", [
@@ -777,6 +781,51 @@ export const activityLog = pgTable(
     createdIdx: index("activity_log_created_idx").on(t.createdAt),
     entityIdx: index("activity_log_entity_idx").on(t.entity, t.entityId),
     userIdx: index("activity_log_user_idx").on(t.userId),
+  }),
+);
+
+/* ============================================================
+ * scooter_swaps — история замен скутера в рамках одной аренды.
+ *
+ * Замена скутера — это in-place операция (rental.scooterId меняется),
+ * связка не плодится. Все факты замен пишутся сюда: кто на кого
+ * заменён, причина, плата за замену модели если другая (или 0).
+ * Документ «Акт приёма-передачи и замены скутера» формируется по
+ * последней записи; в журнале действий аренды видно всю историю.
+ * ============================================================ */
+export const scooterSwaps = pgTable(
+  "scooter_swaps",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    rentalId: bigint("rental_id", { mode: "number" })
+      .notNull()
+      .references(() => rentals.id, { onDelete: "cascade" }),
+    /** Скутер до замены. null если запись о первоначальной выдаче пропущена. */
+    prevScooterId: bigint("prev_scooter_id", { mode: "number" }).references(
+      () => scooters.id,
+      { onDelete: "set null" },
+    ),
+    newScooterId: bigint("new_scooter_id", { mode: "number" })
+      .notNull()
+      .references(() => scooters.id, { onDelete: "set null" }),
+    swapAt: timestamp("swap_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    reason: text("reason"),
+    /**
+     * Доплата за замену модели, ₽. Если новая модель дороже старой —
+     * = (новая ставка − старая) × оставшиеся дни. Иначе 0.
+     * Платёж с типом 'swap_fee' создаётся отдельно в payments.
+     */
+    feeAmount: integer("fee_amount").notNull().default(0),
+    createdByUserId: bigint("created_by_user_id", { mode: "number" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    rentalIdx: index("scooter_swaps_rental_idx").on(t.rentalId),
+    swapAtIdx: index("scooter_swaps_swap_at_idx").on(t.swapAt),
   }),
 );
 

@@ -4,9 +4,15 @@
  * HTML-строку потом можно отдать либо как preview (Content-Type: text/html),
  * либо сконвертить в .docx через html-to-docx.
  */
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { db } from "../db/index.js";
-import { clients, rentals, scooterModels, scooters } from "../db/schema.js";
+import {
+  clients,
+  rentals,
+  scooterModels,
+  scooters,
+  scooterSwaps,
+} from "../db/schema.js";
 import { LANDLORD } from "./landlord.js";
 
 export type DocumentType =
@@ -69,12 +75,40 @@ export async function loadBundle(rentalId: number): Promise<Bundle | null> {
       }
     }
   }
-  // Если эта аренда — child от замены скутера, подтягиваем предыдущий
-  // скутер для шаблона act_swap.
+  // act_swap: тянем последнюю запись о замене скутера из scooter_swaps.
+  // Это таблица истории замен (после рефакторинга свап стал in-place,
+  // а не плодит child rentals). Для совместимости со старыми связками,
+  // которые накопились ДО рефакторинга, делаем fallback на цепочку
+  // parentRentalId — там предыдущий скутер живёт в parent rental.
   let prevScooter: typeof scooters.$inferSelect | null = null;
   let prevModel: typeof scooterModels.$inferSelect | null = null;
   let swapReason: string | null = null;
-  if (rental.parentRentalId != null) {
+
+  const [lastSwap] = await db
+    .select()
+    .from(scooterSwaps)
+    .where(eq(scooterSwaps.rentalId, rentalId))
+    .orderBy(desc(scooterSwaps.swapAt))
+    .limit(1);
+  if (lastSwap?.prevScooterId) {
+    const [s] = await db
+      .select()
+      .from(scooters)
+      .where(eq(scooters.id, lastSwap.prevScooterId));
+    if (s) {
+      prevScooter = s;
+      if (s.modelId != null) {
+        const [m] = await db
+          .select()
+          .from(scooterModels)
+          .where(eq(scooterModels.id, s.modelId));
+        if (m) prevModel = m;
+      }
+    }
+    swapReason = lastSwap.reason ?? null;
+  } else if (rental.parentRentalId != null) {
+    // Legacy fallback: для аренд из старой архитектуры (свап создавал
+    // child rental) — тянем prev из родителя.
     const [parent] = await db
       .select()
       .from(rentals)
@@ -95,8 +129,6 @@ export async function loadBundle(rentalId: number): Promise<Bundle | null> {
         }
       }
     }
-    // Парсим «замена скутера: <причина>» из rental.note. Префикс
-    // ставит endpoint /swap-scooter в apps/api/src/routes/rentals.ts.
     const note = rental.note ?? "";
     const m = note.match(/замена скутера:\s*(.+)$/iu);
     swapReason = m && m[1] ? m[1].trim() : note.trim() || null;
