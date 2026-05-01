@@ -509,7 +509,10 @@ export function makeFixtureBundle(): Bundle {
       name: "__PH_scooterName__",
       modelId: 0,
       model: "gear",
-      mileage: 1234567,
+      // Уникальный номер: не должен пересекаться с rental.id (1234567),
+      // иначе при рендере без форматирования "1234567 км" textMap заменит
+      // его на rental.id-плашку и в шаблоне «Пробег: <Номер договора> км».
+      mileage: 6543210,
       baseStatus: "rental_pool",
       vin: "__PH_scooterVin__",
       engineNo: "__PH_scooterEngineNo__",
@@ -682,8 +685,11 @@ export function replaceFixtureWithPlaceholders(html: string): string {
   // (toLocaleString ставит non-breaking space).
   const numericMap: Array<[string, string]> = [
     ["1234567", "rental.id"], ["9999999", "rental.id"],          // rental.id (без форматирования)
-    ["1 234 567", "scooter.mileage"], // mileage
-    ["1 234 567", "scooter.mileage"],
+    // scooter.mileage в шаблонах рендерится как `${scooter.mileage} км` —
+    // без форматирования. Без этой записи mileage не попадал бы в плашку
+    // (а раньше и того хуже — съедал rental.id-плашку, потому что
+    // mileage был 1234567 == rental.id).
+    ["6543210", "scooter.mileage"],
     ["9 999 999", "scooter.purchasePrice"],
     ["9 999 999", "scooter.purchasePrice"],
     ["8 888 888", "rental.deposit"],
