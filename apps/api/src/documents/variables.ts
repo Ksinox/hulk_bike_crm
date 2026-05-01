@@ -617,6 +617,17 @@ export function replaceFixtureWithPlaceholders(html: string): string {
     return `<span data-var="${key}" data-label="${escapeAttr(label)}" class="tpl-var">${escapeForHtml(label)}</span>`;
   };
 
+  // moneyWords для трёх ключевых fixture-чисел — заранее вычисляем,
+  // чтобы заменить «прописью»-фразы на соответствующие плашки. Иначе
+  // когда пользователь сохранял override в Tiptap, фраза «Восемь
+  // миллионов восемьсот восемьдесят восемь тысяч восемьсот восемьдесят
+  // восемь» попадала в БД как обычный текст — и в финальном договоре
+  // в любых аренде показывалась эта же фейковая фразаm вместо
+  // реального moneyWords(deposit).
+  const wordsDeposit = moneyWords(8888888); // rental.depositWords
+  const wordsSum = moneyWords(7777777); // rental.sumWords
+  const wordsPurchasePrice = moneyWords(9999999); // scooter.purchasePriceWords
+
   // Текстовые маркеры — простой replaceAll.
   const textMap: Record<string, string> = {
     "__PH_clientName__": "client.name",
@@ -626,6 +637,9 @@ export function replaceFixtureWithPlaceholders(html: string): string {
     "__PH_clientPassIssuer__": "client.passportIssuer",
     "__PH_clientPassDivCode__": "client.passportDivisionCode",
     "__PH_clientPassReg__": "client.passportRegistration",
+    [wordsDeposit]: "rental.depositWords",
+    [wordsSum]: "rental.sumWords",
+    [wordsPurchasePrice]: "scooter.purchasePriceWords",
     "__PH_scooterName__": "scooter.name",
     "__PH_scooterVin__": "scooter.frameNumber",
     "__PH_scooterEngineNo__": "scooter.engineNo",

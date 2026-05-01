@@ -10,7 +10,7 @@ import {
   Plus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { Client, ClientDetails, DocFile } from "@/lib/mock/clients";
+import type { Client, ClientDetails } from "@/lib/mock/clients";
 import type { UploadedFile } from "./DocUpload";
 import { FilePreviewModal } from "./FilePreviewModal";
 import { clientStore, useClientExtraDocs } from "./clientStore";
@@ -284,29 +284,15 @@ export function IncidentsTab({ d }: { d: ClientDetails }) {
 type DocSlot = {
   key: string;
   label: string;
-  /** Либо legacy mock-DocFile (имя+дата), либо готовый UploadedFile из API
-   *  (с fileKey для preview/download). */
-  file: DocFile | UploadedFile;
+  /** UploadedFile из API (с fileKey для preview/download) или null
+   *  если файл ещё не загружен. */
+  file: UploadedFile | null;
   required: boolean;
   comment?: string;
+  /** Тип API-документа для загрузки — passport / license / etc. */
+  kind?: "passport" | "license" | "extra";
 };
 
-function docToUploaded(
-  file: DocFile | UploadedFile,
-  title: string,
-): UploadedFile | null {
-  if (!file) return null;
-  // Уже UploadedFile (из API) — отдаём как есть, добавим title для слота.
-  if ("fileKey" in file || "mimeType" in file) {
-    return { ...file, title: file.title ?? title };
-  }
-  // Legacy DocFile (name+date) — конвертируем в UploadedFile-заглушку.
-  return {
-    name: file.name,
-    title,
-    existing: true,
-  };
-}
 
 /** Превращаем ApiClientDoc → UploadedFile для FilePreviewModal/слотов. */
 function apiDocToUploaded(doc: ApiClientDoc): UploadedFile {
@@ -343,29 +329,50 @@ export function DocsTab({ client, d }: { client: Client; d: ClientDetails }) {
     {
       key: "passport_main",
       label: "Паспорт (основной разворот)",
-      // Берём первый из API, если есть; иначе legacy mock.
-      file: passportDocs[0]
-        ? apiDocToUploaded(passportDocs[0])
-        : d.docs.passport_main,
+      // Берём первый из API. Legacy mock фоллбэк удалён — он создавал
+      // фантомные «загруженные на сервере» файлы, по клику на которые
+      // модалка писала «нет ключа в хранилище», что путало пользователя.
+      file: passportDocs[0] ? apiDocToUploaded(passportDocs[0]) : null,
       required: true,
+      kind: "passport",
     },
     {
       key: "passport_reg",
       label: "Паспорт (прописка)",
-      file: passportDocs[1]
-        ? apiDocToUploaded(passportDocs[1])
-        : d.docs.passport_reg,
+      file: passportDocs[1] ? apiDocToUploaded(passportDocs[1]) : null,
       required: true,
+      kind: "passport",
     },
     {
       key: "license",
       label: "Водительское",
-      file: licenseDocs[0]
-        ? apiDocToUploaded(licenseDocs[0])
-        : d.docs.license,
+      file: licenseDocs[0] ? apiDocToUploaded(licenseDocs[0]) : null,
       required: false,
+      kind: "license",
     },
   ];
+
+  const onSlotUpload = async (
+    kind: "passport" | "license",
+    file: File,
+    title: string,
+  ) => {
+    try {
+      await uploadDoc.mutateAsync({ kind, file, title });
+      toast.success("Документ загружен", title);
+    } catch (e) {
+      toast.error("Не удалось загрузить", (e as Error).message ?? "");
+    }
+  };
+
+  const onSlotDelete = async (docId: number) => {
+    try {
+      await deleteDoc.mutateAsync(docId);
+      toast.success("Документ удалён", "");
+    } catch (e) {
+      toast.error("Не удалось удалить", (e as Error).message ?? "");
+    }
+  };
 
   const [preview, setPreview] = useState<UploadedFile | null>(null);
   const [pending, setPending] = useState<UploadedFile[] | null>(null);
@@ -442,6 +449,21 @@ export function DocsTab({ client, d }: { client: Client; d: ClientDetails }) {
             key={slot.key}
             slot={slot}
             onOpen={(uf) => setPreview(uf)}
+            onUpload={
+              slot.kind && slot.kind !== "extra"
+                ? (file) =>
+                    onSlotUpload(
+                      slot.kind as "passport" | "license",
+                      file,
+                      slot.label,
+                    )
+                : undefined
+            }
+            onDelete={
+              slot.file?.docId
+                ? () => onSlotDelete(slot.file!.docId!)
+                : undefined
+            }
           />
         ))}
         {/* API-документы типа extra: новые, с fileKey, поддерживают
@@ -519,27 +541,27 @@ export function DocsTab({ client, d }: { client: Client; d: ClientDetails }) {
 function DocMiniCard({
   slot,
   onOpen,
+  onUpload,
+  onDelete,
 }: {
   slot: DocSlot;
   onOpen: (uf: UploadedFile) => void;
+  /** Если задан — при выборе файла отправляем его на сервер через
+   *  useUploadClientDoc. Если нет — слот не интерактивный (только
+   *  показ существующего файла). */
+  onUpload?: (file: File) => void | Promise<void>;
+  /** Удаление с сервера через useDeleteClientDoc. */
+  onDelete?: () => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const [uploaded, setUploaded] = useState<UploadedFile | null>(() =>
-    docToUploaded(slot.file, slot.label),
-  );
+  const uploaded = slot.file;
 
-  const handleFiles = (list: FileList) => {
+  const handleFiles = async (list: FileList) => {
     const f = list[0];
     if (!f) return;
-    const uf: UploadedFile = {
-      name: f.name,
-      size: f.size,
-      title: slot.label,
-    };
-    if (f.type.startsWith("image/") || f.type === "application/pdf") {
-      uf.thumbUrl = URL.createObjectURL(f);
+    if (onUpload) {
+      await onUpload(f);
     }
-    setUploaded(uf);
   };
 
   if (!uploaded) {
@@ -551,7 +573,7 @@ function DocMiniCard({
           accept="image/*,application/pdf"
           className="hidden"
           onChange={(e) => {
-            if (e.target.files) handleFiles(e.target.files);
+            if (e.target.files) void handleFiles(e.target.files);
             e.target.value = "";
           }}
         />
@@ -568,7 +590,14 @@ function DocMiniCard({
     );
   }
 
-  return <MiniCardBody file={uploaded} onOpen={() => onOpen(uploaded)} />;
+  return (
+    <MiniCardBody
+      file={uploaded}
+      onOpen={() => onOpen(uploaded)}
+      onRemove={onDelete}
+      editable={!!onDelete}
+    />
+  );
 }
 
 function ExtraDocMiniCard({

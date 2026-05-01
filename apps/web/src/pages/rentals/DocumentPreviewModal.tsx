@@ -148,13 +148,25 @@ export function DocumentPreviewModal({
     }
   };
 
+  // В режиме редактирования шаблона раскрываем модалку на весь экран —
+  // редактору нужен простор: тулбар форматирования, sidebar переменных,
+  // длинный текст шаблона. В режиме предпросмотра — компактная модалка
+  // 960px достаточно (документ A4-формата).
+  const containerClass = editingTemplate
+    ? "fixed inset-0 z-[120] flex items-stretch justify-center bg-ink/60 backdrop-blur-sm"
+    : "fixed inset-0 z-[120] flex items-stretch justify-center bg-ink/60 p-4 backdrop-blur-sm";
+
   return (
     <div
-      className="fixed inset-0 z-[120] flex items-stretch justify-center bg-ink/60 p-4 backdrop-blur-sm"
+      className={containerClass}
       onClick={onClose}
     >
       <div
-        className="relative flex w-full max-w-[960px] flex-col overflow-hidden rounded-2xl bg-surface shadow-card-lg"
+        className={
+          editingTemplate
+            ? "relative flex h-full w-full flex-col overflow-hidden bg-surface"
+            : "relative flex w-full max-w-[960px] flex-col overflow-hidden rounded-2xl bg-surface shadow-card-lg"
+        }
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
