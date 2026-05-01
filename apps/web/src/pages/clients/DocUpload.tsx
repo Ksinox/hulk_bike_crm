@@ -11,6 +11,18 @@ export type UploadedFile = {
   existing?: boolean;
   title?: string;
   comment?: string;
+  /** Сырой File-объект (если файл только что выбран в браузере и ещё
+   *  не отправлен на сервер). При сохранении формы клиента отправляется
+   *  через useUploadClientDoc. */
+  file?: File;
+  /** Ключ файла в S3/MinIO (для уже загруженных). Используется
+   *  fileUrl() для построения URL просмотра/скачивания. */
+  fileKey?: string;
+  /** Тип файла (image/jpeg, application/pdf, ...) — для FilePreviewModal:
+   *  выбрать <img> или <iframe>. */
+  mimeType?: string;
+  /** Запись в БД client_documents (для удаления и т.п.). */
+  docId?: number;
 };
 
 function formatSize(bytes?: number): string {

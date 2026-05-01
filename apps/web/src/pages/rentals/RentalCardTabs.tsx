@@ -1550,33 +1550,101 @@ function ScooterThumb({ rental }: { rental: Rental }) {
 
 /* =================== История аренды =================== */
 
+/** Отформатированное время суток вида «14:30» из ISO timestamp */
+function fmtIsoTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+/** «DD.MM.YYYY» из ISO timestamp */
+function fmtIsoDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}`;
+}
+
+/** Сортировочный ключ — ISO-секунды. Для сегмента берём start + startTime. */
+function rentalSortKey(r: Rental): string {
+  const [d, m, y] = r.start.split(".");
+  const t = r.startTime ?? "12:00";
+  return `${y}-${m}-${d}T${t}:00`;
+}
+
 /**
- * Показывает всю цепочку этой аренды: исходную + все продления
- * (parentRentalId → child). Для каждой записи — даты, тариф, сумма,
- * экипировка. Текущая аренда подсвечена.
- *
- * Полезно операторам которые продлевали аренду несколько раз и хотят
- * увидеть всю историю клиента в одном месте.
+ * Объединённый поток событий по аренде: продления/замены + создание
+ * актов о повреждениях + платежи по ущербу. Показывает всё в порядке
+ * хронологии чтобы оператор мог проследить «когда возник долг и как он
+ * погашался».
  */
 export function HistoryTab({
   rental,
   chainRentals,
+  damageReports = [],
 }: {
   rental: Rental;
   chainRentals: Rental[];
+  /** Опционально — акты о повреждениях по всей цепочке (передаются из
+   *  RentalCard). Если не передан — секция damage просто не рендерится. */
+  damageReports?: ApiDamageReport[];
 }) {
-  // Сортируем по дате выдачи (старые сверху → новые снизу)
-  const ordered = useMemo(
-    () =>
-      [...chainRentals].sort((a, b) =>
-        a.start.split(".").reverse().join("").localeCompare(
-          b.start.split(".").reverse().join(""),
-        ),
-      ),
-    [chainRentals],
-  );
+  // Объединяем события и сортируем по ISO-времени
+  type RentalEv = {
+    kind: "rental";
+    sortKey: string;
+    rental: Rental;
+  };
+  type DamageActEv = {
+    kind: "damage_act";
+    sortKey: string;
+    report: ApiDamageReport;
+  };
+  type DamagePaymentEv = {
+    kind: "damage_payment";
+    sortKey: string;
+    payment: ApiDamagePayment;
+    report: ApiDamageReport;
+  };
+  type Ev = RentalEv | DamageActEv | DamagePaymentEv;
 
-  if (ordered.length === 0) {
+  const events = useMemo<Ev[]>(() => {
+    const out: Ev[] = [];
+    for (const r of chainRentals) {
+      out.push({ kind: "rental", sortKey: rentalSortKey(r), rental: r });
+    }
+    for (const rep of damageReports) {
+      out.push({ kind: "damage_act", sortKey: rep.createdAt, report: rep });
+      for (const p of rep.payments) {
+        if (!p.paid) continue; // в ленте — только подтверждённые платежи
+        const paidAt = p.paidAt ?? p.createdAt;
+        out.push({
+          kind: "damage_payment",
+          sortKey: paidAt,
+          payment: p,
+          report: rep,
+        });
+      }
+    }
+    out.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+    return out;
+  }, [chainRentals, damageReports]);
+
+  // Сводка наверху: для рент-сегментов считаем дни и сумму, для долгов
+  // отдельный итог.
+  const rentEvents = events.filter((e): e is RentalEv => e.kind === "rental");
+  const totalDays = rentEvents.reduce((s, e) => s + (e.rental.days ?? 0), 0);
+  const totalRentSum = rentEvents.reduce(
+    (s, e) => s + (e.rental.sum ?? 0),
+    0,
+  );
+  const totalDamageBilled = damageReports.reduce((s, r) => s + r.total, 0);
+  const totalDamagePaid = damageReports.reduce(
+    (s, r) => s + r.paidSum + r.depositCovered,
+    0,
+  );
+  const totalDamageDebt = damageReports.reduce((s, r) => s + r.debt, 0);
+
+  if (events.length === 0) {
     return (
       <div className="rounded-2xl bg-surface p-6 text-center text-[13px] text-muted shadow-card-sm">
         <History size={24} className="mx-auto mb-2 text-muted-2" />
@@ -1585,7 +1653,7 @@ export function HistoryTab({
     );
   }
 
-  if (ordered.length === 1) {
+  if (rentEvents.length === 1 && damageReports.length === 0) {
     return (
       <div className="rounded-2xl bg-surface p-6 text-center text-[13px] text-muted shadow-card-sm">
         <History size={24} className="mx-auto mb-2 text-muted-2" />
@@ -1598,35 +1666,170 @@ export function HistoryTab({
   return (
     <div className="flex flex-col gap-2">
       <div className="text-[12px] text-muted-2 px-1">
-        Цепочка из {ordered.length}{" "}
-        {pluralRu(ordered.length, ["аренды", "аренд", "аренд"])} — суммарно{" "}
+        Цепочка из {rentEvents.length}{" "}
+        {pluralRu(rentEvents.length, ["аренды", "аренд", "аренд"])} — суммарно{" "}
         <b className="text-ink">
-          {ordered.reduce((s, r) => s + (r.days ?? 0), 0)}{" "}
-          {pluralRu(
-            ordered.reduce((s, r) => s + (r.days ?? 0), 0),
-            ["день", "дня", "дней"],
-          )}
+          {totalDays}{" "}
+          {pluralRu(totalDays, ["день", "дня", "дней"])}
         </b>
         ,{" "}
         <b className="text-ink">
-          {ordered
-            .reduce((s, r) => s + (r.sum ?? 0), 0)
-            .toLocaleString("ru-RU")}{" "}
-          ₽
+          {totalRentSum.toLocaleString("ru-RU")} ₽
         </b>{" "}
         за всё время
+        {damageReports.length > 0 && (
+          <>
+            {" · "}
+            ущерб:{" "}
+            <b className="text-ink">
+              {totalDamageBilled.toLocaleString("ru-RU")} ₽
+            </b>{" "}
+            (погашено{" "}
+            <b className="text-ink">
+              {totalDamagePaid.toLocaleString("ru-RU")} ₽
+            </b>
+            ,{" остаток "}
+            <b className={totalDamageDebt > 0 ? "text-red-ink" : "text-green-ink"}>
+              {totalDamageDebt.toLocaleString("ru-RU")} ₽
+            </b>
+            )
+          </>
+        )}
       </div>
 
-      {ordered.map((r, idx) => {
+      {events.map((ev, idx) => {
+        if (ev.kind === "damage_act") {
+          const rep = ev.report;
+          return (
+            <div
+              key={`act-${rep.id}`}
+              className="rounded-2xl border-l-4 border-amber-500 bg-amber-50 p-4 shadow-card-sm"
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+                  <AlertTriangle size={14} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[14px] font-bold text-ink">
+                      Зафиксирован ущерб
+                    </span>
+                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-800">
+                      акт #{rep.id}
+                    </span>
+                    {rep.clientAgreement === "agreed" && (
+                      <span className="rounded-full bg-green-soft px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-green-ink">
+                        клиент согласен
+                      </span>
+                    )}
+                    {rep.clientAgreement === "disputed" && (
+                      <span className="rounded-full bg-red-soft px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-ink">
+                        не согласен
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-muted">
+                    <Calendar size={11} />
+                    {fmtIsoDate(rep.createdAt)} · {fmtIsoTime(rep.createdAt)}
+                    <span className="text-muted-2">·</span>
+                    <span>
+                      {rep.items.length}{" "}
+                      {pluralRu(rep.items.length, [
+                        "позиция",
+                        "позиции",
+                        "позиций",
+                      ])}{" "}
+                      на сумму{" "}
+                      <b className="text-ink">
+                        {rep.total.toLocaleString("ru-RU")} ₽
+                      </b>
+                      {rep.depositCovered > 0 && (
+                        <>
+                          , зачтено из залога{" "}
+                          {rep.depositCovered.toLocaleString("ru-RU")} ₽
+                        </>
+                      )}
+                    </span>
+                  </div>
+                  {rep.note && (
+                    <div className="mt-1 text-[11px] text-muted">
+                      Комментарий: {rep.note}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        }
+        if (ev.kind === "damage_payment") {
+          const p = ev.payment;
+          const rep = ev.report;
+          return (
+            <div
+              key={`pay-${p.id}`}
+              className="rounded-2xl border-l-4 border-green-500 bg-green-soft/40 p-3 shadow-card-sm"
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-green-soft text-green-ink">
+                  <Plus size={13} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2 text-[13px]">
+                    <span className="font-semibold text-ink">
+                      Платёж по ущербу{" "}
+                      <span className="tabular-nums">
+                        {p.amount.toLocaleString("ru-RU")} ₽
+                      </span>
+                    </span>
+                    <span className="rounded-full bg-surface-soft px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted">
+                      акт #{rep.id}
+                    </span>
+                  </div>
+                  <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[11px] text-muted">
+                    <Calendar size={11} />
+                    {p.paidAt ? fmtIsoDate(p.paidAt) : "—"}
+                    {p.paidAt && (
+                      <>
+                        <span>·</span> {fmtIsoTime(p.paidAt)}
+                      </>
+                    )}
+                    <span className="text-muted-2">·</span>
+                    {p.method === "cash"
+                      ? "наличными"
+                      : p.method === "card"
+                        ? "картой"
+                        : "переводом"}
+                    {p.receivedByName && (
+                      <>
+                        <span className="text-muted-2">·</span>
+                        принял: {p.receivedByName}
+                      </>
+                    )}
+                  </div>
+                  {p.note && (
+                    <div className="mt-0.5 text-[11px] text-muted">
+                      {p.note}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        }
+        // ev.kind === "rental"
+        const r = ev.rental;
+        // Индекс среди rental-событий (не общий idx)
+        const rentalIdx = rentEvents.findIndex((e) => e.rental.id === r.id);
         const isCurrent = r.id === rental.id;
-        const isFirst = idx === 0;
+        const isFirst = rentalIdx === 0;
         const isSwap =
           !isFirst && /замена скутера/i.test(r.note ?? "");
         const equipmentList =
           (r.equipment?.length ?? 0) > 0 ? r.equipment.join(", ") : null;
+        void idx;
         return (
           <div
-            key={r.id}
+            key={`r-${r.id}`}
             className={cn(
               "rounded-2xl bg-surface p-4 shadow-card-sm",
               isCurrent && "ring-2 ring-blue-600/50",
@@ -1634,7 +1837,7 @@ export function HistoryTab({
           >
             <div className="flex flex-wrap items-center gap-2">
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-700 text-[12px] font-bold">
-                {idx + 1}
+                {rentalIdx + 1}
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
@@ -1690,3 +1893,4 @@ export function HistoryTab({
     </div>
   );
 }
+

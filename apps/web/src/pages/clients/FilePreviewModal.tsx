@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Download, FileText, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { fileUrl } from "@/lib/api/documents";
 import type { UploadedFile } from "./DocUpload";
 
 function isImageName(name: string): boolean {
@@ -37,12 +38,28 @@ export function FilePreviewModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const src = file.thumbUrl;
-  const isImg = !!src && isImageName(file.name);
-  const isPdf = !!src && isPdfName(file.name);
-  const hasLocalFile = !!src;
+  // Источник для просмотра: blob URL (свежий локальный файл) ИЛИ URL из
+  // S3 через /api/files/{key} (если файл уже на сервере).
+  const serverUrl = file.fileKey
+    ? fileUrl(file.fileKey, { filename: file.name })
+    : null;
+  const src = file.thumbUrl ?? serverUrl;
+  const mimeIsImage = file.mimeType?.startsWith("image/") ?? false;
+  const mimeIsPdf = file.mimeType === "application/pdf";
+  const isImg = !!src && (mimeIsImage || isImageName(file.name));
+  const isPdf = !!src && (mimeIsPdf || isPdfName(file.name));
+  const canPreviewOrDownload = !!src;
 
   const handleDownload = () => {
+    if (file.fileKey) {
+      // Серверный файл — открываем по URL с disposition=attachment.
+      const url = fileUrl(file.fileKey, {
+        download: true,
+        filename: file.name,
+      });
+      window.open(url, "_blank");
+      return;
+    }
     if (!src) return;
     const a = document.createElement("a");
     a.href = src;
@@ -88,15 +105,15 @@ export function FilePreviewModal({
           <button
             type="button"
             onClick={handleDownload}
-            disabled={!hasLocalFile}
+            disabled={!canPreviewOrDownload}
             title={
-              hasLocalFile
+              canPreviewOrDownload
                 ? "Скачать"
-                : "Файл на сервере — скачивание будет после интеграции"
+                : "Источник файла недоступен"
             }
             className={cn(
               "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold transition-colors",
-              hasLocalFile
+              canPreviewOrDownload
                 ? "bg-blue-600 text-white hover:bg-blue-700"
                 : "cursor-not-allowed bg-surface-soft text-muted-2",
             )}
@@ -139,9 +156,9 @@ export function FilePreviewModal({
                   Предпросмотр недоступен
                 </div>
                 <div className="mt-1 max-w-[360px] text-[12px] text-muted">
-                  {hasLocalFile
-                    ? "Скачайте файл чтобы открыть его в нужной программе."
-                    : "Файл сохранён на сервере. После интеграции backend'а его можно будет открыть и скачать."}
+                  {canPreviewOrDownload
+                    ? "Тип файла не поддерживает inline-просмотр — нажмите «Скачать», чтобы открыть в нужной программе."
+                    : "Файл недоступен — нет ни локальной копии, ни ключа в хранилище."}
                 </div>
               </div>
             </div>

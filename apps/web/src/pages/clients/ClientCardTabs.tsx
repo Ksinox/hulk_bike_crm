@@ -16,6 +16,13 @@ import { FilePreviewModal } from "./FilePreviewModal";
 import { clientStore, useClientExtraDocs } from "./clientStore";
 import { SequentialNamingModal } from "./SequentialNamingModal";
 import {
+  useApiClientDocs,
+  useUploadClientDoc,
+  useDeleteClientDoc,
+  type ApiClientDoc,
+} from "@/lib/api/documents";
+import { toast } from "@/lib/toast";
+import {
   PAYMENT_LABEL,
   STATUS_LABEL as RENTAL_STATUS_LABEL,
   type Rental,
@@ -277,13 +284,23 @@ export function IncidentsTab({ d }: { d: ClientDetails }) {
 type DocSlot = {
   key: string;
   label: string;
-  file: DocFile;
+  /** Либо legacy mock-DocFile (имя+дата), либо готовый UploadedFile из API
+   *  (с fileKey для preview/download). */
+  file: DocFile | UploadedFile;
   required: boolean;
   comment?: string;
 };
 
-function docToUploaded(file: DocFile, title: string): UploadedFile | null {
+function docToUploaded(
+  file: DocFile | UploadedFile,
+  title: string,
+): UploadedFile | null {
   if (!file) return null;
+  // Уже UploadedFile (из API) — отдаём как есть, добавим title для слота.
+  if ("fileKey" in file || "mimeType" in file) {
+    return { ...file, title: file.title ?? title };
+  }
+  // Legacy DocFile (name+date) — конвертируем в UploadedFile-заглушку.
   return {
     name: file.name,
     title,
@@ -291,29 +308,65 @@ function docToUploaded(file: DocFile, title: string): UploadedFile | null {
   };
 }
 
+/** Превращаем ApiClientDoc → UploadedFile для FilePreviewModal/слотов. */
+function apiDocToUploaded(doc: ApiClientDoc): UploadedFile {
+  return {
+    name: doc.fileName,
+    size: doc.size,
+    title: doc.title ?? undefined,
+    comment: doc.comment ?? undefined,
+    fileKey: doc.fileKey,
+    mimeType: doc.mimeType,
+    docId: doc.id,
+    existing: true,
+  };
+}
+
 export function DocsTab({ client, d }: { client: Client; d: ClientDetails }) {
+  // API-документы клиента (паспорт, права, прочие) — подгружаем из БД.
+  // Группируем по kind для отображения в трёх «обязательных» слотах +
+  // секции «Прочие документы».
+  const docsQ = useApiClientDocs(client.id);
+  const apiDocs = docsQ.data ?? [];
+  const passportDocs = apiDocs.filter((d) => d.kind === "passport");
+  const licenseDocs = apiDocs.filter((d) => d.kind === "license");
+  const extraApiDocs = apiDocs.filter((d) => d.kind === "extra");
+
+  const uploadDoc = useUploadClientDoc(client.id);
+  const deleteDoc = useDeleteClientDoc(client.id);
+
+  // Legacy: локальные доп. документы (через clientStore). Оставляем
+  // для совместимости — но новые документы идут через API.
+  const localExtraDocs = useClientExtraDocs(client.id);
+
   const slots: DocSlot[] = [
     {
       key: "passport_main",
       label: "Паспорт (основной разворот)",
-      file: d.docs.passport_main,
+      // Берём первый из API, если есть; иначе legacy mock.
+      file: passportDocs[0]
+        ? apiDocToUploaded(passportDocs[0])
+        : d.docs.passport_main,
       required: true,
     },
     {
       key: "passport_reg",
       label: "Паспорт (прописка)",
-      file: d.docs.passport_reg,
+      file: passportDocs[1]
+        ? apiDocToUploaded(passportDocs[1])
+        : d.docs.passport_reg,
       required: true,
     },
     {
       key: "license",
       label: "Водительское",
-      file: d.docs.license,
+      file: licenseDocs[0]
+        ? apiDocToUploaded(licenseDocs[0])
+        : d.docs.license,
       required: false,
     },
   ];
 
-  const extraDocs = useClientExtraDocs(client.id);
   const [preview, setPreview] = useState<UploadedFile | null>(null);
   const [pending, setPending] = useState<UploadedFile[] | null>(null);
   const addInputRef = useRef<HTMLInputElement>(null);
@@ -321,7 +374,7 @@ export function DocsTab({ client, d }: { client: Client; d: ClientDetails }) {
   const addUploaded = (list: FileList) => {
     const next: UploadedFile[] = [];
     for (const f of Array.from(list)) {
-      const uf: UploadedFile = { name: f.name, size: f.size };
+      const uf: UploadedFile = { name: f.name, size: f.size, file: f };
       if (f.type.startsWith("image/") || f.type === "application/pdf") {
         uf.thumbUrl = URL.createObjectURL(f);
       }
@@ -330,11 +383,45 @@ export function DocsTab({ client, d }: { client: Client; d: ClientDetails }) {
     if (next.length > 0) setPending(next);
   };
 
-  const patchExtra = (i: number, upd: Partial<UploadedFile>) => {
-    clientStore.setExtraDocs(
-      client.id,
-      extraDocs.map((x, j) => (j === i ? { ...x, ...upd } : x)),
-    );
+  const onUploadExtra = async (named: UploadedFile[]) => {
+    setPending(null);
+    let okCount = 0;
+    let failCount = 0;
+    for (const uf of named) {
+      if (!uf.file) continue;
+      try {
+        await uploadDoc.mutateAsync({
+          kind: "extra",
+          file: uf.file,
+          title: uf.title,
+          comment: uf.comment,
+        });
+        okCount++;
+      } catch {
+        failCount++;
+      }
+    }
+    if (okCount > 0) {
+      toast.success(
+        "Документы загружены",
+        `${okCount} ${okCount === 1 ? "файл" : "файлов"} сохранено на сервере.`,
+      );
+    }
+    if (failCount > 0) {
+      toast.error(
+        "Не удалось загрузить",
+        `${failCount} ${failCount === 1 ? "файл" : "файлов"}.`,
+      );
+    }
+  };
+
+  const onDeleteApiDoc = async (docId: number) => {
+    try {
+      await deleteDoc.mutateAsync(docId);
+      toast.success("Документ удалён", "");
+    } catch (e) {
+      toast.error("Не удалось удалить", (e as Error).message ?? "");
+    }
   };
 
   return (
@@ -357,17 +444,50 @@ export function DocsTab({ client, d }: { client: Client; d: ClientDetails }) {
             onOpen={(uf) => setPreview(uf)}
           />
         ))}
-        {extraDocs.map((f, i) => (
+        {/* API-документы типа extra: новые, с fileKey, поддерживают
+            preview/download/delete через сервер. */}
+        {extraApiDocs.map((doc) => {
+          const uf = apiDocToUploaded(doc);
+          return (
+            <ExtraDocMiniCard
+              key={`api-${doc.id}`}
+              file={uf}
+              onOpen={() => setPreview(uf)}
+              onTitleChange={(_v: string) => {
+                /* TODO: PATCH title через API если потребуется */
+              }}
+              onCommentChange={(_v: string) => {
+                /* TODO: PATCH comment через API если потребуется */
+              }}
+              onRemove={() => onDeleteApiDoc(doc.id)}
+            />
+          );
+        })}
+        {/* Legacy локальные доп. документы — оставляем для совместимости
+            пока в БД не мигрированы. */}
+        {localExtraDocs.map((f, i) => (
           <ExtraDocMiniCard
             key={`extra-${i}`}
             file={f}
             onOpen={() => setPreview(f)}
-            onTitleChange={(v) => patchExtra(i, { title: v })}
-            onCommentChange={(v) => patchExtra(i, { comment: v })}
+            onTitleChange={(v) =>
+              clientStore.setExtraDocs(
+                client.id,
+                localExtraDocs.map((x, j) => (j === i ? { ...x, title: v } : x)),
+              )
+            }
+            onCommentChange={(v) =>
+              clientStore.setExtraDocs(
+                client.id,
+                localExtraDocs.map((x, j) =>
+                  j === i ? { ...x, comment: v } : x,
+                ),
+              )
+            }
             onRemove={() =>
               clientStore.setExtraDocs(
                 client.id,
-                extraDocs.filter((_, j) => j !== i),
+                localExtraDocs.filter((_, j) => j !== i),
               )
             }
           />
@@ -388,10 +508,7 @@ export function DocsTab({ client, d }: { client: Client; d: ClientDetails }) {
       {pending && pending.length > 0 && (
         <SequentialNamingModal
           files={pending}
-          onComplete={(named) => {
-            clientStore.addExtraDocs(client.id, named);
-            setPending(null);
-          }}
+          onComplete={onUploadExtra}
           onCancel={() => setPending(null)}
         />
       )}

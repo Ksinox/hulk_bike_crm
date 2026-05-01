@@ -1107,7 +1107,11 @@ export function RentalCard({
           />
         )}
         {tab === "history" && (
-          <HistoryTab rental={rental} chainRentals={chainRentals} />
+          <HistoryTab
+            rental={rental}
+            chainRentals={chainRentals}
+            damageReports={reports}
+          />
         )}
         {tab === "tasks" && <TasksTab rental={rental} />}
         {tab === "docs" && <DocumentsTab rental={rental} />}

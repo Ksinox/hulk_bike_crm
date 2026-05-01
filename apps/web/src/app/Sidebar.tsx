@@ -44,7 +44,7 @@ function buildMainItems(canManageStaff: boolean): NavItem[] {
   items.push(
     { id: "rassrochki", label: "Рассрочки", icon: Receipt },
     { id: "sales", label: "Продажи", icon: Wallet },
-    { id: "service", label: "Ремонты", icon: Wrench },
+    { id: "service", label: "Ремонты", icon: Wrench, ready: true },
     { id: "incidents", label: "Инциденты", icon: CircleAlert },
     { id: "tasks", label: "Задачи", icon: ClipboardCheck },
     { id: "analytics", label: "Аналитика", icon: BarChart3 },

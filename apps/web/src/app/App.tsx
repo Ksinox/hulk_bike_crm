@@ -5,6 +5,7 @@ import { Clients } from "@/pages/clients/Clients";
 import { Rentals } from "@/pages/rentals/Rentals";
 import { Documents } from "@/pages/documents/Documents";
 import { Garage } from "@/pages/fleet/Garage";
+import { Service } from "@/pages/service/Service";
 import { Staff } from "@/pages/staff/Staff";
 import { UpdateToast } from "./UpdateToast";
 import { TitleBar } from "./TitleBar";
@@ -84,6 +85,8 @@ export function App() {
           <Rentals />
         ) : route === "fleet" ? (
           <Garage />
+        ) : route === "service" ? (
+          <Service />
         ) : route === "staff" ? (
           <Staff />
         ) : route === "docs" ? (
