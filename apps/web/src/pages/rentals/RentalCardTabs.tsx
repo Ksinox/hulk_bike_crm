@@ -47,7 +47,11 @@ import { fileUrl } from "@/lib/files";
 import { navigate } from "@/app/navigationStore";
 import { toast } from "@/lib/toast";
 import { DocumentPreviewModal } from "./DocumentPreviewModal";
-import { useDamageReports } from "@/lib/api/damage-reports";
+import {
+  useDamageReports,
+  type ApiDamageReport,
+  type ApiDamagePayment,
+} from "@/lib/api/damage-reports";
 
 function fmt(n: number | null | undefined) {
   if (n == null || Number.isNaN(n)) return "0";
@@ -1267,6 +1271,11 @@ function PrintDocumentsView({ rental }: { rental: Rental }) {
           htmlUrl={previewUrl(preview)}
           docxUrl={downloadUrl(preview)}
           docxFilename={`${DOC_META[preview].title} ${String(rental.id).padStart(4, "0")}.doc`}
+          // Передаём templateKey — превью покажет кнопку «Подправить
+          // шаблон», которая открывает редактор шаблона прямо здесь же
+          // и после сохранения перерисовывает превью со свежей версией.
+          templateKey={preview}
+          templateName={DOC_META[preview].title}
           onClose={() => setPreview(null)}
         />
       )}

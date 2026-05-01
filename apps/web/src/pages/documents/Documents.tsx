@@ -416,12 +416,24 @@ function TemplatePreview({
     docxFilename = `${template.title} (образец).doc`;
   }
 
+  // templateKey для редактирования шаблона прямо из превью образца:
+  // - для rental-based шаблонов берём rentalType (act_transfer/act_return/...);
+  // - для damage используем хардкод "damage" (в галерее свой ключ);
+  // - для client statement редактирования нет.
+  const editableKey: string | undefined =
+    template.kind === "rental"
+      ? template.rentalType
+      : template.kind === "damage"
+        ? "damage"
+        : undefined;
   return (
     <DocumentPreviewModal
       title={`${template.title} — образец`}
       htmlUrl={htmlUrl}
       docxUrl={docxUrl}
       docxFilename={docxFilename}
+      templateKey={editableKey}
+      templateName={template.title}
       onClose={onClose}
     />
   );

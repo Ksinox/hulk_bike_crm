@@ -1,14 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  ArrowLeft,
   Download,
   FileText,
   Loader2,
+  Pencil,
   Printer,
   RefreshCw,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
+import { TemplateEditorPage } from "@/pages/documents/editor/TemplateEditorPage";
 
 /**
  * Модалка предпросмотра документа внутри CRM.
@@ -26,14 +29,22 @@ export function DocumentPreviewModal({
   htmlUrl,
   docxUrl,
   docxFilename,
+  templateKey,
+  templateName,
   onClose,
 }: {
   title: string;
   htmlUrl: string;
   docxUrl: string;
   docxFilename: string;
+  /** Если задан — в шапке появится кнопка «Подправить шаблон»,
+   *  которая прямо здесь же открывает редактор шаблона. После
+   *  возврата превью перерисовывается со свежим override. */
+  templateKey?: string;
+  templateName?: string;
   onClose: () => void;
 }) {
+  const [editingTemplate, setEditingTemplate] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [iframeReady, setIframeReady] = useState(false);
   const [htmlContent, setHtmlContent] = useState<string | null>(null);
@@ -160,45 +171,59 @@ export function DocumentPreviewModal({
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setReloadKey(Date.now())}
-              title="Перегенерировать превью со свежими данными клиента/скутера"
-              className="inline-flex items-center gap-1.5 rounded-full bg-surface px-3 py-2 text-[12px] font-semibold text-muted-2 transition-colors hover:bg-blue-50 hover:text-blue-700"
-            >
-              <RefreshCw size={13} /> Обновить
-            </button>
-            <button
-              type="button"
-              onClick={handlePrint}
-              disabled={!iframeReady || printing}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-bold text-white transition-colors",
-                iframeReady && !printing
-                  ? "bg-ink hover:bg-blue-600"
-                  : "cursor-not-allowed bg-surface text-muted-2",
-              )}
-            >
-              {printing ? (
-                <Loader2 size={14} className="animate-spin" />
-              ) : (
-                <Printer size={14} />
-              )}
-              Печать
-            </button>
-            <button
-              type="button"
-              onClick={handleDownloadWord}
-              disabled={downloading}
-              className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-4 py-2 text-[13px] font-bold text-blue-700 transition-colors hover:bg-blue-100"
-            >
-              {downloading ? (
-                <Loader2 size={14} className="animate-spin" />
-              ) : (
-                <Download size={14} />
-              )}
-              Скачать Word
-            </button>
+            {!editingTemplate && templateKey && (
+              <button
+                type="button"
+                onClick={() => setEditingTemplate(true)}
+                title="Открыть шаблон документа в редакторе и подправить текст. После сохранения превью обновится."
+                className="inline-flex items-center gap-1.5 rounded-full bg-surface px-3 py-2 text-[12px] font-semibold text-muted-2 transition-colors hover:bg-blue-50 hover:text-blue-700"
+              >
+                <Pencil size={13} /> Подправить шаблон
+              </button>
+            )}
+            {!editingTemplate && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setReloadKey(Date.now())}
+                  title="Перегенерировать превью со свежими данными клиента/скутера"
+                  className="inline-flex items-center gap-1.5 rounded-full bg-surface px-3 py-2 text-[12px] font-semibold text-muted-2 transition-colors hover:bg-blue-50 hover:text-blue-700"
+                >
+                  <RefreshCw size={13} /> Обновить
+                </button>
+                <button
+                  type="button"
+                  onClick={handlePrint}
+                  disabled={!iframeReady || printing}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-bold text-white transition-colors",
+                    iframeReady && !printing
+                      ? "bg-ink hover:bg-blue-600"
+                      : "cursor-not-allowed bg-surface text-muted-2",
+                  )}
+                >
+                  {printing ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : (
+                    <Printer size={14} />
+                  )}
+                  Печать
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDownloadWord}
+                  disabled={downloading}
+                  className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-4 py-2 text-[13px] font-bold text-blue-700 transition-colors hover:bg-blue-100"
+                >
+                  {downloading ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : (
+                    <Download size={14} />
+                  )}
+                  Скачать Word
+                </button>
+              </>
+            )}
             <button
               type="button"
               onClick={onClose}
@@ -211,30 +236,62 @@ export function DocumentPreviewModal({
         </div>
 
         {/* Hint */}
-        <div className="border-b border-border bg-blue-50/60 px-5 py-2 text-[11px] text-blue-900">
-          Чтобы сохранить <b>PDF</b> — нажмите «Печать» и в диалоге браузера
-          выберите «Сохранить как PDF». Для <b>Word</b> используйте кнопку
-          «Скачать Word» — файл можно открыть и подкорректировать в Microsoft
-          Word.
-        </div>
+        {!editingTemplate && (
+          <div className="border-b border-border bg-blue-50/60 px-5 py-2 text-[11px] text-blue-900">
+            Чтобы сохранить <b>PDF</b> — нажмите «Печать» и в диалоге браузера
+            выберите «Сохранить как PDF». Для <b>Word</b> используйте кнопку
+            «Скачать Word» — файл можно открыть и подкорректировать в Microsoft
+            Word.
+          </div>
+        )}
 
-        {/* Iframe preview */}
-        <div className="relative flex-1 overflow-hidden bg-surface-soft">
-          {(!iframeReady || !htmlContent) && (
-            <div className="absolute inset-0 flex items-center justify-center text-muted">
-              <Loader2 size={24} className="animate-spin" />
+        {/* Контент: превью документа в iframe ИЛИ inline-редактор шаблона. */}
+        {editingTemplate && templateKey ? (
+          <div className="flex-1 overflow-y-auto bg-surface-soft p-4">
+            <div className="mb-2 flex items-center gap-2 text-[12px] text-muted-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingTemplate(false);
+                  // Перегенерируем превью со свежим override после правки.
+                  setReloadKey(Date.now());
+                }}
+                className="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1.5 font-semibold text-ink-2 hover:bg-border"
+              >
+                <ArrowLeft size={12} /> Вернуться к превью
+              </button>
+              <span>
+                Правки сохраняются автоматически (через 1.5 секунды).
+                После «Вернуться» превью перерисуется свежей версией.
+              </span>
             </div>
-          )}
-          {htmlContent && (
-            <iframe
-              ref={iframeRef}
-              srcDoc={htmlContent}
-              title={title}
-              onLoad={() => setIframeReady(true)}
-              className="h-full min-h-[70vh] w-full bg-white"
+            <TemplateEditorPage
+              templateKey={templateKey}
+              templateName={templateName ?? title}
+              onBack={() => {
+                setEditingTemplate(false);
+                setReloadKey(Date.now());
+              }}
             />
-          )}
-        </div>
+          </div>
+        ) : (
+          <div className="relative flex-1 overflow-hidden bg-surface-soft">
+            {(!iframeReady || !htmlContent) && (
+              <div className="absolute inset-0 flex items-center justify-center text-muted">
+                <Loader2 size={24} className="animate-spin" />
+              </div>
+            )}
+            {htmlContent && (
+              <iframe
+                ref={iframeRef}
+                srcDoc={htmlContent}
+                title={title}
+                onLoad={() => setIframeReady(true)}
+                className="h-full min-h-[70vh] w-full bg-white"
+              />
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
