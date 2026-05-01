@@ -21,6 +21,7 @@ import {
   renderClaimHtml,
   renderClaimHtmlForWord,
 } from "../documents/claim-document.js";
+import { ensureRepairJobForScooter } from "./repair-jobs.js";
 
 /**
  * Акты о повреждениях.
@@ -193,12 +194,26 @@ export async function damageReportsRoutes(app: FastifyInstance) {
     // v0.2.75: статус аренды НЕ меняем при создании акта.
     // Реакция клиента (agreed/disputed) проставляется отдельным endpoint
     // /:id/agreement, и только при 'disputed' аренда уходит в 'problem'.
-    // Скутер — в ремонт (если флаг и есть скутер).
+    // Скутер — в ремонт (если флаг и есть скутер). Дополнительно
+    // открываем (или находим существующий) repair_job и наполняем его
+    // чек-листом из позиций акта — оператор увидит их в разделе «Ремонты».
     if (sendScooterToRepair && rental.scooterId) {
       await db
         .update(scooters)
         .set({ baseStatus: "repair" })
         .where(eq(scooters.id, rental.scooterId));
+      try {
+        await ensureRepairJobForScooter({
+          scooterId: rental.scooterId,
+          rentalId: rental.id,
+          damageReportId: report!.id,
+          createdByUserId: userId,
+        });
+      } catch (e) {
+        // Не валим создание акта если что-то с ремонтом не так — это
+        // вспомогательная запись, можно создать вручную через API.
+        req.log?.warn?.({ err: e }, "ensureRepairJobForScooter failed");
+      }
     }
     // Если залог зачли — фиксируем это «возвратом залога» (отрицательным
     // движением) — пока просто помечаем deposit_returned=false и пишем в note.

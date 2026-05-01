@@ -342,7 +342,11 @@ export function resolveVariable(key: string, b: Bundle): string {
     const prop = key.slice("rental.".length);
     switch (prop) {
       case "id":
-        return String(rental.id);
+        // Номер договора = id корневой связки. Для продлений и legacy-замен
+        // (child rentals) подставляется тот же номер, что и в исходном
+        // договоре, а не id текущей дочерней аренды — клиент видит везде
+        // один номер по сделке.
+        return String(b.rootRentalId ?? rental.id);
       case "startDate":
         return fmtDateRu(rental.startAt);
       case "startDateShort":
@@ -370,7 +374,10 @@ export function resolveVariable(key: string, b: Bundle): string {
       case "weeklyAmount":
         return fmtMoney((rental.rate ?? 0) * 7);
       case "contractDate":
-        return fmtDateRu(rental.startAt);
+        // Дата составления договора = дата корневой связки. Для продлений
+        // акт говорит «К договору от <дата>» — это дата подписания, а
+        // не дата продления.
+        return fmtDateRu(b.rootStartAt ?? rental.startAt);
       default: {
         const v = (rental as unknown as Record<string, unknown>)[prop];
         return v != null ? String(v) : "—";
@@ -535,6 +542,8 @@ export function makeFixtureBundle(): Bundle {
       createdAt: dt(1, 1),
       updatedAt: dt(1, 2),
     } as unknown as Bundle["model"],
+    rootRentalId: 1234567,
+    rootStartAt: dt(3, 3, 9, 0),
   };
 }
 

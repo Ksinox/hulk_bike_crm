@@ -1092,6 +1092,153 @@ export const damageReportItemsRelations = relations(damageReportItems, ({ one })
 }));
 
 /* ============================================================
+ * repair_jobs / repair_progress / repair_progress_photos
+ *
+ * Журнал ремонта скутера: цикл «ушёл в repair → готов к аренде».
+ * Создаётся автоматически при создании damage_report с
+ * sendScooterToRepair=true. Каждый damage_report_item становится
+ * пунктом чек-листа (repair_progress) с возможностью прикрепить
+ * фото повреждения / результата работ.
+ * ============================================================ */
+
+export const repairJobs = pgTable(
+  "repair_jobs",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    scooterId: bigint("scooter_id", { mode: "number" })
+      .notNull()
+      .references(() => scooters.id, { onDelete: "cascade" }),
+    rentalId: bigint("rental_id", { mode: "number" }).references(
+      () => rentals.id,
+      { onDelete: "set null" },
+    ),
+    damageReportId: bigint("damage_report_id", { mode: "number" }).references(
+      () => damageReports.id,
+      { onDelete: "set null" },
+    ),
+    /** 'in_progress' | 'completed' */
+    status: text("status").notNull().default("in_progress"),
+    startedAt: timestamp("started_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    createdByUserId: bigint("created_by_user_id", { mode: "number" }).references(
+      () => users.id,
+      { onDelete: "set null" },
+    ),
+    completedByUserId: bigint("completed_by_user_id", {
+      mode: "number",
+    }).references(() => users.id, { onDelete: "set null" }),
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    scooterIdx: index("repair_jobs_scooter_idx").on(t.scooterId),
+    statusIdx: index("repair_jobs_status_idx").on(t.status),
+  }),
+);
+
+export const repairProgress = pgTable(
+  "repair_progress",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    repairJobId: bigint("repair_job_id", { mode: "number" })
+      .notNull()
+      .references(() => repairJobs.id, { onDelete: "cascade" }),
+    /** Снимок ссылается на позицию акта ущерба (если nullable — пункт
+     *  добавлен вручную или акт удалён). */
+    damageReportItemId: bigint("damage_report_item_id", {
+      mode: "number",
+    }).references(() => damageReportItems.id, { onDelete: "set null" }),
+    title: text("title").notNull(),
+    qty: integer("qty").notNull().default(1),
+    /** Цена позиции на момент создания пункта (для отображения, не для биллинга). */
+    priceSnapshot: integer("price_snapshot").notNull().default(0),
+    done: boolean("done").notNull().default(false),
+    notes: text("notes"),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    completedByUserId: bigint("completed_by_user_id", {
+      mode: "number",
+    }).references(() => users.id, { onDelete: "set null" }),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    jobIdx: index("repair_progress_job_idx").on(t.repairJobId),
+  }),
+);
+
+export const repairProgressPhotos = pgTable(
+  "repair_progress_photos",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    progressId: bigint("progress_id", { mode: "number" })
+      .notNull()
+      .references(() => repairProgress.id, { onDelete: "cascade" }),
+    fileKey: text("file_key").notNull(),
+    fileName: text("file_name").notNull(),
+    mimeType: text("mime_type").notNull(),
+    size: integer("size").notNull().default(0),
+    uploadedByUserId: bigint("uploaded_by_user_id", {
+      mode: "number",
+    }).references(() => users.id, { onDelete: "set null" }),
+    uploadedAt: timestamp("uploaded_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    progressIdx: index("repair_progress_photos_progress_idx").on(t.progressId),
+  }),
+);
+
+export const repairJobsRelations = relations(repairJobs, ({ many, one }) => ({
+  progress: many(repairProgress),
+  scooter: one(scooters, {
+    fields: [repairJobs.scooterId],
+    references: [scooters.id],
+  }),
+  rental: one(rentals, {
+    fields: [repairJobs.rentalId],
+    references: [rentals.id],
+  }),
+  damageReport: one(damageReports, {
+    fields: [repairJobs.damageReportId],
+    references: [damageReports.id],
+  }),
+}));
+
+export const repairProgressRelations = relations(
+  repairProgress,
+  ({ one, many }) => ({
+    job: one(repairJobs, {
+      fields: [repairProgress.repairJobId],
+      references: [repairJobs.id],
+    }),
+    photos: many(repairProgressPhotos),
+  }),
+);
+
+export const repairProgressPhotosRelations = relations(
+  repairProgressPhotos,
+  ({ one }) => ({
+    progress: one(repairProgress, {
+      fields: [repairProgressPhotos.progressId],
+      references: [repairProgress.id],
+    }),
+  }),
+);
+
+/* ============================================================
  * client_applications — публичные заявки клиентов (как Google Forms).
  *
  * Постоянная ссылка вида https://crm.hulk-bike.ru/apply открывает

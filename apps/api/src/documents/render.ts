@@ -44,6 +44,17 @@ export type Bundle = {
   /** Краткая причина замены, извлекаем из rental.note (формат
    *  «замена скутера: <причина>»). null если note пустой. */
   swapReason?: string | null;
+  /** Идентификатор корневой аренды цепочки (по which был подписан договор).
+   *  Если parentRentalId == null — равно rental.id. Иначе — поднимаемся вверх
+   *  по parentRentalId до самого корня. Используется как «номер договора»
+   *  во всех актах: продление и legacy-замены ссылаются на тот же договор,
+   *  что и корневая связка. */
+  rootRentalId: number;
+  /** Дата подписания корневого договора (rental.startAt у root-связки).
+   *  Для продлений отличается от rental.startAt — там дата продления, а
+   *  не дата исходного договора. Используется в подписях актов
+   *  «К договору № X от <дата>». */
+  rootStartAt: Date | null;
 };
 
 export async function loadBundle(rentalId: number): Promise<Bundle | null> {
@@ -133,7 +144,36 @@ export async function loadBundle(rentalId: number): Promise<Bundle | null> {
     const m = note.match(/замена скутера:\s*(.+)$/iu);
     swapReason = m && m[1] ? m[1].trim() : note.trim() || null;
   }
-  return { rental, client, scooter, model, prevScooter, prevModel, swapReason };
+
+  // Поднимаемся к корню цепочки: rootRentalId == id той связки, по которой
+  // клиент реально подписал договор (без продлений и legacy-замен сверху).
+  // Это и есть «номер договора», который должен печататься во всех актах.
+  let rootRentalId = rental.id;
+  let rootStartAt: Date | null = rental.startAt ?? null;
+  let parentCursor: number | null = rental.parentRentalId ?? null;
+  let safety = 100;
+  while (parentCursor != null && safety-- > 0) {
+    const [p] = await db
+      .select()
+      .from(rentals)
+      .where(eq(rentals.id, parentCursor));
+    if (!p) break;
+    rootRentalId = p.id;
+    rootStartAt = p.startAt ?? rootStartAt;
+    parentCursor = p.parentRentalId ?? null;
+  }
+
+  return {
+    rental,
+    client,
+    scooter,
+    model,
+    prevScooter,
+    prevModel,
+    swapReason,
+    rootRentalId,
+    rootStartAt,
+  };
 }
 
 /* ============ helpers ============ */
@@ -311,7 +351,7 @@ const TOOLBAR = "";
 
 function tplContract(b: Bundle): string {
   const { rental, client, scooter, model } = b;
-  const contractNumber = String(rental.id);
+  const contractNumber = String(b.rootRentalId);
   const contractDate = fmtDateRu(rental.startAt);
   const depositAmount = rental.deposit;
   const depositLine =
@@ -495,6 +535,10 @@ function tplActReturn(b: Bundle): string {
 
 function tplAct(b: Bundle, kind: "transfer" | "return"): string {
   const { rental, client, scooter, model } = b;
+  // Номер договора — это id корневой связки. Для продлений и legacy-замен
+  // (которые в старой архитектуре жили в child rentals) акт ссылается на
+  // тот же договор, что и корневая аренда — иначе у клиента в голове два
+  // разных номера за одну и ту же сделку.
   const title =
     kind === "transfer"
       ? "Приложение №1"
@@ -507,7 +551,7 @@ function tplAct(b: Bundle, kind: "transfer" | "return"): string {
     kind === "transfer"
       ? "Арендодатель передал, а Арендатор принял Скутер"
       : "Арендодатель принял, а Арендатор передал Скутер";
-  const contractNumber = String(rental.id);
+  const contractNumber = String(b.rootRentalId);
   const actDate = fmtDateRu(
     kind === "transfer" ? rental.startAt : rental.endActualAt ?? rental.endPlannedAt,
   );
@@ -526,7 +570,7 @@ function tplAct(b: Bundle, kind: "transfer" | "return"): string {
 <title>${subtitle} по договору №${contractNumber}</title>${CSS}</head><body>
 ${TOOLBAR}
 <div class="wrap">
-  <div class="subtitle"><b>${title}</b><br>К договору № ${contractNumber} от ${fmtDateRu(rental.startAt)} г.</div>
+  <div class="subtitle"><b>${title}</b><br>К договору № ${contractNumber} от ${fmtDateRu(b.rootStartAt ?? rental.startAt)} г.</div>
   <h1>${subtitle}</h1>
   <div class="meta-row">
     <span>${LANDLORD.city}</span>
@@ -616,9 +660,7 @@ ${TOOLBAR}
 function tplActSwap(b: Bundle): string {
   const { rental, client, scooter, model, prevScooter, prevModel, swapReason } =
     b;
-  const contractNumber = rental.parentRentalId
-    ? String(rental.parentRentalId)
-    : String(rental.id);
+  const contractNumber = String(b.rootRentalId);
   const swapDate = fmtDateRu(rental.startAt);
   const equipmentRows = (rental.equipmentJson ?? []) as Array<{
     name: string;
@@ -630,7 +672,7 @@ function tplActSwap(b: Bundle): string {
 <title>Акт приёма-передачи и замены скутера по договору №${contractNumber}</title>${CSS}</head><body>
 ${TOOLBAR}
 <div class="wrap">
-  <div class="subtitle"><b>Приложение</b><br>К договору № ${contractNumber} от ${fmtDateRu(rental.startAt)} г.</div>
+  <div class="subtitle"><b>Приложение</b><br>К договору № ${contractNumber} от ${fmtDateRu(b.rootStartAt ?? rental.startAt)} г.</div>
   <h1>Акт приёма-передачи и замены скутера</h1>
   <div class="meta-row">
     <span>${LANDLORD.city}</span>
@@ -641,7 +683,7 @@ ${TOOLBAR}
   <div class="para"><b>Арендодатель:</b> ${landlordBlock()}</div>
 
   <div class="para">
-    составили настоящий акт о нижеследующем: Арендодатель забрал у Арендатора скутер, переданный ранее по Акту приёма-передачи к Договору № ${contractNumber} от ${fmtDateRu(rental.startAt)} г., и передал во временное пользование Арендатору другой скутер.
+    составили настоящий акт о нижеследующем: Арендодатель забрал у Арендатора скутер, переданный ранее по Акту приёма-передачи к Договору № ${contractNumber} от ${fmtDateRu(b.rootStartAt ?? rental.startAt)} г., и передал во временное пользование Арендатору другой скутер.
   </div>
 
   <table style="width: 100%; border: 0; border-collapse: collapse; margin-top: 6pt; page-break-inside: avoid">

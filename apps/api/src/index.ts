@@ -23,6 +23,7 @@ import { activityRoutes } from "./routes/activity.js";
 import { rentalDocumentsRoutes } from "./routes/rental-documents.js";
 import { priceListRoutes } from "./routes/price-list.js";
 import { damageReportsRoutes } from "./routes/damage-reports.js";
+import { repairJobsRoutes } from "./routes/repair-jobs.js";
 import { documentTemplatesRoutes } from "./routes/document-templates.js";
 import { publicRoutes } from "./routes/public.js";
 import { publicApplicationsRoutes } from "./routes/public-applications.js";
@@ -157,6 +158,10 @@ async function bootstrap() {
     // Акты о повреждениях
     await protectedApp.register(damageReportsRoutes, {
       prefix: "/api/damage-reports",
+    });
+    // Ремонты — журнал ремонтов скутеров с чек-листом и фото
+    await protectedApp.register(repairJobsRoutes, {
+      prefix: "/api/repair-jobs",
     });
     // Пользовательские шаблоны документов (overrides + custom)
     await protectedApp.register(documentTemplatesRoutes, {

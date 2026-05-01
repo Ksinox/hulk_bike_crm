@@ -6,6 +6,7 @@ import { rentals, scooters, users } from "../db/schema.js";
 import { requireRole } from "../auth/plugin.js";
 import { logActivity } from "../services/activityLog.js";
 import { scooterStatusLabel } from "../services/activityMessages.js";
+import { ensureRepairJobForScooter } from "./repair-jobs.js";
 
 const ScooterModelEnum = z.enum(["jog", "gear", "honda", "tank"]);
 const ScooterBaseStatusEnum = z.enum([
@@ -159,6 +160,21 @@ export async function scootersRoutes(app: FastifyInstance) {
     // Если сменился статус — отдельным summary с русскими лейблами
     const statusChanged =
       parsed.data.baseStatus && parsed.data.baseStatus !== before.baseStatus;
+    // v0.2.94: при ручном переводе скутера в repair (через карточку
+    // скутера) автоматически открываем repair_job — пустой, без чек-листа
+    // от акта. Оператор может добавлять пункты вручную в разделе Ремонты.
+    if (statusChanged && parsed.data.baseStatus === "repair") {
+      try {
+        await ensureRepairJobForScooter({
+          scooterId: id,
+          createdByUserId:
+            (req as unknown as { user?: { userId?: number } }).user?.userId ??
+            null,
+        });
+      } catch (e) {
+        req.log?.warn?.({ err: e }, "ensureRepairJobForScooter failed");
+      }
+    }
     await logActivity(req, {
       entity: "scooter",
       entityId: id,
