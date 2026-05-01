@@ -325,6 +325,8 @@ export async function renderClaimHtml(b: ClaimBundle): Promise<string> {
       client: b.client,
       scooter: b.scooter,
       model: b.model,
+      rootRentalId: b.rental.id,
+      rootStartAt: b.rental.startAt ?? null,
     });
     return `<!doctype html><html lang="ru"><head><meta charset="utf-8">
 <title>Досудебная претензия № ${String(b.report.id).padStart(4, "0")}</title>${CSS}</head><body>

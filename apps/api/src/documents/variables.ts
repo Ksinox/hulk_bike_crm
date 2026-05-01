@@ -562,6 +562,10 @@ export function makeSwapFixtureBundle(): Bundle {
       ...base.rental,
       parentRentalId: 9999999, // фикция, чтобы template-логика «это child аренда» включалась
     } as unknown as Bundle["rental"],
+    // У свап-фикстуры корень — родитель: id=9999999, дата подписания —
+    // фиктивная (чтобы не пересекалась с rental.startAt в textMap).
+    rootRentalId: 9999999,
+    rootStartAt: dt(7, 7, 8, 0),
     prevScooter: {
       id: 0,
       name: "__PH_prevScooterName__",
@@ -677,7 +681,7 @@ export function replaceFixtureWithPlaceholders(html: string): string {
   // цифрами. Делаем замену с учётом возможных пробелов между разрядами
   // (toLocaleString ставит non-breaking space).
   const numericMap: Array<[string, string]> = [
-    ["1234567", "rental.id"],          // rental.id (без форматирования)
+    ["1234567", "rental.id"], ["9999999", "rental.id"],          // rental.id (без форматирования)
     ["1 234 567", "scooter.mileage"], // mileage
     ["1 234 567", "scooter.mileage"],
     ["9 999 999", "scooter.purchasePrice"],
@@ -715,6 +719,7 @@ export function replaceFixtureWithPlaceholders(html: string): string {
     ["05.05.90г.", "client.birthDate"],
     ["06.06.90г.", "client.passportIssuedOn"],
     ["03.03.1990", "rental.startDate"],
+    ["07.07.1990", "rental.contractDate"], // rootStartAt у swap-фикстуры
     ["04.04.1990", "rental.endDate"],
     ["05.05.1990", "client.birthDate"],
     ["06.06.1990", "client.passportIssuedOn"],
