@@ -1,4 +1,9 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQueries,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { api } from "@/lib/api";
 
 export type ApiDamageReportItem = {
@@ -89,6 +94,36 @@ export function useDamageReports(rentalId: number | null) {
         )
         .then((r) => r.items),
   });
+}
+
+/**
+ * Все акты ущерба по ВСЕЙ цепочке аренд (root + продления + замены, в т.ч.
+ * вручную удалённые сегменты). Нужно для расчёта долга, который должен
+ * сохраняться даже если связку, на которой создавался акт, удалили
+ * (заказчик: «если мы передумали учитывать продление — это не значит что
+ *  мы откатились назад по долгу»).
+ *
+ * Возвращает плоский массив reports + флаги загрузки.
+ */
+export function useChainDamageReports(rentalIds: number[]) {
+  const queries = useQueries({
+    queries: rentalIds.map((id) => ({
+      queryKey: damageReportsKeys.byRental(id),
+      queryFn: () =>
+        api
+          .get<{ items: ApiDamageReport[] }>(
+            `/api/damage-reports?rentalId=${id}`,
+          )
+          .then((r) => r.items),
+      // Кэш по id живёт независимо от цепочки — react-query уже умеет
+      // дедуплицировать через queryKey.
+      staleTime: 30_000,
+    })),
+  });
+  const data: ApiDamageReport[] = queries.flatMap((q) => q.data ?? []);
+  const isLoading = queries.some((q) => q.isLoading);
+  const isError = queries.some((q) => q.isError);
+  return { data, isLoading, isError };
 }
 
 export function useCreateDamageReport() {

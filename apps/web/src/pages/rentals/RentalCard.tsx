@@ -40,7 +40,7 @@ import { DamageReportDialog } from "./DamageReportDialog";
 import { DamageReportPaymentDialog } from "./DamageReportPaymentDialog";
 import { DocumentPreviewModal } from "./DocumentPreviewModal";
 import {
-  useDamageReports,
+  useChainDamageReports,
   useDamageAgreement,
 } from "@/lib/api/damage-reports";
 import { RentalActionsMenu, type MenuAction } from "./RentalActionsMenu";
@@ -293,9 +293,16 @@ export function RentalCard({
     currentScooter?.baseStatus === "repair" &&
     (rental.status === "active" || rental.status === "overdue");
 
-  // Акты о повреждениях по аренде (для блока «Долг по ущербу» и кнопок).
-  const damageReports = useDamageReports(rental.id);
-  const reports = damageReports.data ?? [];
+  // Акты о повреждениях по ВСЕЙ цепочке аренд (включая удалённые
+  // сегменты — chainIdsFull, не chainIds). Заказчик в задаче 2 v0.2.91:
+  //   «если мы продлили аренду, погасили долг, потом удалили связку
+  //    продления — инфа по оплаченному долгу должна оставаться,
+  //    мы же не откатились назад, мы просто передумали учитывать
+  //    продление».
+  // Долг по ущербу живёт независимо от структуры цепочки — фиксируется
+  // на damage_report и никуда не пропадает при удалении связок.
+  const damageReports = useChainDamageReports(chainIdsFull);
+  const reports = damageReports.data;
   const totalDebt = reports.reduce((s, r) => s + r.debt, 0);
   const reportWithDebt = reports.find((r) => r.debt > 0) ?? null;
   const reportLatest =
