@@ -187,25 +187,41 @@ function orDash(v: string | number | null | undefined, dashes = "___________"): 
   return String(v);
 }
 
-/** Полный блок реквизитов клиента как в исходном договоре */
+/** Полный блок реквизитов клиента как в исходном договоре. Учитывает
+ *  гражданство: для иностранца берём свободный passportRaw (заказчик
+ *  пишет «паспорт RB1234567 Беларусь, выдан…»), для РФ — стандартные
+ *  поля. Дата рождения, телефон и адрес — общие. */
 function clientBlock(client: Bundle["client"]): string {
   const parts: string[] = [];
   parts.push(`<b>${client.name}</b>`);
   if (client.birthDate) parts.push(`Дата рождения ${fmtDateRu(client.birthDate)}`);
-  if (client.passportSeries || client.passportNumber) {
-    parts.push(
-      `Паспорт серия ${orDash(client.passportSeries, "____")} номер ${orDash(client.passportNumber, "______")}`,
-    );
+
+  if (client.isForeigner) {
+    if (client.passportRaw && client.passportRaw.trim() !== "") {
+      parts.push(client.passportRaw.trim());
+    }
+  } else {
+    if (client.passportSeries || client.passportNumber) {
+      parts.push(
+        `Паспорт серия ${orDash(client.passportSeries, "____")} номер ${orDash(client.passportNumber, "______")}`,
+      );
+    }
+    if (client.passportIssuedOn)
+      parts.push(`Дата выдачи ${fmtDateRu(client.passportIssuedOn)}`);
+    if (client.passportIssuer) parts.push(`Кем выдан: ${client.passportIssuer}`);
+    if (client.passportDivisionCode)
+      parts.push(`Код подразделения ${client.passportDivisionCode}`);
   }
-  if (client.passportIssuedOn)
-    parts.push(`Дата выдачи ${fmtDateRu(client.passportIssuedOn)}`);
-  if (client.passportIssuer) parts.push(`Кем выдан: ${client.passportIssuer}`);
-  if (client.passportDivisionCode)
-    parts.push(`Код подразделения ${client.passportDivisionCode}`);
+
   if (client.passportRegistration)
     parts.push(`Зарегистрирован: ${client.passportRegistration}`);
   if (client.phone) parts.push(`Тел. ${client.phone}`);
   return parts.join(". ");
+}
+
+/** Подходящая фраза для «гражданин ___» в начале вступления договора. */
+function citizenshipPhrase(client: Bundle["client"]): string {
+  return client.isForeigner ? "иностранный гражданин" : "гражданин РФ";
 }
 
 /** Реквизиты арендодателя одной строкой */
@@ -316,7 +332,7 @@ ${TOOLBAR}
   </div>
 
   <div class="para">
-    Мы, нижеподписавшиеся, гражданин РФ ${landlordBlock()}, именуемый в дальнейшем «Арендодатель», с одной стороны, и гражданин РФ ${clientBlock(client)}, именуемый в дальнейшем «Арендатор», с другой стороны, заключили настоящий Договор (далее — «Договор»), о нижеследующем:
+    Мы, нижеподписавшиеся, гражданин РФ ${landlordBlock()}, именуемый в дальнейшем «Арендодатель», с одной стороны, и ${citizenshipPhrase(client)} ${clientBlock(client)}, именуемый в дальнейшем «Арендатор», с другой стороны, заключили настоящий Договор (далее — «Договор»), о нижеследующем:
   </div>
 
   <h2>1. Предмет договора</h2>
@@ -448,10 +464,16 @@ ${TOOLBAR}
       <td style="width:50%;"><b>Арендатор:</b><br>
         ${client.name}<br>
         ${client.birthDate ? "Дата рождения: " + fmtDateRu(client.birthDate) + "<br>" : ""}
-        Паспорт серия ${orDash(client.passportSeries, "____")} номер ${orDash(client.passportNumber, "______")}<br>
+        ${
+          client.isForeigner
+            ? client.passportRaw && client.passportRaw.trim() !== ""
+              ? client.passportRaw + "<br>"
+              : ""
+            : `Паспорт серия ${orDash(client.passportSeries, "____")} номер ${orDash(client.passportNumber, "______")}<br>
         ${client.passportIssuedOn ? "Дата выдачи: " + fmtDateRu(client.passportIssuedOn) + "<br>" : ""}
         ${client.passportIssuer ? client.passportIssuer + "<br>" : ""}
-        ${client.passportDivisionCode ? "Код подразделения: " + client.passportDivisionCode + "<br>" : ""}
+        ${client.passportDivisionCode ? "Код подразделения: " + client.passportDivisionCode + "<br>" : ""}`
+        }
         ${client.passportRegistration ? "Зарегистрирован: " + client.passportRegistration + "<br>" : ""}
         Тел.: ${client.phone}<br><br>
         Подпись: _______________ / ${client.name} /

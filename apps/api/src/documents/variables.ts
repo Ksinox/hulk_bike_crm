@@ -45,6 +45,16 @@ export const VARIABLE_CATALOG: VariableGroup[] = [
       { key: "client.passportIssuer", label: "Кем выдан паспорт" },
       { key: "client.passportDivisionCode", label: "Код подразделения" },
       { key: "client.passportRegistration", label: "Адрес регистрации" },
+      {
+        key: "client.citizenshipPhrase",
+        label: "Гражданство фразой",
+        hint: "«гражданин РФ» / «иностранный гражданин»",
+      },
+      {
+        key: "client.passportSummary",
+        label: "Паспорт строкой",
+        hint: "Для РФ — серия/номер/выдан/код/адрес одной строкой; для иностранца — passportRaw",
+      },
     ],
   },
   {
@@ -226,6 +236,40 @@ export function resolveVariable(key: string, b: Bundle): string {
     const prop = key.slice("client.".length);
     if (prop === "birthDate") return fmtDateRu(client.birthDate);
     if (prop === "passportIssuedOn") return fmtDateRu(client.passportIssuedOn);
+    // Гражданство фразой — для шаблона договора. РФ → «гражданин РФ»,
+    // иначе → «иностранный гражданин». Используется как подстановка
+    // в текст «Мы, нижеподписавшиеся, [фраза] Иванов И.И., …».
+    if (prop === "citizenshipPhrase") {
+      return client.isForeigner ? "иностранный гражданин" : "гражданин РФ";
+    }
+    // Паспорт строкой — все паспортные данные одной фразой. Для РФ
+    // собираем из стандартных полей, для иностранца берём свободный
+    // passportRaw (заказчик сам пишет «паспорт RB1234567 Беларусь,
+    // выдан...» в форме клиента).
+    if (prop === "passportSummary") {
+      if (client.isForeigner) {
+        return client.passportRaw && client.passportRaw.trim() !== ""
+          ? client.passportRaw.trim()
+          : "—";
+      }
+      const parts: string[] = [];
+      if (client.passportSeries || client.passportNumber) {
+        parts.push(
+          `паспорт серия ${client.passportSeries ?? "____"} номер ${client.passportNumber ?? "______"}`,
+        );
+      }
+      if (client.passportIssuedOn) {
+        parts.push(`выдан ${fmtDateRu(client.passportIssuedOn)}`);
+      }
+      if (client.passportIssuer) parts.push(client.passportIssuer);
+      if (client.passportDivisionCode) {
+        parts.push(`код подразделения ${client.passportDivisionCode}`);
+      }
+      if (client.passportRegistration) {
+        parts.push(`зарегистрирован: ${client.passportRegistration}`);
+      }
+      return parts.length > 0 ? parts.join(", ") : "—";
+    }
     const v = (client as unknown as Record<string, unknown>)[prop];
     return v != null && v !== "" ? String(v) : "—";
   }
@@ -664,6 +708,20 @@ export function replaceFixtureWithPlaceholders(html: string): string {
   for (const [marker, key] of timeMap) {
     out = out.split(marker).join(pill(key));
   }
+
+  // Гражданство клиента — заменяем «гражданин РФ» ИМЕННО перед именем
+  // клиента (в шаблоне это `<b>__PH_clientName__</b>` → после textMap-
+  // прохода превращается в `<b><span data-var="client.name">…</span></b>`,
+  // а sometimes без <b>). Регекс ловит этот контекст и не трогает
+  // «гражданин РФ» перед landlordBlock — арендодатель всегда РФ,
+  // у него хардкод. После замены плашка client.citizenshipPhrase
+  // подставит правильную фразу: «гражданин РФ» для РФ-клиента,
+  // «иностранный гражданин» для иностранца.
+  out = out.replace(
+    /гражданин РФ(\s+)(<b>)?(\s*<span[^>]*\bdata-var="client\.name"[^>]*>)/g,
+    (_m, ws: string, b: string | undefined, span: string) =>
+      `${pill("client.citizenshipPhrase")}${ws}${b ?? ""}${span}`,
+  );
 
   // ВАЖНО: пояснительные слова перед плашками («Дата рождения», «Паспорт
   // серия», «Кем выдан:», «Зарегистрирован:» и т.п.) НЕ удаляем. Раньше
