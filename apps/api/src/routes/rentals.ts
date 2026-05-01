@@ -1116,9 +1116,17 @@ export async function rentalsRoutes(app: FastifyInstance) {
       const result = await db.transaction(async (tx) => {
         const [old] = await tx.select().from(rentals).where(eq(rentals.id, id));
         if (!old) throw new Error("not found");
-        if (old.status !== "active" && old.status !== "overdue") {
+        // v0.2.91: разрешаем замену скутера и для «Проблемной» аренды —
+        // это путь возобновления (resume-damage). После замены аренда
+        // автоматически переводится в active (см. ниже).
+        if (
+          old.status !== "active" &&
+          old.status !== "overdue" &&
+          old.status !== "problem"
+        ) {
           throw new Error("rental not active");
         }
+        const wasProblem = old.status === "problem";
         // Проверим, что новый скутер существует и в rental_pool.
         const [newScooter] = await tx
           .select()
@@ -1141,7 +1149,13 @@ export async function rentalsRoutes(app: FastifyInstance) {
         // endPlannedAt) НЕ трогаем — клиент платит за тот же период.
         await tx
           .update(rentals)
-          .set({ scooterId: d.newScooterId, updatedAt: sql`now()` })
+          .set({
+            scooterId: d.newScooterId,
+            // Если шла замена ИЗ «Проблемной» — переводим в active.
+            // Иначе статус не трогаем (active/overdue остаются как были).
+            ...(wasProblem ? { status: "active" as const } : {}),
+            updatedAt: sql`now()`,
+          })
           .where(eq(rentals.id, id));
 
         // Старый скутер — в выбранный оператором статус (rental_pool/repair).

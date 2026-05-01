@@ -25,6 +25,7 @@ import {
 import { ratingTier } from "@/lib/mock/clients";
 import { useClientUnreachable } from "@/pages/clients/clientStore";
 import { useApiClients } from "@/lib/api/clients";
+import { useApiScooters } from "@/lib/api/scooters";
 import { navigate } from "@/app/navigationStore";
 import {
   DocumentsTab,
@@ -281,6 +282,17 @@ export function RentalCard({
 
   const tone = STATUS_TONE[rental.status];
   const isUnreachable = useClientUnreachable(rental.clientId);
+  // Текущий статус скутера — нужен для проверки конфликта (active rental
+  // + scooter в repair). См. блок «Скутер в ремонте» ниже.
+  const { data: apiScooters = [] } = useApiScooters();
+  const currentScooter =
+    rental.scooterId != null
+      ? apiScooters.find((s) => s.id === rental.scooterId) ?? null
+      : null;
+  const scooterInRepair =
+    currentScooter?.baseStatus === "repair" &&
+    (rental.status === "active" || rental.status === "overdue");
+
   // Акты о повреждениях по аренде (для блока «Долг по ущербу» и кнопок).
   const damageReports = useDamageReports(rental.id);
   const reports = damageReports.data ?? [];
@@ -365,8 +377,18 @@ export function RentalCard({
   // В «Получено от клиента» (paidIn) НЕ включаем депозит — он возвратный
   // и не является заработком. Если депозит был списан в ущерб, отдельный
   // платёж типа 'damage' создаётся в модалке возврата — он сюда попадёт.
+  // ВАЖНО: «За всё время аренды» — это доход именно от АРЕНДЫ. Платежи за
+  // ущерб (damage) сюда НЕ попадают — это закрытие долга по инциденту, а
+  // не оплата проката. Иначе при погашении ущерба плашка «За всё время»
+  // ошибочно растёт, а Долг падает (см. правки заказчика по v0.2.91).
   const paidIn = chainPayments
-    .filter((p) => p.paid && p.type !== "refund" && p.type !== "deposit")
+    .filter(
+      (p) =>
+        p.paid &&
+        p.type !== "refund" &&
+        p.type !== "deposit" &&
+        p.type !== "damage",
+    )
     .reduce((s, p) => s + p.amount, 0);
   // pending (плашка «Долг») — суммируем неоплаченные платежи ТОЛЬКО
   // по полностью активным связкам цепочки (archivedAt == null).
@@ -401,10 +423,29 @@ export function RentalCard({
     if (id === "extend" || id === "clone") return setExtendOpen(true);
     if (id === "edit") return setEditRentalOpen(true);
     if (id === "resume-damage") {
-      // Возобновление аренды с ущербом — возвращает её в active. Если
-      // долг по акту ещё есть — спрашиваем подтверждение (часто
-      // продолжаем работать с клиентом который согласен платить).
+      // v0.2.91: возобновление аренды требует ВАЛИДНОГО скутера —
+      // active rental не может быть без скутера или со скутером в
+      // статусе repair. Если такая ситуация — открываем диалог замены,
+      // оператор подберёт новый. После успешной замены аренда автоматом
+      // окажется active (swap-scooter сам ставит status='active'). Если
+      // прежний скутер в parke — возвращаем как есть.
       const debtSum = reports.reduce((s, r) => s + r.debt, 0);
+      const noScooter = rental.scooterId == null;
+      const oldInRepair = currentScooter?.baseStatus === "repair";
+      if (noScooter || oldInRepair) {
+        const ok = await confirmDialog({
+          title: "Нужен скутер для возобновления",
+          message: noScooter
+            ? "Сейчас к аренде не привязан скутер. Чтобы перевести в активный статус, выберите скутер из парка."
+            : `Текущий скутер «${currentScooter?.name ?? rental.scooter}» в ремонте. Чтобы возобновить, замените его на свободный из парка${debtSum > 0 ? ` (долг ${debtSum.toLocaleString("ru-RU")} ₽ останется на клиенте)` : ""}.`,
+          confirmText: "Выбрать скутер",
+          cancelText: "Отмена",
+        });
+        if (!ok) return;
+        setSwapOpen(true);
+        return;
+      }
+      // Стандартный путь — скутер на месте, просто возвращаем active.
       const msg =
         debtSum > 0
           ? `У клиента ещё висит долг по ущербу ${debtSum.toLocaleString("ru-RU")} ₽. Возобновить аренду? Долг останется на клиенте, скутер вернётся в активный статус.`
@@ -418,16 +459,6 @@ export function RentalCard({
       if (!ok) return;
       try {
         await api.patch(`/api/rentals/${rental.id}`, { status: "active" });
-        // Скутер обратно в rental_pool если был в repair после damage.
-        if (rental.scooterId) {
-          try {
-            await api.patch(`/api/scooters/${rental.scooterId}`, {
-              baseStatus: "rental_pool",
-            });
-          } catch {
-            /* не критично если не получилось */
-          }
-        }
         toast.success(
           "Аренда возобновлена",
           "Скутер активен, можно продолжить работу с клиентом.",
@@ -667,8 +698,88 @@ export function RentalCard({
           </span>
         </div>
       )}
-      {/* Блок «Долг по ущербу» — показывается если по аренде есть акты с долгом. */}
-      {totalDebt > 0 && reportWithDebt && (
+      {/*
+        v0.2.91: Скутер ушёл в ремонт, а аренда всё ещё активна — это
+        несогласованное состояние. Предлагаем оператору выбор:
+          • Заменить скутер на другой (открывает SwapScooterDialog)
+          • Перевести аренду в «Проблемную» (без скутера)
+        Эта плашка появляется автоматически после печати акта о
+        повреждениях с галкой «отправить в ремонт» и не уходит, пока
+        оператор явно не примет решение.
+      */}
+      {scooterInRepair && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-[12px] border-2 border-orange-500 bg-orange-soft/70 px-3 py-2 text-[13px] text-orange-ink">
+          <div className="flex items-start gap-2">
+            <Wrench size={16} className="mt-0.5 shrink-0" />
+            <div className="min-w-0">
+              <div className="font-bold">
+                Скутер ушёл в ремонт — нужно решение по аренде
+              </div>
+              <div className="text-[11px] opacity-80">
+                {currentScooter?.name ?? "Скутер"} переведён в статус
+                «На ремонте». Активная аренда не может оставаться на
+                ремонтном скутере. Выберите дальнейший шаг:
+              </div>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setSwapOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-[10px] bg-blue-600 px-3 py-1.5 text-[12px] font-bold text-white hover:bg-blue-700"
+            >
+              <Repeat size={12} /> Заменить скутер
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                const ok = await confirmDialog({
+                  title: "Перевести аренду в «Проблемную»?",
+                  message:
+                    "Аренда будет помечена как «Проблемная» и продолжит висеть на клиенте без скутера до решения вопроса (например, оплаты ущерба). Возобновить можно будет только выбрав скутер при возврате в активный статус.",
+                  confirmText: "Перевести в «Проблемная»",
+                  cancelText: "Отмена",
+                  danger: true,
+                });
+                if (!ok) return;
+                try {
+                  await api.patch(`/api/rentals/${rental.id}`, {
+                    status: "problem",
+                    scooterId: null,
+                  });
+                  toast.success(
+                    "Аренда — «Проблемная»",
+                    "Скутер отвязан. Решайте вопрос с клиентом.",
+                  );
+                } catch (e) {
+                  toast.error(
+                    "Не удалось",
+                    (e as Error).message ?? "",
+                  );
+                }
+              }}
+              className="inline-flex items-center gap-1.5 rounded-[10px] border border-orange-500 bg-white px-3 py-1.5 text-[12px] font-bold text-orange-700 hover:bg-orange-50"
+            >
+              <AlertTriangle size={12} /> В «Проблемная»
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/*
+        Баннер «Долг по ущербу» теперь живёт по новой логике (v0.2.91):
+        - clientAgreement = 'pending'  → показываем кнопки «Согласен / Не
+          согласен», ОЖИДАЯ решения оператора. Долг уже виден в KPI.
+        - clientAgreement = 'agreed'   → баннер ПОЛНОСТЬЮ СКРЫТ. Долг
+          фиксируется только в KPI «Долг», платежи принимаются через
+          небольшую кнопку «Внести платёж» рядом с KPI. После полного
+          погашения KPI = 0, баннер не появляется.
+        - clientAgreement = 'disputed' → показываем плашку «Не согласен»
+          с кнопкой «Распечатать претензию» и кнопкой платежа.
+      */}
+      {totalDebt > 0 &&
+        reportWithDebt &&
+        reportWithDebt.clientAgreement !== "agreed" && (
         <div className="flex flex-col gap-2 rounded-[12px] border-2 border-red-500 bg-red-soft/70 px-3 py-2 text-[13px] text-red-ink">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-start gap-2">
@@ -696,14 +807,11 @@ export function RentalCard({
               <Plus size={12} /> Внести платёж
             </button>
           </div>
-          {/* Реакция клиента на акт. После выбора — отображаем бейдж. */}
+          {/* Реакция клиента на акт. После выбора 'agreed' баннер целиком
+              исчезает (см. условие выше). Здесь рендерятся только pending
+              (выбор) и disputed (показываем повторную печать претензии). */}
           <div className="flex flex-wrap items-center gap-2 border-t border-red-300 pt-2 text-[12px]">
             <span className="text-ink-2">Реакция клиента:</span>
-            {reportWithDebt.clientAgreement === "agreed" && (
-              <span className="inline-flex items-center gap-1.5 rounded-[10px] bg-green-soft px-3 py-1.5 text-[12px] font-bold text-green-ink">
-                <ThumbsUp size={12} /> Согласен — гасит долг через платежи
-              </span>
-            )}
             {reportWithDebt.clientAgreement === "disputed" && (
               <>
                 <span className="inline-flex items-center gap-1.5 rounded-[10px] bg-red-soft px-3 py-1.5 text-[12px] font-bold text-red-ink">
@@ -912,6 +1020,35 @@ export function RentalCard({
           />
         )}
       </div>
+
+      {/*
+        v0.2.91: компактная панель платежа по ущербу для случая когда
+        клиент согласился (баннер скрыт). Долг виден в KPI «Долг», а
+        кнопка позволяет сразу внести очередной платёж в счёт погашения.
+      */}
+      {totalDebt > 0 &&
+        reportWithDebt &&
+        reportWithDebt.clientAgreement === "agreed" && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-[10px] border border-red-300 bg-red-soft/40 px-3 py-2 text-[12px] text-red-ink">
+          <div className="flex items-center gap-2">
+            <ThumbsUp size={13} className="text-green-700" />
+            <span>
+              <b>Клиент гасит ущерб.</b> Остаток долга{" "}
+              <b className="tabular-nums">{fmt(totalDebt)} ₽</b>
+              {reportWithDebt.paidSum > 0
+                ? ` (уже оплачено ${fmt(reportWithDebt.paidSum)} ₽)`
+                : ""}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setPaymentReportId(reportWithDebt.id)}
+            className="inline-flex items-center gap-1.5 rounded-[10px] bg-red-600 px-3 py-1.5 text-[12px] font-bold text-white hover:bg-red-700"
+          >
+            <Plus size={12} /> Внести платёж по ущербу
+          </button>
+        </div>
+      )}
 
       {rental.note && (
         <div className="rounded-[10px] bg-surface-soft px-3 py-1.5 text-[12px] text-ink-2">
