@@ -16,6 +16,7 @@ import { FilePreviewModal } from "./FilePreviewModal";
 import { clientStore, useClientExtraDocs } from "./clientStore";
 import { SequentialNamingModal } from "./SequentialNamingModal";
 import {
+  fileUrl,
   useApiClientDocs,
   useUploadClientDoc,
   useDeleteClientDoc,
@@ -296,6 +297,13 @@ type DocSlot = {
 
 /** Превращаем ApiClientDoc → UploadedFile для FilePreviewModal/слотов. */
 function apiDocToUploaded(doc: ApiClientDoc): UploadedFile {
+  // Для изображений пробрасываем URL стрима как thumbUrl, чтобы карточка
+  // в слоте паспорта/ВУ показывала превью самой картинки, а не общий
+  // значок-иконку. PDF превью inline не получится — для них останется
+  // иконка, открытие через FilePreviewModal по клику.
+  const isImage =
+    doc.mimeType?.startsWith("image/") ||
+    /\.(jpe?g|png|webp|gif)$/i.test(doc.fileName);
   return {
     name: doc.fileName,
     size: doc.size,
@@ -305,6 +313,9 @@ function apiDocToUploaded(doc: ApiClientDoc): UploadedFile {
     mimeType: doc.mimeType,
     docId: doc.id,
     existing: true,
+    thumbUrl: isImage
+      ? fileUrl(doc.fileKey, { filename: doc.fileName })
+      : undefined,
   };
 }
 
@@ -521,7 +532,7 @@ export function DocsTab({ client, d }: { client: Client; d: ClientDetails }) {
         />
       </div>
 
-      <PassportBlock d={d} />
+      <PassportBlock d={d} client={client} />
 
       {preview && (
         <FilePreviewModal file={preview} onClose={() => setPreview(null)} />
@@ -757,21 +768,44 @@ function AddDocCard({
   );
 }
 
-function PassportBlock({ d }: { d: ClientDetails }) {
-  const fields: { label: string; value: string }[] = [
-    { label: "Дата рождения", value: d.birth },
-    { label: "Серия и номер", value: `${d.passport.ser} ${d.passport.num}` },
-    { label: "Кем выдан", value: d.passport.issuer },
-    { label: "Дата выдачи", value: d.passport.date },
-    { label: "Код подразделения", value: d.passport.code },
-    { label: "Регистрация", value: d.regAddr },
-    { label: "Фактический адрес", value: d.liveAddr },
-  ];
+function PassportBlock({ d, client }: { d: ClientDetails; client: Client }) {
+  // Для иностранного гражданина РФ-поля (серия/номер/кем выдан/дата
+  // выдачи/код подразделения) не имеют смысла — паспорт хранится одной
+  // строкой в client.passportRaw. Раньше блок показывал эти поля с
+  // прочерками, что выглядело как «данные не заполнены», хотя на самом
+  // деле клиент — иностранец и эти поля и не должны быть.
+  const isForeigner = !!client.isForeigner;
+  const fields: { label: string; value: string }[] = isForeigner
+    ? [
+        { label: "Дата рождения", value: d.birth },
+        {
+          label: "Документ",
+          value: client.passportRaw?.trim() || "—",
+        },
+        { label: "Регистрация", value: d.regAddr },
+        { label: "Фактический адрес", value: d.liveAddr },
+      ]
+    : [
+        { label: "Дата рождения", value: d.birth },
+        { label: "Серия и номер", value: `${d.passport.ser} ${d.passport.num}` },
+        { label: "Кем выдан", value: d.passport.issuer },
+        { label: "Дата выдачи", value: d.passport.date },
+        { label: "Код подразделения", value: d.passport.code },
+        { label: "Регистрация", value: d.regAddr },
+        { label: "Фактический адрес", value: d.liveAddr },
+      ];
   return (
     <div className="rounded-[14px] border border-border p-3">
       <div className="mb-2 flex items-center justify-between">
-        <div className="text-[12px] font-semibold uppercase tracking-wider text-muted-2">
-          Паспортные данные
+        <div className="flex items-center gap-2">
+          <div className="text-[12px] font-semibold uppercase tracking-wider text-muted-2">
+            Паспортные данные
+          </div>
+          {isForeigner && (
+            <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-700">
+              Иностранный гражданин
+            </span>
+          )}
         </div>
         <button
           type="button"
@@ -784,7 +818,9 @@ function PassportBlock({ d }: { d: ClientDetails }) {
         {fields.map((f) => (
           <div key={f.label} className="flex gap-2">
             <span className="w-[140px] shrink-0 text-muted-2">{f.label}</span>
-            <span className="min-w-0 flex-1 text-ink">{f.value}</span>
+            <span className="min-w-0 flex-1 whitespace-pre-wrap text-ink">
+              {f.value}
+            </span>
           </div>
         ))}
       </div>
