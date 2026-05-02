@@ -218,8 +218,14 @@ function initialForm(editing: Client | null): Form {
     birth: d.birth === "—" ? "" : d.birth,
     source: editing.source,
     sourceCustom: "",
-    isForeigner: false,
-    passportRaw: "",
+    // Без этих двух строк форма редактирования теряла признак иностранца:
+    // открыли карточку, переключили в «Иностранный гражданин», заполнили
+    // паспорт текстом, сохранили → API записал is_foreigner=true. На
+    // повторном открытии initialForm возвращал isForeigner:false /
+    // passportRaw:"" — UI показывал «Гражданин РФ» с пустыми полями,
+    // данные «исчезали».
+    isForeigner: !!editing.isForeigner,
+    passportRaw: editing.passportRaw ?? "",
     passSer: d.passport.ser === "—" ? "" : d.passport.ser,
     passNum:
       d.passport.num === "—" ? "" : d.passport.num.replace(/\s/g, ""),

@@ -235,6 +235,25 @@ export function resolveVariable(key: string, b: Bundle): string {
   if (key.startsWith("client.")) {
     const prop = key.slice("client.".length);
     if (prop === "birthDate") return fmtDateRu(client.birthDate);
+    // Для иностранного гражданина РФ-паспортные плашки пустые. Без этой
+    // ветки в overrides, сделанных под РФ-формат («Паспорт серия [pill]
+    // номер [pill]. Дата выдачи [pill]…»), вместо данных подставлялись
+    // прочерки — и в документе для иностранца появлялись три «—».
+    // Серия → passportRaw (вся свободная строка вместо первого поля),
+    // остальные РФ-поля → пустая строка. После «Залить актуальную
+    // системную версию» override обновится и блок выберется по системной
+    // логике автоматически.
+    if (client.isForeigner) {
+      if (prop === "passportSeries") return (client.passportRaw ?? "").trim();
+      if (
+        prop === "passportNumber" ||
+        prop === "passportIssuer" ||
+        prop === "passportIssuedOn" ||
+        prop === "passportDivisionCode"
+      ) {
+        return "";
+      }
+    }
     if (prop === "passportIssuedOn") return fmtDateRu(client.passportIssuedOn);
     // Гражданство фразой — для шаблона договора. РФ → «гражданин РФ»,
     // иначе → «иностранный гражданин». Используется как подстановка
