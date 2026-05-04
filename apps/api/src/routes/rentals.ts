@@ -1165,7 +1165,26 @@ export async function rentalsRoutes(app: FastifyInstance) {
           .where(eq(scooters.id, d.newScooterId));
         if (!newScooter) throw new Error("new scooter not found");
         if (newScooter.baseStatus !== "rental_pool") {
+          // По бизнес-логике заменить можно только на скутер «Готов к
+          // аренде». Скутеры в ремонте/на продаже/разборке/выкупе и т.д.
+          // отдавать в аренду нельзя.
           throw new Error("new scooter not in rental_pool");
+        }
+        // Дополнительная защита: даже если baseStatus='rental_pool',
+        // у скутера МОЖЕТ быть открытая аренда (занят, но baseStatus
+        // не меняли). Не даём наплодить дубль.
+        const otherOpen = await tx
+          .select({ id: rentals.id })
+          .from(rentals)
+          .where(
+            and(
+              eq(rentals.scooterId, d.newScooterId),
+              sql`${rentals.id} <> ${id}`,
+              sql`${rentals.status} IN ('active', 'overdue', 'returning')`,
+            ),
+          );
+        if (otherOpen.length > 0) {
+          throw new Error("scooter already busy");
         }
 
         const now = new Date();
