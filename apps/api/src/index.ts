@@ -148,6 +148,11 @@ async function bootstrap() {
     });
     // Журнал действий
     await protectedApp.register(activityRoutes, { prefix: "/api/activity" });
+    // v0.4.1: глобальные настройки приложения
+    const { appSettingsRoutes } = await import("./routes/app-settings.js");
+    await protectedApp.register(appSettingsRoutes, {
+      prefix: "/api/app-settings",
+    });
     // Диагностика — только creator
     const { diagRoutes } = await import("./routes/diag.js");
     await protectedApp.register(diagRoutes, { prefix: "/api/_diag" });

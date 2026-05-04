@@ -6,6 +6,7 @@ import { Rentals } from "@/pages/rentals/Rentals";
 import { Documents } from "@/pages/documents/Documents";
 import { Garage } from "@/pages/fleet/Garage";
 import { Service } from "@/pages/service/Service";
+import { Settings } from "@/pages/settings/Settings";
 import { Staff } from "@/pages/staff/Staff";
 import { WhatsNew } from "@/pages/whats-new/WhatsNew";
 import { UpdateToast } from "./UpdateToast";
@@ -15,6 +16,7 @@ import { isElectron } from "@/platform";
 import { loadRoute, saveRoute, type RouteId } from "./route";
 import { onNavigate } from "./navigationStore";
 import { useMe } from "@/lib/api/auth";
+import { useAppSettings } from "@/lib/api/app-settings";
 import { setRole } from "@/lib/role";
 import { Login } from "./Login";
 import { ForceChangePassword } from "./ForceChangePassword";
@@ -23,6 +25,9 @@ import { NewApplicationDetector } from "@/pages/clients/NewApplicationDetector";
 
 export function App() {
   const { data: me, isLoading, isError } = useMe();
+  // v0.4.1: подгружаем глобальные настройки на старте — внутри хука
+  // billing_period_start_day прокидывается в lib/billingPeriod.
+  useAppSettings();
   const [webUpdate, setWebUpdate] = useState<string | null>(null);
   const [route, setRoute] = useState<RouteId>(() => loadRoute());
 
@@ -94,6 +99,8 @@ export function App() {
           <Documents />
         ) : route === "whats-new" ? (
           <WhatsNew />
+        ) : route === "settings" ? (
+          <Settings />
         ) : (
           <Dashboard />
         )}

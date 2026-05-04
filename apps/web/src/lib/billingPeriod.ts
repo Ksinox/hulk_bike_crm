@@ -19,6 +19,21 @@
 
 const DEFAULT_PERIOD_START_DAY = 15;
 
+// v0.4.1: реактивный override через настройки. Сервис app-settings
+// при загрузке вызывает setBillingPeriodStartDay() с актуальным
+// значением. Если настройка не выставлена — используется дефолт 15.
+let runtimeStartDay: number = DEFAULT_PERIOD_START_DAY;
+
+export function setBillingPeriodStartDay(day: number): void {
+  if (Number.isFinite(day) && day >= 1 && day <= 28) {
+    runtimeStartDay = Math.floor(day);
+  }
+}
+
+export function getBillingPeriodStartDay(): number {
+  return runtimeStartDay;
+}
+
 export type BillingPeriod = {
   /** Включительно: первая секунда дня start. */
   start: Date;
@@ -44,7 +59,7 @@ const MONTHS_RU_SHORT = [
 ];
 
 function startDay(): number {
-  return DEFAULT_PERIOD_START_DAY;
+  return runtimeStartDay;
 }
 
 function makePeriod(periodStartYear: number, periodStartMonth: number): BillingPeriod {

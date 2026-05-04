@@ -1393,6 +1393,22 @@ export const documentTemplates = pgTable(
 );
 
 /* ============================================================
+ * app_settings — глобальные настройки (v0.4.1).
+ * key-value стор. Доступ только director / creator.
+ * ============================================================ */
+export const appSettings = pgTable("app_settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedByUserId: bigint("updated_by_user_id", { mode: "number" }).references(
+    () => users.id,
+    { onDelete: "set null" },
+  ),
+});
+
+/* ============================================================
  * debt_entries — лента событий по долгу аренды (v0.3.8).
  *
  * Источники долга в системе три:
