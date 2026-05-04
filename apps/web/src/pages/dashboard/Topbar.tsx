@@ -1,14 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import {
   Bell,
+  Bike,
   Calendar,
   ChevronDown,
   Crown,
   LogOut,
   Settings,
   ShieldCheck,
-  User as UserIcon,
   UserCog,
+  UserPlus,
+  User as UserIcon,
   Wrench,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -16,6 +18,9 @@ import { setRole, useRole, type UserRole } from "@/lib/role";
 import { useLogout, useMe } from "@/lib/api/auth";
 import { GlobalSearch } from "./GlobalSearch";
 import { ProfileModal } from "./ProfileModal";
+import { AddClientModal } from "@/pages/clients/AddClientModal";
+import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
+import { navigate } from "@/app/navigationStore";
 
 export function Topbar() {
   const { data: me } = useMe();
@@ -23,6 +28,8 @@ export function Topbar() {
   const role = useRole();
   const [menuOpen, setMenuOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [newClientOpen, setNewClientOpen] = useState(false);
+  const [newRentalOpen, setNewRentalOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Создатель может переключаться между ролями на лету для тестирования UI
@@ -64,6 +71,26 @@ export function Topbar() {
         {formatTodayRu()}
       </div>
       <div className="flex-1" />
+
+      {/* v0.3.1: быстрые действия с дашборда — оператору не нужно
+          переходить в «Клиенты» / «Аренды» чтобы создать запись.
+          Заказчик: «всё должно быть доступно прямо с дашборда». */}
+      <button
+        type="button"
+        onClick={() => setNewClientOpen(true)}
+        className="hidden md:inline-flex items-center gap-1.5 rounded-full border border-border bg-surface-soft px-3 py-1.5 text-[13px] font-semibold text-ink-2 transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
+        title="Новый клиент"
+      >
+        <UserPlus size={14} /> Новый клиент
+      </button>
+      <button
+        type="button"
+        onClick={() => setNewRentalOpen(true)}
+        className="hidden md:inline-flex items-center gap-1.5 rounded-full bg-ink px-3 py-1.5 text-[13px] font-bold text-white transition-colors hover:bg-blue-600"
+        title="Новая аренда"
+      >
+        <Bike size={14} /> Новая аренда
+      </button>
 
       {isCreator && <CreatorViewSwitcher current={role} onChange={setRole} />}
 
@@ -125,6 +152,21 @@ export function Topbar() {
         )}
       </div>
       {profileOpen && <ProfileModal onClose={() => setProfileOpen(false)} />}
+      {newClientOpen && (
+        <AddClientModal
+          onClose={() => setNewClientOpen(false)}
+          onCreated={() => setNewClientOpen(false)}
+        />
+      )}
+      {newRentalOpen && (
+        <NewRentalModal
+          onClose={() => setNewRentalOpen(false)}
+          onCreated={(r) => {
+            setNewRentalOpen(false);
+            navigate({ route: "rentals", rentalId: r.id });
+          }}
+        />
+      )}
     </div>
   );
 }
