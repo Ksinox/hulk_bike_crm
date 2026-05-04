@@ -155,24 +155,6 @@ export function ParkTileHoverCard({
       />
 
       <div className="relative overflow-hidden rounded-2xl bg-surface shadow-card-lg ring-1 ring-border">
-        {/* Большое время возврата в правом верхнем углу — только если
-            возврат сегодня. Самая важная инфа дня. */}
-        {isReturnToday && returnTimeToday && (
-          <div className="absolute right-3 top-2 z-[1] flex flex-col items-end leading-none">
-            <span className="text-[9px] font-bold uppercase tracking-wider text-muted-2">
-              Возврат сегодня
-            </span>
-            <span
-              className={cn(
-                "mt-0.5 font-display text-[24px] font-extrabold tabular-nums leading-none",
-                lateMinutesToday > 0 ? "text-red-ink" : "text-ink",
-              )}
-            >
-              {returnTimeToday}
-            </span>
-          </div>
-        )}
-
         <div className="flex">
           {/* === Слева: вертикальная постер-аватарка === */}
           <div className="relative flex w-[120px] shrink-0 items-end justify-center overflow-visible bg-surface-soft pb-2">
@@ -190,15 +172,7 @@ export function ParkTileHoverCard({
           </div>
 
           {/* === Справа: инфо-колонка === */}
-          <div
-            className={cn(
-              "min-w-0 flex-1 px-3 py-3",
-              // Если в углу торчит блок «Возврат сегодня» — дадим
-              // верхнему ряду заголовков немного отступа, чтобы не
-              // накладывался на крупное время.
-              isReturnToday && returnTimeToday && "pr-[88px]",
-            )}
-          >
+          <div className="min-w-0 flex-1 px-3 py-3">
             <div className="flex items-center gap-2">
               <div className="font-display text-[16px] font-extrabold leading-tight text-ink">
                 {scooter.name}
@@ -248,26 +222,59 @@ export function ParkTileHoverCard({
                     {client.phone}
                   </a>
                 )}
-                <div className="mt-0.5 flex items-center gap-1 text-[10px]">
-                  <Calendar size={10} className="text-muted-2" />
-                  Возврат: {fmtRuDateTime(activeRental.endPlannedAt)}
-                </div>
+                {/* Мелкая строка «Возврат: дата+время» — НЕ показываем
+                    если возврат сегодня (тогда внизу будет крупная
+                    зелёная плашка с временем). Для дальних возвратов
+                    (завтра и позже) — оставляем чтобы было видно дату. */}
+                {!isReturnToday && (
+                  <div className="mt-0.5 flex items-center gap-1 text-[10px]">
+                    <Calendar size={10} className="text-muted-2" />
+                    Возврат: {fmtRuDateTime(activeRental.endPlannedAt)}
+                  </div>
+                )}
               </div>
             )}
 
-            {/* Плашка «Опаздывает на N мин» — на самой карточке. */}
+            {/* Возврат сегодня — крупная зелёная плашка внизу карточки
+                (вместо position-absolute правого верхнего угла, который
+                ломал верстку при длинных именах). Время крупным шрифтом,
+                рядом подпись «Возврат сегодня». Если время уже прошло —
+                плашка станет красной с «Опаздывает на N мин» (см. ниже). */}
+            {isReturnToday && returnTimeToday && lateMinutesToday === 0 && (
+              <div className="mt-2 inline-flex items-center gap-2 rounded-full bg-green px-3 py-1 text-white shadow-card">
+                <Calendar size={12} />
+                <span className="text-[11px] font-bold uppercase tracking-wider">
+                  Возврат сегодня
+                </span>
+                <span className="font-display text-[18px] font-extrabold tabular-nums leading-none">
+                  {returnTimeToday}
+                </span>
+              </div>
+            )}
+
+            {/* Плашка «Опаздывает на N мин» — крупная красная, в том же
+                стиле что и зелёная сверху. */}
             {lateMinutesToday > 0 && (
-              <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-red px-2 py-0.5 text-[11px] font-bold text-white shadow-card">
-                <AlertTriangle size={10} />
-                Опаздывает на {fmtMinutes(lateMinutesToday)}
+              <div className="mt-2 inline-flex items-center gap-2 rounded-full bg-red px-3 py-1 text-white shadow-card">
+                <AlertTriangle size={12} />
+                <span className="text-[11px] font-bold uppercase tracking-wider">
+                  Опаздывает на
+                </span>
+                <span className="font-display text-[18px] font-extrabold tabular-nums leading-none">
+                  {fmtMinutes(lateMinutesToday)}
+                </span>
               </div>
             )}
             {/* «Просрочен на N дней N часов» — full overdue. */}
             {overdueDayDate && (
-              <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-red px-2 py-0.5 text-[11px] font-bold text-white shadow-card">
-                <AlertTriangle size={10} />
-                Просрочен на{" "}
-                {fmtDaysHours(overdueDays, overdueHoursRest)}
+              <div className="mt-2 inline-flex items-center gap-2 rounded-full bg-red px-3 py-1 text-white shadow-card">
+                <AlertTriangle size={12} />
+                <span className="text-[11px] font-bold uppercase tracking-wider">
+                  Просрочен на
+                </span>
+                <span className="font-display text-[18px] font-extrabold tabular-nums leading-none">
+                  {fmtDaysHours(overdueDays, overdueHoursRest)}
+                </span>
               </div>
             )}
             {scooter.baseStatus === "repair" && !activeRental && (
