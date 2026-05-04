@@ -18,7 +18,8 @@ import {
 
 type Target =
   | { kind: "rental"; id: number }
-  | { kind: "client"; id: number };
+  | { kind: "client"; id: number }
+  | { kind: "rentalsList"; filter: "active" | "overdue" | "returnsToday" };
 
 type Ctx = {
   /**
@@ -30,6 +31,7 @@ type Ctx = {
   stack: Target[];
   openRental: (id: number) => void;
   openClient: (id: number) => void;
+  openRentalsList: (filter: "active" | "overdue" | "returnsToday") => void;
   back: () => void;
   close: () => void;
   /** Хелпер для дочерних компонентов: «я внутри drawer'а?» */
@@ -61,6 +63,7 @@ export function useDashboardDrawer(): Ctx {
       stack: [],
       openRental: () => {},
       openClient: () => {},
+      openRentalsList: () => {},
       back: () => {},
       close: () => {},
       inDrawer: false,
@@ -77,6 +80,8 @@ export function DashboardDrawerProvider({ children }: { children: ReactNode }) {
         setStack((s) => [...s, { kind: "rental", id }]),
       openClient: (id) =>
         setStack((s) => [...s, { kind: "client", id }]),
+      openRentalsList: (filter) =>
+        setStack((s) => [...s, { kind: "rentalsList", filter }]),
       back: () => setStack((s) => s.slice(0, -1)),
       close: () => setStack([]),
       inDrawer: stack.length > 0,
@@ -96,30 +101,33 @@ function DrawerHost({ ctx }: { ctx: Ctx }) {
   if (stack.length === 0) return null;
 
   const top = stack[stack.length - 1]!;
-  // Самый «глубокий» rental в стеке — он будет фоном, поверх него
-  // ClientQuickView. Если top тоже rental — рендерим его как drawer.
-  const rentalLayer = stack.find((t) => t.kind === "rental");
-  const clientOnTop = top.kind === "client";
-  // Если в стеке есть и rental, и client (top), drawer показывает
-  // rental, а ClientQuickView рисуется поверх благодаря своему z-120.
-  // Если только rental — просто drawer. Если только client — только
-  // ClientQuickView (без drawer'а).
+  // Базовый «фоновый» уровень — последний rental или rentalsList.
+  // ClientQuickView (если он top) рисуется поверх благодаря z-120.
+  const baseLayer =
+    top.kind === "client"
+      ? // Найти в стеке предыдущий не-client уровень для фона.
+        [...stack].reverse().find((t) => t.kind !== "client") ?? null
+      : top;
   return (
     <>
-      {rentalLayer && (
+      {baseLayer && baseLayer.kind === "rental" && (
         <RentalDrawerLayer
-          rentalId={rentalLayer.id}
-          // Кнопка X закрывает ВСЁ окно (стек). Если поверх
-          // открыт client — её всё равно не видно, поэтому это
-          // безопасно.
+          rentalId={baseLayer.id}
           onClose={ctx.close}
         />
       )}
-      {clientOnTop && (
+      {baseLayer && baseLayer.kind === "rentalsList" && (
+        <RentalsListDrawerLayer
+          filter={baseLayer.filter}
+          onClose={ctx.close}
+          onPickRental={(id) => ctx.openRental(id)}
+        />
+      )}
+      {top.kind === "client" && (
         <ClientQuickView
-          // ClientQuickView сам полноэкранный с z-120 — рисуется
-          // поверх drawer'а. Esc/X внутри него закрывают только
-          // его слой через back().
+          // ClientQuickView самостоятельный fullscreen-overlay с z-120 —
+          // рисуется поверх drawer'а. Esc/X закрывают только его слой
+          // через back(), фоновый drawer остаётся.
           clientId={top.id}
           onClose={ctx.back}
         />
@@ -220,6 +228,162 @@ function RentalDrawerLayer({
           ) : (
             <div className="flex h-full items-center justify-center text-muted">
               Аренда не найдена. Возможно, она была удалена.
+            </div>
+          )}
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+// =====================================================================
+// RentalsListDrawerLayer — drawer-список аренд. v0.3.1, idea 4.
+// Открывается кликом по KPI-карточкам дашборда (Просрочено / Активные /
+// Сегодня возвращают). Внутри — прокручиваемый список соответствующих
+// аренд. Клик по строке → push rental на стек drawer'а (см. ctx.openRental).
+// =====================================================================
+function RentalsListDrawerLayer({
+  filter,
+  onClose,
+  onPickRental,
+}: {
+  filter: "active" | "overdue" | "returnsToday";
+  onClose: () => void;
+  onPickRental: (id: number) => void;
+}) {
+  const [closing, setClosing] = useState(false);
+  const requestClose = () => {
+    if (closing) return;
+    setClosing(true);
+    window.setTimeout(onClose, 220);
+  };
+  useEffect(() => {
+    setClosing(false);
+  }, [filter]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") requestClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const active = useRentals();
+  // Используем helpers через локальный import, чтобы не тащить весь
+  // useDashboardMetrics (циклический импорт).
+  // Простая версия: фильтруем active rentals по статусу/дате.
+  const today = new Date();
+  const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+
+  // Rental из rentalsStore — UI-shape (DD.MM.YYYY), не ApiRental с ISO.
+  // Для фильтрации по дате используем парсинг DD.MM.YYYY → YYYY-MM-DD.
+  const ymdFromRu = (s: string): string => {
+    const m = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(s);
+    return m ? `${m[3]}-${m[2]}-${m[1]}` : "";
+  };
+  const filtered = active.filter((r) => {
+    if (filter === "active") {
+      return r.status === "active";
+    }
+    if (filter === "overdue") {
+      const endKey = ymdFromRu(r.endPlanned);
+      return (
+        r.status === "overdue" ||
+        (r.status === "active" && endKey && endKey < todayKey)
+      );
+    }
+    if (filter === "returnsToday") {
+      const endKey = ymdFromRu(r.endPlanned);
+      return (
+        (r.status === "active" || r.status === "returning") &&
+        endKey === todayKey
+      );
+    }
+    return false;
+  });
+
+  const title =
+    filter === "active"
+      ? "Активные аренды"
+      : filter === "overdue"
+        ? "Просроченные аренды"
+        : "Возвращают сегодня";
+
+  return (
+    <div
+      className={cn(
+        "fixed inset-0 z-[100] bg-ink/40",
+        closing ? "animate-backdrop-out" : "animate-backdrop-in",
+      )}
+    >
+      <aside
+        className={cn(
+          "ml-auto flex h-full w-full max-w-[680px] flex-col overflow-hidden bg-surface shadow-card-lg",
+          "transform transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
+          closing ? "translate-x-full" : "translate-x-0",
+        )}
+      >
+        <header className="flex items-center justify-between gap-3 border-b border-border bg-surface-soft px-5 py-3">
+          <div className="min-w-0">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-2">
+              Список аренд
+            </div>
+            <div className="truncate text-[14px] font-bold text-ink">
+              {title} · {filtered.length}
+            </div>
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => {
+                navigate({ route: "rentals" });
+                requestClose();
+              }}
+              title="Открыть список аренд на полной странице"
+              className="inline-flex items-center gap-1 rounded-[8px] bg-surface px-2.5 py-1.5 text-[12px] font-semibold text-ink-2 hover:bg-blue-50 hover:text-blue-700"
+            >
+              <ExternalLink size={12} /> На полную
+            </button>
+            <button
+              type="button"
+              onClick={requestClose}
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-2 hover:bg-white hover:text-ink"
+              title="Закрыть (Esc)"
+            >
+              <X size={16} />
+            </button>
+          </div>
+        </header>
+        <div className="flex-1 min-h-0 overflow-y-auto p-3">
+          {filtered.length === 0 ? (
+            <div className="flex h-full items-center justify-center text-muted">
+              Нет записей в этой категории.
+            </div>
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              {filtered.map((r) => (
+                <button
+                  key={r.id}
+                  type="button"
+                  onClick={() => onPickRental(r.id)}
+                  className="flex flex-col gap-0.5 rounded-[10px] border border-border bg-white px-3 py-2 text-left transition-colors hover:border-blue-300 hover:bg-blue-50"
+                >
+                  <div className="flex flex-wrap items-center gap-2 text-[13px] font-bold text-ink">
+                    Аренда #{String(r.id).padStart(4, "0")}
+                    <span className="rounded-full bg-surface-soft px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-muted-2">
+                      {r.status}
+                    </span>
+                    <span className="ml-auto font-mono text-[12px] tabular-nums text-ink-2">
+                      {r.scooter}
+                    </span>
+                  </div>
+                  <div className="text-[12px] text-muted">
+                    {r.start} → {r.endPlanned} · {r.days} дн ·{" "}
+                    <b>{(r.sum ?? 0).toLocaleString("ru-RU")} ₽</b>
+                  </div>
+                </button>
+              ))}
             </div>
           )}
         </div>

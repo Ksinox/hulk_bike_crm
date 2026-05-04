@@ -86,6 +86,14 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
           title="Просрочено"
           value={String(metrics.overdueCount)}
           valueTone={metrics.overdueCount > 0 ? "red" : undefined}
+          // v0.3.1 (idea 4): клик по KPI открывает drawer со списком
+          // просроченных аренд. Из списка → клик по строке → стек drawer'а
+          // с конкретной арендой.
+          onClick={
+            metrics.overdueCount > 0
+              ? () => drawer.openRentalsList("overdue")
+              : undefined
+          }
           delta={
             metrics.overdueDeltaFromYesterday > 0
               ? {
@@ -108,6 +116,11 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
           title="Активных аренд"
           value={String(metrics.activeRentalsCount)}
           unit={metrics.fleetTotal > 0 ? `/ ${metrics.fleetTotal}` : undefined}
+          onClick={
+            metrics.activeRentalsCount > 0
+              ? () => drawer.openRentalsList("active")
+              : undefined
+          }
           foot={
             <span>
               {metrics.fleetTotal > 0

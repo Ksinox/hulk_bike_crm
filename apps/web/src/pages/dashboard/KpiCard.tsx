@@ -11,6 +11,9 @@ export type KpiCardProps = {
   delta?: { tone: DeltaTone; label: string };
   blue?: boolean;
   valueTone?: "default" | "red";
+  /** v0.3.1 (idea 4): если задан — карточка кликабельна и
+   *  открывает соответствующий drawer-список. */
+  onClick?: () => void;
 };
 
 export function KpiCard({
@@ -21,9 +24,17 @@ export function KpiCard({
   delta,
   blue,
   valueTone = "default",
+  onClick,
 }: KpiCardProps) {
+  const clickable = !!onClick;
   return (
-    <Card blue={blue}>
+    <Card
+      blue={blue}
+      onClick={onClick}
+      className={cn(
+        clickable && "cursor-pointer transition-shadow hover:shadow-card-lg",
+      )}
+    >
       <div
         className={cn(
           "flex items-center gap-1.5 text-[13px] font-medium",
