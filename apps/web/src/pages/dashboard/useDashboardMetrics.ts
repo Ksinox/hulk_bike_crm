@@ -10,6 +10,7 @@ import { useApiScooters } from "@/lib/api/scooters";
 import { useApiPayments, type ApiPayment } from "@/lib/api/payments";
 import { useAllDamageReports } from "@/lib/api/damage-reports";
 import type { ApiRental, ApiScooter } from "@/lib/api/types";
+import { currentBillingPeriod } from "@/lib/billingPeriod";
 
 export type DashboardMetrics = {
   isLoading: boolean;
@@ -155,7 +156,13 @@ export function useDashboardMetrics(): DashboardMetrics {
     const now = new Date();
     const todayKey = ymd(now);
     const yesterdayKey = ymd(addDays(now, -1));
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    // v0.3.7: расчётный период бизнеса — 15→14 (см. lib/billingPeriod).
+    // Все «месячные» KPI на дашборде считаются за период, а не за
+    // календарный месяц. monthStart/monthEnd оставляем именами для
+    // совместимости с прежним кодом ниже, но семантика — billing period.
+    const period = currentBillingPeriod(now);
+    const monthStart = period.start;
+    const monthEnd = period.end;
 
     // ===== KPI: поступит сегодня (запланированные платежи на сегодня)
     const todayPayments = payments.filter(
@@ -289,11 +296,12 @@ export function useDashboardMetrics(): DashboardMetrics {
     // В выручку НЕ включаем залоги — это возвратные деньги, не доход.
     // Считаем только тип 'rent', 'damage', 'fine' и прочие «заработки».
     const monthPayments = payments.filter(
-      (p) =>
-        p.paid &&
-        p.paidAt &&
-        new Date(p.paidAt) >= monthStart &&
-        p.type !== "deposit",
+      (p) => {
+        if (!p.paid || !p.paidAt) return false;
+        if (p.type === "deposit" || p.type === "refund") return false;
+        const t = new Date(p.paidAt).getTime();
+        return t >= monthStart.getTime() && t < monthEnd.getTime();
+      },
     );
     const revenueMonth = monthPayments.reduce((s, p) => s + p.amount, 0);
     const revenueMonthCount = monthPayments.length;
@@ -309,9 +317,10 @@ export function useDashboardMetrics(): DashboardMetrics {
     const expectedRentals = rentals.filter((r) => {
       if (!["active", "overdue", "returning", "returned"].includes(r.status))
         return false;
-      // Берём аренды, начавшиеся в этом месяце
-      const start = new Date(r.startAt);
-      if (start < monthStart) return false;
+      // Берём аренды, начавшиеся в текущем расчётном периоде (15→14)
+      const startMs = new Date(r.startAt).getTime();
+      if (startMs < monthStart.getTime() || startMs >= monthEnd.getTime())
+        return false;
       return !rentPaymentsByRentalId.has(r.id);
     });
     const revenueExpected = expectedRentals.reduce((s, r) => s + r.sum, 0);

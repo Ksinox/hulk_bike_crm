@@ -19,6 +19,7 @@ import { useApiClients } from "@/lib/api/clients";
 import { useApiScooters } from "@/lib/api/scooters";
 import { useApiPayments } from "@/lib/api/payments";
 import { revenueFromPayments } from "@/lib/revenue";
+import { currentBillingPeriod } from "@/lib/billingPeriod";
 import { ErrorBoundary } from "@/app/ErrorBoundary";
 import type { ApiClient } from "@/lib/api/types";
 import {
@@ -62,8 +63,16 @@ function matchStatus(
       r.status === "overdue";
     return isActiveOrReturning && r.endPlanned === today;
   }
-  if (f === "new_request")
-    return r.status === "new_request" || r.status === "meeting";
+  if (f === "new_request") {
+    // v0.3.7: «Новые» = аренды, ВЫДАННЫЕ сегодня (начало = сегодня)
+    // и сейчас в обращении. Заявки/встречи переехали в Клиентов
+    // (отдельный таб в ит.4).
+    const isLive =
+      r.status === "active" ||
+      r.status === "overdue" ||
+      r.status === "returning";
+    return isLive && r.start === today;
+  }
   if (f === "completed")
     return r.status === "completed" || r.status === "cancelled";
   if (f === "issue")
@@ -218,18 +227,12 @@ export function Rentals() {
   );
 
   const kpi = useMemo<Kpi[]>(() => {
-    // Отчётный период — с 14-го прошлого месяца по 14-е текущего.
-    const today = new Date();
-    const y = today.getFullYear();
-    const m = today.getMonth();
-    const d = today.getDate();
-    const periodEnd = d >= 14
-      ? new Date(y, m + 1, 14)
-      : new Date(y, m, 14);
-    const periodStart = new Date(periodEnd);
-    periodStart.setMonth(periodStart.getMonth() - 1);
-    const monthNames = ["янв","фев","мар","апр","май","июн","июл","авг","сен","окт","ноя","дек"];
-    const rangeLabel = `${String(periodStart.getDate()).padStart(2,"0")} ${monthNames[periodStart.getMonth()]} — ${String(periodEnd.getDate()).padStart(2,"0")} ${monthNames[periodEnd.getMonth()]}`;
+    // Расчётный период — с 15-го одного месяца по 14-е следующего
+    // включительно. Сервис в @/lib/billingPeriod — единая точка правды.
+    const period = currentBillingPeriod();
+    const periodStart = period.start;
+    const periodEnd = period.end;
+    const rangeLabel = period.label;
 
     // Активная аренда без скутера — это «призрак» (артефакт старых данных
     // или неправильно созданная заявка). Не считаем её — иначе бейдж

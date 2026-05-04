@@ -21,7 +21,7 @@ const STATUS_TABS: { id: StatusFilter; label: string }[] = [
   { id: "active", label: "Активные" },
   { id: "overdue", label: "Просрочка" },
   { id: "return_today", label: "Возврат сегодня" },
-  { id: "new_request", label: "Новые" },
+  { id: "new_request", label: "Выданы сегодня" },
   { id: "completed", label: "Завершены" },
   { id: "issue", label: "Проблемные" },
   { id: "archived", label: "Архив" },

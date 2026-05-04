@@ -1287,6 +1287,11 @@ function PrintDocumentsView({ rental }: { rental: Rental }) {
 function DamageReportCard({ rental }: { rental: Rental }) {
   const reports = useDamageReports(rental.id).data ?? [];
   const [previewId, setPreviewId] = useState<number | null>(null);
+  // v0.3.7: досудебная претензия должна быть доступна ВСЕГДА, как только
+  // есть акт о повреждениях, независимо от того нажал ли оператор «Не
+  // согласен» на акт. Иногда документ нужен задним числом — для архива
+  // или для повторной попытки переговоров с клиентом.
+  const [claimPreviewId, setClaimPreviewId] = useState<number | null>(null);
   const API_BASE =
     import.meta.env.VITE_API_URL?.replace(/\/$/, "") ?? "http://localhost:4000";
 
@@ -1342,10 +1347,30 @@ function DamageReportCard({ rental }: { rental: Rental }) {
               >
                 <Download size={12} /> Word
               </a>
+              {/* v0.3.7: «Досудебная претензия» — всегда доступна, не
+                  зависит от реакции клиента. Нужна для архива и на случай
+                  если оператор не открыл документ сразу. */}
+              <button
+                type="button"
+                onClick={() => setClaimPreviewId(r.id)}
+                className="inline-flex items-center gap-1.5 rounded-[8px] border border-amber-300 bg-amber-50 px-3 py-1 text-[12px] font-semibold text-amber-900 hover:bg-amber-100"
+                title="Открыть досудебную претензию по этому акту"
+              >
+                <AlertTriangle size={12} /> Претензия
+              </button>
             </div>
           );
         })}
       </div>
+      {claimPreviewId != null && (
+        <DocumentPreviewModal
+          title={`Досудебная претензия по акту #${claimPreviewId}`}
+          htmlUrl={`${API_BASE}/api/damage-reports/${claimPreviewId}/claim?format=html`}
+          docxUrl={`${API_BASE}/api/damage-reports/${claimPreviewId}/claim?format=docx`}
+          docxFilename={`Досудебная претензия ${String(claimPreviewId).padStart(4, "0")}.doc`}
+          onClose={() => setClaimPreviewId(null)}
+        />
+      )}
       {previewId != null && (
         <DocumentPreviewModal
           title={`Акт о повреждениях #${previewId}`}

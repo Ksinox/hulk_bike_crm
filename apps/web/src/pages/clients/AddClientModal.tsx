@@ -617,9 +617,14 @@ export function AddClientModal({
                   maxLength={4}
                   value={f.passSer}
                   placeholder="0000"
-                  onChange={(e) =>
-                    set("passSer", e.target.value.replace(/\D/g, ""))
-                  }
+                  onChange={(e) => {
+                    const v = e.target.value.replace(/\D/g, "").slice(0, 4);
+                    set("passSer", v);
+                    // v0.3.7: автопереход на следующее поле, когда серия заполнена
+                    if (v.length === 4) {
+                      document.getElementById("f-pnum")?.focus();
+                    }
+                  }}
                   onBlur={() => markTouched("passSer")}
                   className={inputClass(showErr("passSer"))}
                 />
@@ -637,9 +642,14 @@ export function AddClientModal({
                   maxLength={6}
                   value={f.passNum}
                   placeholder="000000"
-                  onChange={(e) =>
-                    set("passNum", e.target.value.replace(/\D/g, ""))
-                  }
+                  onChange={(e) => {
+                    const v = e.target.value.replace(/\D/g, "").slice(0, 6);
+                    set("passNum", v);
+                    // v0.3.7: автопереход на «Кем выдан», когда номер заполнен
+                    if (v.length === 6) {
+                      document.getElementById("f-pissuer")?.focus();
+                    }
+                  }}
                   onBlur={() => markTouched("passNum")}
                   className={inputClass(showErr("passNum"))}
                 />

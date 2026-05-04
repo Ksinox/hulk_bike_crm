@@ -71,6 +71,12 @@ export type Rental = {
   deposit: number;
   depositReturned?: boolean;
   equipment: string[];
+  /**
+   * Снимок выбранной экипировки (с itemId/name/price/free на момент
+   * выдачи). Источник правды — таблица rentals.equipment_json в БД.
+   * Пустой массив у легаси-аренд, выданных до v0.2.x.
+   */
+  equipmentJson?: { itemId?: number | null; name: string; price: number; free: boolean }[];
   paymentMethod: PaymentMethod;
   note?: string;
   contractUploaded?: boolean;

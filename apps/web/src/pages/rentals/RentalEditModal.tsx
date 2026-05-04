@@ -22,7 +22,15 @@ import {
   useDeleteScooterSwap,
 } from "@/lib/api/rentals";
 import { useApiScooters } from "@/lib/api/scooters";
+import { useApiEquipment, type ApiEquipmentItem } from "@/lib/api/equipment";
 import type { Rental } from "@/lib/mock/rentals";
+
+type EquipmentSnapshot = {
+  itemId?: number | null;
+  name: string;
+  price: number;
+  free: boolean;
+};
 
 /** Унифицированный пункт «замена скутера» в модалке. Объединяет два
  *  источника: legacy-связку с другим scooterId vs предка и запись
@@ -658,6 +666,16 @@ function RentalEditForm({
     computeDaysBetween(rental.start, rental.endPlanned) ?? rental.days;
   const [days, setDays] = useState<number>(initialDays);
   const [note, setNote] = useState<string>(rental.note ?? "");
+  // v0.3.7: правка экипировки. Локальное состояние — массив снимков
+  // (itemId+name+price+free). На submit отправляем как `equipmentJson`.
+  const [equipment, setEquipment] = useState<EquipmentSnapshot[]>(
+    () => rental.equipmentJson ?? [],
+  );
+  const equipmentInitialKey = useMemo(
+    () => JSON.stringify(rental.equipmentJson ?? []),
+    [rental.equipmentJson],
+  );
+  const equipmentChanged = JSON.stringify(equipment) !== equipmentInitialKey;
   const [saving, setSaving] = useState(false);
 
   const lastChanged = useRef<"dates" | "days" | "init">("init");
@@ -695,7 +713,8 @@ function RentalEditForm({
     rate !== rental.rate ||
     days !== rental.days ||
     rate * days !== rental.sum ||
-    (note ?? "") !== (rental.note ?? "");
+    (note ?? "") !== (rental.note ?? "") ||
+    equipmentChanged;
 
   // Проверка нижней границы даты выдачи (для не-базовых связок).
   const startTooEarly = (() => {
@@ -727,6 +746,9 @@ function RentalEditForm({
       if (newSum !== rental.sum) patch.sum = newSum;
       if ((note ?? "") !== (rental.note ?? "")) {
         patch.note = note.trim() || undefined;
+      }
+      if (equipmentChanged) {
+        patch.equipmentJson = equipment;
       }
       patch.startTime = startTime;
       if (Object.keys(patch).length > 0) {
@@ -836,6 +858,10 @@ function RentalEditForm({
           </b>
         </div>
 
+        <Field label="Экипировка">
+          <EquipmentEditor value={equipment} onChange={setEquipment} />
+        </Field>
+
         <Field label="Заметка">
           <textarea
             value={note}
@@ -930,6 +956,109 @@ function Field({
         {label}
       </div>
       {children}
+    </div>
+  );
+}
+
+/**
+ * Редактор экипировки аренды. Multi-select из каталога /api/equipment.
+ * Если позиция уже в аренде, но удалена из каталога — отображаем её как
+ * «вне каталога» и сохраняем в снимке. Снимок (name/price/free) важен:
+ * если каталог изменят позже, у аренды останется честная цена выдачи.
+ */
+function EquipmentEditor({
+  value,
+  onChange,
+}: {
+  value: EquipmentSnapshot[];
+  onChange: (next: EquipmentSnapshot[]) => void;
+}) {
+  const { data: catalog = [] } = useApiEquipment();
+  const selectedIds = new Set(
+    value.map((v) => v.itemId).filter((x): x is number => typeof x === "number"),
+  );
+  const toggle = (item: ApiEquipmentItem) => {
+    if (selectedIds.has(item.id)) {
+      onChange(value.filter((v) => v.itemId !== item.id));
+    } else {
+      onChange([
+        ...value,
+        {
+          itemId: item.id,
+          name: item.name,
+          price: item.price,
+          free: item.isFree,
+        },
+      ]);
+    }
+  };
+  // Снимки, которых нет в каталоге (legacy/удалены) — показываем как
+  // отдельные «вне каталога» чипсы, чтобы оператор мог их снять.
+  const orphans = value.filter(
+    (v) => v.itemId == null || !catalog.find((c) => c.id === v.itemId),
+  );
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap gap-1.5">
+        {catalog.length === 0 && (
+          <span className="text-[11px] text-muted-2">
+            Каталог пуст — добавьте позиции в Парк → Экипировка.
+          </span>
+        )}
+        {catalog.map((item) => {
+          const on = selectedIds.has(item.id);
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => toggle(item)}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12px] font-semibold transition-colors",
+                on
+                  ? "border-blue-500 bg-blue-50 text-blue-700"
+                  : "border-border bg-white text-ink-2 hover:border-blue-400",
+              )}
+              title={
+                item.isFree
+                  ? "Бесплатно (входит в стоимость)"
+                  : `${item.price} ₽`
+              }
+            >
+              {item.name}
+              {item.isFree ? (
+                <span className="text-[10px] text-green-700">бесплатно</span>
+              ) : item.price > 0 ? (
+                <span className="text-[10px] text-muted-2">
+                  +{item.price}₽
+                </span>
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
+      {orphans.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {orphans.map((o, i) => (
+            <button
+              key={`orphan-${i}`}
+              type="button"
+              onClick={() =>
+                onChange(value.filter((v) => v !== o))
+              }
+              className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-1 text-[12px] font-semibold text-amber-900"
+              title="Вне текущего каталога — нажмите чтобы снять"
+            >
+              {o.name}
+              <X size={10} />
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="text-[11px] text-muted-2">
+        Изменения сохранятся атомарно. Сумма аренды не пересчитывается
+        автоматически — поправьте «Тариф/Дни» если экипировка влияет на
+        итог.
+      </div>
     </div>
   );
 }

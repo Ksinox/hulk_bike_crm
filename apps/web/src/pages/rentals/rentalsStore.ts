@@ -146,6 +146,11 @@ export function patchRental(id: number, patch: Partial<Rental>) {
   if (patch.damageAmount !== undefined) {
     body.damageAmount = patch.damageAmount ?? null;
   }
+  if (patch.equipmentJson !== undefined) {
+    // v0.3.7: поддержка изменения экипировки в RentalEditModal.
+    // Бэк перезаписывает равно тем что прислали (атомарно).
+    body.equipmentJson = patch.equipmentJson;
+  }
   if (Object.keys(body).length === 0) return;
   api.patch(`/api/rentals/${id}`, body).then(invAll).catch(logErr("patchRental"));
 }
@@ -401,7 +406,12 @@ export function useRentals(): Rental[] {
   }, [data, scooters]);
 }
 
-/** Архивные аренды (soft-deleted). Используется во вкладке «Архив». */
+/**
+ * Архивные аренды. По бизнес-логике (v0.3.7) сюда попадают ТОЛЬКО
+ * завершённые/отменённые/проблемные аренды. Активные / просроченные /
+ * возвращаемые в архив не должны попадать никогда — это защищает от
+ * легаси-данных, где у живой аренды по ошибке проставлен archivedAt.
+ */
 export function useArchivedRentals(): Rental[] {
   const { data } = useApiRentalsArchived();
   const { data: scooters } = useApiScooters();
@@ -409,7 +419,15 @@ export function useArchivedRentals(): Rental[] {
   return useMemo(() => {
     if (!data) return [];
     const byId = new Map((scooters ?? []).map((s) => [s.id, s] as const));
-    return data.map((r) => adaptRental(r, byId));
+    const ALLOWED = new Set([
+      "completed",
+      "cancelled",
+      "completed_damage",
+      "problem",
+    ]);
+    return data
+      .filter((r) => ALLOWED.has(r.status))
+      .map((r) => adaptRental(r, byId));
   }, [data, scooters]);
 }
 

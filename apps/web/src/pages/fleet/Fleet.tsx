@@ -4,8 +4,6 @@ import {
   ArrowDownNarrowWide,
   ArrowUpNarrowWide,
   Check,
-  ChevronLeft,
-  ChevronRight,
   HelpCircle,
   Key,
   Layers,
@@ -47,7 +45,7 @@ type StatusTab =
   | "for_sale"
   | "ready";
 
-const PAGE_SIZE = 10;
+// v0.3.7: пагинация удалена в пользу одного скролла.
 
 function fmt(n: number): string {
   return n.toLocaleString("ru-RU");
@@ -96,7 +94,6 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
   const [sortBy, setSortBy] = useState<"number" | "mileage">("number");
   const [sortDir, setSortDir] = useState<"desc" | "asc">("desc");
   const [query, setQuery] = useState("");
-  const [page, setPage] = useState(1);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [backTo, setBackTo] = useState<BackTarget | null>(null);
@@ -229,13 +226,6 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
     sortDir,
   ]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const currentPage = Math.min(page, totalPages);
-  const pageRows = filtered.slice(
-    (currentPage - 1) * PAGE_SIZE,
-    currentPage * PAGE_SIZE,
-  );
-
   // ============ ДЕТАЛЬНАЯ КАРТОЧКА ============
   if (selectedId != null) {
     const sel = rows.find((r) => r.scooter.id === selectedId);
@@ -285,7 +275,6 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
           active={tab === "all"}
           onClick={() => {
             setTab("all");
-            setPage(1);
           }}
         />
         <KpiTile
@@ -297,7 +286,6 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
           active={tab === "rental_pool"}
           onClick={() => {
             setTab("rental_pool");
-            setPage(1);
           }}
         />
         <KpiTile
@@ -309,7 +297,6 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
           active={tab === "rented"}
           onClick={() => {
             setTab("rented");
-            setPage(1);
           }}
         />
         <KpiTile
@@ -321,7 +308,6 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
           active={tab === "ready"}
           onClick={() => {
             setTab("ready");
-            setPage(1);
           }}
         />
         <KpiTile
@@ -333,7 +319,6 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
           active={tab === "repair"}
           onClick={() => {
             setTab("repair");
-            setPage(1);
           }}
         />
         <KpiTile
@@ -345,7 +330,6 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
           active={tab === "for_sale"}
           onClick={() => {
             setTab("for_sale");
-            setPage(1);
           }}
         />
       </div>
@@ -362,7 +346,6 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
-              setPage(1);
             }}
             placeholder="Имя (Jog #42) или VIN"
             className="h-9 w-full rounded-full bg-surface pl-9 pr-12 text-[13px] text-ink shadow-card-sm outline-none placeholder:text-muted-2 focus:ring-2 focus:ring-blue-100"
@@ -373,7 +356,6 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
               value={modelIdsFilter}
               onChange={(next) => {
                 setModelIdsFilter(next);
-                setPage(1);
               }}
             />
           </div>
@@ -419,13 +401,15 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
           <span />
         </div>
 
-        {pageRows.length === 0 && (
+        {filtered.length === 0 && (
           <div className="px-5 py-16 text-center text-[13px] text-muted">
             Ничего не нашлось под выбранные фильтры
           </div>
         )}
 
-        {pageRows.map((row) => (
+        {/* v0.3.7: один непрерывный список со скроллом — без страниц.
+            Парк ~50–100 скутеров, разбивка на страницы только мешает. */}
+        {filtered.map((row) => (
           <FleetRow
             key={row.scooter.id}
             row={row}
@@ -433,17 +417,11 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
           />
         ))}
 
-        {/* pagination */}
-        <div className="flex items-center justify-between gap-3 border-t border-border bg-surface-soft/50 px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-muted-2">
-          <span>
-            Показано {pageRows.length} из {filtered.length} скутеров
-          </span>
-          <Pagination
-            current={currentPage}
-            total={totalPages}
-            onChange={setPage}
-          />
-        </div>
+        {filtered.length > 0 && (
+          <div className="flex items-center justify-between gap-3 border-t border-border bg-surface-soft/50 px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-muted-2">
+            <span>Всего {filtered.length} скутеров</span>
+          </div>
+        )}
       </div>
 
       {addOpen && <AddScooterModal onClose={() => setAddOpen(false)} />}
@@ -681,94 +659,6 @@ function KpiTile({
       {active && (
         <span className="absolute inset-x-5 bottom-0 h-0.5 rounded-t-full bg-blue-600" />
       )}
-    </button>
-  );
-}
-
-function Pagination({
-  current,
-  total,
-  onChange,
-}: {
-  current: number;
-  total: number;
-  onChange: (p: number) => void;
-}) {
-  if (total <= 1) return null;
-  const pages: (number | "…")[] = [];
-  const maxBtns = 5;
-  if (total <= maxBtns) {
-    for (let i = 1; i <= total; i++) pages.push(i);
-  } else {
-    pages.push(1);
-    if (current > 3) pages.push("…");
-    const start = Math.max(2, current - 1);
-    const end = Math.min(total - 1, current + 1);
-    for (let i = start; i <= end; i++) pages.push(i);
-    if (current < total - 2) pages.push("…");
-    pages.push(total);
-  }
-  return (
-    <div className="flex items-center gap-1">
-      <PagerBtn
-        disabled={current === 1}
-        onClick={() => onChange(current - 1)}
-        aria-label="Назад"
-      >
-        <ChevronLeft size={14} />
-      </PagerBtn>
-      {pages.map((p, i) =>
-        p === "…" ? (
-          <span key={`gap-${i}`} className="px-1 text-muted-2">
-            …
-          </span>
-        ) : (
-          <button
-            key={p}
-            type="button"
-            onClick={() => onChange(p)}
-            className={cn(
-              "flex h-7 w-7 items-center justify-center rounded-full text-[12px] font-bold tabular-nums transition-colors",
-              p === current
-                ? "bg-blue-600 text-white"
-                : "border border-border bg-surface text-ink-2 hover:border-blue-600 hover:text-blue-600",
-            )}
-          >
-            {p}
-          </button>
-        ),
-      )}
-      <PagerBtn
-        disabled={current === total}
-        onClick={() => onChange(current + 1)}
-        aria-label="Вперёд"
-      >
-        <ChevronRight size={14} />
-      </PagerBtn>
-    </div>
-  );
-}
-
-function PagerBtn({
-  children,
-  disabled,
-  onClick,
-  ...rest
-}: React.ButtonHTMLAttributes<HTMLButtonElement>) {
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      className={cn(
-        "flex h-7 w-7 items-center justify-center rounded-full border border-border bg-surface text-ink-2 transition-colors",
-        disabled
-          ? "cursor-not-allowed opacity-40"
-          : "hover:border-blue-600 hover:text-blue-600",
-      )}
-      {...rest}
-    >
-      {children}
     </button>
   );
 }

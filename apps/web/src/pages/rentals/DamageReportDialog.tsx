@@ -193,7 +193,7 @@ export function DamageReportDialog({
   // удерживается у нас до полного покрытия долга (информационный режим).
   const depositIsItem = (rental.deposit ?? 0) <= 0;
   const depositMax = Math.min(rental.deposit ?? 0, total);
-  const [depositCovered, setDepositCovered] = useState(
+  const [depositCovered, setDepositCovered] = useState<number>(
     existing?.depositCovered ?? 0,
   );
   useEffect(() => {
@@ -607,20 +607,15 @@ export function DamageReportDialog({
                     >
                       Весь залог
                     </button>
-                    <input
-                      type="number"
-                      min={0}
-                      max={depositMax}
+                    {/* v0.3.7: контролируем как строку, чтобы можно было
+                        стирать и вводить значение в любом порядке. На blur
+                        парсим в число и клампим в [0; depositMax]. Раньше
+                        Number("")||0 сразу сбрасывал поле в 0 при стирании
+                        и не давал нормально ввести сумму. */}
+                    <DepositInput
                       value={depositCovered}
-                      onChange={(e) =>
-                        setDepositCovered(
-                          Math.max(
-                            0,
-                            Math.min(depositMax, Number(e.target.value) || 0),
-                          ),
-                        )
-                      }
-                      className="w-[100px] rounded-[8px] border border-border bg-white px-2 py-1 text-right text-[13px] tabular-nums"
+                      max={depositMax}
+                      onChange={setDepositCovered}
                     />
                   </div>
                 </div>
@@ -681,5 +676,53 @@ export function DamageReportDialog({
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * Поле ввода суммы зачёта из залога. Хранит строковое значение —
+ * пользователь свободно стирает и вводит цифры. На blur парсит в число
+ * и клампит в [0; max]. Если внешний `value` меняется (например при
+ * нажатии «Весь залог») — синхронизируется.
+ */
+function DepositInput({
+  value,
+  max,
+  onChange,
+}: {
+  value: number;
+  max: number;
+  onChange: (n: number) => void;
+}) {
+  const [text, setText] = useState<string>(String(value || 0));
+  // Синхронизация при внешнем изменении (кнопка «Весь залог», смена rental)
+  useEffect(() => {
+    setText(String(value || 0));
+  }, [value]);
+  const commit = () => {
+    const parsed = Number(text.replace(/\s+/g, ""));
+    const next = Number.isFinite(parsed)
+      ? Math.max(0, Math.min(max, Math.round(parsed)))
+      : 0;
+    onChange(next);
+    setText(String(next));
+  };
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      value={text}
+      onChange={(e) => {
+        // Принимаем только цифры. Пустая строка допускается — пользователь
+        // продолжит ввод, парсинг отложим до blur.
+        const v = e.target.value.replace(/[^\d]/g, "");
+        setText(v);
+      }}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") commit();
+      }}
+      className="w-[100px] rounded-[8px] border border-border bg-white px-2 py-1 text-right text-[13px] tabular-nums"
+    />
   );
 }

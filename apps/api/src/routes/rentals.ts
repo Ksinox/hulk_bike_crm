@@ -163,10 +163,18 @@ export async function rentalsRoutes(app: FastifyInstance) {
    * могут быть восстановлены директором/создателем.
    */
   app.get("/archived", async () => {
+    // v0.3.7: в архив попадают только завершённые/отменённые/проблемные.
+    // Активные/просроченные/возвращаемые с archivedAt — это легаси-баг,
+    // фильтруем на чтении (на запись защита идёт через бизнес-флоу).
     const rows = await db
       .select()
       .from(rentals)
-      .where(isNotNull(rentals.archivedAt))
+      .where(
+        and(
+          isNotNull(rentals.archivedAt),
+          sql`${rentals.status} IN ('completed', 'cancelled', 'completed_damage', 'problem')`,
+        ),
+      )
       .orderBy(desc(rentals.archivedAt));
     return { items: rows };
   });
