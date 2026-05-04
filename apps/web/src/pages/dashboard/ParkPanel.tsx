@@ -10,6 +10,10 @@ import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
 import { navigate } from "@/app/navigationStore";
 import { ApiError } from "@/lib/api";
 import { toast } from "@/lib/toast";
+import {
+  ParkTileHoverCard,
+  useTileHoverPreview,
+} from "./ParkTileHoverCard";
 
 /** Статус плитки — производный от baseStatus скутера + активной аренды. */
 type TileStatus =
@@ -89,6 +93,8 @@ export function ParkPanel({
   const [newRentalFor, setNewRentalFor] = useState<string | null>(null);
   /** Открыт диалог «Распределить скутер» (поменять статус у 'ready') */
   const [reassignFor, setReassignFor] = useState<ApiScooter | null>(null);
+  /** Hover-preview на плитках — лёгкое окошко с фото и инфо. */
+  const hover = useTileHoverPreview();
 
   const tiles = useMemo(() => {
     const scooters = scootersQ.data ?? [];
@@ -335,6 +341,8 @@ export function ParkPanel({
               type="button"
               key={s.id}
               onClick={handleClick}
+              onMouseEnter={(e) => hover.onEnter(e, s.id)}
+              onMouseLeave={hover.onLeave}
               title={titleParts.join(" · ")}
               className={cn(
                 "group relative flex aspect-square cursor-pointer flex-col items-center justify-center overflow-hidden rounded-[10px] border border-transparent text-[11px] font-semibold transition-all hover:-translate-y-0.5 hover:z-10 hover:shadow-card",
@@ -371,6 +379,17 @@ export function ParkPanel({
           );
         })}
       </div>
+
+      {/* Hover-preview плитки парка. Появляется через 350ms наведения,
+          исчезает на mouseleave. Не блокирует клик — он по-прежнему
+          ходит на плитку. v0.3.1, idea 1. */}
+      {hover.state && (
+        <ParkTileHoverCard
+          scooterId={hover.state.scooterId}
+          anchor={hover.state.anchor}
+          onClose={hover.close}
+        />
+      )}
 
       {newRentalFor && (
         <NewRentalModal
