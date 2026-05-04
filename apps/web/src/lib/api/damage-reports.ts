@@ -97,6 +97,22 @@ export function useDamageReports(rentalId: number | null) {
 }
 
 /**
+ * Все damage_reports в системе. Используется на дашборде, чтобы быстро
+ * вычислить какие аренды имеют долг по ущербу и подсветить их плитки
+ * красным в Парке.
+ */
+export function useAllDamageReports() {
+  return useQuery({
+    queryKey: [...damageReportsKeys.all, "list-all"] as const,
+    queryFn: () =>
+      api
+        .get<{ items: ApiDamageReport[] }>(`/api/damage-reports`)
+        .then((r) => r.items),
+    staleTime: 30_000,
+  });
+}
+
+/**
  * Все акты ущерба по ВСЕЙ цепочке аренд (root + продления + замены, в т.ч.
  * вручную удалённые сегменты). Нужно для расчёта долга, который должен
  * сохраняться даже если связку, на которой создавался акт, удалили

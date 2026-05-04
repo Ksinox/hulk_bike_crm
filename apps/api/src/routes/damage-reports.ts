@@ -117,16 +117,25 @@ async function loadReportFull(reportId: number) {
 }
 
 export async function damageReportsRoutes(app: FastifyInstance) {
-  /** Список актов по аренде (с items, платежами и остатком долга). */
-  app.get<{ Querystring: { rentalId?: string } }>("/", async (req, reply) => {
-    const rentalId = Number(req.query.rentalId);
-    if (!Number.isFinite(rentalId) || rentalId <= 0)
-      return reply.code(400).send({ error: "rentalId required" });
-    const rows = await db
-      .select()
-      .from(damageReports)
-      .where(eq(damageReports.rentalId, rentalId))
-      .orderBy(asc(damageReports.createdAt), asc(damageReports.id));
+  /**
+   * Список актов. Если задан rentalId — только по этой аренде. Без
+   * параметра — все акты в системе (для дашборда: чтобы понять у каких
+   * аренд есть открытый долг по ущербу и подсветить плитки парка).
+   */
+  app.get<{ Querystring: { rentalId?: string } }>("/", async (req) => {
+    const rentalIdRaw = req.query.rentalId;
+    const rentalId = rentalIdRaw ? Number(rentalIdRaw) : null;
+    const rows =
+      rentalId && Number.isFinite(rentalId) && rentalId > 0
+        ? await db
+            .select()
+            .from(damageReports)
+            .where(eq(damageReports.rentalId, rentalId))
+            .orderBy(asc(damageReports.createdAt), asc(damageReports.id))
+        : await db
+            .select()
+            .from(damageReports)
+            .orderBy(asc(damageReports.createdAt), asc(damageReports.id));
     const full = await Promise.all(rows.map((r) => loadReportFull(r.id)));
     return { items: full.filter(Boolean) };
   });

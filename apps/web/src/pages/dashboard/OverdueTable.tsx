@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { Check, ChevronRight, Phone } from "lucide-react";
+import { Check, ChevronDown, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Card } from "./KpiCard";
 import { StatusPill } from "./StatusPill";
 import { ClientAvatar } from "./ReturnsList";
 import { formatRub, type OverdueItem } from "./useDashboardMetrics";
+import { navigate } from "@/app/navigationStore";
 
 export function OverdueTable({
   className,
@@ -18,8 +19,14 @@ export function OverdueTable({
   compactHeader?: boolean;
 }) {
   const sorted = [...items].sort((a, b) => b.daysOverdue - a.daysOverdue);
-  const top = sorted.slice(0, 5);
   const total = items.length;
+  /**
+   * Переключатель «Все долги» → раскрывает список со скроллом прямо здесь.
+   * Раньше кнопка открывала отдельную страницу/попап — заказчик попросил
+   * чтобы скролл работал внутри виджета без выхода с дашборда.
+   */
+  const [expanded, setExpanded] = useState(false);
+  const visible = expanded ? sorted : sorted.slice(0, 5);
 
   // Компактный режим: когда просрочек нет — одна тонкая полоса вместо
   // полноразмерной карточки. Экономит место на дашборде.
@@ -58,32 +65,51 @@ export function OverdueTable({
           </h3>
           <StatusPill tone="late">{total}</StatusPill>
         </div>
-        <button className="inline-flex items-center gap-1.5 rounded-[10px] bg-surface-soft px-3 py-1.5 text-xs font-semibold text-ink-2 transition-colors hover:bg-blue-50 hover:text-blue-700">
-          Все долги <ChevronRight size={12} strokeWidth={2.2} />
-        </button>
+        {sorted.length > 5 && (
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="inline-flex items-center gap-1.5 rounded-[10px] bg-surface-soft px-3 py-1.5 text-xs font-semibold text-ink-2 transition-colors hover:bg-blue-50 hover:text-blue-700"
+          >
+            {expanded ? "Свернуть" : "Все долги"}
+            {expanded ? (
+              <ChevronDown size={12} strokeWidth={2.2} />
+            ) : (
+              <ChevronRight size={12} strokeWidth={2.2} />
+            )}
+          </button>
+        )}
       </div>
 
-      <table className="w-full border-separate border-spacing-0 text-[13px]">
-          <thead>
+      {/* В развёрнутом режиме высоту ограничиваем и включаем скролл,
+          чтобы оставаться внутри карточки и не растягивать дашборд. */}
+      <div
+        className={cn(
+          expanded && "max-h-[480px] overflow-y-auto pr-1",
+        )}
+      >
+        <table className="w-full border-separate border-spacing-0 text-[13px]">
+          <thead className={cn(expanded && "sticky top-0 bg-surface z-10")}>
             <tr>
               <Th style={{ width: "34%" }}>Клиент</Th>
               <Th>Скутер</Th>
               <Th>Долг</Th>
               <Th>Просрочка</Th>
-              {showPhoneColumn && <Th>Телефон</Th>}
-              {!showPhoneColumn && <Th />}
+              <Th>Телефон</Th>
+              {showPhoneColumn && <Th>Тел. моб.</Th>}
             </tr>
           </thead>
           <tbody>
-            {top.map((o) => (
+            {visible.map((o) => (
               <OverdueRow
                 key={o.rentalId}
                 item={o}
                 showPhoneColumn={showPhoneColumn}
               />
             ))}
-        </tbody>
-      </table>
+          </tbody>
+        </table>
+      </div>
     </Card>
   );
 }
@@ -96,14 +122,18 @@ function OverdueRow({
   showPhoneColumn: boolean;
 }) {
   const initials = initialsOf(o.clientName);
+  const phoneHref = phoneToTel(o.clientPhone);
   return (
-    <tr className="cursor-pointer group">
+    <tr
+      className="cursor-pointer group"
+      onClick={() => navigate({ route: "rentals", rentalId: o.rentalId })}
+      title="Открыть карточку аренды"
+    >
       <Td overdue>
         <div className="flex items-center gap-2.5">
           <ClientAvatar initials={initials} variant="red" />
           <div>
             <div className="font-semibold">{o.clientName}</div>
-            <div className="text-[11px] text-muted">{o.clientPhone}</div>
           </div>
         </div>
       </Td>
@@ -114,44 +144,33 @@ function OverdueRow({
       <Td overdue>
         <StatusPill tone="late">{o.daysOverdue} дн</StatusPill>
       </Td>
-      {showPhoneColumn ? (
+      <Td overdue>
+        {/* v0.2.95: вместо кнопки «Позвонить» (бесполезной без интеграции
+            с телефонией) — крупный телефон, кликабельный. На десктопе
+            оператор просто читает и набирает на физическом, на мобильном
+            tel: ссылка инициирует звонок. */}
+        <a
+          href={phoneHref}
+          onClick={(e) => e.stopPropagation()}
+          className="font-mono text-[14px] font-bold text-ink hover:text-blue-600"
+        >
+          {o.clientPhone || "—"}
+        </a>
+      </Td>
+      {showPhoneColumn && (
         <Td overdue>
           <span className="text-[13px] text-muted">{o.clientPhone}</span>
-        </Td>
-      ) : (
-        <Td overdue>
-          <CopyBtn phone={o.clientPhone} />
         </Td>
       )}
     </tr>
   );
 }
 
-function CopyBtn({ phone }: { phone: string }) {
-  const [copied, setCopied] = useState(false);
-  const onClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    try {
-      navigator.clipboard?.writeText(phone);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1200);
-    } catch {
-      /* noop */
-    }
-  };
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-[10px] px-3 py-1.5 text-xs font-semibold transition-colors",
-        copied ? "bg-green text-white" : "bg-ink text-white hover:bg-blue-600",
-      )}
-    >
-      {copied ? <Check size={12} strokeWidth={2.5} /> : <Phone size={12} />}
-      {copied ? "Скопировано" : "Позвонить"}
-    </button>
-  );
+function phoneToTel(phone: string): string {
+  // Превращаем «+7 (999) 999-99-99» в tel:+79999999999
+  const digits = (phone || "").replace(/[^\d+]/g, "");
+  if (!digits) return "#";
+  return `tel:${digits.startsWith("+") ? digits : `+${digits}`}`;
 }
 
 function initialsOf(name: string): string {

@@ -14,7 +14,7 @@ import { toast } from "@/lib/toast";
 /** Статус плитки — производный от baseStatus скутера + активной аренды. */
 type TileStatus =
   | "rented"
-  | "overdue"
+  | "overdue" // просрочка ИЛИ долг по ущербу — красная плитка
   | "returning" // на возврате — физически у клиента или в процессе приёма
   | "ready" // не распределён (baseStatus=ready)
   | "pool" // в парке аренды, свободен к сдаче (baseStatus=rental_pool, без активной аренды)
@@ -24,7 +24,7 @@ type TileStatus =
   | "disassembly";
 
 type ModelFilter = "all" | ScooterModel;
-type StatusFilter = "all" | TileStatus;
+type StatusFilter = "all" | TileStatus | "returns_today";
 
 const MODEL_CHIPS: { id: ModelFilter; label: string }[] = [
   { id: "all", label: "Все модели" },
@@ -37,8 +37,8 @@ const MODEL_CHIPS: { id: ModelFilter; label: string }[] = [
 const STATUS_CHIPS: { id: StatusFilter; label: string; swatch: string }[] = [
   { id: "all", label: "всё", swatch: "hsl(var(--muted))" },
   { id: "rented", label: "активная аренда", swatch: "hsl(var(--blue))" },
-  { id: "overdue", label: "просрочка", swatch: "hsl(var(--red))" },
-  { id: "returning", label: "на возврате", swatch: "hsl(var(--purple))" },
+  { id: "overdue", label: "просрочка / ущерб", swatch: "hsl(var(--red))" },
+  { id: "returns_today", label: "возврат сегодня", swatch: "hsl(var(--blue-600))" },
   { id: "pool", label: "готов к аренде", swatch: "hsl(var(--green))" },
   { id: "ready", label: "не распределён", swatch: "hsl(var(--border-strong))" },
   { id: "repair", label: "ремонт", swatch: "hsl(var(--orange))" },
@@ -109,14 +109,38 @@ export function ParkPanel({
         activeRentalByScooter.set(r.scooterId, r.id);
     });
 
-    return scooters.map((s) => ({
-      id: s.id,
-      name: s.name,
-      model: s.model,
-      status: computeTileStatus(s, activeByScooter.get(s.id)),
-      rentalId: activeRentalByScooter.get(s.id) ?? null,
-    }));
-  }, [scootersQ.data, rentalsQ.data]);
+    // ID множества из metrics — нужны для подсветки красных плиток
+    // (просрочка по статусу, факт. просрочка по дате, открытый долг по
+    // ущербу) и мигающего индикатора «возврат сегодня».
+    const overdueIds = metrics.overdueRentalIds;
+    const damageIds = metrics.damageDebtRentalIds;
+    const returnsTodayIds = metrics.returnsTodayRentalIds;
+
+    return scooters.map((s) => {
+      const rentalId = activeRentalByScooter.get(s.id) ?? null;
+      const isOverdue = rentalId != null && overdueIds.has(rentalId);
+      const hasDamage = rentalId != null && damageIds.has(rentalId);
+      const isReturnToday =
+        rentalId != null && returnsTodayIds.has(rentalId);
+      return {
+        id: s.id,
+        name: s.name,
+        model: s.model,
+        status: computeTileStatus(s, activeByScooter.get(s.id), {
+          isOverdue,
+          hasDamage,
+        }),
+        rentalId,
+        isReturnToday,
+      };
+    });
+  }, [
+    scootersQ.data,
+    rentalsQ.data,
+    metrics.overdueRentalIds,
+    metrics.damageDebtRentalIds,
+    metrics.returnsTodayRentalIds,
+  ]);
 
   const modelCounts = useMemo(() => {
     const acc: Record<string, number> = {};
@@ -127,6 +151,9 @@ export function ParkPanel({
   const statusCounts = useMemo(() => {
     const acc: Record<string, number> = {};
     tiles.forEach((t) => (acc[t.status] = (acc[t.status] ?? 0) + 1));
+    // Дополнительный «виртуальный» счётчик: сегодня возвращают.
+    // Он не входит в TileStatus, считается по флагу isReturnToday.
+    acc["returns_today"] = tiles.filter((t) => t.isReturnToday).length;
     return acc;
   }, [tiles]);
 
@@ -231,7 +258,12 @@ export function ParkPanel({
         {tiles.map((s) => {
           const modelMatch = model === "all" || s.model === model;
           if (!modelMatch) return null;
-          const statusMatch = status === "all" || s.status === status;
+          const statusMatch =
+            status === "all"
+              ? true
+              : status === "returns_today"
+                ? s.isReturnToday
+                : s.status === status;
           const num = s.name.split("#")[1] ?? s.name;
           const handleClick = () => {
             // Клик в зависимости от статуса — разные операционные действия
@@ -256,12 +288,16 @@ export function ParkPanel({
             // repair / for_sale / sold / disassembly — открываем карточку
             navigate({ route: "fleet", scooterId: s.id });
           };
+          // Подсказка собирается из статуса + флагов «возврат сегодня».
+          const titleParts = [`${s.name}`, STATUS_LABEL[s.status]];
+          if (s.isReturnToday) titleParts.push("возврат сегодня");
+          titleParts.push(`клик: ${hintFor(s.status)}`);
           return (
             <button
               type="button"
               key={s.id}
               onClick={handleClick}
-              title={`${s.name} · ${STATUS_LABEL[s.status]} — клик: ${hintFor(s.status)}`}
+              title={titleParts.join(" · ")}
               className={cn(
                 "group relative flex aspect-square cursor-pointer flex-col items-center justify-center rounded-[10px] border border-transparent text-[11px] font-semibold transition-all hover:-translate-y-0.5 hover:z-10 hover:shadow-card",
                 tileClass(s.status),
@@ -269,6 +305,15 @@ export function ParkPanel({
               )}
             >
               {num}
+              {/* Мигающий индикатор «возврат сегодня» — маленький кружок
+                  в правом верхнем углу. На красных/синих плитках работает
+                  с белой обводкой для контраста. */}
+              {s.isReturnToday && (
+                <span
+                  className="pointer-events-none absolute right-1 top-1 h-2 w-2 rounded-full bg-yellow-300 ring-2 ring-white/90 animate-pulse"
+                  aria-label="возврат сегодня"
+                />
+              )}
             </button>
           );
         })}
@@ -398,6 +443,10 @@ function ReassignDialog({
 function computeTileStatus(
   s: ApiScooter,
   activeKind: "active" | "overdue" | "returning" | undefined,
+  flags: { isOverdue: boolean; hasDamage: boolean } = {
+    isOverdue: false,
+    hasDamage: false,
+  },
 ): TileStatus {
   if (s.baseStatus === "sold") return "sold";
   if (s.baseStatus === "disassembly") return "disassembly";
@@ -406,7 +455,11 @@ function computeTileStatus(
   if (s.baseStatus === "repair") return "repair";
   // Открытая аренда «бьёт» baseStatus — пока есть активная/просроченная/
   // на возврате аренда, скутер не свободен, что бы ни было записано в БД.
-  if (activeKind === "overdue") return "overdue";
+  // v0.2.95: «overdue» считаем не только по rental.status, но и по факту
+  // (active с прошедшей датой) и по долгу за ущерб — заказчик хочет
+  // видеть красную плитку при ЛЮБОМ долге.
+  if (activeKind === "overdue" || flags.isOverdue || flags.hasDamage)
+    return "overdue";
   if (activeKind === "returning") return "returning";
   if (activeKind === "active") return "rented";
   // Теперь различаем «не распределён» и «парк аренды свободен»

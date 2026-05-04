@@ -8,6 +8,7 @@ import { useApiClients } from "@/lib/api/clients";
 import { useApiRentals } from "@/lib/api/rentals";
 import { useApiScooters } from "@/lib/api/scooters";
 import { useApiPayments, type ApiPayment } from "@/lib/api/payments";
+import { useAllDamageReports } from "@/lib/api/damage-reports";
 import type { ApiRental, ApiScooter } from "@/lib/api/types";
 
 export type DashboardMetrics = {
@@ -49,6 +50,18 @@ export type DashboardMetrics = {
   // Просрочки
   overdue: OverdueItem[];
 
+  /**
+   * Множества rentalId для быстрой подсветки плиток в ParkPanel.
+   *  - overdueRentalIds — все «просрочки» (status=overdue ИЛИ active с
+   *    endPlannedAt в прошлом).
+   *  - damageDebtRentalIds — аренды с открытым актом и debt>0.
+   *  - returnsTodayRentalIds — те, у кого endPlannedAt = сегодня
+   *    (status active/returning).
+   */
+  overdueRentalIds: Set<number>;
+  damageDebtRentalIds: Set<number>;
+  returnsTodayRentalIds: Set<number>;
+
   // Выручка — для графика (пока только агрегаты за месяц)
   revenueMonth: number; // реально получено (подтверждённые платежи)
   revenueMonthCount: number;
@@ -87,6 +100,7 @@ export function useDashboardMetrics(): DashboardMetrics {
   const rentalsQ = useApiRentals();
   const scootersQ = useApiScooters();
   const paymentsQ = useApiPayments();
+  const damageReportsQ = useAllDamageReports();
 
   const isLoading =
     clientsQ.isLoading ||
@@ -99,6 +113,7 @@ export function useDashboardMetrics(): DashboardMetrics {
     const rentals: ApiRental[] = rentalsQ.data ?? [];
     const scooters: ApiScooter[] = scootersQ.data ?? [];
     const payments: ApiPayment[] = paymentsQ.data ?? [];
+    const damageAll = damageReportsQ.data ?? [];
 
     const clientById = new Map(clients.map((c) => [c.id, c]));
     const scooterById = new Map(scooters.map((s) => [s.id, s]));
@@ -276,6 +291,21 @@ export function useDashboardMetrics(): DashboardMetrics {
     const hasScooters = scooters.length > 0;
     const hasAnyData = hasRentals || hasScooters || clients.length > 0;
 
+    // === Множества для подсветки плиток ParkPanel ===
+    const overdueRentalIds = new Set<number>(overdueRentals.map((r) => r.id));
+    const returnsTodayRentalIds = new Set<number>(
+      returnsToday.map((r) => r.rentalId),
+    );
+    // Аренды с активным долгом по ущербу (debt>0 в любом акте). На фронте
+    // debt уже подсчитан сервером на базе total/depositCovered/payments —
+    // оператор увидит красный квадратик пока есть хоть одна копейка долга.
+    const damageDebtRentalIds = new Set<number>(
+      damageAll
+        .filter((d) => d.debt > 0)
+        .map((d) => d.rentalId)
+        .filter((id): id is number => typeof id === "number"),
+    );
+
     return {
       isLoading,
       hasAnyData,
@@ -294,13 +324,23 @@ export function useDashboardMetrics(): DashboardMetrics {
       park,
       returnsToday,
       overdue,
+      overdueRentalIds,
+      damageDebtRentalIds,
+      returnsTodayRentalIds,
       revenueMonth,
       revenueMonthCount,
       revenueExpected,
       revenueExpectedCount,
       revenueByDay,
     };
-  }, [clientsQ.data, rentalsQ.data, scootersQ.data, paymentsQ.data, isLoading]);
+  }, [
+    clientsQ.data,
+    rentalsQ.data,
+    scootersQ.data,
+    paymentsQ.data,
+    damageReportsQ.data,
+    isLoading,
+  ]);
 }
 
 // utils

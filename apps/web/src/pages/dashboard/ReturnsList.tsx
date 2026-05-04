@@ -1,6 +1,7 @@
-import { Check } from "lucide-react";
+import { Check, Phone } from "lucide-react";
 import { Card } from "./KpiCard";
 import { StatusPill } from "./StatusPill";
+import { navigate } from "@/app/navigationStore";
 import type { ReturnItem } from "./useDashboardMetrics";
 
 export function ReturnsList({
@@ -30,9 +31,21 @@ export function ReturnsList({
           {items.slice(0, 5).map((r) => {
             const initials = initialsOf(r.clientName);
             const when = formatTime(r.endPlannedAt);
+            const phoneHref = phoneToTel(r.clientPhone);
             return (
               <div
                 key={r.rentalId}
+                onClick={() =>
+                  navigate({ route: "rentals", rentalId: r.rentalId })
+                }
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    navigate({ route: "rentals", rentalId: r.rentalId });
+                  }
+                }}
+                title="Открыть карточку аренды"
                 className="flex cursor-pointer items-center gap-2.5 border-b border-border py-2.5 last:border-b-0 hover:-mx-2 hover:rounded-[10px] hover:bg-surface-soft hover:px-2"
               >
                 <ClientAvatar initials={initials} />
@@ -43,6 +56,16 @@ export function ReturnsList({
                   <div className="text-xs text-muted truncate">
                     {r.scooterName} · {when}
                   </div>
+                  {r.clientPhone && (
+                    <a
+                      href={phoneHref}
+                      onClick={(e) => e.stopPropagation()}
+                      className="mt-0.5 inline-flex items-center gap-1 font-mono text-[12px] font-bold text-ink hover:text-blue-600"
+                    >
+                      <Phone size={11} className="text-muted-2" />
+                      {r.clientPhone}
+                    </a>
+                  )}
                 </div>
                 <StatusPill tone="active">{when}</StatusPill>
               </div>
@@ -97,4 +120,10 @@ function formatTime(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
   return d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+}
+
+function phoneToTel(phone: string): string {
+  const digits = (phone || "").replace(/[^\d+]/g, "");
+  if (!digits) return "#";
+  return `tel:${digits.startsWith("+") ? digits : `+${digits}`}`;
 }
