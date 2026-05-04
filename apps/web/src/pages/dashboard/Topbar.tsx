@@ -20,12 +20,13 @@ import { GlobalSearch } from "./GlobalSearch";
 import { ProfileModal } from "./ProfileModal";
 import { AddClientModal } from "@/pages/clients/AddClientModal";
 import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
-import { navigate } from "@/app/navigationStore";
+import { useDashboardDrawer } from "./DashboardDrawer";
 
 export function Topbar() {
   const { data: me } = useMe();
   const logoutMut = useLogout();
   const role = useRole();
+  const drawer = useDashboardDrawer();
   const [menuOpen, setMenuOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [newClientOpen, setNewClientOpen] = useState(false);
@@ -163,7 +164,11 @@ export function Topbar() {
           onClose={() => setNewRentalOpen(false)}
           onCreated={(r) => {
             setNewRentalOpen(false);
-            navigate({ route: "rentals", rentalId: r.id });
+            // v0.3.1 (idea 3): после создания аренды НЕ перекидываем на
+            // страницу аренд — открываем в drawer'е дашборда. Оператор
+            // остаётся в operations console и сразу видит созданную
+            // аренду со всеми вкладками. Это «принцип одного экрана».
+            drawer.openRental(r.id);
           }}
         />
       )}
