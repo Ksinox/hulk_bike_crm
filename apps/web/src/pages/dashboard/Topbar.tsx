@@ -360,32 +360,36 @@ function ChangelogPopover({
         <div className="text-[13px] font-bold text-ink">
           {unreadCount > 0
             ? `Новых улучшений: ${unreadCount}`
-            : "Все улучшения просмотрены"}
+            : "Новых уведомлений пока нет"}
         </div>
         <div className="mt-0.5 text-[11px] text-muted-2">
-          В версии CRM
+          {unreadCount > 0
+            ? "Свежие изменения в CRM"
+            : "Все улучшения вы уже просмотрели"}
         </div>
       </div>
-      <div className="border-t border-border">
-        {preview.map((e) => (
-          <div
-            key={e.id}
-            className="flex flex-col gap-0.5 px-4 py-2 text-[12px]"
-          >
-            <div className="font-semibold text-ink-2">{e.title}</div>
-            <div className="text-[11px] text-muted-2">
-              {e.category} · {e.areas.join(", ")}
+      {unreadCount > 0 && (
+        <div className="border-t border-border">
+          {preview.map((e) => (
+            <div
+              key={e.id}
+              className="flex flex-col gap-0.5 px-4 py-2 text-[12px]"
+            >
+              <div className="font-semibold text-ink-2">{e.title}</div>
+              <div className="text-[11px] text-muted-2">
+                {e.category} · {e.areas.join(", ")}
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
       <div className="border-t border-border p-2">
         <button
           type="button"
           onClick={onOpen}
           className="flex w-full items-center justify-center gap-1.5 rounded-[10px] bg-ink px-3 py-2 text-[13px] font-bold text-white transition-colors hover:bg-blue-600"
         >
-          Посмотреть улучшения
+          {unreadCount > 0 ? "Посмотреть улучшения" : "Открыть «Что нового»"}
         </button>
       </div>
     </div>

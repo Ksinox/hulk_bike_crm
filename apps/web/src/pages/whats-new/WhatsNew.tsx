@@ -1,9 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { Sparkles } from "lucide-react";
 import { Topbar } from "@/pages/dashboard/Topbar";
-import { changelog, type ChangelogCategory } from "@/data/changelog";
+import {
+  changelog,
+  type ChangelogCategory,
+  type ChangelogEntry,
+} from "@/data/changelog";
 import { cn } from "@/lib/utils";
-import { ChangelogEntryCard } from "./ChangelogEntryCard";
+import { CategoryBadge, ChangelogEntryCard } from "./ChangelogEntryCard";
 import { markChangelogSeen } from "./useUnreadChangelog";
 
 const CATEGORIES: (ChangelogCategory | "Все")[] = [
@@ -15,14 +19,21 @@ const CATEGORIES: (ChangelogCategory | "Все")[] = [
   "Расчёты",
 ];
 
-const MONTHS_RU = [
-  "января", "февраля", "марта", "апреля", "мая", "июня",
-  "июля", "августа", "сентября", "октября", "ноября", "декабря",
+// Порядок категорий на странице — сверху самые «громкие».
+const CATEGORY_ORDER: ChangelogCategory[] = [
+  "Новое",
+  "Улучшение",
+  "Дизайн",
+  "Исправление",
+  "Расчёты",
 ];
 
-function formatDateRu(iso: string): string {
-  const [y, m, d] = iso.split("-").map(Number);
-  return `${d} ${MONTHS_RU[(m ?? 1) - 1]} ${y}`;
+function pluralRu(n: number, one: string, few: string, many: string): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return one;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
+  return many;
 }
 
 export function WhatsNew() {
@@ -40,17 +51,22 @@ export function WhatsNew() {
     [filter],
   );
 
-  // Группировка по дате+версии (одна группа на день, версия в подзаголовке).
+  // Группировка: сначала по категории (в фиксированном порядке), внутри —
+  // от новой даты к старой. Заказчик хочет видеть «всё новое подряд,
+  // потом всё про дизайн» и т.д.
   const groups = useMemo(() => {
-    const map = new Map<string, typeof changelog>();
+    const map = new Map<ChangelogCategory, ChangelogEntry[]>();
     for (const e of filtered) {
-      const arr = map.get(e.date) ?? [];
+      const arr = map.get(e.category) ?? [];
       arr.push(e);
-      map.set(e.date, arr);
+      map.set(e.category, arr);
     }
-    return Array.from(map.entries()).sort((a, b) =>
-      a[0] < b[0] ? 1 : -1,
-    );
+    return CATEGORY_ORDER.flatMap((cat) => {
+      const list = map.get(cat);
+      if (!list || list.length === 0) return [];
+      const sorted = [...list].sort((a, b) => (a.date < b.date ? 1 : -1));
+      return [{ category: cat, entries: sorted }];
+    });
   }, [filtered]);
 
   return (
@@ -92,20 +108,14 @@ export function WhatsNew() {
         </div>
       )}
 
-      <div className="flex flex-col gap-5">
-        {groups.map(([date, entries]) => (
-          <section key={date} className="flex flex-col gap-3">
-            <div className="flex items-baseline gap-3 px-1">
-              <h2 className="text-[18px] font-bold text-ink">
-                {formatDateRu(date)}
-              </h2>
+      <div className="flex flex-col gap-6">
+        {groups.map(({ category, entries }) => (
+          <section key={category} className="flex flex-col gap-3">
+            <div className="flex items-center gap-3 px-1">
+              <CategoryBadge category={category} />
               <span className="text-[12px] font-semibold text-muted-2">
                 {entries.length}{" "}
-                {entries.length === 1
-                  ? "улучшение"
-                  : entries.length < 5
-                    ? "улучшения"
-                    : "улучшений"}
+                {pluralRu(entries.length, "улучшение", "улучшения", "улучшений")}
               </span>
             </div>
             {entries.map((e) => (
