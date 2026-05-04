@@ -47,7 +47,6 @@ export function StaffResetPasswordModal({
   return (
     <div
       className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-ink/55 p-6 backdrop-blur-sm"
-      onClick={onClose}
     >
       <div
         className="mt-16 w-full max-w-[440px] overflow-hidden rounded-2xl bg-surface shadow-card-lg"

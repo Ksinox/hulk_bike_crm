@@ -602,7 +602,6 @@ function PhotoPreview({
   return (
     <div
       className="fixed inset-0 z-[200] flex items-center justify-center bg-ink/80 p-6"
-      onClick={onClose}
     >
       <button
         type="button"

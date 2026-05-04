@@ -41,7 +41,6 @@ export function RevenueListModal({
         "fixed inset-0 z-[120] flex items-center justify-center bg-ink/55 p-4 backdrop-blur-sm",
         closing ? "animate-backdrop-out" : "animate-backdrop-in",
       )}
-      onClick={requestClose}
     >
       <div
         className={cn(

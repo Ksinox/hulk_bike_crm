@@ -131,7 +131,6 @@ export function DamageReportPaymentDialog({
         "fixed inset-0 z-[130] flex items-center justify-center bg-ink/55 p-6 backdrop-blur-sm",
         closing ? "animate-backdrop-out" : "animate-backdrop-in",
       )}
-      onClick={requestClose}
     >
       <div
         className={cn(

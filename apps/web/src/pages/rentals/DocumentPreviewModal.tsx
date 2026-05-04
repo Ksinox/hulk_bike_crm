@@ -159,7 +159,6 @@ export function DocumentPreviewModal({
   return (
     <div
       className={containerClass}
-      onClick={onClose}
     >
       <div
         className={

@@ -75,7 +75,6 @@ export function FilePreviewModal({
         "fixed inset-0 z-[200] flex items-center justify-center bg-ink/70 p-6 backdrop-blur-sm",
         closing ? "animate-backdrop-out" : "animate-backdrop-in",
       )}
-      onClick={requestClose}
     >
       <div
         className={cn(

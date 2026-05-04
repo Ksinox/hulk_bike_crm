@@ -146,7 +146,6 @@ export function ScooterEditForm({
         "fixed inset-0 z-[130] flex justify-end bg-ink/45 backdrop-blur-sm",
         closing ? "animate-backdrop-out" : "animate-backdrop-in",
       )}
-      onClick={requestClose}
     >
       <div
         className={cn(

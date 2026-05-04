@@ -173,7 +173,6 @@ function FullJournalModal({ onClose }: { onClose: () => void }) {
   return (
     <div
       className="fixed inset-0 z-[140] flex items-start justify-center overflow-y-auto bg-ink/55 p-6 backdrop-blur-sm"
-      onClick={onClose}
     >
       <div
         className="mt-10 flex w-full max-w-[760px] flex-col overflow-hidden rounded-2xl bg-surface shadow-card-lg"

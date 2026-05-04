@@ -336,7 +336,6 @@ export function NewRentalModal({
         "fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-ink/55 p-6 backdrop-blur-sm",
         closing ? "animate-backdrop-out" : "animate-backdrop-in",
       )}
-      onClick={requestClose}
     >
       <div
         className={cn(
