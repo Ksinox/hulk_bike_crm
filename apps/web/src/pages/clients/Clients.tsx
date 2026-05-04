@@ -12,8 +12,11 @@ import {
   type FiltersState,
 } from "./ClientsFilters";
 import { ClientsList } from "./ClientsList";
-import { ClientCard } from "./ClientCard";
 import { AddClientModal } from "./AddClientModal";
+import {
+  DashboardDrawerProvider,
+  useDashboardDrawer,
+} from "@/pages/dashboard/DashboardDrawer";
 import { ShareApplicationButton } from "./ShareApplicationButton";
 import { ApplicationsBlock } from "./ApplicationsBlock";
 import { useAllClients, useUnreachableSet } from "./clientStore";
@@ -62,7 +65,20 @@ function matchClient(
   return true;
 }
 
+// v0.3.3: страница клиентов теперь работает через drawer-паттерн.
+// Список занимает всю ширину; клик по строке открывает drawer справа
+// с полной ClientCard. DashboardDrawerProvider тот же что и на дашборде —
+// shared контекст, поэтому stacking (открыть клиента → провалиться в
+// аренду) работает консистентно.
 export function Clients() {
+  return (
+    <DashboardDrawerProvider>
+      <ClientsInner />
+    </DashboardDrawerProvider>
+  );
+}
+
+function ClientsInner() {
   const [filters, setFilters] = useState<FiltersState>({
     search: "",
     status: "all",
@@ -98,14 +114,17 @@ export function Clients() {
     }
     return set;
   }, [rentals]);
-  const [selectedId, setSelectedId] = useState<number>(17);
+  const drawer = useDashboardDrawer();
   const [addOpen, setAddOpen] = useState(false);
   const [backTo, setBackTo] = useState<BackTarget | null>(null);
 
+  // Pending-навигация (например, переход «к клиенту X» из аренды) теперь
+  // открывает клиента в drawer'е вместо переключения «выбран в списке».
   useEffect(() => {
     const p = consumePending("clients");
-    if (p?.clientId) setSelectedId(p.clientId);
+    if (p?.clientId) drawer.openClient(p.clientId);
     if (p?.from) setBackTo(p.from);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const filtered = useMemo(
@@ -164,27 +183,13 @@ export function Clients() {
 
       <ClientsFilters value={filters} onChange={setFilters} />
 
-      <div className="grid flex-1 gap-4 lg:grid-cols-[360px_1fr]">
-        <ClientsList
-          items={filtered}
-          selectedId={selectedId}
-          onSelect={setSelectedId}
-        />
-
-        {(() => {
-          const selected = clients.find((c) => c.id === selectedId);
-          if (!selected) {
-            return (
-              <div className="flex min-h-[400px] items-center justify-center rounded-2xl bg-surface p-10 text-center shadow-card-sm">
-                <div className="text-[13px] text-muted">
-                  Выберите клиента из списка
-                </div>
-              </div>
-            );
-          }
-          return <ClientCard client={selected} />;
-        })()}
-      </div>
+      {/* Список во всю ширину. Клик по строке открывает drawer справа
+          с полной ClientCard — оператор не теряет контекст списка. */}
+      <ClientsList
+        items={filtered}
+        selectedId={null}
+        onSelect={(id) => drawer.openClient(id)}
+      />
 
       {addOpen && <AddClientModal onClose={() => setAddOpen(false)} />}
     </main>

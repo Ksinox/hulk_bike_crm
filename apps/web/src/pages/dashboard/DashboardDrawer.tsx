@@ -10,7 +10,9 @@ import { ArrowLeft, ExternalLink, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { navigate } from "@/app/navigationStore";
 import { RentalCard } from "@/pages/rentals/RentalCard";
+import { ClientCard } from "@/pages/clients/ClientCard";
 import { ClientQuickView } from "@/pages/clients/ClientQuickView";
+import { useAllClients } from "@/pages/clients/clientStore";
 import {
   useRentals,
   useArchivedRentals,
@@ -101,13 +103,16 @@ function DrawerHost({ ctx }: { ctx: Ctx }) {
   if (stack.length === 0) return null;
 
   const top = stack[stack.length - 1]!;
-  // Базовый «фоновый» уровень — последний rental или rentalsList.
-  // ClientQuickView (если он top) рисуется поверх благодаря z-120.
+  // Базовый «фоновый» уровень — последний rental или rentalsList,
+  // если поверх него лежит client (stacking). ClientQuickView (z-120)
+  // рисуется поверх. Если client единственный в стеке — рендерим его
+  // полным ClientCard в drawer-shell.
   const baseLayer =
     top.kind === "client"
-      ? // Найти в стеке предыдущий не-client уровень для фона.
-        [...stack].reverse().find((t) => t.kind !== "client") ?? null
+      ? [...stack].reverse().find((t) => t.kind !== "client") ?? null
       : top;
+  const clientStacked = top.kind === "client" && baseLayer != null;
+  const clientAlone = top.kind === "client" && baseLayer == null;
   return (
     <>
       {baseLayer && baseLayer.kind === "rental" && (
@@ -123,14 +128,15 @@ function DrawerHost({ ctx }: { ctx: Ctx }) {
           onPickRental={(id) => ctx.openRental(id)}
         />
       )}
-      {top.kind === "client" && (
-        <ClientQuickView
-          // ClientQuickView самостоятельный fullscreen-overlay с z-120 —
-          // рисуется поверх drawer'а. Esc/X закрывают только его слой
-          // через back(), фоновый drawer остаётся.
-          clientId={top.id}
-          onClose={ctx.back}
-        />
+      {clientStacked && top.kind === "client" && (
+        // Stacking: rental drawer на фоне, поверх — компактный
+        // ClientQuickView (z-120).
+        <ClientQuickView clientId={top.id} onClose={ctx.back} />
+      )}
+      {clientAlone && top.kind === "client" && (
+        // Одиночный client (открыт со страницы Clients) — рендерим полный
+        // ClientCard в drawer-shell как для rental.
+        <ClientDrawerLayer clientId={top.id} onClose={ctx.close} />
       )}
     </>
   );
@@ -256,6 +262,108 @@ function RentalDrawerLayer({
 // Сегодня возвращают). Внутри — прокручиваемый список соответствующих
 // аренд. Клик по строке → push rental на стек drawer'а (см. ctx.openRental).
 // =====================================================================
+// =====================================================================
+// ClientDrawerLayer — drawer с полной ClientCard. v0.3.3.
+// Используется когда клиент в стеке один (открыт со страницы Clients).
+// В случае stacking (client поверх rental) рендерится компактный
+// ClientQuickView через ветку DrawerHost.
+// =====================================================================
+function ClientDrawerLayer({
+  clientId,
+  onClose,
+}: {
+  clientId: number;
+  onClose: () => void;
+}) {
+  const [closing, setClosing] = useState(false);
+  const [entered, setEntered] = useState(false);
+  const requestClose = () => {
+    if (closing) return;
+    setClosing(true);
+    window.setTimeout(onClose, 220);
+  };
+  useEffect(() => {
+    setClosing(false);
+    setEntered(false);
+    const t = window.setTimeout(() => setEntered(true), 10);
+    return () => window.clearTimeout(t);
+  }, [clientId]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") requestClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const all = useAllClients();
+  const client = useMemo(
+    () => all.find((c) => c.id === clientId) ?? null,
+    [all, clientId],
+  );
+
+  return (
+    <div
+      className={cn(
+        "fixed inset-0 z-[100] bg-ink/40",
+        closing ? "animate-backdrop-out" : "animate-backdrop-in",
+      )}
+      onClick={requestClose}
+    >
+      <aside
+        className={cn(
+          "ml-auto flex h-full w-full max-w-[820px] flex-col overflow-hidden bg-surface shadow-card-lg",
+          "transform transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
+          closing || !entered ? "translate-x-full" : "translate-x-0",
+        )}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <header className="flex items-center justify-between gap-3 border-b border-border bg-surface-soft px-5 py-3">
+          <div className="min-w-0">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-2">
+              Карточка клиента
+            </div>
+            <div className="truncate text-[14px] font-bold text-ink">
+              {client ? client.name : "(загрузка…)"}
+            </div>
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => {
+                navigate({ route: "clients", clientId });
+                requestClose();
+              }}
+              title="Открыть на полной странице"
+              className="inline-flex items-center gap-1 rounded-[8px] bg-surface px-2.5 py-1.5 text-[12px] font-semibold text-ink-2 hover:bg-blue-50 hover:text-blue-700"
+            >
+              <ExternalLink size={12} /> На полную
+            </button>
+            <button
+              type="button"
+              onClick={requestClose}
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-2 hover:bg-white hover:text-ink"
+              title="Закрыть (Esc)"
+            >
+              <X size={16} />
+            </button>
+          </div>
+        </header>
+        <div className="flex-1 min-h-0 overflow-y-auto p-5">
+          {client ? (
+            <ClientCard client={client} />
+          ) : (
+            <div className="flex h-full items-center justify-center text-muted">
+              Клиент не найден.
+            </div>
+          )}
+        </div>
+      </aside>
+    </div>
+  );
+}
+
 function RentalsListDrawerLayer({
   filter,
   onClose,
