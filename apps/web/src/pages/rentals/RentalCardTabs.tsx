@@ -1,5 +1,10 @@
 import { useMemo, useState } from "react";
 import {
+  useRentalDebt,
+  useDeleteDebtEntry,
+  type DebtEntry,
+} from "@/lib/api/debt";
+import {
   AlertTriangle,
   ArrowLeftRight,
   ArrowRight,
@@ -1915,6 +1920,268 @@ export function HistoryTab({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/* =================== История долгов (v0.3.8) =================== */
+
+/**
+ * Таб «История долгов» — таймлайн всего что связано с долгом по этой
+ * аренде:
+ *  • текущая начисленная просрочка (1.5×rate×days, derived live)
+ *  • события списания просрочки (overdue_forgive)
+ *  • ручные начисления и списания (manual_charge / manual_forgive)
+ *  • ущерб (damage_reports — ссылка с total и balance)
+ *
+ * Цель — оператор открывает таб и видит «откуда взялась эта сумма» с
+ * указанием автора и времени. Заказчик: «у нас должна быть прозрачная
+ * история, кто что начислил/списал».
+ */
+export function DebtHistoryTab({ rental }: { rental: Rental }) {
+  const debtQ = useRentalDebt(rental.id);
+  const deleteEntry = useDeleteDebtEntry();
+  const data = debtQ.data;
+
+  if (debtQ.isLoading) {
+    return <Empty text="Загружаем историю…" />;
+  }
+  if (!data) {
+    return <Empty text="Нет данных" hint="Не удалось загрузить долг по аренде." />;
+  }
+
+  const fmt = (n: number) => n.toLocaleString("ru-RU");
+
+  return (
+    <div className="flex flex-col gap-3">
+      {/* === Сводка === */}
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <DebtMini
+          label="Просрочка"
+          value={`${fmt(data.overdueBalance)} ₽`}
+          hint={
+            data.overdueDays > 0
+              ? `${data.overdueDays} дн × ${fmt(Math.round(data.overdueRate * 1.5))} ₽`
+              : "не в просрочке"
+          }
+          tone={data.overdueBalance > 0 ? "red" : "neutral"}
+        />
+        <DebtMini
+          label="Ущерб"
+          value={`${fmt(data.damageBalance)} ₽`}
+          hint={`${data.damageReports.length} ${data.damageReports.length === 1 ? "акт" : "акт(ов)"}`}
+          tone={data.damageBalance > 0 ? "red" : "neutral"}
+        />
+        <DebtMini
+          label="Ручной долг"
+          value={`${fmt(data.manualBalance)} ₽`}
+          hint="нач — спис"
+          tone={data.manualBalance > 0 ? "red" : "neutral"}
+        />
+        <DebtMini
+          label="Итого"
+          value={`${fmt(data.total)} ₽`}
+          hint={data.total > 0 ? "к оплате" : "нет долгов"}
+          tone={data.total > 0 ? "red" : "green"}
+        />
+      </div>
+
+      {/* === Подробный расчёт просрочки === */}
+      {(data.overdueCharge > 0 || data.overdueForgiven > 0) && (
+        <div className="rounded-[14px] border border-border bg-surface-soft p-3 text-[12px]">
+          <div className="mb-1 font-semibold text-ink">Просрочка</div>
+          <div className="flex flex-col gap-0.5 text-muted">
+            <div className="flex justify-between">
+              <span>Начислено: {data.overdueDays} дн × {fmt(Math.round(data.overdueRate * 1.5))} ₽</span>
+              <span className="tabular-nums text-ink">+ {fmt(data.overdueCharge)} ₽</span>
+            </div>
+            {data.overdueForgiven > 0 && (
+              <div className="flex justify-between">
+                <span>Списано (прощено)</span>
+                <span className="tabular-nums text-green-700">− {fmt(data.overdueForgiven)} ₽</span>
+              </div>
+            )}
+            {data.overduePaid > 0 && (
+              <div className="flex justify-between">
+                <span>Оплачено</span>
+                <span className="tabular-nums text-green-700">− {fmt(data.overduePaid)} ₽</span>
+              </div>
+            )}
+            <div className="mt-1 flex justify-between border-t border-border pt-1 font-semibold text-ink">
+              <span>Остаток</span>
+              <span className="tabular-nums">{fmt(data.overdueBalance)} ₽</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* === Damage reports (ссылки) === */}
+      {data.damageReports.length > 0 && (
+        <div className="rounded-[14px] border border-border bg-surface-soft p-3 text-[12px]">
+          <div className="mb-1 font-semibold text-ink">
+            Акты о повреждениях ({data.damageReports.length})
+          </div>
+          <div className="flex flex-col gap-1">
+            {data.damageReports.map((r) => (
+              <div
+                key={r.id}
+                className="flex items-center justify-between gap-2 rounded-[8px] bg-white px-2 py-1.5"
+              >
+                <div className="text-muted">
+                  Акт #{r.id} от {new Date(r.createdAt).toLocaleDateString("ru-RU")}
+                  {r.depositCovered > 0 && (
+                    <span className="ml-1">
+                      · из залога {fmt(r.depositCovered)} ₽
+                    </span>
+                  )}
+                  <span className="ml-1">
+                    · реакция: {r.clientAgreement === "agreed"
+                      ? "согласен"
+                      : r.clientAgreement === "disputed"
+                        ? "не согласен"
+                        : "не выбрана"}
+                  </span>
+                </div>
+                <span className="tabular-nums font-semibold text-ink">
+                  {fmt(r.total)} ₽
+                </span>
+              </div>
+            ))}
+            <div className="mt-1 text-[11px] text-muted-2">
+              Подробности и платежи — на табе «Документы» и в баннере «Долг по ущербу» в шапке.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* === Лента событий === */}
+      <div className="rounded-[14px] border border-border bg-surface p-3">
+        <div className="mb-2 text-[13px] font-semibold text-ink">
+          События ({data.events.length})
+        </div>
+        {data.events.length === 0 ? (
+          <div className="text-[12px] text-muted-2">
+            Пока нет ручных операций по долгу. Начисляйте долг через
+            «Действия → Начислить долг», списывайте просрочку через
+            «Действия → Сбросить просрочку».
+          </div>
+        ) : (
+          <div className="flex flex-col gap-1.5">
+            {data.events.map((e) => (
+              <DebtEntryRow
+                key={e.id}
+                entry={e}
+                onDelete={() =>
+                  deleteEntry.mutate({
+                    rentalId: rental.id,
+                    entryId: e.id,
+                  })
+                }
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DebtMini({
+  label,
+  value,
+  hint,
+  tone,
+}: {
+  label: string;
+  value: string;
+  hint: string;
+  tone: "red" | "green" | "neutral";
+}) {
+  return (
+    <div
+      className={cn(
+        "rounded-[10px] px-3 py-2",
+        tone === "red"
+          ? "bg-red-soft/60"
+          : tone === "green"
+            ? "bg-green-soft/60"
+            : "bg-surface-soft",
+      )}
+    >
+      <div className="text-[11px] text-muted-2">{label}</div>
+      <div className="font-display text-[16px] font-extrabold tabular-nums text-ink">
+        {value}
+      </div>
+      <div className="text-[10px] text-muted-2">{hint}</div>
+    </div>
+  );
+}
+
+const DEBT_KIND_META: Record<
+  DebtEntry["kind"],
+  { label: string; sign: "+" | "−"; tone: "red" | "green" }
+> = {
+  manual_charge: { label: "Начисление", sign: "+", tone: "red" },
+  manual_forgive: { label: "Списание (ручной)", sign: "−", tone: "green" },
+  overdue_forgive: { label: "Сброс просрочки", sign: "−", tone: "green" },
+  overdue_payment: { label: "Оплата просрочки", sign: "−", tone: "green" },
+};
+
+function DebtEntryRow({
+  entry,
+  onDelete,
+}: {
+  entry: DebtEntry;
+  onDelete: () => void;
+}) {
+  const meta = DEBT_KIND_META[entry.kind] ?? {
+    label: entry.kind,
+    sign: "+",
+    tone: "red",
+  };
+  const fmt = (n: number) => n.toLocaleString("ru-RU");
+  return (
+    <div className="flex items-center gap-2 rounded-[10px] border border-border bg-surface-soft px-3 py-2">
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="text-[12px] font-semibold text-ink">
+            {meta.label}
+          </span>
+          <span className="text-[10px] text-muted-2">
+            {new Date(entry.createdAt).toLocaleString("ru-RU", {
+              day: "2-digit",
+              month: "2-digit",
+              year: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            })}
+          </span>
+          {entry.createdByName && (
+            <span className="text-[10px] text-muted-2">
+              · {entry.createdByName}
+            </span>
+          )}
+        </div>
+        {entry.comment && (
+          <div className="text-[11px] text-muted">{entry.comment}</div>
+        )}
+      </div>
+      <span
+        className={cn(
+          "tabular-nums text-[14px] font-bold",
+          meta.tone === "red" ? "text-red-600" : "text-green-700",
+        )}
+      >
+        {meta.sign} {fmt(entry.amount)} ₽
+      </span>
+      <button
+        type="button"
+        onClick={onDelete}
+        title="Удалить запись (только для директора)"
+        className="rounded-[8px] p-1 text-muted-2 hover:bg-red-soft hover:text-red-600"
+      >
+        <X size={12} />
+      </button>
     </div>
   );
 }

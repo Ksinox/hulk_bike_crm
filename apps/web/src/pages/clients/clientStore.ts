@@ -303,25 +303,39 @@ export function useAllClients(): Client[] {
 /**
  * Вычисляем для каждого клиента:
  *   rents — число аренд в истории
- *   debt  — сумма просрочек по формуле (тариф + 250 ₽) × дней просрочки
+ *   debt  — сумма просрочек по формуле 1.5 × rate × дней просрочки
+ *           (v0.3.8: бизнес-формула «1 день текущего тарифа + 50% от
+ *           1 дня тарифа», помноженная на дни просрочки).
+ *
+ * v0.3.8: учитываем не только status='overdue', но и status='active' с
+ * прошедшим endPlannedAt. Раньше фильтр «С долгом» в Клиентах не
+ * находил никого, потому что многие просроченные аренды живут в статусе
+ * 'active' (статус автоматически не переключается).
  */
 function computeStats(rentals: ApiRental[]): {
   rentsByClient: Map<number, number>;
   debtByClient: Map<number, number>;
 } {
-  const today = new Date();
+  const now = new Date();
+  const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
   const rentsByClient = new Map<number, number>();
   const debtByClient = new Map<number, number>();
   for (const r of rentals) {
     rentsByClient.set(r.clientId, (rentsByClient.get(r.clientId) ?? 0) + 1);
-    if (r.status !== "overdue") continue;
-    const end = new Date(r.endPlannedAt);
+    const isActive = r.status === "active" || r.status === "overdue";
+    if (!isActive) continue;
+    const endKey = r.endPlannedAt.slice(0, 10);
+    if (endKey >= todayKey) continue; // не просрочена
+    const endDate = new Date(`${endKey}T00:00:00`);
     const diffDays = Math.max(
       0,
-      Math.round((today.getTime() - end.getTime()) / 86_400_000),
+      Math.round(
+        (new Date(todayKey + "T00:00:00").getTime() - endDate.getTime()) /
+          86_400_000,
+      ),
     );
     if (diffDays <= 0) continue;
-    const add = diffDays * (r.rate + 250);
+    const add = diffDays * Math.round(r.rate * 1.5);
     debtByClient.set(r.clientId, (debtByClient.get(r.clientId) ?? 0) + add);
   }
   return { rentsByClient, debtByClient };

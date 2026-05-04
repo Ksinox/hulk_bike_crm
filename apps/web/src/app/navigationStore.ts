@@ -11,6 +11,12 @@ type NavRequest = {
    * + сразу всплывает документ с новыми датами для печати.
    */
   openContract?: boolean;
+  /**
+   * v0.3.8: открыть конкретный таб карточки аренды сразу после перехода.
+   * Сейчас используется значение `"debt"` — клик по строке должника на
+   * дашборде открывает аренду с активированным табом «История долгов».
+   */
+  openTab?: "terms" | "history" | "debt" | "tasks" | "docs";
   /** Откуда пришли — для breadcrumb «← назад» */
   from?: {
     route: RouteId;
@@ -39,12 +45,18 @@ export function navigate(req: NavRequest): void {
 
 /** Прочитать pending-выбор для маршрута; после чтения сбрасывается */
 export function consumePending(route: RouteId):
-  | { clientId?: number; rentalId?: number; scooterId?: number; from?: BackTarget }
+  | {
+      clientId?: number;
+      rentalId?: number;
+      scooterId?: number;
+      from?: BackTarget;
+      openTab?: NavRequest["openTab"];
+    }
   | null {
   if (!pending || pending.route !== route) return null;
-  const { clientId, rentalId, scooterId, from } = pending;
+  const { clientId, rentalId, scooterId, from, openTab } = pending;
   pending = null;
-  return { clientId, rentalId, scooterId, from };
+  return { clientId, rentalId, scooterId, from, openTab };
 }
 
 /** Подписаться на события навигации (для App) */

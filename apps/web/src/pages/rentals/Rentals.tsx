@@ -53,7 +53,21 @@ function matchStatus(
     r.status === "completed" || r.status === "cancelled";
   if (f === "all") return !isFinished;
   if (f === "active") return r.status === "active";
-  if (f === "overdue") return r.status === "overdue";
+  if (f === "overdue") {
+    // v0.3.8: фильтр «Просрочка» включает и status='overdue', и
+    // status='active' с прошедшим endPlanned. Раньше показывал только
+    // первое — на дашборде клиенты с долгом были, а в фильтре аренд
+    // никого, потому что статус 'overdue' автоматически не выставлялся.
+    if (r.status === "overdue") return true;
+    if (r.status === "active") {
+      const [d, m, y] = r.endPlanned.split(".").map(Number);
+      const [td, tm, ty] = today.split(".").map(Number);
+      const end = new Date(y!, m! - 1, d!).getTime();
+      const todayMs = new Date(ty!, tm! - 1, td!).getTime();
+      return end < todayMs;
+    }
+    return false;
+  }
   if (f === "return_today") {
     // Возврат именно сегодня — плановая дата завершения = сегодняшняя дата.
     // Учитываем активные и возвращаемые аренды.
@@ -144,6 +158,11 @@ export function Rentals() {
    * подписал с клиентом. Сократили путь оформления.
    */
   const [autoDocRentalId, setAutoDocRentalId] = useState<number | null>(null);
+  // v0.3.8: какой таб открыть в карточке (опционально — приходит через
+  // navigate({ openTab: 'debt' }) с дашборда).
+  const [pendingTab, setPendingTab] = useState<
+    "terms" | "history" | "debt" | "tasks" | "docs" | null
+  >(null);
   /**
    * После замены скутера — открываем превью акта замены поверх карточки.
    * State хранится здесь, а не в RentalCard, потому что после успешного
@@ -165,6 +184,7 @@ export function Rentals() {
     const p = consumePending("rentals");
     if (p?.rentalId != null) {
       setSelectedId(p.rentalId);
+      if (p.openTab) setPendingTab(p.openTab);
       return;
     }
     const first = rentals.find((r) => r.status === "active");
@@ -183,6 +203,9 @@ export function Rentals() {
         // превью документа с новыми датами для печати.
         if (req.openContract) {
           setAutoDocRentalId(req.rentalId);
+        }
+        if (req.openTab) {
+          setPendingTab(req.openTab);
         }
       }
     });
@@ -361,6 +384,7 @@ export function Rentals() {
             >
               <RentalCard
                 rental={selected}
+                initialTab={pendingTab ?? undefined}
                 onSwapped={(newId) => {
                   // Свап успешен: одновременно (1) переключаем фокус
                   // на новую связку — старая ушла в архив и пропадёт

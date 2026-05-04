@@ -131,8 +131,10 @@ function OverdueRow({
   const initials = initialsOf(o.clientName);
   const phoneHref = phoneToTel(o.clientPhone);
   const onRowClick = () => {
+    // v0.3.8: при клике с дашборда открываем сразу таб «История долгов» —
+    // оператор видит из чего сложилась сумма и может списать просрочку.
     if (onOpenRental) onOpenRental(o.rentalId);
-    else navigate({ route: "rentals", rentalId: o.rentalId });
+    else navigate({ route: "rentals", rentalId: o.rentalId, openTab: "debt" });
   };
   return (
     <tr

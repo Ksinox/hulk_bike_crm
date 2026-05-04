@@ -1384,3 +1384,45 @@ export const documentTemplates = pgTable(
     keyIdx: index("document_templates_key_idx").on(t.templateKey),
   }),
 );
+
+/* ============================================================
+ * debt_entries — лента событий по долгу аренды (v0.3.8).
+ *
+ * Источники долга в системе три:
+ *  1) «просрочка» — derived: 1.5 × rate × overdueDays на момент now()
+ *  2) «ущерб»     — damage_reports.debt (живёт в своих таблицах)
+ *  3) «ручной»    — этот журнал (manual_charge / manual_forgive)
+ *
+ * Здесь же фиксируются «сбросы просрочки» — списания (overdue_forgive),
+ * чтобы можно было восстановить историю кто/когда/сколько простил.
+ * ============================================================ */
+export const debtEntries = pgTable(
+  "debt_entries",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    rentalId: bigint("rental_id", { mode: "number" })
+      .notNull()
+      .references(() => rentals.id, { onDelete: "cascade" }),
+    /**
+     * - manual_charge   — оператор начислил долг (+amount)
+     * - manual_forgive  — оператор списал часть ручного долга (-amount)
+     * - overdue_forgive — оператор сбросил просрочку (списал computed-долг)
+     * - overdue_payment — оплата просрочки (зарезервировано под §18)
+     */
+    kind: text("kind").notNull(),
+    /** Сумма всегда положительная; знак подразумевается видом события. */
+    amount: integer("amount").notNull(),
+    comment: text("comment"),
+    createdByUserId: bigint("created_by_user_id", {
+      mode: "number",
+    }).references(() => users.id, { onDelete: "set null" }),
+    createdByName: text("created_by_name"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    rentalIdx: index("debt_entries_rental_idx").on(t.rentalId),
+    kindIdx: index("debt_entries_kind_idx").on(t.kind),
+  }),
+);

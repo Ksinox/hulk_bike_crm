@@ -28,6 +28,7 @@ import { useApiClients } from "@/lib/api/clients";
 import { useApiScooters } from "@/lib/api/scooters";
 import { navigate } from "@/app/navigationStore";
 import {
+  DebtHistoryTab,
   DocumentsTab,
   HistoryTab,
   TasksTab,
@@ -43,6 +44,11 @@ import {
   useChainDamageReports,
   useDamageAgreement,
 } from "@/lib/api/damage-reports";
+import {
+  useRentalDebt,
+  useChargeManualDebt,
+  useForgiveOverdue,
+} from "@/lib/api/debt";
 import { RentalActionsMenu, type MenuAction } from "./RentalActionsMenu";
 import {
   getRentalChainIds,
@@ -65,11 +71,12 @@ import { confirmDialog } from "@/lib/toast";
 import { toast } from "@/lib/toast";
 import { ApiError, api } from "@/lib/api";
 
-type TabId = "terms" | "history" | "tasks" | "docs";
+type TabId = "terms" | "history" | "debt" | "tasks" | "docs";
 
 const TABS: { id: TabId; label: string }[] = [
   { id: "terms", label: "Условия" },
   { id: "history", label: "История" },
+  { id: "debt", label: "История долгов" },
   { id: "tasks", label: "Задачи" },
   { id: "docs", label: "Документы" },
 ];
@@ -107,6 +114,21 @@ function statusActions(
       label: opts.hasDamage ? "Изменить ущерб" : "Зафиксировать ущерб",
       icon: Wrench,
       tone: "warn",
+    },
+    // v0.3.8: ручное начисление долга — на любых живых статусах.
+    {
+      id: "charge-debt",
+      label: "Начислить долг",
+      icon: Plus,
+      tone: "warn",
+    },
+    // v0.3.8: списание просрочки — только если есть начисленная просрочка.
+    // Само действие проверит наличие на сервере и вернёт ошибку если нет.
+    {
+      id: "forgive-overdue",
+      label: "Сбросить просрочку",
+      icon: RotateCcw,
+      tone: "ghost",
     },
     {
       id: opts.isUnreachable ? "unmark-unreachable" : "mark-unreachable",
@@ -191,6 +213,7 @@ function statusChipClass(tone: string): string {
 export function RentalCard({
   rental,
   onSwapped,
+  initialTab,
 }: {
   rental: Rental;
   /** Callback в Rentals при успешной замене скутера. Rentals переключает
@@ -198,8 +221,11 @@ export function RentalCard({
    *  карточки — иначе при ремаунте RentalCard локальный state превью
    *  терялся, и превью никогда не показывалось. */
   onSwapped?: (newRentalId: number) => void;
+  /** v0.3.8: какой таб открыть по умолчанию (используется при навигации
+   *  с дашборда: клик по должнику → openTab='debt' → таб «История долгов»). */
+  initialTab?: TabId;
 }) {
-  const [tab, setTab] = useState<TabId>("terms");
+  const [tab, setTab] = useState<TabId>(initialTab ?? "terms");
   const [action, setAction] = useState<ActionKind | null>(null);
   const [editRentalOpen, setEditRentalOpen] = useState(false);
   const [extendOpen, setExtendOpen] = useState(false);
@@ -318,6 +344,12 @@ export function RentalCard({
   const damageReports = useChainDamageReports(chainIdsFull);
   const reports = damageReports.data;
   const totalDebt = reports.reduce((s, r) => s + r.debt, 0);
+  // v0.3.8: серверная сводка по долгу — просрочка/ручной/ущерб + лента
+  // событий (для таба «История долгов»). Источник правды для KPI «Долг».
+  const debtQ = useRentalDebt(rental.id);
+  const debtSummary = debtQ.data;
+  const chargeManualMut = useChargeManualDebt();
+  const forgiveOverdueMut = useForgiveOverdue();
   const reportWithDebt = reports.find((r) => r.debt > 0) ?? null;
   const reportLatest =
     reports.length > 0 ? reports[reports.length - 1]! : null;
@@ -496,6 +528,77 @@ export function RentalCard({
         setEditingReportId(last.id);
       } else {
         setDamageOpen(true);
+      }
+      return;
+    }
+    if (id === "charge-debt") {
+      // v0.3.8: ручное начисление долга. Минимум сумма + комментарий.
+      // Используем простую цепочку prompt() — отдельной модалки не делаем,
+      // действие редкое и хочется один клик-ответ.
+      const amountStr = window.prompt("Сумма долга, ₽");
+      if (!amountStr) return;
+      const amount = Number(amountStr.replace(/\D/g, ""));
+      if (!Number.isFinite(amount) || amount <= 0) {
+        toast.error("Неверная сумма", "Введите положительное число.");
+        return;
+      }
+      const comment = window.prompt(
+        "Комментарий — за что начисляем долг (видно всем):",
+      );
+      if (comment == null || !comment.trim()) {
+        toast.error("Нужен комментарий", "Без него начисление недопустимо.");
+        return;
+      }
+      try {
+        await chargeManualMut.mutateAsync({
+          rentalId: rental.id,
+          amount,
+          comment: comment.trim(),
+        });
+        toast.success(
+          "Долг начислен",
+          `+${amount.toLocaleString("ru-RU")} ₽ по аренде. Запись в Истории долгов.`,
+        );
+      } catch (e) {
+        toast.error("Не удалось начислить", (e as Error).message ?? "");
+      }
+      return;
+    }
+    if (id === "forgive-overdue") {
+      // v0.3.8: списать (сбросить) текущую начисленную просрочку.
+      const ok = await confirmDialog({
+        title: "Сбросить просрочку?",
+        message:
+          "Вся начисленная на сейчас просрочка будет списана. Это действие отразится в Истории долгов с указанием автора. Сама аренда не меняется (статус остаётся прежним).",
+        confirmText: "Сбросить",
+        cancelText: "Отмена",
+      });
+      if (!ok) return;
+      const comment = window.prompt(
+        "Причина списания (необязательно):",
+        "",
+      );
+      try {
+        await forgiveOverdueMut.mutateAsync({
+          rentalId: rental.id,
+          comment: comment ?? undefined,
+        });
+        toast.success("Просрочка сброшена", "Запись в Истории долгов.");
+      } catch (e) {
+        const msg = (e as { body?: { error?: string } }).body?.error;
+        if (msg === "no_overdue") {
+          toast.info(
+            "Нет начисленной просрочки",
+            "Сбрасывать нечего — клиент не в просрочке.",
+          );
+        } else if (msg === "already_zero") {
+          toast.info(
+            "Уже сброшена",
+            "Долг по просрочке уже 0 — повторно сбрасывать нечего.",
+          );
+        } else {
+          toast.error("Не удалось", (e as Error).message ?? "");
+        }
       }
       return;
     }
@@ -697,15 +800,18 @@ export function RentalCard({
         получен» — это будет отдельный лёгкий чекбокс, не блокирующий поток.
       */}
       {rental.status === "overdue" && endDate && (() => {
+        // v0.3.8: формула долга по просрочке = 1.5 × rate × days
+        // (1 день тарифа + 50% от 1 дня × кол-во просроченных дней)
         const d = Math.max(1, daysLeft !== null ? Math.abs(daysLeft) : 1);
-        const overdueDebt = d * (rental.rate + 250);
+        const dailyOverdue = Math.round(rental.rate * 1.5);
+        const overdueDebt = d * dailyOverdue;
         return (
           <div className="flex items-center gap-2 rounded-[12px] bg-red-soft/70 px-3 py-2 text-[12px] text-red-ink">
             <AlertTriangle size={14} className="shrink-0" />
             <div className="min-w-0 flex-1">
               <b>Просрочка {d} дн.</b> Долг {fmt(overdueDebt)} ₽
-              (тариф {fmt(rental.rate)} ₽ + 250 ₽/день). Плановый возврат —{" "}
-              {rental.endPlanned} {rental.startTime || "12:00"}.
+              (тариф {fmt(rental.rate)} ₽ + 50% = {fmt(dailyOverdue)} ₽/день).
+              Плановый возврат — {rental.endPlanned} {rental.startTime || "12:00"}.
             </div>
           </div>
         );
@@ -996,33 +1102,32 @@ export function RentalCard({
           badgeIcon={paidIn > 0 ? CheckCircle2 : undefined}
         />
         {(() => {
-          // Долг = аренда (просрочка/неоплата) + долг по актам ущерба.
-          //  - при просрочке аренды — (тариф + 250) × дней просрочки
-          //  - иначе — сумма неоплаченных rent-платежей
-          //  - плюс totalDebt из всех damage_reports (фактический долг по актам)
-          let rentDebt = pending;
-          let rentDebtHint = "";
-          if (rental.status === "overdue") {
-            const d = Math.max(
-              1,
-              daysLeft !== null ? Math.abs(daysLeft) : 1,
-            );
-            rentDebt = d * (rental.rate + 250);
-            rentDebtHint = `просрочка ${d} дн × ${fmt(rental.rate + 250)} ₽`;
-          } else if (pending > 0) {
-            rentDebtHint = "не оплачена аренда";
-          }
-          const debt = rentDebt + totalDebt;
-          let debtHint: string;
-          if (debt === 0) {
-            debtHint = "нет долгов";
-          } else if (rentDebt > 0 && totalDebt > 0) {
-            debtHint = `${rentDebtHint} + ущерб ${fmt(totalDebt)} ₽`;
-          } else if (totalDebt > 0) {
-            debtHint = "по акту повреждений";
-          } else {
-            debtHint = rentDebtHint;
-          }
+          // v0.3.8: разложение долга на компоненты:
+          //   • неоплачено = pending (rent-платежи без paid)
+          //   • просрочка  = debtSummary.overdueBalance (1.5×rate×days, − списания)
+          //   • ущерб      = debtSummary.damageBalance (Σ damage_reports.debt)
+          //   • ручной     = debtSummary.manualBalance (Σ manual_charge − manual_forgive)
+          //
+          // Источник правды — debtSummary с сервера. Если сводка ещё не
+          // загрузилась — graceful fallback на старый расчёт (просрочка
+          // по локальной формуле + totalDebt).
+          const overdueLocal =
+            rental.status === "overdue"
+              ? Math.max(1, daysLeft !== null ? Math.abs(daysLeft) : 1) *
+                Math.round(rental.rate * 1.5)
+              : 0;
+          const overdueBalance =
+            debtSummary?.overdueBalance ?? overdueLocal;
+          const damageBalance = debtSummary?.damageBalance ?? totalDebt;
+          const manualBalance = debtSummary?.manualBalance ?? 0;
+          const debt = pending + overdueBalance + damageBalance + manualBalance;
+          const parts: string[] = [];
+          if (pending > 0) parts.push(`не оплачено ${fmt(pending)} ₽`);
+          if (overdueBalance > 0)
+            parts.push(`просрочка ${fmt(overdueBalance)} ₽`);
+          if (damageBalance > 0) parts.push(`ущерб ${fmt(damageBalance)} ₽`);
+          if (manualBalance > 0) parts.push(`ручной ${fmt(manualBalance)} ₽`);
+          const debtHint = debt === 0 ? "нет долгов" : parts.join(" + ");
           return (
             <KpiCard
               label="Долг"
@@ -1127,6 +1232,7 @@ export function RentalCard({
             damageReports={reports}
           />
         )}
+        {tab === "debt" && <DebtHistoryTab rental={rental} />}
         {tab === "tasks" && <TasksTab rental={rental} />}
         {tab === "docs" && <DocumentsTab rental={rental} />}
       </div>

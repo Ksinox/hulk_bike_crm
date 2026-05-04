@@ -5,6 +5,8 @@ import { db } from "../db/index.js";
 import {
   activityLog,
   clients,
+  damageReports,
+  debtEntries,
   payments,
   rentals,
   returnInspections,
@@ -1442,4 +1444,293 @@ export async function rentalsRoutes(app: FastifyInstance) {
       return row;
     },
   );
+
+  /* ============================================================
+   *  v0.3.8 — учёт долгов (просрочка / ущерб / ручной)
+   *
+   *  - GET    /api/rentals/:id/debt          — сводка + история событий
+   *  - POST   /api/rentals/:id/debt/manual   — начислить ручной долг
+   *  - POST   /api/rentals/:id/debt/forgive-overdue — сбросить просрочку
+   *
+   *  Долг по ущербу = сумма damage_reports.debt по аренде (не дублируем).
+   *  Долг по просрочке = max(0, 1.5×rate×overdueDays − Σ overdue_forgive
+   *                                          − Σ overdue_payment).
+   *  Ручной долг        = Σ manual_charge − Σ manual_forgive.
+   * ============================================================ */
+
+  /** Считает кол-во календарных дней просрочки на момент now() для аренды. */
+  function calcOverdueDays(
+    endPlannedAt: Date,
+    status: string,
+    now: Date = new Date(),
+  ): number {
+    if (status !== "overdue" && status !== "active") return 0;
+    const endDate = new Date(
+      endPlannedAt.getFullYear(),
+      endPlannedAt.getMonth(),
+      endPlannedAt.getDate(),
+    );
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const diff = Math.floor(
+      (today.getTime() - endDate.getTime()) / 86_400_000,
+    );
+    return diff > 0 ? diff : 0;
+  }
+
+  function overdueChargeAmount(rate: number, overdueDays: number): number {
+    // Формула заказчика: (1 день × ставка) + (50% от 1 дня × ставка),
+    // помноженная на количество дней просрочки = 1.5 × rate × days.
+    if (overdueDays <= 0 || rate <= 0) return 0;
+    return Math.round(rate * 1.5) * overdueDays;
+  }
+
+  app.get<{ Params: { id: string } }>("/:id/debt", async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
+    const [rental] = await db
+      .select()
+      .from(rentals)
+      .where(eq(rentals.id, id));
+    if (!rental) return reply.code(404).send({ error: "not found" });
+
+    // === Просрочка ===
+    const overdueDays = calcOverdueDays(rental.endPlannedAt, rental.status);
+    const overdueCharge = overdueChargeAmount(rental.rate, overdueDays);
+
+    // === События по долгу (manual + forgive + payments) ===
+    const events = await db
+      .select()
+      .from(debtEntries)
+      .where(eq(debtEntries.rentalId, id))
+      .orderBy(desc(debtEntries.createdAt));
+
+    let overdueForgiven = 0;
+    let overduePaid = 0;
+    let manualCharged = 0;
+    let manualForgiven = 0;
+    for (const e of events) {
+      if (e.kind === "overdue_forgive") overdueForgiven += e.amount;
+      else if (e.kind === "overdue_payment") overduePaid += e.amount;
+      else if (e.kind === "manual_charge") manualCharged += e.amount;
+      else if (e.kind === "manual_forgive") manualForgiven += e.amount;
+    }
+    const overdueBalance = Math.max(
+      0,
+      overdueCharge - overdueForgiven - overduePaid,
+    );
+    const manualBalance = Math.max(0, manualCharged - manualForgiven);
+
+    // === Ущерб — берём из damage_reports (не дублируем здесь) ===
+    const damageRows = await db
+      .select({
+        id: damageReports.id,
+        total: damageReports.total,
+        depositCovered: damageReports.depositCovered,
+        clientAgreement: damageReports.clientAgreement,
+        createdAt: damageReports.createdAt,
+      })
+      .from(damageReports)
+      .where(eq(damageReports.rentalId, id));
+    // Долг по акту = total − depositCovered − Σ(payments.type=damage, paid=true)
+    const damagePayments = damageRows.length
+      ? await db
+          .select({
+            damageReportId: payments.damageReportId,
+            amount: payments.amount,
+            paid: payments.paid,
+          })
+          .from(payments)
+          .where(
+            and(
+              eq(payments.rentalId, id),
+              eq(payments.type, "damage"),
+            ),
+          )
+      : [];
+    const paidByReport = new Map<number, number>();
+    for (const p of damagePayments) {
+      if (!p.paid || p.damageReportId == null) continue;
+      paidByReport.set(
+        p.damageReportId,
+        (paidByReport.get(p.damageReportId) ?? 0) + p.amount,
+      );
+    }
+    let damageBalance = 0;
+    for (const r of damageRows) {
+      const debt = Math.max(
+        0,
+        r.total - r.depositCovered - (paidByReport.get(r.id) ?? 0),
+      );
+      damageBalance += debt;
+    }
+
+    return {
+      overdueDays,
+      overdueRate: rental.rate,
+      overdueCharge,
+      overdueForgiven,
+      overduePaid,
+      overdueBalance,
+      manualBalance,
+      damageBalance,
+      total: overdueBalance + manualBalance + damageBalance,
+      events,
+      damageReports: damageRows,
+    };
+  });
+
+  app.post<{
+    Params: { id: string };
+    Body: { amount: number; comment: string };
+  }>("/:id/debt/manual", async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
+    const Body = z.object({
+      amount: z.number().int().positive(),
+      comment: z.string().min(1).max(500),
+    });
+    const parsed = Body.safeParse(req.body);
+    if (!parsed.success) {
+      return reply
+        .code(400)
+        .send({ error: "validation", issues: parsed.error.issues });
+    }
+    const [rental] = await db
+      .select({ id: rentals.id })
+      .from(rentals)
+      .where(eq(rentals.id, id));
+    if (!rental) return reply.code(404).send({ error: "not found" });
+    const userId = req.user?.userId ?? null;
+    let userName = "система";
+    if (userId) {
+      const [u] = await db
+        .select({ name: usersTable.name })
+        .from(usersTable)
+        .where(eq(usersTable.id, userId));
+      userName = u?.name ?? "система";
+    }
+    const [row] = await db
+      .insert(debtEntries)
+      .values({
+        rentalId: id,
+        kind: "manual_charge",
+        amount: parsed.data.amount,
+        comment: parsed.data.comment,
+        createdByUserId: userId,
+        createdByName: userName,
+      })
+      .returning();
+    await logActivity(req, {
+      entity: "rental",
+      entityId: id,
+      action: "debt_manual",
+      summary: `Начислен долг ${parsed.data.amount} ₽ по аренде #${id}: ${parsed.data.comment}`,
+    });
+    return row;
+  });
+
+  app.post<{
+    Params: { id: string };
+    Body: { comment?: string };
+  }>("/:id/debt/forgive-overdue", async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
+    const Body = z.object({ comment: z.string().max(500).optional() });
+    const parsed = Body.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return reply
+        .code(400)
+        .send({ error: "validation", issues: parsed.error.issues });
+    }
+    const [rental] = await db
+      .select()
+      .from(rentals)
+      .where(eq(rentals.id, id));
+    if (!rental) return reply.code(404).send({ error: "not found" });
+    const overdueDays = calcOverdueDays(rental.endPlannedAt, rental.status);
+    const overdueCharge = overdueChargeAmount(rental.rate, overdueDays);
+    if (overdueCharge <= 0) {
+      return reply
+        .code(400)
+        .send({ error: "no_overdue", message: "Нет начисленной просрочки." });
+    }
+    // Учитываем уже списанное
+    const events = await db
+      .select()
+      .from(debtEntries)
+      .where(eq(debtEntries.rentalId, id));
+    let alreadyForgiven = 0;
+    let alreadyPaid = 0;
+    for (const e of events) {
+      if (e.kind === "overdue_forgive") alreadyForgiven += e.amount;
+      else if (e.kind === "overdue_payment") alreadyPaid += e.amount;
+    }
+    const remaining = Math.max(
+      0,
+      overdueCharge - alreadyForgiven - alreadyPaid,
+    );
+    if (remaining <= 0) {
+      return reply
+        .code(400)
+        .send({ error: "already_zero", message: "Долг по просрочке уже 0." });
+    }
+    const userId = req.user?.userId ?? null;
+    let userName = "система";
+    if (userId) {
+      const [u] = await db
+        .select({ name: usersTable.name })
+        .from(usersTable)
+        .where(eq(usersTable.id, userId));
+      userName = u?.name ?? "система";
+    }
+    const [row] = await db
+      .insert(debtEntries)
+      .values({
+        rentalId: id,
+        kind: "overdue_forgive",
+        amount: remaining,
+        comment: parsed.data.comment ?? null,
+        createdByUserId: userId,
+        createdByName: userName,
+      })
+      .returning();
+    await logActivity(req, {
+      entity: "rental",
+      entityId: id,
+      action: "debt_overdue_forgiven",
+      summary: `Сброшена просрочка ${remaining} ₽ по аренде #${id}${parsed.data.comment ? `: ${parsed.data.comment}` : ""}`,
+    });
+    return row;
+  });
+
+  /** Удаление события долга — для случаев когда оператор ошибся
+   *  при ручном начислении. Доступно только директору / создателю. */
+  app.delete<{
+    Params: { id: string; entryId: string };
+  }>("/:id/debt/:entryId", async (req, reply) => {
+    const id = Number(req.params.id);
+    const entryId = Number(req.params.entryId);
+    if (!Number.isFinite(id) || !Number.isFinite(entryId))
+      return reply.code(400).send({ error: "bad id" });
+    if (req.user?.role !== "director" && req.user?.role !== "creator") {
+      return reply.code(403).send({ error: "forbidden" });
+    }
+    const [row] = await db
+      .delete(debtEntries)
+      .where(
+        and(
+          eq(debtEntries.id, entryId),
+          eq(debtEntries.rentalId, id),
+        ),
+      )
+      .returning();
+    if (!row) return reply.code(404).send({ error: "not found" });
+    await logActivity(req, {
+      entity: "rental",
+      entityId: id,
+      action: "debt_entry_deleted",
+      summary: `Удалена запись долга #${entryId} по аренде #${id} (${row.kind} ${row.amount} ₽)`,
+    });
+    return { ok: true };
+  });
 }
