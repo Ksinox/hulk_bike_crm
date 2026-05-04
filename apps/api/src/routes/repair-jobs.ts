@@ -312,6 +312,9 @@ export async function repairJobsRoutes(app: FastifyInstance) {
         .object({
           title: z.string().min(1).max(200),
           notes: z.string().max(2000).nullable().optional(),
+          /** v0.4.0: количество и снимок цены — приходят из прайс-пикера. */
+          qty: z.number().int().min(1).max(99).optional(),
+          priceSnapshot: z.number().int().min(0).optional(),
         })
         .strict();
       const parsed = schema.safeParse(req.body);
@@ -327,8 +330,8 @@ export async function repairJobsRoutes(app: FastifyInstance) {
       await db.insert(repairProgress).values({
         repairJobId: jobId,
         title: parsed.data.title,
-        qty: 1,
-        priceSnapshot: 0,
+        qty: parsed.data.qty ?? 1,
+        priceSnapshot: parsed.data.priceSnapshot ?? 0,
         done: false,
         notes: parsed.data.notes ?? null,
         sortOrder: existing.length,

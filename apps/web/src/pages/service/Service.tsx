@@ -35,6 +35,7 @@ import {
   type ApiRepairProgressPhoto,
 } from "@/lib/api/repair-jobs";
 import type { ApiScooter } from "@/lib/api/types";
+import { PriceItemsPicker } from "./PriceItemsPicker";
 
 type Tab = "active" | "completed";
 
@@ -208,14 +209,24 @@ function ActiveRepairCard({ job }: { job: ApiRepairJob }) {
   const doneItems = job.progress.filter((p) => p.done).length;
   const allDone = totalItems > 0 && doneItems === totalItems;
 
-  const onAddItem = async () => {
-    const title = window.prompt("Что добавить в чек-лист?");
-    if (!title || !title.trim()) return;
+  // v0.4.0: вместо prompt() открываем модалку с прейскурантом —
+  // оператор может выбрать несколько позиций сразу с указанием qty.
+  const [priceOpen, setPriceOpen] = useState(false);
+  const onAddItem = () => setPriceOpen(true);
+  const handlePicked = async (
+    items: { title: string; priceSnapshot: number; qty: number }[],
+  ) => {
     try {
-      await addItem.mutateAsync({
-        jobId: job.id,
-        title: title.trim(),
-      });
+      // Добавляем последовательно — endpoint умеет только один пункт за раз.
+      for (const it of items) {
+        await addItem.mutateAsync({
+          jobId: job.id,
+          title: it.title,
+          qty: it.qty,
+          priceSnapshot: it.priceSnapshot,
+        });
+      }
+      toast.success("Добавлено", `${items.length} позиц(ии) в чек-лист`);
     } catch (e) {
       toast.error("Не удалось добавить", (e as Error).message ?? "");
     }
@@ -374,6 +385,13 @@ function ActiveRepairCard({ job }: { job: ApiRepairJob }) {
           <CheckCircle2 size={14} /> Готов к аренде
         </button>
       </div>
+
+      {priceOpen && (
+        <PriceItemsPicker
+          onClose={() => setPriceOpen(false)}
+          onAdd={handlePicked}
+        />
+      )}
     </div>
   );
 }

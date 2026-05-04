@@ -8,12 +8,17 @@ import type { ApiPayment } from "@/lib/api/payments";
  *  - 'deposit'  — залог возвратный, не доход
  *  - 'refund'   — возврат денег клиенту, отрицательная операция
  *
- * Платежи типа 'rent', 'damage', 'fine' учитываются как выручка.
- * Эта же формула используется на дашборде и в бейдже /rentals — чтобы
- * цифры везде совпадали.
+ * Платежи типа 'rent', 'damage', 'fine', 'swap_fee' учитываются как
+ * выручка. Эта же формула используется на дашборде и в бейдже /rentals —
+ * чтобы цифры везде совпадали.
  *
- * Если переданы границы окна (rangeStart/rangeEnd) — учитываются только
- * платежи с paidAt в [start; end].
+ * Окно фильтрации (v0.4.0 после аудита):
+ *  - rangeStart — включительно (paidAt >= rangeStart)
+ *  - rangeEnd   — ИСКЛЮЧИТЕЛЬНО (paidAt < rangeEnd)
+ * Это совпадает с семантикой `BillingPeriod` в lib/billingPeriod —
+ * период [start, end), где end = первая секунда следующего периода.
+ * Раньше end был «<=», и платёж ровно в полночь следующего периода
+ * мог попасть и в этот, и в следующий период (двойной счёт).
  */
 export function revenueFromPayments(
   payments: readonly ApiPayment[],
@@ -28,7 +33,7 @@ export function revenueFromPayments(
       if (rangeStart || rangeEnd) {
         const t = new Date(p.paidAt).getTime();
         if (rangeStart && t < rangeStart.getTime()) return false;
-        if (rangeEnd && t > rangeEnd.getTime()) return false;
+        if (rangeEnd && t >= rangeEnd.getTime()) return false;
       }
       return true;
     })

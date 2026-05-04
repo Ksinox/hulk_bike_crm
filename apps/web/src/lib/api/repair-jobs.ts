@@ -117,10 +117,14 @@ export function useAddRepairProgressItem() {
       jobId: number;
       title: string;
       notes?: string | null;
+      qty?: number;
+      priceSnapshot?: number;
     }) =>
       api.post<ApiRepairJob>(`/api/repair-jobs/${args.jobId}/progress`, {
         title: args.title,
         notes: args.notes ?? null,
+        qty: args.qty,
+        priceSnapshot: args.priceSnapshot,
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: repairJobsKeys.all });

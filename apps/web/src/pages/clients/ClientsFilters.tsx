@@ -7,7 +7,8 @@ export type StatusFilter =
   | "inactive"
   | "debt"
   | "issue"
-  | "black";
+  | "black"
+  | "applications";
 
 export type FiltersState = {
   search: string;
@@ -21,6 +22,7 @@ const STATUS_TABS: { id: StatusFilter; label: string; hint?: string }[] = [
   { id: "debt", label: "С долгом" },
   { id: "issue", label: "Проблемные", hint: "долг, просрочка, не выходит на связь" },
   { id: "black", label: "Ч/С" },
+  { id: "applications", label: "Заявки", hint: "новые и просмотренные заявки с сайта" },
 ];
 
 export function ClientsFilters({

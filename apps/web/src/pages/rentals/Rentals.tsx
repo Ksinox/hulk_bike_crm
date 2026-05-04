@@ -235,19 +235,38 @@ export function Rentals() {
     }
   }, [selectedId, activeRentals, archivedList]);
 
-  const filtered = useMemo(
-    () =>
-      rentals.filter(
+  const filtered = useMemo(() => {
+    // v0.4.0: фильтр периода — отсекаем по дате выдачи аренды (start).
+    // Если periodStartIso не выбран — показываем все периоды.
+    let periodStart: Date | null = null;
+    let periodEnd: Date | null = null;
+    if (filters.periodStartIso) {
+      periodStart = new Date(filters.periodStartIso);
+      periodEnd = new Date(periodStart);
+      periodEnd.setMonth(periodEnd.getMonth() + 1);
+    }
+    const inPeriod = (r: Rental): boolean => {
+      if (!periodStart || !periodEnd) return true;
+      const [d, m, y] = r.start.split(".").map(Number);
+      const startMs = new Date(y!, m! - 1, d!).getTime();
+      return (
+        startMs >= periodStart.getTime() &&
+        startMs < periodEnd.getTime()
+      );
+    };
+    return rentals
+      .filter(
         (r) =>
           matchStatus(r, filters.status, unreachable, today) &&
-          matchSearch(r, filters.search, apiClients ?? []),
-      ).sort((a, b) => {
+          matchSearch(r, filters.search, apiClients ?? []) &&
+          inPeriod(r),
+      )
+      .sort((a, b) => {
         const sr = statusRank(a.status) - statusRank(b.status);
         if (sr !== 0) return sr;
         return b.id - a.id;
-      }),
-    [filters, rentals, unreachable, apiClients, today, rentalPoolSize],
-  );
+      });
+  }, [filters, rentals, unreachable, apiClients, today, rentalPoolSize]);
 
   const kpi = useMemo<Kpi[]>(() => {
     // Расчётный период — с 15-го одного месяца по 14-е следующего

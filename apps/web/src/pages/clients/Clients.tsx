@@ -16,6 +16,7 @@ import { ClientCard } from "./ClientCard";
 import { AddClientModal } from "./AddClientModal";
 import { ShareApplicationButton } from "./ShareApplicationButton";
 import { ApplicationsBlock } from "./ApplicationsBlock";
+import { ApplicationsTab } from "./ApplicationsTab";
 import { useAllClients, useUnreachableSet } from "./clientStore";
 import { useRentals } from "@/pages/rentals/rentalsStore";
 import {
@@ -164,6 +165,9 @@ export function Clients() {
 
       <ClientsFilters value={filters} onChange={setFilters} />
 
+      {filters.status === "applications" ? (
+        <ApplicationsTab />
+      ) : (
       <div className="grid flex-1 gap-4 lg:grid-cols-[360px_1fr]">
         <ClientsList
           items={filtered}
@@ -185,6 +189,7 @@ export function Clients() {
           return <ClientCard client={selected} />;
         })()}
       </div>
+      )}
 
       {addOpen && <AddClientModal onClose={() => setAddOpen(false)} />}
     </main>
