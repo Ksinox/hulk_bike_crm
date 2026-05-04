@@ -36,6 +36,7 @@ import {
 } from "./RentalCardTabs";
 import { RentalActionDialog, type ActionKind } from "./RentalActionDialog";
 import { ExtendRentalDialog } from "./ExtendRentalDialog";
+import { PaymentAcceptDialog } from "./PaymentAcceptDialog";
 import { SwapScooterDialog } from "./SwapScooterDialog";
 import { DamageReportDialog } from "./DamageReportDialog";
 import { DamageReportPaymentDialog } from "./DamageReportPaymentDialog";
@@ -229,6 +230,9 @@ export function RentalCard({
   const [action, setAction] = useState<ActionKind | null>(null);
   const [editRentalOpen, setEditRentalOpen] = useState(false);
   const [extendOpen, setExtendOpen] = useState(false);
+  // v0.3.9: после продления / оплаты — открываем диалог приёма оплаты
+  // на новой связке. Хранится rentalId, чтобы пережить перерендер.
+  const [paymentRentalId, setPaymentRentalId] = useState<number | null>(null);
   const [damageOpen, setDamageOpen] = useState(false);
   const [editingReportId, setEditingReportId] = useState<number | null>(null);
   const [paymentReportId, setPaymentReportId] = useState<number | null>(null);
@@ -1262,12 +1266,18 @@ export function RentalCard({
           rental={rental}
           onClose={() => setExtendOpen(false)}
           onExtended={(r) => {
-            // После продления просто переключаем фокус на новую аренду.
-            // Договор НЕ открываем — заказчик подтвердил, что при продлении
-            // новый договор не печатается (это та же аренда, просто с
-            // расширенным сроком и доплатой).
+            // v0.3.9: после продления переключаем фокус на новую связку
+            // и сразу открываем диалог приёма оплаты — оператор вводит
+            // принятую сумму, переплата уходит в депозит.
             navigate({ route: "rentals", rentalId: r.id });
+            setPaymentRentalId(r.id);
           }}
+        />
+      )}
+      {paymentRentalId != null && (
+        <PaymentAcceptDialogContainer
+          rentalId={paymentRentalId}
+          onClose={() => setPaymentRentalId(null)}
         />
       )}
 
@@ -1351,6 +1361,33 @@ export function RentalCard({
  *  возвращённый скутер, причину замены и переданный новый скутер.
  *  Экспортируется чтобы Rentals.tsx мог рендерить превью у себя поверх
  *  любой карточки (см. RentalCard.onSwapped). */
+/**
+ * v0.3.9: контейнер-фасад над PaymentAcceptDialog. Берёт rental из
+ * глобального списка по id (после продления selectedId переключается
+ * на новый id, и Rentals перерендеривает RentalCard с новой rental —
+ * но в момент открытия диалога мы держим rentalId отдельно от prop).
+ */
+function PaymentAcceptDialogContainer({
+  rentalId,
+  onClose,
+}: {
+  rentalId: number;
+  onClose: () => void;
+}) {
+  const all = useRentals();
+  const r = all.find((x) => x.id === rentalId);
+  if (!r) return null;
+  return (
+    <PaymentAcceptDialog
+      rental={r}
+      onClose={onClose}
+      onPaid={() => {
+        /* invalidations происходят в dialog'е */
+      }}
+    />
+  );
+}
+
 export function ActTransferPreview({
   rentalId,
   onClose,

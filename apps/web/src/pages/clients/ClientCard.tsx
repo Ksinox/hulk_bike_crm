@@ -301,17 +301,35 @@ export function ClientCard({ client }: { client: Client }) {
                 }
               />
             </div>
-            <KpiBox
-              label="Остаток"
-              value={overdueBalance > 0 ? `${fmt(overdueBalance)} ₽` : ""}
-              hint={
-                overdueBalance > 0
-                  ? "просрочка: тариф + 250 ₽/день"
-                  : "нет просрочек"
-              }
-              tone={overdueBalance > 0 ? "red" : "gray"}
-              fill
-            />
+            <div className="flex h-full flex-col gap-2">
+              <KpiBox
+                label="Остаток"
+                value={overdueBalance > 0 ? `${fmt(overdueBalance)} ₽` : ""}
+                hint={
+                  overdueBalance > 0
+                    ? "просрочка: 1.5 × тариф/день"
+                    : "нет просрочек"
+                }
+                tone={overdueBalance > 0 ? "red" : "gray"}
+                fill
+              />
+              {/* v0.3.9: депозит — неиспользованные средства клиента */}
+              <KpiBox
+                label="Депозит"
+                value={
+                  (client.depositBalance ?? 0) > 0
+                    ? `${fmt(client.depositBalance ?? 0)} ₽`
+                    : "0 ₽"
+                }
+                hint={
+                  (client.depositBalance ?? 0) > 0
+                    ? "пойдёт в счёт следующей оплаты"
+                    : "переплат пока нет"
+                }
+                tone={(client.depositBalance ?? 0) > 0 ? "green" : "gray"}
+                fill
+              />
+            </div>
           </div>
         </div>
       </div>

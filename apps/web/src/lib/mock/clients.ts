@@ -26,6 +26,11 @@ export type Client = {
   isForeigner?: boolean;
   passportRaw?: string | null;
   blacklistReason?: string | null;
+  /**
+   * v0.3.9: баланс депозита клиента (неиспользованные средства,
+   * подтянутся в счёт следующей оплаты). Источник — clients.deposit_balance.
+   */
+  depositBalance?: number;
 };
 
 export type RentalStatus = "active" | "done" | "overdue";

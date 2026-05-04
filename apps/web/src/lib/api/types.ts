@@ -28,6 +28,8 @@ export type ApiClient = {
   blacklistAt: string | null;
   blacklistBy: string | null;
   unreachable: boolean;
+  /** v0.3.9: баланс депозита (неиспользованные средства). */
+  depositBalance?: number;
 
   birthDate: string | null;
   passportSeries: string | null;

@@ -27,6 +27,15 @@ export function ExtendRentalDialog({
 }) {
   const [closing, setClosing] = useState(false);
   const [days, setDays] = useState(7);
+  // v0.3.9: режим тарифа.
+  //   • auto   — выбираем по дням (как раньше): short/week/month.
+  //   • week   — недельный фиксированный (week-rate × ceil(days/7) — оператор
+  //              сам контролирует итоговую сумму через days).
+  //   • custom — оператор сам ставит ставку и сам считает сумму.
+  const [tariffMode, setTariffMode] = useState<"auto" | "week" | "custom">(
+    "auto",
+  );
+  const [customRate, setCustomRate] = useState<number>(0);
 
   const requestClose = () => {
     if (closing) return;
@@ -43,8 +52,14 @@ export function ExtendRentalDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const period = periodForDays(days);
-  const rate = TARIFF[rental.model][period];
+  const autoPeriod = periodForDays(days);
+  const period =
+    tariffMode === "week" ? ("week" as const) : autoPeriod;
+  // v0.3.9: ставка зависит от режима. В custom — оператор задаёт сам.
+  const rate =
+    tariffMode === "custom"
+      ? Math.max(0, customRate)
+      : TARIFF[rental.model][period];
   const sum = rate * days;
 
   const newEndPlanned = useMemo(() => {
@@ -141,25 +156,71 @@ export function ExtendRentalDialog({
             </div>
           </label>
 
-          <div className="grid grid-cols-3 gap-2">
-            {(["short", "week", "month"] as const).map((p) => (
-              <div
-                key={p}
-                className={cn(
-                  "rounded-[10px] px-3 py-2 text-[11px]",
-                  p === period
-                    ? "bg-blue-50 text-blue-700"
-                    : "bg-surface-soft text-muted",
-                )}
-              >
-                <div className="font-semibold uppercase tracking-wider">
-                  {TARIFF_PERIOD_LABEL[p]}
-                </div>
-                <div className="mt-0.5 tabular-nums">
-                  {TARIFF[rental.model][p]} ₽/сут
-                </div>
+          {/* v0.3.9: режим тарифа */}
+          <div>
+            <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-2">
+              Тариф
+            </div>
+            <div className="grid grid-cols-3 gap-1.5">
+              {(["auto", "week", "custom"] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setTariffMode(m)}
+                  className={cn(
+                    "rounded-[10px] border px-2.5 py-1.5 text-[12px] font-semibold transition-colors",
+                    tariffMode === m
+                      ? "border-blue-500 bg-blue-50 text-blue-700"
+                      : "border-border bg-white text-ink-2 hover:border-blue-400",
+                  )}
+                >
+                  {m === "auto"
+                    ? "Авто (по дням)"
+                    : m === "week"
+                      ? "Недельный"
+                      : "Произвольный"}
+                </button>
+              ))}
+            </div>
+            {tariffMode === "custom" && (
+              <div className="mt-2">
+                <label className="text-[12px] font-semibold text-ink">
+                  Ставка, ₽/сут
+                  <input
+                    type="number"
+                    min={0}
+                    value={customRate || ""}
+                    onChange={(e) =>
+                      setCustomRate(Math.max(0, Number(e.target.value) || 0))
+                    }
+                    placeholder="например 450"
+                    className="mt-1 h-9 w-full rounded-[10px] border border-border bg-white px-3 text-[13px] text-ink outline-none focus:border-blue-600"
+                  />
+                </label>
               </div>
-            ))}
+            )}
+            {tariffMode === "auto" && (
+              <div className="mt-2 grid grid-cols-3 gap-2">
+                {(["short", "week", "month"] as const).map((p) => (
+                  <div
+                    key={p}
+                    className={cn(
+                      "rounded-[10px] px-3 py-2 text-[11px]",
+                      p === period
+                        ? "bg-blue-50 text-blue-700"
+                        : "bg-surface-soft text-muted",
+                    )}
+                  >
+                    <div className="font-semibold uppercase tracking-wider">
+                      {TARIFF_PERIOD_LABEL[p]}
+                    </div>
+                    <div className="mt-0.5 tabular-nums">
+                      {TARIFF[rental.model][p]} ₽/сут
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-3 gap-2">

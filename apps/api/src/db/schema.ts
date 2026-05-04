@@ -217,6 +217,13 @@ export const clients = pgTable(
     addedOn: date("added_on").notNull().defaultNow(),
     comment: text("comment"),
 
+    /**
+     * v0.3.9: баланс депозита (неиспользованные средства, которые
+     * подтянутся в счёт оплаты следующей аренды). Это НЕ залог под
+     * скутер (rentals.deposit) — это переплата клиента «на будущее».
+     */
+    depositBalance: integer("deposit_balance").notNull().default(0),
+
     // Флаги
     blacklisted: boolean("blacklisted").notNull().default(false),
     blacklistReason: text("blacklist_reason"),

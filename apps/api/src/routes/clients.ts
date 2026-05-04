@@ -165,4 +165,107 @@ export async function clientsRoutes(app: FastifyInstance) {
       );
     return reply.send(wordHtml);
   });
+
+  /* ============================================================
+   *  v0.3.9 — баланс депозита клиента (charge / spend / get).
+   *
+   *  Депозит — неиспользованные средства, которые автоматически
+   *  подтянутся в счёт следующей оплаты аренды. Не путать с залогом
+   *  под скутер (rentals.deposit).
+   * ============================================================ */
+
+  app.get<{ Params: { id: string } }>("/:id/deposit", async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
+    const [row] = await db
+      .select({ balance: clients.depositBalance, name: clients.name })
+      .from(clients)
+      .where(eq(clients.id, id));
+    if (!row) return reply.code(404).send({ error: "not found" });
+    return { balance: row.balance, clientName: row.name };
+  });
+
+  /** Зачислить средства на депозит (например — переплата при оплате). */
+  app.post<{
+    Params: { id: string };
+    Body: { amount: number; comment?: string; rentalId?: number };
+  }>("/:id/deposit/charge", async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
+    const Body = z.object({
+      amount: z.number().int().positive(),
+      comment: z.string().max(500).optional(),
+      rentalId: z.number().int().positive().optional(),
+    });
+    const parsed = Body.safeParse(req.body);
+    if (!parsed.success) {
+      return reply
+        .code(400)
+        .send({ error: "validation", issues: parsed.error.issues });
+    }
+    const [row] = await db
+      .update(clients)
+      .set({
+        depositBalance: sql`${clients.depositBalance} + ${parsed.data.amount}`,
+      })
+      .where(eq(clients.id, id))
+      .returning({ id: clients.id, balance: clients.depositBalance, name: clients.name });
+    if (!row) return reply.code(404).send({ error: "not found" });
+    await logActivity(req, {
+      entity: "client",
+      entityId: id,
+      action: "deposit_charged",
+      summary: `Депозит +${parsed.data.amount} ₽: ${row.name}${parsed.data.comment ? ` (${parsed.data.comment})` : ""}`,
+      meta: parsed.data.rentalId
+        ? { rentalId: parsed.data.rentalId }
+        : undefined,
+    });
+    return row;
+  });
+
+  /** Списать средства с депозита (использование в счёт оплаты). */
+  app.post<{
+    Params: { id: string };
+    Body: { amount: number; comment?: string; rentalId?: number };
+  }>("/:id/deposit/spend", async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
+    const Body = z.object({
+      amount: z.number().int().positive(),
+      comment: z.string().max(500).optional(),
+      rentalId: z.number().int().positive().optional(),
+    });
+    const parsed = Body.safeParse(req.body);
+    if (!parsed.success) {
+      return reply
+        .code(400)
+        .send({ error: "validation", issues: parsed.error.issues });
+    }
+    const [before] = await db
+      .select({ balance: clients.depositBalance, name: clients.name })
+      .from(clients)
+      .where(eq(clients.id, id));
+    if (!before) return reply.code(404).send({ error: "not found" });
+    const spend = Math.min(parsed.data.amount, before.balance);
+    if (spend <= 0) {
+      return reply.code(400).send({ error: "no_balance" });
+    }
+    const [row] = await db
+      .update(clients)
+      .set({
+        depositBalance: sql`${clients.depositBalance} - ${spend}`,
+      })
+      .where(eq(clients.id, id))
+      .returning({ id: clients.id, balance: clients.depositBalance, name: clients.name });
+    await logActivity(req, {
+      entity: "client",
+      entityId: id,
+      action: "deposit_spent",
+      summary: `Депозит −${spend} ₽: ${before.name}${parsed.data.comment ? ` (${parsed.data.comment})` : ""}`,
+      meta: parsed.data.rentalId
+        ? { rentalId: parsed.data.rentalId }
+        : undefined,
+    });
+    return row;
+  });
 }
