@@ -38,7 +38,10 @@ const MODEL_CHIPS: { id: ModelFilter; label: string }[] = [
 const STATUS_CHIPS: { id: StatusFilter; label: string; swatch: string }[] = [
   { id: "all", label: "всё", swatch: "hsl(var(--muted))" },
   { id: "rented", label: "активная аренда", swatch: "hsl(var(--blue))" },
-  { id: "late_today", label: "опаздывает", swatch: "#eab308" },
+  // Чип «опаздывает» — фоном синий (плитка остаётся синей), но
+  // визуально swatch — красный, чтобы соответствовать пульсирующему
+  // свечению на плитке.
+  { id: "late_today", label: "опаздывает", swatch: "hsl(var(--red))" },
   { id: "overdue", label: "просрочка / ущерб", swatch: "hsl(var(--red))" },
   { id: "returns_today", label: "возврат сегодня", swatch: "hsl(var(--blue-600))" },
   { id: "pool", label: "готов к аренде", swatch: "hsl(var(--green))" },
@@ -319,18 +322,28 @@ export function ParkPanel({
               onClick={handleClick}
               title={titleParts.join(" · ")}
               className={cn(
-                "group relative flex aspect-square cursor-pointer flex-col items-center justify-center rounded-[10px] border border-transparent text-[11px] font-semibold transition-all hover:-translate-y-0.5 hover:z-10 hover:shadow-card",
+                "group relative flex aspect-square cursor-pointer flex-col items-center justify-center overflow-hidden rounded-[10px] border border-transparent text-[11px] font-semibold transition-all hover:-translate-y-0.5 hover:z-10 hover:shadow-card",
                 tileClass(s.status),
                 !statusMatch && "opacity-20",
               )}
             >
-              {num}
+              {/* v0.3.00: красное пульсирующее свечение ВНУТРЬ плитки —
+                  для late_today (возврат сегодня, время прошло). Плитка
+                  остаётся синей — клиент пока активный, не просрочка,
+                  но свечение красным сигнализирует «опаздывает». */}
+              {s.status === "late_today" && (
+                <span
+                  className="pointer-events-none absolute inset-0 rounded-[10px] shadow-[inset_0_0_18px_3px_rgba(239,68,68,0.85)] animate-pulse"
+                  aria-hidden
+                />
+              )}
+              <span className="relative z-[1]">{num}</span>
               {/* Мигающий индикатор «возврат сегодня» — маленький кружок
                   в правом верхнем углу. На красных/синих плитках работает
                   с белой обводкой для контраста. */}
               {s.isReturnToday && (
                 <span
-                  className="pointer-events-none absolute right-1 top-1 h-2 w-2 rounded-full bg-yellow-300 ring-2 ring-white/90 animate-pulse"
+                  className="pointer-events-none absolute right-1 top-1 z-[2] h-2 w-2 rounded-full bg-yellow-300 ring-2 ring-white/90 animate-pulse"
                   aria-label="возврат сегодня"
                 />
               )}
@@ -500,9 +513,12 @@ function tileClass(s: TileStatus): string {
     case "overdue":
       return "bg-red text-white";
     case "late_today":
-      // v0.2.99: «опаздывает по времени сегодня» — между «всё хорошо»
-      // и «просрочка». Жёлтый достаточно тёмный чтобы белый текст читался.
-      return "bg-yellow-500 text-white";
+      // v0.3.00: плитка остаётся синей (это всё ещё активная аренда),
+      // но получает красное пульсирующее свечение ВНУТРЬ — оператор
+      // сразу видит «время прошло, но это не просрочка». Свечение
+      // рисуется отдельным абсолютно позиционированным слоем (см. JSX
+      // в render — overlay rounded-[10px] с inset-shadow + animate-pulse).
+      return "bg-blue text-white";
     case "returning":
       return "bg-purple text-white";
     case "pool":
