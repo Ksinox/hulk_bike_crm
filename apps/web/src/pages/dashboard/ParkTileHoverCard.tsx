@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Bike, Calendar, Phone, User as UserIcon, Wrench } from "lucide-react";
+import { AlertTriangle, Bike, Calendar, Phone, Wrench } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fileUrl } from "@/lib/files";
 import { useApiScooters } from "@/lib/api/scooters";
@@ -11,18 +11,21 @@ import { MODEL_LABEL } from "@/lib/mock/rentals";
 type Anchor = { x: number; y: number; w: number; h: number };
 
 /**
- * Hover-preview для плитки парка. Появляется рядом с курсором при
- * наведении (через {@link useTileHoverPreview} hook). Содержит:
- *  • большую аватарку модели (как в карточке скутера),
- *  • имя/модель/пробег/статус скутера,
- *  • если есть открытая аренда — клиент, телефон, план возврата.
+ * Hover-preview для плитки парка. v0.3.2 — компактный горизонтальный
+ * layout: слева вертикальная постер-аватарка модели (с торчащим колесом
+ * как в карточке скутера), справа короткая инфо-колонка.
  *
- * Это «лёгкое» окошко — НЕ модалка и НЕ drawer; не блокирует фон,
- * исчезает когда курсор уходит. Если оператор хочет открыть полную
- * карточку — клик по плитке (это handlerит сама плитка).
+ * Под текстом — статус-плашка («Опаздывает на 15 мин») в фирменном
+ * стиле CRM. Никаких нативных browser-tooltip'ов поверх — title на
+ * плитке отключён, единственная подсказка — этот hover-card.
  *
- * Концепция «operations console / progressive disclosure»: оператор
- * наводит — видит выжимку, кликает — проваливается в drawer.
+ * Содержимое:
+ *  • postera-аватарка модели (108×140 примерно), белый фон;
+ *  • имя/модель/baseStatus + пробег;
+ *  • если активная аренда — клиент, телефон (tel:), плановое время
+ *    возврата;
+ *  • если возврат сегодня прошёл — крупная красная плашка
+ *    «Опаздывает на N мин».
  */
 export function ParkTileHoverCard({
   scooterId,
@@ -50,8 +53,6 @@ export function ParkTileHoverCard({
   const modelName =
     linkedModel?.name ?? MODEL_LABEL[scooter.model] ?? scooter.model;
 
-  // Активная аренда на этом скутере (одна — после v0.2.97 защит дубль
-  // невозможен на API-уровне).
   const activeRental = rentals.find(
     (r) =>
       r.scooterId === scooterId &&
@@ -63,24 +64,35 @@ export function ParkTileHoverCard({
     ? clients.find((c) => c.id === activeRental.clientId)
     : null;
 
-  // Координаты карточки: справа от плитки, либо снизу если справа не
-  // помещается. Простой алгоритм без сложного flip-логики.
+  // «Опаздывает на N мин» — расчёт по timestamp endPlannedAt vs now,
+  // но только если возврат запланирован сегодня. Просрочка по дате
+  // (вчера и раньше) — это уже другой кейс, отдельная плашка.
+  const todayKey = ymd(new Date());
+  const endKey = activeRental?.endPlannedAt.slice(0, 10);
+  const isReturnToday = !!activeRental && endKey === todayKey;
+  const overdueDayDate =
+    !!activeRental && endKey !== undefined && endKey < todayKey;
+  let lateMinutesToday = 0;
+  if (isReturnToday && activeRental) {
+    const endMs = new Date(activeRental.endPlannedAt).getTime();
+    const diff = Date.now() - endMs;
+    if (diff > 0) lateMinutesToday = Math.floor(diff / 60_000);
+  }
+
+  // Размещение карточки. Ширина 360px. Пытаемся справа от плитки;
+  // если не помещается — слева. По вертикали стараемся центровать
+  // с плиткой, но не залезать за края экрана.
   const PADDING = 12;
-  const W = 320;
+  const W = 360;
+  const H_APPROX = 220;
   const winW = window.innerWidth;
   const winH = window.innerHeight;
   let left = anchor.x + anchor.w + PADDING;
-  let top = anchor.y;
-  if (left + W > winW) {
-    // не помещается справа — кладём слева
-    left = Math.max(PADDING, anchor.x - W - PADDING);
-  }
-  // вертикальная коррекция — чтобы карточка не уезжала за низ экрана
-  if (top + 280 > winH) {
-    top = Math.max(PADDING, winH - 280 - PADDING);
-  }
+  if (left + W > winW) left = Math.max(PADDING, anchor.x - W - PADDING);
+  let top = anchor.y + anchor.h / 2 - H_APPROX / 2;
+  if (top + H_APPROX > winH) top = winH - H_APPROX - PADDING;
+  if (top < PADDING) top = PADDING;
 
-  // Esc закрывает hover (на случай если курсор «застрял» где-то ещё).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -95,93 +107,106 @@ export function ParkTileHoverCard({
       style={{ left, top, width: W }}
     >
       <div className="overflow-hidden rounded-2xl bg-surface shadow-card-lg ring-1 ring-border">
-        {/* Шапка с аватаркой модели */}
-        <div className="relative flex items-end justify-center overflow-hidden bg-surface-soft px-4 pt-4 pb-2">
-          {avatarSrc ? (
-            <img
-              src={avatarSrc}
-              alt={modelName}
-              className="-mt-2 h-32 w-auto max-w-none object-contain drop-shadow-[0_8px_12px_rgba(15,23,42,0.18)]"
-            />
-          ) : (
-            <div className="flex h-24 w-24 items-center justify-center rounded-full bg-ink text-white">
-              <Bike size={32} strokeWidth={1.5} />
-            </div>
-          )}
-        </div>
-
-        <div className="px-4 py-3">
-          <div className="flex items-baseline gap-2">
-            <div className="font-display text-[18px] font-extrabold leading-tight text-ink">
-              {scooter.name}
-            </div>
-            <span
-              className={cn(
-                "rounded-full px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider",
-                scooter.baseStatus === "rental_pool"
-                  ? "bg-green-soft text-green-ink"
-                  : scooter.baseStatus === "repair"
-                    ? "bg-orange-soft text-orange-ink"
-                    : scooter.baseStatus === "for_sale" ||
-                        scooter.baseStatus === "buyout"
-                      ? "bg-purple-soft text-purple-ink"
-                      : scooter.baseStatus === "sold"
-                        ? "bg-border text-muted"
-                        : "bg-surface-soft text-muted-2",
-              )}
-            >
-              {baseStatusLabel(scooter.baseStatus)}
-            </span>
+        <div className="flex">
+          {/* === Слева: вертикальная постер-аватарка === */}
+          <div className="relative flex w-[120px] shrink-0 items-end justify-center overflow-visible bg-surface-soft pb-2">
+            {avatarSrc ? (
+              <img
+                src={avatarSrc}
+                alt={modelName}
+                className="-mb-1 -mt-2 h-[160px] w-auto max-w-none object-contain drop-shadow-[0_8px_12px_rgba(15,23,42,0.18)]"
+              />
+            ) : (
+              <div className="my-6 flex h-20 w-20 items-center justify-center rounded-full bg-ink text-white">
+                <Bike size={32} strokeWidth={1.5} />
+              </div>
+            )}
           </div>
-          <div className="mt-0.5 text-[12px] text-muted-2">{modelName}</div>
-          {scooter.mileage != null && (
-            <div className="mt-1 text-[11px] text-muted-2">
-              Пробег: {scooter.mileage.toLocaleString("ru-RU")} км
-            </div>
-          )}
 
-          {/* Активная аренда */}
-          {activeRental ? (
-            <div className="mt-3 rounded-[12px] bg-blue-50 px-3 py-2 text-[12px] text-blue-900">
-              <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-blue-700/80">
-                <UserIcon size={10} /> Активная аренда
+          {/* === Справа: инфо-колонка === */}
+          <div className="min-w-0 flex-1 px-3 py-3">
+            <div className="flex items-center gap-2">
+              <div className="font-display text-[16px] font-extrabold leading-tight text-ink">
+                {scooter.name}
               </div>
-              {client && (
-                <div className="mt-1 font-bold text-ink">{client.name}</div>
-              )}
-              {client?.phone && (
-                <a
-                  href={`tel:${client.phone.replace(/[^\d+]/g, "")}`}
-                  onClick={(e) => e.stopPropagation()}
-                  className="mt-0.5 inline-flex items-center gap-1 font-mono text-[12px] text-ink hover:text-blue-700"
-                >
-                  <Phone size={10} className="text-muted-2" /> {client.phone}
-                </a>
-              )}
-              <div className="mt-1.5 flex items-center gap-1 text-[11px]">
-                <Calendar size={10} className="text-muted-2" />
-                Возврат: {fmtRuDateTime(activeRental.endPlannedAt)}
+              <span
+                className={cn(
+                  "rounded-full px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider",
+                  scooter.baseStatus === "rental_pool"
+                    ? "bg-green-soft text-green-ink"
+                    : scooter.baseStatus === "repair"
+                      ? "bg-orange-soft text-orange-ink"
+                      : scooter.baseStatus === "for_sale" ||
+                          scooter.baseStatus === "buyout"
+                        ? "bg-purple-soft text-purple-ink"
+                        : scooter.baseStatus === "sold"
+                          ? "bg-border text-muted"
+                          : "bg-surface-soft text-muted-2",
+                )}
+              >
+                {baseStatusLabel(scooter.baseStatus)}
+              </span>
+            </div>
+            <div className="mt-0.5 truncate text-[11px] text-muted-2">
+              {modelName}
+            </div>
+            {scooter.mileage != null && (
+              <div className="mt-0.5 text-[10px] text-muted-2">
+                Пробег: {scooter.mileage.toLocaleString("ru-RU")} км
               </div>
-            </div>
-          ) : (
-            <div className="mt-3 rounded-[12px] bg-surface-soft px-3 py-2 text-[12px] text-muted">
-              {scooter.baseStatus === "rental_pool"
-                ? "Свободен — клик откроет форму новой аренды."
-                : scooter.baseStatus === "repair"
-                  ? "В ремонте — без активной аренды."
-                  : "Без активной аренды."}
-            </div>
-          )}
+            )}
 
-          {scooter.baseStatus === "repair" && (
-            <div className="mt-2 flex items-center gap-1.5 text-[11px] text-orange-ink">
-              <Wrench size={11} />
-              На обслуживании. Подробности — в разделе «Ремонты».
-            </div>
-          )}
+            {/* Активная аренда — компактный блок */}
+            {activeRental && (
+              <div className="mt-2 rounded-[10px] bg-blue-50 px-2.5 py-1.5 text-[12px] text-blue-900">
+                {client && (
+                  <div className="truncate font-bold text-ink">
+                    {client.name}
+                  </div>
+                )}
+                {client?.phone && (
+                  <a
+                    href={`tel:${client.phone.replace(/[^\d+]/g, "")}`}
+                    onClick={(e) => e.stopPropagation()}
+                    className="mt-0.5 inline-flex items-center gap-1 font-mono text-[11px] text-ink hover:text-blue-700"
+                  >
+                    <Phone size={10} className="text-muted-2" />
+                    {client.phone}
+                  </a>
+                )}
+                <div className="mt-0.5 flex items-center gap-1 text-[10px]">
+                  <Calendar size={10} className="text-muted-2" />
+                  Возврат: {fmtRuDateTime(activeRental.endPlannedAt)}
+                </div>
+              </div>
+            )}
 
-          <div className="mt-2 text-[10px] text-muted-2">
-            Клик по плитке — открыть подробную карточку
+            {/* Плашка «Опаздывает на N мин» — на самой карточке, не в
+                нативной подсказке курсора. v0.3.2. */}
+            {lateMinutesToday > 0 && (
+              <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-red px-2 py-0.5 text-[11px] font-bold text-white shadow-card">
+                <AlertTriangle size={10} />
+                Опаздывает на {fmtMinutes(lateMinutesToday)}
+              </div>
+            )}
+            {overdueDayDate && (
+              <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-red px-2 py-0.5 text-[11px] font-bold text-white shadow-card">
+                <AlertTriangle size={10} />
+                Просрочка
+              </div>
+            )}
+            {scooter.baseStatus === "repair" && !activeRental && (
+              <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-orange-soft px-2 py-0.5 text-[11px] font-bold text-orange-ink">
+                <Wrench size={10} />
+                В ремонте
+              </div>
+            )}
+
+            {!activeRental && scooter.baseStatus === "rental_pool" && (
+              <div className="mt-2 text-[11px] text-muted-2">
+                Свободен — клик откроет форму новой аренды.
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -216,14 +241,25 @@ function fmtRuDateTime(iso: string): string {
   return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
+function fmtMinutes(m: number): string {
+  if (m < 60) return `${m} мин`;
+  const h = Math.floor(m / 60);
+  const rest = m % 60;
+  if (rest === 0) return `${h} ч`;
+  return `${h} ч ${rest} мин`;
+}
+
+function ymd(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 /**
  * Хук для управления hover-preview'ом на плитке. Возвращает state
  * текущего scooterId, anchor, и handlers для onMouseEnter/onMouseLeave.
  *
  * Поведение:
  *  - mouseEnter → ставит таймер 350ms; если за это время курсор всё
- *    ещё на плитке — показываем preview (избегаем «всплытия» при
- *    случайном пробеге курсора по сетке плиток);
+ *    ещё на плитке — показываем preview;
  *  - mouseLeave → отменяет таймер / прячет preview;
  *  - mousedown / клик — прячет (плитка обработает свой клик).
  */

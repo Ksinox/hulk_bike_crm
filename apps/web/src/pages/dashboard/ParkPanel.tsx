@@ -56,6 +56,10 @@ const STATUS_CHIPS: { id: StatusFilter; label: string; swatch: string }[] = [
   { id: "sold", label: "продан", swatch: "hsl(var(--border))" },
 ];
 
+// Лейблы статусов — раньше использовались в title-tooltip плиток.
+// После v0.3.2 нативный tooltip убран в пользу ParkTileHoverCard;
+// оставляем константу для возможного использования в других местах
+// (счётчики чипов, фильтры и т.п.).
 const STATUS_LABEL: Record<TileStatus, string> = {
   rented: "активная аренда",
   overdue: "просрочен",
@@ -332,10 +336,9 @@ export function ParkPanel({
             // repair / for_sale / sold / disassembly — открываем карточку
             navigate({ route: "fleet", scooterId: s.id });
           };
-          // Подсказка собирается из статуса + флагов «возврат сегодня».
-          const titleParts = [`${s.name}`, STATUS_LABEL[s.status]];
-          if (s.isReturnToday) titleParts.push("возврат сегодня");
-          titleParts.push(`клик: ${hintFor(s.status)}`);
+          // v0.3.2: нативный browser-tooltip отключён — он
+          // перекрывал стилизованную hover-карточку. Все подсказки
+          // рендерим через ParkTileHoverCard.
           return (
             <button
               type="button"
@@ -343,7 +346,6 @@ export function ParkPanel({
               onClick={handleClick}
               onMouseEnter={(e) => hover.onEnter(e, s.id)}
               onMouseLeave={hover.onLeave}
-              title={titleParts.join(" · ")}
               className={cn(
                 "group relative flex aspect-square cursor-pointer flex-col items-center justify-center overflow-hidden rounded-[10px] border border-transparent text-[11px] font-semibold transition-all hover:-translate-y-0.5 hover:z-10 hover:shadow-card",
                 tileClass(s.status),
@@ -637,3 +639,8 @@ export function Count({
     </span>
   );
 }
+
+// suppress unused warnings — STATUS_LABEL и hintFor оставлены для
+// возможного будущего использования (см. v0.3.2 чистка title-tooltip)
+void STATUS_LABEL;
+void hintFor;

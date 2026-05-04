@@ -144,15 +144,22 @@ function RentalDrawerLayer({
   onClose: () => void;
 }) {
   const [closing, setClosing] = useState(false);
+  // v0.3.2: enter-анимация. Стартуем «за экраном» (translate-x-full),
+  // через 10ms ставим entered=true → translate-x-0, transition даёт
+  // плавный slide-in справа.
+  const [entered, setEntered] = useState(false);
   const requestClose = () => {
     if (closing) return;
     setClosing(true);
     window.setTimeout(onClose, 220);
   };
-  // Сбрасываем флаг закрытия при смене rentalId — drawer переоткрывается
+  // Сбрасываем флаги при смене rentalId — drawer переоткрывается
   // на другую аренду без размонтирования.
   useEffect(() => {
     setClosing(false);
+    setEntered(false);
+    const t = window.setTimeout(() => setEntered(true), 10);
+    return () => window.clearTimeout(t);
   }, [rentalId]);
   // Esc на этом уровне — закрывает drawer. Если поверх открыт client,
   // его собственный обработчик Esc сработает раньше (он повешен глубже
@@ -181,13 +188,20 @@ function RentalDrawerLayer({
         "fixed inset-0 z-[100] bg-ink/40",
         closing ? "animate-backdrop-out" : "animate-backdrop-in",
       )}
+      // v0.3.2: клик по затемнённому фону закрывает drawer. Backdrop
+      // close для FORM-модалок мы убрали (там это мешало выделению),
+      // но для drawer'а это удобно — не тянуться к X в углу.
+      onClick={requestClose}
     >
       <aside
         className={cn(
           "ml-auto flex h-full w-full max-w-[820px] flex-col overflow-hidden bg-surface shadow-card-lg",
           "transform transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
-          closing ? "translate-x-full" : "translate-x-0",
+          closing || !entered ? "translate-x-full" : "translate-x-0",
         )}
+        // Клики внутри панели не должны всплывать в backdrop — иначе
+        // drawer закрывался бы при любом клике в RentalCard.
+        onClick={(e) => e.stopPropagation()}
       >
         <header className="flex items-center justify-between gap-3 border-b border-border bg-surface-soft px-5 py-3">
           <div className="min-w-0">
@@ -252,6 +266,7 @@ function RentalsListDrawerLayer({
   onPickRental: (id: number) => void;
 }) {
   const [closing, setClosing] = useState(false);
+  const [entered, setEntered] = useState(false);
   const requestClose = () => {
     if (closing) return;
     setClosing(true);
@@ -259,6 +274,9 @@ function RentalsListDrawerLayer({
   };
   useEffect(() => {
     setClosing(false);
+    setEntered(false);
+    const t = window.setTimeout(() => setEntered(true), 10);
+    return () => window.clearTimeout(t);
   }, [filter]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -316,13 +334,15 @@ function RentalsListDrawerLayer({
         "fixed inset-0 z-[100] bg-ink/40",
         closing ? "animate-backdrop-out" : "animate-backdrop-in",
       )}
+      onClick={requestClose}
     >
       <aside
         className={cn(
           "ml-auto flex h-full w-full max-w-[680px] flex-col overflow-hidden bg-surface shadow-card-lg",
           "transform transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
-          closing ? "translate-x-full" : "translate-x-0",
+          closing || !entered ? "translate-x-full" : "translate-x-0",
         )}
+        onClick={(e) => e.stopPropagation()}
       >
         <header className="flex items-center justify-between gap-3 border-b border-border bg-surface-soft px-5 py-3">
           <div className="min-w-0">
