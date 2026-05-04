@@ -10,6 +10,7 @@ import { OverdueTable } from "./OverdueTable";
 import { ActivityFeed } from "./ActivityFeed";
 import { ClassicKpi, CLASSIC_KPI_ICONS } from "./ClassicKpi";
 import { NewApplicationsWidget } from "./NewApplicationsWidget";
+import { DuplicateRentalsBanner } from "./DuplicateRentalsBanner";
 import { loadView, saveView, type DashboardView } from "./view";
 import {
   formatRub,
@@ -30,6 +31,11 @@ export function Dashboard() {
     <main className="flex min-w-0 flex-1 flex-col gap-4">
       <Topbar />
       <Greeting view={view} onViewChange={onViewChange} metrics={metrics} />
+      {/* Диагностический баннер «дубли активных аренд». Показывается
+          только если в БД есть >1 открытой аренды на один scooterId
+          (data inconsistency из легаси-багов swap/extend). После того
+          как все дубли разобраны — баннер пропадает сам. v0.2.97. */}
+      <DuplicateRentalsBanner metrics={metrics} />
       {view === "park" ? (
         <ParkVariant metrics={metrics} />
       ) : (

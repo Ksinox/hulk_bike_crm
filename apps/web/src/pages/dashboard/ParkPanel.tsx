@@ -117,10 +117,20 @@ export function ParkPanel({
     const returnsTodayScooters = metrics.returnsTodayScooterIds;
 
     return scooters.map((s) => {
-      const rentalId = activeRentalByScooter.get(s.id) ?? null;
       const isOverdue = overdueScooters.has(s.id);
       const hasDamage = damageScooters.has(s.id);
       const isReturnToday = returnsTodayScooters.has(s.id);
+      // v0.2.97: вместо одного rentalId из «прошлой» Map<scooter,rental>
+      // выбираем тот, ИЗ-ЗА которого плитка подсвечена. Иначе кликом
+      // оператор попадал не туда (на скутере мог быть «дубль» активных
+      // аренд из легаси-данных, см. duplicateActiveByScooter).
+      const rentalId =
+        metrics.overdueRentalByScooter.get(s.id) ??
+        metrics.damageDebtRentalByScooter.get(s.id) ??
+        metrics.returnsTodayRentalByScooter.get(s.id) ??
+        metrics.anyActiveRentalByScooter.get(s.id) ??
+        activeRentalByScooter.get(s.id) ??
+        null;
       return {
         id: s.id,
         name: s.name,
@@ -139,6 +149,10 @@ export function ParkPanel({
     metrics.overdueScooterIds,
     metrics.damageDebtScooterIds,
     metrics.returnsTodayScooterIds,
+    metrics.overdueRentalByScooter,
+    metrics.damageDebtRentalByScooter,
+    metrics.returnsTodayRentalByScooter,
+    metrics.anyActiveRentalByScooter,
   ]);
 
   const modelCounts = useMemo(() => {

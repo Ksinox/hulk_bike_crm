@@ -289,6 +289,37 @@ export async function rentalsRoutes(app: FastifyInstance) {
     const [before] = await db.select().from(rentals).where(eq(rentals.id, id));
     if (!before) return reply.code(404).send({ error: "not found" });
 
+    // v0.2.97: запрет переназначить аренду на скутер у которого уже есть
+    // открытая аренда. Раньше POST /rentals защищался, а PATCH — нет,
+    // что плодило дубли «две active аренды на одном скутере». Если
+    // оператор хочет именно подменить скутер активной аренды — для этого
+    // есть отдельный POST /:id/swap-scooter (с правильной транзакцией).
+    if (
+      parsed.data.scooterId !== undefined &&
+      parsed.data.scooterId !== null &&
+      parsed.data.scooterId !== before.scooterId
+    ) {
+      const targetScooterId = parsed.data.scooterId;
+      const conflict = await db
+        .select({ id: rentals.id, status: rentals.status })
+        .from(rentals)
+        .where(
+          and(
+            eq(rentals.scooterId, targetScooterId),
+            sql`${rentals.id} <> ${id}`,
+            sql`${rentals.status} IN ('active', 'overdue', 'returning')`,
+          ),
+        );
+      if (conflict.length > 0) {
+        const r = conflict[0]!;
+        return reply.code(409).send({
+          error: "scooter_busy",
+          message: `Скутер уже в открытой аренде (#${r.id}, статус ${r.status}). Сначала закройте её или используйте «Заменить скутер».`,
+          rentalId: r.id,
+        });
+      }
+    }
+
     const patch: Record<string, unknown> = { ...parsed.data };
     if (parsed.data.startAt)
       patch.startAt = new Date(parsed.data.startAt);

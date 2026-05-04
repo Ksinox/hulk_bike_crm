@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
 import { useApiScooters } from "@/lib/api/scooters";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
-import { useSwapScooter } from "@/lib/api/rentals";
+import { useApiRentals, useSwapScooter } from "@/lib/api/rentals";
 import { MODEL_LABEL, type Rental } from "@/lib/mock/rentals";
 import { SCOOTER_BASE_STATUS_OPTIONS } from "@/pages/fleet/scooterStatusOptions";
 import type { ApiScooter, ScooterBaseStatus } from "@/lib/api/types";
@@ -59,7 +59,30 @@ export function SwapScooterDialog({
 
   const { data: scooters = [] } = useApiScooters();
   const { data: models = [] } = useApiScooterModels();
+  const { data: allRentals = [] } = useApiRentals();
   const swap = useSwapScooter();
+
+  // ID всех скутеров, которые сейчас фактически заняты — у них есть
+  // открытая аренда (active/overdue/returning). У такого скутера
+  // baseStatus может быть «rental_pool» (потому что мы не меняем
+  // baseStatus при выдаче — занятость задаётся наличием rental). Без
+  // этого фильтра picker замены показывал бы свободные ВПЕРЕМЕЖКУ с
+  // занятыми, и оператор мог бы случайно выдать клиенту скутер,
+  // которым уже пользуется другой.
+  const busyScooterIds = useMemo(() => {
+    const set = new Set<number>();
+    allRentals.forEach((r) => {
+      if (r.scooterId == null) return;
+      if (
+        r.status === "active" ||
+        r.status === "overdue" ||
+        r.status === "returning"
+      ) {
+        set.add(r.scooterId);
+      }
+    });
+    return set;
+  }, [allRentals]);
 
   // Текущий скутер из API (нужен ApiScooter для постер-аватарки).
   const currentScooter = useMemo(
@@ -70,7 +93,8 @@ export function SwapScooterDialog({
     [scooters, rental.scooterId],
   );
 
-  // Доступные скутеры — только из парка аренды, исключая текущий.
+  // Доступные скутеры — только из парка аренды, исключая текущий
+  // И исключая фактически занятые (есть открытая аренда). См. busyScooterIds.
   const available = useMemo(() => {
     const q = search.trim().toLowerCase();
     return scooters
@@ -78,7 +102,8 @@ export function SwapScooterDialog({
         (s) =>
           !s.archivedAt &&
           s.baseStatus === "rental_pool" &&
-          s.id !== rental.scooterId,
+          s.id !== rental.scooterId &&
+          !busyScooterIds.has(s.id),
       )
       .filter((s) => {
         if (!q) return true;
@@ -87,7 +112,7 @@ export function SwapScooterDialog({
         const hay = `${s.name} ${label}`.toLowerCase();
         return hay.includes(q);
       });
-  }, [scooters, models, search, rental.scooterId]);
+  }, [scooters, models, search, rental.scooterId, busyScooterIds]);
 
   // Группировка по enum-полю s.model — оно заполнено всегда (в отличие
   // от опционального modelId). Для имени группы предпочитаем

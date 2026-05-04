@@ -68,6 +68,27 @@ export type DashboardMetrics = {
   damageDebtScooterIds: Set<number>;
   returnsTodayScooterIds: Set<number>;
 
+  /**
+   * Карты scooterId → rentalId для кликов в ParkPanel: умная навигация
+   * открывает именно ту аренду, из-за которой плитка подсвечена. v0.2.97.
+   *  - overdueRentalByScooter: первая найденная просрочка
+   *  - returnsTodayRentalByScooter: первая найденная возвращаемая сегодня
+   *  - damageDebtRentalByScooter: первая аренда с долгом по ущербу
+   *  - anyActiveRentalByScooter: любая открытая аренда (active/overdue/
+   *    returning) — fallback если ни один флаг не сработал.
+   */
+  overdueRentalByScooter: Map<number, number>;
+  returnsTodayRentalByScooter: Map<number, number>;
+  damageDebtRentalByScooter: Map<number, number>;
+  anyActiveRentalByScooter: Map<number, number>;
+
+  /**
+   * Дубли активных аренд: scooterId → массив rentalId, у которых одно-
+   * временно открытое состояние (active/overdue/returning). Если в массиве
+   * >1 элемента — есть data-inconsistency, показываем баннер. v0.2.97.
+   */
+  duplicateActiveByScooter: { scooterId: number; rentalIds: number[] }[];
+
   // Выручка — для графика (пока только агрегаты за месяц)
   revenueMonth: number; // реально получено (подтверждённые платежи)
   revenueMonthCount: number;
@@ -319,26 +340,72 @@ export function useDashboardMetrics(): DashboardMetrics {
     // кружочка возврата). Считаем напрямую: скутер «возвращается сегодня»
     // если у него ЛЮБАЯ rental попадает в returnsToday.
     const overdueScooterIds = new Set<number>();
+    const overdueRentalByScooter = new Map<number, number>();
     overdueRentals.forEach((r) => {
-      if (r.scooterId != null) overdueScooterIds.add(r.scooterId);
+      if (r.scooterId != null) {
+        overdueScooterIds.add(r.scooterId);
+        // Запоминаем ПЕРВУЮ найденную просрочку — её и будем открывать.
+        if (!overdueRentalByScooter.has(r.scooterId)) {
+          overdueRentalByScooter.set(r.scooterId, r.id);
+        }
+      }
     });
     const returnsTodayScooterIds = new Set<number>();
+    const returnsTodayRentalByScooter = new Map<number, number>();
+    // Для подсчёта дублей активных аренд на одном скутере собираем все
+    // открытые rentals на каждый scooterId.
+    const openRentalsByScooter = new Map<number, number[]>();
     rentals.forEach((r) => {
       if (r.scooterId == null) return;
+      const isOpen =
+        r.status === "active" ||
+        r.status === "overdue" ||
+        r.status === "returning";
+      if (isOpen) {
+        const arr = openRentalsByScooter.get(r.scooterId) ?? [];
+        arr.push(r.id);
+        openRentalsByScooter.set(r.scooterId, arr);
+      }
       if (
         (r.status === "active" || r.status === "returning") &&
         r.endPlannedAt.slice(0, 10) === todayKey
       ) {
         returnsTodayScooterIds.add(r.scooterId);
+        if (!returnsTodayRentalByScooter.has(r.scooterId)) {
+          returnsTodayRentalByScooter.set(r.scooterId, r.id);
+        }
       }
     });
+    const anyActiveRentalByScooter = new Map<number, number>();
+    openRentalsByScooter.forEach((ids, scooterId) => {
+      // Берём максимальный id (самая свежая запись) — если дублей нет,
+      // это и есть единственная активная аренда.
+      anyActiveRentalByScooter.set(
+        scooterId,
+        ids.reduce((a, b) => (a > b ? a : b)),
+      );
+    });
     const damageDebtScooterIds = new Set<number>();
+    const damageDebtRentalByScooter = new Map<number, number>();
     const rentalById = new Map(rentals.map((r) => [r.id, r] as const));
     damageAll.forEach((d) => {
       if (d.debt <= 0) return;
       const r = rentalById.get(d.rentalId);
-      if (r?.scooterId != null) damageDebtScooterIds.add(r.scooterId);
+      if (r?.scooterId != null) {
+        damageDebtScooterIds.add(r.scooterId);
+        if (!damageDebtRentalByScooter.has(r.scooterId)) {
+          damageDebtRentalByScooter.set(r.scooterId, r.id);
+        }
+      }
     });
+
+    const duplicateActiveByScooter = Array.from(openRentalsByScooter.entries())
+      .filter(([, ids]) => ids.length > 1)
+      .map(([scooterId, ids]) => ({
+        scooterId,
+        // sort desc — свежие сверху для удобства
+        rentalIds: [...ids].sort((a, b) => b - a),
+      }));
 
     return {
       isLoading,
@@ -364,6 +431,11 @@ export function useDashboardMetrics(): DashboardMetrics {
       overdueScooterIds,
       damageDebtScooterIds,
       returnsTodayScooterIds,
+      overdueRentalByScooter,
+      returnsTodayRentalByScooter,
+      damageDebtRentalByScooter,
+      anyActiveRentalByScooter,
+      duplicateActiveByScooter,
       revenueMonth,
       revenueMonthCount,
       revenueExpected,
