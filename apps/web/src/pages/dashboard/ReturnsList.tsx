@@ -7,9 +7,12 @@ import type { ReturnItem } from "./useDashboardMetrics";
 export function ReturnsList({
   className,
   items = [],
+  onOpenRental,
 }: {
   className?: string;
   items?: ReturnItem[];
+  /** v0.3.1: если передан — открываем drawer на дашборде, без навигации. */
+  onOpenRental?: (rentalId: number) => void;
 }) {
   return (
     <Card className={className}>
@@ -35,14 +38,16 @@ export function ReturnsList({
             return (
               <div
                 key={r.rentalId}
-                onClick={() =>
-                  navigate({ route: "rentals", rentalId: r.rentalId })
-                }
+                onClick={() => {
+                  if (onOpenRental) onOpenRental(r.rentalId);
+                  else navigate({ route: "rentals", rentalId: r.rentalId });
+                }}
                 role="button"
                 tabIndex={0}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") {
-                    navigate({ route: "rentals", rentalId: r.rentalId });
+                    if (onOpenRental) onOpenRental(r.rentalId);
+                    else navigate({ route: "rentals", rentalId: r.rentalId });
                   }
                 }}
                 title="Открыть карточку аренды"

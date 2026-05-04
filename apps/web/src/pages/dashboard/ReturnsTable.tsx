@@ -10,9 +10,12 @@ import type { ReturnItem } from "./useDashboardMetrics";
 export function ReturnsTable({
   className,
   items = [],
+  onOpenRental,
 }: {
   className?: string;
   items?: ReturnItem[];
+  /** v0.3.1: drawer-обработчик клика по строке (без редиректа). */
+  onOpenRental?: (rentalId: number) => void;
 }) {
   return (
     <Card className={className}>
@@ -46,7 +49,7 @@ export function ReturnsTable({
           </thead>
           <tbody>
             {items.map((r) => (
-              <Row key={r.rentalId} r={r} />
+              <Row key={r.rentalId} r={r} onOpenRental={onOpenRental} />
             ))}
           </tbody>
         </table>
@@ -55,11 +58,20 @@ export function ReturnsTable({
   );
 }
 
-function Row({ r }: { r: ReturnItem }) {
+function Row({
+  r,
+  onOpenRental,
+}: {
+  r: ReturnItem;
+  onOpenRental?: (rentalId: number) => void;
+}) {
   const initials = initialsOf(r.clientName);
   const time = formatTime(r.endPlannedAt);
   return (
-    <tr className="group cursor-pointer">
+    <tr
+      className="group cursor-pointer"
+      onClick={() => onOpenRental?.(r.rentalId)}
+    >
       <Td>
         <div className="flex items-center gap-2.5">
           <ClientAvatar initials={initials} />

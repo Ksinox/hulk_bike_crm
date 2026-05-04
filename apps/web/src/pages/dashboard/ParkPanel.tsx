@@ -68,9 +68,16 @@ const STATUS_LABEL: Record<TileStatus, string> = {
 export function ParkPanel({
   className,
   metrics,
+  onOpenRental,
 }: {
   className?: string;
   metrics: DashboardMetrics;
+  /**
+   * Если задан — клик по плитке с активной/просроченной/late_today
+   * арендой откроет drawer вместо перехода на страницу аренд. Дашборд
+   * передаёт эту функцию из своего DrawerContext (v0.3.1).
+   */
+  onOpenRental?: (rentalId: number) => void;
 }) {
   const scootersQ = useApiScooters();
   const rentalsQ = useApiRentals();
@@ -289,14 +296,22 @@ export function ParkPanel({
                 : s.status === status;
           const num = s.name.split("#")[1] ?? s.name;
           const handleClick = () => {
-            // Клик в зависимости от статуса — разные операционные действия
+            // Клик в зависимости от статуса — разные операционные действия.
+            // v0.3.1: late_today тоже открывает аренду (это активная аренда
+            // с истекающим временем сегодня), раньше попадало в else
+            // и открывало карточку скутера.
             if (
               s.status === "rented" ||
               s.status === "overdue" ||
+              s.status === "late_today" ||
               s.status === "returning"
             ) {
-              if (s.rentalId != null)
-                navigate({ route: "rentals", rentalId: s.rentalId });
+              if (s.rentalId != null) {
+                // Если есть drawer-обработчик — открываем правый sidebar
+                // на дашборде. Иначе fallback на полную страницу аренд.
+                if (onOpenRental) onOpenRental(s.rentalId);
+                else navigate({ route: "rentals", rentalId: s.rentalId });
+              }
               return;
             }
             if (s.status === "pool") {
@@ -327,13 +342,18 @@ export function ParkPanel({
                 !statusMatch && "opacity-20",
               )}
             >
-              {/* v0.3.00: красное пульсирующее свечение ВНУТРЬ плитки —
-                  для late_today (возврат сегодня, время прошло). Плитка
-                  остаётся синей — клиент пока активный, не просрочка,
-                  но свечение красным сигнализирует «опаздывает». */}
+              {/* v0.3.1: красное пульсирующее свечение снизу плитки
+                  ПОЛУДУГОЙ. Достигается radial-gradient'ом эллипсом «снизу»:
+                  ядро у нижнего края, прозрачно к 70% высоты. Плитка остаётся
+                  синей — это активная аренда, не просрочка. Свечение мягко
+                  пульсирует через animate-pulse. */}
               {s.status === "late_today" && (
                 <span
-                  className="pointer-events-none absolute inset-0 rounded-[10px] shadow-[inset_0_0_18px_3px_rgba(239,68,68,0.85)] animate-pulse"
+                  className="pointer-events-none absolute inset-0 rounded-[10px] animate-pulse"
+                  style={{
+                    background:
+                      "radial-gradient(ellipse 75% 55% at 50% 100%, rgba(239,68,68,0.85) 0%, rgba(239,68,68,0.35) 45%, transparent 75%)",
+                  }}
                   aria-hidden
                 />
               )}
@@ -432,7 +452,6 @@ function ReassignDialog({
   return (
     <div
       className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-ink/55 p-6 backdrop-blur-sm"
-      onClick={onClose}
     >
       <div
         className="mt-24 w-full max-w-[420px] overflow-hidden rounded-2xl bg-surface shadow-card-lg"

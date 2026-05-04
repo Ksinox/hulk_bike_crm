@@ -12,11 +12,15 @@ export function OverdueTable({
   items = [],
   showPhoneColumn = false,
   compactHeader = false,
+  onOpenRental,
 }: {
   className?: string;
   items?: OverdueItem[];
   showPhoneColumn?: boolean;
   compactHeader?: boolean;
+  /** v0.3.1: если передан — клик по строке открывает drawer вместо
+   *  навигации на страницу аренд. */
+  onOpenRental?: (rentalId: number) => void;
 }) {
   const sorted = [...items].sort((a, b) => b.daysOverdue - a.daysOverdue);
   const total = items.length;
@@ -105,6 +109,7 @@ export function OverdueTable({
                 key={o.rentalId}
                 item={o}
                 showPhoneColumn={showPhoneColumn}
+                onOpenRental={onOpenRental}
               />
             ))}
           </tbody>
@@ -117,16 +122,22 @@ export function OverdueTable({
 function OverdueRow({
   item: o,
   showPhoneColumn,
+  onOpenRental,
 }: {
   item: OverdueItem;
   showPhoneColumn: boolean;
+  onOpenRental?: (rentalId: number) => void;
 }) {
   const initials = initialsOf(o.clientName);
   const phoneHref = phoneToTel(o.clientPhone);
+  const onRowClick = () => {
+    if (onOpenRental) onOpenRental(o.rentalId);
+    else navigate({ route: "rentals", rentalId: o.rentalId });
+  };
   return (
     <tr
       className="cursor-pointer group"
-      onClick={() => navigate({ route: "rentals", rentalId: o.rentalId })}
+      onClick={onRowClick}
       title="Открыть карточку аренды"
     >
       <Td overdue>

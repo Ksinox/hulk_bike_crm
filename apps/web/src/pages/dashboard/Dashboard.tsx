@@ -11,6 +11,10 @@ import { ActivityFeed } from "./ActivityFeed";
 import { ClassicKpi, CLASSIC_KPI_ICONS } from "./ClassicKpi";
 import { NewApplicationsWidget } from "./NewApplicationsWidget";
 import { DuplicateRentalsBanner } from "./DuplicateRentalsBanner";
+import {
+  DashboardDrawerProvider,
+  useDashboardDrawer,
+} from "./DashboardDrawer";
 import { loadView, saveView, type DashboardView } from "./view";
 import {
   formatRub,
@@ -28,24 +32,30 @@ export function Dashboard() {
   };
 
   return (
-    <main className="flex min-w-0 flex-1 flex-col gap-4">
-      <Topbar />
-      <Greeting view={view} onViewChange={onViewChange} metrics={metrics} />
-      {/* Диагностический баннер «дубли активных аренд». Показывается
-          только если в БД есть >1 открытой аренды на один scooterId
-          (data inconsistency из легаси-багов swap/extend). После того
-          как все дубли разобраны — баннер пропадает сам. v0.2.97. */}
-      <DuplicateRentalsBanner metrics={metrics} />
-      {view === "park" ? (
-        <ParkVariant metrics={metrics} />
-      ) : (
-        <ClassicVariant metrics={metrics} />
-      )}
-    </main>
+    // v0.3.1: drawer-провайдер оборачивает весь дашборд — клики по
+    // виджетам открывают боковую панель справа вместо перехода на
+    // страницу аренд/клиентов. Дашборд остаётся в фоне.
+    <DashboardDrawerProvider>
+      <main className="flex min-w-0 flex-1 flex-col gap-4">
+        <Topbar />
+        <Greeting view={view} onViewChange={onViewChange} metrics={metrics} />
+        {/* Диагностический баннер «дубли активных аренд». Показывается
+            только если в БД есть >1 открытой аренды на один scooterId
+            (data inconsistency из легаси-багов swap/extend). После того
+            как все дубли разобраны — баннер пропадает сам. v0.2.97. */}
+        <DuplicateRentalsBanner metrics={metrics} />
+        {view === "park" ? (
+          <ParkVariant metrics={metrics} />
+        ) : (
+          <ClassicVariant metrics={metrics} />
+        )}
+      </main>
+    </DashboardDrawerProvider>
   );
 }
 
 function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
+  const drawer = useDashboardDrawer();
   return (
     <div className="grid auto-rows-[minmax(120px,auto)] grid-cols-12 gap-4">
       <div className="col-span-3">
@@ -117,13 +127,22 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
           items-start гарантирует что флексы не растягиваются друг под друга. */}
       <div className="col-span-12 grid auto-rows-[minmax(120px,max-content)] grid-cols-12 items-start gap-4">
         <div className="col-span-8 flex flex-col gap-4">
-          <ParkPanel metrics={metrics} />
-          <OverdueTable items={metrics.overdue} />
+          <ParkPanel
+            metrics={metrics}
+            onOpenRental={(id) => drawer.openRental(id)}
+          />
+          <OverdueTable
+            items={metrics.overdue}
+            onOpenRental={(id) => drawer.openRental(id)}
+          />
           <ActivityFeed />
         </div>
         <div className="col-span-4 flex flex-col gap-4">
           <RevenueCard metrics={metrics} />
-          <ReturnsList items={metrics.returnsToday} />
+          <ReturnsList
+            items={metrics.returnsToday}
+            onOpenRental={(id) => drawer.openRental(id)}
+          />
         </div>
       </div>
     </div>
@@ -131,6 +150,7 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
 }
 
 function ClassicVariant({ metrics }: { metrics: DashboardMetrics }) {
+  const drawer = useDashboardDrawer();
   return (
     <div className="grid auto-rows-[minmax(120px,auto)] grid-cols-12 gap-4">
       <ClassicKpi
@@ -193,13 +213,18 @@ function ClassicVariant({ metrics }: { metrics: DashboardMetrics }) {
       />
       <NewApplicationsWidget className="col-span-3" />
 
-      <ReturnsTable className="col-span-8" items={metrics.returnsToday} />
+      <ReturnsTable
+        className="col-span-8"
+        items={metrics.returnsToday}
+        onOpenRental={(id) => drawer.openRental(id)}
+      />
       <ActivityFeed className="col-span-4" compact />
       <OverdueTable
         className="col-span-12"
         items={metrics.overdue}
         showPhoneColumn
         compactHeader
+        onOpenRental={(id) => drawer.openRental(id)}
       />
     </div>
   );
