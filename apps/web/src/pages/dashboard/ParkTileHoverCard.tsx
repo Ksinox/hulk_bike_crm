@@ -11,21 +11,19 @@ import { MODEL_LABEL } from "@/lib/mock/rentals";
 type Anchor = { x: number; y: number; w: number; h: number };
 
 /**
- * Hover-preview для плитки парка. v0.3.2 — компактный горизонтальный
- * layout: слева вертикальная постер-аватарка модели (с торчащим колесом
- * как в карточке скутера), справа короткая инфо-колонка.
+ * Hover-preview для плитки парка.
  *
- * Под текстом — статус-плашка («Опаздывает на 15 мин») в фирменном
- * стиле CRM. Никаких нативных browser-tooltip'ов поверх — title на
- * плитке отключён, единственная подсказка — этот hover-card.
- *
- * Содержимое:
- *  • postera-аватарка модели (108×140 примерно), белый фон;
- *  • имя/модель/baseStatus + пробег;
- *  • если активная аренда — клиент, телефон (tel:), плановое время
- *    возврата;
- *  • если возврат сегодня прошёл — крупная красная плашка
- *    «Опаздывает на N мин».
+ *  - Слева: вертикальная постер-аватарка модели (с торчащим колесом
+ *    как в карточке скутера).
+ *  - Справа: имя/модель/baseStatus, пробег, активная аренда.
+ *  - В правом верхнем углу: для аренд возвращающихся СЕГОДНЯ —
+ *    крупное время возврата (важная инфа дня).
+ *  - Под текстом — статус-плашки:
+ *    «Опаздывает на 15 мин» — возврат сегодня, время прошло;
+ *    «Просрочен на 2 дня 5 ч» — план возврата вчера и раньше.
+ *  - Слева/справа от карточки — треугольник-указатель на исходную
+ *    плитку, чтобы было понятно от какой именно плитки эта подсказка
+ *    (предупреждение от заказчика: «можно запутаться в сетке плиток»).
  */
 export function ParkTileHoverCard({
   scooterId,
@@ -64,19 +62,35 @@ export function ParkTileHoverCard({
     ? clients.find((c) => c.id === activeRental.clientId)
     : null;
 
-  // «Опаздывает на N мин» — расчёт по timestamp endPlannedAt vs now,
-  // но только если возврат запланирован сегодня. Просрочка по дате
-  // (вчера и раньше) — это уже другой кейс, отдельная плашка.
+  // Когда возврат запланирован сегодня — important: показываем большое
+  // время в углу карточки. Просрочка по дате (вчера и раньше) — отдельная
+  // плашка с расчётом дней + часов.
   const todayKey = ymd(new Date());
   const endKey = activeRental?.endPlannedAt.slice(0, 10);
   const isReturnToday = !!activeRental && endKey === todayKey;
   const overdueDayDate =
     !!activeRental && endKey !== undefined && endKey < todayKey;
+
+  // «Опаздывает на N мин» — возврат сегодня, время прошло.
   let lateMinutesToday = 0;
+  let returnTimeToday = "";
   if (isReturnToday && activeRental) {
-    const endMs = new Date(activeRental.endPlannedAt).getTime();
+    const endDate = new Date(activeRental.endPlannedAt);
+    const endMs = endDate.getTime();
     const diff = Date.now() - endMs;
     if (diff > 0) lateMinutesToday = Math.floor(diff / 60_000);
+    returnTimeToday = `${String(endDate.getHours()).padStart(2, "0")}:${String(endDate.getMinutes()).padStart(2, "0")}`;
+  }
+
+  // «Просрочен на N дней N часов» — endPlannedAt по календарной дате
+  // в прошлом. Считаем разницу в часах и разбиваем на дни/часы.
+  let overdueDays = 0;
+  let overdueHoursRest = 0;
+  if (overdueDayDate && activeRental) {
+    const endMs = new Date(activeRental.endPlannedAt).getTime();
+    const totalHours = Math.max(0, Math.floor((Date.now() - endMs) / 3_600_000));
+    overdueDays = Math.floor(totalHours / 24);
+    overdueHoursRest = totalHours % 24;
   }
 
   // Размещение карточки. Ширина 360px. Пытаемся справа от плитки;
@@ -87,11 +101,23 @@ export function ParkTileHoverCard({
   const H_APPROX = 220;
   const winW = window.innerWidth;
   const winH = window.innerHeight;
+  let placedRight = true;
   let left = anchor.x + anchor.w + PADDING;
-  if (left + W > winW) left = Math.max(PADDING, anchor.x - W - PADDING);
+  if (left + W > winW) {
+    left = Math.max(PADDING, anchor.x - W - PADDING);
+    placedRight = false;
+  }
   let top = anchor.y + anchor.h / 2 - H_APPROX / 2;
   if (top + H_APPROX > winH) top = winH - H_APPROX - PADDING;
   if (top < PADDING) top = PADDING;
+  // Координата центра плитки относительно top карточки — указатель
+  // должен «смотреть» прямо в центр плитки, даже если карточка
+  // съехала из-за края экрана.
+  const tileCenterY = anchor.y + anchor.h / 2;
+  const arrowTopWithinCard = Math.max(
+    16,
+    Math.min(H_APPROX - 16, tileCenterY - top),
+  );
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -106,7 +132,47 @@ export function ParkTileHoverCard({
       className="pointer-events-none fixed z-[80] animate-in fade-in slide-in-from-left-1 duration-150"
       style={{ left, top, width: W }}
     >
-      <div className="overflow-hidden rounded-2xl bg-surface shadow-card-lg ring-1 ring-border">
+      {/* Указатель-треугольник к исходной плитке. Если карточка справа
+          от плитки — треугольник торчит влево; если слева — вправо. */}
+      <span
+        className={cn(
+          "absolute h-0 w-0",
+          placedRight ? "-left-[10px]" : "-right-[10px]",
+        )}
+        style={{
+          top: arrowTopWithinCard - 8,
+          borderTop: "8px solid transparent",
+          borderBottom: "8px solid transparent",
+          ...(placedRight
+            ? { borderRight: "10px solid hsl(var(--surface))" }
+            : { borderLeft: "10px solid hsl(var(--surface))" }),
+          // Тонкая обводка треугольника. Псевдоэлементами border делается
+          // плохо — оставляем без обводки, но drop-shadow карточки даст
+          // визуальную привязку.
+          filter: "drop-shadow(0 1px 1px rgba(15,23,42,0.08))",
+        }}
+        aria-hidden
+      />
+
+      <div className="relative overflow-hidden rounded-2xl bg-surface shadow-card-lg ring-1 ring-border">
+        {/* Большое время возврата в правом верхнем углу — только если
+            возврат сегодня. Самая важная инфа дня. */}
+        {isReturnToday && returnTimeToday && (
+          <div className="absolute right-3 top-2 z-[1] flex flex-col items-end leading-none">
+            <span className="text-[9px] font-bold uppercase tracking-wider text-muted-2">
+              Возврат сегодня
+            </span>
+            <span
+              className={cn(
+                "mt-0.5 font-display text-[24px] font-extrabold tabular-nums leading-none",
+                lateMinutesToday > 0 ? "text-red-ink" : "text-ink",
+              )}
+            >
+              {returnTimeToday}
+            </span>
+          </div>
+        )}
+
         <div className="flex">
           {/* === Слева: вертикальная постер-аватарка === */}
           <div className="relative flex w-[120px] shrink-0 items-end justify-center overflow-visible bg-surface-soft pb-2">
@@ -124,7 +190,15 @@ export function ParkTileHoverCard({
           </div>
 
           {/* === Справа: инфо-колонка === */}
-          <div className="min-w-0 flex-1 px-3 py-3">
+          <div
+            className={cn(
+              "min-w-0 flex-1 px-3 py-3",
+              // Если в углу торчит блок «Возврат сегодня» — дадим
+              // верхнему ряду заголовков немного отступа, чтобы не
+              // накладывался на крупное время.
+              isReturnToday && returnTimeToday && "pr-[88px]",
+            )}
+          >
             <div className="flex items-center gap-2">
               <div className="font-display text-[16px] font-extrabold leading-tight text-ink">
                 {scooter.name}
@@ -181,18 +255,19 @@ export function ParkTileHoverCard({
               </div>
             )}
 
-            {/* Плашка «Опаздывает на N мин» — на самой карточке, не в
-                нативной подсказке курсора. v0.3.2. */}
+            {/* Плашка «Опаздывает на N мин» — на самой карточке. */}
             {lateMinutesToday > 0 && (
               <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-red px-2 py-0.5 text-[11px] font-bold text-white shadow-card">
                 <AlertTriangle size={10} />
                 Опаздывает на {fmtMinutes(lateMinutesToday)}
               </div>
             )}
+            {/* «Просрочен на N дней N часов» — full overdue. */}
             {overdueDayDate && (
               <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-red px-2 py-0.5 text-[11px] font-bold text-white shadow-card">
                 <AlertTriangle size={10} />
-                Просрочка
+                Просрочен на{" "}
+                {fmtDaysHours(overdueDays, overdueHoursRest)}
               </div>
             )}
             {scooter.baseStatus === "repair" && !activeRental && (
@@ -249,6 +324,21 @@ function fmtMinutes(m: number): string {
   return `${h} ч ${rest} мин`;
 }
 
+function fmtDaysHours(days: number, hours: number): string {
+  if (days === 0) return `${hours} ч`;
+  if (hours === 0) return `${days} ${pluralDay(days)}`;
+  return `${days} ${pluralDay(days)} ${hours} ч`;
+}
+
+function pluralDay(n: number): string {
+  const a = Math.abs(n);
+  const n10 = a % 10;
+  const n100 = a % 100;
+  if (n10 === 1 && n100 !== 11) return "день";
+  if (n10 >= 2 && n10 <= 4 && (n100 < 10 || n100 >= 20)) return "дня";
+  return "дней";
+}
+
 function ymd(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
@@ -256,12 +346,6 @@ function ymd(d: Date): string {
 /**
  * Хук для управления hover-preview'ом на плитке. Возвращает state
  * текущего scooterId, anchor, и handlers для onMouseEnter/onMouseLeave.
- *
- * Поведение:
- *  - mouseEnter → ставит таймер 350ms; если за это время курсор всё
- *    ещё на плитке — показываем preview;
- *  - mouseLeave → отменяет таймер / прячет preview;
- *  - mousedown / клик — прячет (плитка обработает свой клик).
  */
 export function useTileHoverPreview() {
   const [state, setState] = useState<{
