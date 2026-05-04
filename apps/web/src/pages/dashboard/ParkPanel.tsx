@@ -109,19 +109,18 @@ export function ParkPanel({
         activeRentalByScooter.set(r.scooterId, r.id);
     });
 
-    // ID множества из metrics — нужны для подсветки красных плиток
-    // (просрочка по статусу, факт. просрочка по дате, открытый долг по
-    // ущербу) и мигающего индикатора «возврат сегодня».
-    const overdueIds = metrics.overdueRentalIds;
-    const damageIds = metrics.damageDebtRentalIds;
-    const returnsTodayIds = metrics.returnsTodayRentalIds;
+    // v0.2.96: проверяем флаги ПО scooterId напрямую — не через Map
+    // <scooter, rentalId>, который теряет ситуации с >1 активной записью
+    // на одном скутере (легаси-данные после миграций swap/extend).
+    const overdueScooters = metrics.overdueScooterIds;
+    const damageScooters = metrics.damageDebtScooterIds;
+    const returnsTodayScooters = metrics.returnsTodayScooterIds;
 
     return scooters.map((s) => {
       const rentalId = activeRentalByScooter.get(s.id) ?? null;
-      const isOverdue = rentalId != null && overdueIds.has(rentalId);
-      const hasDamage = rentalId != null && damageIds.has(rentalId);
-      const isReturnToday =
-        rentalId != null && returnsTodayIds.has(rentalId);
+      const isOverdue = overdueScooters.has(s.id);
+      const hasDamage = damageScooters.has(s.id);
+      const isReturnToday = returnsTodayScooters.has(s.id);
       return {
         id: s.id,
         name: s.name,
@@ -137,9 +136,9 @@ export function ParkPanel({
   }, [
     scootersQ.data,
     rentalsQ.data,
-    metrics.overdueRentalIds,
-    metrics.damageDebtRentalIds,
-    metrics.returnsTodayRentalIds,
+    metrics.overdueScooterIds,
+    metrics.damageDebtScooterIds,
+    metrics.returnsTodayScooterIds,
   ]);
 
   const modelCounts = useMemo(() => {

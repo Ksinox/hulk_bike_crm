@@ -51,16 +51,22 @@ export type DashboardMetrics = {
   overdue: OverdueItem[];
 
   /**
-   * Множества rentalId для быстрой подсветки плиток в ParkPanel.
-   *  - overdueRentalIds — все «просрочки» (status=overdue ИЛИ active с
-   *    endPlannedAt в прошлом).
-   *  - damageDebtRentalIds — аренды с открытым актом и debt>0.
-   *  - returnsTodayRentalIds — те, у кого endPlannedAt = сегодня
-   *    (status active/returning).
+   * Множества rentalId — для других виджетов где rentalId это первичный
+   * ключ (например OverdueTable).
    */
   overdueRentalIds: Set<number>;
   damageDebtRentalIds: Set<number>;
   returnsTodayRentalIds: Set<number>;
+
+  /**
+   * Множества scooterId — для подсветки плиток в ParkPanel. Считаются
+   * НАПРЯМУЮ по rentals, без промежуточной свёртки rentalId↔scooterId
+   * через Map (которая теряла кейсы когда у скутера >1 активной записи
+   * в БД из легаси-данных). v0.2.96.
+   */
+  overdueScooterIds: Set<number>;
+  damageDebtScooterIds: Set<number>;
+  returnsTodayScooterIds: Set<number>;
 
   // Выручка — для графика (пока только агрегаты за месяц)
   revenueMonth: number; // реально получено (подтверждённые платежи)
@@ -306,6 +312,34 @@ export function useDashboardMetrics(): DashboardMetrics {
         .filter((id): id is number => typeof id === "number"),
     );
 
+    // Те же множества, но по scooterId — напрямую по списку аренд.
+    // Раньше ParkPanel пытался свести rentalId→scooterId через Map<scooter,
+    // rentalId>, которая хранит только ОДНУ аренду на скутер; при дублях
+    // в легаси-данных терялась подсветка (плитка синяя, но без жёлтого
+    // кружочка возврата). Считаем напрямую: скутер «возвращается сегодня»
+    // если у него ЛЮБАЯ rental попадает в returnsToday.
+    const overdueScooterIds = new Set<number>();
+    overdueRentals.forEach((r) => {
+      if (r.scooterId != null) overdueScooterIds.add(r.scooterId);
+    });
+    const returnsTodayScooterIds = new Set<number>();
+    rentals.forEach((r) => {
+      if (r.scooterId == null) return;
+      if (
+        (r.status === "active" || r.status === "returning") &&
+        r.endPlannedAt.slice(0, 10) === todayKey
+      ) {
+        returnsTodayScooterIds.add(r.scooterId);
+      }
+    });
+    const damageDebtScooterIds = new Set<number>();
+    const rentalById = new Map(rentals.map((r) => [r.id, r] as const));
+    damageAll.forEach((d) => {
+      if (d.debt <= 0) return;
+      const r = rentalById.get(d.rentalId);
+      if (r?.scooterId != null) damageDebtScooterIds.add(r.scooterId);
+    });
+
     return {
       isLoading,
       hasAnyData,
@@ -327,6 +361,9 @@ export function useDashboardMetrics(): DashboardMetrics {
       overdueRentalIds,
       damageDebtRentalIds,
       returnsTodayRentalIds,
+      overdueScooterIds,
+      damageDebtScooterIds,
+      returnsTodayScooterIds,
       revenueMonth,
       revenueMonthCount,
       revenueExpected,
