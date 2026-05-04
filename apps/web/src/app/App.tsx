@@ -7,6 +7,7 @@ import { Documents } from "@/pages/documents/Documents";
 import { Garage } from "@/pages/fleet/Garage";
 import { Service } from "@/pages/service/Service";
 import { Staff } from "@/pages/staff/Staff";
+import { WhatsNew } from "@/pages/whats-new/WhatsNew";
 import { UpdateToast } from "./UpdateToast";
 import { TitleBar } from "./TitleBar";
 import { startWebVersionCheck } from "@/lib/version-check";
@@ -91,6 +92,8 @@ export function App() {
           <Staff />
         ) : route === "docs" ? (
           <Documents />
+        ) : route === "whats-new" ? (
+          <WhatsNew />
         ) : (
           <Dashboard />
         )}

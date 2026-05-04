@@ -21,6 +21,9 @@ import { ProfileModal } from "./ProfileModal";
 import { AddClientModal } from "@/pages/clients/AddClientModal";
 import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
 import { useDashboardDrawer } from "./DashboardDrawer";
+import { navigate } from "@/app/navigationStore";
+import { useUnreadChangelog } from "@/pages/whats-new/useUnreadChangelog";
+import { changelog } from "@/data/changelog";
 
 export function Topbar() {
   const { data: me } = useMe();
@@ -31,7 +34,10 @@ export function Topbar() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [newClientOpen, setNewClientOpen] = useState(false);
   const [newRentalOpen, setNewRentalOpen] = useState(false);
+  const [bellOpen, setBellOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const bellRef = useRef<HTMLDivElement>(null);
+  const { unreadCount: changelogUnread } = useUnreadChangelog();
 
   // Создатель может переключаться между ролями на лету для тестирования UI
   const isCreator = me?.role === "creator";
@@ -40,6 +46,9 @@ export function Topbar() {
     const onClick = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setMenuOpen(false);
+      }
+      if (bellRef.current && !bellRef.current.contains(e.target as Node)) {
+        setBellOpen(false);
       }
     };
     window.addEventListener("mousedown", onClick);
@@ -99,10 +108,27 @@ export function Topbar() {
         <Settings size={18} />
         <SoonDot />
       </IconBtn>
-      <IconBtn aria-label="Уведомления — скоро" title="Уведомления — скоро" disabled>
-        <Bell size={18} />
-        <SoonDot />
-      </IconBtn>
+
+      <div className="relative" ref={bellRef}>
+        <IconBtn
+          aria-label="Что нового"
+          title={
+            changelogUnread > 0
+              ? `Новых улучшений: ${changelogUnread}`
+              : "Что нового"
+          }
+          onClick={() => setBellOpen((v) => !v)}
+        >
+          <Bell size={18} />
+          {changelogUnread > 0 && (
+            <span className="absolute -right-0.5 -top-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-red px-1 text-[10px] font-bold text-white ring-2 ring-surface">
+              {changelogUnread}
+            </span>
+          )}
+        </IconBtn>
+
+        {bellOpen && <ChangelogPopover unreadCount={changelogUnread} onClose={() => setBellOpen(false)} />}
+      </div>
 
       <div className="relative" ref={menuRef}>
         <button
@@ -313,6 +339,56 @@ function IconBtn({
     >
       {children}
     </button>
+  );
+}
+
+function ChangelogPopover({
+  unreadCount,
+  onClose,
+}: {
+  unreadCount: number;
+  onClose: () => void;
+}) {
+  const preview = changelog.slice(0, 3);
+  const onOpen = () => {
+    onClose();
+    navigate({ route: "whats-new" });
+  };
+  return (
+    <div className="absolute right-0 top-11 z-50 w-[320px] overflow-hidden rounded-[14px] bg-surface shadow-card-lg ring-1 ring-border">
+      <div className="px-4 pb-2 pt-3">
+        <div className="text-[13px] font-bold text-ink">
+          {unreadCount > 0
+            ? `Новых улучшений: ${unreadCount}`
+            : "Все улучшения просмотрены"}
+        </div>
+        <div className="mt-0.5 text-[11px] text-muted-2">
+          В версии CRM
+        </div>
+      </div>
+      <div className="border-t border-border">
+        {preview.map((e) => (
+          <div
+            key={e.id}
+            className="flex flex-col gap-0.5 px-4 py-2 text-[12px]"
+          >
+            <div className="font-semibold text-ink-2">{e.title}</div>
+            <div className="text-[11px] text-muted-2">
+              {e.category} · {e.areas.join(", ")}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="border-t border-border p-2">
+        <button
+          type="button"
+          onClick={onOpen}
+          className="flex w-full items-center justify-center gap-1.5 rounded-[10px] bg-ink px-3 py-2 text-[13px] font-bold text-white transition-colors hover:bg-blue-600"
+        >
+          Посмотреть улучшения
+        </button>
+      </div>
+    </div>
   );
 }
 

@@ -10,6 +10,7 @@ import {
   Receipt,
   Settings,
   ShoppingBag,
+  Sparkles,
   UserCog,
   Users,
   Wallet,
@@ -21,6 +22,7 @@ import { UpdateBanner, useDesktopUpdate } from "./UpdateBanner";
 import { isElectron } from "@/platform";
 import type { RouteId } from "./route";
 import { useMe } from "@/lib/api/auth";
+import { useUnreadChangelog } from "@/pages/whats-new/useUnreadChangelog";
 
 type NavItem = {
   id: RouteId | "logout";
@@ -49,6 +51,7 @@ function buildMainItems(canManageStaff: boolean): NavItem[] {
     { id: "tasks", label: "Задачи", icon: ClipboardCheck },
     { id: "analytics", label: "Аналитика", icon: BarChart3 },
     { id: "docs", label: "Документы", icon: FileText, ready: true },
+    { id: "whats-new", label: "Что нового", icon: Sparkles, ready: true },
   );
   return items;
 }
@@ -70,6 +73,7 @@ export function Sidebar({
   const { data: me } = useMe();
   const canManageStaff = me?.role === "creator" || me?.role === "director";
   const mainItems = buildMainItems(canManageStaff);
+  const { unreadCount: changelogUnread } = useUnreadChangelog();
   const [tooltip, setTooltip] = useState<{
     label: string;
     top: number;
@@ -131,6 +135,7 @@ export function Sidebar({
               onEnter={handleEnter}
               onLeave={handleLeave}
               onSelect={onSelect}
+              badgeCount={item.id === "whats-new" ? changelogUnread : 0}
             />
           ))}
         </div>
@@ -182,6 +187,7 @@ function NavRow({
   onEnter,
   onLeave,
   onSelect,
+  badgeCount = 0,
 }: {
   item: NavItem;
   active: boolean;
@@ -189,10 +195,12 @@ function NavRow({
   onEnter: (e: React.MouseEvent<HTMLButtonElement>, label: string) => void;
   onLeave: () => void;
   onSelect: (id: RouteId) => void;
+  badgeCount?: number;
 }) {
   const Icon = item.icon;
   const isLogout = item.id === "logout";
   const disabled = !isLogout && item.ready !== true;
+  const showBadge = !active && badgeCount > 0;
 
   const tooltipLabel = disabled ? `${item.label} · скоро` : item.label;
 
@@ -214,7 +222,12 @@ function NavRow({
         !active && disabled && "cursor-not-allowed text-muted-2 opacity-50",
       )}
     >
-      <Icon size={20} className="flex-shrink-0" />
+      <span className="relative flex-shrink-0">
+        <Icon size={20} />
+        {showBadge && !expanded && (
+          <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-red ring-2 ring-surface" />
+        )}
+      </span>
       <span
         className={cn(
           "flex min-w-0 flex-1 items-center gap-2 text-[13px] font-semibold transition-[opacity,transform]",
@@ -231,6 +244,16 @@ function NavRow({
         {disabled && (
           <span className="ml-auto rounded-full bg-surface-soft px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-muted-2">
             скоро
+          </span>
+        )}
+        {showBadge && !disabled && (
+          <span
+            className={cn(
+              "ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-bold",
+              active ? "bg-white/20 text-white" : "bg-red text-white",
+            )}
+          >
+            {badgeCount}
           </span>
         )}
       </span>

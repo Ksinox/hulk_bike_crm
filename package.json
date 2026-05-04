@@ -31,6 +31,7 @@
     "db:seed": "pnpm --filter api db:seed",
     "db:studio": "pnpm --filter api db:studio",
     "lint": "pnpm -r lint",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "changelog:draft": "node scripts/changelog/draft.mjs"
   }
 }
