@@ -6,7 +6,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { ExternalLink, X } from "lucide-react";
+import { ArrowLeft, ExternalLink, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { navigate } from "@/app/navigationStore";
 import { RentalCard } from "@/pages/rentals/RentalCard";
@@ -21,78 +21,114 @@ type Target =
   | { kind: "client"; id: number };
 
 type Ctx = {
-  target: Target | null;
+  /**
+   * Стек открытых сущностей. Top = текущий уровень (последний поверх).
+   * Из rental drawer'а можно openClient — кладёт client на top, drawer
+   * показывает его. Кнопка «← Назад» / Esc в верхнем слое поппит
+   * стек и возвращает на предыдущий уровень.
+   */
+  stack: Target[];
   openRental: (id: number) => void;
   openClient: (id: number) => void;
+  back: () => void;
   close: () => void;
+  /** Хелпер для дочерних компонентов: «я внутри drawer'а?» */
+  inDrawer: boolean;
 };
 
 const DashboardDrawerCtx = createContext<Ctx | null>(null);
 
 /**
- * Контекст drawer'а на дашборде.
+ * Контекст drawer'а на дашборде (v0.3.1 — stacking, идея 2).
  *
- * Идея заказчика (v0.3.1): клики по виджетам дашборда (плитка скутера,
- * строка просрочки, строка «сегодня возвращают») не должны выкидывать
- * с дашборда на страницу аренд — пусть открывается боковая панель
- * справа с тем же содержимым (RentalCard / ClientQuickView). Дашборд
- * остаётся на своём месте.
+ * Концепция «operations console» — все действия с дашборда без
+ * перехода на страницы:
+ *  • клик по виджету → drawer (rental / client) выезжает справа;
+ *  • внутри rental drawer'а клик на клиента → openClient — клиент
+ *    рендерится поверх rental drawer'а как ClientQuickView (он уже
+ *    z-120, drawer z-100, оба видны);
+ *  • Esc / закрытие верхнего уровня → возврат к предыдущему;
+ *  • когда стек пустой — drawer закрыт.
  *
- * Если дочерний компонент находится вне Provider'а — хук возвращает no-op
- * стабы, и компонент сам решит fallback (обычно navigate на полную страницу).
+ * Если дочерний компонент находится вне Provider'а — хук возвращает
+ * inDrawer=false и no-op стабы (RentalCard сам решит fallback на
+ * navigate / inline ClientQuickView).
  */
 export function useDashboardDrawer(): Ctx {
   const v = useContext(DashboardDrawerCtx);
   return (
     v ?? {
-      target: null,
+      stack: [],
       openRental: () => {},
       openClient: () => {},
+      back: () => {},
       close: () => {},
+      inDrawer: false,
     }
   );
 }
 
 export function DashboardDrawerProvider({ children }: { children: ReactNode }) {
-  const [target, setTarget] = useState<Target | null>(null);
+  const [stack, setStack] = useState<Target[]>([]);
   const ctx: Ctx = useMemo(
     () => ({
-      target,
-      openRental: (id) => setTarget({ kind: "rental", id }),
-      openClient: (id) => setTarget({ kind: "client", id }),
-      close: () => setTarget(null),
+      stack,
+      openRental: (id) =>
+        setStack((s) => [...s, { kind: "rental", id }]),
+      openClient: (id) =>
+        setStack((s) => [...s, { kind: "client", id }]),
+      back: () => setStack((s) => s.slice(0, -1)),
+      close: () => setStack([]),
+      inDrawer: stack.length > 0,
     }),
-    [target],
+    [stack],
   );
   return (
     <DashboardDrawerCtx.Provider value={ctx}>
       {children}
-      <DrawerHost target={target} onClose={ctx.close} />
+      <DrawerHost ctx={ctx} />
     </DashboardDrawerCtx.Provider>
   );
 }
 
-function DrawerHost({
-  target,
-  onClose,
-}: {
-  target: Target | null;
-  onClose: () => void;
-}) {
-  // ClientQuickView — собственный фуллскрин-оверлей. Рендерим его
-  // отдельно от drawer-панели, иначе будут двойные фоны.
-  if (target?.kind === "client") {
-    return (
-      <ClientQuickView clientId={target.id} onClose={onClose} />
-    );
-  }
-  if (target?.kind === "rental") {
-    return <RentalDrawerPanel rentalId={target.id} onClose={onClose} />;
-  }
-  return null;
+function DrawerHost({ ctx }: { ctx: Ctx }) {
+  const { stack } = ctx;
+  if (stack.length === 0) return null;
+
+  const top = stack[stack.length - 1]!;
+  // Самый «глубокий» rental в стеке — он будет фоном, поверх него
+  // ClientQuickView. Если top тоже rental — рендерим его как drawer.
+  const rentalLayer = stack.find((t) => t.kind === "rental");
+  const clientOnTop = top.kind === "client";
+  // Если в стеке есть и rental, и client (top), drawer показывает
+  // rental, а ClientQuickView рисуется поверх благодаря своему z-120.
+  // Если только rental — просто drawer. Если только client — только
+  // ClientQuickView (без drawer'а).
+  return (
+    <>
+      {rentalLayer && (
+        <RentalDrawerLayer
+          rentalId={rentalLayer.id}
+          // Кнопка X закрывает ВСЁ окно (стек). Если поверх
+          // открыт client — её всё равно не видно, поэтому это
+          // безопасно.
+          onClose={ctx.close}
+        />
+      )}
+      {clientOnTop && (
+        <ClientQuickView
+          // ClientQuickView сам полноэкранный с z-120 — рисуется
+          // поверх drawer'а. Esc/X внутри него закрывают только
+          // его слой через back().
+          clientId={top.id}
+          onClose={ctx.back}
+        />
+      )}
+    </>
+  );
 }
 
-function RentalDrawerPanel({
+function RentalDrawerLayer({
   rentalId,
   onClose,
 }: {
@@ -105,6 +141,15 @@ function RentalDrawerPanel({
     setClosing(true);
     window.setTimeout(onClose, 220);
   };
+  // Сбрасываем флаг закрытия при смене rentalId — drawer переоткрывается
+  // на другую аренду без размонтирования.
+  useEffect(() => {
+    setClosing(false);
+  }, [rentalId]);
+  // Esc на этом уровне — закрывает drawer. Если поверх открыт client,
+  // его собственный обработчик Esc сработает раньше (он повешен глубже
+  // в DOM на свой root), поэтому drawer'у Esc дойдёт только когда
+  // client уже снят (т.е. drawer на верхнем уровне).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") requestClose();
@@ -113,11 +158,6 @@ function RentalDrawerPanel({
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  // Сбрасываем флаг закрытия при смене rentalId — drawer переоткрывается
-  // на другую аренду без размонтирования.
-  useEffect(() => {
-    setClosing(false);
-  }, [rentalId]);
 
   const active = useRentals();
   const archived = useArchivedRentals();
@@ -130,11 +170,8 @@ function RentalDrawerPanel({
   return (
     <div
       className={cn(
-        "fixed inset-0 z-[100]",
-        // Тонкая дымка по фону. Кликом по ней закрываем.
-        closing
-          ? "animate-backdrop-out bg-ink/40"
-          : "animate-backdrop-in bg-ink/40",
+        "fixed inset-0 z-[100] bg-ink/40",
+        closing ? "animate-backdrop-out" : "animate-backdrop-in",
       )}
     >
       <aside
@@ -143,7 +180,6 @@ function RentalDrawerPanel({
           "transform transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
           closing ? "translate-x-full" : "translate-x-0",
         )}
-        onClick={(e) => e.stopPropagation()}
       >
         <header className="flex items-center justify-between gap-3 border-b border-border bg-surface-soft px-5 py-3">
           <div className="min-w-0">
@@ -191,3 +227,7 @@ function RentalDrawerPanel({
     </div>
   );
 }
+
+// ArrowLeft пока не используется — оставлен для будущей кнопки «Назад»
+// если решим добавить полную stack-навигацию (rental over rental и т.д.).
+void ArrowLeft;

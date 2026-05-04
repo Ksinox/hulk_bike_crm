@@ -59,6 +59,7 @@ import {
   useResetRentalChain,
   useUnarchiveRental,
 } from "@/lib/api/rentals";
+import { useDashboardDrawer } from "@/pages/dashboard/DashboardDrawer";
 import { useMe } from "@/lib/api/auth";
 import { confirmDialog } from "@/lib/toast";
 import { toast } from "@/lib/toast";
@@ -210,6 +211,19 @@ export function RentalCard({
   const [swapOpen, setSwapOpen] = useState(false);
   const damageAgreement = useDamageAgreement();
   const [clientQuickView, setClientQuickView] = useState(false);
+  // v0.3.1 (idea 2: stacking drawers): когда RentalCard рендерится
+  // ВНУТРИ drawer'а на дашборде — клик на клиента не должен открывать
+  // отдельный ClientQuickView, а должен класть «client» поверх стека
+  // drawer'а. Эффект: над текущим rental drawer'ом всплывает client
+  // view; Esc / X возвращает к rental drawer'у.
+  // Если RentalCard на странице аренд (вне drawer'а) — useDashboardDrawer
+  // вернёт inDrawer=false, поведение сохранится прежнее (локальная
+  // ClientQuickView через setClientQuickView).
+  const drawer = useDashboardDrawer();
+  const openClient = (clientId: number) => {
+    if (drawer.inDrawer) drawer.openClient(clientId);
+    else setClientQuickView(true);
+  };
   const { data: me } = useMe();
   const deleteRental = useDeleteRental();
   const unarchiveRental = useUnarchiveRental();
@@ -612,7 +626,7 @@ export function RentalCard({
                 {" — "}
                 <button
                   type="button"
-                  onClick={() => setClientQuickView(true)}
+                  onClick={() => openClient(client.id)}
                   title="Быстрый просмотр клиента"
                   className="rounded decoration-2 underline-offset-4 hover:underline"
                 >
@@ -1086,7 +1100,7 @@ export function RentalCard({
         {tab === "terms" && (
           <TermsTab
             rental={rental}
-            onClientClick={() => setClientQuickView(true)}
+            onClientClick={() => client && openClient(client.id)}
             onSwapScooter={() => {
               if (!rental.scooterId) {
                 toast.info("Нет скутера", "К аренде не привязан скутер");
