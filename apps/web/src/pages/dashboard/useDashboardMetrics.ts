@@ -67,6 +67,13 @@ export type DashboardMetrics = {
   overdueScooterIds: Set<number>;
   damageDebtScooterIds: Set<number>;
   returnsTodayScooterIds: Set<number>;
+  /**
+   * v0.2.99: «опаздывает по времени сегодня» — endPlannedAt's date == today
+   * И время уже прошло. Это ещё НЕ просрочка (она с завтрашнего дня), но
+   * предупреждение для оператора что клиент превышает запланированное время.
+   * На дашборде такая плитка жёлтая.
+   */
+  pastDueTodayScooterIds: Set<number>;
 
   /**
    * Карты scooterId → rentalId для кликов в ParkPanel: умная навигация
@@ -172,10 +179,16 @@ export function useDashboardMetrics(): DashboardMetrics {
         : null;
 
     // ===== KPI: Просрочки
+    // v0.2.99: считаем по КАЛЕНДАРНОЙ дате, не по timestamp. Если план
+    // возврата сегодня — это ещё не просрочка, оператор имеет весь день
+    // на приём. Просрочка начинается со СЛЕДУЮЩЕГО дня (endPlannedAt's
+    // date < today's date). Раньше использовался timestamp-comparison —
+    // в результате после 16:00 сегодняшние возвраты ошибочно
+    // подсвечивались как просрочка.
     const overdueRentals = rentals.filter(
       (r) =>
         r.status === "overdue" ||
-        (r.status === "active" && r.endPlannedAt < nowIso(now)),
+        (r.status === "active" && r.endPlannedAt.slice(0, 10) < todayKey),
     );
     const overdueYesterday = rentals.filter(
       (r) =>
@@ -192,11 +205,12 @@ export function useDashboardMetrics(): DashboardMetrics {
     const overdue: OverdueItem[] = overdueRentals.map((r) => {
       const sc = r.scooterId != null ? scooterById.get(r.scooterId) : null;
       const cl = clientById.get(r.clientId);
-      const end = new Date(r.endPlannedAt);
-      const daysOverdue = Math.max(
-        0,
-        Math.floor((now.getTime() - end.getTime()) / 86400_000),
-      );
+      // v0.2.99: считаем «дней просрочки» по календарным датам (без часов).
+      // День возврата = 0 дней просрочки (но после фильтра выше такие
+      // вообще не попадают в overdue). +1 день начинается со следующего
+      // календарного дня после endPlannedAt.
+      const endDateKey = r.endPlannedAt.slice(0, 10);
+      const daysOverdue = Math.max(0, daysBetweenYmd(endDateKey, todayKey));
       const debt = payments
         .filter((p) => p.rentalId === r.id && !p.paid)
         .reduce((s, p) => s + p.amount, 0);
@@ -352,9 +366,11 @@ export function useDashboardMetrics(): DashboardMetrics {
     });
     const returnsTodayScooterIds = new Set<number>();
     const returnsTodayRentalByScooter = new Map<number, number>();
+    const pastDueTodayScooterIds = new Set<number>();
     // Для подсчёта дублей активных аренд на одном скутере собираем все
     // открытые rentals на каждый scooterId.
     const openRentalsByScooter = new Map<number, number[]>();
+    const nowMs = now.getTime();
     rentals.forEach((r) => {
       if (r.scooterId == null) return;
       const isOpen =
@@ -366,13 +382,19 @@ export function useDashboardMetrics(): DashboardMetrics {
         arr.push(r.id);
         openRentalsByScooter.set(r.scooterId, arr);
       }
-      if (
+      const isReturnToday =
         (r.status === "active" || r.status === "returning") &&
-        r.endPlannedAt.slice(0, 10) === todayKey
-      ) {
+        r.endPlannedAt.slice(0, 10) === todayKey;
+      if (isReturnToday) {
         returnsTodayScooterIds.add(r.scooterId);
         if (!returnsTodayRentalByScooter.has(r.scooterId)) {
           returnsTodayRentalByScooter.set(r.scooterId, r.id);
+        }
+        // Если время уже прошло — отмечаем как «опаздывает по времени»
+        // (это ещё не просрочка по бизнес-правилу, просрочка завтра).
+        const endMs = new Date(r.endPlannedAt).getTime();
+        if (!Number.isNaN(endMs) && endMs < nowMs) {
+          pastDueTodayScooterIds.add(r.scooterId);
         }
       }
     });
@@ -431,6 +453,7 @@ export function useDashboardMetrics(): DashboardMetrics {
       overdueScooterIds,
       damageDebtScooterIds,
       returnsTodayScooterIds,
+      pastDueTodayScooterIds,
       overdueRentalByScooter,
       returnsTodayRentalByScooter,
       damageDebtRentalByScooter,
@@ -464,8 +487,17 @@ function addDays(d: Date, days: number): Date {
   x.setDate(x.getDate() + days);
   return x;
 }
-function nowIso(d: Date): string {
-  return d.toISOString();
+/**
+ * Календарных дней между двумя YYYY-MM-DD строками (b - a, без учёта
+ * времени). Положительное значение, если b позже a; 0 если та же дата.
+ * Используется для подсчёта «дней просрочки» — день возврата = 0,
+ * следующий = 1 и т.д.
+ */
+function daysBetweenYmd(a: string, b: string): number {
+  const aMs = new Date(`${a}T00:00:00Z`).getTime();
+  const bMs = new Date(`${b}T00:00:00Z`).getTime();
+  if (Number.isNaN(aMs) || Number.isNaN(bMs)) return 0;
+  return Math.round((bMs - aMs) / 86_400_000);
 }
 
 /** Приветствие по времени суток. */

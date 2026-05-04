@@ -14,7 +14,8 @@ import { toast } from "@/lib/toast";
 /** Статус плитки — производный от baseStatus скутера + активной аренды. */
 type TileStatus =
   | "rented"
-  | "overdue" // просрочка ИЛИ долг по ущербу — красная плитка
+  | "overdue" // просрочка по дате (вчера и раньше) ИЛИ долг по ущербу — красная
+  | "late_today" // возврат сегодня, но время уже прошло — жёлтая (предупреждение). v0.2.99
   | "returning" // на возврате — физически у клиента или в процессе приёма
   | "ready" // не распределён (baseStatus=ready)
   | "pool" // в парке аренды, свободен к сдаче (baseStatus=rental_pool, без активной аренды)
@@ -37,6 +38,7 @@ const MODEL_CHIPS: { id: ModelFilter; label: string }[] = [
 const STATUS_CHIPS: { id: StatusFilter; label: string; swatch: string }[] = [
   { id: "all", label: "всё", swatch: "hsl(var(--muted))" },
   { id: "rented", label: "активная аренда", swatch: "hsl(var(--blue))" },
+  { id: "late_today", label: "опаздывает", swatch: "#eab308" },
   { id: "overdue", label: "просрочка / ущерб", swatch: "hsl(var(--red))" },
   { id: "returns_today", label: "возврат сегодня", swatch: "hsl(var(--blue-600))" },
   { id: "pool", label: "готов к аренде", swatch: "hsl(var(--green))" },
@@ -50,6 +52,7 @@ const STATUS_CHIPS: { id: StatusFilter; label: string; swatch: string }[] = [
 const STATUS_LABEL: Record<TileStatus, string> = {
   rented: "активная аренда",
   overdue: "просрочен",
+  late_today: "опаздывает (возврат сегодня, время прошло)",
   returning: "на возврате",
   ready: "не распределён",
   pool: "готов к аренде",
@@ -115,11 +118,13 @@ export function ParkPanel({
     const overdueScooters = metrics.overdueScooterIds;
     const damageScooters = metrics.damageDebtScooterIds;
     const returnsTodayScooters = metrics.returnsTodayScooterIds;
+    const lateTodayScooters = metrics.pastDueTodayScooterIds;
 
     return scooters.map((s) => {
       const isOverdue = overdueScooters.has(s.id);
       const hasDamage = damageScooters.has(s.id);
       const isReturnToday = returnsTodayScooters.has(s.id);
+      const isLateToday = lateTodayScooters.has(s.id);
       // v0.2.97: вместо одного rentalId из «прошлой» Map<scooter,rental>
       // выбираем тот, ИЗ-ЗА которого плитка подсвечена. Иначе кликом
       // оператор попадал не туда (на скутере мог быть «дубль» активных
@@ -138,6 +143,7 @@ export function ParkPanel({
         status: computeTileStatus(s, activeByScooter.get(s.id), {
           isOverdue,
           hasDamage,
+          isLateToday,
         }),
         rentalId,
         isReturnToday,
@@ -149,6 +155,7 @@ export function ParkPanel({
     metrics.overdueScooterIds,
     metrics.damageDebtScooterIds,
     metrics.returnsTodayScooterIds,
+    metrics.pastDueTodayScooterIds,
     metrics.overdueRentalByScooter,
     metrics.damageDebtRentalByScooter,
     metrics.returnsTodayRentalByScooter,
@@ -456,9 +463,14 @@ function ReassignDialog({
 function computeTileStatus(
   s: ApiScooter,
   activeKind: "active" | "overdue" | "returning" | undefined,
-  flags: { isOverdue: boolean; hasDamage: boolean } = {
+  flags: {
+    isOverdue: boolean;
+    hasDamage: boolean;
+    isLateToday: boolean;
+  } = {
     isOverdue: false,
     hasDamage: false,
+    isLateToday: false,
   },
 ): TileStatus {
   if (s.baseStatus === "sold") return "sold";
@@ -466,13 +478,14 @@ function computeTileStatus(
   if (s.baseStatus === "for_sale" || s.baseStatus === "buyout")
     return "for_sale";
   if (s.baseStatus === "repair") return "repair";
-  // Открытая аренда «бьёт» baseStatus — пока есть активная/просроченная/
-  // на возврате аренда, скутер не свободен, что бы ни было записано в БД.
-  // v0.2.95: «overdue» считаем не только по rental.status, но и по факту
-  // (active с прошедшей датой) и по долгу за ущерб — заказчик хочет
-  // видеть красную плитку при ЛЮБОМ долге.
+  // Красная плитка — реальная просрочка по дате (вчера и раньше) ИЛИ
+  // открытый долг по ущербу.
   if (activeKind === "overdue" || flags.isOverdue || flags.hasDamage)
     return "overdue";
+  // v0.2.99: жёлтая плитка — возврат запланирован сегодня, но время
+  // уже прошло. Бизнес-правило: формальная просрочка только со
+  // следующего дня; этот промежуток — предупреждение.
+  if (flags.isLateToday) return "late_today";
   if (activeKind === "returning") return "returning";
   if (activeKind === "active") return "rented";
   // Теперь различаем «не распределён» и «парк аренды свободен»
@@ -486,6 +499,10 @@ function tileClass(s: TileStatus): string {
       return "bg-blue text-white";
     case "overdue":
       return "bg-red text-white";
+    case "late_today":
+      // v0.2.99: «опаздывает по времени сегодня» — между «всё хорошо»
+      // и «просрочка». Жёлтый достаточно тёмный чтобы белый текст читался.
+      return "bg-yellow-500 text-white";
     case "returning":
       return "bg-purple text-white";
     case "pool":
