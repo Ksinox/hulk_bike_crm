@@ -5,14 +5,11 @@ import { type Rental, type RentalStatus } from "@/lib/mock/rentals";
 import { RentalsFilters, type FiltersState } from "./RentalsFilters";
 import { RentalsList } from "./RentalsList";
 import { RentalsKpi, type Kpi } from "./RentalsKpi";
-import { ActTransferPreview } from "./RentalCard";
-import {
-  DashboardDrawerProvider,
-  useDashboardDrawer,
-} from "@/pages/dashboard/DashboardDrawer";
+import { RentalCard, ActTransferPreview } from "./RentalCard";
 import { DocumentPreviewModal } from "./DocumentPreviewModal";
 import { consumePending, onNavigate } from "@/app/navigationStore";
 import {
+  getRentalChainIds,
   useRentals,
   useArchivedRentals,
 } from "./rentalsStore";
@@ -22,6 +19,7 @@ import { useApiClients } from "@/lib/api/clients";
 import { useApiScooters } from "@/lib/api/scooters";
 import { useApiPayments } from "@/lib/api/payments";
 import { revenueFromPayments } from "@/lib/revenue";
+import { ErrorBoundary } from "@/app/ErrorBoundary";
 import type { ApiClient } from "@/lib/api/types";
 import {
   matchId,
@@ -113,18 +111,7 @@ function statusRank(s: RentalStatus): number {
   return i === -1 ? 999 : i;
 }
 
-// v0.3.3: страница аренд работает через drawer-паттерн. Список во всю
-// ширину; клик → drawer с RentalCard. Тот же DashboardDrawerProvider
-// что на дашборде/Clients, чтобы stacking (rental → клиент) работал.
 export function Rentals() {
-  return (
-    <DashboardDrawerProvider>
-      <RentalsInner />
-    </DashboardDrawerProvider>
-  );
-}
-
-function RentalsInner() {
   const activeRentals = useRentals();
   const archivedList = useArchivedRentals();
   const unreachable = useUnreachableSet();
@@ -140,18 +127,21 @@ function RentalsInner() {
     search: "",
     status: "all",
   });
-  const drawer = useDashboardDrawer();
+  const [selectedId, setSelectedId] = useState<number | null>(null);
   const [newOpen, setNewOpen] = useState(false);
   /**
    * После создания аренды — автоматически открываем превью документа
    * «Договор + акт». Сценарий: оператор создал → сразу нажал «Печать» →
-   * подписал с клиентом.
+   * подписал с клиентом. Сократили путь оформления.
    */
   const [autoDocRentalId, setAutoDocRentalId] = useState<number | null>(null);
   /**
-   * После замены скутера — открываем превью акта замены. В drawer-режиме
-   * RentalCard не ремаунтится при смене rentalId (нет key={...}), но
-   * сохраняем lifted state на случай переоткрытия drawer'а.
+   * После замены скутера — открываем превью акта замены поверх карточки.
+   * State хранится здесь, а не в RentalCard, потому что после успешного
+   * свапа старая аренда архивируется и пропадает из useApiRentals →
+   * <ErrorBoundary key={selected.id}> ремаунтит RentalCard, и локальный
+   * state потерялся бы (превью никогда не открылось бы). На этом уровне
+   * state переживает любые ремаунты карточки.
    */
   const [swapActPreviewId, setSwapActPreviewId] = useState<number | null>(null);
 
@@ -159,30 +149,59 @@ function RentalsInner() {
   const rentals =
     filters.status === "archived" ? archivedList : activeRentals;
 
-  // v0.3.3: при первом открытии страницы НЕ выбираем автоматически
-  // первую аренду — пользователь сам кликнет нужную. Если пришли
-  // через navigate({rentalId}) — открываем drawer на эту аренду.
   useEffect(() => {
+    if (selectedId != null) return;
+    // Если пришли через navigate({route:"rentals", rentalId}) — выберем
+    // именно эту аренду. Иначе первую активную.
     const p = consumePending("rentals");
     if (p?.rentalId != null) {
-      drawer.openRental(p.rentalId);
+      setSelectedId(p.rentalId);
+      return;
     }
+    const first = rentals.find((r) => r.status === "active");
+    setSelectedId(first?.id ?? rentals[0]?.id ?? null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Слушаем навигацию: если уже на странице аренд, и кто-то вызвал
-  // navigate({route:"rentals", rentalId: X}) — открываем drawer.
+  // navigate({route:"rentals", rentalId: X}) (например после продления
+  // в RentalCard), — переключаем фокус на X.
   useEffect(() => {
     return onNavigate((req) => {
       if (req.route === "rentals" && req.rentalId != null) {
-        drawer.openRental(req.rentalId);
+        setSelectedId(req.rentalId);
+        // openContract=true приходит при продлении — сразу открываем
+        // превью документа с новыми датами для печати.
         if (req.openContract) {
           setAutoDocRentalId(req.rentalId);
         }
       }
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Если выбранная связка пропала из активных (например, удалили её
+  // через RentalEditModal или она ушла в архив) — пробуем переключить
+  // фокус на любую другую active-связку из той же цепочки. Так карточка
+  // не «закрывается» из-за удаления одной из замен/продлений: пользователь
+  // продолжает видеть аренду на свежей живой связке. Если в цепочке
+  // вообще не осталось active — selectedId остаётся прежним и колонка
+  // показывает «Выберите аренду» (это уже корректное поведение для
+  // целиком закрытой/архивной аренды).
+  useEffect(() => {
+    if (selectedId == null) return;
+    if (activeRentals.find((r) => r.id === selectedId)) return;
+    const all = [...activeRentals, ...archivedList];
+    if (!all.find((r) => r.id === selectedId)) return;
+    const chainIds = getRentalChainIds(selectedId, all);
+    const activeInChain = activeRentals.filter((r) => chainIds.includes(r.id));
+    if (activeInChain.length > 0) {
+      // Берём самую свежую (наибольший id) — обычно это «голова» цепочки.
+      const head = activeInChain.reduce((acc, r) =>
+        r.id > acc.id ? r : acc,
+      );
+      setSelectedId(head.id);
+    }
+  }, [selectedId, activeRentals, archivedList]);
 
   const filtered = useMemo(
     () =>
@@ -315,13 +334,44 @@ function RentalsInner() {
 
       <RentalsFilters value={filters} onChange={setFilters} />
 
-      {/* v0.3.3: список во всю ширину; клик по строке открывает
-          drawer справа с RentalCard через DashboardDrawerProvider. */}
-      <RentalsList
-        items={filtered}
-        selectedId={null}
-        onSelect={(id) => drawer.openRental(id)}
-      />
+      <div className="grid flex-1 gap-4 lg:grid-cols-[420px_1fr]">
+        <RentalsList
+          items={filtered}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+        />
+
+        {(() => {
+          const selected = rentals.find((r) => r.id === selectedId);
+          if (!selected) {
+            return (
+              <div className="flex min-h-[400px] items-center justify-center rounded-2xl bg-surface p-10 text-center shadow-card-sm">
+                <div className="text-[13px] text-muted">
+                  Выберите аренду из списка
+                </div>
+              </div>
+            );
+          }
+          return (
+            <ErrorBoundary
+              key={selected.id}
+            >
+              <RentalCard
+                rental={selected}
+                onSwapped={(newId) => {
+                  // Свап успешен: одновременно (1) переключаем фокус
+                  // на новую связку — старая ушла в архив и пропадёт
+                  // из списка, (2) поднимаем превью акта замены поверх
+                  // карточки. RentalCard ремаунтится с key=newId, но
+                  // превью живёт в state Rentals и переживает ремаунт.
+                  setSelectedId(newId);
+                  setSwapActPreviewId(newId);
+                }}
+              />
+            </ErrorBoundary>
+          );
+        })()}
+      </div>
 
       {swapActPreviewId != null && (
         <ActTransferPreview
@@ -334,9 +384,7 @@ function RentalsInner() {
         <NewRentalModal
           onClose={() => setNewOpen(false)}
           onCreated={(r) => {
-            // v0.3.3: после создания открываем аренду в drawer + auto
-            // preview договора. Пользователь не уходит со страницы.
-            drawer.openRental(r.id);
+            setSelectedId(r.id);
             setAutoDocRentalId(r.id);
           }}
         />
