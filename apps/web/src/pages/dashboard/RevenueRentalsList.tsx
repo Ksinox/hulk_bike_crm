@@ -5,13 +5,17 @@ import { useApiPayments } from "@/lib/api/payments";
 import { useApiClients } from "@/lib/api/clients";
 import { useApiScooters } from "@/lib/api/scooters";
 import { navigate } from "@/app/navigationStore";
+import { currentBillingPeriod } from "@/lib/billingPeriod";
 export type RevenuePeriod = "day" | "week" | "month";
 
 /**
  * Вычисляет окно [start; end] для выбранного периода.
  *  - day:   сегодня 00:00 — завтра 00:00
  *  - week:  понедельник этой недели — следующий понедельник
- *  - month: 1-е число этого месяца — 1-е следующего
+ *  - month: РАСЧЁТНЫЙ ПЕРИОД БИЗНЕСА (15→14, или другой день из настроек),
+ *           НЕ календарный месяц 1-31. v0.4.13: раньше тут был
+ *           календарный 1-1, из-за чего цифры на дашборде расходились
+ *           с KPI «Выручка» в /rentals (там 15→14).
  */
 export function periodWindow(period: RevenuePeriod): {
   start: Date;
@@ -31,10 +35,14 @@ export function periodWindow(period: RevenuePeriod): {
     const end = new Date(start.getTime() + 7 * 86_400_000);
     return { start, end };
   }
-  // month
-  const start = new Date(now.getFullYear(), now.getMonth(), 1);
-  const end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-  return { start, end };
+  // month → расчётный период (15→14 по умолчанию)
+  const bp = currentBillingPeriod(now);
+  return { start: bp.start, end: bp.end };
+}
+
+/** Лейбл расчётного периода для UI (используется в фильтре «Месяц»). */
+export function billingPeriodLabel(): string {
+  return currentBillingPeriod().label;
 }
 
 function fmt(n: number): string {
@@ -149,10 +157,15 @@ export function RevenueRentalsList({
           status: r?.status ?? "completed",
         };
       })
+      // v0.4.13: сортируем по дате ВЫДАЧИ аренды (startAt) DESC —
+      // от самых свежих к старым. Раньше сортировка шла по последнему
+      // paidAt, что давало визуально странный порядок: «01.05, 01.04,
+      // 04.05, 04.05» (один платёж по старой аренде попадал в начало).
+      // Теперь чёткий порядок по выдаче.
       .sort(
         (a, b) =>
-          new Date(b.paidAt || b.startAt).getTime() -
-          new Date(a.paidAt || a.startAt).getTime(),
+          new Date(b.startAt || b.paidAt).getTime() -
+          new Date(a.startAt || a.paidAt).getTime(),
       );
   }, [rentals, payments, clients, scooters, start, end]);
 

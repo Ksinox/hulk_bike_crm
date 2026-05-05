@@ -86,18 +86,21 @@ export function RevenueCard({
         });
       }
     } else {
-      // month — все дни от 1-го до последнего дня текущего месяца.
-      const daysInMonth = new Date(
-        today.getFullYear(),
-        today.getMonth() + 1,
-        0,
-      ).getDate();
-      for (let i = 1; i <= daysInMonth; i++) {
-        const ds = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(i).padStart(2, "0")}`;
+      // v0.4.13: month-график строим по РАСЧЁТНОМУ периоду 15→14
+      // (а не календарному 1-31). Так шкала графика и список аренд
+      // ниже соответствуют тому же окну, что в KPI «Выручка» в Аренды.
+      const dayMs = 86_400_000;
+      for (
+        let t = win.start.getTime();
+        t < win.end.getTime();
+        t += dayMs
+      ) {
+        const d = new Date(t);
+        const ds = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
         const v = byDay.get(ds) ?? { sum: 0, count: 0 };
         bars.push({
           date: ds,
-          label: String(i),
+          label: String(d.getDate()),
           sum: v.sum,
           count: v.count,
         });
