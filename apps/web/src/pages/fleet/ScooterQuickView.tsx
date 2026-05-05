@@ -69,13 +69,16 @@ export function ScooterQuickView({ scooterId }: { scooterId: number }) {
     ? clients.find((c) => c.id === currentRental.clientId)
     : null;
 
-  // Поиск аватарки модели
+  // v0.4.14: всегда предпочитаем avatarKey (полная PNG с прозрачным
+  // фоном). avatarThumbKey генерится на бэке как JPEG и нередко имеет
+  // непрозрачный (чёрный) фон — на белом контейнере смотрится плохо.
+  // ScooterThumb тоже использует avatarKey, для консистентности.
   const modelAvatar = useMemo(() => {
     if (!scooter) return null;
     const m = models.find((m) => m.id === scooter.modelId);
     if (!m) return null;
-    if (m.avatarThumbKey) return fileUrl(m.avatarThumbKey);
     if (m.avatarKey) return fileUrl(m.avatarKey);
+    if (m.avatarThumbKey) return fileUrl(m.avatarThumbKey);
     return null;
   }, [scooter, models]);
 

@@ -244,17 +244,17 @@ function DrawerCard({
   onOpenClient: (id: number) => void;
   onOpenScooter: (id: number) => void;
 }) {
-  // v0.4.11: плавный enter через width-анимацию.
-  // Стартуем с width=0 (соседи в полный размер) → entered → width=820.
-  // Соседи равномерно сдвигаются по мере роста, без зазоров.
+  // v0.4.14: enter + exit анимации через width-grow / width-shrink.
+  // entered: false → ширина 0 (стартовый кадр) → true → растёт до width.
+  // closing: true → ширина возвращается в 0, после transition вызываем
+  // onCloseSelf() для удаления из стека. Соседние панели плавно
+  // сдвигаются вправо, заполняя освободившееся место.
   const [entered, setEntered] = useState(false);
+  const [closing, setClosing] = useState(false);
+
   useEffect(() => {
-    // Двойной requestAnimationFrame — гарантирует что первый layout
-    // случился с width:0, и только потом applies entered=true. Иначе
-    // браузер может скоалесить два состояния и пропустить transition.
     const r1 = requestAnimationFrame(() => {
       const r2 = requestAnimationFrame(() => setEntered(true));
-      // cleanup закрытия r2 — закрывается через возврат
       cleanup.r2 = r2;
     });
     const cleanup = { r1, r2: 0 };
@@ -264,17 +264,26 @@ function DrawerCard({
     };
   }, []);
 
+  const requestClose = () => {
+    if (closing) return;
+    setClosing(true);
+    // ждём окончания transition (320ms) — потом убираем из стека
+    window.setTimeout(onCloseSelf, 320);
+  };
+
+  // open=true для рендера content; на exit фазе тоже true чтобы
+  // содержимое не пропадало мгновенно при сжатии ширины.
+  const isOpen = entered && !closing;
+
   return (
     <aside
       className={cn(
         "h-full overflow-hidden bg-surface shadow-card-lg",
-        // Растущая ширина — соседи смещаются плавно. Длительность
-        // одинаковая для всех панелей → синхронный slide.
         "transition-[width,opacity] duration-[320ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
-        entered ? "opacity-100" : "opacity-90",
+        isOpen ? "opacity-100" : "opacity-80",
       )}
       style={{
-        width: entered ? `min(${width}px, 92vw)` : "0px",
+        width: isOpen ? `min(${width}px, 92vw)` : "0px",
         flexShrink: 0,
       }}
       onClick={(e) => e.stopPropagation()}
@@ -288,7 +297,7 @@ function DrawerCard({
         {target.kind === "rental" && (
           <RentalDrawerContent
             rentalId={target.id}
-            onClose={onCloseSelf}
+            onClose={requestClose}
             onOpenClient={onOpenClient}
             onOpenScooter={onOpenScooter}
           />
@@ -296,7 +305,7 @@ function DrawerCard({
         {target.kind === "client" && (
           <ClientDrawerContent
             clientId={target.id}
-            onClose={onCloseSelf}
+            onClose={requestClose}
             onOpenRental={onOpenRental}
             onOpenScooter={onOpenScooter}
           />
@@ -304,7 +313,7 @@ function DrawerCard({
         {target.kind === "scooter" && (
           <ScooterDrawerContent
             scooterId={target.id}
-            onClose={onCloseSelf}
+            onClose={requestClose}
             onOpenRental={onOpenRental}
             onOpenClient={onOpenClient}
           />
@@ -312,7 +321,7 @@ function DrawerCard({
         {target.kind === "rentalsList" && (
           <RentalsListDrawerContent
             filter={target.filter}
-            onClose={onCloseSelf}
+            onClose={requestClose}
             onPickRental={onOpenRental}
           />
         )}
