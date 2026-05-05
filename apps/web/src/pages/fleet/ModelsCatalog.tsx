@@ -1,5 +1,17 @@
 import { useMemo, useState } from "react";
-import { Plus, Star, Tag, Trash2, Pencil, X, Check, Loader2 } from "lucide-react";
+import {
+  Plus,
+  Star,
+  Tag,
+  Trash2,
+  Pencil,
+  X,
+  Check,
+  Loader2,
+  Image as ImageIcon,
+  Wallet,
+  Settings2,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   useApiScooterModels,
@@ -268,66 +280,84 @@ function ModelFormModal({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-ink/55 p-6 backdrop-blur-sm"
-    >
+    // v0.4.40: переверстка — единый стиль секций с заголовками, более
+    // широкая модалка для 4-х тарифов в строку, sticky-footer с
+    // основной кнопкой как primary blue, не серый ink. Лейблы в lower-
+    // case с цветным акцентом, без UPPERCASE-крика. Чекбоксы переделаны
+    // в карточки-toggle, где хинт читается без потери приоритета.
+    <div className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-ink/55 p-4 backdrop-blur-sm sm:p-6">
       <div
-        className="mt-16 w-full max-w-[460px] overflow-hidden rounded-2xl bg-surface shadow-card-lg"
+        className="mt-8 flex w-full max-w-[560px] flex-col overflow-hidden rounded-2xl bg-surface shadow-card-lg sm:mt-16"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-border bg-surface-soft px-5 py-3">
-          <div className="text-[15px] font-bold">
-            {isEdit ? "Изменить модель" : "Новая модель"}
+        {/* Шапка */}
+        <header className="flex items-center justify-between gap-3 border-b border-border bg-white px-6 py-4">
+          <div>
+            <div className="font-display text-[18px] font-extrabold leading-tight text-ink">
+              {isEdit ? "Изменить модель" : "Новая модель"}
+            </div>
+            <div className="mt-0.5 text-[12px] text-muted-2">
+              {isEdit
+                ? "Тарифы и характеристики применяются к будущим арендам."
+                : "Создайте модель, потом добавите аватарку и скутера в парк."}
+            </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-2 hover:bg-white hover:text-ink"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted-2 hover:bg-surface-soft hover:text-ink"
+            aria-label="Закрыть"
           >
-            <X size={16} />
+            <X size={18} />
           </button>
-        </div>
-        <div className="flex flex-col gap-4 px-5 py-5">
+        </header>
+
+        {/* Тело */}
+        <div className="flex flex-col gap-5 overflow-y-auto px-6 py-5">
           {isEdit && <AvatarEditor model={initial} />}
           {!isEdit && (
-            <div className="rounded-[10px] bg-surface-soft px-3 py-2 text-[11px] text-muted-2">
-              Аватарку модели можно будет загрузить после создания — откройте её
-              снова кнопкой «Изменить».
+            <div className="flex items-start gap-2.5 rounded-[12px] border border-blue-100 bg-blue-50/60 px-3.5 py-2.5 text-[12px] text-blue-900">
+              <ImageIcon size={14} className="mt-0.5 shrink-0 text-blue-500" />
+              <span>
+                Аватарку загрузите после создания — откройте модель снова
+                кнопкой «Изменить».
+              </span>
             </div>
           )}
 
-          <Field label="Название">
+          <Field label="Название модели" required>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
               maxLength={100}
-              placeholder="Например: Yamaha Jog"
-              className="h-10 w-full rounded-[10px] border border-border bg-white px-3 text-[14px] outline-none focus:border-blue"
+              placeholder="Yamaha Jog"
+              className="h-11 w-full rounded-[10px] border border-border bg-white px-3.5 text-[14px] font-medium outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
             />
           </Field>
 
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <Field label="1–2 дня, ₽/сут">
-              <RateInput value={dayRate} onChange={setDayRate} />
-            </Field>
-            <Field label="3–6 дней, ₽/сут">
-              <RateInput value={shortRate} onChange={setShortRate} />
-            </Field>
-            <Field label="7–29 дней, ₽/сут">
-              <RateInput value={weekRate} onChange={setWeekRate} />
-            </Field>
-            <Field label="30+ дней, ₽/сут">
-              <RateInput value={monthRate} onChange={setMonthRate} />
-            </Field>
-          </div>
-
-          <div className="rounded-[10px] border border-border bg-surface-soft px-3 py-3">
-            <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-2">
-              Технические характеристики · показываются на лендинге
+          {/* Тарифы — единая карточка, 4 поля в ряд */}
+          <Section
+            icon={<Wallet size={13} />}
+            title="Тарифы"
+            hint="Цена за сутки в зависимости от срока аренды"
+          >
+            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+              <RateField label="1–2 дня" value={dayRate} onChange={setDayRate} />
+              <RateField label="3–6 дней" value={shortRate} onChange={setShortRate} />
+              <RateField label="7–29 дней" value={weekRate} onChange={setWeekRate} />
+              <RateField label="30+ дней" value={monthRate} onChange={setMonthRate} />
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              <Field label="Макс, км/ч">
+          </Section>
+
+          {/* Тех.характеристики */}
+          <Section
+            icon={<Settings2 size={13} />}
+            title="Технические характеристики"
+            hint="Показываются на лендинге для клиентов"
+          >
+            <div className="grid grid-cols-2 gap-2.5">
+              <Field label="Макс. скорость, км/ч">
                 <input
                   type="number"
                   inputMode="numeric"
@@ -336,17 +366,17 @@ function ModelFormModal({
                   value={maxSpeedKmh}
                   onChange={(e) => setMaxSpeedKmh(e.target.value)}
                   placeholder="60"
-                  className="h-10 w-full rounded-[10px] border border-border bg-white px-3 text-[14px] outline-none focus:border-blue"
+                  className="h-11 w-full rounded-[10px] border border-border bg-white px-3.5 text-[14px] outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                 />
               </Field>
-              <Field label="Бак, л">
+              <Field label="Объём бака, л">
                 <input
                   type="text"
                   inputMode="decimal"
                   value={tankVolumeL}
                   onChange={(e) => setTankVolumeL(e.target.value)}
                   placeholder="5.5"
-                  className="h-10 w-full rounded-[10px] border border-border bg-white px-3 text-[14px] outline-none focus:border-blue"
+                  className="h-11 w-full rounded-[10px] border border-border bg-white px-3.5 text-[14px] outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                 />
               </Field>
               <Field label="Расход, л/100 км">
@@ -356,7 +386,7 @@ function ModelFormModal({
                   value={fuelLPer100Km}
                   onChange={(e) => setFuelLPer100Km(e.target.value)}
                   placeholder="1.5"
-                  className="h-10 w-full rounded-[10px] border border-border bg-white px-3 text-[14px] outline-none focus:border-blue"
+                  className="h-11 w-full rounded-[10px] border border-border bg-white px-3.5 text-[14px] outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                 />
               </Field>
               <Field label="Охлаждение">
@@ -365,88 +395,176 @@ function ModelFormModal({
                   onChange={(e) =>
                     setCoolingType(e.target.value as "" | "air" | "liquid")
                   }
-                  className="h-10 w-full rounded-[10px] border border-border bg-white px-2 text-[14px] outline-none focus:border-blue"
+                  className="h-11 w-full rounded-[10px] border border-border bg-white px-3 text-[14px] outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                 >
-                  <option value="">—</option>
+                  <option value="">— не указано —</option>
                   <option value="air">Воздушное</option>
                   <option value="liquid">Жидкостное</option>
                 </select>
               </Field>
             </div>
+          </Section>
+
+          {/* Видимость */}
+          <div className="grid gap-2 sm:grid-cols-2">
+            <ToggleCard
+              checked={active}
+              onChange={setActive}
+              title="Активна"
+              hint="Показывать на лендинге и в выборе скутера"
+            />
+            <ToggleCard
+              checked={quickPick}
+              onChange={setQuickPick}
+              disabled={!active}
+              title="Быстрый выбор"
+              hint="Отображать первой в форме новой аренды"
+            />
           </div>
 
-          <div className="space-y-2">
-            <label className="flex cursor-pointer items-center gap-2 text-[13px] text-ink">
-              <input
-                type="checkbox"
-                checked={active}
-                onChange={(e) => setActive(e.target.checked)}
-                className="h-4 w-4 accent-blue-600"
-              />
-              <span>
-                Активна
-                <span className="ml-1.5 text-[11px] text-muted-2">
-                  · показывать на лендинге и в выборе скутера. Снимите если
-                  модели сейчас в обороте нет.
-                </span>
-              </span>
-            </label>
-
-            <label className="flex cursor-pointer items-center gap-2 text-[13px] text-ink">
-              <input
-                type="checkbox"
-                checked={quickPick}
-                onChange={(e) => setQuickPick(e.target.checked)}
-                disabled={!active}
-                className="h-4 w-4 accent-blue-600 disabled:opacity-40"
-              />
-              <span className={!active ? "text-muted-2" : ""}>
-                Отображать в быстром выборе при создании аренды
-              </span>
-            </label>
-          </div>
-
-          <Field label="Примечание">
+          <Field label="Примечание (необязательно)">
             <textarea
               value={note}
               onChange={(e) => setNote(e.target.value)}
               rows={2}
-              className="w-full rounded-[10px] border border-border bg-white px-3 py-2 text-[13px] outline-none focus:border-blue"
+              placeholder="Например: жёлтые рамы, заводской объём масла 0.9 л."
+              className="w-full resize-none rounded-[10px] border border-border bg-white px-3.5 py-2.5 text-[13px] outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
             />
           </Field>
 
           {err && (
-            <div className="rounded-[10px] border border-red-400/30 bg-red-500/10 px-3 py-2 text-[12px] text-red-ink">
-              {err}
+            <div className="flex items-start gap-2 rounded-[10px] border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-700">
+              <X size={14} className="mt-0.5 shrink-0" />
+              <span>{err}</span>
             </div>
           )}
-
-          <div className="flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-full bg-surface-soft px-4 py-2 text-[13px] font-semibold hover:bg-border"
-            >
-              Отмена
-            </button>
-            <button
-              type="button"
-              onClick={submit}
-              disabled={!canSave || pending}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-bold transition-colors",
-                !canSave || pending
-                  ? "cursor-not-allowed bg-surface-soft text-muted-2"
-                  : "bg-ink text-white hover:bg-blue-600",
-              )}
-            >
-              {pending ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-              {isEdit ? "Сохранить" : "Создать"}
-            </button>
-          </div>
         </div>
+
+        {/* Sticky-футер */}
+        <footer className="flex items-center justify-end gap-2 border-t border-border bg-surface-soft/50 px-6 py-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full px-4 py-2 text-[13px] font-semibold text-muted hover:bg-surface-soft hover:text-ink"
+          >
+            Отмена
+          </button>
+          <button
+            type="button"
+            onClick={submit}
+            disabled={!canSave || pending}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-full px-5 py-2 text-[13px] font-bold transition-colors",
+              !canSave || pending
+                ? "cursor-not-allowed bg-blue-200 text-white/80"
+                : "bg-blue-600 text-white shadow-sm hover:bg-blue-700",
+            )}
+          >
+            {pending ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <Check size={14} />
+            )}
+            {isEdit ? "Сохранить" : "Создать модель"}
+          </button>
+        </footer>
       </div>
     </div>
+  );
+}
+
+/* v0.4.40: визуальные хелперы для модалки модели */
+
+function Section({
+  icon,
+  title,
+  hint,
+  children,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section>
+      <div className="mb-2 flex items-baseline gap-2">
+        <span className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-blue-50 text-blue-600">
+          {icon}
+        </span>
+        <h3 className="text-[13px] font-bold text-ink">{title}</h3>
+        {hint && <span className="text-[11px] text-muted-2">{hint}</span>}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function RateField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <label className="flex flex-col">
+      <span className="mb-1 text-[11px] font-semibold text-muted">{label}</span>
+      <div className="relative">
+        <input
+          type="number"
+          value={value}
+          onChange={(e) => onChange(Math.max(0, Number(e.target.value) || 0))}
+          className="h-11 w-full rounded-[10px] border border-border bg-white pl-3.5 pr-7 text-[14px] tabular-nums outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+        />
+        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-semibold text-muted-2">
+          ₽
+        </span>
+      </div>
+    </label>
+  );
+}
+
+function ToggleCard({
+  checked,
+  onChange,
+  disabled,
+  title,
+  hint,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  disabled?: boolean;
+  title: string;
+  hint: string;
+}) {
+  return (
+    <label
+      className={cn(
+        "flex cursor-pointer items-start gap-2.5 rounded-[10px] border px-3 py-2.5 transition-colors",
+        disabled
+          ? "cursor-not-allowed border-border bg-surface-soft/50 opacity-60"
+          : checked
+            ? "border-blue-300 bg-blue-50/40 hover:border-blue-400"
+            : "border-border bg-white hover:border-blue-300",
+      )}
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        disabled={disabled}
+        className="mt-0.5 h-4 w-4 accent-blue-600 disabled:opacity-40"
+      />
+      <div className="min-w-0 flex-1">
+        <div className="text-[13px] font-semibold text-ink">{title}</div>
+        <div className="mt-0.5 text-[11px] leading-snug text-muted-2">
+          {hint}
+        </div>
+      </div>
+    </label>
   );
 }
 
@@ -483,37 +601,24 @@ function AvatarEditor({ model }: { model: ApiScooterModel }) {
 
 function Field({
   label,
+  required,
   children,
 }: {
   label: string;
+  required?: boolean;
   children: React.ReactNode;
 }) {
   return (
-    <div>
-      <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-2">
+    <label className="flex flex-col">
+      <span className="mb-1.5 text-[12px] font-semibold text-muted">
         {label}
-      </div>
+        {required && <span className="ml-0.5 text-red-500">*</span>}
+      </span>
       {children}
-    </div>
+    </label>
   );
 }
 
-function RateInput({
-  value,
-  onChange,
-}: {
-  value: number;
-  onChange: (v: number) => void;
-}) {
-  return (
-    <input
-      type="number"
-      value={value}
-      onChange={(e) => onChange(Math.max(0, Number(e.target.value) || 0))}
-      className="h-10 w-full rounded-[10px] border border-border bg-white px-3 text-[14px] outline-none focus:border-blue"
-    />
-  );
-}
 
 function plural(n: number, forms: [string, string, string]): string {
   const mod10 = n % 10;
