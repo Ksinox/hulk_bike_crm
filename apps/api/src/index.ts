@@ -201,6 +201,12 @@ async function bootstrap() {
   // Бэкапы БД: раз в сутки JSON.gz в MinIO. Не блокирует старт.
   const { scheduleDailyBackup } = await import("./services/backup.js");
   scheduleDailyBackup();
+
+  // v0.4.34: автопереход active→overdue по плановой дате. Раз в час.
+  const { scheduleOverdueTransition } = await import(
+    "./services/overdueScheduler.js"
+  );
+  scheduleOverdueTransition();
 }
 
 bootstrap().catch((err) => {
