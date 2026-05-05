@@ -57,8 +57,10 @@ function buildMainItems(canManageStaff: boolean): NavItem[] {
 }
 
 const footerItems: NavItem[] = [
-  { id: "settings", label: "Настройки", icon: Settings },
-  { id: "logout", label: "Выход", icon: LogOut },
+  // v0.4.23: ready:true — раньше отсутствовал → пункт показывался с
+  // меткой «скоро» и был задизаблен, хотя страница уже работает с v0.4.1.
+  { id: "settings", label: "Настройки", icon: Settings, ready: true },
+  { id: "logout", label: "Выход", icon: LogOut, ready: true },
 ];
 
 export function Sidebar({
