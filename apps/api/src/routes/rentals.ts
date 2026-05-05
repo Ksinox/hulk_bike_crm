@@ -165,18 +165,20 @@ export async function rentalsRoutes(app: FastifyInstance) {
    * могут быть восстановлены директором/создателем.
    */
   app.get("/archived", async () => {
-    // v0.3.7: в архив попадают только завершённые/отменённые/проблемные.
-    // Активные/просроченные/возвращаемые с archivedAt — это легаси-баг,
-    // фильтруем на чтении (на запись защита идёт через бизнес-флоу).
+    // v0.4.18: возвращаем ВСЕ архивные (archivedAt IS NOT NULL),
+    // независимо от status. Фильтрация по статусу для отображения
+    // во вкладке «Архив» переехала на фронт (rentalsStore.useArchivedRentals).
+    //
+    // Раньше на бэке резался WHERE status IN (completed, ...). Из-за этого
+    // если аренда была удалена с нестандартным статусом (например
+    // 'returning') — она не возвращалась в API, но её платежи всё равно
+    // считались в выручке и в списке RevenueRentalsList показывались
+    // как «— · —» (rental не найден в массиве). Двойная фильтрация
+    // здесь не нужна — фронт сам решает что показывать в каждом UI-месте.
     const rows = await db
       .select()
       .from(rentals)
-      .where(
-        and(
-          isNotNull(rentals.archivedAt),
-          sql`${rentals.status} IN ('completed', 'cancelled', 'completed_damage', 'problem')`,
-        ),
-      )
+      .where(isNotNull(rentals.archivedAt))
       .orderBy(desc(rentals.archivedAt));
     return { items: rows };
   });
