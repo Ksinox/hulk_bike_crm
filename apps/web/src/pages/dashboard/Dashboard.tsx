@@ -11,10 +11,7 @@ import { ActivityFeed } from "./ActivityFeed";
 import { ClassicKpi, CLASSIC_KPI_ICONS } from "./ClassicKpi";
 import { NewApplicationsWidget } from "./NewApplicationsWidget";
 import { DuplicateRentalsBanner } from "./DuplicateRentalsBanner";
-import {
-  DashboardDrawerProvider,
-  useDashboardDrawer,
-} from "./DashboardDrawer";
+import { useDashboardDrawer } from "./DashboardDrawer";
 import { loadView, saveView, type DashboardView } from "./view";
 import {
   formatRub,
@@ -32,25 +29,19 @@ export function Dashboard() {
   };
 
   return (
-    // v0.3.1: drawer-провайдер оборачивает весь дашборд — клики по
-    // виджетам открывают боковую панель справа вместо перехода на
-    // страницу аренд/клиентов. Дашборд остаётся в фоне.
-    <DashboardDrawerProvider>
-      <main className="flex min-w-0 flex-1 flex-col gap-4">
-        <Topbar />
-        <Greeting view={view} onViewChange={onViewChange} metrics={metrics} />
-        {/* Диагностический баннер «дубли активных аренд». Показывается
-            только если в БД есть >1 открытой аренды на один scooterId
-            (data inconsistency из легаси-багов swap/extend). После того
-            как все дубли разобраны — баннер пропадает сам. v0.2.97. */}
-        <DuplicateRentalsBanner metrics={metrics} />
-        {view === "park" ? (
-          <ParkVariant metrics={metrics} />
-        ) : (
-          <ClassicVariant metrics={metrics} />
-        )}
-      </main>
-    </DashboardDrawerProvider>
+    // v0.4.8: DrawerProvider поднят в App.tsx, теперь стек работает на
+    // любых страницах (Клиенты, Аренды, Парк, Ремонты, etc) — связь
+    // прослеживается одинаково везде.
+    <main className="flex min-w-0 flex-1 flex-col gap-4">
+      <Topbar />
+      <Greeting view={view} onViewChange={onViewChange} metrics={metrics} />
+      <DuplicateRentalsBanner metrics={metrics} />
+      {view === "park" ? (
+        <ParkVariant metrics={metrics} />
+      ) : (
+        <ClassicVariant metrics={metrics} />
+      )}
+    </main>
   );
 }
 

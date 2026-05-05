@@ -1946,27 +1946,19 @@ export function ActivityTimelineSection({
   loading?: boolean;
 }) {
   const drawer = useDashboardDrawer();
+  // v0.4.8: drawer-провайдер теперь поднят в App.tsx, поэтому стек
+  // работает на любых страницах. Кликнул событие в Ленте → новая
+  // панель выезжает справа, цепочка наслаивается. Fallback на navigate
+  // больше не нужен — стек всегда доступен.
   const handleClick = (it: ApiActivityItem) => {
     if (it.entityId == null) return;
-    // Если событие про скутер/клиента/аренду — открываем drawer.
-    // Damage_report / payment / repair_job — пока просто без действия
-    // (можно расширить позже: открыть аренду по которой акт).
-    if (it.entity === "rental") {
-      if (drawer.inDrawer) drawer.openRental(it.entityId);
-      else navigate({ route: "rentals", rentalId: it.entityId });
-      return;
-    }
-    if (it.entity === "scooter") {
-      if (drawer.inDrawer) drawer.openScooter(it.entityId);
-      else navigate({ route: "fleet", scooterId: it.entityId });
-      return;
-    }
-    if (it.entity === "client") {
-      if (drawer.inDrawer) drawer.openClient(it.entityId);
-      else navigate({ route: "clients", clientId: it.entityId });
-      return;
-    }
+    if (it.entity === "rental") drawer.openRental(it.entityId);
+    else if (it.entity === "scooter") drawer.openScooter(it.entityId);
+    else if (it.entity === "client") drawer.openClient(it.entityId);
   };
+  // navigate keep imported для других мест файла; void чтобы линтер
+  // не ругался если в этой функции его нет.
+  void navigate;
   if (loading) {
     return (
       <div className="rounded-2xl bg-surface p-4 text-[12px] text-muted shadow-card-sm">

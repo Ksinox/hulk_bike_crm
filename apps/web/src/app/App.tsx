@@ -21,6 +21,7 @@ import { setRole } from "@/lib/role";
 import { Login } from "./Login";
 import { ForceChangePassword } from "./ForceChangePassword";
 import { ToastContainer, ConfirmContainer, PickContainer } from "@/lib/toast";
+import { DashboardDrawerProvider } from "@/pages/dashboard/DashboardDrawer";
 import { NewApplicationDetector } from "@/pages/clients/NewApplicationDetector";
 
 export function App() {
@@ -78,7 +79,7 @@ export function App() {
   }
 
   return (
-    <>
+    <DashboardDrawerProvider>
       <TitleBar />
       <div
         className="mx-auto flex min-h-screen max-w-[1440px] gap-[18px] p-[18px]"
@@ -118,6 +119,6 @@ export function App() {
       <ToastContainer />
       <ConfirmContainer />
       <PickContainer />
-    </>
+    </DashboardDrawerProvider>
   );
 }
