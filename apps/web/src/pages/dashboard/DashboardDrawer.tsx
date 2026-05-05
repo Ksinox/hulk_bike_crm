@@ -494,6 +494,36 @@ function ScooterDrawerContent({
   );
 }
 
+// v0.4.31: те же мапы что в RevenueRentalsList — для согласованности
+// статус-пилюль во всём дашборде. Используем здесь же чтобы список
+// аренд в drawer'е не выглядел как «новый компонент с английским
+// ACTIVE» (см. жалобу пользователя).
+const RENTAL_STATUS_LABEL: Record<string, string> = {
+  active: "активна",
+  overdue: "просрочка",
+  returning: "возврат",
+  completed: "завершена",
+  completed_damage: "с ущербом",
+  problem: "проблемная",
+  cancelled: "отменена",
+  meeting: "встреча",
+  new_request: "заявка",
+  police: "в полиции",
+  court: "суд",
+};
+
+const RENTAL_STATUS_TONE: Record<string, string> = {
+  active: "bg-green-soft text-green-ink",
+  overdue: "bg-red-soft text-red-ink",
+  returning: "bg-orange-soft text-orange-ink",
+  completed: "bg-surface-soft text-muted",
+  completed_damage: "bg-red-soft text-red-ink",
+  problem: "bg-red-soft text-red-ink",
+  cancelled: "bg-surface-soft text-muted",
+  meeting: "bg-blue-50 text-blue-700",
+  new_request: "bg-blue-50 text-blue-700",
+};
+
 function RentalsListDrawerContent({
   filter,
   onClose,
@@ -509,6 +539,18 @@ function RentalsListDrawerContent({
   const ymdFromRu = (s: string): string => {
     const m = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(s);
     return m ? `${m[3]}-${m[2]}-${m[1]}` : "";
+  };
+  // v0.4.31: «эффективный» статус. В БД status='active' остаётся пока
+  // оператор не нажал «продлить/завершить» — но если плановая дата
+  // возврата уже в прошлом, для пользователя это «просрочка». Раньше
+  // в drawer'е таких рендерили как ACTIVE — это путало.
+  const effectiveStatus = (r: { status: string; endPlanned: string }) => {
+    if (r.status === "active") {
+      const endKey = ymdFromRu(r.endPlanned);
+      if (endKey && endKey < todayKey) return "overdue";
+      if (endKey === todayKey) return "returning";
+    }
+    return r.status;
   };
   const filtered = active.filter((r) => {
     if (filter === "active") return r.status === "active";
@@ -552,28 +594,37 @@ function RentalsListDrawerContent({
           </div>
         ) : (
           <div className="flex flex-col gap-1.5">
-            {filtered.map((r) => (
-              <button
-                key={r.id}
-                type="button"
-                onClick={() => onPickRental(r.id)}
-                className="flex flex-col gap-0.5 rounded-[10px] border border-border bg-white px-3 py-2 text-left transition-colors hover:border-blue-300 hover:bg-blue-50"
-              >
-                <div className="flex flex-wrap items-center gap-2 text-[13px] font-bold text-ink">
-                  Аренда #{String(r.id).padStart(4, "0")}
-                  <span className="rounded-full bg-surface-soft px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-muted-2">
-                    {r.status}
-                  </span>
-                  <span className="ml-auto font-mono text-[12px] tabular-nums text-ink-2">
-                    {r.scooter}
-                  </span>
-                </div>
-                <div className="text-[12px] text-muted">
-                  {r.start} → {r.endPlanned} · {r.days} дн ·{" "}
-                  <b>{(r.sum ?? 0).toLocaleString("ru-RU")} ₽</b>
-                </div>
-              </button>
-            ))}
+            {filtered.map((r) => {
+              const eff = effectiveStatus(r);
+              return (
+                <button
+                  key={r.id}
+                  type="button"
+                  onClick={() => onPickRental(r.id)}
+                  className="flex flex-col gap-0.5 rounded-[10px] border border-border bg-white px-3 py-2 text-left transition-colors hover:border-blue-300 hover:bg-blue-50"
+                >
+                  <div className="flex flex-wrap items-center gap-2 text-[13px] font-bold text-ink">
+                    Аренда #{String(r.id).padStart(4, "0")}
+                    <span
+                      className={cn(
+                        "rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wide",
+                        RENTAL_STATUS_TONE[eff] ??
+                          "bg-surface-soft text-muted-2",
+                      )}
+                    >
+                      {RENTAL_STATUS_LABEL[eff] ?? eff}
+                    </span>
+                    <span className="ml-auto font-mono text-[12px] tabular-nums text-ink-2">
+                      {r.scooter}
+                    </span>
+                  </div>
+                  <div className="text-[12px] text-muted">
+                    {r.start} → {r.endPlanned} · {r.days} дн ·{" "}
+                    <b>{(r.sum ?? 0).toLocaleString("ru-RU")} ₽</b>
+                  </div>
+                </button>
+              );
+            })}
           </div>
         )}
       </div>
