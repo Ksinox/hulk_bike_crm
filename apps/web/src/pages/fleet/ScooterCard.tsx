@@ -20,6 +20,7 @@ import {
   type ScooterDisplayStatus,
 } from "@/lib/mock/fleet";
 import { useScooterMaintenance } from "@/lib/api/scooter-maintenance";
+import { useRepairJobs } from "@/lib/api/repair-jobs";
 import { useRole } from "@/lib/role";
 import { MODEL_LABEL, type ScooterModel } from "@/lib/mock/rentals";
 import { effectiveRentalStatus } from "@/lib/rentalStatus";
@@ -159,7 +160,13 @@ export function ScooterCard({
     ? apiClients?.find((c) => c.id === activeRental.clientId) ?? null
     : null;
 
-  const repairsCount = 0; // пока нет справочника ремонтов
+  // v0.4.41: фактический счётчик ремонтов и расходов по этому скутеру —
+  // показывается на табе «Ремонты» (раньше был хардкод 0).
+  const { data: repairJobsList = [] } = useRepairJobs({
+    scooterId: scooter.id,
+  });
+  const { data: maintenanceList = [] } = useScooterMaintenance(scooter.id);
+  const repairsCount = repairJobsList.length + maintenanceList.length;
   const incidentsCount = 0;
 
   // Информация по замене масла — интервал зависит от модели (Jog — 5000 км, остальные — 3000 км).

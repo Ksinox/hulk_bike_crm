@@ -1,5 +1,14 @@
 import { useState } from "react";
-import { Loader2, Plus, Trash2, Wrench, X } from "lucide-react";
+import {
+  CheckCircle2,
+  ChevronRight,
+  ImageIcon,
+  Loader2,
+  Plus,
+  Trash2,
+  Wrench,
+  X,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   useCreateMaintenance,
@@ -8,6 +17,11 @@ import {
   type ApiMaintenance,
   type MaintenanceKind,
 } from "@/lib/api/scooter-maintenance";
+import {
+  useRepairJobs,
+  type ApiRepairJob,
+} from "@/lib/api/repair-jobs";
+import { navigate } from "@/app/navigationStore";
 import { confirmDialog, toast } from "@/lib/toast";
 
 const KIND_LABEL: Record<MaintenanceKind, string> = {
@@ -29,23 +43,61 @@ export function MaintenanceTab({
 }: {
   scooterId: number;
 }) {
-  const { data: items = [], isLoading } = useScooterMaintenance(scooterId);
+  // v0.4.41: связь repair_jobs ↔ скутер. Раньше таб «Ремонты» на
+  // карточке скутера показывал только scooter_maintenance (масло,
+  // запчасти — ручные расходы), а repair_jobs (фактические ремонты
+  // по дефектам с чек-листом из damage_report) показывались только
+  // на отдельной странице «Ремонты». Теперь обе сущности связаны
+  // в одной вкладке: вверху ремонты по дефектам, ниже расходы.
+  const { data: maintenance = [], isLoading: maintLoading } =
+    useScooterMaintenance(scooterId);
+  const { data: repairs = [], isLoading: repairsLoading } = useRepairJobs({
+    scooterId,
+  });
   const [addOpen, setAddOpen] = useState(false);
 
-  const total = items.reduce((s, r) => s + r.amount, 0);
+  const maintTotal = maintenance.reduce((s, r) => s + r.amount, 0);
+  // Cost ремонта = Σ (priceSnapshot × qty) по всем пунктам progress.
+  const repairCost = (job: ApiRepairJob): number =>
+    job.progress.reduce((s, p) => s + p.priceSnapshot * (p.qty ?? 1), 0);
+  const repairsTotal = repairs.reduce((s, j) => s + repairCost(j), 0);
+  const totalSpent = maintTotal + repairsTotal;
+
+  const activeRepairs = repairs.filter((r) => r.status === "in_progress");
+  const closedRepairs = repairs.filter((r) => r.status === "completed");
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-center justify-between rounded-xl bg-surface-soft px-4 py-3">
+    <div className="flex flex-col gap-4">
+      {/* Сводка: всего потрачено + кнопка добавить расход */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-surface-soft px-4 py-3">
         <div>
           <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-2">
             Всего потрачено
           </div>
-          <div className="mt-0.5 text-[20px] font-bold text-ink">
-            {total.toLocaleString("ru-RU")} ₽
+          <div className="mt-0.5 text-[20px] font-bold text-ink tabular-nums">
+            {totalSpent.toLocaleString("ru-RU")} ₽
           </div>
           <div className="text-[11px] text-muted">
-            {items.length} {plural(items.length, ["запись", "записи", "записей"])}
+            {repairs.length > 0 && (
+              <>
+                {repairs.length}{" "}
+                {plural(repairs.length, ["ремонт", "ремонта", "ремонтов"])}
+                {repairsTotal > 0 && ` · ${repairsTotal.toLocaleString("ru-RU")} ₽`}
+              </>
+            )}
+            {repairs.length > 0 && maintenance.length > 0 && " · "}
+            {maintenance.length > 0 && (
+              <>
+                {maintenance.length}{" "}
+                {plural(maintenance.length, [
+                  "расход",
+                  "расхода",
+                  "расходов",
+                ])}
+                {maintTotal > 0 && ` · ${maintTotal.toLocaleString("ru-RU")} ₽`}
+              </>
+            )}
+            {repairs.length === 0 && maintenance.length === 0 && "записей пока нет"}
           </div>
         </div>
         <button
@@ -57,29 +109,82 @@ export function MaintenanceTab({
         </button>
       </div>
 
-      {isLoading ? (
-        <div className="py-8 text-center text-muted">Загрузка…</div>
-      ) : items.length === 0 ? (
-        <div className="flex items-center gap-3 rounded-xl bg-surface px-4 py-6 shadow-card-sm">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-surface-soft text-muted-2">
-            <Wrench size={18} />
+      {/* Секция «Ремонты по дефектам» — repair_jobs */}
+      {(repairsLoading || repairs.length > 0) && (
+        <section className="flex flex-col gap-2">
+          <div className="flex items-baseline gap-2 px-1">
+            <span className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-red-soft text-red-ink">
+              <Wrench size={12} />
+            </span>
+            <h3 className="text-[13px] font-bold text-ink">
+              Ремонты по дефектам
+            </h3>
+            {activeRepairs.length > 0 && (
+              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-800">
+                {activeRepairs.length} активных
+              </span>
+            )}
+            <span className="ml-auto text-[11px] text-muted-2">
+              из актов о повреждениях
+            </span>
           </div>
-          <div>
-            <div className="text-[14px] font-semibold text-ink">
-              Пока нет записей об обслуживании
+          {repairsLoading ? (
+            <div className="py-4 text-center text-[12px] text-muted">
+              Загружаем ремонты…
             </div>
-            <div className="text-[12px] text-muted">
-              Добавьте первый расход (масло, ремонт, запчасти)
+          ) : (
+            <div className="overflow-hidden rounded-xl bg-surface shadow-card-sm">
+              {[...activeRepairs, ...closedRepairs].map((job) => (
+                <RepairJobRow
+                  key={job.id}
+                  job={job}
+                  cost={repairCost(job)}
+                />
+              ))}
             </div>
-          </div>
-        </div>
-      ) : (
-        <div className="overflow-hidden rounded-xl bg-surface shadow-card-sm">
-          {items.map((m) => (
-            <MaintRow key={m.id} m={m} />
-          ))}
-        </div>
+          )}
+        </section>
       )}
+
+      {/* Секция «Расходы и обслуживание» — scooter_maintenance */}
+      <section className="flex flex-col gap-2">
+        <div className="flex items-baseline gap-2 px-1">
+          <span className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-blue-50 text-blue-600">
+            <Plus size={12} />
+          </span>
+          <h3 className="text-[13px] font-bold text-ink">
+            Расходы и обслуживание
+          </h3>
+          <span className="ml-auto text-[11px] text-muted-2">
+            масло, запчасти, прочее
+          </span>
+        </div>
+        {maintLoading ? (
+          <div className="py-4 text-center text-[12px] text-muted">
+            Загружаем расходы…
+          </div>
+        ) : maintenance.length === 0 ? (
+          <div className="flex items-center gap-3 rounded-xl bg-surface px-4 py-5 shadow-card-sm">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-surface-soft text-muted-2">
+              <Wrench size={18} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-[13px] font-semibold text-ink">
+                Расходов пока нет
+              </div>
+              <div className="text-[12px] text-muted">
+                Добавьте первый расход — масло, запчасти или прочее
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="overflow-hidden rounded-xl bg-surface shadow-card-sm">
+            {maintenance.map((m) => (
+              <MaintRow key={m.id} m={m} />
+            ))}
+          </div>
+        )}
+      </section>
 
       {addOpen && (
         <MaintenanceAddModal
@@ -88,6 +193,93 @@ export function MaintenanceTab({
         />
       )}
     </div>
+  );
+}
+
+/* v0.4.41: строка одного repair_job. Кликабельна → переход на /service. */
+function RepairJobRow({
+  job,
+  cost,
+}: {
+  job: ApiRepairJob;
+  cost: number;
+}) {
+  const isClosed = job.status === "completed";
+  const doneCount = job.progress.filter((p) => p.done).length;
+  const totalItems = job.progress.length;
+  const photoCount = job.progress.reduce(
+    (s, p) => s + (p.photos?.length ?? 0),
+    0,
+  );
+  return (
+    <button
+      type="button"
+      onClick={() => navigate({ route: "service" })}
+      className="flex w-full items-center gap-3 border-b border-border px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-surface-soft"
+      title="Открыть журнал ремонтов"
+    >
+      <span
+        className={cn(
+          "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider",
+          isClosed
+            ? "bg-green-soft text-green-ink"
+            : "bg-amber-100 text-amber-800",
+        )}
+      >
+        {isClosed ? (
+          <CheckCircle2 size={10} />
+        ) : (
+          <Wrench size={10} />
+        )}
+        {isClosed ? "закрыт" : "в работе"}
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-baseline gap-1.5 text-[13px] font-semibold text-ink">
+          <span>Ремонт #{String(job.id).padStart(3, "0")}</span>
+          {job.rental?.clientName && (
+            <span className="text-[11px] font-normal text-muted-2">
+              · по аренде клиента {job.rental.clientName}
+            </span>
+          )}
+        </div>
+        <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[11px] text-muted">
+          <span>{formatDateRu(job.startedAt.slice(0, 10))}</span>
+          {job.completedAt && (
+            <>
+              <span>→</span>
+              <span>{formatDateRu(job.completedAt.slice(0, 10))}</span>
+            </>
+          )}
+          {totalItems > 0 && (
+            <>
+              <span>·</span>
+              <span>
+                {doneCount}/{totalItems}{" "}
+                {plural(totalItems, ["пункт", "пункта", "пунктов"])}
+              </span>
+            </>
+          )}
+          {photoCount > 0 && (
+            <>
+              <span>·</span>
+              <span className="inline-flex items-center gap-0.5">
+                <ImageIcon size={10} /> {photoCount}
+              </span>
+            </>
+          )}
+        </div>
+      </div>
+      <div className="text-right">
+        {cost > 0 ? (
+          <div className="text-[14px] font-bold tabular-nums text-ink">
+            {cost.toLocaleString("ru-RU")} ₽
+          </div>
+        ) : (
+          <div className="text-[11px] text-muted-2">без расходов</div>
+        )}
+      </div>
+      <ChevronRight size={14} className="shrink-0 text-muted-2" />
+    </button>
   );
 }
 
