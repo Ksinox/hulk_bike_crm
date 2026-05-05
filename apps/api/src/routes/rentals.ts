@@ -1625,39 +1625,45 @@ export async function rentalsRoutes(app: FastifyInstance) {
       damageBalance += debt;
     }
 
-    // v0.4.24: автоматическая «реабилитация» зависших аренд.
-    // Если status='problem' / 'completed_damage' и долг по ущербу = 0
-    // (а ручного и просрочки тоже нет) — переводим в нормальный
-    // статус. Раньше это срабатывало только при поступлении свежего
-    // damage-payment, но если оператор открывает карточку аренды у
-    // которой долг уже 0 и статус застрял — мы тут же чиним.
+    // v0.4.27: автоматическая «реабилитация» зависших аренд.
+    // Корень проблемы: статус 'problem' / 'completed_damage' выставлялся
+    // из-за неоплаченного УЩЕРБА. Когда ущерб погашен (damageBalance=0),
+    // статус должен вернуться в нормальный. Раньше я ошибочно требовал
+    // ещё и manualBalance===0 — но ручной долг это отдельная сущность,
+    // не связанная с тем что вызвало 'problem'. Если оператор начислил
+    // 100 ₽ ручного долга, это не повод держать аренду в «проблемной».
     //
-    // active vs completed: если возврат уже зафиксирован
-    // (endActualAt IS NOT NULL) → completed, иначе → active.
+    // Также оборачиваем в try/catch — если update падает (например
+    // по race condition), endpoint не должен возвращать 500: лучше
+    // отдать debt-данные клиенту, чем сломать всю карточку.
     if (
       (rental.status === "problem" || rental.status === "completed_damage") &&
-      damageBalance === 0 &&
-      manualBalance === 0
+      damageBalance === 0
     ) {
-      const nextStatus: "active" | "completed" =
-        rental.endActualAt == null ? "active" : "completed";
-      await db
-        .update(rentals)
-        .set({ status: nextStatus, updatedAt: sql`now()` })
-        .where(eq(rentals.id, id));
-      // Перечитаем, чтобы вернуть актуальный rental в ответе (UI
-      // подтянет статус сразу без повторного refetch).
-      const [refreshed] = await db
-        .select({ status: rentals.status })
-        .from(rentals)
-        .where(eq(rentals.id, id));
-      void refreshed;
-      await logActivity(req, {
-        entity: "rental",
-        entityId: id,
-        action: "status_auto_normalized",
-        summary: `Аренда #${id}: долг по ущербу 0 → статус «${nextStatus === "active" ? "активная" : "завершена"}»`,
-      });
+      try {
+        const nextStatus: "active" | "completed" =
+          rental.endActualAt == null ? "active" : "completed";
+        await db
+          .update(rentals)
+          .set({ status: nextStatus, updatedAt: sql`now()` })
+          .where(eq(rentals.id, id));
+        await logActivity(req, {
+          entity: "rental",
+          entityId: id,
+          action: "status_auto_normalized",
+          summary: `Аренда #${id}: ущерб погашен → статус «${nextStatus === "active" ? "активная" : "завершена"}» (было «${rental.status}»)`,
+        });
+        // Мутируем rental в памяти — чтобы вернуть response с уже
+        // новым статусом (UI rentalsList тоже инвалидируется на фронте).
+        rental.status = nextStatus;
+      } catch (e) {
+        // Логируем но не валим запрос — debt summary всё равно отдадим.
+        // eslint-disable-next-line no-console
+        console.error(
+          `[auto-normalize-status] rental ${id} update failed:`,
+          e,
+        );
+      }
     }
 
     return {
