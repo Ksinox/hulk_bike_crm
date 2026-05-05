@@ -1237,11 +1237,30 @@ export function RentalCard({
             <KpiCard label={label} value={value} hint={hint} accent={accent} />
           );
         })()}
-        <KpiCard
-          label="Эта аренда"
-          value={`${fmt(rental.sum)} ₽`}
-          hint={`+ залог: ${fmt(rental.deposit || DEPOSIT_AMOUNT)} ₽`}
-        />
+        {(() => {
+          // v0.4.38: показываем «исходно» если из залога что-то списано
+          // через PaymentAcceptDialog. Считается = текущий rental.deposit
+          // + Σ payments этой аренды с method='deposit' (PaymentAcceptDialog
+          // помечает все списания из залога этим методом). Раньше после
+          // списания UI показывал уменьшенную сумму, оператор не понимал,
+          // что было исходно.
+          const depositSpent = chainPayments
+            .filter((p) => p.method === "deposit")
+            .reduce((s, p) => s + p.amount, 0);
+          const currentDeposit = rental.deposit || DEPOSIT_AMOUNT;
+          const originalDeposit = currentDeposit + depositSpent;
+          const hint =
+            depositSpent > 0
+              ? `залог: ${fmt(originalDeposit)} ₽ (списано ${fmt(depositSpent)} ₽ → осталось ${fmt(currentDeposit)} ₽)`
+              : `+ залог: ${fmt(currentDeposit)} ₽`;
+          return (
+            <KpiCard
+              label="Эта аренда"
+              value={`${fmt(rental.sum)} ₽`}
+              hint={hint}
+            />
+          );
+        })()}
         <KpiCard
           label="За всё время аренды"
           value={`${fmt(paidIn)} ₽`}

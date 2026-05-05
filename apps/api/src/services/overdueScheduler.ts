@@ -31,12 +31,21 @@ const TICK_INTERVAL_MS = 60 * 60 * 1000; // раз в час
 async function tick(): Promise<void> {
   try {
     // returning() даёт нам id-ишники реально переведённых — для лога
+    // v0.4.38: добавил `end_planned_at IS NOT NULL` — schema NOT NULL,
+    // но если когда-нибудь legacy-импорт прокинет NULL, запись зависнет
+    // в active. Эта защита бесплатная и предотвращает зависание.
+    // v0.4.38: добавил `updated_at < now() - 5s` — защита от race с
+    // оператором, который только что выполнил /complete или extend.
+    // Без этого scheduler мог тронуть запись параллельно с транзакцией
+    // оператора и запутать UI кратковременной сменой статуса.
     const updated = await db.execute(sql`
       UPDATE rentals
          SET status = 'overdue', updated_at = now()
        WHERE status = 'active'
+         AND end_planned_at IS NOT NULL
          AND end_planned_at::date < (now() AT TIME ZONE 'Europe/Moscow')::date
          AND archived_at IS NULL
+         AND updated_at < now() - interval '5 seconds'
        RETURNING id
     `);
     // postgres-js execute возвращает result.rows

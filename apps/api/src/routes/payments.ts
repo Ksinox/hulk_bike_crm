@@ -149,6 +149,13 @@ export async function paymentsRoutes(app: FastifyInstance) {
 
   // POST /api/payments
   app.post("/", async (req, reply) => {
+    // v0.4.38: финансово-критичная операция — недоступна механику.
+    if (req.user?.role === "mechanic") {
+      return reply.code(403).send({
+        error: "forbidden",
+        message: "Создание платежей недоступно механику.",
+      });
+    }
     const parsed = CreatePaymentBody.safeParse(req.body);
     if (!parsed.success) {
       return reply

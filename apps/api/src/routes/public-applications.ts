@@ -228,7 +228,10 @@ export async function publicApplicationsRoutes(app: FastifyInstance) {
         });
       }
 
-      // Если файл такого kind уже есть — удаляем старый перед записью нового.
+      // v0.4.38: put → insert → delete старого. Раньше сначала удаляли
+      // старый файл, потом пытались записать новый — если MinIO моргнёт
+      // на putObject, старый уже стёрт, новый не сохранён, в БД пусто.
+      // Клиент может закрыть вкладку и заявка повисит без фотки.
       const [existing] = await db
         .select()
         .from(clientApplicationFiles)
@@ -238,21 +241,26 @@ export async function publicApplicationsRoutes(app: FastifyInstance) {
             eq(clientApplicationFiles.kind, parsedKind.data),
           ),
         );
-      if (existing) {
-        await removeObject(existing.fileKey).catch(() => {
-          /* файл мог уже исчезнуть */
-        });
-        await db
-          .delete(clientApplicationFiles)
-          .where(eq(clientApplicationFiles.id, existing.id));
-      }
 
       const fileKey = makeFileKey(
         `applications/${id}/${parsedKind.data}`,
         fileName,
       );
+      // 1) Записываем новый файл в MinIO
       await putObject(fileKey, fileBuf, mimeType);
 
+      // 2) Если был старый — удаляем запись из БД и файл из MinIO,
+      //    но только после того как новая загрузка прошла успешно
+      if (existing) {
+        await db
+          .delete(clientApplicationFiles)
+          .where(eq(clientApplicationFiles.id, existing.id));
+        await removeObject(existing.fileKey).catch(() => {
+          /* старый MinIO-объект мог уже исчезнуть */
+        });
+      }
+
+      // 3) Создаём новую запись
       const [row] = await db
         .insert(clientApplicationFiles)
         .values({

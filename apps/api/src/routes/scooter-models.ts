@@ -1,8 +1,8 @@
 import type { FastifyInstance } from "fastify";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/index.js";
-import { scooterModels } from "../db/schema.js";
+import { scooterModels, scooters } from "../db/schema.js";
 import { requireRole } from "../auth/plugin.js";
 import { logActivity } from "../services/activityLog.js";
 import { diffFields } from "../services/activityMessages.js";
@@ -168,6 +168,22 @@ export async function scooterModelsRoutes(app: FastifyInstance) {
         .from(scooterModels)
         .where(eq(scooterModels.id, id));
       if (!existing) return reply.code(404).send({ error: "not found" });
+
+      // v0.4.38: блокируем удаление если есть скутеры с этой моделью.
+      // Раньше DELETE проходил → FK 23503 → API 500, или (если CASCADE)
+      // удалялись все скутеры этой модели вместе с историей аренд.
+      const countRow = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(scooters)
+        .where(eq(scooters.modelId, id));
+      const count = countRow[0]?.count ?? 0;
+      if (count > 0) {
+        return reply.code(409).send({
+          error: "model_in_use",
+          message: `Модель используется в ${count} скутерах. Сначала переназначьте их на другую модель или удалите.`,
+          count,
+        });
+      }
 
       // удалим аватарку из MinIO если была
       if (existing.avatarKey) {

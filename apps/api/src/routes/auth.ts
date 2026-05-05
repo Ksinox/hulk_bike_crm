@@ -54,7 +54,20 @@ export async function authRoutes(app: FastifyInstance) {
    * body: { login, password, remember }
    * При успехе ставит http-only cookie hulk_session с JWT.
    */
-  app.post("/login", async (req, reply) => {
+  // v0.4.38: rate-limit на login против брутфорса. 20 попыток за
+  // 15 минут на один IP — bcrypt всё равно медленный, но без лимита
+  // бот может непрерывно нагружать CPU. После лимита 429.
+  app.post(
+    "/login",
+    {
+      config: {
+        rateLimit: {
+          max: 20,
+          timeWindow: "15 minutes",
+        },
+      },
+    },
+    async (req, reply) => {
     const parsed = LoginBody.safeParse(req.body);
     if (!parsed.success) {
       return reply.code(400).send({ error: "validation", issues: parsed.error.issues });
@@ -100,7 +113,8 @@ export async function authRoutes(app: FastifyInstance) {
         role: row.role,
         avatarColor: row.avatarColor,
       });
-  });
+  },
+  );
 
   /**
    * POST /api/auth/logout — очищает cookie.
@@ -128,11 +142,26 @@ export async function authRoutes(app: FastifyInstance) {
           role: users.role,
           avatarColor: users.avatarColor,
           mustChangePassword: users.mustChangePassword,
+          active: users.active,
         })
         .from(users)
         .where(eq(users.id, u.userId));
       if (!row) return reply.code(401).send({ error: "user deleted" });
-      return row;
+      // v0.4.38: если юзера деактивировали (`active=false`) — отзываем
+      // сессию немедленно. Раньше JWT оставался валидным до истечения
+      // (12h–30d), и деактивация работала только при следующем логине.
+      if (!row.active) {
+        reply.clearCookie(SESSION_COOKIE, { path: "/" });
+        return reply.code(401).send({ error: "user_deactivated" });
+      }
+      return {
+        id: row.id,
+        name: row.name,
+        login: row.login,
+        role: row.role,
+        avatarColor: row.avatarColor,
+        mustChangePassword: row.mustChangePassword,
+      };
     },
   );
 

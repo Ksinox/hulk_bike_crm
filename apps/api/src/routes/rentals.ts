@@ -152,6 +152,26 @@ async function summaryForRental(rentalId: number): Promise<string> {
   return `#${r.id} · ${cl?.name ?? "—"}${sc?.name ? " · " + sc.name : ""}`;
 }
 
+/**
+ * v0.4.38: финансово-чувствительные endpoint'ы (списания/прощения долгов,
+ * приёмы оплат, нормализация статуса, удаление debt-entry, смена скутера
+ * с доплатой) недоступны механику. Mechanic — это парень в гараже,
+ * деньги клиента ему трогать нельзя. creator/director/admin/accountant
+ * проходят. Возвращает true если роль OK, иначе шлёт 403 и возвращает false.
+ */
+function assertFinancialRole(
+  req: { user?: { role?: string } },
+  reply: { code: (n: number) => { send: (b: unknown) => unknown } },
+): boolean {
+  const role = req.user?.role;
+  if (role && role !== "mechanic") return true;
+  reply.code(403).send({
+    error: "forbidden",
+    message: "Эта операция недоступна механику. Обратитесь к директору.",
+  });
+  return false;
+}
+
 export async function rentalsRoutes(app: FastifyInstance) {
   // Основной список — без архива.
   app.get("/", async () => {
@@ -685,12 +705,35 @@ export async function rentalsRoutes(app: FastifyInstance) {
             : null;
           const reborn: "active" | "overdue" =
             endKey && endKey < todayKey ? "overdue" : "active";
+          // v0.4.38: проверяем что скутер родителя не занят другой
+          // активной арендой (через swap-scooter он мог уйти к другой
+          // аренде). Если занят — отвязываем (scooterId=null), оператор
+          // подберёт новый через UI. Иначе будет инвариант-bust:
+          // две live-аренды на одном скутере.
+          let parentScooterId: number | null = parent.scooterId ?? null;
+          if (parentScooterId != null) {
+            const otherOpen = await db
+              .select({ id: rentals.id })
+              .from(rentals)
+              .where(
+                and(
+                  eq(rentals.scooterId, parentScooterId),
+                  sql`${rentals.id} <> ${parent.id}`,
+                  sql`${rentals.status} IN ('active', 'overdue', 'returning')`,
+                  isNull(rentals.archivedAt),
+                ),
+              );
+            if (otherOpen.length > 0) {
+              parentScooterId = null;
+            }
+          }
           await db
             .update(rentals)
             .set({
               archivedAt: null,
               endActualAt: null,
               status: reborn,
+              scooterId: parentScooterId,
               updatedAt: sql`now()`,
             })
             .where(eq(rentals.id, parent.id));
@@ -1077,6 +1120,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
   app.post<{ Params: { id: string } }>(
     "/:id/revert-overdue",
     async (req, reply) => {
+      if (!assertFinancialRole(req, reply)) return;
       const id = Number(req.params.id);
       if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
       const today = new Date();
@@ -1595,6 +1639,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
   app.post<{ Params: { id: string } }>(
     "/:id/confirm-payment",
     async (req, reply) => {
+      if (!assertFinancialRole(req, reply)) return;
       const id = Number(req.params.id);
       if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
 
@@ -1994,6 +2039,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
       comment?: string;
     };
   }>("/:id/debt/payment", async (req, reply) => {
+    if (!assertFinancialRole(req, reply)) return;
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
     const Body = z.object({
@@ -2051,6 +2097,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
     Params: { id: string };
     Body: { amount: number; comment: string };
   }>("/:id/debt/manual", async (req, reply) => {
+    if (!assertFinancialRole(req, reply)) return;
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
     const Body = z.object({
@@ -2109,6 +2156,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
     Params: { id: string };
     Body: { comment?: string; target?: "all" | "fine" | "days" };
   }>("/:id/debt/forgive-overdue", async (req, reply) => {
+    if (!assertFinancialRole(req, reply)) return;
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
     const Body = z.object({
@@ -2294,6 +2342,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
   app.post<{ Params: { id: string } }>(
     "/:id/normalize-status",
     async (req, reply) => {
+      if (!assertFinancialRole(req, reply)) return;
       const id = Number(req.params.id);
       if (!Number.isFinite(id))
         return reply.code(400).send({ error: "bad id" });
