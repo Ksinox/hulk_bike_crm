@@ -202,25 +202,29 @@ export function useDashboardMetrics(): DashboardMetrics {
         r.status === "overdue" && r.updatedAt && r.updatedAt < todayKey,
     ).length;
 
-    const overdueSum = overdueRentals.reduce((s, r) => {
-      const scheduledUnpaid = payments
-        .filter((p) => p.rentalId === r.id && !p.paid)
-        .reduce((ps, p) => ps + p.amount, 0);
-      return s + (scheduledUnpaid || r.sum);
-    }, 0);
+    // v0.4.2: долг по просрочке считается по бизнес-формуле
+    // 1.5 × rate × overdueDays (то же что в карточке аренды и в фильтре
+    // «С долгом» в Клиентах). Раньше дашборд показывал unpaid-сумму
+    // или r.sum — это был долг по аренде, а не по просрочке. Из-за
+    // этого на дашборде у клиента стояло 5500 ₽, а в карточке —
+    // правильные 3750 ₽ (1.5 × 500 × 5).
+    const overdueDebtFor = (r: ApiRental): number => {
+      const endDateKey = r.endPlannedAt.slice(0, 10);
+      const days = Math.max(0, daysBetweenYmd(endDateKey, todayKey));
+      if (days <= 0) return 0;
+      return Math.round(r.rate * 1.5) * days;
+    };
+
+    const overdueSum = overdueRentals.reduce(
+      (s, r) => s + overdueDebtFor(r),
+      0,
+    );
 
     const overdue: OverdueItem[] = overdueRentals.map((r) => {
       const sc = r.scooterId != null ? scooterById.get(r.scooterId) : null;
       const cl = clientById.get(r.clientId);
-      // v0.2.99: считаем «дней просрочки» по календарным датам (без часов).
-      // День возврата = 0 дней просрочки (но после фильтра выше такие
-      // вообще не попадают в overdue). +1 день начинается со следующего
-      // календарного дня после endPlannedAt.
       const endDateKey = r.endPlannedAt.slice(0, 10);
       const daysOverdue = Math.max(0, daysBetweenYmd(endDateKey, todayKey));
-      const debt = payments
-        .filter((p) => p.rentalId === r.id && !p.paid)
-        .reduce((s, p) => s + p.amount, 0);
       return {
         rentalId: r.id,
         scooterName: sc?.name ?? "—",
@@ -228,7 +232,7 @@ export function useDashboardMetrics(): DashboardMetrics {
         clientPhone: cl?.phone ?? "",
         endPlannedAt: r.endPlannedAt,
         daysOverdue,
-        debt: debt || r.sum,
+        debt: overdueDebtFor(r),
       };
     });
 
