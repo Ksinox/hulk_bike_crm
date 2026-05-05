@@ -124,6 +124,14 @@ export function TermsTab({
 }) {
   const { data: apiClients } = useApiClients();
   const client = apiClients?.find((c) => c.id === rental.clientId);
+  // v0.4.11: предпочитаем drawer-стек для перехода на скутер (если есть).
+  // Fallback на navigate — только когда DrawerProvider не доступен в дереве
+  // (в тестах/изолированных рендерах). На любых страницах в App.tsx
+  // provider всегда есть → клик откроет drawer вместо ухода на /fleet.
+  const drawer = useDashboardDrawer();
+  const goToScooter = (scooterId: number) => {
+    drawer.openScooter(scooterId);
+  };
   const time = rental.startTime ?? "12:00";
   const location = "Склад \"Северный\"";
   const mileage = mockMileage(rental.scooter);
@@ -293,11 +301,7 @@ export function TermsTab({
                 );
                 return;
               }
-              navigate({
-                route: "fleet",
-                scooterId: rental.scooterId,
-                from: { route: "rentals", rentalId: rental.id },
-              });
+              goToScooter(rental.scooterId);
             }}
             title={
               rental.scooterId != null
@@ -315,11 +319,7 @@ export function TermsTab({
                 type="button"
                 onClick={() => {
                   if (rental.scooterId == null) return;
-                  navigate({
-                    route: "fleet",
-                    scooterId: rental.scooterId,
-                    from: { route: "rentals", rentalId: rental.id },
-                  });
+                  goToScooter(rental.scooterId);
                 }}
                 className="min-w-0 flex-1 text-left"
               >
@@ -356,11 +356,7 @@ export function TermsTab({
                   type="button"
                   onClick={() => {
                     if (rental.scooterId == null) return;
-                    navigate({
-                      route: "fleet",
-                      scooterId: rental.scooterId,
-                      from: { route: "rentals", rentalId: rental.id },
-                    });
+                    goToScooter(rental.scooterId);
                   }}
                   title="Открыть карточку скутера"
                   className="rounded-[6px] p-1 text-muted-2 hover:bg-surface-soft hover:text-ink"
@@ -428,13 +424,7 @@ export function TermsTab({
               <div key={`${s.scooterId}-${i}`} className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() =>
-                    navigate({
-                      route: "fleet",
-                      scooterId: s.scooterId,
-                      from: { route: "rentals", rentalId: rental.id },
-                    })
-                  }
+                  onClick={() => goToScooter(s.scooterId)}
                   title={
                     s.isCurrent
                       ? `${s.scooter} — текущий. Клик → карточка скутера.`
