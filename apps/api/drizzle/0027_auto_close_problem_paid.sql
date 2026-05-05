@@ -11,10 +11,10 @@
 
 UPDATE rentals r
 SET
-    status = CASE
+    status = (CASE
         WHEN r.end_actual_at IS NOT NULL THEN 'completed'
         ELSE 'active'
-    END,
+    END)::rental_status,
     updated_at = now()
 WHERE r.status IN ('problem', 'completed_damage')
   AND COALESCE((
