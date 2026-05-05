@@ -13,6 +13,14 @@ export function useApiRentals() {
     queryKey: rentalsKeys.list(),
     queryFn: () =>
       api.get<ListResponse<ApiRental>>("/api/rentals").then((r) => r.items),
+    // v0.4.28: автообновление раз в минуту — чтобы KPI на дашборде
+    // («Поступит сегодня», «Просрочки», и т.п.) не показывали stale-
+    // данные при открытой вкладке без фокуса. Когда оператор где-то
+    // принял возврат/продление — invalidateQueries(['rentals']) делает
+    // refetch немедленно; интервал страхует случаи, когда инвалидация
+    // прошла на другом устройстве/в другой сессии.
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
   });
 }
 

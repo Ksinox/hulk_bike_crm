@@ -1,6 +1,5 @@
 import {
   createContext,
-  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -150,31 +149,34 @@ function DrawerHost({ ctx }: { ctx: Ctx }) {
     return () => window.clearTimeout(t);
   }, [stack.length]);
 
-  // Колесо мыши: если пользователь крутит над контейнером (но не над
-  // скроллящимся внутренне элементом) — переводим в горизонтальный
-  // скролл. Внутри drawer-карточки сработает её собственный
-  // вертикальный скролл (мы не intercept'им там).
-  const onWheelOuter = useCallback((e: React.WheelEvent) => {
-    const target = e.target as HTMLElement | null;
-    // Если над skroll-able элементом внутри карточки — не вмешиваемся.
-    // Эвристика: ищем ближайший элемент с overflow-y:auto/scroll.
-    let cur: HTMLElement | null = target;
-    while (cur && cur !== scrollRef.current) {
-      const cs = window.getComputedStyle(cur);
-      if (
-        (cs.overflowY === "auto" || cs.overflowY === "scroll") &&
-        cur.scrollHeight > cur.clientHeight
-      ) {
-        return; // даём вертикальному скроллу работать
-      }
-      cur = cur.parentElement;
-    }
+  // v0.4.28: колесо мыши вешаем НЕ через React `onWheel` (он passive
+  // по умолчанию в актуальных Chromium → preventDefault даёт warning
+  // в консоли и не работает), а через нативный addEventListener с
+  // {passive:false}. Логика та же: над контейнером крутим в
+  // горизонталь, над scroll-able элементом — даём ему работать.
+  useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
-      el.scrollLeft += e.deltaY;
-      e.preventDefault();
-    }
+    const onWheel = (e: WheelEvent) => {
+      const target = e.target as HTMLElement | null;
+      let cur: HTMLElement | null = target;
+      while (cur && cur !== el) {
+        const cs = window.getComputedStyle(cur);
+        if (
+          (cs.overflowY === "auto" || cs.overflowY === "scroll") &&
+          cur.scrollHeight > cur.clientHeight
+        ) {
+          return; // вертикальный скролл внутри карточки
+        }
+        cur = cur.parentElement;
+      }
+      if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+        el.scrollLeft += e.deltaY;
+        e.preventDefault();
+      }
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
   }, []);
 
   if (stack.length === 0) return null;
@@ -197,7 +199,6 @@ function DrawerHost({ ctx }: { ctx: Ctx }) {
     >
       <div
         ref={scrollRef}
-        onWheel={onWheelOuter}
         className="ml-auto h-full w-full overflow-x-auto overflow-y-hidden"
         onClick={(e) => {
           if (e.target === e.currentTarget) ctx.close();

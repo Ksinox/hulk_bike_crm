@@ -175,17 +175,27 @@ export function useDashboardMetrics(): DashboardMetrics {
     const monthStart = period.start;
     const monthEnd = period.end;
 
-    // ===== KPI: поступит сегодня (v0.4.15)
+    // ===== KPI: поступит сегодня (v0.4.15, доработано в v0.4.28)
     // Считаем как сумму rental.sum по арендам, у которых endPlannedAt =
-    // сегодня и они ещё не закрыты/не продлены (active/returning).
+    // сегодня и они ещё фактически не закрыты.
     // Идея: клиенты обычно продлевают на ту же сумму, что в текущем
     // продлении. Когда клиент возвращает/продлевает — его аренда уходит
     // из этого списка (parent архивируется при extend, status=completed
     // при return) → цифра уменьшается в реальном времени.
+    //
+    // v0.4.28: ужесточил фильтр — раньше сюда попадали аренды со
+    // status=active+endPlannedAt=сегодня даже если endActualAt уже
+    // выставлен (промежуточное состояние при возврате) или статус
+    // успел перескочить в overdue (status сменился, но endPlannedAt
+    // = сегодня). Теперь:
+    //   • endActualAt должен быть null (клиент не сдал скутер)
+    //   • статус только active|returning (отбрасываем overdue/problem/
+    //     completed_damage — оператор уже не ждёт от них «поступления»)
     const returnsTodayRentals = rentals.filter(
       (r) =>
         (r.status === "active" || r.status === "returning") &&
-        r.endPlannedAt.slice(0, 10) === todayKey,
+        r.endPlannedAt.slice(0, 10) === todayKey &&
+        !r.endActualAt,
     );
     const todayIncoming = returnsTodayRentals.reduce(
       (s, r) => s + (r.sum ?? 0),

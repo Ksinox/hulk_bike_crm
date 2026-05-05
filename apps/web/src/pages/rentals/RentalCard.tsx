@@ -1123,14 +1123,24 @@ export function RentalCard({
           </div>
         </div>
       )}
-      {totalDebt === 0 && reports.length > 0 && (
-        <div className="flex items-center gap-2 rounded-[12px] bg-green-soft/70 px-3 py-2 text-[12px] text-green-ink">
-          <CheckCircle2 size={14} className="shrink-0" />
-          <span>
-            <b>Ущерб полностью оплачен.</b> Аренду можно архивировать.
-          </span>
-        </div>
-      )}
+      {/* v0.4.28: плашка «можно архивировать» имеет смысл только для
+          завершённых аренд. На активной/возвращающейся аренде ущерб
+          может быть погашен (зачёт из залога + платёж), но клиент
+          ещё катается — «архивировать» неприменимо. Также прячем,
+          если уже архивирована. */}
+      {totalDebt === 0 &&
+        reports.length > 0 &&
+        !rental.archivedAt &&
+        (rental.status === "completed" ||
+          rental.status === "completed_damage" ||
+          rental.status === "problem") && (
+          <div className="flex items-center gap-2 rounded-[12px] bg-green-soft/70 px-3 py-2 text-[12px] text-green-ink">
+            <CheckCircle2 size={14} className="shrink-0" />
+            <span>
+              <b>Ущерб полностью оплачен.</b> Аренду можно архивировать.
+            </span>
+          </div>
+        )}
       {rental.status === "completed_damage" && reports.length === 0 && (
         <div className="flex items-center gap-2 rounded-[12px] bg-red-soft/70 px-3 py-2 text-[12px] text-red-ink">
           <AlertTriangle size={14} className="shrink-0" />
