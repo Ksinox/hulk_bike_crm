@@ -17,9 +17,7 @@ import { useUnreachableSet } from "@/pages/clients/clientStore";
 import { NewRentalModal } from "./NewRentalModal";
 import { useApiClients } from "@/lib/api/clients";
 import { useApiScooters } from "@/lib/api/scooters";
-import { useApiPayments } from "@/lib/api/payments";
-import { revenueFromPayments } from "@/lib/revenue";
-import { currentBillingPeriod } from "@/lib/billingPeriod";
+import { useBillingPeriodRevenue } from "@/lib/useRevenue";
 import { ErrorBoundary } from "@/app/ErrorBoundary";
 import type { ApiClient } from "@/lib/api/types";
 import {
@@ -139,8 +137,11 @@ export function Rentals() {
   const archivedList = useArchivedRentals();
   const unreachable = useUnreachableSet();
   const { data: apiClients } = useApiClients();
-  const { data: payments } = useApiPayments();
   const { data: apiScooters = [] } = useApiScooters();
+  // v0.4.10: единый источник правды для выручки — общий хук, тот же
+  // что использует и дашборд. Скоуп='rentals' оставлен на будущее
+  // когда появятся другие модули с платежами (продажи/ремонты).
+  const revenue = useBillingPeriodRevenue("rentals");
   // Пул скутеров, пригодных к сдаче в аренду — только 'rental_pool'
   const rentalPoolSize = apiScooters.filter(
     (s) => s.baseStatus === "rental_pool" && !s.archivedAt,
@@ -269,12 +270,10 @@ export function Rentals() {
   }, [filters, rentals, unreachable, apiClients, today, rentalPoolSize]);
 
   const kpi = useMemo<Kpi[]>(() => {
-    // Расчётный период — с 15-го одного месяца по 14-е следующего
-    // включительно. Сервис в @/lib/billingPeriod — единая точка правды.
-    const period = currentBillingPeriod();
-    const periodStart = period.start;
-    const periodEnd = period.end;
-    const rangeLabel = period.label;
+    // v0.4.10: период и сумма выручки приходят из useBillingPeriodRevenue —
+    // того же хука что использует дашборд. Раньше каждая страница считала
+    // период и фильтр сама → при малейшем расхождении кода — разные суммы.
+    const rangeLabel = revenue.period.label;
 
     // Активная аренда без скутера — это «призрак» (артефакт старых данных
     // или неправильно созданная заявка). Не считаем её — иначе бейдж
@@ -297,15 +296,7 @@ export function Rentals() {
     const overdueDebt = rentals
       .filter((r) => r.status === "overdue")
       .reduce((s, r) => s + (r.sum ?? 0), 0);
-    // Выручка считается по фактическим платежам (paid=true, type!='deposit'),
-    // а не по rental.sum — иначе при продлении (parent rental архивируется
-    // и фильтр его исключает) сумма «теряется». Та же формула что в
-    // useDashboardMetrics, через общую функцию revenueFromPayments.
-    const periodRevenue = revenueFromPayments(
-      payments ?? [],
-      periodStart,
-      periodEnd,
-    );
+    const periodRevenue = revenue.total;
 
     return [
       {
@@ -341,7 +332,7 @@ export function Rentals() {
         tone: "purple",
       },
     ];
-  }, [rentals, payments]);
+  }, [rentals, revenue]);
 
   return (
     <main className="flex min-w-0 flex-1 flex-col gap-4">

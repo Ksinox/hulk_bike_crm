@@ -11,6 +11,7 @@ import { useApiPayments, type ApiPayment } from "@/lib/api/payments";
 import { useAllDamageReports } from "@/lib/api/damage-reports";
 import type { ApiRental, ApiScooter } from "@/lib/api/types";
 import { currentBillingPeriod } from "@/lib/billingPeriod";
+import { useBillingPeriodRevenue } from "@/lib/useRevenue";
 
 export type DashboardMetrics = {
   isLoading: boolean;
@@ -136,6 +137,10 @@ export function useDashboardMetrics(): DashboardMetrics {
   const scootersQ = useApiScooters();
   const paymentsQ = useApiPayments();
   const damageReportsQ = useAllDamageReports();
+  // v0.4.10: общая выручка за период — единый источник правды (используется
+  // и здесь, и на вкладке «Аренды»). Скоуп='all' включает все источники
+  // (в будущем продажи/ремонты/рассрочки тоже подтянутся сюда).
+  const periodRevenue = useBillingPeriodRevenue("all");
 
   const isLoading =
     clientsQ.isLoading ||
@@ -302,19 +307,9 @@ export function useDashboardMetrics(): DashboardMetrics {
       })
       .sort((a, b) => a.endPlannedAt.localeCompare(b.endPlannedAt));
 
-    // ===== Выручка за месяц
-    // В выручку НЕ включаем залоги — это возвратные деньги, не доход.
-    // Считаем только тип 'rent', 'damage', 'fine' и прочие «заработки».
-    const monthPayments = payments.filter(
-      (p) => {
-        if (!p.paid || !p.paidAt) return false;
-        if (p.type === "deposit" || p.type === "refund") return false;
-        const t = new Date(p.paidAt).getTime();
-        return t >= monthStart.getTime() && t < monthEnd.getTime();
-      },
-    );
-    const revenueMonth = monthPayments.reduce((s, p) => s + p.amount, 0);
-    const revenueMonthCount = monthPayments.length;
+    // ===== Выручка за период (v0.4.10: общий хук) =====
+    const revenueMonth = periodRevenue.total;
+    const revenueMonthCount = periodRevenue.count;
 
     // ===== Ожидаемая выручка — аренды этого месяца без зафиксированного rent-платежа.
     // Это случаи когда скутер уже выдан клиенту (active/overdue/returning/returned),
@@ -336,16 +331,8 @@ export function useDashboardMetrics(): DashboardMetrics {
     const revenueExpected = expectedRentals.reduce((s, r) => s + r.sum, 0);
     const revenueExpectedCount = expectedRentals.length;
 
-    // ===== Платежи по дням месяца — для графика
-    const byDayMap = new Map<string, number>();
-    monthPayments.forEach((p) => {
-      if (!p.paidAt) return;
-      const d = p.paidAt.slice(0, 10);
-      byDayMap.set(d, (byDayMap.get(d) ?? 0) + p.amount);
-    });
-    const revenueByDay = Array.from(byDayMap.entries())
-      .map(([date, sum]) => ({ date, sum }))
-      .sort((a, b) => a.date.localeCompare(b.date));
+    // ===== Платежи по дням периода — приходят из общего хука =====
+    const revenueByDay = periodRevenue.byDay;
 
     const hasRentals = rentals.length > 0;
     const hasScooters = scooters.length > 0;
@@ -491,6 +478,7 @@ export function useDashboardMetrics(): DashboardMetrics {
     paymentsQ.data,
     damageReportsQ.data,
     isLoading,
+    periodRevenue,
   ]);
 }
 
