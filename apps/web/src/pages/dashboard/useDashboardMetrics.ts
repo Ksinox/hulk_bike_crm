@@ -243,7 +243,10 @@ export function useDashboardMetrics(): DashboardMetrics {
       const endDateKey = r.endPlannedAt.slice(0, 10);
       const days = Math.max(0, daysBetweenYmd(endDateKey, todayKey));
       if (days <= 0) return 0;
-      return Math.round(r.rate * 1.5) * days;
+      // v0.4.25: учитываем rateUnit. Для week-тарифов сначала приводим
+      // к дневному эквиваленту = round(rate / 7).
+      const daily = r.rateUnit === "week" ? Math.round(r.rate / 7) : r.rate;
+      return Math.round(daily * 1.5) * days;
     };
 
     const overdueSum = overdueRentals.reduce(

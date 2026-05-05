@@ -864,8 +864,15 @@ export function RentalCard({
         // оставляем как пояснение справа. Если API ещё не загрузилось —
         // считаем локально (graceful fallback).
         const d = Math.max(1, daysLeft !== null ? Math.abs(daysLeft) : 1);
-        const fallbackDays = rental.rate * d;
-        const fallbackFine = Math.round(rental.rate * 0.5) * d;
+        // v0.4.25: dailyRate учитывает rateUnit. При week-тарифе
+        // dailyRate = round(rate/7), штраф = round(dailyRate × 0.5).
+        const dailyRate =
+          rental.rateUnit === "week"
+            ? Math.round(rental.rate / 7)
+            : rental.rate;
+        const fineDaily = Math.round(dailyRate * 0.5);
+        const fallbackDays = dailyRate * d;
+        const fallbackFine = fineDaily * d;
         const daysBalance =
           debtSummary?.overdueDaysBalance ?? fallbackDays;
         const fineBalance =
@@ -879,8 +886,8 @@ export function RentalCard({
                 Просрочка {d} дн. — {fmt(totalBalance)} ₽
               </div>
               <div className="text-[11px] opacity-90">
-                дни {fmt(daysBalance)} ₽ ({fmt(rental.rate)} ₽ × {d}) ·
-                штраф {fmt(fineBalance)} ₽ ({fmt(Math.round(rental.rate * 0.5))} ₽/день × {d})
+                дни {fmt(daysBalance)} ₽ ({fmt(dailyRate)} ₽ × {d}) ·
+                штраф {fmt(fineBalance)} ₽ ({fmt(fineDaily)} ₽/день × {d})
               </div>
               <div className="text-[11px] opacity-80">
                 Плановый возврат — {rental.endPlanned} {rental.startTime || "12:00"}
@@ -1187,7 +1194,11 @@ export function RentalCard({
           const overdueLocal =
             rental.status === "overdue"
               ? Math.max(1, daysLeft !== null ? Math.abs(daysLeft) : 1) *
-                Math.round(rental.rate * 1.5)
+                Math.round(
+                  (rental.rateUnit === "week"
+                    ? rental.rate / 7
+                    : rental.rate) * 1.5,
+                )
               : 0;
           const overdueBalance =
             debtSummary?.overdueBalance ?? overdueLocal;

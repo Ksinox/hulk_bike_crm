@@ -67,6 +67,8 @@ const CreateRentalBody = z
       .optional(),
     tariffPeriod: z.enum(["short", "week", "month"]),
     rate: z.number().int().positive(),
+    /** v0.4.25: 'day' (default) или 'week' — единица измерения ставки. */
+    rateUnit: z.enum(["day", "week"]).optional(),
     /** Сумма залога в ₽. 0 если неденежный. */
     deposit: z.number().int().min(0).optional(),
     /** Описание предмета, если залог неденежный */
@@ -105,6 +107,7 @@ const PatchRentalBody = z
     paymentConfirmedAt: z.string().optional().nullable(),
     note: z.string().optional().nullable(),
     rate: z.number().int().positive().optional(),
+    rateUnit: z.enum(["day", "week"]).optional(),
     days: z.number().int().positive().optional(),
     sum: z.number().int().min(0).optional(),
     deposit: z.number().int().min(0).optional(),
@@ -247,6 +250,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
         sourceChannel: d.sourceChannel ?? null,
         tariffPeriod: d.tariffPeriod,
         rate: d.rate,
+        rateUnit: d.rateUnit ?? "day",
         deposit: d.deposit ?? 2000,
         depositItem: d.depositItem ?? null,
         startAt: new Date(d.startAt),
@@ -1033,6 +1037,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
           extraDays: z.number().int().positive(),
           newRate: z.number().int().positive(),
           newTariffPeriod: z.enum(["short", "week", "month"]),
+          newRateUnit: z.enum(["day", "week"]).optional(),
         })
         .strict();
       const parsed = schema.safeParse(req.body);
@@ -1070,12 +1075,18 @@ export async function rentalsRoutes(app: FastifyInstance) {
             sourceChannel: old.sourceChannel,
             tariffPeriod: d.newTariffPeriod,
             rate: d.newRate,
+            rateUnit: d.newRateUnit ?? "day",
             deposit: old.deposit,
             depositItem: old.depositItem,
             startAt: newStart,
             endPlannedAt: newEnd,
             days: d.extraDays,
-            sum: d.newRate * d.extraDays,
+            // v0.4.25: при rateUnit='week' sum = rate × недель.
+            // extraDays уже задан как недели×7, поэтому делим обратно.
+            sum:
+              d.newRateUnit === "week"
+                ? d.newRate * Math.max(1, Math.round(d.extraDays / 7))
+                : d.newRate * d.extraDays,
             paymentMethod: old.paymentMethod,
             equipment: old.equipment,
             equipmentJson: old.equipmentJson as unknown as object,
@@ -1480,26 +1491,27 @@ export async function rentalsRoutes(app: FastifyInstance) {
   }
 
   /**
-   * Расчёт двух компонентов просрочки (v0.4.3).
-   *  • daysCharge — «долг по неоплаченным дням», начисляется как
-   *    rate × overdueDays (как обычная аренда продлённая на эти дни).
-   *  • fineCharge — штраф 50% от тарифа за каждый день просрочки,
-   *    round(rate × 0.5) × overdueDays.
-   *  • totalCharge = daysCharge + fineCharge (= 1.5 × rate × days).
+   * Расчёт двух компонентов просрочки (v0.4.3 / v0.4.25).
+   *  • daysCharge — «долг по неоплаченным дням» = dailyRate × overdueDays
+   *  • fineCharge — штраф 50% за каждый день просрочки
    *
-   *  Бизнес-смысл: «обычные» дни клиент бы и так оплатил (он же катался),
-   *  а штраф — отдельная санкция. При сбросе просрочки оператор может
-   *  списать только штраф (например постоянному клиенту), оставив дни.
+   *  v0.4.25: учитываем rateUnit. При 'week' оператор видит «3000 ₽/нед»,
+   *  но просрочка считается за каждый ДЕНЬ просрочки. Поэтому
+   *  dailyRate = round(rate / 7). Округление только при расчёте просрочки
+   *  (rate в БД остаётся exact).
    */
   function overdueComponents(
     rate: number,
+    rateUnit: string,
     overdueDays: number,
   ): { daysCharge: number; fineCharge: number; totalCharge: number } {
     if (overdueDays <= 0 || rate <= 0) {
       return { daysCharge: 0, fineCharge: 0, totalCharge: 0 };
     }
-    const daysCharge = rate * overdueDays;
-    const fineCharge = Math.round(rate * 0.5) * overdueDays;
+    const dailyRate =
+      rateUnit === "week" ? Math.round(rate / 7) : rate;
+    const daysCharge = dailyRate * overdueDays;
+    const fineCharge = Math.round(dailyRate * 0.5) * overdueDays;
     return { daysCharge, fineCharge, totalCharge: daysCharge + fineCharge };
   }
 
@@ -1516,6 +1528,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
     const overdueDays = calcOverdueDays(rental.endPlannedAt, rental.status);
     const { daysCharge, fineCharge, totalCharge } = overdueComponents(
       rental.rate,
+      rental.rateUnit ?? "day",
       overdueDays,
     );
 
@@ -1752,6 +1765,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
     const overdueDays = calcOverdueDays(rental.endPlannedAt, rental.status);
     const { daysCharge, fineCharge, totalCharge } = overdueComponents(
       rental.rate,
+      rental.rateUnit ?? "day",
       overdueDays,
     );
     if (totalCharge <= 0) {

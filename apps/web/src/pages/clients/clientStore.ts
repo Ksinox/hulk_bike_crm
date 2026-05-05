@@ -342,7 +342,12 @@ function computeStats(rentals: ApiRental[]): {
       ),
     );
     if (diffDays <= 0) continue;
-    const add = diffDays * Math.round(r.rate * 1.5);
+    // v0.4.25: rateUnit учёт — для weekly tariffs сначала к ₽/сут
+    const daily =
+      (r as { rateUnit?: string }).rateUnit === "week"
+        ? Math.round(r.rate / 7)
+        : r.rate;
+    const add = diffDays * Math.round(daily * 1.5);
     debtByClient.set(r.clientId, (debtByClient.get(r.clientId) ?? 0) + add);
   }
   return { rentsByClient, debtByClient };

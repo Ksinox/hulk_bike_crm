@@ -376,7 +376,11 @@ export function TermsTab({
           <InfoCell
             icon={CreditCard}
             label="Тариф"
-            value={`от ${TARIFF_PERIOD_LABEL[rental.tariffPeriod].replace(/^от\s+/i, "")} · ${fmt(rental.rate)} ₽/сут`}
+            value={
+              rental.rateUnit === "week"
+                ? `Произвольный · ${fmt(rental.rate)} ₽/нед`
+                : `от ${TARIFF_PERIOD_LABEL[rental.tariffPeriod].replace(/^от\s+/i, "")} · ${fmt(rental.rate)} ₽/сут`
+            }
           />
           <InfoCell
             icon={CreditCard}

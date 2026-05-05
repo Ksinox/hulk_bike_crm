@@ -159,30 +159,21 @@ export function NewRentalModal({
   }, [modelFromCatalog, period, model]);
 
   /**
-   * v0.4.24: режим тарифа.
-   *  • auto   — period вычисляется автоматически по дням (как раньше)
-   *  • week   — принудительно period='week' (недельный тариф независимо
-   *             от количества дней — например 10 дней × недельный тариф)
-   *  • custom — оператор задаёт ставку сам, period не используется
+   * v0.4.25: чекбокс «Произвольный тариф» + единица измерения внутри.
+   *  • customMode=false → ставка из computedRate (по дням, как было)
+   *  • customMode=true  → оператор задаёт rate сам
+   *      • customUnit='day'  → rate = ₽/сут, days = поле «срок, дней», sum = rate × days
+   *      • customUnit='week' → rate = ₽/нед, поле «срок» означает НЕДЕЛИ;
+   *                            days_for_API = N×7, sum = rate × N
+   * Просрочка для week-режима считается через dailyEquivalent =
+   * round(rate / 7); см. dailyRate() в lib/rentalRate.
    */
-  const [tariffMode, setTariffMode] = useState<"auto" | "week" | "custom">(
-    "auto",
-  );
+  const [customMode, setCustomMode] = useState<boolean>(false);
+  const [customUnit, setCustomUnit] = useState<"day" | "week">("day");
   const [customRate, setCustomRate] = useState<string>("");
-  // Расчёт ставки в режиме «Недельный» — если каталог есть, берём
-  // weekRate, иначе TARIFF[model].week.
-  const weekRate = useMemo(() => {
-    if (modelFromCatalog) return modelFromCatalog.weekRate ?? 0;
-    return TARIFF[model].week;
-  }, [modelFromCatalog, model]);
-  const rate =
-    tariffMode === "custom"
-      ? Math.max(0, Number(customRate) || 0)
-      : tariffMode === "week"
-        ? weekRate
-        : computedRate;
-  // Для backward-совместимости с UI ниже (есть ссылки на customMode).
-  const customMode = tariffMode === "custom";
+  const rate = customMode
+    ? Math.max(0, Number(customRate) || 0)
+    : computedRate;
 
   /**
    * Сумма аренды.
@@ -202,7 +193,13 @@ export function NewRentalModal({
   );
   /** Доплата за экипировку за ВЕСЬ период аренды. */
   const equipmentExtra = equipmentPerDay * days;
-  const sum = rate * days + equipmentExtra;
+  // v0.4.25: при недельном customMode sum = rate × weeks (rate в ₽/нед).
+  // Экипировка остаётся посуточная и считается × days.
+  const isWeeklyCustom = customMode && customUnit === "week";
+  const weeks = isWeeklyCustom ? Math.max(1, Math.round(days / 7)) : 0;
+  const sum = isWeeklyCustom
+    ? rate * weeks + equipmentExtra
+    : rate * days + equipmentExtra;
   const endPlanned = addDays(start, days);
 
   const blacklistedClient = !!client?.blacklisted;
@@ -319,9 +316,11 @@ export function NewRentalModal({
         startTime,
         endPlanned,
         status: "active",
-        // v0.4.24: при tariffMode='week' принудительно period='week'
-        tariffPeriod: tariffMode === "week" ? "week" : period,
+        // v0.4.25: rateUnit='week' если оператор выбрал недельный
+        // произвольный тариф. tariffPeriod ставим 'week' для совместимости.
+        tariffPeriod: isWeeklyCustom ? "week" : period,
         rate,
+        rateUnit: isWeeklyCustom ? "week" : "day",
         days,
         sum,
         deposit: depositMode === "sum" ? depositSum : 0,
@@ -573,22 +572,34 @@ export function NewRentalModal({
                   то же время = дедлайн возврата
                 </div>
               </label>
+              {/* v0.4.25: в week-режиме поле означает «Срок, недель»;
+                  под капотом days = weeks × 7. */}
               <label className="text-[12px] font-semibold text-ink">
-                Срок, дней
+                {customMode && customUnit === "week" ? "Срок, недель" : "Срок, дней"}
                 <input
                   type="number"
-                  min={MIN_RENTAL_DAYS}
-                  max={90}
-                  value={days}
-                  onChange={(e) =>
-                    setDays(
-                      Math.max(MIN_RENTAL_DAYS, Number(e.target.value) || MIN_RENTAL_DAYS),
-                    )
+                  min={1}
+                  max={customMode && customUnit === "week" ? 26 : 90}
+                  value={
+                    customMode && customUnit === "week"
+                      ? Math.max(1, Math.round(days / 7))
+                      : days
                   }
+                  onChange={(e) => {
+                    const raw = Number(e.target.value) || 1;
+                    if (customMode && customUnit === "week") {
+                      const weeks = Math.max(1, Math.min(26, raw));
+                      setDays(weeks * 7);
+                    } else {
+                      setDays(Math.max(MIN_RENTAL_DAYS, raw));
+                    }
+                  }}
                   className="mt-1 h-9 w-full rounded-[10px] border border-border bg-surface px-3 text-[13px] text-ink outline-none focus:border-blue-600"
                 />
                 <div className="mt-1 text-[10px] text-muted-2">
-                  минимум {MIN_RENTAL_DAYS} {MIN_RENTAL_DAYS === 1 ? "сутки" : "суток"}
+                  {customMode && customUnit === "week"
+                    ? `= ${days} дн (× 7)`
+                    : `минимум ${MIN_RENTAL_DAYS} ${MIN_RENTAL_DAYS === 1 ? "сутки" : "суток"}`}
                 </div>
               </label>
             </div>
@@ -633,37 +644,23 @@ export function NewRentalModal({
                 Выберите скутер выше — тарифы подтянутся из его модели.
               </div>
             )}
-            {/* v0.4.24: переключатель режима тарифа — auto/week/custom.
-                Раньше был только чекбокс «Произвольный», недельного
-                варианта не было — приходилось считать сумму руками. */}
-            <div className="mt-3 rounded-[10px] border border-border bg-surface-soft p-2">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
-                Режим тарифа
-              </div>
-              <div className="mt-1 grid grid-cols-3 gap-1.5">
-                {(["auto", "week", "custom"] as const).map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    onClick={() => setTariffMode(m)}
-                    className={cn(
-                      "rounded-[8px] border px-2.5 py-1.5 text-[12px] font-semibold transition-colors",
-                      tariffMode === m
-                        ? "border-blue-500 bg-blue-50 text-blue-700"
-                        : "border-border bg-white text-ink-2 hover:border-blue-400",
-                    )}
-                  >
-                    {m === "auto"
-                      ? "Авто (по дням)"
-                      : m === "week"
-                        ? `Недельный · ${weekRate} ₽/сут`
-                        : "Произвольный"}
-                  </button>
-                ))}
-              </div>
-              {tariffMode === "custom" && (
-                <div className="mt-2 flex items-center gap-2">
-                  <span className="text-[11px] text-muted-2">Ставка, ₽/сут</span>
+            {/* v0.4.25: чекбокс «Произвольный тариф» (как было) +
+                переключатель единицы измерения «₽/сут / ₽/нед» внутри.
+                В режиме «нед» поле «Срок» означает НЕДЕЛИ. */}
+            <div className="mt-3 flex items-start gap-2 rounded-[10px] border border-border bg-surface-soft p-2">
+              <label className="mt-1 flex cursor-pointer items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={customMode}
+                  onChange={(e) => setCustomMode(e.target.checked)}
+                  className="h-4 w-4 cursor-pointer accent-blue-600"
+                />
+                <span className="text-[12px] font-semibold">
+                  Произвольный тариф
+                </span>
+              </label>
+              {customMode && (
+                <div className="ml-auto flex flex-wrap items-center gap-2">
                   <input
                     type="text"
                     inputMode="numeric"
@@ -671,20 +668,34 @@ export function NewRentalModal({
                     onChange={(e) =>
                       setCustomRate(e.target.value.replace(/\D/g, "").slice(0, 6))
                     }
-                    placeholder="800"
+                    placeholder="3000"
                     className="h-8 w-24 rounded-[8px] border border-border bg-surface px-2 text-[12px] tabular-nums text-ink outline-none focus:border-blue-600"
                   />
-                </div>
-              )}
-              {tariffMode === "week" && weekRate <= 0 && (
-                <div className="mt-2 text-[11px] text-amber-700">
-                  У модели не задан недельный тариф. Откройте каталог
-                  моделей и заполните weekRate, или используйте «Произвольный».
+                  <div className="inline-flex rounded-[8px] bg-white p-0.5 ring-1 ring-border">
+                    {(["day", "week"] as const).map((u) => (
+                      <button
+                        key={u}
+                        type="button"
+                        onClick={() => setCustomUnit(u)}
+                        className={cn(
+                          "rounded-[6px] px-2 py-1 text-[11px] font-semibold transition-colors",
+                          customUnit === u
+                            ? "bg-blue-600 text-white"
+                            : "text-muted hover:text-ink",
+                        )}
+                      >
+                        {u === "day" ? "₽/сут" : "₽/нед"}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
             <div className="mt-3 grid grid-cols-3 gap-2 text-[13px]">
-              <Calc label="Ставка" value={`${rate} ₽/сут`} />
+              <Calc
+                label="Ставка"
+                value={`${rate} ₽/${isWeeklyCustom ? "нед" : "сут"}`}
+              />
               <Calc
                 label="Возврат"
                 value={`${endPlanned} ${startTime}`}
@@ -694,9 +705,13 @@ export function NewRentalModal({
                 label="Итог"
                 value={`${sum.toLocaleString("ru-RU")} ₽`}
                 hint={
-                  equipmentPerDay > 0
-                    ? `(${rate}+${equipmentPerDay}) × ${days}`
-                    : `${rate} × ${days}`
+                  isWeeklyCustom
+                    ? equipmentPerDay > 0
+                      ? `${rate}×${weeks} нед + ${equipmentPerDay}×${days}`
+                      : `${rate} × ${weeks} нед`
+                    : equipmentPerDay > 0
+                      ? `(${rate}+${equipmentPerDay}) × ${days}`
+                      : `${rate} × ${days}`
                 }
                 emphasize
               />

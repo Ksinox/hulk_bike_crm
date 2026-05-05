@@ -416,7 +416,14 @@ export const rentals = pgTable(
 
     // Тариф и финансы
     tariffPeriod: tariffPeriodEnum("tariff_period").notNull(),
-    rate: integer("rate").notNull(), // ₽ / сут
+    rate: integer("rate").notNull(), // ₽ / сут (или ₽ / нед если rateUnit='week')
+    /**
+     * v0.4.25: единица измерения ставки.
+     *  • 'day'  (default) — rate в ₽/сут, sum = rate × days
+     *  • 'week' — rate в ₽/нед, days = N×7, sum = rate × N
+     * Используется только в произвольных тарифах с режимом «по неделям».
+     */
+    rateUnit: text("rate_unit").notNull().default("day"),
     /**
      * Сумма залога в ₽. 0 если залог неденежный — тогда в depositItem
      * хранится описание предмета (например «паспорт», «iPhone»).

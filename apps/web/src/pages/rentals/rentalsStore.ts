@@ -129,6 +129,7 @@ export function patchRental(id: number, patch: Partial<Rental>) {
   if (patch.status !== undefined) body.status = patch.status;
   if (patch.note !== undefined) body.note = patch.note ?? null;
   if (patch.rate !== undefined) body.rate = patch.rate;
+  if (patch.rateUnit !== undefined) body.rateUnit = patch.rateUnit;
   if (patch.days !== undefined) body.days = patch.days;
   if (patch.sum !== undefined) body.sum = patch.sum;
   if (patch.depositReturned !== undefined) {
@@ -320,6 +321,7 @@ function buildRentalBody(
     sourceChannel: r.sourceChannel,
     tariffPeriod: r.tariffPeriod,
     rate: r.rate,
+    rateUnit: r.rateUnit ?? "day",
     deposit: r.deposit,
     depositItem: r.depositItem ?? null,
     startAt: ruToIso(r.start, r.startTime),
@@ -363,10 +365,11 @@ export async function extendRentalAsync(
   extraDays: number,
   newRate: number,
   newTariffPeriod: Rental["tariffPeriod"],
+  newRateUnit: "day" | "week" = "day",
 ): Promise<{ id: number }> {
   const created = await api.post<{ id: number }>(
     `/api/rentals/${oldId}/extend`,
-    { extraDays, newRate, newTariffPeriod },
+    { extraDays, newRate, newTariffPeriod, newRateUnit },
   );
   invAll();
   return created;

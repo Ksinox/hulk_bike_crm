@@ -124,6 +124,8 @@ export type ApiRental = {
   sourceChannel: RentalSourceChannel | null;
   tariffPeriod: TariffPeriod;
   rate: number;
+  /** v0.4.25: 'day' (default) или 'week' — единица измерения тарифа. */
+  rateUnit?: "day" | "week";
   deposit: number;
   depositItem: string | null;
   depositReturned: boolean | null;

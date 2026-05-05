@@ -182,7 +182,9 @@ function RentalRow({
           {r.rate > 0 && (
             <>
               <span className="opacity-40">·</span>
-              <span className="tabular-nums">{fmt(r.rate)} ₽/сут</span>
+              <span className="tabular-nums">
+                {fmt(r.rate)} ₽/{r.rateUnit === "week" ? "нед" : "сут"}
+              </span>
             </>
           )}
         </div>

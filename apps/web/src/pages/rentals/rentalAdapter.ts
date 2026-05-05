@@ -37,6 +37,7 @@ export function adaptRental(
     sourceChannel: r.sourceChannel ?? undefined,
     tariffPeriod: r.tariffPeriod,
     rate: r.rate,
+    rateUnit: r.rateUnit ?? "day",
     days: r.days,
     sum: r.sum,
     deposit: r.deposit,

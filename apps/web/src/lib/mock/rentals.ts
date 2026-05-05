@@ -66,6 +66,8 @@ export type Rental = {
   status: RentalStatus;
   tariffPeriod: TariffPeriod;
   rate: number;
+  /** v0.4.25: 'day' (default) или 'week' — единица измерения тарифа. */
+  rateUnit?: "day" | "week";
   days: number;
   sum: number;
   deposit: number;

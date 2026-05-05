@@ -27,14 +27,11 @@ export function ExtendRentalDialog({
 }) {
   const [closing, setClosing] = useState(false);
   const [days, setDays] = useState(7);
-  // v0.3.9: режим тарифа.
-  //   • auto   — выбираем по дням (как раньше): short/week/month.
-  //   • week   — недельный фиксированный (week-rate × ceil(days/7) — оператор
-  //              сам контролирует итоговую сумму через days).
-  //   • custom — оператор сам ставит ставку и сам считает сумму.
-  const [tariffMode, setTariffMode] = useState<"auto" | "week" | "custom">(
-    "auto",
-  );
+  // v0.4.25: чекбокс «Произвольный тариф» + переключатель ед.измерения
+  // ₽/сут vs ₽/нед. В week-режиме поле «дней» означает недели, под
+  // капотом days = weeks × 7.
+  const [customMode, setCustomMode] = useState<boolean>(false);
+  const [customUnit, setCustomUnit] = useState<"day" | "week">("day");
   const [customRate, setCustomRate] = useState<number>(0);
 
   const requestClose = () => {
@@ -53,14 +50,18 @@ export function ExtendRentalDialog({
   }, []);
 
   const autoPeriod = periodForDays(days);
+  // В custom-week режиме форсируем period='week' для tariffPeriod в payload.
   const period =
-    tariffMode === "week" ? ("week" as const) : autoPeriod;
-  // v0.3.9: ставка зависит от режима. В custom — оператор задаёт сам.
-  const rate =
-    tariffMode === "custom"
-      ? Math.max(0, customRate)
-      : TARIFF[rental.model][period];
-  const sum = rate * days;
+    customMode && customUnit === "week" ? ("week" as const) : autoPeriod;
+  // v0.4.25: rate зависит от режима.
+  //  • !customMode — берём из тарифной сетки модели по period
+  //  • customMode — оператор задаёт сам (₽/сут или ₽/нед)
+  const rate = customMode
+    ? Math.max(0, customRate)
+    : TARIFF[rental.model][period];
+  const isWeeklyCustom = customMode && customUnit === "week";
+  const weeks = isWeeklyCustom ? Math.max(1, Math.round(days / 7)) : 0;
+  const sum = isWeeklyCustom ? rate * weeks : rate * days;
 
   const newEndPlanned = useMemo(() => {
     const [d, m, y] = rental.endPlanned.split(".").map(Number);
@@ -78,7 +79,13 @@ export function ExtendRentalDialog({
     try {
       // Ждём реальный id новой аренды-продления — нужен сразу для
       // navigate на новую карточку и для авто-открытия документа.
-      const created = await extendRentalAsync(rental.id, days, rate, period);
+      const created = await extendRentalAsync(
+        rental.id,
+        days,
+        rate,
+        period,
+        isWeeklyCustom ? "week" : "day",
+      );
       onExtended?.({
         ...rental,
         id: created.id,
@@ -156,51 +163,12 @@ export function ExtendRentalDialog({
             </div>
           </label>
 
-          {/* v0.3.9: режим тарифа */}
+          {/* v0.4.25: автомат-тариф (показываем плашки) + чекбокс
+              «Произвольный» с переключателем ₽/сут vs ₽/нед. В week
+              режиме поле «срок» означает недели, sum = rate × weeks. */}
           <div>
-            <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-2">
-              Тариф
-            </div>
-            <div className="grid grid-cols-3 gap-1.5">
-              {(["auto", "week", "custom"] as const).map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => setTariffMode(m)}
-                  className={cn(
-                    "rounded-[10px] border px-2.5 py-1.5 text-[12px] font-semibold transition-colors",
-                    tariffMode === m
-                      ? "border-blue-500 bg-blue-50 text-blue-700"
-                      : "border-border bg-white text-ink-2 hover:border-blue-400",
-                  )}
-                >
-                  {m === "auto"
-                    ? "Авто (по дням)"
-                    : m === "week"
-                      ? "Недельный"
-                      : "Произвольный"}
-                </button>
-              ))}
-            </div>
-            {tariffMode === "custom" && (
-              <div className="mt-2">
-                <label className="text-[12px] font-semibold text-ink">
-                  Ставка, ₽/сут
-                  <input
-                    type="number"
-                    min={0}
-                    value={customRate || ""}
-                    onChange={(e) =>
-                      setCustomRate(Math.max(0, Number(e.target.value) || 0))
-                    }
-                    placeholder="например 450"
-                    className="mt-1 h-9 w-full rounded-[10px] border border-border bg-white px-3 text-[13px] text-ink outline-none focus:border-blue-600"
-                  />
-                </label>
-              </div>
-            )}
-            {tariffMode === "auto" && (
-              <div className="mt-2 grid grid-cols-3 gap-2">
+            {!customMode && (
+              <div className="grid grid-cols-3 gap-2">
                 {(["short", "week", "month"] as const).map((p) => (
                   <div
                     key={p}
@@ -221,15 +189,69 @@ export function ExtendRentalDialog({
                 ))}
               </div>
             )}
+            <div className="mt-2 flex flex-wrap items-center gap-2 rounded-[10px] border border-border bg-surface-soft p-2">
+              <label className="flex cursor-pointer items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={customMode}
+                  onChange={(e) => setCustomMode(e.target.checked)}
+                  className="h-4 w-4 cursor-pointer accent-blue-600"
+                />
+                <span className="text-[12px] font-semibold">
+                  Произвольный тариф
+                </span>
+              </label>
+              {customMode && (
+                <div className="ml-auto flex flex-wrap items-center gap-2">
+                  <input
+                    type="number"
+                    min={0}
+                    value={customRate || ""}
+                    onChange={(e) =>
+                      setCustomRate(Math.max(0, Number(e.target.value) || 0))
+                    }
+                    placeholder="3000"
+                    className="h-8 w-24 rounded-[8px] border border-border bg-surface px-2 text-[12px] tabular-nums text-ink outline-none focus:border-blue-600"
+                  />
+                  <div className="inline-flex rounded-[8px] bg-white p-0.5 ring-1 ring-border">
+                    {(["day", "week"] as const).map((u) => (
+                      <button
+                        key={u}
+                        type="button"
+                        onClick={() => setCustomUnit(u)}
+                        className={cn(
+                          "rounded-[6px] px-2 py-1 text-[11px] font-semibold transition-colors",
+                          customUnit === u
+                            ? "bg-blue-600 text-white"
+                            : "text-muted hover:text-ink",
+                        )}
+                      >
+                        {u === "day" ? "₽/сут" : "₽/нед"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            {isWeeklyCustom && (
+              <div className="mt-2 text-[11px] text-blue-700">
+                Поле «дней» в week-режиме воспринимается как недели:
+                ввод «{Math.max(1, Math.round(days / 7))}» = {days} дн.
+                Итого {weeks} × {rate} = {sum} ₽.
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-3 gap-2">
             <Calc label="Новый возврат" value={newEndPlanned} />
-            <Calc label="Ставка" value={`${rate} ₽/сут`} />
+            <Calc
+              label="Ставка"
+              value={`${rate} ₽/${isWeeklyCustom ? "нед" : "сут"}`}
+            />
             <Calc
               label="К оплате"
               value={`${fmt(sum)} ₽`}
-              hint={`${rate} × ${days}`}
+              hint={isWeeklyCustom ? `${rate} × ${weeks} нед` : `${rate} × ${days}`}
               emphasize
             />
           </div>
