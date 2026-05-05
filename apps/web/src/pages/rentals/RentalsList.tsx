@@ -4,6 +4,7 @@ import {
   STATUS_LABEL,
   STATUS_TONE,
   type Rental,
+  type RentalStatus,
 } from "@/lib/mock/rentals";
 import { initialsOf } from "@/lib/mock/clients";
 import { useClientPhoto } from "@/pages/clients/clientStore";
@@ -21,6 +22,31 @@ const TONE_PILL: Record<string, string> = {
   purple: "bg-purple-soft text-purple-ink",
   gray: "bg-surface-soft text-muted",
 };
+
+/**
+ * v0.4.33: «эффективный» статус. В БД status='active' остаётся пока
+ * оператор не нажал «продлить/завершить» — но если плановая дата
+ * возврата уже в прошлом, для пользователя это «просрочка», а если
+ * ровно сегодня — «возврат». Раньше в списке показывался зелёный
+ * «Активна» даже у явно просроченных аренд (фильтр «Просрочка» их
+ * собирал, но badge врал) — это сбивало с толку.
+ *
+ * endPlanned формат — "DD.MM.YYYY".
+ */
+function effectiveStatus(
+  status: RentalStatus,
+  endPlanned: string,
+): RentalStatus {
+  if (status !== "active") return status;
+  const m = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(endPlanned);
+  if (!m) return status;
+  const today = new Date();
+  const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  const endKey = `${m[3]}-${m[2]}-${m[1]}`;
+  if (endKey < todayKey) return "overdue";
+  if (endKey === todayKey) return "returning";
+  return status;
+}
 
 export function RentalsList({
   items,
@@ -98,21 +124,25 @@ function RentalRow({
   const { data: apiClients } = useApiClients();
   const c = apiClients?.find((x) => x.id === r.clientId);
   const photo = useClientPhoto(r.clientId);
-  const tone = STATUS_TONE[r.status];
+  // v0.4.33: всё (badge, цвет полоски слева, isIssue) считаем по
+  // эффективному статусу, чтобы просроченные `active` подсвечивались
+  // красным, а не зелёным.
+  const effStatus = effectiveStatus(r.status, r.endPlanned);
+  const tone = STATUS_TONE[effStatus] ?? STATUS_TONE[r.status];
   const isIssue =
-    r.status === "overdue" ||
-    r.status === "police" ||
-    r.status === "court" ||
-    r.status === "completed_damage";
+    effStatus === "overdue" ||
+    effStatus === "police" ||
+    effStatus === "court" ||
+    effStatus === "completed_damage";
 
   const accent = !active
     ? isIssue
       ? "before:bg-red"
-      : r.status === "returning"
+      : effStatus === "returning"
         ? "before:bg-orange"
-        : r.status === "active"
+        : effStatus === "active"
           ? "before:bg-green"
-          : r.status === "new_request" || r.status === "meeting"
+          : effStatus === "new_request" || effStatus === "meeting"
             ? "before:bg-blue"
             : "before:bg-transparent"
     : "before:bg-transparent";
@@ -206,7 +236,7 @@ function RentalRow({
               active ? "bg-white/20 text-white" : TONE_PILL[tone],
             )}
           >
-            {STATUS_LABEL[r.status]}
+            {STATUS_LABEL[effStatus] ?? STATUS_LABEL[r.status] ?? r.status}
           </span>
         </div>
         <div className="text-right">

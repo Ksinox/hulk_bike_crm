@@ -326,7 +326,22 @@ export function RentalCard({
   const daysLeft =
     startDate && endDate ? daysBetween(now(), endDate) : null;
 
-  const tone = STATUS_TONE[rental.status];
+  // v0.4.33: эффективный статус — если в БД 'active', но плановая
+  // дата возврата уже прошла (или сегодня), показываем «Просрочка» /
+  // «Возврат», а не зелёный «Активна». Раньше шапка карточки врала
+  // на этот счёт даже на странице, отфильтрованной как «Просрочка».
+  const effectiveStatus: typeof rental.status = (() => {
+    if (rental.status !== "active") return rental.status;
+    const m = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(rental.endPlanned);
+    if (!m) return rental.status;
+    const today = new Date();
+    const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+    const endKey = `${m[3]}-${m[2]}-${m[1]}`;
+    if (endKey < todayKey) return "overdue";
+    if (endKey === todayKey) return "returning";
+    return rental.status;
+  })();
+  const tone = STATUS_TONE[effectiveStatus] ?? STATUS_TONE[rental.status];
   const isUnreachable = useClientUnreachable(rental.clientId);
   // Текущий статус скутера — нужен для проверки конфликта (active rental
   // + scooter в repair). См. блок «Скутер в ремонте» ниже.
@@ -829,7 +844,7 @@ export function RentalCard({
               statusChipClass(tone),
             )}
           >
-            {STATUS_LABEL[rental.status]}
+            {STATUS_LABEL[effectiveStatus] ?? STATUS_LABEL[rental.status]}
           </span>
           {isUnreachable && (
             <span className="inline-flex items-center gap-1 rounded-full bg-orange-soft px-2.5 py-1 text-[11px] font-bold text-orange-ink">
