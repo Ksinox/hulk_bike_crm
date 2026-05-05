@@ -45,7 +45,14 @@ const STATUS_TONE: Record<string, string> = {
   disassembly: "bg-orange-soft text-orange-ink",
 };
 
-export function ScooterQuickView({ scooterId }: { scooterId: number }) {
+export function ScooterQuickView({
+  scooterId,
+  onOpenRental,
+}: {
+  scooterId: number;
+  /** v0.4.32: открыть карточку текущей аренды в том же drawer-стеке. */
+  onOpenRental?: (rentalId: number) => void;
+}) {
   const fleet = useFleetScooters();
   const scooter = fleet.find((s) => s.id === scooterId) ?? null;
   const { data: models = [] } = useApiScooterModels();
@@ -73,9 +80,19 @@ export function ScooterQuickView({ scooterId }: { scooterId: number }) {
   // фоном). avatarThumbKey генерится на бэке как JPEG и нередко имеет
   // непрозрачный (чёрный) фон — на белом контейнере смотрится плохо.
   // ScooterThumb тоже использует avatarKey, для консистентности.
+  // v0.4.32: добавлен fallback по имени модели — если у скутера в БД
+  // нет modelId (старые записи), но есть строка scooter.model,
+  // подберём подходящую модель по подстроке. Раньше возвращался null
+  // и пользователь видел иконку «велосипед» вместо реального
+  // изображения скутера.
   const modelAvatar = useMemo(() => {
     if (!scooter) return null;
-    const m = models.find((m) => m.id === scooter.modelId);
+    const m =
+      (scooter.modelId && models.find((m) => m.id === scooter.modelId)) ||
+      (scooter.model &&
+        models.find((m) =>
+          m.name.toLowerCase().includes(String(scooter.model).toLowerCase()),
+        ));
     if (!m) return null;
     if (m.avatarKey) return fileUrl(m.avatarKey);
     if (m.avatarThumbKey) return fileUrl(m.avatarThumbKey);
@@ -167,9 +184,25 @@ export function ScooterQuickView({ scooterId }: { scooterId: number }) {
         />
       </div>
 
-      {/* Текущая аренда (если есть) */}
+      {/* Текущая аренда (если есть). v0.4.32: блок стал кликабельным —
+          клик открывает drawer-карточку аренды (или, если открыто как
+          standalone screen — переходит на /rentals?id=…). Раньше блок
+          был статичный и пользователь не мог быстро переключиться на
+          аренду этого скутера. */}
       {currentRental && (
-        <div className="rounded-[14px] border border-blue-200 bg-blue-50 p-3 text-[13px]">
+        <button
+          type="button"
+          onClick={() => {
+            if (onOpenRental) onOpenRental(currentRental.id);
+          }}
+          disabled={!onOpenRental}
+          className={cn(
+            "rounded-[14px] border border-blue-200 bg-blue-50 p-3 text-left text-[13px] transition-colors",
+            onOpenRental
+              ? "hover:border-blue-400 hover:bg-blue-100 cursor-pointer"
+              : "cursor-default",
+          )}
+        >
           <div className="text-[11px] font-bold uppercase tracking-wider text-blue-700">
             Сейчас в аренде
           </div>
@@ -189,7 +222,7 @@ export function ScooterQuickView({ scooterId }: { scooterId: number }) {
               {currentClient.phone}
             </div>
           )}
-        </div>
+        </button>
       )}
 
       {/* Лента событий — клик ведёт в drawer-стек */}

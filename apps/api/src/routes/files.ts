@@ -39,7 +39,13 @@ export async function filesRoutes(app: FastifyInstance) {
         "Content-Disposition",
         `${disposition}; filename*=UTF-8''${safe}`,
       )
-      .header("Cache-Control", "private, max-age=300")
+      // v0.4.32: ключ объекта в MinIO content-addressed (новая загрузка =
+      // новый ключ), значит файл по конкретному key никогда не меняется.
+      // Раньше max-age=300 заставлял браузер каждый раз перепроверять
+      // картинки — пользователь видел подгрузку при каждом наведении/
+      // открытии карточки. Теперь 7 дней + immutable: один раз скачали —
+      // дальше из кэша мгновенно.
+      .header("Cache-Control", "private, max-age=604800, immutable")
       // helmet по умолчанию ставит CORP=same-origin, что ломает <img> на
       // соседнем поддомене web. Для файлов разрешаем cross-origin-встраивание
       // (доступ к самому роуту по-прежнему контролирует CORS + авторизация).

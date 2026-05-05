@@ -204,7 +204,16 @@ function DrawerHost({ ctx }: { ctx: Ctx }) {
           if (e.target === e.currentTarget) ctx.close();
         }}
       >
-        <div className="flex h-full min-w-full flex-row-reverse justify-start">
+        {/* v0.4.32: пустая зона слева от панелей (когда стек короче
+            ширины экрана) — это de-facto «вне drawer'а», клик там
+            должен закрывать. Раньше клик попадал в этот flex-контейнер
+            и не доходил до scrollRef → закрытие не срабатывало. */}
+        <div
+          className="flex h-full min-w-full flex-row-reverse justify-start"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) ctx.close();
+          }}
+        >
           {[...stack].reverse().map((target, revIdx) => {
             const idx = stack.length - 1 - revIdx;
             return (
@@ -465,6 +474,7 @@ function ClientDrawerContent({
 function ScooterDrawerContent({
   scooterId,
   onClose,
+  onOpenRental,
 }: {
   scooterId: number;
   onClose: () => void;
@@ -487,8 +497,10 @@ function ScooterDrawerContent({
       />
       <div className="flex-1 min-h-0 overflow-y-auto">
         {/* v0.4.9: компактная версия. Полная ScooterCard доступна по
-            кнопке «На полную» в шапке drawer'а. */}
-        <ScooterQuickView scooterId={scooterId} />
+            кнопке «На полную» в шапке drawer'а.
+            v0.4.32: прокинут onOpenRental — блок «Сейчас в аренде»
+            теперь кликабельный, открывает аренду в том же стеке. */}
+        <ScooterQuickView scooterId={scooterId} onOpenRental={onOpenRental} />
       </div>
     </>
   );
