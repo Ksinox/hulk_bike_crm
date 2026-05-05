@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { setBillingPeriodStartDay } from "@/lib/billingPeriod";
+import { setWorkingHours } from "@/lib/workingHours";
 
 export type AppSetting = {
   key: string;
@@ -30,6 +31,10 @@ export function useAppSettings() {
       if (Number.isFinite(startDay) && startDay >= 1 && startDay <= 28) {
         setBillingPeriodStartDay(startDay);
       }
+      // v0.4.21: график работы (часы открытия/закрытия)
+      const whStart = Number(map.get("work_hours_start") ?? "9");
+      const whEnd = Number(map.get("work_hours_end") ?? "22");
+      setWorkingHours(whStart, whEnd);
       return r.items;
     },
     staleTime: 60_000,

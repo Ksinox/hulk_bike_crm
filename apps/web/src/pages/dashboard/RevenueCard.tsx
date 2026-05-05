@@ -8,6 +8,7 @@ import {
 import { RevenueRentalsList, type RevenuePeriod, periodWindow } from "./RevenueRentalsList";
 import { ExpandRevenueButton, RevenueListModal } from "./RevenueListModal";
 import { useApiPayments } from "@/lib/api/payments";
+import { workingHoursList } from "@/lib/workingHours";
 
 type Period = RevenuePeriod;
 
@@ -62,16 +63,48 @@ export function RevenueCard({
     const bars: Bar[] = [];
 
     if (period === "day") {
-      // Один столбик за сегодня (вечером сравним с другими — в будущем
-      // можно разбить по часам, пока показываем только один большой).
+      // v0.4.21: почасовая шкала от open до close (settings.work_hours_*).
+      // Платежи группируются по часу совершения. Раньше был один большой
+      // столбик за сегодня — мало info.
+      const hours = workingHoursList(); // [9, 10, ..., 21]
+      const byHour = new Map<number, { sum: number; count: number }>();
+      for (const p of inWindow) {
+        if (!p.paidAt) continue;
+        const t = new Date(p.paidAt);
+        const h = t.getHours();
+        const cur = byHour.get(h) ?? { sum: 0, count: 0 };
+        cur.sum += p.amount;
+        cur.count += 1;
+        byHour.set(h, cur);
+      }
+      // Платежи вне окна работы — собираем в крайние часы (open / close).
+      // Это редкий кейс (24/7 аккаунт, оплата ночью), но не теряем сумму.
+      for (const [h, v] of byHour.entries()) {
+        if (h < hours[0]!) {
+          const cur = byHour.get(hours[0]!) ?? { sum: 0, count: 0 };
+          cur.sum += v.sum;
+          cur.count += v.count;
+          byHour.set(hours[0]!, cur);
+          byHour.delete(h);
+        } else if (h >= hours[hours.length - 1]! + 1) {
+          const last = hours[hours.length - 1]!;
+          const cur = byHour.get(last) ?? { sum: 0, count: 0 };
+          cur.sum += v.sum;
+          cur.count += v.count;
+          byHour.set(last, cur);
+          byHour.delete(h);
+        }
+      }
       const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
-      const v = byDay.get(todayStr) ?? { sum: 0, count: 0 };
-      bars.push({
-        date: todayStr,
-        label: today.toLocaleDateString("ru-RU", { day: "2-digit", month: "short" }),
-        sum: v.sum,
-        count: v.count,
-      });
+      for (const h of hours) {
+        const v = byHour.get(h) ?? { sum: 0, count: 0 };
+        bars.push({
+          date: `${todayStr}T${String(h).padStart(2, "0")}`,
+          label: `${h}`,
+          sum: v.sum,
+          count: v.count,
+        });
+      }
     } else if (period === "week") {
       // 7 дней начиная с понедельника текущей недели.
       for (let i = 0; i < 7; i++) {

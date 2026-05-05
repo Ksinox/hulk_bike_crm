@@ -64,9 +64,15 @@ async function maybeAutoClose(rentalId: number) {
 
   const debt = Math.max(0, billed - paidSum);
   if (debt === 0) {
+    // v0.4.21: уточнение по бизнесу — если возврат не завершён
+    // (endActualAt = null), скутер ещё у клиента, значит после
+    // погашения долга аренда должна быть 'active', а не 'completed'.
+    // Если возврат уже зафиксирован — переводим в 'completed'.
+    const nextStatus: "active" | "completed" =
+      r.endActualAt == null ? "active" : "completed";
     await db
       .update(rentals)
-      .set({ status: "completed", updatedAt: sql`now()` })
+      .set({ status: nextStatus, updatedAt: sql`now()` })
       .where(eq(rentals.id, rentalId));
   }
 }

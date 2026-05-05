@@ -27,6 +27,50 @@ export function Settings() {
   const [periodStartDay, setPeriodStartDay] = useState<string>(
     map.get("billing_period_start_day") ?? "15",
   );
+  const [workStart, setWorkStart] = useState<string>(
+    map.get("work_hours_start") ?? "9",
+  );
+  const [workEnd, setWorkEnd] = useState<string>(
+    map.get("work_hours_end") ?? "22",
+  );
+
+  const saveWorkHours = async () => {
+    const s = Number(workStart);
+    const e = Number(workEnd);
+    if (
+      !Number.isFinite(s) ||
+      !Number.isFinite(e) ||
+      s < 0 ||
+      s > 23 ||
+      e < 1 ||
+      e > 24 ||
+      e <= s
+    ) {
+      toast.error(
+        "Неверный график",
+        "Открытие — час 0..23, закрытие — час 1..24, закрытие позже открытия.",
+      );
+      return;
+    }
+    try {
+      await Promise.all([
+        setMut.mutateAsync({
+          key: "work_hours_start",
+          value: String(Math.floor(s)),
+        }),
+        setMut.mutateAsync({
+          key: "work_hours_end",
+          value: String(Math.floor(e)),
+        }),
+      ]);
+      toast.success(
+        "График работы сохранён",
+        `${s}:00 — ${e}:00. Часовой график выручки на дашборде использует эти границы.`,
+      );
+    } catch (e2) {
+      toast.error("Не удалось сохранить", (e2 as Error).message ?? "");
+    }
+  };
 
   const savePeriodStartDay = async () => {
     const n = Number(periodStartDay);
@@ -109,6 +153,48 @@ export function Settings() {
             <div className="mt-2 text-[11px] text-muted-2">
               Изменения применяются мгновенно ко всем пользователям
               после следующего обновления страницы.
+            </div>
+          </div>
+
+          {/* v0.4.21: график работы магазина */}
+          <div className="mt-4 rounded-[14px] border border-border p-4">
+            <div className="text-[13px] font-semibold text-ink">
+              График работы магазина
+            </div>
+            <div className="mt-1 max-w-[640px] text-[12px] text-muted">
+              Часы открытия/закрытия. Используются в почасовом графике
+              выручки на дашборде (режим «День»). Можно ставить
+              нестандартные часы — например для круглосуточной точки
+              0–24.
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <span className="text-[12px] text-muted">Открытие</span>
+              <input
+                type="number"
+                min={0}
+                max={23}
+                value={workStart}
+                onChange={(e) => setWorkStart(e.target.value)}
+                className="h-10 w-20 rounded-[10px] border border-border bg-white px-3 text-[14px] text-ink outline-none focus:border-blue-600"
+              />
+              <span className="text-[12px] text-muted">:00 → закрытие</span>
+              <input
+                type="number"
+                min={1}
+                max={24}
+                value={workEnd}
+                onChange={(e) => setWorkEnd(e.target.value)}
+                className="h-10 w-20 rounded-[10px] border border-border bg-white px-3 text-[14px] text-ink outline-none focus:border-blue-600"
+              />
+              <span className="text-[12px] text-muted">:00</span>
+              <button
+                type="button"
+                onClick={saveWorkHours}
+                disabled={setMut.isPending}
+                className="ml-auto inline-flex items-center gap-1 rounded-full bg-ink px-4 py-2 text-[12px] font-bold text-white hover:bg-blue-600 disabled:opacity-50"
+              >
+                <Save size={12} /> Сохранить
+              </button>
             </div>
           </div>
         </section>
