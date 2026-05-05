@@ -28,6 +28,7 @@ import {
   STATUS_LABEL as RENTAL_STATUS_LABEL,
   type Rental,
 } from "@/lib/mock/rentals";
+import { effectiveRentalStatus } from "@/lib/rentalStatus";
 import { useRentalsByClient } from "@/pages/rentals/rentalsStore";
 import { navigate } from "@/app/navigationStore";
 
@@ -132,6 +133,9 @@ export function RentalsTab({ client }: { client: Client }) {
         <tbody>
           {sorted.map((r) => {
             const p = periodText(r);
+            // v0.4.34: effectiveStatus — просроченный 'active' показывается
+            // как «Просрочка» (красный), не «Активна» (зелёный).
+            const eff = effectiveRentalStatus(r.status, r.endPlanned);
             return (
               <tr
                 key={r.id}
@@ -156,11 +160,11 @@ export function RentalsTab({ client }: { client: Client }) {
                   <span
                     className={cn(
                       "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold",
-                      RENTAL_STATUS_TONE[r.status] ??
+                      RENTAL_STATUS_TONE[eff] ??
                         "bg-surface-soft text-muted",
                     )}
                   >
-                    {RENTAL_STATUS_LABEL[r.status]}
+                    {RENTAL_STATUS_LABEL[eff] ?? RENTAL_STATUS_LABEL[r.status]}
                   </span>
                   {r.note && (
                     <div className="mt-0.5 text-[11px] text-muted-2">

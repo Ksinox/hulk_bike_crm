@@ -5,6 +5,7 @@ import { useApiPayments } from "@/lib/api/payments";
 import { useApiClients } from "@/lib/api/clients";
 import { useApiScooters } from "@/lib/api/scooters";
 import { currentBillingPeriod } from "@/lib/billingPeriod";
+import { effectiveRentalStatus } from "@/lib/rentalStatus";
 import { useDashboardDrawer } from "./DashboardDrawer";
 export type RevenuePeriod = "day" | "week" | "month";
 
@@ -154,6 +155,14 @@ export function RevenueRentalsList({
         const r = rentals.find((rr) => rr.id === rentalId);
         const client = r ? clients.find((c) => c.id === r.clientId) : undefined;
         const scooter = r ? scooters.find((s) => s.id === r.scooterId) : undefined;
+        // v0.4.34: эффективный статус — просроченный 'active' рендерится
+        // как «Просрочка». Раньше тут показывалось зелёное «Активна»
+        // даже для аренд с прошедшим endPlanned.
+        const rawStatus = r?.status ?? "completed";
+        const effStatus = effectiveRentalStatus(
+          rawStatus,
+          r?.endPlannedAt ?? null,
+        );
         return {
           id: rentalId,
           startAt: r?.startAt ?? lastPaidAtByRentalId.get(rentalId) ?? "",
@@ -162,7 +171,7 @@ export function RevenueRentalsList({
           scooterName: scooter?.name ?? "—",
           plannedSum: r?.sum ?? 0,
           paidSum: paidInWindow,
-          status: r?.status ?? "completed",
+          status: effStatus,
         };
       })
       // v0.4.13: сортируем по дате ВЫДАЧИ аренды (startAt) DESC —

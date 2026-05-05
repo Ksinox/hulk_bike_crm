@@ -1026,6 +1026,38 @@ export async function rentalsRoutes(app: FastifyInstance) {
             note: d.damageNotes ?? "ущерб при возврате",
           });
         }
+        // v0.4.34: при возврате залога создаём payment(type='refund')
+        // чтобы отразить выплату в учёте. Раньше depositReturned=true
+        // был просто boolean, никаких следов где деньги — нет. Refund
+        // исключён из revenue (см. lib/revenue.ts), так что повторного
+        // зачёта не происходит. Создаём только если залог был реально
+        // принят (rental.deposit > 0 и оператор подтвердил получение
+        // через confirmDepositReceived → есть payment type='deposit').
+        if (d.depositReturned && (r.deposit ?? 0) > 0 && r.confirmDepositReceived) {
+          // Проверяем что для этой аренды нет уже созданного refund
+          // (idempotent на случай повторного вызова /complete).
+          const [existing] = await tx
+            .select({ id: payments.id })
+            .from(payments)
+            .where(
+              and(
+                eq(payments.rentalId, id),
+                eq(payments.type, "refund"),
+              ),
+            )
+            .limit(1);
+          if (!existing) {
+            await tx.insert(payments).values({
+              rentalId: id,
+              type: "refund",
+              amount: r.deposit,
+              method: "cash",
+              paid: true,
+              paidAt: new Date(),
+              note: "Залог возвращён клиенту при сдаче",
+            });
+          }
+        }
         return r;
       });
 

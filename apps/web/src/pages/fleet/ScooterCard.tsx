@@ -22,6 +22,7 @@ import {
 import { useScooterMaintenance } from "@/lib/api/scooter-maintenance";
 import { useRole } from "@/lib/role";
 import { MODEL_LABEL, type ScooterModel } from "@/lib/mock/rentals";
+import { effectiveRentalStatus } from "@/lib/rentalStatus";
 import { useApiClients } from "@/lib/api/clients";
 import { useRentals } from "@/pages/rentals/rentalsStore";
 import { navigate } from "@/app/navigationStore";
@@ -1028,7 +1029,10 @@ function HistoryTab({
       </div>
       {sorted.map((r) => {
         const client = apiClients?.find((c) => c.id === r.clientId);
-        const s = STATUS_LABEL[r.status] ?? STATUS_LABEL.completed;
+        // v0.4.34: эффективный статус — просроченный 'active' будет
+        // показан как «просрочка», а не «активна».
+        const eff = effectiveRentalStatus(r.status, r.endPlanned);
+        const s = STATUS_LABEL[eff] ?? STATUS_LABEL[r.status] ?? STATUS_LABEL.completed;
         const isCurrent = r.id === currentId;
         return (
           <button

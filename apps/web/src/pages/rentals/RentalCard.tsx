@@ -22,6 +22,7 @@ import {
   type Rental,
   type RentalStatus,
 } from "@/lib/mock/rentals";
+import { effectiveRentalStatus } from "@/lib/rentalStatus";
 import { ratingTier } from "@/lib/mock/clients";
 import { useClientUnreachable } from "@/pages/clients/clientStore";
 import { useApiClients } from "@/lib/api/clients";
@@ -326,21 +327,10 @@ export function RentalCard({
   const daysLeft =
     startDate && endDate ? daysBetween(now(), endDate) : null;
 
-  // v0.4.33: эффективный статус — если в БД 'active', но плановая
-  // дата возврата уже прошла (или сегодня), показываем «Просрочка» /
-  // «Возврат», а не зелёный «Активна». Раньше шапка карточки врала
-  // на этот счёт даже на странице, отфильтрованной как «Просрочка».
-  const effectiveStatus: typeof rental.status = (() => {
-    if (rental.status !== "active") return rental.status;
-    const m = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(rental.endPlanned);
-    if (!m) return rental.status;
-    const today = new Date();
-    const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
-    const endKey = `${m[3]}-${m[2]}-${m[1]}`;
-    if (endKey < todayKey) return "overdue";
-    if (endKey === todayKey) return "returning";
-    return rental.status;
-  })();
+  // v0.4.33/34: эффективный статус (общий хелпер в @/lib/rentalStatus).
+  // Если БД-статус 'active' но плановая дата возврата уже в прошлом —
+  // показываем «Просрочка». Шапка карточки и tone берутся отсюда.
+  const effectiveStatus = effectiveRentalStatus(rental.status, rental.endPlanned);
   const tone = STATUS_TONE[effectiveStatus] ?? STATUS_TONE[rental.status];
   const isUnreachable = useClientUnreachable(rental.clientId);
   // Текущий статус скутера — нужен для проверки конфликта (active rental

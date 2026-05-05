@@ -19,6 +19,8 @@ import { useAllClients } from "@/pages/clients/clientStore";
 import { ScooterQuickView } from "@/pages/fleet/ScooterQuickView";
 import { useFleetScooters } from "@/pages/fleet/fleetStore";
 import { ClientCard } from "@/pages/clients/ClientCard";
+import { effectiveRentalStatus } from "@/lib/rentalStatus";
+import type { RentalStatus } from "@/lib/mock/rentals";
 
 /**
  * v0.4.7: горизонтальный стек drawer'ов.
@@ -552,18 +554,10 @@ function RentalsListDrawerContent({
     const m = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(s);
     return m ? `${m[3]}-${m[2]}-${m[1]}` : "";
   };
-  // v0.4.31: «эффективный» статус. В БД status='active' остаётся пока
-  // оператор не нажал «продлить/завершить» — но если плановая дата
-  // возврата уже в прошлом, для пользователя это «просрочка». Раньше
-  // в drawer'е таких рендерили как ACTIVE — это путало.
-  const effectiveStatus = (r: { status: string; endPlanned: string }) => {
-    if (r.status === "active") {
-      const endKey = ymdFromRu(r.endPlanned);
-      if (endKey && endKey < todayKey) return "overdue";
-      if (endKey === todayKey) return "returning";
-    }
-    return r.status;
-  };
+  // v0.4.31/34: эффективный статус через общий хелпер
+  // (apps/web/src/lib/rentalStatus.ts).
+  const effectiveStatus = (r: { status: string; endPlanned: string }) =>
+    effectiveRentalStatus(r.status as RentalStatus, r.endPlanned) as string;
   const filtered = active.filter((r) => {
     if (filter === "active") return r.status === "active";
     if (filter === "overdue") {

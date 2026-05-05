@@ -50,27 +50,75 @@ async function maybeAutoClose(rentalId: number) {
   if (!r) return;
   if (r.status !== "completed_damage" && r.status !== "problem") return;
 
+  // v0.4.34: считаем долг ПО КАЖДОМУ damage_report отдельно и суммируем
+  // только положительные остатки (Σ max(0, total − depositCovered − paid)).
+  // Раньше: brutto billed − Σ всех damage-payments. При множественных
+  // актах переплата по одному акту «съедала» долг другого, и autoClose
+  // срабатывал преждевременно. Также теперь учитываем damageReportId в
+  // payments — если платёж не привязан к акту (legacy), он раздаётся
+  // pro-rata между актами.
   const reports = await db
     .select({
+      id: damageReports.id,
       total: damageReports.total,
       depositCovered: damageReports.depositCovered,
     })
     .from(damageReports)
     .where(eq(damageReports.rentalId, rentalId));
-  const billed = reports.reduce(
-    (s, x) => s + (x.total ?? 0) - (x.depositCovered ?? 0),
-    0,
-  );
 
-  const paidRow = await db
-    .select({ s: sql<number>`coalesce(sum(${payments.amount}), 0)` })
+  if (reports.length === 0) return;
+
+  const damagePays = await db
+    .select({
+      amount: payments.amount,
+      damageReportId: payments.damageReportId,
+    })
     .from(payments)
     .where(
       sql`${payments.rentalId} = ${rentalId} AND ${payments.type} = 'damage' AND ${payments.paid} = true`,
     );
-  const paidSum = Number(paidRow[0]?.s ?? 0);
 
-  const debt = Math.max(0, billed - paidSum);
+  // Сначала разносим платежи с явным damageReportId
+  const paidByReport = new Map<number, number>();
+  let unassignedPaid = 0;
+  for (const p of damagePays) {
+    if (p.damageReportId != null) {
+      paidByReport.set(
+        p.damageReportId,
+        (paidByReport.get(p.damageReportId) ?? 0) + (p.amount ?? 0),
+      );
+    } else {
+      unassignedPaid += p.amount ?? 0;
+    }
+  }
+  // Старые legacy-платежи без damageReportId — раскидываем pro-rata
+  // по остаточному долгу каждого акта (FIFO по созданию).
+  if (unassignedPaid > 0) {
+    for (const rep of reports) {
+      if (unassignedPaid <= 0) break;
+      const reportDebt = Math.max(
+        0,
+        (rep.total ?? 0) -
+          (rep.depositCovered ?? 0) -
+          (paidByReport.get(rep.id) ?? 0),
+      );
+      const take = Math.min(unassignedPaid, reportDebt);
+      paidByReport.set(rep.id, (paidByReport.get(rep.id) ?? 0) + take);
+      unassignedPaid -= take;
+    }
+  }
+
+  const debt = reports.reduce(
+    (s, rep) =>
+      s +
+      Math.max(
+        0,
+        (rep.total ?? 0) -
+          (rep.depositCovered ?? 0) -
+          (paidByReport.get(rep.id) ?? 0),
+      ),
+    0,
+  );
   if (debt === 0) {
     // v0.4.21: уточнение по бизнесу — если возврат не завершён
     // (endActualAt = null), скутер ещё у клиента, значит после

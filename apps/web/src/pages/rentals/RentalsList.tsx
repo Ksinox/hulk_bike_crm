@@ -4,8 +4,8 @@ import {
   STATUS_LABEL,
   STATUS_TONE,
   type Rental,
-  type RentalStatus,
 } from "@/lib/mock/rentals";
+import { effectiveRentalStatus } from "@/lib/rentalStatus";
 import { initialsOf } from "@/lib/mock/clients";
 import { useClientPhoto } from "@/pages/clients/clientStore";
 import { useApiClients } from "@/lib/api/clients";
@@ -23,30 +23,8 @@ const TONE_PILL: Record<string, string> = {
   gray: "bg-surface-soft text-muted",
 };
 
-/**
- * v0.4.33: «эффективный» статус. В БД status='active' остаётся пока
- * оператор не нажал «продлить/завершить» — но если плановая дата
- * возврата уже в прошлом, для пользователя это «просрочка», а если
- * ровно сегодня — «возврат». Раньше в списке показывался зелёный
- * «Активна» даже у явно просроченных аренд (фильтр «Просрочка» их
- * собирал, но badge врал) — это сбивало с толку.
- *
- * endPlanned формат — "DD.MM.YYYY".
- */
-function effectiveStatus(
-  status: RentalStatus,
-  endPlanned: string,
-): RentalStatus {
-  if (status !== "active") return status;
-  const m = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(endPlanned);
-  if (!m) return status;
-  const today = new Date();
-  const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
-  const endKey = `${m[3]}-${m[2]}-${m[1]}`;
-  if (endKey < todayKey) return "overdue";
-  if (endKey === todayKey) return "returning";
-  return status;
-}
+// v0.4.34: effectiveStatus вынесен в @/lib/rentalStatus — общий хелпер
+// для всех мест где рендерится статус-пилюля.
 
 export function RentalsList({
   items,
@@ -127,7 +105,7 @@ function RentalRow({
   // v0.4.33: всё (badge, цвет полоски слева, isIssue) считаем по
   // эффективному статусу, чтобы просроченные `active` подсвечивались
   // красным, а не зелёным.
-  const effStatus = effectiveStatus(r.status, r.endPlanned);
+  const effStatus = effectiveRentalStatus(r.status, r.endPlanned);
   const tone = STATUS_TONE[effStatus] ?? STATUS_TONE[r.status];
   const isIssue =
     effStatus === "overdue" ||
