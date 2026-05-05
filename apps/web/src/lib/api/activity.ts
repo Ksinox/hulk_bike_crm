@@ -45,3 +45,24 @@ export function useActivityPage(limit: number, offset: number) {
       ),
   });
 }
+
+/**
+ * v0.4.5: лента событий по сущности (для табов «История» в карточках
+ * аренды / скутера / клиента). Включает связанные события — например
+ * для скутера придут все аренды на него и их события.
+ */
+export function useActivityTimeline(
+  entity: "rental" | "scooter" | "client" | null | undefined,
+  id: number | null | undefined,
+  limit = 200,
+) {
+  return useQuery({
+    queryKey: [...activityKeys.all, "timeline", entity, id, limit] as const,
+    queryFn: () =>
+      api.get<{ items: ApiActivityItem[]; rentalIds?: number[]; damageReportIds?: number[] }>(
+        `/api/activity/timeline?entity=${entity}&id=${id}&limit=${limit}`,
+      ),
+    enabled: entity != null && id != null && id > 0,
+    staleTime: 15_000,
+  });
+}

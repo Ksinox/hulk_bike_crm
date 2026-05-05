@@ -5,6 +5,10 @@ import {
   type DebtEntry,
 } from "@/lib/api/debt";
 import {
+  useActivityTimeline,
+  type ApiActivityItem,
+} from "@/lib/api/activity";
+import {
   AlertTriangle,
   ArrowLeftRight,
   ArrowRight,
@@ -1618,6 +1622,12 @@ export function HistoryTab({
    *  RentalCard). Если не передан — секция damage просто не рендерится. */
   damageReports?: ApiDamageReport[];
 }) {
+  // v0.4.5: лента событий из activity_log по всей цепочке аренды.
+  // Включает создание, продления, замены скутера, начисления долга,
+  // изменения статуса, акты о повреждениях, etc — всё что писалось
+  // через logActivity на бэке. Сверху самые свежие.
+  const timelineQ = useActivityTimeline("rental", rental.id);
+  const timeline = timelineQ.data?.items ?? [];
   // Объединяем события и сортируем по ISO-времени
   type RentalEv = {
     kind: "rental";
@@ -1674,27 +1684,18 @@ export function HistoryTab({
   );
   const totalDamageDebt = damageReports.reduce((s, r) => s + r.debt, 0);
 
-  if (events.length === 0) {
-    return (
-      <div className="rounded-2xl bg-surface p-6 text-center text-[13px] text-muted shadow-card-sm">
-        <History size={24} className="mx-auto mb-2 text-muted-2" />
-        Нет данных по истории.
-      </div>
-    );
-  }
-
-  if (rentEvents.length === 1 && damageReports.length === 0) {
-    return (
-      <div className="rounded-2xl bg-surface p-6 text-center text-[13px] text-muted shadow-card-sm">
-        <History size={24} className="mx-auto mb-2 text-muted-2" />
-        Это первичная аренда. Продлений ещё не было — здесь появится
-        список, как только клиент решит продлить.
-      </div>
-    );
-  }
+  // v0.4.5: убран early-return «нет продлений» — теперь история ВСЕГДА
+  // показывает activity_log с самого создания аренды (даже у первичных
+  // одиночных аренд там будет минимум «Аренда создана»).
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-3">
+      {/* v0.4.5: единая лента событий activity_log — сверху самые свежие */}
+      <ActivityTimelineSection
+        items={timeline}
+        loading={timelineQ.isLoading}
+      />
+
       <div className="text-[12px] text-muted-2 px-1">
         Цепочка из {rentEvents.length}{" "}
         {pluralRu(rentEvents.length, ["аренды", "аренд", "аренд"])} — суммарно{" "}
@@ -1924,6 +1925,134 @@ export function HistoryTab({
   );
 }
 
+/* =================== Activity timeline (v0.4.5) =================== */
+
+/**
+ * Секция «Лента событий» в табе «История» аренды (а также возможно
+ * скутера/клиента — компонент универсальный). Показывает activity_log
+ * сверху-вниз от свежих к старым с краткими подписями.
+ */
+export function ActivityTimelineSection({
+  items,
+  loading,
+}: {
+  items: ApiActivityItem[];
+  loading?: boolean;
+}) {
+  if (loading) {
+    return (
+      <div className="rounded-2xl bg-surface p-4 text-[12px] text-muted shadow-card-sm">
+        Загружаем ленту событий…
+      </div>
+    );
+  }
+  if (items.length === 0) {
+    return (
+      <div className="rounded-2xl bg-surface p-4 text-[12px] text-muted shadow-card-sm">
+        События появятся здесь автоматически (создание, продления,
+        смена статусов, начисления долга и т.д.).
+      </div>
+    );
+  }
+  return (
+    <div className="rounded-2xl bg-surface p-3 shadow-card-sm">
+      <div className="mb-2 flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-muted-2">
+        <History size={12} /> Лента событий
+        <span className="rounded-full bg-surface-soft px-1.5 py-0.5 text-[10px] text-muted">
+          {items.length}
+        </span>
+      </div>
+      <ol className="flex flex-col gap-1.5">
+        {items.map((it) => (
+          <li
+            key={it.id}
+            className="flex items-start gap-2 rounded-[10px] bg-surface-soft px-3 py-2"
+          >
+            <div
+              className={cn(
+                "mt-0.5 h-2 w-2 shrink-0 rounded-full",
+                actionDotColor(it.action),
+              )}
+            />
+            <div className="min-w-0 flex-1">
+              <div className="text-[13px] leading-snug text-ink">
+                {it.summary}
+              </div>
+              <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[10px] text-muted-2">
+                <Clock size={10} />
+                {new Date(it.createdAt).toLocaleString("ru-RU", {
+                  day: "2-digit",
+                  month: "2-digit",
+                  year: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+                {it.userName && it.userName !== "система" && (
+                  <>
+                    <span className="opacity-40">·</span>
+                    <span>{it.userName}</span>
+                  </>
+                )}
+                {it.entity && (
+                  <>
+                    <span className="opacity-40">·</span>
+                    <span className="lowercase">{entityLabel(it.entity)}</span>
+                  </>
+                )}
+              </div>
+            </div>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+function actionDotColor(action: string): string {
+  if (
+    action.includes("created") ||
+    action.includes("activate") ||
+    action === "extended"
+  ) {
+    return "bg-blue-500";
+  }
+  if (action.includes("forgiv") || action.includes("paid")) {
+    return "bg-green-500";
+  }
+  if (
+    action.includes("debt") ||
+    action.includes("damage") ||
+    action.includes("overdue")
+  ) {
+    return "bg-red-500";
+  }
+  if (action.includes("archived") || action.includes("deleted")) {
+    return "bg-muted-2";
+  }
+  return "bg-amber-500";
+}
+
+function entityLabel(entity: string): string {
+  switch (entity) {
+    case "rental":
+      return "аренда";
+    case "scooter":
+      return "скутер";
+    case "client":
+      return "клиент";
+    case "damage_report":
+      return "акт ущерба";
+    case "payment":
+      return "платёж";
+    case "repair_job":
+      return "ремонт";
+    case "user":
+      return "пользователь";
+    default:
+      return entity;
+  }
+}
+
 /* =================== История долгов (v0.3.8) =================== */
 
 /**
@@ -1986,82 +2115,62 @@ export function DebtHistoryTab({ rental }: { rental: Rental }) {
         />
       </div>
 
-      {/* === Подробный расчёт просрочки (v0.4.3 раздельно) === */}
-      {(data.overdueCharge > 0 || data.overdueForgiven > 0) && (
-        <div className="rounded-[14px] border border-border bg-surface-soft p-3 text-[12px]">
-          <div className="mb-2 font-semibold text-ink">Просрочка — раскладка</div>
-
-          {/* Долг по неоплаченным дням */}
-          <div className="mb-2 rounded-[10px] bg-white px-3 py-2">
-            <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
-              Долг по неоплаченным дням
-            </div>
-            <div className="mt-0.5 flex flex-col gap-0.5 text-muted">
-              <div className="flex justify-between">
-                <span>
-                  {data.overdueDays} дн × {fmt(data.overdueRate)} ₽ (тариф)
-                </span>
-                <span className="tabular-nums text-ink">
-                  + {fmt(data.overdueDaysCharge)} ₽
-                </span>
+      {/* === Компактная раскладка просрочки (v0.4.5) === */}
+      {(data.overdueCharge > 0 || data.overdueForgiven > 0) && (() => {
+        // Ищем последние списания / оплаты по компонентам — чтобы вывести
+        // плашку «Списан Директором (Имя) DD.MM» над суммой.
+        const daysEvent = data.events.find(
+          (e) => e.kind === "overdue_days_forgive" || e.kind === "overdue_days_payment",
+        );
+        const fineEvent = data.events.find(
+          (e) => e.kind === "overdue_fine_forgive" || e.kind === "overdue_fine_payment",
+        );
+        // Legacy mixed — fallback: если есть overdue_forgive, покажем
+        // его поверх того компонента у которого balance стал 0 первым.
+        const mixedEvent = data.events.find(
+          (e) => e.kind === "overdue_forgive" || e.kind === "overdue_payment",
+        );
+        const daysWiped =
+          data.overdueDaysCharge > 0 && data.overdueDaysBalance === 0;
+        const fineWiped =
+          data.overdueFineCharge > 0 && data.overdueFineBalance === 0;
+        return (
+          <div className="rounded-[14px] border border-border bg-surface p-3">
+            <div className="mb-2 flex items-baseline justify-between gap-2">
+              <div className="text-[13px] font-semibold text-ink">
+                Просрочка — {data.overdueDays}{" "}
+                {pluralDay(data.overdueDays)}
               </div>
-              <div className="flex justify-between border-t border-border pt-1 font-semibold text-ink">
-                <span>Остаток</span>
-                <span className="tabular-nums">
-                  {fmt(data.overdueDaysBalance)} ₽
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Штраф 50% за просрочку */}
-          <div className="mb-2 rounded-[10px] bg-white px-3 py-2">
-            <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
-              Штраф 50% за просроченные дни
-            </div>
-            <div className="mt-0.5 flex flex-col gap-0.5 text-muted">
-              <div className="flex justify-between">
-                <span>
-                  {data.overdueDays} дн × {fmt(Math.round(data.overdueRate * 0.5))} ₽ (50% тарифа)
-                </span>
-                <span className="tabular-nums text-ink">
-                  + {fmt(data.overdueFineCharge)} ₽
-                </span>
-              </div>
-              <div className="flex justify-between border-t border-border pt-1 font-semibold text-ink">
-                <span>Остаток</span>
-                <span className="tabular-nums">
-                  {fmt(data.overdueFineBalance)} ₽
-                </span>
+              <div
+                className={cn(
+                  "font-display text-[18px] font-extrabold tabular-nums",
+                  data.overdueBalance > 0 ? "text-red-600" : "text-muted-2",
+                )}
+              >
+                {fmt(data.overdueBalance)} ₽
               </div>
             </div>
-          </div>
-
-          {/* Сводка */}
-          <div className="flex flex-col gap-0.5 px-3 text-muted">
-            {data.overdueForgiven > 0 && (
-              <div className="flex justify-between">
-                <span>Уже списано (всего)</span>
-                <span className="tabular-nums text-green-700">
-                  − {fmt(data.overdueForgiven)} ₽
-                </span>
-              </div>
-            )}
-            {data.overduePaid > 0 && (
-              <div className="flex justify-between">
-                <span>Уже оплачено</span>
-                <span className="tabular-nums text-green-700">
-                  − {fmt(data.overduePaid)} ₽
-                </span>
-              </div>
-            )}
-            <div className="mt-1 flex justify-between border-t border-border pt-1 text-[13px] font-semibold text-ink">
-              <span>Итого по просрочке</span>
-              <span className="tabular-nums">{fmt(data.overdueBalance)} ₽</span>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <OverdueComponent
+                label="Дни просрочки"
+                formula={`${data.overdueDays} × ${fmt(data.overdueRate)} ₽ (тариф)`}
+                charge={data.overdueDaysCharge}
+                balance={data.overdueDaysBalance}
+                wiped={daysWiped}
+                wipedEvent={daysEvent ?? (daysWiped ? mixedEvent ?? null : null)}
+              />
+              <OverdueComponent
+                label="Штраф за каждый день"
+                formula={`${data.overdueDays} × ${fmt(Math.round(data.overdueRate * 0.5))} ₽ (50% от тарифа)`}
+                charge={data.overdueFineCharge}
+                balance={data.overdueFineBalance}
+                wiped={fineWiped}
+                wipedEvent={fineEvent ?? (fineWiped ? mixedEvent ?? null : null)}
+              />
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* === Damage reports (ссылки) === */}
       {data.damageReports.length > 0 && (
@@ -2132,6 +2241,82 @@ export function DebtHistoryTab({ rental }: { rental: Rental }) {
       </div>
     </div>
   );
+}
+
+/**
+ * Компонент компактной плашки одной части просрочки (дни / штраф).
+ * Если эта часть была списана/оплачена (balance=0 при charge>0),
+ * показывает плашку «Списан by name • DD.MM», и сумма становится
+ * приглушённой и зачёркнутой (визуальный «погашен» индикатор).
+ */
+function OverdueComponent({
+  label,
+  formula,
+  charge,
+  balance,
+  wiped,
+  wipedEvent,
+}: {
+  label: string;
+  formula: string;
+  charge: number;
+  balance: number;
+  wiped: boolean;
+  wipedEvent: DebtEntry | null;
+}) {
+  const fmt = (n: number) => n.toLocaleString("ru-RU");
+  const dimmed = wiped && balance === 0;
+  return (
+    <div
+      className={cn(
+        "rounded-[10px] border px-3 py-2",
+        dimmed
+          ? "border-border bg-surface-soft/60"
+          : "border-border bg-surface-soft",
+      )}
+    >
+      <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
+        {label}
+      </div>
+      {/* Плашка «Списан…» — только если компонент полностью погашен и
+          мы знаем кто/когда это сделал. */}
+      {dimmed && wipedEvent && (
+        <div className="mt-0.5 text-[10px] font-semibold uppercase tracking-wider text-green-700">
+          Списан{wipedEvent.createdByName ? ` · ${wipedEvent.createdByName}` : ""}
+          {wipedEvent.createdAt && ` · ${formatShortDate(wipedEvent.createdAt)}`}
+        </div>
+      )}
+      <div
+        className={cn(
+          "mt-1 font-display text-[20px] font-extrabold tabular-nums",
+          dimmed ? "text-muted-2 line-through" : "text-ink",
+        )}
+      >
+        {fmt(charge)} ₽
+      </div>
+      <div className="mt-0.5 text-[11px] text-muted-2">{formula}</div>
+      {!dimmed && balance !== charge && (
+        <div className="mt-1 text-[11px] text-muted">
+          Остаток: <b className="tabular-nums text-ink">{fmt(balance)} ₽</b>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function formatShortDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function pluralDay(n: number): string {
+  const a = Math.abs(n);
+  const n10 = a % 10;
+  const n100 = a % 100;
+  if (n10 === 1 && n100 !== 11) return "день";
+  if (n10 >= 2 && n10 <= 4 && (n100 < 10 || n100 >= 20)) return "дня";
+  return "дней";
 }
 
 function DebtMini({

@@ -775,23 +775,27 @@ export function RentalCard({
     <div className="flex min-h-0 flex-col gap-3 rounded-2xl bg-surface p-5 shadow-card-sm">
       {/* =========== HEADER =========== */}
       <header className="flex flex-wrap items-center gap-3">
-        <h2 className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 font-display text-[22px] font-extrabold leading-tight text-ink">
-          <span className="truncate">
+        {/* v0.4.5: «Аренда #0001» — фикс. ширина, имя клиента —
+            отдельным элементом с переносом на новую строку. Раньше всё
+            это лежало в одном <span class=truncate>, и в drawer-режиме
+            «Аренда #0062 — Абдулазизов…» обрезалось до «Аренда #0062 — …». */}
+        <h2 className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-0.5 font-display text-[22px] font-extrabold leading-tight text-ink">
+          <span className="shrink-0">
             Аренда #{String(rental.id).padStart(4, "0")}
-            {client && (
-              <>
-                {" — "}
-                <button
-                  type="button"
-                  onClick={() => openClient(client.id)}
-                  title="Быстрый просмотр клиента"
-                  className="rounded decoration-2 underline-offset-4 hover:underline"
-                >
-                  {client.name}
-                </button>
-              </>
-            )}
           </span>
+          {client && (
+            <span className="flex min-w-0 max-w-full items-baseline gap-1">
+              <span className="text-muted-2">—</span>
+              <button
+                type="button"
+                onClick={() => openClient(client.id)}
+                title={client.name}
+                className="block min-w-0 max-w-full break-words text-left rounded decoration-2 underline-offset-4 hover:underline"
+              >
+                {client.name}
+              </button>
+            </span>
+          )}
           <span
             className={cn(
               "inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold",

@@ -34,6 +34,8 @@ import {
 import type { UploadedFile } from "./DocUpload";
 import { ClientPhoto } from "./ClientPhoto";
 import { CreateDealMenu } from "./CreateDealMenu";
+import { useActivityTimeline } from "@/lib/api/activity";
+import { ActivityTimelineSection } from "@/pages/rentals/RentalCardTabs";
 import {
   getActiveRentalByClient,
   useRentalsByClient,
@@ -42,6 +44,7 @@ import { navigate } from "@/app/navigationStore";
 
 export type CardTab =
   | "rentals"
+  | "timeline"
   | "instalments"
   | "incidents"
   | "docs"
@@ -49,6 +52,9 @@ export type CardTab =
 
 const TABS: { id: CardTab; label: string }[] = [
   { id: "rentals", label: "Аренды" },
+  // v0.4.5: лента всех событий по клиенту — аренды, продления, акты,
+  // долги, оплаты, изменения рейтинга. Связь клиент ↔ скутеры ↔ ремонты.
+  { id: "timeline", label: "Лента событий" },
   { id: "instalments", label: "Рассрочки" },
   { id: "incidents", label: "Инциденты" },
   { id: "docs", label: "Документы" },
@@ -386,6 +392,7 @@ export function ClientCard({ client }: { client: Client }) {
 
       <div className="flex-1 pt-3">
         {tab === "rentals" && <RentalsTab client={client} />}
+        {tab === "timeline" && <ClientTimelineTab clientId={client.id} />}
         {tab === "instalments" && <InstalmentsTab d={d} />}
         {tab === "incidents" && <IncidentsTab d={d} />}
         {tab === "docs" && <DocsTab key={client.id} client={client} d={d} />}
@@ -548,5 +555,20 @@ function KpiBox({
         {hint}
       </div>
     </div>
+  );
+}
+
+/**
+ * v0.4.5: «Лента событий» в карточке клиента. Показывает все события
+ * связанные с клиентом — аренды (со скутерами), продления, акты ущерба,
+ * долги, оплаты. Источник — /api/activity/timeline?entity=client.
+ */
+function ClientTimelineTab({ clientId }: { clientId: number }) {
+  const q = useActivityTimeline("client", clientId);
+  return (
+    <ActivityTimelineSection
+      items={q.data?.items ?? []}
+      loading={q.isLoading}
+    />
   );
 }

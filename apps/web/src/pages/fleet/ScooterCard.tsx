@@ -30,6 +30,8 @@ import { ScooterDocumentsTab } from "./ScooterDocumentsTab";
 import { ScooterPhotosGallery } from "./ScooterPhotosGallery";
 import { ScooterStatusModal } from "./ScooterStatusModal";
 import { MaintenanceTab } from "./MaintenanceTab";
+import { useActivityTimeline } from "@/lib/api/activity";
+import { ActivityTimelineSection } from "@/pages/rentals/RentalCardTabs";
 import { useArchiveScooter } from "@/lib/api/scooters";
 import { useMe } from "@/lib/api/auth";
 import { Archive, Loader2 } from "lucide-react";
@@ -39,9 +41,13 @@ import { fileUrl } from "@/lib/files";
 import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
 import { toast, confirmDialog } from "@/lib/toast";
 
-type TabId = "history" | "repairs" | "incidents" | "docs";
+type TabId = "history" | "timeline" | "repairs" | "incidents" | "docs";
 const TABS: { id: TabId; label: string; count?: number }[] = [
   { id: "history", label: "История аренд" },
+  // v0.4.5: единая лента событий — все аренды на этом скутере + ремонты +
+  // акты повреждений + смены статусов. Видно кто катался, что ломалось,
+  // кто наносил повреждения. Связь скутер ↔ клиент ↔ ремонт.
+  { id: "timeline", label: "Лента событий" },
   { id: "repairs", label: "Ремонты" },
   { id: "incidents", label: "Инциденты" },
   { id: "docs", label: "Документы" },
@@ -818,6 +824,7 @@ export function ScooterCard({
         {tab === "history" && (
           <HistoryTab rentals={scooterRentals} currentId={activeRental?.id} />
         )}
+        {tab === "timeline" && <ScooterTimelineTab scooterId={scooter.id} />}
         {tab === "repairs" && <MaintenanceTab scooterId={scooter.id} />}
         {tab === "incidents" && (
           <Empty text="По этому скутеру не было инцидентов" />
@@ -1176,5 +1183,20 @@ function RoiHint({
         {action}
       </button>
     </div>
+  );
+}
+
+/**
+ * v0.4.5: «Лента событий» в карточке скутера. Показывает все события
+ * по этому скутеру и его арендам — кто катался, что ломалось, кто
+ * наносил ущерб. Источник — /api/activity/timeline?entity=scooter.
+ */
+function ScooterTimelineTab({ scooterId }: { scooterId: number }) {
+  const q = useActivityTimeline("scooter", scooterId);
+  return (
+    <ActivityTimelineSection
+      items={q.data?.items ?? []}
+      loading={q.isLoading}
+    />
   );
 }
