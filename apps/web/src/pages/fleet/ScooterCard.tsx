@@ -833,7 +833,13 @@ export function ScooterCard({
           <HistoryTab rentals={scooterRentals} currentId={activeRental?.id} />
         )}
         {tab === "timeline" && <ScooterTimelineTab scooterId={scooter.id} />}
-        {tab === "repairs" && <MaintenanceTab scooterId={scooter.id} />}
+        {tab === "repairs" && (
+          <MaintenanceTab
+            scooterId={scooter.id}
+            baseStatus={scooter.baseStatus}
+            onSendToRepair={() => setStatusOpen(true)}
+          />
+        )}
         {tab === "incidents" && (
           <Empty text="По этому скутеру не было инцидентов" />
         )}

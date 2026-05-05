@@ -40,15 +40,31 @@ const KIND_CHIP_CLASS: Record<MaintenanceKind, string> = {
 
 export function MaintenanceTab({
   scooterId,
+  baseStatus,
+  onSendToRepair,
 }: {
   scooterId: number;
+  /** v0.4.42: текущий baseStatus скутера. Если не 'repair' — показываем
+   *  большую кнопку «Отправить в ремонт», которая открывает status-modal.
+   *  Если 'repair' и есть active repair_job — призыв перейти на /service. */
+  baseStatus?: string;
+  onSendToRepair?: () => void;
 }) {
-  // v0.4.41: связь repair_jobs ↔ скутер. Раньше таб «Ремонты» на
-  // карточке скутера показывал только scooter_maintenance (масло,
-  // запчасти — ручные расходы), а repair_jobs (фактические ремонты
-  // по дефектам с чек-листом из damage_report) показывались только
-  // на отдельной странице «Ремонты». Теперь обе сущности связаны
-  // в одной вкладке: вверху ремонты по дефектам, ниже расходы.
+  // v0.4.41-42: связь repair_jobs ↔ скутер.
+  // Бизнес-логика ремонта (по правке заказчика v0.4.42):
+  //   1. Скутер требует ремонта → оператор меняет статус на «В ремонте».
+  //      Бэк (scooters.ts) автоматически создаёт repair_job (in_progress).
+  //   2. Оператор идёт на /service, открывает этот repair_job и
+  //      добавляет пункты из общего прайс-листа (PriceItemsPicker).
+  //      Это работает И для ручного ремонта, И для damage-flow —
+  //      damage_report заранее наполняет чек-лист.
+  //   3. По мере выполнения отмечает галочки + фотографии.
+  //   4. «Готов к аренде» → status job=completed, скутер → rental_pool.
+  //
+  // Ручной "Добавить расход" остаётся, но теперь это бухгалтерский
+  // журнал расходных материалов (масло/запчасти/прочее), без kind='repair'
+  // — собственно ремонтная работа считается через repair_progress, а
+  // не через maintenance.
   const { data: maintenance = [], isLoading: maintLoading } =
     useScooterMaintenance(scooterId);
   const { data: repairs = [], isLoading: repairsLoading } = useRepairJobs({
@@ -65,9 +81,54 @@ export function MaintenanceTab({
 
   const activeRepairs = repairs.filter((r) => r.status === "in_progress");
   const closedRepairs = repairs.filter((r) => r.status === "completed");
+  const isInRepair = baseStatus === "repair";
 
   return (
     <div className="flex flex-col gap-4">
+      {/* CTA-блок: либо «отправить в ремонт», либо «открыть чек-лист» */}
+      {isInRepair && activeRepairs.length > 0 ? (
+        <button
+          type="button"
+          onClick={() => navigate({ route: "service" })}
+          className="flex items-center gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-left transition-colors hover:bg-amber-100"
+        >
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-200 text-amber-800">
+            <Wrench size={16} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="text-[14px] font-bold text-amber-900">
+              Скутер сейчас в ремонте
+            </div>
+            <div className="text-[12px] text-amber-800/80">
+              Открыть чек-лист на странице «Ремонты» — добавить пункты из
+              прайса, отметить выполнение.
+            </div>
+          </div>
+          <ChevronRight size={16} className="shrink-0 text-amber-700" />
+        </button>
+      ) : !isInRepair && onSendToRepair ? (
+        <button
+          type="button"
+          onClick={onSendToRepair}
+          className="flex items-center gap-3 rounded-xl border border-dashed border-border bg-white px-4 py-3 text-left transition-colors hover:border-blue-400 hover:bg-blue-50/40"
+        >
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+            <Wrench size={16} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="text-[14px] font-bold text-ink">
+              Отправить в ремонт
+            </div>
+            <div className="text-[12px] text-muted">
+              Сменит статус скутера на «В ремонте». Создастся новая запись
+              ремонта — выбрать работы из прайса можно будет на странице
+              «Ремонты».
+            </div>
+          </div>
+          <ChevronRight size={16} className="shrink-0 text-muted-2" />
+        </button>
+      ) : null}
+
       {/* Сводка: всего потрачено + кнопка добавить расход */}
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-surface-soft px-4 py-3">
         <div>
@@ -104,28 +165,27 @@ export function MaintenanceTab({
           type="button"
           onClick={() => setAddOpen(true)}
           className="inline-flex items-center gap-1.5 rounded-full bg-ink px-3.5 py-2 text-[12px] font-bold text-white hover:bg-blue-600"
+          title="Расходный материал: масло, запчасть, прочее. Сама работа по ремонту проводится через статус «В ремонте»."
         >
           <Plus size={13} /> Добавить расход
         </button>
       </div>
 
-      {/* Секция «Ремонты по дефектам» — repair_jobs */}
+      {/* Секция «Ремонты» — repair_jobs (damage + manual) */}
       {(repairsLoading || repairs.length > 0) && (
         <section className="flex flex-col gap-2">
           <div className="flex items-baseline gap-2 px-1">
             <span className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-red-soft text-red-ink">
               <Wrench size={12} />
             </span>
-            <h3 className="text-[13px] font-bold text-ink">
-              Ремонты по дефектам
-            </h3>
+            <h3 className="text-[13px] font-bold text-ink">Ремонты</h3>
             {activeRepairs.length > 0 && (
               <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-800">
                 {activeRepairs.length} активных
               </span>
             )}
             <span className="ml-auto text-[11px] text-muted-2">
-              из актов о повреждениях
+              через статус «В ремонте» или акт о повреждениях
             </span>
           </div>
           {repairsLoading ? (
@@ -337,7 +397,7 @@ function MaintenanceAddModal({
   onClose: () => void;
 }) {
   const mut = useCreateMaintenance();
-  const [kind, setKind] = useState<MaintenanceKind>("other");
+  const [kind, setKind] = useState<MaintenanceKind>("oil");
   const [amount, setAmount] = useState(0);
   const [performedOn, setPerformedOn] = useState(todayYmd());
   const [mileage, setMileage] = useState<string>("");
@@ -380,9 +440,12 @@ function MaintenanceAddModal({
           </button>
         </div>
         <div className="flex flex-col gap-3.5 px-5 py-5">
-          <Field label="Тип работы">
+          <Field label="Тип расхода">
             <div className="flex flex-wrap gap-1.5">
-              {(Object.keys(KIND_LABEL) as MaintenanceKind[]).map((k) => (
+              {/* v0.4.42: убран kind='repair'. Сам ремонт регистрируется
+                  через смену статуса скутера → repair_job + чек-лист
+                  на /service. Здесь — только расходные материалы. */}
+              {(["oil", "parts", "other"] as MaintenanceKind[]).map((k) => (
                 <button
                   key={k}
                   type="button"
