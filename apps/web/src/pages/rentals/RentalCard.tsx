@@ -569,25 +569,60 @@ export function RentalCard({
       return;
     }
     if (id === "forgive-overdue") {
-      // v0.3.8: списать (сбросить) текущую начисленную просрочку.
-      const ok = await confirmDialog({
-        title: "Сбросить просрочку?",
-        message:
-          "Вся начисленная на сейчас просрочка будет списана. Это действие отразится в Истории долгов с указанием автора. Сама аренда не меняется (статус остаётся прежним).",
-        confirmText: "Сбросить",
-        cancelText: "Отмена",
+      // v0.4.3: списание просрочки с выбором — ВСЯ просрочка или только
+      // штраф 50%. Просрочка состоит из двух компонентов:
+      //   • неоплаченные дни (rate × дни)
+      //   • штраф 50% (rate × 0.5 × дни)
+      // Постоянному клиенту можно простить штраф, оставив дни как
+      // обычную аренду.
+      const days = debtSummary?.overdueDaysBalance ?? 0;
+      const fine = debtSummary?.overdueFineBalance ?? 0;
+      const total = days + fine;
+      if (total <= 0) {
+        toast.info("Нет просрочки", "Сбрасывать нечего.");
+        return;
+      }
+      // Двухшаговый выбор: сначала "списать всю?" (Да/Нет), при «Нет»
+      // — "списать только штраф?". Так backdrop/Esc гарантированно =
+      // отмена, а не "штраф" (если бы делали один трёхопционный диалог,
+      // клик мимо — съел бы штраф).
+      const all = await confirmDialog({
+        title: "Сбросить ВСЮ просрочку?",
+        message: `Просрочка ${total.toLocaleString("ru-RU")} ₽ = долг по дням ${days.toLocaleString("ru-RU")} ₽ + штраф 50% ${fine.toLocaleString("ru-RU")} ₽. Подтвердите чтобы списать обе части. Если хотите списать только штраф — нажмите «Не сейчас».`,
+        confirmText: "Списать всё",
+        cancelText: "Не сейчас",
       });
-      if (!ok) return;
-      const comment = window.prompt(
-        "Причина списания (необязательно):",
-        "",
-      );
+      let target: "all" | "fine" | null = all ? "all" : null;
+      if (!all) {
+        if (fine <= 0) {
+          // Дальнейший шаг бесполезен — нечего списывать.
+          return;
+        }
+        const fineOnly = await confirmDialog({
+          title: "Списать только штраф?",
+          message: `Будет списано ${fine.toLocaleString("ru-RU")} ₽ (50% × ${debtSummary?.overdueDays ?? 0} дн). Долг по неоплаченным дням останется.`,
+          confirmText: "Списать штраф",
+          cancelText: "Отмена",
+        });
+        if (!fineOnly) return;
+        target = "fine";
+      }
+      if (target == null) return;
+      if (target === "fine" && fine <= 0) {
+        toast.info("Нет штрафа", "Штраф уже списан или оплачен.");
+        return;
+      }
+      const comment = window.prompt("Причина списания (необязательно):", "");
       try {
-        await forgiveOverdueMut.mutateAsync({
+        const r = await forgiveOverdueMut.mutateAsync({
           rentalId: rental.id,
           comment: comment ?? undefined,
+          target,
         });
-        toast.success("Просрочка сброшена", "Запись в Истории долгов.");
+        toast.success(
+          target === "all" ? "Просрочка сброшена полностью" : "Штраф списан",
+          `Списано ${(r.amount ?? 0).toLocaleString("ru-RU")} ₽. Запись в Истории долгов.`,
+        );
       } catch (e) {
         const msg = (e as { body?: { error?: string } }).body?.error;
         if (msg === "no_overdue") {
@@ -804,18 +839,33 @@ export function RentalCard({
         получен» — это будет отдельный лёгкий чекбокс, не блокирующий поток.
       */}
       {rental.status === "overdue" && endDate && (() => {
-        // v0.3.8: формула долга по просрочке = 1.5 × rate × days
-        // (1 день тарифа + 50% от 1 дня × кол-во просроченных дней)
+        // v0.4.3: просрочка раскладывается на «дни» (rate × days) и
+        // «штраф 50%» (round(rate*0.5) × days). В баннере показываем
+        // ТЕКУЩИЕ остатки из API (с учётом списаний и оплат), а формулу
+        // оставляем как пояснение справа. Если API ещё не загрузилось —
+        // считаем локально (graceful fallback).
         const d = Math.max(1, daysLeft !== null ? Math.abs(daysLeft) : 1);
-        const dailyOverdue = Math.round(rental.rate * 1.5);
-        const overdueDebt = d * dailyOverdue;
+        const fallbackDays = rental.rate * d;
+        const fallbackFine = Math.round(rental.rate * 0.5) * d;
+        const daysBalance =
+          debtSummary?.overdueDaysBalance ?? fallbackDays;
+        const fineBalance =
+          debtSummary?.overdueFineBalance ?? fallbackFine;
+        const totalBalance = daysBalance + fineBalance;
         return (
-          <div className="flex items-center gap-2 rounded-[12px] bg-red-soft/70 px-3 py-2 text-[12px] text-red-ink">
-            <AlertTriangle size={14} className="shrink-0" />
+          <div className="flex flex-wrap items-start gap-2 rounded-[12px] bg-red-soft/70 px-3 py-2 text-[12px] text-red-ink">
+            <AlertTriangle size={14} className="mt-0.5 shrink-0" />
             <div className="min-w-0 flex-1">
-              <b>Просрочка {d} дн.</b> Долг {fmt(overdueDebt)} ₽
-              (тариф {fmt(rental.rate)} ₽ + 50% = {fmt(dailyOverdue)} ₽/день).
-              Плановый возврат — {rental.endPlanned} {rental.startTime || "12:00"}.
+              <div className="font-semibold">
+                Просрочка {d} дн. — {fmt(totalBalance)} ₽
+              </div>
+              <div className="text-[11px] opacity-90">
+                дни {fmt(daysBalance)} ₽ ({fmt(rental.rate)} ₽ × {d}) ·
+                штраф {fmt(fineBalance)} ₽ ({fmt(Math.round(rental.rate * 0.5))} ₽/день × {d})
+              </div>
+              <div className="text-[11px] opacity-80">
+                Плановый возврат — {rental.endPlanned} {rental.startTime || "12:00"}
+              </div>
             </div>
           </div>
         );

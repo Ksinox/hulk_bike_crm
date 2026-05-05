@@ -1477,11 +1477,28 @@ export async function rentalsRoutes(app: FastifyInstance) {
     return diff > 0 ? diff : 0;
   }
 
-  function overdueChargeAmount(rate: number, overdueDays: number): number {
-    // Формула заказчика: (1 день × ставка) + (50% от 1 дня × ставка),
-    // помноженная на количество дней просрочки = 1.5 × rate × days.
-    if (overdueDays <= 0 || rate <= 0) return 0;
-    return Math.round(rate * 1.5) * overdueDays;
+  /**
+   * Расчёт двух компонентов просрочки (v0.4.3).
+   *  • daysCharge — «долг по неоплаченным дням», начисляется как
+   *    rate × overdueDays (как обычная аренда продлённая на эти дни).
+   *  • fineCharge — штраф 50% от тарифа за каждый день просрочки,
+   *    round(rate × 0.5) × overdueDays.
+   *  • totalCharge = daysCharge + fineCharge (= 1.5 × rate × days).
+   *
+   *  Бизнес-смысл: «обычные» дни клиент бы и так оплатил (он же катался),
+   *  а штраф — отдельная санкция. При сбросе просрочки оператор может
+   *  списать только штраф (например постоянному клиенту), оставив дни.
+   */
+  function overdueComponents(
+    rate: number,
+    overdueDays: number,
+  ): { daysCharge: number; fineCharge: number; totalCharge: number } {
+    if (overdueDays <= 0 || rate <= 0) {
+      return { daysCharge: 0, fineCharge: 0, totalCharge: 0 };
+    }
+    const daysCharge = rate * overdueDays;
+    const fineCharge = Math.round(rate * 0.5) * overdueDays;
+    return { daysCharge, fineCharge, totalCharge: daysCharge + fineCharge };
   }
 
   app.get<{ Params: { id: string } }>("/:id/debt", async (req, reply) => {
@@ -1495,7 +1512,10 @@ export async function rentalsRoutes(app: FastifyInstance) {
 
     // === Просрочка ===
     const overdueDays = calcOverdueDays(rental.endPlannedAt, rental.status);
-    const overdueCharge = overdueChargeAmount(rental.rate, overdueDays);
+    const { daysCharge, fineCharge, totalCharge } = overdueComponents(
+      rental.rate,
+      overdueDays,
+    );
 
     // === События по долгу (manual + forgive + payments) ===
     const events = await db
@@ -1504,20 +1524,51 @@ export async function rentalsRoutes(app: FastifyInstance) {
       .where(eq(debtEntries.rentalId, id))
       .orderBy(desc(debtEntries.createdAt));
 
-    let overdueForgiven = 0;
-    let overduePaid = 0;
+    // v0.4.3: раздельный учёт списаний/оплат по двум потокам.
+    //  - overdue_days_forgive / overdue_days_payment → «дни»
+    //  - overdue_fine_forgive / overdue_fine_payment → «штраф»
+    //  - legacy overdue_forgive / overdue_payment    → «обоюдные»,
+    //    при подсчёте съедают сначала дни, потом штраф (FIFO по сумме).
+    let daysForgiveExplicit = 0;
+    let fineForgiveExplicit = 0;
+    let daysPayExplicit = 0;
+    let finePayExplicit = 0;
+    let mixedReductions = 0; // legacy overdue_forgive + overdue_payment
     let manualCharged = 0;
     let manualForgiven = 0;
     for (const e of events) {
-      if (e.kind === "overdue_forgive") overdueForgiven += e.amount;
-      else if (e.kind === "overdue_payment") overduePaid += e.amount;
+      if (e.kind === "overdue_days_forgive") daysForgiveExplicit += e.amount;
+      else if (e.kind === "overdue_fine_forgive") fineForgiveExplicit += e.amount;
+      else if (e.kind === "overdue_days_payment") daysPayExplicit += e.amount;
+      else if (e.kind === "overdue_fine_payment") finePayExplicit += e.amount;
+      else if (e.kind === "overdue_forgive") mixedReductions += e.amount;
+      else if (e.kind === "overdue_payment") mixedReductions += e.amount;
       else if (e.kind === "manual_charge") manualCharged += e.amount;
       else if (e.kind === "manual_forgive") manualForgiven += e.amount;
     }
-    const overdueBalance = Math.max(
+    // Сначала считаем «явные» остатки по компонентам.
+    let daysBalance = Math.max(
       0,
-      overdueCharge - overdueForgiven - overduePaid,
+      daysCharge - daysForgiveExplicit - daysPayExplicit,
     );
+    let fineBalance = Math.max(
+      0,
+      fineCharge - fineForgiveExplicit - finePayExplicit,
+    );
+    // Затем mixedReductions съедают сначала дни, потом штраф.
+    if (mixedReductions > 0) {
+      const cutDays = Math.min(daysBalance, mixedReductions);
+      daysBalance -= cutDays;
+      const leftover = mixedReductions - cutDays;
+      if (leftover > 0) {
+        fineBalance = Math.max(0, fineBalance - leftover);
+      }
+    }
+    const overdueBalance = daysBalance + fineBalance;
+    // Для UI «сколько уже простили/оплатили» — суммируем всё.
+    const overdueForgiven =
+      daysForgiveExplicit + fineForgiveExplicit + mixedReductions; // включая legacy
+    const overduePaid = daysPayExplicit + finePayExplicit;
     const manualBalance = Math.max(0, manualCharged - manualForgiven);
 
     // === Ущерб — берём из damage_reports (не дублируем здесь) ===
@@ -1567,7 +1618,13 @@ export async function rentalsRoutes(app: FastifyInstance) {
     return {
       overdueDays,
       overdueRate: rental.rate,
-      overdueCharge,
+      // v0.4.3: разбивка просрочки на компоненты для UI/Истории долгов
+      overdueDaysCharge: daysCharge,
+      overdueFineCharge: fineCharge,
+      overdueDaysBalance: daysBalance,
+      overdueFineBalance: fineBalance,
+      // Совместимость со старым клиентом — сумма обоих компонентов
+      overdueCharge: totalCharge,
       overdueForgiven,
       overduePaid,
       overdueBalance,
@@ -1629,51 +1686,74 @@ export async function rentalsRoutes(app: FastifyInstance) {
     return row;
   });
 
+  /**
+   * v0.4.3: списание просрочки с возможностью выбрать что списываем.
+   *  body.target:
+   *   • 'all'  — списываем и неоплаченные дни, и штраф 50%
+   *   • 'fine' — списываем ТОЛЬКО штраф (клиент гасит дни как обычную
+   *              аренду, но санкция за просрочку прощена)
+   *   • undefined — обратная совместимость, считаем как 'all'
+   */
   app.post<{
     Params: { id: string };
-    Body: { comment?: string };
+    Body: { comment?: string; target?: "all" | "fine" };
   }>("/:id/debt/forgive-overdue", async (req, reply) => {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
-    const Body = z.object({ comment: z.string().max(500).optional() });
+    const Body = z.object({
+      comment: z.string().max(500).optional(),
+      target: z.enum(["all", "fine"]).optional(),
+    });
     const parsed = Body.safeParse(req.body ?? {});
     if (!parsed.success) {
       return reply
         .code(400)
         .send({ error: "validation", issues: parsed.error.issues });
     }
+    const target = parsed.data.target ?? "all";
     const [rental] = await db
       .select()
       .from(rentals)
       .where(eq(rentals.id, id));
     if (!rental) return reply.code(404).send({ error: "not found" });
     const overdueDays = calcOverdueDays(rental.endPlannedAt, rental.status);
-    const overdueCharge = overdueChargeAmount(rental.rate, overdueDays);
-    if (overdueCharge <= 0) {
+    const { daysCharge, fineCharge, totalCharge } = overdueComponents(
+      rental.rate,
+      overdueDays,
+    );
+    if (totalCharge <= 0) {
       return reply
         .code(400)
         .send({ error: "no_overdue", message: "Нет начисленной просрочки." });
     }
-    // Учитываем уже списанное
+    // Подсчитаем уже списанное по компонентам, чтобы не списать дважды.
     const events = await db
       .select()
       .from(debtEntries)
       .where(eq(debtEntries.rentalId, id));
-    let alreadyForgiven = 0;
-    let alreadyPaid = 0;
+    let daysForgiven = 0;
+    let fineForgiven = 0;
+    let mixedReductions = 0;
     for (const e of events) {
-      if (e.kind === "overdue_forgive") alreadyForgiven += e.amount;
-      else if (e.kind === "overdue_payment") alreadyPaid += e.amount;
+      if (e.kind === "overdue_days_forgive") daysForgiven += e.amount;
+      else if (e.kind === "overdue_fine_forgive") fineForgiven += e.amount;
+      else if (e.kind === "overdue_days_payment") daysForgiven += e.amount;
+      else if (e.kind === "overdue_fine_payment") fineForgiven += e.amount;
+      else if (e.kind === "overdue_forgive") mixedReductions += e.amount;
+      else if (e.kind === "overdue_payment") mixedReductions += e.amount;
     }
-    const remaining = Math.max(
-      0,
-      overdueCharge - alreadyForgiven - alreadyPaid,
-    );
-    if (remaining <= 0) {
-      return reply
-        .code(400)
-        .send({ error: "already_zero", message: "Долг по просрочке уже 0." });
+    // Распределяем mixedReductions на дни и штраф (сначала дни).
+    let daysRemaining = Math.max(0, daysCharge - daysForgiven);
+    let fineRemaining = Math.max(0, fineCharge - fineForgiven);
+    if (mixedReductions > 0) {
+      const cutDays = Math.min(daysRemaining, mixedReductions);
+      daysRemaining -= cutDays;
+      const leftover = mixedReductions - cutDays;
+      if (leftover > 0) {
+        fineRemaining = Math.max(0, fineRemaining - leftover);
+      }
     }
+
     const userId = req.user?.userId ?? null;
     let userName = "система";
     if (userId) {
@@ -1683,24 +1763,77 @@ export async function rentalsRoutes(app: FastifyInstance) {
         .where(eq(usersTable.id, userId));
       userName = u?.name ?? "система";
     }
-    const [row] = await db
-      .insert(debtEntries)
-      .values({
-        rentalId: id,
-        kind: "overdue_forgive",
-        amount: remaining,
-        comment: parsed.data.comment ?? null,
-        createdByUserId: userId,
-        createdByName: userName,
-      })
-      .returning();
+
+    if (target === "fine") {
+      if (fineRemaining <= 0) {
+        return reply.code(400).send({
+          error: "already_zero",
+          message: "Штраф просрочки уже списан/оплачен.",
+        });
+      }
+      const [row] = await db
+        .insert(debtEntries)
+        .values({
+          rentalId: id,
+          kind: "overdue_fine_forgive",
+          amount: fineRemaining,
+          comment: parsed.data.comment ?? null,
+          createdByUserId: userId,
+          createdByName: userName,
+        })
+        .returning();
+      await logActivity(req, {
+        entity: "rental",
+        entityId: id,
+        action: "debt_overdue_fine_forgiven",
+        summary: `Списан штраф просрочки ${fineRemaining} ₽ по аренде #${id}${parsed.data.comment ? `: ${parsed.data.comment}` : ""}`,
+      });
+      return { row, mode: "fine", amount: fineRemaining };
+    }
+
+    // target === 'all' — списываем и дни, и штраф двумя записями.
+    if (daysRemaining <= 0 && fineRemaining <= 0) {
+      return reply
+        .code(400)
+        .send({ error: "already_zero", message: "Долг по просрочке уже 0." });
+    }
+    const inserted: typeof events = [];
+    if (daysRemaining > 0) {
+      const [row] = await db
+        .insert(debtEntries)
+        .values({
+          rentalId: id,
+          kind: "overdue_days_forgive",
+          amount: daysRemaining,
+          comment: parsed.data.comment ?? null,
+          createdByUserId: userId,
+          createdByName: userName,
+        })
+        .returning();
+      if (row) inserted.push(row);
+    }
+    if (fineRemaining > 0) {
+      const [row] = await db
+        .insert(debtEntries)
+        .values({
+          rentalId: id,
+          kind: "overdue_fine_forgive",
+          amount: fineRemaining,
+          comment: parsed.data.comment ?? null,
+          createdByUserId: userId,
+          createdByName: userName,
+        })
+        .returning();
+      if (row) inserted.push(row);
+    }
+    const total = daysRemaining + fineRemaining;
     await logActivity(req, {
       entity: "rental",
       entityId: id,
       action: "debt_overdue_forgiven",
-      summary: `Сброшена просрочка ${remaining} ₽ по аренде #${id}${parsed.data.comment ? `: ${parsed.data.comment}` : ""}`,
+      summary: `Сброшена просрочка ${total} ₽ (дни ${daysRemaining} + штраф ${fineRemaining}) по аренде #${id}${parsed.data.comment ? `: ${parsed.data.comment}` : ""}`,
     });
-    return row;
+    return { entries: inserted, mode: "all", amount: total };
   });
 
   /** Удаление события долга — для случаев когда оператор ошибся

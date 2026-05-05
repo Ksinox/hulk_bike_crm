@@ -1961,7 +1961,7 @@ export function DebtHistoryTab({ rental }: { rental: Rental }) {
           value={`${fmt(data.overdueBalance)} ₽`}
           hint={
             data.overdueDays > 0
-              ? `${data.overdueDays} дн × ${fmt(Math.round(data.overdueRate * 1.5))} ₽`
+              ? `дни ${fmt(data.overdueDaysBalance)} ₽ + штраф ${fmt(data.overdueFineBalance)} ₽`
               : "не в просрочке"
           }
           tone={data.overdueBalance > 0 ? "red" : "neutral"}
@@ -1986,29 +1986,77 @@ export function DebtHistoryTab({ rental }: { rental: Rental }) {
         />
       </div>
 
-      {/* === Подробный расчёт просрочки === */}
+      {/* === Подробный расчёт просрочки (v0.4.3 раздельно) === */}
       {(data.overdueCharge > 0 || data.overdueForgiven > 0) && (
         <div className="rounded-[14px] border border-border bg-surface-soft p-3 text-[12px]">
-          <div className="mb-1 font-semibold text-ink">Просрочка</div>
-          <div className="flex flex-col gap-0.5 text-muted">
-            <div className="flex justify-between">
-              <span>Начислено: {data.overdueDays} дн × {fmt(Math.round(data.overdueRate * 1.5))} ₽</span>
-              <span className="tabular-nums text-ink">+ {fmt(data.overdueCharge)} ₽</span>
+          <div className="mb-2 font-semibold text-ink">Просрочка — раскладка</div>
+
+          {/* Долг по неоплаченным дням */}
+          <div className="mb-2 rounded-[10px] bg-white px-3 py-2">
+            <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
+              Долг по неоплаченным дням
             </div>
+            <div className="mt-0.5 flex flex-col gap-0.5 text-muted">
+              <div className="flex justify-between">
+                <span>
+                  {data.overdueDays} дн × {fmt(data.overdueRate)} ₽ (тариф)
+                </span>
+                <span className="tabular-nums text-ink">
+                  + {fmt(data.overdueDaysCharge)} ₽
+                </span>
+              </div>
+              <div className="flex justify-between border-t border-border pt-1 font-semibold text-ink">
+                <span>Остаток</span>
+                <span className="tabular-nums">
+                  {fmt(data.overdueDaysBalance)} ₽
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Штраф 50% за просрочку */}
+          <div className="mb-2 rounded-[10px] bg-white px-3 py-2">
+            <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
+              Штраф 50% за просроченные дни
+            </div>
+            <div className="mt-0.5 flex flex-col gap-0.5 text-muted">
+              <div className="flex justify-between">
+                <span>
+                  {data.overdueDays} дн × {fmt(Math.round(data.overdueRate * 0.5))} ₽ (50% тарифа)
+                </span>
+                <span className="tabular-nums text-ink">
+                  + {fmt(data.overdueFineCharge)} ₽
+                </span>
+              </div>
+              <div className="flex justify-between border-t border-border pt-1 font-semibold text-ink">
+                <span>Остаток</span>
+                <span className="tabular-nums">
+                  {fmt(data.overdueFineBalance)} ₽
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Сводка */}
+          <div className="flex flex-col gap-0.5 px-3 text-muted">
             {data.overdueForgiven > 0 && (
               <div className="flex justify-between">
-                <span>Списано (прощено)</span>
-                <span className="tabular-nums text-green-700">− {fmt(data.overdueForgiven)} ₽</span>
+                <span>Уже списано (всего)</span>
+                <span className="tabular-nums text-green-700">
+                  − {fmt(data.overdueForgiven)} ₽
+                </span>
               </div>
             )}
             {data.overduePaid > 0 && (
               <div className="flex justify-between">
-                <span>Оплачено</span>
-                <span className="tabular-nums text-green-700">− {fmt(data.overduePaid)} ₽</span>
+                <span>Уже оплачено</span>
+                <span className="tabular-nums text-green-700">
+                  − {fmt(data.overduePaid)} ₽
+                </span>
               </div>
             )}
-            <div className="mt-1 flex justify-between border-t border-border pt-1 font-semibold text-ink">
-              <span>Остаток</span>
+            <div className="mt-1 flex justify-between border-t border-border pt-1 text-[13px] font-semibold text-ink">
+              <span>Итого по просрочке</span>
               <span className="tabular-nums">{fmt(data.overdueBalance)} ₽</span>
             </div>
           </div>
@@ -2121,10 +2169,28 @@ const DEBT_KIND_META: Record<
   DebtEntry["kind"],
   { label: string; sign: "+" | "−"; tone: "red" | "green" }
 > = {
-  manual_charge: { label: "Начисление", sign: "+", tone: "red" },
+  manual_charge: { label: "Начисление (ручной)", sign: "+", tone: "red" },
   manual_forgive: { label: "Списание (ручной)", sign: "−", tone: "green" },
-  overdue_forgive: { label: "Сброс просрочки", sign: "−", tone: "green" },
+  // legacy: одной записью списали/оплатили всю просрочку
+  overdue_forgive: { label: "Сброс просрочки (всё)", sign: "−", tone: "green" },
   overdue_payment: { label: "Оплата просрочки", sign: "−", tone: "green" },
+  // v0.4.3: раздельный учёт «дни» / «штраф»
+  overdue_days_forgive: {
+    label: "Списан долг по дням",
+    sign: "−",
+    tone: "green",
+  },
+  overdue_fine_forgive: { label: "Списан штраф", sign: "−", tone: "green" },
+  overdue_days_payment: {
+    label: "Оплата (дни просрочки)",
+    sign: "−",
+    tone: "green",
+  },
+  overdue_fine_payment: {
+    label: "Оплата (штраф просрочки)",
+    sign: "−",
+    tone: "green",
+  },
 };
 
 function DebtEntryRow({

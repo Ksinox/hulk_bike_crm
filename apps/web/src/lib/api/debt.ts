@@ -15,8 +15,13 @@ import { api } from "@/lib/api";
 export type DebtKind =
   | "manual_charge"
   | "manual_forgive"
-  | "overdue_forgive"
-  | "overdue_payment";
+  | "overdue_forgive" // legacy: списание «всей просрочки» одним числом
+  | "overdue_payment" // legacy: оплата просрочки одним числом
+  // v0.4.3: разделённый учёт «дни» vs «штраф 50%»
+  | "overdue_days_forgive"
+  | "overdue_fine_forgive"
+  | "overdue_days_payment"
+  | "overdue_fine_payment";
 
 export type DebtEntry = {
   id: number;
@@ -34,13 +39,21 @@ export type DebtSummary = {
   overdueDays: number;
   /** Дневная ставка аренды (для подсказок UI). */
   overdueRate: number;
-  /** Полное начисление просрочки (1.5 × rate × overdueDays). */
+  /** v0.4.3: начисление по «неоплаченным дням» = rate × overdueDays. */
+  overdueDaysCharge: number;
+  /** v0.4.3: штраф 50% × дни = round(rate*0.5) × overdueDays. */
+  overdueFineCharge: number;
+  /** v0.4.3: остаток по «дням» (charge - days_forgive - days_payment). */
+  overdueDaysBalance: number;
+  /** v0.4.3: остаток по «штрафу». */
+  overdueFineBalance: number;
+  /** Полное начисление просрочки (= daysCharge + fineCharge). */
   overdueCharge: number;
-  /** Сколько уже простили из просрочки. */
+  /** Сколько уже простили из просрочки (всего, по обоим компонентам). */
   overdueForgiven: number;
   /** Сколько уже оплачено в счёт просрочки. */
   overduePaid: number;
-  /** Текущий остаток просрочки (overdueCharge - forgiven - paid). */
+  /** Текущий остаток просрочки (= daysBalance + fineBalance). */
   overdueBalance: number;
   /** Остаток ручного долга (charge - forgive). */
   manualBalance: number;
@@ -93,13 +106,23 @@ export function useChargeManualDebt() {
   });
 }
 
+/**
+ * v0.4.3: списание просрочки с выбором что списать.
+ *  • target='all'  — и неоплаченные дни, и штраф 50%
+ *  • target='fine' — только штраф (дни остаются)
+ *  • target не указан — обратная совместимость = 'all'
+ */
 export function useForgiveOverdue() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (args: { rentalId: number; comment?: string }) =>
-      api.post<DebtEntry>(
+    mutationFn: (args: {
+      rentalId: number;
+      comment?: string;
+      target?: "all" | "fine";
+    }) =>
+      api.post<{ amount: number; mode: "all" | "fine" }>(
         `/api/rentals/${args.rentalId}/debt/forgive-overdue`,
-        { comment: args.comment ?? "" },
+        { comment: args.comment ?? "", target: args.target ?? "all" },
       ),
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: debtKeys.one(vars.rentalId) });
