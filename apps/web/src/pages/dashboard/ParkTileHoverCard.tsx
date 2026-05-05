@@ -177,23 +177,34 @@ export function ParkTileHoverCard({
               <div className="font-display text-[16px] font-extrabold leading-tight text-ink">
                 {scooter.name}
               </div>
-              <span
-                className={cn(
-                  "rounded-full px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider",
-                  scooter.baseStatus === "rental_pool"
-                    ? "bg-green-soft text-green-ink"
-                    : scooter.baseStatus === "repair"
-                      ? "bg-orange-soft text-orange-ink"
-                      : scooter.baseStatus === "for_sale" ||
-                          scooter.baseStatus === "buyout"
-                        ? "bg-purple-soft text-purple-ink"
-                        : scooter.baseStatus === "sold"
-                          ? "bg-border text-muted"
-                          : "bg-surface-soft text-muted-2",
-                )}
-              >
-                {baseStatusLabel(scooter.baseStatus)}
-              </span>
+              {/* v0.4.12: если по скутеру есть active/overdue/returning
+                  аренда — показываем «В аренде» синим, а не baseStatus
+                  «Готов». Раньше plашка читала только scooter.baseStatus
+                  и в активной аренде писала «готов» (т.к. сам baseStatus
+                  у скутера остаётся 'rental_pool' пока он в работе). */}
+              {activeRental ? (
+                <span className="rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-blue-700">
+                  в аренде
+                </span>
+              ) : (
+                <span
+                  className={cn(
+                    "rounded-full px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider",
+                    scooter.baseStatus === "rental_pool"
+                      ? "bg-green-soft text-green-ink"
+                      : scooter.baseStatus === "repair"
+                        ? "bg-orange-soft text-orange-ink"
+                        : scooter.baseStatus === "for_sale" ||
+                            scooter.baseStatus === "buyout"
+                          ? "bg-purple-soft text-purple-ink"
+                          : scooter.baseStatus === "sold"
+                            ? "bg-border text-muted"
+                            : "bg-surface-soft text-muted-2",
+                  )}
+                >
+                  {baseStatusLabel(scooter.baseStatus)}
+                </span>
+              )}
             </div>
             <div className="mt-0.5 truncate text-[11px] text-muted-2">
               {modelName}

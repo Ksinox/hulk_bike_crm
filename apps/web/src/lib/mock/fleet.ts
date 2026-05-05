@@ -17,8 +17,12 @@ export type ScooterDisplayStatus = ScooterBaseStatus | "rented";
 
 export const SCOOTER_STATUS_LABEL: Record<ScooterDisplayStatus, string> = {
   ready: "Не распределён",
-  rental_pool: "Готов к аренде",
-  rented: "Активная аренда",
+  rental_pool: "Готов",
+  // v0.4.12: «В аренде» (синий) — когда у скутера есть active/overdue/
+  // returning rental. Это derived-статус, baseStatus при этом остаётся
+  // 'rental_pool'. Бизнес-смысл: «не путать готовых к выдаче с теми кто
+  // сейчас у клиента».
+  rented: "В аренде",
   repair: "Ремонт",
   buyout: "Выкуп",
   for_sale: "Продаётся",

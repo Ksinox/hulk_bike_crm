@@ -110,14 +110,23 @@ export function ScooterQuickView({ scooterId }: { scooterId: number }) {
             </span>
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-2">
-            <span
-              className={cn(
-                "inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider",
-                tone,
-              )}
-            >
-              {STATUS_LABEL[scooter.baseStatus] ?? scooter.baseStatus}
-            </span>
+            {/* v0.4.12: если идёт аренда — синяя «В аренде», иначе
+                baseStatus. Раньше показывал «Парк аренды/готов» даже
+                когда скутер фактически у клиента. */}
+            {currentRental ? (
+              <span className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider text-blue-700">
+                В аренде
+              </span>
+            ) : (
+              <span
+                className={cn(
+                  "inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider",
+                  tone,
+                )}
+              >
+                {STATUS_LABEL[scooter.baseStatus] ?? scooter.baseStatus}
+              </span>
+            )}
             {scooter.baseStatus === "repair" && (
               <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
                 <Wrench size={10} /> в работе у мастера
