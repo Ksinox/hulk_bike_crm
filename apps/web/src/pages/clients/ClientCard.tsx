@@ -102,25 +102,15 @@ export function ClientCard({ client }: { client: Client }) {
 
   /**
    * Остаток по клиенту — сумма накопленных штрафов за просрочки.
-   * Формула: за каждый день просрочки возврата начисляется
-   * (ставка тарифа + 250 ₽). Считается по всем арендам в статусе overdue.
+   * v0.4.20: используем client.debt из clientStore.computeStats —
+   * единая точка правды для долга по клиенту. Раньше здесь была
+   * собственная формула (rate+250), статус только 'overdue', что
+   * расходилось с банном «Есть непогашенный долг: 4500 ₽» снизу
+   * (тот считается через client.debt = 1.5 × rate, active+past-due).
+   * Из-за этого KpiBox «Остаток» писал «нет просрочек» при ненулевом
+   * debt в банне.
    */
-  const overdueBalance = useMemo(() => {
-    const today = new Date();
-    let total = 0;
-    for (const r of rentalsForClient) {
-      if (r.status !== "overdue") continue;
-      const m = r.endPlanned.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
-      if (!m) continue;
-      const end = new Date(+m[3], +m[2] - 1, +m[1]);
-      const days = Math.max(
-        0,
-        Math.round((today.getTime() - end.getTime()) / 86400000),
-      );
-      total += days * (r.rate + 250);
-    }
-    return total;
-  }, [rentalsForClient]);
+  const overdueBalance = client.debt ?? 0;
 
   const handleDroppedFiles = (list: FileList) => {
     const uploaded: UploadedFile[] = [];

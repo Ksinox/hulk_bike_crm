@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Maximize2, Minimize2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { RevenueRentalsList, type RevenuePeriod } from "./RevenueRentalsList";
+import { useDashboardDrawer } from "./DashboardDrawer";
 
 const TABS: { id: RevenuePeriod; label: string }[] = [
   { id: "day", label: "День" },
@@ -19,6 +20,7 @@ export function RevenueListModal({
 }) {
   const [closing, setClosing] = useState(false);
   const [period, setPeriod] = useState<RevenuePeriod>(initialPeriod);
+  const drawer = useDashboardDrawer();
 
   const requestClose = () => {
     if (closing) return;
@@ -84,7 +86,13 @@ export function RevenueListModal({
         <div className="flex-1 overflow-y-auto p-4">
           <RevenueRentalsList
             period={period}
-            onRowClick={() => requestClose()}
+            // v0.4.20: клик по аренде закрывает модалку И открывает
+            // drawer-стек с этой арендой. Раньше только закрывал
+            // модалку и ничего не открывал — выглядело как «не работает».
+            onRowClick={(id) => {
+              requestClose();
+              drawer.openRental(id);
+            }}
             compact={false}
           />
         </div>
