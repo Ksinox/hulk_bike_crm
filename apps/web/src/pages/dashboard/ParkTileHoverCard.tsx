@@ -240,41 +240,53 @@ export function ParkTileHoverCard({
                 ломал верстку при длинных именах). Время крупным шрифтом,
                 рядом подпись «Возврат сегодня». Если время уже прошло —
                 плашка станет красной с «Опаздывает на N мин» (см. ниже). */}
+            {/* v0.4.7: вертикальная верстка плашек — лейбл сверху, крупная
+                сумма/время снизу. Раньше «Просрочен на 4 дня 21 ч» в одну
+                строку рассыпалось при узких карточках. */}
             {isReturnToday && returnTimeToday && lateMinutesToday === 0 && (
-              <div className="mt-2 inline-flex items-center gap-2 rounded-full bg-green px-3 py-1 text-white shadow-card">
-                <Calendar size={12} />
-                <span className="text-[11px] font-bold uppercase tracking-wider">
-                  Возврат сегодня
-                </span>
-                <span className="font-display text-[18px] font-extrabold tabular-nums leading-none">
-                  {returnTimeToday}
-                </span>
+              <div className="mt-2 inline-flex items-center gap-2 rounded-[14px] bg-green px-3 py-1.5 text-white shadow-card">
+                <AlertTriangle size={14} className="opacity-0" aria-hidden />
+                <Calendar
+                  size={14}
+                  className="-ml-7 shrink-0"
+                  aria-hidden
+                />
+                <div className="flex flex-col leading-tight">
+                  <span className="text-[10px] font-bold uppercase tracking-wider opacity-90">
+                    Возврат сегодня
+                  </span>
+                  <span className="font-display text-[18px] font-extrabold tabular-nums leading-none">
+                    {returnTimeToday}
+                  </span>
+                </div>
               </div>
             )}
 
-            {/* Плашка «Опаздывает на N мин» — крупная красная, в том же
-                стиле что и зелёная сверху. */}
             {lateMinutesToday > 0 && (
-              <div className="mt-2 inline-flex items-center gap-2 rounded-full bg-red px-3 py-1 text-white shadow-card">
-                <AlertTriangle size={12} />
-                <span className="text-[11px] font-bold uppercase tracking-wider">
-                  Опаздывает на
-                </span>
-                <span className="font-display text-[18px] font-extrabold tabular-nums leading-none">
-                  {fmtMinutes(lateMinutesToday)}
-                </span>
+              <div className="mt-2 inline-flex items-center gap-2 rounded-[14px] bg-red px-3 py-1.5 text-white shadow-card">
+                <AlertTriangle size={14} className="shrink-0" aria-hidden />
+                <div className="flex flex-col leading-tight">
+                  <span className="text-[10px] font-bold uppercase tracking-wider opacity-90">
+                    Опаздывает на
+                  </span>
+                  <span className="font-display text-[18px] font-extrabold tabular-nums leading-none">
+                    {fmtMinutes(lateMinutesToday)}
+                  </span>
+                </div>
               </div>
             )}
-            {/* «Просрочен на N дней N часов» — full overdue. */}
+
             {overdueDayDate && (
-              <div className="mt-2 inline-flex items-center gap-2 rounded-full bg-red px-3 py-1 text-white shadow-card">
-                <AlertTriangle size={12} />
-                <span className="text-[11px] font-bold uppercase tracking-wider">
-                  Просрочен на
-                </span>
-                <span className="font-display text-[18px] font-extrabold tabular-nums leading-none">
-                  {fmtDaysHours(overdueDays, overdueHoursRest)}
-                </span>
+              <div className="mt-2 inline-flex items-center gap-2 rounded-[14px] bg-red px-3 py-1.5 text-white shadow-card">
+                <AlertTriangle size={14} className="shrink-0" aria-hidden />
+                <div className="flex flex-col leading-tight">
+                  <span className="text-[10px] font-bold uppercase tracking-wider opacity-90">
+                    Просрочен на
+                  </span>
+                  <span className="font-display text-[18px] font-extrabold tabular-nums leading-none">
+                    {fmtDaysHours(overdueDays, overdueHoursRest)}
+                  </span>
+                </div>
               </div>
             )}
             {scooter.baseStatus === "repair" && !activeRental && (

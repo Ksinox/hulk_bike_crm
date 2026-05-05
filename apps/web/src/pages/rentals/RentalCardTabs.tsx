@@ -55,6 +55,7 @@ import { useApiScooterSwaps } from "@/lib/api/rentals";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { fileUrl } from "@/lib/files";
 import { navigate } from "@/app/navigationStore";
+import { useDashboardDrawer } from "@/pages/dashboard/DashboardDrawer";
 import { toast } from "@/lib/toast";
 import { DocumentPreviewModal } from "./DocumentPreviewModal";
 import {
@@ -1932,6 +1933,10 @@ export function HistoryTab({
  * Секция «Лента событий» в табе «История» аренды (а также возможно
  * скутера/клиента — компонент универсальный). Показывает activity_log
  * сверху-вниз от свежих к старым с краткими подписями.
+ *
+ * v0.4.7: каждая строка кликабельна — открывает соответствующую
+ * сущность в drawer-стеке (если рендеримся внутри drawer-провайдера).
+ * Иначе — навигация на полную страницу.
  */
 export function ActivityTimelineSection({
   items,
@@ -1940,6 +1945,28 @@ export function ActivityTimelineSection({
   items: ApiActivityItem[];
   loading?: boolean;
 }) {
+  const drawer = useDashboardDrawer();
+  const handleClick = (it: ApiActivityItem) => {
+    if (it.entityId == null) return;
+    // Если событие про скутер/клиента/аренду — открываем drawer.
+    // Damage_report / payment / repair_job — пока просто без действия
+    // (можно расширить позже: открыть аренду по которой акт).
+    if (it.entity === "rental") {
+      if (drawer.inDrawer) drawer.openRental(it.entityId);
+      else navigate({ route: "rentals", rentalId: it.entityId });
+      return;
+    }
+    if (it.entity === "scooter") {
+      if (drawer.inDrawer) drawer.openScooter(it.entityId);
+      else navigate({ route: "fleet", scooterId: it.entityId });
+      return;
+    }
+    if (it.entity === "client") {
+      if (drawer.inDrawer) drawer.openClient(it.entityId);
+      else navigate({ route: "clients", clientId: it.entityId });
+      return;
+    }
+  };
   if (loading) {
     return (
       <div className="rounded-2xl bg-surface p-4 text-[12px] text-muted shadow-card-sm">
@@ -1964,46 +1991,77 @@ export function ActivityTimelineSection({
         </span>
       </div>
       <ol className="flex flex-col gap-1.5">
-        {items.map((it) => (
-          <li
-            key={it.id}
-            className="flex items-start gap-2 rounded-[10px] bg-surface-soft px-3 py-2"
-          >
-            <div
-              className={cn(
-                "mt-0.5 h-2 w-2 shrink-0 rounded-full",
-                actionDotColor(it.action),
-              )}
-            />
-            <div className="min-w-0 flex-1">
-              <div className="text-[13px] leading-snug text-ink">
-                {it.summary}
-              </div>
-              <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[10px] text-muted-2">
-                <Clock size={10} />
-                {new Date(it.createdAt).toLocaleString("ru-RU", {
-                  day: "2-digit",
-                  month: "2-digit",
-                  year: "numeric",
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
-                {it.userName && it.userName !== "система" && (
-                  <>
-                    <span className="opacity-40">·</span>
-                    <span>{it.userName}</span>
-                  </>
+        {items.map((it) => {
+          const clickable =
+            it.entityId != null &&
+            (it.entity === "rental" ||
+              it.entity === "scooter" ||
+              it.entity === "client");
+          return (
+            <li key={it.id}>
+              <button
+                type="button"
+                onClick={() => clickable && handleClick(it)}
+                disabled={!clickable}
+                className={cn(
+                  "flex w-full items-start gap-2 rounded-[10px] bg-surface-soft px-3 py-2 text-left transition-colors",
+                  clickable
+                    ? "cursor-pointer hover:bg-blue-50"
+                    : "cursor-default",
                 )}
-                {it.entity && (
-                  <>
-                    <span className="opacity-40">·</span>
-                    <span className="lowercase">{entityLabel(it.entity)}</span>
-                  </>
+                title={
+                  clickable
+                    ? `Открыть ${entityLabel(it.entity)}`
+                    : undefined
+                }
+              >
+                <div
+                  className={cn(
+                    "mt-0.5 h-2 w-2 shrink-0 rounded-full",
+                    actionDotColor(it.action),
+                  )}
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="text-[13px] leading-snug text-ink">
+                    {it.summary}
+                  </div>
+                  <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[10px] text-muted-2">
+                    <Clock size={10} />
+                    {new Date(it.createdAt).toLocaleString("ru-RU", {
+                      day: "2-digit",
+                      month: "2-digit",
+                      year: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                    {it.userName && it.userName !== "система" && (
+                      <>
+                        <span className="opacity-40">·</span>
+                        <span>{it.userName}</span>
+                      </>
+                    )}
+                    {it.entity && (
+                      <>
+                        <span className="opacity-40">·</span>
+                        <span className="lowercase">
+                          {entityLabel(it.entity)}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </div>
+                {clickable && (
+                  <span
+                    className="self-center text-[10px] font-bold uppercase tracking-wider text-blue-600 opacity-0 transition-opacity group-hover:opacity-100"
+                    aria-hidden
+                  >
+                    →
+                  </span>
                 )}
-              </div>
-            </div>
-          </li>
-        ))}
+              </button>
+            </li>
+          );
+        })}
       </ol>
     </div>
   );
