@@ -95,10 +95,18 @@ export const debtKeys = {
 };
 
 export function useRentalDebt(rentalId: number | null | undefined) {
+  const qc = useQueryClient();
   return useQuery({
     queryKey: debtKeys.one(rentalId ?? 0),
-    queryFn: () =>
-      api.get<DebtSummary>(`/api/rentals/${rentalId}/debt`),
+    queryFn: async () => {
+      const res = await api.get<DebtSummary>(`/api/rentals/${rentalId}/debt`);
+      // v0.4.24: API может авто-нормализовать статус (problem→active
+      // когда долг 0). Перезапросим список аренд чтобы карточка увидела
+      // новый статус сразу.
+      qc.invalidateQueries({ queryKey: ["rentals"] });
+      qc.invalidateQueries({ queryKey: ["rentals-archived"] });
+      return res;
+    },
     enabled: rentalId != null && rentalId > 0,
   });
 }

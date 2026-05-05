@@ -159,15 +159,30 @@ export function NewRentalModal({
   }, [modelFromCatalog, period, model]);
 
   /**
-   * Произвольный тариф — позволяет оператору вручную задать ставку и
-   * количество дней, не привязываясь к short/week/month. Полезно для
-   * нестандартных договорённостей: «10 суток по 700₽ / неделя за 4000₽».
+   * v0.4.24: режим тарифа.
+   *  • auto   — period вычисляется автоматически по дням (как раньше)
+   *  • week   — принудительно period='week' (недельный тариф независимо
+   *             от количества дней — например 10 дней × недельный тариф)
+   *  • custom — оператор задаёт ставку сам, period не используется
    */
-  const [customMode, setCustomMode] = useState(false);
+  const [tariffMode, setTariffMode] = useState<"auto" | "week" | "custom">(
+    "auto",
+  );
   const [customRate, setCustomRate] = useState<string>("");
-  const rate = customMode
-    ? Math.max(0, Number(customRate) || 0)
-    : computedRate;
+  // Расчёт ставки в режиме «Недельный» — если каталог есть, берём
+  // weekRate, иначе TARIFF[model].week.
+  const weekRate = useMemo(() => {
+    if (modelFromCatalog) return modelFromCatalog.weekRate ?? 0;
+    return TARIFF[model].week;
+  }, [modelFromCatalog, model]);
+  const rate =
+    tariffMode === "custom"
+      ? Math.max(0, Number(customRate) || 0)
+      : tariffMode === "week"
+        ? weekRate
+        : computedRate;
+  // Для backward-совместимости с UI ниже (есть ссылки на customMode).
+  const customMode = tariffMode === "custom";
 
   /**
    * Сумма аренды.
@@ -304,7 +319,8 @@ export function NewRentalModal({
         startTime,
         endPlanned,
         status: "active",
-        tariffPeriod: period,
+        // v0.4.24: при tariffMode='week' принудительно period='week'
+        tariffPeriod: tariffMode === "week" ? "week" : period,
         rate,
         days,
         sum,
@@ -617,18 +633,36 @@ export function NewRentalModal({
                 Выберите скутер выше — тарифы подтянутся из его модели.
               </div>
             )}
-            <div className="mt-3 flex items-center gap-2 rounded-[10px] border border-border bg-surface-soft p-2">
-              <label className="flex cursor-pointer items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={customMode}
-                  onChange={(e) => setCustomMode(e.target.checked)}
-                  className="h-4 w-4 cursor-pointer accent-blue-600"
-                />
-                <span className="text-[12px] font-semibold">Произвольный тариф</span>
-              </label>
-              {customMode && (
-                <div className="ml-auto flex items-center gap-2">
+            {/* v0.4.24: переключатель режима тарифа — auto/week/custom.
+                Раньше был только чекбокс «Произвольный», недельного
+                варианта не было — приходилось считать сумму руками. */}
+            <div className="mt-3 rounded-[10px] border border-border bg-surface-soft p-2">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
+                Режим тарифа
+              </div>
+              <div className="mt-1 grid grid-cols-3 gap-1.5">
+                {(["auto", "week", "custom"] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setTariffMode(m)}
+                    className={cn(
+                      "rounded-[8px] border px-2.5 py-1.5 text-[12px] font-semibold transition-colors",
+                      tariffMode === m
+                        ? "border-blue-500 bg-blue-50 text-blue-700"
+                        : "border-border bg-white text-ink-2 hover:border-blue-400",
+                    )}
+                  >
+                    {m === "auto"
+                      ? "Авто (по дням)"
+                      : m === "week"
+                        ? `Недельный · ${weekRate} ₽/сут`
+                        : "Произвольный"}
+                  </button>
+                ))}
+              </div>
+              {tariffMode === "custom" && (
+                <div className="mt-2 flex items-center gap-2">
                   <span className="text-[11px] text-muted-2">Ставка, ₽/сут</span>
                   <input
                     type="text"
@@ -640,6 +674,12 @@ export function NewRentalModal({
                     placeholder="800"
                     className="h-8 w-24 rounded-[8px] border border-border bg-surface px-2 text-[12px] tabular-nums text-ink outline-none focus:border-blue-600"
                   />
+                </div>
+              )}
+              {tariffMode === "week" && weekRate <= 0 && (
+                <div className="mt-2 text-[11px] text-amber-700">
+                  У модели не задан недельный тариф. Откройте каталог
+                  моделей и заполните weekRate, или используйте «Произвольный».
                 </div>
               )}
             </div>
