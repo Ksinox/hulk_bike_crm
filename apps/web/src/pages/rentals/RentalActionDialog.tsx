@@ -271,12 +271,21 @@ export function RentalActionDialog({
       case "police":
         setRentalStatus(rental.id, "police");
         break;
-      case "revert-police":
-        // v0.4.36: возвращаем аренду в обычный поток работы. Если
-        // плановая дата возврата уже прошла — overdue (через scheduler
-        // авто-перейдёт), иначе active.
-        setRentalStatus(rental.id, "overdue");
+      case "revert-police": {
+        // v0.4.36/37: возвращаем аренду в обычный поток работы. Если
+        // плановая дата возврата уже прошла — overdue, иначе active.
+        // Scheduler делает только active→overdue (не наоборот), поэтому
+        // если revert произошёл при будущей плановой дате, ставить
+        // overdue нельзя — застрянет навсегда красным.
+        const m = /^(\d{2})\.(\d{2})\.(\d{4})/.exec(rental.endPlanned);
+        const today = new Date();
+        const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+        const endKey = m ? `${m[3]}-${m[2]}-${m[1]}` : null;
+        const next: "overdue" | "active" =
+          endKey && endKey < todayKey ? "overdue" : "active";
+        setRentalStatus(rental.id, next);
         break;
+      }
       case "lawyer":
         setRentalStatus(rental.id, "court");
         break;

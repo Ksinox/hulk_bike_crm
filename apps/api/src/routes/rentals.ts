@@ -556,6 +556,24 @@ export async function rentalsRoutes(app: FastifyInstance) {
     // 'cancelled' — иначе нарушается инвариант «archived ⇒ status ∈
     // {completed, cancelled, completed_damage}». Без этого аренда с
     // archivedAt + status='active' путала фильтры и отчёты.
+    // v0.4.37: симметрия с /complete — блокируем DELETE при unpaid
+    // swap_fee/fine. Иначе оператор обходит блокировку, нажав «удалить»
+    // вместо «завершить» — долг улетает в архив с висящими платежами.
+    const unpaidExtras = await db
+      .select({ id: payments.id, type: payments.type, amount: payments.amount })
+      .from(payments)
+      .where(
+        sql`${payments.rentalId} = ${id} AND ${payments.paid} = false AND ${payments.type} IN ('swap_fee', 'fine')`,
+      );
+    if (unpaidExtras.length > 0) {
+      const total = unpaidExtras.reduce((s, p) => s + (p.amount ?? 0), 0);
+      return reply.code(409).send({
+        error: "unpaid_extras",
+        message: `По аренде висят неоплаченные ${unpaidExtras.map((p) => p.type).join(", ")} платежи на ${total} ₽. Закройте перед архивацией.`,
+        unpaid: unpaidExtras,
+      });
+    }
+
     const liveStatuses = new Set([
       "new_request",
       "meeting",
@@ -564,9 +582,8 @@ export async function rentalsRoutes(app: FastifyInstance) {
       "returning",
       "problem",
     ]);
-    const nextStatus = liveStatuses.has(row.status)
-      ? "cancelled"
-      : row.status;
+    const wasLive = liveStatuses.has(row.status);
+    const nextStatus = wasLive ? "cancelled" : row.status;
     await db
       .update(rentals)
       .set({
@@ -576,6 +593,15 @@ export async function rentalsRoutes(app: FastifyInstance) {
         updatedAt: sql`now()`,
       })
       .where(eq(rentals.id, id));
+    // v0.4.37: при cancel живой аренды освобождаем скутер (rental_pool).
+    // Иначе скутер остаётся «занятым», в парке не показывается как
+    // готовый к выдаче, а оператор не может его выдать новому клиенту.
+    if (wasLive && row.scooterId) {
+      await db
+        .update(scooters)
+        .set({ baseStatus: "rental_pool", updatedAt: sql`now()` })
+        .where(eq(scooters.id, row.scooterId));
+    }
 
     // Если удаляемая связка БЫЛА «головой» цепочки (т.е. больше не было
     // потомков) и у неё есть родитель, который ушёл в архив автоматически
@@ -1258,6 +1284,19 @@ export async function rentalsRoutes(app: FastifyInstance) {
       const result = await db.transaction(async (tx) => {
         const [old] = await tx.select().from(rentals).where(eq(rentals.id, id));
         if (!old) throw new Error("not found");
+        // v0.4.37: продлять можно только живые аренды без проблем.
+        // Раньше extend на 'problem'/'police'/'court' молча проходил —
+        // родитель уезжал в архив со status='completed', а damage_report
+        // повисал на архивной аренде, и удалить её через DELETE уже было
+        // нельзя (archivedBy=null + есть pending damage = блок).
+        const extendable = new Set([
+          "active",
+          "overdue",
+          "returning",
+        ]);
+        if (!extendable.has(old.status)) {
+          throw new Error(`extend_blocked_status:${old.status}`);
+        }
 
         await tx
           .update(rentals)
@@ -2106,25 +2145,35 @@ export async function rentalsRoutes(app: FastifyInstance) {
       .where(eq(debtEntries.rentalId, id));
     let daysForgiven = 0;
     let fineForgiven = 0;
-    let mixedReductions = 0;
+    // v0.4.37: разделяем legacy на forgive vs payment (как в /debt
+    // v0.4.36). mixedForgive — переливается дни→штраф (это списание,
+    // допустимо), mixedPayment — только дни (это деньги клиента,
+    // переливать в штраф нельзя).
+    let mixedForgive = 0;
+    let mixedPayment = 0;
     for (const e of events) {
       if (e.kind === "overdue_days_forgive") daysForgiven += e.amount;
       else if (e.kind === "overdue_fine_forgive") fineForgiven += e.amount;
       else if (e.kind === "overdue_days_payment") daysForgiven += e.amount;
       else if (e.kind === "overdue_fine_payment") fineForgiven += e.amount;
-      else if (e.kind === "overdue_forgive") mixedReductions += e.amount;
-      else if (e.kind === "overdue_payment") mixedReductions += e.amount;
+      else if (e.kind === "overdue_forgive") mixedForgive += e.amount;
+      else if (e.kind === "overdue_payment") mixedPayment += e.amount;
     }
-    // Распределяем mixedReductions на дни и штраф (сначала дни).
     let daysRemaining = Math.max(0, daysCharge - daysForgiven);
     let fineRemaining = Math.max(0, fineCharge - fineForgiven);
-    if (mixedReductions > 0) {
-      const cutDays = Math.min(daysRemaining, mixedReductions);
+    // mixedForgive (legacy «сброс») — съедает сначала дни, потом штраф.
+    if (mixedForgive > 0) {
+      const cutDays = Math.min(daysRemaining, mixedForgive);
       daysRemaining -= cutDays;
-      const leftover = mixedReductions - cutDays;
+      const leftover = mixedForgive - cutDays;
       if (leftover > 0) {
         fineRemaining = Math.max(0, fineRemaining - leftover);
       }
+    }
+    // mixedPayment (legacy «оплата») — только дни. Остаток НЕ переливаем.
+    if (mixedPayment > 0) {
+      const cutDays = Math.min(daysRemaining, mixedPayment);
+      daysRemaining -= cutDays;
     }
 
     const userId = req.user?.userId ?? null;
