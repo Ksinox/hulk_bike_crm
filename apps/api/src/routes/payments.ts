@@ -7,12 +7,20 @@ import { damageReports, payments, rentals } from "../db/schema.js";
 const CreatePaymentBody = z
   .object({
     rentalId: z.number().int().positive(),
-    type: z.enum(["rent", "deposit", "fine", "damage", "refund"]),
+    // v0.4.34: добавлен 'swap_fee' — он давно есть в БД-enum payment_type,
+    // но в zod-валидаторе отсутствовал, делать руками платёж было нельзя.
+    type: z.enum(["rent", "deposit", "fine", "damage", "refund", "swap_fee"]),
     amount: z.number().int().positive(),
-    method: z.enum(["cash", "card", "transfer"]),
+    // v0.4.34: добавлен 'deposit' — спец-метод оплат из залога/депозита,
+    // не попадает в revenue (см. lib/revenue.ts).
+    method: z.enum(["cash", "card", "transfer", "deposit"]),
     paid: z.boolean().optional(),
     paidAt: z.string().optional().nullable(),
     scheduledOn: z.string().optional().nullable(),
+    // v0.4.34: критично для платежей type='damage' — раньше схема
+    // молча не принимала damageReportId, фронт получал 400 при оплате
+    // ущерба (см. PaymentAcceptDialog.distribute → target='damage').
+    damageReportId: z.number().int().positive().optional().nullable(),
     note: z.string().optional().nullable(),
   })
   .strict();
@@ -100,6 +108,16 @@ export async function paymentsRoutes(app: FastifyInstance) {
         .send({ error: "validation", issues: parsed.error.issues });
     }
     const d = parsed.data;
+    // v0.4.34: enforced — type='damage' ОБЯЗАН иметь damageReportId.
+    // Иначе платёж не привяжется к конкретному акту и при множественных
+    // damage_reports автозакрытие посчитает его в общую кучу. Раньше
+    // это было «по соглашению», бэк молчал.
+    if (d.type === "damage" && !d.damageReportId) {
+      return reply.code(400).send({
+        error: "validation",
+        message: "damage payment requires damageReportId",
+      });
+    }
     const [row] = await db
       .insert(payments)
       .values({
@@ -110,6 +128,7 @@ export async function paymentsRoutes(app: FastifyInstance) {
         paid: d.paid ?? false,
         paidAt: d.paidAt ? new Date(d.paidAt) : null,
         scheduledOn: d.scheduledOn ?? null,
+        damageReportId: d.damageReportId ?? null,
         note: d.note ?? null,
       })
       .returning();

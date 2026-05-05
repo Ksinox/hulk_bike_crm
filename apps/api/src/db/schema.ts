@@ -102,6 +102,11 @@ export const paymentMethodEnum = pgEnum("payment_method", [
   "cash",
   "card",
   "transfer",
+  // v0.4.34: спец-метод для оплат, профинансированных из залога
+  // (rental.deposit) или из депозита клиента (clients.deposit_balance).
+  // Не попадает в revenue — иначе двойной счёт (залог уже был выручкой
+  // при создании аренды как type='deposit').
+  "deposit",
 ]);
 
 export const paymentTypeEnum = pgEnum("payment_type", [

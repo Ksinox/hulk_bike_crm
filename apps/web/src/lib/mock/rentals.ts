@@ -11,7 +11,7 @@ export type RentalStatus =
   | "problem"
   | "cancelled";
 
-export type PaymentMethod = "cash" | "card" | "transfer";
+export type PaymentMethod = "cash" | "card" | "transfer" | "deposit";
 
 /** Канал обращения для конкретной аренды (может отличаться от канала клиента) */
 export type RentalSourceChannel =
@@ -213,6 +213,7 @@ export const PAYMENT_LABEL: Record<PaymentMethod, string> = {
   cash: "наличные",
   card: "карта",
   transfer: "перевод",
+  deposit: "из залога/депозита",
 };
 
 /**

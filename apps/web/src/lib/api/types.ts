@@ -106,7 +106,10 @@ export type RentalSourceChannel =
  * перед отправкой на сервер (см. rentalsStore.createRental).
  */
 export type TariffPeriod = "day" | "short" | "week" | "month";
-export type PaymentMethod = "cash" | "card" | "transfer";
+// v0.4.34: 'deposit' — спец-метод для платежей, профинансированных
+// из залога (rental.deposit) или из депозита клиента
+// (clients.deposit_balance). Исключается из revenue.
+export type PaymentMethod = "cash" | "card" | "transfer" | "deposit";
 
 export type RentalEquipmentItem = {
   itemId?: number | null;

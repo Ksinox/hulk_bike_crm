@@ -82,7 +82,7 @@ export type DebtSummary = {
     amount: number;
     paid: boolean;
     paidAt: string | null;
-    method: "cash" | "card" | "transfer";
+    method: "cash" | "card" | "transfer" | "deposit";
     damageReportId: number | null;
     createdAt: string;
     note: string | null;

@@ -58,6 +58,7 @@ const PAYMENT_METHOD_RU: Record<string, string> = {
   cash: "наличные",
   card: "карта",
   transfer: "перевод",
+  deposit: "из залога/депозита",
 };
 
 export async function loadStatementBundle(

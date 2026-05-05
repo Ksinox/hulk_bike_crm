@@ -25,7 +25,7 @@ export type Payment = {
   type: PaymentType;
   amount: number;
   date: string;
-  method: "cash" | "card" | "transfer";
+  method: "cash" | "card" | "transfer" | "deposit";
   note?: string;
   paid: boolean;
 };

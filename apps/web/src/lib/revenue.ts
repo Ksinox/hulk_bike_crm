@@ -29,6 +29,10 @@ export function revenueFromPayments(
     .filter((p) => {
       if (!p.paid) return false;
       if (p.type === "deposit" || p.type === "refund") return false;
+      // v0.4.34: исключаем method='deposit' — это оплата за счёт залога
+      // или депозита клиента, который уже учитывался при выдаче аренды.
+      // Не вычитать его — двойной счёт revenue.
+      if (p.method === "deposit") return false;
       if (!p.paidAt) return false;
       if (rangeStart || rangeEnd) {
         const t = new Date(p.paidAt).getTime();

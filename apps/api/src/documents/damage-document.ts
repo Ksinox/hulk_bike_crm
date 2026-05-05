@@ -359,7 +359,7 @@ function renderDamageHtmlSystem(b: DamageBundle): string {
                   <td class="center">${i + 1}</td>
                   <td>${fmtDateRu(p.paidAt ?? p.createdAt)}</td>
                   <td class="num">${fmtMoney(p.amount)}</td>
-                  <td>${p.method === "cash" ? "наличные" : p.method === "card" ? "карта" : "перевод"}</td>
+                  <td>${p.method === "cash" ? "наличные" : p.method === "card" ? "карта" : p.method === "deposit" ? "из залога/депозита" : "перевод"}</td>
                   <td>${p.receivedByUserId ?? "—"}</td>
                   <td>${escape(p.note ?? "")}</td>
                 </tr>

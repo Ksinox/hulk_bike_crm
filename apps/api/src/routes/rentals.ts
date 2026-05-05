@@ -848,11 +848,17 @@ export async function rentalsRoutes(app: FastifyInstance) {
       const [row] = await db.select().from(rentals).where(eq(rentals.id, id));
       if (!row) return reply.code(404).send({ error: "not found" });
 
-      // Чистим в обратном порядке зависимостей:
-      // 1. activity_log — все записи про эту аренду
-      // 2. payments
-      // 3. return_inspections
-      // 4. сама аренда
+      // Чистим в обратном порядке зависимостей. v0.4.34: расширено —
+      // добавили damage_reports, debt_entries и scooter_swaps. Раньше
+      // покупная purge оставляла damage_reports с битым FK на rental_id
+      // → /api/damage-reports начинал отдавать 500.
+      //   1. activity_log — все записи про эту аренду
+      //   2. damage_reports (включая damage_report.payments — каскадно через FK)
+      //   3. debt_entries
+      //   4. payments
+      //   5. return_inspections
+      //   6. scooter_swaps
+      //   7. сама аренда (после дочерних — FK)
       // Дочерние аренды-продления (parentRentalId = id) тоже зачищаем —
       // иначе останутся осиротевшие записи.
       const childIds = (
@@ -872,10 +878,19 @@ export async function rentalsRoutes(app: FastifyInstance) {
               eq(activityLog.entityId, rid),
             ),
           );
+        await db
+          .delete(damageReports)
+          .where(eq(damageReports.rentalId, rid));
+        await db
+          .delete(debtEntries)
+          .where(eq(debtEntries.rentalId, rid));
         await db.delete(payments).where(eq(payments.rentalId, rid));
         await db
           .delete(returnInspections)
           .where(eq(returnInspections.rentalId, rid));
+        await db
+          .delete(scooterSwaps)
+          .where(eq(scooterSwaps.rentalId, rid));
       }
       // Дочерние сначала (FK), потом сама
       if (childIds.length > 0) {

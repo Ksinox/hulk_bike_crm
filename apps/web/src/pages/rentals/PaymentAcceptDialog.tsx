@@ -128,50 +128,107 @@ export function PaymentAcceptDialog({
 
   const fmt = (n: number) => n.toLocaleString("ru-RU");
 
+  type OpTarget =
+    | "overdue_days"
+    | "overdue_fine"
+    | "damage"
+    | "manual"
+    | "rent"
+    | "deposit";
+  type Op = {
+    target: OpTarget;
+    amount: number;
+    damageReportId?: number;
+    /** v0.4.34: способ — какими деньгами профинансирован этот суб-платёж.
+     *  'deposit' — за счёт залога/депозита, не попадает в revenue.
+     *  cash/transfer — реально принято от клиента. */
+    method: PaymentMethod;
+  };
+
   /**
-   * Распределяет общий полученный платёж по приоритету:
-   * overdue_days → overdue_fine → damage → manual → rent → излишек.
-   * Возвращает carved-out массив операций для последующего выполнения.
+   * v0.4.34: распределяет ВСЕ принятые средства по приоритету
+   * (overdue_days → overdue_fine → damage → manual → rent → излишек),
+   * при этом каждую операцию помечает method'ом по источнику денег:
+   *  - первые depositToUse рублей → method='deposit'
+   *  - следующие securityToUse рублей → method='deposit'
+   *  - остаток (accepted) → method выбранный оператором
+   * Это нужно чтобы revenue не задваивался: залог/депозит уже были
+   * учтены раньше, повторный учёт исключается фильтром revenue.ts.
    */
-  const distribute = (totalAmount: number) => {
-    let left = totalAmount;
-    const ops: {
-      target:
-        | "overdue_days"
-        | "overdue_fine"
-        | "damage"
-        | "manual"
-        | "rent"
-        | "deposit";
-      amount: number;
-      damageReportId?: number;
-    }[] = [];
-    const take = (cap: number, target: typeof ops[number]["target"], damageReportId?: number) => {
-      if (left <= 0 || cap <= 0) return;
-      const take = Math.min(left, cap);
-      ops.push({ target, amount: take, damageReportId });
-      left -= take;
-    };
-    take(overdueDaysBalance, "overdue_days");
-    take(overdueFineBalance, "overdue_fine");
-    // damage — по каждому отчёту в порядке создания
+  const distribute = (): Op[] => {
+    // Шаг 1 — разложили общий totalReceived на «что именно платим»
+    const queue: { cap: number; target: OpTarget; damageReportId?: number }[] =
+      [
+        { cap: overdueDaysBalance, target: "overdue_days" },
+        { cap: overdueFineBalance, target: "overdue_fine" },
+      ];
     for (const dr of debt?.damageReports ?? []) {
-      const reportPaid =
-        (payments
-          .filter(
-            (p) =>
-              p.rentalId === rental.id &&
-              p.type === "damage" &&
-              p.paid &&
-              p.damageReportId === dr.id,
-          )
-          .reduce((s, p) => s + p.amount, 0));
+      const reportPaid = payments
+        .filter(
+          (p) =>
+            p.rentalId === rental.id &&
+            p.type === "damage" &&
+            p.paid &&
+            p.damageReportId === dr.id,
+        )
+        .reduce((s, p) => s + p.amount, 0);
       const reportDebt = Math.max(0, dr.total - dr.depositCovered - reportPaid);
-      take(reportDebt, "damage", dr.id);
+      queue.push({ cap: reportDebt, target: "damage", damageReportId: dr.id });
     }
-    take(manualBalance, "manual");
-    take(pendingRent, "rent");
-    if (left > 0) ops.push({ target: "deposit", amount: left });
+    queue.push({ cap: manualBalance, target: "manual" });
+    queue.push({ cap: pendingRent, target: "rent" });
+
+    // Шаг 2 — funding-источники в порядке списания
+    const funding: { amount: number; method: PaymentMethod }[] = [
+      { amount: depositToUse, method: "deposit" },
+      { amount: securityToUse, method: "deposit" },
+      { amount: accepted, method },
+    ];
+
+    const ops: Op[] = [];
+    let fundIdx = 0;
+    let fundLeft = funding[0]?.amount ?? 0;
+    let fundMethod: PaymentMethod = funding[0]?.method ?? method;
+
+    const advanceFund = () => {
+      while (fundLeft <= 0 && fundIdx < funding.length - 1) {
+        fundIdx++;
+        fundLeft = funding[fundIdx]!.amount;
+        fundMethod = funding[fundIdx]!.method;
+      }
+    };
+    advanceFund();
+
+    for (const slot of queue) {
+      let slotLeft = slot.cap;
+      while (slotLeft > 0 && (fundLeft > 0 || fundIdx < funding.length - 1)) {
+        if (fundLeft === 0) advanceFund();
+        if (fundLeft === 0) break;
+        const take = Math.min(slotLeft, fundLeft);
+        ops.push({
+          target: slot.target,
+          amount: take,
+          damageReportId: slot.damageReportId,
+          method: fundMethod,
+        });
+        slotLeft -= take;
+        fundLeft -= take;
+      }
+      if (fundLeft === 0 && fundIdx >= funding.length - 1) break;
+    }
+
+    // Излишек → депозит клиента (если ещё остался funding после всех слотов).
+    let leftover = 0;
+    if (fundLeft > 0) leftover += fundLeft;
+    while (fundIdx < funding.length - 1) {
+      fundIdx++;
+      leftover += funding[fundIdx]!.amount;
+    }
+    if (leftover > 0) {
+      // Метод тут роли не играет — overpay идёт в clients.deposit_balance,
+      // payment-запись не создаётся.
+      ops.push({ target: "deposit", amount: leftover, method: "cash" });
+    }
     return ops;
   };
 
@@ -179,7 +236,7 @@ export function PaymentAcceptDialog({
     if (saving) return;
     setSaving(true);
     try {
-      // 1. Списать депозит клиента, если используется
+      // 1. Списать депозит клиента (clients.deposit_balance), если используется
       if (depositToUse > 0) {
         await api.post(
           `/api/clients/${rental.clientId}/deposit/spend`,
@@ -190,7 +247,10 @@ export function PaymentAcceptDialog({
           },
         );
       }
-      // 2. Списать с залога — уменьшаем rental.deposit на ту же сумму
+      // 2. Списать с залога (rental.deposit). v0.4.34: сам факт списания
+      //    теперь оформлен через payment(method='deposit') в шаге 3 —
+      //    PATCH здесь только уменьшает rental.deposit на сумму, чтобы
+      //    залог не использовали повторно.
       if (securityToUse > 0) {
         const newDepositValue = Math.max(0, securityMax - securityToUse);
         await api.patch(`/api/rentals/${rental.id}`, {
@@ -202,59 +262,44 @@ export function PaymentAcceptDialog({
         });
       }
       // 3. Выполнить распределение всех принятых средств
-      const ops = distribute(totalReceived);
+      const ops = distribute();
       for (const op of ops) {
         if (op.amount <= 0) continue;
         if (op.target === "overdue_days") {
-          await api.post(`/api/rentals/${rental.id}/debt/manual`, {
-            amount: 0,
-            comment: "_internal_skip", // не используется — для overdue_payment нужен отдельный endpoint
-          }).catch(() => {}); // суррогат
-          // Используем debt_entries напрямую через endpoint для оплаты
-          // просрочки — он у нас в API уже есть (overdue_days_payment kind).
-          // Сделаем через POST manual но с явным kind через note.
-          // Правильно: используем тот же forgive-overdue со специальным
-          // флагом? Нет. Проще: через payments отдельный механизм.
-          // Реализация — вместо отдельного endpoint, делаем запись
-          // напрямую как manual_forgive с тэгом:
-          // (см. ниже) — добавим в API endpoint для overdue_payment.
           await api.post(`/api/rentals/${rental.id}/debt/payment`, {
             kind: "overdue_days_payment",
             amount: op.amount,
-            comment: `Оплата клиента (${method})`,
+            comment: `Оплата клиента (${methodLabel(op.method)})`,
           });
         } else if (op.target === "overdue_fine") {
           await api.post(`/api/rentals/${rental.id}/debt/payment`, {
             kind: "overdue_fine_payment",
             amount: op.amount,
-            comment: `Оплата клиента (${method})`,
+            comment: `Оплата клиента (${methodLabel(op.method)})`,
           });
         } else if (op.target === "damage") {
           await api.post("/api/payments", {
             rentalId: rental.id,
             type: "damage",
             amount: op.amount,
-            method,
+            method: op.method,
             paid: true,
             paidAt: new Date().toISOString(),
             damageReportId: op.damageReportId,
-            note: `Оплата по акту`,
+            note: "Оплата по акту",
           });
         } else if (op.target === "manual") {
-          // manual_forgive с признаком «это оплата от клиента, не списание»
           await api.post(`/api/rentals/${rental.id}/debt/payment`, {
             kind: "manual_payment",
             amount: op.amount,
-            comment: `Оплата клиента (${method})`,
+            comment: `Оплата клиента (${methodLabel(op.method)})`,
           });
         } else if (op.target === "rent") {
-          // Найдём первый unpaid rent и пометим paid=true (если хватает),
-          // иначе создадим частичный paid=true и оставим остаток unpaid.
           await api.post("/api/payments", {
             rentalId: rental.id,
             type: "rent",
             amount: op.amount,
-            method,
+            method: op.method,
             paid: true,
             paidAt: new Date().toISOString(),
           });
@@ -281,7 +326,7 @@ export function PaymentAcceptDialog({
           `Зачтено в долг ${fmt(totalReceived)} ₽. Остаток ${fmt(underpay)} ₽ висит за клиентом.`,
         );
       } else {
-        toast.success("Оплата принята", `Зачтено в погашение долгов.`);
+        toast.success("Оплата принята", "Зачтено в погашение долгов.");
       }
 
       onPaid?.();
@@ -292,6 +337,13 @@ export function PaymentAcceptDialog({
       setSaving(false);
     }
   };
+
+  function methodLabel(m: PaymentMethod): string {
+    if (m === "cash") return "наличные";
+    if (m === "transfer") return "перевод";
+    if (m === "deposit") return "из залога/депозита";
+    return m;
+  }
 
   const debtParts: { label: string; amount: number }[] = [];
   if (pendingRent > 0)

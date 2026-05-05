@@ -24,7 +24,7 @@ export type ApiDamagePayment = {
   rentalId: number;
   type: "damage";
   amount: number;
-  method: "cash" | "card" | "transfer";
+  method: "cash" | "card" | "transfer" | "deposit";
   paid: boolean;
   paidAt: string | null;
   note: string | null;
@@ -73,7 +73,7 @@ export type CreateDamageReportInput = {
 export type DamagePaymentInput = {
   amount: number;
   note?: string | null;
-  method?: "cash" | "card" | "transfer";
+  method?: "cash" | "card" | "transfer" | "deposit";
 };
 
 export const damageReportsKeys = {

@@ -1825,7 +1825,9 @@ export function HistoryTab({
                       ? "наличными"
                       : p.method === "card"
                         ? "картой"
-                        : "переводом"}
+                        : p.method === "deposit"
+                          ? "из залога/депозита"
+                          : "переводом"}
                     {p.receivedByName && (
                       <>
                         <span className="text-muted-2">·</span>
@@ -2344,6 +2346,7 @@ function PaymentEventRow({
     cash: "наличные",
     card: "карта",
     transfer: "перевод",
+    deposit: "из залога/депозита",
   };
   const label = typeLabel[payment.type] ?? `Платёж (${payment.type})`;
   const at = payment.paidAt ?? payment.createdAt;
