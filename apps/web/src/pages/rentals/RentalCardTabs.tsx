@@ -3,6 +3,7 @@ import {
   useRentalDebt,
   useDeleteDebtEntry,
   type DebtEntry,
+  type DebtSummary,
 } from "@/lib/api/debt";
 import {
   useActivityTimeline,
@@ -2211,34 +2212,127 @@ export function DebtHistoryTab({ rental }: { rental: Rental }) {
         </div>
       )}
 
-      {/* === Лента событий === */}
-      <div className="rounded-[14px] border border-border bg-surface p-3">
-        <div className="mb-2 text-[13px] font-semibold text-ink">
-          События ({data.events.length})
+      {/* === Лента событий по долгу (debt_entries + payments) === */}
+      {(() => {
+        // v0.4.6: в ленту входят и ручные начисления/списания (debt_entries),
+        // и фактические оплаты (payments.paid=true). Раньше платежи нигде
+        // в Истории долгов не отображались — теперь видно «Оплата +X ₽».
+        type DebtEv =
+          | { kind: "entry"; sortKey: string; entry: DebtEntry }
+          | {
+              kind: "payment";
+              sortKey: string;
+              payment: NonNullable<typeof data.payments>[number];
+            };
+        const merged: DebtEv[] = [];
+        for (const e of data.events) {
+          merged.push({ kind: "entry", sortKey: e.createdAt, entry: e });
+        }
+        for (const p of data.payments ?? []) {
+          // refund — это ВЫВОД денег клиенту (а не приход). Залог в ленту
+          // долгов не пишем, депозит — это про залог под скутер.
+          if (!p.paid || p.type === "refund" || p.type === "deposit") continue;
+          merged.push({
+            kind: "payment",
+            sortKey: p.paidAt ?? p.createdAt,
+            payment: p,
+          });
+        }
+        merged.sort((a, b) => b.sortKey.localeCompare(a.sortKey));
+        return (
+          <div className="rounded-[14px] border border-border bg-surface p-3">
+            <div className="mb-2 text-[13px] font-semibold text-ink">
+              События ({merged.length})
+            </div>
+            {merged.length === 0 ? (
+              <div className="text-[12px] text-muted-2">
+                Пока ничего не происходило. Начисления долга и оплаты
+                будут появляться здесь сверху-вниз от свежих к старым.
+              </div>
+            ) : (
+              <div className="flex flex-col gap-1.5">
+                {merged.map((m) =>
+                  m.kind === "entry" ? (
+                    <DebtEntryRow
+                      key={`e-${m.entry.id}`}
+                      entry={m.entry}
+                      onDelete={() =>
+                        deleteEntry.mutate({
+                          rentalId: rental.id,
+                          entryId: m.entry.id,
+                        })
+                      }
+                    />
+                  ) : (
+                    <PaymentEventRow
+                      key={`p-${m.payment.id}`}
+                      payment={m.payment}
+                    />
+                  ),
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+    </div>
+  );
+}
+
+/**
+ * v0.4.6: строка события «Оплата» в ленте Истории долгов. Источник —
+ * payments.paid=true (rent / damage / fine / swap_fee). Зелёный знак
+ * минус — баланс долга уменьшается.
+ */
+function PaymentEventRow({
+  payment,
+}: {
+  payment: NonNullable<DebtSummary["payments"]>[number];
+}) {
+  const fmt = (n: number) => n.toLocaleString("ru-RU");
+  const typeLabel: Record<string, string> = {
+    rent: "Оплата аренды",
+    damage: "Оплата по ущербу",
+    fine: "Оплата штрафа",
+    swap_fee: "Доплата за замену скутера",
+  };
+  const methodLabel: Record<string, string> = {
+    cash: "наличные",
+    card: "карта",
+    transfer: "перевод",
+  };
+  const label = typeLabel[payment.type] ?? `Платёж (${payment.type})`;
+  const at = payment.paidAt ?? payment.createdAt;
+  return (
+    <div className="flex items-center gap-2 rounded-[10px] border border-green-200 bg-green-soft/30 px-3 py-2">
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="text-[12px] font-semibold text-ink">{label}</span>
+          <span className="text-[10px] text-muted-2">
+            {new Date(at).toLocaleString("ru-RU", {
+              day: "2-digit",
+              month: "2-digit",
+              year: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            })}
+          </span>
+          <span className="text-[10px] text-muted-2">
+            · {methodLabel[payment.method] ?? payment.method}
+          </span>
+          {payment.damageReportId != null && (
+            <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">
+              акт #{payment.damageReportId}
+            </span>
+          )}
         </div>
-        {data.events.length === 0 ? (
-          <div className="text-[12px] text-muted-2">
-            Пока нет ручных операций по долгу. Начисляйте долг через
-            «Действия → Начислить долг», списывайте просрочку через
-            «Действия → Сбросить просрочку».
-          </div>
-        ) : (
-          <div className="flex flex-col gap-1.5">
-            {data.events.map((e) => (
-              <DebtEntryRow
-                key={e.id}
-                entry={e}
-                onDelete={() =>
-                  deleteEntry.mutate({
-                    rentalId: rental.id,
-                    entryId: e.id,
-                  })
-                }
-              />
-            ))}
-          </div>
+        {payment.note && (
+          <div className="text-[11px] text-muted">{payment.note}</div>
         )}
       </div>
+      <span className="tabular-nums text-[14px] font-bold text-green-700">
+        − {fmt(payment.amount)} ₽
+      </span>
     </div>
   );
 }

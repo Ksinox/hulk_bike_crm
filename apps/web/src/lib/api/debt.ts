@@ -71,6 +71,22 @@ export type DebtSummary = {
     clientAgreement: "pending" | "agreed" | "disputed";
     createdAt: string;
   }[];
+  /**
+   * v0.4.6: все платежи по аренде. UI показывает paid=true как события
+   * «Оплата» в Истории долгов. Не paid (плановые) — игнорируем в ленте,
+   * они и так отдельно в табе «Платежи»/баннерах.
+   */
+  payments: {
+    id: number;
+    type: "rent" | "deposit" | "fine" | "damage" | "refund" | "swap_fee";
+    amount: number;
+    paid: boolean;
+    paidAt: string | null;
+    method: "cash" | "card" | "transfer";
+    damageReportId: number | null;
+    createdAt: string;
+    note: string | null;
+  }[];
 };
 
 export const debtKeys = {

@@ -1582,22 +1582,17 @@ export async function rentalsRoutes(app: FastifyInstance) {
       })
       .from(damageReports)
       .where(eq(damageReports.rentalId, id));
+    // v0.4.6: возвращаем все платежи по аренде (paid=true), чтобы UI
+    // мог отображать их как события «Оплата» в истории долгов. Раньше
+    // оплаты вообще не светились в ленте — только начисления и списания.
+    const allPayments = await db
+      .select()
+      .from(payments)
+      .where(eq(payments.rentalId, id))
+      .orderBy(desc(payments.id));
+
     // Долг по акту = total − depositCovered − Σ(payments.type=damage, paid=true)
-    const damagePayments = damageRows.length
-      ? await db
-          .select({
-            damageReportId: payments.damageReportId,
-            amount: payments.amount,
-            paid: payments.paid,
-          })
-          .from(payments)
-          .where(
-            and(
-              eq(payments.rentalId, id),
-              eq(payments.type, "damage"),
-            ),
-          )
-      : [];
+    const damagePayments = allPayments.filter((p) => p.type === "damage");
     const paidByReport = new Map<number, number>();
     for (const p of damagePayments) {
       if (!p.paid || p.damageReportId == null) continue;
@@ -1633,6 +1628,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
       total: overdueBalance + manualBalance + damageBalance,
       events,
       damageReports: damageRows,
+      payments: allPayments,
     };
   });
 
