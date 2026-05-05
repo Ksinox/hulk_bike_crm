@@ -208,7 +208,7 @@ function DrawerHost({ ctx }: { ctx: Ctx }) {
             const idx = stack.length - 1 - revIdx;
             return (
               <DrawerCard
-                key={drawerKey(target, idx)}
+                key={drawerKey(target)}
                 target={target}
                 width={DRAWER_W}
                 onCloseSelf={() => ctx.closeAt(idx)}
@@ -224,9 +224,19 @@ function DrawerHost({ ctx }: { ctx: Ctx }) {
   );
 }
 
-function drawerKey(t: Target, idx: number): string {
-  if (t.kind === "rentalsList") return `${idx}-list-${t.filter}`;
-  return `${idx}-${t.kind}-${t.id}`;
+/**
+ * v0.4.16: СТАБИЛЬНЫЙ React-key — без idx. Раньше при закрытии drawer
+ * в середине стека все последующие меняли idx → React делал
+ * unmount/remount всем их компонентам → начинались новые enter-анимации
+ * → видимое «мерцание» соседей. С key только по kind+id остающиеся
+ * панели — это те же React-инстансы, они просто перерасполагаются
+ * во flex-layout (плавно).
+ *
+ * Уникальность по содержимому гарантирована pushUnique() в Provider.
+ */
+function drawerKey(t: Target): string {
+  if (t.kind === "rentalsList") return `list-${t.filter}`;
+  return `${t.kind}-${t.id}`;
 }
 
 function DrawerCard({
