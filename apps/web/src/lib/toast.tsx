@@ -194,6 +194,69 @@ export function confirmDialog(args: ConfirmArgs): Promise<boolean> {
   });
 }
 
+/* ========== Диалог выбора из нескольких вариантов (v0.4.4) ========== */
+
+type PickOption<T extends string> = {
+  /** Идентификатор варианта (вернётся в Promise если выбран). */
+  id: T;
+  label: string;
+  /** Подсказка под лейблом — уточнение. */
+  hint?: string;
+  tone?: "default" | "danger" | "primary";
+  disabled?: boolean;
+};
+
+type PickArgs<T extends string> = {
+  title: string;
+  message?: string;
+  options: PickOption<T>[];
+  cancelText?: string;
+};
+
+type PickState = {
+  title: string;
+  message?: string;
+  options: PickOption<string>[];
+  cancelText?: string;
+  resolve: (id: string | null) => void;
+};
+
+const pickListeners = new Set<(s: PickState | null) => void>();
+let pickState: PickState | null = null;
+function emitPick() {
+  pickListeners.forEach((l) => l(pickState));
+}
+
+/**
+ * Показать модалку с несколькими вариантами действий + «Отмена».
+ * Возвращает id выбранного варианта или null, если пользователь отменил
+ * (Esc, клик мимо, кнопка «Отмена»).
+ *
+ * Пример:
+ *   const choice = await pickAction({
+ *     title: "Что списываем?",
+ *     options: [
+ *       { id: "days", label: "Неоплаченные дни" },
+ *       { id: "fine", label: "Проценты по просроченным дням" },
+ *     ],
+ *   });
+ *   if (choice === "days") ...
+ */
+export function pickAction<T extends string>(
+  args: PickArgs<T>,
+): Promise<T | null> {
+  return new Promise((resolve) => {
+    pickState = {
+      title: args.title,
+      message: args.message,
+      options: args.options as PickOption<string>[],
+      cancelText: args.cancelText,
+      resolve: (id) => resolve(id as T | null),
+    };
+    emitPick();
+  });
+}
+
 const ConfirmCtx = createContext<ConfirmState | null>(null);
 
 export function ConfirmContainer() {
@@ -268,6 +331,84 @@ export function ConfirmContainer() {
   );
 }
 
+/* ========== Контейнер pickAction-диалога ========== */
+
+export function PickContainer() {
+  const [s, setS] = useState<PickState | null>(pickState);
+  useEffect(() => {
+    const l = (next: PickState | null) => setS(next);
+    pickListeners.add(l);
+    return () => {
+      pickListeners.delete(l);
+    };
+  }, []);
+
+  if (!s) return null;
+  const close = (id: string | null) => {
+    s.resolve(id);
+    pickState = null;
+    emitPick();
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[1100] flex items-center justify-center bg-ink/60 p-6 backdrop-blur-sm"
+      onClick={() => close(null)}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") close(null);
+      }}
+    >
+      <div
+        className="w-full max-w-[420px] overflow-hidden rounded-2xl bg-surface shadow-card-lg"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="border-b border-border px-5 py-4">
+          <div className="text-[15px] font-bold text-ink">{s.title}</div>
+          {s.message && (
+            <div className="mt-1 text-[13px] leading-relaxed text-ink-2">
+              {s.message}
+            </div>
+          )}
+        </div>
+        <div className="flex flex-col gap-1.5 px-5 py-3">
+          {s.options.map((opt) => (
+            <button
+              key={opt.id}
+              type="button"
+              disabled={opt.disabled}
+              onClick={() => !opt.disabled && close(opt.id)}
+              className={cn(
+                "w-full rounded-[10px] px-4 py-2.5 text-left text-[13px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-40",
+                opt.tone === "danger"
+                  ? "bg-red-soft text-red-ink hover:bg-red-soft/80"
+                  : opt.tone === "primary"
+                    ? "bg-blue-50 text-blue-700 hover:bg-blue-100"
+                    : "bg-surface-soft text-ink hover:bg-border",
+              )}
+            >
+              <div>{opt.label}</div>
+              {opt.hint && (
+                <div className="mt-0.5 text-[11px] font-normal opacity-80">
+                  {opt.hint}
+                </div>
+              )}
+            </button>
+          ))}
+        </div>
+        <div className="flex justify-end border-t border-border bg-surface-soft px-5 py-3">
+          <button
+            type="button"
+            onClick={() => close(null)}
+            className="rounded-full bg-surface px-4 py-2 text-[13px] font-semibold text-ink-2 hover:bg-border"
+          >
+            {s.cancelText ?? "Отмена"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** Обёртка на случай если где-то пригодится {children} */
 export function ToastProvider({ children }: { children: ReactNode }) {
   return (
@@ -275,6 +416,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {children}
       <ToastContainer />
       <ConfirmContainer />
+      <PickContainer />
     </>
   );
 }

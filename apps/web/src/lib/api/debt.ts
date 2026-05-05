@@ -118,9 +118,9 @@ export function useForgiveOverdue() {
     mutationFn: (args: {
       rentalId: number;
       comment?: string;
-      target?: "all" | "fine";
+      target?: "all" | "fine" | "days";
     }) =>
-      api.post<{ amount: number; mode: "all" | "fine" }>(
+      api.post<{ amount: number; mode: "all" | "fine" | "days" }>(
         `/api/rentals/${args.rentalId}/debt/forgive-overdue`,
         { comment: args.comment ?? "", target: args.target ?? "all" },
       ),

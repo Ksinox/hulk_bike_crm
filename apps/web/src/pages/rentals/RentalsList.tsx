@@ -151,69 +151,79 @@ function RentalRow({
         )}
       </span>
 
+      {/* v0.4.4: ФИО занимает всю строку и может переноситься на 2 строки.
+          Раньше id (#0082) стоял рядом с именем и забирал место → длинные
+          ФИО («Захарченко Максимилиан Валерьевич») обрезались многоточием.
+          Теперь id и статус-пилюля живут в правой колонке, а имя — на всю
+          доступную ширину с line-clamp-2. */}
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span
-            className={cn(
-              "truncate text-[13px] font-semibold",
-              active ? "text-white" : "text-ink",
-            )}
-          >
-            {c?.name ?? "Клиент #" + r.clientId}
-          </span>
-          <span
-            className={cn(
-              "shrink-0 text-[11px] tabular-nums",
-              active ? "text-white/70" : "text-muted-2",
-            )}
-          >
-            #{String(r.id).padStart(4, "0")}
-          </span>
+        <div
+          className={cn(
+            "text-[13px] font-semibold leading-tight break-words",
+            // line-clamp-2 — переносим на 2 строки, после многоточие
+            "line-clamp-2",
+            active ? "text-white" : "text-ink",
+          )}
+          title={c?.name ?? undefined}
+        >
+          {c?.name ?? "Клиент #" + r.clientId}
         </div>
         <div
           className={cn(
-            "mt-0.5 flex items-center gap-2 text-[11px]",
+            "mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] leading-tight",
             active ? "text-white/80" : "text-muted-2",
           )}
         >
           <span className="font-semibold">{r.scooter}</span>
           <span className="opacity-40">·</span>
-          <span>
-            {r.start} — {r.endPlanned}
+          <span className="tabular-nums">
+            {r.start.slice(0, 5)} — {r.endPlanned.slice(0, 5)}
           </span>
           {r.rate > 0 && (
             <>
               <span className="opacity-40">·</span>
-              <span>{fmt(r.rate)} ₽/сут</span>
+              <span className="tabular-nums">{fmt(r.rate)} ₽/сут</span>
             </>
           )}
         </div>
       </div>
 
-      <div className="shrink-0 text-right">
-        <span
-          className={cn(
-            "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold",
-            active ? "bg-white/20 text-white" : TONE_PILL[tone],
-          )}
-        >
-          {STATUS_LABEL[r.status]}
-        </span>
-        <div
-          className={cn(
-            "mt-1 text-[12px] font-bold tabular-nums",
-            active ? "text-white" : "text-ink",
-          )}
-        >
-          {r.sum > 0 ? `${fmt(r.sum)} ₽` : "—"}
+      <div className="shrink-0 self-stretch flex flex-col items-end justify-between gap-1">
+        <div className="flex items-center gap-1.5">
+          <span
+            className={cn(
+              "text-[10px] tabular-nums",
+              active ? "text-white/70" : "text-muted-2",
+            )}
+          >
+            #{String(r.id).padStart(4, "0")}
+          </span>
+          <span
+            className={cn(
+              "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold",
+              active ? "bg-white/20 text-white" : TONE_PILL[tone],
+            )}
+          >
+            {STATUS_LABEL[r.status]}
+          </span>
         </div>
-        <div
-          className={cn(
-            "text-[10px]",
-            active ? "text-white/70" : "text-muted-2",
-          )}
-        >
-          {PAYMENT_LABEL[r.paymentMethod]}
+        <div className="text-right">
+          <div
+            className={cn(
+              "text-[12px] font-bold tabular-nums",
+              active ? "text-white" : "text-ink",
+            )}
+          >
+            {r.sum > 0 ? `${fmt(r.sum)} ₽` : "—"}
+          </div>
+          <div
+            className={cn(
+              "text-[10px]",
+              active ? "text-white/70" : "text-muted-2",
+            )}
+          >
+            {PAYMENT_LABEL[r.paymentMethod]}
+          </div>
         </div>
       </div>
     </button>

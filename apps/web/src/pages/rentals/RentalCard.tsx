@@ -68,7 +68,7 @@ import {
 } from "@/lib/api/rentals";
 import { useDashboardDrawer } from "@/pages/dashboard/DashboardDrawer";
 import { useMe } from "@/lib/api/auth";
-import { confirmDialog } from "@/lib/toast";
+import { confirmDialog, pickAction } from "@/lib/toast";
 import { toast } from "@/lib/toast";
 import { ApiError, api } from "@/lib/api";
 
@@ -582,32 +582,41 @@ export function RentalCard({
         toast.info("Нет просрочки", "Сбрасывать нечего.");
         return;
       }
-      // Двухшаговый выбор: сначала "списать всю?" (Да/Нет), при «Нет»
-      // — "списать только штраф?". Так backdrop/Esc гарантированно =
-      // отмена, а не "штраф" (если бы делали один трёхопционный диалог,
-      // клик мимо — съел бы штраф).
-      const all = await confirmDialog({
-        title: "Сбросить ВСЮ просрочку?",
-        message: `Просрочка ${total.toLocaleString("ru-RU")} ₽ = долг по дням ${days.toLocaleString("ru-RU")} ₽ + штраф 50% ${fine.toLocaleString("ru-RU")} ₽. Подтвердите чтобы списать обе части. Если хотите списать только штраф — нажмите «Не сейчас».`,
-        confirmText: "Списать всё",
-        cancelText: "Не сейчас",
+      // v0.4.4: один диалог с тремя вариантами (Esc/клик мимо = отмена).
+      // pickAction возвращает id выбранного варианта или null.
+      const choice = await pickAction<"days" | "fine" | "all">({
+        title: "Что списываем?",
+        message: `Просрочка ${total.toLocaleString("ru-RU")} ₽ за ${debtSummary?.overdueDays ?? 0} дн.`,
+        options: [
+          {
+            id: "days",
+            label: "Неоплаченные дни",
+            hint: `${days.toLocaleString("ru-RU")} ₽ — тариф × дни просрочки`,
+            disabled: days <= 0,
+          },
+          {
+            id: "fine",
+            label: "Проценты по просроченным дням",
+            hint: `${fine.toLocaleString("ru-RU")} ₽ — штраф 50% × дни`,
+            disabled: fine <= 0,
+          },
+          {
+            id: "all",
+            label: "Всю просрочку (дни + штраф)",
+            hint: `${total.toLocaleString("ru-RU")} ₽`,
+            tone: "danger",
+          },
+        ],
       });
-      let target: "all" | "fine" | null = all ? "all" : null;
-      if (!all) {
-        if (fine <= 0) {
-          // Дальнейший шаг бесполезен — нечего списывать.
-          return;
-        }
-        const fineOnly = await confirmDialog({
-          title: "Списать только штраф?",
-          message: `Будет списано ${fine.toLocaleString("ru-RU")} ₽ (50% × ${debtSummary?.overdueDays ?? 0} дн). Долг по неоплаченным дням останется.`,
-          confirmText: "Списать штраф",
-          cancelText: "Отмена",
-        });
-        if (!fineOnly) return;
-        target = "fine";
-      }
-      if (target == null) return;
+      if (choice == null) return;
+      // Маппим UI-выбор в API-target. Бэк сейчас умеет 'all' и 'fine'.
+      // 'days' = списать дни без штрафа — это «всё минус штраф».
+      // Реализуем как: списываем 'all', а потом ОБРАТНО начисляем штраф
+      // через manual_charge? Нет, грязно. Лучше добавим target='days'
+      // в API. Сейчас, до апгрейда API — 'days' просто маппим в 'all'
+      // если штрафа нет, или предупреждаем. Но мы УЖЕ обновили API под
+      // эту итерацию и можем сразу target='days'.
+      const target: "all" | "fine" | "days" = choice;
       if (target === "fine" && fine <= 0) {
         toast.info("Нет штрафа", "Штраф уже списан или оплачен.");
         return;
@@ -619,8 +628,14 @@ export function RentalCard({
           comment: comment ?? undefined,
           target,
         });
+        const successTitle =
+          target === "all"
+            ? "Просрочка сброшена полностью"
+            : target === "days"
+              ? "Долг по дням списан"
+              : "Штраф списан";
         toast.success(
-          target === "all" ? "Просрочка сброшена полностью" : "Штраф списан",
+          successTitle,
           `Списано ${(r.amount ?? 0).toLocaleString("ru-RU")} ₽. Запись в Истории долгов.`,
         );
       } catch (e) {

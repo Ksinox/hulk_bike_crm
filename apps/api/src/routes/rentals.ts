@@ -1687,22 +1687,22 @@ export async function rentalsRoutes(app: FastifyInstance) {
   });
 
   /**
-   * v0.4.3: списание просрочки с возможностью выбрать что списываем.
+   * v0.4.3 / v0.4.4: списание просрочки с возможностью выбрать что списываем.
    *  body.target:
-   *   • 'all'  — списываем и неоплаченные дни, и штраф 50%
-   *   • 'fine' — списываем ТОЛЬКО штраф (клиент гасит дни как обычную
-   *              аренду, но санкция за просрочку прощена)
+   *   • 'days' — только «неоплаченные дни» (rate × days), штраф остаётся
+   *   • 'fine' — только штраф 50%, дни остаются
+   *   • 'all'  — и дни, и штраф
    *   • undefined — обратная совместимость, считаем как 'all'
    */
   app.post<{
     Params: { id: string };
-    Body: { comment?: string; target?: "all" | "fine" };
+    Body: { comment?: string; target?: "all" | "fine" | "days" };
   }>("/:id/debt/forgive-overdue", async (req, reply) => {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
     const Body = z.object({
       comment: z.string().max(500).optional(),
-      target: z.enum(["all", "fine"]).optional(),
+      target: z.enum(["all", "fine", "days"]).optional(),
     });
     const parsed = Body.safeParse(req.body ?? {});
     if (!parsed.success) {
@@ -1789,6 +1789,33 @@ export async function rentalsRoutes(app: FastifyInstance) {
         summary: `Списан штраф просрочки ${fineRemaining} ₽ по аренде #${id}${parsed.data.comment ? `: ${parsed.data.comment}` : ""}`,
       });
       return { row, mode: "fine", amount: fineRemaining };
+    }
+
+    if (target === "days") {
+      if (daysRemaining <= 0) {
+        return reply.code(400).send({
+          error: "already_zero",
+          message: "Долг по неоплаченным дням уже списан/оплачен.",
+        });
+      }
+      const [row] = await db
+        .insert(debtEntries)
+        .values({
+          rentalId: id,
+          kind: "overdue_days_forgive",
+          amount: daysRemaining,
+          comment: parsed.data.comment ?? null,
+          createdByUserId: userId,
+          createdByName: userName,
+        })
+        .returning();
+      await logActivity(req, {
+        entity: "rental",
+        entityId: id,
+        action: "debt_overdue_days_forgiven",
+        summary: `Списан долг по дням просрочки ${daysRemaining} ₽ по аренде #${id}${parsed.data.comment ? `: ${parsed.data.comment}` : ""}`,
+      });
+      return { row, mode: "days", amount: daysRemaining };
     }
 
     // target === 'all' — списываем и дни, и штраф двумя записями.

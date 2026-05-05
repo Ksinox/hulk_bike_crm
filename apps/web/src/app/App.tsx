@@ -20,7 +20,7 @@ import { useAppSettings } from "@/lib/api/app-settings";
 import { setRole } from "@/lib/role";
 import { Login } from "./Login";
 import { ForceChangePassword } from "./ForceChangePassword";
-import { ToastContainer, ConfirmContainer } from "@/lib/toast";
+import { ToastContainer, ConfirmContainer, PickContainer } from "@/lib/toast";
 import { NewApplicationDetector } from "@/pages/clients/NewApplicationDetector";
 
 export function App() {
@@ -117,6 +117,7 @@ export function App() {
       <NewApplicationDetector />
       <ToastContainer />
       <ConfirmContainer />
+      <PickContainer />
     </>
   );
 }
