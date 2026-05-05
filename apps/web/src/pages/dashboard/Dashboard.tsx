@@ -55,6 +55,12 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
           title="Поступит сегодня"
           value={metrics.todayIncoming > 0 ? `+${formatRub(metrics.todayIncoming)}` : "0"}
           unit="₽"
+          // v0.4.15: клик → drawer со списком возвращающих сегодня.
+          onClick={
+            metrics.todayIncomingCount > 0
+              ? () => drawer.openRentalsList("returnsToday")
+              : undefined
+          }
           delta={
             metrics.todayIncomingDelta != null
               ? {
@@ -66,8 +72,8 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
           foot={
             <span>
               {metrics.todayIncomingCount > 0
-                ? `${metrics.todayIncomingCount} ${plural(metrics.todayIncomingCount, ["платёж", "платежа", "платежей"])}`
-                : "платежей на сегодня нет"}
+                ? `${metrics.todayIncomingCount} ${plural(metrics.todayIncomingCount, ["возврат — продление?", "возврата — продления?", "возвратов — продления?"])}`
+                : "сегодня никто не возвращает"}
             </span>
           }
         />
@@ -76,10 +82,15 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
         <KpiCard
           title="Просрочено"
           value={String(metrics.overdueCount)}
+          unit={metrics.overdueCount > 0 ? "шт" : undefined}
           valueTone={metrics.overdueCount > 0 ? "red" : undefined}
-          // v0.3.1 (idea 4): клик по KPI открывает drawer со списком
-          // просроченных аренд. Из списка → клик по строке → стек drawer'а
-          // с конкретной арендой.
+          // v0.4.15: сумма долга — крупным вторым числом, не в footer.
+          secondaryValue={
+            metrics.overdueCount > 0
+              ? `${formatRub(metrics.overdueSum)} ₽ долг`
+              : undefined
+          }
+          secondaryTone="red"
           onClick={
             metrics.overdueCount > 0
               ? () => drawer.openRentalsList("overdue")
@@ -96,7 +107,7 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
           foot={
             <span>
               {metrics.overdueCount > 0
-                ? `долг ${formatRub(metrics.overdueSum)} ₽`
+                ? `требуют звонка`
                 : "нет просрочек"}
             </span>
           }

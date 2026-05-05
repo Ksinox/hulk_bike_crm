@@ -22,8 +22,14 @@ export type DashboardMetrics = {
   hasRentals: boolean;
 
   // KPI
-  todayIncoming: number; // ₽, запланировано к поступлению сегодня
-  todayIncomingCount: number; // число платежей
+  /** Прогноз поступлений на сегодня — суммарная rental.sum по
+   *  возвращающим сегодня. Идея: клиенты обычно продлевают примерно
+   *  на ту же сумму. Если кто-то уже вернул/продлил — он уходит из
+   *  returnsToday и его сумма пропадает. Точная сумма после продления
+   *  попадает в выручку через payments. */
+  todayIncoming: number;
+  /** Число аренд возвращающих сегодня (потенциальные продления). */
+  todayIncomingCount: number;
   todayIncomingDelta: number | null; // относительный прирост vs вчера, %
 
   overdueCount: number;
@@ -169,18 +175,32 @@ export function useDashboardMetrics(): DashboardMetrics {
     const monthStart = period.start;
     const monthEnd = period.end;
 
-    // ===== KPI: поступит сегодня (запланированные платежи на сегодня)
-    const todayPayments = payments.filter(
-      (p) => p.scheduledOn === todayKey && !p.paid,
+    // ===== KPI: поступит сегодня (v0.4.15)
+    // Считаем как сумму rental.sum по арендам, у которых endPlannedAt =
+    // сегодня и они ещё не закрыты/не продлены (active/returning).
+    // Идея: клиенты обычно продлевают на ту же сумму, что в текущем
+    // продлении. Когда клиент возвращает/продлевает — его аренда уходит
+    // из этого списка (parent архивируется при extend, status=completed
+    // при return) → цифра уменьшается в реальном времени.
+    const returnsTodayRentals = rentals.filter(
+      (r) =>
+        (r.status === "active" || r.status === "returning") &&
+        r.endPlannedAt.slice(0, 10) === todayKey,
     );
-    const todayIncoming = todayPayments.reduce((s, p) => s + p.amount, 0);
-    const todayIncomingCount = todayPayments.length;
+    const todayIncoming = returnsTodayRentals.reduce(
+      (s, r) => s + (r.sum ?? 0),
+      0,
+    );
+    const todayIncomingCount = returnsTodayRentals.length;
 
-    const yesterdayPayments = payments.filter(
-      (p) => p.scheduledOn === yesterdayKey,
+    // Дельта vs вчера — для индикатора. Берём аналогичный показатель
+    // на вчерашний день: возвраты/продления по rental.sum, чьи
+    // endPlannedAt = вчера. Это скорее тренд, чем строгое сравнение.
+    const yesterdayRentals = rentals.filter(
+      (r) => r.endPlannedAt.slice(0, 10) === yesterdayKey,
     );
-    const yesterdayIncoming = yesterdayPayments.reduce(
-      (s, p) => s + p.amount,
+    const yesterdayIncoming = yesterdayRentals.reduce(
+      (s, r) => s + (r.sum ?? 0),
       0,
     );
     const todayIncomingDelta =
