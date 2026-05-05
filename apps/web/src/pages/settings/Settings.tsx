@@ -17,8 +17,15 @@ import { useMe } from "@/lib/api/auth";
 
 export function Settings() {
   const me = useMe();
+  // v0.4.22: разрешаем менять настройки также роли 'admin' — заказчик
+  // часто работает под админкой и хочет настраивать расчётный период
+  // и часы работы без переключения на директорский профиль.
+  // Бэкенд PUT /api/app-settings/:key всё ещё проверяет
+  // director/creator (см. routes/app-settings.ts). Ослаблю и его.
   const isAdmin =
-    me.data?.role === "director" || me.data?.role === "creator";
+    me.data?.role === "director" ||
+    me.data?.role === "creator" ||
+    me.data?.role === "admin";
   const settingsQ = useAppSettings();
   const setMut = useSetAppSetting();
   const items = settingsQ.data ?? [];

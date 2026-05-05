@@ -35,7 +35,11 @@ export async function appSettingsRoutes(app: FastifyInstance) {
   app.put<{ Params: { key: string }; Body: { value: string } }>(
     "/:key",
     async (req, reply) => {
-      if (req.user?.role !== "director" && req.user?.role !== "creator") {
+      // v0.4.22: разрешаем admin менять настройки наравне с
+      // director/creator. На UI они один блок «настройки»
+      // и логика для оператора одинаковая.
+      const allowed = ["director", "creator", "admin"] as const;
+      if (!allowed.includes(req.user?.role as never)) {
         return reply.code(403).send({ error: "forbidden" });
       }
       const Body = z.object({ value: z.string().min(1).max(200) });
