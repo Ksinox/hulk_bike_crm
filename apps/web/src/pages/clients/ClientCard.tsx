@@ -36,6 +36,7 @@ import { ClientPhoto } from "./ClientPhoto";
 import { CreateDealMenu } from "./CreateDealMenu";
 import { useActivityTimeline } from "@/lib/api/activity";
 import { ActivityTimelineSection } from "@/pages/rentals/RentalCardTabs";
+import { useDashboardDrawer } from "@/pages/dashboard/DashboardDrawer";
 import {
   getActiveRentalByClient,
   useRentalsByClient,
@@ -83,6 +84,8 @@ export function ClientCard({ client }: { client: Client }) {
   const phone2 = useClientExtraPhone(client.id);
   const unreachable = useClientUnreachable(client.id);
   const rentalsForClient = useRentalsByClient(client.id);
+  const rentals = rentalsForClient;
+  const drawer = useDashboardDrawer();
   const activeRental = useMemo(
     () => getActiveRentalByClient(client.id, rentalsForClient),
     [client.id, rentalsForClient],
@@ -172,8 +175,12 @@ export function ClientCard({ client }: { client: Client }) {
         <ClientPhoto client={client} size="xl" />
 
         <div className="flex min-w-0 flex-1 flex-col gap-3">
-          <header className="flex items-start gap-3">
-            <div className="min-w-0 flex-1">
+          {/* v0.4.9: ФИО — на собственной строке, кнопки действий ниже.
+              Раньше всё умещалось в одну строку и в drawer-режиме длинные
+              ФИО («Абдулазизов Нурулло Салижанович») разваливались на 4
+              строки в узкую колонку рядом с кнопками. */}
+          <header className="flex flex-col gap-3">
+            <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <h2
                   className={cn(
@@ -216,7 +223,7 @@ export function ClientCard({ client }: { client: Client }) {
               </div>
             </div>
 
-            <div className="flex shrink-0 gap-2">
+            <div className="flex flex-wrap gap-2">
               <button
                 type="button"
                 onClick={() =>
@@ -362,9 +369,31 @@ export function ClientCard({ client }: { client: Client }) {
               {client.comment || "по последней аренде"}
             </span>
           </div>
+          {/* v0.4.9: кнопка теперь активна — открывает аренду на табе
+              «История долгов», где оператор может принять платёж. Если
+              у клиента есть активная аренда — её, иначе самую свежую. */}
           <button
             type="button"
-            className="shrink-0 rounded-full bg-white px-3 py-1 text-[12px] font-semibold text-orange-ink shadow-card-sm hover:bg-surface-soft"
+            onClick={() => {
+              const target =
+                activeRental ??
+                rentals
+                  .slice()
+                  .sort((a, b) => b.id - a.id)
+                  .find((r) => (r.sum ?? 0) > 0);
+              if (!target) return;
+              if (drawer.inDrawer) {
+                drawer.openRental(target.id);
+              } else {
+                navigate({
+                  route: "rentals",
+                  rentalId: target.id,
+                  openTab: "debt",
+                });
+              }
+            }}
+            disabled={!activeRental && rentals.length === 0}
+            className="shrink-0 rounded-full bg-white px-3 py-1 text-[12px] font-semibold text-orange-ink shadow-card-sm transition-colors hover:bg-surface-soft disabled:opacity-50"
           >
             Записать оплату
           </button>

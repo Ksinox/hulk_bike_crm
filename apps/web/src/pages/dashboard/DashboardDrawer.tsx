@@ -17,7 +17,7 @@ import {
   useArchivedRentals,
 } from "@/pages/rentals/rentalsStore";
 import { useAllClients } from "@/pages/clients/clientStore";
-import { ScooterCard } from "@/pages/fleet/ScooterCard";
+import { ScooterQuickView } from "@/pages/fleet/ScooterQuickView";
 import { useFleetScooters } from "@/pages/fleet/fleetStore";
 import { ClientCard } from "@/pages/clients/ClientCard";
 
@@ -179,6 +179,15 @@ function DrawerHost({ ctx }: { ctx: Ctx }) {
 
   if (stack.length === 0) return null;
 
+  // v0.4.9: фикс дёрганной анимации — каждая панель имеет фиксированную
+  // ширину и позиционируется через CSS-переменную --right. Когда стек
+  // меняется, ВСЕ панели одновременно анимируют свой right, и новая
+  // одновременно делает slide-in через keyframe-анимацию на mount.
+  // Раньше использовался flex-layout: добавление новой панели вызывало
+  // мгновенный layout-shift существующих, потом translate-x-0 — два
+  // визуальных шага вместо одного, отсюда «дёрганость».
+  const DRAWER_W = 820;
+  const total = stack.length;
   return (
     <div
       className="fixed inset-0 z-[100] bg-ink/40 animate-backdrop-in"
@@ -189,25 +198,35 @@ function DrawerHost({ ctx }: { ctx: Ctx }) {
       <div
         ref={scrollRef}
         onWheel={onWheelOuter}
-        className="ml-auto flex h-full w-full overflow-x-auto overflow-y-hidden"
-        // Когда drawers занимают меньше чем width — выравнивание справа.
-        style={{ scrollBehavior: "smooth" }}
+        className="relative ml-auto h-full w-full overflow-x-auto overflow-y-hidden"
         onClick={(e) => {
-          // Клик по пустому пространству СЛЕВА от карточек закрывает все.
           if (e.target === e.currentTarget) ctx.close();
         }}
       >
-        <div className="ml-auto flex h-full">
-          {stack.map((target, idx) => (
-            <DrawerCard
-              key={drawerKey(target, idx)}
-              target={target}
-              onCloseSelf={() => ctx.closeAt(idx)}
-              onOpenRental={ctx.openRental}
-              onOpenClient={ctx.openClient}
-              onOpenScooter={ctx.openScooter}
-            />
-          ))}
+        {/* Внутренний «холст» шириной = total*DRAWER_W. На нём панели
+            позиционированы через right: idx*DRAWER_W → новейшая справа. */}
+        <div
+          className="relative h-full"
+          style={{
+            width: `${Math.max(total, 1) * DRAWER_W}px`,
+            minWidth: "100%",
+          }}
+        >
+          {stack.map((target, idx) => {
+            const offsetFromRight = (total - 1 - idx) * DRAWER_W;
+            return (
+              <DrawerCard
+                key={drawerKey(target, idx)}
+                target={target}
+                width={DRAWER_W}
+                offsetRight={offsetFromRight}
+                onCloseSelf={() => ctx.closeAt(idx)}
+                onOpenRental={ctx.openRental}
+                onOpenClient={ctx.openClient}
+                onOpenScooter={ctx.openScooter}
+              />
+            );
+          })}
         </div>
       </div>
     </div>
@@ -221,31 +240,45 @@ function drawerKey(t: Target, idx: number): string {
 
 function DrawerCard({
   target,
+  width,
+  offsetRight,
   onCloseSelf,
   onOpenRental,
   onOpenClient,
   onOpenScooter,
 }: {
   target: Target;
+  width: number;
+  offsetRight: number;
   onCloseSelf: () => void;
   onOpenRental: (id: number) => void;
   onOpenClient: (id: number) => void;
   onOpenScooter: (id: number) => void;
 }) {
-  // Enter-анимация: стартуем с translate-x-full → 0
+  // Enter-анимация: первый mount стартуем с translate-x-full → 0.
+  // ВНИМАНИЕ: state'ом управляем только enter, не «слайдом по позиции» —
+  // позиция меняется через `right` и анимируется CSS-transition'ом.
   const [entered, setEntered] = useState(false);
   useEffect(() => {
-    const t = window.setTimeout(() => setEntered(true), 10);
+    const t = window.setTimeout(() => setEntered(true), 16);
     return () => window.clearTimeout(t);
   }, []);
 
   return (
     <aside
       className={cn(
-        "flex h-full w-[820px] max-w-[92vw] flex-shrink-0 flex-col overflow-hidden border-l border-border bg-surface shadow-card-lg",
-        "transform transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
+        "absolute top-0 flex h-full flex-col overflow-hidden border-l border-border bg-surface shadow-card-lg",
+        "transition-[right,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]",
+        // Стартовый кадр: панель за правым краем (translate-x-full),
+        // потом entered=true → translate-x-0. Параллельно меняется right
+        // у других карточек когда их offsetRight пересчитан.
         entered ? "translate-x-0" : "translate-x-full",
       )}
+      style={{
+        right: `${offsetRight}px`,
+        width: `${width}px`,
+        maxWidth: "92vw",
+      }}
       // Клики внутри панели не закрывают всё.
       onClick={(e) => e.stopPropagation()}
     >
@@ -416,6 +449,7 @@ function ScooterDrawerContent({
 }) {
   const fleet = useFleetScooters();
   const scooter = fleet.find((s) => s.id === scooterId) ?? null;
+  void scooter; // имя для шапки берём по id ниже из fleet
   return (
     <>
       <DrawerHeader
@@ -427,18 +461,10 @@ function ScooterDrawerContent({
           onClose();
         }}
       />
-      <div className="flex-1 min-h-0 overflow-y-auto p-5">
-        {scooter ? (
-          <ScooterCard
-            scooter={scooter}
-            status={scooter.baseStatus as never}
-            onBack={onClose}
-          />
-        ) : (
-          <div className="flex h-full items-center justify-center text-muted">
-            Скутер не найден.
-          </div>
-        )}
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        {/* v0.4.9: компактная версия. Полная ScooterCard доступна по
+            кнопке «На полную» в шапке drawer'а. */}
+        <ScooterQuickView scooterId={scooterId} />
       </div>
     </>
   );
