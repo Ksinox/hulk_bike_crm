@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { ExternalLink, X } from "lucide-react";
+import { Check, ExternalLink, Eye, MailQuestion, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { navigate } from "@/app/navigationStore";
 import { RentalCard } from "@/pages/rentals/RentalCard";
@@ -21,6 +21,15 @@ import { useFleetScooters } from "@/pages/fleet/fleetStore";
 import { ClientCard } from "@/pages/clients/ClientCard";
 import { effectiveRentalStatus } from "@/lib/rentalStatus";
 import type { RentalStatus } from "@/lib/mock/rentals";
+import {
+  useApplications,
+  useDeleteApplication,
+  type ApiApplication,
+} from "@/lib/api/clientApplications";
+import { NewApplicationModal } from "@/pages/clients/NewApplicationModal";
+import { AddClientModal } from "@/pages/clients/AddClientModal";
+import { applicationToFormInit } from "@/pages/clients/applicationConvert";
+import { toast, confirmDialog } from "@/lib/toast";
 
 /**
  * v0.4.7: горизонтальный стек drawer'ов.
@@ -46,7 +55,10 @@ type Target =
   | { kind: "rental"; id: number }
   | { kind: "client"; id: number }
   | { kind: "scooter"; id: number }
-  | { kind: "rentalsList"; filter: "active" | "overdue" | "returnsToday" };
+  | { kind: "rentalsList"; filter: "active" | "overdue" | "returnsToday" }
+  // v0.4.39: drawer для заявок клиентов. Клик по дашборд-плитке
+  // «Новые заявки» открывает этот drawer, а не уводит на /clients.
+  | { kind: "applicationsList" };
 
 type Ctx = {
   stack: Target[];
@@ -54,6 +66,7 @@ type Ctx = {
   openClient: (id: number) => void;
   openScooter: (id: number) => void;
   openRentalsList: (filter: "active" | "overdue" | "returnsToday") => void;
+  openApplicationsList: () => void;
   back: () => void;
   close: () => void;
   closeAt: (index: number) => void;
@@ -71,6 +84,7 @@ export function useDashboardDrawer(): Ctx {
       openClient: () => {},
       openScooter: () => {},
       openRentalsList: () => {},
+      openApplicationsList: () => {},
       back: () => {},
       close: () => {},
       closeAt: () => {},
@@ -87,7 +101,9 @@ function pushUnique(stack: Target[], next: Target): Target[] {
       t.kind === next.kind &&
       ((t.kind === "rentalsList" && next.kind === "rentalsList"
         ? t.filter === next.filter
-        : "id" in t && "id" in next && t.id === next.id) ||
+        : t.kind === "applicationsList" && next.kind === "applicationsList"
+          ? true
+          : "id" in t && "id" in next && t.id === next.id) ||
         false),
   );
   if (idx === -1) return [...stack, next];
@@ -105,6 +121,8 @@ export function DashboardDrawerProvider({ children }: { children: ReactNode }) {
       openScooter: (id) => setStack((s) => pushUnique(s, { kind: "scooter", id })),
       openRentalsList: (filter) =>
         setStack((s) => pushUnique(s, { kind: "rentalsList", filter })),
+      openApplicationsList: () =>
+        setStack((s) => pushUnique(s, { kind: "applicationsList" })),
       back: () => setStack((s) => s.slice(0, -1)),
       close: () => setStack([]),
       closeAt: (index) =>
@@ -248,6 +266,7 @@ function DrawerHost({ ctx }: { ctx: Ctx }) {
  */
 function drawerKey(t: Target): string {
   if (t.kind === "rentalsList") return `list-${t.filter}`;
+  if (t.kind === "applicationsList") return `applications-list`;
   return `${t.kind}-${t.id}`;
 }
 
@@ -345,6 +364,12 @@ function DrawerCard({
             filter={target.filter}
             onClose={requestClose}
             onPickRental={onOpenRental}
+          />
+        )}
+        {target.kind === "applicationsList" && (
+          <ApplicationsListDrawerContent
+            onClose={requestClose}
+            onOpenClient={onOpenClient}
           />
         )}
       </div>
@@ -634,6 +659,170 @@ function RentalsListDrawerContent({
           </div>
         )}
       </div>
+    </>
+  );
+}
+
+/* ============================================================
+ *  Drawer «Заявки клиентов»
+ *  v0.4.39: drawer-версия списка заявок. Открывается с дашборда
+ *  по клику на плитку «Новые заявки» — без ухода со страницы.
+ * ============================================================ */
+
+function ApplicationsListDrawerContent({
+  onClose,
+  onOpenClient,
+}: {
+  onClose: () => void;
+  onOpenClient: (id: number) => void;
+}) {
+  const { data: items = [], isLoading } = useApplications();
+  const deleteApp = useDeleteApplication();
+  const [viewing, setViewing] = useState<ApiApplication | null>(null);
+  const [converting, setConverting] = useState<ApiApplication | null>(null);
+
+  const newCount = items.filter((a) => a.status === "new").length;
+
+  const markSpam = async (a: ApiApplication) => {
+    const ok = await confirmDialog({
+      title: "Удалить заявку?",
+      message: `Заявка «${a.name || "—"}» будет помечена как спам и удалена из БД.`,
+      confirmText: "Удалить",
+      cancelText: "Отмена",
+      danger: true,
+    });
+    if (!ok) return;
+    deleteApp.mutate(a.id, {
+      onSuccess: () => toast.success("Заявка удалена", "Помечена как спам"),
+      onError: () => toast.error("Не удалось удалить"),
+    });
+  };
+
+  return (
+    <>
+      <DrawerHeader
+        kind="Заявки клиентов"
+        title={`Заявки · ${items.length}${newCount > 0 ? ` (${newCount} новых)` : ""}`}
+        onClose={onClose}
+        onOpenFull={() => {
+          navigate({ route: "clients" });
+          onClose();
+        }}
+      />
+      <div className="flex-1 min-h-0 overflow-y-auto p-3">
+        {isLoading ? (
+          <div className="flex h-full items-center justify-center text-muted">
+            Загружаем заявки…
+          </div>
+        ) : items.length === 0 ? (
+          <div className="flex flex-col items-center justify-center gap-2 px-4 py-12 text-center">
+            <MailQuestion size={28} className="text-muted-2" />
+            <div className="text-[14px] font-semibold text-ink">
+              Заявок пока нет
+            </div>
+            <div className="text-[12px] text-muted">
+              Когда клиент заполнит форму на сайте — появится здесь.
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-1.5">
+            {items.map((a) => (
+              <div
+                key={a.id}
+                className={cn(
+                  "flex flex-col gap-2 rounded-[10px] border border-border bg-white px-3 py-2.5",
+                  a.status === "new" && "bg-amber-50/40 border-amber-200",
+                )}
+              >
+                <div className="flex items-start gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[13px] font-bold text-ink">
+                        {a.name || "Без имени"}
+                      </span>
+                      {a.status === "new" && (
+                        <span className="rounded-full bg-amber-500 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white">
+                          новая
+                        </span>
+                      )}
+                      {a.status === "viewed" && (
+                        <span className="rounded-full bg-surface-soft px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-muted">
+                          просмотрена
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-0.5 text-[11px] text-muted-2">
+                      {a.phone || "телефон не указан"}
+                      {a.submittedAt && (
+                        <span>
+                          {" · "}
+                          {new Date(a.submittedAt).toLocaleString("ru-RU", {
+                            day: "2-digit",
+                            month: "2-digit",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setViewing(a)}
+                    className="inline-flex items-center gap-1 rounded-full border border-border bg-white px-2.5 py-1 text-[11px] font-semibold text-ink hover:bg-surface-soft"
+                  >
+                    <Eye size={11} /> Просмотр
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConverting(a)}
+                    className="inline-flex items-center gap-1 rounded-full bg-blue-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-blue-700"
+                  >
+                    <Check size={11} /> Оформить
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => markSpam(a)}
+                    className="inline-flex items-center gap-1 rounded-full border border-red-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-red-600 hover:bg-red-50"
+                    title="Пометить как спам и удалить"
+                  >
+                    <Trash2 size={11} /> Спам
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {viewing && (
+        <NewApplicationModal
+          application={viewing}
+          onConvertNow={() => {
+            setConverting(viewing);
+            setViewing(null);
+          }}
+          onLater={() => setViewing(null)}
+          onDelete={() => {
+            void markSpam(viewing);
+            setViewing(null);
+          }}
+        />
+      )}
+      {converting && (
+        <AddClientModal
+          onClose={() => setConverting(null)}
+          applicationId={converting.id}
+          initialData={applicationToFormInit(converting)}
+          onCreated={(client) => {
+            setConverting(null);
+            toast.success("Клиент создан", "Заявка переведена в клиента");
+            if (client?.id) onOpenClient(client.id);
+          }}
+        />
+      )}
     </>
   );
 }

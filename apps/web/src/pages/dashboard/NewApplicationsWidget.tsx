@@ -1,7 +1,7 @@
 import { Bell } from "lucide-react";
 import { useApplications } from "@/lib/api/clientApplications";
-import { navigate } from "@/app/navigationStore";
 import { KpiCard } from "./KpiCard";
+import { useDashboardDrawer } from "./DashboardDrawer";
 
 /**
  * Виджет «Новые заявки» на дашборде.
@@ -18,7 +18,10 @@ export function NewApplicationsWidget({ className }: { className?: string }) {
   const total = items.length;
   const hasNew = newCount > 0;
 
-  const goToList = () => navigate({ route: "clients" });
+  // v0.4.39: открываем drawer-список заявок (а не уводим на /clients).
+  // Оператор не теряет контекст дашборда.
+  const drawer = useDashboardDrawer();
+  const goToList = () => drawer.openApplicationsList();
 
   return (
     <div
