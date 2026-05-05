@@ -31,9 +31,12 @@ import { useRentalDebt } from "@/lib/api/debt";
 import type { Rental } from "@/lib/mock/rentals";
 import type { PaymentMethod } from "@/lib/mock/rentals";
 
+// v0.4.30: терминала для карт у бизнеса нет — только наличные и
+// перевод. «card» остаётся в типе PaymentMethod ради обратной
+// совместимости с историческими записями в БД, но в UI-селекторах
+// больше не показывается.
 const METHODS: { id: PaymentMethod; label: string }[] = [
   { id: "cash", label: "Наличные" },
-  { id: "card", label: "Карта" },
   { id: "transfer", label: "Перевод" },
 ];
 
