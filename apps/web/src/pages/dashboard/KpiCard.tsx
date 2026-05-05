@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 type DeltaTone = "up" | "down" | "flat";
 
 export type KpiCardProps = {
-  title: string;
+  title: React.ReactNode;
   value: string;
   unit?: string;
   foot?: React.ReactNode;
@@ -14,12 +14,6 @@ export type KpiCardProps = {
   /** v0.3.1 (idea 4): если задан — карточка кликабельна и
    *  открывает соответствующий drawer-список. */
   onClick?: () => void;
-  /** v0.4.15: вторая большая цифра (например «долг 17 400 ₽» в плашке
-   *  «Просрочено»). Рисуется ниже основного value с чуть меньшим, но
-   *  всё ещё заметным шрифтом. */
-  secondaryValue?: string;
-  /** Цвет вторичной цифры — чтобы выделить долг. */
-  secondaryTone?: "default" | "red" | "muted";
 };
 
 export function KpiCard({
@@ -31,8 +25,6 @@ export function KpiCard({
   blue,
   valueTone = "default",
   onClick,
-  secondaryValue,
-  secondaryTone = "default",
 }: KpiCardProps) {
   const clickable = !!onClick;
   return (
@@ -71,19 +63,6 @@ export function KpiCard({
           </span>
         )}
       </div>
-      {secondaryValue && (
-        <div
-          className={cn(
-            "mt-1 font-display text-[20px] font-extrabold tabular-nums leading-none",
-            secondaryTone === "red" && !blue ? "text-red" : "",
-            secondaryTone === "muted" ? "text-muted" : "",
-            !blue && secondaryTone === "default" ? "text-ink-2" : "",
-            blue ? "text-white/90" : "",
-          )}
-        >
-          {secondaryValue}
-        </div>
-      )}
       <div
         className={cn(
           "mt-2.5 flex items-center gap-1.5 text-xs",

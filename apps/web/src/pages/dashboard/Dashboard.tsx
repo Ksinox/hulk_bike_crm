@@ -84,13 +84,6 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
           value={String(metrics.overdueCount)}
           unit={metrics.overdueCount > 0 ? "шт" : undefined}
           valueTone={metrics.overdueCount > 0 ? "red" : undefined}
-          // v0.4.15: сумма долга — крупным вторым числом, не в footer.
-          secondaryValue={
-            metrics.overdueCount > 0
-              ? `${formatRub(metrics.overdueSum)} ₽ долг`
-              : undefined
-          }
-          secondaryTone="red"
           onClick={
             metrics.overdueCount > 0
               ? () => drawer.openRentalsList("overdue")
@@ -105,11 +98,16 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
               : undefined
           }
           foot={
-            <span>
-              {metrics.overdueCount > 0
-                ? `требуют звонка`
-                : "нет просрочек"}
-            </span>
+            metrics.overdueCount > 0 ? (
+              // v0.4.17: сумма долга в footer — крупнее обычного и
+              // красным, чтоб была заметна. Высота карточки остаётся как
+              // у соседних (без secondaryValue), весь ряд ровный.
+              <span className="text-[14px] font-bold text-red">
+                {formatRub(metrics.overdueSum)} ₽ долг
+              </span>
+            ) : (
+              <span>нет просрочек</span>
+            )
           }
         />
       </div>

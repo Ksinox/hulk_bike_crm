@@ -4,8 +4,8 @@ import { useApiRentals, useApiRentalsArchived } from "@/lib/api/rentals";
 import { useApiPayments } from "@/lib/api/payments";
 import { useApiClients } from "@/lib/api/clients";
 import { useApiScooters } from "@/lib/api/scooters";
-import { navigate } from "@/app/navigationStore";
 import { currentBillingPeriod } from "@/lib/billingPeriod";
+import { useDashboardDrawer } from "./DashboardDrawer";
 export type RevenuePeriod = "day" | "week" | "month";
 
 /**
@@ -104,6 +104,9 @@ export function RevenueRentalsList({
   );
   const { data: payments = [] } = useApiPayments();
   const { data: clients = [] } = useApiClients();
+  // v0.4.17: клик по аренде из списка теперь открывает drawer-стек,
+  // а не унесёт на страницу /rentals (было через navigate).
+  const drawer = useDashboardDrawer();
   const { data: scooters = [] } = useApiScooters();
 
   // Если задан dayFilter (YYYY-MM-DD) — окно сужается до этого дня.
@@ -212,7 +215,7 @@ export function RevenueRentalsList({
             type="button"
             onClick={() => {
               if (onRowClick) onRowClick(r.id);
-              navigate({ route: "rentals", rentalId: r.id });
+              else drawer.openRental(r.id);
             }}
             className="flex items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-surface-soft"
           >
