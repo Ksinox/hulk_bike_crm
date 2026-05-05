@@ -38,15 +38,25 @@ const KIND_CHIP_CLASS: Record<MaintenanceKind, string> = {
   other: "bg-surface-soft text-muted-2",
 };
 
-export function MaintenanceTab({
+/**
+ * v0.4.43: чёткое разделение CRM-сущностей.
+ *
+ *   • <RepairsTab>  — показывает ТОЛЬКО repair_jobs (фактические ремонты
+ *     по дефектам или вручную через смену статуса). С чек-листом и фото.
+ *
+ *   • <ExpensesTab> — показывает ТОЛЬКО scooter_maintenance (расходные
+ *     материалы: масло, запчасти, прочее). Без понятия «работа».
+ *
+ * Раньше всё это было в одном табе «Ремонты» — путаница: оператор
+ * видел «Ремонт» как тип расхода и тут же ниже Repair Job. Теперь два
+ * разных таба с разной семантикой.
+ */
+export function RepairsTab({
   scooterId,
   baseStatus,
   onSendToRepair,
 }: {
   scooterId: number;
-  /** v0.4.42: текущий baseStatus скутера. Если не 'repair' — показываем
-   *  большую кнопку «Отправить в ремонт», которая открывает status-modal.
-   *  Если 'repair' и есть active repair_job — призыв перейти на /service. */
   baseStatus?: string;
   onSendToRepair?: () => void;
 }) {
@@ -65,27 +75,20 @@ export function MaintenanceTab({
   // журнал расходных материалов (масло/запчасти/прочее), без kind='repair'
   // — собственно ремонтная работа считается через repair_progress, а
   // не через maintenance.
-  const { data: maintenance = [], isLoading: maintLoading } =
-    useScooterMaintenance(scooterId);
   const { data: repairs = [], isLoading: repairsLoading } = useRepairJobs({
     scooterId,
   });
-  const [addOpen, setAddOpen] = useState(false);
 
-  const maintTotal = maintenance.reduce((s, r) => s + r.amount, 0);
-  // Cost ремонта = Σ (priceSnapshot × qty) по всем пунктам progress.
   const repairCost = (job: ApiRepairJob): number =>
     job.progress.reduce((s, p) => s + p.priceSnapshot * (p.qty ?? 1), 0);
   const repairsTotal = repairs.reduce((s, j) => s + repairCost(j), 0);
-  const totalSpent = maintTotal + repairsTotal;
-
   const activeRepairs = repairs.filter((r) => r.status === "in_progress");
   const closedRepairs = repairs.filter((r) => r.status === "completed");
   const isInRepair = baseStatus === "repair";
 
   return (
     <div className="flex flex-col gap-4">
-      {/* CTA-блок: либо «отправить в ремонт», либо «открыть чек-лист» */}
+      {/* CTA: статус-зависимая призывная карточка */}
       {isInRepair && activeRepairs.length > 0 ? (
         <button
           type="button"
@@ -100,7 +103,7 @@ export function MaintenanceTab({
               Скутер сейчас в ремонте
             </div>
             <div className="text-[12px] text-amber-800/80">
-              Открыть чек-лист на странице «Ремонты» — добавить пункты из
+              Открыть чек-лист на странице «Ремонты» — добавить работы из
               прайса, отметить выполнение.
             </div>
           </div>
@@ -120,131 +123,123 @@ export function MaintenanceTab({
               Отправить в ремонт
             </div>
             <div className="text-[12px] text-muted">
-              Сменит статус скутера на «В ремонте». Создастся новая запись
-              ремонта — выбрать работы из прайса можно будет на странице
-              «Ремонты».
+              Сменит статус скутера на «В ремонте». Создастся запись
+              ремонта — работы из прайса выбираются на странице «Ремонты».
             </div>
           </div>
           <ChevronRight size={16} className="shrink-0 text-muted-2" />
         </button>
       ) : null}
 
-      {/* Сводка: всего потрачено + кнопка добавить расход */}
+      {/* Сводка: только по ремонтам */}
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-surface-soft px-4 py-3">
         <div>
           <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-2">
-            Всего потрачено
+            Стоимость ремонтов
           </div>
           <div className="mt-0.5 text-[20px] font-bold text-ink tabular-nums">
-            {totalSpent.toLocaleString("ru-RU")} ₽
+            {repairsTotal.toLocaleString("ru-RU")} ₽
           </div>
           <div className="text-[11px] text-muted">
-            {repairs.length > 0 && (
-              <>
-                {repairs.length}{" "}
-                {plural(repairs.length, ["ремонт", "ремонта", "ремонтов"])}
-                {repairsTotal > 0 && ` · ${repairsTotal.toLocaleString("ru-RU")} ₽`}
-              </>
-            )}
-            {repairs.length > 0 && maintenance.length > 0 && " · "}
-            {maintenance.length > 0 && (
-              <>
-                {maintenance.length}{" "}
-                {plural(maintenance.length, [
-                  "расход",
-                  "расхода",
-                  "расходов",
-                ])}
-                {maintTotal > 0 && ` · ${maintTotal.toLocaleString("ru-RU")} ₽`}
-              </>
-            )}
-            {repairs.length === 0 && maintenance.length === 0 && "записей пока нет"}
+            {repairs.length === 0
+              ? "ремонтов пока не было"
+              : `${repairs.length} ${plural(repairs.length, ["ремонт", "ремонта", "ремонтов"])} · ${activeRepairs.length} активных, ${closedRepairs.length} закрыто`}
+          </div>
+        </div>
+      </div>
+
+      {/* Список ремонтов */}
+      {repairsLoading ? (
+        <div className="py-6 text-center text-[12px] text-muted">
+          Загружаем ремонты…
+        </div>
+      ) : repairs.length === 0 ? (
+        <div className="flex items-center gap-3 rounded-xl bg-surface px-4 py-5 shadow-card-sm">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-surface-soft text-muted-2">
+            <Wrench size={18} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-[13px] font-semibold text-ink">
+              Ремонтов по этому скутеру не было
+            </div>
+            <div className="text-[12px] text-muted">
+              Появятся автоматически при создании акта о повреждениях или
+              при отправке скутера в ремонт.
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="overflow-hidden rounded-xl bg-surface shadow-card-sm">
+          {[...activeRepairs, ...closedRepairs].map((job) => (
+            <RepairJobRow key={job.id} job={job} cost={repairCost(job)} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * v0.4.43: отдельный таб «Расходы» — только scooter_maintenance.
+ * Журнал расходных материалов (масло, запчасти, прочее). Без понятия
+ * «ремонт» — для ремонтных работ есть таб «Ремонты» (repair_jobs).
+ */
+export function ExpensesTab({ scooterId }: { scooterId: number }) {
+  const { data: items = [], isLoading } = useScooterMaintenance(scooterId);
+  const [addOpen, setAddOpen] = useState(false);
+  const total = items.reduce((s, r) => s + r.amount, 0);
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-surface-soft px-4 py-3">
+        <div>
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-2">
+            Всего расходов
+          </div>
+          <div className="mt-0.5 text-[20px] font-bold text-ink tabular-nums">
+            {total.toLocaleString("ru-RU")} ₽
+          </div>
+          <div className="text-[11px] text-muted">
+            {items.length === 0
+              ? "записей пока нет"
+              : `${items.length} ${plural(items.length, ["запись", "записи", "записей"])}`}
           </div>
         </div>
         <button
           type="button"
           onClick={() => setAddOpen(true)}
           className="inline-flex items-center gap-1.5 rounded-full bg-ink px-3.5 py-2 text-[12px] font-bold text-white hover:bg-blue-600"
-          title="Расходный материал: масло, запчасть, прочее. Сама работа по ремонту проводится через статус «В ремонте»."
         >
           <Plus size={13} /> Добавить расход
         </button>
       </div>
 
-      {/* Секция «Ремонты» — repair_jobs (damage + manual) */}
-      {(repairsLoading || repairs.length > 0) && (
-        <section className="flex flex-col gap-2">
-          <div className="flex items-baseline gap-2 px-1">
-            <span className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-red-soft text-red-ink">
-              <Wrench size={12} />
-            </span>
-            <h3 className="text-[13px] font-bold text-ink">Ремонты</h3>
-            {activeRepairs.length > 0 && (
-              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-800">
-                {activeRepairs.length} активных
-              </span>
-            )}
-            <span className="ml-auto text-[11px] text-muted-2">
-              через статус «В ремонте» или акт о повреждениях
-            </span>
-          </div>
-          {repairsLoading ? (
-            <div className="py-4 text-center text-[12px] text-muted">
-              Загружаем ремонты…
-            </div>
-          ) : (
-            <div className="overflow-hidden rounded-xl bg-surface shadow-card-sm">
-              {[...activeRepairs, ...closedRepairs].map((job) => (
-                <RepairJobRow
-                  key={job.id}
-                  job={job}
-                  cost={repairCost(job)}
-                />
-              ))}
-            </div>
-          )}
-        </section>
-      )}
-
-      {/* Секция «Расходы и обслуживание» — scooter_maintenance */}
-      <section className="flex flex-col gap-2">
-        <div className="flex items-baseline gap-2 px-1">
-          <span className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-blue-50 text-blue-600">
-            <Plus size={12} />
-          </span>
-          <h3 className="text-[13px] font-bold text-ink">
-            Расходы и обслуживание
-          </h3>
-          <span className="ml-auto text-[11px] text-muted-2">
-            масло, запчасти, прочее
-          </span>
+      {isLoading ? (
+        <div className="py-6 text-center text-[12px] text-muted">
+          Загрузка…
         </div>
-        {maintLoading ? (
-          <div className="py-4 text-center text-[12px] text-muted">
-            Загружаем расходы…
+      ) : items.length === 0 ? (
+        <div className="flex items-center gap-3 rounded-xl bg-surface px-4 py-5 shadow-card-sm">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-surface-soft text-muted-2">
+            <Plus size={18} />
           </div>
-        ) : maintenance.length === 0 ? (
-          <div className="flex items-center gap-3 rounded-xl bg-surface px-4 py-5 shadow-card-sm">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-surface-soft text-muted-2">
-              <Wrench size={18} />
+          <div className="min-w-0 flex-1">
+            <div className="text-[13px] font-semibold text-ink">
+              Расходов пока нет
             </div>
-            <div className="min-w-0 flex-1">
-              <div className="text-[13px] font-semibold text-ink">
-                Расходов пока нет
-              </div>
-              <div className="text-[12px] text-muted">
-                Добавьте первый расход — масло, запчасти или прочее
-              </div>
+            <div className="text-[12px] text-muted">
+              Замена масла, запчасти, прочие материалы. Ремонтные работы —
+              в табе «Ремонты».
             </div>
           </div>
-        ) : (
-          <div className="overflow-hidden rounded-xl bg-surface shadow-card-sm">
-            {maintenance.map((m) => (
-              <MaintRow key={m.id} m={m} />
-            ))}
-          </div>
-        )}
-      </section>
+        </div>
+      ) : (
+        <div className="overflow-hidden rounded-xl bg-surface shadow-card-sm">
+          {items.map((m) => (
+            <MaintRow key={m.id} m={m} />
+          ))}
+        </div>
+      )}
 
       {addOpen && (
         <MaintenanceAddModal

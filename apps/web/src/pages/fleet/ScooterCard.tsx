@@ -31,7 +31,7 @@ import { ScooterEditForm } from "./ScooterEditForm";
 import { ScooterDocumentsTab } from "./ScooterDocumentsTab";
 import { ScooterPhotosGallery } from "./ScooterPhotosGallery";
 import { ScooterStatusModal } from "./ScooterStatusModal";
-import { MaintenanceTab } from "./MaintenanceTab";
+import { RepairsTab, ExpensesTab } from "./MaintenanceTab";
 import { useActivityTimeline } from "@/lib/api/activity";
 import { ActivityTimelineSection } from "@/pages/rentals/RentalCardTabs";
 import { useArchiveScooter } from "@/lib/api/scooters";
@@ -43,14 +43,24 @@ import { fileUrl } from "@/lib/files";
 import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
 import { toast, confirmDialog } from "@/lib/toast";
 
-type TabId = "history" | "timeline" | "repairs" | "incidents" | "docs";
+type TabId =
+  | "history"
+  | "timeline"
+  | "repairs"
+  | "expenses"
+  | "incidents"
+  | "docs";
 const TABS: { id: TabId; label: string; count?: number }[] = [
   { id: "history", label: "История аренд" },
   // v0.4.5: единая лента событий — все аренды на этом скутере + ремонты +
   // акты повреждений + смены статусов. Видно кто катался, что ломалось,
   // кто наносил повреждения. Связь скутер ↔ клиент ↔ ремонт.
   { id: "timeline", label: "Лента событий" },
+  // v0.4.43: разделили на две сущности.
+  // «Ремонты» — repair_jobs (фактические ремонты с чек-листом).
+  // «Расходы» — scooter_maintenance (масло, запчасти, прочее).
   { id: "repairs", label: "Ремонты" },
+  { id: "expenses", label: "Расходы" },
   { id: "incidents", label: "Инциденты" },
   { id: "docs", label: "Документы" },
 ];
@@ -160,13 +170,14 @@ export function ScooterCard({
     ? apiClients?.find((c) => c.id === activeRental.clientId) ?? null
     : null;
 
-  // v0.4.41: фактический счётчик ремонтов и расходов по этому скутеру —
-  // показывается на табе «Ремонты» (раньше был хардкод 0).
+  // v0.4.43: счётчики на табах. Ремонты считают только repair_jobs,
+  // расходы — только scooter_maintenance. Раньше оба смешивались.
   const { data: repairJobsList = [] } = useRepairJobs({
     scooterId: scooter.id,
   });
   const { data: maintenanceList = [] } = useScooterMaintenance(scooter.id);
-  const repairsCount = repairJobsList.length + maintenanceList.length;
+  const repairsCount = repairJobsList.length;
+  const expensesCount = maintenanceList.length;
   const incidentsCount = 0;
 
   // Информация по замене масла — интервал зависит от модели (Jog — 5000 км, остальные — 3000 км).
@@ -795,9 +806,11 @@ export function ScooterCard({
               ? scooterRentals.length
               : t.id === "repairs"
                 ? repairsCount
-                : t.id === "incidents"
-                  ? incidentsCount
-                  : 0;
+                : t.id === "expenses"
+                  ? expensesCount
+                  : t.id === "incidents"
+                    ? incidentsCount
+                    : 0;
           return (
             <button
               key={t.id}
@@ -834,12 +847,13 @@ export function ScooterCard({
         )}
         {tab === "timeline" && <ScooterTimelineTab scooterId={scooter.id} />}
         {tab === "repairs" && (
-          <MaintenanceTab
+          <RepairsTab
             scooterId={scooter.id}
             baseStatus={scooter.baseStatus}
             onSendToRepair={() => setStatusOpen(true)}
           />
         )}
+        {tab === "expenses" && <ExpensesTab scooterId={scooter.id} />}
         {tab === "incidents" && (
           <Empty text="По этому скутеру не было инцидентов" />
         )}

@@ -6,6 +6,13 @@ import { scooterMaintenance, scooters, users } from "../db/schema.js";
 import { logActivity } from "../services/activityLog.js";
 import { maintenanceKindLabel } from "../services/activityMessages.js";
 
+// v0.4.43: убран 'repair' — ремонтные работы регистрируются через
+// repair_jobs (отдельная сущность с чек-листом и фотографиями), а
+// scooter_maintenance — это бухгалтерия расходов: масло, запчасти,
+// прочее. Старые записи с kind='repair' конвертированы миграцией
+// 0031 в 'other', но zod продолжает принимать 'repair' для обратной
+// совместимости (старые мобильные клиенты, мутации в логах) — он же
+// будет принят базой как text. На фронте опция убрана из формы.
 const KindEnum = z.enum(["oil", "repair", "parts", "other"]);
 
 const Body = z
