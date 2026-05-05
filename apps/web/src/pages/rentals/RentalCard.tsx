@@ -1274,6 +1274,55 @@ export function RentalCard({
         ))}
       </div>
 
+      {/* v0.4.19: крупная кнопка «Принять платёж» когда есть любой долг
+          (просрочка / ущерб / ручной / неоплаченная аренда). Раньше она
+          была в меню «Действия» и не бросалась в глаза. Теперь видна
+          сразу под условиями аренды — оператору не нужно искать. */}
+      {(() => {
+        const overdueB = debtSummary?.overdueBalance ?? 0;
+        const damageB = debtSummary?.damageBalance ?? totalDebt;
+        const manualB = debtSummary?.manualBalance ?? 0;
+        const totalDebtSum = pending + overdueB + damageB + manualB;
+        if (totalDebtSum <= 0) return null;
+        const parts: string[] = [];
+        if (pending > 0) parts.push(`не оплачено ${fmt(pending)} ₽`);
+        if (overdueB > 0) parts.push(`просрочка ${fmt(overdueB)} ₽`);
+        if (damageB > 0) parts.push(`ущерб ${fmt(damageB)} ₽`);
+        if (manualB > 0) parts.push(`ручной ${fmt(manualB)} ₽`);
+        return (
+          <button
+            type="button"
+            onClick={() => {
+              // Если основной долг — ущерб, открываем платёж по акту.
+              // Иначе — стандартный приём оплаты по аренде.
+              if (damageB > 0 && reportWithDebt) {
+                setPaymentReportId(reportWithDebt.id);
+              } else {
+                setPaymentRentalId(rental.id);
+              }
+            }}
+            className="flex items-center justify-between gap-3 rounded-[14px] bg-red-soft/60 px-4 py-3 text-left ring-1 ring-inset ring-red-300 transition-colors hover:bg-red-soft"
+          >
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-600 text-white shadow-card-sm">
+                <Plus size={18} />
+              </div>
+              <div className="min-w-0">
+                <div className="text-[15px] font-bold text-red-ink">
+                  Принять платёж — {fmt(totalDebtSum)} ₽
+                </div>
+                <div className="mt-0.5 text-[11px] text-red-ink/80">
+                  {parts.join(" · ")}
+                </div>
+              </div>
+            </div>
+            <span className="rounded-full bg-white px-3 py-1.5 text-[12px] font-bold text-red-ink shadow-card-sm">
+              Принять →
+            </span>
+          </button>
+        );
+      })()}
+
       <div className="flex-1 pt-3">
         {tab === "terms" && (
           <TermsTab

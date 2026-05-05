@@ -49,12 +49,16 @@ function fmt(n: number): string {
   return n.toLocaleString("ru-RU");
 }
 
+// v0.4.19: добавлен 'problem' статус (раньше fallback показывал
+// английское «PROBLEM» серым). Все статусы аренды должны быть здесь —
+// это локальный справочник для красивых пилюль в списке выручки.
 const STATUS_LABEL: Record<string, string> = {
   active: "активна",
   overdue: "просрочка",
   returning: "возврат",
   completed: "завершена",
   completed_damage: "с ущербом",
+  problem: "проблемная",
   cancelled: "отменена",
   meeting: "встреча",
   new_request: "заявка",
@@ -68,6 +72,7 @@ const STATUS_TONE: Record<string, string> = {
   returning: "bg-orange-soft text-orange-ink",
   completed: "bg-surface-soft text-muted",
   completed_damage: "bg-red-soft text-red-ink",
+  problem: "bg-red-soft text-red-ink",
   cancelled: "bg-surface-soft text-muted",
   meeting: "bg-blue-50 text-blue-700",
   new_request: "bg-blue-50 text-blue-700",
