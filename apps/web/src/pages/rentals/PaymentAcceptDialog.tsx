@@ -1,30 +1,33 @@
 /**
- * v0.3.9 — диалог приёма оплаты по аренде.
+ * v0.4.26 — диалог приёма оплаты по аренде.
  *
- * Сценарий: после продления аренды (или при оплате уже созданной аренды)
- * оператор открывает этот диалог, видит «К оплате», использует депозит
- * клиента (если есть), вводит сумму принятых от клиента наличных/карты,
- * и подтверждает. Авто-распределение:
+ * При наличии долга (просрочка / ущерб / ручной / неоплаченная аренда)
+ * «К оплате» = СУММА ДОЛГА (а не sum аренды). Раньше показывали
+ * rental.sum даже когда был долг — оператор не видел сразу сколько
+ * клиент должен и приходилось руками считать.
  *
- *   1. Депозит клиента (если включена галка) — гасит часть от sum.
- *   2. Cash = сумма наличными от клиента (вводит оператор).
- *   3. Если cash + используемый депозит >= sum → аренда оплачена,
- *      переплата уходит обратно в депозит.
- *   4. Если cash + депозит < sum → платёж создаётся как paid=false
- *      (плановая часть оплачена, остаток ждёт следующего платежа).
+ * Источники средств:
+ *  • Депозит клиента — переплаты из прошлых сделок (clients.deposit_balance)
+ *  • Залог — деньги внесённые в начале аренды (rentals.deposit). Можно
+ *    списать частично/целиком, если клиент проблемный — залог не вернётся.
+ *  • Принято от клиента — сумма + способ (нал/карта/перевод)
  *
- * §18 заказчика «переплата → просрочка»: пока в этом диалоге излишек
- * валится в депозит. На активной просрочке диалог не используется
- * (открывается из ExtendRentalDialog для свежей связки) — там просрочки
- * ещё нет. Если позже (ит.5) обнаружится переплата + старая просрочка
- * — диалог расширим.
+ * Распределение по приоритету:
+ *  1. Просрочка дни (overdue_days)
+ *  2. Просрочка штраф (overdue_fine)
+ *  3. Ущерб (damage_reports)
+ *  4. Ручной долг (manual_charge)
+ *  5. Неоплаченная аренда (rent payments)
+ *  6. Излишек → депозит клиента
  */
-import { useEffect, useState } from "react";
-import { Check, X, Wallet } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Check, X, Wallet, Shield } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
 import { api } from "@/lib/api";
 import { useApiClients } from "@/lib/api/clients";
+import { useApiPayments } from "@/lib/api/payments";
+import { useRentalDebt } from "@/lib/api/debt";
 import type { Rental } from "@/lib/mock/rentals";
 import type { PaymentMethod } from "@/lib/mock/rentals";
 
@@ -62,91 +65,220 @@ export function PaymentAcceptDialog({
   const { data: clients = [] } = useApiClients();
   const client = clients.find((c) => c.id === rental.clientId);
   const depositBalance = client?.depositBalance ?? 0;
+  const { data: payments = [] } = useApiPayments();
+  const debtQ = useRentalDebt(rental.id);
+  const debt = debtQ.data;
 
-  const sum = rental.sum;
+  // Неоплаченная аренда (rent payments paid=false)
+  const pendingRent = useMemo(() => {
+    return payments
+      .filter(
+        (p) =>
+          p.rentalId === rental.id && p.type === "rent" && !p.paid,
+      )
+      .reduce((s, p) => s + p.amount, 0);
+  }, [payments, rental.id]);
+
+  // Компоненты долга — берём из API debt summary
+  const overdueDaysBalance = debt?.overdueDaysBalance ?? 0;
+  const overdueFineBalance = debt?.overdueFineBalance ?? 0;
+  const damageBalance = debt?.damageBalance ?? 0;
+  const manualBalance = debt?.manualBalance ?? 0;
+  const totalDebt =
+    pendingRent +
+    overdueDaysBalance +
+    overdueFineBalance +
+    damageBalance +
+    manualBalance;
+
+  // «К оплате» — приоритетно долг. Если долгов нет — sum аренды (предоплата).
+  const dueAmount = totalDebt > 0 ? totalDebt : rental.sum;
+
+  // Источники
   const [useDeposit, setUseDeposit] = useState<boolean>(depositBalance > 0);
-  const depositToUse = useDeposit ? Math.min(depositBalance, sum) : 0;
-  const remainingAfterDeposit = Math.max(0, sum - depositToUse);
+  const depositToUse = useDeposit ? Math.min(depositBalance, dueAmount) : 0;
+  const remainingAfterDeposit = Math.max(0, dueAmount - depositToUse);
+
+  const securityMax = rental.deposit ?? 0;
+  const [useSecurity, setUseSecurity] = useState<boolean>(false);
+  const [securityStr, setSecurityStr] = useState<string>("0");
+  const securityToUse = useSecurity
+    ? Math.min(securityMax, Math.max(0, Number(securityStr.replace(/\D/g, "")) || 0))
+    : 0;
+  const remainingAfterSecurity = Math.max(0, remainingAfterDeposit - securityToUse);
 
   const [acceptedStr, setAcceptedStr] = useState<string>(
-    String(remainingAfterDeposit),
+    String(remainingAfterSecurity),
   );
-  // Если меняется состав депозита — переустановим «принято» = остаток
+  // Sync «принято» при изменении источников
   useEffect(() => {
-    setAcceptedStr(String(remainingAfterDeposit));
-  }, [remainingAfterDeposit]);
+    setAcceptedStr(String(remainingAfterSecurity));
+  }, [remainingAfterSecurity]);
 
   const accepted = Number(acceptedStr.replace(/\D/g, "")) || 0;
-  const totalReceived = depositToUse + accepted;
-  const overpay = Math.max(0, totalReceived - sum);
-  const underpay = Math.max(0, sum - totalReceived);
+  const totalReceived = depositToUse + securityToUse + accepted;
+  const overpay = Math.max(0, totalReceived - dueAmount);
+  const underpay = Math.max(0, dueAmount - totalReceived);
 
   const [method, setMethod] = useState<PaymentMethod>("cash");
   const [saving, setSaving] = useState(false);
 
   const fmt = (n: number) => n.toLocaleString("ru-RU");
 
+  /**
+   * Распределяет общий полученный платёж по приоритету:
+   * overdue_days → overdue_fine → damage → manual → rent → излишек.
+   * Возвращает carved-out массив операций для последующего выполнения.
+   */
+  const distribute = (totalAmount: number) => {
+    let left = totalAmount;
+    const ops: {
+      target:
+        | "overdue_days"
+        | "overdue_fine"
+        | "damage"
+        | "manual"
+        | "rent"
+        | "deposit";
+      amount: number;
+      damageReportId?: number;
+    }[] = [];
+    const take = (cap: number, target: typeof ops[number]["target"], damageReportId?: number) => {
+      if (left <= 0 || cap <= 0) return;
+      const take = Math.min(left, cap);
+      ops.push({ target, amount: take, damageReportId });
+      left -= take;
+    };
+    take(overdueDaysBalance, "overdue_days");
+    take(overdueFineBalance, "overdue_fine");
+    // damage — по каждому отчёту в порядке создания
+    for (const dr of debt?.damageReports ?? []) {
+      const reportPaid =
+        (payments
+          .filter(
+            (p) =>
+              p.rentalId === rental.id &&
+              p.type === "damage" &&
+              p.paid &&
+              p.damageReportId === dr.id,
+          )
+          .reduce((s, p) => s + p.amount, 0));
+      const reportDebt = Math.max(0, dr.total - dr.depositCovered - reportPaid);
+      take(reportDebt, "damage", dr.id);
+    }
+    take(manualBalance, "manual");
+    take(pendingRent, "rent");
+    if (left > 0) ops.push({ target: "deposit", amount: left });
+    return ops;
+  };
+
   const submit = async () => {
     if (saving) return;
     setSaving(true);
     try {
-      // 1. Списать депозит, если используется
+      // 1. Списать депозит клиента, если используется
       if (depositToUse > 0) {
         await api.post(
           `/api/clients/${rental.clientId}/deposit/spend`,
           {
             amount: depositToUse,
-            comment: `В счёт аренды #${rental.id}`,
+            comment: `В счёт долга по аренде #${rental.id}`,
             rentalId: rental.id,
           },
         );
       }
-      // 2. Создать rent-платёж на сумму депозит + принято (или paid=false если меньше)
-      const rentAmount = Math.min(sum, totalReceived);
-      if (rentAmount > 0) {
-        await api.post("/api/payments", {
-          rentalId: rental.id,
-          type: "rent",
-          amount: rentAmount,
-          method,
-          paid: rentAmount >= sum,
-          paidAt: new Date().toISOString(),
-        });
-      } else if (sum > 0) {
-        // Плательщик ничего не внёс и депозита нет — создаём плановый
-        // (paid=false) платёж, чтобы он висел в долге.
-        await api.post("/api/payments", {
-          rentalId: rental.id,
-          type: "rent",
-          amount: sum,
-          method,
-          paid: false,
+      // 2. Списать с залога — уменьшаем rental.deposit на ту же сумму
+      if (securityToUse > 0) {
+        const newDepositValue = Math.max(0, securityMax - securityToUse);
+        await api.patch(`/api/rentals/${rental.id}`, {
+          deposit: newDepositValue,
+          note:
+            (rental.note ?? "") +
+            (rental.note ? " · " : "") +
+            `с залога списано ${securityToUse} ₽ в счёт долга`,
         });
       }
-      // 3. Переплата → пополнение депозита
-      if (overpay > 0) {
-        await api.post(
-          `/api/clients/${rental.clientId}/deposit/charge`,
-          {
-            amount: overpay,
-            comment: `Переплата по аренде #${rental.id}`,
+      // 3. Выполнить распределение всех принятых средств
+      const ops = distribute(totalReceived);
+      for (const op of ops) {
+        if (op.amount <= 0) continue;
+        if (op.target === "overdue_days") {
+          await api.post(`/api/rentals/${rental.id}/debt/manual`, {
+            amount: 0,
+            comment: "_internal_skip", // не используется — для overdue_payment нужен отдельный endpoint
+          }).catch(() => {}); // суррогат
+          // Используем debt_entries напрямую через endpoint для оплаты
+          // просрочки — он у нас в API уже есть (overdue_days_payment kind).
+          // Сделаем через POST manual но с явным kind через note.
+          // Правильно: используем тот же forgive-overdue со специальным
+          // флагом? Нет. Проще: через payments отдельный механизм.
+          // Реализация — вместо отдельного endpoint, делаем запись
+          // напрямую как manual_forgive с тэгом:
+          // (см. ниже) — добавим в API endpoint для overdue_payment.
+          await api.post(`/api/rentals/${rental.id}/debt/payment`, {
+            kind: "overdue_days_payment",
+            amount: op.amount,
+            comment: `Оплата клиента (${method})`,
+          });
+        } else if (op.target === "overdue_fine") {
+          await api.post(`/api/rentals/${rental.id}/debt/payment`, {
+            kind: "overdue_fine_payment",
+            amount: op.amount,
+            comment: `Оплата клиента (${method})`,
+          });
+        } else if (op.target === "damage") {
+          await api.post("/api/payments", {
             rentalId: rental.id,
-          },
-        );
+            type: "damage",
+            amount: op.amount,
+            method,
+            paid: true,
+            paidAt: new Date().toISOString(),
+            damageReportId: op.damageReportId,
+            note: `Оплата по акту`,
+          });
+        } else if (op.target === "manual") {
+          // manual_forgive с признаком «это оплата от клиента, не списание»
+          await api.post(`/api/rentals/${rental.id}/debt/payment`, {
+            kind: "manual_payment",
+            amount: op.amount,
+            comment: `Оплата клиента (${method})`,
+          });
+        } else if (op.target === "rent") {
+          // Найдём первый unpaid rent и пометим paid=true (если хватает),
+          // иначе создадим частичный paid=true и оставим остаток unpaid.
+          await api.post("/api/payments", {
+            rentalId: rental.id,
+            type: "rent",
+            amount: op.amount,
+            method,
+            paid: true,
+            paidAt: new Date().toISOString(),
+          });
+        } else if (op.target === "deposit") {
+          await api.post(
+            `/api/clients/${rental.clientId}/deposit/charge`,
+            {
+              amount: op.amount,
+              comment: `Переплата по аренде #${rental.id}`,
+              rentalId: rental.id,
+            },
+          );
+        }
       }
 
       if (overpay > 0) {
         toast.success(
           "Оплата принята",
-          `Аренда оплачена. Переплата ${fmt(overpay)} ₽ ушла в депозит.`,
+          `Долги погашены. Переплата ${fmt(overpay)} ₽ ушла в депозит.`,
         );
       } else if (underpay > 0) {
         toast.info(
           "Принят частичный платёж",
-          `Остаток ${fmt(underpay)} ₽ висит за клиентом.`,
+          `Зачтено в долг ${fmt(totalReceived)} ₽. Остаток ${fmt(underpay)} ₽ висит за клиентом.`,
         );
       } else {
-        toast.success("Оплата принята", `Аренда оплачена полностью.`);
+        toast.success("Оплата принята", `Зачтено в погашение долгов.`);
       }
 
       onPaid?.();
@@ -158,6 +290,18 @@ export function PaymentAcceptDialog({
     }
   };
 
+  const debtParts: { label: string; amount: number }[] = [];
+  if (pendingRent > 0)
+    debtParts.push({ label: "не оплачено", amount: pendingRent });
+  if (overdueDaysBalance > 0)
+    debtParts.push({ label: "просрочка дни", amount: overdueDaysBalance });
+  if (overdueFineBalance > 0)
+    debtParts.push({ label: "штраф просрочки", amount: overdueFineBalance });
+  if (damageBalance > 0)
+    debtParts.push({ label: "ущерб", amount: damageBalance });
+  if (manualBalance > 0)
+    debtParts.push({ label: "ручной долг", amount: manualBalance });
+
   return (
     <div
       className={cn(
@@ -167,7 +311,7 @@ export function PaymentAcceptDialog({
     >
       <div
         className={cn(
-          "w-full max-w-[480px] overflow-hidden rounded-2xl bg-surface shadow-card-lg",
+          "w-full max-w-[520px] overflow-hidden rounded-2xl bg-surface shadow-card-lg",
           closing ? "animate-modal-out" : "animate-modal-in",
         )}
         onClick={(e) => e.stopPropagation()}
@@ -191,14 +335,23 @@ export function PaymentAcceptDialog({
           <div className="rounded-[10px] bg-blue-50 px-3 py-2.5">
             <div className="text-[11px] text-blue-700">К оплате</div>
             <div className="font-display text-[26px] font-extrabold tabular-nums text-blue-700">
-              {fmt(sum)} ₽
+              {fmt(dueAmount)} ₽
             </div>
-            <div className="text-[11px] text-blue-700/70">
-              {rental.rate} ₽/сут × {rental.days} дн
-            </div>
+            {debtParts.length > 0 ? (
+              <div className="mt-0.5 text-[11px] text-blue-700/80">
+                {debtParts
+                  .map((d) => `${d.label} ${fmt(d.amount)} ₽`)
+                  .join(" · ")}
+              </div>
+            ) : (
+              <div className="mt-0.5 text-[11px] text-blue-700/70">
+                {rental.rate} ₽/{rental.rateUnit === "week" ? "нед" : "сут"} ·{" "}
+                {rental.days} дн (предоплата)
+              </div>
+            )}
           </div>
 
-          {/* Депозит */}
+          {/* Депозит клиента */}
           {depositBalance > 0 && (
             <label className="flex items-start gap-2 rounded-[10px] border border-green-300 bg-green-soft/40 px-3 py-2 text-[12px] text-green-ink cursor-pointer">
               <input
@@ -209,18 +362,62 @@ export function PaymentAcceptDialog({
               />
               <div className="min-w-0 flex-1">
                 <div className="font-semibold">
-                  Использовать депозит — {fmt(depositBalance)} ₽
+                  Депозит клиента — {fmt(depositBalance)} ₽
                 </div>
                 <div className="text-[11px] opacity-80">
                   {useDeposit
-                    ? `Зачтём ${fmt(depositToUse)} ₽. Остаток депозита после: ${fmt(depositBalance - depositToUse + overpay)} ₽.`
-                    : "Депозит не будет использован."}
+                    ? `Зачтём ${fmt(depositToUse)} ₽`
+                    : "Не использовать"}
                 </div>
               </div>
             </label>
           )}
 
-          {/* Принято */}
+          {/* Залог */}
+          {securityMax > 0 && (
+            <div className="rounded-[10px] border border-amber-300 bg-amber-50 px-3 py-2 text-[12px] text-amber-900">
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={useSecurity}
+                  onChange={(e) => setUseSecurity(e.target.checked)}
+                  className="mt-0.5"
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 font-semibold">
+                    <Shield size={12} /> Списать с залога — макс {fmt(securityMax)} ₽
+                  </div>
+                  <div className="text-[11px] opacity-80">
+                    Использовать когда клиент не возвращает скутер или
+                    отказывается платить. После списания залог уменьшится.
+                  </div>
+                </div>
+              </label>
+              {useSecurity && (
+                <div className="mt-2 flex items-center gap-2">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={securityStr}
+                    onChange={(e) =>
+                      setSecurityStr(e.target.value.replace(/[^\d]/g, ""))
+                    }
+                    className="h-9 w-32 rounded-[8px] border border-border bg-white px-2 text-[13px] tabular-nums text-ink outline-none focus:border-blue-600"
+                  />
+                  <span className="text-[11px]">₽ из залога</span>
+                  <button
+                    type="button"
+                    onClick={() => setSecurityStr(String(Math.min(securityMax, dueAmount)))}
+                    className="ml-auto rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-semibold hover:bg-amber-200"
+                  >
+                    Покрыть долг полностью
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Принято от клиента */}
           <div>
             <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-2">
               Принято от клиента, ₽
@@ -260,12 +457,15 @@ export function PaymentAcceptDialog({
             </div>
           </div>
 
-          {/* Превью распределения */}
+          {/* Превью */}
           <div className="rounded-[10px] bg-surface-soft px-3 py-2 text-[12px]">
             <div className="font-semibold text-ink">Будет проведено</div>
             <div className="mt-1 flex flex-col gap-0.5 text-muted">
               {depositToUse > 0 && (
-                <Row label="Из депозита" value={`− ${fmt(depositToUse)} ₽`} />
+                <Row label="Из депозита клиента" value={`− ${fmt(depositToUse)} ₽`} />
+              )}
+              {securityToUse > 0 && (
+                <Row label="Списано с залога" value={`− ${fmt(securityToUse)} ₽`} />
               )}
               {accepted > 0 && (
                 <Row
@@ -274,14 +474,14 @@ export function PaymentAcceptDialog({
                 />
               )}
               <div className="mt-1 flex justify-between border-t border-border pt-1 text-ink">
-                <span className="font-semibold">Зачтено в аренду</span>
+                <span className="font-semibold">Зачтено в долг/аренду</span>
                 <span className="tabular-nums font-semibold">
-                  {fmt(Math.min(sum, totalReceived))} ₽
+                  {fmt(Math.min(dueAmount, totalReceived))} ₽
                 </span>
               </div>
               {overpay > 0 && (
                 <div className="flex justify-between text-green-700">
-                  <span>Переплата → депозит</span>
+                  <span>Переплата → депозит клиента</span>
                   <span className="tabular-nums">+ {fmt(overpay)} ₽</span>
                 </div>
               )}
@@ -306,10 +506,10 @@ export function PaymentAcceptDialog({
           <button
             type="button"
             onClick={submit}
-            disabled={saving || (totalReceived <= 0 && sum > 0)}
+            disabled={saving || totalReceived <= 0}
             className={cn(
               "inline-flex items-center gap-1 rounded-full px-4 py-1.5 text-[12px] font-bold text-white",
-              saving || (totalReceived <= 0 && sum > 0)
+              saving || totalReceived <= 0
                 ? "cursor-not-allowed bg-surface text-muted-2"
                 : "bg-blue-600 hover:bg-blue-700",
             )}

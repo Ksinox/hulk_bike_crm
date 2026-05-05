@@ -17,7 +17,7 @@ import { queryClient } from "@/lib/queryClient";
 import { adaptRental } from "./rentalAdapter";
 
 /* Платёж привязан к конкретной аренде */
-export type PaymentType = "rent" | "deposit" | "fine" | "damage" | "refund";
+export type PaymentType = "rent" | "deposit" | "fine" | "damage" | "refund" | "swap_fee";
 
 export type Payment = {
   id: number;

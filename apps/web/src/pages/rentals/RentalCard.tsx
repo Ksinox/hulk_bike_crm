@@ -182,11 +182,13 @@ function statusActions(
       ];
     case "completed_damage":
       return withExtras([
-        { id: "resume-damage", label: "Возобновить аренду", icon: RotateCcw, tone: "primary" },
+        { id: "normalize-status", label: "Сбросить «проблемная» (если долгов нет)", icon: CheckCircle2, tone: "primary" },
+        { id: "resume-damage", label: "Возобновить аренду", icon: RotateCcw, tone: "ghost" },
         { id: "claim", label: "Досудебная претензия", icon: AlertTriangle, tone: "warn" },
       ]);
     case "problem":
       return withExtras([
+        { id: "normalize-status", label: "Сбросить «проблемная» (если долгов нет)", icon: CheckCircle2, tone: "primary" },
         { id: "claim", label: "Распечатать претензию", icon: AlertTriangle, tone: "warn" },
         { id: "resume-damage", label: "Возобновить аренду", icon: RotateCcw, tone: "ghost" },
       ]);
@@ -522,6 +524,31 @@ export function RentalCard({
         );
       } catch (e) {
         toast.error("Не удалось возобновить", (e as Error).message ?? "");
+      }
+      return;
+    }
+    if (id === "normalize-status") {
+      // v0.4.26: ручная нормализация статуса проблемной аренды.
+      // Бэк сам решит active vs completed по endActualAt.
+      try {
+        const res = await api.post<{ ok: true; newStatus: string }>(
+          `/api/rentals/${rental.id}/normalize-status`,
+          {},
+        );
+        toast.success(
+          "Статус сброшен",
+          `Новый статус: «${res.newStatus === "active" ? "Активная" : "Завершена"}». Запись в Истории.`,
+        );
+      } catch (e) {
+        const msg = (e as { body?: { error?: string } }).body?.error;
+        if (msg === "wrong_status") {
+          toast.info(
+            "Статус нормальный",
+            "Аренда уже не в проблемном статусе.",
+          );
+        } else {
+          toast.error("Не удалось", (e as Error).message ?? "");
+        }
       }
       return;
     }

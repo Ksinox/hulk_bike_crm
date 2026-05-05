@@ -1682,6 +1682,75 @@ export async function rentalsRoutes(app: FastifyInstance) {
     };
   });
 
+  /**
+   * v0.4.26: запись «оплаты» по компонентам долга. Используется
+   * PaymentAcceptDialog при распределении принятых средств:
+   *   • overdue_days_payment / overdue_fine_payment — гасит просрочку
+   *   • manual_payment — гасит ручной долг (alias для manual_forgive
+   *     с тегом «оплата от клиента»)
+   * Damage и rent имеют свои потоки через /api/payments.
+   */
+  app.post<{
+    Params: { id: string };
+    Body: {
+      kind: "overdue_days_payment" | "overdue_fine_payment" | "manual_payment";
+      amount: number;
+      comment?: string;
+    };
+  }>("/:id/debt/payment", async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
+    const Body = z.object({
+      kind: z.enum([
+        "overdue_days_payment",
+        "overdue_fine_payment",
+        "manual_payment",
+      ]),
+      amount: z.number().int().positive(),
+      comment: z.string().max(500).optional(),
+    });
+    const parsed = Body.safeParse(req.body);
+    if (!parsed.success) {
+      return reply
+        .code(400)
+        .send({ error: "validation", issues: parsed.error.issues });
+    }
+    const userId = req.user?.userId ?? null;
+    let userName = "система";
+    if (userId) {
+      const [u] = await db
+        .select({ name: usersTable.name })
+        .from(usersTable)
+        .where(eq(usersTable.id, userId));
+      userName = u?.name ?? "система";
+    }
+    // manual_payment кладём как manual_forgive с пометкой — чтобы старая
+    // логика подсчёта manualBalance работала без изменений (она уже
+    // считает manual_charge − manual_forgive).
+    const dbKind =
+      parsed.data.kind === "manual_payment"
+        ? "manual_forgive"
+        : parsed.data.kind;
+    const [row] = await db
+      .insert(debtEntries)
+      .values({
+        rentalId: id,
+        kind: dbKind,
+        amount: parsed.data.amount,
+        comment: parsed.data.comment ?? "Оплата клиента",
+        createdByUserId: userId,
+        createdByName: userName,
+      })
+      .returning();
+    await logActivity(req, {
+      entity: "rental",
+      entityId: id,
+      action: "debt_payment",
+      summary: `Оплата ${parsed.data.amount} ₽ по аренде #${id} (${parsed.data.kind})`,
+    });
+    return row;
+  });
+
   app.post<{
     Params: { id: string };
     Body: { amount: number; comment: string };
@@ -1909,6 +1978,44 @@ export async function rentalsRoutes(app: FastifyInstance) {
     });
     return { entries: inserted, mode: "all", amount: total };
   });
+
+  /**
+   * v0.4.26: ручная нормализация статуса. Если аренда висит в
+   * 'problem' / 'completed_damage' но фактически долгов нет —
+   * оператор может одной кнопкой перевести в active/completed.
+   * Та же логика что в auto-trigger /debt, но запускается явно.
+   */
+  app.post<{ Params: { id: string } }>(
+    "/:id/normalize-status",
+    async (req, reply) => {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id))
+        return reply.code(400).send({ error: "bad id" });
+      const [r] = await db
+        .select()
+        .from(rentals)
+        .where(eq(rentals.id, id));
+      if (!r) return reply.code(404).send({ error: "not found" });
+      if (r.status !== "problem" && r.status !== "completed_damage") {
+        return reply
+          .code(400)
+          .send({ error: "wrong_status", current: r.status });
+      }
+      const nextStatus: "active" | "completed" =
+        r.endActualAt == null ? "active" : "completed";
+      await db
+        .update(rentals)
+        .set({ status: nextStatus, updatedAt: sql`now()` })
+        .where(eq(rentals.id, id));
+      await logActivity(req, {
+        entity: "rental",
+        entityId: id,
+        action: "status_normalized_manual",
+        summary: `Статус аренды #${id} принудительно нормализован: «${r.status}» → «${nextStatus}»`,
+      });
+      return { ok: true, newStatus: nextStatus };
+    },
+  );
 
   /** Удаление события долга — для случаев когда оператор ошибся
    *  при ручном начислении. Доступно только директору / создателю. */

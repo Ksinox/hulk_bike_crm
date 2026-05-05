@@ -5,13 +5,15 @@ import type { ListResponse, PaymentMethod } from "./types";
 export type ApiPayment = {
   id: number;
   rentalId: number;
-  type: "rent" | "deposit" | "fine" | "damage" | "refund";
+  type: "rent" | "deposit" | "fine" | "damage" | "refund" | "swap_fee";
   amount: number;
   method: PaymentMethod;
   paid: boolean;
   paidAt: string | null;
   scheduledOn: string | null;
   note: string | null;
+  /** v0.4.26: ссылка на damage_report для типа='damage'. */
+  damageReportId?: number | null;
   createdAt: string;
 };
 
