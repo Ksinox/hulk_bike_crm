@@ -67,12 +67,13 @@ function matchStatus(
     return false;
   }
   if (f === "return_today") {
-    // Возврат именно сегодня — плановая дата завершения = сегодняшняя дата.
-    // Учитываем активные и возвращаемые аренды.
+    // Возврат именно сегодня — плановая дата завершения = сегодняшняя
+    // дата. v0.4.36: status='returning' включаем без проверки даты —
+    // если оператор перевёл аренду в «возвращается», это явный сигнал
+    // что клиент сегодня сдаёт, дата плана уже не критична.
+    if (r.status === "returning") return true;
     const isActiveOrReturning =
-      r.status === "active" ||
-      r.status === "returning" ||
-      r.status === "overdue";
+      r.status === "active" || r.status === "overdue";
     return isActiveOrReturning && r.endPlanned === today;
   }
   if (f === "new_request") {
@@ -87,16 +88,24 @@ function matchStatus(
   }
   if (f === "completed")
     return r.status === "completed" || r.status === "cancelled";
-  if (f === "issue")
-    return (
+  if (f === "issue") {
+    // v0.4.36: unreachable клиента засчитываем только для ЖИВЫХ аренд.
+    // Раньше закрытая 3 месяца назад аренда «не отвечающего» клиента
+    // висела в «Проблемные» и засоряла фильтр.
+    const isFinishedStatus =
+      r.status === "completed" || r.status === "cancelled";
+    if (
       r.status === "police" ||
       r.status === "court" ||
       r.status === "problem" ||
       // legacy: до v0.2.75 при создании акта аренда уходила в completed_damage,
       // теперь оставляем как есть для существующих записей (новые → 'problem').
-      r.status === "completed_damage" ||
-      unreachable.has(r.clientId)
-    );
+      r.status === "completed_damage"
+    ) {
+      return true;
+    }
+    return !isFinishedStatus && unreachable.has(r.clientId);
+  }
   if (f === "archived") return true; // данные приходят из useArchivedRentals
   return true;
 }

@@ -23,6 +23,8 @@ export type ActionKind =
   | "complete"
   | "complete-damage"
   | "police"
+  // v0.4.36: вернуть аренду из police/court обратно в работу
+  | "revert-police"
   | "incident"
   | "record-damage"
   | "claim"
@@ -268,6 +270,12 @@ export function RentalActionDialog({
         break;
       case "police":
         setRentalStatus(rental.id, "police");
+        break;
+      case "revert-police":
+        // v0.4.36: возвращаем аренду в обычный поток работы. Если
+        // плановая дата возврата уже прошла — overdue (через scheduler
+        // авто-перейдёт), иначе active.
+        setRentalStatus(rental.id, "overdue");
         break;
       case "lawyer":
         setRentalStatus(rental.id, "court");
@@ -736,12 +744,27 @@ function specFor(action: ActionKind, rental: Rental): Spec {
         title: "Подать в полицию",
         body: (
           <div>
-            Аренда перейдёт в статус <b>Полиция</b>. Переход обратно невозможен
-            без возврата скутера. Убедитесь что предупреждение клиента отправлено.
+            Аренда перейдёт в статус <b>Полиция</b>. Из этого статуса можно
+            вернуть аренду в работу через «Отменить дело», или закрыть как
+            «Скутер вернулся».
           </div>
         ),
         cta: "Подать заявление",
         ctaTone: "danger",
+      };
+    case "revert-police":
+      return {
+        title: "Отменить дело",
+        body: (
+          <div>
+            Аренда вернётся в обычный поток работы (статус <b>Просрочка</b>).
+            Используйте если разбирательство закончилось, или скутер
+            нашёлся, но клиент ещё не сдал — нужно продолжить взыскание
+            долга обычным путём.
+          </div>
+        ),
+        cta: "Вернуть в работу",
+        ctaTone: "warn",
       };
     case "lawyer":
       return {

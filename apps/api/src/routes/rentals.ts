@@ -305,6 +305,44 @@ export async function rentalsRoutes(app: FastifyInstance) {
     const [before] = await db.select().from(rentals).where(eq(rentals.id, id));
     if (!before) return reply.code(404).send({ error: "not found" });
 
+    // v0.4.36: whitelist переходов статуса. Через generic PATCH /:id
+    // нельзя загнать аренду в произвольный статус — это плодит баги
+    // вроде «police-аренда без police-логики», «completed без архива».
+    // Допустимые переходы:
+    //   active ↔ overdue (sync со scheduler)
+    //   active/overdue → returning → completed/completed_damage
+    //   * → cancelled (отмена с любого живого статуса)
+    //   problem ↔ active (resume-damage / normalize-status)
+    //   police/court → active/overdue/completed (revert/return)
+    //   completed_damage → completed/active (нормализация после
+    //   погашения долга)
+    // Финальные статусы (completed, cancelled) трогать через PATCH
+    // вообще нельзя — это история.
+    if (parsed.data.status && parsed.data.status !== before.status) {
+      const allowed: Partial<Record<string, string[]>> = {
+        new_request: ["meeting", "active", "cancelled"],
+        meeting: ["active", "cancelled"],
+        active: ["overdue", "returning", "completed", "completed_damage", "problem", "police", "court", "cancelled"],
+        overdue: ["active", "returning", "completed", "completed_damage", "problem", "police", "court", "cancelled"],
+        returning: ["active", "completed", "completed_damage", "cancelled"],
+        completed: [],
+        completed_damage: ["active", "completed", "problem"],
+        problem: ["active", "completed", "completed_damage"],
+        police: ["active", "overdue", "completed", "completed_damage", "cancelled"],
+        court: ["active", "overdue", "completed", "completed_damage", "cancelled"],
+        cancelled: [],
+      };
+      const ok = allowed[before.status]?.includes(parsed.data.status);
+      if (!ok) {
+        return reply.code(409).send({
+          error: "invalid_status_transition",
+          from: before.status,
+          to: parsed.data.status,
+          message: `Переход ${before.status} → ${parsed.data.status} запрещён через PATCH. Используйте специализированный endpoint.`,
+        });
+      }
+    }
+
     // v0.2.97: запрет переназначить аренду на скутер у которого уже есть
     // открытая аренда. Раньше POST /rentals защищался, а PATCH — нет,
     // что плодило дубли «две active аренды на одном скутере». Если
@@ -436,6 +474,71 @@ export async function rentalsRoutes(app: FastifyInstance) {
       return reply.code(409).send({ error: "already_archived" });
     }
 
+    // v0.4.36: блокируем soft-delete если по аренде остался непогашенный
+    // долг по ущербу или открытый damage_report без agreement. Иначе
+    // оператор «архивирует» аренду — в дашборде долг исчезает, но акт
+    // ущерба остаётся в БД и потом всплывает рассинхрон. Если нужно
+    // правда снести вместе с долгом — есть hard-delete /purge/:id.
+    const damageRows = await db
+      .select({
+        id: damageReports.id,
+        total: damageReports.total,
+        depositCovered: damageReports.depositCovered,
+        clientAgreement: damageReports.clientAgreement,
+      })
+      .from(damageReports)
+      .where(eq(damageReports.rentalId, id));
+    if (damageRows.length > 0) {
+      // Открытый акт ущерба (pending — клиент ещё не отреагировал)
+      // блокирует удаление сам по себе.
+      const pending = damageRows.filter((d) => d.clientAgreement === "pending");
+      if (pending.length > 0) {
+        return reply.code(409).send({
+          error: "damage_pending",
+          message:
+            "По аренде есть акт ущерба без реакции клиента — закройте его (согласен/не согласен) перед удалением",
+        });
+      }
+      // Считаем непогашенный долг по ущербу.
+      const damagePaid = await db
+        .select({
+          amount: payments.amount,
+          damageReportId: payments.damageReportId,
+        })
+        .from(payments)
+        .where(
+          sql`${payments.rentalId} = ${id} AND ${payments.type} = 'damage' AND ${payments.paid} = true`,
+        );
+      const paidByReport = new Map<number, number>();
+      let unassigned = 0;
+      for (const p of damagePaid) {
+        if (p.damageReportId != null) {
+          paidByReport.set(
+            p.damageReportId,
+            (paidByReport.get(p.damageReportId) ?? 0) + (p.amount ?? 0),
+          );
+        } else {
+          unassigned += p.amount ?? 0;
+        }
+      }
+      const debt = damageRows.reduce((s, d) => {
+        const reportPaid = paidByReport.get(d.id) ?? 0;
+        const myDebt = Math.max(
+          0,
+          (d.total ?? 0) - (d.depositCovered ?? 0) - reportPaid,
+        );
+        return s + myDebt;
+      }, 0);
+      const totalDebt = Math.max(0, debt - unassigned);
+      if (totalDebt > 0) {
+        return reply.code(409).send({
+          error: "damage_debt",
+          message: `По аренде висит непогашенный долг по ущербу ${totalDebt} ₽. Закройте долг или используйте /purge для физического удаления`,
+          debt: totalDebt,
+        });
+      }
+    }
+
     const [u] = await db
       .select({ name: usersTable.name })
       .from(usersTable)
@@ -448,9 +551,30 @@ export async function rentalsRoutes(app: FastifyInstance) {
       .update(rentals)
       .set({ parentRentalId: row.parentRentalId, updatedAt: sql`now()` })
       .where(eq(rentals.parentRentalId, id));
+    // v0.4.36: при ручной архивации live-аренды (active/overdue/returning/
+    // new_request/meeting/problem) принудительно ставим статус
+    // 'cancelled' — иначе нарушается инвариант «archived ⇒ status ∈
+    // {completed, cancelled, completed_damage}». Без этого аренда с
+    // archivedAt + status='active' путала фильтры и отчёты.
+    const liveStatuses = new Set([
+      "new_request",
+      "meeting",
+      "active",
+      "overdue",
+      "returning",
+      "problem",
+    ]);
+    const nextStatus = liveStatuses.has(row.status)
+      ? "cancelled"
+      : row.status;
     await db
       .update(rentals)
-      .set({ archivedAt: sql`now()`, archivedBy: by })
+      .set({
+        archivedAt: sql`now()`,
+        archivedBy: by,
+        status: nextStatus,
+        updatedAt: sql`now()`,
+      })
       .where(eq(rentals.id, id));
 
     // Если удаляемая связка БЫЛА «головой» цепочки (т.е. больше не было
@@ -523,12 +647,24 @@ export async function rentalsRoutes(app: FastifyInstance) {
           .from(rentals)
           .where(eq(rentals.id, row.parentRentalId));
         if (parent && parent.archivedBy == null && parent.archivedAt != null) {
+          // v0.4.36: восстанавливаем родителя с пересчётом статуса по дате,
+          // а не хардкодом 'active'. Если плановая дата возврата уже
+          // прошла — возрождаем как 'overdue'. Раньше при удалении
+          // потомка родитель, который был в overdue/problem, оживал как
+          // active — терялась реальная просрочка/проблемность.
+          const today = new Date();
+          const todayKey = today.toISOString().slice(0, 10);
+          const endKey = parent.endPlannedAt
+            ? parent.endPlannedAt.toISOString().slice(0, 10)
+            : null;
+          const reborn: "active" | "overdue" =
+            endKey && endKey < todayKey ? "overdue" : "active";
           await db
             .update(rentals)
             .set({
               archivedAt: null,
               endActualAt: null,
-              status: "active",
+              status: reborn,
               updatedAt: sql`now()`,
             })
             .where(eq(rentals.id, parent.id));
@@ -964,6 +1100,33 @@ export async function rentalsRoutes(app: FastifyInstance) {
       const d = parsed.data;
       const withDamage = (d.damageAmount ?? 0) > 0 || !d.conditionOk;
 
+      // v0.4.36: блокируем complete если по аренде висят неоплаченные
+      // swap_fee/fine платежи. Раньше аренда уезжала в архив с долгом
+      // по доплате за свап или штрафом — клиент должен, но в системе
+      // запись «висит на завершённой аренде», работать с ней неудобно.
+      // Если оператор хочет завершить с непогашенным платежом — его
+      // нужно явно списать (forgive-overdue / debt/manual) или принять
+      // (PaymentAcceptDialog), либо использовать «Закрыть с ущербом»
+      // (complete с damageAmount) — тогда долг будет в damage_report.
+      const unpaidExtras = await db
+        .select({
+          id: payments.id,
+          type: payments.type,
+          amount: payments.amount,
+        })
+        .from(payments)
+        .where(
+          sql`${payments.rentalId} = ${id} AND ${payments.paid} = false AND ${payments.type} IN ('swap_fee', 'fine')`,
+        );
+      if (unpaidExtras.length > 0) {
+        const total = unpaidExtras.reduce((s, p) => s + (p.amount ?? 0), 0);
+        return reply.code(409).send({
+          error: "unpaid_extras",
+          message: `По аренде есть неоплаченные ${unpaidExtras.map((p) => p.type).join(", ")} платежи на сумму ${total} ₽. Примите оплату или спишите перед завершением.`,
+          unpaid: unpaidExtras,
+        });
+      }
+
       const result = await db.transaction(async (tx) => {
         const [r] = await tx
           .update(rentals)
@@ -1277,6 +1440,27 @@ export async function rentalsRoutes(app: FastifyInstance) {
             updatedAt: sql`now()`,
           })
           .where(eq(rentals.id, id));
+
+        // v0.4.36: при resume-damage (swap из 'problem') старый damage_report
+        // больше не блокирует аренду. Если по нему всё ещё висит долг —
+        // долг остаётся на клиенте (через debt_entries / payments), но
+        // damage_report помечается client_agreement='agreed' чтобы
+        // PaymentAcceptDialog не считал его «pending». Это формализует
+        // то, что оператор уже принял ответственность клиента, заменил
+        // скутер и продолжает работу. Предыдущая логика просто меняла
+        // статус аренды на active — а pending-акт продолжал блокировать
+        // новые операции.
+        if (wasProblem) {
+          await tx
+            .update(damageReports)
+            .set({ clientAgreement: "agreed", updatedAt: sql`now()` })
+            .where(
+              and(
+                eq(damageReports.rentalId, id),
+                eq(damageReports.clientAgreement, "pending"),
+              ),
+            );
+        }
 
         // Старый скутер — в выбранный оператором статус (rental_pool/repair).
         if (prevScooterId) {
@@ -1595,7 +1779,14 @@ export async function rentalsRoutes(app: FastifyInstance) {
     let fineForgiveExplicit = 0;
     let daysPayExplicit = 0;
     let finePayExplicit = 0;
-    let mixedReductions = 0; // legacy overdue_forgive + overdue_payment
+    // v0.4.36: разделяем legacy mixed на forgive vs payment. Раньше
+    // оба сваливались в один mixedReductions и payment автоматически
+    // переливался из дней в штраф когда дни =0 — клиент заплативший
+    // ТОЛЬКО за дни видел что и штраф погашен. Это бизнес-баг:
+    // forgive — это списание (бесплатно для клиента), его допустимо
+    // переливать. Payment — это деньги клиента, переливать нельзя.
+    let mixedForgive = 0; // legacy overdue_forgive — допустимо переливать
+    let mixedPayment = 0; // legacy overdue_payment — НЕ переливать
     let manualCharged = 0;
     let manualForgiven = 0;
     for (const e of events) {
@@ -1603,8 +1794,8 @@ export async function rentalsRoutes(app: FastifyInstance) {
       else if (e.kind === "overdue_fine_forgive") fineForgiveExplicit += e.amount;
       else if (e.kind === "overdue_days_payment") daysPayExplicit += e.amount;
       else if (e.kind === "overdue_fine_payment") finePayExplicit += e.amount;
-      else if (e.kind === "overdue_forgive") mixedReductions += e.amount;
-      else if (e.kind === "overdue_payment") mixedReductions += e.amount;
+      else if (e.kind === "overdue_forgive") mixedForgive += e.amount;
+      else if (e.kind === "overdue_payment") mixedPayment += e.amount;
       else if (e.kind === "manual_charge") manualCharged += e.amount;
       else if (e.kind === "manual_forgive") manualForgiven += e.amount;
     }
@@ -1617,20 +1808,33 @@ export async function rentalsRoutes(app: FastifyInstance) {
       0,
       fineCharge - fineForgiveExplicit - finePayExplicit,
     );
-    // Затем mixedReductions съедают сначала дни, потом штраф.
-    if (mixedReductions > 0) {
-      const cutDays = Math.min(daysBalance, mixedReductions);
+    // mixedForgive (legacy «сброс просрочки» без указания компонента) —
+    // съедает сначала дни, потом штраф. Это сознательное допущение.
+    if (mixedForgive > 0) {
+      const cutDays = Math.min(daysBalance, mixedForgive);
       daysBalance -= cutDays;
-      const leftover = mixedReductions - cutDays;
+      const leftover = mixedForgive - cutDays;
       if (leftover > 0) {
         fineBalance = Math.max(0, fineBalance - leftover);
       }
     }
+    // mixedPayment — съедает только дни. Если клиент платил с тегом
+    // overdue_payment без уточнения, это деньги «в погашение», разумно
+    // считать что в первую очередь дни (по бизнесу штраф = дополнительное
+    // наказание, его клиент платит отдельно). Перелив в штраф был бы
+    // двойной выгодой клиенту.
+    if (mixedPayment > 0) {
+      const cutDays = Math.min(daysBalance, mixedPayment);
+      daysBalance -= cutDays;
+      // ОСТАТОК НЕ ПЕРЕЛИВАЕМ. Если клиент заплатил больше чем «дни» —
+      // это его переплата, она должна была уйти в депозит через
+      // PaymentAcceptDialog, а не закрывать штраф «магически».
+    }
     const overdueBalance = daysBalance + fineBalance;
     // Для UI «сколько уже простили/оплатили» — суммируем всё.
     const overdueForgiven =
-      daysForgiveExplicit + fineForgiveExplicit + mixedReductions; // включая legacy
-    const overduePaid = daysPayExplicit + finePayExplicit;
+      daysForgiveExplicit + fineForgiveExplicit + mixedForgive;
+    const overduePaid = daysPayExplicit + finePayExplicit + mixedPayment;
     const manualBalance = Math.max(0, manualCharged - manualForgiven);
 
     // === Ущерб — берём из damage_reports (не дублируем здесь) ===

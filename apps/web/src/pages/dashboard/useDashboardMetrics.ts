@@ -344,25 +344,37 @@ export function useDashboardMetrics(): DashboardMetrics {
     const revenueMonth = periodRevenue.total;
     const revenueMonthCount = periodRevenue.count;
 
-    // ===== Ожидаемая выручка — аренды этого месяца без зафиксированного rent-платежа.
-    // Это случаи когда скутер уже выдан клиенту (active/overdue/returning/returned),
-    // но админ ещё не прошёл чеклист «Подтвердить оплату». Деньги в кассе
-    // есть, а в системе — нет. Показываем отдельной строкой чтобы сразу
-    // видеть «хвост» и закрыть его в пару кликов.
-    const rentPaymentsByRentalId = new Set(
-      payments.filter((p) => p.type === "rent").map((p) => p.rentalId),
-    );
-    const expectedRentals = rentals.filter((r) => {
-      if (!["active", "overdue", "returning", "returned"].includes(r.status))
-        return false;
-      // Берём аренды, начавшиеся в текущем расчётном периоде (15→14)
+    // ===== Ожидаемая выручка — sum по живым арендам этого периода
+    // МИНУС уже оплаченные rent-платежи. v0.4.36: раньше фильтр был
+    // «нет ни одного rent-платежа любого типа paid» — план рассрочки
+    // (paid=false) выпадал из expected, хотя деньги ещё не поступили.
+    // А аренда с одним маленьким частичным rent-платежом (например
+    // клиент дал 500 из 5000) полностью пропадала из ожиданий.
+    // Теперь считаем `Σ rental.sum − Σ paid rent payments` по каждой
+    // живой аренде в периоде — точная картина «сколько ещё ждём».
+    const paidRentByRentalId = new Map<number, number>();
+    for (const p of payments) {
+      if (p.type !== "rent") continue;
+      if (!p.paid) continue;
+      paidRentByRentalId.set(
+        p.rentalId,
+        (paidRentByRentalId.get(p.rentalId) ?? 0) + (p.amount ?? 0),
+      );
+    }
+    let revenueExpected = 0;
+    let revenueExpectedCount = 0;
+    for (const r of rentals) {
+      if (!["active", "overdue", "returning"].includes(r.status)) continue;
       const startMs = new Date(r.startAt).getTime();
       if (startMs < monthStart.getTime() || startMs >= monthEnd.getTime())
-        return false;
-      return !rentPaymentsByRentalId.has(r.id);
-    });
-    const revenueExpected = expectedRentals.reduce((s, r) => s + r.sum, 0);
-    const revenueExpectedCount = expectedRentals.length;
+        continue;
+      const paid = paidRentByRentalId.get(r.id) ?? 0;
+      const remaining = Math.max(0, (r.sum ?? 0) - paid);
+      if (remaining > 0) {
+        revenueExpected += remaining;
+        revenueExpectedCount++;
+      }
+    }
 
     // ===== Платежи по дням периода — приходят из общего хука =====
     const revenueByDay = periodRevenue.byDay;

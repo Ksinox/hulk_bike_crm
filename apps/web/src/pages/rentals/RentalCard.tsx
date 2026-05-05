@@ -194,7 +194,37 @@ function statusActions(
         { id: "resume-damage", label: "Возобновить аренду", icon: RotateCcw, tone: "ghost" },
       ]);
     case "police":
-      return withExtras([]);
+    case "court":
+      // v0.4.36: добавлены действия выхода. Раньше из police/court
+      // нельзя было ничего сделать — аренда зависала. Теперь:
+      //  • «Скутер вернулся» — закрываем как completed (пишем когда дело
+      //    разрешилось — клиент вернул скутер либо разбирательство
+      //    окончено и скутер фактически вернулся в парк).
+      //  • «Закрыть с ущербом» — переводим в problem чтобы оператор
+      //    оформил damage_report и взыскал убытки штатно.
+      //  • «Отменить дело» — аренда возвращается в overdue (если
+      //    непросрочена — в active), оператор продолжает обычную
+      //    работу с долгом.
+      return withExtras([
+        {
+          id: "complete",
+          label: "Скутер вернулся — завершить",
+          icon: CheckCircle2,
+          tone: "primary",
+        },
+        {
+          id: "set-damage",
+          label: "Закрыть с ущербом",
+          icon: Wrench,
+          tone: "warn",
+        },
+        {
+          id: "revert-police",
+          label: "Отменить дело — вернуть в работу",
+          icon: RotateCcw,
+          tone: "ghost",
+        },
+      ]);
     default:
       return [];
   }
