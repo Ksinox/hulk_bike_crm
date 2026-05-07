@@ -674,7 +674,15 @@ export function AddClientModal({
                   value={f.passDate}
                   placeholder="ДД.ММ.ГГГГ"
                   maxLength={10}
-                  onChange={(e) => set("passDate", formatDateRu(e.target.value))}
+                  onChange={(e) => {
+                    const v = formatDateRu(e.target.value);
+                    set("passDate", v);
+                    // v0.4.46: автопереход на «Код подразделения», когда
+                    // дата заполнена полностью (DD.MM.YYYY = 10 символов).
+                    if (v.length === 10) {
+                      document.getElementById("f-pcode")?.focus();
+                    }
+                  }}
                   className={inputClass(null)}
                 />
               </Field>
@@ -686,7 +694,15 @@ export function AddClientModal({
                   value={f.passCode}
                   placeholder="000-000"
                   maxLength={7}
-                  onChange={(e) => set("passCode", formatDivisionCode(e.target.value))}
+                  onChange={(e) => {
+                    const v = formatDivisionCode(e.target.value);
+                    set("passCode", v);
+                    // v0.4.46: автопереход на «Адрес регистрации» когда
+                    // код подразделения заполнен (000-000 = 7 символов).
+                    if (v.length === 7) {
+                      document.getElementById("f-regaddr")?.focus();
+                    }
+                  }}
                   className={inputClass(null)}
                 />
               </Field>
