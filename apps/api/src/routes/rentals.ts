@@ -1323,6 +1323,11 @@ export async function rentalsRoutes(app: FastifyInstance) {
           newRate: z.number().int().positive(),
           newTariffPeriod: z.enum(["short", "week", "month"]),
           newRateUnit: z.enum(["day", "week"]).optional(),
+          // v0.4.45: явно управляем созданием paid=true rent payment.
+          // По умолчанию true (старое поведение), фронт ExtendRentalDialog
+          // передаёт false когда после продления откроется PaymentAcceptDialog
+          // — там оператор зафиксирует фактически принятую сумму.
+          autoMarkPaid: z.boolean().optional().default(true),
         })
         .strict();
       const parsed = schema.safeParse(req.body);
@@ -1392,17 +1397,21 @@ export async function rentalsRoutes(app: FastifyInstance) {
           })
           .returning();
 
-        // Авто-платёж за продление — продлили = оплатили (тот же подход
-        // что и в POST /api/rentals: убираем шаг «подтвердить оплату»).
+        // v0.4.45: всегда создаём rent-платёж, но paid зависит от
+        // autoMarkPaid. true (legacy) — paid=true сразу. false (новый
+        // флоу) — paid=false placeholder, фронт PaymentAcceptDialog
+        // зарегистрирует фактически принятую сумму, помечая платёж paid.
         if (child && child.sum > 0) {
           await tx.insert(payments).values({
             rentalId: child.id,
             type: "rent",
             amount: child.sum,
             method: child.paymentMethod,
-            paid: true,
-            paidAt: new Date(),
-            note: "оплата продления (автоматически)",
+            paid: d.autoMarkPaid,
+            paidAt: d.autoMarkPaid ? new Date() : null,
+            note: d.autoMarkPaid
+              ? "оплата продления (автоматически)"
+              : "продление, ожидает оплаты",
           });
         }
         return child;

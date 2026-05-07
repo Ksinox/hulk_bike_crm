@@ -366,10 +366,14 @@ export async function extendRentalAsync(
   newRate: number,
   newTariffPeriod: Rental["tariffPeriod"],
   newRateUnit: "day" | "week" = "day",
+  /** v0.4.45: если false — бэк создаёт rent-платёж как paid=false
+   *  (placeholder), фронт затем открывает PaymentAcceptDialog для
+   *  фиксации фактически принятой суммы (с расчётом депозит/просрочка). */
+  autoMarkPaid = true,
 ): Promise<{ id: number }> {
   const created = await api.post<{ id: number }>(
     `/api/rentals/${oldId}/extend`,
-    { extraDays, newRate, newTariffPeriod, newRateUnit },
+    { extraDays, newRate, newTariffPeriod, newRateUnit, autoMarkPaid },
   );
   invAll();
   return created;

@@ -11,6 +11,7 @@ import {
 } from "@/lib/mock/rentals";
 import { extendRentalAsync } from "./rentalsStore";
 import { toast } from "@/lib/toast";
+import { PaymentAcceptDialog } from "./PaymentAcceptDialog";
 
 function fmt(n: number) {
   return n.toLocaleString("ru-RU");
@@ -73,20 +74,26 @@ export function ExtendRentalDialog({
   }, [rental.endPlanned, days]);
 
   const [saving, setSaving] = useState(false);
+  // v0.4.45: после extend сразу показываем PaymentAcceptDialog для
+  // приёма фактической оплаты. extend на бэке создаёт rent-платёж как
+  // paid=false (placeholder) — модалка зафиксирует фактически принятую
+  // сумму. Если оператор внёс больше rate × days, излишек идёт в
+  // погашение долга по просрочке (если есть) или в депозит клиента.
+  const [paymentForRental, setPaymentForRental] = useState<Rental | null>(null);
+
   const handleExtend = async () => {
     if (saving) return;
     setSaving(true);
     try {
-      // Ждём реальный id новой аренды-продления — нужен сразу для
-      // navigate на новую карточку и для авто-открытия документа.
       const created = await extendRentalAsync(
         rental.id,
         days,
         rate,
         period,
         isWeeklyCustom ? "week" : "day",
+        false, // autoMarkPaid=false — оплату фиксируем через PaymentAcceptDialog
       );
-      onExtended?.({
+      const newRental: Rental = {
         ...rental,
         id: created.id,
         days,
@@ -94,8 +101,10 @@ export function ExtendRentalDialog({
         sum: rate * days,
         endPlanned: newEndPlanned,
         parentRentalId: rental.id,
-      } as Rental);
-      requestClose();
+      } as Rental;
+      onExtended?.(newRental);
+      // НЕ закрываем dialog — поверх откроется PaymentAcceptDialog.
+      setPaymentForRental(newRental);
     } catch (e) {
       toast.error(
         "Не удалось продлить",
@@ -105,6 +114,29 @@ export function ExtendRentalDialog({
       setSaving(false);
     }
   };
+
+  // Когда открыт PaymentAcceptDialog, скрываем основной диалог продления
+  // (физически не удаляем — оставляем dialog в DOM-стеке, чтобы при
+  // отмене оплаты оператор мог увидеть параметры продления и решить).
+  if (paymentForRental) {
+    return (
+      <PaymentAcceptDialog
+        rental={paymentForRental}
+        onClose={() => {
+          // Закрытие модалки оплаты — закрываем и весь поток продления.
+          // Аренда уже создана; rent-платёж paid=false останется в системе
+          // как «ожидает оплаты» (оператор разберётся отдельно).
+          setPaymentForRental(null);
+          requestClose();
+        }}
+        onPaid={() => {
+          toast.success("Продление оплачено");
+          setPaymentForRental(null);
+          requestClose();
+        }}
+      />
+    );
+  }
 
   return (
     <div
