@@ -235,9 +235,10 @@ export async function rentalsRoutes(app: FastifyInstance) {
     }
 
     // Блокируем выдачу скутера, по которому уже есть открытая аренда.
-    // Открытая = active / overdue / returning. Скутер занят, пока возврат
-    // не подтверждён — иначе один скутер окажется одновременно у двух
-    // клиентов в учёте, и парк-метрики будут врать.
+    // Открытая = active / overdue / returning + archived_at IS NULL.
+    // v0.4.44: добавлен фильтр archived_at IS NULL — иначе старые
+    // архивные записи со status='active' (legacy до v0.4.36) ложно
+    // блокировали выдачу свободного скутера.
     if (d.scooterId) {
       const openRentals = await db
         .select({ id: rentals.id, status: rentals.status })
@@ -246,6 +247,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
           and(
             eq(rentals.scooterId, d.scooterId),
             sql`${rentals.status} IN ('active', 'overdue', 'returning')`,
+            isNull(rentals.archivedAt),
           ),
         );
       if (openRentals.length > 0) {
@@ -374,6 +376,8 @@ export async function rentalsRoutes(app: FastifyInstance) {
       parsed.data.scooterId !== before.scooterId
     ) {
       const targetScooterId = parsed.data.scooterId;
+      // v0.4.44: добавлен фильтр archived_at IS NULL — см. комментарий
+      // в POST /. Архивные записи не должны блокировать переназначение.
       const conflict = await db
         .select({ id: rentals.id, status: rentals.status })
         .from(rentals)
@@ -382,6 +386,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
             eq(rentals.scooterId, targetScooterId),
             sql`${rentals.id} <> ${id}`,
             sql`${rentals.status} IN ('active', 'overdue', 'returning')`,
+            isNull(rentals.archivedAt),
           ),
         );
       if (conflict.length > 0) {
@@ -1489,6 +1494,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
         // Дополнительная защита: даже если baseStatus='rental_pool',
         // у скутера МОЖЕТ быть открытая аренда (занят, но baseStatus
         // не меняли). Не даём наплодить дубль.
+        // v0.4.44: исключаем архивные — иначе legacy-записи блокируют свап.
         const otherOpen = await tx
           .select({ id: rentals.id })
           .from(rentals)
@@ -1497,6 +1503,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
               eq(rentals.scooterId, d.newScooterId),
               sql`${rentals.id} <> ${id}`,
               sql`${rentals.status} IN ('active', 'overdue', 'returning')`,
+              isNull(rentals.archivedAt),
             ),
           );
         if (otherOpen.length > 0) {
