@@ -277,6 +277,8 @@ export function applicationFileUrl(
 ): string {
   const base =
     import.meta.env.VITE_API_URL?.replace(/\/$/, "") ?? "http://localhost:4000";
-  const qs = opts.variant ? `?variant=${opts.variant}` : "";
+  // v0.4.63: cache-buster v=webp — после смены формата вариантов с
+  // JPEG на WebP нужно инвалидировать 7-дневный кеш браузера.
+  const qs = opts.variant ? `?variant=${opts.variant}&v=webp` : "";
   return `${base}/api/client-applications/${id}/files/${kind}${qs}`;
 }

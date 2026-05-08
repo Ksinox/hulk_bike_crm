@@ -2267,12 +2267,12 @@ revealTargets.forEach(el => io.observe(el));
       for (const m of items) {
         const node = tpl.content.firstElementChild.cloneNode(true);
         const img = node.querySelector('.scooter-photo');
-        // v0.4.62: ?variant=view — серверная sharp-уменьшенная версия
-        // (≤2000×2000, JPEG q82, mozjpeg, ~300 КБ вместо тяжёлого
-        // оригинала аватарки). Карточки на лендинге крупные, 2000px
-        // хватает с запасом для retina. Если у модели variant ещё не
-        // сгенерирован — API silently fallback'ает на оригинал.
-        img.src = apiUrl.replace(/\/+$/, '') + m.avatarUrl + '?variant=view';
+        // v0.4.63: ?variant=view+v=webp — серверная sharp-уменьшенная
+        // версия (≤2000×2000, WebP q80, ~250 КБ). WebP сохраняет
+        // прозрачность исходных PNG-аватарок; JPEG её сплющивал в
+        // чёрный фон. v=webp инвалидирует 7-дневный кеш браузеров,
+        // которые успели схватить старый JPEG-на-чёрном.
+        img.src = apiUrl.replace(/\/+$/, '') + m.avatarUrl + '?variant=view&v=webp';
         img.alt = m.name;
         node.querySelector('.scooter-name').textContent = m.name;
         const tag = node.querySelector('.scooter-tag');

@@ -38,12 +38,17 @@ export function fileUrl(
     filename?: string;
     /**
      * v0.4.61: вариант изображения.
-     *   "thumb" — миниатюра ≤400×400 (~30 КБ) для гридов и слотов
-     *   "view"  — превью ≤2000×2000 (~300 КБ) для попапов
+     *   "thumb" — миниатюра ≤400×400 (~25 КБ WebP) для гридов и слотов
+     *   "view"  — превью ≤2000×2000 (~250 КБ WebP) для попапов
      *   undefined — оригинал (для скачивания и юридических целей)
      *
      * Если у объекта нет нужного варианта (старая загрузка до v0.4.61),
      * сервер silently fallback'ает на оригинал — UI не сломается.
+     *
+     * v0.4.63: добавлен cache-buster &v=webp. Раньше варианты были JPEG
+     * с заплющенной альфой → прозрачные PNG отдавались как JPEG-на-
+     * чёрном. После переключения на WebP с alpha — нужно инвалидировать
+     * 7-дневный браузерный кеш. Bump версии в URL = новый ключ кэша.
      */
     variant?: "thumb" | "view";
   } = {},
@@ -51,7 +56,10 @@ export function fileUrl(
   const params = new URLSearchParams();
   if (opts.download) params.set("disposition", "attachment");
   if (opts.filename) params.set("filename", opts.filename);
-  if (opts.variant) params.set("variant", opts.variant);
+  if (opts.variant) {
+    params.set("variant", opts.variant);
+    params.set("v", "webp");
+  }
   const qs = params.toString();
   return `${API_BASE}/api/files/${encodeURI(fileKey)}${qs ? `?${qs}` : ""}`;
 }
