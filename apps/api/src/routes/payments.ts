@@ -30,6 +30,10 @@ const PatchPaymentBody = z
     paid: z.boolean().optional(),
     paidAt: z.string().optional().nullable(),
     amount: z.number().int().positive().optional(),
+    // v0.4.50: разрешаем менять method при PATCH — PaymentAcceptDialog
+    // помечает placeholder paid=true и обновляет method (с дефолтного
+    // 'cash' на тот, что выбрал оператор: cash/transfer/deposit).
+    method: z.enum(["cash", "card", "transfer", "deposit"]).optional(),
     note: z.string().optional().nullable(),
   })
   .strict();

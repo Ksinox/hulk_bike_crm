@@ -21,6 +21,7 @@
  *  6. Излишек → депозит клиента
  */
 import { useEffect, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Check, X, Wallet, Shield, Repeat } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
@@ -182,6 +183,7 @@ export function PaymentAcceptDialog({
 
   const [method, setMethod] = useState<PaymentMethod>("cash");
   const [saving, setSaving] = useState(false);
+  const qc = useQueryClient();
 
   const fmt = (n: number) => n.toLocaleString("ru-RU");
 
@@ -393,7 +395,26 @@ export function PaymentAcceptDialog({
             `с залога списано ${securityToUse} ₽ в счёт долга`,
         });
       }
-      // 3. Выполнить распределение всех принятых средств
+      // 3. Выполнить распределение всех принятых средств.
+      // v0.4.50: получаем актуальный список rent-payments (после
+      // возможного extend-inplace) — нам нужны unpaid placeholders
+      // для PATCH paid=true. react-query кэш мог не успеть обновиться.
+      const freshPayments = await api.get<{
+        items: Array<{
+          id: number;
+          rentalId: number;
+          type: string;
+          amount: number;
+          paid: boolean;
+        }>;
+      }>(`/api/payments?rentalId=${rental.id}`);
+      const unpaidRent = (freshPayments.items ?? [])
+        .filter(
+          (p) =>
+            p.rentalId === rental.id && p.type === "rent" && !p.paid,
+        )
+        .sort((a, b) => a.id - b.id);
+
       const ops = distribute();
       for (const op of ops) {
         if (op.amount <= 0) continue;
@@ -427,14 +448,57 @@ export function PaymentAcceptDialog({
             comment: `Оплата клиента (${methodLabel(op.method)})`,
           });
         } else if (op.target === "rent") {
-          await api.post("/api/payments", {
-            rentalId: rental.id,
-            type: "rent",
-            amount: op.amount,
-            method: op.method,
-            paid: true,
-            paidAt: new Date().toISOString(),
-          });
+          // v0.4.50: вместо POST нового rent-платежа PATCH'аем
+          // существующие placeholder'ы paid=false (созданные
+          // extend-inplace или другими flow). FIFO по id —
+          // погашаем старые в первую очередь.
+          //
+          // Если placeholder.amount <= op.amount → PATCH paid=true,
+          //   списываем его сумму с op.amount.
+          // Если placeholder.amount > op.amount → разделяем:
+          //   PATCH placeholder.amount -= op.amount (остаток в долг),
+          //   POST новый paid=true с op.amount.
+          // Если placeholder'ов не хватило → POST новый paid=true.
+          let amountLeft = op.amount;
+          while (amountLeft > 0 && unpaidRent.length > 0) {
+            const ph = unpaidRent[0]!;
+            if (ph.amount <= amountLeft) {
+              await api.patch(`/api/payments/${ph.id}`, {
+                paid: true,
+                paidAt: new Date().toISOString(),
+                method: op.method,
+              });
+              amountLeft -= ph.amount;
+              unpaidRent.shift();
+            } else {
+              // Частичное погашение placeholder: уменьшаем его сумму
+              // на amountLeft, создаём отдельный paid=true на amountLeft.
+              await api.patch(`/api/payments/${ph.id}`, {
+                amount: ph.amount - amountLeft,
+              });
+              await api.post("/api/payments", {
+                rentalId: rental.id,
+                type: "rent",
+                amount: amountLeft,
+                method: op.method,
+                paid: true,
+                paidAt: new Date().toISOString(),
+              });
+              ph.amount = ph.amount - amountLeft;
+              amountLeft = 0;
+            }
+          }
+          // Остаток (placeholder'ов не было или мало) — новый paid=true
+          if (amountLeft > 0) {
+            await api.post("/api/payments", {
+              rentalId: rental.id,
+              type: "rent",
+              amount: amountLeft,
+              method: op.method,
+              paid: true,
+              paidAt: new Date().toISOString(),
+            });
+          }
         } else if (op.target === "deposit") {
           await api.post(
             `/api/clients/${rental.clientId}/deposit/charge`,
@@ -446,6 +510,15 @@ export function PaymentAcceptDialog({
           );
         }
       }
+
+      // v0.4.50: инвалидируем все связанные queries — фронт сразу
+      // подтянет актуальные данные (payments, debt-summary, аренды).
+      qc.invalidateQueries({ queryKey: ["payments"] });
+      qc.invalidateQueries({ queryKey: ["rentals"] });
+      qc.invalidateQueries({ queryKey: ["clients"] });
+      qc.invalidateQueries({ queryKey: ["activity"] });
+      // Долг по этой аренде
+      qc.invalidateQueries({ queryKey: ["rental-debt", rental.id] });
 
       if (overpay > 0) {
         toast.success(
