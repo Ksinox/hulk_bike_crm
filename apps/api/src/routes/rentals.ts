@@ -2678,9 +2678,6 @@ export async function rentalsRoutes(app: FastifyInstance) {
         .where(eq(usersTable.id, userId));
       userName = u?.name ?? "система";
     }
-    // manual_payment кладём как manual_forgive с пометкой — чтобы старая
-    // логика подсчёта manualBalance работала без изменений (она уже
-    // считает manual_charge − manual_forgive).
     const dbKind =
       parsed.data.kind === "manual_payment"
         ? "manual_forgive"
@@ -2696,11 +2693,74 @@ export async function rentalsRoutes(app: FastifyInstance) {
         createdByName: userName,
       })
       .returning();
+
+    // v0.4.55: оплата просроченных дней СДВИГАЕТ end_planned_at — клиент
+    // фактически «купил» эти дни задним числом, аренда продлевается на
+    // них. daysAdded = floor(amount / dailyRate), не больше текущих
+    // overdueDays. Штраф (overdue_fine_payment) — только финансовый, на
+    // время не влияет. manual_payment — тоже не сдвигает.
+    let endPlannedShift = 0;
+    let newStatus: string | null = null;
+    if (parsed.data.kind === "overdue_days_payment") {
+      const [r] = await db
+        .select({
+          rate: rentals.rate,
+          rateUnit: rentals.rateUnit,
+          endPlannedAt: rentals.endPlannedAt,
+          status: rentals.status,
+        })
+        .from(rentals)
+        .where(eq(rentals.id, id));
+      if (r) {
+        const dailyRate =
+          r.rateUnit === "week" ? Math.round(r.rate / 7) : r.rate;
+        if (dailyRate > 0) {
+          const overdueDays = calcOverdueDays(r.endPlannedAt, r.status);
+          const daysAdded = Math.min(
+            overdueDays,
+            Math.floor(parsed.data.amount / dailyRate),
+          );
+          if (daysAdded > 0) {
+            endPlannedShift = daysAdded;
+            const newEnd = new Date(
+              r.endPlannedAt.getTime() + daysAdded * 86_400_000,
+            );
+            // Мгновенная нормализация статуса: если был overdue, а
+            // новый endPlanned >= сегодня → возвращаем active.
+            const todayMsk = new Date(
+              new Date().toLocaleString("en-US", {
+                timeZone: "Europe/Moscow",
+              }),
+            );
+            todayMsk.setHours(0, 0, 0, 0);
+            if (
+              r.status === "overdue" &&
+              newEnd.getTime() >= todayMsk.getTime()
+            ) {
+              newStatus = "active";
+            }
+            await db
+              .update(rentals)
+              .set({
+                endPlannedAt: newEnd,
+                ...(newStatus ? { status: "active" as const } : {}),
+                updatedAt: sql`now()`,
+              })
+              .where(eq(rentals.id, id));
+          }
+        }
+      }
+    }
+
     await logActivity(req, {
       entity: "rental",
       entityId: id,
       action: "debt_payment",
-      summary: `Оплата ${parsed.data.amount} ₽ по аренде #${id} (${parsed.data.kind})`,
+      summary:
+        endPlannedShift > 0
+          ? `Оплата ${parsed.data.amount} ₽ по аренде #${id} (${parsed.data.kind}) — endPlanned сдвинут на ${endPlannedShift} дн${newStatus ? ", статус → active" : ""}`
+          : `Оплата ${parsed.data.amount} ₽ по аренде #${id} (${parsed.data.kind})`,
+      meta: { endPlannedShift, newStatus },
     });
     return row;
   });
@@ -2766,7 +2826,11 @@ export async function rentalsRoutes(app: FastifyInstance) {
    */
   app.post<{
     Params: { id: string };
-    Body: { comment?: string; target?: "all" | "fine" | "days" };
+    Body: {
+      comment?: string;
+      target?: "all" | "fine" | "days";
+      daysCount?: number;
+    };
   }>("/:id/debt/forgive-overdue", async (req, reply) => {
     if (!assertFinancialRole(req, reply)) return;
     const id = Number(req.params.id);
@@ -2774,6 +2838,10 @@ export async function rentalsRoutes(app: FastifyInstance) {
     const Body = z.object({
       comment: z.string().max(500).optional(),
       target: z.enum(["all", "fine", "days"]).optional(),
+      // v0.4.55: частичное прощение дней. Если задан — прощается ровно
+      // N дней (по сумме N × dailyRate). Применяется только при
+      // target='days'. Если undefined — прощается всё (старое поведение).
+      daysCount: z.number().int().positive().optional(),
     });
     const parsed = Body.safeParse(req.body ?? {});
     if (!parsed.success) {
@@ -2873,6 +2941,42 @@ export async function rentalsRoutes(app: FastifyInstance) {
       return { row, mode: "fine", amount: fineRemaining };
     }
 
+    // v0.4.55: helper — сдвинуть endPlannedAt на N дней + нормализовать
+    // status (overdue → active если новый endPlanned >= сегодня).
+    // Возвращает {shift, newStatus} для лога.
+    const dailyRate =
+      rental.rateUnit === "week"
+        ? Math.round(rental.rate / 7)
+        : rental.rate;
+    const shiftEndPlanned = async (
+      daysToAdd: number,
+    ): Promise<{ shift: number; newStatus: string | null }> => {
+      if (daysToAdd <= 0) return { shift: 0, newStatus: null };
+      const newEnd = new Date(
+        rental.endPlannedAt.getTime() + daysToAdd * 86_400_000,
+      );
+      const todayMsk = new Date(
+        new Date().toLocaleString("en-US", {
+          timeZone: "Europe/Moscow",
+        }),
+      );
+      todayMsk.setHours(0, 0, 0, 0);
+      const shouldNormalize =
+        rental.status === "overdue" && newEnd.getTime() >= todayMsk.getTime();
+      await db
+        .update(rentals)
+        .set({
+          endPlannedAt: newEnd,
+          ...(shouldNormalize ? { status: "active" as const } : {}),
+          updatedAt: sql`now()`,
+        })
+        .where(eq(rentals.id, id));
+      return {
+        shift: daysToAdd,
+        newStatus: shouldNormalize ? "active" : null,
+      };
+    };
+
     if (target === "days") {
       if (daysRemaining <= 0) {
         return reply.code(400).send({
@@ -2880,24 +2984,46 @@ export async function rentalsRoutes(app: FastifyInstance) {
           message: "Долг по неоплаченным дням уже списан/оплачен.",
         });
       }
+      // v0.4.55: частичное прощение. Если daysCount задан, прощаем
+      // ровно N дней (capped до фактического остатка). Иначе — всё.
+      const requestedAmount =
+        parsed.data.daysCount && parsed.data.daysCount > 0
+          ? Math.min(
+              daysRemaining,
+              parsed.data.daysCount * Math.max(1, dailyRate),
+            )
+          : daysRemaining;
       const [row] = await db
         .insert(debtEntries)
         .values({
           rentalId: id,
           kind: "overdue_days_forgive",
-          amount: daysRemaining,
+          amount: requestedAmount,
           comment: parsed.data.comment ?? null,
           createdByUserId: userId,
           createdByName: userName,
         })
         .returning();
+      // Сдвигаем endPlanned пропорционально прощённой части.
+      const daysToShift = Math.floor(requestedAmount / Math.max(1, dailyRate));
+      const shiftRes = await shiftEndPlanned(daysToShift);
       await logActivity(req, {
         entity: "rental",
         entityId: id,
         action: "debt_overdue_days_forgiven",
-        summary: `Списан долг по дням просрочки ${daysRemaining} ₽ по аренде #${id}${parsed.data.comment ? `: ${parsed.data.comment}` : ""}`,
+        summary: `Списан долг по дням просрочки ${requestedAmount} ₽ (${daysToShift} дн) по аренде #${id}${parsed.data.comment ? `: ${parsed.data.comment}` : ""}${shiftRes.newStatus ? " · статус → active" : ""}`,
+        meta: {
+          daysToShift,
+          newStatus: shiftRes.newStatus,
+        },
       });
-      return { row, mode: "days", amount: daysRemaining };
+      return {
+        row,
+        mode: "days",
+        amount: requestedAmount,
+        daysShift: daysToShift,
+        newStatus: shiftRes.newStatus,
+      };
     }
 
     // target === 'all' — списываем и дни, и штраф двумя записями.
@@ -2935,14 +3061,27 @@ export async function rentalsRoutes(app: FastifyInstance) {
         .returning();
       if (row) inserted.push(row);
     }
+    // v0.4.55: при target='all' сдвигаем endPlanned на дни-часть.
+    const daysToShiftAll = Math.floor(daysRemaining / Math.max(1, dailyRate));
+    const shiftResAll = await shiftEndPlanned(daysToShiftAll);
     const total = daysRemaining + fineRemaining;
     await logActivity(req, {
       entity: "rental",
       entityId: id,
       action: "debt_overdue_forgiven",
-      summary: `Сброшена просрочка ${total} ₽ (дни ${daysRemaining} + штраф ${fineRemaining}) по аренде #${id}${parsed.data.comment ? `: ${parsed.data.comment}` : ""}`,
+      summary: `Сброшена просрочка ${total} ₽ (дни ${daysRemaining} + штраф ${fineRemaining}) по аренде #${id}${parsed.data.comment ? `: ${parsed.data.comment}` : ""}${shiftResAll.shift > 0 ? ` · endPlanned +${shiftResAll.shift} дн` : ""}${shiftResAll.newStatus ? ", статус → active" : ""}`,
+      meta: {
+        daysShift: shiftResAll.shift,
+        newStatus: shiftResAll.newStatus,
+      },
     });
-    return { entries: inserted, mode: "all", amount: total };
+    return {
+      entries: inserted,
+      mode: "all",
+      amount: total,
+      daysShift: shiftResAll.shift,
+      newStatus: shiftResAll.newStatus,
+    };
   });
 
   /**

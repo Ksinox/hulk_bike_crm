@@ -667,41 +667,63 @@ export function RentalCard({
         toast.info("Нет просрочки", "Сбрасывать нечего.");
         return;
       }
-      // v0.4.4: один диалог с тремя вариантами (Esc/клик мимо = отмена).
-      // pickAction возвращает id выбранного варианта или null.
-      const choice = await pickAction<"days" | "fine" | "all">({
+      // v0.4.55: четвёртый вариант — частичное прощение N дней.
+      // При выборе оператор вводит число дней; ENPlanned сдвинется
+      // на эти дни автоматически (бэк), статус нормализуется в active
+      // если новый endPlanned в будущем.
+      const overdueDaysCount = debtSummary?.overdueDays ?? 0;
+      const choice = await pickAction<
+        "days" | "days_partial" | "fine" | "all"
+      >({
         title: "Что списываем?",
-        message: `Просрочка ${total.toLocaleString("ru-RU")} ₽ за ${debtSummary?.overdueDays ?? 0} дн.`,
+        message: `Просрочка ${total.toLocaleString("ru-RU")} ₽ за ${overdueDaysCount} дн.`,
         options: [
           {
             id: "days",
-            label: "Неоплаченные дни",
-            hint: `${days.toLocaleString("ru-RU")} ₽ — тариф × дни просрочки`,
+            label: `Все неоплаченные дни (${overdueDaysCount} дн)`,
+            hint: `${days.toLocaleString("ru-RU")} ₽ — тариф × дни просрочки. endPlanned +${overdueDaysCount} дн.`,
+            disabled: days <= 0,
+          },
+          {
+            id: "days_partial",
+            label: "Только N дней (укажу сколько)",
+            hint: `Простит выбранные дни, остальные останутся в долге`,
             disabled: days <= 0,
           },
           {
             id: "fine",
             label: "Проценты по просроченным дням",
-            hint: `${fine.toLocaleString("ru-RU")} ₽ — штраф 50% × дни`,
+            hint: `${fine.toLocaleString("ru-RU")} ₽ — штраф 50% × дни. endPlanned не меняется.`,
             disabled: fine <= 0,
           },
           {
             id: "all",
             label: "Всю просрочку (дни + штраф)",
-            hint: `${total.toLocaleString("ru-RU")} ₽`,
+            hint: `${total.toLocaleString("ru-RU")} ₽. endPlanned +${overdueDaysCount} дн.`,
             tone: "danger",
           },
         ],
       });
       if (choice == null) return;
-      // Маппим UI-выбор в API-target. Бэк сейчас умеет 'all' и 'fine'.
-      // 'days' = списать дни без штрафа — это «всё минус штраф».
-      // Реализуем как: списываем 'all', а потом ОБРАТНО начисляем штраф
-      // через manual_charge? Нет, грязно. Лучше добавим target='days'
-      // в API. Сейчас, до апгрейда API — 'days' просто маппим в 'all'
-      // если штрафа нет, или предупреждаем. Но мы УЖЕ обновили API под
-      // эту итерацию и можем сразу target='days'.
-      const target: "all" | "fine" | "days" = choice;
+
+      // Если выбрано «частичное» — спрашиваем число дней
+      let daysCount: number | undefined;
+      if (choice === "days_partial") {
+        const raw = window.prompt(
+          `Сколько дней простить? (доступно ${overdueDaysCount})`,
+          String(overdueDaysCount),
+        );
+        if (raw == null) return;
+        const n = Math.max(1, Math.min(overdueDaysCount, Number(raw) || 0));
+        if (n <= 0) {
+          toast.error("Некорректное число дней");
+          return;
+        }
+        daysCount = n;
+      }
+
+      const target: "all" | "fine" | "days" =
+        choice === "days_partial" ? "days" : choice;
       if (target === "fine" && fine <= 0) {
         toast.info("Нет штрафа", "Штраф уже списан или оплачен.");
         return;
@@ -712,16 +734,22 @@ export function RentalCard({
           rentalId: rental.id,
           comment: comment ?? undefined,
           target,
+          daysCount,
         });
         const successTitle =
-          target === "all"
-            ? "Просрочка сброшена полностью"
-            : target === "days"
-              ? "Долг по дням списан"
-              : "Штраф списан";
+          choice === "days_partial"
+            ? `Прощено ${daysCount} дн просрочки`
+            : target === "all"
+              ? "Просрочка сброшена полностью"
+              : target === "days"
+                ? "Долг по дням списан"
+                : "Штраф списан";
+        const shiftHint = r.daysShift
+          ? ` · endPlanned +${r.daysShift} дн${r.newStatus ? ", статус → active" : ""}`
+          : "";
         toast.success(
           successTitle,
-          `Списано ${(r.amount ?? 0).toLocaleString("ru-RU")} ₽. Запись в Истории долгов.`,
+          `Списано ${(r.amount ?? 0).toLocaleString("ru-RU")} ₽. Запись в Истории долгов.${shiftHint}`,
         );
       } catch (e) {
         const msg = (e as { body?: { error?: string } }).body?.error;

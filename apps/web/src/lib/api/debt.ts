@@ -190,15 +190,28 @@ export function useForgiveOverdue() {
       rentalId: number;
       comment?: string;
       target?: "all" | "fine" | "days";
+      /** v0.4.55: при target='days' прощается ровно N дней (а не всё). */
+      daysCount?: number;
     }) =>
-      api.post<{ amount: number; mode: "all" | "fine" | "days" }>(
-        `/api/rentals/${args.rentalId}/debt/forgive-overdue`,
-        { comment: args.comment ?? "", target: args.target ?? "all" },
-      ),
+      api.post<{
+        amount: number;
+        mode: "all" | "fine" | "days";
+        daysShift?: number;
+        newStatus?: string | null;
+      }>(`/api/rentals/${args.rentalId}/debt/forgive-overdue`, {
+        comment: args.comment ?? "",
+        target: args.target ?? "all",
+        daysCount: args.daysCount,
+      }),
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: debtKeys.one(vars.rentalId) });
       qc.invalidateQueries({ queryKey: ["activity"] });
       qc.invalidateQueries({ queryKey: debtKeys.aggregate });
+      // v0.4.55: forgive теперь сдвигает endPlannedAt и status —
+      // инвалидируем список аренд и клиентов чтобы UI подтянул новые
+      // даты/статусы.
+      qc.invalidateQueries({ queryKey: ["rentals"] });
+      qc.invalidateQueries({ queryKey: ["clients"] });
     },
   });
 }
