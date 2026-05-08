@@ -545,7 +545,8 @@ function RepairProgressRow({ progress }: { progress: ApiRepairProgress }) {
       {/* Фото */}
       <div className="mt-2 flex flex-wrap items-start gap-1.5">
         {progress.photos.map((ph) => {
-          const url = fileUrl(ph.fileKey);
+          // v0.4.61: миниатюры ремонтных фото — thumb-вариант (~30 КБ).
+          const url = fileUrl(ph.fileKey, { variant: "thumb" });
           if (!url) return null;
           return (
             <div
@@ -615,7 +616,8 @@ function PhotoPreview({
   photo: ApiRepairProgressPhoto;
   onClose: () => void;
 }) {
-  const url = fileUrl(photo.fileKey);
+  // v0.4.61: для попапа просмотра — view-вариант (≤2000px).
+  const url = fileUrl(photo.fileKey, { variant: "view" });
   if (!url) return null;
   return (
     <div
@@ -711,7 +713,8 @@ function JournalRow({ job }: { job: ApiRepairJob }) {
                   {p.photos.length > 0 && (
                     <div className="mt-0.5 flex w-full flex-wrap gap-1.5">
                       {p.photos.map((ph) => {
-                        const url = fileUrl(ph.fileKey);
+                        // Журнал ремонтов: миниатюры по фото — thumb.
+                        const url = fileUrl(ph.fileKey, { variant: "thumb" });
                         if (!url) return null;
                         return (
                           <a

@@ -3,7 +3,8 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/index.js";
 import { scooterDocuments } from "../db/schema.js";
-import { makeFileKey, putObject, removeObject } from "../storage/index.js";
+import { makeFileKey, removeObject } from "../storage/index.js";
+import { putObjectWithImageVariants } from "../storage/image.js";
 
 const KindEnum = z.enum(["pts", "sts", "osago", "purchase", "photo"]);
 
@@ -63,7 +64,7 @@ export async function scooterDocumentsRoutes(app: FastifyInstance) {
     }
 
     const key = makeFileKey(`scooters/${scooterId}/${parsedKind.data}`, fileName);
-    await putObject(key, fileBuf, mimeType);
+    await putObjectWithImageVariants(key, fileBuf, mimeType);
 
     // Для kind='photo' — всегда INSERT (до 10 фото на скутер).
     // Для остальных (ПТС/СТС/ОСАГО/договор) — один-документ-на-вид, UPDATE если уже есть.

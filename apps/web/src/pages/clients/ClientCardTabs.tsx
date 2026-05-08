@@ -317,8 +317,13 @@ function apiDocToUploaded(doc: ApiClientDoc): UploadedFile {
     mimeType: doc.mimeType,
     docId: doc.id,
     existing: true,
+    // v0.4.61: для миниатюр в слотах паспорта/прописки/ВУ просим у
+    // сервера thumb-вариант (≤400px, ~30 КБ). Раньше тут стоял URL на
+    // оригинал паспорта 4-8 МБ — браузер тянул полный JPEG ради иконки
+    // 9×9 rem. Открыл клиента с 3 сканами → 25 МБ загрузки. Теперь
+    // загрузка миниатюр — мгновенная.
     thumbUrl: isImage
-      ? fileUrl(doc.fileKey, { filename: doc.fileName })
+      ? fileUrl(doc.fileKey, { filename: doc.fileName, variant: "thumb" })
       : undefined,
   };
 }

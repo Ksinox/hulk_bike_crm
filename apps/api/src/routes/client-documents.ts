@@ -3,7 +3,8 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/index.js";
 import { clientDocuments } from "../db/schema.js";
-import { makeFileKey, putObject, removeObject } from "../storage/index.js";
+import { makeFileKey, removeObject } from "../storage/index.js";
+import { putObjectWithImageVariants } from "../storage/image.js";
 
 const KindEnum = z.enum(["photo", "passport", "license", "extra"]);
 
@@ -65,7 +66,10 @@ export async function clientDocumentsRoutes(app: FastifyInstance) {
     }
 
     const key = makeFileKey(`clients/${clientId}/${parsedKind.data}`, fileName);
-    await putObject(key, fileBuf, mimeType);
+    // putObjectWithImageVariants кладёт оригинал + view (≤2000px) + thumb
+    // (≤400px), все JPEG/progressive. Для не-картинок (PDF) кладёт только
+    // оригинал — поведение совместимо с прежним putObject.
+    await putObjectWithImageVariants(key, fileBuf, mimeType);
 
     const [row] = await db
       .insert(clientDocuments)

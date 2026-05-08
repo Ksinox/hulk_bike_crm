@@ -124,7 +124,7 @@ export function ScooterPhotosGallery({ scooterId }: { scooterId: number }) {
                 title="Открыть"
               >
                 <img
-                  src={fileUrl(p.fileKey)}
+                  src={fileUrl(p.fileKey, { variant: "thumb" }) ?? undefined}
                   alt={p.fileName}
                   className="h-full w-full object-cover transition-transform group-hover:scale-[1.03]"
                 />
@@ -152,7 +152,9 @@ export function ScooterPhotosGallery({ scooterId }: { scooterId: number }) {
         <FilePreviewModal
           file={{
             name: preview.fileName,
-            thumbUrl: fileUrl(preview.fileKey),
+            // v0.4.61: для попапа просмотра тянем view-вариант (≤2000px,
+            // ~300 КБ). Полный 4-8 МБ грузится только при клике «Скачать».
+            thumbUrl: fileUrl(preview.fileKey, { variant: "view" }) ?? undefined,
             size: preview.size,
           }}
           onClose={() => setPreview(null)}

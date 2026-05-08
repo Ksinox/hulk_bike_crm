@@ -7,7 +7,8 @@ import {
   clientApplicationFiles,
   clientApplications,
 } from "../db/schema.js";
-import { makeFileKey, putObject, removeObject } from "../storage/index.js";
+import { makeFileKey, removeObject } from "../storage/index.js";
+import { putObjectWithImageVariants } from "../storage/image.js";
 import { logActivity } from "../services/activityLog.js";
 
 /**
@@ -252,8 +253,8 @@ export async function publicApplicationsRoutes(app: FastifyInstance) {
         `applications/${id}/${parsedKind.data}`,
         fileName,
       );
-      // 1) Записываем новый файл в MinIO
-      await putObject(fileKey, fileBuf, mimeType);
+      // 1) Записываем новый файл в MinIO + варианты (view/thumb для image/*).
+      await putObjectWithImageVariants(fileKey, fileBuf, mimeType);
 
       // 2) Если был старый — удаляем запись из БД и файл из MinIO,
       //    но только после того как новая загрузка прошла успешно

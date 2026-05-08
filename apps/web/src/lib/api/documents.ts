@@ -33,11 +33,25 @@ const API_BASE =
 
 export function fileUrl(
   fileKey: string,
-  opts: { download?: boolean; filename?: string } = {},
+  opts: {
+    download?: boolean;
+    filename?: string;
+    /**
+     * v0.4.61: вариант изображения.
+     *   "thumb" — миниатюра ≤400×400 (~30 КБ) для гридов и слотов
+     *   "view"  — превью ≤2000×2000 (~300 КБ) для попапов
+     *   undefined — оригинал (для скачивания и юридических целей)
+     *
+     * Если у объекта нет нужного варианта (старая загрузка до v0.4.61),
+     * сервер silently fallback'ает на оригинал — UI не сломается.
+     */
+    variant?: "thumb" | "view";
+  } = {},
 ): string {
   const params = new URLSearchParams();
   if (opts.download) params.set("disposition", "attachment");
   if (opts.filename) params.set("filename", opts.filename);
+  if (opts.variant) params.set("variant", opts.variant);
   const qs = params.toString();
   return `${API_BASE}/api/files/${encodeURI(fileKey)}${qs ? `?${qs}` : ""}`;
 }

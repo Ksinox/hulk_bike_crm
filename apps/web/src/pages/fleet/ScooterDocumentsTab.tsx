@@ -255,8 +255,14 @@ export function ScooterDocumentsTab({ scooter }: { scooter: FleetScooter }) {
         <FilePreviewModal
           file={{
             name: preview.fileName,
-            thumbUrl: fileUrl(preview.fileKey),
+            // v0.4.61: для попапа — view-вариант (≤2000px), вместо
+            // оригинального скана 4-8 МБ. Скачивание идёт через fileKey
+            // → отдаст оригинал.
+            thumbUrl:
+              fileUrl(preview.fileKey, { variant: "view" }) ?? undefined,
             size: preview.size,
+            mimeType: preview.mimeType,
+            fileKey: preview.fileKey,
           }}
           onClose={() => setPreview(null)}
         />
@@ -330,7 +336,7 @@ function ServerDocSlot({
           >
             {isImageMime(doc.mimeType) ? (
               <img
-                src={fileUrl(doc.fileKey)}
+                src={fileUrl(doc.fileKey, { variant: "thumb" }) ?? undefined}
                 alt=""
                 className="h-full w-full object-cover"
               />

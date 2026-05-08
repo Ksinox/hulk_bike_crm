@@ -40,8 +40,17 @@ export function FilePreviewModal({
 
   // Источник для просмотра: blob URL (свежий локальный файл) ИЛИ URL из
   // S3 через /api/files/{key} (если файл уже на сервере).
+  // v0.4.61: для серверных картинок просим view-вариант (≤2000px,
+  // ~300 КБ) — он отлично читается на A4 и грузится за полсекунды
+  // вместо нескольких. Скачивание всегда отдаёт оригинал.
+  const isServerImage =
+    file.mimeType?.startsWith("image/") ||
+    /\.(jpe?g|png|webp|gif)$/i.test(file.name);
   const serverUrl = file.fileKey
-    ? fileUrl(file.fileKey, { filename: file.name })
+    ? fileUrl(file.fileKey, {
+        filename: file.name,
+        variant: isServerImage ? "view" : undefined,
+      })
     : null;
   const src = file.thumbUrl ?? serverUrl;
   const mimeIsImage = file.mimeType?.startsWith("image/") ?? false;

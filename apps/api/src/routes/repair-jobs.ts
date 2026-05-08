@@ -13,7 +13,8 @@ import {
   damageReportItems,
 } from "../db/schema.js";
 import { logActivity } from "../services/activityLog.js";
-import { makeFileKey, putObject, removeObject } from "../storage/index.js";
+import { makeFileKey, removeObject } from "../storage/index.js";
+import { putObjectWithImageVariants } from "../storage/image.js";
 
 const MAX_PHOTO_SIZE = 12 * 1024 * 1024; // 12 MB
 
@@ -400,7 +401,7 @@ export async function repairJobsRoutes(app: FastifyInstance) {
         });
       }
       const key = makeFileKey(`repairs/${row.repairJobId}/${id}`, fileName);
-      await putObject(key, fileBuf, mimeType);
+      await putObjectWithImageVariants(key, fileBuf, mimeType);
       const userId = getUserId(req);
       const [photo] = await db
         .insert(repairProgressPhotos)
