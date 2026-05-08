@@ -15,6 +15,7 @@ import {
   removeObject,
   statObject,
 } from "../storage/index.js";
+import { variantKey } from "../storage/image.js";
 import { logActivity } from "../services/activityLog.js";
 import { CreateClientBody } from "./clients.js";
 
@@ -193,8 +194,17 @@ export async function clientApplicationsRoutes(app: FastifyInstance) {
     };
   });
 
-  /* GET /api/client-applications/:id/files/:kind — стрим файла из MinIO */
-  app.get<{ Params: { id: string; kind: string } }>(
+  /* GET /api/client-applications/:id/files/:kind — стрим файла из MinIO.
+   *
+   * v0.4.62: ?variant=thumb|view — отдаём уменьшенный вариант (см.
+   * storage/image.ts). Для миниатюр в карточке заявки CRM запрашивает
+   * thumb (~30 КБ), для попапа — view (~300 КБ). Без параметра — оригинал.
+   * Если вариант ещё не сгенерирован (legacy-загрузка до v0.4.62) —
+   * silently fallback на оригинал. */
+  app.get<{
+    Params: { id: string; kind: string };
+    Querystring: { variant?: "thumb" | "view" };
+  }>(
     "/:id/files/:kind",
     async (req, reply) => {
       const id = Number(req.params.id);
@@ -214,14 +224,30 @@ export async function clientApplicationsRoutes(app: FastifyInstance) {
         );
       if (!file) return reply.code(404).send({ error: "not_found" });
 
+      // Пробуем variant-ключ; при отсутствии падаем на оригинал.
+      let key = file.fileKey;
       let meta;
-      try {
-        meta = await statObject(file.fileKey);
-      } catch {
-        return reply.code(404).send({ error: "not_found" });
+      if (req.query.variant === "thumb" || req.query.variant === "view") {
+        const derived = variantKey(file.fileKey, req.query.variant);
+        try {
+          meta = await statObject(derived);
+          key = derived;
+        } catch {
+          try {
+            meta = await statObject(file.fileKey);
+          } catch {
+            return reply.code(404).send({ error: "not_found" });
+          }
+        }
+      } else {
+        try {
+          meta = await statObject(file.fileKey);
+        } catch {
+          return reply.code(404).send({ error: "not_found" });
+        }
       }
 
-      const stream = await getObjectStream(file.fileKey);
+      const stream = await getObjectStream(key);
       reply
         .header("Content-Type", meta.mimeType)
         .header("Content-Length", meta.size)
@@ -229,8 +255,9 @@ export async function clientApplicationsRoutes(app: FastifyInstance) {
         // Поэтому кешируем агрессивно (24 ч + immutable), чтобы повторное
         // открытие модалки заявки не дёргало MinIO заново.
         .header("Cache-Control", "private, max-age=86400, immutable")
-        // ETag на основе ключа MinIO — браузер сам делает 304 при revalidation.
-        .header("ETag", `"${file.fileKey}"`)
+        // ETag учитывает variant — иначе кэш брал бы thumb, перепутав
+        // его с оригиналом, при смене ?variant.
+        .header("ETag", `"${key}"`)
         // helmet по умолчанию ставит CORP: same-origin → блокирует <img>
         // на crm.hulkbike.ru (web) при загрузке с api.hulkbike.ru (api).
         // Разрешаем cross-origin — браузер поверит CORS-заголовкам.
@@ -406,6 +433,22 @@ export async function clientApplicationsRoutes(app: FastifyInstance) {
           );
           await copyObject(file.fileKey, newKey);
           copiedKeys.push(newKey);
+          // v0.4.62: при конверте заявки в клиента также копируем
+          // sharp-варианты (thumb + view) — они прибиты к оригиналу
+          // конвенцией key.__thumb__.jpg / key.__view__.jpg. Если у
+          // оригинала их нет (legacy-загрузка до v0.4.62) — copyObject
+          // упадёт с NoSuchKey, ловим тихо: после backfill варианты
+          // догенерятся для нового key, а до этого fallback на оригинал.
+          for (const v of ["thumb", "view"] as const) {
+            const fromVar = variantKey(file.fileKey, v);
+            const toVar = variantKey(newKey, v);
+            try {
+              await copyObject(fromVar, toVar);
+              copiedKeys.push(toVar);
+            } catch {
+              /* варианта нет — пропускаем, оригинал и так скопирован */
+            }
+          }
 
           await db.insert(clientDocuments).values({
             clientId: newClient.id,

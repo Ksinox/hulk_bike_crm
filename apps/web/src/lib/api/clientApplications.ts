@@ -259,12 +259,24 @@ export function useConvertApplication() {
   });
 }
 
-/** URL для img src — фото загружается с cookie-сессией менеджера. */
+/**
+ * URL для img src — фото загружается с cookie-сессией менеджера.
+ *
+ * v0.4.62: variant — серверная генерация уменьшенных версий (sharp).
+ *   "thumb" — миниатюра ≤400px (~30 КБ) для гридов в карточке заявки
+ *   "view"  — превью ≤2000px (~300 КБ) для попапов
+ *   undefined — оригинал (для скачивания)
+ *
+ * Если у файла нет нужного варианта (legacy-загрузка до v0.4.62) —
+ * сервер silently fallback'ает на оригинал.
+ */
 export function applicationFileUrl(
   id: number,
   kind: ApplicationFileKind,
+  opts: { variant?: "thumb" | "view" } = {},
 ): string {
   const base =
     import.meta.env.VITE_API_URL?.replace(/\/$/, "") ?? "http://localhost:4000";
-  return `${base}/api/client-applications/${id}/files/${kind}`;
+  const qs = opts.variant ? `?variant=${opts.variant}` : "";
+  return `${base}/api/client-applications/${id}/files/${kind}${qs}`;
 }

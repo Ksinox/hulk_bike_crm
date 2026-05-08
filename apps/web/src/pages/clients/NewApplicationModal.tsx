@@ -370,7 +370,7 @@ function Portrait({
       title="Открыть селфи"
     >
       <img
-        src={applicationFileUrl(applicationId, "selfie")}
+        src={applicationFileUrl(applicationId, "selfie", { variant: "thumb" })}
         alt="Селфи"
         crossOrigin="use-credentials"
         className="h-full w-full object-cover transition-opacity group-hover:opacity-90"
@@ -479,7 +479,7 @@ function DocumentTile({
     >
       <div className="relative flex-1 overflow-hidden">
         <img
-          src={applicationFileUrl(applicationId, kind)}
+          src={applicationFileUrl(applicationId, kind, { variant: "thumb" })}
           alt={label}
           crossOrigin="use-credentials"
           className="h-full w-full object-cover transition-opacity group-hover:opacity-90"
@@ -506,7 +506,10 @@ function ZoomImage({
   label: string;
 }) {
   const [broken, setBroken] = useState(false);
-  const url = applicationFileUrl(applicationId, kind);
+  // v0.4.62: для попапа-zoom — view-вариант (≤2000px). Скачивание
+  // («Открыть в новой вкладке» при ошибке) идёт без variant — там оригинал.
+  const url = applicationFileUrl(applicationId, kind, { variant: "view" });
+  const downloadUrl = applicationFileUrl(applicationId, kind);
   if (broken && file) {
     const ext = (file.fileName.split(".").pop() ?? "").toUpperCase();
     const sizeKb = Math.round(file.size / 1024);
@@ -526,7 +529,7 @@ function ZoomImage({
           Скорее всего формат HEIC/HEIF (с iPhone) — не отображается в Chrome.
         </div>
         <a
-          href={url}
+          href={downloadUrl}
           target="_blank"
           rel="noreferrer"
           className="mt-5 inline-flex items-center gap-1.5 rounded-full bg-ink px-4 py-2 text-[13px] font-semibold text-white hover:bg-ink-2"
