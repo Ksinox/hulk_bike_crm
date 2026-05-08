@@ -1228,16 +1228,17 @@ export function RentalCard({
       >
         {(() => {
           let label = "Срок";
-          // Если аренда продлевалась — общий срок = сумма дней по всей цепочке
-          // (от первой выдачи до текущего планового конца), иначе rental.days.
           const totalDays = isExtended
             ? chainRentals.reduce((s, r) => s + (r.days || 0), 0)
             : rental.days;
           let value = `${totalDays} дн`;
-          // В hint показываем диапазон от ROOT-старта (первая выдача) до
-          // текущего планового конца, чтобы было видно реальный период проката.
           const hint = `${rootRental.start.slice(0, 5)} — ${rental.endPlanned.slice(0, 5)}`;
           let accent: KpiAccent = "default";
+          // v0.4.54: если фактический долг 0 — показываем «возврат был
+          // DD.MM», без красного «Просрочен», даже когда status='overdue'
+          // и/или endPlanned прошёл. Это согласует KPI с бейджем
+          // в шапке (effectiveStatus='returning').
+          const debtZero = overdueRelatedDebt === 0;
           if (rental.status === "active" && daysLeft !== null) {
             if (daysLeft > 0) {
               value = `осталось ${daysLeft} дн`;
@@ -1245,18 +1246,29 @@ export function RentalCard({
             } else if (daysLeft === 0) {
               value = `возврат сегодня`;
               accent = "red";
+            } else if (debtZero) {
+              // Просрочен по дате, но долг 0 — амбер «возврат был»
+              label = "Возврат был";
+              value = rental.endPlanned.slice(0, 5);
+              accent = "default";
             } else {
               label = "Просрочен";
               value = `${Math.abs(daysLeft)} дн`;
               accent = "red";
             }
           } else if (rental.status === "overdue") {
-            label = "Просрочен";
-            value =
-              daysLeft !== null && daysLeft < 0
-                ? `${Math.abs(daysLeft)} дн`
-                : "сегодня";
-            accent = "red";
+            if (debtZero) {
+              label = "Возврат был";
+              value = rental.endPlanned.slice(0, 5);
+              accent = "default";
+            } else {
+              label = "Просрочен";
+              value =
+                daysLeft !== null && daysLeft < 0
+                  ? `${Math.abs(daysLeft)} дн`
+                  : "сегодня";
+              accent = "red";
+            }
           }
           return (
             <KpiCard label={label} value={value} hint={hint} accent={accent} />
