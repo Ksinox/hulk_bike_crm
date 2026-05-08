@@ -13,6 +13,8 @@ import {
 } from "./rentalsStore";
 import { clientStore } from "@/pages/clients/clientStore";
 import { api } from "@/lib/api";
+import { useActivityTimeline } from "@/lib/api/activity";
+import { DocumentPreviewModal } from "./DocumentPreviewModal";
 
 /** v0.4.57: helper для записи компенсаций с залога. Использует
  *  существующий endpoint /debt/manual (kind=manual_charge). */
@@ -114,6 +116,10 @@ export function RentalActionDialog({
   // DamageReportDialog). Сумма списывается с залога.
   const [equipmentDamageAmount, setEquipmentDamageAmount] = useState<string>("0");
   const [equipmentDamageNote, setEquipmentDamageNote] = useState<string>("");
+  // v0.4.57: пробег скутера при возврате. Опционально — некоторые
+  // бизнесы ведут учёт пробега (для ТО / страховки). Пустое значение
+  // не передаётся в API.
+  const [mileageAtReturn, setMileageAtReturn] = useState<string>("");
   // Legacy-флаг для action="complete-damage" — в новом flow «Завершить»
   // ущерб открывается через onOpenDamage callback, без чекбокса.
   const [hasDamage] = useState(false);
@@ -158,7 +164,14 @@ export function RentalActionDialog({
       //     ограничена [start_at..today].
       //   • Финансовая сводка по сделке.
       const scooterDamaged = !returnOk;
-      const equipmentDamaged = !equipmentOk;
+      // v0.4.57: чекбокс экипировки скрываем если у аренды её нет
+      // (клиент брал скутер без шлема/держателя). Иначе оператор не
+      // мог бы завершить аренду — чекбокс «возвращена в полном объёме»
+      // невозможно отметить честно при пустой экипировке.
+      const hasEquipment =
+        (rental.equipment && rental.equipment.length > 0) ||
+        (rental.equipmentJson && rental.equipmentJson.length > 0);
+      const equipmentDamaged = hasEquipment ? !equipmentOk : false;
       const depositTotal = rental.deposit || 2000;
       const eqDamageNum = Math.max(0, Math.min(depositTotal, Math.floor(Number(equipmentDamageAmount) || 0)));
       const withholdNum = Math.max(0, Math.min(depositTotal - eqDamageNum, Math.floor(Number(depositWithhold) || 0)));
@@ -181,17 +194,19 @@ export function RentalActionDialog({
                 Чек-лист приёма
               </div>
               <div className="space-y-1.5 text-[13px]">
-                <Checkline
-                  checked={equipmentOk}
-                  onChange={(v) => {
-                    setEquipmentOk(v);
-                    if (v) {
-                      setEquipmentDamageAmount("0");
-                      setEquipmentDamageNote("");
-                    }
-                  }}
-                  label="Экипировка возвращена в полном объёме"
-                />
+                {hasEquipment && (
+                  <Checkline
+                    checked={equipmentOk}
+                    onChange={(v) => {
+                      setEquipmentOk(v);
+                      if (v) {
+                        setEquipmentDamageAmount("0");
+                        setEquipmentDamageNote("");
+                      }
+                    }}
+                    label="Экипировка возвращена в полном объёме"
+                  />
+                )}
                 <Checkline
                   checked={returnOk}
                   onChange={setReturnOk}
@@ -203,6 +218,11 @@ export function RentalActionDialog({
                   label="Залог проверен и готов к возврату"
                 />
               </div>
+              {!hasEquipment && (
+                <div className="mt-2 text-[11px] text-muted-2">
+                  Экипировка не выдавалась — пункт пропущен.
+                </div>
+              )}
             </div>
 
             {/* Дата возврата */}
@@ -223,6 +243,21 @@ export function RentalActionDialog({
                 клиент вернул скутер раньше — дата нужна для корректного
                 расчёта дней просрочки.
               </div>
+            </div>
+
+            {/* Пробег при возврате (опционально) */}
+            <div>
+              <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-2">
+                Пробег при возврате, км <span className="text-muted-2/70 normal-case">— опционально</span>
+              </label>
+              <input
+                type="number"
+                min={0}
+                value={mileageAtReturn}
+                onChange={(e) => setMileageAtReturn(e.target.value)}
+                placeholder="например: 9 250"
+                className="mt-1 h-9 w-full rounded-[10px] border border-border bg-surface px-3 text-[13px] tabular-nums outline-none focus:border-blue-600"
+              />
             </div>
 
             {/* Состояние скутера НЕ ок → открыть DamageReport */}
@@ -327,14 +362,35 @@ export function RentalActionDialog({
             )}
           </div>
         ),
-        cta: hasDamage ? "Завершить с ущербом" : "Завершить аренду",
-        ctaTone: hasDamage ? "warn" : "primary",
-        // Чек-лист обязателен. При ущербе галка «Состояние ОК» естественно
-        // не нужна (ущерб = не ок), но экипировку и залог всё равно
-        // подтверждаем. Без ущерба — все три галки.
-        blocked: hasDamage
-          ? !equipmentOk || !depositBack
-          : !equipmentOk || !returnOk || !depositBack,
+        cta: scooterDamaged
+          ? "Перейти к фиксации ущерба"
+          : "Завершить аренду",
+        ctaTone: scooterDamaged ? "warn" : "primary",
+        // v0.4.57: блокировка кнопки. Логика:
+        //  • Состояние скутера в порядке = обязательно (если не ок —
+        //    оператор должен снять галку, тогда кнопка станет «Перейти
+        //    к фиксации ущерба» и blocked зависит только от daty/depBack).
+        //  • Экипировка ок ИЛИ задана сумма компенсации (если её нет —
+        //    оператор не закроет аренду без указания компенсации).
+        //  • Залог проверен.
+        //  • Если оператор поставил withhold > 0 — нужна причина.
+        //  • Если экипировки нет (hasEquipment=false) — пункт пропускаем.
+        blocked: (() => {
+          if (!depositBack) return true;
+          // Если убрали галку «состояние в порядке» — пользователь
+          // переходит в DamageReport flow, кнопка активна для перехода.
+          if (scooterDamaged) return false;
+          if (hasEquipment && !equipmentOk) {
+            // Не отметил экипировку как ок — должен указать сумму компенсации.
+            const eq = Math.floor(Number(equipmentDamageAmount) || 0);
+            if (eq <= 0) return true;
+            if (!equipmentDamageNote.trim()) return true;
+          }
+          // Если есть withhold > 0 — обязательна причина.
+          const wh = Math.floor(Number(depositWithhold) || 0);
+          if (wh > 0 && !depositWithholdNote.trim()) return true;
+          return false;
+        })(),
       };
     }
     return specFor(action, rental);
@@ -387,6 +443,7 @@ export function RentalActionDialog({
               equipmentOk,
               depositReturned: depositBack,
               damageNotes: "",
+              mileage: mileageAtReturn ? Number(mileageAtReturn) : undefined,
             },
             0,
             "",
@@ -424,6 +481,7 @@ export function RentalActionDialog({
             conditionOk: true,
             equipmentOk,
             depositReturned: depositBack,
+            mileage: mileageAtReturn ? Number(mileageAtReturn) : undefined,
           });
         });
         break;
@@ -548,10 +606,19 @@ export function RentalActionDialog({
         </div>
 
         <div className="px-5 py-4 text-[13px] text-ink-2">
-          <div className="mb-3 flex items-center justify-between rounded-[10px] bg-surface-soft px-3 py-2 text-[12px]">
-            <span>{rental.scooter}</span>
-            <span className="text-muted-2">· {rental.start} — {rental.endPlanned}</span>
+          <div className="mb-3 rounded-[10px] bg-surface-soft px-3 py-2 text-[12px]">
+            <div className="flex items-center justify-between">
+              <span>{rental.scooter}</span>
+              <span className="text-muted-2">· {rental.start} — {rental.endPlanned}</span>
+            </div>
+            {action === "complete" && (
+              <RentalExtensionsHint rentalId={rental.id} />
+            )}
           </div>
+
+          {action === "complete" && (
+            <ReturnDocPreviewLink rentalId={rental.id} />
+          )}
 
           {spec.body}
           {/*
@@ -1077,5 +1144,71 @@ function Checkline({
         {label}
       </span>
     </label>
+  );
+}
+
+/**
+ * v0.4.57: подсказка о серии продлений в шапке окна «Завершить аренду».
+ * Берёт events из activity_log и считает action='extended' /
+ * 'rental_extended' / 'extension'. Если 0 — ничего не рисует.
+ *
+ * Зачем: до v0.4.57 продления плодили child rentals с parentRentalId,
+ * сейчас inplace — но у одной аренды может быть N продлений, и
+ * оператор перед завершением должен видеть «3 продления, серия 22 дн».
+ */
+function RentalExtensionsHint({ rentalId }: { rentalId: number }) {
+  const q = useActivityTimeline("rental", rentalId, 200);
+  const items = q.data?.items ?? [];
+  const extensions = items.filter(
+    (e) =>
+      e.action === "extended" ||
+      e.action === "rental_extended" ||
+      e.action === "extension",
+  );
+  if (extensions.length === 0) return null;
+  return (
+    <div className="mt-1.5 text-[11px] text-muted-2">
+      Продлений в этой аренде: <b className="text-ink">{extensions.length}</b>
+      {" — "}
+      <span title={extensions.map((e) => e.summary).join("\n")}>
+        история в табе «История»
+      </span>
+    </div>
+  );
+}
+
+/**
+ * v0.4.57: ссылка-кнопка «Превью акта возврата» в шапке окна
+ * «Завершить аренду». Открывает DocumentPreviewModal с шаблоном
+ * act_return — оператор может проверить документ перед нажатием
+ * «Завершить» и не зависит от того что сейчас в БД (документ
+ * рендерится по живым данным).
+ */
+function ReturnDocPreviewLink({ rentalId }: { rentalId: number }) {
+  const [open, setOpen] = useState(false);
+  const base = window.location.origin.includes("localhost")
+    ? "http://localhost:4000"
+    : window.location.origin.replace("crm.", "api.");
+  const htmlUrl = `${base}/api/rentals/${rentalId}/document/act_return?format=html`;
+  const docxUrl = `${base}/api/rentals/${rentalId}/document/act_return?format=docx`;
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="mb-3 flex w-full items-center justify-center gap-2 rounded-[10px] border border-border bg-surface px-3 py-2 text-[12px] text-blue-600 hover:bg-blue-soft"
+      >
+        Превью акта возврата
+      </button>
+      {open && (
+        <DocumentPreviewModal
+          title="Акт возврата (предпросмотр)"
+          htmlUrl={htmlUrl}
+          docxUrl={docxUrl}
+          docxFilename={`act_return_${rentalId}.docx`}
+          onClose={() => setOpen(false)}
+        />
+      )}
+    </>
   );
 }
