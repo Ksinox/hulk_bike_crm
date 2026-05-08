@@ -34,7 +34,7 @@ import {
   validatePhone,
   validateSeries,
 } from "./formatters";
-import { toUpperRu } from "@/lib/textCase";
+import { toTitleCaseRu } from "@/lib/textCase";
 
 /**
  * Публичная форма анкеты клиента (как Google Forms, постоянная ссылка #/apply).
@@ -578,7 +578,7 @@ function Step1({
           className={inputCls}
           placeholder="Иван Иванов Иванович"
           value={form.name}
-          onChange={(e) => setField("name", toUpperRu(e.target.value))}
+          onChange={(e) => setField("name", toTitleCaseRu(e.target.value))}
         />
         {form.name.length > 0 && nameErr && (
           <div className="mt-1 text-[12px] text-red-600">{nameErr}</div>
@@ -685,7 +685,7 @@ function Step2({
             className="min-h-[140px] w-full rounded-xl border border-slate-300 bg-white p-3 text-[16px] text-slate-900 placeholder:text-slate-400 focus:border-slate-900 focus:outline-none"
             placeholder="Например: Паспорт гражданина Узбекистана AB1234567, выдан 12.05.2018 МВД Ташкента"
             value={form.passportRaw}
-            onChange={(e) => setField("passportRaw", toUpperRu(e.target.value))}
+            onChange={(e) => setField("passportRaw", toTitleCaseRu(e.target.value))}
           />
         </div>
       </div>
@@ -758,7 +758,7 @@ function Step2({
           className="min-h-[80px] w-full rounded-xl border border-slate-300 bg-white p-3 text-[16px] text-slate-900 placeholder:text-slate-400 focus:border-slate-900 focus:outline-none"
           placeholder="Например: ОУФМС России по г. Москве в районе…"
           value={form.passIssuer}
-          onChange={(e) => setField("passIssuer", toUpperRu(e.target.value))}
+          onChange={(e) => setField("passIssuer", toTitleCaseRu(e.target.value))}
         />
       </div>
 
@@ -780,7 +780,7 @@ function Step2({
           className="min-h-[80px] w-full rounded-xl border border-slate-300 bg-white p-3 text-[16px] text-slate-900 placeholder:text-slate-400 focus:border-slate-900 focus:outline-none"
           placeholder="Город, улица, дом, квартира"
           value={form.passRegistration}
-          onChange={(e) => setField("passRegistration", toUpperRu(e.target.value))}
+          onChange={(e) => setField("passRegistration", toTitleCaseRu(e.target.value))}
         />
       </div>
     </div>
@@ -809,7 +809,7 @@ function Step3({
             className="min-h-[100px] w-full rounded-xl border border-slate-300 bg-white p-3 text-[16px] text-slate-900 placeholder:text-slate-400 focus:border-slate-900 focus:outline-none"
             placeholder="Город, улица, дом, квартира"
             value={form.liveAddress}
-            onChange={(e) => setField("liveAddress", toUpperRu(e.target.value))}
+            onChange={(e) => setField("liveAddress", toTitleCaseRu(e.target.value))}
           />
         </div>
       )}
