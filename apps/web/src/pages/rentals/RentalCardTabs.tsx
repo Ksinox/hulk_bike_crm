@@ -64,6 +64,7 @@ import { navigate } from "@/app/navigationStore";
 import { useDashboardDrawer } from "@/pages/dashboard/DashboardDrawer";
 import { toast } from "@/lib/toast";
 import { DocumentPreviewModal } from "./DocumentPreviewModal";
+import { PeriodCalendarReadOnly } from "@/components/ui/date-picker";
 import {
   useDamageReports,
   type ApiDamageReport,
@@ -116,6 +117,53 @@ function mockMileage(scooter: string): number {
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/);
   return parts.slice(0, 2).map((p) => p[0]?.toUpperCase() ?? "").join("");
+}
+
+/** DD.MM.YYYY → ISO YYYY-MM-DD. null если не парсится. */
+function ruDateToIso(ru: string): string | null {
+  const m = ru.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  if (!m) return null;
+  return `${m[3]}-${m[2]}-${m[1]}`;
+}
+
+/**
+ * Визуализация периода аренды на read-only календаре. Показывает
+ * подсвеченный диапазон от выдачи до планового возврата + красную
+ * рамку вокруг сегодняшней клетки если просрочка вышла за конец.
+ *
+ * Без отдельной логики просрочки — RangeCalendar уже подсвечивает
+ * сегодня точкой; визуально оператор сам видит «сегодня уже после
+ * планового возврата → нужно завершать».
+ */
+function RentalPeriodVisualizer({
+  start,
+  endPlanned,
+  isOverdue,
+}: {
+  start: string;
+  endPlanned: string;
+  isOverdue: boolean;
+}) {
+  const startIso = ruDateToIso(start);
+  const endIso = ruDateToIso(endPlanned);
+  if (!startIso || !endIso) return null;
+  return (
+    <div className="rounded-[14px] border border-border bg-surface-soft/60 p-2">
+      <div className="mb-1 flex items-center justify-between px-1 text-[10px] font-bold uppercase tracking-wider text-muted-2">
+        <span>Период аренды</span>
+        {isOverdue && (
+          <span className="rounded-full bg-red-soft px-2 py-0.5 text-[9px] font-bold text-red-ink">
+            Просрочка
+          </span>
+        )}
+      </div>
+      <PeriodCalendarReadOnly
+        from={startIso}
+        to={endIso}
+        className="bg-surface"
+      />
+    </div>
+  );
 }
 
 export function TermsTab({
@@ -562,6 +610,17 @@ export function TermsTab({
             </span>
           </div>
         )}
+
+        {/* Read-only календарь с подсвеченным периодом аренды.
+            Помогает быстро увидеть «где мы внутри срока» — особенно
+            при просрочке (точка-маркер сегодня выходит за конец
+            диапазона). При продлении показываем root.start → текущий
+            endPlanned, чтобы был виден весь срок сделки. */}
+        <RentalPeriodVisualizer
+          start={rootRental.start}
+          endPlanned={rental.endPlanned}
+          isOverdue={rental.status === "overdue"}
+        />
 
         {client && (
           <div className="flex items-center gap-3 rounded-[12px] bg-surface-soft px-3 py-2">

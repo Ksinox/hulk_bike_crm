@@ -35,6 +35,15 @@ import {
   validateSeries,
 } from "./formatters";
 import { toTitleCaseRu } from "@/lib/textCase";
+import { DatePicker } from "@/components/ui/date-picker";
+
+/** Сегодня в ISO для maxDate ограничения. */
+function todayIsoLocal(): string {
+  const d = new Date();
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  return `${d.getFullYear()}-${mm}-${dd}`;
+}
 
 /**
  * Публичная форма анкеты клиента (как Google Forms, постоянная ссылка #/apply).
@@ -615,19 +624,16 @@ function Step1({
 
       <div>
         <FieldLabel required>Дата рождения</FieldLabel>
-        <input
-          className={inputCls}
-          placeholder="ДД.ММ.ГГГГ"
-          inputMode="numeric"
-          value={form.birth}
-          maxLength={10}
-          onChange={(e) => setField("birth", formatDateRu(e.target.value))}
+        <DatePicker
+          value={
+            isCompleteDate(form.birth) ? dateRuToIso(form.birth) : null
+          }
+          onChange={(iso) =>
+            setField("birth", iso ? isoToDateRu(iso) : "")
+          }
+          maxDate={todayIsoLocal()}
+          clearable={false}
         />
-        {form.birth.length > 0 && !isCompleteDate(form.birth) && (
-          <div className="mt-1 text-[12px] text-amber-600">
-            Введите дату полностью — например 02.11.94 или 02.11.1994
-          </div>
-        )}
         {isCompleteDate(form.birth) && birthErr && (
           <div className="mt-1 text-[12px] text-red-600">{birthErr}</div>
         )}
@@ -732,19 +738,15 @@ function Step2({
 
       <div>
         <FieldLabel required>Дата выдачи</FieldLabel>
-        <input
-          className={inputCls}
-          placeholder="ДД.ММ.ГГГГ"
-          inputMode="numeric"
-          value={form.passDate}
-          maxLength={10}
-          onChange={(e) => setField("passDate", formatDateRu(e.target.value))}
+        <DatePicker
+          value={
+            isCompleteDate(form.passDate) ? dateRuToIso(form.passDate) : null
+          }
+          onChange={(iso) =>
+            setField("passDate", iso ? isoToDateRu(iso) : "")
+          }
+          maxDate={todayIsoLocal()}
         />
-        {form.passDate.length > 0 && !isCompleteDate(form.passDate) && (
-          <div className="mt-1 text-[12px] text-amber-600">
-            Введите дату полностью — например 15.01.25 или 15.01.2025
-          </div>
-        )}
         {isCompleteDate(form.passDate) && validatePastDate(form.passDate) && (
           <div className="mt-1 text-[12px] text-red-600">
             {validatePastDate(form.passDate)}

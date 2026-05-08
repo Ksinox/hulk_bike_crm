@@ -83,11 +83,13 @@ const CalendarGridComponent = ({ isRange = false }: { isRange?: boolean }) => {
               "data-[selected]:bg-ink data-[selected]:text-white",
               "data-[unavailable]:line-through data-[disabled]:opacity-30 data-[unavailable]:opacity-30",
               "data-[focus-visible]:z-10 data-[focus-visible]:outline data-[focus-visible]:outline-2 data-[focus-visible]:outline-blue-200",
-              // Range-стили: выбранный диапазон — мягкий синий фон,
+              // Range-стили: выбранный диапазон — насыщенный голубой
+              // (bg-blue-200, чтобы контрастировать с белым фоном
+              // календаря — раньше был bg-blue-50, почти не видно),
               // концы (start/end) — насыщенный ink. Quadrants скруглены
               // только по концам, чтобы диапазон выглядел как лента.
               isRange &&
-                "data-[selected]:rounded-none data-[selection-end]:rounded-e-lg data-[selection-start]:rounded-s-lg data-[selected]:bg-blue-50 data-[selected]:text-blue-700 data-[selection-start]:[&:not([data-hover])]:bg-ink data-[selection-end]:[&:not([data-hover])]:bg-ink data-[selection-start]:[&:not([data-hover])]:text-white data-[selection-end]:[&:not([data-hover])]:text-white",
+                "data-[selected]:rounded-none data-[selection-end]:rounded-e-lg data-[selection-start]:rounded-s-lg data-[selected]:bg-blue-200 data-[selected]:text-blue-900 data-[hovered]:data-[selected]:bg-blue-300 data-[selection-start]:[&:not([data-hover])]:bg-ink data-[selection-end]:[&:not([data-hover])]:bg-ink data-[selection-start]:[&:not([data-hover])]:text-white data-[selection-end]:[&:not([data-hover])]:text-white",
               // Маркер «сегодня» — точка под цифрой
               date.compare(now) === 0 &&
                 cn(

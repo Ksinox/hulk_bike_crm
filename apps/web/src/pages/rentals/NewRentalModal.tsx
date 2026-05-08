@@ -19,6 +19,7 @@ import { AddClientModal } from "@/pages/clients/AddClientModal";
 import { useApiScooters } from "@/lib/api/scooters";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { useApiEquipment } from "@/lib/api/equipment";
+import { DatePicker } from "@/components/ui/date-picker";
 
 /** Сегодня в формате DD.MM.YYYY (локальное время). */
 function todayRuDate(): string {
@@ -26,6 +27,20 @@ function todayRuDate(): string {
   const dd = String(d.getDate()).padStart(2, "0");
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   return `${dd}.${mm}.${d.getFullYear()}`;
+}
+
+/** DD.MM.YYYY → ISO YYYY-MM-DD (для DatePicker). null если невалидно. */
+function ruToIso(ru: string): string | null {
+  const m = ru.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  if (!m) return null;
+  return `${m[3]}-${m[2]}-${m[1]}`;
+}
+
+/** ISO YYYY-MM-DD → DD.MM.YYYY (после выбора в DatePicker). */
+function isoToRu(iso: string): string {
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return iso;
+  return `${m[3]}.${m[2]}.${m[1]}`;
 }
 
 function currentHHMM(): string {
@@ -553,12 +568,15 @@ export function NewRentalModal({
             <div className="grid grid-cols-3 gap-3">
               <label className="text-[12px] font-semibold text-ink">
                 Дата выдачи
-                <input
-                  type="text"
-                  value={start}
-                  onChange={(e) => setStart(e.target.value)}
-                  className="mt-1 h-9 w-full rounded-[10px] border border-border bg-surface px-3 text-[13px] text-ink outline-none focus:border-blue-600"
-                />
+                <div className="mt-1">
+                  <DatePicker
+                    value={ruToIso(start)}
+                    onChange={(iso) =>
+                      setStart(iso ? isoToRu(iso) : todayRuDate())
+                    }
+                    clearable={false}
+                  />
+                </div>
               </label>
               <label className="text-[12px] font-semibold text-ink">
                 Время

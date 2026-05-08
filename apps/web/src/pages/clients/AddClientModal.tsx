@@ -22,6 +22,7 @@ import {
   type UploadedFile,
 } from "./DocUpload";
 import { clientStore } from "./clientStore";
+import { DatePicker } from "@/components/ui/date-picker";
 import { toast } from "@/lib/toast";
 import type { ApplicationFormInit } from "./applicationConvert";
 import { toTitleCaseRu } from "@/lib/textCase";
@@ -152,6 +153,26 @@ function dateRuToIso(s: string): string | null {
   if (!m) return null;
   const [, d, mo, y] = m;
   return `${y}-${mo}-${d}`;
+}
+
+/**
+ * DD.MM.YYYY ↔ YYYY-MM-DD конверторы для DatePicker. Контракт DatePicker —
+ * ISO; форма AddClientModal внутри хранит «русский» формат с автомаской.
+ * Эти helpers переводят туда-обратно.
+ */
+function ruToIsoDate(ru: string): string | null {
+  return dateRuToIso(ru);
+}
+function isoToRuDate(iso: string): string {
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return iso;
+  return `${m[3]}.${m[2]}.${m[1]}`;
+}
+function todayIso(): string {
+  const d = new Date();
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  return `${d.getFullYear()}-${mm}-${dd}`;
 }
 
 /** Trim + null если пусто — чтобы не отправлять "" в API. */
@@ -581,16 +602,15 @@ export function AddClientModal({
                 error={showErr("birth")}
                 htmlFor="f-birth"
               >
-                <input
+                <DatePicker
                   id="f-birth"
-                  type="text"
-                  inputMode="numeric"
-                  value={f.birth}
-                  placeholder="ДД.ММ.ГГГГ"
-                  maxLength={10}
-                  onChange={(e) => set("birth", formatDateRu(e.target.value))}
-                  onBlur={() => markTouched("birth")}
-                  className={inputClass(showErr("birth"))}
+                  value={ruToIsoDate(f.birth)}
+                  onChange={(iso) => {
+                    set("birth", iso ? isoToRuDate(iso) : "");
+                    markTouched("birth");
+                  }}
+                  maxDate={todayIso()}
+                  clearable={false}
                 />
               </Field>
               <Field
@@ -748,23 +768,20 @@ export function AddClientModal({
             </Field>
             <Row>
               <Field label="Дата выдачи" htmlFor="f-pdate">
-                <input
+                <DatePicker
                   id="f-pdate"
-                  type="text"
-                  inputMode="numeric"
-                  value={f.passDate}
-                  placeholder="ДД.ММ.ГГГГ"
-                  maxLength={10}
-                  onChange={(e) => {
-                    const v = formatDateRu(e.target.value);
-                    set("passDate", v);
-                    // v0.4.46: автопереход на «Код подразделения», когда
-                    // дата заполнена полностью (DD.MM.YYYY = 10 символов).
-                    if (v.length === 10) {
-                      document.getElementById("f-pcode")?.focus();
+                  value={ruToIsoDate(f.passDate)}
+                  onChange={(iso) => {
+                    set("passDate", iso ? isoToRuDate(iso) : "");
+                    if (iso) {
+                      // v0.4.46: автопереход на «Код подразделения» после выбора даты.
+                      setTimeout(
+                        () => document.getElementById("f-pcode")?.focus(),
+                        0,
+                      );
                     }
                   }}
-                  className={inputClass(null)}
+                  maxDate={todayIso()}
                 />
               </Field>
               <Field label="Код подразделения" htmlFor="f-pcode">
