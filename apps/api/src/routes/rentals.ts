@@ -262,6 +262,18 @@ export async function rentalsRoutes(app: FastifyInstance) {
     }
 
     const initialStatus = d.status ?? "new_request";
+    // v0.4.60: snapshot пробега скутера на момент выдачи. Используется
+    // в шаблонах актов выдачи через {rental.mileageAtStart} — иначе
+    // {scooter.mileage} рендерил бы live-значение, которое после
+    // возврата уже изменено и не соответствует моменту выдачи.
+    let scooterMileageSnapshot: number | null = null;
+    if (d.scooterId) {
+      const [s] = await db
+        .select({ mileage: scooters.mileage })
+        .from(scooters)
+        .where(eq(scooters.id, d.scooterId));
+      scooterMileageSnapshot = s?.mileage ?? null;
+    }
     const [row] = await db
       .insert(rentals)
       .values({
@@ -287,6 +299,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
         paymentMethod: d.paymentMethod,
         equipment: d.equipment ?? [],
         equipmentJson: (d.equipmentJson ?? []) as unknown as object,
+        mileageAtStart: scooterMileageSnapshot,
         note: d.note ?? null,
       })
       .returning();
@@ -1233,10 +1246,38 @@ export async function rentalsRoutes(app: FastifyInstance) {
         // Скутер возвращается в парк аренды — становится доступным
         // для следующей аренды. Если был ущерб и нужен ремонт — оператор
         // отдельно переводит в "repair" через карточку скутера.
+        // v0.4.60: при возврате обновляем пробег скутера если оператор
+        // его ввёл. Логируем изменение в activity_log на сущность scooter
+        // — это видно в карточке скутера и в общей ленте событий.
+        let mileageBefore: number | null = null;
+        let mileageAfter: number | null = null;
         if (r.scooterId) {
+          const setVals: Record<string, unknown> = {
+            baseStatus: "rental_pool",
+            updatedAt: sql`now()`,
+          };
+          if (
+            d.mileageAtReturn != null &&
+            Number.isFinite(d.mileageAtReturn) &&
+            d.mileageAtReturn >= 0
+          ) {
+            const [s] = await tx
+              .select({ mileage: scooters.mileage })
+              .from(scooters)
+              .where(eq(scooters.id, r.scooterId));
+            mileageBefore = s?.mileage ?? 0;
+            // Защита от опечатки: пробег должен только расти. Если ввели
+            // меньше текущего — игнорируем (но логируем warn).
+            if (d.mileageAtReturn >= mileageBefore) {
+              setVals.mileage = d.mileageAtReturn;
+              mileageAfter = d.mileageAtReturn;
+            } else {
+              mileageAfter = mileageBefore; // не меняем
+            }
+          }
           await tx
             .update(scooters)
-            .set({ baseStatus: "rental_pool", updatedAt: sql`now()` })
+            .set(setVals)
             .where(eq(scooters.id, r.scooterId));
         }
 
@@ -1306,7 +1347,12 @@ export async function rentalsRoutes(app: FastifyInstance) {
             });
           }
         }
-        return r;
+        return {
+          rental: r,
+          scooterId: r.scooterId,
+          mileageBefore,
+          mileageAfter,
+        };
       });
 
       const summary = await summaryForRental(id);
@@ -1318,7 +1364,46 @@ export async function rentalsRoutes(app: FastifyInstance) {
           ? `Завершена аренда ${summary} · зафиксирован ущерб ${(d.damageAmount ?? 0).toLocaleString("ru-RU")} ₽`
           : `Завершена аренда ${summary} · без ущерба, залог ${d.depositReturned ? "возвращён клиенту" : "удержан"}`,
       });
-      return result;
+      // v0.4.60: лог изменения пробега скутера (на сущность scooter,
+      // чтобы запись была видна в карточке скутера и в его таймлайне).
+      if (
+        result.scooterId &&
+        result.mileageBefore != null &&
+        result.mileageAfter != null
+      ) {
+        if (result.mileageAfter > result.mileageBefore) {
+          await logActivity(req, {
+            entity: "scooter",
+            entityId: result.scooterId,
+            action: "mileage_updated",
+            summary: `Пробег: ${result.mileageBefore.toLocaleString("ru-RU")} → ${result.mileageAfter.toLocaleString("ru-RU")} км (+${(result.mileageAfter - result.mileageBefore).toLocaleString("ru-RU")} после аренды #${id})`,
+            meta: {
+              before: result.mileageBefore,
+              after: result.mileageAfter,
+              delta: result.mileageAfter - result.mileageBefore,
+              rentalId: id,
+            },
+          });
+        } else if (
+          d.mileageAtReturn != null &&
+          d.mileageAtReturn < result.mileageBefore
+        ) {
+          // Оператор ввёл меньше текущего — мы не обновили, но залогируем
+          // факт попытки чтобы было видно при разборе.
+          await logActivity(req, {
+            entity: "scooter",
+            entityId: result.scooterId,
+            action: "mileage_skip",
+            summary: `Пробег при возврате аренды #${id} (${d.mileageAtReturn.toLocaleString("ru-RU")} км) меньше текущего (${result.mileageBefore.toLocaleString("ru-RU")} км) — не обновлён`,
+            meta: {
+              entered: d.mileageAtReturn,
+              current: result.mileageBefore,
+              rentalId: id,
+            },
+          });
+        }
+      }
+      return result.rental;
     },
   );
 
@@ -1903,6 +1988,10 @@ export async function rentalsRoutes(app: FastifyInstance) {
           .update(rentals)
           .set({
             scooterId: d.newScooterId,
+            // v0.4.60: при swap обновляем mileageAtStart на пробег
+            // нового скутера. Иначе акты выдачи (если оператор перевыпустит
+            // после swap) показывали бы пробег старого скутера.
+            mileageAtStart: newScooter.mileage ?? null,
             // Если шла замена ИЗ «Проблемной» — переводим в active.
             // Иначе статус не трогаем (active/overdue остаются как были).
             ...(wasProblem ? { status: "active" as const } : {}),

@@ -14,6 +14,7 @@ import {
 import { clientStore } from "@/pages/clients/clientStore";
 import { api } from "@/lib/api";
 import { useActivityTimeline } from "@/lib/api/activity";
+import { useApiScooter } from "@/lib/api/scooters";
 import { DocumentPreviewModal } from "./DocumentPreviewModal";
 
 /** v0.4.57: helper для записи компенсаций с залога. Использует
@@ -134,6 +135,12 @@ export function RentalActionDialog({
   const [payMethod, setPayMethod] = useState<"cash" | "transfer">("cash");
   const [payNote, setPayNote] = useState<string>("");
 
+  // v0.4.60: текущий пробег скутера для подсказки оператору в инпуте
+  // «Пробег при возврате». Без неё оператор может ввести меньшее
+  // значение и оно молча отбросится бэком.
+  const scooterQ = useApiScooter(rental.scooterId ?? null);
+  const currentMileage = scooterQ.data?.mileage ?? null;
+
   const requestClose = () => {
     if (closing) return;
     setClosing(true);
@@ -252,12 +259,27 @@ export function RentalActionDialog({
               </label>
               <input
                 type="number"
-                min={0}
+                min={currentMileage ?? 0}
                 value={mileageAtReturn}
                 onChange={(e) => setMileageAtReturn(e.target.value)}
-                placeholder="например: 9 250"
+                placeholder={
+                  currentMileage != null
+                    ? `текущий: ${currentMileage.toLocaleString("ru-RU")}`
+                    : "например: 9 250"
+                }
                 className="mt-1 h-9 w-full rounded-[10px] border border-border bg-surface px-3 text-[13px] tabular-nums outline-none focus:border-blue-600"
               />
+              {currentMileage != null && (
+                <div className="mt-1 text-[11px] text-muted-2">
+                  Текущий пробег скутера: <b className="text-ink tabular-nums">{currentMileage.toLocaleString("ru-RU")}</b> км.
+                  {mileageAtReturn && Number(mileageAtReturn) > currentMileage && (
+                    <> Будет обновлён → <b className="text-ink tabular-nums">{Number(mileageAtReturn).toLocaleString("ru-RU")}</b> км (+{(Number(mileageAtReturn) - currentMileage).toLocaleString("ru-RU")} за аренду).</>
+                  )}
+                  {mileageAtReturn && Number(mileageAtReturn) > 0 && Number(mileageAtReturn) < currentMileage && (
+                    <span className="text-orange-ink"> ⚠ Меньше текущего — изменение игнорируется.</span>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Состояние скутера НЕ ок → открыть DamageReport */}

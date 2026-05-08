@@ -9,6 +9,7 @@ import { db } from "../db/index.js";
 import {
   clients,
   rentals,
+  returnInspections,
   scooterModels,
   scooters,
   scooterSwaps,
@@ -39,6 +40,10 @@ export type Bundle = {
   client: typeof clients.$inferSelect;
   scooter: typeof scooters.$inferSelect | null;
   model: typeof scooterModels.$inferSelect | null;
+  /** v0.4.60: данные инспекции возврата для шаблона act_return.
+   *  null если возврат ещё не оформлен. Используется для
+   *  {rental.mileageAtReturn} и {inspection.*}. */
+  inspection?: typeof returnInspections.$inferSelect | null;
   /** Скутер из родительской аренды до замены (rental.parentRentalId).
    *  null когда замена не производилась. Заполняется loadBundle. */
   prevScooter?: typeof scooters.$inferSelect | null;
@@ -165,6 +170,14 @@ export async function loadBundle(rentalId: number): Promise<Bundle | null> {
     parentCursor = p.parentRentalId ?? null;
   }
 
+  // v0.4.60: данные инспекции возврата (для шаблона act_return).
+  // Если оператор ещё не оформил возврат — null, шаблон покажет «—».
+  const [inspection] = await db
+    .select()
+    .from(returnInspections)
+    .where(eq(returnInspections.rentalId, rentalId))
+    .limit(1);
+
   return {
     rental,
     client,
@@ -175,6 +188,7 @@ export async function loadBundle(rentalId: number): Promise<Bundle | null> {
     swapReason,
     rootRentalId,
     rootStartAt,
+    inspection: inspection ?? null,
   };
 }
 

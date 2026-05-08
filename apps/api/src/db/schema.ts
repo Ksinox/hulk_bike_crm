@@ -492,6 +492,16 @@ export const rentals = pgTable(
     /** Сумма ущерба, выставлена вручную (ДТП, поломка). null — ущерба нет. */
     damageAmount: integer("damage_amount"),
 
+    /**
+     * v0.4.60: snapshot пробега скутера на момент выдачи. Нужен для
+     * корректного рендера актов выдачи: до v0.4.60 шаблон использовал
+     * {scooter.mileage} (live), и если открыть «Акт выдачи» после
+     * возврата — там уже новый пробег. Теперь используем
+     * {rental.mileageAtStart}, который snapshot-ится при создании
+     * аренды и при swap скутера.
+     */
+    mileageAtStart: integer("mileage_at_start"),
+
     note: text("note"),
 
     /**

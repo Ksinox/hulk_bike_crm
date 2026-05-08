@@ -143,6 +143,8 @@ export const VARIABLE_CATALOG: VariableGroup[] = [
       { key: "rental.rate", label: "Тариф ₽/сутки" },
       { key: "rental.weeklyAmount", label: "Сумма за неделю (тариф×7)" },
       { key: "rental.contractDate", label: "Дата составления договора" },
+      { key: "rental.mileageAtStart", label: "Пробег при выдаче, км" },
+      { key: "rental.mileageAtReturn", label: "Пробег при возврате, км" },
     ],
   },
 ];
@@ -396,6 +398,18 @@ export function resolveVariable(key: string, b: Bundle): string {
         // акт говорит «К договору от <дата>» — это дата подписания, а
         // не дата продления.
         return fmtDateRu(b.rootStartAt ?? rental.startAt);
+      case "mileageAtStart":
+        // v0.4.60: snapshot пробега на момент выдачи. Не используем
+        // {scooter.mileage} (live) — оно меняется после возврата.
+        return rental.mileageAtStart != null
+          ? rental.mileageAtStart.toLocaleString("ru-RU")
+          : "—";
+      case "mileageAtReturn":
+        // v0.4.60: пробег из inspection (заполняется при /complete).
+        // null если возврат ещё не оформлен.
+        return b.inspection?.mileageAtReturn != null
+          ? b.inspection.mileageAtReturn.toLocaleString("ru-RU")
+          : "—";
       default: {
         const v = (rental as unknown as Record<string, unknown>)[prop];
         return v != null ? String(v) : "—";
