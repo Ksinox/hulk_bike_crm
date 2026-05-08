@@ -9,8 +9,10 @@ import {
   ThumbsUp,
   Plus,
   Repeat,
+  Shield,
   ShieldAlert,
   Star,
+  Wallet,
   Wrench,
   XCircle,
 } from "lucide-react";
@@ -41,6 +43,8 @@ import { PaymentAcceptDialog } from "./PaymentAcceptDialog";
 import { SwapScooterDialog } from "./SwapScooterDialog";
 import { DamageReportDialog } from "./DamageReportDialog";
 import { DamageReportPaymentDialog } from "./DamageReportPaymentDialog";
+import { SecurityTopupDialog } from "./SecurityTopupDialog";
+import { EquipmentChangeDialog } from "./EquipmentChangeDialog";
 import { DocumentPreviewModal } from "./DocumentPreviewModal";
 import {
   useChainDamageReports,
@@ -268,6 +272,9 @@ export function RentalCard({
   // v0.3.9: после продления / оплаты — открываем диалог приёма оплаты
   // на новой связке. Хранится rentalId, чтобы пережить перерендер.
   const [paymentRentalId, setPaymentRentalId] = useState<number | null>(null);
+  // v0.4.49: модалки пополнения залога и изменения экипировки
+  const [securityTopupOpen, setSecurityTopupOpen] = useState(false);
+  const [equipmentChangeOpen, setEquipmentChangeOpen] = useState(false);
   const [damageOpen, setDamageOpen] = useState(false);
   const [editingReportId, setEditingReportId] = useState<number | null>(null);
   const [paymentReportId, setPaymentReportId] = useState<number | null>(null);
@@ -1353,6 +1360,77 @@ export function RentalCard({
         </div>
       )}
 
+      {/* v0.4.49: плашка залога — показывается только когда:
+          - залог денежный (depositItem == null)
+          - текущий deposit < исходного (deposit_original)
+          Кнопка «Пополнить» открывает SecurityTopupDialog. */}
+      {(() => {
+        const isItem =
+          (rental as { depositItem?: string | null }).depositItem != null;
+        if (isItem) return null;
+        const current = rental.deposit ?? 0;
+        const original =
+          (rental as { depositOriginal?: number }).depositOriginal ?? current;
+        if (current >= original) return null;
+        const isEmpty = current === 0;
+        return (
+          <div
+            className={cn(
+              "flex items-center justify-between gap-3 rounded-[10px] border px-3 py-2 text-[12px]",
+              isEmpty
+                ? "border-red-300 bg-red-soft/40 text-red-ink animate-pulse"
+                : "border-amber-300 bg-amber-50 text-amber-900",
+            )}
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <Shield
+                size={14}
+                className={isEmpty ? "text-red-600" : "text-amber-600"}
+              />
+              <span className="font-semibold">
+                {isEmpty
+                  ? "Залог исчерпан"
+                  : `Залог ${fmt(current)} ₽ из ${fmt(original)} ₽ — списано ${fmt(original - current)} ₽`}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSecurityTopupOpen(true)}
+              className={cn(
+                "shrink-0 rounded-full px-3 py-1 text-[11px] font-bold text-white transition-colors",
+                isEmpty
+                  ? "bg-red-600 hover:bg-red-700"
+                  : "bg-amber-600 hover:bg-amber-700",
+              )}
+            >
+              Пополнить
+            </button>
+          </div>
+        );
+      })()}
+
+      {/* v0.4.49: плашка «Депозит клиента» — отдельный счёт сверх залога.
+          Показывается только если depositBalance > 0. Кликом открывает
+          карточку клиента. */}
+      {client && (client.depositBalance ?? 0) > 0 && (
+        <button
+          type="button"
+          onClick={() => openClient(client.id)}
+          className="flex items-center justify-between gap-3 rounded-[10px] border border-green-200 bg-green-soft/40 px-3 py-2 text-[12px] text-green-ink transition-colors hover:bg-green-soft/60"
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            <Wallet size={14} className="text-green-600" />
+            <span className="font-semibold">
+              Депозит клиента: {fmt(client.depositBalance ?? 0)} ₽
+            </span>
+            <span className="text-[11px] opacity-75">
+              · сверхлимитный счёт, можно зачесть в продление/долг
+            </span>
+          </div>
+          <span className="shrink-0 text-[11px] opacity-75">→ карточка</span>
+        </button>
+      )}
+
       {rental.note && (
         <div className="rounded-[10px] bg-surface-soft px-3 py-1.5 text-[12px] text-ink-2">
           <b>Заметка:</b> {rental.note}
@@ -1378,49 +1456,82 @@ export function RentalCard({
         ))}
       </div>
 
-      {/* v0.4.19: крупная кнопка «Принять платёж» когда есть любой долг
-          (просрочка / ущерб / ручной / неоплаченная аренда). Раньше она
-          была в меню «Действия» и не бросалась в глаза. Теперь видна
-          сразу под условиями аренды — оператору не нужно искать. */}
+      {/* v0.4.49: CTA «Принять платёж» виден на ЛЮБОЙ live-аренде.
+          Долг есть → красная плашка с суммой. Долгов нет → синяя
+          нейтральная (для предоплаты-за-продление через переключатель
+          в модалке). На completed/cancelled — скрыта. */}
       {(() => {
+        const isLive =
+          rental.status === "active" ||
+          rental.status === "overdue" ||
+          rental.status === "returning" ||
+          rental.status === "problem" ||
+          rental.status === "completed_damage";
+        if (!isLive) return null;
         const overdueB = debtSummary?.overdueBalance ?? 0;
         const damageB = debtSummary?.damageBalance ?? totalDebt;
         const manualB = debtSummary?.manualBalance ?? 0;
         const totalDebtSum = pending + overdueB + damageB + manualB;
-        if (totalDebtSum <= 0) return null;
+        const hasDebt = totalDebtSum > 0;
         const parts: string[] = [];
         if (pending > 0) parts.push(`не оплачено ${fmt(pending)} ₽`);
         if (overdueB > 0) parts.push(`просрочка ${fmt(overdueB)} ₽`);
         if (damageB > 0) parts.push(`ущерб ${fmt(damageB)} ₽`);
         if (manualB > 0) parts.push(`ручной ${fmt(manualB)} ₽`);
+
+        if (hasDebt) {
+          return (
+            <button
+              type="button"
+              onClick={() => {
+                if (damageB > 0 && reportWithDebt) {
+                  setPaymentReportId(reportWithDebt.id);
+                } else {
+                  setPaymentRentalId(rental.id);
+                }
+              }}
+              className="flex items-center justify-between gap-3 rounded-[14px] bg-red-soft/60 px-4 py-3 text-left ring-1 ring-inset ring-red-300 transition-colors hover:bg-red-soft"
+            >
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-600 text-white shadow-card-sm">
+                  <Plus size={18} />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-[15px] font-bold text-red-ink">
+                    Принять платёж — {fmt(totalDebtSum)} ₽
+                  </div>
+                  <div className="mt-0.5 text-[11px] text-red-ink/80">
+                    {parts.join(" · ")}
+                  </div>
+                </div>
+              </div>
+              <span className="rounded-full bg-white px-3 py-1.5 text-[12px] font-bold text-red-ink shadow-card-sm">
+                Принять →
+              </span>
+            </button>
+          );
+        }
+        // Долгов нет — нейтральный CTA для предоплаты/продления
         return (
           <button
             type="button"
-            onClick={() => {
-              // Если основной долг — ущерб, открываем платёж по акту.
-              // Иначе — стандартный приём оплаты по аренде.
-              if (damageB > 0 && reportWithDebt) {
-                setPaymentReportId(reportWithDebt.id);
-              } else {
-                setPaymentRentalId(rental.id);
-              }
-            }}
-            className="flex items-center justify-between gap-3 rounded-[14px] bg-red-soft/60 px-4 py-3 text-left ring-1 ring-inset ring-red-300 transition-colors hover:bg-red-soft"
+            onClick={() => setPaymentRentalId(rental.id)}
+            className="flex items-center justify-between gap-3 rounded-[14px] bg-blue-50 px-4 py-3 text-left ring-1 ring-inset ring-blue-200 transition-colors hover:bg-blue-100"
           >
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-600 text-white shadow-card-sm">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white shadow-card-sm">
                 <Plus size={18} />
               </div>
               <div className="min-w-0">
-                <div className="text-[15px] font-bold text-red-ink">
-                  Принять платёж — {fmt(totalDebtSum)} ₽
+                <div className="text-[15px] font-bold text-blue-900">
+                  Принять платёж
                 </div>
-                <div className="mt-0.5 text-[11px] text-red-ink/80">
-                  {parts.join(" · ")}
+                <div className="mt-0.5 text-[11px] text-blue-900/70">
+                  Долгов нет — оплата с продлением или в депозит клиента.
                 </div>
               </div>
             </div>
-            <span className="rounded-full bg-white px-3 py-1.5 text-[12px] font-bold text-red-ink shadow-card-sm">
+            <span className="rounded-full bg-white px-3 py-1.5 text-[12px] font-bold text-blue-700 shadow-card-sm">
               Принять →
             </span>
           </button>
@@ -1449,6 +1560,13 @@ export function RentalCard({
               }
               setSwapOpen(true);
             }}
+            onChangeEquipment={
+              rental.status === "active" ||
+              rental.status === "overdue" ||
+              rental.status === "returning"
+                ? () => setEquipmentChangeOpen(true)
+                : undefined
+            }
           />
         )}
         {tab === "history" && (
@@ -1500,6 +1618,23 @@ export function RentalCard({
         <PaymentAcceptDialogContainer
           rentalId={paymentRentalId}
           onClose={() => setPaymentRentalId(null)}
+        />
+      )}
+      {securityTopupOpen && (
+        <SecurityTopupDialog
+          rentalId={rental.id}
+          currentDeposit={rental.deposit ?? 0}
+          originalDeposit={
+            (rental as { depositOriginal?: number }).depositOriginal ??
+            (rental.deposit ?? 0)
+          }
+          onClose={() => setSecurityTopupOpen(false)}
+        />
+      )}
+      {equipmentChangeOpen && (
+        <EquipmentChangeDialog
+          rental={rental}
+          onClose={() => setEquipmentChangeOpen(false)}
         />
       )}
 

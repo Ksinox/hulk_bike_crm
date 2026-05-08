@@ -21,15 +21,21 @@
  *  6. Излишек → депозит клиента
  */
 import { useEffect, useMemo, useState } from "react";
-import { Check, X, Wallet, Shield } from "lucide-react";
+import { Check, X, Wallet, Shield, Repeat } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
 import { api } from "@/lib/api";
 import { useApiClients } from "@/lib/api/clients";
 import { useApiPayments } from "@/lib/api/payments";
 import { useRentalDebt } from "@/lib/api/debt";
+import { extendInplaceAsync } from "./rentalsStore";
 import type { Rental } from "@/lib/mock/rentals";
 import type { PaymentMethod } from "@/lib/mock/rentals";
+import {
+  MIN_RENTAL_DAYS,
+  TARIFF,
+  periodForDays,
+} from "@/lib/mock/rentals";
 
 // v0.4.30: терминала для карт у бизнеса нет — только наличные и
 // перевод. «card» остаётся в типе PaymentMethod ради обратной
@@ -88,23 +94,51 @@ export function PaymentAcceptDialog({
   const damageBalance = debt?.damageBalance ?? 0;
   const manualBalance = debt?.manualBalance ?? 0;
 
-  // v0.4.48: «Без штрафа просрочки» — клиент предупредил заранее, что
-  // не сможет оплатить вовремя. Чекбокс появляется только если есть
-  // начисленная просрочка. При активации overdue-компоненты списываются
-  // через forgive-overdue ПЕРЕД distribute (см. submit). К оплате
-  // пересчитывается без них.
-  const hasOverdue = overdueDaysBalanceRaw + overdueFineBalanceRaw > 0;
-  const [waiveOverdue, setWaiveOverdue] = useState<boolean>(false);
-  const overdueDaysBalance = waiveOverdue ? 0 : overdueDaysBalanceRaw;
-  const overdueFineBalance = waiveOverdue ? 0 : overdueFineBalanceRaw;
+  // v0.4.49: ДВЕ независимые галки про просрочку.
+  //  - countOverdueFine=true (default) → штраф 50% входит в «К оплате»
+  //  - countOverdueDays=true (default) → дни просрочки входят в «К оплате»
+  // Снятие любой → forgive соответствующего kind перед distribute.
+  // Чекбоксы показываются только если есть начисленная просрочка.
+  const hasOverdueFine = overdueFineBalanceRaw > 0;
+  const hasOverdueDays = overdueDaysBalanceRaw > 0;
+  const hasOverdue = hasOverdueFine || hasOverdueDays;
+  const [countOverdueFine, setCountOverdueFine] = useState<boolean>(true);
+  const [countOverdueDays, setCountOverdueDays] = useState<boolean>(true);
+  const overdueDaysBalance = countOverdueDays ? overdueDaysBalanceRaw : 0;
+  const overdueFineBalance = countOverdueFine ? overdueFineBalanceRaw : 0;
+
+  // v0.4.49: режим — «Только оплата» / «Оплата с продлением».
+  type Mode = "only_pay" | "pay_with_extend";
+  const [mode, setMode] = useState<Mode>("only_pay");
+
+  // Параметры продления — активны только в режиме pay_with_extend.
+  const [extDays, setExtDays] = useState<number>(7);
+  const [extCustomMode, setExtCustomMode] = useState<boolean>(false);
+  const [extCustomUnit, setExtCustomUnit] = useState<"day" | "week">("day");
+  const [extCustomRate, setExtCustomRate] = useState<number>(0);
+  const extPeriod = periodForDays(extDays);
+  const extEffectivePeriod =
+    extCustomMode && extCustomUnit === "week"
+      ? ("week" as const)
+      : extPeriod;
+  const extRate = extCustomMode
+    ? Math.max(0, extCustomRate)
+    : TARIFF[rental.model][extEffectivePeriod];
+  const extIsWeekly = extCustomMode && extCustomUnit === "week";
+  const extWeeks = extIsWeekly ? Math.max(1, Math.round(extDays / 7)) : 0;
+  const extSum = extIsWeekly ? extRate * extWeeks : extRate * extDays;
+  const extEnabled = mode === "pay_with_extend";
+
   const totalDebt =
     pendingRent +
     overdueDaysBalance +
     overdueFineBalance +
     damageBalance +
-    manualBalance;
+    manualBalance +
+    (extEnabled ? extSum : 0);
 
-  // «К оплате» — приоритетно долг. Если долгов нет — sum аренды (предоплата).
+  // «К оплате» — приоритетно долг (включая стоимость продления если режим
+  // «Оплата с продлением»). Если долгов нет — sum аренды (предоплата).
   const dueAmount = totalDebt > 0 ? totalDebt : rental.sum;
 
   // Источники
@@ -112,12 +146,25 @@ export function PaymentAcceptDialog({
   const depositToUse = useDeposit ? Math.min(depositBalance, dueAmount) : 0;
   const remainingAfterDeposit = Math.max(0, dueAmount - depositToUse);
 
+  // v0.4.49: залог можно списать ТОЛЬКО на ущерб/просрочку, нельзя на
+  // rent/manual. depositItem != null → залог-предмет, кнопки нет вообще.
+  // Если в долге только rent (нет overdue/damage) — кнопка тоже скрыта.
   const securityMax = rental.deposit ?? 0;
+  const isDepositItem = (rental as { depositItem?: string | null }).depositItem != null;
+  const securityCoverable =
+    overdueDaysBalance + overdueFineBalance + damageBalance;
+  const securityAllowed =
+    !isDepositItem && securityMax > 0 && securityCoverable > 0;
   const [useSecurity, setUseSecurity] = useState<boolean>(false);
   const [securityStr, setSecurityStr] = useState<string>("0");
-  const securityToUse = useSecurity
-    ? Math.min(securityMax, Math.max(0, Number(securityStr.replace(/\D/g, "")) || 0))
-    : 0;
+  const securityToUse =
+    securityAllowed && useSecurity
+      ? Math.min(
+          securityMax,
+          securityCoverable,
+          Math.max(0, Number(securityStr.replace(/\D/g, "")) || 0),
+        )
+      : 0;
   const remainingAfterSecurity = Math.max(0, remainingAfterDeposit - securityToUse);
 
   const [acceptedStr, setAcceptedStr] = useState<string>(
@@ -167,11 +214,14 @@ export function PaymentAcceptDialog({
    */
   const distribute = (): Op[] => {
     // Шаг 1 — разложили общий totalReceived на «что именно платим»
-    const queue: { cap: number; target: OpTarget; damageReportId?: number }[] =
-      [
-        { cap: overdueDaysBalance, target: "overdue_days" },
-        { cap: overdueFineBalance, target: "overdue_fine" },
-      ];
+    const queue: {
+      cap: number;
+      target: OpTarget;
+      damageReportId?: number;
+    }[] = [
+      { cap: overdueDaysBalance, target: "overdue_days" },
+      { cap: overdueFineBalance, target: "overdue_fine" },
+    ];
     for (const dr of debt?.damageReports ?? []) {
       const reportPaid = payments
         .filter(
@@ -187,19 +237,53 @@ export function PaymentAcceptDialog({
     }
     queue.push({ cap: manualBalance, target: "manual" });
     queue.push({ cap: pendingRent, target: "rent" });
+    // v0.4.49: rent от продления — отдельный target, добавляем в очередь
+    // последним перед излишком. Маркер damageReportId=-1 — чтобы submit()
+    // понимал что это продление и вызывал extend-inplace вместо обычного
+    // payment(rent).
+    if (extEnabled && extSum > 0) {
+      queue.push({ cap: extSum, target: "rent", damageReportId: -1 });
+    }
 
-    // Шаг 2 — funding-источники в порядке списания
+    // Шаг 2 — funding-источники в порядке списания.
+    // Security-залог НЕЛЬЗЯ использовать на rent и manual — только
+    // на ущерб/просрочку. Поэтому обрабатываем его отдельно «съев»
+    // только подходящие slots, остаток (если есть) в funding-цепочку
+    // НЕ пускаем (вернётся в rental.deposit как излишек security).
+    const ops: Op[] = [];
+
+    // 2A — security: только overdue_*/damage
+    let secLeft = securityToUse;
+    if (secLeft > 0) {
+      for (const slot of queue) {
+        if (secLeft <= 0) break;
+        if (
+          slot.target !== "overdue_days" &&
+          slot.target !== "overdue_fine" &&
+          slot.target !== "damage"
+        )
+          continue;
+        if (slot.cap <= 0) continue;
+        const take = Math.min(secLeft, slot.cap);
+        ops.push({
+          target: slot.target,
+          amount: take,
+          damageReportId: slot.damageReportId,
+          method: "deposit",
+        });
+        slot.cap -= take;
+        secLeft -= take;
+      }
+    }
+
+    // 2B — основной funding: clientDeposit → accepted
     const funding: { amount: number; method: PaymentMethod }[] = [
       { amount: depositToUse, method: "deposit" },
-      { amount: securityToUse, method: "deposit" },
       { amount: accepted, method },
     ];
-
-    const ops: Op[] = [];
     let fundIdx = 0;
     let fundLeft = funding[0]?.amount ?? 0;
     let fundMethod: PaymentMethod = funding[0]?.method ?? method;
-
     const advanceFund = () => {
       while (fundLeft <= 0 && fundIdx < funding.length - 1) {
         fundIdx++;
@@ -227,7 +311,7 @@ export function PaymentAcceptDialog({
       if (fundLeft === 0 && fundIdx >= funding.length - 1) break;
     }
 
-    // Излишек → депозит клиента (если ещё остался funding после всех слотов).
+    // Излишек cash/deposit-balance → депозит клиента
     let leftover = 0;
     if (fundLeft > 0) leftover += fundLeft;
     while (fundIdx < funding.length - 1) {
@@ -235,10 +319,11 @@ export function PaymentAcceptDialog({
       leftover += funding[fundIdx]!.amount;
     }
     if (leftover > 0) {
-      // Метод тут роли не играет — overpay идёт в clients.deposit_balance,
-      // payment-запись не создаётся.
       ops.push({ target: "deposit", amount: leftover, method: "cash" });
     }
+    // Излишек security НЕ выливается в депозит клиента — он просто
+    // остаётся в rental.deposit (мы списали меньше чем оператор ввёл).
+    // На UI «Списано с залога» = securityToUse − secLeft.
     return ops;
   };
 
@@ -246,18 +331,41 @@ export function PaymentAcceptDialog({
     if (saving) return;
     setSaving(true);
     try {
-      // v0.4.48: 0. Если оператор поставил «Без штрафа просрочки» —
-      //   списываем всю текущую просрочку через forgive-overdue ПЕРЕД
-      //   распределением платежа. Прощение фиксируется в debt_entries
-      //   (kind='overdue_forgive'), отражается в Истории долгов и в
-      //   фильтре «С долгом» у клиента.
-      if (waiveOverdue && hasOverdue) {
-        await api.post(
-          `/api/rentals/${rental.id}/debt/forgive-overdue`,
-          {
-            target: "all",
-            comment: "Прощение просрочки при приёме оплаты (предупредил заранее)",
-          },
+      // v0.4.49: 0. Раздельное списание просрочки по галкам.
+      //   - !countOverdueFine && hasOverdueFine → forgive(target='fine')
+      //   - !countOverdueDays && hasOverdueDays → forgive(target='days')
+      //   - оба сняты → target='all' (одним запросом).
+      const wantWaiveDays = !countOverdueDays && hasOverdueDays;
+      const wantWaiveFine = !countOverdueFine && hasOverdueFine;
+      if (wantWaiveDays && wantWaiveFine) {
+        await api.post(`/api/rentals/${rental.id}/debt/forgive-overdue`, {
+          target: "all",
+          comment:
+            "Прощение просрочки целиком при приёме оплаты (предупредил заранее)",
+        });
+      } else if (wantWaiveDays) {
+        await api.post(`/api/rentals/${rental.id}/debt/forgive-overdue`, {
+          target: "days",
+          comment: "Прощение просроченных дней при приёме оплаты",
+        });
+      } else if (wantWaiveFine) {
+        await api.post(`/api/rentals/${rental.id}/debt/forgive-overdue`, {
+          target: "fine",
+          comment: "Прощение штрафа просрочки при приёме оплаты",
+        });
+      }
+      // v0.4.49: 0a. Если режим «Оплата с продлением» — продлеваем
+      //   аренду in-place ДО распределения. Бэк обновит endPlannedAt/sum
+      //   и создаст rent-payment как paid=false (placeholder). Дальше
+      //   distribute() распределит этот rent-сегмент на источники.
+      if (extEnabled && extSum > 0) {
+        await extendInplaceAsync(
+          rental.id,
+          extDays,
+          extRate,
+          extEffectivePeriod,
+          extIsWeekly ? "week" : "day",
+          false, // autoMarkPaid=false → rent payment paid=false
         );
       }
       // 1. Списать депозит клиента (clients.deposit_balance), если используется
@@ -380,6 +488,11 @@ export function PaymentAcceptDialog({
     debtParts.push({ label: "ущерб", amount: damageBalance });
   if (manualBalance > 0)
     debtParts.push({ label: "ручной долг", amount: manualBalance });
+  if (extEnabled && extSum > 0)
+    debtParts.push({
+      label: `продление ${extDays}${extIsWeekly ? `=${extWeeks}нед` : "дн"}`,
+      amount: extSum,
+    });
 
   return (
     <div
@@ -430,40 +543,171 @@ export function PaymentAcceptDialog({
             )}
           </div>
 
-          {/* v0.4.48: «Без штрафа просрочки» — клиент предупредил заранее.
-              Показывается ТОЛЬКО если по аренде есть начисленная просрочка.
-              При активации overdue-компоненты исключаются из «К оплате»,
-              а при submit бэк создаёт debt_entry kind='overdue_forgive'
-              на полную сумму просрочки. */}
+          {/* v0.4.49: ДВЕ независимые галки — учитывать штраф / учитывать
+              дни просрочки. По умолчанию обе ✅ — стандартный сценарий
+              «клиент-должник платит всё». Снятие = forgive соответствующего
+              kind в submit (бэк создаёт debt_entry). Подпись рядом
+              показывает фактическую сумму компонента и количество дней. */}
           {hasOverdue && (
-            <label
-              className={cn(
-                "flex cursor-pointer items-start gap-2.5 rounded-[10px] border px-3 py-2.5 transition-colors",
-                waiveOverdue
-                  ? "border-amber-300 bg-amber-50/60"
-                  : "border-border bg-white hover:border-amber-300",
+            <div className="flex flex-col gap-2 rounded-[10px] border border-amber-200 bg-amber-50/30 px-3 py-2.5">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-amber-800">
+                Просрочка по аренде
+              </div>
+              {hasOverdueDays && (
+                <label className="flex cursor-pointer items-start gap-2.5">
+                  <input
+                    type="checkbox"
+                    checked={countOverdueDays}
+                    onChange={(e) => setCountOverdueDays(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 accent-amber-600"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[12px] font-semibold text-ink">
+                      Учитывать просроченные дни ·{" "}
+                      <span className="text-amber-700 tabular-nums">
+                        {fmt(overdueDaysBalanceRaw)} ₽
+                      </span>
+                      {(debt?.overdueDays ?? 0) > 0 && (
+                        <span className="text-[11px] font-normal text-muted-2">
+                          {" "}
+                          ({rental.rate} ₽/{rental.rateUnit === "week" ? "нед" : "сут"} ×{" "}
+                          {debt?.overdueDays ?? 0} дн)
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-0.5 text-[11px] leading-snug text-muted-2">
+                      Снять — клиент-«свой», стоимость дней не считаем.
+                    </div>
+                  </div>
+                </label>
               )}
-            >
-              <input
-                type="checkbox"
-                checked={waiveOverdue}
-                onChange={(e) => setWaiveOverdue(e.target.checked)}
-                className="mt-0.5 h-4 w-4 accent-amber-600"
-              />
-              <div className="min-w-0 flex-1">
-                <div className="text-[12px] font-semibold text-ink">
-                  Без штрафа просрочки —{" "}
-                  <span className="text-amber-700">
-                    спишется{" "}
-                    {fmt(overdueDaysBalanceRaw + overdueFineBalanceRaw)} ₽
-                  </span>
+              {hasOverdueFine && (
+                <label className="flex cursor-pointer items-start gap-2.5">
+                  <input
+                    type="checkbox"
+                    checked={countOverdueFine}
+                    onChange={(e) => setCountOverdueFine(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 accent-amber-600"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[12px] font-semibold text-ink">
+                      Учитывать штраф просрочки ·{" "}
+                      <span className="text-amber-700 tabular-nums">
+                        {fmt(overdueFineBalanceRaw)} ₽
+                      </span>
+                      {(debt?.overdueDays ?? 0) > 0 && (
+                        <span className="text-[11px] font-normal text-muted-2">
+                          {" "}
+                          (50% × {debt?.overdueDays ?? 0} дн)
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-0.5 text-[11px] leading-snug text-muted-2">
+                      Снять — клиент предупредил, штрафной % не считаем.
+                    </div>
+                  </div>
+                </label>
+              )}
+            </div>
+          )}
+
+          {/* v0.4.49: режим «Только оплата» / «Оплата с продлением». */}
+          <div className="flex rounded-[10px] bg-surface-soft p-0.5">
+            {(["only_pay", "pay_with_extend"] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setMode(m)}
+                className={cn(
+                  "flex flex-1 items-center justify-center gap-1.5 rounded-[8px] px-3 py-1.5 text-[12px] font-semibold transition-colors",
+                  mode === m
+                    ? "bg-white text-ink shadow-card-sm"
+                    : "text-muted hover:text-ink",
+                )}
+              >
+                {m === "only_pay" ? (
+                  <>
+                    <Wallet size={12} /> Только оплата
+                  </>
+                ) : (
+                  <>
+                    <Repeat size={12} /> Оплата с продлением
+                  </>
+                )}
+              </button>
+            ))}
+          </div>
+
+          {/* v0.4.49: Блок продления — активен в режиме pay_with_extend. */}
+          {extEnabled && (
+            <div className="flex flex-col gap-2 rounded-[10px] border border-blue-200 bg-blue-50/30 px-3 py-2.5">
+              <div className="flex items-center justify-between">
+                <div className="text-[11px] font-bold uppercase tracking-wider text-blue-800">
+                  Продление
                 </div>
-                <div className="mt-0.5 text-[11px] leading-snug text-muted-2">
-                  Клиент предупредил заранее. Просрочка обнулится, к оплате
-                  пересчитается без штрафа. Запись в Истории долгов.
+                <div className="text-[11px] tabular-nums text-blue-700">
+                  +{extDays} {extIsWeekly ? `(${extWeeks} нед)` : "дн"} · {fmt(extSum)} ₽
                 </div>
               </div>
-            </label>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-muted">
+                  {extIsWeekly ? "Дней (= " + extWeeks + " нед)" : "Дней"}
+                </span>
+                <input
+                  type="number"
+                  min={MIN_RENTAL_DAYS}
+                  value={extDays}
+                  onChange={(e) =>
+                    setExtDays(Math.max(MIN_RENTAL_DAYS, Number(e.target.value) || MIN_RENTAL_DAYS))
+                  }
+                  className="h-7 w-16 rounded-[6px] border border-border bg-white px-2 text-[12px] tabular-nums outline-none focus:border-blue-500"
+                />
+              </div>
+              <label className="flex cursor-pointer items-center gap-2 text-[11px]">
+                <input
+                  type="checkbox"
+                  checked={extCustomMode}
+                  onChange={(e) => setExtCustomMode(e.target.checked)}
+                  className="h-3.5 w-3.5 accent-blue-600"
+                />
+                Произвольный тариф
+              </label>
+              {extCustomMode && (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={0}
+                    value={extCustomRate}
+                    onChange={(e) =>
+                      setExtCustomRate(Math.max(0, Number(e.target.value) || 0))
+                    }
+                    placeholder="0"
+                    className="h-7 w-24 rounded-[6px] border border-border bg-white px-2 text-[12px] tabular-nums outline-none focus:border-blue-500"
+                  />
+                  <div className="inline-flex rounded-[6px] bg-white p-0.5 ring-1 ring-border">
+                    {(["day", "week"] as const).map((u) => (
+                      <button
+                        key={u}
+                        type="button"
+                        onClick={() => setExtCustomUnit(u)}
+                        className={cn(
+                          "rounded-[4px] px-2 py-0.5 text-[10px] font-semibold transition-colors",
+                          extCustomUnit === u
+                            ? "bg-blue-600 text-white"
+                            : "text-muted hover:text-ink",
+                        )}
+                      >
+                        {u === "day" ? "₽/сут" : "₽/нед"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div className="text-[10px] text-blue-700/70">
+                После продления endPlannedAt увеличится на {extDays} дн.
+                Текущая аренда продолжается, без отдельной «новой».
+              </div>
+            </div>
           )}
 
           {/* Депозит клиента */}
@@ -488,8 +732,11 @@ export function PaymentAcceptDialog({
             </label>
           )}
 
-          {/* Залог */}
-          {securityMax > 0 && (
+          {/* Залог. v0.4.49: видим только когда:
+              - залог денежный (не предмет)
+              - есть что покрывать из залога (overdue/damage в долге)
+              На rent/manual залог ставить нельзя по бизнес-правилу. */}
+          {securityAllowed && (
             <div className="rounded-[10px] border border-amber-300 bg-amber-50 px-3 py-2 text-[12px] text-amber-900">
               <label className="flex items-start gap-2 cursor-pointer">
                 <input
@@ -500,11 +747,11 @@ export function PaymentAcceptDialog({
                 />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5 font-semibold">
-                    <Shield size={12} /> Списать с залога — макс {fmt(securityMax)} ₽
+                    <Shield size={12} /> Списать с залога — макс {fmt(Math.min(securityMax, securityCoverable))} ₽
                   </div>
                   <div className="text-[11px] opacity-80">
-                    Использовать когда клиент не возвращает скутер или
-                    отказывается платить. После списания залог уменьшится.
+                    Только в счёт ущерба и просрочки. Аренду из залога
+                    оплатить нельзя — он остаётся как страховой счёт.
                   </div>
                 </div>
               </label>
@@ -522,10 +769,14 @@ export function PaymentAcceptDialog({
                   <span className="text-[11px]">₽ из залога</span>
                   <button
                     type="button"
-                    onClick={() => setSecurityStr(String(Math.min(securityMax, dueAmount)))}
+                    onClick={() =>
+                      setSecurityStr(
+                        String(Math.min(securityMax, securityCoverable)),
+                      )
+                    }
                     className="ml-auto rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-semibold hover:bg-amber-200"
                   >
-                    Покрыть долг полностью
+                    Покрыть полностью
                   </button>
                 </div>
               )}

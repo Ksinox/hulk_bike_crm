@@ -119,6 +119,10 @@ export const paymentTypeEnum = pgEnum("payment_type", [
    *  × оставшиеся дни. Создаётся автоматически при /swap-scooter
    *  если ставка нового скутера выше. */
   "swap_fee",
+  /** v0.4.49: доплата за изменение состава экипировки активной
+   *  аренды. Считается delta × оставшиеся дни. Попадает в revenue
+   *  как обычная выручка. */
+  "equipment_fee",
 ]);
 
 export const paymentConfirmerRoleEnum = pgEnum("payment_confirmer_role", [
@@ -434,6 +438,11 @@ export const rentals = pgTable(
      * хранится описание предмета (например «паспорт», «iPhone»).
      */
     deposit: integer("deposit").notNull().default(2000),
+    /** v0.4.49: snapshot исходной суммы залога при создании аренды.
+     *  Используется как «минимально требуемая сумма» — если текущий
+     *  deposit < deposit_original, оператор может пополнить через
+     *  /security-topup. Не уменьшается автоматически. */
+    depositOriginal: integer("deposit_original").notNull().default(0),
     /** Описание предмета, если залог неденежный. null → залог деньгами. */
     depositItem: text("deposit_item"),
     depositReturned: boolean("deposit_returned"),

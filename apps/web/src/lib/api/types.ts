@@ -130,6 +130,10 @@ export type ApiRental = {
   /** v0.4.25: 'day' (default) или 'week' — единица измерения тарифа. */
   rateUnit?: "day" | "week";
   deposit: number;
+  /** v0.4.49: snapshot исходной суммы залога. Текущий deposit может
+   *  быть меньше из-за списаний на ущерб/просрочку — UI показывает
+   *  плашку «Залог X из Y» когда deposit < depositOriginal. */
+  depositOriginal?: number;
   depositItem: string | null;
   depositReturned: boolean | null;
   startAt: string; // ISO

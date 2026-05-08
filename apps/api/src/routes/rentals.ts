@@ -274,6 +274,11 @@ export async function rentalsRoutes(app: FastifyInstance) {
         rate: d.rate,
         rateUnit: d.rateUnit ?? "day",
         deposit: d.deposit ?? 2000,
+        // v0.4.49: snapshot для проверки «нужно ли пополнить залог».
+        // Любое списание уменьшает deposit, depositOriginal — константа
+        // на момент выдачи. Если depositItem — оригинал не нужен.
+        depositOriginal:
+          d.depositItem ? 0 : (d.deposit ?? 2000),
         depositItem: d.depositItem ?? null,
         startAt: new Date(d.startAt),
         endPlannedAt: new Date(d.endPlannedAt),
@@ -1432,6 +1437,376 @@ export async function rentalsRoutes(app: FastifyInstance) {
         });
       }
       return reply.code(201).send(result);
+    },
+  );
+
+  /**
+   * v0.4.49: POST /api/rentals/:id/extend-inplace — продление БЕЗ chain.
+   *
+   * В отличие от старого /extend (который создавал child rental с
+   * parentRentalId), здесь обновляется текущая аренда:
+   *   endPlannedAt += extraDays
+   *   days += extraDays
+   *   sum += newRate × extraDays (или × недель для weekly)
+   * + одна запись payment(type='rent', paid=autoMarkPaid).
+   *
+   * По бизнес-правке заказчика: «продление = увеличение срока той же
+   * аренды, не отдельная активная сущность». Нет «запланированных»
+   * аренд, нет cha. История продлений — через activity_log.
+   */
+  app.post<{ Params: { id: string } }>(
+    "/:id/extend-inplace",
+    async (req, reply) => {
+      if (!assertFinancialRole(req, reply)) return;
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id))
+        return reply.code(400).send({ error: "bad id" });
+      const schema = z
+        .object({
+          extraDays: z.number().int().positive(),
+          newRate: z.number().int().positive(),
+          newTariffPeriod: z.enum(["short", "week", "month"]),
+          newRateUnit: z.enum(["day", "week"]).optional(),
+          autoMarkPaid: z.boolean().optional().default(true),
+        })
+        .strict();
+      const parsed = schema.safeParse(req.body);
+      if (!parsed.success)
+        return reply
+          .code(400)
+          .send({ error: "validation", issues: parsed.error.issues });
+      const d = parsed.data;
+
+      const result = await db.transaction(async (tx) => {
+        const [old] = await tx
+          .select()
+          .from(rentals)
+          .where(eq(rentals.id, id));
+        if (!old) throw new Error("not found");
+
+        const extendable = new Set(["active", "overdue", "returning"]);
+        if (!extendable.has(old.status)) {
+          throw new Error(`extend_blocked_status:${old.status}`);
+        }
+
+        const extraSum =
+          d.newRateUnit === "week"
+            ? d.newRate * Math.max(1, Math.round(d.extraDays / 7))
+            : d.newRate * d.extraDays;
+
+        const newEndPlanned = new Date(
+          old.endPlannedAt.getTime() + d.extraDays * 86_400_000,
+        );
+
+        const [updated] = await tx
+          .update(rentals)
+          .set({
+            endPlannedAt: newEndPlanned,
+            days: old.days + d.extraDays,
+            sum: old.sum + extraSum,
+            // tariffPeriod / rate / rateUnit — обновляем на новые значения
+            // (если оператор сменил тариф для продления, считаем что
+            // продлевается уже по новому до следующего изменения).
+            tariffPeriod: d.newTariffPeriod,
+            rate: d.newRate,
+            rateUnit: d.newRateUnit ?? old.rateUnit,
+            // Если в момент продления статус был overdue — возвращаем в
+            // active (новая endPlannedAt в будущем). Если returning —
+            // оставляем (оператор должен сам подтвердить).
+            status:
+              old.status === "overdue"
+                ? "active"
+                : old.status,
+            updatedAt: sql`now()`,
+          })
+          .where(eq(rentals.id, id))
+          .returning();
+        if (!updated) throw new Error("update failed");
+
+        if (extraSum > 0) {
+          await tx.insert(payments).values({
+            rentalId: id,
+            type: "rent",
+            amount: extraSum,
+            method: updated.paymentMethod,
+            paid: d.autoMarkPaid,
+            paidAt: d.autoMarkPaid ? new Date() : null,
+            note: d.autoMarkPaid
+              ? `продление на ${d.extraDays} дн (оплачено)`
+              : `продление на ${d.extraDays} дн (ожидает оплаты)`,
+          });
+        }
+        return updated;
+      });
+
+      const summary = await summaryForRental(id);
+      await logActivity(req, {
+        entity: "rental",
+        entityId: id,
+        action: "rental_extended",
+        summary: `Продление аренды ${summary} на ${d.extraDays} дн (${result.rate} ₽/${result.rateUnit === "week" ? "нед" : "сут"})`,
+        meta: {
+          extraDays: d.extraDays,
+          newRate: d.newRate,
+          newRateUnit: d.newRateUnit ?? "day",
+          newEndPlannedAt: result.endPlannedAt,
+        },
+      });
+      return result;
+    },
+  );
+
+  /**
+   * v0.4.49: POST /api/rentals/:id/security-topup — пополнение залога.
+   *
+   * Доступно когда rental.deposit < rental.depositOriginal (т.е. ранее
+   * было списание из залога за ущерб/просрочку). Если залог — предмет
+   * (depositItem != null), пополнение запрещено (нет смысла — это не
+   * деньги).
+   */
+  app.post<{ Params: { id: string } }>(
+    "/:id/security-topup",
+    async (req, reply) => {
+      if (!assertFinancialRole(req, reply)) return;
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id))
+        return reply.code(400).send({ error: "bad id" });
+      const schema = z
+        .object({
+          amount: z.number().int().positive(),
+          method: z.enum(["cash", "transfer"]),
+        })
+        .strict();
+      const parsed = schema.safeParse(req.body);
+      if (!parsed.success)
+        return reply
+          .code(400)
+          .send({ error: "validation", issues: parsed.error.issues });
+
+      const [rental] = await db
+        .select()
+        .from(rentals)
+        .where(eq(rentals.id, id));
+      if (!rental) return reply.code(404).send({ error: "not found" });
+      if (rental.depositItem) {
+        return reply.code(400).send({
+          error: "deposit_is_item",
+          message:
+            "Залог этой аренды — предмет, а не сумма. Пополнение деньгами невозможно.",
+        });
+      }
+
+      const result = await db.transaction(async (tx) => {
+        await tx.insert(payments).values({
+          rentalId: id,
+          type: "deposit",
+          amount: parsed.data.amount,
+          method: parsed.data.method,
+          paid: true,
+          paidAt: new Date(),
+          note: "пополнение залога",
+        });
+        const newDeposit = (rental.deposit ?? 0) + parsed.data.amount;
+        const newOriginal = Math.max(
+          rental.depositOriginal ?? 0,
+          newDeposit,
+        );
+        const [r] = await tx
+          .update(rentals)
+          .set({
+            deposit: newDeposit,
+            depositOriginal: newOriginal,
+            updatedAt: sql`now()`,
+          })
+          .where(eq(rentals.id, id))
+          .returning();
+        return r;
+      });
+
+      const summary = await summaryForRental(id);
+      await logActivity(req, {
+        entity: "rental",
+        entityId: id,
+        action: "security_topped_up",
+        summary: `Пополнение залога ${summary} на ${parsed.data.amount} ₽`,
+        meta: {
+          amount: parsed.data.amount,
+          method: parsed.data.method,
+          newDeposit: result?.deposit,
+          newOriginal: result?.depositOriginal,
+        },
+      });
+      return result;
+    },
+  );
+
+  /**
+   * v0.4.49: POST /api/rentals/:id/equipment-change — замена/удаление
+   * экипировки активной аренды.
+   *
+   * Body: { newEquipmentJson: EquipmentJsonItem[], payNow: bool, method? }
+   *
+   * Считаем delta = (Σ новых price.free=false) − (Σ старых price.free=false)
+   * × оставшиеся_дни_до_endPlannedAt.
+   *
+   *   delta > 0 → доплата.
+   *     payNow=true  → payment(type='equipment_fee', paid=true)
+   *     payNow=false → debt_entry(kind='manual_charge', amount=delta)
+   *   delta < 0 → возврат на clients.deposit_balance (charge endpoint
+   *     пополняет deposit_balance клиента на |delta|).
+   *   delta = 0 → просто обновляем equipmentJson (никаких финансовых
+   *     операций, например замена шлема на шлем той же цены).
+   *
+   * Только active/overdue/returning. На completed нельзя.
+   */
+  app.post<{ Params: { id: string } }>(
+    "/:id/equipment-change",
+    async (req, reply) => {
+      if (!assertFinancialRole(req, reply)) return;
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id))
+        return reply.code(400).send({ error: "bad id" });
+      const schema = z
+        .object({
+          newEquipmentJson: z.array(EquipmentJsonItem).default([]),
+          payNow: z.boolean().default(false),
+          method: z.enum(["cash", "transfer"]).optional(),
+          comment: z.string().max(300).optional(),
+        })
+        .strict();
+      const parsed = schema.safeParse(req.body);
+      if (!parsed.success)
+        return reply
+          .code(400)
+          .send({ error: "validation", issues: parsed.error.issues });
+
+      const [rental] = await db
+        .select()
+        .from(rentals)
+        .where(eq(rentals.id, id));
+      if (!rental) return reply.code(404).send({ error: "not found" });
+      const editable = new Set(["active", "overdue", "returning"]);
+      if (!editable.has(rental.status)) {
+        return reply.code(409).send({
+          error: "not_editable",
+          message: `Экипировка меняется только на активной аренде. Текущий статус: ${rental.status}.`,
+        });
+      }
+
+      // ===== Расчёт delta-стоимости в день =====
+      const oldItems = (rental.equipmentJson ?? []) as Array<{
+        price?: number;
+        free?: boolean;
+      }>;
+      const newItems = parsed.data.newEquipmentJson;
+      const sumPerDay = (
+        items: Array<{ price?: number; free?: boolean }>,
+      ): number =>
+        items.reduce((s, it) => s + (it.free ? 0 : it.price ?? 0), 0);
+      const oldDailySum = sumPerDay(oldItems);
+      const newDailySum = sumPerDay(newItems);
+      const dailyDelta = newDailySum - oldDailySum;
+
+      const now = new Date();
+      const endMs = rental.endPlannedAt.getTime();
+      const remainingDays = Math.max(
+        0,
+        Math.ceil((endMs - now.getTime()) / 86_400_000),
+      );
+      const totalDelta = dailyDelta * remainingDays;
+
+      const userId = req.user?.userId ?? null;
+      let userName = "система";
+      if (userId) {
+        const [u] = await db
+          .select({ name: usersTable.name })
+          .from(usersTable)
+          .where(eq(usersTable.id, userId));
+        userName = u?.name ?? "система";
+      }
+
+      const result = await db.transaction(async (tx) => {
+        // 1. Обновляем equipmentJson всегда
+        const [updated] = await tx
+          .update(rentals)
+          .set({
+            equipmentJson: newItems as unknown as object,
+            updatedAt: sql`now()`,
+          })
+          .where(eq(rentals.id, id))
+          .returning();
+
+        // 2. Финансовая часть
+        if (totalDelta > 0) {
+          // Доплата
+          if (parsed.data.payNow) {
+            if (!parsed.data.method) {
+              throw new Error("method required for immediate payment");
+            }
+            await tx.insert(payments).values({
+              rentalId: id,
+              type: "equipment_fee",
+              amount: totalDelta,
+              method: parsed.data.method,
+              paid: true,
+              paidAt: new Date(),
+              note: `Доплата за изменение экипировки (${remainingDays} дн × ${dailyDelta} ₽)`,
+            });
+          } else {
+            // Висит как ручной долг — оператор примет позже через PaymentAcceptDialog
+            await tx.insert(debtEntries).values({
+              rentalId: id,
+              kind: "manual_charge",
+              amount: totalDelta,
+              comment:
+                parsed.data.comment ??
+                `Изменение экипировки (${remainingDays} дн × ${dailyDelta} ₽)`,
+              createdByUserId: userId,
+              createdByName: userName,
+            });
+          }
+        } else if (totalDelta < 0) {
+          // Возврат на депозит клиента — используем существующий update
+          // на clients.deposit_balance напрямую (минуя HTTP slag).
+          await tx.execute(sql`
+            UPDATE clients SET deposit_balance = deposit_balance + ${-totalDelta}
+             WHERE id = ${rental.clientId}
+          `);
+          // payment(type='refund') чтобы был учётный след
+          await tx.insert(payments).values({
+            rentalId: id,
+            type: "refund",
+            amount: -totalDelta,
+            method: "cash",
+            paid: true,
+            paidAt: new Date(),
+            note: `Возврат за уменьшение экипировки (${remainingDays} дн × ${-dailyDelta} ₽) → депозит клиента`,
+          });
+        }
+        return updated;
+      });
+
+      const summary = await summaryForRental(id);
+      await logActivity(req, {
+        entity: "rental",
+        entityId: id,
+        action: "equipment_changed",
+        summary:
+          totalDelta === 0
+            ? `Изменена экипировка по аренде ${summary} (без доплаты)`
+            : totalDelta > 0
+              ? `Изменена экипировка по аренде ${summary} · доплата ${totalDelta} ₽${parsed.data.payNow ? " (оплачено)" : " (в долг)"}`
+              : `Изменена экипировка по аренде ${summary} · возврат ${-totalDelta} ₽ → депозит клиента`,
+        meta: {
+          oldItems,
+          newItems,
+          dailyDelta,
+          remainingDays,
+          totalDelta,
+          payNow: parsed.data.payNow,
+        },
+      });
+      return result;
     },
   );
 

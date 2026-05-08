@@ -5,7 +5,14 @@ import type { ListResponse, PaymentMethod } from "./types";
 export type ApiPayment = {
   id: number;
   rentalId: number;
-  type: "rent" | "deposit" | "fine" | "damage" | "refund" | "swap_fee";
+  type:
+    | "rent"
+    | "deposit"
+    | "fine"
+    | "damage"
+    | "refund"
+    | "swap_fee"
+    | "equipment_fee";
   amount: number;
   method: PaymentMethod;
   paid: boolean;

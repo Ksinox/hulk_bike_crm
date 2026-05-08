@@ -17,7 +17,14 @@ import { queryClient } from "@/lib/queryClient";
 import { adaptRental } from "./rentalAdapter";
 
 /* Платёж привязан к конкретной аренде */
-export type PaymentType = "rent" | "deposit" | "fine" | "damage" | "refund" | "swap_fee";
+export type PaymentType =
+  | "rent"
+  | "deposit"
+  | "fine"
+  | "damage"
+  | "refund"
+  | "swap_fee"
+  | "equipment_fee";
 
 export type Payment = {
   id: number;
@@ -377,6 +384,65 @@ export async function extendRentalAsync(
   );
   invAll();
   return created;
+}
+
+/**
+ * v0.4.49: продление БЕЗ chain — обновляет endPlannedAt/days/sum
+ * существующей аренды и создаёт rent-payment. Возвращает id той же
+ * аренды (для совместимости с extendRentalAsync интерфейсом).
+ */
+export async function extendInplaceAsync(
+  rentalId: number,
+  extraDays: number,
+  newRate: number,
+  newTariffPeriod: Rental["tariffPeriod"],
+  newRateUnit: "day" | "week" = "day",
+  autoMarkPaid = true,
+): Promise<{ id: number }> {
+  await api.post(
+    `/api/rentals/${rentalId}/extend-inplace`,
+    { extraDays, newRate, newTariffPeriod, newRateUnit, autoMarkPaid },
+  );
+  invAll();
+  return { id: rentalId };
+}
+
+/** v0.4.49: пополнение залога. Только для денежных залогов. */
+export async function topupSecurityAsync(
+  rentalId: number,
+  amount: number,
+  method: "cash" | "transfer",
+): Promise<void> {
+  await api.post(`/api/rentals/${rentalId}/security-topup`, {
+    amount,
+    method,
+  });
+  invAll();
+}
+
+/** v0.4.49: смена экипировки активной аренды.
+ *  payNow=true → сразу payment(equipment_fee, paid=true)
+ *  payNow=false → debt_entry(manual_charge) при доплате,
+ *                 или возврат на clients.deposit_balance при удешевлении. */
+export async function equipmentChangeAsync(args: {
+  rentalId: number;
+  newEquipmentJson: Array<{
+    itemId?: number | null;
+    name: string;
+    price: number;
+    free: boolean;
+  }>;
+  payNow: boolean;
+  method?: "cash" | "transfer";
+  comment?: string;
+}): Promise<void> {
+  await api.post(`/api/rentals/${args.rentalId}/equipment-change`, {
+    newEquipmentJson: args.newEquipmentJson,
+    payNow: args.payNow,
+    method: args.method,
+    comment: args.comment,
+  });
+  invAll();
 }
 
 export function toggleTask(id: number) {

@@ -26,6 +26,7 @@ import {
   Gauge,
   History,
   Plus,
+  Repeat,
   ShieldCheck,
   X,
 } from "lucide-react";
@@ -116,11 +117,15 @@ export function TermsTab({
   rental,
   onClientClick,
   onSwapScooter,
+  onChangeEquipment,
 }: {
   rental: Rental;
   onClientClick?: () => void;
   /** Открыть диалог замены скутера. Если undefined — кнопка не показана. */
   onSwapScooter?: () => void;
+  /** v0.4.49: открыть диалог изменения экипировки. Если undefined —
+   *  кнопка не показана (например, на completed аренде). */
+  onChangeEquipment?: () => void;
 }) {
   const { data: apiClients } = useApiClients();
   const client = apiClients?.find((c) => c.id === rental.clientId);
@@ -401,7 +406,24 @@ export function TermsTab({
           />
           <InfoCell
             icon={HelmetIcon}
-            label="Экипировка"
+            label={
+              <span className="flex items-center justify-between gap-2">
+                <span>Экипировка</span>
+                {onChangeEquipment && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onChangeEquipment();
+                    }}
+                    className="inline-flex items-center gap-1 rounded-full border border-border bg-white px-2 py-0.5 text-[10px] font-semibold text-blue-600 hover:bg-blue-50"
+                    title="Изменить состав экипировки"
+                  >
+                    <Repeat size={10} /> Изменить
+                  </button>
+                )}
+              </span>
+            }
             value={
               rental.equipment.length === 0
                 ? "не выдавалась"
@@ -571,7 +593,9 @@ function InfoCell({
   hint,
 }: {
   icon: React.ComponentType<{ size?: number | string; className?: string }>;
-  label: string;
+  /** v0.4.49: label теперь принимает ReactNode — нужно для встраивания
+   *  кнопки «Изменить» в ячейку «Экипировка». */
+  label: React.ReactNode;
   value: string;
   hint?: string;
 }) {

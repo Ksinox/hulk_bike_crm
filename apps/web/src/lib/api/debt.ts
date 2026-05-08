@@ -78,7 +78,14 @@ export type DebtSummary = {
    */
   payments: {
     id: number;
-    type: "rent" | "deposit" | "fine" | "damage" | "refund" | "swap_fee";
+    type:
+      | "rent"
+      | "deposit"
+      | "fine"
+      | "damage"
+      | "refund"
+      | "swap_fee"
+      | "equipment_fee";
     amount: number;
     paid: boolean;
     paidAt: string | null;
