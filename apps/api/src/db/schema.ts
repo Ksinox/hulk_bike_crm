@@ -141,7 +141,10 @@ export const clientApplicationStatusEnum = pgEnum("client_application_status", [
   "draft", // клиент начал заполнять, ещё не нажал «Отправить»
   "new", // отправлено, ждёт менеджера; виджет на дашборде «пульсирует»
   "viewed", // менеджер открыл — пульсация спадает, заявка ещё в списке
-  "cancelled", // менеджер пометил как фейк/спам
+  "accepted", // оформлен в клиента — finalize-статус, FK clientId не null
+  "rejected", // менеджер отклонил с причиной (не подошёл — пустые фото и т.п.)
+  "spam", // менеджер пометил как спам/бот
+  "cancelled", // legacy, оставлен для миграции старых записей
 ]);
 
 export const clientApplicationFileKindEnum = pgEnum(
@@ -1321,6 +1324,24 @@ export const clientApplications = pgTable(
     source: clientSourceEnum("source"),
     /** Произвольный текст когда выбран source='other'. */
     sourceCustom: text("source_custom"),
+
+    /** Заполняется при convert: ссылка на созданного клиента. NULL — заявка
+     *  ещё не оформлена. ON DELETE SET NULL — если клиента удалили,
+     *  заявка остаётся в архиве (история). */
+    clientId: bigint("client_id", { mode: "number" }).references(
+      () => clients.id,
+      { onDelete: "set null" },
+    ),
+    /** Когда менеджер нажал «Оформить» (status=accepted). */
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+    /** Когда менеджер нажал «Отклонить» (status=rejected). */
+    rejectedAt: timestamp("rejected_at", { withTimezone: true }),
+    /** Когда менеджер пометил как спам (status=spam). */
+    spamAt: timestamp("spam_at", { withTimezone: true }),
+    /** Текст причины отклонения/спама — короткое объяснение менеджера. */
+    rejectionReason: text("rejection_reason"),
+    /** Код-пресет (empty_photos / unreadable / repeat_fake / bot / other). */
+    rejectionReasonCode: text("rejection_reason_code"),
 
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()

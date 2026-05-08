@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, ilike, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/index.js";
 import {
@@ -56,54 +56,112 @@ const ConvertBody = CreateClientBody.extend({
 });
 
 export async function clientApplicationsRoutes(app: FastifyInstance) {
-  /* GET /api/client-applications?status=new|viewed|all
-   * По умолчанию — new + viewed (что менеджеру нужно видеть). */
-  app.get<{ Querystring: { status?: string } }>("/", async (req) => {
-    const status = req.query.status ?? "active";
-    const allowed: ("new" | "viewed")[] =
-      status === "new"
-        ? ["new"]
-        : status === "viewed"
-          ? ["viewed"]
-          : ["new", "viewed"];
+  /* GET /api/client-applications?status=...&q=...
+   * - status: csv из new|viewed|accepted|rejected|spam|all (default: new+viewed
+   *   — что в ленте на дашборде; по запросу архивная страница передаст 'all'
+   *   или конкретный статус).
+   * - q: поиск по name/phone/passport (ilike). Пустой → нет фильтра. */
+  app.get<{
+    Querystring: { status?: string; q?: string; clientId?: string };
+  }>("/", async (req) => {
+      const statusParam = (req.query.status ?? "active").trim();
+      type Status =
+        | "new"
+        | "viewed"
+        | "accepted"
+        | "rejected"
+        | "spam"
+        | "draft"
+        | "cancelled";
+      const validStatuses: Status[] = [
+        "new",
+        "viewed",
+        "accepted",
+        "rejected",
+        "spam",
+        "draft",
+        "cancelled",
+      ];
+      let allowed: Status[];
+      if (statusParam === "all") {
+        // Все, кроме draft (черновики не дошли до отправки).
+        allowed = ["new", "viewed", "accepted", "rejected", "spam"];
+      } else if (statusParam === "active") {
+        allowed = ["new", "viewed"];
+      } else {
+        allowed = statusParam
+          .split(",")
+          .map((s) => s.trim())
+          .filter((s): s is Status =>
+            validStatuses.includes(s as Status),
+          );
+        if (allowed.length === 0) allowed = ["new", "viewed"];
+      }
 
-    const apps = await db
-      .select()
-      .from(clientApplications)
-      .where(inArray(clientApplications.status, allowed))
-      .orderBy(desc(clientApplications.submittedAt));
+      const q = (req.query.q ?? "").trim();
+      const conditions = [inArray(clientApplications.status, allowed)];
 
-    if (apps.length === 0) return { items: [] };
+      // Фильтр по клиенту — для отображения «исходных» заявок в его
+      // карточке. Если задан clientId, статус расширяем (любой кроме
+      // draft/cancelled), потому что заявка уже принята.
+      const clientIdParam = req.query.clientId;
+      if (clientIdParam !== undefined) {
+        const clientId = Number(clientIdParam);
+        if (Number.isFinite(clientId)) {
+          conditions.push(eq(clientApplications.clientId, clientId));
+        }
+      }
 
-    const ids = apps.map((a) => a.id);
-    const files = await db
-      .select()
-      .from(clientApplicationFiles)
-      .where(inArray(clientApplicationFiles.applicationId, ids));
+      if (q.length > 0) {
+        const like = `%${q}%`;
+        const search = or(
+          ilike(clientApplications.name, like),
+          ilike(clientApplications.phone, like),
+          ilike(clientApplications.passportSeries, like),
+          ilike(clientApplications.passportNumber, like),
+          ilike(clientApplications.passportRaw, like),
+        );
+        if (search) conditions.push(search);
+      }
 
-    const filesByApp = new Map<number, typeof files>();
-    for (const f of files) {
-      const arr = filesByApp.get(f.applicationId) ?? [];
-      arr.push(f);
-      filesByApp.set(f.applicationId, arr);
-    }
+      const apps = await db
+        .select()
+        .from(clientApplications)
+        .where(and(...conditions))
+        .orderBy(desc(clientApplications.submittedAt));
 
-    return {
-      items: apps.map((a) => ({
-        ...a,
-        // НЕ отдаём fileKey/uploadToken наружу
-        uploadToken: undefined,
-        files: (filesByApp.get(a.id) ?? []).map((f) => ({
-          id: f.id,
-          kind: f.kind,
-          fileName: f.fileName,
-          mimeType: f.mimeType,
-          size: f.size,
-          uploadedAt: f.uploadedAt,
+      if (apps.length === 0) return { items: [] };
+
+      const ids = apps.map((a) => a.id);
+      const files = await db
+        .select()
+        .from(clientApplicationFiles)
+        .where(inArray(clientApplicationFiles.applicationId, ids));
+
+      const filesByApp = new Map<number, typeof files>();
+      for (const f of files) {
+        const arr = filesByApp.get(f.applicationId) ?? [];
+        arr.push(f);
+        filesByApp.set(f.applicationId, arr);
+      }
+
+      return {
+        items: apps.map((a) => ({
+          ...a,
+          // НЕ отдаём fileKey/uploadToken наружу
+          uploadToken: undefined,
+          files: (filesByApp.get(a.id) ?? []).map((f) => ({
+            id: f.id,
+            kind: f.kind,
+            fileName: f.fileName,
+            mimeType: f.mimeType,
+            size: f.size,
+            uploadedAt: f.uploadedAt,
+          })),
         })),
-      })),
-    };
-  });
+      };
+    },
+  );
 
   /* GET /api/client-applications/:id — деталь */
   app.get<{ Params: { id: string } }>("/:id", async (req, reply) => {
@@ -198,6 +256,91 @@ export async function clientApplicationsRoutes(app: FastifyInstance) {
     return { ok: true };
   });
 
+  /* POST /api/client-applications/:id/reject
+   * Менеджер отклонил заявку (нечитаемое фото / не подошёл и т.п.).
+   * Заявка остаётся в архиве со статусом 'rejected' + причина. */
+  const RejectBody = z.object({
+    reasonCode: z.string().max(50).optional().nullable(),
+    reason: z.string().max(500).optional().nullable(),
+  });
+  app.post<{ Params: { id: string }; Body: unknown }>(
+    "/:id/reject",
+    async (req, reply) => {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id))
+        return reply.code(400).send({ error: "bad id" });
+      const parsed = RejectBody.safeParse(req.body ?? {});
+      if (!parsed.success)
+        return reply
+          .code(400)
+          .send({ error: "validation", issues: parsed.error.issues });
+      await db
+        .update(clientApplications)
+        .set({
+          status: "rejected",
+          rejectedAt: sql`now()`,
+          rejectionReasonCode: parsed.data.reasonCode ?? null,
+          rejectionReason: parsed.data.reason ?? null,
+          updatedAt: sql`now()`,
+        })
+        .where(eq(clientApplications.id, id));
+      return { ok: true };
+    },
+  );
+
+  /* POST /api/client-applications/:id/spam — то же что reject, но статус
+   * 'spam'. Используется отдельно чтобы по аналитике видеть «реальные
+   * отказы» отдельно от «явных ботов». */
+  app.post<{ Params: { id: string }; Body: unknown }>(
+    "/:id/spam",
+    async (req, reply) => {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id))
+        return reply.code(400).send({ error: "bad id" });
+      const parsed = RejectBody.safeParse(req.body ?? {});
+      if (!parsed.success)
+        return reply
+          .code(400)
+          .send({ error: "validation", issues: parsed.error.issues });
+      await db
+        .update(clientApplications)
+        .set({
+          status: "spam",
+          spamAt: sql`now()`,
+          rejectionReasonCode: parsed.data.reasonCode ?? null,
+          rejectionReason: parsed.data.reason ?? null,
+          updatedAt: sql`now()`,
+        })
+        .where(eq(clientApplications.id, id));
+      return { ok: true };
+    },
+  );
+
+  /* POST /api/client-applications/:id/restore
+   * Возвращает rejected/spam обратно в 'new' (передумал). Чистит причины. */
+  app.post<{ Params: { id: string } }>("/:id/restore", async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id))
+      return reply.code(400).send({ error: "bad id" });
+    await db
+      .update(clientApplications)
+      .set({
+        status: "new",
+        rejectedAt: null,
+        spamAt: null,
+        rejectionReason: null,
+        rejectionReasonCode: null,
+        updatedAt: sql`now()`,
+      })
+      .where(
+        and(
+          eq(clientApplications.id, id),
+          inArray(clientApplications.status, ["rejected", "spam"]),
+        ),
+      );
+    return { ok: true };
+  });
+
   /* POST /api/client-applications/:id/convert
    * Создаёт клиента из заявки + переносит файлы из applications/* в clients/*.
    * После успеха заявка удаляется. */
@@ -285,13 +428,19 @@ export async function clientApplicationsRoutes(app: FastifyInstance) {
         return reply.code(500).send({ error: "file_copy_failed" });
       }
 
-      // Удаляем старые ключи в MinIO (после успешного копирования всех keep)
-      for (const file of appFiles) {
-        await removeObject(file.fileKey).catch(() => {});
-      }
-
-      // Удаляем заявку и её files (cascade сделает client_application_files)
-      await db.delete(clientApplications).where(eq(clientApplications.id, id));
+      // НЕ удаляем заявку и её файлы — нужны для архива.
+      // Помечаем «принято» + связываем с клиентом, чтобы из карточки
+      // клиента можно было открыть исходную анкету (с фото, что
+      // прислал сам клиент).
+      await db
+        .update(clientApplications)
+        .set({
+          status: "accepted",
+          clientId: newClient.id,
+          acceptedAt: sql`now()`,
+          updatedAt: sql`now()`,
+        })
+        .where(eq(clientApplications.id, id));
 
       await logActivity(req, {
         entity: "client",

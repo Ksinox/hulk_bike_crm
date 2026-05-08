@@ -1,6 +1,7 @@
 export type RouteId =
   | "dashboard"
   | "clients"
+  | "applications"
   | "rentals"
   | "rassrochki"
   | "sales"
@@ -19,6 +20,7 @@ const KEY = "hulk-route";
 const READY: RouteId[] = [
   "dashboard",
   "clients",
+  "applications",
   "rentals",
   "fleet",
   "service",

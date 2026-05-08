@@ -6,6 +6,7 @@ import {
   ClipboardCheck,
   FileText,
   Home,
+  Inbox,
   LogOut,
   Receipt,
   Settings,
@@ -23,6 +24,7 @@ import { isElectron } from "@/platform";
 import type { RouteId } from "./route";
 import { useMe } from "@/lib/api/auth";
 import { useUnreadChangelog } from "@/pages/whats-new/useUnreadChangelog";
+import { useApplications } from "@/lib/api/clientApplications";
 
 type NavItem = {
   id: RouteId | "logout";
@@ -35,6 +37,7 @@ function buildMainItems(canManageStaff: boolean): NavItem[] {
   const items: NavItem[] = [
     { id: "dashboard", label: "Дашборд", icon: Home, ready: true },
     { id: "clients", label: "Клиенты", icon: Users, ready: true },
+    { id: "applications", label: "Заявки", icon: Inbox, ready: true },
     { id: "rentals", label: "Аренды", icon: Bike, ready: true },
     { id: "fleet", label: "Скутеры", icon: ShoppingBag, ready: true },
   ];
@@ -76,6 +79,9 @@ export function Sidebar({
   const canManageStaff = me?.role === "creator" || me?.role === "director";
   const mainItems = buildMainItems(canManageStaff);
   const { unreadCount: changelogUnread } = useUnreadChangelog();
+  // Считаем «новые» заявки (status='new'). polling уже включен в хуке.
+  const newApplicationsQ = useApplications({ status: "new", poll: true });
+  const newApplicationsCount = newApplicationsQ.data?.length ?? 0;
   const [tooltip, setTooltip] = useState<{
     label: string;
     top: number;
@@ -137,7 +143,13 @@ export function Sidebar({
               onEnter={handleEnter}
               onLeave={handleLeave}
               onSelect={onSelect}
-              badgeCount={item.id === "whats-new" ? changelogUnread : 0}
+              badgeCount={
+                item.id === "whats-new"
+                  ? changelogUnread
+                  : item.id === "applications"
+                    ? newApplicationsCount
+                    : 0
+              }
             />
           ))}
         </div>

@@ -42,7 +42,17 @@ type Props = {
   application: ApiApplication;
   onConvertNow: () => void;
   onLater: () => void;
-  onDelete: () => void;
+  /** Открывает форму причины и помечает заявку 'rejected'. */
+  onReject?: () => void;
+  /** Открывает форму причины и помечает заявку 'spam'. */
+  onSpam?: () => void;
+  /** Legacy: используется в виджете дашборда — пометить как спам через
+   *  старый DELETE. На странице архива — заменено onSpam с причиной. */
+  onDelete?: () => void;
+  /** Read-only режим: модалка только показывает данные, без кнопок
+   *  действий (используется при просмотре исходной заявки из карточки
+   *  уже оформленного клиента). */
+  readOnly?: boolean;
 };
 
 const KIND_LABEL: Record<ApplicationFileKind, string> = {
@@ -56,7 +66,10 @@ export function NewApplicationModal({
   application,
   onConvertNow,
   onLater,
+  onReject,
+  onSpam,
   onDelete,
+  readOnly,
 }: Props) {
   const [zoomed, setZoomed] = useState<ApplicationFileKind | null>(null);
 
@@ -71,7 +84,10 @@ export function NewApplicationModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [onLater, zoomed]);
 
-  const handleDelete = () => {
+  // Legacy «Это спам» через hard-delete (виджет дашборда). На новой
+  // странице архива заменено soft-методом через onSpam.
+  const handleLegacyDelete = () => {
+    if (!onDelete) return;
     if (window.confirm("Удалить заявку как спам? Действие необратимо.")) {
       onDelete();
     }
@@ -219,31 +235,73 @@ export function NewApplicationModal({
           </div>
         </div>
 
-        <footer className="flex flex-col gap-2 border-t border-border bg-surface-soft px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <button
-            type="button"
-            onClick={handleDelete}
-            className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-2 text-[12px] font-semibold text-red-600 transition-colors hover:bg-red-50"
-          >
-            <Trash2 size={14} /> Это спам
-          </button>
-          <div className="flex flex-1 gap-2 sm:justify-end">
+        {!readOnly && (
+          <footer className="flex flex-col gap-2 border-t border-border bg-surface-soft px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-wrap items-center gap-1">
+              {onSpam && (
+                <button
+                  type="button"
+                  onClick={onSpam}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-2 text-[12px] font-semibold text-orange-ink transition-colors hover:bg-orange-soft/60"
+                >
+                  <AlertCircle size={14} /> Спам
+                </button>
+              )}
+              {onReject && (
+                <button
+                  type="button"
+                  onClick={onReject}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-2 text-[12px] font-semibold text-red-ink transition-colors hover:bg-red-soft/60"
+                >
+                  <Trash2 size={14} /> Отклонить
+                </button>
+              )}
+              {/* Legacy fallback: в виджете дашборда onSpam/onReject не
+                  пробрасываются — оставляем кнопку «Это спам» через
+                  hard-delete для обратной совместимости. */}
+              {!onSpam && !onReject && onDelete && (
+                <button
+                  type="button"
+                  onClick={handleLegacyDelete}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-2 text-[12px] font-semibold text-red-600 transition-colors hover:bg-red-50"
+                >
+                  <Trash2 size={14} /> Это спам
+                </button>
+              )}
+            </div>
+            <div className="flex flex-1 gap-2 sm:justify-end">
+              <button
+                type="button"
+                onClick={onLater}
+                className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-full border border-border bg-white px-5 text-[14px] font-semibold text-ink transition-colors hover:bg-surface-soft sm:flex-initial"
+              >
+                <Clock size={16} /> Позже
+              </button>
+              <button
+                type="button"
+                onClick={onConvertNow}
+                disabled={application.status === "accepted"}
+                className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-full bg-ink px-5 text-[14px] font-semibold text-white transition-colors hover:bg-ink-2 disabled:opacity-50 sm:flex-initial"
+              >
+                <Check size={16} />{" "}
+                {application.status === "accepted"
+                  ? "Уже оформлено"
+                  : "Оформить сейчас"}
+              </button>
+            </div>
+          </footer>
+        )}
+        {readOnly && (
+          <footer className="flex justify-end border-t border-border bg-surface-soft px-6 py-4">
             <button
               type="button"
               onClick={onLater}
-              className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-full border border-border bg-white px-5 text-[14px] font-semibold text-ink transition-colors hover:bg-surface-soft sm:flex-initial"
+              className="inline-flex h-10 items-center gap-1.5 rounded-full bg-ink px-5 text-[13px] font-semibold text-white hover:bg-ink-2"
             >
-              <Clock size={16} /> Позже
+              Закрыть
             </button>
-            <button
-              type="button"
-              onClick={onConvertNow}
-              className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-full bg-ink px-5 text-[14px] font-semibold text-white transition-colors hover:bg-ink-2 sm:flex-initial"
-            >
-              <Check size={16} /> Оформить сейчас
-            </button>
-          </div>
-        </footer>
+          </footer>
+        )}
       </div>
 
       {zoomed && (

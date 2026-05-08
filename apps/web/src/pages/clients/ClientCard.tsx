@@ -37,6 +37,9 @@ import { CreateDealMenu } from "./CreateDealMenu";
 import { useActivityTimeline } from "@/lib/api/activity";
 import { ActivityTimelineSection } from "@/pages/rentals/RentalCardTabs";
 import { useDashboardDrawer } from "@/pages/dashboard/DashboardDrawer";
+import { useApplicationsByClient } from "@/lib/api/clientApplications";
+import { NewApplicationModal } from "./NewApplicationModal";
+import { Inbox } from "lucide-react";
 import {
   getActiveRentalByClient,
   useRentalsByClient,
@@ -83,6 +86,10 @@ export function ClientCard({ client }: { client: Client }) {
   const tier = ratingTier(client.rating);
   const phone2 = useClientExtraPhone(client.id);
   const unreachable = useClientUnreachable(client.id);
+  // Заявки этого клиента (если оформлен через convert — будет одна).
+  const applicationsQ = useApplicationsByClient(client.id);
+  const sourceApplication = applicationsQ.data?.[0] ?? null;
+  const [appPreviewOpen, setAppPreviewOpen] = useState(false);
   const rentalsForClient = useRentalsByClient(client.id);
   const rentals = rentalsForClient;
   const drawer = useDashboardDrawer();
@@ -207,6 +214,22 @@ export function ClientCard({ client }: { client: Client }) {
                 id #{String(client.id).padStart(4, "0")} · добавлен{" "}
                 {client.added} · источник: {SOURCE_LABEL[client.source]}
               </div>
+              {sourceApplication && (
+                <button
+                  type="button"
+                  onClick={() => setAppPreviewOpen(true)}
+                  className="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700 transition-colors hover:bg-blue-100"
+                  title="Открыть исходную заявку клиента"
+                >
+                  <Inbox size={12} />
+                  Через заявку #{sourceApplication.id}
+                  {sourceApplication.submittedAt && (
+                    <span className="text-blue-700/70">
+                      · {formatShortDate(sourceApplication.submittedAt)}
+                    </span>
+                  )}
+                </button>
+              )}
               <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
                 <PhoneDisplay phone={client.phone} primary />
                 {phone2 && <PhoneDisplay phone={phone2} extra />}
@@ -433,8 +456,24 @@ export function ClientCard({ client }: { client: Client }) {
           onCancel={() => setPendingFiles(null)}
         />
       )}
+
+      {appPreviewOpen && sourceApplication && (
+        <NewApplicationModal
+          application={sourceApplication}
+          readOnly
+          onLater={() => setAppPreviewOpen(false)}
+          onConvertNow={() => setAppPreviewOpen(false)}
+        />
+      )}
     </div>
   );
+}
+
+function formatShortDate(iso: string): string {
+  const d = new Date(iso);
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  return `${dd}.${mm}`;
 }
 
 async function copyText(text: string): Promise<boolean> {

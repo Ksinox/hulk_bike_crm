@@ -9,6 +9,7 @@ import { Service } from "@/pages/service/Service";
 import { Settings } from "@/pages/settings/Settings";
 import { Staff } from "@/pages/staff/Staff";
 import { WhatsNew } from "@/pages/whats-new/WhatsNew";
+import { Applications } from "@/pages/applications/Applications";
 import { UpdateToast } from "./UpdateToast";
 import { TitleBar } from "./TitleBar";
 import { startWebVersionCheck } from "@/lib/version-check";
@@ -88,6 +89,8 @@ export function App() {
         <Sidebar activeId={route} onSelect={onSelect} />
         {route === "clients" ? (
           <Clients />
+        ) : route === "applications" ? (
+          <Applications />
         ) : route === "rentals" ? (
           <Rentals />
         ) : route === "fleet" ? (

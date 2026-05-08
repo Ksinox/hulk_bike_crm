@@ -9,7 +9,12 @@ import {
   type ClientSource,
 } from "@/lib/mock/clients";
 import { useApiClients, clientsKeys } from "@/lib/api/clients";
-import { applicationsKeys } from "@/lib/api/clientApplications";
+import {
+  applicationsKeys,
+  useApplications,
+  type ApiApplication,
+} from "@/lib/api/clientApplications";
+import { applicationToFormInit } from "./applicationConvert";
 import { api } from "@/lib/api";
 import {
   DocUpload,
@@ -303,6 +308,47 @@ export function AddClientModal({
         } as Record<string, boolean>)
       : ({} as Record<string, boolean>),
   );
+  /** Если оператор подтянул данные из найденной заявки — здесь её id.
+   *  При сохранении клиента вызовется convert (как если бы он зашёл
+   *  через виджет «Новые заявки»). */
+  const [linkedAppId, setLinkedAppId] = useState<number | null>(null);
+  /** Подсказка отклонена («Скрыть») — больше не показываем. */
+  const [hintDismissed, setHintDismissed] = useState(false);
+  /** Дебаунсенный запрос для авто-поиска похожих заявок. */
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  useEffect(() => {
+    if (isEdit || applicationId || linkedAppId || hintDismissed) {
+      setDebouncedQuery("");
+      return;
+    }
+    const name = f.name.trim();
+    const phone = f.phone.replace(/\D/g, "");
+    const next = name.length >= 3 ? name : phone.length >= 5 ? phone : "";
+    if (next === debouncedQuery) return;
+    const handle = window.setTimeout(() => setDebouncedQuery(next), 250);
+    return () => window.clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [f.name, f.phone, isEdit, applicationId, linkedAppId, hintDismissed]);
+  const isFromApplication = !!applicationId || !!linkedAppId;
+  const matchedAppsQ = useApplications({
+    status: "all",
+    q: debouncedQuery,
+    poll: false,
+    enabled: !isEdit && !isFromApplication && debouncedQuery.length > 0,
+  });
+  const matchedApp: ApiApplication | null = useMemo(() => {
+    const list = matchedAppsQ.data ?? [];
+    // Не предлагаем уже принятые заявки (accepted=это тот же клиент).
+    return (
+      list.find(
+        (a) =>
+          a.status === "new" ||
+          a.status === "viewed" ||
+          a.status === "rejected" ||
+          a.status === "spam",
+      ) ?? null
+    );
+  }, [matchedAppsQ.data]);
 
   const requestClose = () => {
     if (closing) return;
@@ -441,6 +487,36 @@ export function AddClientModal({
               </div>
             </div>
           </div>
+
+          {matchedApp && !isFromApplication && (
+            <ApplicationMatchHint
+              app={matchedApp}
+              onPull={() => {
+                const init = applicationToFormInit(matchedApp);
+                setF((prev) => ({
+                  ...prev,
+                  name: init.name || prev.name,
+                  phone: init.phone || prev.phone,
+                  phone2: init.phone2 || prev.phone2,
+                  birth: init.birth || prev.birth,
+                  isForeigner: init.isForeigner,
+                  passportRaw: init.passportRaw || prev.passportRaw,
+                  passSer: init.passSer || prev.passSer,
+                  passNum: init.passNum || prev.passNum,
+                  passIssuer: init.passIssuer || prev.passIssuer,
+                  passDate: init.passDate || prev.passDate,
+                  passCode: init.passCode || prev.passCode,
+                  regAddr: init.regAddr || prev.regAddr,
+                  sameAddr: init.sameAddr,
+                  liveAddr: init.liveAddr || prev.liveAddr,
+                  source: init.source ?? prev.source,
+                  sourceCustom: init.sourceCustom || prev.sourceCustom,
+                }));
+                setLinkedAppId(matchedApp.id);
+              }}
+              onDismiss={() => setHintDismissed(true)}
+            />
+          )}
 
           {/* Section 1 — Основные */}
           <Section num={1} title="Основные" badge="обязательно">
@@ -960,13 +1036,15 @@ export function AddClientModal({
                     }
                     return;
                   }
-                  // Если открыты из заявки — идём через convert API:
-                  // он создаёт клиента + переносит файлы из заявки в client_documents
-                  // + удаляет саму заявку. Один атомарный запрос.
-                  if (applicationId) {
+                  // Если открыты из заявки или оператор подтянул данные
+                  // через auto-search — идём через convert API: он
+                  // создаёт клиента, переносит файлы из заявки в
+                  // client_documents и помечает заявку accepted.
+                  const effectiveAppId = applicationId ?? linkedAppId;
+                  if (effectiveAppId) {
                     try {
                       const created = await api.post<{ id: number; name: string; phone: string }>(
-                        `/api/client-applications/${applicationId}/convert`,
+                        `/api/client-applications/${effectiveAppId}/convert`,
                         {
                           name: f.name.trim(),
                           phone: f.phone,
@@ -1205,6 +1283,57 @@ function PhotoSlot({
           <X size={12} />
         </button>
       )}
+    </div>
+  );
+}
+
+function ApplicationMatchHint({
+  app,
+  onPull,
+  onDismiss,
+}: {
+  app: ApiApplication;
+  onPull: () => void;
+  onDismiss: () => void;
+}) {
+  const dateStr = app.submittedAt
+    ? new Date(app.submittedAt).toLocaleDateString("ru-RU", {
+        day: "2-digit",
+        month: "long",
+      })
+    : "недавно";
+  return (
+    <div className="rounded-2xl border-2 border-dashed border-blue-300 bg-blue-50 p-4">
+      <div className="flex items-start gap-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white">
+          <span className="text-[16px]">!</span>
+        </div>
+        <div className="flex-1">
+          <div className="text-[13px] font-bold text-blue-900">
+            Похожая заявка от {dateStr} — подтянуть данные?
+          </div>
+          <div className="mt-0.5 text-[12px] text-blue-900/80">
+            {app.name || "без имени"} · {app.phone || "тел. не указан"}.
+            Все поля и фото можно подставить одной кнопкой.
+          </div>
+          <div className="mt-2 flex gap-2">
+            <button
+              type="button"
+              onClick={onPull}
+              className="inline-flex items-center gap-1.5 rounded-full bg-ink px-3 py-1.5 text-[12px] font-bold text-white hover:bg-blue-700"
+            >
+              Подтянуть
+            </button>
+            <button
+              type="button"
+              onClick={onDismiss}
+              className="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-[12px] font-semibold text-blue-900 ring-1 ring-blue-200 hover:bg-blue-100"
+            >
+              Скрыть
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
