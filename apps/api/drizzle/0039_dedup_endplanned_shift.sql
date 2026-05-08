@@ -68,11 +68,11 @@ shift_calc AS (
     -- dailyRate
     CASE WHEN r.rate_unit = 'week' THEN ROUND(r.rate / 7.0)
          ELSE r.rate END AS daily_rate,
-    -- сколько дней уже просрочено сейчас
+    -- сколько дней уже просрочено сейчас (разница date - date уже integer)
     GREATEST(
       0,
-      EXTRACT(DAY FROM ((now() AT TIME ZONE 'Europe/Moscow')::date - r.end_planned_at::date))::int
-    ) AS overdue_days_now,
+      ((now() AT TIME ZONE 'Europe/Moscow')::date - r.end_planned_at::date)
+    )::int AS overdue_days_now,
     -- сколько дней мы можем компенсировать = floor(amount / dailyRate)
     CASE
       WHEN r.rate_unit = 'week' AND ROUND(r.rate / 7.0) > 0 THEN
