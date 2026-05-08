@@ -208,6 +208,17 @@ export function ParkPanel({
     // Дополнительный «виртуальный» счётчик: сегодня возвращают.
     // Он не входит в TileStatus, считается по флагу isReturnToday.
     acc["returns_today"] = tiles.filter((t) => t.isReturnToday).length;
+    // v0.4.59: счётчик чипа «активная аренда» соответствует расширенной
+    // логике фильтра — все «у клиента на руках» статусы (rented +
+    // overdue + late_today + returning). Иначе число на чипе показывало
+    // только строго rented и не сходилось с тем что показывал фильтр.
+    acc["rented"] = tiles.filter(
+      (t) =>
+        t.status === "rented" ||
+        t.status === "overdue" ||
+        t.status === "late_today" ||
+        t.status === "returning",
+    ).length;
     return acc;
   }, [tiles]);
 
@@ -312,12 +323,30 @@ export function ParkPanel({
         {tiles.map((s) => {
           const modelMatch = model === "all" || s.model === model;
           if (!modelMatch) return null;
+          // v0.4.59: фильтр «активная аренда» — все скутеры у которых
+          // есть аренда в работе (rented + overdue + late_today +
+          // returning), а не строго status==='rented'. Логика как в
+          // Rentals.tsx → matchStatus("active"): «всё что у клиента
+          // сейчас на руках, в каком бы состоянии ни было». Раньше
+          // оператор видел «22 в активной аренде», но 22 = только
+          // строго rented; просрочки/опаздывает/возвраты не
+          // суммировались, и фильтр прятал их при выборе.
+          // Цвета плиток сохраняются — это отдельное визуальное
+          // состояние, не зависит от этого фильтра.
+          const RENTED_STATUSES = new Set<TileStatus>([
+            "rented",
+            "overdue",
+            "late_today",
+            "returning",
+          ]);
           const statusMatch =
             status === "all"
               ? true
               : status === "returns_today"
                 ? s.isReturnToday
-                : s.status === status;
+                : status === "rented"
+                  ? RENTED_STATUSES.has(s.status)
+                  : s.status === status;
           const num = s.name.split("#")[1] ?? s.name;
           const handleClick = () => {
             // Клик в зависимости от статуса — разные операционные действия.
