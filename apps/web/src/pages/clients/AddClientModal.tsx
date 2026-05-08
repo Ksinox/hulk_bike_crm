@@ -283,6 +283,10 @@ export function AddClientModal({
         regAddr: initialData.regAddr || base.regAddr,
         sameAddr: initialData.sameAddr,
         liveAddr: initialData.liveAddr || base.liveAddr,
+        // Источник: если клиент сам выбрал в анкете — подставляем,
+        // иначе оставляем дефолт формы (менеджер выберет).
+        source: initialData.source ?? base.source,
+        sourceCustom: initialData.sourceCustom || base.sourceCustom,
       };
     }
     return base;

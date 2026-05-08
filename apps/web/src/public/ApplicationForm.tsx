@@ -64,6 +64,7 @@ type StepId =
   | "photo_passport_reg"
   | "photo_license"
   | "photo_selfie"
+  | "source"
   | "confirm";
 
 function getSteps(isForeigner: boolean): StepId[] {
@@ -75,10 +76,21 @@ function getSteps(isForeigner: boolean): StepId[] {
     "photo_passport_reg",
     "photo_license",
     "photo_selfie",
+    "source",
     "confirm",
   ];
   return isForeigner ? all.filter((s) => s !== "photo_passport_reg") : all;
 }
+
+type ClientSourceChoice = "avito" | "repeat" | "ref" | "maps" | "other";
+
+const SOURCE_OPTIONS: { id: ClientSourceChoice; label: string; hint?: string }[] = [
+  { id: "avito", label: "Авито", hint: "Объявление на Авито" },
+  { id: "maps", label: "Карты", hint: "Яндекс / 2ГИС / Google Maps" },
+  { id: "ref", label: "Рекомендация", hint: "Друзья или знакомые посоветовали" },
+  { id: "repeat", label: "Уже катался", hint: "Брал у нас раньше" },
+  { id: "other", label: "Другое", hint: "Свой вариант" },
+];
 
 type FormState = {
   // Контакты
@@ -100,6 +112,10 @@ type FormState = {
   // Адрес
   sameAddress: boolean;
   liveAddress: string;
+
+  // Источник: откуда о нас узнал
+  source: ClientSourceChoice | "";
+  sourceCustom: string;
 
   // Согласие
   agreedPdn: boolean;
@@ -125,6 +141,8 @@ const EMPTY: FormState = {
   // по умолчанию отжата» — клиент сам решит, ставить или нет.
   sameAddress: false,
   liveAddress: "",
+  source: "",
+  sourceCustom: "",
   agreedPdn: false,
   honeypot: "",
 };
@@ -147,6 +165,9 @@ function fieldsFromState(s: FormState): ApplicationFields {
       : nullableTrim(s.passRegistration),
     sameAddress: s.sameAddress,
     liveAddress: s.sameAddress ? null : nullableTrim(s.liveAddress),
+    source: s.source ? s.source : null,
+    sourceCustom:
+      s.source === "other" ? nullableTrim(s.sourceCustom) : null,
     honeypot: s.honeypot || null,
   };
 }
@@ -167,6 +188,8 @@ function stateFromFields(f: ApplicationFields): Partial<FormState> {
     passRegistration: f.passportRegistration ?? "",
     sameAddress: f.sameAddress ?? false,
     liveAddress: f.liveAddress ?? "",
+    source: (f.source ?? "") as ClientSourceChoice | "",
+    sourceCustom: f.sourceCustom ?? "",
   };
 }
 
@@ -266,11 +289,18 @@ export function ApplicationForm() {
 
   const canNextAddress = form.sameAddress || form.liveAddress.trim().length > 0;
 
+  // Источник обязателен. Если выбран «другое» — обязательно текст-уточнение,
+  // иначе уволочённое значение бесполезно для CRM.
+  const canNextSource =
+    form.source !== "" &&
+    (form.source !== "other" || form.sourceCustom.trim().length > 0);
+
   const canSubmit =
     form.agreedPdn &&
     canNextContact &&
     canNextPassport &&
     canNextAddress &&
+    canNextSource &&
     uploaded.has("passport_main") &&
     uploaded.has("license") &&
     uploaded.has("selfie") &&
@@ -292,6 +322,8 @@ export function ApplicationForm() {
         return uploaded.has("license");
       case "photo_selfie":
         return uploaded.has("selfie");
+      case "source":
+        return canNextSource;
       case "confirm":
         return true;
     }
@@ -424,6 +456,9 @@ export function ApplicationForm() {
               }
               onAdvance={advanceFromPhoto}
             />
+          )}
+          {currentStepId === "source" && (
+            <SourceStep form={form} setField={setField} />
           )}
           {currentStepId === "confirm" && (
             <Confirm
@@ -868,6 +903,77 @@ function PhotoStep({
   );
 }
 
+function SourceStep({
+  form,
+  setField,
+}: {
+  form: FormState;
+  setField: <K extends keyof FormState>(k: K, v: FormState[K]) => void;
+}) {
+  return (
+    <div className="space-y-4">
+      <h1 className="text-[22px] font-bold text-slate-900">
+        Откуда вы о нас узнали?
+      </h1>
+      <p className="text-[14px] text-slate-600">
+        Это нужно нам, чтобы понимать, какая реклама работает. Выбор не
+        влияет на оформление аренды.
+      </p>
+
+      <div className="grid gap-2">
+        {SOURCE_OPTIONS.map((opt) => {
+          const active = form.source === opt.id;
+          return (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => {
+                setField("source", opt.id);
+                if (opt.id !== "other") setField("sourceCustom", "");
+              }}
+              className={
+                active
+                  ? "flex w-full items-start gap-3 rounded-xl border-2 border-slate-900 bg-slate-900 px-4 py-3 text-left text-white"
+                  : "flex w-full items-start gap-3 rounded-xl border border-slate-300 bg-white px-4 py-3 text-left text-slate-900 hover:border-slate-500"
+              }
+            >
+              <div className="flex-1">
+                <div className="text-[16px] font-bold">{opt.label}</div>
+                {opt.hint && (
+                  <div
+                    className={
+                      active
+                        ? "text-[12px] text-white/70"
+                        : "text-[12px] text-slate-500"
+                    }
+                  >
+                    {opt.hint}
+                  </div>
+                )}
+              </div>
+              {active && <Check size={20} />}
+            </button>
+          );
+        })}
+      </div>
+
+      {form.source === "other" && (
+        <div>
+          <FieldLabel required>Опишите, откуда узнали</FieldLabel>
+          <input
+            className={inputCls}
+            placeholder="Например: бывший прокат, реклама в подъезде…"
+            value={form.sourceCustom}
+            onChange={(e) =>
+              setField("sourceCustom", e.target.value.slice(0, 200))
+            }
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Confirm({
   form,
   setField,
@@ -905,6 +1011,16 @@ function Confirm({
         <Row
           label="Адрес проживания"
           value={form.sameAddress ? "Совпадает с регистрацией" : form.liveAddress}
+        />
+        <Row
+          label="Откуда узнали"
+          value={
+            form.source === ""
+              ? ""
+              : form.source === "other"
+                ? form.sourceCustom
+                : (SOURCE_OPTIONS.find((o) => o.id === form.source)?.label ?? "")
+          }
         />
       </div>
 

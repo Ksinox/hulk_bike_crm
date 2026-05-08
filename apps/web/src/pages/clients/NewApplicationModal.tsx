@@ -184,6 +184,14 @@ export function NewApplicationModal({
                 multiline
               />
             </Section>
+
+            <Section title="Откуда узнал о нас">
+              <Row
+                label="Источник"
+                value={formatSource(application)}
+                multiline
+              />
+            </Section>
           </div>
         </div>
 
@@ -531,4 +539,19 @@ function formatDate(iso: string | null | undefined): string | null {
   if (!m) return iso;
   const [, y, mo, d] = m;
   return `${d}.${mo}.${y}`;
+}
+
+const SOURCE_LABEL_LOCAL: Record<NonNullable<ApiApplication["source"]>, string> = {
+  avito: "Авито",
+  repeat: "Уже катался",
+  ref: "Рекомендация",
+  maps: "Карты (Яндекс/2ГИС/Google)",
+  other: "Другое",
+};
+
+function formatSource(app: ApiApplication): string | null {
+  if (!app.source) return null;
+  if (app.source === "other" && app.sourceCustom)
+    return `${SOURCE_LABEL_LOCAL.other} — ${app.sourceCustom}`;
+  return SOURCE_LABEL_LOCAL[app.source];
 }

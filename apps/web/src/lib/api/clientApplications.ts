@@ -40,6 +40,11 @@ export type ApiApplication = {
   passportRegistration: string | null;
   liveAddress: string | null;
   sameAddress: boolean;
+  /** Откуда клиент о нас узнал (выбрал на отдельном шаге анкеты).
+   *  Может быть null, если заявка создана до релиза с шагом source. */
+  source: "avito" | "repeat" | "ref" | "maps" | "other" | null;
+  /** Текст-уточнение, если выбран source='other'. */
+  sourceCustom: string | null;
   viewedAt: string | null;
   submittedAt: string | null;
   createdAt: string;

@@ -1,8 +1,10 @@
 import type { ApiApplication } from "@/lib/api/clientApplications";
+import type { ClientSource } from "@/lib/mock/clients";
 
 /**
  * Маппинг полей публичной заявки → начальное состояние Form в AddClientModal.
- * Source клиента в заявке нет — менеджер выберет сам перед сохранением.
+ * Source с релиза 0.5+ клиент выбирает прямо в анкете (старые заявки могут
+ * иметь source=null — тогда менеджер выберет сам).
  */
 
 export type ApplicationFormInit = {
@@ -20,6 +22,8 @@ export type ApplicationFormInit = {
   regAddr: string;
   sameAddr: boolean;
   liveAddr: string;
+  source: ClientSource | null;
+  sourceCustom: string;
 };
 
 function isoToDateRu(s: string | null | undefined): string {
@@ -48,5 +52,7 @@ export function applicationToFormInit(
     regAddr: app.passportRegistration ?? "",
     sameAddr: app.sameAddress,
     liveAddr: app.liveAddress ?? "",
+    source: app.source,
+    sourceCustom: app.sourceCustom ?? "",
   };
 }

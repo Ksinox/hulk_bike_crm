@@ -24,6 +24,8 @@ import { logActivity } from "../services/activityLog.js";
  * Защита от спама: rate-limit per-IP, honeypot-поле, mime-whitelist на файлах.
  */
 
+const ClientSourceEnum = z.enum(["avito", "repeat", "ref", "maps", "other"]);
+
 /** Поля, которые клиент может заполнить через публичную форму. */
 const ApplicationFieldsBody = z
   .object({
@@ -41,6 +43,10 @@ const ApplicationFieldsBody = z
     passportRegistration: z.string().max(500).optional().nullable(),
     liveAddress: z.string().max(500).optional().nullable(),
     sameAddress: z.boolean().optional(),
+    /** Откуда узнал — клиент выбирает на отдельном шаге анкеты.
+     *  При convert копируется в clients.source. */
+    source: ClientSourceEnum.optional().nullable(),
+    sourceCustom: z.string().max(200).optional().nullable(),
     /** Honeypot — реальные клиенты это поле не видят и не заполняют. */
     honeypot: z.string().max(100).optional().nullable(),
   })

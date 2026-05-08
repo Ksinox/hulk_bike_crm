@@ -21,6 +21,8 @@ function url(path: string): string {
   return `${API_BASE}${path}`;
 }
 
+export type ClientSource = "avito" | "repeat" | "ref" | "maps" | "other";
+
 export type ApplicationFields = {
   name?: string | null;
   phone?: string | null;
@@ -36,6 +38,11 @@ export type ApplicationFields = {
   passportRegistration?: string | null;
   liveAddress?: string | null;
   sameAddress?: boolean;
+  /** Откуда клиент о нас узнал. Выбирается клиентом на отдельном
+   *  шаге анкеты, потом переносится в карточку клиента при оформлении. */
+  source?: ClientSource | null;
+  /** Текст-уточнение, если выбран source='other'. */
+  sourceCustom?: string | null;
   honeypot?: string | null;
 };
 

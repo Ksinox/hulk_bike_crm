@@ -1315,6 +1315,13 @@ export const clientApplications = pgTable(
     /** Honeypot: должно быть пустым. Если есть значение — спам, в БД не пишем. */
     honeypot: text("honeypot"),
 
+    /** Откуда клиент о нас узнал — выбирается им же в анкете на отдельном
+     *  шаге. При convert копируется в clients.source. Тот же enum, что
+     *  у clients.source. NULL — клиент не дошёл до шага «источник». */
+    source: clientSourceEnum("source"),
+    /** Произвольный текст когда выбран source='other'. */
+    sourceCustom: text("source_custom"),
+
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
