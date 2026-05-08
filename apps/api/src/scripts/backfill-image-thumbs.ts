@@ -13,11 +13,14 @@
  * / «error: …». В конце сводка.
  */
 import { db } from "../db/index.js";
+import { isNotNull, ne, and } from "drizzle-orm";
 import {
   clientDocuments,
   scooterDocuments,
   repairProgressPhotos,
   clientApplicationFiles,
+  scooterModels,
+  equipmentItems,
 } from "../db/schema.js";
 import { getObjectStream, statObject } from "../storage/index.js";
 import {
@@ -34,6 +37,21 @@ type Stats = {
   notImage: number;
   errors: number;
 };
+
+/**
+ * Грубая угадайка mime-типа по имени файла. Нужна для аватарок моделей/
+ * экипировки — у них в БД не хранится mimeType. По умолчанию JPEG —
+ * sharp распарсит почти всё что начинается с JPEG/PNG/WebP magic bytes.
+ */
+function guessMimeByName(name: string): string {
+  const ext = name.toLowerCase().split(".").pop() ?? "";
+  if (ext === "png") return "image/png";
+  if (ext === "webp") return "image/webp";
+  if (ext === "avif") return "image/avif";
+  if (ext === "gif") return "image/gif";
+  if (ext === "heic" || ext === "heif") return "image/heic";
+  return "image/jpeg";
+}
 
 async function streamToBuffer(
   stream: NodeJS.ReadableStream,
@@ -137,6 +155,40 @@ async function main(): Promise<void> {
     .select({ fileKey: clientApplicationFiles.fileKey, mimeType: clientApplicationFiles.mimeType })
     .from(clientApplicationFiles);
   for (const r of afiles) await processOne(r.fileKey, r.mimeType, stats);
+
+  // 5. scooter_models — аватарки моделей (используются на лендинге).
+  // Mime-тип в БД не хранится — определяем по расширению. Если расширения
+  // нет, sharp всё равно поймёт картинку по магическим байтам.
+  console.log("\n— scooter_models avatars —");
+  const mavatars = await db
+    .select({
+      avatarKey: scooterModels.avatarKey,
+      avatarThumbKey: scooterModels.avatarThumbKey,
+      avatarFileName: scooterModels.avatarFileName,
+    })
+    .from(scooterModels)
+    .where(and(isNotNull(scooterModels.avatarKey), ne(scooterModels.avatarKey, "")));
+  for (const r of mavatars) {
+    const mime = guessMimeByName(r.avatarFileName ?? r.avatarKey ?? "");
+    if (r.avatarKey) await processOne(r.avatarKey, mime, stats);
+    if (r.avatarThumbKey) await processOne(r.avatarThumbKey, mime, stats);
+  }
+
+  // 6. equipment_items — аватарки экипировки (Шлем / Цепь / Замок и т.п.).
+  console.log("\n— equipment_items avatars —");
+  const eavatars = await db
+    .select({
+      avatarKey: equipmentItems.avatarKey,
+      avatarThumbKey: equipmentItems.avatarThumbKey,
+      avatarFileName: equipmentItems.avatarFileName,
+    })
+    .from(equipmentItems)
+    .where(and(isNotNull(equipmentItems.avatarKey), ne(equipmentItems.avatarKey, "")));
+  for (const r of eavatars) {
+    const mime = guessMimeByName(r.avatarFileName ?? r.avatarKey ?? "");
+    if (r.avatarKey) await processOne(r.avatarKey, mime, stats);
+    if (r.avatarThumbKey) await processOne(r.avatarThumbKey, mime, stats);
+  }
 
   console.log("\n— summary —");
   console.log(`total processed: ${stats.total}`);

@@ -6,7 +6,8 @@ import { equipmentItems } from "../db/schema.js";
 import { requireRole } from "../auth/plugin.js";
 import { logActivity } from "../services/activityLog.js";
 import { diffFields } from "../services/activityMessages.js";
-import { makeFileKey, putObject, removeObject } from "../storage/index.js";
+import { makeFileKey, removeObject } from "../storage/index.js";
+import { putObjectWithImageVariants } from "../storage/image.js";
 
 const MAX_AVATAR = 5 * 1024 * 1024;
 
@@ -187,13 +188,14 @@ export async function equipmentRoutes(app: FastifyInstance) {
       if (thumbBuf && !/^image\//.test(thumbMime))
         return reply.code(400).send({ error: "thumb must be image" });
 
+      // v0.4.62: sharp поверх обоих файлов (см. scooter-models.ts).
       const key = makeFileKey(`equipment/${id}`, fileName);
-      await putObject(key, fileBuf, mimeType);
+      await putObjectWithImageVariants(key, fileBuf, mimeType);
 
       let thumbKey: string | null = null;
       if (thumbBuf) {
         thumbKey = makeFileKey(`equipment/${id}/thumb`, thumbName);
-        await putObject(thumbKey, thumbBuf, thumbMime);
+        await putObjectWithImageVariants(thumbKey, thumbBuf, thumbMime);
       }
 
       if (existing.avatarKey && existing.avatarKey !== key) {

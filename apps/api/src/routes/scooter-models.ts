@@ -6,7 +6,8 @@ import { scooterModels, scooters } from "../db/schema.js";
 import { requireRole } from "../auth/plugin.js";
 import { logActivity } from "../services/activityLog.js";
 import { diffFields } from "../services/activityMessages.js";
-import { makeFileKey, putObject, removeObject } from "../storage/index.js";
+import { makeFileKey, removeObject } from "../storage/index.js";
+import { putObjectWithImageVariants } from "../storage/image.js";
 
 const MAX_AVATAR = 5 * 1024 * 1024; // 5 МБ
 
@@ -249,13 +250,20 @@ export async function scooterModelsRoutes(app: FastifyInstance) {
       if (thumbBuf && !/^image\//.test(thumbMime))
         return reply.code(400).send({ error: "thumb must be image" });
 
+      // v0.4.62: sharp пробегает поверх ОБОИХ файлов — и оригинала, и
+      // кропа. Оригинал остаётся как есть (для скачивания и юр-целей),
+      // плюс рядом появляются __view__.jpg ≤2000px и __thumb__.jpg
+      // ≤400px. На лендинге `/api/public/.../avatar?variant=view` берёт
+      // уменьшенную версию (~300 КБ) вместо тяжёлого оригинала.
+      // Если оператор кропнул — сжатые варианты генерятся и из кропа,
+      // тогда CRM тянет миниатюры конкретно с обрезанной версии.
       const key = makeFileKey(`models/${id}`, fileName);
-      await putObject(key, fileBuf, mimeType);
+      await putObjectWithImageVariants(key, fileBuf, mimeType);
 
       let thumbKey: string | null = null;
       if (thumbBuf) {
         thumbKey = makeFileKey(`models/${id}/thumb`, thumbName);
-        await putObject(thumbKey, thumbBuf, thumbMime);
+        await putObjectWithImageVariants(thumbKey, thumbBuf, thumbMime);
       }
 
       // Удаляем старые ключи (и оригинал и старую миниатюру).
