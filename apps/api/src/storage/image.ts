@@ -4,20 +4,29 @@
  * EXIF-rotate (фотки с iPhone приходят боком, без rotate они так и
  * хранятся «лёжа»).
  *
- * Контракт: функция принимает буфер исходной картинки, возвращает три
- * варианта (orig / view / thumb) — все JPEG, прогрессивные. Если входной
- * mime не картинка — возвращаем `null` и upload-роуты грузят оригинал
- * как есть (PDF, видео и т.п. не обрабатываются).
+ * Формат вариантов — WebP. Выбор пал на WebP вместо JPEG/PNG:
+ *   • поддерживает alpha-канал — прозрачные PNG (аватарки моделей
+ *     на прозрачном фоне) сохраняют прозрачность. JPEG flatten'ил
+ *     альфу в чёрный прямоугольник, PNG в разы тяжелее.
+ *   • размер ≈25% меньше JPEG того же визуального качества (благодаря
+ *     более продвинутому VP8L-кодеку), и в 3-4 раза меньше PNG.
+ *   • поддержка во всех современных браузерах (Safari iOS 14+,
+ *     Chrome/Firefox/Edge — давно, Yandex/Opera — давно).
+ *
+ * Контракт: функция принимает буфер исходной картинки, возвращает два
+ * варианта (view / thumb) — оба WebP. Если входной mime не картинка —
+ * возвращаем `null` и upload-роуты грузят оригинал как есть (PDF,
+ * видео и т.п. не обрабатываются).
  *
  * Размеры:
- *   thumb:  max 400×400, JPEG q80, mozjpeg — ~30 КБ для миниатюр в гриде
- *   view:   max 2000×2000, JPEG q82, mozjpeg — ~300 КБ для попапа просмотра
- *   orig:   как есть — для скачивания и юридических целей
+ *   thumb:  max 400×400, WebP q78  — ~25 КБ для миниатюр в гриде
+ *   view:   max 2000×2000, WebP q80 — ~250 КБ для попапа просмотра
+ *   orig:   как есть — для скачивания и юр-целей
  *
  * Ключи в MinIO кладутся по конвенции:
  *   {basePath}/{uuid}.{ext}                ← orig (тот что был раньше)
- *   {basePath}/{uuid}.__view__.jpg         ← view-вариант
- *   {basePath}/{uuid}.__thumb__.jpg        ← thumb-вариант
+ *   {basePath}/{uuid}.__view__.webp        ← view-вариант
+ *   {basePath}/{uuid}.__thumb__.webp       ← thumb-вариант
  *
  * Так фронт-роут /api/files/{key}?variant=thumb просто подменяет ключ
  * на derived (см. files.ts) и берёт нужный вариант. Если variant-файл
@@ -59,6 +68,11 @@ export async function generateImageVariants(
     // .clone() — потому что sharp pipeline single-shot. Делаем общую
     // нормализацию (rotate по EXIF) один раз, дальше клонируем под два
     // варианта параллельно.
+    //
+    // Формат — WebP, lossy, без принудительного flatten. Если у входа
+    // alpha-канал (PNG-аватарка скутера на прозрачном фоне) — alpha
+    // сохраняется. effort=4 — золотая середина между скоростью и
+    // компрессией (по бенчмаркам sharp).
     const base = sharp(buf, { failOn: "none" }).rotate();
     const [view, thumb] = await Promise.all([
       base
@@ -67,7 +81,7 @@ export async function generateImageVariants(
           fit: "inside",
           withoutEnlargement: true,
         })
-        .jpeg({ quality: 82, progressive: true, mozjpeg: true })
+        .webp({ quality: 80, effort: 4 })
         .toBuffer(),
       base
         .clone()
@@ -75,7 +89,7 @@ export async function generateImageVariants(
           fit: "inside",
           withoutEnlargement: true,
         })
-        .jpeg({ quality: 80, progressive: true, mozjpeg: true })
+        .webp({ quality: 78, effort: 4 })
         .toBuffer(),
     ]);
     return { view, thumb };
@@ -91,19 +105,19 @@ export async function generateImageVariants(
 /**
  * Преобразует ключ оригинала в ключ варианта.
  *   "clients/123/passport/abc.jpg" + "thumb"
- *     → "clients/123/passport/abc.__thumb__.jpg"
+ *     → "clients/123/passport/abc.__thumb__.webp"
  *
- * Маркер `__thumb__` / `__view__` ставится перед расширением. Если
- * расширения нет — добавляем `.jpg` (мы всё равно сохраняем JPEG).
+ * Маркер `__thumb__` / `__view__` ставится перед расширением. Расширение
+ * всегда `.webp` (мы всегда сохраняем WebP — см. generateImageVariants).
  */
 export function variantKey(
   origKey: string,
   variant: "view" | "thumb",
 ): string {
   const dot = origKey.lastIndexOf(".");
-  if (dot < 0) return `${origKey}.__${variant}__.jpg`;
+  if (dot < 0) return `${origKey}.__${variant}__.webp`;
   const base = origKey.slice(0, dot);
-  return `${base}.__${variant}__.jpg`;
+  return `${base}.__${variant}__.webp`;
 }
 
 /**
@@ -126,7 +140,7 @@ export async function putObjectWithImageVariants(
   if (!variants) return;
 
   await Promise.all([
-    putObject(variantKey(key, "view"), variants.view, "image/jpeg"),
-    putObject(variantKey(key, "thumb"), variants.thumb, "image/jpeg"),
+    putObject(variantKey(key, "view"), variants.view, "image/webp"),
+    putObject(variantKey(key, "thumb"), variants.thumb, "image/webp"),
   ]);
 }

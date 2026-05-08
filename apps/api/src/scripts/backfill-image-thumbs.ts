@@ -106,10 +106,10 @@ async function processOne(
       return;
     }
     if (!hasThumb) {
-      await putObject(thumbKey, variants.thumb, "image/jpeg");
+      await putObject(thumbKey, variants.thumb, "image/webp");
     }
     if (!hasView) {
-      await putObject(viewKey, variants.view, "image/jpeg");
+      await putObject(viewKey, variants.view, "image/webp");
     }
     stats.ok++;
     console.log(`OK ${fileKey}`);

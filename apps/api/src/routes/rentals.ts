@@ -2268,12 +2268,24 @@ export async function rentalsRoutes(app: FastifyInstance) {
     now: Date = new Date(),
   ): number {
     if (status !== "overdue" && status !== "active") return 0;
+    // v0.4.67: считаем в Europe/Moscow. Без этого на UTC-сервере
+    // (где-то ~21:00 UTC = 00:00 MSK) аренда с end_planned_at сегодня
+    // утром ещё «не просрочена» по UTC-дате, но по МСК уже да —
+    // фронт показывал «Просрочен N дн», а бэк-долг считал 0.
+    const toMsk = (d: Date) =>
+      new Date(d.toLocaleString("en-US", { timeZone: "Europe/Moscow" }));
+    const endMsk = toMsk(endPlannedAt);
+    const nowMsk = toMsk(now);
     const endDate = new Date(
-      endPlannedAt.getFullYear(),
-      endPlannedAt.getMonth(),
-      endPlannedAt.getDate(),
+      endMsk.getFullYear(),
+      endMsk.getMonth(),
+      endMsk.getDate(),
     );
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const today = new Date(
+      nowMsk.getFullYear(),
+      nowMsk.getMonth(),
+      nowMsk.getDate(),
+    );
     const diff = Math.floor(
       (today.getTime() - endDate.getTime()) / 86_400_000,
     );
@@ -2392,14 +2404,27 @@ export async function rentalsRoutes(app: FastifyInstance) {
         sql`${payments.rentalId} IN (${idsList}) AND ${payments.type} = 'rent' AND ${payments.paid} = false`,
       );
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // v0.4.67: считаем «сегодня» по МСК, не по UTC сервера. Иначе
+    // вечером по МСК (когда UTC всё ещё прошлый день) overdueDays=0.
+    const toMsk = (d: Date) =>
+      new Date(d.toLocaleString("en-US", { timeZone: "Europe/Moscow" }));
+    const nowMsk = toMsk(new Date());
+    const today = new Date(
+      nowMsk.getFullYear(),
+      nowMsk.getMonth(),
+      nowMsk.getDate(),
+    );
     const items = liveRentals.map((r) => {
-      // Просроченные дни
-      const endMs = r.endPlannedAt.getTime();
+      // Просроченные дни — по дате (МСК), не по миллисекундам.
+      const endMsk = toMsk(r.endPlannedAt);
+      const endDate = new Date(
+        endMsk.getFullYear(),
+        endMsk.getMonth(),
+        endMsk.getDate(),
+      );
       const overdueDays = Math.max(
         0,
-        Math.floor((today.getTime() - endMs) / 86_400_000),
+        Math.floor((today.getTime() - endDate.getTime()) / 86_400_000),
       );
       // ₽/сут — для weekly tariffs делим на 7
       const dailyRate =
