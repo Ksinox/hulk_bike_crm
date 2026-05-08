@@ -15,6 +15,15 @@ import {
   useTileHoverPreview,
 } from "./ParkTileHoverCard";
 
+/** Извлечь номер из имени скутера ("Jog #07" → 7). Используется для
+ * сортировки плиток парка по возрастанию номера, без блочной разбивки
+ * по моделям. Если номера нет (имя без "#NN") — отправляем такие
+ * скутеры в конец, чтобы не ломали порядок. */
+function parkNumber(name: string): number {
+  const m = name.match(/#\s*(\d+)/);
+  return m ? parseInt(m[1], 10) : Number.POSITIVE_INFINITY;
+}
+
 /** Статус плитки — производный от baseStatus скутера + активной аренды. */
 type TileStatus =
   | "rented"
@@ -101,7 +110,12 @@ export function ParkPanel({
   const hover = useTileHoverPreview();
 
   const tiles = useMemo(() => {
-    const scooters = scootersQ.data ?? [];
+    // Сортируем плитки по номеру скутера: #1 → #2 → … → #55. Заказчик
+    // хочет видеть единый поток без группировки Jog/Gear блоками —
+    // оператор быстрее находит конкретный номер.
+    const scooters = [...(scootersQ.data ?? [])].sort(
+      (a, b) => parkNumber(a.name) - parkNumber(b.name),
+    );
     const rentals = rentalsQ.data ?? [];
 
     // Скутер «занят» (числится в аренде на дашборде) пока существует

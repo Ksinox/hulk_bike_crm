@@ -19,6 +19,7 @@ import {
 import { clientStore } from "./clientStore";
 import { toast } from "@/lib/toast";
 import type { ApplicationFormInit } from "./applicationConvert";
+import { toUpperRu } from "@/lib/textCase";
 
 const SOURCE_OPTIONS: { id: ClientSource; label: string }[] = [
   { id: "avito", label: SOURCE_LABEL.avito },
@@ -450,7 +451,7 @@ export function AddClientModal({
                 type="text"
                 value={f.name}
                 placeholder="Например: Иванов Иван Иванович"
-                onChange={(e) => set("name", e.target.value)}
+                onChange={(e) => set("name", toUpperRu(e.target.value))}
                 onBlur={() => markTouched("name")}
                 className={inputClass(showErr("name"))}
               />
@@ -596,7 +597,7 @@ export function AddClientModal({
                   id="f-praw"
                   rows={4}
                   value={f.passportRaw}
-                  onChange={(e) => set("passportRaw", e.target.value)}
+                  onChange={(e) => set("passportRaw", toUpperRu(e.target.value))}
                   placeholder="Например: Паспорт гражданина Узбекистана AB1234567, выдан МВД Респ. Узбекистан 12.03.2019, действителен до 12.03.2029"
                   className="w-full resize-y rounded-[10px] border border-border bg-surface px-3 py-2 text-[13px] outline-none focus:border-blue-600"
                 />
@@ -661,7 +662,7 @@ export function AddClientModal({
                 type="text"
                 value={f.passIssuer}
                 placeholder="ОВД района…"
-                onChange={(e) => set("passIssuer", e.target.value)}
+                onChange={(e) => set("passIssuer", toUpperRu(e.target.value))}
                 className={inputClass(null)}
               />
             </Field>
@@ -736,7 +737,7 @@ export function AddClientModal({
                 id="f-regaddr"
                 value={f.regAddr}
                 placeholder="Индекс, регион, город, улица, дом, кв."
-                onChange={(e) => set("regAddr", e.target.value)}
+                onChange={(e) => set("regAddr", toUpperRu(e.target.value))}
                 className={cn(inputClass(null), "min-h-[56px] resize-y")}
               />
             </Field>
@@ -755,7 +756,7 @@ export function AddClientModal({
                   id="f-liveaddr"
                   value={f.liveAddr}
                   placeholder="Индекс, регион, город, улица, дом, кв."
-                  onChange={(e) => set("liveAddr", e.target.value)}
+                  onChange={(e) => set("liveAddr", toUpperRu(e.target.value))}
                   className={cn(inputClass(null), "min-h-[56px] resize-y")}
                 />
               </Field>

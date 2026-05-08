@@ -1,10 +1,12 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { UserRound, Upload, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { guessGender, type Client } from "@/lib/mock/clients";
 import { FilePreviewModal } from "./FilePreviewModal";
 import { clientStore, useClientPhoto } from "./clientStore";
 import type { UploadedFile } from "./DocUpload";
+import { useApiClientDocs } from "@/lib/api/documents";
+import { fileUrl } from "@/lib/files";
 
 type Size = "sm" | "md" | "lg" | "xl";
 
@@ -55,7 +57,28 @@ export function ClientPhoto({
   size?: Size;
   onChange?: (next: UploadedFile | null) => void;
 }) {
-  const photo = useClientPhoto(client.id);
+  const localPhoto = useClientPhoto(client.id);
+  // Серверное фото (kind='photo' в client_documents) — приоритетнее
+  // локально загруженного через clientStore. Это нужно чтобы селфи из
+  // публичной заявки автоматически становилось аватаром клиента: при
+  // конверсии convert копирует selfie в client_documents с kind='photo',
+  // и здесь оно подхватывается без ручной перезагрузки.
+  const docsQ = useApiClientDocs(client.id);
+  const photoDoc = useMemo(
+    () => (docsQ.data ?? []).find((d) => d.kind === "photo"),
+    [docsQ.data],
+  );
+  const photoFromDocsUrl = photoDoc ? fileUrl(photoDoc.fileKey) : null;
+  const photoFromDocs: UploadedFile | null =
+    photoDoc && photoFromDocsUrl
+      ? {
+          name: photoDoc.fileName,
+          size: photoDoc.size,
+          thumbUrl: photoFromDocsUrl,
+          title: photoDoc.title || `Фото · ${client.name}`,
+        }
+      : null;
+  const photo = photoFromDocs ?? localPhoto;
   const [previewing, setPreviewing] = useState(false);
   const replaceRef = useRef<HTMLInputElement>(null);
 
