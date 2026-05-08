@@ -4,8 +4,6 @@ import {
   FileSignature,
   FileText,
   Pencil,
-  Plus,
-  Upload,
   Tags,
   Wallet,
   AlertTriangle,
@@ -16,10 +14,7 @@ import { PriceListView } from "@/pages/rentals/PriceListView";
 import { DocumentPreviewModal } from "@/pages/rentals/DocumentPreviewModal";
 import { useApiRentals } from "@/lib/api/rentals";
 import { TemplateEditorPage } from "./editor/TemplateEditorPage";
-import { CustomTemplateEditor } from "./editor/CustomTemplateEditor";
 import { useApiDocumentTemplates } from "@/lib/api/document-templates";
-import { importFileToHtml } from "./editor/importFile";
-import { toast } from "@/lib/toast";
 
 type DocsTab = "templates" | "price";
 
@@ -96,11 +91,17 @@ type TemplateMeta = {
   badge: string;
   badgeTone: "blue" | "amber" | "green" | "red" | "purple";
   icon: typeof FileText;
-  /** Для открытия превью: rental-based ('contract_full', 'act_return',
-   *  'damage') или client-based ('statement'). */
+  /** Для открытия превью: rental-based, damage, statement. */
   kind: "rental" | "damage" | "statement";
   /** Тип документа в API (только для rental-based). */
-  rentalType?: "contract_full" | "act_return" | "act_swap";
+  rentalType?:
+    | "contract"
+    | "contract_full"
+    | "contract_full_intl"
+    | "act_transfer"
+    | "act_return"
+    | "act_swap"
+    | "purchase_deposit";
 };
 
 const TEMPLATES: TemplateMeta[] = [
@@ -108,18 +109,51 @@ const TEMPLATES: TemplateMeta[] = [
     id: "contract_full",
     title: "Договор + Акт приёма-передачи",
     subtitle:
-      "Основной шаблон при выдаче скутера. На двух страницах — договор и акт. Содержит все условия, реквизиты и описание ТС из карточки клиента и скутера.",
-    badge: "Основной",
+      "Основной шаблон при выдаче скутера гражданину РФ. На двух страницах — договор и акт. Содержит все условия, реквизиты и описание ТС из карточки клиента и скутера.",
+    badge: "Основной (РФ)",
     badgeTone: "blue",
     icon: FileSignature,
     kind: "rental",
     rentalType: "contract_full",
   },
   {
+    id: "contract_full_intl",
+    title: "Договор + Акт (для иностранца)",
+    subtitle:
+      "Версия основного шаблона для иностранного гражданина. Вместо РФ-полей паспорта — свободная строка из карточки клиента. Подставляется автоматически когда оператор печатает «Договор + Акт» по аренде с иностранцем.",
+    badge: "Иностранец",
+    badgeTone: "amber",
+    icon: FileSignature,
+    kind: "rental",
+    rentalType: "contract_full_intl",
+  },
+  {
+    id: "contract",
+    title: "Договор проката (без акта)",
+    subtitle:
+      "Только сам договор без приложения с актом. Используется когда акт оформляется отдельно или подписывается заново при продлении/замене.",
+    badge: "Только договор",
+    badgeTone: "blue",
+    icon: FileSignature,
+    kind: "rental",
+    rentalType: "contract",
+  },
+  {
+    id: "act_transfer",
+    title: "Акт приёма-передачи (выдача)",
+    subtitle:
+      "Приложение №1 к договору — самостоятельный акт выдачи скутера. Подписывается отдельно если ранее был распечатан только договор без акта.",
+    badge: "При выдаче",
+    badgeTone: "green",
+    icon: FileText,
+    kind: "rental",
+    rentalType: "act_transfer",
+  },
+  {
     id: "act_return",
     title: "Акт возврата",
     subtitle:
-      "Подписывается при окончательном возврате скутера в конце аренды. Фиксирует пробег, состояние, отметку о повреждениях и наличие/возврат экипировки. Открывается из карточки аренды → вкладка «Документы».",
+      "Подписывается при окончательном возврате скутера в конце аренды. Фиксирует состояние, отметку о повреждениях и наличие/возврат экипировки. Открывается из карточки аренды → вкладка «Документы».",
     badge: "При возврате",
     badgeTone: "purple",
     icon: FileText,
@@ -136,6 +170,17 @@ const TEMPLATES: TemplateMeta[] = [
     icon: FileText,
     kind: "rental",
     rentalType: "act_swap",
+  },
+  {
+    id: "purchase_deposit",
+    title: "Договор задатка (выкуп)",
+    subtitle:
+      "Используется при переводе скутера в рассрочку/выкуп. Фиксирует сумму задатка, схему оплаты и условия передачи права собственности. Подписывается одним документом в дополнение к основной аренде.",
+    badge: "Выкуп",
+    badgeTone: "purple",
+    icon: FileSignature,
+    kind: "rental",
+    rentalType: "purchase_deposit",
   },
   {
     id: "damage",
@@ -164,9 +209,13 @@ const TEMPLATES: TemplateMeta[] = [
 
 /** Какие шаблоны можно редактировать через Tiptap (override системного). */
 const EDITABLE_KEYS = new Set([
+  "contract",
   "contract_full",
+  "contract_full_intl",
+  "act_transfer",
   "act_return",
   "act_swap",
+  "purchase_deposit",
   "damage",
 ]);
 
@@ -174,16 +223,12 @@ function TemplatesGallery() {
   const { data: rentals = [], isLoading } = useApiRentals();
   const { data: overrides = [] } = useApiDocumentTemplates();
   const [previewing, setPreviewing] = useState<TemplateMeta | null>(null);
-  /** Что открыто в редакторе:
-   *  - { kind:'system', meta } — редактируем системный шаблон
-   *  - { kind:'custom', id }    — редактируем существующий custom-шаблон
-   *  - { kind:'new', initialHtml } — создаём новый custom (опц. из импорта)
-   */
+  /** Что открыто в редакторе. Раньше поддерживался ещё «custom» / «new»
+   *  (произвольные шаблоны юзера), но мы их выпилили — заказчик ими не
+   *  пользовался, а кнопка «Добавить шаблон» только путала. Остался один
+   *  режим — редактирование override'ов системных шаблонов. */
   const [editing, setEditing] = useState<
-    | { kind: "system"; meta: TemplateMeta }
-    | { kind: "custom"; id: number }
-    | { kind: "new"; initialHtml: string }
-    | null
+    { kind: "system"; meta: TemplateMeta } | null
   >(null);
 
   // Если открыт редактор — показываем его.
@@ -196,23 +241,11 @@ function TemplatesGallery() {
       />
     );
   }
-  if (editing?.kind === "custom" || editing?.kind === "new") {
-    return (
-      <CustomTemplateEditor
-        existingId={editing.kind === "custom" ? editing.id : null}
-        initialHtmlForNew={
-          editing.kind === "new" ? editing.initialHtml : undefined
-        }
-        onBack={() => setEditing(null)}
-      />
-    );
-  }
 
   // Берём первую попавшуюся аренду как «образцовую» для превью.
   const sampleRental = rentals.find((r) => r.scooterId && r.clientId) ?? rentals[0];
   const hasOverride = (key: string) =>
     overrides.some((o) => o.templateKey === key && o.kind === "override");
-  const customs = overrides.filter((t) => t.kind === "custom");
 
   return (
     <div className="flex flex-col gap-3">
@@ -225,56 +258,9 @@ function TemplatesGallery() {
           <div className="mt-0.5 text-blue-900/80">
             Каждый можно открыть как <b>образец</b> (превью на реальной аренде)
             или <b>редактировать</b> — текст подменится в редакторе и при
-            генерации документа подставятся реальные данные. Чтобы добавить
-            свой шаблон — карточка <b>«+ Добавить шаблон»</b> в разделе ниже.
+            генерации документа подставятся реальные данные.
           </div>
         </div>
-      </div>
-
-      {/* Зона «Мои шаблоны»: карточки custom-шаблонов + интерактивная
-          dropzone-карточка «+ Добавить» в той же сетке. Клик по dropzone
-          открывает пустой редактор; перетаскивание файла на dropzone
-          импортирует .docx/.md/.html/.txt и открывает в редакторе. */}
-      <SectionHeading
-        label="Мои шаблоны"
-        count={customs.length}
-        hint="Кастомные документы — клик чтобы открыть в редакторе"
-      />
-      <div className="grid items-stretch gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {customs.map((c) => (
-          <button
-            key={c.id}
-            type="button"
-            onClick={() => setEditing({ kind: "custom", id: c.id })}
-            className="group relative flex flex-col items-start gap-2 overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-5 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md"
-          >
-            <div className="absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r from-blue-500 via-sky-400 to-indigo-400" />
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-slate-700 to-slate-900 text-white shadow-sm">
-              <FileText size={18} strokeWidth={2.2} />
-            </div>
-            <div className="text-[14px] font-bold leading-tight tracking-tight text-ink">
-              {c.name}
-            </div>
-            <div className="text-[11px] text-muted-2">
-              обновлён{" "}
-              {new Date(c.updatedAt).toLocaleString("ru-RU", {
-                day: "2-digit",
-                month: "short",
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
-            </div>
-            <div className="mt-auto inline-flex items-center gap-1 text-[11px] font-semibold text-blue-700 transition-transform group-hover:translate-x-0.5">
-              Открыть в редакторе →
-            </div>
-          </button>
-        ))}
-        <AddTemplateDropzone
-          onCreateEmpty={() =>
-            setEditing({ kind: "new", initialHtml: "<p></p>" })
-          }
-          onImport={(html) => setEditing({ kind: "new", initialHtml: html })}
-        />
       </div>
 
       <SectionHeading
@@ -464,125 +450,6 @@ function SectionHeading({
       {hint && (
         <div className="text-[11px] italic text-muted-2">{hint}</div>
       )}
-    </div>
-  );
-}
-
-/**
- * Карточка-dropzone «+ Добавить шаблон» — встаёт в сетку «Мои шаблоны».
- *
- * Поведение:
- *  - Клик по карточке → открывает пустой редактор (создание нового шаблона)
- *  - Drag-and-drop файла на карточку → импортирует .docx/.md/.html/.txt
- *    и открывает в редакторе
- *  - Кнопка «Загрузить файл» внутри карточки — альтернатива drop'у через
- *    нативный файловый диалог
- *
- * Визуально: gradient dashed border blue, при ховере/drag — выразительная
- * подсветка с пульсацией.
- */
-function AddTemplateDropzone({
-  onCreateEmpty,
-  onImport,
-}: {
-  onCreateEmpty: () => void;
-  onImport: (html: string) => void;
-}) {
-  const [importing, setImporting] = useState(false);
-  const [dragActive, setDragActive] = useState(false);
-
-  const handleFile = async (file: File | null) => {
-    if (!file) return;
-    setImporting(true);
-    try {
-      const html = await importFileToHtml(file);
-      onImport(html);
-      toast.success(
-        "Файл загружен в редактор",
-        `«${file.name}» — теперь расставьте переменные через сайдбар.`,
-      );
-    } catch (e) {
-      toast.error("Не удалось импортировать", (e as Error).message ?? "");
-    } finally {
-      setImporting(false);
-    }
-  };
-
-  return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={onCreateEmpty}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") onCreateEmpty();
-      }}
-      onDragOver={(e) => {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = "copy";
-        if (!dragActive) setDragActive(true);
-      }}
-      onDragLeave={() => setDragActive(false)}
-      onDrop={(e) => {
-        e.preventDefault();
-        setDragActive(false);
-        const file = e.dataTransfer.files?.[0];
-        if (file) void handleFile(file);
-      }}
-      className={cn(
-        "group relative flex h-full min-h-[200px] cursor-pointer flex-col items-center justify-center gap-2.5 overflow-hidden rounded-2xl border-2 border-dashed p-5 text-center transition-all duration-200 focus:outline-none",
-        dragActive
-          ? "scale-[1.01] border-blue-500 bg-gradient-to-br from-blue-100 to-indigo-100 shadow-lg ring-4 ring-blue-200/60"
-          : "border-blue-300 bg-gradient-to-br from-blue-50/60 to-indigo-50/40 hover:-translate-y-0.5 hover:border-blue-400 hover:shadow-md",
-        importing && "cursor-wait opacity-70",
-      )}
-      title="Кликните чтобы создать пустой шаблон, или перетащите Word/Markdown/HTML файл"
-    >
-      {/* Декоративные капли в углах для жизни */}
-      <div className="pointer-events-none absolute -right-6 -top-6 h-20 w-20 rounded-full bg-blue-300/20 blur-2xl transition-all group-hover:bg-blue-400/30" />
-      <div className="pointer-events-none absolute -bottom-6 -left-6 h-20 w-20 rounded-full bg-indigo-300/20 blur-2xl transition-all group-hover:bg-indigo-400/30" />
-
-      <div
-        className={cn(
-          "relative flex h-14 w-14 items-center justify-center rounded-2xl shadow-md transition-all duration-300",
-          dragActive
-            ? "scale-110 bg-gradient-to-br from-blue-500 to-indigo-600 text-white"
-            : "bg-gradient-to-br from-blue-100 to-indigo-100 text-blue-600 group-hover:scale-110 group-hover:from-blue-500 group-hover:to-indigo-600 group-hover:text-white",
-        )}
-      >
-        {importing ? (
-          <div className="h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent" />
-        ) : (
-          <Plus size={26} strokeWidth={2.5} />
-        )}
-      </div>
-      <div className="relative text-[15px] font-bold tracking-tight text-ink">
-        {importing
-          ? "Загружаем файл…"
-          : dragActive
-            ? "Отпустите файл здесь"
-            : "Добавить шаблон"}
-      </div>
-      <div className="relative max-w-[260px] text-[11.5px] leading-relaxed text-muted-2">
-        Кликни чтобы создать <b className="text-ink">пустой</b>, или{" "}
-        <b className="text-ink">перетащи</b> сюда файл —<br />
-        Word, Markdown, HTML или TXT
-      </div>
-      <label
-        className="relative mt-1 inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-[11px] font-semibold text-blue-700 shadow-sm ring-1 ring-blue-200 transition hover:bg-blue-50 hover:shadow"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <Upload size={12} /> Выбрать файл
-        <input
-          type="file"
-          accept=".docx,.md,.markdown,.html,.htm,.txt"
-          className="hidden"
-          onChange={(e) => {
-            void handleFile(e.target.files?.[0] ?? null);
-            e.target.value = "";
-          }}
-          disabled={importing}
-        />
-      </label>
     </div>
   );
 }

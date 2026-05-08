@@ -21,6 +21,7 @@ import { logActivity } from "../services/activityLog.js";
 const TypeEnum = z.enum([
   "contract",
   "contract_full",
+  "contract_full_intl",
   "act_transfer",
   "act_return",
   "act_swap",
@@ -291,6 +292,7 @@ function docFilename(type: DocumentType, rentalId: number): string {
   const map: Record<DocumentType, string> = {
     contract: `Договор_проката_№${rentalId}`,
     contract_full: `Договор_проката_и_акт_№${rentalId}`,
+    contract_full_intl: `Договор_проката_и_акт_иностранец_№${rentalId}`,
     act_transfer: `Акт_приёма-передачи_№${rentalId}`,
     act_return: `Акт_возврата_№${rentalId}`,
     act_swap: `Акт_замены_скутера_№${rentalId}`,

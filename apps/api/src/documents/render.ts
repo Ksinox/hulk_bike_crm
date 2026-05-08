@@ -17,7 +17,8 @@ import { LANDLORD } from "./landlord.js";
 
 export type DocumentType =
   | "contract" // Договор проката скутера (только сам договор)
-  | "contract_full" // Договор + акт приёма-передачи на одной странице
+  | "contract_full" // Договор + акт приёма-передачи на одной странице (для гр. РФ)
+  | "contract_full_intl" // Договор + акт для иностранного гражданина
   | "act_transfer" // Приложение №1 — Акт приёма-передачи (выдача)
   | "act_return" // Приложение №2 — Акт возврата
   | "act_swap" // Акт приёма-передачи и замены скутера
@@ -26,6 +27,7 @@ export type DocumentType =
 export const DOCUMENT_LABEL: Record<DocumentType, string> = {
   contract: "Договор проката",
   contract_full: "Договор + Акт приёма-передачи",
+  contract_full_intl: "Договор + Акт (для иностранца)",
   act_transfer: "Акт приёма-передачи (выдача)",
   act_return: "Акт возврата",
   act_swap: "Акт приёма-передачи и замены скутера",
@@ -981,6 +983,7 @@ ${body}
 const TITLES: Record<DocumentType, string> = {
   contract: "Договор проката",
   contract_full: "Договор + Акт приёма-передачи",
+  contract_full_intl: "Договор + Акт (для иностранца)",
   act_transfer: "Акт приёма-передачи",
   act_return: "Акт возврата",
   act_swap: "Акт приёма-передачи и замены скутера",
@@ -1006,6 +1009,8 @@ export async function renderDocumentHtml(
       return tplContract(bundle);
     case "contract_full":
       return tplContractFull(bundle);
+    case "contract_full_intl":
+      return tplContractFullIntl(bundle);
     case "act_transfer":
       return tplActTransfer(bundle);
     case "act_return":
@@ -1029,8 +1034,22 @@ export async function renderSystemTemplateForEditor(
 ): Promise<string> {
   // Для act_swap нужна расширенная фикстура с prevScooter/prevModel/
   // swapReason — иначе плашки этих переменных не появятся в шаблоне.
-  const fixtureBundle =
+  // Для contract_full_intl фикстура с isForeigner=true и непустым
+  // passportRaw — чтобы редактор показывал именно вариант для иностранца
+  // с свободной строкой паспорта вместо РФ-полей.
+  const baseFixture =
     type === "act_swap" ? makeSwapFixtureBundle() : makeFixtureBundle();
+  const fixtureBundle: Bundle =
+    type === "contract_full_intl"
+      ? {
+          ...baseFixture,
+          client: {
+            ...baseFixture.client,
+            isForeigner: true,
+            passportRaw: "__PH_clientPassportRaw__",
+          },
+        }
+      : baseFixture;
   const html = await renderDocumentHtml(type, fixtureBundle, {
     skipOverride: true,
   });
@@ -1159,6 +1178,28 @@ function tplContractFull(b: Bundle): string {
     "</body>",
     `<div style="page-break-before: always"></div>${actInner}</body>`,
   );
+}
+
+/**
+ * Версия contract_full для иностранного гражданина. Системный шаблон
+ * рендерит ту же сборку «договор + акт» но с принудительным
+ * client.isForeigner = true — clientBlock + inline-условия в tplContract/
+ * tplContractFull выводят свободную строку passportRaw вместо РФ-полей,
+ * citizenshipPhrase отдаёт «иностранный гражданин» и т.д.
+ *
+ * Зачем отдельный type:
+ * — В редакторе оператор видит ровно тот рендер который попадёт клиенту-
+ *   иностранцу и может настроить его override отдельно от РФ-варианта.
+ * — При генерации документа из карточки аренды бэкенд сам выберет
+ *   contract_full vs contract_full_intl по client.isForeigner — оператор
+ *   жмёт одну кнопку «Договор + Акт» и получает корректную версию.
+ */
+function tplContractFullIntl(b: Bundle): string {
+  const intlBundle: Bundle = {
+    ...b,
+    client: { ...b.client, isForeigner: true },
+  };
+  return tplContractFull(intlBundle);
 }
 
 /**

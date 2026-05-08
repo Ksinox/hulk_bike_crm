@@ -1198,12 +1198,23 @@ export function DocumentsTab({ rental }: { rental: Rental }) {
 function PrintDocumentsView({ rental }: { rental: Rental }) {
   const API_BASE =
     import.meta.env.VITE_API_URL?.replace(/\/$/, "") ?? "http://localhost:4000";
+  const { data: apiClients } = useApiClients();
+  const client = apiClients?.find((c) => c.id === rental.clientId);
   const [preview, setPreview] = useState<DocType | null>(null);
 
+  // Для иностранного гражданина «Договор + Акт» рендерим через
+  // contract_full_intl — там автоматически выбирается foreign-вариант
+  // с свободной строкой паспорта вместо РФ-полей. Юзер видит одну
+  // кнопку «Договор + Акт», система сама подставляет правильный шаблон.
+  const apiType = (type: DocType): string =>
+    type === "contract_full" && client?.isForeigner
+      ? "contract_full_intl"
+      : type;
+
   const previewUrl = (type: DocType) =>
-    `${API_BASE}/api/rentals/${rental.id}/document/${type}?format=html`;
+    `${API_BASE}/api/rentals/${rental.id}/document/${apiType(type)}?format=html`;
   const downloadUrl = (type: DocType) =>
-    `${API_BASE}/api/rentals/${rental.id}/document/${type}?format=docx`;
+    `${API_BASE}/api/rentals/${rental.id}/document/${apiType(type)}?format=docx`;
 
   const openPreview = (type: DocType) => {
     setPreview(type);
@@ -1310,13 +1321,16 @@ function PrintDocumentsView({ rental }: { rental: Rental }) {
           // Передаём templateKey — превью покажет кнопку «Подправить
           // шаблон», которая открывает редактор шаблона прямо здесь же
           // и после сохранения перерисовывает превью со свежей версией.
-          templateKey={preview}
+          // Для иностранца используем templateKey contract_full_intl,
+          // чтобы редактор открыл именно «иностранную» версию шаблона.
+          templateKey={apiType(preview)}
           templateName={DOC_META[preview].title}
           // rentalId + documentType разрешают кнопку «Сохранить» — она
-          // замораживает текущий рендер в S3 + БД (rental_document_snapshots),
-          // дальше открывается через ленту событий или вкладку «Документы».
+          // замораживает текущий рендер в S3 + БД (rental_document_snapshots).
+          // documentType — это API-тип (contract_full_intl у иностранца),
+          // чтобы снапшот сохранялся именно тот рендер что юзер видит.
           rentalId={rental.id}
-          documentType={preview}
+          documentType={apiType(preview)}
           onClose={() => setPreview(null)}
         />
       )}

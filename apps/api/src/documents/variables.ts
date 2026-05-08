@@ -694,6 +694,9 @@ export function replaceFixtureWithPlaceholders(html: string): string {
     "__PH_clientPassIssuer__": "client.passportIssuer",
     "__PH_clientPassDivCode__": "client.passportDivisionCode",
     "__PH_clientPassReg__": "client.passportRegistration",
+    // Свободная строка паспорта для contract_full_intl-фикстуры —
+    // в шаблоне для иностранца это единственная плашка вместо РФ-полей.
+    "__PH_clientPassportRaw__": "client.passportRaw",
     [wordsDeposit]: "rental.depositWords",
     [wordsSum]: "rental.sumWords",
     [wordsPurchasePrice]: "scooter.purchasePriceWords",
