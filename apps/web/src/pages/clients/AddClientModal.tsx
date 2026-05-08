@@ -182,18 +182,6 @@ function nullableTrim(s: string): string | null {
 }
 
 /**
- * Автоформат даты ДД.ММ.ГГГГ — точки расставляются автоматически
- * по мере ввода. Принимает любую строку, оставляет только цифры
- * и расставляет точки после 2 и 4 цифр.
- */
-function formatDateRu(v: string): string {
-  const d = v.replace(/\D/g, "").slice(0, 8);
-  if (d.length <= 2) return d;
-  if (d.length <= 4) return `${d.slice(0, 2)}.${d.slice(2)}`;
-  return `${d.slice(0, 2)}.${d.slice(2, 4)}.${d.slice(4)}`;
-}
-
-/**
  * Автоформат кода подразделения паспорта XXX-XXX —
  * тире после 3 цифр.
  */

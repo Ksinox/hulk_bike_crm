@@ -21,7 +21,6 @@ import {
 } from "./PhotoSamples";
 import {
   dateRuToIso,
-  formatDateRu,
   formatDivisionCode,
   formatPhone,
   isCompleteDate,
