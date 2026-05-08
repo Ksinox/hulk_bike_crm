@@ -15,6 +15,7 @@ import { clientStore } from "@/pages/clients/clientStore";
 import { api } from "@/lib/api";
 import { useActivityTimeline } from "@/lib/api/activity";
 import { useApiScooter } from "@/lib/api/scooters";
+import { useApiPriceList } from "@/lib/api/price-list";
 import { DocumentPreviewModal } from "./DocumentPreviewModal";
 
 /** v0.4.57: helper для записи компенсаций с залога. Использует
@@ -95,28 +96,41 @@ export function RentalActionDialog({
   // Форма для возврата с ущербом / инцидента
   const [damageAmount, setDamageAmount] = useState<string>("3000");
   const [damageNote, setDamageNote] = useState<string>("");
-  // v0.4.57: чек-лист стартует пустым. Цель чек-листа — заставить
-  // оператора сознательно подтвердить каждый пункт, чтобы не
-  // пропустить проверку. Если ставить true по умолчанию — оператор
-  // просто жмёт «Завершить» не глядя.
-  const [returnOk, setReturnOk] = useState(false);
-  const [equipmentOk, setEquipmentOk] = useState(false);
-  const [depositBack, setDepositBack] = useState(false);
-  // v0.4.57: дата фактического возврата (по умолчанию сегодня).
-  // Оператор может оформить возврат задним числом если клиент
-  // вернул скутер вчера вечером, а оформление утром.
+  // v0.4.62: КАРТОЧНАЯ модель чек-листа возврата. Раньше были чекбоксы
+  // «Состояние скутера ОК» / «Экипировка ОК» / «Залог готов к выдаче».
+  // Это не работало для случая «один шлем повреждён, второй ОК» —
+  // приходилось снимать общую галку и вводить общую сумму.
+  //
+  // Теперь: карточки на каждую позицию (1 скутер + N позиций
+  // экипировки из rental.equipmentJson). У каждой карточки два
+  // состояния: 'ok' / 'problem'. Изначально не выбрано.
+  //   • problem на скутере → откроется DamageReportDialog
+  //   • problem на экипировке → откроется picker позиций из прайс-листа
+  //     (группа «Экипировка»), оператор выбирает причину и сумму
+  //     (или вводит свою).
+  // Залог-чекбокс убран: финальная сумма к возврату считается из
+  // удержаний и показывается внизу.
+  type CardKey = "scooter" | `equipment-${number}`;
+  type CardState = "ok" | "problem";
+  type EquipmentDamage = {
+    name: string;
+    amount: number;
+    itemId?: number;
+    isCustom: boolean;
+  };
+  const [cardStates, setCardStates] = useState<Record<string, CardState>>({});
+  const [equipmentDamages, setEquipmentDamages] = useState<
+    Record<string, EquipmentDamage>
+  >({});
+  const [pickerKey, setPickerKey] = useState<CardKey | null>(null);
+  // Дата фактического возврата.
   const [returnDate, setReturnDate] = useState<string>(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   });
-  // v0.4.57: частичное удержание залога (мелкие компенсации без
-  // оформления полноценного акта ущерба).
+  // Дополнительное удержание (мелкие компенсации без акта).
   const [depositWithhold, setDepositWithhold] = useState<string>("0");
   const [depositWithholdNote, setDepositWithholdNote] = useState<string>("");
-  // v0.4.57: ущерб экипировки (отдельный flow, без открытия
-  // DamageReportDialog). Сумма списывается с залога.
-  const [equipmentDamageAmount, setEquipmentDamageAmount] = useState<string>("0");
-  const [equipmentDamageNote, setEquipmentDamageNote] = useState<string>("");
   // v0.4.57: пробег скутера при возврате. Опционально — некоторые
   // бизнесы ведут учёт пробега (для ТО / страховки). Пустое значение
   // не передаётся в API.
@@ -158,32 +172,51 @@ export function RentalActionDialog({
 
   const spec: Spec = (() => {
     if (action === "complete") {
-      // v0.4.57: переписано окно завершения. Логика:
-      //   • Чек-лист стартует пустым → оператор сознательно подтверждает.
-      //   • Если «Состояние скутера НЕ в порядке» → при сабмите откроется
-      //     DamageReportDialog (полноценный акт с повреждениями).
-      //   • Если «Экипировка НЕ в порядке» → раскрывается inline-форма:
-      //     сумма компенсации экипировки + комментарий. Эта сумма
-      //     удерживается из залога (без отдельного акта ущерба).
-      //   • Залог можно частично удержать (мелкие компенсации) —
-      //     инпут «Удержать из залога ₽».
-      //   • Дата возврата — редактируемая (по умолчанию сегодня),
-      //     ограничена [start_at..today].
-      //   • Финансовая сводка по сделке.
-      const scooterDamaged = !returnOk;
-      // v0.4.57: чекбокс экипировки скрываем если у аренды её нет
-      // (клиент брал скутер без шлема/держателя). Иначе оператор не
-      // мог бы завершить аренду — чекбокс «возвращена в полном объёме»
-      // невозможно отметить честно при пустой экипировке.
-      const hasEquipment =
-        (rental.equipment && rental.equipment.length > 0) ||
-        (rental.equipmentJson && rental.equipmentJson.length > 0);
-      const equipmentDamaged = hasEquipment ? !equipmentOk : false;
+      // v0.4.62: КАРТОЧНАЯ модель приёма возврата.
+      //   • На каждую позицию (скутер + каждая экипировка) — карточка с
+      //     двумя состояниями: «В порядке» / «Есть проблема».
+      //   • problem на скутере → откроется DamageReportDialog.
+      //   • problem на экипировке → откроется picker позиций из прайса
+      //     группы «Экипировка», оператор выбирает причину+сумму
+      //     (или «свой вариант»).
+      //   • Если экипировки нет — нет карточек экипировки, только скутер.
+      //   • Внизу — финансовая сводка по залогу (без чекбокса).
+      const equipmentList: { name: string; itemId?: number | null; price?: number }[] = [];
+      if (rental.equipmentJson && rental.equipmentJson.length > 0) {
+        for (const e of rental.equipmentJson) {
+          equipmentList.push({
+            name: e.name,
+            itemId: e.itemId ?? null,
+            price: e.price,
+          });
+        }
+      } else if (rental.equipment && rental.equipment.length > 0) {
+        for (const name of rental.equipment) {
+          equipmentList.push({ name });
+        }
+      }
+      const scooterCard: CardKey = "scooter";
+      const scooterState = cardStates[scooterCard];
+      const scooterDamaged = scooterState === "problem";
+      const equipmentCards = equipmentList.map((_, i) => `equipment-${i}` as CardKey);
+      const allCards: CardKey[] = [scooterCard, ...equipmentCards];
+      const allDecided = allCards.every((k) => cardStates[k] != null);
+      // Сумма удержаний по проблемной экипировке.
+      const equipmentDamageTotal = equipmentCards.reduce((sum, key) => {
+        if (cardStates[key] !== "problem") return sum;
+        return sum + (equipmentDamages[key]?.amount ?? 0);
+      }, 0);
       const depositTotal = rental.deposit || 2000;
-      const eqDamageNum = Math.max(0, Math.min(depositTotal, Math.floor(Number(equipmentDamageAmount) || 0)));
-      const withholdNum = Math.max(0, Math.min(depositTotal - eqDamageNum, Math.floor(Number(depositWithhold) || 0)));
-      const depositToReturn = Math.max(0, depositTotal - eqDamageNum - withholdNum);
-      // Парс start для min даты возврата
+      const cappedEquipDamage = Math.max(0, Math.min(depositTotal, equipmentDamageTotal));
+      const withholdNum = Math.max(
+        0,
+        Math.min(
+          Math.max(0, depositTotal - cappedEquipDamage),
+          Math.floor(Number(depositWithhold) || 0),
+        ),
+      );
+      const depositToReturn = Math.max(0, depositTotal - cappedEquipDamage - withholdNum);
+      // Парс start для min даты возврата.
       const startMatch = /^(\d{2})\.(\d{2})\.(\d{4})/.exec(rental.start);
       const minReturnDate = startMatch
         ? `${startMatch[3]}-${startMatch[2]}-${startMatch[1]}`
@@ -192,42 +225,70 @@ export function RentalActionDialog({
         const d = new Date();
         return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
       })();
+      // Все ли проблемы экипировки заполнены (выбрана позиция/сумма).
+      const allEquipmentProblemsFilled = equipmentCards.every((key) => {
+        if (cardStates[key] !== "problem") return true;
+        const d = equipmentDamages[key];
+        return !!d && d.amount > 0 && d.name.trim().length > 0;
+      });
       return {
         title: "Завершить аренду",
         body: (
           <div className="space-y-3">
-            <div className="rounded-[10px] border border-border bg-surface-soft p-3">
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-2 mb-2">
-                Чек-лист приёма
+            {/* Карточки приёмки */}
+            <div className="space-y-2">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-2">
+                Приёмка позиций
               </div>
-              <div className="space-y-1.5 text-[13px]">
-                {hasEquipment && (
-                  <Checkline
-                    checked={equipmentOk}
-                    onChange={(v) => {
-                      setEquipmentOk(v);
-                      if (v) {
-                        setEquipmentDamageAmount("0");
-                        setEquipmentDamageNote("");
-                      }
+              <ReturnItemCard
+                label="Скутер"
+                sublabel={rental.scooter}
+                state={scooterState}
+                onSetOk={() =>
+                  setCardStates((s) => ({ ...s, [scooterCard]: "ok" }))
+                }
+                onSetProblem={() => {
+                  // problem на скутере = открыть DamageReportDialog
+                  // (через onOpenDamage parent). До открытия фиксируем
+                  // в state, чтоб при возврате из damage flow было видно.
+                  setCardStates((s) => ({ ...s, [scooterCard]: "problem" }));
+                }}
+                accent="scooter"
+              />
+              {equipmentList.map((eq, i) => {
+                const key = `equipment-${i}` as CardKey;
+                const damage = equipmentDamages[key];
+                return (
+                  <ReturnItemCard
+                    key={key}
+                    label={eq.name}
+                    sublabel={eq.price ? `${fmt(eq.price)} ₽ при выдаче` : undefined}
+                    state={cardStates[key]}
+                    damageInfo={
+                      cardStates[key] === "problem" && damage
+                        ? `${damage.name} — ${fmt(damage.amount)} ₽`
+                        : undefined
+                    }
+                    onSetOk={() => {
+                      setCardStates((s) => ({ ...s, [key]: "ok" }));
+                      setEquipmentDamages((m) => {
+                        const next = { ...m };
+                        delete next[key];
+                        return next;
+                      });
                     }}
-                    label="Экипировка возвращена в полном объёме"
+                    onSetProblem={() => {
+                      setCardStates((s) => ({ ...s, [key]: "problem" }));
+                      setPickerKey(key);
+                    }}
+                    onEditProblem={() => setPickerKey(key)}
+                    accent="equipment"
                   />
-                )}
-                <Checkline
-                  checked={returnOk}
-                  onChange={setReturnOk}
-                  label="Состояние скутера в порядке"
-                />
-                <Checkline
-                  checked={depositBack}
-                  onChange={setDepositBack}
-                  label="Залог проверен и готов к возврату"
-                />
-              </div>
-              {!hasEquipment && (
-                <div className="mt-2 text-[11px] text-muted-2">
-                  Экипировка не выдавалась — пункт пропущен.
+                );
+              })}
+              {equipmentList.length === 0 && (
+                <div className="text-[11px] text-muted-2">
+                  Экипировка не выдавалась.
                 </div>
               )}
             </div>
@@ -245,11 +306,6 @@ export function RentalActionDialog({
                 onChange={(e) => setReturnDate(e.target.value)}
                 className="mt-1 h-9 w-full rounded-[10px] border border-border bg-surface px-3 text-[13px] tabular-nums outline-none focus:border-blue-600"
               />
-              <div className="mt-1 text-[11px] text-muted-2">
-                По умолчанию сегодня. Можно поставить задним числом если
-                клиент вернул скутер раньше — дата нужна для корректного
-                расчёта дней просрочки.
-              </div>
             </div>
 
             {/* Пробег при возврате (опционально) */}
@@ -271,72 +327,30 @@ export function RentalActionDialog({
               />
               {currentMileage != null && (
                 <div className="mt-1 text-[11px] text-muted-2">
-                  Текущий пробег скутера: <b className="text-ink tabular-nums">{currentMileage.toLocaleString("ru-RU")}</b> км.
+                  Текущий: <b className="text-ink tabular-nums">{currentMileage.toLocaleString("ru-RU")}</b> км.
                   {mileageAtReturn && Number(mileageAtReturn) > currentMileage && (
-                    <> Будет обновлён → <b className="text-ink tabular-nums">{Number(mileageAtReturn).toLocaleString("ru-RU")}</b> км (+{(Number(mileageAtReturn) - currentMileage).toLocaleString("ru-RU")} за аренду).</>
+                    <> → <b className="text-ink tabular-nums">{Number(mileageAtReturn).toLocaleString("ru-RU")}</b> км (+{(Number(mileageAtReturn) - currentMileage).toLocaleString("ru-RU")}).</>
                   )}
                   {mileageAtReturn && Number(mileageAtReturn) > 0 && Number(mileageAtReturn) < currentMileage && (
-                    <span className="text-orange-ink"> ⚠ Меньше текущего — изменение игнорируется.</span>
+                    <span className="text-orange-ink"> ⚠ меньше текущего — игнорируется.</span>
                   )}
                 </div>
               )}
             </div>
 
-            {/* Состояние скутера НЕ ок → открыть DamageReport */}
+            {/* Плашка damage flow для скутера */}
             {scooterDamaged && (
               <div className="flex items-start gap-2 rounded-[10px] border border-orange/40 bg-orange-soft/40 p-3 text-[12px] text-orange-ink">
                 <AlertTriangle size={14} className="mt-0.5 shrink-0" />
                 <span>
-                  Состояние скутера не в порядке — после нажатия откроется
-                  окно <b>«Зафиксировать ущерб»</b>: выберешь повреждения из
-                  прейскуранта, рассчитаешь сумму и зачёт залога. Аренда
-                  останется активной до полного погашения долга.
+                  По скутеру отмечена проблема — после нажатия откроется
+                  <b> «Зафиксировать ущерб»</b>: выберешь повреждения из
+                  прейскуранта, рассчитаешь сумму и зачёт залога.
                 </span>
               </div>
             )}
 
-            {/* Экипировка НЕ ок → inline-форма компенсации */}
-            {equipmentDamaged && !scooterDamaged && (
-              <div className="space-y-2 rounded-[10px] border border-orange/30 bg-orange-soft/40 p-3">
-                <div className="flex items-center gap-2 text-[12px] font-bold text-orange-ink">
-                  <AlertTriangle size={14} /> Компенсация по экипировке
-                </div>
-                <div className="text-[11px] text-orange-ink/80">
-                  Шлем потеряли, держатель повреждён, и т.п. Сумма ниже
-                  будет удержана из залога — без отдельного акта ущерба.
-                  Если повреждения серьёзные (бак, рама, пластик) —
-                  снимай галку «Состояние скутера в порядке» вместо этого
-                  и оформляй полноценный акт.
-                </div>
-                <div>
-                  <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-2">
-                    Сумма компенсации, ₽
-                  </label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={depositTotal}
-                    value={equipmentDamageAmount}
-                    onChange={(e) => setEquipmentDamageAmount(e.target.value)}
-                    className="mt-1 h-9 w-full rounded-[10px] border border-border bg-surface px-3 text-[13px] tabular-nums outline-none focus:border-blue-600"
-                  />
-                </div>
-                <div>
-                  <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-2">
-                    Что именно повреждено / утрачено
-                  </label>
-                  <textarea
-                    value={equipmentDamageNote}
-                    onChange={(e) => setEquipmentDamageNote(e.target.value)}
-                    rows={2}
-                    placeholder="Например: шлем — царапины и треснул визор"
-                    className="mt-1 w-full resize-y rounded-[10px] border border-border bg-surface px-3 py-2 text-[13px] outline-none focus:border-blue-600"
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* Частичное удержание залога (отдельно от экипировки) */}
+            {/* Финансовая сводка по залогу — только если скутер ок */}
             {!scooterDamaged && (
               <div className="rounded-[10px] border border-border bg-surface p-3">
                 <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-2 mb-2">
@@ -347,21 +361,27 @@ export function RentalActionDialog({
                     <span>Внесён при выдаче</span>
                     <span className="tabular-nums font-semibold">{fmt(depositTotal)} ₽</span>
                   </div>
-                  {eqDamageNum > 0 && (
-                    <div className="flex justify-between text-orange-ink">
-                      <span>− Компенсация экипировки</span>
-                      <span className="tabular-nums">−{fmt(eqDamageNum)} ₽</span>
-                    </div>
-                  )}
+                  {equipmentCards.map((key) => {
+                    if (cardStates[key] !== "problem") return null;
+                    const d = equipmentDamages[key];
+                    if (!d) return null;
+                    const eqName = equipmentList[Number(key.split("-")[1])]?.name ?? "Экипировка";
+                    return (
+                      <div key={key} className="flex justify-between text-orange-ink">
+                        <span className="truncate">− {eqName}: {d.name}</span>
+                        <span className="tabular-nums">−{fmt(d.amount)} ₽</span>
+                      </div>
+                    );
+                  })}
                   <div>
                     <label className="text-[11px] text-muted-2">
-                      Удержать дополнительно (мелкие компенсации без акта)
+                      Дополнительное удержание (мелкое, без акта)
                     </label>
                     <div className="mt-1 flex gap-2">
                       <input
                         type="number"
                         min={0}
-                        max={depositTotal - eqDamageNum}
+                        max={Math.max(0, depositTotal - cappedEquipDamage)}
                         value={depositWithhold}
                         onChange={(e) => setDepositWithhold(e.target.value)}
                         className="h-8 w-24 rounded-[8px] border border-border bg-surface px-2 text-[12px] tabular-nums outline-none focus:border-blue-600"
@@ -382,33 +402,34 @@ export function RentalActionDialog({
                 </div>
               </div>
             )}
+
+            {/* Picker позиций экипировки из прайса */}
+            {pickerKey && pickerKey !== "scooter" && (
+              <EquipmentDamagePicker
+                onClose={() => setPickerKey(null)}
+                presetName={
+                  equipmentList[Number(pickerKey.split("-")[1])]?.name ?? null
+                }
+                onPick={(picked) => {
+                  setEquipmentDamages((m) => ({ ...m, [pickerKey]: picked }));
+                  setPickerKey(null);
+                }}
+              />
+            )}
           </div>
         ),
-        cta: scooterDamaged
-          ? "Перейти к фиксации ущерба"
-          : "Завершить аренду",
+        cta: scooterDamaged ? "Перейти к фиксации ущерба" : "Завершить аренду",
         ctaTone: scooterDamaged ? "warn" : "primary",
-        // v0.4.57: блокировка кнопки. Логика:
-        //  • Состояние скутера в порядке = обязательно (если не ок —
-        //    оператор должен снять галку, тогда кнопка станет «Перейти
-        //    к фиксации ущерба» и blocked зависит только от daty/depBack).
-        //  • Экипировка ок ИЛИ задана сумма компенсации (если её нет —
-        //    оператор не закроет аренду без указания компенсации).
-        //  • Залог проверен.
-        //  • Если оператор поставил withhold > 0 — нужна причина.
-        //  • Если экипировки нет (hasEquipment=false) — пункт пропускаем.
+        // Блокировка кнопки:
+        //  • Все карточки должны быть в одном из состояний (ok/problem).
+        //  • Проблемы экипировки должны иметь сумму и название.
+        //  • При withhold > 0 — обязательная причина.
+        //  • На damage-flow скутера → перенаправляем после подтверждения,
+        //    кнопка активна как только скутер выбран.
         blocked: (() => {
-          if (!depositBack) return true;
-          // Если убрали галку «состояние в порядке» — пользователь
-          // переходит в DamageReport flow, кнопка активна для перехода.
+          if (!allDecided) return true;
           if (scooterDamaged) return false;
-          if (hasEquipment && !equipmentOk) {
-            // Не отметил экипировку как ок — должен указать сумму компенсации.
-            const eq = Math.floor(Number(equipmentDamageAmount) || 0);
-            if (eq <= 0) return true;
-            if (!equipmentDamageNote.trim()) return true;
-          }
-          // Если есть withhold > 0 — обязательна причина.
+          if (!allEquipmentProblemsFilled) return true;
           const wh = Math.floor(Number(depositWithhold) || 0);
           if (wh > 0 && !depositWithholdNote.trim()) return true;
           return false;
@@ -441,17 +462,16 @@ export function RentalActionDialog({
         revertOverdue(rental.id);
         break;
       case "complete": {
-        // v0.4.57: учитываем дату возврата, компенсацию экипировки и
-        // частичное удержание залога. Сценарии:
-        //   1) Состояние не в порядке → DamageReportDialog (через
-        //      onOpenDamage). Закрываем чеклист, дальше parent.
-        //   2) Состояние ок, экипировка не в порядке → завершаем
-        //      аренду + создаём manual_charge на сумму компенсации
-        //      экипировки (списывается с залога).
-        //   3) Состояние ок, экипировка ок, есть withhold залога →
-        //      завершаем + manual_charge на withhold.
-        //   4) Всё ок, удержаний нет → обычное завершение.
-        if (!returnOk) {
+        // v0.4.62: карточная модель. Логика:
+        //   • Скутер problem → onOpenDamage (DamageReportDialog).
+        //   • На каждую проблемную экипировку → manual_charge с суммой
+        //     и названием выбранной позиции.
+        //   • Дополнительное удержание → manual_charge.
+        //   • equipmentOk = все equipment cards в state='ok'.
+        //   • depositReturned = true (теперь это не вопрос —
+        //     рассчитывается из удержаний).
+        const scooterDamaged = cardStates["scooter"] === "problem";
+        if (scooterDamaged) {
           if (onOpenDamage) {
             onOpenDamage();
             requestClose();
@@ -462,8 +482,8 @@ export function RentalActionDialog({
             {
               dateActual: returnDate ? isoDateToRu(returnDate) : todayStr(),
               conditionOk: false,
-              equipmentOk,
-              depositReturned: depositBack,
+              equipmentOk: false,
+              depositReturned: false,
               damageNotes: "",
               mileage: mileageAtReturn ? Number(mileageAtReturn) : undefined,
             },
@@ -472,22 +492,33 @@ export function RentalActionDialog({
           );
           break;
         }
-        // Преобразуем ISO yyyy-mm-dd → DD.MM.YYYY для inspection.dateActual
         const dateActual = returnDate ? isoDateToRu(returnDate) : todayStr();
-        const eqDamageAmt = Math.max(0, Math.floor(Number(equipmentDamageAmount) || 0));
-        const withholdAmt = Math.max(0, Math.floor(Number(depositWithhold) || 0));
-        // Компенсации до завершения — иначе аренда уже архивирована и
-        // некоторые роуты могут отказаться писать долги.
+        const equipmentOkAll = Object.entries(cardStates).every(
+          ([k, v]) => k === "scooter" || v === "ok",
+        );
         const charges: Promise<unknown>[] = [];
-        if (!equipmentOk && eqDamageAmt > 0) {
+        // Списываем по каждой проблемной экипировке отдельной записью —
+        // в истории долга будет видно ЗА ЧТО именно удерживали.
+        for (const [key, state] of Object.entries(cardStates)) {
+          if (key === "scooter" || state !== "problem") continue;
+          const damage = equipmentDamages[key];
+          if (!damage || damage.amount <= 0) continue;
+          // Найдём имя позиции экипировки по индексу
+          const idx = Number(key.split("-")[1]);
+          const eqList =
+            (rental.equipmentJson && rental.equipmentJson.length > 0
+              ? rental.equipmentJson
+              : (rental.equipment ?? []).map((n) => ({ name: n }))) ?? [];
+          const eqName = (eqList[idx] as { name?: string } | undefined)?.name ?? "Экипировка";
           charges.push(
             postManualCharge(
               rental.id,
-              eqDamageAmt,
-              `Компенсация экипировки при возврате${equipmentDamageNote ? `: ${equipmentDamageNote}` : ""}`,
+              damage.amount,
+              `Компенсация экипировки «${eqName}»: ${damage.name}`,
             ),
           );
         }
+        const withholdAmt = Math.max(0, Math.floor(Number(depositWithhold) || 0));
         if (withholdAmt > 0) {
           charges.push(
             postManualCharge(
@@ -501,8 +532,8 @@ export function RentalActionDialog({
           completeRentalNoDamage(rental.id, {
             dateActual,
             conditionOk: true,
-            equipmentOk,
-            depositReturned: depositBack,
+            equipmentOk: equipmentOkAll,
+            depositReturned: true,
             mileage: mileageAtReturn ? Number(mileageAtReturn) : undefined,
           });
         });
@@ -515,8 +546,8 @@ export function RentalActionDialog({
           {
             dateActual: todayStr(),
             conditionOk: false,
-            equipmentOk,
-            depositReturned: depositBack,
+            equipmentOk: false,
+            depositReturned: false,
             damageNotes: damageNote,
           },
           Number(damageAmount) || 0,
@@ -833,11 +864,10 @@ export function RentalActionDialog({
                   className="mt-1 w-full resize-y rounded-[10px] border border-border bg-surface px-3 py-2 text-[13px] text-ink outline-none focus:border-blue-600"
                 />
               </label>
-              <Checkbox
-                checked={depositBack}
-                onChange={setDepositBack}
-                label={`Залог ${fmt(rental.deposit || 2000)} ₽ возвращён (иначе удерживается в счёт ущерба)`}
-              />
+              {/* v0.4.62: чекбокс «залог возвращён» удалён в новом
+                  flow возврата (action='complete' использует карточки).
+                  В legacy 'complete-damage' depositReturned всегда false
+                  — ущерб = удержание залога, чекбокс лишний. */}
             </div>
           )}
         </div>
@@ -872,28 +902,6 @@ export function RentalActionDialog({
         </div>
       </div>
     </div>
-  );
-}
-
-function Checkbox({
-  checked,
-  onChange,
-  label,
-}: {
-  checked: boolean;
-  onChange: (v: boolean) => void;
-  label: string;
-}) {
-  return (
-    <label className="flex cursor-pointer items-center gap-2 rounded-[10px] bg-surface-soft px-3 py-2 text-[12px] text-ink">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-        className="h-4 w-4 accent-blue-600"
-      />
-      {label}
-    </label>
   );
 }
 
@@ -1144,28 +1152,218 @@ function specFor(action: ActionKind, rental: Rental): Spec {
   }
 }
 
-/** Строка чек-листа с галкой — для единого окна «Завершить аренду». */
-function Checkline({
-  checked,
-  onChange,
+/**
+ * v0.4.62: карточка позиции для приёма возврата. Два состояния:
+ * 'ok' (зелёный с галочкой) или 'problem' (оранжевый с крестом).
+ * До выбора — нейтральный фон с двумя кнопками рядом.
+ */
+function ReturnItemCard({
   label,
+  sublabel,
+  state,
+  damageInfo,
+  onSetOk,
+  onSetProblem,
+  onEditProblem,
+  accent,
 }: {
-  checked: boolean;
-  onChange: (v: boolean) => void;
   label: string;
+  sublabel?: string;
+  state?: "ok" | "problem";
+  damageInfo?: string;
+  onSetOk: () => void;
+  onSetProblem: () => void;
+  onEditProblem?: () => void;
+  accent: "scooter" | "equipment";
 }) {
+  const tone =
+    state === "ok"
+      ? "border-emerald-400/50 bg-emerald-50"
+      : state === "problem"
+        ? "border-orange/50 bg-orange-soft/40"
+        : "border-border bg-surface";
   return (
-    <label className="flex cursor-pointer items-center gap-2">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-        className="h-4 w-4 cursor-pointer accent-blue-600"
-      />
-      <span className={cn("text-[13px]", checked ? "text-ink" : "text-muted")}>
-        {label}
-      </span>
-    </label>
+    <div
+      className={cn(
+        "rounded-[10px] border p-3 transition-colors",
+        tone,
+      )}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="text-[13px] font-semibold text-ink truncate">
+            {accent === "scooter" ? "🛵 " : "🎒 "}{label}
+          </div>
+          {sublabel && (
+            <div className="text-[11px] text-muted-2 truncate">{sublabel}</div>
+          )}
+          {state === "problem" && damageInfo && (
+            <button
+              type="button"
+              onClick={onEditProblem}
+              className="mt-1 text-[12px] text-orange-ink underline hover:no-underline"
+            >
+              {damageInfo} (изменить)
+            </button>
+          )}
+        </div>
+        <div className="flex shrink-0 gap-1.5">
+          <button
+            type="button"
+            onClick={onSetOk}
+            className={cn(
+              "flex h-8 w-8 items-center justify-center rounded-full border transition-colors",
+              state === "ok"
+                ? "border-emerald-500 bg-emerald-500 text-white"
+                : "border-border bg-surface text-muted hover:border-emerald-400 hover:text-emerald-500",
+            )}
+            title="В порядке"
+          >
+            <Check size={16} />
+          </button>
+          <button
+            type="button"
+            onClick={onSetProblem}
+            className={cn(
+              "flex h-8 w-8 items-center justify-center rounded-full border transition-colors",
+              state === "problem"
+                ? "border-orange-500 bg-orange-500 text-white"
+                : "border-border bg-surface text-muted hover:border-orange-400 hover:text-orange-500",
+            )}
+            title="Есть проблема"
+          >
+            <X size={16} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * v0.4.62: модалка-пикер позиции из прайс-листа (группа «Экипировка»)
+ * для фиксации ущерба по конкретной экипировке. Также позволяет
+ * добавить «свой вариант» (название + сумма).
+ */
+function EquipmentDamagePicker({
+  presetName,
+  onPick,
+  onClose,
+}: {
+  presetName: string | null;
+  onPick: (d: {
+    name: string;
+    amount: number;
+    itemId?: number;
+    isCustom: boolean;
+  }) => void;
+  onClose: () => void;
+}) {
+  const groupsQ = useApiPriceList();
+  const groups = groupsQ.data ?? [];
+  const equipGroup = groups.find(
+    (g) => g.name.toLowerCase().includes("экипировк"),
+  );
+  const items = equipGroup?.items ?? [];
+  const [customName, setCustomName] = useState("");
+  const [customAmount, setCustomAmount] = useState("");
+  return (
+    <div
+      className="fixed inset-0 z-[140] flex items-center justify-center bg-ink/55 p-6 backdrop-blur-sm animate-backdrop-in"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-[440px] overflow-hidden rounded-2xl bg-surface shadow-card-lg animate-modal-in"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-3 border-b border-border bg-surface-soft px-5 py-3">
+          <div className="min-w-0 flex-1 text-[15px] font-semibold text-ink">
+            Что с {presetName ? `«${presetName}»` : "экипировкой"}?
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-8 w-8 items-center justify-center rounded-full text-muted hover:bg-border hover:text-ink"
+          >
+            <X size={16} />
+          </button>
+        </div>
+        <div className="max-h-[60vh] overflow-y-auto px-5 py-4">
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-2 mb-2">
+            Позиции прайса
+          </div>
+          {items.length === 0 ? (
+            <div className="py-2 text-[12px] text-muted-2">
+              Прайс-лист пуст или группа «Экипировка» не найдена. Используй
+              «свой вариант» ниже.
+            </div>
+          ) : (
+            <div className="space-y-1">
+              {items.map((it) => (
+                <button
+                  key={it.id}
+                  type="button"
+                  onClick={() =>
+                    onPick({
+                      name: it.name,
+                      amount: it.priceA ?? 0,
+                      itemId: it.id,
+                      isCustom: false,
+                    })
+                  }
+                  className="flex w-full items-center justify-between rounded-[8px] border border-border bg-surface px-3 py-2 text-[13px] hover:border-blue-600 hover:bg-blue-soft"
+                >
+                  <span className="truncate text-left">{it.name}</span>
+                  <span className="tabular-nums font-semibold text-ink shrink-0 ml-2">
+                    {(it.priceA ?? 0).toLocaleString("ru-RU")} ₽
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="mt-4 border-t border-border pt-3">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-2 mb-2">
+              Свой вариант
+            </div>
+            <div className="space-y-2">
+              <input
+                type="text"
+                value={customName}
+                onChange={(e) => setCustomName(e.target.value)}
+                placeholder="Например: разбит визор шлема"
+                className="h-9 w-full rounded-[10px] border border-border bg-surface px-3 text-[13px] outline-none focus:border-blue-600"
+              />
+              <div className="flex gap-2">
+                <input
+                  type="number"
+                  min={0}
+                  value={customAmount}
+                  onChange={(e) => setCustomAmount(e.target.value)}
+                  placeholder="Сумма ₽"
+                  className="h-9 w-32 rounded-[10px] border border-border bg-surface px-3 text-[13px] tabular-nums outline-none focus:border-blue-600"
+                />
+                <button
+                  type="button"
+                  disabled={
+                    !customName.trim() || !(Number(customAmount) > 0)
+                  }
+                  onClick={() =>
+                    onPick({
+                      name: customName.trim(),
+                      amount: Math.floor(Number(customAmount)),
+                      isCustom: true,
+                    })
+                  }
+                  className="h-9 flex-1 rounded-[10px] bg-blue-600 text-white text-[13px] font-semibold disabled:opacity-40"
+                >
+                  Применить
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
