@@ -265,12 +265,14 @@ export function RentalActionDialog({
               <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-2">
                 Приёмка позиций
               </div>
+              {/* Скутер — основная позиция, во всю ширину */}
               <ReturnItemCard
                 title={rental.scooter}
                 subtitle={scooterModel?.name ?? rental.scooter}
                 imageUrl={scooterAvatar}
                 fallbackIcon="scooter"
                 state={scooterState}
+                size="large"
                 onSetOk={() =>
                   setCardStates((s) => ({ ...s, [scooterCard]: "ok" }))
                 }
@@ -278,49 +280,55 @@ export function RentalActionDialog({
                   setCardStates((s) => ({ ...s, [scooterCard]: "problem" }));
                 }}
               />
-              {equipmentList.map((eq, i) => {
-                const key = `equipment-${i}` as CardKey;
-                const damage = equipmentDamages[key];
-                const eqItem = eq.itemId
-                  ? equipmentItems.find((x) => x.id === eq.itemId)
-                  : null;
-                const eqAvatar = fileUrl(
-                  eqItem?.avatarThumbKey ?? eqItem?.avatarKey,
-                  { variant: "thumb" },
-                );
-                return (
-                  <ReturnItemCard
-                    key={key}
-                    title={eq.name}
-                    subtitle={
-                      eq.price && eq.price > 0
-                        ? `${fmt(eq.price)} ₽ при выдаче`
-                        : "бесплатно"
-                    }
-                    imageUrl={eqAvatar}
-                    fallbackIcon="equipment"
-                    state={cardStates[key]}
-                    damageInfo={
-                      cardStates[key] === "problem" && damage
-                        ? `${damage.name} — ${fmt(damage.amount)} ₽`
-                        : undefined
-                    }
-                    onSetOk={() => {
-                      setCardStates((s) => ({ ...s, [key]: "ok" }));
-                      setEquipmentDamages((m) => {
-                        const next = { ...m };
-                        delete next[key];
-                        return next;
-                      });
-                    }}
-                    onSetProblem={() => {
-                      setCardStates((s) => ({ ...s, [key]: "problem" }));
-                      setPickerKey(key);
-                    }}
-                    onEditProblem={() => setPickerKey(key)}
-                  />
-                );
-              })}
+              {/* Экипировка — компактная сетка 2 колонки */}
+              {equipmentList.length > 0 && (
+                <div className="grid grid-cols-2 gap-2">
+                  {equipmentList.map((eq, i) => {
+                    const key = `equipment-${i}` as CardKey;
+                    const damage = equipmentDamages[key];
+                    const eqItem = eq.itemId
+                      ? equipmentItems.find((x) => x.id === eq.itemId)
+                      : null;
+                    const eqAvatar = fileUrl(
+                      eqItem?.avatarThumbKey ?? eqItem?.avatarKey,
+                      { variant: "thumb" },
+                    );
+                    return (
+                      <ReturnItemCard
+                        key={key}
+                        title={eq.name}
+                        subtitle={
+                          eq.price && eq.price > 0
+                            ? `${fmt(eq.price)} ₽`
+                            : "бесплатно"
+                        }
+                        imageUrl={eqAvatar}
+                        fallbackIcon="equipment"
+                        state={cardStates[key]}
+                        size="compact"
+                        damageInfo={
+                          cardStates[key] === "problem" && damage
+                            ? `${damage.name} — ${fmt(damage.amount)} ₽`
+                            : undefined
+                        }
+                        onSetOk={() => {
+                          setCardStates((s) => ({ ...s, [key]: "ok" }));
+                          setEquipmentDamages((m) => {
+                            const next = { ...m };
+                            delete next[key];
+                            return next;
+                          });
+                        }}
+                        onSetProblem={() => {
+                          setCardStates((s) => ({ ...s, [key]: "problem" }));
+                          setPickerKey(key);
+                        }}
+                        onEditProblem={() => setPickerKey(key)}
+                      />
+                    );
+                  })}
+                </div>
+              )}
               {equipmentList.length === 0 && (
                 <div className="text-[11px] text-muted-2">
                   Экипировка не выдавалась.
@@ -684,12 +692,20 @@ export function RentalActionDialog({
     >
       <div
         className={cn(
-          "w-full max-w-[520px] overflow-hidden rounded-2xl bg-surface shadow-card-lg",
+          // v0.4.65: окно завершения шире (640px вместо 520px) — нужно
+          // чтобы помещалась сетка экипировки 2-колонками и popup
+          // фирменного DatePicker не обрезался краем модалки. Для
+          // других action использует тот же размер — это нормально, в
+          // них контент проще и просто получится больше воздуха.
+          // overflow-hidden убран чтоб popup-календарь мог
+          // вылазить за границы dialog'а; вместо этого скролл — на
+          // внутренней области.
+          "w-full max-w-[640px] rounded-2xl bg-surface shadow-card-lg",
           closing ? "animate-modal-out" : "animate-modal-in",
         )}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center gap-3 border-b border-border bg-surface-soft px-5 py-3">
+        <div className="flex items-center gap-3 rounded-t-2xl border-b border-border bg-surface-soft px-5 py-3">
           <div className="min-w-0 flex-1 text-[15px] font-semibold text-ink">
             {spec.title}
           </div>
@@ -925,7 +941,7 @@ export function RentalActionDialog({
           )}
         </div>
 
-        <div className="flex items-center justify-end gap-2 border-t border-border bg-surface-soft px-5 py-3">
+        <div className="flex items-center justify-end gap-2 rounded-b-2xl border-t border-border bg-surface-soft px-5 py-3">
           <button
             type="button"
             onClick={requestClose}
@@ -1278,6 +1294,7 @@ function ReturnItemCard({
   fallbackIcon,
   state,
   damageInfo,
+  size = "large",
   onSetOk,
   onSetProblem,
   onEditProblem,
@@ -1288,6 +1305,9 @@ function ReturnItemCard({
   fallbackIcon: "scooter" | "equipment";
   state?: "ok" | "problem";
   damageInfo?: string;
+  /** large = full-width карточка с большим фото (для скутера).
+   *  compact = плотная карточка для сетки 2-колонки (для экипировки). */
+  size?: "large" | "compact";
   onSetOk: () => void;
   onSetProblem: () => void;
   onEditProblem?: () => void;
@@ -1298,17 +1318,25 @@ function ReturnItemCard({
       : state === "problem"
         ? "border-orange-400 ring-1 ring-orange-200/60 bg-orange-soft/30"
         : "border-border bg-surface hover:border-blue-300";
+  const isCompact = size === "compact";
+  const imageSize = isCompact ? "h-12 w-12" : "h-14 w-14";
+  const padding = isCompact ? "p-2.5" : "p-3";
+  const titleSize = isCompact ? "text-[13px]" : "text-[14px]";
+  const buttonHeight = isCompact ? "h-8" : "h-9";
+  const buttonText = isCompact ? "text-[11.5px]" : "text-[12.5px]";
   return (
     <div
       className={cn(
-        "rounded-xl border p-3 transition-all",
+        "rounded-xl border transition-all",
+        padding,
         tone,
       )}
     >
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2.5">
         <div
           className={cn(
-            "flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg ring-1",
+            "shrink-0 items-center justify-center overflow-hidden rounded-lg ring-1 flex",
+            imageSize,
             state === "ok"
               ? "ring-emerald-200 bg-emerald-50"
               : state === "problem"
@@ -1319,13 +1347,21 @@ function ReturnItemCard({
           {imageUrl ? (
             <img src={imageUrl} alt="" className="h-full w-full object-contain" />
           ) : fallbackIcon === "scooter" ? (
-            <Bike size={26} className="text-muted-2" strokeWidth={1.5} />
+            <Bike
+              size={isCompact ? 22 : 26}
+              className="text-muted-2"
+              strokeWidth={1.5}
+            />
           ) : (
-            <ImageIcon size={22} className="text-muted-2" strokeWidth={1.5} />
+            <ImageIcon
+              size={isCompact ? 18 : 22}
+              className="text-muted-2"
+              strokeWidth={1.5}
+            />
           )}
         </div>
         <div className="min-w-0 flex-1">
-          <div className="text-[14px] font-semibold text-ink truncate leading-tight">
+          <div className={cn("font-semibold text-ink truncate leading-tight", titleSize)}>
             {title}
           </div>
           {subtitle && (
@@ -1333,40 +1369,49 @@ function ReturnItemCard({
           )}
         </div>
       </div>
-      <div className="mt-3 flex gap-2">
+      <div className={cn("flex gap-1.5", isCompact ? "mt-2" : "mt-3 gap-2")}>
         <button
           type="button"
           onClick={onSetOk}
           className={cn(
-            "h-9 flex-1 rounded-lg border text-[12.5px] font-semibold transition-colors",
+            "flex-1 rounded-lg border font-semibold transition-colors",
+            buttonHeight,
+            buttonText,
             state === "ok"
               ? "border-emerald-500 bg-emerald-500 text-white shadow-sm"
               : "border-border bg-surface text-ink-2 hover:border-emerald-400 hover:bg-emerald-50/50 hover:text-emerald-700",
           )}
         >
-          Без ущерба
+          {isCompact ? "ОК" : "Без ущерба"}
         </button>
         <button
           type="button"
           onClick={onSetProblem}
           className={cn(
-            "h-9 flex-1 rounded-lg border text-[12.5px] font-semibold transition-colors",
+            "flex-1 rounded-lg border font-semibold transition-colors",
+            buttonHeight,
+            buttonText,
             state === "problem"
               ? "border-orange-500 bg-orange-500 text-white shadow-sm"
               : "border-border bg-surface text-ink-2 hover:border-orange-400 hover:bg-orange-soft/40 hover:text-orange-700",
           )}
         >
-          Есть ущерб
+          {isCompact ? "Ущерб" : "Есть ущерб"}
         </button>
       </div>
       {state === "problem" && damageInfo && (
         <button
           type="button"
           onClick={onEditProblem}
-          className="mt-2.5 flex w-full items-center justify-between rounded-lg bg-orange-soft/50 px-3 py-2 text-[12px] text-orange-ink hover:bg-orange-soft/80"
+          className={cn(
+            "flex w-full items-center justify-between rounded-lg bg-orange-soft/50 px-2.5 py-1.5 text-orange-ink hover:bg-orange-soft/80",
+            isCompact ? "mt-1.5 text-[11px]" : "mt-2.5 text-[12px]",
+          )}
         >
           <span className="truncate font-semibold">{damageInfo}</span>
-          <span className="ml-2 shrink-0 text-[11px] underline">изменить</span>
+          <span className="ml-2 shrink-0 text-[10px] underline opacity-80">
+            изменить
+          </span>
         </button>
       )}
     </div>
