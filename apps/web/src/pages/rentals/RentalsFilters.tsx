@@ -1,6 +1,6 @@
 import { Search } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { listRecentBillingPeriods } from "@/lib/billingPeriod";
+import { DateRangeFilter } from "@/pages/clients/DateRangeFilter";
 
 export type StatusFilter =
   // v0.4.47: 'all' оставлен в типе для обратной совместимости со
@@ -19,11 +19,17 @@ export type FiltersState = {
   search: string;
   status: StatusFilter;
   /**
-   * v0.4.0: фильтр расчётного периода (15→14). Хранится как ISO дата
-   * начала периода или null = «все периоды». Применяется к дате выдачи
-   * аренды (rental.start). Ограничивает список выводимых аренд.
+   * v0.4.0: фильтр расчётного периода (15→14). Старый select по
+   * месяцам выпилен — теперь используются произвольные диапазоны через
+   * DateRangeFilter (dateFrom / dateTo, ISO YYYY-MM-DD). Поле оставлено
+   * для совместимости с сохранёнными состояниями: если оно прилетит из
+   * URL/storage — Rentals.tsx преобразует его в dateFrom/dateTo.
    */
   periodStartIso?: string | null;
+  /** ISO YYYY-MM-DD — нижняя граница даты выдачи аренды. */
+  dateFrom: string | null;
+  /** ISO YYYY-MM-DD — верхняя граница даты выдачи аренды. */
+  dateTo: string | null;
 };
 
 // v0.4.47: убран таб «Все» — он дублировал «Активные». «Активные»
@@ -80,38 +86,18 @@ export function RentalsFilters({
         ))}
       </div>
 
-      {/* v0.4.0: выпадающий фильтр расчётного периода (15→14) */}
-      <PeriodFilter
-        value={value.periodStartIso ?? null}
-        onChange={(p) => onChange({ ...value, periodStartIso: p })}
+      {/* Фильтр по дате выдачи аренды — поповер с пресетами «Сегодня /
+          Вчера / За неделю / За месяц» + Range-календарь. Заменил
+          старый select по биллинговым периодам (15→14): пользователь
+          жаловался что неудобно, а пикером можно выбрать любой
+          произвольный диапазон. */}
+      <DateRangeFilter
+        from={value.dateFrom}
+        to={value.dateTo}
+        onChange={(r) =>
+          onChange({ ...value, dateFrom: r.from, dateTo: r.to })
+        }
       />
     </div>
-  );
-}
-
-function PeriodFilter({
-  value,
-  onChange,
-}: {
-  value: string | null;
-  onChange: (next: string | null) => void;
-}) {
-  const periods = listRecentBillingPeriods(12);
-  return (
-    <select
-      value={value ?? "all"}
-      onChange={(e) =>
-        onChange(e.target.value === "all" ? null : e.target.value)
-      }
-      className="h-9 rounded-full border border-border bg-white px-3 text-[12px] font-semibold text-ink outline-none focus:border-blue-600"
-      title="Период (15-е число прошлого по 14-е текущего)"
-    >
-      <option value="all">Все периоды</option>
-      {periods.map((p) => (
-        <option key={p.start.toISOString()} value={p.start.toISOString()}>
-          {p.label}
-        </option>
-      ))}
-    </select>
   );
 }

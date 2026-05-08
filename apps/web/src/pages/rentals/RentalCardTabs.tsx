@@ -64,7 +64,7 @@ import { navigate } from "@/app/navigationStore";
 import { useDashboardDrawer } from "@/pages/dashboard/DashboardDrawer";
 import { toast } from "@/lib/toast";
 import { DocumentPreviewModal } from "./DocumentPreviewModal";
-import { PeriodCalendarReadOnly } from "@/components/ui/date-picker";
+import { RentalPeriodCalendar } from "@/components/ui/date-picker";
 import {
   useDamageReports,
   type ApiDamageReport,
@@ -126,14 +126,22 @@ function ruDateToIso(ru: string): string | null {
   return `${m[3]}-${m[2]}-${m[1]}`;
 }
 
+/** Сегодня в ISO YYYY-MM-DD (локальное время). */
+function todayIsoLocal(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 /**
- * Визуализация периода аренды на read-only календаре. Показывает
- * подсвеченный диапазон от выдачи до планового возврата + красную
- * рамку вокруг сегодняшней клетки если просрочка вышла за конец.
+ * Визуализация периода аренды на read-only календаре с двумя зонами:
+ * — синяя лента от даты выдачи до планового возврата (фирменный цвет
+ *   ink, мягкие blue-200 в середине) — это и есть «нормальный срок»
+ * — красная лента от planned + 1 до сегодняшнего дня — хвост просрочки.
+ *   Включается когда status=overdue.
  *
- * Без отдельной логики просрочки — RangeCalendar уже подсвечивает
- * сегодня точкой; визуально оператор сам видит «сегодня уже после
- * планового возврата → нужно завершать».
+ * Реактивно к данным: если оператор продлил аренду / простил
+ * просрочку / завершил аренду — пропсы сменятся, картинка перерисуется
+ * (мы не держим локальное состояние).
  */
 function RentalPeriodVisualizer({
   start,
@@ -157,9 +165,10 @@ function RentalPeriodVisualizer({
           </span>
         )}
       </div>
-      <PeriodCalendarReadOnly
-        from={startIso}
-        to={endIso}
+      <RentalPeriodCalendar
+        startIso={startIso}
+        plannedEndIso={endIso}
+        overdueUntilIso={isOverdue ? todayIsoLocal() : null}
         className="bg-surface"
       />
     </div>

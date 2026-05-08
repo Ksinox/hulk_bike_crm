@@ -182,6 +182,8 @@ export function Rentals() {
   const [filters, setFilters] = useState<FiltersState>({
     search: "",
     status: "active",
+    dateFrom: null,
+    dateTo: null,
   });
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [newOpen, setNewOpen] = useState(false);
@@ -269,23 +271,20 @@ export function Rentals() {
   }, [selectedId, activeRentals, archivedList]);
 
   const filtered = useMemo(() => {
-    // v0.4.0: фильтр периода — отсекаем по дате выдачи аренды (start).
-    // Если periodStartIso не выбран — показываем все периоды.
-    let periodStart: Date | null = null;
-    let periodEnd: Date | null = null;
-    if (filters.periodStartIso) {
-      periodStart = new Date(filters.periodStartIso);
-      periodEnd = new Date(periodStart);
-      periodEnd.setMonth(periodEnd.getMonth() + 1);
-    }
+    // v0.4.57: фильтр диапазона дат выдачи аренды через DateRangeFilter.
+    // Старый PeriodFilter (по биллинговым периодам 15→14) выпилен —
+    // оператор хотел произвольные диапазоны через календарь. Теперь
+    // dateFrom/dateTo (ISO YYYY-MM-DD) — границы включительно по дате
+    // выдачи (rental.start).
     const inPeriod = (r: Rental): boolean => {
-      if (!periodStart || !periodEnd) return true;
+      if (!filters.dateFrom && !filters.dateTo) return true;
       const [d, m, y] = r.start.split(".").map(Number);
-      const startMs = new Date(y!, m! - 1, d!).getTime();
-      return (
-        startMs >= periodStart.getTime() &&
-        startMs < periodEnd.getTime()
-      );
+      // r.start формата DD.MM.YYYY → собираем ISO для лексикографического
+      // сравнения с dateFrom/dateTo (ISO).
+      const startIso = `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+      if (filters.dateFrom && startIso < filters.dateFrom) return false;
+      if (filters.dateTo && startIso > filters.dateTo) return false;
+      return true;
     };
     return rentals
       .filter(

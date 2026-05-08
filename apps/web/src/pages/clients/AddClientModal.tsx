@@ -759,17 +759,13 @@ export function AddClientModal({
                 <DatePicker
                   id="f-pdate"
                   value={ruToIsoDate(f.passDate)}
-                  onChange={(iso) => {
-                    set("passDate", iso ? isoToRuDate(iso) : "");
-                    if (iso) {
-                      // v0.4.46: автопереход на «Код подразделения» после выбора даты.
-                      setTimeout(
-                        () => document.getElementById("f-pcode")?.focus(),
-                        0,
-                      );
-                    }
-                  }}
+                  onChange={(iso) =>
+                    set("passDate", iso ? isoToRuDate(iso) : "")
+                  }
                   maxDate={todayIso()}
+                  // После полного ввода (DD.MM.YYYY) — фокус на «Код
+                  // подразделения», как было в старой паспортной форме.
+                  nextFieldId="f-pcode"
                 />
               </Field>
               <Field label="Код подразделения" htmlFor="f-pcode">
