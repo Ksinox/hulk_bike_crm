@@ -2691,6 +2691,10 @@ export async function rentalsRoutes(app: FastifyInstance) {
         comment: parsed.data.comment ?? "Оплата клиента",
         createdByUserId: userId,
         createdByName: userName,
+        // v0.4.56: запись считается применённой к endPlanned сразу,
+        // если это компонент дней просрочки (бэк ниже сделает сдвиг
+        // и нормализацию статуса в той же транзакции).
+        appliedToEndPlanned: parsed.data.kind === "overdue_days_payment",
       })
       .returning();
 
@@ -3002,6 +3006,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
           comment: parsed.data.comment ?? null,
           createdByUserId: userId,
           createdByName: userName,
+          appliedToEndPlanned: true, // v0.4.56: применяем сразу
         })
         .returning();
       // Сдвигаем endPlanned пропорционально прощённой части.
@@ -3043,6 +3048,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
           comment: parsed.data.comment ?? null,
           createdByUserId: userId,
           createdByName: userName,
+          appliedToEndPlanned: true, // v0.4.56
         })
         .returning();
       if (row) inserted.push(row);
@@ -3057,6 +3063,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
           comment: parsed.data.comment ?? null,
           createdByUserId: userId,
           createdByName: userName,
+          appliedToEndPlanned: true, // v0.4.56
         })
         .returning();
       if (row) inserted.push(row);

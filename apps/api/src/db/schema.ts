@@ -1532,6 +1532,17 @@ export const debtEntries = pgTable(
       mode: "number",
     }).references(() => users.id, { onDelete: "set null" }),
     createdByName: text("created_by_name"),
+    /**
+     * v0.4.56: применён ли сдвиг end_planned_at для этой записи.
+     * Только для kind IN ('overdue_days_forgive', 'overdue_days_payment',
+     * 'overdue_forgive', 'overdue_payment') — оплата/прощение
+     * просроченных дней должны сдвигать end_planned_at вперёд.
+     * Защищает от двойного сдвига при повторных запусках бэкфила
+     * или при изменениях в endpoint'ах.
+     */
+    appliedToEndPlanned: boolean("applied_to_endplanned")
+      .notNull()
+      .default(false),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
