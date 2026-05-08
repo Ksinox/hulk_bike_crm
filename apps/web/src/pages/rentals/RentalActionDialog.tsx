@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, Bike, Check, FileText, Image as ImageIcon, X } from "lucide-react";
+import { AlertTriangle, Bike, Check, FileText, Image as ImageIcon, UserRound, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Rental } from "@/lib/mock/rentals";
 import { DatePicker } from "@/components/ui/date-picker";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { useApiEquipment } from "@/lib/api/equipment";
 import { useApiClients } from "@/lib/api/clients";
+import { useApiClientDocs } from "@/lib/api/documents";
 import { fileUrl } from "@/lib/files";
 import {
   addPayment,
@@ -172,6 +173,12 @@ export function RentalActionDialog({
   const scooterAvatar = fileUrl(scooterModel?.avatarKey, { variant: "thumb" });
   const equipmentItems = equipmentQ.data ?? [];
   const client = (clientsQ.data ?? []).find((c) => c.id === rental.clientId) ?? null;
+  // v0.4.64: фото клиента (из client_documents kind='photo') — используется
+  // в шапке окна завершения как «лицо аренды». Скутер уезжает в карточки
+  // приёмки позиций.
+  const clientDocsQ = useApiClientDocs(rental.clientId);
+  const clientPhotoDoc = (clientDocsQ.data ?? []).find((d) => d.kind === "photo");
+  const clientPhoto = clientPhotoDoc ? fileUrl(clientPhotoDoc.fileKey, { variant: "thumb" }) : null;
 
   const requestClose = () => {
     if (closing) return;
@@ -701,8 +708,7 @@ export function RentalActionDialog({
               rental={rental}
               clientName={client?.name ?? null}
               clientPhone={client?.phone ?? null}
-              modelName={scooterModel?.name ?? null}
-              scooterAvatar={scooterAvatar}
+              clientPhoto={clientPhoto}
             />
           ) : (
             <div className="mb-3 flex items-center justify-between rounded-[10px] bg-surface-soft px-3 py-2 text-[12px]">
@@ -1200,51 +1206,46 @@ function specFor(action: ActionKind, rental: Rental): Spec {
 }
 
 /**
- * v0.4.63: компактная сводка по аренде в шапке окна «Завершить аренду».
- * Заменяет старую строчку «Jog #28 · 01.05 — 09.05» — теперь это нормальная
- * информационная панель с клиентом, скутером, периодом и финансами.
+ * v0.4.64: шапка окна «Завершить аренду» — карточка клиента.
+ *
+ * Логическое разделение: ВЕРХ = «кто сдаёт» (фото клиента + контакты),
+ * НИЖЕ — «что сдаёт» (карточки скутера и экипировки в секции «Приёмка
+ * позиций»). До этого скутер был и в шапке (как фоновая аватарка), и в
+ * приёмке — дублирование. Теперь скутер только в приёмке.
  */
 function RentalSummaryCard({
   rental,
   clientName,
   clientPhone,
-  modelName,
-  scooterAvatar,
+  clientPhoto,
 }: {
   rental: Rental;
   clientName: string | null;
   clientPhone: string | null;
-  modelName: string | null;
-  scooterAvatar: string | null;
+  clientPhoto: string | null;
 }) {
   return (
-    <div className="mb-4 flex items-stretch gap-3 rounded-xl border border-border bg-gradient-to-br from-blue-soft/40 to-surface-soft/60 p-3">
-      <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-surface ring-1 ring-border">
-        {scooterAvatar ? (
+    <div className="mb-4 flex items-center gap-3 rounded-xl border border-border bg-gradient-to-br from-blue-soft/40 to-surface-soft/60 p-3">
+      <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-full bg-surface ring-2 ring-white shadow-sm">
+        {clientPhoto ? (
           <img
-            src={scooterAvatar}
+            src={clientPhoto}
             alt=""
-            className="h-full w-full object-contain"
+            className="h-full w-full object-cover"
           />
         ) : (
-          <Bike size={28} className="text-muted-2" strokeWidth={1.5} />
+          <div className="flex h-full w-full items-center justify-center bg-blue-soft/60">
+            <UserRound size={32} className="text-blue-600/70" strokeWidth={1.5} />
+          </div>
         )}
       </div>
       <div className="min-w-0 flex-1 space-y-0.5">
-        <div className="flex items-center gap-2">
-          <span className="text-[14px] font-bold text-ink">
-            {rental.scooter}
-          </span>
-          {modelName && (
-            <span className="text-[11px] text-muted-2">· {modelName}</span>
-          )}
+        <div className="text-[14px] font-bold text-ink truncate">
+          {clientName ?? `Клиент #${rental.clientId}`}
         </div>
-        {clientName && (
-          <div className="text-[12px] text-ink-2 truncate">
-            {clientName}
-            {clientPhone && (
-              <span className="text-muted-2"> · {clientPhone}</span>
-            )}
+        {clientPhone && (
+          <div className="text-[12px] text-ink-2 tabular-nums">
+            {clientPhone}
           </div>
         )}
         <div className="flex items-center gap-2 text-[11px] text-muted-2">
