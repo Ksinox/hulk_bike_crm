@@ -366,11 +366,12 @@ export function RentalCard({
   const daysLeft =
     startDate && endDate ? daysBetween(now(), endDate) : null;
 
-  // v0.4.33/34: эффективный статус (общий хелпер в @/lib/rentalStatus).
-  // Если БД-статус 'active' но плановая дата возврата уже в прошлом —
-  // показываем «Просрочка». Шапка карточки и tone берутся отсюда.
-  const effectiveStatus = effectiveRentalStatus(rental.status, rental.endPlanned);
-  const tone = STATUS_TONE[effectiveStatus] ?? STATUS_TONE[rental.status];
+  // v0.4.53: effectiveStatus теперь учитывает долг — если 0, не
+  // показываем красную просрочку даже когда endPlanned в прошлом.
+  // Реальный totalDebt считается ниже (debtSummary), так что
+  // initial значение — обычная формула без долга. Перевычислим
+  // когда debtSummary подгрузится (см. ниже useEffect не нужен,
+  // useMemo сам пересчитает на render).
   const isUnreachable = useClientUnreachable(rental.clientId);
   // Текущий статус скутера — нужен для проверки конфликта (active rental
   // + scooter в repair). См. блок «Скутер в ремонте» ниже.
@@ -398,6 +399,19 @@ export function RentalCard({
   // событий (для таба «История долгов»). Источник правды для KPI «Долг».
   const debtQ = useRentalDebt(rental.id);
   const debtSummary = debtQ.data;
+  // v0.4.53: суммарный долг для определения «просрочка / просто
+  // ожидаем возврата». Pending rent (paid=false) НЕ считаем —
+  // это плановая оплата, не просрочка.
+  const overdueRelatedDebt =
+    (debtSummary?.overdueBalance ?? 0) +
+    (debtSummary?.damageBalance ?? totalDebt) +
+    (debtSummary?.manualBalance ?? 0);
+  const effectiveStatus = effectiveRentalStatus(
+    rental.status,
+    rental.endPlanned,
+    overdueRelatedDebt,
+  );
+  const tone = STATUS_TONE[effectiveStatus] ?? STATUS_TONE[rental.status];
   const chargeManualMut = useChargeManualDebt();
   const forgiveOverdueMut = useForgiveOverdue();
   const reportWithDebt = reports.find((r) => r.debt > 0) ?? null;
@@ -931,9 +945,11 @@ export function RentalCard({
       {rental.status === "overdue" && endDate && (() => {
         // v0.4.3: просрочка раскладывается на «дни» (rate × days) и
         // «штраф 50%» (round(rate*0.5) × days). В баннере показываем
-        // ТЕКУЩИЕ остатки из API (с учётом списаний и оплат), а формулу
-        // оставляем как пояснение справа. Если API ещё не загрузилось —
-        // считаем локально (graceful fallback).
+        // ТЕКУЩИЕ остатки из API (с учётом списаний и оплат).
+        // v0.4.53: если фактический долг просрочки 0 (всё погашено или
+        // прощено) — баннер не показываем, оператор видит «нет долгов»
+        // в KPI и больше его ничего не сбивает с толку.
+        if ((debtSummary?.overdueBalance ?? -1) === 0) return null;
         const d = Math.max(1, daysLeft !== null ? Math.abs(daysLeft) : 1);
         // v0.4.25: dailyRate учитывает rateUnit. При week-тарифе
         // dailyRate = round(rate/7), штраф = round(dailyRate × 0.5).

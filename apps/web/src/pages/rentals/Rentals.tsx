@@ -16,6 +16,7 @@ import {
 import { useUnreachableSet } from "@/pages/clients/clientStore";
 import { NewRentalModal } from "./NewRentalModal";
 import { useApiClients } from "@/lib/api/clients";
+import { useDebtAggregate } from "@/lib/api/debt";
 import { useApiScooters } from "@/lib/api/scooters";
 import { useBillingPeriodRevenue } from "@/lib/useRevenue";
 import { ErrorBoundary } from "@/app/ErrorBoundary";
@@ -39,6 +40,10 @@ function matchStatus(
   f: FiltersState["status"],
   unreachable: Set<number>,
   today: string,
+  /** v0.4.53: реальный долг по аренде (overdue+damage+manual без pending).
+   *  Используется в фильтре «Просрочка» — если 0, не показываем аренду
+   *  даже если endPlanned в прошлом. */
+  realDebt?: number,
 ): boolean {
   // v0.4.47: фильтр «Активные» теперь означает ВСЕ живые аренды —
   // включая просроченные (просрочка это второй статус-маркер, не
@@ -58,9 +63,10 @@ function matchStatus(
   }
   if (f === "overdue") {
     // v0.3.8: фильтр «Просрочка» включает и status='overdue', и
-    // status='active' с прошедшим endPlanned. Раньше показывал только
-    // первое — на дашборде клиенты с долгом были, а в фильтре аренд
-    // никого, потому что статус 'overdue' автоматически не выставлялся.
+    // status='active' с прошедшим endPlanned.
+    // v0.4.53: ДОПОЛНИТЕЛЬНО проверяем реальный долг — если 0
+    // (всё погашено или прощено), фильтр НЕ показывает аренду.
+    if (realDebt !== undefined && realDebt <= 0) return false;
     if (r.status === "overdue") return true;
     if (r.status === "active") {
       const [d, m, y] = r.endPlanned.split(".").map(Number);
@@ -152,6 +158,18 @@ export function Rentals() {
   const unreachable = useUnreachableSet();
   const { data: apiClients } = useApiClients();
   const { data: apiScooters = [] } = useApiScooters();
+  // v0.4.53: реальный долг по аренде для фильтра «Просрочка»
+  const { data: debtAgg } = useDebtAggregate();
+  const debtByRentalId = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const d of debtAgg ?? []) {
+      m.set(
+        d.rentalId,
+        d.overdueBalance + d.damageBalance + d.manualBalance,
+      );
+    }
+    return m;
+  }, [debtAgg]);
   // v0.4.10: единый источник правды для выручки — общий хук, тот же
   // что использует и дашборд. Скоуп='rentals' оставлен на будущее
   // когда появятся другие модули с платежами (продажи/ремонты).
@@ -272,7 +290,13 @@ export function Rentals() {
     return rentals
       .filter(
         (r) =>
-          matchStatus(r, filters.status, unreachable, today) &&
+          matchStatus(
+            r,
+            filters.status,
+            unreachable,
+            today,
+            debtByRentalId.get(r.id),
+          ) &&
           matchSearch(r, filters.search, apiClients ?? []) &&
           inPeriod(r),
       )

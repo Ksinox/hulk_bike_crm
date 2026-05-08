@@ -20,6 +20,7 @@ import { ScooterQuickView } from "@/pages/fleet/ScooterQuickView";
 import { useFleetScooters } from "@/pages/fleet/fleetStore";
 import { ClientCard } from "@/pages/clients/ClientCard";
 import { effectiveRentalStatus } from "@/lib/rentalStatus";
+import { useDebtAggregate } from "@/lib/api/debt";
 import type { RentalStatus } from "@/lib/mock/rentals";
 import {
   useApplications,
@@ -573,16 +574,31 @@ function RentalsListDrawerContent({
   onPickRental: (id: number) => void;
 }) {
   const active = useRentals();
+  // v0.4.53: подмешиваем фактический долг — если 0, не показываем
+  // красную просрочку (effectiveStatus вернёт 'returning' для
+  // просроченных по дате но без долга аренд).
+  const { data: debtAgg } = useDebtAggregate();
   const today = new Date();
   const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
   const ymdFromRu = (s: string): string => {
     const m = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(s);
     return m ? `${m[3]}-${m[2]}-${m[1]}` : "";
   };
-  // v0.4.31/34: эффективный статус через общий хелпер
-  // (apps/web/src/lib/rentalStatus.ts).
-  const effectiveStatus = (r: { status: string; endPlanned: string }) =>
-    effectiveRentalStatus(r.status as RentalStatus, r.endPlanned) as string;
+  const effectiveStatus = (r: {
+    id: number;
+    status: string;
+    endPlanned: string;
+  }) => {
+    const myDebt = debtAgg?.find((d) => d.rentalId === r.id);
+    const overdueRel = myDebt
+      ? myDebt.overdueBalance + myDebt.damageBalance + myDebt.manualBalance
+      : undefined;
+    return effectiveRentalStatus(
+      r.status as RentalStatus,
+      r.endPlanned,
+      overdueRel,
+    ) as string;
+  };
   const filtered = active.filter((r) => {
     if (filter === "active") {
       // v0.4.47: «Активные аренды» = ВСЕ живые. Аренды с просрочкой
@@ -596,6 +612,14 @@ function RentalsListDrawerContent({
       );
     }
     if (filter === "overdue") {
+      // v0.4.53: только аренды с реальным долгом (overdue+damage+manual).
+      // Если просто endPlanned прошёл, но клиент всё оплатил/прощён —
+      // это не «просрочка» для дашборда.
+      const myDebt = debtAgg?.find((d) => d.rentalId === r.id);
+      const overdueRel = myDebt
+        ? myDebt.overdueBalance + myDebt.damageBalance + myDebt.manualBalance
+        : 0;
+      if (overdueRel <= 0) return false;
       const endKey = ymdFromRu(r.endPlanned);
       return (
         r.status === "overdue" ||

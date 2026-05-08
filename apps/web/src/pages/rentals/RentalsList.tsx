@@ -26,6 +26,10 @@ const TONE_PILL: Record<string, string> = {
 // v0.4.34: effectiveStatus вынесен в @/lib/rentalStatus — общий хелпер
 // для всех мест где рендерится статус-пилюля.
 
+// v0.4.53: маппинг rentalId → суммарный долг по аренде (overdue+damage+manual,
+// без pendingRent). Если 0, бейдж/полоска НЕ окрашиваются красным.
+import { useDebtAggregate } from "@/lib/api/debt";
+
 export function RentalsList({
   items,
   selectedId,
@@ -100,12 +104,23 @@ function RentalRow({
   onSelect: (id: number) => void;
 }) {
   const { data: apiClients } = useApiClients();
+  const { data: debtAgg } = useDebtAggregate();
   const c = apiClients?.find((x) => x.id === r.clientId);
   const photo = useClientPhoto(r.clientId);
   // v0.4.33: всё (badge, цвет полоски слева, isIssue) считаем по
   // эффективному статусу, чтобы просроченные `active` подсвечивались
   // красным, а не зелёным.
-  const effStatus = effectiveRentalStatus(r.status, r.endPlanned);
+  // v0.4.53: учитываем фактический долг — если 0, не показываем
+  // красную просрочку, рендерим как «returning» (ожидаем возврата).
+  const myDebt = debtAgg?.find((d) => d.rentalId === r.id);
+  const overdueRelatedDebt = myDebt
+    ? myDebt.overdueBalance + myDebt.damageBalance + myDebt.manualBalance
+    : undefined;
+  const effStatus = effectiveRentalStatus(
+    r.status,
+    r.endPlanned,
+    overdueRelatedDebt,
+  );
   const tone = STATUS_TONE[effStatus] ?? STATUS_TONE[r.status];
   const isIssue =
     effStatus === "overdue" ||

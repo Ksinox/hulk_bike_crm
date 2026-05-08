@@ -30,13 +30,16 @@ const todayKey = (now = new Date()): string =>
 export function effectiveRentalStatus(
   status: RentalStatus,
   endPlanned: string | null | undefined,
+  /** v0.4.53: фактический долг по этой аренде (опциональный).
+   *  Если передан и >0 — рассматриваем endPlanned-в-прошлом как
+   *  настоящую просрочку (overdue). Если 0 — клиент закрыл вопрос
+   *  (forgive/payment), плашка просрочки и бейдж скрываются —
+   *  показываем «returning» (ожидаем возврата) или 'active'. */
+  totalDebt?: number,
   now: Date = new Date(),
 ): RentalStatus {
   if (status !== "active") return status;
   if (!endPlanned) return status;
-  // ISO: "2026-05-05T18:03:00+03:00" или "2026-05-05" → берём первые 10
-  // символов как YYYY-MM-DD ключ
-  // RU: "DD.MM.YYYY" → конвертируем в YYYY-MM-DD
   let endKey: string | null = null;
   const ru = /^(\d{2})\.(\d{2})\.(\d{4})/.exec(endPlanned);
   if (ru) {
@@ -46,7 +49,14 @@ export function effectiveRentalStatus(
   }
   if (!endKey) return status;
   const today = todayKey(now);
-  if (endKey < today) return "overdue";
+  if (endKey < today) {
+    // v0.4.53: если долг по аренде 0 (всё погашено / прощено) —
+    // НЕ показываем красную просрочку. Меняем на 'returning'
+    // (амбер «ожидаем возврата») — клиент должен вернуть скутер,
+    // но штрафных начислений нет.
+    if (totalDebt !== undefined && totalDebt <= 0) return "returning";
+    return "overdue";
+  }
   if (endKey === today) return "returning";
   return status;
 }
