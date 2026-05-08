@@ -8,6 +8,7 @@ import {
   type PatchClientInput,
 } from "@/lib/api/clients";
 import { useApiRentals } from "@/lib/api/rentals";
+import { useDebtAggregate, type AggregateDebtItem } from "@/lib/api/debt";
 import type { ApiRental } from "@/lib/api/types";
 import { api } from "@/lib/api";
 import { queryClient } from "@/lib/queryClient";
@@ -286,18 +287,26 @@ export function useUnreachableSet(): Set<number> {
 export function useAllClients(): Client[] {
   const { data: apiClients } = useApiClients();
   const { data: apiRentals } = useApiRentals();
+  // v0.4.51: подмешиваем РЕАЛЬНЫЙ долг из агрегата (учитывая
+  // forgive/payment в debt_entries и оплаты в payments). До этого
+  // computeStats считал просрочку с нуля по формуле 1.5×rate×days
+  // — фильтр «С долгом» показывал устаревшие суммы.
+  const { data: debtAgg } = useDebtAggregate();
   useSyncExternalStore(subscribe, () => rev, () => 0);
 
   return useMemo(() => {
     if (!apiClients) return state.addedClients;
-    const { rentsByClient, debtByClient } = computeStats(apiRentals ?? []);
+    const { rentsByClient, debtByClient } = computeStats(
+      apiRentals ?? [],
+      debtAgg ?? null,
+    );
     const mapped = apiClients.map((a) => ({
       ...adaptClient(a),
       rents: rentsByClient.get(a.id) ?? 0,
       debt: debtByClient.get(a.id) ?? 0,
     }));
     return [...mapped, ...state.addedClients];
-  }, [apiClients, apiRentals]);
+  }, [apiClients, apiRentals, debtAgg]);
 }
 
 /**
@@ -319,20 +328,38 @@ export function useAllClients(): Client[] {
  * «С долгом» — оператор открывает его карточку и видит детальный
  * остаток с учётом всех событий.
  */
-function computeStats(rentals: ApiRental[]): {
+function computeStats(
+  rentals: ApiRental[],
+  debtAgg: AggregateDebtItem[] | null,
+): {
   rentsByClient: Map<number, number>;
   debtByClient: Map<number, number>;
 } {
-  const now = new Date();
-  const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
   const rentsByClient = new Map<number, number>();
   const debtByClient = new Map<number, number>();
+  // Считаем число аренд по клиенту
   for (const r of rentals) {
     rentsByClient.set(r.clientId, (rentsByClient.get(r.clientId) ?? 0) + 1);
+  }
+  // v0.4.51: суммируем РЕАЛЬНЫЙ долг из агрегата API. Учитывает
+  // forgive/payment/damage/manual/pending — всё что в карточке аренды.
+  if (debtAgg && debtAgg.length > 0) {
+    for (const it of debtAgg) {
+      const cur = debtByClient.get(it.clientId) ?? 0;
+      debtByClient.set(it.clientId, cur + it.totalDebt);
+    }
+    return { rentsByClient, debtByClient };
+  }
+  // Fallback (агрегат ещё не загружен или endpoint вернул []):
+  // считаем по локальной формуле — старое поведение, чтобы UI не падал
+  // в пустой долг до загрузки.
+  const now = new Date();
+  const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  for (const r of rentals) {
     const isActive = r.status === "active" || r.status === "overdue";
     if (!isActive) continue;
     const endKey = r.endPlannedAt.slice(0, 10);
-    if (endKey >= todayKey) continue; // не просрочена
+    if (endKey >= todayKey) continue;
     const endDate = new Date(`${endKey}T00:00:00`);
     const diffDays = Math.max(
       0,
@@ -342,7 +369,6 @@ function computeStats(rentals: ApiRental[]): {
       ),
     );
     if (diffDays <= 0) continue;
-    // v0.4.25: rateUnit учёт — для weekly tariffs сначала к ₽/сут
     const daily =
       (r as { rateUnit?: string }).rateUnit === "week"
         ? Math.round(r.rate / 7)

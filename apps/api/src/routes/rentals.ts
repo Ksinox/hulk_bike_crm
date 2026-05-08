@@ -2226,6 +2226,222 @@ export async function rentalsRoutes(app: FastifyInstance) {
     return { daysCharge, fineCharge, totalCharge: daysCharge + fineCharge };
   }
 
+  /**
+   * v0.4.51: GET /api/rentals/debt-aggregate
+   *
+   * Возвращает агрегированный долг по ВСЕМ live-арендам одним
+   * запросом. Используется на дашборде и в clientStore — раньше
+   * фронт вычислял долг локально по формуле «1.5 × rate × overdueDays»
+   * без учёта debt_entries (forgive/payment) → KPI «С долгом» и
+   * OverdueTable показывали устаревшие суммы после оплаты просрочки.
+   *
+   * Формат ответа:
+   *   { items: [{
+   *       rentalId, clientId, status,
+   *       overdueDays, overdueDaysCharge, overdueDaysBalance,
+   *       overdueFineCharge, overdueFineBalance,
+   *       damageBalance, manualBalance, pendingRent, totalDebt
+   *     }] }
+   *
+   * Идентичен формуле /:id/debt но для всех live-аренд сразу.
+   */
+  app.get("/debt-aggregate", async () => {
+    const liveRentals = await db
+      .select({
+        id: rentals.id,
+        clientId: rentals.clientId,
+        status: rentals.status,
+        rate: rentals.rate,
+        rateUnit: rentals.rateUnit,
+        endPlannedAt: rentals.endPlannedAt,
+      })
+      .from(rentals)
+      .where(
+        and(
+          isNull(rentals.archivedAt),
+          sql`${rentals.status} IN ('active', 'overdue', 'returning')`,
+        ),
+      );
+
+    if (liveRentals.length === 0) {
+      return { items: [] };
+    }
+
+    const rentalIds = liveRentals.map((r) => r.id);
+    const idsList = sql.join(
+      rentalIds.map((x) => sql`${x}`),
+      sql`, `,
+    );
+
+    // Все debt_entries по live-арендам
+    const entries = await db
+      .select()
+      .from(debtEntries)
+      .where(sql`${debtEntries.rentalId} IN (${idsList})`);
+
+    // Все damage_reports по live-арендам
+    const damageRows = await db
+      .select({
+        id: damageReports.id,
+        rentalId: damageReports.rentalId,
+        total: damageReports.total,
+        depositCovered: damageReports.depositCovered,
+      })
+      .from(damageReports)
+      .where(sql`${damageReports.rentalId} IN (${idsList})`);
+
+    // Все damage payments
+    const damagePays = await db
+      .select({
+        rentalId: payments.rentalId,
+        amount: payments.amount,
+        damageReportId: payments.damageReportId,
+      })
+      .from(payments)
+      .where(
+        sql`${payments.rentalId} IN (${idsList}) AND ${payments.type} = 'damage' AND ${payments.paid} = true`,
+      );
+
+    // Все unpaid rent payments
+    const unpaidRent = await db
+      .select({
+        rentalId: payments.rentalId,
+        amount: payments.amount,
+      })
+      .from(payments)
+      .where(
+        sql`${payments.rentalId} IN (${idsList}) AND ${payments.type} = 'rent' AND ${payments.paid} = false`,
+      );
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const items = liveRentals.map((r) => {
+      // Просроченные дни
+      const endMs = r.endPlannedAt.getTime();
+      const overdueDays = Math.max(
+        0,
+        Math.floor((today.getTime() - endMs) / 86_400_000),
+      );
+      // ₽/сут — для weekly tariffs делим на 7
+      const dailyRate =
+        r.rateUnit === "week" ? Math.round(r.rate / 7) : r.rate;
+      const daysCharge = dailyRate * overdueDays;
+      const fineCharge = Math.round(dailyRate * 0.5) * overdueDays;
+
+      // Раскладываем debt_entries
+      const myEntries = entries.filter((e) => e.rentalId === r.id);
+      let daysForgiveExplicit = 0;
+      let fineForgiveExplicit = 0;
+      let daysPayExplicit = 0;
+      let finePayExplicit = 0;
+      let mixedForgive = 0;
+      let mixedPayment = 0;
+      let manualCharged = 0;
+      let manualForgiven = 0;
+      for (const e of myEntries) {
+        if (e.kind === "overdue_days_forgive") daysForgiveExplicit += e.amount;
+        else if (e.kind === "overdue_fine_forgive")
+          fineForgiveExplicit += e.amount;
+        else if (e.kind === "overdue_days_payment")
+          daysPayExplicit += e.amount;
+        else if (e.kind === "overdue_fine_payment")
+          finePayExplicit += e.amount;
+        else if (e.kind === "overdue_forgive") mixedForgive += e.amount;
+        else if (e.kind === "overdue_payment") mixedPayment += e.amount;
+        else if (e.kind === "manual_charge") manualCharged += e.amount;
+        else if (e.kind === "manual_forgive") manualForgiven += e.amount;
+      }
+      let daysBalance = Math.max(
+        0,
+        daysCharge - daysForgiveExplicit - daysPayExplicit,
+      );
+      let fineBalance = Math.max(
+        0,
+        fineCharge - fineForgiveExplicit - finePayExplicit,
+      );
+      // mixedForgive переливается дни → штраф
+      if (mixedForgive > 0) {
+        const cut = Math.min(daysBalance, mixedForgive);
+        daysBalance -= cut;
+        const left = mixedForgive - cut;
+        if (left > 0) fineBalance = Math.max(0, fineBalance - left);
+      }
+      // mixedPayment — только дни
+      if (mixedPayment > 0) {
+        const cut = Math.min(daysBalance, mixedPayment);
+        daysBalance -= cut;
+      }
+      const manualBalance = Math.max(0, manualCharged - manualForgiven);
+
+      // Damage по report'ам
+      const myDamageRows = damageRows.filter((d) => d.rentalId === r.id);
+      const paidByReport = new Map<number, number>();
+      let unassignedPaid = 0;
+      for (const p of damagePays.filter((p) => p.rentalId === r.id)) {
+        if (p.damageReportId != null) {
+          paidByReport.set(
+            p.damageReportId,
+            (paidByReport.get(p.damageReportId) ?? 0) + (p.amount ?? 0),
+          );
+        } else {
+          unassignedPaid += p.amount ?? 0;
+        }
+      }
+      if (unassignedPaid > 0) {
+        for (const dr of myDamageRows) {
+          if (unassignedPaid <= 0) break;
+          const reportDebt = Math.max(
+            0,
+            (dr.total ?? 0) -
+              (dr.depositCovered ?? 0) -
+              (paidByReport.get(dr.id) ?? 0),
+          );
+          const take = Math.min(unassignedPaid, reportDebt);
+          paidByReport.set(dr.id, (paidByReport.get(dr.id) ?? 0) + take);
+          unassignedPaid -= take;
+        }
+      }
+      const damageBalance = myDamageRows.reduce(
+        (s, dr) =>
+          s +
+          Math.max(
+            0,
+            (dr.total ?? 0) -
+              (dr.depositCovered ?? 0) -
+              (paidByReport.get(dr.id) ?? 0),
+          ),
+        0,
+      );
+
+      // Pending rent (paid=false)
+      const pendingRent = unpaidRent
+        .filter((p) => p.rentalId === r.id)
+        .reduce((s, p) => s + (p.amount ?? 0), 0);
+
+      const overdueBalance = daysBalance + fineBalance;
+      const totalDebt =
+        overdueBalance + damageBalance + manualBalance + pendingRent;
+
+      return {
+        rentalId: r.id,
+        clientId: r.clientId,
+        status: r.status,
+        overdueDays,
+        overdueDaysCharge: daysCharge,
+        overdueDaysBalance: daysBalance,
+        overdueFineCharge: fineCharge,
+        overdueFineBalance: fineBalance,
+        overdueBalance,
+        damageBalance,
+        manualBalance,
+        pendingRent,
+        totalDebt,
+      };
+    });
+
+    return { items };
+  });
+
   app.get<{ Params: { id: string } }>("/:id/debt", async (req, reply) => {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });

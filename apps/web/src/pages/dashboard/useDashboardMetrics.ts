@@ -9,6 +9,7 @@ import { useApiRentals } from "@/lib/api/rentals";
 import { useApiScooters } from "@/lib/api/scooters";
 import { useApiPayments, type ApiPayment } from "@/lib/api/payments";
 import { useAllDamageReports } from "@/lib/api/damage-reports";
+import { useDebtAggregate } from "@/lib/api/debt";
 import type { ApiRental, ApiScooter } from "@/lib/api/types";
 import { currentBillingPeriod } from "@/lib/billingPeriod";
 import { useBillingPeriodRevenue } from "@/lib/useRevenue";
@@ -143,6 +144,8 @@ export function useDashboardMetrics(): DashboardMetrics {
   const scootersQ = useApiScooters();
   const paymentsQ = useApiPayments();
   const damageReportsQ = useAllDamageReports();
+  // v0.4.51: реальный долг по всем live-арендам (учитывает forgive/payment).
+  const debtAggQ = useDebtAggregate();
   // v0.4.10: общая выручка за период — единый источник правды (используется
   // и здесь, и на вкладке «Аренды»). Скоуп='all' включает все источники
   // (в будущем продажи/ремонты/рассрочки тоже подтянутся сюда).
@@ -160,6 +163,10 @@ export function useDashboardMetrics(): DashboardMetrics {
     const scooters: ApiScooter[] = scootersQ.data ?? [];
     const payments: ApiPayment[] = paymentsQ.data ?? [];
     const damageAll = damageReportsQ.data ?? [];
+    const debtAgg = debtAggQ.data ?? [];
+    const debtByRentalId = new Map(
+      debtAgg.map((d) => [d.rentalId, d.totalDebt]),
+    );
 
     const clientById = new Map(clients.map((c) => [c.id, c]));
     const scooterById = new Map(scooters.map((s) => [s.id, s]));
@@ -237,24 +244,19 @@ export function useDashboardMetrics(): DashboardMetrics {
         r.status === "overdue" && r.updatedAt && r.updatedAt < todayKey,
     ).length;
 
-    // v0.4.2: долг по просрочке считается по бизнес-формуле
-    // 1.5 × rate × overdueDays = «дни» (rate × days) + «штраф 50%»
-    // (round(rate × 0.5) × days). То же что в карточке аренды и в
-    // фильтре «С долгом» в Клиентах.
-    //
-    // Внимание: здесь показывается ИСХОДНОЕ начисление, без вычета
-    // событий из debt_entries (списаний/оплат). Если оператор сбросил
-    // штраф через «Действия → Сбросить просрочку», то на дашборде до
-    // обновления данных всё равно будет видна полная сумма. Источник
-    // правды для остатка — карточка аренды (берёт /api/rentals/:id/debt).
-    // Это сделано осознанно: API /rentals/archived не возвращает
-    // дебт-события, и тянуть их по каждому rental на дашборде = N+1.
+    // v0.4.51: используем реальный долг из API debt-aggregate, который
+    // учитывает forgive/payment в debt_entries и оплаты в payments.
+    // Раньше считалось по формуле 1.5×rate×days с нуля без учёта
+    // — после оплаты просрочки/forgive дашборд показывал устаревшие
+    // суммы. Fallback на формулу если агрегат ещё не загружен.
     const overdueDebtFor = (r: ApiRental): number => {
+      const fromAgg = debtByRentalId.get(r.id);
+      if (fromAgg !== undefined) return fromAgg;
+      // Fallback (агрегат ещё не пришёл) — старая формула чтобы не
+      // показывать «Долг 0» до загрузки.
       const endDateKey = r.endPlannedAt.slice(0, 10);
       const days = Math.max(0, daysBetweenYmd(endDateKey, todayKey));
       if (days <= 0) return 0;
-      // v0.4.25: учитываем rateUnit. Для week-тарифов сначала приводим
-      // к дневному эквиваленту = round(rate / 7).
       const daily = r.rateUnit === "week" ? Math.round(r.rate / 7) : r.rate;
       return Math.round(daily * 1.5) * days;
     };
@@ -527,6 +529,7 @@ export function useDashboardMetrics(): DashboardMetrics {
     scootersQ.data,
     paymentsQ.data,
     damageReportsQ.data,
+    debtAggQ.data,
     isLoading,
     periodRevenue,
   ]);

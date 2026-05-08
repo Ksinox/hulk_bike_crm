@@ -99,7 +99,43 @@ export type DebtSummary = {
 export const debtKeys = {
   all: ["rental-debt"] as const,
   one: (rentalId: number) => [...debtKeys.all, rentalId] as const,
+  aggregate: ["debt-aggregate"] as const,
 };
+
+/**
+ * v0.4.51: агрегированный долг по всем live-арендам в одном запросе.
+ *
+ * Используется в clientStore.computeStats и useDashboardMetrics —
+ * раньше эти места считали просрочку с нуля по формуле «1.5×rate×days»
+ * без учёта debt_entries (forgive/payment) → KPI «С долгом» и
+ * OverdueTable показывали устаревшие суммы после оплаты или forgive.
+ */
+export type AggregateDebtItem = {
+  rentalId: number;
+  clientId: number;
+  status: string;
+  overdueDays: number;
+  overdueDaysCharge: number;
+  overdueDaysBalance: number;
+  overdueFineCharge: number;
+  overdueFineBalance: number;
+  overdueBalance: number;
+  damageBalance: number;
+  manualBalance: number;
+  pendingRent: number;
+  totalDebt: number;
+};
+
+export function useDebtAggregate() {
+  return useQuery({
+    queryKey: debtKeys.aggregate,
+    queryFn: () =>
+      api
+        .get<{ items: AggregateDebtItem[] }>("/api/rentals/debt-aggregate")
+        .then((r) => r.items),
+    staleTime: 30_000, // 30 секунд — балансировать частоту обновлений и нагрузку
+  });
+}
 
 export function useRentalDebt(rentalId: number | null | undefined) {
   const qc = useQueryClient();
@@ -112,6 +148,9 @@ export function useRentalDebt(rentalId: number | null | undefined) {
       // новый статус сразу.
       qc.invalidateQueries({ queryKey: ["rentals"] });
       qc.invalidateQueries({ queryKey: ["rentals-archived"] });
+      // v0.4.51: агрегат долгов тоже обновляем — он обслуживает дашборд
+      // и список клиентов «С долгом».
+      qc.invalidateQueries({ queryKey: ["debt-aggregate"] });
       return res;
     },
     enabled: rentalId != null && rentalId > 0,
@@ -133,6 +172,7 @@ export function useChargeManualDebt() {
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: debtKeys.one(vars.rentalId) });
       qc.invalidateQueries({ queryKey: ["activity"] });
+      qc.invalidateQueries({ queryKey: debtKeys.aggregate });
     },
   });
 }
@@ -158,6 +198,7 @@ export function useForgiveOverdue() {
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: debtKeys.one(vars.rentalId) });
       qc.invalidateQueries({ queryKey: ["activity"] });
+      qc.invalidateQueries({ queryKey: debtKeys.aggregate });
     },
   });
 }

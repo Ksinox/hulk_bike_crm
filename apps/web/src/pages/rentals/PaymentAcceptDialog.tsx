@@ -519,6 +519,9 @@ export function PaymentAcceptDialog({
       qc.invalidateQueries({ queryKey: ["activity"] });
       // Долг по этой аренде
       qc.invalidateQueries({ queryKey: ["rental-debt", rental.id] });
+      // v0.4.51: агрегат долгов — обновляет KPI «Просрочено» и список
+      // клиентов «С долгом» по всей CRM.
+      qc.invalidateQueries({ queryKey: ["debt-aggregate"] });
 
       if (overpay > 0) {
         toast.success(
