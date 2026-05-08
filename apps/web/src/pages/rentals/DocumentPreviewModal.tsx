@@ -7,11 +7,13 @@ import {
   Pencil,
   Printer,
   RefreshCw,
+  Save,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
 import { TemplateEditorPage } from "@/pages/documents/editor/TemplateEditorPage";
+import { useSaveRentalDocSnapshot } from "@/lib/api/rentals";
 
 /**
  * Модалка предпросмотра документа внутри CRM.
@@ -31,6 +33,8 @@ export function DocumentPreviewModal({
   docxFilename,
   templateKey,
   templateName,
+  rentalId,
+  documentType,
   onClose,
 }: {
   title: string;
@@ -42,6 +46,12 @@ export function DocumentPreviewModal({
    *  возврата превью перерисовывается со свежим override. */
   templateKey?: string;
   templateName?: string;
+  /** Если оба заданы — в шапке появится кнопка «Сохранить» которая
+   *  замораживает текущий рендер: HTML+Word отправляются в S3, в БД
+   *  создаётся запись rental_document_snapshots. Дальше через ленту
+   *  событий можно открыть именно эту версию. */
+  rentalId?: number;
+  documentType?: string;
   onClose: () => void;
 }) {
   const [editingTemplate, setEditingTemplate] = useState(false);
@@ -50,6 +60,7 @@ export function DocumentPreviewModal({
   const [htmlContent, setHtmlContent] = useState<string | null>(null);
   const [printing, setPrinting] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const saveSnapshot = useSaveRentalDocSnapshot();
   /**
    * Cache-buster: при каждом ре-рендере с новым reloadKey fetch перезапускается
    * (URL уникален), и сервер возвращает свежий HTML с актуальными данными
@@ -121,6 +132,22 @@ export function DocumentPreviewModal({
       "Подсказка для чистой печати",
       "В диалоге печати откройте «Ещё параметры» и снимите «Верхние и нижние колонтитулы» — тогда URL и дата не напечатаются.",
     );
+  };
+
+  const handleSaveSnapshot = async () => {
+    if (!rentalId || !documentType) return;
+    try {
+      const snap = await saveSnapshot.mutateAsync({
+        rentalId,
+        type: documentType,
+      });
+      toast.success(
+        "Документ сохранён",
+        `«${snap.title}» доступен в карточке аренды и в ленте событий.`,
+      );
+    } catch (e) {
+      toast.error("Не удалось сохранить", (e as Error).message ?? "");
+    }
   };
 
   const handleDownloadWord = async () => {
@@ -233,6 +260,22 @@ export function DocumentPreviewModal({
                   )}
                   Скачать Word
                 </button>
+                {rentalId && documentType && (
+                  <button
+                    type="button"
+                    onClick={handleSaveSnapshot}
+                    disabled={saveSnapshot.isPending}
+                    title="Заморозить текущий рендер: сохранить эту версию документа в карточку аренды. Дальше через ленту событий или вкладку «Документы» можно открыть именно её — даже если данные клиента/скутера потом изменятся."
+                    className="inline-flex items-center gap-1.5 rounded-full bg-green-soft px-4 py-2 text-[13px] font-bold text-green-ink transition-colors hover:bg-green-100"
+                  >
+                    {saveSnapshot.isPending ? (
+                      <Loader2 size={14} className="animate-spin" />
+                    ) : (
+                      <Save size={14} />
+                    )}
+                    Сохранить
+                  </button>
+                )}
               </>
             )}
             <button

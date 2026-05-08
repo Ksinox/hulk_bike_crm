@@ -185,3 +185,80 @@ export function useDeleteRental() {
     },
   });
 }
+
+/* ============ Snapshots документов аренды ============ */
+
+export type RentalDocumentSnapshot = {
+  id: number;
+  rentalId: number;
+  docType: string;
+  title: string;
+  htmlFileKey: string;
+  docxFileKey: string | null;
+  size: number;
+  savedByUserLogin: string | null;
+  savedAt: string;
+};
+
+export const rentalDocSnapshotsKeys = {
+  byRental: (rentalId: number) =>
+    ["rental-document-snapshots", rentalId] as const,
+};
+
+export function useApiRentalDocSnapshots(rentalId: number) {
+  return useQuery({
+    queryKey: rentalDocSnapshotsKeys.byRental(rentalId),
+    queryFn: () =>
+      api
+        .get<ListResponse<RentalDocumentSnapshot>>(
+          `/api/rentals/${rentalId}/document-snapshots`,
+        )
+        .then((r) => r.items),
+  });
+}
+
+/**
+ * Сохранить текущий рендер документа как снапшот в S3 + БД.
+ * Возвращает созданную запись.
+ */
+export function useSaveRentalDocSnapshot() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { rentalId: number; type: string }) =>
+      api.post<RentalDocumentSnapshot>(
+        `/api/rentals/${args.rentalId}/document/${args.type}/snapshot`,
+        {},
+      ),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({
+        queryKey: rentalDocSnapshotsKeys.byRental(vars.rentalId),
+      });
+      qc.invalidateQueries({ queryKey: ["activity"] });
+    },
+  });
+}
+
+export function useDeleteRentalDocSnapshot() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { snapshotId: number; rentalId: number }) =>
+      api.delete<void>(`/api/rental-document-snapshots/${args.snapshotId}`),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({
+        queryKey: rentalDocSnapshotsKeys.byRental(vars.rentalId),
+      });
+      qc.invalidateQueries({ queryKey: ["activity"] });
+    },
+  });
+}
+
+/** URL для открытия/скачивания сохранённого снапшота. */
+export function rentalDocSnapshotUrl(
+  snapshotId: number,
+  format: "html" | "docx",
+): string {
+  const base =
+    import.meta.env.VITE_API_URL?.replace(/\/$/, "") ??
+    "http://localhost:4000";
+  return `${base}/api/rental-document-snapshots/${snapshotId}/file?format=${format}`;
+}

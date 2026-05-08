@@ -52,7 +52,12 @@ import {
 } from "./rentalsStore";
 import { useApiClients } from "@/lib/api/clients";
 import { useApiScooters } from "@/lib/api/scooters";
-import { useApiScooterSwaps } from "@/lib/api/rentals";
+import {
+  useApiScooterSwaps,
+  useApiRentalDocSnapshots,
+  useDeleteRentalDocSnapshot,
+  rentalDocSnapshotUrl,
+} from "@/lib/api/rentals";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { fileUrl } from "@/lib/files";
 import { navigate } from "@/app/navigationStore";
@@ -1287,6 +1292,8 @@ function PrintDocumentsView({ rental }: { rental: Rental }) {
         })}
       </div>
 
+      <SavedDocSnapshotsBlock rental={rental} />
+
       <DamageReportCard rental={rental} />
 
       <div className="text-[11px] text-muted-2">
@@ -1305,9 +1312,112 @@ function PrintDocumentsView({ rental }: { rental: Rental }) {
           // и после сохранения перерисовывает превью со свежей версией.
           templateKey={preview}
           templateName={DOC_META[preview].title}
+          // rentalId + documentType разрешают кнопку «Сохранить» — она
+          // замораживает текущий рендер в S3 + БД (rental_document_snapshots),
+          // дальше открывается через ленту событий или вкладку «Документы».
+          rentalId={rental.id}
+          documentType={preview}
           onClose={() => setPreview(null)}
         />
       )}
+    </div>
+  );
+}
+
+/**
+ * Блок «Сохранённые версии документов» — список снапшотов, замороженных
+ * через кнопку «Сохранить» в превью документа. Каждый снапшот фиксирует
+ * состояние аренды (паспорт клиента, цены, скутер) на момент сохранения,
+ * не зависит от последующих правок. Открывается в новой вкладке.
+ */
+function SavedDocSnapshotsBlock({ rental }: { rental: Rental }) {
+  const snapshotsQ = useApiRentalDocSnapshots(rental.id);
+  const deleteSnapshot = useDeleteRentalDocSnapshot();
+  const items = snapshotsQ.data ?? [];
+
+  if (items.length === 0) {
+    return (
+      <div className="rounded-[14px] border border-dashed border-border bg-surface-soft/40 p-3 text-[12px] text-muted-2">
+        <b>Сохранённых версий документов нет.</b> Откройте любой документ
+        и нажмите «Сохранить» — текущий рендер заморозится в карточке
+        аренды и в ленте событий. Дальше сможете открыть именно эту
+        версию даже после правок данных клиента/скутера.
+      </div>
+    );
+  }
+
+  const handleDelete = async (id: number, title: string) => {
+    if (
+      !window.confirm(
+        `Удалить сохранённую версию «${title}»? Это уберёт файлы из хранилища.`,
+      )
+    ) {
+      return;
+    }
+    try {
+      await deleteSnapshot.mutateAsync({ snapshotId: id, rentalId: rental.id });
+      toast.success("Удалено", title);
+    } catch (e) {
+      toast.error("Не удалось удалить", (e as Error).message ?? "");
+    }
+  };
+
+  return (
+    <div className="rounded-[14px] border border-border bg-surface p-3">
+      <div className="mb-2 flex items-center gap-2">
+        <FileText size={14} className="text-blue-700" />
+        <div className="text-[13px] font-semibold text-ink">
+          Сохранённые версии документов ({items.length})
+        </div>
+      </div>
+      <div className="flex flex-col gap-1.5">
+        {items.map((s) => {
+          const savedDate = new Date(s.savedAt);
+          const dateStr = savedDate.toLocaleDateString("ru-RU");
+          const timeStr = savedDate.toLocaleTimeString("ru-RU", {
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+          return (
+            <div
+              key={s.id}
+              className="flex flex-wrap items-center gap-2 rounded-[10px] border border-border bg-surface-soft px-3 py-2"
+            >
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[13px] font-semibold text-ink">
+                  {s.title}
+                </div>
+                <div className="text-[11px] text-muted-2">
+                  Сохранено {dateStr} в {timeStr}
+                  {s.savedByUserLogin ? ` · ${s.savedByUserLogin}` : ""}
+                </div>
+              </div>
+              <a
+                href={rentalDocSnapshotUrl(s.id, "html")}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-[8px] bg-ink px-3 py-1 text-[12px] font-bold text-white hover:bg-blue-600"
+              >
+                <FileText size={12} /> Открыть
+              </a>
+              <a
+                href={rentalDocSnapshotUrl(s.id, "docx")}
+                className="inline-flex items-center gap-1.5 rounded-[8px] bg-white px-3 py-1 text-[12px] font-semibold text-ink-2 hover:bg-blue-50 hover:text-blue-700"
+              >
+                <Download size={12} /> Word
+              </a>
+              <button
+                type="button"
+                onClick={() => handleDelete(s.id, s.title)}
+                className="inline-flex items-center gap-1.5 rounded-[8px] border border-red-100 bg-red-soft px-3 py-1 text-[12px] font-semibold text-red-ink hover:bg-red-100"
+                title="Удалить эту сохранённую версию (файл уйдёт из хранилища)"
+              >
+                Удалить
+              </button>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

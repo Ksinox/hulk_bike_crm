@@ -1780,6 +1780,8 @@ export function ActTransferPreview({
       docxFilename={`Акт замены скутера ${String(rentalId).padStart(4, "0")}.doc`}
       templateKey="act_swap"
       templateName="Акт приёма-передачи и замены скутера"
+      rentalId={rentalId}
+      documentType="act_swap"
       onClose={onClose}
     />
   );

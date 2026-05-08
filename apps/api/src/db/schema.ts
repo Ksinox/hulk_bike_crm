@@ -866,6 +866,49 @@ export const scooterSwaps = pgTable(
   }),
 );
 
+/* ============================================================
+ * rental_document_snapshots — сохранённые версии документов аренды.
+ *
+ * При каждом «Сохранить» в превью оператор замораживает текущий рендер:
+ * договор/акт со всеми подставленными значениями (паспорт клиента, цена,
+ * дата выдачи и т.д. в том виде в каком они были на момент сохранения)
+ * сохраняется в S3 + здесь индексируется. Потом через ленту событий или
+ * отдельную вкладку в карточке аренды можно открыть конкретную версию,
+ * увидеть условия по которым выдавали скутер.
+ *
+ * Это снапшот, не «текущая генерация» — нужно для разборок (суд,
+ * переписка с клиентом «вы говорили X, мы давали Y»). Текущий рендер
+ * на лету продолжает работать через GET /api/rentals/:id/document/:type.
+ * ============================================================ */
+export const rentalDocumentSnapshots = pgTable(
+  "rental_document_snapshots",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    rentalId: bigint("rental_id", { mode: "number" })
+      .notNull()
+      .references(() => rentals.id, { onDelete: "cascade" }),
+    /** Тип документа — contract / act_transfer / act_return / act_swap / contract_full */
+    docType: text("doc_type").notNull(),
+    /** Заголовок для отображения — «Договор аренды от 04.05.2026» */
+    title: text("title").notNull(),
+    /** Ключ HTML-снапшота в S3. */
+    htmlFileKey: text("html_file_key").notNull(),
+    /** Ключ Word-снапшота в S3 (тот же контент в .doc). */
+    docxFileKey: text("docx_file_key"),
+    /** Размер HTML-файла в байтах. */
+    size: integer("size").notNull(),
+    /** Кто сохранил — login. null если автомат/seed. */
+    savedByUserLogin: text("saved_by_user_login"),
+    savedAt: timestamp("saved_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    rentalIdx: index("rental_doc_snapshots_rental_idx").on(t.rentalId),
+    savedAtIdx: index("rental_doc_snapshots_saved_at_idx").on(t.savedAt),
+  }),
+);
+
 export const clientDocumentsRelations = relations(
   clientDocuments,
   ({ one }) => ({

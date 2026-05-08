@@ -593,7 +593,6 @@ ${TOOLBAR}
     № шасси (рама): <b>${orDash(scooter?.frameNumber ?? scooter?.vin, "______________")}</b><br>
     Цвет: <b>${orDash(scooter?.color, "____________")}</b><br>
     ${scooter?.name ? "Внутренний номер: " + scooter.name : ""}<br>
-    Пробег на момент ${kind === "transfer" ? "выдачи" : "возврата"}: <b>${orDash(scooter?.mileage != null ? `${scooter.mileage} км` : null, "______ км")}</b><br>
     Техническое состояние скутера: ${kind === "transfer" ? "зафиксировано посредством фото-видео фиксации и отправлено в общий чат в мессенджере «WhatsApp»" : "_______________________________________________________________"}
   </div>
 
@@ -696,7 +695,6 @@ ${TOOLBAR}
         № шасси (рама): <b>${orDash(prevScooter?.frameNumber ?? prevScooter?.vin, "______________")}</b><br>
         Цвет: <b>${orDash(prevScooter?.color, "____________")}</b><br>
         ${prevScooter?.name ? "Внутренний номер: <b>" + prevScooter.name + "</b><br>" : ""}
-        Пробег на момент возврата: <b>${orDash(prevScooter?.mileage != null ? `${prevScooter.mileage} км` : null, "______ км")}</b>
         <div style="margin-top: 8pt"><b>Причина замены:</b> ${orDash(swapReason ?? null, "________________________________")}</div>
       </td>
       <td style="width: 50%; border: 0; padding: 0 0 0 8pt; vertical-align: top; font-size: 10.5pt">
@@ -707,7 +705,6 @@ ${TOOLBAR}
         № шасси (рама): <b>${orDash(scooter?.frameNumber ?? scooter?.vin, "______________")}</b><br>
         Цвет: <b>${orDash(scooter?.color, "____________")}</b><br>
         ${scooter?.name ? "Внутренний номер: <b>" + scooter.name + "</b><br>" : ""}
-        Пробег на момент выдачи: <b>${orDash(scooter?.mileage != null ? `${scooter.mileage} км` : null, "______ км")}</b>
         <div style="margin-top: 8pt; font-size: 9.5pt">Техническое состояние скутера зафиксировано посредством фото-видео фиксации и отправлено в общий чат в мессенджере «WhatsApp».</div>
       </td>
     </tr>
