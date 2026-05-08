@@ -12,6 +12,24 @@ import {
   setRentalStatus,
 } from "./rentalsStore";
 import { clientStore } from "@/pages/clients/clientStore";
+import { api } from "@/lib/api";
+
+/** v0.4.57: helper для записи компенсаций с залога. Использует
+ *  существующий endpoint /debt/manual (kind=manual_charge). */
+async function postManualCharge(rentalId: number, amount: number, comment: string) {
+  try {
+    await api.post(`/api/rentals/${rentalId}/debt/manual`, { amount, comment });
+  } catch (e) {
+    console.error("postManualCharge", e);
+  }
+}
+
+/** v0.4.57: ISO yyyy-mm-dd → DD.MM.YYYY (формат inspection.dateActual). */
+function isoDateToRu(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m) return iso;
+  return `${m[3]}.${m[2]}.${m[1]}`;
+}
 
 export type ActionKind =
   | "schedule"
@@ -74,9 +92,28 @@ export function RentalActionDialog({
   // Форма для возврата с ущербом / инцидента
   const [damageAmount, setDamageAmount] = useState<string>("3000");
   const [damageNote, setDamageNote] = useState<string>("");
-  const [returnOk, setReturnOk] = useState(true);
-  const [equipmentOk, setEquipmentOk] = useState(true);
-  const [depositBack, setDepositBack] = useState(true);
+  // v0.4.57: чек-лист стартует пустым. Цель чек-листа — заставить
+  // оператора сознательно подтвердить каждый пункт, чтобы не
+  // пропустить проверку. Если ставить true по умолчанию — оператор
+  // просто жмёт «Завершить» не глядя.
+  const [returnOk, setReturnOk] = useState(false);
+  const [equipmentOk, setEquipmentOk] = useState(false);
+  const [depositBack, setDepositBack] = useState(false);
+  // v0.4.57: дата фактического возврата (по умолчанию сегодня).
+  // Оператор может оформить возврат задним числом если клиент
+  // вернул скутер вчера вечером, а оформление утром.
+  const [returnDate, setReturnDate] = useState<string>(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  });
+  // v0.4.57: частичное удержание залога (мелкие компенсации без
+  // оформления полноценного акта ущерба).
+  const [depositWithhold, setDepositWithhold] = useState<string>("0");
+  const [depositWithholdNote, setDepositWithholdNote] = useState<string>("");
+  // v0.4.57: ущерб экипировки (отдельный flow, без открытия
+  // DamageReportDialog). Сумма списывается с залога.
+  const [equipmentDamageAmount, setEquipmentDamageAmount] = useState<string>("0");
+  const [equipmentDamageNote, setEquipmentDamageNote] = useState<string>("");
   // Legacy-флаг для action="complete-damage" — в новом flow «Завершить»
   // ущерб открывается через onOpenDamage callback, без чекбокса.
   const [hasDamage] = useState(false);
@@ -108,11 +145,33 @@ export function RentalActionDialog({
 
   const spec: Spec = (() => {
     if (action === "complete") {
-      // Единое окно завершения — без двухшагового перехода через
-      // returning. Чек-лист с тремя пунктами. Если «Состояние скутера
-      // в порядке» НЕ отмечено — при сабмите вместо завершения
-      // открывается окно «Зафиксировать ущерб» (через onOpenDamage).
-      const damaged = !returnOk;
+      // v0.4.57: переписано окно завершения. Логика:
+      //   • Чек-лист стартует пустым → оператор сознательно подтверждает.
+      //   • Если «Состояние скутера НЕ в порядке» → при сабмите откроется
+      //     DamageReportDialog (полноценный акт с повреждениями).
+      //   • Если «Экипировка НЕ в порядке» → раскрывается inline-форма:
+      //     сумма компенсации экипировки + комментарий. Эта сумма
+      //     удерживается из залога (без отдельного акта ущерба).
+      //   • Залог можно частично удержать (мелкие компенсации) —
+      //     инпут «Удержать из залога ₽».
+      //   • Дата возврата — редактируемая (по умолчанию сегодня),
+      //     ограничена [start_at..today].
+      //   • Финансовая сводка по сделке.
+      const scooterDamaged = !returnOk;
+      const equipmentDamaged = !equipmentOk;
+      const depositTotal = rental.deposit || 2000;
+      const eqDamageNum = Math.max(0, Math.min(depositTotal, Math.floor(Number(equipmentDamageAmount) || 0)));
+      const withholdNum = Math.max(0, Math.min(depositTotal - eqDamageNum, Math.floor(Number(depositWithhold) || 0)));
+      const depositToReturn = Math.max(0, depositTotal - eqDamageNum - withholdNum);
+      // Парс start для min даты возврата
+      const startMatch = /^(\d{2})\.(\d{2})\.(\d{4})/.exec(rental.start);
+      const minReturnDate = startMatch
+        ? `${startMatch[3]}-${startMatch[2]}-${startMatch[1]}`
+        : undefined;
+      const todayIso = (() => {
+        const d = new Date();
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      })();
       return {
         title: "Завершить аренду",
         body: (
@@ -124,7 +183,13 @@ export function RentalActionDialog({
               <div className="space-y-1.5 text-[13px]">
                 <Checkline
                   checked={equipmentOk}
-                  onChange={setEquipmentOk}
+                  onChange={(v) => {
+                    setEquipmentOk(v);
+                    if (v) {
+                      setEquipmentDamageAmount("0");
+                      setEquipmentDamageNote("");
+                    }
+                  }}
                   label="Экипировка возвращена в полном объёме"
                 />
                 <Checkline
@@ -135,12 +200,33 @@ export function RentalActionDialog({
                 <Checkline
                   checked={depositBack}
                   onChange={setDepositBack}
-                  label="Залог возвращён клиенту"
+                  label="Залог проверен и готов к возврату"
                 />
               </div>
             </div>
 
-            {damaged && (
+            {/* Дата возврата */}
+            <div>
+              <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-2">
+                Дата возврата
+              </label>
+              <input
+                type="date"
+                value={returnDate}
+                min={minReturnDate}
+                max={todayIso}
+                onChange={(e) => setReturnDate(e.target.value)}
+                className="mt-1 h-9 w-full rounded-[10px] border border-border bg-surface px-3 text-[13px] tabular-nums outline-none focus:border-blue-600"
+              />
+              <div className="mt-1 text-[11px] text-muted-2">
+                По умолчанию сегодня. Можно поставить задним числом если
+                клиент вернул скутер раньше — дата нужна для корректного
+                расчёта дней просрочки.
+              </div>
+            </div>
+
+            {/* Состояние скутера НЕ ок → открыть DamageReport */}
+            {scooterDamaged && (
               <div className="flex items-start gap-2 rounded-[10px] border border-orange/40 bg-orange-soft/40 p-3 text-[12px] text-orange-ink">
                 <AlertTriangle size={14} className="mt-0.5 shrink-0" />
                 <span>
@@ -152,33 +238,90 @@ export function RentalActionDialog({
               </div>
             )}
 
-            {false && (
+            {/* Экипировка НЕ ок → inline-форма компенсации */}
+            {equipmentDamaged && !scooterDamaged && (
               <div className="space-y-2 rounded-[10px] border border-orange/30 bg-orange-soft/40 p-3">
                 <div className="flex items-center gap-2 text-[12px] font-bold text-orange-ink">
-                  <AlertTriangle size={14} /> Фиксация ущерба
+                  <AlertTriangle size={14} /> Компенсация по экипировке
+                </div>
+                <div className="text-[11px] text-orange-ink/80">
+                  Шлем потеряли, держатель повреждён, и т.п. Сумма ниже
+                  будет удержана из залога — без отдельного акта ущерба.
+                  Если повреждения серьёзные (бак, рама, пластик) —
+                  снимай галку «Состояние скутера в порядке» вместо этого
+                  и оформляй полноценный акт.
                 </div>
                 <div>
                   <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-2">
-                    Сумма ущерба, ₽
+                    Сумма компенсации, ₽
                   </label>
                   <input
                     type="number"
-                    value={damageAmount}
-                    onChange={(e) => setDamageAmount(e.target.value)}
+                    min={0}
+                    max={depositTotal}
+                    value={equipmentDamageAmount}
+                    onChange={(e) => setEquipmentDamageAmount(e.target.value)}
                     className="mt-1 h-9 w-full rounded-[10px] border border-border bg-surface px-3 text-[13px] tabular-nums outline-none focus:border-blue-600"
                   />
                 </div>
                 <div>
                   <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-2">
-                    Описание повреждений
+                    Что именно повреждено / утрачено
                   </label>
                   <textarea
-                    value={damageNote}
-                    onChange={(e) => setDamageNote(e.target.value)}
+                    value={equipmentDamageNote}
+                    onChange={(e) => setEquipmentDamageNote(e.target.value)}
                     rows={2}
-                    placeholder="Например: разбит пластик передней панели, царапина на сиденье"
+                    placeholder="Например: шлем — царапины и треснул визор"
                     className="mt-1 w-full resize-y rounded-[10px] border border-border bg-surface px-3 py-2 text-[13px] outline-none focus:border-blue-600"
                   />
+                </div>
+              </div>
+            )}
+
+            {/* Частичное удержание залога (отдельно от экипировки) */}
+            {!scooterDamaged && (
+              <div className="rounded-[10px] border border-border bg-surface p-3">
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-2 mb-2">
+                  Залог
+                </div>
+                <div className="space-y-2 text-[12px]">
+                  <div className="flex justify-between">
+                    <span>Внесён при выдаче</span>
+                    <span className="tabular-nums font-semibold">{fmt(depositTotal)} ₽</span>
+                  </div>
+                  {eqDamageNum > 0 && (
+                    <div className="flex justify-between text-orange-ink">
+                      <span>− Компенсация экипировки</span>
+                      <span className="tabular-nums">−{fmt(eqDamageNum)} ₽</span>
+                    </div>
+                  )}
+                  <div>
+                    <label className="text-[11px] text-muted-2">
+                      Удержать дополнительно (мелкие компенсации без акта)
+                    </label>
+                    <div className="mt-1 flex gap-2">
+                      <input
+                        type="number"
+                        min={0}
+                        max={depositTotal - eqDamageNum}
+                        value={depositWithhold}
+                        onChange={(e) => setDepositWithhold(e.target.value)}
+                        className="h-8 w-24 rounded-[8px] border border-border bg-surface px-2 text-[12px] tabular-nums outline-none focus:border-blue-600"
+                      />
+                      <input
+                        type="text"
+                        value={depositWithholdNote}
+                        onChange={(e) => setDepositWithholdNote(e.target.value)}
+                        placeholder="Причина (обязательно если > 0)"
+                        className="h-8 flex-1 rounded-[8px] border border-border bg-surface px-2 text-[12px] outline-none focus:border-blue-600"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex justify-between border-t border-border pt-2 text-[13px] font-bold">
+                    <span>К возврату клиенту</span>
+                    <span className="tabular-nums text-blue-600">{fmt(depositToReturn)} ₽</span>
+                  </div>
                 </div>
               </div>
             )}
@@ -219,23 +362,27 @@ export function RentalActionDialog({
       case "revert-overdue":
         revertOverdue(rental.id);
         break;
-      case "complete":
-        // Единое окно завершения — без двухшагового перехода через
-        // returning. Если «Состояние не в порядке» — закрываем этот
-        // диалог и открываем «Зафиксировать ущерб» (parent через
-        // onOpenDamage). Если всё в порядке — обычное завершение.
+      case "complete": {
+        // v0.4.57: учитываем дату возврата, компенсацию экипировки и
+        // частичное удержание залога. Сценарии:
+        //   1) Состояние не в порядке → DamageReportDialog (через
+        //      onOpenDamage). Закрываем чеклист, дальше parent.
+        //   2) Состояние ок, экипировка не в порядке → завершаем
+        //      аренду + создаём manual_charge на сумму компенсации
+        //      экипировки (списывается с залога).
+        //   3) Состояние ок, экипировка ок, есть withhold залога →
+        //      завершаем + manual_charge на withhold.
+        //   4) Всё ок, удержаний нет → обычное завершение.
         if (!returnOk) {
-          // Закрываем диалог чек-листа и просим parent открыть damage.
           if (onOpenDamage) {
             onOpenDamage();
             requestClose();
             return;
           }
-          // Fallback если parent не передал callback — старая логика.
           completeRentalWithDamage(
             rental.id,
             {
-              dateActual: todayStr(),
+              dateActual: returnDate ? isoDateToRu(returnDate) : todayStr(),
               conditionOk: false,
               equipmentOk,
               depositReturned: depositBack,
@@ -244,15 +391,43 @@ export function RentalActionDialog({
             0,
             "",
           );
-        } else {
+          break;
+        }
+        // Преобразуем ISO yyyy-mm-dd → DD.MM.YYYY для inspection.dateActual
+        const dateActual = returnDate ? isoDateToRu(returnDate) : todayStr();
+        const eqDamageAmt = Math.max(0, Math.floor(Number(equipmentDamageAmount) || 0));
+        const withholdAmt = Math.max(0, Math.floor(Number(depositWithhold) || 0));
+        // Компенсации до завершения — иначе аренда уже архивирована и
+        // некоторые роуты могут отказаться писать долги.
+        const charges: Promise<unknown>[] = [];
+        if (!equipmentOk && eqDamageAmt > 0) {
+          charges.push(
+            postManualCharge(
+              rental.id,
+              eqDamageAmt,
+              `Компенсация экипировки при возврате${equipmentDamageNote ? `: ${equipmentDamageNote}` : ""}`,
+            ),
+          );
+        }
+        if (withholdAmt > 0) {
+          charges.push(
+            postManualCharge(
+              rental.id,
+              withholdAmt,
+              `Удержание из залога${depositWithholdNote ? `: ${depositWithholdNote}` : ""}`,
+            ),
+          );
+        }
+        Promise.all(charges).finally(() => {
           completeRentalNoDamage(rental.id, {
-            dateActual: todayStr(),
+            dateActual,
             conditionOk: true,
             equipmentOk,
             depositReturned: depositBack,
           });
-        }
+        });
         break;
+      }
       case "complete-damage":
         // Legacy путь, оставлен для совместимости, но из UI больше не вызывается.
         completeRentalWithDamage(
@@ -379,14 +554,13 @@ export function RentalActionDialog({
           </div>
 
           {spec.body}
-
-          {action === "complete" && (
-            <div className="mt-3 flex flex-col gap-2">
-              <Checkbox checked={returnOk} onChange={setReturnOk} label="Состояние скутера ОК" />
-              <Checkbox checked={equipmentOk} onChange={setEquipmentOk} label="Экипировка в порядке" />
-              <Checkbox checked={depositBack} onChange={setDepositBack} label={`Залог ${fmt(rental.deposit || 2000)} ₽ возвращён клиенту`} />
-            </div>
-          )}
+          {/*
+           * v0.4.57: дубль чек-листа удалён. Чек-лист рендерится только
+           * один раз внутри spec.body для action='complete' (см. начало
+           * файла). До этого был второй блок чекбоксов с другими
+           * лейблами, привязанный к тому же state — оператор видел
+           * «всё уже отмечено» и жал «Завершить» не глядя.
+           */}
 
           {action === "incident" && (
             <div className="mt-3 flex flex-col gap-2">

@@ -1322,120 +1322,110 @@ export async function rentalsRoutes(app: FastifyInstance) {
     },
   );
 
+  /**
+   * v0.4.57: legacy /extend перенаправлен на inplace-логику.
+   *
+   * Раньше /extend создавал child rental с parentRentalId — это плодило
+   * дочерние записи на каждое продление, ломало UX (одну реальную аренду
+   * клиент видел как несколько разных), усложняло KPI и архивацию.
+   *
+   * Теперь endpoint существует ТОЛЬКО ради совместимости со старым
+   * фронтом (рассылка обновления desktop-клиента ещё не дошла до всех).
+   * Внутри он делает то же самое, что /extend-inplace: обновляет ту же
+   * запись rentals (endPlannedAt, days, sum), создаёт rent-payment.
+   * Возвращает обновлённую аренду (тот же id) — старый фронт ждёт
+   * объект rental в ответе, intersection с новой моделью совместима.
+   */
   app.post<{ Params: { id: string } }>(
     "/:id/extend",
     async (req, reply) => {
+      if (!assertFinancialRole(req, reply)) return;
       const id = Number(req.params.id);
-      if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
+      if (!Number.isFinite(id))
+        return reply.code(400).send({ error: "bad id" });
       const schema = z
         .object({
           extraDays: z.number().int().positive(),
           newRate: z.number().int().positive(),
           newTariffPeriod: z.enum(["short", "week", "month"]),
           newRateUnit: z.enum(["day", "week"]).optional(),
-          // v0.4.45: явно управляем созданием paid=true rent payment.
-          // По умолчанию true (старое поведение), фронт ExtendRentalDialog
-          // передаёт false когда после продления откроется PaymentAcceptDialog
-          // — там оператор зафиксирует фактически принятую сумму.
           autoMarkPaid: z.boolean().optional().default(true),
         })
         .strict();
       const parsed = schema.safeParse(req.body);
       if (!parsed.success)
-        return reply.code(400).send({ error: "validation", issues: parsed.error.issues });
+        return reply
+          .code(400)
+          .send({ error: "validation", issues: parsed.error.issues });
       const d = parsed.data;
 
       const result = await db.transaction(async (tx) => {
-        const [old] = await tx.select().from(rentals).where(eq(rentals.id, id));
+        const [old] = await tx
+          .select()
+          .from(rentals)
+          .where(eq(rentals.id, id));
         if (!old) throw new Error("not found");
-        // v0.4.37: продлять можно только живые аренды без проблем.
-        // Раньше extend на 'problem'/'police'/'court' молча проходил —
-        // родитель уезжал в архив со status='completed', а damage_report
-        // повисал на архивной аренде, и удалить её через DELETE уже было
-        // нельзя (archivedBy=null + есть pending damage = блок).
-        const extendable = new Set([
-          "active",
-          "overdue",
-          "returning",
-        ]);
+
+        const extendable = new Set(["active", "overdue", "returning"]);
         if (!extendable.has(old.status)) {
           throw new Error(`extend_blocked_status:${old.status}`);
         }
 
-        await tx
+        const extraSum =
+          d.newRateUnit === "week"
+            ? d.newRate * Math.max(1, Math.round(d.extraDays / 7))
+            : d.newRate * d.extraDays;
+
+        const newEndPlanned = new Date(
+          old.endPlannedAt.getTime() + d.extraDays * 86_400_000,
+        );
+
+        const [updated] = await tx
           .update(rentals)
           .set({
-            status: "completed",
-            endActualAt: old.endPlannedAt,
-            depositReturned: false,
-            // Закрытая «материнская» аренда уезжает в архив. Связь
-            // (parentRentalId у потомка) сохраняется — историю не теряем.
-            archivedAt: sql`now()`,
-            updatedAt: sql`now()`,
-          })
-          .where(eq(rentals.id, id));
-
-        const newStart = old.endPlannedAt;
-        const newEnd = new Date(newStart.getTime() + d.extraDays * 86_400_000);
-
-        const [child] = await tx
-          .insert(rentals)
-          .values({
-            clientId: old.clientId,
-            scooterId: old.scooterId,
-            parentRentalId: old.id,
-            status: "active",
-            sourceChannel: old.sourceChannel,
+            endPlannedAt: newEndPlanned,
+            days: old.days + d.extraDays,
+            sum: old.sum + extraSum,
             tariffPeriod: d.newTariffPeriod,
             rate: d.newRate,
-            rateUnit: d.newRateUnit ?? "day",
-            deposit: old.deposit,
-            depositItem: old.depositItem,
-            startAt: newStart,
-            endPlannedAt: newEnd,
-            days: d.extraDays,
-            // v0.4.25: при rateUnit='week' sum = rate × недель.
-            // extraDays уже задан как недели×7, поэтому делим обратно.
-            sum:
-              d.newRateUnit === "week"
-                ? d.newRate * Math.max(1, Math.round(d.extraDays / 7))
-                : d.newRate * d.extraDays,
-            paymentMethod: old.paymentMethod,
-            equipment: old.equipment,
-            equipmentJson: old.equipmentJson as unknown as object,
-            note: `продление аренды #${String(old.id).padStart(4, "0")}`,
+            rateUnit: d.newRateUnit ?? old.rateUnit,
+            status: old.status === "overdue" ? "active" : old.status,
+            updatedAt: sql`now()`,
           })
+          .where(eq(rentals.id, id))
           .returning();
+        if (!updated) throw new Error("update failed");
 
-        // v0.4.45: всегда создаём rent-платёж, но paid зависит от
-        // autoMarkPaid. true (legacy) — paid=true сразу. false (новый
-        // флоу) — paid=false placeholder, фронт PaymentAcceptDialog
-        // зарегистрирует фактически принятую сумму, помечая платёж paid.
-        if (child && child.sum > 0) {
+        if (extraSum > 0) {
           await tx.insert(payments).values({
-            rentalId: child.id,
+            rentalId: id,
             type: "rent",
-            amount: child.sum,
-            method: child.paymentMethod,
+            amount: extraSum,
+            method: updated.paymentMethod,
             paid: d.autoMarkPaid,
             paidAt: d.autoMarkPaid ? new Date() : null,
             note: d.autoMarkPaid
-              ? "оплата продления (автоматически)"
-              : "продление, ожидает оплаты",
+              ? `продление на ${d.extraDays} дн (оплачено)`
+              : `продление на ${d.extraDays} дн (ожидает оплаты)`,
           });
         }
-        return child;
+        return updated;
       });
 
-      if (result) {
-        const summary = await summaryForRental(result.id);
-        await logActivity(req, {
-          entity: "rental",
-          entityId: result.id,
-          action: "extended",
-          summary: `Продление аренды ${summary} на ${d.extraDays} дн`,
-        });
-      }
+      const summary = await summaryForRental(id);
+      await logActivity(req, {
+        entity: "rental",
+        entityId: id,
+        action: "rental_extended",
+        summary: `Продление аренды ${summary} на ${d.extraDays} дн (${result.rate} ₽/${result.rateUnit === "week" ? "нед" : "сут"})`,
+        meta: {
+          extraDays: d.extraDays,
+          newRate: d.newRate,
+          newRateUnit: d.newRateUnit ?? "day",
+          newEndPlannedAt: result.endPlannedAt,
+          legacyAlias: true,
+        },
+      });
       return reply.code(201).send(result);
     },
   );

@@ -9,7 +9,7 @@ import {
   TARIFF_PERIOD_LABEL,
   type Rental,
 } from "@/lib/mock/rentals";
-import { extendRentalAsync } from "./rentalsStore";
+import { extendInplaceAsync } from "./rentalsStore";
 import { toast } from "@/lib/toast";
 import { PaymentAcceptDialog } from "./PaymentAcceptDialog";
 
@@ -85,7 +85,11 @@ export function ExtendRentalDialog({
     if (saving) return;
     setSaving(true);
     try {
-      const created = await extendRentalAsync(
+      // v0.4.57: используем inplace-продление (без создания child rental).
+      // Та же физическая аренда обновляется: end_planned_at += days, days +=,
+      // sum += rate × days. История продлений видна в activity_log
+      // (action='rental_extended'), не плодит дочерних записей.
+      await extendInplaceAsync(
         rental.id,
         days,
         rate,
@@ -93,18 +97,19 @@ export function ExtendRentalDialog({
         isWeeklyCustom ? "week" : "day",
         false, // autoMarkPaid=false — оплату фиксируем через PaymentAcceptDialog
       );
-      const newRental: Rental = {
+      // id остаётся тем же (inplace), но локально сохраняем обновлённую
+      // версию для PaymentAcceptDialog — там она использует endPlanned
+      // и sum для расчётов. invAll() в extendInplaceAsync уже сделал
+      // refetch, но нам нужна синхронная Rental для следующего шага.
+      const updated: Rental = {
         ...rental,
-        id: created.id,
-        days,
+        days: rental.days + days,
         rate,
-        sum: rate * days,
+        sum: rental.sum + rate * days,
         endPlanned: newEndPlanned,
-        parentRentalId: rental.id,
       } as Rental;
-      onExtended?.(newRental);
-      // НЕ закрываем dialog — поверх откроется PaymentAcceptDialog.
-      setPaymentForRental(newRental);
+      onExtended?.(updated);
+      setPaymentForRental(updated);
     } catch (e) {
       toast.error(
         "Не удалось продлить",
