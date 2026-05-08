@@ -1262,10 +1262,12 @@ export function RentalCard({
           let value = `${totalDays} дн`;
           const hint = `${rootRental.start.slice(0, 5)} — ${rental.endPlanned.slice(0, 5)}`;
           let accent: KpiAccent = "default";
-          // v0.4.54: если фактический долг 0 — показываем «возврат был
-          // DD.MM», без красного «Просрочен», даже когда status='overdue'
-          // и/или endPlanned прошёл. Это согласует KPI с бейджем
-          // в шапке (effectiveStatus='returning').
+          // v0.4.66: всегда показываем «Просрочен N дн» когда endPlanned
+          // прошёл, даже если долг 0 — оператор должен видеть срочность
+          // возврата скутера. Цвет (red/default) теперь зависит от долга:
+          // долг 0 → серый/амбер (без паники), долг > 0 → красный.
+          // Раньше при долге 0 показывало «Возврат был DD.MM» — это
+          // не передавало срочности и сбивало оператора.
           const debtZero = overdueRelatedDebt === 0;
           if (rental.status === "active" && daysLeft !== null) {
             if (daysLeft > 0) {
@@ -1274,29 +1276,18 @@ export function RentalCard({
             } else if (daysLeft === 0) {
               value = `возврат сегодня`;
               accent = "red";
-            } else if (debtZero) {
-              // Просрочен по дате, но долг 0 — амбер «возврат был»
-              label = "Возврат был";
-              value = rental.endPlanned.slice(0, 5);
-              accent = "default";
             } else {
               label = "Просрочен";
               value = `${Math.abs(daysLeft)} дн`;
-              accent = "red";
+              accent = debtZero ? "default" : "red";
             }
           } else if (rental.status === "overdue") {
-            if (debtZero) {
-              label = "Возврат был";
-              value = rental.endPlanned.slice(0, 5);
-              accent = "default";
-            } else {
-              label = "Просрочен";
-              value =
-                daysLeft !== null && daysLeft < 0
-                  ? `${Math.abs(daysLeft)} дн`
-                  : "сегодня";
-              accent = "red";
-            }
+            label = "Просрочен";
+            value =
+              daysLeft !== null && daysLeft < 0
+                ? `${Math.abs(daysLeft)} дн`
+                : "сегодня";
+            accent = debtZero ? "default" : "red";
           }
           return (
             <KpiCard label={label} value={value} hint={hint} accent={accent} />

@@ -22,7 +22,9 @@ import { api } from "@/lib/api";
 import { useActivityTimeline } from "@/lib/api/activity";
 import { useApiScooter } from "@/lib/api/scooters";
 import { useApiPriceList } from "@/lib/api/price-list";
+import { useDebtAggregate } from "@/lib/api/debt";
 import { DocumentPreviewModal } from "./DocumentPreviewModal";
+import { PaymentAcceptDialog } from "./PaymentAcceptDialog";
 
 /** v0.4.57: helper для записи компенсаций с залога. Использует
  *  существующий endpoint /debt/manual (kind=manual_charge). */
@@ -129,6 +131,22 @@ export function RentalActionDialog({
     Record<string, EquipmentDamage>
   >({});
   const [pickerKey, setPickerKey] = useState<CardKey | null>(null);
+  // v0.4.66: повреждения скутера — multi-select (царапина пластика +
+  // сломан фонарь + ...). Каждое — позиция прайса (фильтр по модели
+  // скутера) или custom. Отдельный picker `ScooterDamagePicker` —
+  // в отличие от экипировки где обычно одна позиция.
+  type ScooterDamage = {
+    name: string;
+    amount: number;
+    itemId?: number;
+    isCustom: boolean;
+  };
+  const [scooterDamages, setScooterDamages] = useState<ScooterDamage[]>([]);
+  const [scooterPickerOpen, setScooterPickerOpen] = useState(false);
+  // v0.4.66: финальный диалог «Создать акт ущерба или закрыть по-братски».
+  const [actDialog, setActDialog] = useState<null | "ask">(null);
+  // v0.4.66: открыть PaymentAcceptDialog если есть долг по аренде.
+  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   // Дата фактического возврата.
   const [returnDate, setReturnDate] = useState<string>(() => {
     const d = new Date();
@@ -166,11 +184,28 @@ export function RentalActionDialog({
   const equipmentQ = useApiEquipment();
   const clientsQ = useApiClients();
   const scooter = scooterQ.data ?? null;
-  const scooterModel =
-    scooter?.modelId != null
-      ? (modelsQ.data ?? []).find((m) => m.id === scooter.modelId) ?? null
-      : null;
-  const scooterAvatar = fileUrl(scooterModel?.avatarKey, { variant: "thumb" });
+  // v0.4.66: fallback на rental.model (slug), если у скутера в БД не
+  // привязан modelId. Часть legacy-данных имеет model='jog'/'gear' но
+  // model_id=null — без fallback аватарка модели не подгружается.
+  const scooterModel = (() => {
+    const all = modelsQ.data ?? [];
+    if (scooter?.modelId != null) {
+      const m = all.find((x) => x.id === scooter.modelId);
+      if (m) return m;
+    }
+    // Fallback по rental.model или scooter.model (slug).
+    const slug = (rental.model ?? scooter?.model ?? "").toLowerCase();
+    if (slug) {
+      // jog → ищем модель name содержащая 'jog' (Yamaha Jog)
+      const m = all.find((x) => x.name.toLowerCase().includes(slug));
+      if (m) return m;
+    }
+    return null;
+  })();
+  const scooterAvatar = fileUrl(
+    scooterModel?.avatarThumbKey ?? scooterModel?.avatarKey,
+    { variant: "thumb" },
+  );
   const equipmentItems = equipmentQ.data ?? [];
   const client = (clientsQ.data ?? []).find((c) => c.id === rental.clientId) ?? null;
   // v0.4.64: фото клиента (из client_documents kind='photo') — используется
@@ -179,12 +214,145 @@ export function RentalActionDialog({
   const clientDocsQ = useApiClientDocs(rental.clientId);
   const clientPhotoDoc = (clientDocsQ.data ?? []).find((d) => d.kind === "photo");
   const clientPhoto = clientPhotoDoc ? fileUrl(clientPhotoDoc.fileKey, { variant: "thumb" }) : null;
+  // v0.4.66: текущий долг по аренде (просрочка/штраф/manual). Если >0 —
+  // нельзя завершить аренду без приёма оплаты или списания. Кнопка
+  // меняется на «Принять платёж», которая открывает PaymentAcceptDialog.
+  const debtAggQ = useDebtAggregate();
+  const rentalDebt =
+    (debtAggQ.data ?? []).find((d) => d.rentalId === rental.id)?.totalDebt ?? 0;
+  const hasOpenDebt = rentalDebt > 0;
 
   const requestClose = () => {
     if (closing) return;
     setClosing(true);
     window.setTimeout(onClose, 160);
   };
+
+  // v0.4.66: helpers для финальных flow завершения.
+  const dateActualForApi = () =>
+    returnDate ? isoDateToRu(returnDate) : todayStr();
+  const mileageForApi = () =>
+    mileageAtReturn ? Number(mileageAtReturn) : undefined;
+
+  // По-братски: manual_charge per item, без акта. Аренда → completed.
+  const finalizeBrotherly = async () => {
+    const charges: Promise<unknown>[] = [];
+    // Скутер
+    for (const d of scooterDamages) {
+      charges.push(
+        postManualCharge(
+          rental.id,
+          d.amount,
+          `Скутер при возврате: ${d.name}`,
+        ),
+      );
+    }
+    // Экипировка
+    const eqList =
+      rental.equipmentJson && rental.equipmentJson.length > 0
+        ? rental.equipmentJson
+        : (rental.equipment ?? []).map((n) => ({ name: n }));
+    for (const [key, state] of Object.entries(cardStates)) {
+      if (key === "scooter" || state !== "problem") continue;
+      const damage = equipmentDamages[key];
+      if (!damage || damage.amount <= 0) continue;
+      const idx = Number(key.split("-")[1]);
+      const eqName = (eqList[idx] as { name?: string } | undefined)?.name ?? "Экипировка";
+      charges.push(
+        postManualCharge(
+          rental.id,
+          damage.amount,
+          `Компенсация экипировки «${eqName}»: ${damage.name}`,
+        ),
+      );
+    }
+    await Promise.all(charges).catch(() => {});
+    completeRentalNoDamage(rental.id, {
+      dateActual: dateActualForApi(),
+      conditionOk: true,
+      equipmentOk: true,
+      depositReturned: true,
+      mileage: mileageForApi(),
+    });
+    requestClose();
+  };
+
+  // Создать акт ущерба: POST damage_report со всеми items, аренда →
+  // completed_damage. Дальнейшая оплата/претензия — через существующий flow.
+  const finalizeWithAct = async () => {
+    const items: Array<{
+      priceItemId: number | null;
+      name: string;
+      originalPrice: number;
+      finalPrice: number;
+      quantity: number;
+      comment: string | null;
+    }> = [];
+    for (const d of scooterDamages) {
+      items.push({
+        priceItemId: d.itemId ?? null,
+        name: `Скутер: ${d.name}`,
+        originalPrice: d.amount,
+        finalPrice: d.amount,
+        quantity: 1,
+        comment: null,
+      });
+    }
+    const eqList =
+      rental.equipmentJson && rental.equipmentJson.length > 0
+        ? rental.equipmentJson
+        : (rental.equipment ?? []).map((n) => ({ name: n }));
+    for (const [key, state] of Object.entries(cardStates)) {
+      if (key === "scooter" || state !== "problem") continue;
+      const damage = equipmentDamages[key];
+      if (!damage || damage.amount <= 0) continue;
+      const idx = Number(key.split("-")[1]);
+      const eqName = (eqList[idx] as { name?: string } | undefined)?.name ?? "Экипировка";
+      items.push({
+        priceItemId: damage.itemId ?? null,
+        name: `Экипировка «${eqName}»: ${damage.name}`,
+        originalPrice: damage.amount,
+        finalPrice: damage.amount,
+        quantity: 1,
+        comment: null,
+      });
+    }
+    if (items.length === 0) {
+      // Защита: не должно происходить (диалог только при damage>0)
+      requestClose();
+      return;
+    }
+    const totalAmount = items.reduce((s, it) => s + it.finalPrice, 0);
+    const depositCovered = Math.min(totalAmount, rental.deposit || 2000);
+    try {
+      await api.post("/api/damage-reports", {
+        rentalId: rental.id,
+        items,
+        depositCovered,
+        sendScooterToRepair: true,
+        note: null,
+      });
+    } catch (e) {
+      console.error("create damage report", e);
+    }
+    // Завершаем аренду в режиме with damage. Передаём 0 как damageAmount —
+    // фактический долг уже учтён через damage_report.
+    completeRentalWithDamage(
+      rental.id,
+      {
+        dateActual: dateActualForApi(),
+        conditionOk: false,
+        equipmentOk: true,
+        depositReturned: false,
+        damageNotes: "",
+        mileage: mileageForApi(),
+      },
+      0,
+      "",
+    );
+    requestClose();
+  };
+  void onOpenDamage; // legacy props, больше не используется в complete
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -222,25 +390,25 @@ export function RentalActionDialog({
       }
       const scooterCard: CardKey = "scooter";
       const scooterState = cardStates[scooterCard];
-      const scooterDamaged = scooterState === "problem";
       const equipmentCards = equipmentList.map((_, i) => `equipment-${i}` as CardKey);
       const allCards: CardKey[] = [scooterCard, ...equipmentCards];
       const allDecided = allCards.every((k) => cardStates[k] != null);
-      // Сумма удержаний по проблемной экипировке.
       const equipmentDamageTotal = equipmentCards.reduce((sum, key) => {
         if (cardStates[key] !== "problem") return sum;
         return sum + (equipmentDamages[key]?.amount ?? 0);
       }, 0);
-      const depositTotal = rental.deposit || 2000;
-      const cappedEquipDamage = Math.max(0, Math.min(depositTotal, equipmentDamageTotal));
-      const withholdNum = Math.max(
+      const scooterDamageTotal = scooterDamages.reduce(
+        (s, d) => s + d.amount,
         0,
-        Math.min(
-          Math.max(0, depositTotal - cappedEquipDamage),
-          Math.floor(Number(depositWithhold) || 0),
-        ),
       );
-      const depositToReturn = Math.max(0, depositTotal - cappedEquipDamage - withholdNum);
+      const depositTotal = rental.deposit || 2000;
+      const totalDamage = scooterDamageTotal + equipmentDamageTotal;
+      const cappedDamage = Math.max(0, Math.min(depositTotal, totalDamage));
+      void depositWithhold; void depositWithholdNote;
+      const depositToReturn = Math.max(0, depositTotal - cappedDamage);
+      // Превышение залога — то что клиент должен будет доплатить.
+      const damageOverDeposit = Math.max(0, totalDamage - depositTotal);
+      void damageOverDeposit;
       // Парс start для min даты возврата.
       const startMatch = /^(\d{2})\.(\d{2})\.(\d{4})/.exec(rental.start);
       const minReturnDate = startMatch
@@ -273,12 +441,22 @@ export function RentalActionDialog({
                 fallbackIcon="scooter"
                 state={scooterState}
                 size="large"
-                onSetOk={() =>
-                  setCardStates((s) => ({ ...s, [scooterCard]: "ok" }))
+                damageInfo={
+                  scooterState === "problem" && scooterDamages.length > 0
+                    ? scooterDamages.length === 1
+                      ? `${scooterDamages[0]!.name} — ${fmt(scooterDamages[0]!.amount)} ₽`
+                      : `${scooterDamages.length} позиций — ${fmt(scooterDamages.reduce((a, b) => a + b.amount, 0))} ₽`
+                    : undefined
                 }
+                onSetOk={() => {
+                  setCardStates((s) => ({ ...s, [scooterCard]: "ok" }));
+                  setScooterDamages([]);
+                }}
                 onSetProblem={() => {
                   setCardStates((s) => ({ ...s, [scooterCard]: "problem" }));
+                  setScooterPickerOpen(true);
                 }}
+                onEditProblem={() => setScooterPickerOpen(true)}
               />
               {/* Экипировка — компактная сетка 2 колонки */}
               {equipmentList.length > 0 && (
@@ -393,63 +571,52 @@ export function RentalActionDialog({
               </div>
             )}
 
-            {/* Плашка damage flow для скутера */}
-            {scooterDamaged && (
-              <div className="flex items-start gap-2 rounded-[10px] border border-orange/40 bg-orange-soft/40 p-3 text-[12px] text-orange-ink">
-                <AlertTriangle size={14} className="mt-0.5 shrink-0" />
-                <span>
-                  По скутеру отмечена проблема — после нажатия откроется
-                  <b> «Зафиксировать ущерб»</b>: выберешь повреждения из
-                  прейскуранта, рассчитаешь сумму и зачёт залога.
-                </span>
+            {/* Финансовая сводка по залогу */}
+            <div className="rounded-xl border border-border bg-surface-soft/60 p-3.5">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-2 mb-2.5">
+                Залог
               </div>
-            )}
-
-            {/* Финансовая сводка по залогу — только если скутер ок */}
-            {!scooterDamaged && (
-              <div className="rounded-xl border border-border bg-surface-soft/60 p-3.5">
-                <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-2 mb-2.5">
-                  Залог
+              <div className="space-y-2 text-[13px]">
+                <div className="flex justify-between">
+                  <span className="text-ink-2">Внесён при выдаче</span>
+                  <span className="tabular-nums font-semibold text-ink">
+                    {fmt(depositTotal)} ₽
+                  </span>
                 </div>
-                <div className="space-y-2 text-[13px]">
-                  <div className="flex justify-between">
-                    <span className="text-ink-2">Внесён при выдаче</span>
-                    <span className="tabular-nums font-semibold text-ink">
-                      {fmt(depositTotal)} ₽
-                    </span>
+                {scooterDamages.map((d, i) => (
+                  <div key={`s-${i}`} className="flex justify-between text-orange-ink">
+                    <span className="truncate">− Скутер: {d.name}</span>
+                    <span className="tabular-nums">−{fmt(d.amount)} ₽</span>
                   </div>
-                  {equipmentCards.map((key) => {
-                    if (cardStates[key] !== "problem") return null;
-                    const d = equipmentDamages[key];
-                    if (!d) return null;
-                    const eqName =
-                      equipmentList[Number(key.split("-")[1])]?.name ?? "Экипировка";
-                    return (
-                      <div key={key} className="flex justify-between text-orange-ink">
-                        <span className="truncate">
-                          − {eqName}: {d.name}
-                        </span>
-                        <span className="tabular-nums">−{fmt(d.amount)} ₽</span>
-                      </div>
-                    );
-                  })}
-                  <div className="border-t border-border/60 pt-2.5 mt-1 flex items-center justify-between text-[14px] font-bold">
-                    <span className="text-ink">К возврату клиенту</span>
-                    <span className="tabular-nums text-blue-600">
-                      {fmt(depositToReturn)} ₽
-                    </span>
-                  </div>
+                ))}
+                {equipmentCards.map((key) => {
+                  if (cardStates[key] !== "problem") return null;
+                  const d = equipmentDamages[key];
+                  if (!d) return null;
+                  const eqName =
+                    equipmentList[Number(key.split("-")[1])]?.name ?? "Экипировка";
+                  return (
+                    <div key={key} className="flex justify-between text-orange-ink">
+                      <span className="truncate">
+                        − {eqName}: {d.name}
+                      </span>
+                      <span className="tabular-nums">−{fmt(d.amount)} ₽</span>
+                    </div>
+                  );
+                })}
+                <div className="border-t border-border/60 pt-2.5 mt-1 flex items-center justify-between text-[14px] font-bold">
+                  <span className="text-ink">К возврату клиенту</span>
+                  <span className="tabular-nums text-blue-600">
+                    {fmt(depositToReturn)} ₽
+                  </span>
                 </div>
               </div>
-            )}
+            </div>
 
             {/* Picker позиций экипировки из прайса */}
             {pickerKey && pickerKey !== "scooter" && (
               <EquipmentDamagePicker
                 onClose={() => {
-                  // Если оператор закрыл picker не выбрав — отменяем
-                  // problem-state на этой карточке, чтоб не остаться без
-                  // суммы и блокировать кнопку.
                   setPickerKey(null);
                   if (pickerKey && !equipmentDamages[pickerKey]) {
                     setCardStates((s) => {
@@ -468,22 +635,56 @@ export function RentalActionDialog({
                 }}
               />
             )}
+
+            {/* Picker повреждений скутера (multi-select из прайса) */}
+            {scooterPickerOpen && (
+              <ScooterDamagePicker
+                scooterModelId={scooter?.modelId ?? null}
+                modelName={scooterModel?.name ?? null}
+                initial={scooterDamages}
+                onClose={() => {
+                  setScooterPickerOpen(false);
+                  // Если ничего не выбрано — отменяем 'problem' на скутере
+                  if (scooterDamages.length === 0) {
+                    setCardStates((s) => {
+                      const next = { ...s };
+                      delete next[scooterCard];
+                      return next;
+                    });
+                  }
+                }}
+                onApply={(damages) => {
+                  setScooterDamages(damages);
+                  setScooterPickerOpen(false);
+                  if (damages.length === 0) {
+                    setCardStates((s) => {
+                      const next = { ...s };
+                      delete next[scooterCard];
+                      return next;
+                    });
+                  }
+                }}
+              />
+            )}
           </div>
         ),
-        cta: scooterDamaged ? "Перейти к фиксации ущерба" : "Завершить аренду",
-        ctaTone: scooterDamaged ? "warn" : "primary",
-        // Блокировка кнопки:
-        //  • Все карточки должны быть в одном из состояний (ok/problem).
-        //  • Проблемы экипировки должны иметь сумму и название.
-        //  • При withhold > 0 — обязательная причина.
-        //  • На damage-flow скутера → перенаправляем после подтверждения,
-        //    кнопка активна как только скутер выбран.
+        cta: hasOpenDebt
+          ? `Принять платёж · ${rentalDebt.toLocaleString("ru-RU")} ₽`
+          : totalDamage > 0
+            ? "Завершить · оформить ущерб"
+            : "Завершить аренду",
+        ctaTone: hasOpenDebt ? "warn" : totalDamage > 0 ? "warn" : "primary",
+        // Блокировка:
+        //  • Если есть долг — кнопка ведёт в PaymentAcceptDialog (не блокируется).
+        //  • Все карточки должны быть в одном из состояний.
+        //  • Проблемы экипировки — заполнены (имя+сумма).
+        //  • Если скутер problem — должна быть хоть одна выбранная позиция.
         blocked: (() => {
+          if (hasOpenDebt) return false; // кнопка активна — открываем PaymentAcceptDialog
           if (!allDecided) return true;
-          if (scooterDamaged) return false;
+          if (cardStates[scooterCard] === "problem" && scooterDamages.length === 0)
+            return true;
           if (!allEquipmentProblemsFilled) return true;
-          const wh = Math.floor(Number(depositWithhold) || 0);
-          if (wh > 0 && !depositWithholdNote.trim()) return true;
           return false;
         })(),
       };
@@ -514,82 +715,41 @@ export function RentalActionDialog({
         revertOverdue(rental.id);
         break;
       case "complete": {
-        // v0.4.62: карточная модель. Логика:
-        //   • Скутер problem → onOpenDamage (DamageReportDialog).
-        //   • На каждую проблемную экипировку → manual_charge с суммой
-        //     и названием выбранной позиции.
-        //   • Дополнительное удержание → manual_charge.
-        //   • equipmentOk = все equipment cards в state='ok'.
-        //   • depositReturned = true (теперь это не вопрос —
-        //     рассчитывается из удержаний).
-        const scooterDamaged = cardStates["scooter"] === "problem";
-        if (scooterDamaged) {
-          if (onOpenDamage) {
-            onOpenDamage();
-            requestClose();
-            return;
-          }
-          completeRentalWithDamage(
-            rental.id,
-            {
-              dateActual: returnDate ? isoDateToRu(returnDate) : todayStr(),
-              conditionOk: false,
-              equipmentOk: false,
-              depositReturned: false,
-              damageNotes: "",
-              mileage: mileageAtReturn ? Number(mileageAtReturn) : undefined,
-            },
-            0,
-            "",
-          );
-          break;
+        // v0.4.66: если есть долг — открываем PaymentAcceptDialog
+        // (нельзя завершить аренду с висящим долгом). После принятия
+        // оплаты/списания debt-aggregate обновится → кнопка станет
+        // обычной «Завершить».
+        if (hasOpenDebt) {
+          setPaymentDialogOpen(true);
+          return;
         }
-        const dateActual = returnDate ? isoDateToRu(returnDate) : todayStr();
-        const equipmentOkAll = Object.entries(cardStates).every(
-          ([k, v]) => k === "scooter" || v === "ok",
+        // v0.4.66: единый flow приёма позиций.
+        //   • Если нет повреждений нигде → сразу завершаем без акта.
+        //   • Если есть хоть одно (скутер ИЛИ экипировка) → открываем
+        //     финальный диалог: «Создать акт ущерба или закрыть по-братски».
+        //     - Создать акт: один damage_report со всеми позициями
+        //       (скутер + экипировка). Аренда → completed_damage.
+        //     - По-братски: manual_charge per item, без акта. Аренда →
+        //       completed.
+        const anyScooterDamage = scooterDamages.length > 0;
+        const anyEquipDamage = Object.entries(cardStates).some(
+          ([k, v]) => k !== "scooter" && v === "problem",
         );
-        const charges: Promise<unknown>[] = [];
-        // Списываем по каждой проблемной экипировке отдельной записью —
-        // в истории долга будет видно ЗА ЧТО именно удерживали.
-        for (const [key, state] of Object.entries(cardStates)) {
-          if (key === "scooter" || state !== "problem") continue;
-          const damage = equipmentDamages[key];
-          if (!damage || damage.amount <= 0) continue;
-          // Найдём имя позиции экипировки по индексу
-          const idx = Number(key.split("-")[1]);
-          const eqList =
-            (rental.equipmentJson && rental.equipmentJson.length > 0
-              ? rental.equipmentJson
-              : (rental.equipment ?? []).map((n) => ({ name: n }))) ?? [];
-          const eqName = (eqList[idx] as { name?: string } | undefined)?.name ?? "Экипировка";
-          charges.push(
-            postManualCharge(
-              rental.id,
-              damage.amount,
-              `Компенсация экипировки «${eqName}»: ${damage.name}`,
-            ),
-          );
-        }
-        const withholdAmt = Math.max(0, Math.floor(Number(depositWithhold) || 0));
-        if (withholdAmt > 0) {
-          charges.push(
-            postManualCharge(
-              rental.id,
-              withholdAmt,
-              `Удержание из залога${depositWithholdNote ? `: ${depositWithholdNote}` : ""}`,
-            ),
-          );
-        }
-        Promise.all(charges).finally(() => {
+        if (!anyScooterDamage && !anyEquipDamage) {
+          // Чисто закрытие без ущерба
           completeRentalNoDamage(rental.id, {
-            dateActual,
+            dateActual: returnDate ? isoDateToRu(returnDate) : todayStr(),
             conditionOk: true,
-            equipmentOk: equipmentOkAll,
+            equipmentOk: true,
             depositReturned: true,
             mileage: mileageAtReturn ? Number(mileageAtReturn) : undefined,
           });
-        });
-        break;
+          break;
+        }
+        // Есть хоть одно повреждение → показываем финальный диалог.
+        // Само закрытие/создание акта произойдёт после выбора оператора.
+        setActDialog("ask");
+        return; // Не закрываем модалку!
       }
       case "complete-damage":
         // Legacy путь, оставлен для совместимости, но из UI больше не вызывается.
@@ -970,6 +1130,45 @@ export function RentalActionDialog({
           </button>
         </div>
       </div>
+      {/* v0.4.66: PaymentAcceptDialog поверх если есть долг */}
+      {paymentDialogOpen && (
+        <PaymentAcceptDialog
+          rental={rental}
+          onClose={() => {
+            setPaymentDialogOpen(false);
+            // После закрытия debt-aggregate сам обновится через invAll
+            // в payment-операциях; кнопка модалки автоматически перейдёт
+            // в режим «Завершить аренду».
+          }}
+        />
+      )}
+      {/* v0.4.66: финальный диалог «акт или по-братски» — поверх основной модалки */}
+      {actDialog === "ask" && action === "complete" && (
+        <FinalActDialog
+          scooterDamages={scooterDamages}
+          equipmentDamages={Object.entries(equipmentDamages).map(
+            ([key, d]) => {
+              const idx = Number(key.split("-")[1]);
+              const eqList =
+                rental.equipmentJson && rental.equipmentJson.length > 0
+                  ? rental.equipmentJson
+                  : (rental.equipment ?? []).map((n) => ({ name: n }));
+              const eqName = (eqList[idx] as { name?: string } | undefined)?.name ?? "Экипировка";
+              return { eqName, damageName: d.name, amount: d.amount };
+            },
+          )}
+          deposit={rental.deposit || 2000}
+          onCancel={() => setActDialog(null)}
+          onBrotherly={async () => {
+            setActDialog(null);
+            await finalizeBrotherly();
+          }}
+          onCreateAct={async () => {
+            setActDialog(null);
+            await finalizeWithAct();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -1414,6 +1613,340 @@ function ReturnItemCard({
           </span>
         </button>
       )}
+    </div>
+  );
+}
+
+/**
+ * v0.4.66: финальный диалог при наличии ущерба — спрашивает оператора:
+ * фиксируем актом или закрываем «по-братски» (manual_charge без акта).
+ */
+function FinalActDialog({
+  scooterDamages,
+  equipmentDamages,
+  deposit,
+  onCancel,
+  onBrotherly,
+  onCreateAct,
+}: {
+  scooterDamages: { name: string; amount: number }[];
+  equipmentDamages: { eqName: string; damageName: string; amount: number }[];
+  deposit: number;
+  onCancel: () => void;
+  onBrotherly: () => void | Promise<void>;
+  onCreateAct: () => void | Promise<void>;
+}) {
+  const total =
+    scooterDamages.reduce((s, d) => s + d.amount, 0) +
+    equipmentDamages.reduce((s, d) => s + d.amount, 0);
+  const overDeposit = Math.max(0, total - deposit);
+  return (
+    <div
+      className="fixed inset-0 z-[140] flex items-center justify-center bg-ink/55 p-6 backdrop-blur-sm animate-backdrop-in"
+      onClick={onCancel}
+    >
+      <div
+        className="w-full max-w-[460px] rounded-2xl bg-surface shadow-card-lg animate-modal-in"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="rounded-t-2xl border-b border-border bg-surface-soft px-5 py-3">
+          <div className="flex items-center gap-2 text-[15px] font-semibold text-ink">
+            <AlertTriangle size={16} className="text-orange-500" />
+            Зафиксировать акт ущерба?
+          </div>
+          <div className="mt-0.5 text-[12px] text-muted-2">
+            Если повреждение мелкое и стороны договорились на месте — можно
+            закрыть без акта (по-братски).
+          </div>
+        </div>
+        <div className="max-h-[40vh] overflow-y-auto px-5 py-4">
+          <div className="space-y-1 text-[13px]">
+            {scooterDamages.map((d, i) => (
+              <div key={`s-${i}`} className="flex justify-between">
+                <span className="truncate">Скутер: {d.name}</span>
+                <span className="tabular-nums font-semibold">
+                  {d.amount.toLocaleString("ru-RU")} ₽
+                </span>
+              </div>
+            ))}
+            {equipmentDamages.map((d, i) => (
+              <div key={`e-${i}`} className="flex justify-between">
+                <span className="truncate">
+                  {d.eqName}: {d.damageName}
+                </span>
+                <span className="tabular-nums font-semibold">
+                  {d.amount.toLocaleString("ru-RU")} ₽
+                </span>
+              </div>
+            ))}
+            <div className="mt-2 flex justify-between border-t border-border pt-2 text-[14px] font-bold">
+              <span>Итого ущерб</span>
+              <span className="tabular-nums text-orange-ink">
+                {total.toLocaleString("ru-RU")} ₽
+              </span>
+            </div>
+            <div className="flex justify-between text-[12px] text-muted-2">
+              <span>Зачёт залога</span>
+              <span className="tabular-nums">
+                −{Math.min(total, deposit).toLocaleString("ru-RU")} ₽
+              </span>
+            </div>
+            {overDeposit > 0 && (
+              <div className="flex justify-between text-[13px] font-bold text-red">
+                <span>К доплате клиентом</span>
+                <span className="tabular-nums">
+                  {overDeposit.toLocaleString("ru-RU")} ₽
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="flex flex-col gap-2 rounded-b-2xl border-t border-border bg-surface-soft px-5 py-3">
+          <button
+            type="button"
+            onClick={onCreateAct}
+            className="w-full rounded-full bg-orange-500 px-4 py-2 text-[13px] font-semibold text-white hover:bg-orange-ink"
+          >
+            Создать акт ущерба
+          </button>
+          <button
+            type="button"
+            onClick={onBrotherly}
+            className="w-full rounded-full border border-border bg-surface px-4 py-2 text-[13px] font-semibold text-ink-2 hover:bg-blue-soft"
+          >
+            По-братски (без акта)
+          </button>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="w-full rounded-full px-4 py-1.5 text-[12px] text-muted hover:text-ink"
+          >
+            Отмена · вернуться к чек-листу
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * v0.4.66: picker повреждений скутера. Multi-select из прайса (группы
+ * текущей модели + общие «Повреждения»/«Штрафы») + опция «свой вариант».
+ *
+ * Отличается от EquipmentDamagePicker:
+ *  - множественный выбор (царапина пластика + сломан фонарь);
+ *  - фильтр по модели скутера (как в DamageReportDialog);
+ *  - группировка с раскрытием.
+ */
+function ScooterDamagePicker({
+  scooterModelId,
+  modelName,
+  initial,
+  onApply,
+  onClose,
+}: {
+  scooterModelId: number | null;
+  modelName: string | null;
+  initial: { name: string; amount: number; itemId?: number; isCustom: boolean }[];
+  onApply: (damages: { name: string; amount: number; itemId?: number; isCustom: boolean }[]) => void;
+  onClose: () => void;
+}) {
+  const groupsQ = useApiPriceList();
+  const groups = groupsQ.data ?? [];
+  // Группы прайса: модельные текущей модели + общие (где scooterModelId=null)
+  // НЕ включаем «Экипировка» — для неё свой picker.
+  const ownGroups = groups.filter(
+    (g) => g.scooterModelId != null && g.scooterModelId === scooterModelId,
+  );
+  const generalGroups = groups.filter(
+    (g) =>
+      g.scooterModelId == null && !g.name.toLowerCase().includes("экипировк"),
+  );
+  const otherModelGroups = groups.filter(
+    (g) => g.scooterModelId != null && g.scooterModelId !== scooterModelId,
+  );
+  const visibleGroups = [...ownGroups, ...generalGroups, ...otherModelGroups];
+
+  const [selected, setSelected] = useState(initial);
+  const [customName, setCustomName] = useState("");
+  const [customAmount, setCustomAmount] = useState("");
+  const total = selected.reduce((s, d) => s + d.amount, 0);
+
+  const isPicked = (itemId: number) =>
+    selected.some((s) => s.itemId === itemId);
+  const togglePrice = (it: { id: number; name: string; priceA: number | null }) => {
+    if (isPicked(it.id)) {
+      setSelected((arr) => arr.filter((d) => d.itemId !== it.id));
+    } else {
+      setSelected((arr) => [
+        ...arr,
+        { itemId: it.id, name: it.name, amount: it.priceA ?? 0, isCustom: false },
+      ]);
+    }
+  };
+  const addCustom = () => {
+    const amt = Math.floor(Number(customAmount));
+    if (!customName.trim() || !Number.isFinite(amt) || amt <= 0) return;
+    setSelected((arr) => [
+      ...arr,
+      { name: customName.trim(), amount: amt, isCustom: true },
+    ]);
+    setCustomName("");
+    setCustomAmount("");
+  };
+  const removeCustom = (idx: number) => {
+    setSelected((arr) => arr.filter((_, i) => i !== idx));
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[140] flex items-center justify-center bg-ink/55 p-6 backdrop-blur-sm animate-backdrop-in"
+      onClick={onClose}
+    >
+      <div
+        className="flex w-full max-w-[560px] flex-col rounded-2xl bg-surface shadow-card-lg animate-modal-in"
+        onClick={(e) => e.stopPropagation()}
+        style={{ maxHeight: "85vh" }}
+      >
+        <div className="flex items-center gap-3 rounded-t-2xl border-b border-border bg-surface-soft px-5 py-3">
+          <div className="min-w-0 flex-1">
+            <div className="text-[15px] font-semibold text-ink">
+              Повреждения скутера
+            </div>
+            {modelName && (
+              <div className="text-[11px] text-muted-2">
+                Прайс по модели · {modelName}
+              </div>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-8 w-8 items-center justify-center rounded-full text-muted hover:bg-border hover:text-ink"
+          >
+            <X size={16} />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+          {visibleGroups.length === 0 && (
+            <div className="text-[12px] text-muted-2">
+              Прайс пуст. Используй «свой вариант» ниже.
+            </div>
+          )}
+          {visibleGroups.map((g) => (
+            <div key={g.id}>
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-2 mb-1.5">
+                {g.name}
+                {g.scooterModelId == null && (
+                  <span className="ml-2 normal-case text-muted-2/70">
+                    общие
+                  </span>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-1.5">
+                {g.items.map((it) => {
+                  const picked = isPicked(it.id);
+                  return (
+                    <button
+                      key={it.id}
+                      type="button"
+                      onClick={() => togglePrice(it)}
+                      className={cn(
+                        "flex items-center justify-between rounded-lg border px-3 py-2 text-[12.5px] transition-all",
+                        picked
+                          ? "border-orange-500 bg-orange-soft/40 text-orange-ink shadow-sm"
+                          : "border-border bg-surface text-ink-2 hover:border-orange-300 hover:bg-orange-soft/20",
+                      )}
+                    >
+                      <span className="truncate text-left">{it.name}</span>
+                      <span className="ml-2 shrink-0 tabular-nums font-semibold">
+                        {(it.priceA ?? 0).toLocaleString("ru-RU")} ₽
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+          {/* Custom */}
+          <div className="border-t border-border pt-3">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-2 mb-1.5">
+              Свой вариант
+            </div>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={customName}
+                onChange={(e) => setCustomName(e.target.value)}
+                placeholder="Описание (например: разбит фонарь)"
+                className="h-9 flex-1 rounded-lg border border-border bg-surface px-3 text-[12.5px] outline-none focus:border-blue-600"
+              />
+              <input
+                type="number"
+                value={customAmount}
+                onChange={(e) => setCustomAmount(e.target.value)}
+                placeholder="₽"
+                className="h-9 w-24 rounded-lg border border-border bg-surface px-3 text-[12.5px] tabular-nums outline-none focus:border-blue-600"
+              />
+              <button
+                type="button"
+                onClick={addCustom}
+                disabled={
+                  !customName.trim() || !(Number(customAmount) > 0)
+                }
+                className="h-9 rounded-lg bg-blue-600 px-3 text-[12.5px] font-semibold text-white disabled:opacity-40"
+              >
+                Добавить
+              </button>
+            </div>
+            {selected.filter((s) => s.isCustom).length > 0 && (
+              <div className="mt-2 space-y-1">
+                {selected
+                  .map((s, i) => ({ s, i }))
+                  .filter((x) => x.s.isCustom)
+                  .map(({ s, i }) => (
+                    <div
+                      key={i}
+                      className="flex items-center justify-between rounded-lg bg-orange-soft/40 px-3 py-1.5 text-[12px]"
+                    >
+                      <span className="truncate text-orange-ink">
+                        {s.name}
+                      </span>
+                      <span className="ml-2 flex shrink-0 items-center gap-2">
+                        <span className="tabular-nums font-semibold text-orange-ink">
+                          {s.amount.toLocaleString("ru-RU")} ₽
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => removeCustom(i)}
+                          className="text-orange-ink/70 hover:text-orange-ink"
+                        >
+                          <X size={14} />
+                        </button>
+                      </span>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center justify-between gap-3 rounded-b-2xl border-t border-border bg-surface-soft px-5 py-3">
+          <div className="text-[12px] text-muted-2">
+            Выбрано: <b className="text-ink">{selected.length}</b> · итого{" "}
+            <b className="text-ink tabular-nums">
+              {total.toLocaleString("ru-RU")} ₽
+            </b>
+          </div>
+          <button
+            type="button"
+            onClick={() => onApply(selected)}
+            disabled={selected.length === 0}
+            className="rounded-full bg-blue-600 px-5 py-1.5 text-[12.5px] font-semibold text-white hover:bg-blue-700 disabled:opacity-40"
+          >
+            Применить
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
