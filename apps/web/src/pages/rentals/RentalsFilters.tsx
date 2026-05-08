@@ -3,6 +3,9 @@ import { cn } from "@/lib/utils";
 import { listRecentBillingPeriods } from "@/lib/billingPeriod";
 
 export type StatusFilter =
+  // v0.4.47: 'all' оставлен в типе для обратной совместимости со
+  // старыми ссылками/URL — на UI больше не показывается. Логически
+  // идентичен 'active' в новой схеме.
   | "all"
   | "active"
   | "overdue"
@@ -23,8 +26,10 @@ export type FiltersState = {
   periodStartIso?: string | null;
 };
 
+// v0.4.47: убран таб «Все» — он дублировал «Активные». «Активные»
+// теперь означают ВСЕ живые аренды (включая просрочки/возвраты).
+// Если оператор хотел «всё подряд» — это и есть активные.
 const STATUS_TABS: { id: StatusFilter; label: string }[] = [
-  { id: "all", label: "Все" },
   { id: "active", label: "Активные" },
   { id: "overdue", label: "Просрочка" },
   { id: "return_today", label: "Возврат сегодня" },

@@ -281,11 +281,16 @@ export function useDashboardMetrics(): DashboardMetrics {
     });
 
     // ===== Активные аренды / загрузка парка
-    // Считаем активной только аренду со скутером — иначе «призрачные»
-    // аренды без scooterId раздувают счётчик и расходятся с парком.
+    // v0.4.47: «активная» = все живые статусы со скутером. Просрочка
+    // и возврат-сегодня — это всё ещё аренды у клиента, скутер в его
+    // руках, парк занят. Считать их в «активных» для нагрузки парка
+    // правильно (раньше returning исключался — расходилось с фильтром
+    // «Активные» в /rentals).
     const activeRentalsCount = rentals.filter(
       (r) =>
-        (r.status === "active" || r.status === "overdue") &&
+        (r.status === "active" ||
+          r.status === "overdue" ||
+          r.status === "returning") &&
         r.scooterId != null,
     ).length;
 

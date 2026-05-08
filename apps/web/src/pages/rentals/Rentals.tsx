@@ -40,17 +40,22 @@ function matchStatus(
   unreachable: Set<number>,
   today: string,
 ): boolean {
-  // На вкладке «Все» показываем только живые аренды. Завершённые и
-  // отменённые — это история, ей место в архиве. Завершённая аренда
-  // авто-уезжает в архив (см. /complete в API), но если фронт вдруг
-  // получит её до архивации — всё равно скрываем.
-  // completed_damage НЕ считается finished — это «проблемная» активная
-  // аренда у которой висит долг по акту. Она остаётся в активном списке
-  // пока долг не погашен.
+  // v0.4.47: фильтр «Активные» теперь означает ВСЕ живые аренды —
+  // включая просроченные (просрочка это второй статус-маркер, не
+  // основной). Раньше "active" показывал только status='active', что
+  // путало: оператор фильтровал «активные», не видел тех у кого ещё
+  // и просрочка, и думал что аренд меньше чем по факту. Также убран
+  // отдельный фильтр «Все» — он теперь дубль «Активных».
   const isFinished =
     r.status === "completed" || r.status === "cancelled";
-  if (f === "all") return !isFinished;
-  if (f === "active") return r.status === "active";
+  // 'all' оставлен для обратной совместимости (если кто-то по URL
+  // приехал) — работает идентично 'active'.
+  if (f === "all" || f === "active") {
+    // Все живые: active + overdue + returning + new_request + meeting +
+    // problem + completed_damage + police + court. Не показываем только
+    // completed/cancelled (они в архиве).
+    return !isFinished;
+  }
   if (f === "overdue") {
     // v0.3.8: фильтр «Просрочка» включает и status='overdue', и
     // status='active' с прошедшим endPlanned. Раньше показывал только
@@ -158,7 +163,7 @@ export function Rentals() {
   const today = todayRu();
   const [filters, setFilters] = useState<FiltersState>({
     search: "",
-    status: "all",
+    status: "active",
   });
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [newOpen, setNewOpen] = useState(false);

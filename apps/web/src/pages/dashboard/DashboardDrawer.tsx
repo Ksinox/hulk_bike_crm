@@ -584,7 +584,17 @@ function RentalsListDrawerContent({
   const effectiveStatus = (r: { status: string; endPlanned: string }) =>
     effectiveRentalStatus(r.status as RentalStatus, r.endPlanned) as string;
   const filtered = active.filter((r) => {
-    if (filter === "active") return r.status === "active";
+    if (filter === "active") {
+      // v0.4.47: «Активные аренды» = ВСЕ живые. Аренды с просрочкой
+      // имеют двойной статус (active+overdue) и должны попадать в оба
+      // фильтра. Раньше показывались только status='active', клиенты
+      // с просрочкой пропадали из списка активных — это путало.
+      return (
+        r.status === "active" ||
+        r.status === "overdue" ||
+        r.status === "returning"
+      );
+    }
     if (filter === "overdue") {
       const endKey = ymdFromRu(r.endPlanned);
       return (
