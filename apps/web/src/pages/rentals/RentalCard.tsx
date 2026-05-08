@@ -155,15 +155,17 @@ function statusActions(
         { id: "cancel", label: "Отменить", icon: XCircle, tone: "ghost" },
       ];
     case "active":
+      // v0.4.48: убрали «Принять платёж» из меню действий — он
+      // дублировал основной CTA на карточке аренды (PaymentAcceptDialog),
+      // вёл на старый RentalActionDialog (legacy форма с типами
+      // rent/fine/damage/deposit без депозита/залога/просрочки).
       return withExtras([
         { id: "extend", label: "Продлить", icon: Repeat, tone: "primary" },
         { id: "complete", label: "Завершить аренду", icon: ArrowRight, tone: "ghost" },
-        { id: "addPayment", label: "Принять платёж", icon: Plus, tone: "ghost" },
       ]);
     case "overdue":
       return withExtras([
         { id: "complete", label: "Завершить аренду", icon: ArrowRight, tone: "primary" },
-        { id: "addPayment", label: "Принять платёж", icon: Plus, tone: "ghost" },
         { id: "revert-overdue", label: "Снять просрочку", icon: XCircle, tone: "ghost" },
         { id: "police", label: "Подать в полицию", icon: ShieldAlert, tone: "danger" },
       ]);

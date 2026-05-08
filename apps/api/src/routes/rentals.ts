@@ -1210,10 +1210,15 @@ export async function rentalsRoutes(app: FastifyInstance) {
             endActualAt: new Date(`${d.dateActual}T12:00:00+03:00`),
             depositReturned: d.depositReturned,
             damageAmount: d.damageAmount ?? null,
-            // Аренда без ущерба сразу уходит в архив (не засоряет
-            // активный список). С ущербом — НЕ архивируется, остаётся
-            // в активных как «проблемная» пока долг не будет погашен.
-            archivedAt: withDamage ? null : sql`now()`,
+            // v0.4.48: завершённая аренда НЕ уходит в архив сразу — она
+            // получает status='completed' и остаётся видимой в фильтре
+            // «Завершены». В архив попадает автоматически при наступлении
+            // нового расчётного периода (через scheduler) ИЛИ вручную
+            // оператором через DELETE. Раньше /complete сразу ставил
+            // archivedAt=now() — оператор не мог посмотреть свежезавершённую
+            // аренду в обычном списке, надо было лезть в Архив.
+            // С ущербом — НЕ архивируется, остаётся как «проблемная».
+            archivedAt: null,
             updatedAt: sql`now()`,
           })
           .where(eq(rentals.id, id))

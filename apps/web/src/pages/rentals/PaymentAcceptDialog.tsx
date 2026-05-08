@@ -83,10 +83,20 @@ export function PaymentAcceptDialog({
   }, [payments, rental.id]);
 
   // Компоненты долга — берём из API debt summary
-  const overdueDaysBalance = debt?.overdueDaysBalance ?? 0;
-  const overdueFineBalance = debt?.overdueFineBalance ?? 0;
+  const overdueDaysBalanceRaw = debt?.overdueDaysBalance ?? 0;
+  const overdueFineBalanceRaw = debt?.overdueFineBalance ?? 0;
   const damageBalance = debt?.damageBalance ?? 0;
   const manualBalance = debt?.manualBalance ?? 0;
+
+  // v0.4.48: «Без штрафа просрочки» — клиент предупредил заранее, что
+  // не сможет оплатить вовремя. Чекбокс появляется только если есть
+  // начисленная просрочка. При активации overdue-компоненты списываются
+  // через forgive-overdue ПЕРЕД distribute (см. submit). К оплате
+  // пересчитывается без них.
+  const hasOverdue = overdueDaysBalanceRaw + overdueFineBalanceRaw > 0;
+  const [waiveOverdue, setWaiveOverdue] = useState<boolean>(false);
+  const overdueDaysBalance = waiveOverdue ? 0 : overdueDaysBalanceRaw;
+  const overdueFineBalance = waiveOverdue ? 0 : overdueFineBalanceRaw;
   const totalDebt =
     pendingRent +
     overdueDaysBalance +
@@ -236,6 +246,20 @@ export function PaymentAcceptDialog({
     if (saving) return;
     setSaving(true);
     try {
+      // v0.4.48: 0. Если оператор поставил «Без штрафа просрочки» —
+      //   списываем всю текущую просрочку через forgive-overdue ПЕРЕД
+      //   распределением платежа. Прощение фиксируется в debt_entries
+      //   (kind='overdue_forgive'), отражается в Истории долгов и в
+      //   фильтре «С долгом» у клиента.
+      if (waiveOverdue && hasOverdue) {
+        await api.post(
+          `/api/rentals/${rental.id}/debt/forgive-overdue`,
+          {
+            target: "all",
+            comment: "Прощение просрочки при приёме оплаты (предупредил заранее)",
+          },
+        );
+      }
       // 1. Списать депозит клиента (clients.deposit_balance), если используется
       if (depositToUse > 0) {
         await api.post(
@@ -405,6 +429,42 @@ export function PaymentAcceptDialog({
               </div>
             )}
           </div>
+
+          {/* v0.4.48: «Без штрафа просрочки» — клиент предупредил заранее.
+              Показывается ТОЛЬКО если по аренде есть начисленная просрочка.
+              При активации overdue-компоненты исключаются из «К оплате»,
+              а при submit бэк создаёт debt_entry kind='overdue_forgive'
+              на полную сумму просрочки. */}
+          {hasOverdue && (
+            <label
+              className={cn(
+                "flex cursor-pointer items-start gap-2.5 rounded-[10px] border px-3 py-2.5 transition-colors",
+                waiveOverdue
+                  ? "border-amber-300 bg-amber-50/60"
+                  : "border-border bg-white hover:border-amber-300",
+              )}
+            >
+              <input
+                type="checkbox"
+                checked={waiveOverdue}
+                onChange={(e) => setWaiveOverdue(e.target.checked)}
+                className="mt-0.5 h-4 w-4 accent-amber-600"
+              />
+              <div className="min-w-0 flex-1">
+                <div className="text-[12px] font-semibold text-ink">
+                  Без штрафа просрочки —{" "}
+                  <span className="text-amber-700">
+                    спишется{" "}
+                    {fmt(overdueDaysBalanceRaw + overdueFineBalanceRaw)} ₽
+                  </span>
+                </div>
+                <div className="mt-0.5 text-[11px] leading-snug text-muted-2">
+                  Клиент предупредил заранее. Просрочка обнулится, к оплате
+                  пересчитается без штрафа. Запись в Истории долгов.
+                </div>
+              </div>
+            </label>
+          )}
 
           {/* Депозит клиента */}
           {depositBalance > 0 && (

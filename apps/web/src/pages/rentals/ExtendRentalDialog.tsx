@@ -12,7 +12,6 @@ import {
 import { extendRentalAsync } from "./rentalsStore";
 import { toast } from "@/lib/toast";
 import { PaymentAcceptDialog } from "./PaymentAcceptDialog";
-import { useRentalDebt, useForgiveOverdue } from "@/lib/api/debt";
 
 function fmt(n: number) {
   return n.toLocaleString("ru-RU");
@@ -35,17 +34,6 @@ export function ExtendRentalDialog({
   const [customMode, setCustomMode] = useState<boolean>(false);
   const [customUnit, setCustomUnit] = useState<"day" | "week">("day");
   const [customRate, setCustomRate] = useState<number>(0);
-  // v0.4.47: «Без штрафа просрочки» — клиент предупредил заранее.
-  // При extend сначала forgive-overdue со всей текущей просрочкой,
-  // потом сам extend. Чекбокс показывается только если по аренде
-  // действительно есть начисленная просрочка.
-  const debtQ = useRentalDebt(rental.id);
-  const overdueBalance =
-    (debtQ.data?.overdueDaysBalance ?? 0) +
-    (debtQ.data?.overdueFineBalance ?? 0);
-  const hasOverdue = overdueBalance > 0;
-  const [waiveOverdue, setWaiveOverdue] = useState<boolean>(false);
-  const forgiveMut = useForgiveOverdue();
 
   const requestClose = () => {
     if (closing) return;
@@ -97,28 +85,6 @@ export function ExtendRentalDialog({
     if (saving) return;
     setSaving(true);
     try {
-      // v0.4.47: если оператор поставил «без штрафа просрочки» —
-      // ПЕРЕД extend списываем всю текущую просрочку. forgive создаёт
-      // debt_entries с пометкой «прощено», что отражается в Истории
-      // долгов аренды и в фильтре «С долгом» для клиента. Делаем до
-      // extend, чтобы прощение относилось к старой аренде (на которой
-      // просрочка и накопилась), а не к новой связке-продлению.
-      if (waiveOverdue && hasOverdue) {
-        try {
-          await forgiveMut.mutateAsync({
-            rentalId: rental.id,
-            target: "all",
-            comment: "Простили при продлении (клиент предупредил заранее)",
-          });
-        } catch (e) {
-          toast.error(
-            "Не удалось списать просрочку",
-            (e as Error).message ?? "",
-          );
-          setSaving(false);
-          return;
-        }
-      }
       const created = await extendRentalAsync(
         rental.id,
         days,
@@ -321,41 +287,6 @@ export function ExtendRentalDialog({
               emphasize
             />
           </div>
-
-          {/* v0.4.47: «без штрафа просрочки» — показываем только если
-              на старой аренде есть начисленная просрочка. Клиент мог
-              предупредить заранее, мы не считаем штраф. Прощение
-              отражается в Истории долгов. */}
-          {hasOverdue && (
-            <label
-              className={cn(
-                "flex cursor-pointer items-start gap-2.5 rounded-[10px] border px-3 py-2.5 transition-colors",
-                waiveOverdue
-                  ? "border-amber-300 bg-amber-50/60"
-                  : "border-border bg-white hover:border-amber-300",
-              )}
-            >
-              <input
-                type="checkbox"
-                checked={waiveOverdue}
-                onChange={(e) => setWaiveOverdue(e.target.checked)}
-                className="mt-0.5 h-4 w-4 accent-amber-600"
-              />
-              <div className="min-w-0 flex-1">
-                <div className="text-[13px] font-semibold text-ink">
-                  Без штрафа просрочки —{" "}
-                  <span className="text-amber-700">
-                    спишется {fmt(overdueBalance)} ₽
-                  </span>
-                </div>
-                <div className="mt-0.5 text-[11px] leading-snug text-muted-2">
-                  Клиент предупредил заранее что не сможет оплатить вовремя.
-                  Просрочка обнулится, новая аренда отсчитается от старой
-                  плановой даты.
-                </div>
-              </div>
-            </label>
-          )}
 
           <div className="rounded-[10px] bg-blue-50 px-3 py-2 text-[11px] text-blue-700">
             По бизнес-логике при продлении подписывается{" "}
