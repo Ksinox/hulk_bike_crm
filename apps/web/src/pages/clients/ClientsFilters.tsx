@@ -1,5 +1,6 @@
 import { Search } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { DateRangeFilter } from "./DateRangeFilter";
 
 export type StatusFilter =
   | "all"
@@ -13,6 +14,10 @@ export type StatusFilter =
 export type FiltersState = {
   search: string;
   status: StatusFilter;
+  /** ISO `YYYY-MM-DD` — нижняя граница включительно. null = нет границы. */
+  dateFrom: string | null;
+  /** ISO `YYYY-MM-DD` — верхняя граница включительно. null = нет границы. */
+  dateTo: string | null;
 };
 
 const STATUS_TABS: { id: StatusFilter; label: string; hint?: string }[] = [
@@ -71,6 +76,17 @@ export function ClientsFilters({
           ))}
         </div>
       </div>
+
+      {/* Фильтр по дате добавления клиента — поповер с пресетами
+          «Сегодня / Вчера / За неделю / За месяц» + Range-календарь
+          для произвольного диапазона. */}
+      <DateRangeFilter
+        from={value.dateFrom}
+        to={value.dateTo}
+        onChange={(r) =>
+          onChange({ ...value, dateFrom: r.from, dateTo: r.to })
+        }
+      />
     </div>
   );
 }

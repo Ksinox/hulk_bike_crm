@@ -29,6 +29,7 @@ export function adaptClient(a: ApiClient): Client {
     debt: 0,
     source: a.source,
     added: isoToRu(a.addedOn),
+    addedOn: a.addedOn,
     blacklisted: a.blacklisted,
     comment: a.comment ?? undefined,
     extraPhone: a.extraPhone,

@@ -11,6 +11,7 @@
     "typecheck": "tsc -b --noEmit"
   },
   "dependencies": {
+    "@internationalized/date": "^3.12.1",
     "@radix-ui/react-slot": "^1.1.0",
     "@tanstack/react-query": "^5.59.0",
     "@tiptap/core": "^3.22.5",
@@ -35,6 +36,7 @@
     "mammoth": "^1.12.0",
     "marked": "^18.0.2",
     "react": "^18.3.1",
+    "react-aria-components": "^1.17.0",
     "react-dom": "^18.3.1",
     "react-easy-crop": "^5.5.7",
     "recharts": "^2.13.0",

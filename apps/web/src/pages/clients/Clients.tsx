@@ -41,6 +41,16 @@ function matchClient(
       matchId(c.id, query);
     if (!ok) return false;
   }
+  // Фильтр по дате добавления клиента. addedOn формата ISO YYYY-MM-DD,
+  // лексикографическое сравнение работает корректно для этого формата.
+  // Если у клиента нет addedOn (legacy mock-данные), но фильтр выставлен —
+  // не пропускаем: пользователь спросил «добавленные в X», а у нас на
+  // этого клиента такой инфы нет.
+  if (f.dateFrom || f.dateTo) {
+    if (!c.addedOn) return false;
+    if (f.dateFrom && c.addedOn < f.dateFrom) return false;
+    if (f.dateTo && c.addedOn > f.dateTo) return false;
+  }
   const hasActive = activeSet.has(c.id);
   if (f.status === "active") {
     // показываем только тех, кто прямо сейчас катает и не в ЧС
@@ -67,6 +77,8 @@ export function Clients() {
   const [filters, setFilters] = useState<FiltersState>({
     search: "",
     status: "all",
+    dateFrom: null,
+    dateTo: null,
   });
   const clients = useAllClients();
   const rentals = useRentals();

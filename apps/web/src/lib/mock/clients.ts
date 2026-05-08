@@ -9,6 +9,12 @@ export type Client = {
   debt: number;
   source: ClientSource;
   added: string;
+  /**
+   * Дата добавления клиента в ISO (`YYYY-MM-DD`). Заполняется adaptClient
+   * из `addedOn` API. Нужно для фильтра по датам — отображается через
+   * UI-форматирование через `c.added`.
+   */
+  addedOn?: string;
   blacklisted?: boolean;
   comment?: string;
   // Опциональные «сырые» поля из API — нужны UI-форме редактирования
