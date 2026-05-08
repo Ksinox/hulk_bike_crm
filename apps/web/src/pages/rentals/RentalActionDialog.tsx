@@ -1,7 +1,12 @@
 import { useEffect, useState } from "react";
-import { AlertTriangle, Check, X } from "lucide-react";
+import { AlertTriangle, Bike, Check, FileText, Image as ImageIcon, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Rental } from "@/lib/mock/rentals";
+import { DatePicker } from "@/components/ui/date-picker";
+import { useApiScooterModels } from "@/lib/api/scooter-models";
+import { useApiEquipment } from "@/lib/api/equipment";
+import { useApiClients } from "@/lib/api/clients";
+import { fileUrl } from "@/lib/files";
 import {
   addPayment,
   addRentalIncident,
@@ -128,9 +133,10 @@ export function RentalActionDialog({
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   });
-  // Дополнительное удержание (мелкие компенсации без акта).
-  const [depositWithhold, setDepositWithhold] = useState<string>("0");
-  const [depositWithholdNote, setDepositWithholdNote] = useState<string>("");
+  // v0.4.63: дополнительное удержание убрано — все удержания теперь
+  // через карточки экипировки (или DamageReport для скутера).
+  const depositWithhold = "0";
+  const depositWithholdNote = "";
   // v0.4.57: пробег скутера при возврате. Опционально — некоторые
   // бизнесы ведут учёт пробега (для ТО / страховки). Пустое значение
   // не передаётся в API.
@@ -154,6 +160,18 @@ export function RentalActionDialog({
   // значение и оно молча отбросится бэком.
   const scooterQ = useApiScooter(rental.scooterId ?? null);
   const currentMileage = scooterQ.data?.mileage ?? null;
+  // v0.4.63: данные для аватарок и шапки.
+  const modelsQ = useApiScooterModels();
+  const equipmentQ = useApiEquipment();
+  const clientsQ = useApiClients();
+  const scooter = scooterQ.data ?? null;
+  const scooterModel =
+    scooter?.modelId != null
+      ? (modelsQ.data ?? []).find((m) => m.id === scooter.modelId) ?? null
+      : null;
+  const scooterAvatar = fileUrl(scooterModel?.avatarKey, { variant: "thumb" });
+  const equipmentItems = equipmentQ.data ?? [];
+  const client = (clientsQ.data ?? []).find((c) => c.id === rental.clientId) ?? null;
 
   const requestClose = () => {
     if (closing) return;
@@ -234,35 +252,46 @@ export function RentalActionDialog({
       return {
         title: "Завершить аренду",
         body: (
-          <div className="space-y-3">
+          <div className="space-y-4">
             {/* Карточки приёмки */}
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-2">
                 Приёмка позиций
               </div>
               <ReturnItemCard
-                label="Скутер"
-                sublabel={rental.scooter}
+                title={rental.scooter}
+                subtitle={scooterModel?.name ?? rental.scooter}
+                imageUrl={scooterAvatar}
+                fallbackIcon="scooter"
                 state={scooterState}
                 onSetOk={() =>
                   setCardStates((s) => ({ ...s, [scooterCard]: "ok" }))
                 }
                 onSetProblem={() => {
-                  // problem на скутере = открыть DamageReportDialog
-                  // (через onOpenDamage parent). До открытия фиксируем
-                  // в state, чтоб при возврате из damage flow было видно.
                   setCardStates((s) => ({ ...s, [scooterCard]: "problem" }));
                 }}
-                accent="scooter"
               />
               {equipmentList.map((eq, i) => {
                 const key = `equipment-${i}` as CardKey;
                 const damage = equipmentDamages[key];
+                const eqItem = eq.itemId
+                  ? equipmentItems.find((x) => x.id === eq.itemId)
+                  : null;
+                const eqAvatar = fileUrl(
+                  eqItem?.avatarThumbKey ?? eqItem?.avatarKey,
+                  { variant: "thumb" },
+                );
                 return (
                   <ReturnItemCard
                     key={key}
-                    label={eq.name}
-                    sublabel={eq.price ? `${fmt(eq.price)} ₽ при выдаче` : undefined}
+                    title={eq.name}
+                    subtitle={
+                      eq.price && eq.price > 0
+                        ? `${fmt(eq.price)} ₽ при выдаче`
+                        : "бесплатно"
+                    }
+                    imageUrl={eqAvatar}
+                    fallbackIcon="equipment"
                     state={cardStates[key]}
                     damageInfo={
                       cardStates[key] === "problem" && damage
@@ -282,7 +311,6 @@ export function RentalActionDialog({
                       setPickerKey(key);
                     }}
                     onEditProblem={() => setPickerKey(key)}
-                    accent="equipment"
                   />
                 );
               })}
@@ -293,50 +321,62 @@ export function RentalActionDialog({
               )}
             </div>
 
-            {/* Дата возврата */}
-            <div>
-              <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-2">
-                Дата возврата
-              </label>
-              <input
-                type="date"
-                value={returnDate}
-                min={minReturnDate}
-                max={todayIso}
-                onChange={(e) => setReturnDate(e.target.value)}
-                className="mt-1 h-9 w-full rounded-[10px] border border-border bg-surface px-3 text-[13px] tabular-nums outline-none focus:border-blue-600"
-              />
+            {/* Дата возврата + пробег — в один ряд */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-2">
+                  Дата возврата
+                </label>
+                <DatePicker
+                  value={returnDate || null}
+                  onChange={(v) => setReturnDate(v ?? "")}
+                  minDate={minReturnDate}
+                  maxDate={todayIso}
+                  className="mt-1"
+                  clearable={false}
+                />
+              </div>
+              <div>
+                <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-2">
+                  Пробег, км <span className="text-muted-2/70 normal-case">опц.</span>
+                </label>
+                <input
+                  type="number"
+                  min={currentMileage ?? 0}
+                  value={mileageAtReturn}
+                  onChange={(e) => setMileageAtReturn(e.target.value)}
+                  placeholder={
+                    currentMileage != null
+                      ? `${currentMileage.toLocaleString("ru-RU")}`
+                      : "—"
+                  }
+                  className="mt-1 h-9 w-full rounded-[10px] border border-border bg-surface px-3 text-[13px] tabular-nums outline-none focus:border-blue-600"
+                />
+              </div>
             </div>
-
-            {/* Пробег при возврате (опционально) */}
-            <div>
-              <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-2">
-                Пробег при возврате, км <span className="text-muted-2/70 normal-case">— опционально</span>
-              </label>
-              <input
-                type="number"
-                min={currentMileage ?? 0}
-                value={mileageAtReturn}
-                onChange={(e) => setMileageAtReturn(e.target.value)}
-                placeholder={
-                  currentMileage != null
-                    ? `текущий: ${currentMileage.toLocaleString("ru-RU")}`
-                    : "например: 9 250"
-                }
-                className="mt-1 h-9 w-full rounded-[10px] border border-border bg-surface px-3 text-[13px] tabular-nums outline-none focus:border-blue-600"
-              />
-              {currentMileage != null && (
-                <div className="mt-1 text-[11px] text-muted-2">
-                  Текущий: <b className="text-ink tabular-nums">{currentMileage.toLocaleString("ru-RU")}</b> км.
-                  {mileageAtReturn && Number(mileageAtReturn) > currentMileage && (
-                    <> → <b className="text-ink tabular-nums">{Number(mileageAtReturn).toLocaleString("ru-RU")}</b> км (+{(Number(mileageAtReturn) - currentMileage).toLocaleString("ru-RU")}).</>
+            {currentMileage != null && mileageAtReturn && (
+              <div className="-mt-2 text-[11px] text-muted-2">
+                {Number(mileageAtReturn) > currentMileage && (
+                  <>
+                    Пробег скутера обновится:{" "}
+                    <b className="text-ink tabular-nums">
+                      {currentMileage.toLocaleString("ru-RU")}
+                    </b>{" "}
+                    →{" "}
+                    <b className="text-ink tabular-nums">
+                      {Number(mileageAtReturn).toLocaleString("ru-RU")}
+                    </b>{" "}
+                    км (+{(Number(mileageAtReturn) - currentMileage).toLocaleString("ru-RU")}).
+                  </>
+                )}
+                {Number(mileageAtReturn) > 0 &&
+                  Number(mileageAtReturn) < currentMileage && (
+                    <span className="text-orange-ink">
+                      ⚠ Введённое значение меньше текущего ({currentMileage.toLocaleString("ru-RU")} км) — изменение игнорируется.
+                    </span>
                   )}
-                  {mileageAtReturn && Number(mileageAtReturn) > 0 && Number(mileageAtReturn) < currentMileage && (
-                    <span className="text-orange-ink"> ⚠ меньше текущего — игнорируется.</span>
-                  )}
-                </div>
-              )}
-            </div>
+              </div>
+            )}
 
             {/* Плашка damage flow для скутера */}
             {scooterDamaged && (
@@ -352,52 +392,37 @@ export function RentalActionDialog({
 
             {/* Финансовая сводка по залогу — только если скутер ок */}
             {!scooterDamaged && (
-              <div className="rounded-[10px] border border-border bg-surface p-3">
-                <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-2 mb-2">
+              <div className="rounded-xl border border-border bg-surface-soft/60 p-3.5">
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-2 mb-2.5">
                   Залог
                 </div>
-                <div className="space-y-2 text-[12px]">
+                <div className="space-y-2 text-[13px]">
                   <div className="flex justify-between">
-                    <span>Внесён при выдаче</span>
-                    <span className="tabular-nums font-semibold">{fmt(depositTotal)} ₽</span>
+                    <span className="text-ink-2">Внесён при выдаче</span>
+                    <span className="tabular-nums font-semibold text-ink">
+                      {fmt(depositTotal)} ₽
+                    </span>
                   </div>
                   {equipmentCards.map((key) => {
                     if (cardStates[key] !== "problem") return null;
                     const d = equipmentDamages[key];
                     if (!d) return null;
-                    const eqName = equipmentList[Number(key.split("-")[1])]?.name ?? "Экипировка";
+                    const eqName =
+                      equipmentList[Number(key.split("-")[1])]?.name ?? "Экипировка";
                     return (
                       <div key={key} className="flex justify-between text-orange-ink">
-                        <span className="truncate">− {eqName}: {d.name}</span>
+                        <span className="truncate">
+                          − {eqName}: {d.name}
+                        </span>
                         <span className="tabular-nums">−{fmt(d.amount)} ₽</span>
                       </div>
                     );
                   })}
-                  <div>
-                    <label className="text-[11px] text-muted-2">
-                      Дополнительное удержание (мелкое, без акта)
-                    </label>
-                    <div className="mt-1 flex gap-2">
-                      <input
-                        type="number"
-                        min={0}
-                        max={Math.max(0, depositTotal - cappedEquipDamage)}
-                        value={depositWithhold}
-                        onChange={(e) => setDepositWithhold(e.target.value)}
-                        className="h-8 w-24 rounded-[8px] border border-border bg-surface px-2 text-[12px] tabular-nums outline-none focus:border-blue-600"
-                      />
-                      <input
-                        type="text"
-                        value={depositWithholdNote}
-                        onChange={(e) => setDepositWithholdNote(e.target.value)}
-                        placeholder="Причина (обязательно если > 0)"
-                        className="h-8 flex-1 rounded-[8px] border border-border bg-surface px-2 text-[12px] outline-none focus:border-blue-600"
-                      />
-                    </div>
-                  </div>
-                  <div className="flex justify-between border-t border-border pt-2 text-[13px] font-bold">
-                    <span>К возврату клиенту</span>
-                    <span className="tabular-nums text-blue-600">{fmt(depositToReturn)} ₽</span>
+                  <div className="border-t border-border/60 pt-2.5 mt-1 flex items-center justify-between text-[14px] font-bold">
+                    <span className="text-ink">К возврату клиенту</span>
+                    <span className="tabular-nums text-blue-600">
+                      {fmt(depositToReturn)} ₽
+                    </span>
                   </div>
                 </div>
               </div>
@@ -406,7 +431,19 @@ export function RentalActionDialog({
             {/* Picker позиций экипировки из прайса */}
             {pickerKey && pickerKey !== "scooter" && (
               <EquipmentDamagePicker
-                onClose={() => setPickerKey(null)}
+                onClose={() => {
+                  // Если оператор закрыл picker не выбрав — отменяем
+                  // problem-state на этой карточке, чтоб не остаться без
+                  // суммы и блокировать кнопку.
+                  setPickerKey(null);
+                  if (pickerKey && !equipmentDamages[pickerKey]) {
+                    setCardStates((s) => {
+                      const next = { ...s };
+                      delete next[pickerKey];
+                      return next;
+                    });
+                  }
+                }}
                 presetName={
                   equipmentList[Number(pickerKey.split("-")[1])]?.name ?? null
                 }
@@ -659,18 +696,28 @@ export function RentalActionDialog({
         </div>
 
         <div className="px-5 py-4 text-[13px] text-ink-2">
-          <div className="mb-3 rounded-[10px] bg-surface-soft px-3 py-2 text-[12px]">
-            <div className="flex items-center justify-between">
+          {action === "complete" ? (
+            <RentalSummaryCard
+              rental={rental}
+              clientName={client?.name ?? null}
+              clientPhone={client?.phone ?? null}
+              modelName={scooterModel?.name ?? null}
+              scooterAvatar={scooterAvatar}
+            />
+          ) : (
+            <div className="mb-3 flex items-center justify-between rounded-[10px] bg-surface-soft px-3 py-2 text-[12px]">
               <span>{rental.scooter}</span>
-              <span className="text-muted-2">· {rental.start} — {rental.endPlanned}</span>
+              <span className="text-muted-2">
+                · {rental.start} — {rental.endPlanned}
+              </span>
             </div>
-            {action === "complete" && (
-              <RentalExtensionsHint rentalId={rental.id} />
-            )}
-          </div>
+          )}
 
           {action === "complete" && (
-            <ReturnDocPreviewLink rentalId={rental.id} />
+            <>
+              <RentalExtensionsHint rentalId={rental.id} />
+              <ReturnDocPreviewLink rentalId={rental.id} />
+            </>
           )}
 
           {spec.body}
@@ -1153,89 +1200,174 @@ function specFor(action: ActionKind, rental: Rental): Spec {
 }
 
 /**
- * v0.4.62: карточка позиции для приёма возврата. Два состояния:
- * 'ok' (зелёный с галочкой) или 'problem' (оранжевый с крестом).
- * До выбора — нейтральный фон с двумя кнопками рядом.
+ * v0.4.63: компактная сводка по аренде в шапке окна «Завершить аренду».
+ * Заменяет старую строчку «Jog #28 · 01.05 — 09.05» — теперь это нормальная
+ * информационная панель с клиентом, скутером, периодом и финансами.
+ */
+function RentalSummaryCard({
+  rental,
+  clientName,
+  clientPhone,
+  modelName,
+  scooterAvatar,
+}: {
+  rental: Rental;
+  clientName: string | null;
+  clientPhone: string | null;
+  modelName: string | null;
+  scooterAvatar: string | null;
+}) {
+  return (
+    <div className="mb-4 flex items-stretch gap-3 rounded-xl border border-border bg-gradient-to-br from-blue-soft/40 to-surface-soft/60 p-3">
+      <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-surface ring-1 ring-border">
+        {scooterAvatar ? (
+          <img
+            src={scooterAvatar}
+            alt=""
+            className="h-full w-full object-contain"
+          />
+        ) : (
+          <Bike size={28} className="text-muted-2" strokeWidth={1.5} />
+        )}
+      </div>
+      <div className="min-w-0 flex-1 space-y-0.5">
+        <div className="flex items-center gap-2">
+          <span className="text-[14px] font-bold text-ink">
+            {rental.scooter}
+          </span>
+          {modelName && (
+            <span className="text-[11px] text-muted-2">· {modelName}</span>
+          )}
+        </div>
+        {clientName && (
+          <div className="text-[12px] text-ink-2 truncate">
+            {clientName}
+            {clientPhone && (
+              <span className="text-muted-2"> · {clientPhone}</span>
+            )}
+          </div>
+        )}
+        <div className="flex items-center gap-2 text-[11px] text-muted-2">
+          <span>{rental.start} — {rental.endPlanned}</span>
+          <span>·</span>
+          <span>{rental.days} дн</span>
+          <span>·</span>
+          <span className="font-semibold text-ink-2 tabular-nums">
+            {fmt(rental.sum)} ₽
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * v0.4.63: карточка позиции для приёма возврата. Два состояния:
+ * 'ok' (зелёный) или 'problem' (оранжевый). До выбора — нейтральный фон.
+ *
+ * UX: вся карточка кликабельна. Внутри — фото позиции (или fallback-иконка),
+ * заголовок/подзаголовок, и две большие pill-кнопки «Без ущерба» / «Есть ущерб».
+ * Если выбрано «Есть ущерб» — под пиллами показывается выбранная позиция
+ * прайса с кнопкой «изменить».
  */
 function ReturnItemCard({
-  label,
-  sublabel,
+  title,
+  subtitle,
+  imageUrl,
+  fallbackIcon,
   state,
   damageInfo,
   onSetOk,
   onSetProblem,
   onEditProblem,
-  accent,
 }: {
-  label: string;
-  sublabel?: string;
+  title: string;
+  subtitle?: string;
+  imageUrl?: string | null;
+  fallbackIcon: "scooter" | "equipment";
   state?: "ok" | "problem";
   damageInfo?: string;
   onSetOk: () => void;
   onSetProblem: () => void;
   onEditProblem?: () => void;
-  accent: "scooter" | "equipment";
 }) {
   const tone =
     state === "ok"
-      ? "border-emerald-400/50 bg-emerald-50"
+      ? "border-emerald-400 ring-1 ring-emerald-200/60 bg-emerald-50/40"
       : state === "problem"
-        ? "border-orange/50 bg-orange-soft/40"
-        : "border-border bg-surface";
+        ? "border-orange-400 ring-1 ring-orange-200/60 bg-orange-soft/30"
+        : "border-border bg-surface hover:border-blue-300";
   return (
     <div
       className={cn(
-        "rounded-[10px] border p-3 transition-colors",
+        "rounded-xl border p-3 transition-all",
         tone,
       )}
     >
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="text-[13px] font-semibold text-ink truncate">
-            {accent === "scooter" ? "🛵 " : "🎒 "}{label}
-          </div>
-          {sublabel && (
-            <div className="text-[11px] text-muted-2 truncate">{sublabel}</div>
+      <div className="flex items-center gap-3">
+        <div
+          className={cn(
+            "flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg ring-1",
+            state === "ok"
+              ? "ring-emerald-200 bg-emerald-50"
+              : state === "problem"
+                ? "ring-orange-200 bg-orange-soft/40"
+                : "ring-border bg-surface-soft",
           )}
-          {state === "problem" && damageInfo && (
-            <button
-              type="button"
-              onClick={onEditProblem}
-              className="mt-1 text-[12px] text-orange-ink underline hover:no-underline"
-            >
-              {damageInfo} (изменить)
-            </button>
+        >
+          {imageUrl ? (
+            <img src={imageUrl} alt="" className="h-full w-full object-contain" />
+          ) : fallbackIcon === "scooter" ? (
+            <Bike size={26} className="text-muted-2" strokeWidth={1.5} />
+          ) : (
+            <ImageIcon size={22} className="text-muted-2" strokeWidth={1.5} />
           )}
         </div>
-        <div className="flex shrink-0 gap-1.5">
-          <button
-            type="button"
-            onClick={onSetOk}
-            className={cn(
-              "flex h-8 w-8 items-center justify-center rounded-full border transition-colors",
-              state === "ok"
-                ? "border-emerald-500 bg-emerald-500 text-white"
-                : "border-border bg-surface text-muted hover:border-emerald-400 hover:text-emerald-500",
-            )}
-            title="В порядке"
-          >
-            <Check size={16} />
-          </button>
-          <button
-            type="button"
-            onClick={onSetProblem}
-            className={cn(
-              "flex h-8 w-8 items-center justify-center rounded-full border transition-colors",
-              state === "problem"
-                ? "border-orange-500 bg-orange-500 text-white"
-                : "border-border bg-surface text-muted hover:border-orange-400 hover:text-orange-500",
-            )}
-            title="Есть проблема"
-          >
-            <X size={16} />
-          </button>
+        <div className="min-w-0 flex-1">
+          <div className="text-[14px] font-semibold text-ink truncate leading-tight">
+            {title}
+          </div>
+          {subtitle && (
+            <div className="text-[11px] text-muted-2 truncate">{subtitle}</div>
+          )}
         </div>
       </div>
+      <div className="mt-3 flex gap-2">
+        <button
+          type="button"
+          onClick={onSetOk}
+          className={cn(
+            "h-9 flex-1 rounded-lg border text-[12.5px] font-semibold transition-colors",
+            state === "ok"
+              ? "border-emerald-500 bg-emerald-500 text-white shadow-sm"
+              : "border-border bg-surface text-ink-2 hover:border-emerald-400 hover:bg-emerald-50/50 hover:text-emerald-700",
+          )}
+        >
+          Без ущерба
+        </button>
+        <button
+          type="button"
+          onClick={onSetProblem}
+          className={cn(
+            "h-9 flex-1 rounded-lg border text-[12.5px] font-semibold transition-colors",
+            state === "problem"
+              ? "border-orange-500 bg-orange-500 text-white shadow-sm"
+              : "border-border bg-surface text-ink-2 hover:border-orange-400 hover:bg-orange-soft/40 hover:text-orange-700",
+          )}
+        >
+          Есть ущерб
+        </button>
+      </div>
+      {state === "problem" && damageInfo && (
+        <button
+          type="button"
+          onClick={onEditProblem}
+          className="mt-2.5 flex w-full items-center justify-between rounded-lg bg-orange-soft/50 px-3 py-2 text-[12px] text-orange-ink hover:bg-orange-soft/80"
+        >
+          <span className="truncate font-semibold">{damageInfo}</span>
+          <span className="ml-2 shrink-0 text-[11px] underline">изменить</span>
+        </button>
+      )}
     </div>
   );
 }
@@ -1416,8 +1548,9 @@ function ReturnDocPreviewLink({ rentalId }: { rentalId: number }) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="mb-3 flex w-full items-center justify-center gap-2 rounded-[10px] border border-border bg-surface px-3 py-2 text-[12px] text-blue-600 hover:bg-blue-soft"
+        className="mb-4 flex w-full items-center justify-center gap-2 rounded-lg border border-blue-200 bg-blue-soft/40 px-3 py-2 text-[12.5px] font-semibold text-blue-600 hover:bg-blue-soft/80"
       >
+        <FileText size={14} />
         Превью акта возврата
       </button>
       {open && (
