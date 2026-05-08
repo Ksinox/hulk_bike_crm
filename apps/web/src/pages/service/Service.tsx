@@ -763,7 +763,7 @@ function ScooterAvatar({
   const linked = scooter?.modelId
     ? models.find((m) => m.id === scooter.modelId)
     : models.find((m) => m.name.toLowerCase().includes(enumModel.toLowerCase()));
-  const avatarSrc = fileUrl(linked?.avatarKey);
+  const avatarSrc = fileUrl(linked?.avatarKey, { variant: "thumb" });
   const size = small ? "h-14 w-14" : "h-20 w-20";
   if (avatarSrc) {
     return (

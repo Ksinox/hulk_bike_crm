@@ -1138,7 +1138,9 @@ function ScooterPhotoArea({ scooter }: { scooter: FleetScooter }) {
   const model = scooter.modelId
     ? models.find((m) => m.id === scooter.modelId)
     : models.find((m) => m.name.toLowerCase().includes(scooter.model));
-  const modelAvatar = fileUrl(model?.avatarKey);
+  // v0.4.62: карточка скутера показывает аватарку модели крупно
+  // (min-h 480px заполняет всю левую колонку) — view-вариант ≤2000px.
+  const modelAvatar = fileUrl(model?.avatarKey, { variant: "view" });
 
   return (
     <div className="relative flex min-h-[480px] flex-col items-center justify-end gap-2 overflow-visible bg-surface-soft p-5 pb-4 text-muted-2 md:border-r md:border-border">

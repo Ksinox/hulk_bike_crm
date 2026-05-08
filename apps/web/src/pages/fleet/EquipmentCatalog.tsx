@@ -92,7 +92,7 @@ function EquipmentCard({
       <div className="flex items-start gap-3">
         <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-purple-soft text-purple-ink">
           {item.avatarKey ? (
-            <img src={fileUrl(item.avatarKey) ?? ""} alt="" className="h-full w-full object-cover" />
+            <img src={fileUrl(item.avatarKey, { variant: "thumb" }) ?? ""} alt="" className="h-full w-full object-cover" />
           ) : (
             <Package size={22} />
           )}

@@ -68,7 +68,11 @@ export function ClientPhoto({
     () => (docsQ.data ?? []).find((d) => d.kind === "photo"),
     [docsQ.data],
   );
-  const photoFromDocsUrl = photoDoc ? fileUrl(photoDoc.fileKey) : null;
+  // v0.4.62: фото клиента в карточке/списке — небольшое превью,
+  // используем thumb-вариант (~30 КБ).
+  const photoFromDocsUrl = photoDoc
+    ? fileUrl(photoDoc.fileKey, { variant: "thumb" })
+    : null;
   const photoFromDocs: UploadedFile | null =
     photoDoc && photoFromDocsUrl
       ? {

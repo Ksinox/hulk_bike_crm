@@ -55,7 +55,9 @@ export function ScooterPosterAvatar({
     : models.find((m) =>
         m.name.toLowerCase().includes(scooter.model.toLowerCase()),
       );
-  const avatarSrc = fileUrl(model?.avatarKey);
+  // v0.4.62: «постер» аватарка — крупное изображение в карточке аренды,
+  // берём view-вариант (≤2000px) вместо тяжёлого оригинала.
+  const avatarSrc = fileUrl(model?.avatarKey, { variant: "view" });
 
   return (
     <div

@@ -99,7 +99,9 @@ function ModelCard({
     });
     if (ok) del.mutate(model.id);
   };
-  const avatarSrc = fileUrl(model.avatarKey);
+  // v0.4.62: карточка модели в каталоге — крупная (~280px),
+  // используем view-вариант (≤2000px, ~300 КБ).
+  const avatarSrc = fileUrl(model.avatarKey, { variant: "view" });
   const isInactive = model.active === false;
   return (
     <div

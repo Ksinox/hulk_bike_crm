@@ -47,7 +47,9 @@ export function ParkTileHoverCard({
     : models.find((m) =>
         m.name.toLowerCase().includes(scooter.model.toLowerCase()),
       );
-  const avatarSrc = fileUrl(linkedModel?.avatarKey);
+  // v0.4.62: hover-карточка показывает аватарку маленькой картинкой —
+  // thumb-вариант (~30 КБ) вместо тяжёлого оригинала.
+  const avatarSrc = fileUrl(linkedModel?.avatarKey, { variant: "thumb" });
   const modelName =
     linkedModel?.name ?? MODEL_LABEL[scooter.model] ?? scooter.model;
 

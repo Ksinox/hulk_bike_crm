@@ -43,8 +43,11 @@ export function AvatarUpload({
   const inputRef = useRef<HTMLInputElement>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
 
-  // Превью: предпочитаем миниатюру (быстрее), fallback на оригинал.
-  const url = fileUrl(avatarThumbKey ?? avatarKey);
+  // Превью: предпочитаем ручную кропнутую миниатюру (avatarThumbKey),
+  // fallback на оригинал. В обоих случаях просим у API thumb-вариант
+  // (sharp-уменьшенный ~30 КБ) — даже если фолбэкнулись на avatarKey,
+  // он не будет тянуться полным размером.
+  const url = fileUrl(avatarThumbKey ?? avatarKey, { variant: "thumb" });
 
   const handleFile = (f: File | null) => {
     if (!f) return;

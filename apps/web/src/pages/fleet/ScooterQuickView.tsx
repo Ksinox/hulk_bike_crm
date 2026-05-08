@@ -94,8 +94,10 @@ export function ScooterQuickView({
           m.name.toLowerCase().includes(String(scooter.model).toLowerCase()),
         ));
     if (!m) return null;
-    if (m.avatarKey) return fileUrl(m.avatarKey);
-    if (m.avatarThumbKey) return fileUrl(m.avatarThumbKey);
+    // v0.4.62: QuickView показывает аватарку среднего размера (~120px),
+    // используем view-вариант. Для thumb-key fallback тоже variant=view.
+    if (m.avatarKey) return fileUrl(m.avatarKey, { variant: "view" });
+    if (m.avatarThumbKey) return fileUrl(m.avatarThumbKey, { variant: "view" });
     return null;
   }, [scooter, models]);
 

@@ -55,7 +55,8 @@ export function ModelPicker({
         <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
           {quickPick.map((m) => {
             const active = m.id === value;
-            const avatar = fileUrl(m.avatarKey);
+            // v0.4.62: квадратные карточки в пикере — thumb-вариант.
+            const avatar = fileUrl(m.avatarKey, { variant: "thumb" });
             return (
               <button
                 key={m.id}

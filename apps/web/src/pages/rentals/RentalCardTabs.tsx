@@ -1742,7 +1742,8 @@ function SwapHistoryAvatar({ scooterId }: { scooterId: number }) {
     : models.find((m) =>
         m.name.toLowerCase().includes(sc.model.toLowerCase()),
       );
-  const avatarSrc = fileUrl(model?.avatarKey);
+  // v0.4.62: маленькая 28×28px аватарка в строке аренды — thumb-вариант.
+  const avatarSrc = fileUrl(model?.avatarKey, { variant: "thumb" });
   if (avatarSrc) {
     return (
       <div className="h-7 w-7 shrink-0 overflow-hidden rounded-full bg-surface-soft">
@@ -1774,7 +1775,9 @@ function ScooterThumb({ rental }: { rental: Rental }) {
   const model = sc?.modelId != null
     ? models.find((m) => m.id === sc.modelId)
     : models.find((m) => m.name.toLowerCase().includes(rental.model));
-  const avatarSrc = fileUrl(model?.avatarKey);
+  // v0.4.62: 80×80px превью на вкладке «Условия» — thumb-вариант
+  // (≤400px) с запасом по retina, ~30 КБ вместо тяжёлого оригинала.
+  const avatarSrc = fileUrl(model?.avatarKey, { variant: "thumb" });
 
   if (avatarSrc) {
     return (
