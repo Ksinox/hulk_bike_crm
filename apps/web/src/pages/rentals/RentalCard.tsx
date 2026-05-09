@@ -168,10 +168,16 @@ function statusActions(
         { id: "complete", label: "Завершить аренду", icon: ArrowRight, tone: "ghost" },
       ]);
     case "overdue":
+      // v0.4.68: убраны «Снять просрочку» и «Подать в полицию».
+      //  • «Снять просрочку» (revert-overdue) дублировал «Сбросить
+      //    просрочку» из withExtras (forgive-overdue) — оставляем
+      //    только последний (он уже добавляется через withExtras).
+      //  • «Подать в полицию» — исключение из обычного flow; если
+      //    реально нужно — оператор фиксирует ущерб (Зафиксировать
+      //    ущерб) и далее работает по акту, претензии и/или
+      //    отдельным процедурам, без отдельной кнопки в карточке.
       return withExtras([
         { id: "complete", label: "Завершить аренду", icon: ArrowRight, tone: "primary" },
-        { id: "revert-overdue", label: "Снять просрочку", icon: XCircle, tone: "ghost" },
-        { id: "police", label: "Подать в полицию", icon: ShieldAlert, tone: "danger" },
       ]);
     case "returning":
       // Единое окно завершения. Чек-лист (экипировка/состояние) +
