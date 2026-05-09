@@ -3195,14 +3195,37 @@ export async function rentalsRoutes(app: FastifyInstance) {
         .returning();
       // Сдвигаем endPlanned пропорционально прощённой части.
       const daysToShift = Math.floor(requestedAmount / Math.max(1, dailyRate));
+      // v0.4.73: при прощении дней автоматически прощаем штраф за эти
+      // же дни. Бизнес-логика: «снять день» = «этот день не считать»,
+      // включая и штраф. Иначе абсурд: оператор «снял 1 день», а в долге
+      // остаётся штраф 250₽ за этот день — оператор ожидал что день
+      // полностью убран. fineToForgive = K дней × 0.5 × dailyRate, но
+      // не больше реального остатка fine.
+      const fineDailyRate = Math.round(dailyRate * 0.5);
+      const fineToForgive = Math.min(
+        fineRemaining,
+        daysToShift * fineDailyRate,
+      );
+      if (fineToForgive > 0) {
+        await db.insert(debtEntries).values({
+          rentalId: id,
+          kind: "overdue_fine_forgive",
+          amount: fineToForgive,
+          comment: `Авто-списание штрафа за прощённые ${daysToShift} дн`,
+          createdByUserId: userId,
+          createdByName: userName,
+          appliedToEndPlanned: true,
+        });
+      }
       const shiftRes = await shiftEndPlanned(daysToShift);
       // v0.4.68: страховка — если status всё ещё overdue (например shift=0
       // из-за дробной суммы или legacy-payment частично разобрал дни),
       // но просрочка по дням+штрафу обнулилась → нормализуем.
       const remainAfter = Math.max(0, daysRemaining - requestedAmount);
+      const fineAfter = Math.max(0, fineRemaining - fineToForgive);
       const norm =
         shiftRes.newStatus == null
-          ? await normalizeIfFullyResolved(remainAfter, fineRemaining)
+          ? await normalizeIfFullyResolved(remainAfter, fineAfter)
           : { shift: 0, newStatus: null };
       const finalShift = shiftRes.shift + norm.shift;
       const finalStatus = shiftRes.newStatus ?? norm.newStatus;

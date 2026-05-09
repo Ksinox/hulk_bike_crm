@@ -999,30 +999,37 @@ export function RentalCard({
         const fineBalance =
           debtSummary?.overdueFineBalance ?? fallbackFine;
         const totalBalance = daysBalance + fineBalance;
-        // v0.4.72: показываем «начислено / прощено / к оплате» отдельно
-        // если был forgive. Раньше формула «500 × 10 дн = 5000» а в
-        // сумме было «4500» — оператор видел противоречие.
+        // v0.4.73: показываем расчёт в ДНЯХ, как мыслит оператор:
+        // «10 дней просрочки, 1 простили, осталось 9 × 500 = 4500».
+        // forgivenDays = forgive рублях / ставку (округление вниз).
         const daysCharge = dailyRate * d;
         const fineCharge = fineDaily * d;
-        const daysForgiven = Math.max(0, daysCharge - daysBalance);
-        const fineForgiven = Math.max(0, fineCharge - fineBalance);
-        const hasForgive = daysForgiven > 0 || fineForgiven > 0;
+        const daysForgivenRub = Math.max(0, daysCharge - daysBalance);
+        const fineForgivenRub = Math.max(0, fineCharge - fineBalance);
+        const forgivenDays = dailyRate > 0 ? Math.floor(daysForgivenRub / dailyRate) : 0;
+        const payDays = Math.max(0, d - forgivenDays); // дни к оплате
+        const hasForgive = daysForgivenRub > 0 || fineForgivenRub > 0;
         return (
           <div className="flex flex-wrap items-start gap-2 rounded-[12px] bg-red-soft/70 px-3 py-2 text-[12px] text-red-ink">
             <AlertTriangle size={14} className="mt-0.5 shrink-0" />
             <div className="min-w-0 flex-1">
               <div className="font-semibold">
-                Просрочка {d} дн. — {fmt(totalBalance)} ₽
+                Просрочка {d} дн.
+                {forgivenDays > 0 && (
+                  <span className="font-normal opacity-80">
+                    {" "}(прощено {forgivenDays} дн → к оплате {payDays} дн)
+                  </span>
+                )}
+                {" "}— {fmt(totalBalance)} ₽
               </div>
               {hasForgive ? (
                 <div className="text-[11px] opacity-90 leading-snug">
-                  дни: начислено {fmt(daysCharge)} ₽ ({fmt(dailyRate)} × {d})
-                  {daysForgiven > 0 && <> − прощено {fmt(daysForgiven)} ₽</>}
-                  {" "}= к оплате <b>{fmt(daysBalance)} ₽</b>
+                  дни: <b>{fmt(daysBalance)} ₽</b>
+                  {" "}({fmt(dailyRate)} × {payDays} дн)
                   <br />
-                  штраф: начислено {fmt(fineCharge)} ₽ ({fmt(fineDaily)} × {d})
-                  {fineForgiven > 0 && <> − прощено {fmt(fineForgiven)} ₽</>}
-                  {" "}= к оплате <b>{fmt(fineBalance)} ₽</b>
+                  штраф: <b>{fmt(fineBalance)} ₽</b>
+                  {" "}(начислено {fmt(fineCharge)} ₽
+                  {fineForgivenRub > 0 && <> − прощено {fmt(fineForgivenRub)} ₽</>})
                 </div>
               ) : (
                 <div className="text-[11px] opacity-90">
