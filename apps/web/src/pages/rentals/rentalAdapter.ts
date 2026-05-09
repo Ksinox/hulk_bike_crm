@@ -43,6 +43,13 @@ export function adaptRental(
     deposit: r.deposit,
     depositReturned: r.depositReturned ?? undefined,
     equipment: r.equipment,
+    // v0.4.70: equipmentJson маппился ранее ТОЛЬКО для legacy через
+    // r.equipment (массив строк). API возвращает структурированный
+    // r.equipmentJson — без маппинга он терялся, и фронт думал что
+    // у аренды экипировки нет: «Изменить экипировку» показывало
+    // «Без экипировки», окно «Завершить аренду» не рисовало карточки,
+    // расчёт delta в EquipmentChangeDialog всегда шёл от oldDaily=0.
+    equipmentJson: r.equipmentJson ?? [],
     paymentMethod: r.paymentMethod,
     note: r.note ?? undefined,
     contractUploaded: r.contractUploaded,

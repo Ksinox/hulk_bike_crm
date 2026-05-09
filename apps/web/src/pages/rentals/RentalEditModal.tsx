@@ -706,11 +706,11 @@ function RentalEditForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [days]);
 
-  // v0.4.69: учёт rateUnit при расчёте суммы. Раньше было `rate * days`
-  // независимо от единицы измерения тарифа — это давало баги в weekly-
-  // тарифах: rate=3000/нед × 21 день → sum=63000 (хотя должно быть
-  // 3000 × 3 недели = 9000). Калашников Артем (#0106) пострадал от
-  // этого при первом открытии RentalEditModal — patch отправил sum=63000.
+  // v0.4.69: учёт rateUnit при расчёте суммы.
+  // v0.4.70: сумма редактируемая — оператор может ввести произвольное
+  // значение (override) если стандартный расчёт не подходит. По умолчанию
+  // tracked computedSum, но если оператор её правит — переходим в
+  // override-режим и больше не пересчитываем автоматически.
   const rateUnit = rental.rateUnit ?? "day";
   const computedSum = (() => {
     if (rateUnit === "week") {
@@ -719,13 +719,15 @@ function RentalEditForm({
     }
     return rate * days;
   })();
+  const [sumOverride, setSumOverride] = useState<number | null>(null);
+  const finalSum = sumOverride ?? computedSum;
   const dirty =
     startDate !== rental.start ||
     startTime !== (rental.startTime ?? "14:00") ||
     endPlanned !== rental.endPlanned ||
     rate !== rental.rate ||
     days !== rental.days ||
-    computedSum !== rental.sum ||
+    finalSum !== rental.sum ||
     (note ?? "") !== (rental.note ?? "") ||
     equipmentChanged;
 
@@ -749,7 +751,7 @@ function RentalEditForm({
     }
     setSaving(true);
     try {
-      const newSum = computedSum;
+      const newSum = finalSum;
 
       const patch: Partial<Rental> = {};
       if (startDate !== rental.start) patch.start = startDate;
@@ -864,11 +866,47 @@ function RentalEditForm({
           </Field>
         </div>
 
-        <div className="rounded-[10px] bg-surface-soft px-3 py-2 text-[12px] text-muted">
-          Новая сумма по этой связке:{" "}
-          <b className="text-ink">
-            {(rate * days).toLocaleString("ru-RU")} ₽
-          </b>
+        <div className="rounded-[10px] bg-surface-soft px-3 py-2 text-[12px]">
+          <div className="mb-1 text-muted">
+            Сумма по этой связке
+            {rateUnit === "week" && (
+              <span className="ml-2 text-[11px] text-muted-2">
+                расчёт: {rate.toLocaleString("ru-RU")} ₽/нед ×{" "}
+                {Math.max(1, Math.round(days / 7))} нед ={" "}
+                {computedSum.toLocaleString("ru-RU")} ₽
+              </span>
+            )}
+            {rateUnit === "day" && (
+              <span className="ml-2 text-[11px] text-muted-2">
+                расчёт: {rate.toLocaleString("ru-RU")} ₽/сут × {days} дн ={" "}
+                {computedSum.toLocaleString("ru-RU")} ₽
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min={0}
+              value={finalSum}
+              onChange={(e) => setSumOverride(Math.max(0, Number(e.target.value) || 0))}
+              className="h-9 flex-1 rounded-[8px] border border-border bg-white px-3 text-[14px] font-bold text-ink outline-none focus:border-blue"
+            />
+            <span className="text-[12px] text-muted">₽</span>
+            {sumOverride !== null && (
+              <button
+                type="button"
+                onClick={() => setSumOverride(null)}
+                className="rounded-full px-2 py-1 text-[11px] text-blue-600 hover:bg-blue-50"
+                title="Сбросить ручную правку — вернуться к расчёту по тарифу × дням"
+              >
+                сброс
+              </button>
+            )}
+          </div>
+          <div className="mt-1 text-[11px] text-muted-2">
+            Можно ввести вручную если стандартный расчёт не подходит
+            (например аренда с разовой надбавкой или скидкой).
+          </div>
         </div>
 
         <Field label="Экипировка">
