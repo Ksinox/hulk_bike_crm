@@ -706,13 +706,26 @@ function RentalEditForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [days]);
 
+  // v0.4.69: учёт rateUnit при расчёте суммы. Раньше было `rate * days`
+  // независимо от единицы измерения тарифа — это давало баги в weekly-
+  // тарифах: rate=3000/нед × 21 день → sum=63000 (хотя должно быть
+  // 3000 × 3 недели = 9000). Калашников Артем (#0106) пострадал от
+  // этого при первом открытии RentalEditModal — patch отправил sum=63000.
+  const rateUnit = rental.rateUnit ?? "day";
+  const computedSum = (() => {
+    if (rateUnit === "week") {
+      const weeks = Math.max(1, Math.round(days / 7));
+      return rate * weeks;
+    }
+    return rate * days;
+  })();
   const dirty =
     startDate !== rental.start ||
     startTime !== (rental.startTime ?? "14:00") ||
     endPlanned !== rental.endPlanned ||
     rate !== rental.rate ||
     days !== rental.days ||
-    rate * days !== rental.sum ||
+    computedSum !== rental.sum ||
     (note ?? "") !== (rental.note ?? "") ||
     equipmentChanged;
 
@@ -736,7 +749,7 @@ function RentalEditForm({
     }
     setSaving(true);
     try {
-      const newSum = rate * days;
+      const newSum = computedSum;
 
       const patch: Partial<Rental> = {};
       if (startDate !== rental.start) patch.start = startDate;
