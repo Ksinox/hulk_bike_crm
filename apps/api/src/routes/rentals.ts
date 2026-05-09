@@ -2455,17 +2455,20 @@ export async function rentalsRoutes(app: FastifyInstance) {
         else if (e.kind === "manual_charge") manualCharged += e.amount;
         else if (e.kind === "manual_forgive") manualForgiven += e.amount;
       }
-      // v0.4.75: balance = current overdue charge напрямую. Forgive/payment
-      // влияют через сдвиг endPlanned (уменьшает overdueDays). См.
-      // комментарий в /:id/debt endpoint.
+      // v0.4.75: гибридная модель.
+      // - daysBalance = overdueDays × dailyRate (без вычитания forgive_days).
+      //   Forgive дней работает через сдвиг endPlanned.
+      // - fineBalance = overdueDays × fineDaily − fine_forgive − fine_payment.
+      //   Чтобы «прощу только штраф» имело эффект без сдвига endPlanned.
       void daysForgiveExplicit;
       void daysPayExplicit;
-      void fineForgiveExplicit;
-      void finePayExplicit;
       void mixedForgive;
       void mixedPayment;
       const daysBalance = daysCharge;
-      const fineBalance = fineCharge;
+      const fineBalance = Math.max(
+        0,
+        fineCharge - fineForgiveExplicit - finePayExplicit,
+      );
       const manualBalance = Math.max(0, manualCharged - manualForgiven);
 
       // Damage по report'ам
@@ -2591,22 +2594,26 @@ export async function rentalsRoutes(app: FastifyInstance) {
       else if (e.kind === "manual_forgive") manualForgiven += e.amount;
     }
     // v0.4.75: упрощённая модель просрочки.
-    // Раньше: daysBalance = daysCharge − forgive_days − pay_days. Forgive
-    // вычитался из суммы при том что endPlanned тоже двигался — двойной
-    // учёт, оператор путался.
-    // Теперь: balance = daysCharge / fineCharge напрямую (по текущим
-    // overdueDays). Forgive/payment ОБЯЗАНЫ сдвигать endPlanned —
-    // тогда overdueDays автоматически уменьшится → balance тоже.
-    // Записи debt_entries оставляются для аудита (история операций),
-    // но в расчёте текущего balance не используются.
+    // - daysBalance = current overdueDays × dailyRate (БЕЗ вычитания
+    //   forgive_days/pay_days). Forgive дней работает через сдвиг
+    //   endPlanned — overdueDays уменьшается, balance тоже.
+    // - fineBalance = current overdueDays × fineDaily − fine_forgive
+    //   − fine_payment. Гибрид: «прощу только штраф» (target='fine')
+    //   должно иметь эффект без сдвига endPlanned. Forgive дней
+    //   уменьшит fineCharge через overdueDays автоматически.
+    // - mixedForgive / mixedPayment (legacy overdue_forgive/payment,
+    //   без указания компонента) — игнорируем в новой модели; ради
+    //   обратной совместимости с старыми записями раньше пытались
+    //   разносить, но это плодило двойной учёт.
     void daysForgiveExplicit;
     void daysPayExplicit;
-    void fineForgiveExplicit;
-    void finePayExplicit;
     void mixedForgive;
     void mixedPayment;
     const daysBalance = daysCharge;
-    const fineBalance = fineCharge;
+    const fineBalance = Math.max(
+      0,
+      fineCharge - fineForgiveExplicit - finePayExplicit,
+    );
     const overdueBalance = daysBalance + fineBalance;
     // Для UI «сколько уже простили/оплатили» — суммируем всё.
     const overdueForgiven =
