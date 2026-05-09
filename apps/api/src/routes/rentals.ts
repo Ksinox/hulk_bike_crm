@@ -2455,26 +2455,17 @@ export async function rentalsRoutes(app: FastifyInstance) {
         else if (e.kind === "manual_charge") manualCharged += e.amount;
         else if (e.kind === "manual_forgive") manualForgiven += e.amount;
       }
-      let daysBalance = Math.max(
-        0,
-        daysCharge - daysForgiveExplicit - daysPayExplicit,
-      );
-      let fineBalance = Math.max(
-        0,
-        fineCharge - fineForgiveExplicit - finePayExplicit,
-      );
-      // mixedForgive переливается дни → штраф
-      if (mixedForgive > 0) {
-        const cut = Math.min(daysBalance, mixedForgive);
-        daysBalance -= cut;
-        const left = mixedForgive - cut;
-        if (left > 0) fineBalance = Math.max(0, fineBalance - left);
-      }
-      // mixedPayment — только дни
-      if (mixedPayment > 0) {
-        const cut = Math.min(daysBalance, mixedPayment);
-        daysBalance -= cut;
-      }
+      // v0.4.75: balance = current overdue charge напрямую. Forgive/payment
+      // влияют через сдвиг endPlanned (уменьшает overdueDays). См.
+      // комментарий в /:id/debt endpoint.
+      void daysForgiveExplicit;
+      void daysPayExplicit;
+      void fineForgiveExplicit;
+      void finePayExplicit;
+      void mixedForgive;
+      void mixedPayment;
+      const daysBalance = daysCharge;
+      const fineBalance = fineCharge;
       const manualBalance = Math.max(0, manualCharged - manualForgiven);
 
       // Damage по report'ам
@@ -2599,37 +2590,23 @@ export async function rentalsRoutes(app: FastifyInstance) {
       else if (e.kind === "manual_charge") manualCharged += e.amount;
       else if (e.kind === "manual_forgive") manualForgiven += e.amount;
     }
-    // Сначала считаем «явные» остатки по компонентам.
-    let daysBalance = Math.max(
-      0,
-      daysCharge - daysForgiveExplicit - daysPayExplicit,
-    );
-    let fineBalance = Math.max(
-      0,
-      fineCharge - fineForgiveExplicit - finePayExplicit,
-    );
-    // mixedForgive (legacy «сброс просрочки» без указания компонента) —
-    // съедает сначала дни, потом штраф. Это сознательное допущение.
-    if (mixedForgive > 0) {
-      const cutDays = Math.min(daysBalance, mixedForgive);
-      daysBalance -= cutDays;
-      const leftover = mixedForgive - cutDays;
-      if (leftover > 0) {
-        fineBalance = Math.max(0, fineBalance - leftover);
-      }
-    }
-    // mixedPayment — съедает только дни. Если клиент платил с тегом
-    // overdue_payment без уточнения, это деньги «в погашение», разумно
-    // считать что в первую очередь дни (по бизнесу штраф = дополнительное
-    // наказание, его клиент платит отдельно). Перелив в штраф был бы
-    // двойной выгодой клиенту.
-    if (mixedPayment > 0) {
-      const cutDays = Math.min(daysBalance, mixedPayment);
-      daysBalance -= cutDays;
-      // ОСТАТОК НЕ ПЕРЕЛИВАЕМ. Если клиент заплатил больше чем «дни» —
-      // это его переплата, она должна была уйти в депозит через
-      // PaymentAcceptDialog, а не закрывать штраф «магически».
-    }
+    // v0.4.75: упрощённая модель просрочки.
+    // Раньше: daysBalance = daysCharge − forgive_days − pay_days. Forgive
+    // вычитался из суммы при том что endPlanned тоже двигался — двойной
+    // учёт, оператор путался.
+    // Теперь: balance = daysCharge / fineCharge напрямую (по текущим
+    // overdueDays). Forgive/payment ОБЯЗАНЫ сдвигать endPlanned —
+    // тогда overdueDays автоматически уменьшится → balance тоже.
+    // Записи debt_entries оставляются для аудита (история операций),
+    // но в расчёте текущего balance не используются.
+    void daysForgiveExplicit;
+    void daysPayExplicit;
+    void fineForgiveExplicit;
+    void finePayExplicit;
+    void mixedForgive;
+    void mixedPayment;
+    const daysBalance = daysCharge;
+    const fineBalance = fineCharge;
     const overdueBalance = daysBalance + fineBalance;
     // Для UI «сколько уже простили/оплатили» — суммируем всё.
     const overdueForgiven =
