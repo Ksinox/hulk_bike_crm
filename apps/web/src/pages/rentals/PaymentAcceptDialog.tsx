@@ -759,10 +759,13 @@ export function PaymentAcceptDialog({
                   <input
                     type="number"
                     min={0}
-                    value={extCustomRate}
+                    // v0.4.72: показываем пусто если 0, чтобы оператор
+                    // мог сразу набирать сумму без удаления нолика.
+                    value={extCustomRate === 0 ? "" : extCustomRate}
                     onChange={(e) =>
                       setExtCustomRate(Math.max(0, Number(e.target.value) || 0))
                     }
+                    onFocus={(e) => e.currentTarget.select()}
                     placeholder="0"
                     className="h-7 w-24 rounded-[6px] border border-border bg-white px-2 text-[12px] tabular-nums outline-none focus:border-blue-500"
                   />

@@ -999,6 +999,14 @@ export function RentalCard({
         const fineBalance =
           debtSummary?.overdueFineBalance ?? fallbackFine;
         const totalBalance = daysBalance + fineBalance;
+        // v0.4.72: показываем «начислено / прощено / к оплате» отдельно
+        // если был forgive. Раньше формула «500 × 10 дн = 5000» а в
+        // сумме было «4500» — оператор видел противоречие.
+        const daysCharge = dailyRate * d;
+        const fineCharge = fineDaily * d;
+        const daysForgiven = Math.max(0, daysCharge - daysBalance);
+        const fineForgiven = Math.max(0, fineCharge - fineBalance);
+        const hasForgive = daysForgiven > 0 || fineForgiven > 0;
         return (
           <div className="flex flex-wrap items-start gap-2 rounded-[12px] bg-red-soft/70 px-3 py-2 text-[12px] text-red-ink">
             <AlertTriangle size={14} className="mt-0.5 shrink-0" />
@@ -1006,10 +1014,22 @@ export function RentalCard({
               <div className="font-semibold">
                 Просрочка {d} дн. — {fmt(totalBalance)} ₽
               </div>
-              <div className="text-[11px] opacity-90">
-                дни {fmt(daysBalance)} ₽ ({fmt(dailyRate)} ₽ × {d}) ·
-                штраф {fmt(fineBalance)} ₽ ({fmt(fineDaily)} ₽/день × {d})
-              </div>
+              {hasForgive ? (
+                <div className="text-[11px] opacity-90 leading-snug">
+                  дни: начислено {fmt(daysCharge)} ₽ ({fmt(dailyRate)} × {d})
+                  {daysForgiven > 0 && <> − прощено {fmt(daysForgiven)} ₽</>}
+                  {" "}= к оплате <b>{fmt(daysBalance)} ₽</b>
+                  <br />
+                  штраф: начислено {fmt(fineCharge)} ₽ ({fmt(fineDaily)} × {d})
+                  {fineForgiven > 0 && <> − прощено {fmt(fineForgiven)} ₽</>}
+                  {" "}= к оплате <b>{fmt(fineBalance)} ₽</b>
+                </div>
+              ) : (
+                <div className="text-[11px] opacity-90">
+                  дни {fmt(daysBalance)} ₽ ({fmt(dailyRate)} ₽ × {d}) ·
+                  штраф {fmt(fineBalance)} ₽ ({fmt(fineDaily)} ₽/день × {d})
+                </div>
+              )}
               <div className="text-[11px] opacity-80">
                 Плановый возврат — {rental.endPlanned} {rental.startTime || "12:00"}
               </div>

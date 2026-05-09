@@ -38,6 +38,24 @@ export function effectiveRentalStatus(
   totalDebt?: number,
   now: Date = new Date(),
 ): RentalStatus {
+  // v0.4.71: расширили обработку — раньше функция работала только при
+  // status='active'. Теперь если в БД status='overdue' (поставлен
+  // scheduler'ом) и долг=0 (клиент всё погасил / простили) —
+  // нормализуем в UI: returning если endPlanned <= today, active иначе.
+  // Бэк-нормализация status в БД делается отдельно в API /debt.
+  if (status === "overdue" && totalDebt !== undefined && totalDebt <= 0) {
+    if (!endPlanned) return "active";
+    let endKey: string | null = null;
+    const ru = /^(\d{2})\.(\d{2})\.(\d{4})/.exec(endPlanned);
+    if (ru) endKey = `${ru[3]}-${ru[2]}-${ru[1]}`;
+    else if (/^\d{4}-\d{2}-\d{2}/.test(endPlanned))
+      endKey = endPlanned.slice(0, 10);
+    if (!endKey) return "active";
+    const today = todayKey(now);
+    if (endKey < today) return "returning";
+    if (endKey === today) return "returning";
+    return "active";
+  }
   if (status !== "active") return status;
   if (!endPlanned) return status;
   let endKey: string | null = null;

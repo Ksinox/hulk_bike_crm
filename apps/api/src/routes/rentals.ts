@@ -2704,14 +2704,45 @@ export async function rentalsRoutes(app: FastifyInstance) {
           action: "status_auto_normalized",
           summary: `Аренда #${id}: ущерб погашен → статус «${nextStatus === "active" ? "активная" : "завершена"}» (было «${rental.status}»)`,
         });
-        // Мутируем rental в памяти — чтобы вернуть response с уже
-        // новым статусом (UI rentalsList тоже инвалидируется на фронте).
         rental.status = nextStatus;
       } catch (e) {
-        // Логируем но не валим запрос — debt summary всё равно отдадим.
         // eslint-disable-next-line no-console
         console.error(
           `[auto-normalize-status] rental ${id} update failed:`,
+          e,
+        );
+      }
+    } else if (
+      // v0.4.72: overdue → active когда долг погашен/прощён.
+      // Сценарий: scheduler перевёл аренду в 'overdue', потом клиент
+      // оплатил/оператор простил все компоненты долга. Статус остаётся
+      // 'overdue' — бейдж красный «Просрочка» в шапке. Карточка
+      // показывает «Долг 0₽» — несостыковка. Теперь автоматически
+      // снимаем 'overdue' если по аренде ничего не должны.
+      // Дальше фронт через effectiveStatus решает active vs returning
+      // по дате endPlanned (returning если endPlanned <= today).
+      rental.status === "overdue" &&
+      overdueBalance === 0 &&
+      manualBalance === 0 &&
+      damageBalance === 0 &&
+      rental.endActualAt == null
+    ) {
+      try {
+        await db
+          .update(rentals)
+          .set({ status: "active", updatedAt: sql`now()` })
+          .where(eq(rentals.id, id));
+        await logActivity(req, {
+          entity: "rental",
+          entityId: id,
+          action: "status_auto_normalized",
+          summary: `Аренда #${id}: долгов нет → статус «активная» (было «просрочка»)`,
+        });
+        rental.status = "active";
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.error(
+          `[auto-normalize-status overdue→active] rental ${id} update failed:`,
           e,
         );
       }
