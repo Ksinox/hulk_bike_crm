@@ -678,6 +678,18 @@ export function RentalCard({
       // на эти дни автоматически (бэк), статус нормализуется в active
       // если новый endPlanned в будущем.
       const overdueDaysCount = debtSummary?.overdueDays ?? 0;
+      // v0.4.73: при прощении дней автоматически списывается штраф за эти
+      // же дни (бэк делает это в одной транзакции). Считаем сколько именно
+      // дней покрывает текущий days-balance и сколько штрафа уйдёт вместе.
+      const dailyRateLocal =
+        rental.rateUnit === "week"
+          ? Math.round(rental.rate / 7)
+          : rental.rate;
+      const fineDailyLocal = Math.round(dailyRateLocal * 0.5);
+      const daysCovered =
+        dailyRateLocal > 0 ? Math.floor(days / dailyRateLocal) : 0;
+      const fineCoveredByDays = Math.min(fine, daysCovered * fineDailyLocal);
+      const totalIfDays = days + fineCoveredByDays;
       const choice = await pickAction<
         "days" | "days_partial" | "fine" | "all"
       >({
@@ -686,26 +698,26 @@ export function RentalCard({
         options: [
           {
             id: "days",
-            label: `Все неоплаченные дни (${overdueDaysCount} дн)`,
-            hint: `${days.toLocaleString("ru-RU")} ₽ — тариф × дни просрочки. endPlanned +${overdueDaysCount} дн.`,
+            label: `Все неоплаченные дни (${daysCovered} дн)`,
+            hint: `${totalIfDays.toLocaleString("ru-RU")} ₽: дни ${days.toLocaleString("ru-RU")} ₽ + штраф за эти дни ${fineCoveredByDays.toLocaleString("ru-RU")} ₽. endPlanned +${daysCovered} дн.`,
             disabled: days <= 0,
           },
           {
             id: "days_partial",
             label: "Только N дней (укажу сколько)",
-            hint: `Простит выбранные дни, остальные останутся в долге`,
+            hint: `Простит выбранные дни (включая штраф за эти же дни). Остальные останутся в долге.`,
             disabled: days <= 0,
           },
           {
             id: "fine",
-            label: "Проценты по просроченным дням",
-            hint: `${fine.toLocaleString("ru-RU")} ₽ — штраф 50% × дни. endPlanned не меняется.`,
+            label: "Только штраф (без дней)",
+            hint: `${fine.toLocaleString("ru-RU")} ₽ — штраф 50% × дни. Дни просрочки и endPlanned не меняются.`,
             disabled: fine <= 0,
           },
           {
             id: "all",
             label: "Всю просрочку (дни + штраф)",
-            hint: `${total.toLocaleString("ru-RU")} ₽. endPlanned +${overdueDaysCount} дн.`,
+            hint: `${total.toLocaleString("ru-RU")} ₽. endPlanned +${daysCovered} дн.`,
             tone: "danger",
           },
         ],
