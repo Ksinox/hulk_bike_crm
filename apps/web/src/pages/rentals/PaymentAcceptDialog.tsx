@@ -33,7 +33,6 @@ import { extendInplaceAsync } from "./rentalsStore";
 import type { Rental } from "@/lib/mock/rentals";
 import type { PaymentMethod } from "@/lib/mock/rentals";
 import {
-  MIN_RENTAL_DAYS,
   TARIFF,
   periodForDays,
 } from "@/lib/mock/rentals";
@@ -113,20 +112,22 @@ export function PaymentAcceptDialog({
   const [mode, setMode] = useState<Mode>("only_pay");
 
   // Параметры продления — активны только в режиме pay_with_extend.
-  const [extDays, setExtDays] = useState<number>(7);
+  // v0.4.77: extInput = пользовательский ввод. В day-mode = дни,
+  // в week-mode = недели. extDays (= реальное количество дней для
+  // shift'а endPlanned) = extInput * (1 или 7).
+  const [extInput, setExtInput] = useState<number>(7);
   const [extCustomMode, setExtCustomMode] = useState<boolean>(false);
   const [extCustomUnit, setExtCustomUnit] = useState<"day" | "week">("day");
   const [extCustomRate, setExtCustomRate] = useState<number>(0);
+  const extIsWeekly = extCustomMode && extCustomUnit === "week";
+  // Реальные дни для расчёта endPlanned-сдвига и суммы.
+  const extDays = extIsWeekly ? Math.max(1, extInput) * 7 : Math.max(1, extInput);
   const extPeriod = periodForDays(extDays);
-  const extEffectivePeriod =
-    extCustomMode && extCustomUnit === "week"
-      ? ("week" as const)
-      : extPeriod;
+  const extEffectivePeriod = extIsWeekly ? ("week" as const) : extPeriod;
   const extRate = extCustomMode
     ? Math.max(0, extCustomRate)
     : TARIFF[rental.model][extEffectivePeriod];
-  const extIsWeekly = extCustomMode && extCustomUnit === "week";
-  const extWeeks = extIsWeekly ? Math.max(1, Math.round(extDays / 7)) : 0;
+  const extWeeks = extIsWeekly ? Math.max(1, extInput) : 0;
   const extSum = extIsWeekly ? extRate * extWeeks : extRate * extDays;
   const extEnabled = mode === "pay_with_extend";
 
@@ -362,20 +363,6 @@ export function PaymentAcceptDialog({
           comment: "Прощение штрафа просрочки при приёме оплаты",
         });
       }
-      // v0.4.49: 0a. Если режим «Оплата с продлением» — продлеваем
-      //   аренду in-place ДО распределения. Бэк обновит endPlannedAt/sum
-      //   и создаст rent-payment как paid=false (placeholder). Дальше
-      //   distribute() распределит этот rent-сегмент на источники.
-      if (extEnabled && extSum > 0) {
-        await extendInplaceAsync(
-          rental.id,
-          extDays,
-          extRate,
-          extEffectivePeriod,
-          extIsWeekly ? "week" : "day",
-          false, // autoMarkPaid=false → rent payment paid=false
-        );
-      }
       // 1. Списать депозит клиента (clients.deposit_balance), если используется
       if (depositToUse > 0) {
         await api.post(
@@ -402,28 +389,19 @@ export function PaymentAcceptDialog({
         });
       }
       // 3. Выполнить распределение всех принятых средств.
-      // v0.4.50: получаем актуальный список rent-payments (после
-      // возможного extend-inplace) — нам нужны unpaid placeholders
-      // для PATCH paid=true. react-query кэш мог не успеть обновиться.
-      const freshPayments = await api.get<{
-        items: Array<{
-          id: number;
-          rentalId: number;
-          type: string;
-          amount: number;
-          paid: boolean;
-        }>;
-      }>(`/api/payments?rentalId=${rental.id}`);
-      const unpaidRent = (freshPayments.items ?? [])
-        .filter(
-          (p) =>
-            p.rentalId === rental.id && p.type === "rent" && !p.paid,
-        )
-        .sort((a, b) => a.id - b.id);
-
+      // v0.4.77: ПОРЯДОК ВАЖЕН. Раньше extend шёл ДО payment-операций,
+      // и overdue_days_payment не сдвигал endPlanned (его уже сдвинул
+      // extend в будущее). Теперь:
+      //   3a. Платежи по просрочке/штрафу/manual/damage — сдвигают
+      //       endPlanned до today (компенсируют просроченные дни).
+      //   3b. extendInplaceAsync — сдвигает дальше за продление,
+      //       создаёт rent placeholder paid=false.
+      //   3c. Платежи по rent — PATCH placeholder paid=true.
       const ops = distribute();
+      // Первый проход: всё кроме rent.
       for (const op of ops) {
         if (op.amount <= 0) continue;
+        if (op.target === "rent") continue; // отложено
         if (op.target === "overdue_days") {
           await api.post(`/api/rentals/${rental.id}/debt/payment`, {
             kind: "overdue_days_payment",
@@ -453,7 +431,46 @@ export function PaymentAcceptDialog({
             amount: op.amount,
             comment: `Оплата клиента (${methodLabel(op.method)})`,
           });
-        } else if (op.target === "rent") {
+        } else if (op.target === "deposit") {
+          await api.post(`/api/clients/${rental.clientId}/deposit/charge`, {
+            amount: op.amount,
+            comment: `Переплата по аренде #${rental.id}`,
+            rentalId: rental.id,
+          });
+        }
+      }
+
+      // 3b. Extend (после payments просрочки → endPlanned уже на today,
+      // extend сдвинет дальше).
+      if (extEnabled && extSum > 0) {
+        await extendInplaceAsync(
+          rental.id,
+          extDays,
+          extRate,
+          extEffectivePeriod,
+          extIsWeekly ? "week" : "day",
+          false, // autoMarkPaid=false → rent payment paid=false placeholder
+        );
+      }
+
+      // 3c. Получаем unpaid rent placeholders (после extend) для PATCH.
+      const freshPayments = await api.get<{
+        items: Array<{
+          id: number;
+          rentalId: number;
+          type: string;
+          amount: number;
+          paid: boolean;
+        }>;
+      }>(`/api/payments?rentalId=${rental.id}`);
+      const unpaidRent = (freshPayments.items ?? [])
+        .filter((p) => p.rentalId === rental.id && p.type === "rent" && !p.paid)
+        .sort((a, b) => a.id - b.id);
+
+      // Второй проход: только rent.
+      for (const op of ops) {
+        if (op.amount <= 0 || op.target !== "rent") continue;
+        {
           // v0.4.50: вместо POST нового rent-платежа PATCH'аем
           // существующие placeholder'ы paid=false (созданные
           // extend-inplace или другими flow). FIFO по id —
@@ -505,15 +522,6 @@ export function PaymentAcceptDialog({
               paidAt: new Date().toISOString(),
             });
           }
-        } else if (op.target === "deposit") {
-          await api.post(
-            `/api/clients/${rental.clientId}/deposit/charge`,
-            {
-              amount: op.amount,
-              comment: `Переплата по аренде #${rental.id}`,
-              rentalId: rental.id,
-            },
-          );
         }
       }
 
@@ -728,19 +736,19 @@ export function PaymentAcceptDialog({
                   Продление
                 </div>
                 <div className="text-[11px] tabular-nums text-blue-700">
-                  +{extDays} {extIsWeekly ? `(${extWeeks} нед)` : "дн"} · {fmt(extSum)} ₽
+                  +{extDays} дн{extIsWeekly ? ` (${extWeeks} нед)` : ""} · {fmt(extSum)} ₽
                 </div>
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-[11px] text-muted">
-                  {extIsWeekly ? "Дней (= " + extWeeks + " нед)" : "Дней"}
+                  {extIsWeekly ? `Недель (= ${extDays} дн)` : "Дней"}
                 </span>
                 <input
                   type="number"
-                  min={MIN_RENTAL_DAYS}
-                  value={extDays}
+                  min={1}
+                  value={extInput}
                   onChange={(e) =>
-                    setExtDays(Math.max(MIN_RENTAL_DAYS, Number(e.target.value) || MIN_RENTAL_DAYS))
+                    setExtInput(Math.max(1, Number(e.target.value) || 1))
                   }
                   className="h-7 w-16 rounded-[6px] border border-border bg-white px-2 text-[12px] tabular-nums outline-none focus:border-blue-500"
                 />
