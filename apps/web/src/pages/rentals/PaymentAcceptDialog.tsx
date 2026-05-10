@@ -104,8 +104,8 @@ function ExtensionRangeCalendar({
   };
 
   return (
-    <div className="rounded-[10px] border border-blue-200 bg-white p-2 select-none">
-      <div className="flex items-center justify-between mb-1.5">
+    <div className="mx-auto inline-block rounded-[10px] border border-blue-200 bg-white p-1.5 select-none">
+      <div className="flex items-center justify-between mb-1 px-0.5">
         <button
           type="button"
           onClick={() => {
@@ -113,11 +113,11 @@ function ExtensionRangeCalendar({
             setViewYear(d.getFullYear());
             setViewMonth(d.getMonth());
           }}
-          className="flex h-6 w-6 items-center justify-center rounded text-muted-2 hover:bg-blue-50 hover:text-blue-600"
+          className="flex h-5 w-5 items-center justify-center rounded text-muted-2 hover:bg-blue-50 hover:text-blue-600"
         >
-          <ChevronLeft size={14} />
+          <ChevronLeft size={12} />
         </button>
-        <span className="text-[12px] font-bold text-ink capitalize">
+        <span className="text-[11px] font-bold text-ink capitalize">
           {monthName}
         </span>
         <button
@@ -127,16 +127,16 @@ function ExtensionRangeCalendar({
             setViewYear(d.getFullYear());
             setViewMonth(d.getMonth());
           }}
-          className="flex h-6 w-6 items-center justify-center rounded text-muted-2 hover:bg-blue-50 hover:text-blue-600"
+          className="flex h-5 w-5 items-center justify-center rounded text-muted-2 hover:bg-blue-50 hover:text-blue-600"
         >
-          <ChevronRight size={14} />
+          <ChevronRight size={12} />
         </button>
       </div>
-      <div className="grid grid-cols-7 gap-0.5 mb-1">
+      <div className="grid grid-cols-7 gap-y-0.5 mb-0.5">
         {["п", "в", "с", "ч", "п", "с", "в"].map((w, i) => (
           <div
             key={i}
-            className="text-center text-[9px] font-semibold uppercase text-muted-2"
+            className="flex size-7 items-center justify-center text-[9px] font-semibold uppercase text-muted-2"
           >
             {w}
           </div>
@@ -178,7 +178,7 @@ function ExtensionRangeCalendar({
               }}
               onClick={() => handlePick(d)}
               className={cn(
-                "relative flex size-9 items-center justify-center text-[12.5px] font-medium tabular-nums transition-colors",
+                "relative flex size-7 items-center justify-center text-[11px] font-medium tabular-nums transition-colors",
                 isOtherMonth && "text-muted-2/40",
                 !isOtherMonth &&
                   !isPickable &&
@@ -222,18 +222,18 @@ function ExtensionRangeCalendar({
           );
         })}
       </div>
-      <div className="mt-2 flex items-center justify-between gap-2 text-[10px] text-muted-2">
+      <div className="mt-1.5 flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5 text-[9px] text-muted-2">
         <span className="flex items-center gap-1">
-          <span className="inline-block h-2 w-2 rounded-sm bg-blue-600" />
-          текущая аренда
+          <span className="inline-block h-1.5 w-1.5 rounded-sm bg-blue-600" />
+          аренда
         </span>
         <span className="flex items-center gap-1">
-          <span className="inline-block h-2 w-2 rounded-sm bg-emerald-600" />
+          <span className="inline-block h-1.5 w-1.5 rounded-sm bg-emerald-600" />
           продление
         </span>
         {isWeekly && (
           <span className="text-emerald-600 font-semibold">
-            ₽/нед · шаг 7 дн
+            шаг 7 дн
           </span>
         )}
       </div>
@@ -1061,23 +1061,25 @@ export function PaymentAcceptDialog({
                                 +{extDays} дн{extIsWeekly ? ` · ${extWeeks} нед` : ""}
                               </span>
                             </div>
-                            <ExtensionRangeCalendar
-                              rentalStartDate={rentalStart}
-                              anchorDate={anchor}
-                              endDate={newEnd}
-                              isWeekly={extIsWeekly}
-                              onHoverDays={setHoverDays}
-                              onPickDays={(days) => {
-                                setHoverDays(null);
-                                if (extIsWeekly) {
-                                  setExtInputOverride(
-                                    Math.max(1, Math.round(days / 7)),
-                                  );
-                                } else {
-                                  setExtInputOverride(days);
-                                }
-                              }}
-                            />
+                            <div className="flex justify-center">
+                              <ExtensionRangeCalendar
+                                rentalStartDate={rentalStart}
+                                anchorDate={anchor}
+                                endDate={newEnd}
+                                isWeekly={extIsWeekly}
+                                onHoverDays={setHoverDays}
+                                onPickDays={(days) => {
+                                  setHoverDays(null);
+                                  if (extIsWeekly) {
+                                    setExtInputOverride(
+                                      Math.max(1, Math.round(days / 7)),
+                                    );
+                                  } else {
+                                    setExtInputOverride(days);
+                                  }
+                                }}
+                              />
+                            </div>
                             <div className="flex items-center gap-2">
                               <span className="text-[11px] text-muted">
                                 {extIsWeekly ? `Недель (= ${extDays} дн)` : "Дней"}
