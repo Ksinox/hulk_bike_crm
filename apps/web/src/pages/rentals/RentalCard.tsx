@@ -1360,20 +1360,37 @@ export function RentalCard({
             .reduce((s, p) => s + p.amount, 0);
           const currentDeposit = rental.deposit || DEPOSIT_AMOUNT;
           const originalDeposit = currentDeposit + depositSpent;
-          // v0.4.88: «Эта аренда» = СУММА ПОСЛЕДНЕГО СЕГМЕНТА (последнее
-          // продление или создание). По бизнесу: rental.sum накапливается
-          // с каждым extend, но KPI «Эта аренда» отражает именно текущий
-          // продлеваемый сегмент. Если продлений не было — это initial sum.
+          // v0.4.91: «Эта аренда» = сумма последнего сегмента продления.
+          // Сегмент = группа rent-платежей созданных в одной операции
+          // (extend / overdue payment). Группировка по близости timestamp
+          // (5 минут окно) — payments одной транзакции имеют ID подряд
+          // и timestamp в одной минуте.
+          // Если продлений не было — это initial sum.
           const rentPays = chainPayments
             .filter((p) => p.type === "rent")
             .sort((a, b) => a.id - b.id);
-          const lastSegmentSum =
-            rentPays.length > 0
-              ? rentPays[rentPays.length - 1]!.amount
-              : rental.sum;
+          const lastSegmentSum = (() => {
+            if (rentPays.length === 0) return rental.sum;
+            if (rentPays.length === 1) return rentPays[0]!.amount;
+            // Группируем подряд идущие payments в один сегмент (по ID
+            // gap > 1 = новая операция). Простое и надёжное правило.
+            // Берём последнюю группу.
+            let lastGroupSum = rentPays[rentPays.length - 1]!.amount;
+            for (let i = rentPays.length - 2; i >= 0; i--) {
+              const cur = rentPays[i]!;
+              const next = rentPays[i + 1]!;
+              if (next.id - cur.id <= 5) {
+                // близко по ID — одна транзакция submit
+                lastGroupSum += cur.amount;
+              } else {
+                break;
+              }
+            }
+            return lastGroupSum;
+          })();
           const hintBase =
             rentPays.length > 1
-              ? `последний сегмент · всего продлений: ${rentPays.length - 1}`
+              ? `последний сегмент · всего платежей: ${rentPays.length}`
               : "сумма этой аренды";
           const hint =
             depositSpent > 0
