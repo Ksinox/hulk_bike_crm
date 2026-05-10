@@ -137,8 +137,20 @@ export function PaymentAcceptDialog({
   const dueAmount = totalDebt;
 
   // Источники
+  // v0.4.80: useDeposit теперь работает И когда долгов нет — оператор
+  // может взять депозит и пустить его в продление. Раньше depositToUse
+  // = min(depositBalance, dueAmount) → если dueAmount=0, депозит не
+  // использовался, и блок «В продление» не появлялся.
   const [useDeposit, setUseDeposit] = useState<boolean>(depositBalance > 0);
-  const depositToUse = useDeposit ? Math.min(depositBalance, dueAmount) : 0;
+  const [useDepositAmountStr, setUseDepositAmountStr] = useState<string>("");
+  const depositToUseRaw =
+    useDeposit ? Number(useDepositAmountStr.replace(/\D/g, "")) : 0;
+  const depositToUse = useDeposit
+    ? Math.min(
+        depositBalance,
+        depositToUseRaw > 0 ? depositToUseRaw : depositBalance,
+      )
+    : 0;
   const remainingAfterDeposit = Math.max(0, dueAmount - depositToUse);
 
   // v0.4.49: залог можно списать ТОЛЬКО на ущерб/просрочку, нельзя на
@@ -853,24 +865,44 @@ export function PaymentAcceptDialog({
 
           {/* Депозит клиента */}
           {depositBalance > 0 && (
-            <label className="flex items-start gap-2 rounded-[10px] border border-green-300 bg-green-soft/40 px-3 py-2 text-[12px] text-green-ink cursor-pointer">
-              <input
-                type="checkbox"
-                checked={useDeposit}
-                onChange={(e) => setUseDeposit(e.target.checked)}
-                className="mt-0.5"
-              />
-              <div className="min-w-0 flex-1">
-                <div className="font-semibold">
-                  Депозит клиента — {fmt(depositBalance)} ₽
+            <div className="rounded-[10px] border border-green-300 bg-green-soft/40 px-3 py-2 text-[12px] text-green-ink">
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={useDeposit}
+                  onChange={(e) => setUseDeposit(e.target.checked)}
+                  className="mt-0.5"
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="font-semibold">
+                    Депозит клиента — {fmt(depositBalance)} ₽
+                  </div>
+                  <div className="text-[11px] opacity-80">
+                    {useDeposit
+                      ? `Зачтём ${fmt(depositToUse)} ₽`
+                      : "Не использовать"}
+                  </div>
                 </div>
-                <div className="text-[11px] opacity-80">
-                  {useDeposit
-                    ? `Зачтём ${fmt(depositToUse)} ₽`
-                    : "Не использовать"}
+              </label>
+              {useDeposit && (
+                <div className="mt-2 flex items-center gap-2">
+                  <span className="text-[11px] opacity-80">Сумма с депозита:</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={depositBalance}
+                    value={useDepositAmountStr}
+                    onChange={(e) =>
+                      setUseDepositAmountStr(
+                        e.target.value.replace(/\D/g, ""),
+                      )
+                    }
+                    placeholder={`всё (${fmt(depositBalance)})`}
+                    className="h-7 w-32 rounded-[6px] border border-green-300 bg-white px-2 text-[12px] tabular-nums outline-none focus:border-green-600"
+                  />
                 </div>
-              </div>
-            </label>
+              )}
+            </div>
           )}
 
           {/* Залог. v0.4.49: видим только когда:

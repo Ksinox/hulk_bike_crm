@@ -1314,7 +1314,21 @@ export function RentalCard({
           // Раньше при долге 0 показывало «Возврат был DD.MM» — это
           // не передавало срочности и сбивало оператора.
           const debtZero = overdueRelatedDebt === 0;
-          if (rental.status === "active" && daysLeft !== null) {
+          // v0.4.80: бронь заранее — start_at в будущем. Аренда висит
+          // как 'active', но фактически не началась. Показываем «До
+          // выдачи N дн» вместо «осталось N дн до конца».
+          const daysUntilStart = startDate
+            ? daysBetween(now(), startDate)
+            : null;
+          if (
+            rental.status === "active" &&
+            daysUntilStart !== null &&
+            daysUntilStart > 0
+          ) {
+            label = "До выдачи";
+            value = `${daysUntilStart} дн`;
+            accent = "default";
+          } else if (rental.status === "active" && daysLeft !== null) {
             if (daysLeft > 0) {
               value = `осталось ${daysLeft} дн`;
               accent = daysLeft <= 2 ? "red" : "default";
