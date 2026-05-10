@@ -1466,6 +1466,12 @@ export function RentalCard({
         </div>
       )}
 
+      {/* v0.4.87: история изменений суммы — раскрывающаяся плашка.
+           Источник = chainPayments (rent тип). Каждый rent payment =
+           одна транзакция «оплата создания» / «продление на N дн».
+           Видна когда есть >1 rent-payment (т.е. были продления). */}
+      <RentalSumHistory chainPayments={chainPayments} totalSum={paidIn} />
+
       {/* v0.4.49: плашка залога — показывается только когда:
           - залог денежный (depositItem == null)
           - текущий deposit < исходного (deposit_original)
@@ -2003,5 +2009,126 @@ function pluralRental(n: number): string {
   if (n10 === 1 && n100 !== 11) return "аренду";
   if (n10 >= 2 && n10 <= 4 && (n100 < 10 || n100 >= 20)) return "аренды";
   return "аренд";
+}
+
+/**
+ * v0.4.87: история изменений суммы аренды.
+ * Источник — rent payments (initial + extensions). Раскрывающаяся
+ * плашка с timeline и running total. Показывается только если было
+ * хотя бы одно продление (chainPayments.rent ≥ 2).
+ */
+function RentalSumHistory({
+  chainPayments,
+  totalSum,
+}: {
+  chainPayments: Array<{
+    id: number;
+    type: string;
+    amount: number;
+    paid: boolean;
+    paidAt?: string | null;
+    createdAt?: string;
+    note?: string | null;
+  }>;
+  totalSum: number;
+}) {
+  const [open, setOpen] = useState(false);
+  const rentPayments = useMemo(
+    () =>
+      chainPayments
+        .filter((p) => p.type === "rent")
+        .sort((a, b) => {
+          const ta = a.paidAt ?? a.createdAt ?? "";
+          const tb = b.paidAt ?? b.createdAt ?? "";
+          return ta.localeCompare(tb) || a.id - b.id;
+        }),
+    [chainPayments],
+  );
+  if (rentPayments.length < 2) return null;
+  // Running total
+  let running = 0;
+  const events = rentPayments.map((p) => {
+    running += p.amount;
+    const date = p.paidAt ?? p.createdAt ?? "";
+    const ru = date
+      ? new Date(date).toLocaleDateString("ru-RU", {
+          day: "2-digit",
+          month: "2-digit",
+        })
+      : "—";
+    const isInitial = (p.note ?? "").toLowerCase().includes("создан");
+    const isExtend = (p.note ?? "").toLowerCase().includes("продлен");
+    const label = isInitial
+      ? "Создание аренды"
+      : isExtend
+        ? p.note?.replace(/^продление\s*/i, "Продление ")
+            .replace(/\s*\(.*$/, "") ?? "Продление"
+        : "Платёж";
+    return {
+      id: p.id,
+      date: ru,
+      label,
+      amount: p.amount,
+      paid: p.paid,
+      running,
+    };
+  });
+  const lastEvent = events[events.length - 1];
+  return (
+    <div className="rounded-[10px] border border-border bg-surface-soft px-3 py-2 text-[12px]">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center justify-between gap-2 text-left"
+      >
+        <span className="flex items-center gap-2 font-semibold text-ink-2">
+          <span className="text-muted-2">⌥</span>
+          История изменений суммы
+          <span className="rounded-full bg-blue-100 px-1.5 py-0 text-[10px] font-bold text-blue-700">
+            {events.length} событий
+          </span>
+        </span>
+        <span className="flex items-center gap-1 text-muted-2">
+          <span className="tabular-nums">{lastEvent ? lastEvent.running.toLocaleString("ru-RU") : 0} ₽</span>
+          <span className="text-[10px]">{open ? "▲" : "▼"}</span>
+        </span>
+      </button>
+      {open && (
+        <div className="mt-2 space-y-1 border-t border-border pt-2">
+          {events.map((e) => (
+            <div
+              key={e.id}
+              className="flex items-center justify-between gap-2 rounded px-1 py-0.5 text-[11.5px] hover:bg-surface"
+            >
+              <span className="flex items-center gap-2 min-w-0">
+                <span className="tabular-nums text-muted-2 w-12 shrink-0">{e.date}</span>
+                <span className="text-ink truncate">{e.label}</span>
+                {!e.paid && (
+                  <span className="rounded-full bg-orange-soft/60 px-1.5 text-[9px] font-semibold text-orange-ink">
+                    не оплачен
+                  </span>
+                )}
+              </span>
+              <span className="flex items-center gap-2 shrink-0">
+                <span className="tabular-nums font-semibold text-emerald-700">
+                  +{e.amount.toLocaleString("ru-RU")}
+                </span>
+                <span className="tabular-nums text-muted-2 w-20 text-right">
+                  = {e.running.toLocaleString("ru-RU")} ₽
+                </span>
+              </span>
+            </div>
+          ))}
+          {totalSum !== lastEvent?.running && (
+            <div className="mt-1 rounded bg-amber-50 px-2 py-1 text-[10.5px] text-amber-800">
+              ⚠ Итог в шапке ({totalSum.toLocaleString("ru-RU")} ₽) отличается
+              от суммы платежей ({lastEvent?.running.toLocaleString("ru-RU")} ₽)
+              — возможна ручная корректировка sum через «Изменить аренду».
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
