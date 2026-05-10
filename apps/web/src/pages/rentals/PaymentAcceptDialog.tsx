@@ -175,12 +175,17 @@ export function PaymentAcceptDialog({
       : 0;
   const remainingAfterSecurity = Math.max(0, remainingAfterDeposit - securityToUse);
 
+  // v0.4.83: «Принято от клиента» — пустое поле когда сумма 0, чтоб
+  // оператор не стирал нолик при наборе. Внутри в submit пустая строка
+  // = 0.
   const [acceptedStr, setAcceptedStr] = useState<string>(
-    String(remainingAfterSecurity),
+    remainingAfterSecurity > 0 ? String(remainingAfterSecurity) : "",
   );
-  // Sync «принято» при изменении источников
+  // Sync «принято» при изменении источников. Если становится 0 — пустая.
   useEffect(() => {
-    setAcceptedStr(String(remainingAfterSecurity));
+    setAcceptedStr(
+      remainingAfterSecurity > 0 ? String(remainingAfterSecurity) : "",
+    );
   }, [remainingAfterSecurity]);
 
   const accepted = Number(acceptedStr.replace(/\D/g, "")) || 0;
@@ -787,90 +792,126 @@ export function PaymentAcceptDialog({
                     )}
                   </div>
                   {extAutoUnits > 0 && (
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-[11px] text-muted">
-                        {extIsWeekly ? `Недель (= ${extDays} дн)` : "Дней"}
-                      </span>
-                      <input
-                        type="number"
-                        min={1}
-                        value={extInput}
-                        onChange={(e) =>
-                          setExtInputOverride(
-                            Math.max(1, Number(e.target.value) || 1),
-                          )
-                        }
-                        className="h-7 w-16 rounded-[6px] border border-border bg-white px-2 text-[12px] tabular-nums outline-none focus:border-blue-500"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setExtInputOverride(null)}
-                        className="text-[10px] text-blue-600 hover:underline"
-                        title="Сбросить ручную правку — авто-расчёт по переплате"
-                      >
-                        авто
-                      </button>
-                      {/* v0.4.82: DatePicker для выбора конца аренды.
-                         extDays = выбранная_дата − текущий endPlanned.
-                         Удобнее когда оператор знает «нужно до 25.05». */}
-                      <span className="ml-auto flex items-center gap-1 text-[11px] text-muted">
-                        <Calendar size={11} /> до даты:
-                      </span>
-                      <DatePicker
-                        value={(() => {
-                          // Текущий endPlanned + extDays = новая дата
-                          const m = /^(\d{2})\.(\d{2})\.(\d{4})/.exec(rental.endPlanned);
-                          if (!m) return null;
-                          const cur = new Date(
-                            Number(m[3]),
-                            Number(m[2]) - 1,
-                            Number(m[1]),
-                          );
-                          cur.setDate(cur.getDate() + extDays);
-                          return `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}-${String(cur.getDate()).padStart(2, "0")}`;
-                        })()}
-                        onChange={(iso) => {
-                          if (!iso) {
-                            setExtInputOverride(null);
-                            return;
+                    <div className="flex flex-col gap-2">
+                      {/* Период продления — визуально */}
+                      {(() => {
+                        const m = /^(\d{2})\.(\d{2})\.(\d{4})/.exec(rental.endPlanned);
+                        if (!m) return null;
+                        const startDate = new Date(
+                          Number(m[3]),
+                          Number(m[2]) - 1,
+                          Number(m[1]),
+                        );
+                        const endDate = new Date(startDate);
+                        endDate.setDate(endDate.getDate() + extDays);
+                        const fmtRu = (d: Date) =>
+                          `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}`;
+                        const toIso = (d: Date) =>
+                          `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+                        const minDate = new Date(startDate);
+                        minDate.setDate(minDate.getDate() + 1);
+                        return (
+                          <div className="rounded-[10px] border border-blue-200 bg-white p-2.5">
+                            <div className="mb-1.5 flex items-center justify-between gap-2">
+                              <span className="text-[11px] font-bold uppercase tracking-wider text-blue-800">
+                                Период продления
+                              </span>
+                              <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-700">
+                                +{extDays} дн{extIsWeekly ? ` · ${extWeeks} нед` : ""}
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 text-[12px]">
+                              <div className="rounded-[8px] bg-surface-soft px-2 py-1.5 text-center">
+                                <div className="text-[10px] text-muted-2">с</div>
+                                <div className="font-semibold text-ink tabular-nums">
+                                  {fmtRu(startDate)}
+                                </div>
+                              </div>
+                              <span className="text-blue-500">→</span>
+                              <div className="rounded-[8px] bg-blue-50 ring-1 ring-blue-300 px-2 py-1.5 text-center">
+                                <div className="text-[10px] text-blue-600">по</div>
+                                <div className="font-semibold text-blue-700 tabular-nums">
+                                  {fmtRu(endDate)}
+                                </div>
+                              </div>
+                            </div>
+                            {/* Календарь для ручной правки */}
+                            <div className="mt-2 flex items-center gap-1.5">
+                              <Calendar size={12} className="text-muted-2" />
+                              <span className="text-[11px] text-muted">Выбрать дату возврата:</span>
+                              <div className="flex-1">
+                                <DatePicker
+                                  value={toIso(endDate)}
+                                  onChange={(iso) => {
+                                    if (!iso) {
+                                      setExtInputOverride(null);
+                                      return;
+                                    }
+                                    const [y, mo, dd] = iso.split("-").map(Number);
+                                    if (!y || !mo || !dd) return;
+                                    const target = new Date(y, mo - 1, dd);
+                                    const diffDays = Math.round(
+                                      (target.getTime() - startDate.getTime()) /
+                                        86_400_000,
+                                    );
+                                    if (diffDays <= 0) return;
+                                    setExtInputOverride(
+                                      extIsWeekly
+                                        ? Math.max(1, Math.ceil(diffDays / 7))
+                                        : diffDays,
+                                    );
+                                  }}
+                                  minDate={toIso(minDate)}
+                                  clearable={false}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] text-muted">
+                          {extIsWeekly ? `Недель (= ${extDays} дн)` : "Дней"}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setExtInputOverride(Math.max(1, extInput - 1))
                           }
-                          // Парсим выбранную дату в ru-формат
-                          const [y, mo, d] = iso.split("-").map(Number);
-                          if (!y || !mo || !d) return;
-                          const target = new Date(y, mo - 1, d);
-                          // Текущий endPlanned
-                          const em = /^(\d{2})\.(\d{2})\.(\d{4})/.exec(rental.endPlanned);
-                          if (!em) return;
-                          const cur = new Date(
-                            Number(em[3]),
-                            Number(em[2]) - 1,
-                            Number(em[1]),
-                          );
-                          const diffDays = Math.round(
-                            (target.getTime() - cur.getTime()) / 86_400_000,
-                          );
-                          if (diffDays <= 0) return;
-                          // В weekly mode конвертируем дни в недели (округление вверх)
-                          if (extIsWeekly) {
-                            setExtInputOverride(Math.max(1, Math.ceil(diffDays / 7)));
-                          } else {
-                            setExtInputOverride(diffDays);
+                          className="flex h-7 w-7 items-center justify-center rounded-[6px] border border-border bg-white text-[14px] font-bold text-ink-2 hover:border-blue-400 hover:text-blue-600"
+                          title="Уменьшить"
+                        >
+                          −
+                        </button>
+                        <input
+                          type="number"
+                          min={1}
+                          value={extInput}
+                          onFocus={(e) => e.currentTarget.select()}
+                          onChange={(e) =>
+                            setExtInputOverride(
+                              Math.max(1, Number(e.target.value) || 1),
+                            )
                           }
-                        }}
-                        minDate={(() => {
-                          const m = /^(\d{2})\.(\d{2})\.(\d{4})/.exec(rental.endPlanned);
-                          if (!m) return undefined;
-                          const cur = new Date(
-                            Number(m[3]),
-                            Number(m[2]) - 1,
-                            Number(m[1]),
-                          );
-                          cur.setDate(cur.getDate() + 1);
-                          return `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}-${String(cur.getDate()).padStart(2, "0")}`;
-                        })()}
-                        clearable={false}
-                        className="!w-auto"
-                      />
+                          className="h-7 w-14 rounded-[6px] border border-border bg-white px-2 text-center text-[12px] tabular-nums outline-none focus:border-blue-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setExtInputOverride(extInput + 1)}
+                          className="flex h-7 w-7 items-center justify-center rounded-[6px] border border-border bg-white text-[14px] font-bold text-ink-2 hover:border-blue-400 hover:text-blue-600"
+                          title="Увеличить"
+                        >
+                          +
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setExtInputOverride(null)}
+                          className="text-[10px] text-blue-600 hover:underline"
+                          title="Сбросить ручную правку — авто-расчёт по переплате"
+                        >
+                          авто
+                        </button>
+                      </div>
                     </div>
                   )}
                 </>
@@ -1040,6 +1081,8 @@ export function PaymentAcceptDialog({
               onChange={(e) =>
                 setAcceptedStr(e.target.value.replace(/[^\d]/g, ""))
               }
+              onFocus={(e) => e.currentTarget.select()}
+              placeholder="0"
               className="h-10 w-full rounded-[10px] border border-border bg-white px-3 text-[16px] font-semibold tabular-nums text-ink outline-none focus:border-blue-600"
             />
           </div>
