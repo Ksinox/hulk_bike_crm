@@ -905,12 +905,16 @@ export function PaymentAcceptDialog({
     >
       <div
         className={cn(
-          "w-full max-w-[520px] overflow-hidden rounded-2xl bg-surface shadow-card-lg",
+          // v0.4.96: широкая прямоугольная модалка max-w-[760px]
+          // (было 520 — узкая колонка с длинным скроллом). Body
+          // имеет внутренний скролл, header/footer закреплены.
+          "flex w-full max-w-[760px] flex-col rounded-2xl bg-surface shadow-card-lg",
           closing ? "animate-modal-out" : "animate-modal-in",
         )}
         onClick={(e) => e.stopPropagation()}
+        style={{ maxHeight: "90vh" }}
       >
-        <div className="flex items-center gap-3 border-b border-border bg-surface-soft px-5 py-3">
+        <div className="flex items-center gap-3 rounded-t-2xl border-b border-border bg-surface-soft px-5 py-3">
           <Wallet size={16} className="text-blue-600" />
           <div className="min-w-0 flex-1 text-[15px] font-semibold text-ink">
             Приём оплаты по аренде #{String(rental.id).padStart(4, "0")}
@@ -924,7 +928,7 @@ export function PaymentAcceptDialog({
           </button>
         </div>
 
-        <div className="flex flex-col gap-3 px-5 py-4 text-[13px] text-ink-2">
+        <div className="flex-1 overflow-y-auto px-5 py-4 text-[13px] text-ink-2 md:columns-2 md:gap-4 [&>*]:mb-3 [&>*]:break-inside-avoid">
           {/* Сумма */}
           <div className="rounded-[10px] bg-blue-50 px-3 py-2.5">
             <div className="text-[11px] text-blue-700">К оплате</div>
@@ -1476,7 +1480,7 @@ export function PaymentAcceptDialog({
           </div>
         </div>
 
-        <div className="flex items-center justify-end gap-2 border-t border-border bg-surface-soft px-5 py-3">
+        <div className="flex items-center justify-end gap-2 rounded-b-2xl border-t border-border bg-surface-soft px-5 py-3">
           <button
             type="button"
             onClick={requestClose}
