@@ -1,7 +1,7 @@
 {
   "name": "desktop",
   "private": true,
-  "version": "0.4.87",
+  "version": "0.4.88",
   "description": "Electron-обёртка для Халк Байк CRM",
   "main": "dist/main.js",
   "scripts": {
