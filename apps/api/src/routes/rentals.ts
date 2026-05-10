@@ -2874,8 +2874,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
             }
             // v0.4.81: при сдвиге endPlanned обновляем также days и sum —
             // фактически клиент «купил» эти дни задним числом, и стоимость
-            // этих дней входит в сумму аренды. KPI «Эта аренда» теперь
-            // корректно показывает увеличение.
+            // этих дней входит в сумму аренды.
             await db
               .update(rentals)
               .set({
@@ -2886,6 +2885,23 @@ export async function rentalsRoutes(app: FastifyInstance) {
                 updatedAt: sql`now()`,
               })
               .where(eq(rentals.id, id));
+            // v0.4.89: создаём payment(type='rent', paid=true) для тех
+            // дней которые клиент «купил». Без этого деньги клиента
+            // не учитывались в paidIn ("За всё время аренды") и
+            // в выручке. Сумма = daysAdded × dailyRate (целое × ставку),
+            // остаток amount → в депозит отдельно.
+            const dayCoverAmount = daysAdded * dailyRate;
+            if (dayCoverAmount > 0) {
+              await db.insert(payments).values({
+                rentalId: id,
+                type: "rent",
+                amount: dayCoverAmount,
+                method: "cash",
+                paid: true,
+                paidAt: new Date(),
+                note: `Оплата ${daysAdded} дн просрочки (продление endPlanned)`,
+              });
+            }
           }
           // Зачисляем остаток в депозит клиента
           if (residualToDeposit > 0 && r.clientId) {
@@ -2897,6 +2913,18 @@ export async function rentalsRoutes(app: FastifyInstance) {
           }
         }
       }
+    } else if (parsed.data.kind === "overdue_fine_payment") {
+      // v0.4.89: оплата штрафа просрочки = выручка. Создаём
+      // payment(type='fine') чтобы попало в paidIn.
+      await db.insert(payments).values({
+        rentalId: id,
+        type: "fine",
+        amount: parsed.data.amount,
+        method: "cash",
+        paid: true,
+        paidAt: new Date(),
+        note: "Оплата штрафа просрочки",
+      });
     }
 
     await logActivity(req, {
