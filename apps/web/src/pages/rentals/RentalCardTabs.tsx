@@ -2213,6 +2213,12 @@ export function ActivityTimelineSection({
             (it.entity === "rental" ||
               it.entity === "scooter" ||
               it.entity === "client");
+          // v0.4.92: продление аренды визуально выделено — рамка
+          // и фон, чтобы оператор сразу видел что с этого момента
+          // начался новый период (по аналогии с «Цепочка аренд»).
+          const isExtension =
+            it.action === "extended" || it.action === "rental_extended";
+          const isCreated = it.action === "created";
           return (
             <li key={it.id}>
               <button
@@ -2220,10 +2226,13 @@ export function ActivityTimelineSection({
                 onClick={() => clickable && handleClick(it)}
                 disabled={!clickable}
                 className={cn(
-                  "flex w-full items-start gap-2 rounded-[10px] bg-surface-soft px-3 py-2 text-left transition-colors",
-                  clickable
-                    ? "cursor-pointer hover:bg-blue-50"
-                    : "cursor-default",
+                  "flex w-full items-start gap-2 rounded-[10px] px-3 py-2 text-left transition-colors",
+                  isExtension
+                    ? "border-2 border-blue-400 bg-blue-50 hover:bg-blue-100"
+                    : isCreated
+                      ? "border border-emerald-300 bg-emerald-50 hover:bg-emerald-100"
+                      : "bg-surface-soft hover:bg-blue-50",
+                  clickable ? "cursor-pointer" : "cursor-default",
                 )}
                 title={
                   clickable
@@ -2238,7 +2247,26 @@ export function ActivityTimelineSection({
                   )}
                 />
                 <div className="min-w-0 flex-1">
-                  <div className="text-[13px] leading-snug text-ink">
+                  {isExtension && (
+                    <div className="mb-0.5 inline-flex items-center gap-1 rounded-full bg-blue-600 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white">
+                      ↻ Продление · новый период
+                    </div>
+                  )}
+                  {isCreated && (
+                    <div className="mb-0.5 inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white">
+                      ✓ Создание аренды
+                    </div>
+                  )}
+                  <div
+                    className={cn(
+                      "text-[13px] leading-snug",
+                      isExtension
+                        ? "font-semibold text-blue-900"
+                        : isCreated
+                          ? "font-semibold text-emerald-900"
+                          : "text-ink",
+                    )}
+                  >
                     {it.summary}
                   </div>
                   <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[10px] text-muted-2">
