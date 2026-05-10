@@ -929,29 +929,39 @@ export function PaymentAcceptDialog({
                 </div>
               </label>
               {useSecurity && (
-                <div className="mt-2 flex items-center gap-2">
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    value={securityStr}
-                    onChange={(e) =>
-                      setSecurityStr(e.target.value.replace(/[^\d]/g, ""))
-                    }
-                    className="h-9 w-32 rounded-[8px] border border-border bg-white px-2 text-[13px] tabular-nums text-ink outline-none focus:border-blue-600"
-                  />
-                  <span className="text-[11px]">₽ из залога</span>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setSecurityStr(
-                        String(Math.min(securityMax, securityCoverable)),
-                      )
-                    }
-                    className="ml-auto rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-semibold hover:bg-amber-200"
-                  >
-                    Покрыть полностью
-                  </button>
-                </div>
+                <>
+                  <div className="mt-2 flex items-center gap-2">
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={securityStr}
+                      onChange={(e) =>
+                        setSecurityStr(e.target.value.replace(/[^\d]/g, ""))
+                      }
+                      className="h-9 w-32 rounded-[8px] border border-border bg-white px-2 text-[13px] tabular-nums text-ink outline-none focus:border-blue-600"
+                    />
+                    <span className="text-[11px]">₽ из залога</span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSecurityStr(
+                          String(Math.min(securityMax, securityCoverable)),
+                        )
+                      }
+                      className="ml-auto rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-semibold hover:bg-amber-200"
+                    >
+                      Покрыть полностью
+                    </button>
+                  </div>
+                  {/* v0.4.81: показываем что останется в залоге к выдаче
+                      клиенту при завершении аренды без ущерба. */}
+                  <div className="mt-1.5 flex items-center justify-between text-[11px] opacity-90">
+                    <span>Останется в залоге (вернётся клиенту при сдаче):</span>
+                    <span className="tabular-nums font-semibold">
+                      {fmt(Math.max(0, securityMax - securityToUse))} ₽
+                    </span>
+                  </div>
+                </>
               )}
             </div>
           )}

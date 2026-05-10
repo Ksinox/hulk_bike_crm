@@ -2828,6 +2828,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
     // время не влияет. manual_payment — тоже не сдвигает.
     let endPlannedShift = 0;
     let newStatus: string | null = null;
+    let residualToDeposit = 0;
     if (parsed.data.kind === "overdue_days_payment") {
       const [r] = await db
         .select({
@@ -2835,6 +2836,9 @@ export async function rentalsRoutes(app: FastifyInstance) {
           rateUnit: rentals.rateUnit,
           endPlannedAt: rentals.endPlannedAt,
           status: rentals.status,
+          days: rentals.days,
+          sum: rentals.sum,
+          clientId: rentals.clientId,
         })
         .from(rentals)
         .where(eq(rentals.id, id));
@@ -2847,13 +2851,15 @@ export async function rentalsRoutes(app: FastifyInstance) {
             overdueDays,
             Math.floor(parsed.data.amount / dailyRate),
           );
+          // v0.4.81: остаток (amount > daysAdded × dailyRate) уходит в депозит
+          // клиента — иначе деньги «терялись». Например, оплачено 600 при
+          // dailyRate=500 — 1 день shift (500 ₽), 100 ₽ уходило в воздух.
+          residualToDeposit = parsed.data.amount - daysAdded * dailyRate;
           if (daysAdded > 0) {
             endPlannedShift = daysAdded;
             const newEnd = new Date(
               r.endPlannedAt.getTime() + daysAdded * 86_400_000,
             );
-            // Мгновенная нормализация статуса: если был overdue, а
-            // новый endPlanned >= сегодня → возвращаем active.
             const todayMsk = new Date(
               new Date().toLocaleString("en-US", {
                 timeZone: "Europe/Moscow",
@@ -2866,14 +2872,28 @@ export async function rentalsRoutes(app: FastifyInstance) {
             ) {
               newStatus = "active";
             }
+            // v0.4.81: при сдвиге endPlanned обновляем также days и sum —
+            // фактически клиент «купил» эти дни задним числом, и стоимость
+            // этих дней входит в сумму аренды. KPI «Эта аренда» теперь
+            // корректно показывает увеличение.
             await db
               .update(rentals)
               .set({
                 endPlannedAt: newEnd,
+                days: r.days + daysAdded,
+                sum: r.sum + daysAdded * dailyRate,
                 ...(newStatus ? { status: "active" as const } : {}),
                 updatedAt: sql`now()`,
               })
               .where(eq(rentals.id, id));
+          }
+          // Зачисляем остаток в депозит клиента
+          if (residualToDeposit > 0 && r.clientId) {
+            await db.execute(sql`
+              UPDATE clients
+                 SET deposit_balance = deposit_balance + ${residualToDeposit}
+               WHERE id = ${r.clientId}
+            `);
           }
         }
       }
@@ -2885,9 +2905,9 @@ export async function rentalsRoutes(app: FastifyInstance) {
       action: "debt_payment",
       summary:
         endPlannedShift > 0
-          ? `Оплата ${parsed.data.amount} ₽ по аренде #${id} (${parsed.data.kind}) — endPlanned сдвинут на ${endPlannedShift} дн${newStatus ? ", статус → active" : ""}`
+          ? `Оплата ${parsed.data.amount} ₽ по аренде #${id} (${parsed.data.kind}) — endPlanned сдвинут на ${endPlannedShift} дн${newStatus ? ", статус → active" : ""}${residualToDeposit > 0 ? `, остаток ${residualToDeposit} ₽ → депозит клиента` : ""}`
           : `Оплата ${parsed.data.amount} ₽ по аренде #${id} (${parsed.data.kind})`,
-      meta: { endPlannedShift, newStatus },
+      meta: { endPlannedShift, newStatus, residualToDeposit },
     });
     return row;
   });
