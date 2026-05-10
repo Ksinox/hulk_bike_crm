@@ -46,11 +46,13 @@ function ExtensionRangeCalendar({
   onHoverDays,
 }: {
   rentalStartDate: Date;
+  /** Текущий endPlanned (граница «текущая аренда / зона ниже»). */
   anchorDate: Date;
+  /** Новый endPlanned после продления (конец зелёной зоны). */
   endDate: Date;
   isWeekly: boolean;
+  /** Сколько новых дней добавить (с момента сегодня или endPlanned). */
   onPickDays: (days: number) => void;
-  /** v0.4.85: преview расчёта при hover на день. null = убрали курсор. */
   onHoverDays?: (days: number | null) => void;
 }) {
   const today = new Date();
@@ -82,20 +84,24 @@ function ExtensionRangeCalendar({
     new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
   const anchorMs = fmtAnchorDay(anchorDate);
   const endMs = fmtAnchorDay(endDate);
-  const minPickableMs = Math.max(
-    anchorMs + 86_400_000,
-    fmtAnchorDay(today),
-  );
+  const todayMs = fmtAnchorDay(today);
+  // v0.4.94: продление считается ОТ today (не от endPlanned). Между
+  // endPlanned и today — просрочка (красная зона). Если endPlanned
+  // в будущем — overdueStartMs = anchorMs + 1 день (нет просрочки).
+  const hasOverdue = anchorMs < todayMs;
+  // База для подсчёта продления = today (если просрочка) или endPlanned
+  const extBaseMs = hasOverdue ? todayMs : anchorMs;
+  const minPickableMs = extBaseMs + 86_400_000;
   const previewMs = hoverDate ? fmtAnchorDay(hoverDate) : null;
   const effEnd = previewMs && previewMs >= minPickableMs ? previewMs : endMs;
 
   const handlePick = (d: Date) => {
     const dMs = fmtAnchorDay(d);
     if (dMs < minPickableMs) return;
-    const diffDays = Math.round((dMs - anchorMs) / 86_400_000);
+    // v0.4.94: считаем дни ОТ extBaseMs (today если просрочка)
+    const diffDays = Math.round((dMs - extBaseMs) / 86_400_000);
     if (diffDays <= 0) return;
     if (isWeekly) {
-      // Snap to multiples of 7: округление вверх
       const weeks = Math.max(1, Math.ceil(diffDays / 7));
       onPickDays(weeks * 7);
     } else {
@@ -151,9 +157,14 @@ function ExtensionRangeCalendar({
           const isEnd = dMs === effEnd;
           const isRentalStart = dMs === rentalStartMs;
           const isInBlueRange = dMs >= rentalStartMs && dMs < anchorMs;
-          const isInGreenRange = dMs > anchorMs && dMs < effEnd;
+          // v0.4.94: красная зона = просрочка (между endPlanned и today)
+          const isInRedRange = hasOverdue && dMs > anchorMs && dMs < todayMs;
+          const isOverdueEnd = hasOverdue && dMs === todayMs;
+          // Зелёная зона = продление (от today+1 или endPlanned+1 до newEnd)
+          const greenStartMs = hasOverdue ? todayMs : anchorMs;
+          const isInGreenRange = dMs > greenStartMs && dMs < effEnd;
           const isPickable = dMs >= minPickableMs;
-          const isToday = dMs === fmtAnchorDay(today);
+          const isToday = dMs === todayMs;
           return (
             <button
               key={i}
@@ -163,7 +174,7 @@ function ExtensionRangeCalendar({
                 if (!isPickable) return;
                 setHoverDate(d);
                 if (onHoverDays) {
-                  const diff = Math.round((dMs - anchorMs) / 86_400_000);
+                  const diff = Math.round((dMs - extBaseMs) / 86_400_000);
                   if (diff > 0) {
                     const days = isWeekly
                       ? Math.max(1, Math.ceil(diff / 7)) * 7
@@ -184,6 +195,7 @@ function ExtensionRangeCalendar({
                   !isPickable &&
                   !isAnchor &&
                   !isInBlueRange &&
+                  !isInRedRange &&
                   !isRentalStart &&
                   "text-ink",
                 !isOtherMonth &&
@@ -191,27 +203,33 @@ function ExtensionRangeCalendar({
                   !isInGreenRange &&
                   !isEnd &&
                   "text-ink hover:bg-emerald-100",
-                // Синий период (текущая аренда) — фирменный стиль
+                // Синий период (текущая аренда)
                 isInBlueRange &&
                   !isRentalStart &&
                   !isAnchor &&
                   "bg-blue-200 text-blue-900",
                 isRentalStart && "rounded-s-lg bg-ink text-white",
-                isAnchor && "bg-ink text-white cursor-default",
+                isAnchor &&
+                  (hasOverdue
+                    ? "bg-blue-200 text-blue-900 cursor-default"
+                    : "bg-ink text-white cursor-default"),
+                // Красная зона (просрочка между endPlanned и today)
+                isInRedRange && "bg-red-200 text-red-900",
+                isOverdueEnd && "bg-red-600 text-white font-bold",
                 // Зелёный период (продление)
-                isInGreenRange &&
-                  "bg-emerald-200 text-emerald-900",
+                isInGreenRange && "bg-emerald-200 text-emerald-900",
                 isEnd &&
                   !isAnchor &&
+                  !isOverdueEnd &&
                   "rounded-e-lg bg-emerald-600 text-white",
-                // Маркер «сегодня» (точка снизу)
                 isToday &&
                   !isAnchor &&
                   !isEnd &&
+                  !isOverdueEnd &&
                   !isRentalStart &&
                   cn(
                     "after:pointer-events-none after:absolute after:bottom-1 after:start-1/2 after:z-10 after:size-[3px] after:-translate-x-1/2 after:rounded-full",
-                    isInBlueRange || isInGreenRange
+                    isInBlueRange || isInGreenRange || isInRedRange
                       ? "after:bg-white"
                       : "after:bg-ink",
                   ),
@@ -227,6 +245,12 @@ function ExtensionRangeCalendar({
           <span className="inline-block h-1.5 w-1.5 rounded-sm bg-blue-600" />
           аренда
         </span>
+        {hasOverdue && (
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-1.5 w-1.5 rounded-sm bg-red-600" />
+            просрочка
+          </span>
+        )}
         <span className="flex items-center gap-1">
           <span className="inline-block h-1.5 w-1.5 rounded-sm bg-emerald-600" />
           продление
@@ -1064,13 +1088,20 @@ export function PaymentAcceptDialog({
                           Number(em[2]) - 1,
                           Number(em[1]),
                         );
-                        const newEnd = new Date(anchor);
+                        // v0.4.94: продление считается ОТ today если есть
+                        // просрочка (endPlanned уже в прошлом). Иначе
+                        // от endPlanned. extBase = max(endPlanned, today).
+                        const todayDate = new Date();
+                        todayDate.setHours(0, 0, 0, 0);
+                        const extBase =
+                          anchor.getTime() < todayDate.getTime()
+                            ? todayDate
+                            : anchor;
+                        const newEnd = new Date(extBase);
                         newEnd.setDate(newEnd.getDate() + extDays);
                         const fmtRu = (d: Date) =>
                           `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}`;
-                        // displayEnd — для подсветки в календаре с
-                        // учётом hover. newEnd — реальный конец после submit.
-                        const displayEnd = new Date(anchor);
+                        const displayEnd = new Date(extBase);
                         displayEnd.setDate(displayEnd.getDate() + displayDays);
                         return (
                           <>
