@@ -22,7 +22,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Calendar, Check, X, Wallet, Shield, Repeat } from "lucide-react";
+import { ChevronLeft, ChevronRight, Check, X, Wallet, Shield, Repeat } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
 import { api } from "@/lib/api";
@@ -30,7 +30,199 @@ import { useApiClients } from "@/lib/api/clients";
 import { useApiPayments } from "@/lib/api/payments";
 import { useRentalDebt } from "@/lib/api/debt";
 import { extendInplaceAsync } from "./rentalsStore";
-import { DatePicker } from "@/components/ui/date-picker";
+/**
+ * v0.4.84: inline-календарь для выбора периода продления.
+ * Якорная дата (anchor) — текущий endPlanned. Кликая по будущей дате,
+ * оператор устанавливает новый endPlanned. Range start..end подсвечивается
+ * синим. На hover показывается preview. В weekly-режиме клик округляется
+ * до целых недель (snap-to-7).
+ */
+function ExtensionRangeCalendar({
+  rentalStartDate,
+  anchorDate,
+  endDate,
+  isWeekly,
+  onPickDays,
+}: {
+  /** Дата начала аренды — синяя зона. */
+  rentalStartDate: Date;
+  /** Текущий endPlanned (граница между синим и зелёным). */
+  anchorDate: Date;
+  /** Новый endPlanned (конец зелёной зоны). */
+  endDate: Date;
+  isWeekly: boolean;
+  onPickDays: (days: number) => void;
+}) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const [viewYear, setViewYear] = useState(anchorDate.getFullYear());
+  const [viewMonth, setViewMonth] = useState(anchorDate.getMonth());
+  const [hoverDate, setHoverDate] = useState<Date | null>(null);
+
+  // Грид: первый день недели (пн), 6 строк × 7 столбцов.
+  const monthStart = new Date(viewYear, viewMonth, 1);
+  // js: 0=Sun..6=Sat. Москва: Mon=0
+  const startWeekday = (monthStart.getDay() + 6) % 7;
+  const gridStart = new Date(monthStart);
+  gridStart.setDate(monthStart.getDate() - startWeekday);
+
+  const days: Date[] = [];
+  for (let i = 0; i < 42; i++) {
+    const d = new Date(gridStart);
+    d.setDate(gridStart.getDate() + i);
+    days.push(d);
+  }
+
+  const monthName = new Intl.DateTimeFormat("ru-RU", {
+    month: "long",
+    year: "numeric",
+  }).format(new Date(viewYear, viewMonth, 1));
+
+  const fmtAnchorDay = (d: Date) =>
+    new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const anchorMs = fmtAnchorDay(anchorDate);
+  const endMs = fmtAnchorDay(endDate);
+  const minPickableMs = Math.max(
+    anchorMs + 86_400_000,
+    fmtAnchorDay(today),
+  );
+  const previewMs = hoverDate ? fmtAnchorDay(hoverDate) : null;
+  const effEnd = previewMs && previewMs >= minPickableMs ? previewMs : endMs;
+
+  const handlePick = (d: Date) => {
+    const dMs = fmtAnchorDay(d);
+    if (dMs < minPickableMs) return;
+    const diffDays = Math.round((dMs - anchorMs) / 86_400_000);
+    if (diffDays <= 0) return;
+    if (isWeekly) {
+      // Snap to multiples of 7: округление вверх
+      const weeks = Math.max(1, Math.ceil(diffDays / 7));
+      onPickDays(weeks * 7);
+    } else {
+      onPickDays(diffDays);
+    }
+  };
+
+  return (
+    <div className="rounded-[10px] border border-blue-200 bg-white p-2 select-none">
+      <div className="flex items-center justify-between mb-1.5">
+        <button
+          type="button"
+          onClick={() => {
+            const d = new Date(viewYear, viewMonth - 1, 1);
+            setViewYear(d.getFullYear());
+            setViewMonth(d.getMonth());
+          }}
+          className="flex h-6 w-6 items-center justify-center rounded text-muted-2 hover:bg-blue-50 hover:text-blue-600"
+        >
+          <ChevronLeft size={14} />
+        </button>
+        <span className="text-[12px] font-bold text-ink capitalize">
+          {monthName}
+        </span>
+        <button
+          type="button"
+          onClick={() => {
+            const d = new Date(viewYear, viewMonth + 1, 1);
+            setViewYear(d.getFullYear());
+            setViewMonth(d.getMonth());
+          }}
+          className="flex h-6 w-6 items-center justify-center rounded text-muted-2 hover:bg-blue-50 hover:text-blue-600"
+        >
+          <ChevronRight size={14} />
+        </button>
+      </div>
+      <div className="grid grid-cols-7 gap-0.5 mb-1">
+        {["п", "в", "с", "ч", "п", "с", "в"].map((w, i) => (
+          <div
+            key={i}
+            className="text-center text-[9px] font-semibold uppercase text-muted-2"
+          >
+            {w}
+          </div>
+        ))}
+      </div>
+      <div className="grid grid-cols-7 gap-0.5">
+        {days.map((d, i) => {
+          const dMs = fmtAnchorDay(d);
+          const rentalStartMs = fmtAnchorDay(rentalStartDate);
+          const isOtherMonth = d.getMonth() !== viewMonth;
+          const isAnchor = dMs === anchorMs;
+          const isEnd = dMs === effEnd;
+          const isRentalStart = dMs === rentalStartMs;
+          // Синяя зона — текущая аренда (start..anchor включительно)
+          const isInBlueRange = dMs >= rentalStartMs && dMs < anchorMs;
+          // Зелёная зона — продление (anchor..end). anchor сам — граница
+          // (синий конец), новый end — зелёный конец.
+          const isInGreenRange = dMs > anchorMs && dMs < effEnd;
+          const isPickable = dMs >= minPickableMs;
+          const isToday = dMs === fmtAnchorDay(today);
+          return (
+            <button
+              key={i}
+              type="button"
+              disabled={!isPickable && !isAnchor}
+              onMouseEnter={() => isPickable && setHoverDate(d)}
+              onMouseLeave={() => setHoverDate(null)}
+              onClick={() => handlePick(d)}
+              className={cn(
+                "relative h-7 text-[11px] tabular-nums transition-colors rounded",
+                isOtherMonth && "text-muted-2/40",
+                !isOtherMonth &&
+                  !isPickable &&
+                  !isAnchor &&
+                  !isInBlueRange &&
+                  !isRentalStart &&
+                  "text-muted-2",
+                !isOtherMonth &&
+                  isPickable &&
+                  !isInGreenRange &&
+                  !isEnd &&
+                  "text-ink hover:bg-emerald-100",
+                // Синий период (текущая аренда)
+                isInBlueRange && "bg-blue-200 text-blue-900 rounded-none",
+                isRentalStart &&
+                  "bg-blue-600 text-white font-bold rounded-r-none",
+                // Граница (текущий endPlanned) — синий конец
+                isAnchor &&
+                  "bg-blue-600 text-white font-bold rounded-none cursor-default",
+                // Зелёный период (продление)
+                isInGreenRange && "bg-emerald-200 text-emerald-900 rounded-none",
+                isEnd &&
+                  !isAnchor &&
+                  "bg-emerald-600 text-white font-bold rounded-l-none",
+                isToday &&
+                  !isAnchor &&
+                  !isEnd &&
+                  !isInBlueRange &&
+                  !isInGreenRange &&
+                  !isRentalStart &&
+                  "ring-1 ring-emerald-400",
+              )}
+            >
+              {d.getDate()}
+            </button>
+          );
+        })}
+      </div>
+      <div className="mt-2 flex items-center justify-between gap-2 text-[10px] text-muted-2">
+        <span className="flex items-center gap-1">
+          <span className="inline-block h-2 w-2 rounded-sm bg-blue-600" />
+          текущая аренда
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="inline-block h-2 w-2 rounded-sm bg-emerald-600" />
+          продление
+        </span>
+        {isWeekly && (
+          <span className="text-emerald-600 font-semibold">
+            ₽/нед · шаг 7 дн
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
 import type { Rental } from "@/lib/mock/rentals";
 import type { PaymentMethod } from "@/lib/mock/rentals";
 import {
@@ -793,125 +985,96 @@ export function PaymentAcceptDialog({
                   </div>
                   {extAutoUnits > 0 && (
                     <div className="flex flex-col gap-2">
-                      {/* Период продления — визуально */}
                       {(() => {
-                        const m = /^(\d{2})\.(\d{2})\.(\d{4})/.exec(rental.endPlanned);
-                        if (!m) return null;
-                        const startDate = new Date(
-                          Number(m[3]),
-                          Number(m[2]) - 1,
-                          Number(m[1]),
+                        // Парсинг дат аренды.
+                        const sm = /^(\d{2})\.(\d{2})\.(\d{4})/.exec(rental.start);
+                        const em = /^(\d{2})\.(\d{2})\.(\d{4})/.exec(rental.endPlanned);
+                        if (!sm || !em) return null;
+                        const rentalStart = new Date(
+                          Number(sm[3]),
+                          Number(sm[2]) - 1,
+                          Number(sm[1]),
                         );
-                        const endDate = new Date(startDate);
-                        endDate.setDate(endDate.getDate() + extDays);
+                        const anchor = new Date(
+                          Number(em[3]),
+                          Number(em[2]) - 1,
+                          Number(em[1]),
+                        );
+                        const newEnd = new Date(anchor);
+                        newEnd.setDate(newEnd.getDate() + extDays);
                         const fmtRu = (d: Date) =>
                           `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}`;
-                        const toIso = (d: Date) =>
-                          `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-                        const minDate = new Date(startDate);
-                        minDate.setDate(minDate.getDate() + 1);
                         return (
-                          <div className="rounded-[10px] border border-blue-200 bg-white p-2.5">
-                            <div className="mb-1.5 flex items-center justify-between gap-2">
-                              <span className="text-[11px] font-bold uppercase tracking-wider text-blue-800">
-                                Период продления
+                          <>
+                            <div className="flex items-center justify-between text-[11px]">
+                              <span className="text-muted">
+                                {fmtRu(anchor)} → {fmtRu(newEnd)}
                               </span>
-                              <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-700">
+                              <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
                                 +{extDays} дн{extIsWeekly ? ` · ${extWeeks} нед` : ""}
                               </span>
                             </div>
-                            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 text-[12px]">
-                              <div className="rounded-[8px] bg-surface-soft px-2 py-1.5 text-center">
-                                <div className="text-[10px] text-muted-2">с</div>
-                                <div className="font-semibold text-ink tabular-nums">
-                                  {fmtRu(startDate)}
-                                </div>
-                              </div>
-                              <span className="text-blue-500">→</span>
-                              <div className="rounded-[8px] bg-blue-50 ring-1 ring-blue-300 px-2 py-1.5 text-center">
-                                <div className="text-[10px] text-blue-600">по</div>
-                                <div className="font-semibold text-blue-700 tabular-nums">
-                                  {fmtRu(endDate)}
-                                </div>
-                              </div>
+                            <ExtensionRangeCalendar
+                              rentalStartDate={rentalStart}
+                              anchorDate={anchor}
+                              endDate={newEnd}
+                              isWeekly={extIsWeekly}
+                              onPickDays={(days) => {
+                                if (extIsWeekly) {
+                                  setExtInputOverride(
+                                    Math.max(1, Math.round(days / 7)),
+                                  );
+                                } else {
+                                  setExtInputOverride(days);
+                                }
+                              }}
+                            />
+                            <div className="flex items-center gap-2">
+                              <span className="text-[11px] text-muted">
+                                {extIsWeekly ? `Недель (= ${extDays} дн)` : "Дней"}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setExtInputOverride(Math.max(1, extInput - 1))
+                                }
+                                className="flex h-7 w-7 items-center justify-center rounded-[6px] border border-border bg-white text-[14px] font-bold text-ink-2 hover:border-emerald-400 hover:text-emerald-600"
+                                title="Уменьшить"
+                              >
+                                −
+                              </button>
+                              <input
+                                type="number"
+                                min={1}
+                                value={extInput}
+                                onFocus={(e) => e.currentTarget.select()}
+                                onChange={(e) =>
+                                  setExtInputOverride(
+                                    Math.max(1, Number(e.target.value) || 1),
+                                  )
+                                }
+                                className="h-7 w-14 rounded-[6px] border border-border bg-white px-2 text-center text-[12px] tabular-nums outline-none focus:border-emerald-500"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setExtInputOverride(extInput + 1)}
+                                className="flex h-7 w-7 items-center justify-center rounded-[6px] border border-border bg-white text-[14px] font-bold text-ink-2 hover:border-emerald-400 hover:text-emerald-600"
+                                title="Увеличить"
+                              >
+                                +
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setExtInputOverride(null)}
+                                className="text-[10px] text-emerald-700 hover:underline"
+                                title="Сбросить ручную правку — авто-расчёт по переплате"
+                              >
+                                авто
+                              </button>
                             </div>
-                            {/* Календарь для ручной правки */}
-                            <div className="mt-2 flex items-center gap-1.5">
-                              <Calendar size={12} className="text-muted-2" />
-                              <span className="text-[11px] text-muted">Выбрать дату возврата:</span>
-                              <div className="flex-1">
-                                <DatePicker
-                                  value={toIso(endDate)}
-                                  onChange={(iso) => {
-                                    if (!iso) {
-                                      setExtInputOverride(null);
-                                      return;
-                                    }
-                                    const [y, mo, dd] = iso.split("-").map(Number);
-                                    if (!y || !mo || !dd) return;
-                                    const target = new Date(y, mo - 1, dd);
-                                    const diffDays = Math.round(
-                                      (target.getTime() - startDate.getTime()) /
-                                        86_400_000,
-                                    );
-                                    if (diffDays <= 0) return;
-                                    setExtInputOverride(
-                                      extIsWeekly
-                                        ? Math.max(1, Math.ceil(diffDays / 7))
-                                        : diffDays,
-                                    );
-                                  }}
-                                  minDate={toIso(minDate)}
-                                  clearable={false}
-                                />
-                              </div>
-                            </div>
-                          </div>
+                          </>
                         );
                       })()}
-                      <div className="flex items-center gap-2">
-                        <span className="text-[11px] text-muted">
-                          {extIsWeekly ? `Недель (= ${extDays} дн)` : "Дней"}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setExtInputOverride(Math.max(1, extInput - 1))
-                          }
-                          className="flex h-7 w-7 items-center justify-center rounded-[6px] border border-border bg-white text-[14px] font-bold text-ink-2 hover:border-blue-400 hover:text-blue-600"
-                          title="Уменьшить"
-                        >
-                          −
-                        </button>
-                        <input
-                          type="number"
-                          min={1}
-                          value={extInput}
-                          onFocus={(e) => e.currentTarget.select()}
-                          onChange={(e) =>
-                            setExtInputOverride(
-                              Math.max(1, Number(e.target.value) || 1),
-                            )
-                          }
-                          className="h-7 w-14 rounded-[6px] border border-border bg-white px-2 text-center text-[12px] tabular-nums outline-none focus:border-blue-500"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setExtInputOverride(extInput + 1)}
-                          className="flex h-7 w-7 items-center justify-center rounded-[6px] border border-border bg-white text-[14px] font-bold text-ink-2 hover:border-blue-400 hover:text-blue-600"
-                          title="Увеличить"
-                        >
-                          +
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setExtInputOverride(null)}
-                          className="text-[10px] text-blue-600 hover:underline"
-                          title="Сбросить ручную правку — авто-расчёт по переплате"
-                        >
-                          авто
-                        </button>
-                      </div>
                     </div>
                   )}
                 </>
