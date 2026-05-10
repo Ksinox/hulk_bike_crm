@@ -321,7 +321,10 @@ export function PaymentAcceptDialog({
   // теперь оператор сначала вводит сумму, потом видит что делать с
   // переплатой.
   type OverpayDest = "deposit" | "extend";
-  const [overpayDest, setOverpayDest] = useState<OverpayDest>("deposit");
+  // v0.4.93: дефолт = «extend» — при существенной переплате логичнее
+  // продлить, чем закидывать в депозит. Оператор может переключить
+  // вручную. Проверяется extAutoUnits после расчёта (см. useEffect ниже).
+  const [overpayDest, setOverpayDest] = useState<OverpayDest>("extend");
 
   // Параметры продления — авто-расчёт по тарифу аренды.
   // Оператор может править вручную через extInputOverride (по умолчанию null).
@@ -432,6 +435,15 @@ export function PaymentAcceptDialog({
   const displaySum = extIsWeekly
     ? extRate * displayWeeks
     : extDailyRate * displayDays;
+
+  // v0.4.93: если переплата слишком мала для продления — авто-переключение
+  // на «депозит». Иначе пользователь видит «продление невозможно» при
+  // выборе extend по дефолту, что сбивает.
+  useEffect(() => {
+    if (overpay > 0 && overpayDest === "extend" && extAutoUnits === 0) {
+      setOverpayDest("deposit");
+    }
+  }, [overpay, overpayDest, extAutoUnits]);
   // Остаток после продления → в депозит
   const extResidualToDeposit = Math.max(0, overpay - extSum);
 
@@ -1356,7 +1368,26 @@ export function PaymentAcceptDialog({
                   {fmt(Math.min(dueAmount, totalReceived))} ₽
                 </span>
               </div>
-              {overpay > 0 && (
+              {/* v0.4.93: при «В продление» переплата делится на:
+                  · сумму продления (extSum) → в саму аренду
+                  · остаток (extResidualToDeposit) → в депозит */}
+              {overpay > 0 && extEnabled && extSum > 0 && (
+                <>
+                  <div className="flex justify-between text-emerald-700">
+                    <span>Продление аренды (+{extDays} дн)</span>
+                    <span className="tabular-nums">+ {fmt(extSum)} ₽</span>
+                  </div>
+                  {extResidualToDeposit > 0 && (
+                    <div className="flex justify-between text-green-700">
+                      <span>Остаток → депозит клиента</span>
+                      <span className="tabular-nums">
+                        + {fmt(extResidualToDeposit)} ₽
+                      </span>
+                    </div>
+                  )}
+                </>
+              )}
+              {overpay > 0 && (!extEnabled || extSum === 0) && (
                 <div className="flex justify-between text-green-700">
                   <span>Переплата → депозит клиента</span>
                   <span className="tabular-nums">+ {fmt(overpay)} ₽</span>
