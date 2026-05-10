@@ -413,20 +413,25 @@ export function PaymentAcceptDialog({
     ? Math.floor(overpay / Math.max(1, extIsWeekly ? extRate : extDailyRate))
     : 0;
   const extInputBase = extInputOverride ?? Math.max(1, extAutoUnits);
-  // hover приоритетно — оператор видит preview при наведении
-  const extDaysRaw =
-    hoverDays != null
-      ? hoverDays
-      : extIsWeekly
-        ? extInputBase * 7
-        : extInputBase;
-  const extDays = extDaysRaw;
-  const extInput = extIsWeekly ? Math.ceil(extDaysRaw / 7) : extDaysRaw;
-  const extWeeks = extIsWeekly ? extInput : 0;
+  // v0.4.90: extDays/extSum — СТАБИЛЬНЫЕ значения без hover (для submit
+  // и distribute()). displayDays/displaySum — preview значения для UI
+  // подсветки при наведении мыши на календарь.
+  // Раньше extDays зависел от hoverDays — submit мог уйти на чужое
+  // число дней (если оператор нажал «Принять» удерживая курсор на дне).
+  // Баг #66: extend на «7 дн» создал placeholder 500 ₽ (1 день).
+  const extDays = extIsWeekly ? extInputBase * 7 : extInputBase;
+  const extWeeks = extIsWeekly ? extInputBase : 0;
+  const extInput = extInputBase;
   const extEffectivePeriod = extIsWeekly
     ? ("week" as const)
     : periodForDays(extDays);
   const extSum = extIsWeekly ? extRate * extWeeks : extDailyRate * extDays;
+  // Display (для плашки превью в UI) — учитывает hover.
+  const displayDays = hoverDays != null ? hoverDays : extDays;
+  const displayWeeks = extIsWeekly ? Math.ceil(displayDays / 7) : 0;
+  const displaySum = extIsWeekly
+    ? extRate * displayWeeks
+    : extDailyRate * displayDays;
   // Остаток после продления → в депозит
   const extResidualToDeposit = Math.max(0, overpay - extSum);
 
@@ -1006,17 +1011,17 @@ export function PaymentAcceptDialog({
                           )}
                         </div>
                         <div className="font-display text-[20px] font-extrabold tabular-nums text-emerald-700">
-                          {fmt(extSum)} ₽
+                          {fmt(displaySum)} ₽
                         </div>
                       </div>
                       <div className="mt-0.5 text-[12px] text-emerald-700/90">
-                        {extDays} дн
-                        {extIsWeekly ? ` · ${extWeeks} нед` : ""}
+                        {displayDays} дн
+                        {extIsWeekly ? ` · ${displayWeeks} нед` : ""}
                         {" × "}
                         {extIsWeekly
                           ? `${fmt(extRate)} ₽/нед`
                           : `${fmt(extDailyRate)} ₽/сут`}
-                        {extResidualToDeposit > 0 && (
+                        {extResidualToDeposit > 0 && hoverDays == null && (
                           <>
                             {" · остаток "}
                             <b>{fmt(extResidualToDeposit)} ₽</b> → депозит
@@ -1051,6 +1056,10 @@ export function PaymentAcceptDialog({
                         newEnd.setDate(newEnd.getDate() + extDays);
                         const fmtRu = (d: Date) =>
                           `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}`;
+                        // displayEnd — для подсветки в календаре с
+                        // учётом hover. newEnd — реальный конец после submit.
+                        const displayEnd = new Date(anchor);
+                        displayEnd.setDate(displayEnd.getDate() + displayDays);
                         return (
                           <>
                             <div className="flex items-center justify-between text-[11px]">
@@ -1058,14 +1067,14 @@ export function PaymentAcceptDialog({
                                 {fmtRu(anchor)} → {fmtRu(newEnd)}
                               </span>
                               <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
-                                +{extDays} дн{extIsWeekly ? ` · ${extWeeks} нед` : ""}
+                                +{displayDays} дн{extIsWeekly ? ` · ${displayWeeks} нед` : ""}
                               </span>
                             </div>
                             <div className="flex justify-center">
                               <ExtensionRangeCalendar
                                 rentalStartDate={rentalStart}
                                 anchorDate={anchor}
-                                endDate={newEnd}
+                                endDate={displayEnd}
                                 isWeekly={extIsWeekly}
                                 onHoverDays={setHoverDays}
                                 onPickDays={(days) => {
