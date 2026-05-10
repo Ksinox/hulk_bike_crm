@@ -135,7 +135,11 @@ export const TARIFF_PERIOD_LABEL: Record<TariffPeriod, string> = {
 
 /** Определяет тарифный период по количеству дней */
 export function periodForDays(days: number): TariffPeriod {
-  if (days <= 2) return "day";
+  // v0.4.76: убрали кейс "day" — БД enum tariffPeriodEnum принимает
+  // только ['short', 'week', 'month']. Возврат "day" для 1-2 дней
+  // ронял valid в /extend-inplace и других endpoints. 1-2 дня
+  // считаем как short (та же ставка). Type TariffPeriod оставляет
+  // "day" для legacy-данных в БД (если где-то такие найдутся).
   if (days <= 6) return "short";
   if (days < 30) return "week";
   return "month";
