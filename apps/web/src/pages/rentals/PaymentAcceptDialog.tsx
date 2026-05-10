@@ -22,7 +22,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Check, X, Wallet, Shield, Repeat } from "lucide-react";
+import { Calendar, Check, X, Wallet, Shield, Repeat } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
 import { api } from "@/lib/api";
@@ -30,6 +30,7 @@ import { useApiClients } from "@/lib/api/clients";
 import { useApiPayments } from "@/lib/api/payments";
 import { useRentalDebt } from "@/lib/api/debt";
 import { extendInplaceAsync } from "./rentalsStore";
+import { DatePicker } from "@/components/ui/date-picker";
 import type { Rental } from "@/lib/mock/rentals";
 import type { PaymentMethod } from "@/lib/mock/rentals";
 import {
@@ -786,7 +787,7 @@ export function PaymentAcceptDialog({
                     )}
                   </div>
                   {extAutoUnits > 0 && (
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <span className="text-[11px] text-muted">
                         {extIsWeekly ? `Недель (= ${extDays} дн)` : "Дней"}
                       </span>
@@ -809,6 +810,67 @@ export function PaymentAcceptDialog({
                       >
                         авто
                       </button>
+                      {/* v0.4.82: DatePicker для выбора конца аренды.
+                         extDays = выбранная_дата − текущий endPlanned.
+                         Удобнее когда оператор знает «нужно до 25.05». */}
+                      <span className="ml-auto flex items-center gap-1 text-[11px] text-muted">
+                        <Calendar size={11} /> до даты:
+                      </span>
+                      <DatePicker
+                        value={(() => {
+                          // Текущий endPlanned + extDays = новая дата
+                          const m = /^(\d{2})\.(\d{2})\.(\d{4})/.exec(rental.endPlanned);
+                          if (!m) return null;
+                          const cur = new Date(
+                            Number(m[3]),
+                            Number(m[2]) - 1,
+                            Number(m[1]),
+                          );
+                          cur.setDate(cur.getDate() + extDays);
+                          return `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}-${String(cur.getDate()).padStart(2, "0")}`;
+                        })()}
+                        onChange={(iso) => {
+                          if (!iso) {
+                            setExtInputOverride(null);
+                            return;
+                          }
+                          // Парсим выбранную дату в ru-формат
+                          const [y, mo, d] = iso.split("-").map(Number);
+                          if (!y || !mo || !d) return;
+                          const target = new Date(y, mo - 1, d);
+                          // Текущий endPlanned
+                          const em = /^(\d{2})\.(\d{2})\.(\d{4})/.exec(rental.endPlanned);
+                          if (!em) return;
+                          const cur = new Date(
+                            Number(em[3]),
+                            Number(em[2]) - 1,
+                            Number(em[1]),
+                          );
+                          const diffDays = Math.round(
+                            (target.getTime() - cur.getTime()) / 86_400_000,
+                          );
+                          if (diffDays <= 0) return;
+                          // В weekly mode конвертируем дни в недели (округление вверх)
+                          if (extIsWeekly) {
+                            setExtInputOverride(Math.max(1, Math.ceil(diffDays / 7)));
+                          } else {
+                            setExtInputOverride(diffDays);
+                          }
+                        }}
+                        minDate={(() => {
+                          const m = /^(\d{2})\.(\d{2})\.(\d{4})/.exec(rental.endPlanned);
+                          if (!m) return undefined;
+                          const cur = new Date(
+                            Number(m[3]),
+                            Number(m[2]) - 1,
+                            Number(m[1]),
+                          );
+                          cur.setDate(cur.getDate() + 1);
+                          return `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, "0")}-${String(cur.getDate()).padStart(2, "0")}`;
+                        })()}
+                        clearable={false}
+                        className="!w-auto"
+                      />
                     </div>
                   )}
                 </>

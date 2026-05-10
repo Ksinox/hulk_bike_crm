@@ -9,9 +9,17 @@ import {
   TARIFF_PERIOD_LABEL,
   type Rental,
 } from "@/lib/mock/rentals";
-import { extendInplaceAsync } from "./rentalsStore";
+import { extendInplaceAsync, equipmentChangeAsync } from "./rentalsStore";
 import { toast } from "@/lib/toast";
 import { PaymentAcceptDialog } from "./PaymentAcceptDialog";
+import { EquipmentEditor } from "./RentalEditModal";
+
+type EquipmentSnapshot = {
+  itemId?: number | null;
+  name: string;
+  price: number;
+  free: boolean;
+};
 
 function fmt(n: number) {
   return n.toLocaleString("ru-RU");
@@ -34,6 +42,22 @@ export function ExtendRentalDialog({
   const [customMode, setCustomMode] = useState<boolean>(false);
   const [customUnit, setCustomUnit] = useState<"day" | "week">("day");
   const [customRate, setCustomRate] = useState<number>(0);
+  // v0.4.82: экипировка при продлении. Изначально снапшот текущей
+  // экипировки. Если оператор её меняет — после extend-inplace
+  // вызываем /equipment-change. Доплата за изменение пойдёт в долг
+  // (manual_charge), который PaymentAcceptDialog потом примет.
+  const initialEquipment: EquipmentSnapshot[] =
+    (rental as { equipmentJson?: EquipmentSnapshot[] }).equipmentJson?.map(
+      (it) => ({
+        itemId: it.itemId ?? null,
+        name: it.name,
+        price: it.price,
+        free: it.free,
+      }),
+    ) ?? [];
+  const [equipment, setEquipment] = useState<EquipmentSnapshot[]>(initialEquipment);
+  const equipmentChanged =
+    JSON.stringify(equipment) !== JSON.stringify(initialEquipment);
 
   const requestClose = () => {
     if (closing) return;
@@ -97,16 +121,33 @@ export function ExtendRentalDialog({
         isWeeklyCustom ? "week" : "day",
         false, // autoMarkPaid=false — оплату фиксируем через PaymentAcceptDialog
       );
-      // id остаётся тем же (inplace), но локально сохраняем обновлённую
-      // версию для PaymentAcceptDialog — там она использует endPlanned
-      // и sum для расчётов. invAll() в extendInplaceAsync уже сделал
-      // refetch, но нам нужна синхронная Rental для следующего шага.
+      // v0.4.82: если экипировка изменилась — применяем ПОСЛЕ extend.
+      // remainingDays на бэке считается от today до endPlanned. После
+      // extend endPlanned уже сдвинут вперёд, поэтому delta учитывает
+      // и старый остаток, и новый extension период (от today до конца).
+      // payNow=false → доплата висит как manual_charge → попадёт в
+      // долги PaymentAcceptDialog, который оператор увидит дальше.
+      if (equipmentChanged) {
+        try {
+          await equipmentChangeAsync({
+            rentalId: rental.id,
+            newEquipmentJson: equipment,
+            payNow: false,
+            comment: "Изменение экипировки при продлении",
+          });
+        } catch (e) {
+          // Не валим продление — оно уже применено. Логируем.
+          console.error("equipmentChange failed", e);
+        }
+      }
       const updated: Rental = {
         ...rental,
         days: rental.days + days,
         rate,
         sum: rental.sum + rate * days,
         endPlanned: newEndPlanned,
+        equipmentJson: equipment as Rental["equipmentJson"],
+        equipment: equipment.map((e) => e.name),
       } as Rental;
       onExtended?.(updated);
       setPaymentForRental(updated);
@@ -275,6 +316,24 @@ export function ExtendRentalDialog({
                 Поле «дней» в week-режиме воспринимается как недели:
                 ввод «{Math.max(1, Math.round(days / 7))}» = {days} дн.
                 Итого {weeks} × {rate} = {sum} ₽.
+              </div>
+            )}
+          </div>
+
+          {/* v0.4.82: экипировка на новый период. Если изменилась —
+              сработает /equipment-change после extend, доплата висит
+              как manual_charge до приёма оплаты. */}
+          <div>
+            <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-2">
+              Экипировка на новый период
+            </div>
+            <EquipmentEditor value={equipment} onChange={setEquipment} />
+            {equipmentChanged && (
+              <div className="mt-1.5 rounded-[8px] bg-blue-50 px-2.5 py-1.5 text-[11px] text-blue-700">
+                Состав экипировки изменён. После продления автоматически
+                применится: доплата (или возврат на депозит) будет
+                рассчитана за период от сегодня до новой даты возврата
+                и попадёт в окно «Принять оплату».
               </div>
             )}
           </div>

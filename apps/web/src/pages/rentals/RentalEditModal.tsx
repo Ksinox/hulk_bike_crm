@@ -1017,7 +1017,8 @@ function Field({
  * «вне каталога» и сохраняем в снимке. Снимок (name/price/free) важен:
  * если каталог изменят позже, у аренды останется честная цена выдачи.
  */
-function EquipmentEditor({
+// v0.4.82: экспортируем для переиспользования в ExtendRentalDialog.
+export function EquipmentEditor({
   value,
   onChange,
 }: {
