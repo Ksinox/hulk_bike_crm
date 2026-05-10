@@ -33,7 +33,6 @@ import { extendInplaceAsync } from "./rentalsStore";
 import type { Rental } from "@/lib/mock/rentals";
 import type { PaymentMethod } from "@/lib/mock/rentals";
 import {
-  TARIFF,
   periodForDays,
 } from "@/lib/mock/rentals";
 
@@ -107,46 +106,34 @@ export function PaymentAcceptDialog({
   const overdueDaysBalance = countOverdueDays ? overdueDaysBalanceRaw : 0;
   const overdueFineBalance = countOverdueFine ? overdueFineBalanceRaw : 0;
 
-  // v0.4.49: режим — «Только оплата» / «Оплата с продлением».
-  type Mode = "only_pay" | "pay_with_extend";
-  const [mode, setMode] = useState<Mode>("only_pay");
+  // v0.4.79: переплата может пойти в депозит или в продление.
+  // Заменяет старый Mode toggle «Только оплата / Оплата с продлением» —
+  // теперь оператор сначала вводит сумму, потом видит что делать с
+  // переплатой.
+  type OverpayDest = "deposit" | "extend";
+  const [overpayDest, setOverpayDest] = useState<OverpayDest>("deposit");
 
-  // Параметры продления — активны только в режиме pay_with_extend.
-  // v0.4.77: extInput = пользовательский ввод. В day-mode = дни,
-  // в week-mode = недели. extDays (= реальное количество дней для
-  // shift'а endPlanned) = extInput * (1 или 7).
-  const [extInput, setExtInput] = useState<number>(7);
+  // Параметры продления — авто-расчёт по тарифу аренды.
+  // Оператор может править вручную через extInputOverride (по умолчанию null).
+  const [extInputOverride, setExtInputOverride] = useState<number | null>(null);
   const [extCustomMode, setExtCustomMode] = useState<boolean>(false);
   const [extCustomUnit, setExtCustomUnit] = useState<"day" | "week">("day");
   const [extCustomRate, setExtCustomRate] = useState<number>(0);
-  const extIsWeekly = extCustomMode && extCustomUnit === "week";
-  // Реальные дни для расчёта endPlanned-сдвига и суммы.
-  const extDays = extIsWeekly ? Math.max(1, extInput) * 7 : Math.max(1, extInput);
-  const extPeriod = periodForDays(extDays);
-  const extEffectivePeriod = extIsWeekly ? ("week" as const) : extPeriod;
+  // Тариф продления = тариф аренды, если оператор не включил custom
+  const extIsWeekly = extCustomMode
+    ? extCustomUnit === "week"
+    : rental.rateUnit === "week";
   const extRate = extCustomMode
     ? Math.max(0, extCustomRate)
-    : TARIFF[rental.model][extEffectivePeriod];
-  const extWeeks = extIsWeekly ? Math.max(1, extInput) : 0;
-  const extSum = extIsWeekly ? extRate * extWeeks : extRate * extDays;
-  const extEnabled = mode === "pay_with_extend";
-
+    : rental.rate;
+  const extDailyRate = extIsWeekly ? Math.round(extRate / 7) : extRate;
+  // Долги (без extend — он считается по переплате)
   const totalDebt =
     pendingRent +
     overdueDaysBalance +
     overdueFineBalance +
     damageBalance +
-    manualBalance +
-    (extEnabled ? extSum : 0);
-
-  // v0.4.71: «К оплате» = долг + (по желанию) сумма продления.
-  // Раньше fallback'ом было rental.sum (полная стоимость аренды) когда
-  // totalDebt=0 — это путало оператора: открыл «принять оплату» по
-  // уже оплаченной аренде с просрочкой, а ему предлагали оплатить
-  // ещё 9000₽ за саму аренду. По бизнес-логике если аренда создана —
-  // за неё уже оплачено. Здесь принимаем платежи только за то что
-  // ДЕЙСТВИТЕЛЬНО должен клиент: pendingRent (неоплаченная rent),
-  // просрочка, ущерб, manual. Плюс продление если включён режим.
+    manualBalance;
   const dueAmount = totalDebt;
 
   // Источники
@@ -187,6 +174,24 @@ export function PaymentAcceptDialog({
   const totalReceived = depositToUse + securityToUse + accepted;
   const overpay = Math.max(0, totalReceived - dueAmount);
   const underpay = Math.max(0, dueAmount - totalReceived);
+
+  // v0.4.79: автоматический расчёт продления по переплате.
+  // Если overpayDest='extend' — overpay делится на extDailyRate (или
+  // weeklyRate), целое количество идёт в продление, остаток в депозит.
+  // Оператор может переопределить число дней/недель через extInputOverride.
+  const extEnabled = overpay > 0 && overpayDest === "extend";
+  const extAutoUnits = extEnabled
+    ? Math.floor(overpay / Math.max(1, extIsWeekly ? extRate : extDailyRate))
+    : 0;
+  const extInput = extInputOverride ?? Math.max(1, extAutoUnits);
+  const extDays = extIsWeekly ? extInput * 7 : extInput;
+  const extWeeks = extIsWeekly ? extInput : 0;
+  const extEffectivePeriod = extIsWeekly
+    ? ("week" as const)
+    : periodForDays(extDays);
+  const extSum = extIsWeekly ? extRate * extWeeks : extDailyRate * extDays;
+  // Остаток после продления → в депозит
+  const extResidualToDeposit = Math.max(0, overpay - extSum);
 
   const [method, setMethod] = useState<PaymentMethod>("cash");
   const [saving, setSaving] = useState(false);
@@ -701,58 +706,101 @@ export function PaymentAcceptDialog({
             </div>
           )}
 
-          {/* v0.4.49: режим «Только оплата» / «Оплата с продлением». */}
-          <div className="flex rounded-[10px] bg-surface-soft p-0.5">
-            {(["only_pay", "pay_with_extend"] as const).map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => setMode(m)}
-                className={cn(
-                  "flex flex-1 items-center justify-center gap-1.5 rounded-[8px] px-3 py-1.5 text-[12px] font-semibold transition-colors",
-                  mode === m
-                    ? "bg-white text-ink shadow-card-sm"
-                    : "text-muted hover:text-ink",
-                )}
-              >
-                {m === "only_pay" ? (
-                  <>
-                    <Wallet size={12} /> Только оплата
-                  </>
-                ) : (
-                  <>
-                    <Repeat size={12} /> Оплата с продлением
-                  </>
-                )}
-              </button>
-            ))}
-          </div>
-
-          {/* v0.4.49: Блок продления — активен в режиме pay_with_extend. */}
-          {extEnabled && (
+          {/* v0.4.79: переплата → выбор «в депозит / в продление». */}
+          {overpay > 0 && (
             <div className="flex flex-col gap-2 rounded-[10px] border border-blue-200 bg-blue-50/30 px-3 py-2.5">
               <div className="flex items-center justify-between">
                 <div className="text-[11px] font-bold uppercase tracking-wider text-blue-800">
-                  Продление
-                </div>
-                <div className="text-[11px] tabular-nums text-blue-700">
-                  +{extDays} дн{extIsWeekly ? ` (${extWeeks} нед)` : ""} · {fmt(extSum)} ₽
+                  Переплата · {fmt(overpay)} ₽
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] text-muted">
-                  {extIsWeekly ? `Недель (= ${extDays} дн)` : "Дней"}
-                </span>
-                <input
-                  type="number"
-                  min={1}
-                  value={extInput}
-                  onChange={(e) =>
-                    setExtInput(Math.max(1, Number(e.target.value) || 1))
-                  }
-                  className="h-7 w-16 rounded-[6px] border border-border bg-white px-2 text-[12px] tabular-nums outline-none focus:border-blue-500"
-                />
+              <div className="flex gap-1.5">
+                {(
+                  [
+                    { id: "deposit" as const, label: "В депозит клиента", icon: Wallet },
+                    { id: "extend" as const, label: "В продление аренды", icon: Repeat },
+                  ]
+                ).map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => {
+                      setOverpayDest(opt.id);
+                      setExtInputOverride(null);
+                    }}
+                    className={cn(
+                      "flex flex-1 items-center justify-center gap-1.5 rounded-[8px] border px-3 py-1.5 text-[12px] font-semibold transition-colors",
+                      overpayDest === opt.id
+                        ? "border-blue-500 bg-blue-600 text-white"
+                        : "border-border bg-white text-ink-2 hover:border-blue-400",
+                    )}
+                  >
+                    <opt.icon size={12} />
+                    {opt.label}
+                  </button>
+                ))}
               </div>
+              {/* В депозит — просто описание */}
+              {overpayDest === "deposit" && (
+                <div className="text-[11px] text-blue-700/80">
+                  {fmt(overpay)} ₽ положим на депозит клиента — пойдут в счёт
+                  будущих аренд / продлений / штрафов.
+                </div>
+              )}
+              {/* В продление — авто-расчёт */}
+              {overpayDest === "extend" && (
+                <>
+                  <div className="text-[11px] text-blue-700">
+                    {extEnabled && extAutoUnits > 0 ? (
+                      <>
+                        Авто-расчёт по тарифу {extDailyRate} ₽/сут
+                        {rental.rateUnit === "week" ? " (тариф недельный)" : ""}:
+                        <b> {extDays} дн{extIsWeekly ? ` (${extWeeks} нед)` : ""}</b>
+                        {" · "}
+                        <b>{fmt(extSum)} ₽</b>
+                        {extResidualToDeposit > 0 && (
+                          <>
+                            {" "}
+                            · остаток <b>{fmt(extResidualToDeposit)} ₽</b> → в
+                            депозит
+                          </>
+                        )}
+                      </>
+                    ) : (
+                      <span className="text-orange-ink">
+                        Переплата меньше дневной ставки — продление невозможно,
+                        положим в депозит.
+                      </span>
+                    )}
+                  </div>
+                  {extAutoUnits > 0 && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] text-muted">
+                        {extIsWeekly ? `Недель (= ${extDays} дн)` : "Дней"}
+                      </span>
+                      <input
+                        type="number"
+                        min={1}
+                        value={extInput}
+                        onChange={(e) =>
+                          setExtInputOverride(
+                            Math.max(1, Number(e.target.value) || 1),
+                          )
+                        }
+                        className="h-7 w-16 rounded-[6px] border border-border bg-white px-2 text-[12px] tabular-nums outline-none focus:border-blue-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setExtInputOverride(null)}
+                        className="text-[10px] text-blue-600 hover:underline"
+                        title="Сбросить ручную правку — авто-расчёт по переплате"
+                      >
+                        авто
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
               <label className="flex cursor-pointer items-center gap-2 text-[11px]">
                 <input
                   type="checkbox"
