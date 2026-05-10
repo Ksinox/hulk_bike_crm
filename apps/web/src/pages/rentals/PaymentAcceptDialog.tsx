@@ -43,15 +43,15 @@ function ExtensionRangeCalendar({
   endDate,
   isWeekly,
   onPickDays,
+  onHoverDays,
 }: {
-  /** Дата начала аренды — синяя зона. */
   rentalStartDate: Date;
-  /** Текущий endPlanned (граница между синим и зелёным). */
   anchorDate: Date;
-  /** Новый endPlanned (конец зелёной зоны). */
   endDate: Date;
   isWeekly: boolean;
   onPickDays: (days: number) => void;
+  /** v0.4.85: преview расчёта при hover на день. null = убрали курсор. */
+  onHoverDays?: (days: number | null) => void;
 }) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -142,7 +142,7 @@ function ExtensionRangeCalendar({
           </div>
         ))}
       </div>
-      <div className="grid grid-cols-7 gap-0.5">
+      <div className="grid grid-cols-7 gap-y-0.5">
         {days.map((d, i) => {
           const dMs = fmtAnchorDay(d);
           const rentalStartMs = fmtAnchorDay(rentalStartDate);
@@ -150,10 +150,7 @@ function ExtensionRangeCalendar({
           const isAnchor = dMs === anchorMs;
           const isEnd = dMs === effEnd;
           const isRentalStart = dMs === rentalStartMs;
-          // Синяя зона — текущая аренда (start..anchor включительно)
           const isInBlueRange = dMs >= rentalStartMs && dMs < anchorMs;
-          // Зелёная зона — продление (anchor..end). anchor сам — граница
-          // (синий конец), новый end — зелёный конец.
           const isInGreenRange = dMs > anchorMs && dMs < effEnd;
           const isPickable = dMs >= minPickableMs;
           const isToday = dMs === fmtAnchorDay(today);
@@ -162,42 +159,62 @@ function ExtensionRangeCalendar({
               key={i}
               type="button"
               disabled={!isPickable && !isAnchor}
-              onMouseEnter={() => isPickable && setHoverDate(d)}
-              onMouseLeave={() => setHoverDate(null)}
+              onMouseEnter={() => {
+                if (!isPickable) return;
+                setHoverDate(d);
+                if (onHoverDays) {
+                  const diff = Math.round((dMs - anchorMs) / 86_400_000);
+                  if (diff > 0) {
+                    const days = isWeekly
+                      ? Math.max(1, Math.ceil(diff / 7)) * 7
+                      : diff;
+                    onHoverDays(days);
+                  }
+                }
+              }}
+              onMouseLeave={() => {
+                setHoverDate(null);
+                onHoverDays?.(null);
+              }}
               onClick={() => handlePick(d)}
               className={cn(
-                "relative h-7 text-[11px] tabular-nums transition-colors rounded",
+                "relative flex size-9 items-center justify-center text-[12.5px] font-medium tabular-nums transition-colors",
                 isOtherMonth && "text-muted-2/40",
                 !isOtherMonth &&
                   !isPickable &&
                   !isAnchor &&
                   !isInBlueRange &&
                   !isRentalStart &&
-                  "text-muted-2",
+                  "text-ink",
                 !isOtherMonth &&
                   isPickable &&
                   !isInGreenRange &&
                   !isEnd &&
                   "text-ink hover:bg-emerald-100",
-                // Синий период (текущая аренда)
-                isInBlueRange && "bg-blue-200 text-blue-900 rounded-none",
-                isRentalStart &&
-                  "bg-blue-600 text-white font-bold rounded-r-none",
-                // Граница (текущий endPlanned) — синий конец
-                isAnchor &&
-                  "bg-blue-600 text-white font-bold rounded-none cursor-default",
+                // Синий период (текущая аренда) — фирменный стиль
+                isInBlueRange &&
+                  !isRentalStart &&
+                  !isAnchor &&
+                  "bg-blue-200 text-blue-900",
+                isRentalStart && "rounded-s-lg bg-ink text-white",
+                isAnchor && "bg-ink text-white cursor-default",
                 // Зелёный период (продление)
-                isInGreenRange && "bg-emerald-200 text-emerald-900 rounded-none",
+                isInGreenRange &&
+                  "bg-emerald-200 text-emerald-900",
                 isEnd &&
                   !isAnchor &&
-                  "bg-emerald-600 text-white font-bold rounded-l-none",
+                  "rounded-e-lg bg-emerald-600 text-white",
+                // Маркер «сегодня» (точка снизу)
                 isToday &&
                   !isAnchor &&
                   !isEnd &&
-                  !isInBlueRange &&
-                  !isInGreenRange &&
                   !isRentalStart &&
-                  "ring-1 ring-emerald-400",
+                  cn(
+                    "after:pointer-events-none after:absolute after:bottom-1 after:start-1/2 after:z-10 after:size-[3px] after:-translate-x-1/2 after:rounded-full",
+                    isInBlueRange || isInGreenRange
+                      ? "after:bg-white"
+                      : "after:bg-ink",
+                  ),
               )}
             >
               {d.getDate()}
@@ -389,12 +406,22 @@ export function PaymentAcceptDialog({
   // Если overpayDest='extend' — overpay делится на extDailyRate (или
   // weeklyRate), целое количество идёт в продление, остаток в депозит.
   // Оператор может переопределить число дней/недель через extInputOverride.
+  // v0.4.85: hoverDays — preview когда оператор водит мышью по календарю.
+  const [hoverDays, setHoverDays] = useState<number | null>(null);
   const extEnabled = overpay > 0 && overpayDest === "extend";
   const extAutoUnits = extEnabled
     ? Math.floor(overpay / Math.max(1, extIsWeekly ? extRate : extDailyRate))
     : 0;
-  const extInput = extInputOverride ?? Math.max(1, extAutoUnits);
-  const extDays = extIsWeekly ? extInput * 7 : extInput;
+  const extInputBase = extInputOverride ?? Math.max(1, extAutoUnits);
+  // hover приоритетно — оператор видит preview при наведении
+  const extDaysRaw =
+    hoverDays != null
+      ? hoverDays
+      : extIsWeekly
+        ? extInputBase * 7
+        : extInputBase;
+  const extDays = extDaysRaw;
+  const extInput = extIsWeekly ? Math.ceil(extDaysRaw / 7) : extDaysRaw;
   const extWeeks = extIsWeekly ? extInput : 0;
   const extEffectivePeriod = extIsWeekly
     ? ("week" as const)
@@ -957,32 +984,52 @@ export function PaymentAcceptDialog({
                   будущих аренд / продлений / штрафов.
                 </div>
               )}
-              {/* В продление — авто-расчёт */}
+              {/* В продление — большая сумма + расчёт */}
               {overpayDest === "extend" && (
                 <>
-                  <div className="text-[11px] text-blue-700">
-                    {extEnabled && extAutoUnits > 0 ? (
-                      <>
-                        Авто-расчёт по тарифу {extDailyRate} ₽/сут
-                        {rental.rateUnit === "week" ? " (тариф недельный)" : ""}:
-                        <b> {extDays} дн{extIsWeekly ? ` (${extWeeks} нед)` : ""}</b>
-                        {" · "}
-                        <b>{fmt(extSum)} ₽</b>
+                  {extEnabled && extAutoUnits > 0 ? (
+                    <div
+                      className={cn(
+                        "rounded-[10px] bg-emerald-50 px-3 py-2 ring-1 transition-colors",
+                        hoverDays != null
+                          ? "ring-emerald-400"
+                          : "ring-emerald-200",
+                      )}
+                    >
+                      <div className="flex items-baseline justify-between gap-2">
+                        <div className="text-[11px] font-bold uppercase tracking-wider text-emerald-700">
+                          Продление
+                          {hoverDays != null && (
+                            <span className="ml-1.5 normal-case font-semibold opacity-80">
+                              · превью
+                            </span>
+                          )}
+                        </div>
+                        <div className="font-display text-[20px] font-extrabold tabular-nums text-emerald-700">
+                          {fmt(extSum)} ₽
+                        </div>
+                      </div>
+                      <div className="mt-0.5 text-[12px] text-emerald-700/90">
+                        {extDays} дн
+                        {extIsWeekly ? ` · ${extWeeks} нед` : ""}
+                        {" × "}
+                        {extIsWeekly
+                          ? `${fmt(extRate)} ₽/нед`
+                          : `${fmt(extDailyRate)} ₽/сут`}
                         {extResidualToDeposit > 0 && (
                           <>
-                            {" "}
-                            · остаток <b>{fmt(extResidualToDeposit)} ₽</b> → в
-                            депозит
+                            {" · остаток "}
+                            <b>{fmt(extResidualToDeposit)} ₽</b> → депозит
                           </>
                         )}
-                      </>
-                    ) : (
-                      <span className="text-orange-ink">
-                        Переплата меньше дневной ставки — продление невозможно,
-                        положим в депозит.
-                      </span>
-                    )}
-                  </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-[11px] text-orange-ink">
+                      Переплата меньше дневной ставки — продление невозможно,
+                      положим в депозит.
+                    </div>
+                  )}
                   {extAutoUnits > 0 && (
                     <div className="flex flex-col gap-2">
                       {(() => {
@@ -1019,7 +1066,9 @@ export function PaymentAcceptDialog({
                               anchorDate={anchor}
                               endDate={newEnd}
                               isWeekly={extIsWeekly}
+                              onHoverDays={setHoverDays}
                               onPickDays={(days) => {
+                                setHoverDays(null);
                                 if (extIsWeekly) {
                                   setExtInputOverride(
                                     Math.max(1, Math.round(days / 7)),
