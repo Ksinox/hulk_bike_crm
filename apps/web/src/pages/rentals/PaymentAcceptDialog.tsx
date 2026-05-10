@@ -42,6 +42,7 @@ function ExtensionRangeCalendar({
   anchorDate,
   endDate,
   isWeekly,
+  affordableDays,
   onPickDays,
   onHoverDays,
 }: {
@@ -51,7 +52,10 @@ function ExtensionRangeCalendar({
   /** Новый endPlanned после продления (конец зелёной зоны). */
   endDate: Date;
   isWeekly: boolean;
-  /** Сколько новых дней добавить (с момента сегодня или endPlanned). */
+  /** v0.4.95: Сколько дней реально оплачено суммой клиента
+   *  (overpay / dailyRate). Дни сверх этого подсвечиваются как
+   *  «не хватает оплаты». */
+  affordableDays?: number;
   onPickDays: (days: number) => void;
   onHoverDays?: (days: number | null) => void;
 }) {
@@ -94,6 +98,11 @@ function ExtensionRangeCalendar({
   const minPickableMs = extBaseMs + 86_400_000;
   const previewMs = hoverDate ? fmtAnchorDay(hoverDate) : null;
   const effEnd = previewMs && previewMs >= minPickableMs ? previewMs : endMs;
+  // v0.4.95: граница «оплачено» = extBase + affordableDays
+  const affordableMs =
+    affordableDays != null && affordableDays >= 0
+      ? extBaseMs + affordableDays * 86_400_000
+      : null;
 
   const handlePick = (d: Date) => {
     const dMs = fmtAnchorDay(d);
@@ -163,6 +172,12 @@ function ExtensionRangeCalendar({
           // Зелёная зона = продление (от today+1 или endPlanned+1 до newEnd)
           const greenStartMs = hasOverdue ? todayMs : anchorMs;
           const isInGreenRange = dMs > greenStartMs && dMs < effEnd;
+          // v0.4.95: «не хватает оплаты» — день в зелёной зоне ИЛИ конец,
+          // но за пределами affordable.
+          const isUnaffordable =
+            affordableMs != null &&
+            dMs > affordableMs &&
+            (isInGreenRange || dMs === effEnd);
           const isPickable = dMs >= minPickableMs;
           const isToday = dMs === todayMs;
           return (
@@ -216,11 +231,19 @@ function ExtensionRangeCalendar({
                 // Красная зона (просрочка между endPlanned и today)
                 isInRedRange && "bg-red-200 text-red-900",
                 isOverdueEnd && "bg-red-600 text-white font-bold",
-                // Зелёный период (продление)
-                isInGreenRange && "bg-emerald-200 text-emerald-900",
+                // Зелёный период (продление, оплачено)
+                isInGreenRange && !isUnaffordable && "bg-emerald-200 text-emerald-900",
+                // Жёлтая зона — продление выбрано но НЕ ХВАТАЕТ денег
+                isUnaffordable && !isEnd && "bg-amber-200 text-amber-900",
                 isEnd &&
                   !isAnchor &&
                   !isOverdueEnd &&
+                  isUnaffordable &&
+                  "rounded-e-lg bg-amber-500 text-white",
+                isEnd &&
+                  !isAnchor &&
+                  !isOverdueEnd &&
+                  !isUnaffordable &&
                   "rounded-e-lg bg-emerald-600 text-white",
                 isToday &&
                   !isAnchor &&
@@ -255,6 +278,12 @@ function ExtensionRangeCalendar({
           <span className="inline-block h-1.5 w-1.5 rounded-sm bg-emerald-600" />
           продление
         </span>
+        {affordableDays != null && (
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-1.5 w-1.5 rounded-sm bg-amber-500" />
+            не хватает
+          </span>
+        )}
         {isWeekly && (
           <span className="text-emerald-600 font-semibold">
             шаг 7 дн
@@ -1119,6 +1148,7 @@ export function PaymentAcceptDialog({
                                 anchorDate={anchor}
                                 endDate={displayEnd}
                                 isWeekly={extIsWeekly}
+                                affordableDays={extAutoUnits * (extIsWeekly ? 7 : 1)}
                                 onHoverDays={setHoverDays}
                                 onPickDays={(days) => {
                                   setHoverDays(null);
@@ -1399,9 +1429,11 @@ export function PaymentAcceptDialog({
                   {fmt(Math.min(dueAmount, totalReceived))} ₽
                 </span>
               </div>
-              {/* v0.4.93: при «В продление» переплата делится на:
+              {/* v0.4.93/95: при «В продление» переплата делится на:
                   · сумму продления (extSum) → в саму аренду
-                  · остаток (extResidualToDeposit) → в депозит */}
+                  · остаток (extResidualToDeposit) → в депозит
+                  · недоплата если extSum > overpay (оператор выбрал
+                    больше дней чем хватает) → ! недоплата */}
               {overpay > 0 && extEnabled && extSum > 0 && (
                 <>
                   <div className="flex justify-between text-emerald-700">
@@ -1413,6 +1445,16 @@ export function PaymentAcceptDialog({
                       <span>Остаток → депозит клиента</span>
                       <span className="tabular-nums">
                         + {fmt(extResidualToDeposit)} ₽
+                      </span>
+                    </div>
+                  )}
+                  {extSum > overpay && (
+                    <div className="flex justify-between text-amber-700 font-semibold">
+                      <span>
+                        ⚠ Не хватает на продление {extDays} дн
+                      </span>
+                      <span className="tabular-nums">
+                        −{fmt(extSum - overpay)} ₽
                       </span>
                     </div>
                   )}
