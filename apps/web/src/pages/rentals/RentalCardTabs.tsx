@@ -486,15 +486,24 @@ export function TermsTab({
                 )}
               </span>
             }
-            value={
-              rental.equipment.length === 0
-                ? "не выдавалась"
-                : rental.equipment
-                    .map(
-                      (e) => e.charAt(0).toUpperCase() + e.slice(1),
-                    )
-                    .join(", ")
-            }
+            value={(() => {
+              // v0.4.78: рендерим equipmentJson (актуальный) с fallback на
+              // equipment (legacy строки). У некоторых аренд два поля
+              // расходятся (баг рассинхрона): equipment = старая выдача,
+              // equipmentJson = текущий состав после change-equipment.
+              // Источник правды — equipmentJson.
+              const ej = (rental as { equipmentJson?: { name: string }[] })
+                .equipmentJson;
+              if (ej && ej.length > 0) {
+                return ej
+                  .map((e) => e.name.charAt(0).toUpperCase() + e.name.slice(1))
+                  .join(", ");
+              }
+              if (rental.equipment.length === 0) return "не выдавалась";
+              return rental.equipment
+                .map((e) => e.charAt(0).toUpperCase() + e.slice(1))
+                .join(", ");
+            })()}
           />
         </div>
       </div>

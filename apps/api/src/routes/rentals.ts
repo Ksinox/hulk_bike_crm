@@ -1801,11 +1801,15 @@ export async function rentalsRoutes(app: FastifyInstance) {
       }
 
       const result = await db.transaction(async (tx) => {
-        // 1. Обновляем equipmentJson всегда
+        // 1. Обновляем equipmentJson + equipment (legacy text array
+        //    должен быть синхронизирован, иначе UI карточки рендерит
+        //    стейл-данные).
+        const newEquipmentNames = newItems.map((it) => it.name);
         const [updated] = await tx
           .update(rentals)
           .set({
             equipmentJson: newItems as unknown as object,
+            equipment: newEquipmentNames,
             updatedAt: sql`now()`,
           })
           .where(eq(rentals.id, id))
