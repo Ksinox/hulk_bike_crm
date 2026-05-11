@@ -11,11 +11,7 @@
 --                completed_damage больше нет, наличие долга по ущербу
 --                выясняется по damage_reports.debt > 0)
 --
--- Также удаляются мёртвые поля чеклиста подтверждения выдачи
--- (`confirm_contract_signed`, `confirm_rent_paid`,
---  `confirm_deposit_received`, `payment_confirmed_by`,
---  `payment_confirmed_by_name`, `payment_confirmed_at`). UI этого
--- чеклиста давно убран, поля всегда false и не используются.
+-- Также удаляются мёртвые поля чеклиста подтверждения выдачи.
 --
 -- ИДЕМПОТЕНТНОСТЬ: вся работа обёрнута в DO-блок, который проверяет
 -- наличие старых enum-значений. Если их нет — миграция уже отработала,
@@ -32,31 +28,36 @@ BEGIN
       AND enumlabel = 'new_request'
   ) THEN
 
-    -- 1. Миграция значений к новым: всё незавершённое → active,
-    --    завершённое/отменённое/с ущербом → completed.
+    -- 1. Сначала ДРОПАЕМ DEFAULT — иначе при смене типа колонки Postgres
+    --    не сможет сравнить старое дефолт-значение ('new_request' тип
+    --    rental_status_old) с новым типом, и упадёт с ошибкой
+    --    «operator does not exist: rental_status = rental_status_old».
+    ALTER TABLE rentals ALTER COLUMN status DROP DEFAULT;
+
+    -- 2. Миграция значений к новым.
     UPDATE rentals SET status = 'active'
       WHERE status::text IN ('new_request', 'meeting', 'overdue', 'returning', 'problem', 'police', 'court');
-
     UPDATE rentals SET status = 'completed'
       WHERE status::text IN ('completed_damage', 'cancelled');
 
-    -- 2. Пересоздать pgEnum с минимальным набором значений.
-    --    Postgres не даёт удалять значения из enum напрямую — только
-    --    через rename + create new + alter column type + drop old.
+    -- 3. Пересоздать pgEnum с минимальным набором значений.
     ALTER TYPE rental_status RENAME TO rental_status_old;
     CREATE TYPE rental_status AS ENUM ('active', 'completed');
 
+    -- 4. Меняем тип колонки через USING (явный каст через text).
     ALTER TABLE rentals
-      ALTER COLUMN status DROP DEFAULT,
-      ALTER COLUMN status TYPE rental_status USING status::text::rental_status,
-      ALTER COLUMN status SET DEFAULT 'active';
+      ALTER COLUMN status TYPE rental_status USING status::text::rental_status;
 
+    -- 5. Восстанавливаем DEFAULT (уже валидное значение нового типа).
+    ALTER TABLE rentals ALTER COLUMN status SET DEFAULT 'active';
+
+    -- 6. Дропаем старый enum.
     DROP TYPE rental_status_old;
 
   END IF;
 
-  -- 3. Удалить мёртвые поля чеклиста подтверждения выдачи.
-  --    IF EXISTS гарантирует идемпотентность.
+  -- Удалить мёртвые поля чеклиста подтверждения выдачи.
+  -- IF EXISTS гарантирует идемпотентность.
   ALTER TABLE rentals DROP COLUMN IF EXISTS confirm_contract_signed;
   ALTER TABLE rentals DROP COLUMN IF EXISTS confirm_rent_paid;
   ALTER TABLE rentals DROP COLUMN IF EXISTS confirm_deposit_received;
@@ -64,7 +65,7 @@ BEGIN
   ALTER TABLE rentals DROP COLUMN IF EXISTS payment_confirmed_by_name;
   ALTER TABLE rentals DROP COLUMN IF EXISTS payment_confirmed_at;
 
-  -- 4. Связанный enum payment_confirmer_role больше не используется.
+  -- Связанный enum payment_confirmer_role больше не используется.
   DROP TYPE IF EXISTS payment_confirmer_role;
 
 END $$;
