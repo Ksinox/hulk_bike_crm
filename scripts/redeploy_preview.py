@@ -20,10 +20,18 @@ URLs:
 """
 import json
 import os
+import ssl
 import sys
 import time
 import urllib.request
 from urllib.error import HTTPError, URLError
+
+# Preview-домены sslip.io получают LE-сертификат с задержкой. Чтобы
+# /health и /version.json проверялись сразу после первого деплоя, не
+# валим script-у на SSL ошибке — она исчезнет когда cert выпустится.
+_NO_VERIFY_CTX = ssl.create_default_context()
+_NO_VERIFY_CTX.check_hostname = False
+_NO_VERIFY_CTX.verify_mode = ssl.CERT_NONE
 
 
 DOKPLOY_BASE = os.environ.get("DOKPLOY_BASE", "http://104.128.128.96:3000")
@@ -61,7 +69,7 @@ def dokploy(path: str, body: dict) -> None:
 def http_status(url: str) -> int:
     try:
         req = urllib.request.Request(url, method="GET")
-        with urllib.request.urlopen(req, timeout=10) as r:
+        with urllib.request.urlopen(req, timeout=10, context=_NO_VERIFY_CTX) as r:
             return r.status
     except HTTPError as e:
         return e.code
@@ -79,7 +87,7 @@ def expected_web_version() -> str:
 def fetch_web_version(base: str) -> str | None:
     try:
         req = urllib.request.Request(f"{base}/version.json", method="GET")
-        with urllib.request.urlopen(req, timeout=10) as r:
+        with urllib.request.urlopen(req, timeout=10, context=_NO_VERIFY_CTX) as r:
             return json.loads(r.read().decode("utf-8")).get("version")
     except (HTTPError, URLError, ValueError):
         return None
