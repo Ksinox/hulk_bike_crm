@@ -31,6 +31,52 @@ import { clientApplicationsRoutes } from "./routes/client-applications.js";
 import authPlugin, { requireAuth } from "./auth/plugin.js";
 import { ensureBucket } from "./storage/index.js";
 import rateLimit from "@fastify/rate-limit";
+import bcrypt from "bcryptjs";
+import { users } from "./db/schema.js";
+
+/**
+ * Bootstrap-юзеры. На preview/staging-окружениях БД создаётся чистая,
+ * и без хотя бы одного пользователя залогиниться нельзя. Если в env
+ * заданы SEED_CREATOR_PASSWORD / SEED_DIRECTOR_PASSWORD /
+ * SEED_ADMIN_PASSWORD И таблица users пуста — создаём трёх
+ * стандартных юзеров (ruslan/director/admin). Идемпотентно: если
+ * пользователи уже есть, ничего не делает. На проде env-переменные
+ * не выставлены, поэтому эффекта нет.
+ */
+async function bootstrapUsersIfEmpty(): Promise<void> {
+  const creatorPw = process.env.SEED_CREATOR_PASSWORD;
+  const directorPw = process.env.SEED_DIRECTOR_PASSWORD;
+  const adminPw = process.env.SEED_ADMIN_PASSWORD;
+  if (!creatorPw || !directorPw || !adminPw) return;
+  const existing = await db.select({ c: sql<number>`count(*)` }).from(users);
+  if (Number(existing[0]?.c ?? 0) > 0) return;
+  const hash = (pw: string) => bcrypt.hashSync(pw, 10);
+  await db.insert(users).values([
+    {
+      name: "Руслан",
+      login: "ruslan",
+      passwordHash: hash(creatorPw),
+      role: "creator",
+      avatarColor: "purple",
+    },
+    {
+      name: "Директор",
+      login: "director",
+      passwordHash: hash(directorPw),
+      role: "director",
+      avatarColor: "blue",
+    },
+    {
+      name: "Администратор",
+      login: "admin",
+      passwordHash: hash(adminPw),
+      role: "admin",
+      avatarColor: "green",
+    },
+  ]);
+  // eslint-disable-next-line no-console
+  console.log("[bootstrap-users] создано 3 стандартных юзера (ruslan/director/admin)");
+}
 
 async function bootstrap() {
   const app = Fastify({
@@ -178,6 +224,11 @@ async function bootstrap() {
   // не отвечает, первая загрузка файла попробует снова)
   ensureBucket().catch((e) => {
     app.log.warn({ err: e }, "MinIO ensureBucket failed (проверь S3_* переменные)");
+  });
+
+  // Bootstrap дефолтных юзеров если БД пустая (для preview/staging).
+  bootstrapUsersIfEmpty().catch((e) => {
+    app.log.warn({ err: e }, "bootstrapUsersIfEmpty failed");
   });
 
   // ==== graceful shutdown ====
