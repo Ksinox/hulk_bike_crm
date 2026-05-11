@@ -44,6 +44,11 @@ import { users } from "./db/schema.js";
  * не выставлены, поэтому эффекта нет.
  */
 async function bootstrapUsersIfEmpty(): Promise<void> {
+  // Тройная защита от случайного срабатывания на проде:
+  // 1) явный флаг ALLOW_BOOTSTRAP_USERS=1
+  // 2) SEED_* env vars выставлены
+  // 3) таблица users пуста
+  if (process.env.ALLOW_BOOTSTRAP_USERS !== "1") return;
   const creatorPw = process.env.SEED_CREATOR_PASSWORD;
   const directorPw = process.env.SEED_DIRECTOR_PASSWORD;
   const adminPw = process.env.SEED_ADMIN_PASSWORD;

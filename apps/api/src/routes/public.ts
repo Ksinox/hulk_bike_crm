@@ -23,15 +23,21 @@ export async function publicRoutes(app: FastifyInstance) {
    * Bootstrap-эндпоинт для пустых БД (preview/staging).
    * POST /api/public/bootstrap-users
    *
-   * Создаёт стандартных юзеров (ruslan/director/admin) если:
-   *  • таблица users пуста
-   *  • в env заданы SEED_CREATOR_PASSWORD / SEED_DIRECTOR_PASSWORD /
-   *    SEED_ADMIN_PASSWORD
+   * Гейтинг (ВСЕ три условия должны выполниться):
+   *  1. env `ALLOW_BOOTSTRAP_USERS=1` — явный opt-in. Без него эндпоинт
+   *     возвращает 404 «как будто его нет». На проде этот флаг не
+   *     выставляется → эндпоинт невидим.
+   *  2. в env заданы SEED_CREATOR_PASSWORD / SEED_DIRECTOR_PASSWORD /
+   *     SEED_ADMIN_PASSWORD.
+   *  3. таблица users пуста.
    *
-   * Иначе возвращает 409. На проде, где юзеры уже есть, эндпоинт
-   * безопасен — он просто откажет с count > 0.
+   * Тройная защита: даже если кто-то случайно выставит SEED_* на проде,
+   * без ALLOW_BOOTSTRAP_USERS эндпоинт не отзовётся.
    */
   app.post("/bootstrap-users", async (_req, reply) => {
+    if (process.env.ALLOW_BOOTSTRAP_USERS !== "1") {
+      return reply.code(404).send({ error: "not_found" });
+    }
     const creatorPw = process.env.SEED_CREATOR_PASSWORD;
     const directorPw = process.env.SEED_DIRECTOR_PASSWORD;
     const adminPw = process.env.SEED_ADMIN_PASSWORD;
