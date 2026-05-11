@@ -28,30 +28,35 @@ BEGIN
       AND enumlabel = 'new_request'
   ) THEN
 
-    -- 1. Сначала ДРОПАЕМ DEFAULT — иначе при смене типа колонки Postgres
-    --    не сможет сравнить старое дефолт-значение ('new_request' тип
-    --    rental_status_old) с новым типом, и упадёт с ошибкой
-    --    «operator does not exist: rental_status = rental_status_old».
+    -- 1. ДРОПАЕМ INDEX — он использует старый тип, при ALTER COLUMN TYPE
+    --    Postgres попытается перестроить и упадёт «operator does not
+    --    exist: rental_status = rental_status_old». Воссоздадим после.
+    DROP INDEX IF EXISTS rentals_status_idx;
+
+    -- 2. ДРОПАЕМ DEFAULT — иначе при смене типа Postgres не сможет
+    --    сравнить старое дефолт-значение ('new_request' тип
+    --    rental_status_old) с новым типом.
     ALTER TABLE rentals ALTER COLUMN status DROP DEFAULT;
 
-    -- 2. Миграция значений к новым.
+    -- 3. Миграция значений к новым.
     UPDATE rentals SET status = 'active'
       WHERE status::text IN ('new_request', 'meeting', 'overdue', 'returning', 'problem', 'police', 'court');
     UPDATE rentals SET status = 'completed'
       WHERE status::text IN ('completed_damage', 'cancelled');
 
-    -- 3. Пересоздать pgEnum с минимальным набором значений.
+    -- 4. Пересоздать pgEnum с минимальным набором значений.
     ALTER TYPE rental_status RENAME TO rental_status_old;
     CREATE TYPE rental_status AS ENUM ('active', 'completed');
 
-    -- 4. Меняем тип колонки через USING (явный каст через text).
+    -- 5. Меняем тип колонки через USING (явный каст через text).
     ALTER TABLE rentals
       ALTER COLUMN status TYPE rental_status USING status::text::rental_status;
 
-    -- 5. Восстанавливаем DEFAULT (уже валидное значение нового типа).
+    -- 6. Восстанавливаем DEFAULT и INDEX.
     ALTER TABLE rentals ALTER COLUMN status SET DEFAULT 'active';
+    CREATE INDEX IF NOT EXISTS rentals_status_idx ON rentals (status);
 
-    -- 6. Дропаем старый enum.
+    -- 7. Дропаем старый enum.
     DROP TYPE rental_status_old;
 
   END IF;
