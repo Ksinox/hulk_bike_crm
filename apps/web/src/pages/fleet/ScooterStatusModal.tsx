@@ -38,11 +38,7 @@ export function ScooterStatusModal({
    * не отражает действительность и сломает учёт.
    */
   const activeRental = rentals.find(
-    (r) =>
-      r.scooterId === scooter.id &&
-      (r.status === "active" ||
-        r.status === "overdue" ||
-        r.status === "returning"),
+    (r) => r.scooterId === scooter.id && r.status === "active",
   );
   const locked = !!activeRental;
 

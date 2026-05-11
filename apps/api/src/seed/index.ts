@@ -213,6 +213,15 @@ async function main() {
   for (const s of FLEET) scooterByName.set(s.name, s.id);
 
   console.log(`▶ rentals: ${RENTALS.length} записей`);
+  // v0.5: модель статусов упрощена до active/completed. Старые моки
+  // могут содержать new_request/meeting/overdue/returning/cancelled/
+  // completed_damage/problem/police/court — мапим на active либо completed.
+  const mapStatus = (s: string): RentalStatus => {
+    if (s === "completed" || s === "completed_damage" || s === "cancelled") {
+      return "completed" as RentalStatus;
+    }
+    return "active" as RentalStatus;
+  };
   await db.insert(rentals).values(
     RENTALS.map((r: Rental) => {
       const client = CLIENTS.find((c: Client) => c.id === r.clientId);
@@ -222,7 +231,7 @@ async function main() {
         clientId: r.clientId,
         scooterId,
         parentRentalId: r.parentRentalId ?? null,
-        status: r.status as RentalStatus,
+        status: mapStatus(r.status as string),
         sourceChannel:
           r.sourceChannel ?? deriveChannel(client?.source as ClientSource),
         tariffPeriod: r.tariffPeriod as TariffPeriod,
@@ -250,14 +259,9 @@ async function main() {
   console.log("▶ payments: разливаем по правилам из web/rentalsStore");
   const paymentRows: Array<typeof payments.$inferInsert> = [];
   for (const r of RENTALS as Rental[]) {
-    const paidStatuses: RentalStatus[] = [
-      "active",
-      "completed",
-      "returning",
-      "overdue",
-      "completed_damage",
-    ];
-    if (r.sum > 0 && paidStatuses.includes(r.status as RentalStatus)) {
+    const mapped = mapStatus(r.status as string);
+    const paidStatuses: RentalStatus[] = ["active" as RentalStatus, "completed" as RentalStatus];
+    if (r.sum > 0 && paidStatuses.includes(mapped)) {
       paymentRows.push({
         rentalId: r.id,
         type: "rent" as PaymentType,
@@ -275,28 +279,6 @@ async function main() {
         paid: true,
         paidAt: parseDateTime(r.start, r.startTime),
         note: "залог",
-      });
-    }
-    if (r.status === "overdue") {
-      paymentRows.push({
-        rentalId: r.id,
-        type: "fine" as PaymentType,
-        amount: 200,
-        method: "cash" as PaymentMethod,
-        paid: false,
-        scheduledOn: parseDate(r.endPlanned),
-        note: "штраф за просрочку (200 ₽/день)",
-      });
-    }
-    if (r.status === "completed_damage") {
-      paymentRows.push({
-        rentalId: r.id,
-        type: "damage" as PaymentType,
-        amount: 3200,
-        method: "cash" as PaymentMethod,
-        paid: false,
-        scheduledOn: parseDate(r.endActual || r.endPlanned),
-        note: "ущерб по возврату не погашен",
       });
     }
     if (r.status === "completed" && r.depositReturned) {

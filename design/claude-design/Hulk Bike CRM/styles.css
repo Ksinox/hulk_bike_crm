@@ -1,0 +1,78 @@
+/* Hulk Bike CRM tokens — direct from ДИЗАЙН.md */
+:root {
+  --bg: hsl(220 33% 98%);
+  --bg-grad-1: hsl(220 40% 99%);
+  --bg-grad-2: hsl(214 40% 96%);
+  --surface: hsl(0 0% 100%);
+  --surface-soft: hsl(220 25% 96%);
+  --border: hsl(220 18% 90%);
+  --border-strong: hsl(220 18% 82%);
+  --ink: hsl(222 35% 12%);
+  --ink-2: hsl(222 25% 22%);
+  --muted: hsl(222 12% 45%);
+  --muted-2: hsl(222 10% 60%);
+
+  --blue-50: hsl(214 100% 97%);
+  --blue-100: hsl(214 95% 92%);
+  --blue-600: hsl(217 91% 55%);
+  --blue-700: hsl(220 91% 47%);
+
+  --green-soft: hsl(150 60% 92%);
+  --green-ink: hsl(155 65% 25%);
+  --green: hsl(150 70% 40%);
+  --red-soft: hsl(355 90% 95%);
+  --red-ink: hsl(355 75% 40%);
+  --red: hsl(355 80% 55%);
+  --orange-soft: hsl(32 100% 93%);
+  --orange-ink: hsl(28 85% 38%);
+  --orange: hsl(28 95% 55%);
+  --purple-soft: hsl(265 60% 95%);
+  --purple-ink: hsl(265 55% 40%);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: linear-gradient(180deg, var(--bg-grad-1), var(--bg-grad-2));
+  min-height: 100vh;
+  color: var(--ink);
+  font-family: 'Inter', system-ui, sans-serif;
+  font-feature-settings: 'cv11', 'ss01';
+  font-size: 13px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+.font-display { font-family: 'Manrope', 'Inter', system-ui, sans-serif; font-weight: 800; letter-spacing: -0.01em; }
+.tnum { font-variant-numeric: tabular-nums; }
+
+.shadow-card-sm { box-shadow: 0 1px 2px hsl(220 30% 20% / 0.04), 0 2px 6px hsl(220 30% 20% / 0.04); }
+.shadow-card    { box-shadow: 0 2px 6px hsl(220 30% 20% / 0.06), 0 8px 20px hsl(220 30% 20% / 0.06); }
+.shadow-card-lg { box-shadow: 0 6px 16px hsl(220 30% 20% / 0.08), 0 24px 48px hsl(220 30% 20% / 0.12); }
+
+/* tiny utility helpers we use a lot */
+.uppercase-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-2);
+}
+
+button { font-family: inherit; cursor: pointer; }
+input, select, textarea { font-family: inherit; }
+
+.scrollbar-thin::-webkit-scrollbar { width: 6px; height: 6px; }
+.scrollbar-thin::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }
+.scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+
+/* keyframes */
+@keyframes pop-in { from { opacity: 0; transform: translateY(4px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+.animate-pop-in { animation: pop-in 160ms ease-out; }
+@keyframes slide-up { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+.animate-slide-up { animation: slide-up 200ms cubic-bezier(.2,.7,.2,1); }
+@keyframes pulse-soft { 0%,100% { opacity: 1; } 50% { opacity: 0.55; } }
+.animate-pulse-soft { animation: pulse-soft 1.6s ease-in-out infinite; }
+
+/* drag cursor when over the end handle */
+.cursor-extend { cursor: ew-resize; }
+.no-select { user-select: none; -webkit-user-select: none; }

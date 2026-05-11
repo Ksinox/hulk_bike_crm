@@ -127,23 +127,19 @@ export function ParkPanel({
       number,
       "active" | "overdue" | "returning"
     >();
+    // v0.5: статусы в БД теперь только 'active' | 'completed'.
+    // overdue/returning — вычисляемые UI-значения (effectiveRentalStatus).
+    // Здесь упрощённо: все active попадают как "active" — детальная
+    // подсветка приходит из metrics.*Scooters ниже.
     rentals.forEach((r) => {
       if (r.scooterId == null) return;
       if (r.status === "active") activeByScooter.set(r.scooterId, "active");
-      if (r.status === "overdue") activeByScooter.set(r.scooterId, "overdue");
-      if (r.status === "returning")
-        activeByScooter.set(r.scooterId, "returning");
     });
 
     const activeRentalByScooter = new Map<number, number>();
     rentals.forEach((r) => {
       if (r.scooterId == null) return;
-      if (
-        r.status === "active" ||
-        r.status === "overdue" ||
-        r.status === "returning"
-      )
-        activeRentalByScooter.set(r.scooterId, r.id);
+      if (r.status === "active") activeRentalByScooter.set(r.scooterId, r.id);
     });
 
     // v0.2.96: проверяем флаги ПО scooterId напрямую — не через Map

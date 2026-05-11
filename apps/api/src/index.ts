@@ -202,11 +202,12 @@ async function bootstrap() {
   const { scheduleDailyBackup } = await import("./services/backup.js");
   scheduleDailyBackup();
 
-  // v0.4.34: автопереход active→overdue по плановой дате. Раз в час.
-  const { scheduleOverdueTransition } = await import(
+  // v0.5: автоархивация completed-аренд из прошлых расчётных периодов.
+  // Cron перевода active→overdue удалён — просрочка computed на фронте.
+  const { scheduleRentalArchive } = await import(
     "./services/overdueScheduler.js"
   );
-  scheduleOverdueTransition();
+  scheduleRentalArchive();
 }
 
 bootstrap().catch((err) => {

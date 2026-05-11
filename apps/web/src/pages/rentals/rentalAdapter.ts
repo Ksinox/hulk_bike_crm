@@ -53,16 +53,10 @@ export function adaptRental(
     paymentMethod: r.paymentMethod,
     note: r.note ?? undefined,
     contractUploaded: r.contractUploaded,
-    paymentConfirmed:
-      r.paymentConfirmedBy && r.paymentConfirmedByName && r.paymentConfirmedAt
-        ? {
-            // TODO: унифицировать enum. В API сейчас boss/manager, в UI —
-            // director/admin. В следующей миграции переименуем в БД.
-            by: r.paymentConfirmedBy === "boss" ? "director" : "admin",
-            byName: r.paymentConfirmedByName,
-            at: splitIsoDateTime(r.paymentConfirmedAt).date,
-          }
-        : null,
+    // v0.5: поля paymentConfirmedBy/Name/At удалены из API (упростили
+    // модель статусов). Подтверждение оплаты в UI больше не отображается —
+    // TODO Phase 2: переработать карточку аренды.
+    paymentConfirmed: null,
     damageAmount: r.damageAmount ?? undefined,
     parentRentalId: r.parentRentalId ?? undefined,
     archivedAt: r.archivedAt ?? null,

@@ -15,16 +15,8 @@ export const SCOOTER_STATUS_RU: Record<string, string> = {
 };
 
 export const RENTAL_STATUS_RU: Record<string, string> = {
-  new_request: "Заявка",
-  meeting: "Встреча",
   active: "Активна",
-  overdue: "Просрочена",
-  returning: "Возврат",
   completed: "Завершена",
-  completed_damage: "Завершена с ущербом",
-  cancelled: "Отменена",
-  police: "Передано в полицию",
-  court: "Передано в суд",
 };
 
 export const MAINTENANCE_KIND_RU: Record<string, string> = {
