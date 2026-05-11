@@ -186,6 +186,21 @@ export async function damageReportsRoutes(app: FastifyInstance) {
         note: note ?? null,
       })
       .returning();
+    // v0.4.97: единый счёт залога. Если при создании акта часть ущерба
+    // покрыта из залога (cappedDeposit > 0) — реально списываем эту
+    // сумму с rental.deposit. До этой версии rental.deposit оставался
+    // нетронутым, и UI расходился: плашка считала «списано» из
+    // depositOriginal − deposit, а KPI-хинт смотрел в payments.method='deposit'.
+    // Теперь любая операция, которая уменьшает залог, обязана уменьшить
+    // именно rental.deposit — это единственная «правда» по текущему остатку.
+    if (cappedDeposit > 0) {
+      await db
+        .update(rentals)
+        .set({
+          deposit: Math.max(0, (rental.deposit ?? 0) - cappedDeposit),
+        })
+        .where(eq(rentals.id, rentalId));
+    }
     if (items.length > 0) {
       await db.insert(damageReportItems).values(
         items.map((it, i) => ({
@@ -256,8 +271,39 @@ export async function damageReportsRoutes(app: FastifyInstance) {
       updatedAt: new Date(),
     };
     if (parsed.data.note !== undefined) next.note = parsed.data.note ?? null;
-    if (parsed.data.depositCovered !== undefined)
-      next.depositCovered = parsed.data.depositCovered;
+    // v0.4.97: при изменении depositCovered — переносим delta на rental.deposit.
+    // delta = (new - old). Если положительная — со счёта залога снимаем
+    // дополнительно. Если отрицательная — возвращаем на залог.
+    // Кэппим: нельзя уйти в минус по rental.deposit; нельзя поднять
+    // deposit выше depositOriginal (если хочется больше — это пополнение
+    // через /security-topup).
+    let depositDelta = 0;
+    if (parsed.data.depositCovered !== undefined) {
+      const newCovered = parsed.data.depositCovered;
+      const oldCovered = report.depositCovered ?? 0;
+      depositDelta = newCovered - oldCovered;
+      next.depositCovered = newCovered;
+    }
+    if (depositDelta !== 0) {
+      const [r] = await db
+        .select()
+        .from(rentals)
+        .where(eq(rentals.id, report.rentalId));
+      if (r) {
+        const cur = r.deposit ?? 0;
+        const original = r.depositOriginal ?? cur;
+        // delta > 0: снимаем больше с залога. clamp до cur (не уйдём в минус)
+        // delta < 0: возвращаем на залог. clamp до original (не превысим максимум)
+        const targetDeposit =
+          depositDelta > 0
+            ? Math.max(0, cur - depositDelta)
+            : Math.min(original, cur + -depositDelta);
+        await db
+          .update(rentals)
+          .set({ deposit: targetDeposit })
+          .where(eq(rentals.id, report.rentalId));
+      }
+    }
     // Если items переданы — заменяем целиком и пересчитываем total.
     if (parsed.data.items) {
       const items = parsed.data.items;

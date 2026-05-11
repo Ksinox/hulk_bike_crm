@@ -1353,13 +1353,19 @@ export function RentalCard({
           );
         })()}
         {(() => {
-          // v0.4.38: показываем «исходно» если из залога что-то списано
-          // через PaymentAcceptDialog.
-          const depositSpent = chainPayments
-            .filter((p) => p.method === "deposit")
-            .reduce((s, p) => s + p.amount, 0);
+          // v0.4.97: единый источник правды по залогу — поля
+          //   rental.deposit (текущий остаток на счёте залога)
+          //   rental.depositOriginal (исторический максимум, «исходно»)
+          // Любая операция, уменьшающая залог (акт ущерба с depositCovered,
+          // PaymentAcceptDialog со списанием на долг), уменьшает именно
+          // rental.deposit. Раньше «списано» считалось через payments.method='deposit',
+          // что давало расхождение с плашкой залога — теперь оба места
+          // читают одни и те же поля.
           const currentDeposit = rental.deposit || DEPOSIT_AMOUNT;
-          const originalDeposit = currentDeposit + depositSpent;
+          const originalDeposit =
+            (rental as { depositOriginal?: number }).depositOriginal ??
+            currentDeposit;
+          const depositSpent = Math.max(0, originalDeposit - currentDeposit);
           // v0.4.92: «Эта аренда» = сумма последнего ПРОДЛЕНИЯ (или
           // initial если продлений не было). Берём из payments только
           // те, у которых note начинается с «Продление» или «продление
