@@ -5,64 +5,65 @@
 --   completed_damage, cancelled, police, court, problem
 --
 -- ПОСЛЕ: 2 статуса:
---   active     — аренда идёт (просрочка и «возврат сегодня» теперь
---                computed на фронте: endPlannedAt < today vs = today)
---   completed  — аренда завершена (с ущербом или без — отдельного
---                completed_damage больше нет, наличие долга по ущербу
---                выясняется по damage_reports.debt > 0)
+--   active     — аренда идёт
+--   completed  — аренда завершена
 --
--- Также удаляются мёртвые поля чеклиста подтверждения выдачи.
+-- Стратегия: ADD COLUMN status_new (новый тип) → COPY → DROP старой
+-- колонки → RENAME. Это обходит проблему PostgresError «operator does
+-- not exist: rental_status = rental_status_old», которая возникала при
+-- попытке ALTER COLUMN TYPE из-за неявных сравнений в депенденсах
+-- (defaults, индексы, drop'нуть их вручную не помогало).
 --
--- ИДЕМПОТЕНТНОСТЬ: вся работа обёрнута в DO-блок, который проверяет
--- наличие старых enum-значений. Если их нет — миграция уже отработала,
--- ничего не делаем. Это критично потому что migrate.ts запускает все
--- .sql файлы на каждом старте API, без отдельного журнала.
+-- ИДЕМПОТЕНТНОСТЬ через DO-блок: проверяем enum на наличие старых
+-- значений. Если нет — миграция уже отработала, ничего не делаем.
 
 DO $$
 BEGIN
-  -- Если в enum rental_status всё ещё есть 'new_request' — миграция
-  -- ещё не отработала. Делаем всю работу. Иначе — skip.
   IF EXISTS (
     SELECT 1 FROM pg_enum
     WHERE enumtypid = 'rental_status'::regtype
       AND enumlabel = 'new_request'
   ) THEN
 
-    -- 1. ДРОПАЕМ INDEX — он использует старый тип, при ALTER COLUMN TYPE
-    --    Postgres попытается перестроить и упадёт «operator does not
-    --    exist: rental_status = rental_status_old». Воссоздадим после.
-    DROP INDEX IF EXISTS rentals_status_idx;
+    -- 1. Создаём новый enum-тип (под временным именем).
+    CREATE TYPE rental_status_new AS ENUM ('active', 'completed');
 
-    -- 2. ДРОПАЕМ DEFAULT — иначе при смене типа Postgres не сможет
-    --    сравнить старое дефолт-значение ('new_request' тип
-    --    rental_status_old) с новым типом.
-    ALTER TABLE rentals ALTER COLUMN status DROP DEFAULT;
+    -- 2. Добавляем новую колонку (nullable пока, заполним).
+    ALTER TABLE rentals ADD COLUMN status_new rental_status_new;
 
-    -- 3. Миграция значений к новым.
-    UPDATE rentals SET status = 'active'
-      WHERE status::text IN ('new_request', 'meeting', 'overdue', 'returning', 'problem', 'police', 'court');
-    UPDATE rentals SET status = 'completed'
-      WHERE status::text IN ('completed_damage', 'cancelled');
+    -- 3. Копируем значения с маппингом: незавершённое → active,
+    --    completed_damage/cancelled → completed.
+    UPDATE rentals
+       SET status_new =
+         CASE
+           WHEN status::text IN ('completed', 'completed_damage', 'cancelled')
+             THEN 'completed'::rental_status_new
+           ELSE 'active'::rental_status_new
+         END;
 
-    -- 4. Пересоздать pgEnum с минимальным набором значений.
-    ALTER TYPE rental_status RENAME TO rental_status_old;
-    CREATE TYPE rental_status AS ENUM ('active', 'completed');
+    -- 4. Дропаем старую колонку (вместе с её default и индексом).
+    ALTER TABLE rentals DROP COLUMN status;
 
-    -- 5. Меняем тип колонки через USING (явный каст через text).
+    -- 5. Дропаем старый enum.
+    DROP TYPE rental_status;
+
+    -- 6. Переименовываем новый enum в каноническое имя.
+    ALTER TYPE rental_status_new RENAME TO rental_status;
+
+    -- 7. Переименовываем колонку.
+    ALTER TABLE rentals RENAME COLUMN status_new TO status;
+
+    -- 8. NOT NULL + DEFAULT.
     ALTER TABLE rentals
-      ALTER COLUMN status TYPE rental_status USING status::text::rental_status;
+      ALTER COLUMN status SET NOT NULL,
+      ALTER COLUMN status SET DEFAULT 'active';
 
-    -- 6. Восстанавливаем DEFAULT и INDEX.
-    ALTER TABLE rentals ALTER COLUMN status SET DEFAULT 'active';
-    CREATE INDEX IF NOT EXISTS rentals_status_idx ON rentals (status);
-
-    -- 7. Дропаем старый enum.
-    DROP TYPE rental_status_old;
+    -- 9. Восстанавливаем индекс.
+    CREATE INDEX rentals_status_idx ON rentals (status);
 
   END IF;
 
-  -- Удалить мёртвые поля чеклиста подтверждения выдачи.
-  -- IF EXISTS гарантирует идемпотентность.
+  -- Удалить мёртвые поля чеклиста подтверждения выдачи (идемпотентно).
   ALTER TABLE rentals DROP COLUMN IF EXISTS confirm_contract_signed;
   ALTER TABLE rentals DROP COLUMN IF EXISTS confirm_rent_paid;
   ALTER TABLE rentals DROP COLUMN IF EXISTS confirm_deposit_received;
