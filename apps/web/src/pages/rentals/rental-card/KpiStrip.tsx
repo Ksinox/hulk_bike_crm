@@ -183,7 +183,7 @@ export function KpiStrip({
             <button
               type="button"
               onClick={onAcceptPayment}
-              className="inline-flex items-center gap-1.5 rounded-[10px] bg-green-600 text-white px-3.5 py-2 text-[12.5px] font-bold hover:bg-green-700 shadow-card-sm whitespace-nowrap"
+              className="inline-flex items-center gap-1.5 rounded-[10px] bg-green text-white px-3.5 py-2 text-[12.5px] font-bold hover:brightness-110 shadow-card-sm whitespace-nowrap"
             >
               <Wallet size={13} /> Принять оплату
             </button>

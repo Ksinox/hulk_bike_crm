@@ -85,9 +85,20 @@ export function DocsInline({ rental }: { rental: Rental }) {
             Документы
           </div>
           <div className="text-[11px] text-muted">
-            договоры и акты · клик для просмотра, скачивание Word
+            договоры, акты, фото · клик для просмотра
           </div>
         </div>
+        <button
+          type="button"
+          onClick={() => {
+            // Кнопка-плейсхолдер — реальный загрузчик ещё не подключён,
+            // тот же flow как в UploadTile (см. ниже).
+          }}
+          className="inline-flex items-center gap-1 rounded-full bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white px-2.5 py-1 text-[11px] font-bold"
+          title="Загрузить документ (в разработке)"
+        >
+          <Upload size={11} /> Загрузить
+        </button>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
         {(Object.keys(DOC_META) as DocType[]).map((t) => {

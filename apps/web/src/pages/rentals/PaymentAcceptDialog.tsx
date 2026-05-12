@@ -980,33 +980,56 @@ export function PaymentAcceptDialog({
       amount: extSum,
     });
 
+  // v0.6.2: вычисляем суммарный долг и просрочку для шапки drawer'а
+  const isOverdueState = (overdueDaysBalanceRaw + overdueFineBalanceRaw) > 0;
+  const overdueDaysHeader = debt?.overdueDays ?? 0;
   return (
     <div
       className={cn(
-        "fixed inset-0 z-[120] flex items-center justify-center bg-ink/55 p-6 backdrop-blur-sm",
+        "fixed inset-0 z-[120] flex items-end justify-center bg-ink/55 backdrop-blur-sm",
         closing ? "animate-backdrop-out" : "animate-backdrop-in",
       )}
     >
       <div
         className={cn(
-          // v0.4.96: широкая прямоугольная модалка max-w-[760px]
-          // (было 520 — узкая колонка с длинным скроллом). Body
-          // имеет внутренний скролл, header/footer закреплены.
-          "flex w-full max-w-[760px] flex-col rounded-2xl bg-surface shadow-card-lg",
-          closing ? "animate-modal-out" : "animate-modal-in",
+          // v0.6.2: bottom-drawer вместо центрированной модалки —
+          // согласно design/claude-design/Hulk Bike CRM/extension-drawer.jsx.
+          // Прижат к низу экрана, slide-up появление, max-h:88vh.
+          "flex w-full max-w-[1200px] mb-3 mx-3 flex-col overflow-hidden rounded-2xl bg-surface border border-border shadow-card-lg",
+          closing ? "animate-slide-down-out" : "animate-slide-up",
         )}
         onClick={(e) => e.stopPropagation()}
-        style={{ maxHeight: "90vh" }}
+        style={{ maxHeight: "88vh" }}
       >
-        <div className="flex items-center gap-3 rounded-t-2xl border-b border-border bg-surface-soft px-5 py-3">
-          <Wallet size={16} className="text-blue-600" />
-          <div className="min-w-0 flex-1 text-[15px] font-semibold text-ink">
-            Приём оплаты по аренде #{String(rental.id).padStart(4, "0")}
+        <div className="flex items-center gap-3 border-b border-border bg-gradient-to-r from-blue-50 to-surface px-5 py-3">
+          <div className="h-9 w-9 rounded-full bg-blue-600 text-white flex items-center justify-center shrink-0">
+            <Repeat size={16} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-[14px] font-bold text-ink">
+              {isOverdueState
+                ? `Закрыть просрочку и продлить · #${String(rental.id).padStart(4, "0")}`
+                : `Продление аренды · #${String(rental.id).padStart(4, "0")}`}
+            </div>
+            <div className="text-[11.5px] text-muted">
+              {isOverdueState ? (
+                <>
+                  Просрочка{" "}
+                  <span className="font-semibold text-red-ink tabular-nums">
+                    {fmt(overdueDaysBalanceRaw + overdueFineBalanceRaw)} ₽
+                    {overdueDaysHeader > 0 ? ` · ${overdueDaysHeader} дн` : ""}
+                  </span>
+                  {" "}— сначала закрытие долга, затем продление.
+                </>
+              ) : (
+                <>Принять оплату по аренде и/или продлить.</>
+              )}
+            </div>
           </div>
           <button
             type="button"
             onClick={requestClose}
-            className="flex h-8 w-8 items-center justify-center rounded-full text-muted hover:bg-border hover:text-ink"
+            className="flex h-8 w-8 items-center justify-center rounded-full text-muted hover:bg-border hover:text-ink shrink-0"
           >
             <X size={16} />
           </button>

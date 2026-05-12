@@ -1,20 +1,35 @@
 /**
  * MasterBlock — основной 3-колоночный блок карточки аренды:
- *   • CLIENT      (фото-карточка + ФИО + контакты + залог/депозит)
+ *   • CLIENT      (identity strip + фото-карточка + ФИО + контакты + залог/депозит)
  *   • SCOOTER     (постер + номер/модель + тариф)
  *   • EQUIPMENT   (чипы с экипировкой + кнопки заменить/добавить)
  *
- * Дизайн скопирован с design/claude-design/Hulk Bike CRM/rental-card.jsx,
- * адаптирован к нашему theme'у (HSL CSS-переменные, shadcn-токены) и
- * реальным типам клиента/скутера/аренды.
+ * v0.6.2: identity (#ID, статус, бейдж долга, «не выходит на связь»)
+ * перенесён из отдельной полосы наверху в первую строку колонки «Клиент» —
+ * по дизайн-эталону design/claude-design/Hulk Bike CRM/rental-card.jsx.
  */
-import { Bike, Clock, MapPin, Repeat, Phone, Plus, Shield, Star, Wallet } from "lucide-react";
+import {
+  AlertTriangle,
+  Clock,
+  MapPin,
+  Repeat,
+  Phone,
+  PhoneOff,
+  Plus,
+  Shield,
+  Star,
+  Wallet,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { ScooterPosterAvatar } from "@/pages/rentals/ScooterPosterAvatar";
 import { initialsOf } from "@/lib/mock/clients";
 import {
   DEPOSIT_AMOUNT,
+  STATUS_LABEL,
+  STATUS_TONE,
   type Rental,
+  type RentalStatus,
 } from "@/lib/mock/rentals";
 import type { ApiClient, ApiScooter } from "@/lib/api/types";
 
@@ -29,10 +44,30 @@ function clientColor(id: number): string {
   return palette[((id - 1) % palette.length + palette.length) % palette.length];
 }
 
+function statusChipClass(tone: string): string {
+  return tone === "green"
+    ? "bg-green-soft text-green-ink"
+    : tone === "red"
+      ? "bg-red-soft text-red-ink"
+      : tone === "orange"
+        ? "bg-orange-soft text-orange-ink"
+        : tone === "blue"
+          ? "bg-blue-50 text-blue-700"
+          : tone === "purple"
+            ? "bg-purple-soft text-purple-ink"
+            : "bg-surface-soft text-muted";
+}
+
 export function MasterBlock({
   rental,
   client,
   scooter,
+  effectiveStatus,
+  isUnreachable,
+  isArchived,
+  totalDebt,
+  overdueDays,
+  onOpenDebts,
   onOpenClientProfile,
   onSwapScooter,
   onChangeEquipment,
@@ -40,6 +75,12 @@ export function MasterBlock({
   rental: Rental;
   client: ApiClient | null | undefined;
   scooter: ApiScooter | null | undefined;
+  effectiveStatus: RentalStatus;
+  isUnreachable: boolean;
+  isArchived: boolean;
+  totalDebt: number;
+  overdueDays: number;
+  onOpenDebts?: () => void;
   onOpenClientProfile: () => void;
   onSwapScooter: () => void;
   /** Если undefined — кнопка изменения экипировки не отображается
@@ -57,11 +98,49 @@ export function MasterBlock({
   const depositSpent = Math.max(0, originalDeposit - currentDeposit);
   const depositItem = rental.depositItem ?? null;
 
+  const tone = STATUS_TONE[effectiveStatus] ?? STATUS_TONE[rental.status];
+
   return (
     <div className="rounded-2xl bg-surface border border-border shadow-card-sm">
       <div className="grid grid-cols-1 lg:grid-cols-[2fr_1px_1fr_1px_1fr]">
         {/* COLUMN 1 — CLIENT */}
         <div className="p-5 flex flex-col gap-3">
+          {/* Identity strip — мелкая полоса сверху */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[10.5px] uppercase tracking-wider font-bold text-muted-2 tabular-nums">
+              Аренда · #{String(rental.id).padStart(4, "0")}
+            </span>
+            <span
+              className={cn(
+                "inline-flex items-center rounded-full px-2 py-0.5 text-[10.5px] font-bold",
+                statusChipClass(tone),
+              )}
+            >
+              {STATUS_LABEL[effectiveStatus] ?? STATUS_LABEL[rental.status]}
+            </span>
+            {isArchived && (
+              <span className="inline-flex items-center rounded-full bg-surface-soft px-2 py-0.5 text-[10.5px] font-bold text-muted ring-1 ring-inset ring-border">
+                в архиве
+              </span>
+            )}
+            {totalDebt > 0 && (
+              <button
+                type="button"
+                onClick={onOpenDebts}
+                className="inline-flex items-center gap-1 rounded-full bg-red-600 text-white px-2 py-0.5 text-[10.5px] font-bold hover:brightness-110"
+                title="История долгов"
+              >
+                <AlertTriangle size={10} /> {fmt(totalDebt)} ₽
+                {overdueDays > 0 && <> · {overdueDays} дн</>}
+              </button>
+            )}
+            {isUnreachable && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-orange-soft px-2 py-0.5 text-[10.5px] font-bold text-orange-ink">
+                <PhoneOff size={10} /> Не выходит
+              </span>
+            )}
+          </div>
+
           <div className="flex gap-3">
             <button
               type="button"
@@ -81,8 +160,8 @@ export function MasterBlock({
                   <span
                     className="font-display text-[30px] font-extrabold"
                     style={{
-                      color: client ? clientColor(client.id) : "var(--muted)",
-                      opacity: 0.65,
+                      color: client ? clientColor(client.id) : "#94a3b8",
+                      opacity: 0.55,
                     }}
                   >
                     {client ? initialsOf(client.name) : "?"}
@@ -91,7 +170,7 @@ export function MasterBlock({
                 <div
                   className="px-1 py-0.5 text-center text-[8px] font-bold uppercase tracking-wider text-white"
                   style={{
-                    background: client ? clientColor(client.id) : "var(--muted-2)",
+                    background: client ? clientColor(client.id) : "#94a3b8",
                     opacity: 0.85,
                   }}
                 >
@@ -106,13 +185,13 @@ export function MasterBlock({
                 className="text-left group"
                 title="Открыть профиль клиента"
               >
-                <h2 className="font-display text-[18px] leading-[1.15] font-extrabold text-ink tracking-tight group-hover:text-blue-700 group-hover:underline decoration-2 underline-offset-2">
+                <h2 className="font-display text-[20px] leading-[1.1] font-extrabold text-ink tracking-tight group-hover:text-blue-700 group-hover:underline decoration-2 underline-offset-2">
                   {client?.name ?? "Клиент не найден"}
                 </h2>
               </button>
               {client && (
                 <div className="mt-1 inline-flex items-center gap-1 text-[11px]">
-                  <Star size={10} className="text-orange-500" />
+                  <Star size={10} className="text-orange" />
                   <span className="tabular-nums font-bold text-ink-2">
                     {client.rating}
                   </span>
@@ -136,16 +215,16 @@ export function MasterBlock({
                     }
                   />
                 )}
-                <MetaLine
-                  label="Доп. тел"
-                  value={
-                    client?.extraPhone ? (
-                      <span className="tabular-nums text-ink-2">{client.extraPhone}</span>
-                    ) : (
-                      <span className="text-muted-2">— нет</span>
-                    )
-                  }
-                />
+                {client?.extraPhone && (
+                  <MetaLine
+                    label="Доп. тел"
+                    value={
+                      <span className="tabular-nums text-ink-2">
+                        {client.extraPhone}
+                      </span>
+                    }
+                  />
+                )}
                 {client?.passportRegistration && (
                   <MetaLine
                     label="Адрес"
@@ -162,8 +241,8 @@ export function MasterBlock({
             </div>
           </div>
 
-          {/* Money row — залог + депозит клиента */}
-          <div className="mt-auto pt-3 grid grid-cols-2 gap-2">
+          {/* Money row — залог + депозит клиента (2-col) */}
+          <div className="mt-auto pt-4 grid grid-cols-2 gap-2">
             <div className="rounded-[10px] border border-border bg-surface-soft px-3 py-2">
               <div className="text-[9.5px] uppercase tracking-wider font-bold text-muted-2 inline-flex items-center gap-1">
                 <Shield size={10} /> Залог
@@ -211,10 +290,10 @@ export function MasterBlock({
           <div className="flex items-start gap-3">
             <ScooterPosterAvatar scooter={scooter ?? null} size="sm" />
             <div className="flex-1 min-w-0">
-              <div className="font-display text-[16px] font-extrabold text-ink leading-tight">
+              <div className="font-display text-[18px] font-extrabold text-ink leading-tight">
                 {scooter?.name ?? rental.scooter ?? "—"}
               </div>
-              <div className="text-[12px] font-semibold text-ink-2 mt-0.5">
+              <div className="text-[12.5px] font-semibold text-ink-2 mt-0.5">
                 <ScooterModelLabel scooter={scooter ?? null} fallback={rental.model} />
               </div>
               {scooter && (
@@ -227,6 +306,7 @@ export function MasterBlock({
               )}
             </div>
           </div>
+          {/* Тариф — отдельная карточка снизу */}
           <div className="mt-auto pt-4">
             <div className="rounded-[10px] border border-border bg-surface px-3 py-2">
               <div className="text-[9.5px] uppercase tracking-wider font-bold text-muted-2">
@@ -275,20 +355,25 @@ export function MasterBlock({
           ) : (
             <div className="flex flex-wrap gap-1.5 content-start">
               {equipmentJson.map((it, idx) => (
-                <span
+                <button
+                  type="button"
                   key={`${it.itemId ?? "na"}-${idx}`}
-                  className={
+                  onClick={onChangeEquipment}
+                  disabled={!onChangeEquipment}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-[10px] px-2 py-1.5 text-[11.5px] font-semibold border-2 border-transparent transition-colors",
                     it.free
-                      ? "inline-flex items-center gap-1.5 rounded-[10px] px-2 py-1.5 text-[11.5px] font-semibold bg-green-soft text-green-ink"
-                      : "inline-flex items-center gap-1.5 rounded-[10px] px-2 py-1.5 text-[11.5px] font-semibold bg-orange-soft text-orange-ink"
-                  }
+                      ? "bg-green-soft text-green-ink hover:border-green"
+                      : "bg-orange-soft text-orange-ink hover:border-orange",
+                    onChangeEquipment ? "cursor-pointer" : "cursor-default",
+                  )}
+                  title={onChangeEquipment ? "Изменить экипировку" : undefined}
                 >
-                  <Bike size={11} />
                   {it.name}
                   {!it.free && it.price > 0 && (
                     <span className="tabular-nums opacity-80">·{it.price} ₽</span>
                   )}
-                </span>
+                </button>
               ))}
             </div>
           )}
@@ -378,6 +463,3 @@ function pluralPos(n: number): string {
   if (n10 >= 2 && n10 <= 4 && (n100 < 10 || n100 >= 20)) return "позиции";
   return "позиций";
 }
-
-// Use Wallet to avoid unused-warning if not needed elsewhere
-void Wallet;

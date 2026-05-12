@@ -79,7 +79,6 @@ import { confirmDialog, pickAction } from "@/lib/toast";
 import { toast } from "@/lib/toast";
 import { ApiError, api } from "@/lib/api";
 
-import { IdentityStrip } from "./rental-card/IdentityStrip";
 import { MasterBlock } from "./rental-card/MasterBlock";
 import { KpiStrip } from "./rental-card/KpiStrip";
 import { CalendarPanel } from "./rental-card/CalendarPanel";
@@ -760,19 +759,8 @@ export function RentalCard({
   return (
     <div className="w-full">
       <div className="w-full max-w-[1180px] mx-auto p-4 lg:p-5 flex flex-col gap-3">
-        {/* Header row: identity + actions menu */}
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <IdentityStrip
-            rentalId={rental.id}
-            rentalStatus={rental.status}
-            effectiveStatus={effectiveStatus}
-            client={client}
-            isUnreachable={isUnreachable}
-            totalDebt={overdueRelatedDebt + pending}
-            overdueDays={overdueDays}
-            isArchived={isArchived}
-            onDebtClick={() => setDrawer("debts")}
-          />
+        {/* Header row: only actions menu now — identity moved into MasterBlock */}
+        <div className="flex items-center justify-end gap-3 flex-wrap">
           <RentalActionsMenu actions={actions} onAction={handleAction} />
         </div>
 
@@ -829,6 +817,12 @@ export function RentalCard({
           rental={rental}
           client={client}
           scooter={currentScooter}
+          effectiveStatus={effectiveStatus}
+          isUnreachable={isUnreachable}
+          isArchived={isArchived}
+          totalDebt={overdueRelatedDebt + pending}
+          overdueDays={overdueDays}
+          onOpenDebts={() => setDrawer("debts")}
           onOpenClientProfile={() => {
             if (client) openClient(client.id);
           }}

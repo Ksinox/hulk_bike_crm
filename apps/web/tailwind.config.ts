@@ -122,6 +122,18 @@ const config: Config = {
           "0%": { opacity: "0", transform: "translateY(6px)" },
           "100%": { opacity: "1", transform: "translateY(0)" },
         },
+        "slide-up": {
+          "0%": { opacity: "0", transform: "translateY(32px)" },
+          "100%": { opacity: "1", transform: "translateY(0)" },
+        },
+        "slide-down-out": {
+          "0%": { opacity: "1", transform: "translateY(0)" },
+          "100%": { opacity: "0", transform: "translateY(32px)" },
+        },
+        "pop-in": {
+          "0%": { opacity: "0", transform: "scale(0.92)" },
+          "100%": { opacity: "1", transform: "scale(1)" },
+        },
       },
       animation: {
         "wave-hand": "wave-hand 2.5s ease-in-out infinite",
@@ -131,6 +143,9 @@ const config: Config = {
         "modal-in": "modal-in 220ms cubic-bezier(0.22, 1, 0.36, 1)",
         "modal-out": "modal-out 160ms ease-in forwards",
         "toast-in": "toast-in 180ms ease-out",
+        "slide-up": "slide-up 260ms cubic-bezier(0.22, 1, 0.36, 1) both",
+        "slide-down-out": "slide-down-out 180ms ease-in both",
+        "pop-in": "pop-in 200ms cubic-bezier(0.22, 1, 0.36, 1) both",
       },
     },
   },
