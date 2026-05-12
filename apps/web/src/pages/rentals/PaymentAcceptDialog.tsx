@@ -20,13 +20,11 @@
  *  5. Неоплаченная аренда (rent payments)
  *  6. Излишек → депозит клиента
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Check,
   X,
-  Wallet,
-  Shield,
   Repeat,
   Coins,
   Calendar as CalendarIcon,
@@ -157,23 +155,14 @@ export function PaymentAcceptDialog({
   // Когда rental.deposit < depositOriginal — это default, оператор
   // часто пополняет именно его. Используется существующий endpoint
   // /security-topup (через api.post внутри submit).
+  // v0.6.7: новый UX (extension-drawer.jsx) не предусматривает явного
+  // выбора «куда направить переплату». Переплата всегда идёт в продление
+  // (extend) — оператор управляет количеством дней через Step 2.
+  // Остаток (< одного дня тарифа) автоматически уходит в депозит клиента
+  // через distribute(). Стейт сохранён для submit-логики, но всегда
+  // равен "extend" в новом UI.
   type OverpayDest = "deposit" | "extend" | "security";
-  // Нужно ли пополнение залога? — флаг для UI и для дефолта overpayDest.
-  const needsSecurityTopup =
-    !rental.depositItem &&
-    (rental.deposit ?? 0) <
-      ((rental as { depositOriginal?: number }).depositOriginal ?? 0);
-  // v0.5.9: дефолт зависит от ситуации. Если залог нужно пополнить —
-  // приоритет на пополнение залога. Иначе — extend (продление).
-  // v0.6.1: если пришёл prefill из drag-to-extend — целимся в «продление»
-  // даже если залог недопополнен (явный жест пользователя в календаре).
-  const [overpayDest, setOverpayDest] = useState<OverpayDest>(
-    (initialExtDays ?? 0) > 0
-      ? "extend"
-      : needsSecurityTopup
-        ? "security"
-        : "extend",
-  );
+  const [overpayDest, setOverpayDest] = useState<OverpayDest>("extend");
 
   // Параметры продления — авто-расчёт по тарифу аренды.
   // Оператор может править вручную через extInputOverride (по умолчанию null).
@@ -191,6 +180,15 @@ export function PaymentAcceptDialog({
   const extIsWeekly = rental.rateUnit === "week";
   const extRate = rental.rate;
   const extDailyRate = extIsWeekly ? Math.round(extRate / 7) : extRate;
+  // v0.6.7: экипировка ВСЕГДА учитывается в формуле дней/суммы продления
+  // (см. extension-drawer.jsx line 14-15: dailyTotal = rate + equipDaily).
+  // Перенесли определение equipment/equipDaily сюда (выше acceptedStr),
+  // чтобы синхронизация суммы работала корректно.
+  const equipment = rental.equipmentJson ?? [];
+  const equipDaily = equipment.reduce(
+    (s, e) => s + (e.free ? 0 : e.price),
+    0,
+  );
   // Долги (без extend — он считается по переплате)
   const totalDebt =
     pendingRent +
@@ -201,156 +199,101 @@ export function PaymentAcceptDialog({
   const dueAmount = totalDebt;
 
   // Источники
-  // v0.4.80: useDeposit теперь работает И когда долгов нет — оператор
-  // может взять депозит и пустить его в продление. Раньше depositToUse
-  // = min(depositBalance, dueAmount) → если dueAmount=0, депозит не
-  // использовался, и блок «В продление» не появлялся.
-  const [useDeposit, setUseDeposit] = useState<boolean>(depositBalance > 0);
-  const [useDepositAmountStr, setUseDepositAmountStr] = useState<string>("");
-  const depositToUseRaw =
-    useDeposit ? Number(useDepositAmountStr.replace(/\D/g, "")) : 0;
-  const depositToUse = useDeposit
-    ? Math.min(
-        depositBalance,
-        depositToUseRaw > 0 ? depositToUseRaw : depositBalance,
-      )
-    : 0;
+  // v0.6.7: депозит управляется одним checkbox'ом в footer'е (как в
+  // extension-drawer.jsx). При включении списываем ВЕСЬ доступный
+  // депозит (или нужное количество — что меньше). Старый input
+  // частичной суммы убран — управляется автоматически.
+  const [useDeposit, setUseDeposit] = useState<boolean>(false);
+  const depositToUse = useDeposit ? depositBalance : 0;
   const remainingAfterDeposit = Math.max(0, dueAmount - depositToUse);
 
-  // v0.4.49: залог можно списать ТОЛЬКО на ущерб/просрочку, нельзя на
-  // rent/manual. depositItem != null → залог-предмет, кнопки нет вообще.
-  // Если в долге только rent (нет overdue/damage) — кнопка тоже скрыта.
-  const securityMax = rental.deposit ?? 0;
-  const isDepositItem = (rental as { depositItem?: string | null }).depositItem != null;
-  const securityCoverable =
-    overdueDaysBalance + overdueFineBalance + damageBalance;
-  const securityAllowed =
-    !isDepositItem && securityMax > 0 && securityCoverable > 0;
-  const [useSecurity, setUseSecurity] = useState<boolean>(false);
-  const [securityStr, setSecurityStr] = useState<string>("0");
-  const securityToUse =
-    securityAllowed && useSecurity
-      ? Math.min(
-          securityMax,
-          securityCoverable,
-          Math.max(0, Number(securityStr.replace(/\D/g, "")) || 0),
-        )
-      : 0;
-  const remainingAfterSecurity = Math.max(0, remainingAfterDeposit - securityToUse);
+  // v0.6.7: списание с залога аренды убрано из UI — функциональность
+  // не входит в новый дизайн (extension-drawer.jsx). securityToUse=0
+  // всегда. Если когда-то понадобится — добавить через отдельный flow,
+  // не в основном диалоге приёма оплаты.
+  const securityToUse = 0;
+  const remainingAfterSecurity = remainingAfterDeposit;
 
+  // v0.6.7: extInputBase — кол-во ЕДИНИЦ продления (дней или недель).
+  //   mode='days'   → управляется через спиннер/quick-presets (extInputOverride).
+  //   mode='amount' → вычисляется из amountInput (см. useEffect ниже).
+  // В режиме days дефолт = 0 (оператор явно жмёт + или quick-pill),
+  // если только не пришёл initialExtDays (drag-to-extend).
+  const extInputBase = Math.max(0, extInputOverride ?? 0);
+  const extDays = extIsWeekly ? extInputBase * 7 : extInputBase;
+  const extWeeks = extIsWeekly ? extInputBase : 0;
+  const extEffectivePeriod = extIsWeekly
+    ? ("week" as const)
+    : periodForDays(Math.max(1, extDays));
+  // extSum считается «по аренде» (без экипировки) — для extend-inplace.
+  const extSum = extIsWeekly ? extRate * extWeeks : extDailyRate * extDays;
+  // v0.6.7: dailyTotal = аренда + экипировка/сут (как в дизайне line 15).
+  const dailyExtTotalBase = extDailyRate + equipDaily;
+  const equipSum = equipDaily * extDays;
+  // Грубая сумма продления: аренда + экипировка за выбранные дни.
+  const periodTotal = extSum + equipSum;
+  // Долг к закрытию (с учётом forgive).
+  const debtPortion = forgiveDebt ? 0 : dueAmount;
+  // Общая сумма «всё что нужно собрать» (до учёта депозита).
+  const grossTotal = debtPortion + periodTotal;
   // v0.4.83: «Принято от клиента» — пустое поле когда сумма 0, чтоб
-  // оператор не стирал нолик при наборе. Внутри в submit пустая строка
-  // = 0.
-  // v0.6.1: при drag-to-extend поле сразу заполняется на сумму долга +
-  // стоимость продления (extDays × dailyRate). Это превращает дёрг
-  // календаря в готовый payload — оператору остаётся только подтвердить.
-  const prefillExtensionSum = (() => {
-    if (!initialExtDays || initialExtDays <= 0) return 0;
-    const isWeek = rental.rateUnit === "week";
-    const dayRate = isWeek ? Math.round(rental.rate / 7) : rental.rate;
-    return dayRate * initialExtDays;
-  })();
+  // оператор не стирал нолик при наборе.
   const [acceptedStr, setAcceptedStr] = useState<string>(() => {
-    const initial = remainingAfterSecurity + prefillExtensionSum;
-    return initial > 0 ? String(initial) : "";
-  });
-  // v0.6.1: «следили ли мы за initial-extension prefill уже один раз».
-  // Без флага useEffect ниже мгновенно затёр бы prefill сразу после
-  // монтажа (remainingAfterSecurity вычисляется на 2-м рендере).
-  const extPrefilledRef = useRef<boolean>((initialExtDays ?? 0) > 0);
-  // Sync «принято» при изменении источников. Если становится 0 — пустая.
-  // Первый эффект пропускаем, если был prefill — иначе оператор увидит
-  // суммы долга без надбавки за продление.
-  useEffect(() => {
-    if (extPrefilledRef.current) {
-      extPrefilledRef.current = false;
-      return;
+    if (!initialExtDays || initialExtDays <= 0) {
+      return remainingAfterSecurity > 0 ? String(remainingAfterSecurity) : "";
     }
-    // v0.6.3: в amount-mode синхронизацию делает отдельный effect ниже.
+    return "";
+  });
+  // v0.6.7: в режиме days acceptedStr автоматически = grossTotal − depositToUse.
+  // В режиме amount — управляется отдельно через amountInput.
+  useEffect(() => {
     if (mode === "amount") return;
-    setAcceptedStr(
-      remainingAfterSecurity > 0 ? String(remainingAfterSecurity) : "",
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [remainingAfterSecurity, mode]);
+    const target = Math.max(0, grossTotal - depositToUse);
+    setAcceptedStr(target > 0 ? String(target) : "");
+  }, [grossTotal, depositToUse, mode]);
 
   const accepted = Number(acceptedStr.replace(/\D/g, "")) || 0;
   const totalReceived = depositToUse + securityToUse + accepted;
   const overpay = Math.max(0, totalReceived - dueAmount);
   const underpay = Math.max(0, dueAmount - totalReceived);
 
-  // v0.4.79: автоматический расчёт продления по переплате.
-  // Если overpayDest='extend' — overpay делится на extDailyRate (или
-  // weeklyRate), целое количество идёт в продление, остаток в депозит.
-  // Оператор может переопределить число дней/недель через extInputOverride.
-  // v0.4.85: hoverDays — preview когда оператор водит мышью по календарю.
-  // v0.6.3: новый floating-календарь read-only, hover не нужен — но
-  // переменная участвует в формулах displayDays. Оставляем как null.
-  const hoverDays: number | null = null;
-  const extEnabled = overpay > 0 && overpayDest === "extend";
-  const extAutoUnits = extEnabled
-    ? Math.floor(overpay / Math.max(1, extIsWeekly ? extRate : extDailyRate))
-    : 0;
-  const extInputBase = extInputOverride ?? Math.max(1, extAutoUnits);
-  // v0.4.90: extDays/extSum — СТАБИЛЬНЫЕ значения без hover (для submit
-  // и distribute()). displayDays/displaySum — preview значения для UI
-  // подсветки при наведении мыши на календарь.
-  // Раньше extDays зависел от hoverDays — submit мог уйти на чужое
-  // число дней (если оператор нажал «Принять» удерживая курсор на дне).
-  // Баг #66: extend на «7 дн» создал placeholder 500 ₽ (1 день).
-  const extDays = extIsWeekly ? extInputBase * 7 : extInputBase;
-  const extWeeks = extIsWeekly ? extInputBase : 0;
-  const extInput = extInputBase;
-  const extEffectivePeriod = extIsWeekly
-    ? ("week" as const)
-    : periodForDays(extDays);
-  const extSum = extIsWeekly ? extRate * extWeeks : extDailyRate * extDays;
-  // v0.6.3: hover-preview больше не нужен (read-only calendar).
-  void hoverDays;
-
-  // v0.4.93: если переплата слишком мала для продления — авто-переключение
-  // на «депозит». Иначе пользователь видит «продление невозможно» при
-  // выборе extend по дефолту, что сбивает.
-  // v0.6.3: в amount-mode НЕ переключаем — оператор сам контролирует
-  // сумму, нулевые дни — нормальная промежуточная ситуация при наборе.
-  useEffect(() => {
-    if (mode === "amount") return;
-    if (overpay > 0 && overpayDest === "extend" && extAutoUnits === 0) {
-      setOverpayDest("deposit");
-    }
-  }, [overpay, overpayDest, extAutoUnits, mode]);
+  // v0.6.7: extension всегда «включён» когда extDays > 0 — оператор
+  // явно выбрал период (через спиннер/preset/amount). Старая логика
+  // «extEnabled только при overpay > 0» убрана — она ломала случай
+  // когда оператор использует депозит как источник продления.
+  const extEnabled = extDays > 0;
 
   // v0.6.3: amount-mode → days. Оператор вводит сумму, которую даёт
   // клиент, мы считаем сколько дней продления это даёт сверх долга.
   //   amount = клиент платит
   //   debtPortion = долг (если clearDebt) или 0 (если forgiveDebt)
-  //   possibleUnits = floor( (amount - debtPortion) / rate )
-  // Записываем в acceptedStr (для distribute) и extInputOverride
-  // (для рендера/submit продления).
+  //   possibleUnits = floor( (amount - debtPortion - equipPart) / dailyTotal )
   useEffect(() => {
     if (mode !== "amount") return;
     const amt = Math.max(0, parseInt(amountInput || "0", 10));
     setAcceptedStr(amt > 0 ? String(amt) : "");
-    const debtPortion = forgiveDebt ? 0 : dueAmount;
     const available = Math.max(0, amt - debtPortion);
-    const unitRate = Math.max(1, extIsWeekly ? extRate : extDailyRate);
-    const possibleUnits = Math.floor(available / unitRate);
-    setExtInputOverride(possibleUnits > 0 ? possibleUnits : 1);
-    if (possibleUnits > 0 && overpayDest !== "extend") {
-      setOverpayDest("extend");
-    }
+    // v0.6.7: dailyTotal включает экипировку.
+    const unitDaily = Math.max(1, extIsWeekly ? extRate + equipDaily * 7 : dailyExtTotalBase);
+    const possibleUnits = Math.floor(available / unitDaily);
+    setExtInputOverride(possibleUnits > 0 ? possibleUnits : 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     amountInput,
     mode,
-    forgiveDebt,
-    dueAmount,
+    debtPortion,
     extIsWeekly,
     extRate,
-    extDailyRate,
+    equipDaily,
+    dailyExtTotalBase,
   ]);
-  // Остаток после продления → в депозит
-  const extResidualToDeposit = Math.max(0, overpay - extSum);
+
+  // v0.6.7: при переключении mode='days' — если override был 0
+  // (после amount-вычисления), сразу поставим дефолт 1, чтобы спиннер
+  // показал понятное значение. Это не активирует продление само по
+  // себе — extEnabled true только когда оператор сознательно жмёт +.
+  // Для drag-to-extend (initialExtDays > 0) override уже > 0.
+  // НЕ автоматизируем, оставляем 0 для свежего открытия без overdue.
 
   const [method, setMethod] = useState<PaymentMethod>("cash");
   const [saving, setSaving] = useState(false);
@@ -542,8 +485,11 @@ export function PaymentAcceptDialog({
       //    теперь оформлен через payment(method='deposit') в шаге 3 —
       //    PATCH здесь только уменьшает rental.deposit на сумму, чтобы
       //    залог не использовали повторно.
+      // v0.6.7: securityToUse=0 всегда (UI убран) — блок dead-code,
+      //    оставлен на случай возврата функциональности.
       if (securityToUse > 0) {
-        const newDepositValue = Math.max(0, securityMax - securityToUse);
+        const securityMaxCurrent = rental.deposit ?? 0;
+        const newDepositValue = Math.max(0, securityMaxCurrent - securityToUse);
         await api.patch(`/api/rentals/${rental.id}`, {
           deposit: newDepositValue,
           note:
@@ -763,23 +709,6 @@ export function PaymentAcceptDialog({
     return m;
   }
 
-  const debtParts: { label: string; amount: number }[] = [];
-  if (pendingRent > 0)
-    debtParts.push({ label: "не оплачено", amount: pendingRent });
-  if (overdueDaysBalance > 0)
-    debtParts.push({ label: "просрочка дни", amount: overdueDaysBalance });
-  if (overdueFineBalance > 0)
-    debtParts.push({ label: "штраф просрочки", amount: overdueFineBalance });
-  if (damageBalance > 0)
-    debtParts.push({ label: "ущерб", amount: damageBalance });
-  if (manualBalance > 0)
-    debtParts.push({ label: "ручной долг", amount: manualBalance });
-  if (extEnabled && extSum > 0)
-    debtParts.push({
-      label: `продление ${extDays}${extIsWeekly ? `=${extWeeks}нед` : "дн"}`,
-      amount: extSum,
-    });
-
   // v0.6.2: вычисляем суммарный долг и просрочку для шапки drawer'а
   const isOverdueState = (overdueDaysBalanceRaw + overdueFineBalanceRaw) > 0;
   const overdueDaysHeader = debt?.overdueDays ?? 0;
@@ -821,11 +750,8 @@ export function PaymentAcceptDialog({
   // существующий EquipmentChangeDialog). Сама структура хранится в
   // rental.equipmentJson, никаких локальных копий тут не делаем —
   // диалог обновляет аренду через invalidateQueries.
-  const equipment = rental.equipmentJson ?? [];
-  const equipDaily = equipment.reduce(
-    (s, e) => s + (e.free ? 0 : e.price),
-    0,
-  );
+  // v0.6.7: equipment/equipDaily объявлены выше (после dueAmount), здесь
+  // только state открытия модалки экипировки.
   const [equipDialogOpen, setEquipDialogOpen] = useState(false);
 
   // v0.6.5: «жёлтая зона» в floating-календаре + предупреждение «не хватает».
@@ -839,14 +765,11 @@ export function PaymentAcceptDialog({
   //   coveredDays = floor( max(0, amount - debtPortion) / dailyTotal )
   //   uncoveredDays = max(0, extDays - coveredDays)
   //   shortage    = max(0, extDays * dailyTotal + debtPortion - amount)
-  const dailyExtTotal = extDailyRate + equipDaily;
-  const debtPortionForShortage = forgiveDebt ? 0 : dueAmount;
-  const amountForShortage = accepted;
   const coveredDaysShortage =
     mode === "amount"
       ? Math.floor(
-          Math.max(0, amountForShortage - debtPortionForShortage) /
-            Math.max(1, dailyExtTotal),
+          Math.max(0, accepted - debtPortion) /
+            Math.max(1, dailyExtTotalBase),
         )
       : extDays;
   const uncoveredDaysShortage =
@@ -855,7 +778,7 @@ export function PaymentAcceptDialog({
     mode === "amount" && uncoveredDaysShortage > 0
       ? Math.max(
           0,
-          extDays * dailyExtTotal + debtPortionForShortage - amountForShortage,
+          extDays * dailyExtTotalBase + debtPortion - accepted,
         )
       : 0;
   return (
@@ -1030,12 +953,12 @@ export function PaymentAcceptDialog({
                   </button>
                   <div className="bg-white px-5 py-2 text-center">
                     <div className="font-display text-[26px] font-extrabold leading-none tabular-nums text-ink">
-                      {extIsWeekly ? extDays : extInput}
+                      {extIsWeekly ? extDays : extInputBase}
                     </div>
                     <div className="text-[10px] text-muted">
-                      {(extIsWeekly ? extDays : extInput) === 1
+                      {(extIsWeekly ? extDays : extInputBase) === 1
                         ? "день"
-                        : (extIsWeekly ? extDays : extInput) < 5
+                        : (extIsWeekly ? extDays : extInputBase) < 5
                           ? "дня"
                           : "дней"}
                     </div>
@@ -1181,266 +1104,10 @@ export function PaymentAcceptDialog({
             </div>
           </div>
 
-          {/* ─── STEP: депозит клиента ────────────────────────────────── */}
-          {depositBalance > 0 && (
-            <div className="border-b border-border px-5 py-4">
-              <label className="flex cursor-pointer items-start gap-2.5">
-                <input
-                  type="checkbox"
-                  checked={useDeposit}
-                  onChange={(e) => setUseDeposit(e.target.checked)}
-                  className="mt-0.5 h-4 w-4 accent-emerald-600"
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="text-[12px] font-semibold text-ink">
-                    Использовать депозит клиента ·{" "}
-                    <span className="tabular-nums text-green-ink">
-                      {fmt(depositBalance)} ₽
-                    </span>
-                  </div>
-                  <div className="mt-0.5 text-[11px] text-muted">
-                    {useDeposit
-                      ? `Зачтём ${fmt(depositToUse)} ₽ из депозита`
-                      : "Депозит не трогаем — клиент платит сейчас"}
-                  </div>
-                </div>
-              </label>
-              {useDeposit && (
-                <div className="mt-2 flex items-center gap-2 pl-7">
-                  <span className="text-[11px] text-muted">Сумма:</span>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    value={useDepositAmountStr}
-                    onChange={(e) =>
-                      setUseDepositAmountStr(
-                        e.target.value.replace(/\D/g, ""),
-                      )
-                    }
-                    placeholder={`всё (${fmt(depositBalance)})`}
-                    className="h-7 w-32 rounded-[6px] border border-border bg-white px-2 text-[12px] tabular-nums outline-none focus:border-emerald-500"
-                  />
-                  <span className="text-[11px] text-muted">₽</span>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ─── STEP: списать с залога аренды ────────────────────────── */}
-          {securityAllowed && (
-            <div className="border-b border-border px-5 py-4">
-              <label className="flex cursor-pointer items-start gap-2.5">
-                <input
-                  type="checkbox"
-                  checked={useSecurity}
-                  onChange={(e) => setUseSecurity(e.target.checked)}
-                  className="mt-0.5 h-4 w-4 accent-amber-600"
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5 text-[12px] font-semibold text-ink">
-                    <Shield size={12} className="text-amber-700" />
-                    Списать с залога · max{" "}
-                    <span className="tabular-nums">
-                      {fmt(Math.min(securityMax, securityCoverable))} ₽
-                    </span>
-                  </div>
-                  <div className="mt-0.5 text-[11px] text-muted">
-                    Только в счёт ущерба и просрочки. Аренду из залога
-                    оплатить нельзя.
-                  </div>
-                </div>
-              </label>
-              {useSecurity && (
-                <div className="mt-2 pl-7">
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="range"
-                      min={0}
-                      max={Math.min(securityMax, securityCoverable)}
-                      step={100}
-                      value={Math.min(
-                        Number(securityStr.replace(/\D/g, "")) || 0,
-                        Math.min(securityMax, securityCoverable),
-                      )}
-                      onChange={(e) => setSecurityStr(e.target.value)}
-                      className="flex-1 accent-amber-600"
-                    />
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      value={securityStr}
-                      onChange={(e) =>
-                        setSecurityStr(e.target.value.replace(/[^\d]/g, ""))
-                      }
-                      className="h-8 w-24 rounded-[8px] border border-border bg-white px-2 text-right text-[13px] tabular-nums outline-none focus:border-amber-600"
-                    />
-                    <span className="text-[11px] text-muted">₽</span>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setSecurityStr(
-                          String(Math.min(securityMax, securityCoverable)),
-                        )
-                      }
-                      className="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-semibold text-amber-800 hover:bg-amber-200"
-                    >
-                      max
-                    </button>
-                  </div>
-                  <div className="mt-1.5 flex items-center justify-between text-[11px] text-muted">
-                    <span>Останется в залоге:</span>
-                    <span className="tabular-nums font-semibold text-ink-2">
-                      {fmt(Math.max(0, securityMax - securityToUse))} ₽
-                    </span>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* ─── STEP: Принято от клиента + способ ────────────────────── */}
-          {mode === "days" && (
-            <div className="border-b border-border px-5 py-4">
-              <div className="mb-1.5 flex items-center gap-2">
-                <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
-                  Принято от клиента, ₽
-                </div>
-                <div className="ml-auto inline-flex rounded-full border border-border bg-white p-0.5">
-                  {METHODS.map((m) => (
-                    <button
-                      key={m.id}
-                      type="button"
-                      onClick={() => setMethod(m.id)}
-                      className={cn(
-                        "rounded-full px-3 py-1 text-[11.5px] font-semibold transition-colors",
-                        method === m.id
-                          ? "bg-blue-600 text-white"
-                          : "text-muted hover:text-ink-2",
-                      )}
-                    >
-                      {m.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <input
-                type="text"
-                inputMode="numeric"
-                value={acceptedStr}
-                onChange={(e) =>
-                  setAcceptedStr(e.target.value.replace(/[^\d]/g, ""))
-                }
-                onFocus={(e) => e.currentTarget.select()}
-                placeholder="0"
-                className="h-10 w-full rounded-[10px] border border-border bg-white px-3 text-[16px] font-semibold tabular-nums text-ink outline-none focus:border-blue-600"
-              />
-            </div>
-          )}
-          {mode === "amount" && (
-            <div className="border-b border-border px-5 py-4">
-              <div className="mb-1.5 flex items-center gap-2">
-                <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
-                  Способ оплаты
-                </div>
-                <div className="ml-auto inline-flex rounded-full border border-border bg-white p-0.5">
-                  {METHODS.map((m) => (
-                    <button
-                      key={m.id}
-                      type="button"
-                      onClick={() => setMethod(m.id)}
-                      className={cn(
-                        "rounded-full px-3 py-1 text-[11.5px] font-semibold transition-colors",
-                        method === m.id
-                          ? "bg-blue-600 text-white"
-                          : "text-muted hover:text-ink-2",
-                      )}
-                    >
-                      {m.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="text-[11px] text-muted">
-                Принято от клиента:{" "}
-                <span className="font-semibold text-ink-2 tabular-nums">
-                  {fmt(accepted)} ₽
-                </span>
-              </div>
-            </div>
-          )}
-
-          {/* ─── Куда направить переплату ─────────────────────────────── */}
-          {overpay > 0 && (
-            <div className="border-b border-border px-5 py-4">
-              <div className="mb-2 flex items-center gap-2">
-                <div className="text-[11px] font-bold uppercase tracking-wider text-blue-800">
-                  Переплата · {fmt(overpay)} ₽ — куда направить?
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {(() => {
-                  const opts: Array<{
-                    id: OverpayDest;
-                    label: string;
-                    icon: typeof Wallet;
-                  }> = [];
-                  if (needsSecurityTopup) {
-                    opts.push({
-                      id: "security",
-                      label: "В залог аренды",
-                      icon: Shield,
-                    });
-                  }
-                  opts.push({
-                    id: "deposit",
-                    label: "В депозит клиента",
-                    icon: Wallet,
-                  });
-                  opts.push({
-                    id: "extend",
-                    label: "В продление",
-                    icon: Repeat,
-                  });
-                  return opts;
-                })().map((opt) => (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    onClick={() => {
-                      setOverpayDest(opt.id);
-                      if (opt.id !== "extend") setExtInputOverride(null);
-                    }}
-                    className={cn(
-                      "inline-flex flex-1 items-center justify-center gap-1.5 rounded-[8px] border px-3 py-1.5 text-[12px] font-semibold transition-colors",
-                      overpayDest === opt.id
-                        ? "border-blue-500 bg-blue-600 text-white"
-                        : "border-border bg-white text-ink-2 hover:border-blue-400",
-                    )}
-                  >
-                    <opt.icon size={12} />
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-              {overpayDest === "extend" && extEnabled && extResidualToDeposit > 0 && (
-                <div className="mt-1.5 text-[10.5px] text-muted">
-                  Остаток {fmt(extResidualToDeposit)} ₽ (меньше одного дня
-                  тарифа) уйдёт в депозит клиента.
-                </div>
-              )}
-              {overpayDest === "extend" && extEnabled && extSum > overpay && (
-                <div className="mt-1.5 text-[10.5px] font-semibold text-amber-700">
-                  ⚠ Выбрано больше дней, чем покрывает переплата —
-                  не хватает {fmt(extSum - overpay)} ₽.
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* v0.6.5: предупреждение «не хватает» — над финальной карточкой
-              только в режиме «по сумме клиента». */}
+          {/* v0.6.7: предупреждение «не хватает» — над footer'ом
+              в режиме «по сумме клиента» (как в дизайне line 343-349). */}
           {shortageAmount > 0 && (
-            <div className="px-5 pt-4">
+            <div className="px-5 py-4">
               <div
                 className="rounded-[10px] px-3 py-2 text-[11.5px] font-semibold"
                 style={{
@@ -1460,81 +1127,13 @@ export function PaymentAcceptDialog({
               </div>
             </div>
           )}
-
-          {/* ─── Финальная карточка «Будет проведено» (детализация) ─── */}
-          <div className="px-5 py-4">
-            <div className="rounded-[12px] border border-border bg-surface-soft px-4 py-3">
-              <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-2">
-                Будет проведено
-              </div>
-              <div className="flex flex-col gap-0.5 text-[12px]">
-                {accepted > 0 && (
-                  <Row
-                    label={`Принято (${METHODS.find((m) => m.id === method)?.label})`}
-                    value={`+ ${fmt(accepted)} ₽`}
-                  />
-                )}
-                {depositToUse > 0 && (
-                  <Row
-                    label="Из депозита клиента"
-                    value={`− ${fmt(depositToUse)} ₽`}
-                  />
-                )}
-                {securityToUse > 0 && (
-                  <Row
-                    label="Списано с залога"
-                    value={`− ${fmt(securityToUse)} ₽`}
-                  />
-                )}
-                {forgiveDebt && overdueBalanceRaw > 0 && (
-                  <Row
-                    label="Просрочка прощена"
-                    value={`−${fmt(overdueBalanceRaw)} ₽`}
-                  />
-                )}
-                <div className="mt-1 flex justify-between border-t border-border pt-1 text-ink">
-                  <span className="font-semibold">Зачтено в долг/аренду</span>
-                  <span className="tabular-nums font-semibold">
-                    {fmt(Math.min(dueAmount, totalReceived))} ₽
-                  </span>
-                </div>
-                {overpay > 0 && extEnabled && extSum > 0 && (
-                  <>
-                    <div className="flex justify-between text-emerald-700">
-                      <span>Продление аренды (+{extDays} дн)</span>
-                      <span className="tabular-nums">+ {fmt(extSum)} ₽</span>
-                    </div>
-                    {extResidualToDeposit > 0 && (
-                      <div className="flex justify-between text-green-700">
-                        <span>Остаток → депозит клиента</span>
-                        <span className="tabular-nums">
-                          + {fmt(extResidualToDeposit)} ₽
-                        </span>
-                      </div>
-                    )}
-                  </>
-                )}
-                {overpay > 0 && overpayDest === "security" && (
-                  <div className="flex justify-between text-blue-700">
-                    <span>Залог пополнен</span>
-                    <span className="tabular-nums">+ {fmt(overpay)} ₽</span>
-                  </div>
-                )}
-                {overpay > 0 && overpayDest === "deposit" && (
-                  <div className="flex justify-between text-green-700">
-                    <span>Переплата → депозит клиента</span>
-                    <span className="tabular-nums">+ {fmt(overpay)} ₽</span>
-                  </div>
-                )}
-                {underpay > 0 && (
-                  <div className="flex justify-between text-red-600">
-                    <span>Недоплата (висит за клиентом)</span>
-                    <span className="tabular-nums">{fmt(underpay)} ₽</span>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
+          {/* v0.6.7: удалены секции (дублирующие новый footer):
+              · «Использовать депозит клиента» — checkbox в footer'е
+              · «Списать с залога» — функциональность убрана из UI
+              · «Принято от клиента, ₽» (mode='days') — авто-расчёт из дней
+              · «Способ оплаты» (mode='amount') — pills в footer'е
+              · «Переплата · X ₽ — куда направить?» — переплата всегда в продление
+              · «Будет проведено» — итог теперь только в footer'е (2-кол) */}
         </div>
 
         {/* ─── FOOTER v0.6.5 ─── 2 колонки: краткая раскладка + К ПРИЁМУ ─── */}
@@ -1601,7 +1200,7 @@ export function PaymentAcceptDialog({
                 К приёму
               </div>
               <div className="font-display text-[28px] font-extrabold leading-none tabular-nums text-blue-700 mt-0.5">
-                {fmt(Math.max(0, accepted))} ₽
+                {fmt(Math.max(0, grossTotal - depositToUse))} ₽
               </div>
               <div className="mt-2 flex items-center justify-end gap-2">
                 <div className="flex rounded-full border border-border bg-white p-0.5">
@@ -1844,15 +1443,6 @@ function CompactExtendCalendar({
           </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex justify-between">
-      <span>{label}</span>
-      <span className="tabular-nums">{value}</span>
     </div>
   );
 }
