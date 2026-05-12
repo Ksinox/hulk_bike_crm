@@ -1388,36 +1388,24 @@ export function RentalCard({
             (rental as { depositOriginal?: number }).depositOriginal ??
             currentDeposit;
           const depositSpent = Math.max(0, originalDeposit - currentDeposit);
-          // v0.4.92: «Эта аренда» = сумма последнего ПРОДЛЕНИЯ (или
-          // initial если продлений не было). Берём из payments только
-          // те, у которых note начинается с «Продление» или «продление
-          // на» — это и есть запись от extend операции (см.
-          // /extend-inplace endpoint, поле note в payments insert).
-          // Раньше группировал по ID gap, но это смешивало платежи
-          // разных видов (extend + overdue payment + бэкфилы).
-          const rentPays = chainPayments
-            .filter((p) => p.type === "rent")
-            .sort((a, b) => a.id - b.id);
-          const isExtendNote = (n?: string | null) =>
-            !!n && /^продлен/i.test(n);
-          const extendPays = rentPays.filter((p) => isExtendNote(p.note));
-          const lastSegmentSum = (() => {
-            if (extendPays.length > 0) {
-              // последняя группа extend payments (близкие по ID)
-              let sum = extendPays[extendPays.length - 1]!.amount;
-              for (let i = extendPays.length - 2; i >= 0; i--) {
-                if (extendPays[i + 1]!.id - extendPays[i]!.id <= 5) {
-                  sum += extendPays[i]!.amount;
-                } else break;
-              }
-              return sum;
-            }
-            // Без продлений — initial (первый rent payment) или rental.sum
-            return rentPays.length > 0 ? rentPays[0]!.amount : rental.sum;
-          })();
+          // v0.5.1: «Эта аренда» = rental.sum, который API правильно
+          // поддерживает:
+          //   • при создании: rate × days
+          //   • при extend-inplace: += addedDays × rate
+          //   • при overdue_days_payment: += daysAdded × rate (v0.4.81)
+          // Раньше показывали сумму последнего ПРОДЛЕНИЯ через фильтр
+          // payments по note='Продление…'. Это ломалось когда клиент
+          // оплачивал просроченные дни — они тоже rent-платежи, но с
+          // другим note, и KPI не рос. Заказчик хочет видеть РЕАЛЬНУЮ
+          // суммарную стоимость текущей аренды (с учётом купленных
+          // просроченных дней) — это и есть rental.sum.
+          const rentPays = chainPayments.filter((p) => p.type === "rent");
+          const extendCount = rentPays.filter(
+            (p) => !!p.note && /^продлен/i.test(p.note),
+          ).length;
           const hintBase =
-            extendPays.length > 0
-              ? `последнее продление · всего: ${extendPays.length}`
+            extendCount > 0
+              ? `продлений · ${extendCount}`
               : "сумма этой аренды";
           const hint =
             depositSpent > 0
@@ -1426,7 +1414,7 @@ export function RentalCard({
           return (
             <KpiCard
               label="Эта аренда"
-              value={`${fmt(lastSegmentSum)} ₽`}
+              value={`${fmt(rental.sum)} ₽`}
               hint={hint}
             />
           );
