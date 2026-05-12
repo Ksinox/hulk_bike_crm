@@ -1920,37 +1920,42 @@ export function HistoryTab({
         loading={timelineQ.isLoading}
       />
 
-      <div className="text-[12px] text-muted-2 px-1">
-        Цепочка из {rentEvents.length}{" "}
-        {pluralRu(rentEvents.length, ["аренды", "аренд", "аренд"])} — суммарно{" "}
-        <b className="text-ink">
-          {totalDays}{" "}
-          {pluralRu(totalDays, ["день", "дня", "дней"])}
-        </b>
-        ,{" "}
-        <b className="text-ink">
-          {totalRentSum.toLocaleString("ru-RU")} ₽
-        </b>{" "}
-        за всё время
-        {damageReports.length > 0 && (
-          <>
-            {" · "}
-            ущерб:{" "}
-            <b className="text-ink">
-              {totalDamageBilled.toLocaleString("ru-RU")} ₽
-            </b>{" "}
-            (погашено{" "}
-            <b className="text-ink">
-              {totalDamagePaid.toLocaleString("ru-RU")} ₽
-            </b>
-            ,{" остаток "}
-            <b className={totalDamageDebt > 0 ? "text-red-ink" : "text-green-ink"}>
-              {totalDamageDebt.toLocaleString("ru-RU")} ₽
-            </b>
-            )
-          </>
-        )}
-      </div>
+      {/* v0.5.4: «Цепочка из N аренд» имеет смысл только при N > 1.
+          Для одиночной аренды эта плашка лишь дублировала шапку карточки
+          и выглядела как «отдельная цепочка», что путало оператора. */}
+      {rentEvents.length > 1 && (
+        <div className="text-[12px] text-muted-2 px-1">
+          Цепочка из {rentEvents.length}{" "}
+          {pluralRu(rentEvents.length, ["аренды", "аренд", "аренд"])} — суммарно{" "}
+          <b className="text-ink">
+            {totalDays}{" "}
+            {pluralRu(totalDays, ["день", "дня", "дней"])}
+          </b>
+          ,{" "}
+          <b className="text-ink">
+            {totalRentSum.toLocaleString("ru-RU")} ₽
+          </b>{" "}
+          за всё время
+          {damageReports.length > 0 && (
+            <>
+              {" · "}
+              ущерб:{" "}
+              <b className="text-ink">
+                {totalDamageBilled.toLocaleString("ru-RU")} ₽
+              </b>{" "}
+              (погашено{" "}
+              <b className="text-ink">
+                {totalDamagePaid.toLocaleString("ru-RU")} ₽
+              </b>
+              ,{" остаток "}
+              <b className={totalDamageDebt > 0 ? "text-red-ink" : "text-green-ink"}>
+                {totalDamageDebt.toLocaleString("ru-RU")} ₽
+              </b>
+              )
+            </>
+          )}
+        </div>
+      )}
 
       {events.map((ev, idx) => {
         if (ev.kind === "damage_act") {
@@ -2075,6 +2080,10 @@ export function HistoryTab({
         }
         // ev.kind === "rental"
         const r = ev.rental;
+        // v0.5.4: для одиночной аренды (chain=1) НЕ показываем её как
+        // отдельный блок в ленте — она и так шапка карточки. Иначе
+        // выглядит будто рядом «висит ещё одна аренда».
+        if (rentEvents.length <= 1) return null;
         // Индекс среди rental-событий (не общий idx)
         const rentalIdx = rentEvents.findIndex((e) => e.rental.id === r.id);
         const isCurrent = r.id === rental.id;
@@ -2218,7 +2227,13 @@ export function ActivityTimelineSection({
           // начался новый период (по аналогии с «Цепочка аренд»).
           const isExtension =
             it.action === "extended" || it.action === "rental_extended";
-          const isCreated = it.action === "created";
+          // v0.5.4: «Создание аренды» — только для action='created' на
+          // сущности rental. Раньше любое created (damage_report, payment
+          // и т.п.) красило строку в зелёную «Создание аренды» — было
+          // неверно: в ленте акт о повреждениях помечался как создание
+          // аренды.
+          const isCreated =
+            it.action === "created" && it.entity === "rental";
           return (
             <li key={it.id}>
               <button
