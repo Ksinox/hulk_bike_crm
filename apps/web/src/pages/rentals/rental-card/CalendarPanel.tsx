@@ -9,7 +9,7 @@
  * дня запускает preview, на mouse-up вызывается onCommitExtend(days) — RentalCard
  * открывает PaymentAcceptDialog с предзаполненным числом дней.
  */
-import { Calendar, MapPin } from "lucide-react";
+import { Calendar } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DragExtendCalendar } from "./DragExtendCalendar";
 import type { Rental, RentalStatus } from "@/lib/mock/rentals";
@@ -142,9 +142,6 @@ function ScheduleBlock({
       </div>
       <div className="mt-1 font-display text-[15px] font-extrabold text-ink tabular-nums">
         {date} · {time}
-      </div>
-      <div className="mt-0.5 text-[11px] text-muted inline-flex items-center gap-1">
-        <MapPin size={10} /> Склад
       </div>
     </div>
   );

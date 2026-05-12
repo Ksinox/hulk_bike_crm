@@ -9,15 +9,17 @@
  * Источник правды:
  *   • эндпоинт /api/rentals/:id/document/:kind — генерируется на лету
  *   • useApiRentalDocSnapshots — фрозен-копии в S3 (для архива)
+ *
+ * v0.6.4: убраны плитка «Загрузить документ» и pill «+ Загрузить» в шапке —
+ * на бэке нет эндпоинта для произвольной загрузки, фича отложена.
  */
-import { useRef, useState } from "react";
+import { useState } from "react";
 import {
   ArrowLeftRight,
   Download,
   FileSignature,
   FileText,
   Trash2,
-  Upload,
 } from "lucide-react";
 import {
   useApiRentalDocSnapshots,
@@ -88,17 +90,6 @@ export function DocsInline({ rental }: { rental: Rental }) {
             договоры, акты, фото · клик для просмотра
           </div>
         </div>
-        <button
-          type="button"
-          onClick={() => {
-            // Кнопка-плейсхолдер — реальный загрузчик ещё не подключён,
-            // тот же flow как в UploadTile (см. ниже).
-          }}
-          className="inline-flex items-center gap-1 rounded-full bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white px-2.5 py-1 text-[11px] font-bold"
-          title="Загрузить документ (в разработке)"
-        >
-          <Upload size={11} /> Загрузить
-        </button>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
         {(Object.keys(DOC_META) as DocType[]).map((t) => {
@@ -130,7 +121,6 @@ export function DocsInline({ rental }: { rental: Rental }) {
           );
         })}
         <SnapshotsBlock rental={rental} />
-        <UploadTile />
       </div>
 
       {preview && (
@@ -147,56 +137,6 @@ export function DocsInline({ rental }: { rental: Rental }) {
         />
       )}
     </div>
-  );
-}
-
-/**
- * v0.6.1: плитка «Загрузить документ». Сейчас на бэке нет эндпоинта для
- * прикрепления произвольного файла к аренде (только генерация на лету +
- * snapshot'ы). Поэтому UI-заглушка: открывает файл-пикер, на выбор файла —
- * тост «функция в разработке». Когда появится /api/rentals/:id/documents
- * (или подобный) — заменить onChange реальным uploadом и invalidate
- * useApiRentalDocSnapshots.
- */
-function UploadTile() {
-  const inputRef = useRef<HTMLInputElement | null>(null);
-  const handleClick = () => {
-    inputRef.current?.click();
-  };
-  const handleFiles = (files: FileList | null) => {
-    if (!files || files.length === 0) return;
-    toast.info(
-      "Функция в разработке",
-      `Загрузка документов будет доступна позже (выбрано: ${files.length}).`,
-    );
-    // Очищаем чтобы тот же файл можно было выбрать повторно после
-    // реализации фичи.
-    if (inputRef.current) inputRef.current.value = "";
-  };
-  return (
-    <button
-      type="button"
-      onClick={handleClick}
-      className="rounded-[12px] border border-dashed border-border p-2.5 flex items-center gap-2.5 hover:border-blue-300 hover:bg-blue-50/30 cursor-pointer text-left transition-colors"
-    >
-      <div className="h-10 w-10 rounded-[10px] bg-surface-soft text-muted flex items-center justify-center flex-col shrink-0">
-        <Upload size={14} />
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="text-[12px] font-bold text-ink truncate">
-          Загрузить документ
-        </div>
-        <div className="text-[10px] text-muted">PDF · JPG · PNG</div>
-      </div>
-      <input
-        ref={inputRef}
-        type="file"
-        multiple
-        accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/*"
-        onChange={(e) => handleFiles(e.target.files)}
-        className="hidden"
-      />
-    </button>
   );
 }
 
