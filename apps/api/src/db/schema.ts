@@ -69,19 +69,15 @@ export const scooterBaseStatusEnum = pgEnum("scooter_base_status", [
 ]);
 
 export const rentalStatusEnum = pgEnum("rental_status", [
-  "new_request",
-  "meeting",
+  // v0.5.0: упрощение до двух базовых статусов.
+  //   active    — аренда идёт. Просрочка («overdue») и «возврат сегодня»
+  //               («returning») теперь computed на фронте через
+  //               effectiveRentalStatus() — БД-статуса для них нет.
+  //   completed — завершена. С ущербом или без — отдельного
+  //               completed_damage больше нет; наличие долга по ущербу
+  //               выясняется по damage_reports.debt > 0.
   "active",
-  "overdue",
-  "returning",
   "completed",
-  "completed_damage",
-  "cancelled",
-  "police",
-  "court",
-  // v0.2.75: «Проблемная» — клиент не согласен с актом о повреждениях,
-  // отправлена досудебная претензия. Аренда не продолжается.
-  "problem",
 ]);
 
 export const rentalSourceChannelEnum = pgEnum("rental_source_channel", [
@@ -123,11 +119,6 @@ export const paymentTypeEnum = pgEnum("payment_type", [
    *  аренды. Считается delta × оставшиеся дни. Попадает в revenue
    *  как обычная выручка. */
   "equipment_fee",
-]);
-
-export const paymentConfirmerRoleEnum = pgEnum("payment_confirmer_role", [
-  "boss",
-  "manager",
 ]);
 
 export const clientDocKindEnum = pgEnum("client_doc_kind", [
@@ -423,7 +414,7 @@ export const rentals = pgTable(
     /** Продление → ссылка на предыдущую аренду. null у корневой. */
     parentRentalId: bigint("parent_rental_id", { mode: "number" }),
 
-    status: rentalStatusEnum("status").notNull().default("new_request"),
+    status: rentalStatusEnum("status").notNull().default("active"),
     sourceChannel: rentalSourceChannelEnum("source_channel"),
 
     // Тариф и финансы
@@ -465,11 +456,6 @@ export const rentals = pgTable(
 
     // Контроль выдачи
     contractUploaded: boolean("contract_uploaded").notNull().default(false),
-    paymentConfirmedBy: paymentConfirmerRoleEnum("payment_confirmed_by"),
-    paymentConfirmedByName: text("payment_confirmed_by_name"),
-    paymentConfirmedAt: timestamp("payment_confirmed_at", {
-      withTimezone: true,
-    }),
 
     /** Legacy: массив названий. Оставлен для совместимости. */
     equipment: text("equipment").array().notNull().default([]),
@@ -480,14 +466,6 @@ export const rentals = pgTable(
      * free=true → цена в итоговую сумму не входит.
      */
     equipmentJson: jsonb("equipment_json").notNull().default([]),
-    /** Чеклист подтверждения выдачи — заполняется кнопкой «Подтвердить» */
-    confirmContractSigned: boolean("confirm_contract_signed")
-      .notNull()
-      .default(false),
-    confirmRentPaid: boolean("confirm_rent_paid").notNull().default(false),
-    confirmDepositReceived: boolean("confirm_deposit_received")
-      .notNull()
-      .default(false),
 
     /** Сумма ущерба, выставлена вручную (ДТП, поломка). null — ущерба нет. */
     damageAmount: integer("damage_amount"),

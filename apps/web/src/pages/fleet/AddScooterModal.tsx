@@ -91,7 +91,16 @@ export function AddScooterModal({ onClose }: { onClose: () => void }) {
   const name = `${scooterPrefix} #${String(number || "1").padStart(2, "0")}`;
   const nameTaken = scooters.some((s) => s.name === name);
 
-  const canSave = !!number && !nameTaken && modelId != null;
+  // v0.5.6: год обязателен валидный (1980..currentYear+1) если введён.
+  // Пустая строка ОК — значит «не указано» (необязательное поле).
+  const currentYear = new Date().getFullYear();
+  const yearTrim = year.trim();
+  const yearNum = Number(yearTrim);
+  const yearValid =
+    yearTrim === "" ||
+    (Number.isInteger(yearNum) && yearNum >= 1980 && yearNum <= currentYear + 1);
+  const canSave =
+    !!number && !nameTaken && modelId != null && yearValid;
 
   const requestClose = () => {
     if (closing) return;
@@ -240,15 +249,29 @@ export function AddScooterModal({ onClose }: { onClose: () => void }) {
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Год выпуска">
+              <Field
+                label="Год выпуска"
+                hint={
+                  !yearValid ? (
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-red-ink">
+                      год от 1980 до {currentYear + 1}
+                    </span>
+                  ) : undefined
+                }
+              >
                 <input
                   type="number"
                   value={year}
                   onChange={(e) => setYear(e.target.value)}
                   placeholder="2020"
                   min={1980}
-                  max={2100}
-                  className="h-10 w-full rounded-[10px] border border-border bg-surface px-3 text-[13px] text-ink outline-none focus:border-blue-600"
+                  max={currentYear + 1}
+                  className={cn(
+                    "h-10 w-full rounded-[10px] border bg-surface px-3 text-[13px] text-ink outline-none",
+                    yearValid
+                      ? "border-border focus:border-blue-600"
+                      : "border-red-500 focus:border-red-600",
+                  )}
                 />
               </Field>
               <Field label="Цвет">

@@ -73,11 +73,7 @@ export function SwapScooterDialog({
     const set = new Set<number>();
     allRentals.forEach((r) => {
       if (r.scooterId == null) return;
-      if (
-        r.status === "active" ||
-        r.status === "overdue" ||
-        r.status === "returning"
-      ) {
+      if (r.status === "active") {
         set.add(r.scooterId);
       }
     });

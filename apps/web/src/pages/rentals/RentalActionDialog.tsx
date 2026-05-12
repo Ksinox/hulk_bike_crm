@@ -145,6 +145,9 @@ export function RentalActionDialog({
   const [scooterPickerOpen, setScooterPickerOpen] = useState(false);
   // v0.4.66: финальный диалог «Создать акт ущерба или закрыть по-братски».
   const [actDialog, setActDialog] = useState<null | "ask">(null);
+  // v0.5.9: после успешного /complete показываем превью акта возврата.
+  // Закрываем главный диалог, но превью остаётся для печати.
+  const [returnDocPreview, setReturnDocPreview] = useState<number | null>(null);
   // v0.4.66: открыть PaymentAcceptDialog если есть долг по аренде.
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   // Дата фактического возврата.
@@ -267,14 +270,20 @@ export function RentalActionDialog({
       );
     }
     await Promise.all(charges).catch(() => {});
-    completeRentalNoDamage(rental.id, {
-      dateActual: dateActualForApi(),
-      conditionOk: true,
-      equipmentOk: true,
-      depositReturned: true,
-      mileage: mileageForApi(),
-    });
-    requestClose();
+    try {
+      await completeRentalNoDamage(rental.id, {
+        dateActual: dateActualForApi(),
+        conditionOk: true,
+        equipmentOk: true,
+        depositReturned: true,
+        mileage: mileageForApi(),
+      });
+    } catch (e) {
+      console.error("completeRentalNoDamage failed", e);
+    }
+    // v0.5.9: после успешного завершения открываем акт возврата —
+    // оператор печатает/скачивает и отдаёт клиенту.
+    setReturnDocPreview(rental.id);
   };
 
   // Создать акт ущерба: POST damage_report со всеми items, аренда →
@@ -323,7 +332,7 @@ export function RentalActionDialog({
       return;
     }
     const totalAmount = items.reduce((s, it) => s + it.finalPrice, 0);
-    const depositCovered = Math.min(totalAmount, rental.deposit || 2000);
+    const depositCovered = Math.min(totalAmount, rental.deposit ?? 0);
     try {
       await api.post("/api/damage-reports", {
         rentalId: rental.id,
@@ -337,20 +346,25 @@ export function RentalActionDialog({
     }
     // Завершаем аренду в режиме with damage. Передаём 0 как damageAmount —
     // фактический долг уже учтён через damage_report.
-    completeRentalWithDamage(
-      rental.id,
-      {
-        dateActual: dateActualForApi(),
-        conditionOk: false,
-        equipmentOk: true,
-        depositReturned: false,
-        damageNotes: "",
-        mileage: mileageForApi(),
-      },
-      0,
-      "",
-    );
-    requestClose();
+    try {
+      await completeRentalWithDamage(
+        rental.id,
+        {
+          dateActual: dateActualForApi(),
+          conditionOk: false,
+          equipmentOk: true,
+          depositReturned: false,
+          damageNotes: "",
+          mileage: mileageForApi(),
+        },
+        0,
+        "",
+      );
+    } catch (e) {
+      console.error("completeRentalWithDamage failed", e);
+    }
+    // v0.5.9: после успешного завершения открываем акт возврата.
+    setReturnDocPreview(rental.id);
   };
   void onOpenDamage; // legacy props, больше не используется в complete
 
@@ -843,6 +857,28 @@ export function RentalActionDialog({
     requestClose();
   };
 
+  // v0.5.9: после успешного /complete вместо закрытия диалога
+  // отображаем DocumentPreviewModal с актом возврата — оператор
+  // печатает/скачивает и закрывает превью.
+  if (returnDocPreview != null) {
+    const base = window.location.origin.includes("localhost")
+      ? "http://localhost:4000"
+      : window.location.origin.replace("crm.", "api.");
+    const htmlUrl = `${base}/api/rentals/${returnDocPreview}/document/act_return?format=html`;
+    const docxUrl = `${base}/api/rentals/${returnDocPreview}/document/act_return?format=docx`;
+    return (
+      <DocumentPreviewModal
+        title="Акт возврата скутера"
+        htmlUrl={htmlUrl}
+        docxUrl={docxUrl}
+        docxFilename={`act_return_${returnDocPreview}.docx`}
+        onClose={() => {
+          setReturnDocPreview(null);
+          requestClose();
+        }}
+      />
+    );
+  }
   return (
     <div
       className={cn(

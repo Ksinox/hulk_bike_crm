@@ -30,6 +30,14 @@ export type ApiClient = {
   unreachable: boolean;
   /** v0.3.9: баланс депозита (неиспользованные средства). */
   depositBalance?: number;
+  /**
+   * v0.5.6: агрегат непогашенного долга по ущербу клиента по ВСЕМ его
+   * арендам (включая завершённые). Сумма = Σ(damage_reports.total
+   * − depositCovered − Σ paid damage payments) по всем damage_reports
+   * клиента. Используется для метки «опасный клиент» в пикере и для
+   * плашки на карточке.
+   */
+  unpaidDamageDebt?: number;
 
   birthDate: string | null;
   passportSeries: string | null;
@@ -82,17 +90,7 @@ export type ApiScooter = {
   updatedAt: string;
 };
 
-export type RentalStatus =
-  | "new_request"
-  | "meeting"
-  | "active"
-  | "overdue"
-  | "returning"
-  | "completed"
-  | "completed_damage"
-  | "cancelled"
-  | "police"
-  | "court";
+export type RentalStatus = "active" | "completed";
 
 export type RentalSourceChannel =
   | "avito"
@@ -143,12 +141,6 @@ export type ApiRental = {
   sum: number;
   paymentMethod: PaymentMethod;
   contractUploaded: boolean;
-  confirmContractSigned: boolean;
-  confirmRentPaid: boolean;
-  confirmDepositReceived: boolean;
-  paymentConfirmedBy: "boss" | "manager" | null;
-  paymentConfirmedByName: string | null;
-  paymentConfirmedAt: string | null;
   equipment: string[];
   equipmentJson: RentalEquipmentItem[];
   damageAmount: number | null;

@@ -12,6 +12,8 @@ export type StatusFilter =
   | "return_today"
   | "new_request"
   | "completed"
+  // v0.5.4: 'issue' оставлен в типе для совместимости со старыми
+  // URL/localStorage. На UI вкладки больше нет (статуса 'problem' нет).
   | "issue"
   | "archived";
 
@@ -35,13 +37,14 @@ export type FiltersState = {
 // v0.4.47: убран таб «Все» — он дублировал «Активные». «Активные»
 // теперь означают ВСЕ живые аренды (включая просрочки/возвраты).
 // Если оператор хотел «всё подряд» — это и есть активные.
+// v0.5.4: убраны вкладки «Заявки/Проблемные». Статусов new_request/
+// problem больше нет в БД — фильтр был мёртвый.
 const STATUS_TABS: { id: StatusFilter; label: string }[] = [
   { id: "active", label: "Активные" },
   { id: "overdue", label: "Просрочка" },
   { id: "return_today", label: "Возврат сегодня" },
   { id: "new_request", label: "Выданы сегодня" },
   { id: "completed", label: "Завершены" },
-  { id: "issue", label: "Проблемные" },
   { id: "archived", label: "Архив" },
 ];
 

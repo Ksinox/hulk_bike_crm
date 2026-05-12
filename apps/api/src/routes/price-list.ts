@@ -242,6 +242,13 @@ export async function priceListRoutes(app: FastifyInstance) {
   });
 }
 
+export async function seedPriceListIfEmpty(): Promise<boolean> {
+  const existing = await db.select({ id: priceGroups.id }).from(priceGroups);
+  if (existing.length > 0) return false;
+  await seedDefaults();
+  return true;
+}
+
 async function seedDefaults(): Promise<void> {
   // Ищем модели Yamaha Gear / Yamaha Jog в каталоге, чтобы привязать к ним
   // соответствующие группы «Детали». Если моделей нет — создаём общую группу

@@ -5,7 +5,6 @@ import {
   Calendar,
   CheckCircle2,
   PhoneOff,
-  ThumbsDown,
   ThumbsUp,
   Plus,
   Repeat,
@@ -43,13 +42,9 @@ import { PaymentAcceptDialog } from "./PaymentAcceptDialog";
 import { SwapScooterDialog } from "./SwapScooterDialog";
 import { DamageReportDialog } from "./DamageReportDialog";
 import { DamageReportPaymentDialog } from "./DamageReportPaymentDialog";
-import { SecurityTopupDialog } from "./SecurityTopupDialog";
 import { EquipmentChangeDialog } from "./EquipmentChangeDialog";
 import { DocumentPreviewModal } from "./DocumentPreviewModal";
-import {
-  useChainDamageReports,
-  useDamageAgreement,
-} from "@/lib/api/damage-reports";
+import { useChainDamageReports } from "@/lib/api/damage-reports";
 import {
   useRentalDebt,
   useChargeManualDebt,
@@ -191,7 +186,7 @@ function statusActions(
       ]);
     case "completed":
       return [
-        { id: "clone", label: "Создать аналогичную", icon: Repeat, tone: "primary" },
+        { id: "revert-completion", label: "Перевести в активную", icon: RotateCcw, tone: "primary" },
       ];
     case "completed_damage":
       return withExtras([
@@ -279,7 +274,6 @@ export function RentalCard({
   // на новой связке. Хранится rentalId, чтобы пережить перерендер.
   const [paymentRentalId, setPaymentRentalId] = useState<number | null>(null);
   // v0.4.49: модалки пополнения залога и изменения экипировки
-  const [securityTopupOpen, setSecurityTopupOpen] = useState(false);
   const [equipmentChangeOpen, setEquipmentChangeOpen] = useState(false);
   const [damageOpen, setDamageOpen] = useState(false);
   const [editingReportId, setEditingReportId] = useState<number | null>(null);
@@ -287,7 +281,6 @@ export function RentalCard({
   const [previewDamageId, setPreviewDamageId] = useState<number | null>(null);
   const [previewClaimId, setPreviewClaimId] = useState<number | null>(null);
   const [swapOpen, setSwapOpen] = useState(false);
-  const damageAgreement = useDamageAgreement();
   const [clientQuickView, setClientQuickView] = useState(false);
   // v0.3.1 (idea 2: stacking drawers): когда RentalCard рендерится
   // ВНУТРИ drawer'а на дашборде — клик на клиента не должен открывать
@@ -497,20 +490,22 @@ export function RentalCard({
         ];
 
   // Финансы — считаются по ВСЕЙ цепочке продлений.
-  // В «Получено от клиента» (paidIn) НЕ включаем депозит — он возвратный
-  // и не является заработком. Если депозит был списан в ущерб, отдельный
-  // платёж типа 'damage' создаётся в модалке возврата — он сюда попадёт.
-  // ВАЖНО: «За всё время аренды» — это доход именно от АРЕНДЫ. Платежи за
-  // ущерб (damage) сюда НЕ попадают — это закрытие долга по инциденту, а
-  // не оплата проката. Иначе при погашении ущерба плашка «За всё время»
-  // ошибочно растёт, а Долг падает (см. правки заказчика по v0.2.91).
+  // v0.5.1: KPI «За всё время аренды» = СУММА ВСЕХ платежей по аренде
+  // (rent + fine + damage + manual + swap_fee + equipment_fee), которые
+  // клиент реально внёс. Раньше damage был исключён (бизнес-правка v0.2.91:
+  // «ущерб ≠ доход от аренды»), но заказчик уточнил по v0.5: «должна
+  // складывать за аренды, оплаты за просрочки, долги — все платежи которые
+  // были в этой аренде». Из расчёта по-прежнему исключаем:
+  //   • refund — возврат залога клиенту (отрицательная операция)
+  //   • deposit — приём залога (возвратный, не доход)
+  //   • method='deposit' — оплата за счёт залога/депозита клиента (уже учли)
   const paidIn = chainPayments
     .filter(
       (p) =>
         p.paid &&
         p.type !== "refund" &&
         p.type !== "deposit" &&
-        p.type !== "damage",
+        p.method !== "deposit",
     )
     .reduce((s, p) => s + p.amount, 0);
   // pending (плашка «Долг») — суммируем неоплаченные платежи ТОЛЬКО
@@ -543,8 +538,28 @@ export function RentalCard({
   void chainExpected;
 
   const handleAction = async (id: string) => {
-    if (id === "extend" || id === "clone") return setExtendOpen(true);
+    if (id === "extend") return setExtendOpen(true);
     if (id === "edit") return setEditRentalOpen(true);
+    if (id === "revert-completion") {
+      // v0.5.1: возврат завершённой аренды в active. Используется когда
+      // оператор случайно нажал «Завершить» или клиент передумал.
+      if (
+        !window.confirm(
+          "Перевести завершённую аренду обратно в активную? Будет снят флаг возврата залога и удалена запись приёмки.",
+        )
+      )
+        return;
+      try {
+        await api.post(`/api/rentals/${rental.id}/revert-completion`, {});
+        toast.success(
+          "Аренда возвращена в активные",
+          "Завершение откатано — можно продолжать работу.",
+        );
+      } catch (e) {
+        toast.error("Не удалось вернуть", (e as Error).message ?? "");
+      }
+      return;
+    }
     if (id === "resume-damage") {
       // v0.2.91: возобновление аренды требует ВАЛИДНОГО скутера —
       // active rental не может быть без скутера или со скутером в
@@ -1097,56 +1112,17 @@ export function RentalCard({
             >
               <Repeat size={12} /> Заменить скутер
             </button>
-            <button
-              type="button"
-              onClick={async () => {
-                const ok = await confirmDialog({
-                  title: "Перевести аренду в «Проблемную»?",
-                  message:
-                    "Аренда будет помечена как «Проблемная» и продолжит висеть на клиенте без скутера до решения вопроса (например, оплаты ущерба). Возобновить можно будет только выбрав скутер при возврате в активный статус.",
-                  confirmText: "Перевести в «Проблемная»",
-                  cancelText: "Отмена",
-                  danger: true,
-                });
-                if (!ok) return;
-                try {
-                  await api.patch(`/api/rentals/${rental.id}`, {
-                    status: "problem",
-                    scooterId: null,
-                  });
-                  toast.success(
-                    "Аренда — «Проблемная»",
-                    "Скутер отвязан. Решайте вопрос с клиентом.",
-                  );
-                } catch (e) {
-                  toast.error(
-                    "Не удалось",
-                    (e as Error).message ?? "",
-                  );
-                }
-              }}
-              className="inline-flex items-center gap-1.5 rounded-[10px] border border-orange-500 bg-white px-3 py-1.5 text-[12px] font-bold text-orange-700 hover:bg-orange-50"
-            >
-              <AlertTriangle size={12} /> В «Проблемная»
-            </button>
           </div>
         </div>
       )}
 
-      {/*
-        Баннер «Долг по ущербу» теперь живёт по новой логике (v0.2.91):
-        - clientAgreement = 'pending'  → показываем кнопки «Согласен / Не
-          согласен», ОЖИДАЯ решения оператора. Долг уже виден в KPI.
-        - clientAgreement = 'agreed'   → баннер ПОЛНОСТЬЮ СКРЫТ. Долг
-          фиксируется только в KPI «Долг», платежи принимаются через
-          небольшую кнопку «Внести платёж» рядом с KPI. После полного
-          погашения KPI = 0, баннер не появляется.
-        - clientAgreement = 'disputed' → показываем плашку «Не согласен»
-          с кнопкой «Распечатать претензию» и кнопкой платежа.
-      */}
-      {totalDebt > 0 &&
-        reportWithDebt &&
-        reportWithDebt.clientAgreement !== "agreed" && (
+      {/* v0.5.2: баннер «Долг по ущербу» упрощён — реакция клиента
+          (Согласен/Не согласен) убрана полностью (заказчик: «досудебную
+          претензию печатают всегда, независимо от согласия»). Теперь:
+          • показывается долг + кнопка «Внести платёж»
+          • кнопка «Распечатать претензию» доступна всегда
+          • статус аренды никуда не уходит — оператор сам решит. */}
+      {totalDebt > 0 && reportWithDebt && (
         <div className="flex flex-col gap-2 rounded-[12px] border-2 border-red-500 bg-red-soft/70 px-3 py-2 text-[13px] text-red-ink">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-start gap-2">
@@ -1166,123 +1142,37 @@ export function RentalCard({
                 </div>
               </div>
             </div>
-            <button
-              type="button"
-              onClick={() => setPaymentReportId(reportWithDebt.id)}
-              className="inline-flex items-center gap-1.5 rounded-[10px] bg-red-600 px-3 py-2 text-[12px] font-bold text-white hover:bg-red-700"
-            >
-              <Plus size={12} /> Внести платёж
-            </button>
-          </div>
-          {/* Реакция клиента на акт. После выбора 'agreed' баннер целиком
-              исчезает (см. условие выше). Здесь рендерятся только pending
-              (выбор) и disputed (показываем повторную печать претензии). */}
-          <div className="flex flex-wrap items-center gap-2 border-t border-red-300 pt-2 text-[12px]">
-            <span className="text-ink-2">Реакция клиента:</span>
-            {reportWithDebt.clientAgreement === "disputed" && (
-              <>
-                <span className="inline-flex items-center gap-1.5 rounded-[10px] bg-red-soft px-3 py-1.5 text-[12px] font-bold text-red-ink">
-                  <ThumbsDown size={12} /> Не согласен — претензия отправлена
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setPreviewClaimId(reportWithDebt.id)}
-                  className="inline-flex items-center gap-1.5 rounded-[10px] border border-red-500 bg-white px-3 py-1.5 text-[12px] font-bold text-red-700 hover:bg-red-50"
-                >
-                  Распечатать снова
-                </button>
-              </>
-            )}
-            {reportWithDebt.clientAgreement === "pending" && (
-              <>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    const ok = await confirmDialog({
-                      title: "Клиент согласен с ущербом?",
-                      message:
-                        "Долг останется на аренде, клиент будет погашать постепенно через «Внести платёж». Аренда останется активной.",
-                      confirmText: "Да, согласен",
-                      cancelText: "Отмена",
-                    });
-                    if (!ok) return;
-                    try {
-                      await damageAgreement.mutateAsync({
-                        reportId: reportWithDebt.id,
-                        agreement: "agreed",
-                      });
-                      toast.success(
-                        "Принято",
-                        "Долг остаётся на аренде. Принимайте платежи постепенно.",
-                      );
-                    } catch (e) {
-                      toast.error("Не удалось", (e as Error).message ?? "");
-                    }
-                  }}
-                  disabled={damageAgreement.isPending}
-                  className="inline-flex items-center gap-1.5 rounded-[10px] border border-green-500 bg-white px-3 py-1.5 text-[12px] font-bold text-green-700 hover:bg-green-50 disabled:opacity-50"
-                >
-                  <ThumbsUp size={12} /> Согласен — будет платить
-                </button>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    const ok = await confirmDialog({
-                      title: "Клиент НЕ согласен?",
-                      message:
-                        "Аренда будет отмечена как «Проблемная», откроется превью досудебной претензии. Никаких продлений и замен с этого момента не делаем.",
-                      confirmText: "Да, не согласен",
-                      cancelText: "Отмена",
-                      danger: true,
-                    });
-                    if (!ok) return;
-                    try {
-                      await damageAgreement.mutateAsync({
-                        reportId: reportWithDebt.id,
-                        agreement: "disputed",
-                      });
-                      setPreviewClaimId(reportWithDebt.id);
-                    } catch (e) {
-                      toast.error("Не удалось", (e as Error).message ?? "");
-                    }
-                  }}
-                  disabled={damageAgreement.isPending}
-                  className="inline-flex items-center gap-1.5 rounded-[10px] border border-red-500 bg-white px-3 py-1.5 text-[12px] font-bold text-red-700 hover:bg-red-50 disabled:opacity-50"
-                >
-                  <ThumbsDown size={12} /> Не согласен — претензия
-                </button>
-              </>
-            )}
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPreviewClaimId(reportWithDebt.id)}
+                className="inline-flex items-center gap-1.5 rounded-[10px] border border-red-500 bg-white px-3 py-2 text-[12px] font-bold text-red-700 hover:bg-red-50"
+              >
+                Досудебная претензия
+              </button>
+              <button
+                type="button"
+                onClick={() => setPaymentReportId(reportWithDebt.id)}
+                className="inline-flex items-center gap-1.5 rounded-[10px] bg-red-600 px-3 py-2 text-[12px] font-bold text-white hover:bg-red-700"
+              >
+                <Plus size={12} /> Внести платёж
+              </button>
+            </div>
           </div>
         </div>
       )}
-      {/* v0.4.28: плашка «можно архивировать» имеет смысл только для
-          завершённых аренд. На активной/возвращающейся аренде ущерб
-          может быть погашен (зачёт из залога + платёж), но клиент
-          ещё катается — «архивировать» неприменимо. Также прячем,
-          если уже архивирована. */}
+      {/* v0.5.2: плашка «ущерб полностью оплачен» для завершённых аренд. */}
       {totalDebt === 0 &&
         reports.length > 0 &&
         !rental.archivedAt &&
-        (rental.status === "completed" ||
-          rental.status === "completed_damage" ||
-          rental.status === "problem") && (
+        rental.status === "completed" && (
           <div className="flex items-center gap-2 rounded-[12px] bg-green-soft/70 px-3 py-2 text-[12px] text-green-ink">
             <CheckCircle2 size={14} className="shrink-0" />
             <span>
-              <b>Ущерб полностью оплачен.</b> Аренду можно архивировать.
+              <b>Ущерб полностью оплачен.</b>
             </span>
           </div>
         )}
-      {rental.status === "completed_damage" && reports.length === 0 && (
-        <div className="flex items-center gap-2 rounded-[12px] bg-red-soft/70 px-3 py-2 text-[12px] text-red-ink">
-          <AlertTriangle size={14} className="shrink-0" />
-          <span>
-            <b>Завершена с ущербом.</b> Остаток не погашен —{" "}
-            {fmt(pending)} ₽.
-          </span>
-        </div>
-      )}
       {rental.status === "returning" && (
         <div className="flex items-center gap-2 rounded-[12px] bg-orange-soft/70 px-3 py-2 text-[12px] text-orange-ink">
           <Calendar size={14} className="shrink-0" />
@@ -1361,50 +1251,42 @@ export function RentalCard({
           // rental.deposit. Раньше «списано» считалось через payments.method='deposit',
           // что давало расхождение с плашкой залога — теперь оба места
           // читают одни и те же поля.
-          const currentDeposit = rental.deposit || DEPOSIT_AMOUNT;
+          const currentDeposit = rental.deposit ?? DEPOSIT_AMOUNT;
           const originalDeposit =
             (rental as { depositOriginal?: number }).depositOriginal ??
             currentDeposit;
           const depositSpent = Math.max(0, originalDeposit - currentDeposit);
-          // v0.4.92: «Эта аренда» = сумма последнего ПРОДЛЕНИЯ (или
-          // initial если продлений не было). Берём из payments только
-          // те, у которых note начинается с «Продление» или «продление
-          // на» — это и есть запись от extend операции (см.
-          // /extend-inplace endpoint, поле note в payments insert).
-          // Раньше группировал по ID gap, но это смешивало платежи
-          // разных видов (extend + overdue payment + бэкфилы).
-          const rentPays = chainPayments
-            .filter((p) => p.type === "rent")
-            .sort((a, b) => a.id - b.id);
-          const isExtendNote = (n?: string | null) =>
-            !!n && /^продлен/i.test(n);
-          const extendPays = rentPays.filter((p) => isExtendNote(p.note));
-          const lastSegmentSum = (() => {
-            if (extendPays.length > 0) {
-              // последняя группа extend payments (близкие по ID)
-              let sum = extendPays[extendPays.length - 1]!.amount;
-              for (let i = extendPays.length - 2; i >= 0; i--) {
-                if (extendPays[i + 1]!.id - extendPays[i]!.id <= 5) {
-                  sum += extendPays[i]!.amount;
-                } else break;
-              }
-              return sum;
-            }
-            // Без продлений — initial (первый rent payment) или rental.sum
-            return rentPays.length > 0 ? rentPays[0]!.amount : rental.sum;
-          })();
+          // v0.5.1: «Эта аренда» = rental.sum, который API правильно
+          // поддерживает:
+          //   • при создании: rate × days
+          //   • при extend-inplace: += addedDays × rate
+          //   • при overdue_days_payment: += daysAdded × rate (v0.4.81)
+          // Раньше показывали сумму последнего ПРОДЛЕНИЯ через фильтр
+          // payments по note='Продление…'. Это ломалось когда клиент
+          // оплачивал просроченные дни — они тоже rent-платежи, но с
+          // другим note, и KPI не рос. Заказчик хочет видеть РЕАЛЬНУЮ
+          // суммарную стоимость текущей аренды (с учётом купленных
+          // просроченных дней) — это и есть rental.sum.
+          const rentPays = chainPayments.filter((p) => p.type === "rent");
+          const extendCount = rentPays.filter(
+            (p) => !!p.note && /^продлен/i.test(p.note),
+          ).length;
           const hintBase =
-            extendPays.length > 0
-              ? `последнее продление · всего: ${extendPays.length}`
+            extendCount > 0
+              ? `продлений · ${extendCount}`
               : "сумма этой аренды";
-          const hint =
-            depositSpent > 0
+          // v0.5.9: если залог — предмет (паспорт и т.п.), показываем
+          // его название в хинте вместо «0 ₽».
+          const isItemDeposit = !!rental.depositItem;
+          const hint = isItemDeposit
+            ? `${hintBase} · залог: ${rental.depositItem}`
+            : depositSpent > 0
               ? `${hintBase} · залог: ${fmt(originalDeposit)} ₽ (списано ${fmt(depositSpent)} ₽)`
               : `${hintBase} · + залог: ${fmt(currentDeposit)} ₽`;
           return (
             <KpiCard
               label="Эта аренда"
-              value={`${fmt(lastSegmentSum)} ₽`}
+              value={`${fmt(rental.sum)} ₽`}
               hint={hint}
             />
           );
@@ -1499,11 +1381,13 @@ export function RentalCard({
         </div>
       )}
 
-      {/* v0.4.49: плашка залога — показывается только когда:
-          - залог денежный (depositItem == null)
-          - текущий deposit < исходного (deposit_original)
-          Кнопка «Пополнить» открывает SecurityTopupDialog. */}
+      {/* v0.5.9: плашка залога — только для активных аренд. У завершённых
+          аренд (status='completed') не показываем — там либо залог
+          возвращён клиенту, либо удержан, либо ушёл в погашение долга,
+          и состояние «нужно пополнить» уже не имеет смысла. Кнопка
+          «Пополнить» теперь открывает PaymentAcceptDialog. */}
       {(() => {
+        if (rental.status === "completed") return null;
         const isItem =
           (rental as { depositItem?: string | null }).depositItem != null;
         if (isItem) return null;
@@ -1534,7 +1418,7 @@ export function RentalCard({
             </div>
             <button
               type="button"
-              onClick={() => setSecurityTopupOpen(true)}
+              onClick={() => setPaymentRentalId(rental.id)}
               className={cn(
                 "shrink-0 rounded-full px-3 py-1 text-[11px] font-bold text-white transition-colors",
                 isEmpty
@@ -1600,12 +1484,11 @@ export function RentalCard({
           нейтральная (для предоплаты-за-продление через переключатель
           в модалке). На completed/cancelled — скрыта. */}
       {(() => {
-        const isLive =
-          rental.status === "active" ||
-          rental.status === "overdue" ||
-          rental.status === "returning" ||
-          rental.status === "problem" ||
-          rental.status === "completed_damage";
+        // v0.5: status в БД только active/completed; legacy-литералы
+        // (overdue/returning/problem/completed_damage) оставлены в этом
+        // месте на случай если фронт получил аренду со старой реплики —
+        // безопасно для рантайма.
+        const isLive = rental.status === "active";
         if (!isLive) return null;
         const overdueB = debtSummary?.overdueBalance ?? 0;
         const damageB = debtSummary?.damageBalance ?? totalDebt;
@@ -1757,17 +1640,6 @@ export function RentalCard({
         <PaymentAcceptDialogContainer
           rentalId={paymentRentalId}
           onClose={() => setPaymentRentalId(null)}
-        />
-      )}
-      {securityTopupOpen && (
-        <SecurityTopupDialog
-          rentalId={rental.id}
-          currentDeposit={rental.deposit ?? 0}
-          originalDeposit={
-            (rental as { depositOriginal?: number }).depositOriginal ??
-            (rental.deposit ?? 0)
-          }
-          onClose={() => setSecurityTopupOpen(false)}
         />
       )}
       {equipmentChangeOpen && (

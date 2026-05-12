@@ -54,11 +54,7 @@ export function ParkTileHoverCard({
     linkedModel?.name ?? MODEL_LABEL[scooter.model] ?? scooter.model;
 
   const activeRental = rentals.find(
-    (r) =>
-      r.scooterId === scooterId &&
-      (r.status === "active" ||
-        r.status === "overdue" ||
-        r.status === "returning"),
+    (r) => r.scooterId === scooterId && r.status === "active",
   );
   const client = activeRental
     ? clients.find((c) => c.id === activeRental.clientId)

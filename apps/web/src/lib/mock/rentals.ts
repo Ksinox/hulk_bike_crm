@@ -71,6 +71,10 @@ export type Rental = {
   days: number;
   sum: number;
   deposit: number;
+  /** Описание предмета, если залог не деньгами (паспорт, телефон и т.д.). */
+  depositItem?: string | null;
+  /** v0.4.49: snapshot исходной суммы залога — для подсветки «нужно пополнить». */
+  depositOriginal?: number;
   depositReturned?: boolean;
   equipment: string[];
   /**

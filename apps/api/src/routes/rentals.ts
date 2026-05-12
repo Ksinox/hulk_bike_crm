@@ -6,6 +6,7 @@ import {
   activityLog,
   clients,
   damageReports,
+  damageReportItems,
   debtEntries,
   payments,
   rentals,
@@ -32,19 +33,7 @@ function pickRateByPeriod(
 import { logActivity } from "../services/activityLog.js";
 import { rentalStatusLabel } from "../services/activityMessages.js";
 
-const RentalStatusEnum = z.enum([
-  "new_request",
-  "meeting",
-  "active",
-  "overdue",
-  "returning",
-  "completed",
-  "completed_damage",
-  "cancelled",
-  "police",
-  "court",
-  "problem",
-]);
+const RentalStatusEnum = z.enum(["active", "completed"]);
 
 /** Снимок экипировки на момент аренды — { itemId?, name, price, free }. */
 const EquipmentJsonItem = z
@@ -96,15 +85,6 @@ const PatchRentalBody = z
     damageAmount: z.number().int().min(0).optional().nullable(),
     depositReturned: z.boolean().optional().nullable(),
     contractUploaded: z.boolean().optional(),
-    confirmContractSigned: z.boolean().optional(),
-    confirmRentPaid: z.boolean().optional(),
-    confirmDepositReceived: z.boolean().optional(),
-    paymentConfirmedBy: z
-      .enum(["boss", "manager"])
-      .optional()
-      .nullable(),
-    paymentConfirmedByName: z.string().optional().nullable(),
-    paymentConfirmedAt: z.string().optional().nullable(),
     note: z.string().optional().nullable(),
     rate: z.number().int().positive().optional(),
     rateUnit: z.enum(["day", "week"]).optional(),
@@ -125,16 +105,6 @@ const CompleteBody = z
     damageAmount: z.number().int().min(0).optional(),
     damageNotes: z.string().optional().nullable(),
     mileageAtReturn: z.number().int().min(0).optional(),
-  })
-  .strict();
-
-const ConfirmPaymentBody = z
-  .object({
-    role: z.enum(["boss", "manager"]),
-    byName: z.string().min(1),
-    contractSigned: z.boolean(),
-    rentPaid: z.boolean(),
-    depositReceived: z.boolean(),
   })
   .strict();
 
@@ -226,7 +196,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
     // Аренда в статусе «выдана» обязана иметь скутер. Иначе в системе
     // появляются «призраки» — аренды без скутера, которые раздувают
     // счётчик «активных» и не имеют физического смысла.
-    const issuedStatuses = new Set(["active", "overdue", "returning"]);
+    const issuedStatuses = new Set(["active"]);
     if (d.status && issuedStatuses.has(d.status) && !d.scooterId) {
       return reply.code(400).send({
         error: "scooter_required",
@@ -246,7 +216,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
         .where(
           and(
             eq(rentals.scooterId, d.scooterId),
-            sql`${rentals.status} IN ('active', 'overdue', 'returning')`,
+            sql`${rentals.status} = 'active'`,
             isNull(rentals.archivedAt),
           ),
         );
@@ -261,7 +231,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
       }
     }
 
-    const initialStatus = d.status ?? "new_request";
+    const initialStatus = d.status ?? "active";
     // v0.4.60: snapshot пробега скутера на момент выдачи. Используется
     // в шаблонах актов выдачи через {rental.mileageAtStart} — иначе
     // {scooter.mileage} рендерил бы live-значение, которое после
@@ -310,7 +280,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
     // как paid. Раньше платёж создавался отдельным шагом «Подтвердить
     // оплату», но этот функционал убран по решению заказчика: «если
     // аренда есть — значит оплачена».
-    const issued = ["active", "overdue", "returning"].includes(initialStatus);
+    const issued = initialStatus === "active";
     if (issued && row.sum > 0) {
       await db.insert(payments).values({
         rentalId: row.id,
@@ -360,17 +330,8 @@ export async function rentalsRoutes(app: FastifyInstance) {
     // вообще нельзя — это история.
     if (parsed.data.status && parsed.data.status !== before.status) {
       const allowed: Partial<Record<string, string[]>> = {
-        new_request: ["meeting", "active", "cancelled"],
-        meeting: ["active", "cancelled"],
-        active: ["overdue", "returning", "completed", "completed_damage", "problem", "police", "court", "cancelled"],
-        overdue: ["active", "returning", "completed", "completed_damage", "problem", "police", "court", "cancelled"],
-        returning: ["active", "completed", "completed_damage", "cancelled"],
+        active: ["completed"],
         completed: [],
-        completed_damage: ["active", "completed", "problem"],
-        problem: ["active", "completed", "completed_damage"],
-        police: ["active", "overdue", "completed", "completed_damage", "cancelled"],
-        court: ["active", "overdue", "completed", "completed_damage", "cancelled"],
-        cancelled: [],
       };
       const ok = allowed[before.status]?.includes(parsed.data.status);
       if (!ok) {
@@ -403,7 +364,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
           and(
             eq(rentals.scooterId, targetScooterId),
             sql`${rentals.id} <> ${id}`,
-            sql`${rentals.status} IN ('active', 'overdue', 'returning')`,
+            sql`${rentals.status} = 'active'`,
             isNull(rentals.archivedAt),
           ),
         );
@@ -424,9 +385,6 @@ export async function rentalsRoutes(app: FastifyInstance) {
       patch.endPlannedAt = new Date(parsed.data.endPlannedAt);
     if (parsed.data.endActualAt)
       patch.endActualAt = new Date(parsed.data.endActualAt);
-    if (parsed.data.paymentConfirmedAt) {
-      patch.paymentConfirmedAt = new Date(parsed.data.paymentConfirmedAt);
-    }
     patch.updatedAt = sql`now()`;
     const [row] = await db
       .update(rentals)
@@ -457,7 +415,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
           .where(eq(payments.id, target.id));
       } else if (parsed.data.sum > 0) {
         // Платежа не было — создадим, если статус активен/завершён.
-        const activeStatuses = ["active", "overdue", "returning", "completed"];
+        const activeStatuses = ["active", "completed"];
         if (activeStatuses.includes(row.status)) {
           await db.insert(payments).values({
             rentalId: id,
@@ -617,16 +575,8 @@ export async function rentalsRoutes(app: FastifyInstance) {
       });
     }
 
-    const liveStatuses = new Set([
-      "new_request",
-      "meeting",
-      "active",
-      "overdue",
-      "returning",
-      "problem",
-    ]);
-    const wasLive = liveStatuses.has(row.status);
-    const nextStatus = wasLive ? "cancelled" : row.status;
+    const wasLive = row.status === "active";
+    const nextStatus: "active" | "completed" = wasLive ? "completed" : row.status;
     await db
       .update(rentals)
       .set({
@@ -716,18 +666,9 @@ export async function rentalsRoutes(app: FastifyInstance) {
           .from(rentals)
           .where(eq(rentals.id, row.parentRentalId));
         if (parent && parent.archivedBy == null && parent.archivedAt != null) {
-          // v0.4.36: восстанавливаем родителя с пересчётом статуса по дате,
-          // а не хардкодом 'active'. Если плановая дата возврата уже
-          // прошла — возрождаем как 'overdue'. Раньше при удалении
-          // потомка родитель, который был в overdue/problem, оживал как
-          // active — терялась реальная просрочка/проблемность.
-          const today = new Date();
-          const todayKey = today.toISOString().slice(0, 10);
-          const endKey = parent.endPlannedAt
-            ? parent.endPlannedAt.toISOString().slice(0, 10)
-            : null;
-          const reborn: "active" | "overdue" =
-            endKey && endKey < todayKey ? "overdue" : "active";
+          // v0.5: всегда возрождаем как 'active' — просрочка теперь
+          // computed на фронте через effectiveRentalStatus().
+          const reborn: "active" = "active";
           // v0.4.38: проверяем что скутер родителя не занят другой
           // активной арендой (через swap-scooter он мог уйти к другой
           // аренде). Если занят — отвязываем (scooterId=null), оператор
@@ -742,7 +683,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
                 and(
                   eq(rentals.scooterId, parentScooterId),
                   sql`${rentals.id} <> ${parent.id}`,
-                  sql`${rentals.status} IN ('active', 'overdue', 'returning')`,
+                  sql`${rentals.status} = 'active'`,
                   isNull(rentals.archivedAt),
                 ),
               );
@@ -1139,49 +1080,6 @@ export async function rentalsRoutes(app: FastifyInstance) {
     },
   );
 
-  // POST /api/rentals/:id/revert-overdue — снять просрочку
-  app.post<{ Params: { id: string } }>(
-    "/:id/revert-overdue",
-    async (req, reply) => {
-      if (!assertFinancialRole(req, reply)) return;
-      const id = Number(req.params.id);
-      if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
-      const today = new Date();
-      const [row] = await db
-        .update(rentals)
-        .set({
-          status: "active",
-          endPlannedAt: today,
-          updatedAt: sql`now()`,
-        })
-        .where(and(eq(rentals.id, id), eq(rentals.status, "overdue")))
-        .returning();
-      if (!row) {
-        return reply
-          .code(409)
-          .send({ error: "rental is not overdue or does not exist" });
-      }
-      await db
-        .delete(payments)
-        .where(
-          and(
-            eq(payments.rentalId, id),
-            eq(payments.type, "fine"),
-            eq(payments.paid, false),
-          ),
-        );
-
-      const summary = await summaryForRental(id);
-      await logActivity(req, {
-        entity: "rental",
-        entityId: id,
-        action: "revert_overdue",
-        summary: `Просрочка снята с аренды ${summary}`,
-      });
-      return row;
-    },
-  );
-
   app.post<{ Params: { id: string } }>(
     "/:id/complete",
     async (req, reply) => {
@@ -1224,7 +1122,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
         const [r] = await tx
           .update(rentals)
           .set({
-            status: withDamage ? "completed_damage" : "completed",
+            status: "completed",
             endActualAt: new Date(`${d.dateActual}T12:00:00+03:00`),
             depositReturned: d.depositReturned,
             damageAmount: d.damageAmount ?? null,
@@ -1304,25 +1202,52 @@ export async function rentalsRoutes(app: FastifyInstance) {
             },
           });
 
+        // v0.5.1: при завершении с ущербом создаём полноценный
+        // damage_report — раньше создавался только payment(type='damage',
+        // paid=false) без damage_report, и debt-aggregator его не цеплял
+        // (unassignedPaid падал в 0 потому что damageBalance считается по
+        // damage_reports). Из-за этого после /complete долг по ущербу
+        // не отображался — оператор завершал аренду «без видимого долга»
+        // и сумма пропадала. Теперь создаётся настоящий акт с одной
+        // авто-позицией; оператор позже может его отредактировать через
+        // обычный DamageReportDialog и добавить позиции из прейскуранта.
         if (withDamage && d.damageAmount && d.damageAmount > 0) {
-          await tx.insert(payments).values({
-            rentalId: id,
-            type: "damage",
-            amount: d.damageAmount,
-            method: "cash",
-            paid: false,
-            scheduledOn: d.dateActual,
-            note: d.damageNotes ?? "ущерб при возврате",
-          });
+          const userId = req.user?.userId ?? null;
+          const [report] = await tx
+            .insert(damageReports)
+            .values({
+              rentalId: id,
+              createdByUserId: userId,
+              total: d.damageAmount,
+              depositCovered: 0,
+              note: d.damageNotes ?? "Ущерб зафиксирован при возврате",
+            })
+            .returning();
+          if (report) {
+            await tx.insert(damageReportItems).values({
+              reportId: report.id,
+              priceItemId: null,
+              name: "Ущерб при возврате",
+              originalPrice: d.damageAmount,
+              finalPrice: d.damageAmount,
+              quantity: 1,
+              comment: d.damageNotes ?? null,
+              sortOrder: 0,
+            });
+          }
         }
-        // v0.4.34: при возврате залога создаём payment(type='refund')
-        // чтобы отразить выплату в учёте. Раньше depositReturned=true
-        // был просто boolean, никаких следов где деньги — нет. Refund
-        // исключён из revenue (см. lib/revenue.ts), так что повторного
-        // зачёта не происходит. Создаём только если залог был реально
-        // принят (rental.deposit > 0 и оператор подтвердил получение
-        // через confirmDepositReceived → есть payment type='deposit').
-        if (d.depositReturned && (r.deposit ?? 0) > 0 && r.confirmDepositReceived) {
+        // v0.4.34/v0.5: при возврате залога создаём payment(type='refund')
+        // чтобы отразить выплату в учёте. Refund исключён из revenue.
+        // Чеклист «depositReceived» удалён — наличие deposit-платежа
+        // проверяем по payments напрямую.
+        const [depPay] = await tx
+          .select({ id: payments.id })
+          .from(payments)
+          .where(
+            and(eq(payments.rentalId, id), eq(payments.type, "deposit")),
+          )
+          .limit(1);
+        if (d.depositReturned && (r.deposit ?? 0) > 0 && depPay) {
           // Проверяем что для этой аренды нет уже созданного refund
           // (idempotent на случай повторного вызова /complete).
           const [existing] = await tx
@@ -1408,6 +1333,84 @@ export async function rentalsRoutes(app: FastifyInstance) {
   );
 
   /**
+   * POST /api/rentals/:id/revert-completion
+   *
+   * v0.5.1: возврат завершённой аренды обратно в active. На случай если
+   * оператор случайно нажал «Завершить» или клиент передумал возвращать.
+   *
+   * Что делает:
+   *  • status='completed' → 'active'
+   *  • endActualAt → null
+   *  • depositReturned, damageAmount → null
+   *  • archivedAt → null (если был выставлен)
+   *  • удаляет return_inspections запись
+   *  • удаляет refund-платежи если были созданы при /complete
+   *  • скутер возвращается в 'rental_pool' (если был в этой аренде)
+   *
+   * НЕ трогает damage_reports — если оператор создал акт ущерба при
+   * завершении, акт остаётся, его можно удалить/изменить отдельно.
+   */
+  app.post<{ Params: { id: string } }>(
+    "/:id/revert-completion",
+    async (req, reply) => {
+      if (!assertFinancialRole(req, reply)) return;
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id))
+        return reply.code(400).send({ error: "bad id" });
+      const [rental] = await db
+        .select()
+        .from(rentals)
+        .where(eq(rentals.id, id));
+      if (!rental) return reply.code(404).send({ error: "not found" });
+      if (rental.status !== "completed") {
+        return reply
+          .code(409)
+          .send({ error: "not_completed", current: rental.status });
+      }
+      await db.transaction(async (tx) => {
+        await tx
+          .update(rentals)
+          .set({
+            status: "active",
+            endActualAt: null,
+            depositReturned: null,
+            damageAmount: null,
+            archivedAt: null,
+            archivedBy: null,
+            updatedAt: sql`now()`,
+          })
+          .where(eq(rentals.id, id));
+        await tx
+          .delete(returnInspections)
+          .where(eq(returnInspections.rentalId, id));
+        // Удаляем refund-платёж за возврат залога — он был создан в /complete,
+        // теперь не актуален.
+        await tx
+          .delete(payments)
+          .where(and(eq(payments.rentalId, id), eq(payments.type, "refund")));
+        // Скутер обратно в rental_pool (если ещё назначен этой аренде).
+        if (rental.scooterId) {
+          await tx
+            .update(scooters)
+            .set({ baseStatus: "rental_pool", updatedAt: sql`now()` })
+            .where(eq(scooters.id, rental.scooterId));
+        }
+      });
+      await logActivity(req, {
+        entity: "rental",
+        entityId: id,
+        action: "revert_completion",
+        summary: `Аренда #${id} возвращена из «завершённых» в активные`,
+      });
+      const [updated] = await db
+        .select()
+        .from(rentals)
+        .where(eq(rentals.id, id));
+      return updated;
+    },
+  );
+
+  /**
    * v0.4.57: legacy /extend перенаправлен на inplace-логику.
    *
    * Раньше /extend создавал child rental с parentRentalId — это плодило
@@ -1451,8 +1454,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
           .where(eq(rentals.id, id));
         if (!old) throw new Error("not found");
 
-        const extendable = new Set(["active", "overdue", "returning"]);
-        if (!extendable.has(old.status)) {
+        if (old.status !== "active") {
           throw new Error(`extend_blocked_status:${old.status}`);
         }
 
@@ -1474,7 +1476,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
             tariffPeriod: d.newTariffPeriod,
             rate: d.newRate,
             rateUnit: d.newRateUnit ?? old.rateUnit,
-            status: old.status === "overdue" ? "active" : old.status,
+            status: "active" as const,
             updatedAt: sql`now()`,
           })
           .where(eq(rentals.id, id))
@@ -1559,8 +1561,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
           .where(eq(rentals.id, id));
         if (!old) throw new Error("not found");
 
-        const extendable = new Set(["active", "overdue", "returning"]);
-        if (!extendable.has(old.status)) {
+        if (old.status !== "active") {
           throw new Error(`extend_blocked_status:${old.status}`);
         }
 
@@ -1585,13 +1586,8 @@ export async function rentalsRoutes(app: FastifyInstance) {
             tariffPeriod: d.newTariffPeriod,
             rate: d.newRate,
             rateUnit: d.newRateUnit ?? old.rateUnit,
-            // Если в момент продления статус был overdue — возвращаем в
-            // active (новая endPlannedAt в будущем). Если returning —
-            // оставляем (оператор должен сам подтвердить).
-            status:
-              old.status === "overdue"
-                ? "active"
-                : old.status,
+            // v0.5: статус остаётся 'active'.
+            status: "active" as const,
             updatedAt: sql`now()`,
           })
           .where(eq(rentals.id, id))
@@ -1760,8 +1756,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
         .from(rentals)
         .where(eq(rentals.id, id));
       if (!rental) return reply.code(404).send({ error: "not found" });
-      const editable = new Set(["active", "overdue", "returning"]);
-      if (!editable.has(rental.status)) {
+      if (rental.status !== "active") {
         return reply.code(409).send({
           error: "not_editable",
           message: `Экипировка меняется только на активной аренде. Текущий статус: ${rental.status}.`,
@@ -1939,14 +1934,10 @@ export async function rentalsRoutes(app: FastifyInstance) {
         // v0.2.91: разрешаем замену скутера и для «Проблемной» аренды —
         // это путь возобновления (resume-damage). После замены аренда
         // автоматически переводится в active (см. ниже).
-        if (
-          old.status !== "active" &&
-          old.status !== "overdue" &&
-          old.status !== "problem"
-        ) {
+        if (old.status !== "active") {
           throw new Error("rental not active");
         }
-        const wasProblem = old.status === "problem";
+        const wasProblem = false;
         // Проверим, что новый скутер существует и в rental_pool.
         const [newScooter] = await tx
           .select()
@@ -1970,7 +1961,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
             and(
               eq(rentals.scooterId, d.newScooterId),
               sql`${rentals.id} <> ${id}`,
-              sql`${rentals.status} IN ('active', 'overdue', 'returning')`,
+              sql`${rentals.status} = 'active'`,
               isNull(rentals.archivedAt),
             ),
           );
@@ -2110,148 +2101,6 @@ export async function rentalsRoutes(app: FastifyInstance) {
     },
   );
 
-  /**
-   * POST /api/rentals/:id/confirm-payment
-   * Новый чеклист: contractSigned, rentPaid, depositReceived.
-   * Подтвердить можно с неотмеченными, но в activity_log попадёт предупреждение.
-   */
-  app.post<{ Params: { id: string } }>(
-    "/:id/confirm-payment",
-    async (req, reply) => {
-      if (!assertFinancialRole(req, reply)) return;
-      const id = Number(req.params.id);
-      if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
-
-      const parsed = ConfirmPaymentBody.safeParse(req.body);
-      if (!parsed.success)
-        return reply.code(400).send({ error: "validation", issues: parsed.error.issues });
-      const d = parsed.data;
-
-      const [before] = await db.select().from(rentals).where(eq(rentals.id, id));
-      if (!before) return reply.code(404).send({ error: "not found" });
-
-      const [row] = await db
-        .update(rentals)
-        .set({
-          paymentConfirmedBy: d.role,
-          paymentConfirmedByName: d.byName,
-          paymentConfirmedAt: new Date(),
-          confirmContractSigned: d.contractSigned,
-          confirmRentPaid: d.rentPaid,
-          confirmDepositReceived: d.depositReceived,
-          updatedAt: sql`now()`,
-        })
-        .where(eq(rentals.id, id))
-        .returning();
-      if (!row) return reply.code(404).send({ error: "not found" });
-
-      // Автосоздаём платёж по аренде (если ещё не зафиксирован и галка «получено»).
-      if (d.rentPaid && !before.confirmRentPaid) {
-        const [hasRent] = await db
-          .select({ id: payments.id })
-          .from(payments)
-          .where(and(eq(payments.rentalId, id), eq(payments.type, "rent")))
-          .limit(1);
-        if (!hasRent) {
-          await db.insert(payments).values({
-            rentalId: id,
-            type: "rent",
-            amount: row.sum,
-            method: row.paymentMethod,
-            paid: true,
-            paidAt: new Date(),
-            note: "оплата аренды (подтверждена при выдаче)",
-          });
-        }
-      }
-      // Залог (если денежный и галка «залог получен»)
-      if (
-        d.depositReceived &&
-        !before.confirmDepositReceived &&
-        row.deposit > 0 &&
-        !row.depositItem
-      ) {
-        const [hasDep] = await db
-          .select({ id: payments.id })
-          .from(payments)
-          .where(and(eq(payments.rentalId, id), eq(payments.type, "deposit")))
-          .limit(1);
-        if (!hasDep) {
-          await db.insert(payments).values({
-            rentalId: id,
-            type: "deposit",
-            amount: row.deposit,
-            method: row.paymentMethod,
-            paid: true,
-            paidAt: new Date(),
-            note: "залог (получен при выдаче)",
-          });
-        }
-      }
-
-      const summary = await summaryForRental(id);
-      const missing: string[] = [];
-      if (!d.contractSigned) missing.push("договор не подписан");
-      if (!d.rentPaid) missing.push("сумма аренды не получена");
-      if (!d.depositReceived) missing.push("залог не получен");
-
-      await logActivity(req, {
-        entity: "rental",
-        entityId: id,
-        action: "confirmed_payment",
-        summary:
-          missing.length === 0
-            ? `Подтверждена выдача аренды ${summary}: договор подписан, аренда оплачена, залог получен`
-            : `Подтверждена выдача аренды ${summary} с замечаниями: ${missing.join(", ")}`,
-        meta: {
-          contractSigned: d.contractSigned,
-          rentPaid: d.rentPaid,
-          depositReceived: d.depositReceived,
-        },
-      });
-
-      // Если что-то «дозакрыли» позже подтверждения — отдельные записи
-      if (
-        before.paymentConfirmedAt &&
-        before.confirmContractSigned === false &&
-        d.contractSigned
-      ) {
-        await logActivity(req, {
-          entity: "rental",
-          entityId: id,
-          action: "contract_signed_later",
-          summary: `По аренде ${summary} довезли подписанный договор`,
-        });
-      }
-      if (
-        before.paymentConfirmedAt &&
-        before.confirmRentPaid === false &&
-        d.rentPaid
-      ) {
-        await logActivity(req, {
-          entity: "rental",
-          entityId: id,
-          action: "rent_paid_later",
-          summary: `По аренде ${summary} поступила оплата аренды`,
-        });
-      }
-      if (
-        before.paymentConfirmedAt &&
-        before.confirmDepositReceived === false &&
-        d.depositReceived
-      ) {
-        await logActivity(req, {
-          entity: "rental",
-          entityId: id,
-          action: "deposit_received_later",
-          summary: `По аренде ${summary} получен залог`,
-        });
-      }
-
-      return row;
-    },
-  );
-
   /* ============================================================
    *  v0.3.8 — учёт долгов (просрочка / ущерб / ручной)
    *
@@ -2271,7 +2120,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
     status: string,
     now: Date = new Date(),
   ): number {
-    if (status !== "overdue" && status !== "active") return 0;
+    if (status !== "active") return 0;
     // v0.4.67: считаем в Europe/Moscow. Без этого на UTC-сервере
     // (где-то ~21:00 UTC = 00:00 MSK) аренда с end_planned_at сегодня
     // утром ещё «не просрочена» по UTC-дате, но по МСК уже да —
@@ -2354,7 +2203,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
       .where(
         and(
           isNull(rentals.archivedAt),
-          sql`${rentals.status} IN ('active', 'overdue', 'returning')`,
+          sql`${rentals.status} = 'active'`,
         ),
       );
 
@@ -2675,66 +2524,8 @@ export async function rentalsRoutes(app: FastifyInstance) {
     // Также оборачиваем в try/catch — если update падает (например
     // по race condition), endpoint не должен возвращать 500: лучше
     // отдать debt-данные клиенту, чем сломать всю карточку.
-    if (
-      (rental.status === "problem" || rental.status === "completed_damage") &&
-      damageBalance === 0
-    ) {
-      try {
-        const nextStatus: "active" | "completed" =
-          rental.endActualAt == null ? "active" : "completed";
-        await db
-          .update(rentals)
-          .set({ status: nextStatus, updatedAt: sql`now()` })
-          .where(eq(rentals.id, id));
-        await logActivity(req, {
-          entity: "rental",
-          entityId: id,
-          action: "status_auto_normalized",
-          summary: `Аренда #${id}: ущерб погашен → статус «${nextStatus === "active" ? "активная" : "завершена"}» (было «${rental.status}»)`,
-        });
-        rental.status = nextStatus;
-      } catch (e) {
-        // eslint-disable-next-line no-console
-        console.error(
-          `[auto-normalize-status] rental ${id} update failed:`,
-          e,
-        );
-      }
-    } else if (
-      // v0.4.72: overdue → active когда долг погашен/прощён.
-      // Сценарий: scheduler перевёл аренду в 'overdue', потом клиент
-      // оплатил/оператор простил все компоненты долга. Статус остаётся
-      // 'overdue' — бейдж красный «Просрочка» в шапке. Карточка
-      // показывает «Долг 0₽» — несостыковка. Теперь автоматически
-      // снимаем 'overdue' если по аренде ничего не должны.
-      // Дальше фронт через effectiveStatus решает active vs returning
-      // по дате endPlanned (returning если endPlanned <= today).
-      rental.status === "overdue" &&
-      overdueBalance === 0 &&
-      manualBalance === 0 &&
-      damageBalance === 0 &&
-      rental.endActualAt == null
-    ) {
-      try {
-        await db
-          .update(rentals)
-          .set({ status: "active", updatedAt: sql`now()` })
-          .where(eq(rentals.id, id));
-        await logActivity(req, {
-          entity: "rental",
-          entityId: id,
-          action: "status_auto_normalized",
-          summary: `Аренда #${id}: долгов нет → статус «активная» (было «просрочка»)`,
-        });
-        rental.status = "active";
-      } catch (e) {
-        // eslint-disable-next-line no-console
-        console.error(
-          `[auto-normalize-status overdue→active] rental ${id} update failed:`,
-          e,
-        );
-      }
-    }
+    // v0.5: автонормализация статуса убрана — модель статусов плоская
+    // (active/completed), просрочка и проблемность — computed на фронте.
 
     return {
       overdueDays,
@@ -2866,12 +2657,9 @@ export async function rentalsRoutes(app: FastifyInstance) {
               }),
             );
             todayMsk.setHours(0, 0, 0, 0);
-            if (
-              r.status === "overdue" &&
-              newEnd.getTime() >= todayMsk.getTime()
-            ) {
-              newStatus = "active";
-            }
+            // v0.5: status всегда 'active' для live-аренд — overdue
+            // computed на фронте.
+            void todayMsk;
             // v0.4.81: при сдвиге endPlanned обновляем также days и sum —
             // фактически клиент «купил» эти дни задним числом, и стоимость
             // этих дней входит в сумму аренды.
@@ -2881,7 +2669,6 @@ export async function rentalsRoutes(app: FastifyInstance) {
                 endPlannedAt: newEnd,
                 days: r.days + daysAdded,
                 sum: r.sum + daysAdded * dailyRate,
-                ...(newStatus ? { status: "active" as const } : {}),
                 updatedAt: sql`now()`,
               })
               .where(eq(rentals.id, id));
@@ -2924,6 +2711,21 @@ export async function rentalsRoutes(app: FastifyInstance) {
         paid: true,
         paidAt: new Date(),
         note: "Оплата штрафа просрочки",
+      });
+    } else if (parsed.data.kind === "manual_payment") {
+      // v0.5.1: оплата ручного долга = выручка по аренде. Раньше
+      // создавался только debt_entry(kind='manual_forgive'), но
+      // payment row не было — KPI «За всё время аренды» не рос,
+      // в выручке деньги не отражались. Теперь пишем payment(type='rent')
+      // чтобы доход попал в paidIn и в общую выручку.
+      await db.insert(payments).values({
+        rentalId: id,
+        type: "rent",
+        amount: parsed.data.amount,
+        method: "cash",
+        paid: true,
+        paidAt: new Date(),
+        note: `Оплата ручного долга${parsed.data.comment ? ": " + parsed.data.comment : ""}`,
       });
     }
 
@@ -3103,6 +2905,10 @@ export async function rentalsRoutes(app: FastifyInstance) {
       t.setHours(0, 0, 0, 0);
       return t;
     })();
+    // v0.5: status больше не зависит от просрочки. shiftEndPlanned
+    // только двигает endPlannedAt; normalizeIfFullyResolved — no-op
+    // (просрочка computed на фронте).
+    void todayMsk;
     const shiftEndPlanned = async (
       daysToAdd: number,
     ): Promise<{ shift: number; newStatus: string | null }> => {
@@ -3110,58 +2916,22 @@ export async function rentalsRoutes(app: FastifyInstance) {
       const newEnd = new Date(
         rental.endPlannedAt.getTime() + daysToAdd * 86_400_000,
       );
-      const shouldNormalize =
-        rental.status === "overdue" && newEnd.getTime() >= todayMsk.getTime();
       await db
         .update(rentals)
         .set({
           endPlannedAt: newEnd,
-          ...(shouldNormalize ? { status: "active" as const } : {}),
           updatedAt: sql`now()`,
         })
         .where(eq(rentals.id, id));
-      return {
-        shift: daysToAdd,
-        newStatus: shouldNormalize ? "active" : null,
-      };
+      return { shift: daysToAdd, newStatus: null };
     };
-
-    /**
-     * v0.4.68: нормализатор статуса по факту обнуления просрочки.
-     * Вызывается после любого forgive — если после операции суммарная
-     * просрочка стала 0 и rental всё ещё в overdue (endPlanned < today),
-     * сдвигаем endPlanned до сегодня и сбрасываем status в active.
-     *
-     * Покрывает кейс: оператор простил только штраф (или только дни в
-     * легаси-flow), а вторая компонента уже была обнулена раньше через
-     * другую операцию. Без этого хелпера status='overdue' оставался
-     * залипшим, в UI висел бейдж «просрочка X дн» при нулевом долге.
-     */
     const normalizeIfFullyResolved = async (
-      newDaysRemaining: number,
-      newFineRemaining: number,
+      _newDaysRemaining: number,
+      _newFineRemaining: number,
     ): Promise<{ shift: number; newStatus: string | null }> => {
-      if (newDaysRemaining > 0 || newFineRemaining > 0) {
-        return { shift: 0, newStatus: null };
-      }
-      if (rental.status !== "overdue") {
-        return { shift: 0, newStatus: null };
-      }
-      const currentOverdueDays = calcOverdueDays(
-        rental.endPlannedAt,
-        rental.status,
-      );
-      // Если endPlanned уже >= today → достаточно сменить status.
-      if (currentOverdueDays <= 0) {
-        await db
-          .update(rentals)
-          .set({ status: "active" as const, updatedAt: sql`now()` })
-          .where(eq(rentals.id, id));
-        return { shift: 0, newStatus: "active" };
-      }
-      // Иначе сдвигаем endPlanned до сегодня (включительно) — клиент
-      // получил эти дни «в подарок», аренда стала нормальной active.
-      return shiftEndPlanned(currentOverdueDays);
+      void _newDaysRemaining;
+      void _newFineRemaining;
+      return { shift: 0, newStatus: null };
     };
 
     if (target === "fine") {
@@ -3353,45 +3123,6 @@ export async function rentalsRoutes(app: FastifyInstance) {
       newStatus: finalStatusAll,
     };
   });
-
-  /**
-   * v0.4.26: ручная нормализация статуса. Если аренда висит в
-   * 'problem' / 'completed_damage' но фактически долгов нет —
-   * оператор может одной кнопкой перевести в active/completed.
-   * Та же логика что в auto-trigger /debt, но запускается явно.
-   */
-  app.post<{ Params: { id: string } }>(
-    "/:id/normalize-status",
-    async (req, reply) => {
-      if (!assertFinancialRole(req, reply)) return;
-      const id = Number(req.params.id);
-      if (!Number.isFinite(id))
-        return reply.code(400).send({ error: "bad id" });
-      const [r] = await db
-        .select()
-        .from(rentals)
-        .where(eq(rentals.id, id));
-      if (!r) return reply.code(404).send({ error: "not found" });
-      if (r.status !== "problem" && r.status !== "completed_damage") {
-        return reply
-          .code(400)
-          .send({ error: "wrong_status", current: r.status });
-      }
-      const nextStatus: "active" | "completed" =
-        r.endActualAt == null ? "active" : "completed";
-      await db
-        .update(rentals)
-        .set({ status: nextStatus, updatedAt: sql`now()` })
-        .where(eq(rentals.id, id));
-      await logActivity(req, {
-        entity: "rental",
-        entityId: id,
-        action: "status_normalized_manual",
-        summary: `Статус аренды #${id} принудительно нормализован: «${r.status}» → «${nextStatus}»`,
-      });
-      return { ok: true, newStatus: nextStatus };
-    },
-  );
 
   /** Удаление события долга — для случаев когда оператор ошибся
    *  при ручном начислении. Доступно только директору / создателю. */

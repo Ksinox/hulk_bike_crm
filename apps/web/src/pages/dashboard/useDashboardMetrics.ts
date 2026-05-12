@@ -200,7 +200,7 @@ export function useDashboardMetrics(): DashboardMetrics {
     //     completed_damage — оператор уже не ждёт от них «поступления»)
     const returnsTodayRentals = rentals.filter(
       (r) =>
-        (r.status === "active" || r.status === "returning") &&
+        r.status === "active" &&
         r.endPlannedAt.slice(0, 10) === todayKey &&
         !r.endActualAt,
     );
@@ -234,14 +234,18 @@ export function useDashboardMetrics(): DashboardMetrics {
     // date < today's date). Раньше использовался timestamp-comparison —
     // в результате после 16:00 сегодняшние возвраты ошибочно
     // подсвечивались как просрочка.
+    // v0.5: status='overdue' больше нет в БД — просрочка вычисляется
+    // по дате (endPlannedAt < today для active).
     const overdueRentals = rentals.filter(
       (r) =>
-        r.status === "overdue" ||
-        (r.status === "active" && r.endPlannedAt.slice(0, 10) < todayKey),
+        r.status === "active" && r.endPlannedAt.slice(0, 10) < todayKey,
     );
     const overdueYesterday = rentals.filter(
       (r) =>
-        r.status === "overdue" && r.updatedAt && r.updatedAt < todayKey,
+        r.status === "active" &&
+        r.endPlannedAt.slice(0, 10) < yesterdayKey &&
+        r.updatedAt &&
+        r.updatedAt < todayKey,
     ).length;
 
     // v0.4.51: используем реальный долг из API debt-aggregate, который
@@ -289,11 +293,7 @@ export function useDashboardMetrics(): DashboardMetrics {
     // правильно (раньше returning исключался — расходилось с фильтром
     // «Активные» в /rentals).
     const activeRentalsCount = rentals.filter(
-      (r) =>
-        (r.status === "active" ||
-          r.status === "overdue" ||
-          r.status === "returning") &&
-        r.scooterId != null,
+      (r) => r.status === "active" && r.scooterId != null,
     ).length;
 
     // fleetTotal — скутеры которые потенциально могут быть в парке аренды.
@@ -330,7 +330,7 @@ export function useDashboardMetrics(): DashboardMetrics {
     const returnsToday: ReturnItem[] = rentals
       .filter(
         (r) =>
-          (r.status === "active" || r.status === "returning") &&
+          r.status === "active" &&
           r.endPlannedAt.slice(0, 10) === todayKey,
       )
       .map((r) => {
@@ -371,7 +371,7 @@ export function useDashboardMetrics(): DashboardMetrics {
     let revenueExpected = 0;
     let revenueExpectedCount = 0;
     for (const r of rentals) {
-      if (!["active", "overdue", "returning"].includes(r.status)) continue;
+      if (r.status !== "active") continue;
       const startMs = new Date(r.startAt).getTime();
       if (startMs < monthStart.getTime() || startMs >= monthEnd.getTime())
         continue;
@@ -431,17 +431,14 @@ export function useDashboardMetrics(): DashboardMetrics {
     const nowMs = now.getTime();
     rentals.forEach((r) => {
       if (r.scooterId == null) return;
-      const isOpen =
-        r.status === "active" ||
-        r.status === "overdue" ||
-        r.status === "returning";
+      const isOpen = r.status === "active";
       if (isOpen) {
         const arr = openRentalsByScooter.get(r.scooterId) ?? [];
         arr.push(r.id);
         openRentalsByScooter.set(r.scooterId, arr);
       }
       const isReturnToday =
-        (r.status === "active" || r.status === "returning") &&
+        r.status === "active" &&
         r.endPlannedAt.slice(0, 10) === todayKey;
       if (isReturnToday) {
         returnsTodayScooterIds.add(r.scooterId);

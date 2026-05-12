@@ -1,7 +1,8 @@
 import type { FastifyInstance } from "fastify";
-import { and, eq, isNotNull, ne } from "drizzle-orm";
+import { and, eq, isNotNull, ne, sql } from "drizzle-orm";
+import bcrypt from "bcryptjs";
 import { db } from "../db/index.js";
-import { scooterModels } from "../db/schema.js";
+import { scooterModels, users } from "../db/schema.js";
 import { getObjectStream, statObject } from "../storage/index.js";
 import { variantKey } from "../storage/image.js";
 
@@ -18,6 +19,63 @@ import { variantKey } from "../storage/image.js";
  * Регистрируется в index.ts ВНЕ блока с requireAuth.
  */
 export async function publicRoutes(app: FastifyInstance) {
+  /**
+   * Bootstrap-эндпоинт для пустых БД (preview/staging).
+   * POST /api/public/bootstrap-users
+   *
+   * Гейтинг (ВСЕ три условия должны выполниться):
+   *  1. env `ALLOW_BOOTSTRAP_USERS=1` — явный opt-in. Без него эндпоинт
+   *     возвращает 404 «как будто его нет». На проде этот флаг не
+   *     выставляется → эндпоинт невидим.
+   *  2. в env заданы SEED_CREATOR_PASSWORD / SEED_DIRECTOR_PASSWORD /
+   *     SEED_ADMIN_PASSWORD.
+   *  3. таблица users пуста.
+   *
+   * Тройная защита: даже если кто-то случайно выставит SEED_* на проде,
+   * без ALLOW_BOOTSTRAP_USERS эндпоинт не отзовётся.
+   */
+  app.post("/bootstrap-users", async (_req, reply) => {
+    if (process.env.ALLOW_BOOTSTRAP_USERS !== "1") {
+      return reply.code(404).send({ error: "not_found" });
+    }
+    const creatorPw = process.env.SEED_CREATOR_PASSWORD;
+    const directorPw = process.env.SEED_DIRECTOR_PASSWORD;
+    const adminPw = process.env.SEED_ADMIN_PASSWORD;
+    if (!creatorPw || !directorPw || !adminPw) {
+      return reply.code(503).send({ error: "seed_env_not_set" });
+    }
+    const existing = await db.select({ c: sql<number>`count(*)` }).from(users);
+    const count = Number(existing[0]?.c ?? 0);
+    if (count > 0) {
+      return reply.code(409).send({ error: "users_already_exist", count });
+    }
+    const hash = (pw: string) => bcrypt.hashSync(pw, 10);
+    await db.insert(users).values([
+      {
+        name: "Руслан",
+        login: "ruslan",
+        passwordHash: hash(creatorPw),
+        role: "creator",
+        avatarColor: "purple",
+      },
+      {
+        name: "Директор",
+        login: "director",
+        passwordHash: hash(directorPw),
+        role: "director",
+        avatarColor: "blue",
+      },
+      {
+        name: "Администратор",
+        login: "admin",
+        passwordHash: hash(adminPw),
+        role: "admin",
+        avatarColor: "green",
+      },
+    ]);
+    return { created: 3, logins: ["ruslan", "director", "admin"] };
+  });
+
   /** Список моделей для витрины: только те, у кого есть аватарка. */
   app.get("/scooter-models", async () => {
     const rows = await db

@@ -356,7 +356,7 @@ function computeStats(
   const now = new Date();
   const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
   for (const r of rentals) {
-    const isActive = r.status === "active" || r.status === "overdue";
+    const isActive = r.status === "active";
     if (!isActive) continue;
     const endKey = r.endPlannedAt.slice(0, 10);
     if (endKey >= todayKey) continue;

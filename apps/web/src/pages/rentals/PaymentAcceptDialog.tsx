@@ -373,11 +373,21 @@ export function PaymentAcceptDialog({
   // Заменяет старый Mode toggle «Только оплата / Оплата с продлением» —
   // теперь оператор сначала вводит сумму, потом видит что делать с
   // переплатой.
-  type OverpayDest = "deposit" | "extend";
-  // v0.4.93: дефолт = «extend» — при существенной переплате логичнее
-  // продлить, чем закидывать в депозит. Оператор может переключить
-  // вручную. Проверяется extAutoUnits после расчёта (см. useEffect ниже).
-  const [overpayDest, setOverpayDest] = useState<OverpayDest>("extend");
+  // v0.5.9: добавлен target 'security' — пополнение залога аренды.
+  // Когда rental.deposit < depositOriginal — это default, оператор
+  // часто пополняет именно его. Используется существующий endpoint
+  // /security-topup (через api.post внутри submit).
+  type OverpayDest = "deposit" | "extend" | "security";
+  // Нужно ли пополнение залога? — флаг для UI и для дефолта overpayDest.
+  const needsSecurityTopup =
+    !rental.depositItem &&
+    (rental.deposit ?? 0) <
+      ((rental as { depositOriginal?: number }).depositOriginal ?? 0);
+  // v0.5.9: дефолт зависит от ситуации. Если залог нужно пополнить —
+  // приоритет на пополнение залога. Иначе — extend (продление).
+  const [overpayDest, setOverpayDest] = useState<OverpayDest>(
+    needsSecurityTopup ? "security" : "extend",
+  );
 
   // Параметры продления — авто-расчёт по тарифу аренды.
   // Оператор может править вручную через extInputOverride (по умолчанию null).
@@ -744,11 +754,43 @@ export function PaymentAcceptDialog({
             comment: `Оплата клиента (${methodLabel(op.method)})`,
           });
         } else if (op.target === "deposit") {
-          await api.post(`/api/clients/${rental.clientId}/deposit/charge`, {
-            amount: op.amount,
-            comment: `Переплата по аренде #${rental.id}`,
-            rentalId: rental.id,
-          });
+          // v0.5.9: если оператор выбрал «В залог аренды», часть денег
+          // направляем в rental.deposit через /security-topup. Только
+          // shortage = depositOriginal − deposit. Сверх — в депозит
+          // клиента (clients.deposit_balance) как раньше.
+          if (overpayDest === "security") {
+            const original =
+              (rental as { depositOriginal?: number }).depositOriginal ?? 0;
+            const current = rental.deposit ?? 0;
+            const shortage = Math.max(0, original - current);
+            const toSecurity = Math.min(op.amount, shortage);
+            const toClient = op.amount - toSecurity;
+            if (toSecurity > 0) {
+              await api.post(
+                `/api/rentals/${rental.id}/security-topup`,
+                { amount: toSecurity, method: op.method },
+              );
+            }
+            if (toClient > 0) {
+              await api.post(
+                `/api/clients/${rental.clientId}/deposit/charge`,
+                {
+                  amount: toClient,
+                  comment: `Переплата по аренде #${rental.id} (сверх пополнения залога)`,
+                  rentalId: rental.id,
+                },
+              );
+            }
+          } else {
+            await api.post(
+              `/api/clients/${rental.clientId}/deposit/charge`,
+              {
+                amount: op.amount,
+                comment: `Переплата по аренде #${rental.id}`,
+                rentalId: rental.id,
+              },
+            );
+          }
         }
       }
 
@@ -1025,13 +1067,34 @@ export function PaymentAcceptDialog({
                   Переплата · {fmt(overpay)} ₽
                 </div>
               </div>
-              <div className="flex gap-1.5">
-                {(
-                  [
-                    { id: "deposit" as const, label: "В депозит клиента", icon: Wallet },
-                    { id: "extend" as const, label: "В продление аренды", icon: Repeat },
-                  ]
-                ).map((opt) => (
+              <div className="flex flex-wrap gap-1.5">
+                {(() => {
+                  const opts: Array<{
+                    id: OverpayDest;
+                    label: string;
+                    icon: typeof Wallet;
+                  }> = [];
+                  // v0.5.9: «Пополнить залог» — показывается только если
+                  // залог денежный И ниже исходного. Иначе скрыто.
+                  if (needsSecurityTopup) {
+                    opts.push({
+                      id: "security",
+                      label: "В залог аренды",
+                      icon: Shield,
+                    });
+                  }
+                  opts.push({
+                    id: "deposit",
+                    label: "В депозит клиента",
+                    icon: Wallet,
+                  });
+                  opts.push({
+                    id: "extend",
+                    label: "В продление аренды",
+                    icon: Repeat,
+                  });
+                  return opts;
+                })().map((opt) => (
                   <button
                     key={opt.id}
                     type="button"
@@ -1058,6 +1121,27 @@ export function PaymentAcceptDialog({
                   будущих аренд / продлений / штрафов.
                 </div>
               )}
+              {/* v0.5.9: В залог — описание + сколько до полного пополнения */}
+              {overpayDest === "security" && (() => {
+                const original =
+                  (rental as { depositOriginal?: number }).depositOriginal ?? 0;
+                const current = rental.deposit ?? 0;
+                const shortage = Math.max(0, original - current);
+                const willTopup = Math.min(overpay, shortage);
+                const willOverflow = overpay - willTopup;
+                return (
+                  <div className="text-[11px] text-blue-700/80">
+                    {fmt(willTopup)} ₽ пополним залог аренды (нужно ещё{" "}
+                    {fmt(shortage)} ₽ до исходных {fmt(original)} ₽).
+                    {willOverflow > 0 && (
+                      <span>
+                        {" "}Сверх — {fmt(willOverflow)} ₽ — уйдёт в депозит
+                        клиента.
+                      </span>
+                    )}
+                  </div>
+                );
+              })()}
               {/* В продление — большая сумма + расчёт */}
               {overpayDest === "extend" && (
                 <>
@@ -1216,16 +1300,21 @@ export function PaymentAcceptDialog({
                   )}
                 </>
               )}
-              <label className="flex cursor-pointer items-center gap-2 text-[11px]">
-                <input
-                  type="checkbox"
-                  checked={extCustomMode}
-                  onChange={(e) => setExtCustomMode(e.target.checked)}
-                  className="h-3.5 w-3.5 accent-blue-600"
-                />
-                Произвольный тариф
-              </label>
-              {extCustomMode && (
+              {/* v0.5.9: «Произвольный тариф» относится только к продлению.
+                  Для «В залог» / «В депозит» бессмысленно — там нет тарифа.
+                  Поэтому показываем только когда overpayDest === 'extend'. */}
+              {overpayDest === "extend" && (
+                <label className="flex cursor-pointer items-center gap-2 text-[11px]">
+                  <input
+                    type="checkbox"
+                    checked={extCustomMode}
+                    onChange={(e) => setExtCustomMode(e.target.checked)}
+                    className="h-3.5 w-3.5 accent-blue-600"
+                  />
+                  Произвольный тариф
+                </label>
+              )}
+              {overpayDest === "extend" && extCustomMode && (
                 <div className="flex items-center gap-2">
                   <input
                     type="number"
@@ -1259,10 +1348,12 @@ export function PaymentAcceptDialog({
                   </div>
                 </div>
               )}
-              <div className="text-[10px] text-blue-700/70">
-                После продления endPlannedAt увеличится на {extDays} дн.
-                Текущая аренда продолжается, без отдельной «новой».
-              </div>
+              {overpayDest === "extend" && (
+                <div className="text-[10px] text-blue-700/70">
+                  После продления endPlannedAt увеличится на {extDays} дн.
+                  Текущая аренда продолжается, без отдельной «новой».
+                </div>
+              )}
             </div>
           )}
 

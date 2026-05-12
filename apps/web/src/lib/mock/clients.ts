@@ -37,6 +37,13 @@ export type Client = {
    * подтянутся в счёт следующей оплаты). Источник — clients.deposit_balance.
    */
   depositBalance?: number;
+  /**
+   * v0.5.6: непогашенный долг по ущербу по ВСЕМ арендам клиента
+   * (включая завершённые). Источник — агрегат damage_reports.
+   * Используется для предупреждения «опасный клиент» в пикере и
+   * для плашки на карточке.
+   */
+  unpaidDamageDebt?: number;
 };
 
 export type RentalStatus = "active" | "done" | "overdue";

@@ -32,7 +32,6 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
-  DEPOSIT_AMOUNT,
   MODEL_LABEL,
   PAYMENT_LABEL,
   TARIFF_PERIOD_LABEL,
@@ -454,18 +453,76 @@ export function TermsTab({
             label="Оплата"
             value={PAYMENT_LABEL[rental.paymentMethod]}
           />
-          <InfoCell
-            icon={ShieldCheck}
-            label="Залог"
-            value={`${fmt(rental.deposit || DEPOSIT_AMOUNT)} ₽`}
-            hint={
-              rental.depositReturned === true
-                ? "возвращён клиенту"
-                : rental.depositReturned === false
-                  ? "удержан"
-                  : "на балансе компании"
-            }
-          />
+          {/* v0.5.6: залог — кастомная ячейка вместо InfoCell, потому
+              что нужно:
+              • показать сумму ИЛИ название предмета
+              • если деньги меньше исходных — красная подсветка
+                «ПОПОЛНИТЬ +N ₽»
+              Эта ячейка отражает живой остаток залога — оператор
+              видит сразу что не хватает. */}
+          {(() => {
+            const isItem = !!rental.depositItem;
+            const current = rental.deposit ?? 0;
+            const original =
+              (rental as { depositOriginal?: number }).depositOriginal ??
+              current;
+            const needsTopup = !isItem && current < original && original > 0;
+            const shortage = needsTopup ? original - current : 0;
+            return (
+              <div
+                className={
+                  needsTopup
+                    ? "rounded-[10px] border-2 border-red-400 bg-red-soft/30 p-2 -m-2"
+                    : ""
+                }
+              >
+                <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
+                  Залог
+                </div>
+                <div className="mt-1 flex items-start gap-2">
+                  <ShieldCheck
+                    size={14}
+                    className={
+                      "mt-[3px] shrink-0 " +
+                      (needsTopup ? "text-red-600" : "text-muted-2")
+                    }
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div
+                      className={
+                        "text-[13px] font-semibold " +
+                        (needsTopup ? "text-red-ink" : "text-ink")
+                      }
+                    >
+                      {isItem
+                        ? rental.depositItem
+                        : `${fmt(current)} ₽`}
+                      {needsTopup && (
+                        <span className="ml-1 text-muted-2 font-normal">
+                          из {fmt(original)} ₽
+                        </span>
+                      )}
+                    </div>
+                    {needsTopup ? (
+                      <div className="mt-0.5 text-[10px] font-bold uppercase tracking-wider text-red-ink">
+                        ⚠ пополнить +{fmt(shortage)} ₽
+                      </div>
+                    ) : (
+                      <div className="mt-0.5 text-[10px] uppercase tracking-wider text-muted-2">
+                        {rental.depositReturned === true
+                          ? "возвращён клиенту"
+                          : rental.depositReturned === false
+                            ? "удержан"
+                            : isItem
+                              ? "предмет залога"
+                              : "на балансе компании"}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
           <InfoCell
             icon={HelmetIcon}
             label={
@@ -1920,37 +1977,42 @@ export function HistoryTab({
         loading={timelineQ.isLoading}
       />
 
-      <div className="text-[12px] text-muted-2 px-1">
-        Цепочка из {rentEvents.length}{" "}
-        {pluralRu(rentEvents.length, ["аренды", "аренд", "аренд"])} — суммарно{" "}
-        <b className="text-ink">
-          {totalDays}{" "}
-          {pluralRu(totalDays, ["день", "дня", "дней"])}
-        </b>
-        ,{" "}
-        <b className="text-ink">
-          {totalRentSum.toLocaleString("ru-RU")} ₽
-        </b>{" "}
-        за всё время
-        {damageReports.length > 0 && (
-          <>
-            {" · "}
-            ущерб:{" "}
-            <b className="text-ink">
-              {totalDamageBilled.toLocaleString("ru-RU")} ₽
-            </b>{" "}
-            (погашено{" "}
-            <b className="text-ink">
-              {totalDamagePaid.toLocaleString("ru-RU")} ₽
-            </b>
-            ,{" остаток "}
-            <b className={totalDamageDebt > 0 ? "text-red-ink" : "text-green-ink"}>
-              {totalDamageDebt.toLocaleString("ru-RU")} ₽
-            </b>
-            )
-          </>
-        )}
-      </div>
+      {/* v0.5.4: «Цепочка из N аренд» имеет смысл только при N > 1.
+          Для одиночной аренды эта плашка лишь дублировала шапку карточки
+          и выглядела как «отдельная цепочка», что путало оператора. */}
+      {rentEvents.length > 1 && (
+        <div className="text-[12px] text-muted-2 px-1">
+          Цепочка из {rentEvents.length}{" "}
+          {pluralRu(rentEvents.length, ["аренды", "аренд", "аренд"])} — суммарно{" "}
+          <b className="text-ink">
+            {totalDays}{" "}
+            {pluralRu(totalDays, ["день", "дня", "дней"])}
+          </b>
+          ,{" "}
+          <b className="text-ink">
+            {totalRentSum.toLocaleString("ru-RU")} ₽
+          </b>{" "}
+          за всё время
+          {damageReports.length > 0 && (
+            <>
+              {" · "}
+              ущерб:{" "}
+              <b className="text-ink">
+                {totalDamageBilled.toLocaleString("ru-RU")} ₽
+              </b>{" "}
+              (погашено{" "}
+              <b className="text-ink">
+                {totalDamagePaid.toLocaleString("ru-RU")} ₽
+              </b>
+              ,{" остаток "}
+              <b className={totalDamageDebt > 0 ? "text-red-ink" : "text-green-ink"}>
+                {totalDamageDebt.toLocaleString("ru-RU")} ₽
+              </b>
+              )
+            </>
+          )}
+        </div>
+      )}
 
       {events.map((ev, idx) => {
         if (ev.kind === "damage_act") {
@@ -1972,16 +2034,6 @@ export function HistoryTab({
                     <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-800">
                       акт #{rep.id}
                     </span>
-                    {rep.clientAgreement === "agreed" && (
-                      <span className="rounded-full bg-green-soft px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-green-ink">
-                        клиент согласен
-                      </span>
-                    )}
-                    {rep.clientAgreement === "disputed" && (
-                      <span className="rounded-full bg-red-soft px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-ink">
-                        не согласен
-                      </span>
-                    )}
                   </div>
                   <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-muted">
                     <Calendar size={11} />
@@ -2075,6 +2127,10 @@ export function HistoryTab({
         }
         // ev.kind === "rental"
         const r = ev.rental;
+        // v0.5.4: для одиночной аренды (chain=1) НЕ показываем её как
+        // отдельный блок в ленте — она и так шапка карточки. Иначе
+        // выглядит будто рядом «висит ещё одна аренда».
+        if (rentEvents.length <= 1) return null;
         // Индекс среди rental-событий (не общий idx)
         const rentalIdx = rentEvents.findIndex((e) => e.rental.id === r.id);
         const isCurrent = r.id === rental.id;
@@ -2218,7 +2274,13 @@ export function ActivityTimelineSection({
           // начался новый период (по аналогии с «Цепочка аренд»).
           const isExtension =
             it.action === "extended" || it.action === "rental_extended";
-          const isCreated = it.action === "created";
+          // v0.5.4: «Создание аренды» — только для action='created' на
+          // сущности rental. Раньше любое created (damage_report, payment
+          // и т.п.) красило строку в зелёную «Создание аренды» — было
+          // неверно: в ленте акт о повреждениях помечался как создание
+          // аренды.
+          const isCreated =
+            it.action === "created" && it.entity === "rental";
           return (
             <li key={it.id}>
               <button
@@ -2494,13 +2556,6 @@ export function DebtHistoryTab({ rental }: { rental: Rental }) {
                       · из залога {fmt(r.depositCovered)} ₽
                     </span>
                   )}
-                  <span className="ml-1">
-                    · реакция: {r.clientAgreement === "agreed"
-                      ? "согласен"
-                      : r.clientAgreement === "disputed"
-                        ? "не согласен"
-                        : "не выбрана"}
-                  </span>
                 </div>
                 <span className="tabular-nums font-semibold text-ink">
                   {fmt(r.total)} ₽

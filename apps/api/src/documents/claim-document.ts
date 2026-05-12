@@ -165,6 +165,11 @@ const CSS = `
   .small { font-size: 9.5pt; color: #444; }
   ol.items { padding-left: 22pt; margin: 8pt 0; }
   ol.items li { margin: 2pt 0; }
+  table.items { width: 100%; border-collapse: collapse; margin: 8pt 0; font-size: 10.5pt; }
+  table.items th, table.items td { border: 1px solid #000; padding: 4pt 6pt; vertical-align: top; }
+  table.items th { background: #eee; font-weight: bold; text-align: left; }
+  table.items td.num { text-align: right; white-space: nowrap; tabular-nums: 1; font-variant-numeric: tabular-nums; }
+  table.items tr.total td { font-weight: bold; background: #f5f5f5; }
   .wrap { background: #fff; }
   @media screen { body { background: #f5f5f5; } .wrap { margin: 0 auto; padding: 16pt; max-width: 820px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); } }
 </style>
@@ -192,9 +197,35 @@ function tplClaim(b: ClaimBundle): string {
     return fmtDateRu(due);
   })();
 
-  const itemsList = items
-    .map((it, i) => `<li>${i + 1}. ${escape(it.name)}${it.comment ? ` — ${escape(it.comment)}` : ""}</li>`)
+  // v0.5.4: таблица позиций с ценами. Заказчик: в претензии должны
+  // фигурировать суммы из каждой позиции (или из прейскуранта, или
+  // вписанные оператором вручную), а не голый список названий.
+  const itemsRows = items
+    .map((it, i) => {
+      const qty = it.quantity ?? 1;
+      const lineTotal = it.finalPrice * qty;
+      const nameCell = `${escape(it.name)}${it.comment ? `<br><span class="small">${escape(it.comment)}</span>` : ""}`;
+      return `<tr>
+        <td class="num">${i + 1}</td>
+        <td>${nameCell}</td>
+        <td class="num">${fmtMoney(it.finalPrice)} ₽</td>
+        <td class="num">${qty}</td>
+        <td class="num">${fmtMoney(lineTotal)} ₽</td>
+      </tr>`;
+    })
     .join("");
+  const itemsTable = `<table class="items">
+    <thead><tr>
+      <th style="width:6%">№</th>
+      <th>Наименование повреждения</th>
+      <th style="width:14%">Цена</th>
+      <th style="width:8%">Кол-во</th>
+      <th style="width:14%">Сумма</th>
+    </tr></thead>
+    <tbody>${itemsRows}
+      <tr class="total"><td colspan="4" style="text-align:right">ИТОГО:</td><td class="num">${fmtMoney(total)} ₽</td></tr>
+    </tbody>
+  </table>`;
 
   return `<!doctype html><html lang="ru"><head><meta charset="utf-8">
 <title>Досудебная претензия № ${reportNo}</title>${CSS}</head><body>
@@ -264,7 +295,7 @@ function tplClaim(b: ClaimBundle): string {
 
   ${
     items.length > 0
-      ? `<ol class="items">${itemsList}</ol>`
+      ? itemsTable
       : `<p class="para small"><i>Перечень повреждений приведён в Акте о повреждениях № ${reportNo}.</i></p>`
   }
 

@@ -44,5 +44,6 @@ export function adaptClient(a: ApiClient): Client {
     passportRaw: a.passportRaw,
     blacklistReason: a.blacklistReason,
     depositBalance: a.depositBalance ?? 0,
+    unpaidDamageDebt: a.unpaidDamageDebt ?? 0,
   };
 }

@@ -39,6 +39,27 @@ Web-бандл внутри Electron ходит в API по `VITE_API_URL`. Ес
 
 Push в `main` → GitHub Action собирает статику. Деплой на хост — через Dokploy (см. `DEPLOY.md`).
 
+## Workflow: preview → prod
+
+Для всех нетривиальных изменений (особенно карточек, финансовых потоков, миграций) — **сначала через preview-окружение**, потом в прод. Прямые коммиты в `main` без обкатки на preview допустимы только для мелочей: typo, текст, версия.
+
+**Preview-окружение:**
+- Привязано к ветке `feature/redesign-rental-card-v0.5` (можно поменять branch в Dokploy → hulk-api-preview/hulk-web-preview).
+- Отдельный Postgres `hulk-postgres-preview-rk2fcv` — чистая БД, миграции отработают сами.
+- Отдельный бакет MinIO `hulk-docs-preview` (создаётся автоматически).
+- URLs: `https://api-preview.104-128-128-96.sslip.io` и `https://crm-preview.104-128-128-96.sslip.io`.
+- Auto-deploy включён — push в feature-ветку → автодеплой preview.
+
+**Стандартная последовательность:**
+1. `git checkout -b feature/<task>` от `main`.
+2. Коммиты в feature-ветку → preview автоматически передеплоится.
+3. Принудительно: `python scripts/redeploy_preview.py` (api+web) или `redeploy_preview.py api|web`.
+4. Тестировать на `crm-preview.104-128-128-96.sslip.io`.
+5. Когда всё работает: `git checkout main && git merge feature/<task> && git push` → прод обновится.
+6. `python scripts/redeploy_api.py` + `redeploy_web.py` для контроля прод-деплоя.
+
+**Не пушить в `main` напрямую** изменения, которые могли что-то сломать. Все большие фичи — через preview.
+
 ## Язык
 
 Интерфейс и коммиты — русский. Комментарии в коде — по необходимости, тоже русский. Имена файлов, переменных, функций — английский (стандарт).

@@ -27,8 +27,8 @@ import { ensureRepairJobForScooter } from "./repair-jobs.js";
  * Акты о повреждениях.
  *
  * Бизнес-логика:
- *  - При создании акта аренда переводится в статус `completed_damage`,
- *    скутер (по флагу) — в `repair`. Аренда не архивируется пока есть долг.
+ *  - При создании акта статус аренды НЕ меняется — она остаётся active,
+ *    долг по ущербу живёт отдельно. Скутер (по флагу) уходит в repair.
  *  - Долг = total - depositCovered - SUM(payments[type=damage, paid=true]).
  *  - Платёж по акту — отдельный POST, авто-проставляет receivedByUserId
  *    из req.user.userId.
@@ -336,50 +336,6 @@ export async function damageReportsRoutes(app: FastifyInstance) {
       entityId: id,
       action: "updated",
       summary: `Акт о повреждениях #${id} изменён`,
-    });
-    return await loadReportFull(id);
-  });
-
-  /**
-   * Реакция клиента на акт. v0.2.75.
-   *  - 'agreed'  → аренда остаётся active/overdue, долг гасится через платежи.
-   *  - 'disputed' → аренда переводится в 'problem' (досудебная претензия).
-   */
-  app.post<{ Params: { id: string } }>("/:id/agreement", async (req, reply) => {
-    const id = Number(req.params.id);
-    if (!Number.isFinite(id))
-      return reply.code(400).send({ error: "bad id" });
-    const parsed = z
-      .object({ agreement: z.enum(["agreed", "disputed"]) })
-      .safeParse(req.body);
-    if (!parsed.success)
-      return reply
-        .code(400)
-        .send({ error: "validation", issues: parsed.error.issues });
-    const [report] = await db
-      .select()
-      .from(damageReports)
-      .where(eq(damageReports.id, id));
-    if (!report) return reply.code(404).send({ error: "not found" });
-    const next = parsed.data.agreement;
-    await db
-      .update(damageReports)
-      .set({ clientAgreement: next, updatedAt: new Date() })
-      .where(eq(damageReports.id, id));
-    if (next === "disputed") {
-      await db
-        .update(rentals)
-        .set({ status: "problem" })
-        .where(eq(rentals.id, report.rentalId));
-    }
-    await logActivity(req, {
-      entity: "damage_report",
-      entityId: id,
-      action: next === "agreed" ? "client_agreed" : "client_disputed",
-      summary:
-        next === "agreed"
-          ? `Клиент согласен с актом #${id}, готов платить`
-          : `Клиент НЕ согласен с актом #${id} — аренда «Проблемная»`,
     });
     return await loadReportFull(id);
   });
