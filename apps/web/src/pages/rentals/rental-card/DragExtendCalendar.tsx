@@ -77,6 +77,17 @@ export function DragExtendCalendar({
   dailyRate,
   /** Вызывается на mouse-up если новых дней > 0. */
   onCommitExtend,
+  /**
+   * v0.6.10: вызывается на каждое изменение preview во время drag.
+   * Используется в floating-режиме (overlay paradigm): bottom-drawer
+   * PaymentAcceptDialog подписывается на live-изменения и сразу
+   * пересчитывает acceptedStr/footer.
+   */
+  onPreviewExtend,
+  /** v0.6.10: начальное число дней продления — для рендера зелёной зоны
+   * при первом монтировании floating-календаря, когда extDays>0 уже
+   * выбран через спиннер в drawer'е. */
+  initialDays,
   /** Опционально, чтобы заблокировать drag (например, в архивных). */
   disabled,
 }: {
@@ -85,6 +96,8 @@ export function DragExtendCalendar({
   isOverdue: boolean;
   dailyRate?: number;
   onCommitExtend?: (days: number) => void;
+  onPreviewExtend?: (days: number) => void;
+  initialDays?: number;
   disabled?: boolean;
 }) {
   const startKey = isoToKey(startIso);
@@ -100,9 +113,26 @@ export function DragExtendCalendar({
     if (baseEndKey) return { y: baseEndKey.y, m: baseEndKey.m };
     return { y: today.y, m: today.m };
   });
-  const [dragEnd, setDragEnd] = useState<DateKey | null>(null);
+
+  // v0.6.10: если родитель передал initialDays — сразу рисуем preview зелёным
+  // (см. floating-режим в PaymentAcceptDialog). Когда пользователь начнёт
+  // drag — setDragEnd перетрёт значение, а после mouse-up зафиксируется.
+  const computeInitialDragEnd = (): DateKey | null => {
+    if (!initialDays || initialDays <= 0 || !baseEndKey) return null;
+    const dt = new Date(baseEndKey.y, baseEndKey.m, baseEndKey.d + initialDays);
+    return fromDate(dt);
+  };
+  const [dragEnd, setDragEnd] = useState<DateKey | null>(computeInitialDragEnd);
   const dragging = useRef(false);
   const gridRef = useRef<HTMLDivElement | null>(null);
+
+  // Если initialDays меняется снаружи (пользователь жмёт +/- в drawer'е) —
+  // синхронизируем preview-зону.
+  useEffect(() => {
+    if (dragging.current) return;
+    setDragEnd(computeInitialDragEnd());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialDays]);
 
   // mouse-up глобально — даже если отпустить вне сетки
   useEffect(() => {
@@ -156,9 +186,11 @@ export function DragExtendCalendar({
     const delta = diffDays(baseEndKey, k);
     if (delta <= 0) {
       setDragEnd(null);
+      onPreviewExtend?.(0);
       return;
     }
     setDragEnd(k);
+    onPreviewExtend?.(delta);
   };
 
   const previewEnd = dragEnd;

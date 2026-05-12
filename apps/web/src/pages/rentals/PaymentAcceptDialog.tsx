@@ -39,7 +39,7 @@ import { useApiPayments } from "@/lib/api/payments";
 import { useRentalDebt } from "@/lib/api/debt";
 import { extendInplaceAsync } from "./rentalsStore";
 import { EquipmentChangeDialog } from "./EquipmentChangeDialog";
-import { PaymentAcceptCalendar } from "./PaymentAcceptCalendar";
+import { DragExtendCalendar } from "./rental-card/DragExtendCalendar";
 import type { Rental } from "@/lib/mock/rentals";
 import type { PaymentMethod } from "@/lib/mock/rentals";
 import {
@@ -821,7 +821,9 @@ export function PaymentAcceptDialog({
           // v0.6.9: при появлении floating-календаря drawer плавно
           // приподнимается на ~30px (transition transform 300ms ease-out),
           // чтобы календарь поместился над ним и не загораживал контент.
-          "flex w-full max-w-[1200px] mb-3 mx-3 flex-col overflow-hidden rounded-2xl bg-surface border border-border shadow-card-lg transition-transform duration-300 ease-out",
+          // v0.6.10: drawer уже (max-w 820px вместо 1200px) — раньше
+          // контент был слишком растянут по горизонтали.
+          "flex w-full max-w-[760px] lg:max-w-[820px] mb-3 mx-3 flex-col overflow-hidden rounded-2xl bg-surface border border-border shadow-card-lg transition-transform duration-300 ease-out",
           closing ? "animate-slide-down-out" : "animate-slide-up",
         )}
         onClick={(e) => e.stopPropagation()}
@@ -869,7 +871,7 @@ export function PaymentAcceptDialog({
           {/* ─── STEP 1 (если есть просрочка) ─────────────────────────── */}
           {isOverdueState && (
             <div
-              className="border-b border-border px-5 py-4"
+              className="border-b border-border px-5 py-3"
               style={{ background: "hsl(var(--red-soft) / 0.3)" }}
             >
               <div className="mb-2.5 flex items-center gap-2">
@@ -983,7 +985,7 @@ export function PaymentAcceptDialog({
           )}
 
           {/* ─── STEP 2: период продления ─────────────────────────────── */}
-          <div className="border-b border-border px-5 py-4">
+          <div className="border-b border-border px-5 py-3">
             <div className="mb-2.5 flex items-center gap-2">
               <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-[11px] font-bold text-white">
                 {isOverdueState ? "2" : "1"}
@@ -1130,7 +1132,7 @@ export function PaymentAcceptDialog({
               v0.6.5: чипы кликабельны — открывают EquipmentChangeDialog
               для свапа (replaceAt) и добавления. По дизайну в правом
               верхнем углу — итог +N ₽/сут, и pill «+ Добавить». */}
-          <div className="border-b border-border px-5 py-4">
+          <div className="border-b border-border px-5 py-3">
             <div className="mb-2 flex items-center gap-2">
               <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-[11px] font-bold text-white">
                 {isOverdueState ? "3" : "2"}
@@ -1189,7 +1191,7 @@ export function PaymentAcceptDialog({
           {/* v0.6.7: предупреждение «не хватает» — над footer'ом
               в режиме «по сумме клиента» (как в дизайне line 343-349). */}
           {shortageAmount > 0 && (
-            <div className="px-5 py-4">
+            <div className="px-5 py-3">
               <div
                 className="rounded-[10px] px-3 py-2 text-[11.5px] font-semibold"
                 style={{
@@ -1338,23 +1340,39 @@ export function PaymentAcceptDialog({
         </div>
       </div>
 
-      {/* v0.6.9: floating month-grid календарь — заменил старый
-          CompactExtendCalendar (полоску ячеек). Появляется когда
-          оператор выбрал период продления (extDays > 0) — Step 2.
-          Анимация slide-in-down (выезжает сверху), bottom-drawer'ов
-          одновременно подъезжает чуть вверх через animate-slide-up
-          (см. style.transform у drawer'а ниже). */}
-      {parsedDates && newEnd && extDays > 0 && (
-        <PaymentAcceptCalendarSlide
+      {/* v0.6.10: overlay paradigm — floating интерактивный DragExtendCalendar
+          (тот же что в карточке аренды) появляется над bottom-drawer'ом
+          сразу при открытии диалога. Backdrop с blur уже закрывает
+          карточку под ним (см. fixed inset-0 outer + backdrop-blur-sm).
+          Drag-handle в этом календаре live обновляет extInputOverride
+          через onPreviewExtend → footer drawer'а пересчитывается
+          мгновенно. */}
+      {parsedDates && (
+        <FloatingDragExtendCalendar
           closing={closing}
           startDate={parsedDates.startDate}
-          anchor={parsedDates.anchor}
-          today={parsedDates.today}
-          newEnd={newEnd}
-          hasOverdue={isOverdueState}
-          forgiveDebt={forgiveDebt}
-          coveredDays={coveredDaysShortage}
-          extDays={extDays}
+          plannedEnd={parsedDates.anchor}
+          isOverdue={isOverdueState && !forgiveDebt}
+          dailyRate={extDailyRate}
+          initialDays={extDays}
+          onPreviewExtend={(days) => {
+            if (extIsWeekly) {
+              const weeks = Math.max(0, Math.ceil(days / 7));
+              setExtInputOverride(weeks);
+            } else {
+              setExtInputOverride(days);
+            }
+            setOverpayDest("extend");
+          }}
+          onCommitExtend={(days) => {
+            if (extIsWeekly) {
+              const weeks = Math.max(0, Math.ceil(days / 7));
+              setExtInputOverride(weeks);
+            } else {
+              setExtInputOverride(days);
+            }
+            setOverpayDest("extend");
+          }}
         />
       )}
 
@@ -1372,47 +1390,43 @@ export function PaymentAcceptDialog({
 }
 
 /**
- * v0.6.9: обёртка над PaymentAcceptCalendar — позиционирует его как
- * floating элемент над bottom-drawer'ом и анимирует выезжание
- * (slide-in-down при появлении / slide-out-up при закрытии диалога).
+ * v0.6.10: floating DragExtendCalendar — overlay paradigm.
  *
- * Реализация slide-down: контейнер рендерится в fixed-позиции по центру
- * экрана, чуть выше уровня drawer'а. Само появление — keyframe
- * animate-slide-in-down (translateY(-24px) → 0). Уход — animate-slide-out-up
- * (когда closing=true, синхронно с drawer'ом).
+ * Этот компонент рендерится в fixed-позиции над bottom-drawer'ом
+ * PaymentAcceptDialog. Сам drawer уже имеет backdrop с blur'ом (см.
+ * fixed inset-0 + backdrop-blur-sm на родителе), который размывает
+ * карточку аренды под ним.
  *
- * Mount/unmount управляется родителем (рендерится только когда extDays>0).
+ * Календарь использует тот же DragExtendCalendar что и в карточке —
+ * full interactive drag-to-extend. onPreviewExtend пробрасывается
+ * вверх в state PaymentAcceptDialog, мгновенно обновляя extDays и
+ * пересчитывая footer (К приёму, новый возврат). onCommitExtend
+ * фиксирует значение на mouse-up.
  */
-function PaymentAcceptCalendarSlide({
+function FloatingDragExtendCalendar({
   closing,
   startDate,
-  anchor,
-  today,
-  newEnd,
-  hasOverdue,
-  forgiveDebt,
-  coveredDays,
-  extDays,
+  plannedEnd,
+  isOverdue,
+  dailyRate,
+  initialDays,
+  onPreviewExtend,
+  onCommitExtend,
 }: {
   closing: boolean;
   startDate: Date;
-  anchor: Date;
-  today: Date;
-  newEnd: Date;
-  hasOverdue: boolean;
-  forgiveDebt: boolean;
-  coveredDays: number;
-  extDays: number;
+  plannedEnd: Date;
+  isOverdue: boolean;
+  dailyRate: number;
+  initialDays: number;
+  onPreviewExtend: (days: number) => void;
+  onCommitExtend: (days: number) => void;
 }) {
+  const startIso = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, "0")}-${String(startDate.getDate()).padStart(2, "0")}`;
+  const endIso = `${plannedEnd.getFullYear()}-${String(plannedEnd.getMonth() + 1).padStart(2, "0")}-${String(plannedEnd.getDate()).padStart(2, "0")}`;
   return (
     <div
-      className={cn(
-        "pointer-events-none fixed inset-x-0 z-[130] flex justify-center",
-        // Над bottom-drawer'ом. Drawer max-h=88vh + mb-3 ≈ под нижним
-        // краем экрана. Календарь зависает над drawer'ом, чуть выше.
-        // ~ 540px типичный drawer; ставим bottom = max(86vh, 480px) + 16px,
-        // чтоб гарантированно не пересечься.
-      )}
+      className="pointer-events-none fixed inset-x-0 z-[130] flex justify-center"
       style={{ bottom: "calc(min(82vh, 520px) + 20px)" }}
     >
       <div
@@ -1421,16 +1435,25 @@ function PaymentAcceptCalendarSlide({
           closing ? "animate-slide-out-up" : "animate-slide-in-down",
         )}
       >
-        <PaymentAcceptCalendar
-          startDate={startDate}
-          anchor={anchor}
-          today={today}
-          newEnd={newEnd}
-          hasOverdue={hasOverdue}
-          forgiveDebt={forgiveDebt}
-          coveredDays={coveredDays}
-          extDays={extDays}
-        />
+        <div className="rounded-2xl border border-border bg-white p-4 shadow-card-lg w-[460px]">
+          <div className="mb-2 flex items-center justify-between">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
+              График аренды и продления
+            </div>
+            <div className="text-[11px] text-muted">
+              Потяните за ручку — пересчитаем&nbsp;footer
+            </div>
+          </div>
+          <DragExtendCalendar
+            startIso={startIso}
+            plannedEndIso={endIso}
+            isOverdue={isOverdue}
+            dailyRate={dailyRate}
+            initialDays={initialDays}
+            onPreviewExtend={onPreviewExtend}
+            onCommitExtend={onCommitExtend}
+          />
+        </div>
       </div>
     </div>
   );

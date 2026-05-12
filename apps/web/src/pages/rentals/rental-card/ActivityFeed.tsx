@@ -29,7 +29,6 @@ import {
   ArrowRight,
   Plus,
   Eye,
-  Clock,
   MoreHorizontal,
   type LucideIcon,
 } from "lucide-react";
@@ -340,6 +339,15 @@ function ActivityRow({
     hour: "2-digit",
     minute: "2-digit",
   });
+  // v0.6.10: subtitle берём из meta.note/comment если есть — это
+  // более «человеческое» описание помимо короткого summary.
+  const subtitle = (() => {
+    const raw =
+      (typeof itemMeta.note === "string" && itemMeta.note) ||
+      (typeof itemMeta.comment === "string" && itemMeta.comment) ||
+      "";
+    return raw && raw !== item.summary ? raw : "";
+  })();
 
   return (
     <div className="relative flex items-stretch gap-3 group">
@@ -384,8 +392,7 @@ function ActivityRow({
                   >
                     {meta.label}
                   </div>
-                  <span className="text-[10px] text-muted-2 tabular-nums inline-flex items-center gap-1">
-                    <Clock size={10} />
+                  <span className="text-[10px] text-muted-2 tabular-nums">
                     {time}
                   </span>
                   {item.userName && (
@@ -397,9 +404,14 @@ function ActivityRow({
                     </span>
                   )}
                 </div>
-                <div className="mt-0.5 text-[13px] font-bold text-ink leading-tight">
+                <div className="mt-0.5 text-[13.5px] font-bold text-ink leading-tight">
                   {item.summary}
                 </div>
+                {subtitle && (
+                  <div className="mt-0.5 text-[11.5px] text-muted">
+                    {subtitle}
+                  </div>
+                )}
 
                 {/* v0.6.8: CSS-grid плавная раскрывашка.
                     Wrapper: grid-template-rows 0fr → 1fr (250ms ease-out).

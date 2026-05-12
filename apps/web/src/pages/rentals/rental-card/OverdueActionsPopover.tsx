@@ -2,13 +2,15 @@
  * OverdueActionsPopover — popover с быстрыми действиями по просрочке.
  *
  * Открывается над/под якорем (anchorRect передаётся снаружи), оверлей под
- * popover'ом — для перехвата клика мимо и закрытия. Действия:
- *   • Принять оплату (закрывает popover + открывает PaymentAcceptDialog)
- *   • Простить 1 день (forgive-overdue target=days, daysCount=1)
- *   • Простить весь штраф (target=fine)
- *   • Простить всю просрочку (target=all)
+ * popover'ом — для перехвата клика мимо и закрытия. v0.6.10: ровно 3 действия
+ * (по дизайну overdue-actions.jsx, action 'pause' не реализуется):
+ *   • Принять оплату — закрывает popover + открывает PaymentAcceptDialog
+ *   • Простить 1 день — forgive-overdue target=days, daysCount=1
+ *   • Простить всю просрочку — target=all
  *
- * Дизайн по design/claude-design/Hulk Bike CRM/overdue-actions.jsx.
+ * Каждая строка: иконка слева + title жирным + subtitle серым + chevron справа.
+ * Tones: primary (синий — Принять оплату), default (нейтр — 1 день), warn
+ * (оранжевый — Всю просрочку, как destructive-подсветка).
  */
 import { useEffect, useRef } from "react";
 import {
@@ -65,7 +67,7 @@ export function OverdueActionsPopover({
   // Позиционирование: выровнять верхний-левый угол popover'а под нижним-левым
   // углом якоря. Если popover выйдет за низ viewport — поднять над якорем.
   const POP_WIDTH = 340;
-  const POP_HEIGHT_EST = 280;
+  const POP_HEIGHT_EST = 220;
   const vw = typeof window === "undefined" ? 1024 : window.innerWidth;
   const vh = typeof window === "undefined" ? 768 : window.innerHeight;
   let left = anchorRect.left;
@@ -127,7 +129,7 @@ export function OverdueActionsPopover({
           <ActionRow
             icon={Wallet}
             title="Принять оплату"
-            subtitle={`${fmt(totalOverdue)} ₽ — погасить просрочку`}
+            subtitle={`${fmt(totalOverdue)} ₽ — погасить весь долг`}
             tone="primary"
             onClick={() => {
               onClose();
@@ -137,16 +139,9 @@ export function OverdueActionsPopover({
           <ActionRow
             icon={Waves}
             title="Простить 1 день"
-            subtitle={`−${fmt(dailyRate)} ₽ из долга`}
+            subtitle={`−${fmt(dailyRate)} ₽ из долга, без обоснования`}
             disabled={daysBalance <= 0 || overdueDays < 1}
             onClick={() => handleForgive("days", 1)}
-          />
-          <ActionRow
-            icon={Gift}
-            title="Простить весь штраф"
-            subtitle={`−${fmt(fineBalance)} ₽`}
-            disabled={fineBalance <= 0}
-            onClick={() => handleForgive("fine")}
           />
           <ActionRow
             icon={Gift}

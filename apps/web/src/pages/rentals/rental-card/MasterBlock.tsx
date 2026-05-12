@@ -8,6 +8,7 @@
  * перенесён из отдельной полосы наверху в первую строку колонки «Клиент» —
  * по дизайн-эталону design/claude-design/Hulk Bike CRM/rental-card.jsx.
  */
+import { useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   Clock,
@@ -18,12 +19,17 @@ import {
   Plus,
   Shield,
   Star,
+  Trash2,
   Wallet,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
+import { useApiEquipment } from "@/lib/api/equipment";
 import { ScooterPosterAvatar } from "@/pages/rentals/ScooterPosterAvatar";
 import { initialsOf } from "@/lib/mock/clients";
+import { toast } from "@/lib/toast";
+import { equipmentChangeAsync } from "@/pages/rentals/rentalsStore";
 import {
   DEPOSIT_AMOUNT,
   STATUS_LABEL,
@@ -92,6 +98,13 @@ export function MasterBlock({
     (s, e) => s + (e.free ? 0 : e.price ?? 0),
     0,
   );
+
+  // v0.6.10: inline popover для замены экипировки (см. дизайн
+  // rental-card.jsx стр. 504-535 + pickers.jsx EquipmentSwapPicker).
+  // Клик на чип открывает popover рядом, в нём список альтернатив из
+  // каталога. Открывается ТОЛЬКО когда onChangeEquipment передан
+  // (т.е. редактирование разрешено).
+  const [swapIdx, setSwapIdx] = useState<number | null>(null);
 
   const currentDeposit = rental.deposit ?? DEPOSIT_AMOUNT;
   const originalDeposit = rental.depositOriginal ?? currentDeposit;
@@ -354,27 +367,49 @@ export function MasterBlock({
             </div>
           ) : (
             <div className="flex flex-wrap gap-1.5 content-start">
-              {equipmentJson.map((it, idx) => (
-                <button
-                  type="button"
-                  key={`${it.itemId ?? "na"}-${idx}`}
-                  onClick={onChangeEquipment}
-                  disabled={!onChangeEquipment}
-                  className={cn(
-                    "inline-flex items-center gap-1.5 rounded-[10px] px-2 py-1.5 text-[11.5px] font-semibold border-2 border-transparent transition-colors",
-                    it.free
-                      ? "bg-green-soft text-green-ink hover:border-green"
-                      : "bg-orange-soft text-orange-ink hover:border-orange",
-                    onChangeEquipment ? "cursor-pointer" : "cursor-default",
-                  )}
-                  title={onChangeEquipment ? "Изменить экипировку" : undefined}
-                >
-                  {it.name}
-                  {!it.free && it.price > 0 && (
-                    <span className="tabular-nums opacity-80">·{it.price} ₽</span>
-                  )}
-                </button>
-              ))}
+              {equipmentJson.map((it, idx) => {
+                const canSwap = !!onChangeEquipment;
+                const isOpen = swapIdx === idx;
+                return (
+                  <div
+                    key={`${it.itemId ?? "na"}-${idx}`}
+                    className="relative"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!canSwap) return;
+                        setSwapIdx(isOpen ? null : idx);
+                      }}
+                      disabled={!canSwap}
+                      className={cn(
+                        "inline-flex items-center gap-1.5 rounded-[10px] px-2 py-1.5 text-[11.5px] font-semibold border-2 transition-colors",
+                        isOpen
+                          ? it.free
+                            ? "bg-green-soft text-green-ink border-green"
+                            : "bg-orange-soft text-orange-ink border-orange"
+                          : it.free
+                            ? "bg-green-soft text-green-ink border-transparent hover:border-green"
+                            : "bg-orange-soft text-orange-ink border-transparent hover:border-orange",
+                        canSwap ? "cursor-pointer" : "cursor-default",
+                      )}
+                      title={canSwap ? "Заменить или убрать" : undefined}
+                    >
+                      {it.name}
+                      {!it.free && it.price > 0 && (
+                        <span className="tabular-nums opacity-80">·{it.price} ₽</span>
+                      )}
+                    </button>
+                    {isOpen && (
+                      <EquipmentSwapPopover
+                        rental={rental}
+                        replacingIdx={idx}
+                        onClose={() => setSwapIdx(null)}
+                      />
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
@@ -462,4 +497,188 @@ function pluralPos(n: number): string {
   if (n10 === 1 && n100 !== 11) return "позиция";
   if (n10 >= 2 && n10 <= 4 && (n100 < 10 || n100 >= 20)) return "позиции";
   return "позиций";
+}
+
+/**
+ * v0.6.10: inline popover для замены/удаления экипировки.
+ *
+ * Дизайн — pickers.jsx EquipmentSwapPicker (стр. 41-83):
+ *   • Заголовок «Заменить «X»»
+ *   • Поиск по каталогу
+ *   • Список альтернатив (free → бесплатно, иначе +N ₽/сут)
+ *   • Footer: «Убрать» / «пересчёт за остаток дней»
+ *
+ * Реализация через existing equipmentChangeAsync — собираем newEquipmentJson
+ * вручную (replaced или removed) и шлём.
+ */
+function EquipmentSwapPopover({
+  rental,
+  replacingIdx,
+  onClose,
+}: {
+  rental: Rental;
+  replacingIdx: number;
+  onClose: () => void;
+}) {
+  const equipment = rental.equipmentJson ?? [];
+  const replacing = equipment[replacingIdx];
+  const { data: catalog = [] } = useApiEquipment();
+  const [filter, setFilter] = useState("");
+  const [saving, setSaving] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
+
+  // ESC + клик мимо закрывают
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    const onDocClick = (e: MouseEvent) => {
+      if (!ref.current) return;
+      if (e.target instanceof Node && !ref.current.contains(e.target)) {
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    // отложить регистрацию click — иначе тот же клик что открыл popover
+    // его сразу закроет
+    const id = window.setTimeout(() => {
+      window.addEventListener("mousedown", onDocClick);
+    }, 0);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.clearTimeout(id);
+      window.removeEventListener("mousedown", onDocClick);
+    };
+  }, [onClose]);
+
+  if (!replacing) return null;
+
+  const items = catalog.filter(
+    (c) =>
+      c.name.toLowerCase().includes(filter.toLowerCase()) &&
+      c.id !== replacing.itemId,
+  );
+
+  const apply = async (
+    next: Array<{
+      itemId?: number | null;
+      name: string;
+      price: number;
+      free: boolean;
+    }>,
+  ) => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      await equipmentChangeAsync({
+        rentalId: rental.id,
+        newEquipmentJson: next,
+        payNow: false,
+      });
+      toast.success("Экипировка изменена", "");
+      onClose();
+    } catch (e) {
+      toast.error("Не удалось изменить", (e as Error).message ?? "");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSelect = (catId: number) => {
+    const cat = catalog.find((c) => c.id === catId);
+    if (!cat) return;
+    const next = equipment.map((e, i) =>
+      i === replacingIdx
+        ? {
+            itemId: cat.id,
+            name: cat.name,
+            price: cat.price,
+            free: cat.isFree,
+          }
+        : { itemId: e.itemId ?? null, name: e.name, price: e.price, free: e.free },
+    );
+    void apply(next);
+  };
+
+  const handleRemove = () => {
+    const next = equipment
+      .filter((_, i) => i !== replacingIdx)
+      .map((e) => ({
+        itemId: e.itemId ?? null,
+        name: e.name,
+        price: e.price,
+        free: e.free,
+      }));
+    void apply(next);
+  };
+
+  return (
+    <div
+      ref={ref}
+      role="dialog"
+      aria-label={`Заменить ${replacing.name}`}
+      className="absolute left-0 top-full z-50 mt-1.5 w-[300px] rounded-2xl border border-border bg-surface shadow-card-lg overflow-hidden animate-fade-in"
+    >
+      <div className="border-b border-border px-3 pt-3 pb-2">
+        <div className="flex items-start gap-2">
+          <div className="flex-1 min-w-0">
+            <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2 truncate">
+              Заменить «{replacing.name}»
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-6 w-6 items-center justify-center rounded-full text-muted hover:bg-surface-soft hover:text-ink"
+            aria-label="Закрыть"
+          >
+            <X size={12} />
+          </button>
+        </div>
+        <input
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          autoFocus
+          placeholder="Найти…"
+          className="mt-2 h-8 w-full rounded-[8px] border border-border bg-white px-2.5 text-[12px] text-ink outline-none focus:border-blue-600"
+        />
+      </div>
+      <div className="max-h-[260px] overflow-y-auto scrollbar-thin px-1.5 py-1.5">
+        {items.length === 0 && (
+          <div className="px-3 py-4 text-center text-[12px] text-muted-2">
+            Ничего не найдено
+          </div>
+        )}
+        {items.map((it) => (
+          <button
+            key={it.id}
+            type="button"
+            disabled={saving}
+            onClick={() => handleSelect(it.id)}
+            className="w-full flex items-center gap-2 px-2 py-1.5 rounded-[8px] hover:bg-blue-50 text-left disabled:opacity-50"
+          >
+            <span className="flex-1 text-[12px] text-ink-2 truncate">{it.name}</span>
+            {it.isFree ? (
+              <span className="text-[10px] font-bold text-green-ink">бесплатно</span>
+            ) : (
+              <span className="text-[10.5px] font-semibold text-orange-ink tabular-nums">
+                +{it.price} ₽/сут
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+      <div className="border-t border-border bg-surface-soft px-3 py-2 flex items-center justify-between">
+        <button
+          type="button"
+          onClick={handleRemove}
+          disabled={saving}
+          className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-ink hover:underline disabled:opacity-50"
+        >
+          <Trash2 size={11} /> Убрать
+        </button>
+        <span className="text-[10.5px] text-muted-2">пересчёт за остаток дней</span>
+      </div>
+    </div>
+  );
 }

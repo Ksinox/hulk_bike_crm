@@ -1,13 +1,13 @@
 /**
- * KpiStrip — горизонтальная панель KPI карточки аренды:
- *   • [Просрочка / Срок]
- *   • [Эта аренда]
- *   • [За всё время]
- *   • [Долг (если > 0)]
+ * KpiStrip — горизонтальная панель KPI карточки аренды.
+ *
+ * v0.6.10 порядок ячеек (по design/claude-design/Hulk Bike CRM/rental-card.jsx):
+ *   • Без долга: [Срок | Эта аренда | За всё время]
+ *   • Есть просрочка: [Просрочка | Долг | Эта аренда | За всё время]
+ *   • Есть долг без просрочки: [Срок | Долг | Эта аренда | За всё время]
  *   + кнопки «Принять оплату» / «Завершить»
  *
- * Цвета и компактная плотность подобраны под дизайн v0.6
- * (см. design/claude-design/Hulk Bike CRM/rental-card.jsx ~258-340).
+ * Долг/просрочка — СЛЕВА сразу после Срока (или вместо него при просрочке).
  */
 import type React from "react";
 import { AlertTriangle, Check, Wallet } from "lucide-react";
@@ -99,6 +99,11 @@ export function KpiStrip({
     action?: { icon: typeof AlertTriangle; onClick: () => void; title: string };
   }> = [];
 
+  // v0.6.10: новый порядок ячеек по дизайну:
+  //   • Если нет долга:        [Срок | Эта аренда | За всё время]
+  //   • Если есть просрочка:   [Просрочка | Долг | Эта аренда | За всё время]
+  //   • Если есть долг (без просрочки): [Срок | Долг | Эта аренда | За всё время]
+  // Просрочка/долг — СЛЕВА, не справа.
   if (isOverdue) {
     cells.push({
       key: "overdue",
@@ -128,22 +133,6 @@ export function KpiStrip({
     });
   }
 
-  cells.push({
-    key: "this",
-    label: "Эта аренда",
-    value: `${fmt(rental.sum)} ₽`,
-    sub: extensionsCount > 0 ? `продлений · ${extensionsCount}` : "сумма этой аренды",
-    tone: "ink",
-  });
-
-  cells.push({
-    key: "lifetime",
-    label: "За всё время",
-    value: `${fmt(paidIn)} ₽`,
-    sub: "всех аренд клиента",
-    tone: "blue",
-  });
-
   if (totalDebt > 0) {
     const parts: string[] = [];
     if (pending > 0) parts.push(`не опл ${fmt(pending)}`);
@@ -167,6 +156,22 @@ export function KpiStrip({
       },
     });
   }
+
+  cells.push({
+    key: "this",
+    label: "Эта аренда",
+    value: `${fmt(rental.sum)} ₽`,
+    sub: extensionsCount > 0 ? `продлений · ${extensionsCount}` : "сумма этой аренды",
+    tone: "ink",
+  });
+
+  cells.push({
+    key: "lifetime",
+    label: "За всё время",
+    value: `${fmt(paidIn)} ₽`,
+    sub: "всех аренд клиента",
+    tone: "blue",
+  });
 
   return (
     <div className="rounded-2xl bg-surface border border-border shadow-card-sm overflow-hidden">
