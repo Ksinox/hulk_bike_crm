@@ -454,25 +454,76 @@ export function TermsTab({
             label="Оплата"
             value={PAYMENT_LABEL[rental.paymentMethod]}
           />
-          <InfoCell
-            icon={ShieldCheck}
-            label="Залог"
-            value={
-              // v0.5.6: если залог — предмет, показываем его, а не «0 ₽».
-              rental.depositItem
-                ? rental.depositItem
-                : `${fmt(rental.deposit ?? DEPOSIT_AMOUNT)} ₽`
-            }
-            hint={
-              rental.depositReturned === true
-                ? "возвращён клиенту"
-                : rental.depositReturned === false
-                  ? "удержан"
-                  : rental.depositItem
-                    ? "предмет залога"
-                    : "на балансе компании"
-            }
-          />
+          {/* v0.5.6: залог — кастомная ячейка вместо InfoCell, потому
+              что нужно:
+              • показать сумму ИЛИ название предмета
+              • если деньги меньше исходных — красная подсветка
+                «ПОПОЛНИТЬ +N ₽»
+              Эта ячейка отражает живой остаток залога — оператор
+              видит сразу что не хватает. */}
+          {(() => {
+            const isItem = !!rental.depositItem;
+            const current = rental.deposit ?? 0;
+            const original =
+              (rental as { depositOriginal?: number }).depositOriginal ??
+              current;
+            const needsTopup = !isItem && current < original && original > 0;
+            const shortage = needsTopup ? original - current : 0;
+            return (
+              <div
+                className={
+                  needsTopup
+                    ? "rounded-[10px] border-2 border-red-400 bg-red-soft/30 p-2 -m-2"
+                    : ""
+                }
+              >
+                <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
+                  Залог
+                </div>
+                <div className="mt-1 flex items-start gap-2">
+                  <ShieldCheck
+                    size={14}
+                    className={
+                      "mt-[3px] shrink-0 " +
+                      (needsTopup ? "text-red-600" : "text-muted-2")
+                    }
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div
+                      className={
+                        "text-[13px] font-semibold " +
+                        (needsTopup ? "text-red-ink" : "text-ink")
+                      }
+                    >
+                      {isItem
+                        ? rental.depositItem
+                        : `${fmt(current)} ₽`}
+                      {needsTopup && (
+                        <span className="ml-1 text-muted-2 font-normal">
+                          из {fmt(original)} ₽
+                        </span>
+                      )}
+                    </div>
+                    {needsTopup ? (
+                      <div className="mt-0.5 text-[10px] font-bold uppercase tracking-wider text-red-ink">
+                        ⚠ пополнить +{fmt(shortage)} ₽
+                      </div>
+                    ) : (
+                      <div className="mt-0.5 text-[10px] uppercase tracking-wider text-muted-2">
+                        {rental.depositReturned === true
+                          ? "возвращён клиенту"
+                          : rental.depositReturned === false
+                            ? "удержан"
+                            : isItem
+                              ? "предмет залога"
+                              : "на балансе компании"}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
           <InfoCell
             icon={HelmetIcon}
             label={

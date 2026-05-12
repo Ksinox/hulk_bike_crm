@@ -41,6 +41,11 @@ export function adaptRental(
     days: r.days,
     sum: r.sum,
     deposit: r.deposit,
+    // v0.5.6: подтягиваем предметный залог (паспорт и т.п.) и исходную
+    // сумму — без этого UI показывал «0 ₽» вместо названия предмета,
+    // и не мог подсветить «залог нужно пополнить» когда deposit < original.
+    depositItem: r.depositItem ?? null,
+    depositOriginal: (r as { depositOriginal?: number }).depositOriginal ?? r.deposit,
     depositReturned: r.depositReturned ?? undefined,
     equipment: r.equipment,
     // v0.4.70: equipmentJson маппился ранее ТОЛЬКО для legacy через
