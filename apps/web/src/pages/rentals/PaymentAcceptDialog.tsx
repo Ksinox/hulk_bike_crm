@@ -827,6 +827,37 @@ export function PaymentAcceptDialog({
     0,
   );
   const [equipDialogOpen, setEquipDialogOpen] = useState(false);
+
+  // v0.6.5: «жёлтая зона» в floating-календаре + предупреждение «не хватает».
+  // Считаем только в режиме «по сумме клиента» — там оператор сам вводит
+  // amount, и легко получить недопокрытие. Когда mode='days' — оператор
+  // явно выбрал N дней, формула «не хватает» теряет смысл.
+  // Логика (по ТЗ):
+  //   amount      = ввод клиента (acceptedStr)
+  //   debtPortion = долг (если clearDebt) или 0 (если forgiveDebt)
+  //   dailyTotal  = ставка аренды / сут + экипировка / сут (текущая)
+  //   coveredDays = floor( max(0, amount - debtPortion) / dailyTotal )
+  //   uncoveredDays = max(0, extDays - coveredDays)
+  //   shortage    = max(0, extDays * dailyTotal + debtPortion - amount)
+  const dailyExtTotal = extDailyRate + equipDaily;
+  const debtPortionForShortage = forgiveDebt ? 0 : dueAmount;
+  const amountForShortage = accepted;
+  const coveredDaysShortage =
+    mode === "amount"
+      ? Math.floor(
+          Math.max(0, amountForShortage - debtPortionForShortage) /
+            Math.max(1, dailyExtTotal),
+        )
+      : extDays;
+  const uncoveredDaysShortage =
+    mode === "amount" ? Math.max(0, extDays - coveredDaysShortage) : 0;
+  const shortageAmount =
+    mode === "amount" && uncoveredDaysShortage > 0
+      ? Math.max(
+          0,
+          extDays * dailyExtTotal + debtPortionForShortage - amountForShortage,
+        )
+      : 0;
   return (
     <div
       className={cn(
@@ -1090,53 +1121,65 @@ export function PaymentAcceptDialog({
             )}
           </div>
 
-          {/* ─── STEP 3: экипировка inline (только если есть) ─────────── */}
-          {equipment.length > 0 && (
-            <div className="border-b border-border px-5 py-4">
-              <div className="mb-2 flex items-center gap-2">
-                <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-[11px] font-bold text-white">
-                  {isOverdueState ? "3" : "2"}
-                </span>
-                <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
-                  Экипировка
+          {/* ─── STEP 3: экипировка на новый период ─────────────────────
+              v0.6.5: чипы кликабельны — открывают EquipmentChangeDialog
+              для свапа (replaceAt) и добавления. По дизайну в правом
+              верхнем углу — итог +N ₽/сут, и pill «+ Добавить». */}
+          <div className="border-b border-border px-5 py-4">
+            <div className="mb-2 flex items-center gap-2">
+              <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-[11px] font-bold text-white">
+                {isOverdueState ? "3" : "2"}
+              </span>
+              <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
+                Экипировка на новый период
+              </div>
+              <span className="ml-auto text-[11px] text-muted">
+                {equipDaily > 0 ? `+${equipDaily} ₽/сут` : "бесплатно"}
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-1.5 rounded-[12px] border border-border bg-white p-2 min-h-[60px]">
+              {equipment.length === 0 && (
+                <div className="px-2 py-2 text-[11.5px] text-muted-2">
+                  Без экипировки
                 </div>
-                <span className="ml-auto text-[11px] text-muted">
-                  {equipDaily > 0 ? `+${equipDaily} ₽/сут` : "бесплатно"}
-                </span>
+              )}
+              {equipment.map((it, idx) => (
                 <button
+                  key={`${it.itemId ?? "noid"}-${idx}`}
                   type="button"
                   onClick={() => setEquipDialogOpen(true)}
-                  className="inline-flex items-center gap-1 rounded-full border border-border bg-white px-2.5 py-1 text-[11px] font-semibold text-ink-2 hover:border-blue-400"
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full pl-2.5 pr-1.5 py-1 text-[11.5px] font-semibold border border-transparent transition-colors hover:ring-2 hover:ring-blue-100",
+                    it.free
+                      ? "text-green-ink"
+                      : "text-orange-ink",
+                  )}
+                  style={{
+                    background: it.free
+                      ? "hsl(var(--green-soft))"
+                      : "hsl(var(--orange-soft))",
+                  }}
+                  title="Поменять / убрать"
                 >
-                  <Pencil size={10} /> Изменить
-                </button>
-              </div>
-              <div className="flex flex-wrap gap-1.5 rounded-[10px] border border-border bg-white p-2">
-                {equipment.map((it, idx) => (
-                  <span
-                    key={`${it.itemId ?? "noid"}-${idx}`}
-                    className={cn(
-                      "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11.5px] font-semibold",
-                      it.free
-                        ? "text-green-ink"
-                        : "text-orange-ink",
-                    )}
-                    style={{
-                      background: it.free
-                        ? "hsl(var(--green-soft))"
-                        : "hsl(var(--orange-soft))",
-                    }}
-                  >
-                    <Shirt size={11} />
-                    {it.name}
-                    {!it.free && (
-                      <span className="tabular-nums">·{it.price}₽</span>
-                    )}
+                  <Shirt size={11} />
+                  {it.name}
+                  {!it.free && (
+                    <span className="tabular-nums">·{it.price}₽</span>
+                  )}
+                  <span className="ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-white/70">
+                    <Repeat size={9} />
                   </span>
-                ))}
-              </div>
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => setEquipDialogOpen(true)}
+                className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11.5px] font-semibold text-blue-700 border border-dashed border-blue-100 hover:bg-blue-50"
+              >
+                <Pencil size={10} /> Изменить
+              </button>
             </div>
-          )}
+          </div>
 
           {/* ─── STEP: депозит клиента ────────────────────────────────── */}
           {depositBalance > 0 && (
@@ -1394,7 +1437,31 @@ export function PaymentAcceptDialog({
             </div>
           )}
 
-          {/* ─── Финальная карточка «Будет проведено» ─────────────────── */}
+          {/* v0.6.5: предупреждение «не хватает» — над финальной карточкой
+              только в режиме «по сумме клиента». */}
+          {shortageAmount > 0 && (
+            <div className="px-5 pt-4">
+              <div
+                className="rounded-[10px] px-3 py-2 text-[11.5px] font-semibold"
+                style={{
+                  background: "hsl(var(--red-soft))",
+                  color: "hsl(var(--red-ink))",
+                }}
+              >
+                Не хватает {fmt(shortageAmount)} ₽ для {uncoveredDaysShortage}
+                {" "}
+                {uncoveredDaysShortage === 1
+                  ? "дня"
+                  : uncoveredDaysShortage < 5
+                    ? "дней"
+                    : "дней"}{" "}
+                продления — оператор может оставить меньше дней или
+                клиент доплатит позже.
+              </div>
+            </div>
+          )}
+
+          {/* ─── Финальная карточка «Будет проведено» (детализация) ─── */}
           <div className="px-5 py-4">
             <div className="rounded-[12px] border border-border bg-surface-soft px-4 py-3">
               <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-2">
@@ -1470,27 +1537,123 @@ export function PaymentAcceptDialog({
           </div>
         </div>
 
-        <div className="flex items-center justify-end gap-2 rounded-b-2xl border-t border-border bg-surface-soft px-5 py-3">
-          <button
-            type="button"
-            onClick={requestClose}
-            className="rounded-full border border-border bg-surface px-4 py-1.5 text-[12px] font-semibold text-muted hover:bg-border"
-          >
-            Отмена
-          </button>
-          <button
-            type="button"
-            onClick={submit}
-            disabled={saving || totalReceived <= 0}
-            className={cn(
-              "inline-flex items-center gap-1 rounded-full px-4 py-1.5 text-[12px] font-bold text-white",
-              saving || totalReceived <= 0
-                ? "cursor-not-allowed bg-surface text-muted-2"
-                : "bg-blue-600 hover:bg-blue-700",
-            )}
-          >
-            <Check size={13} /> Принять оплату
-          </button>
+        {/* ─── FOOTER v0.6.5 ─── 2 колонки: краткая раскладка + К ПРИЁМУ ─── */}
+        <div className="rounded-b-2xl border-t border-border bg-surface-soft px-5 py-3">
+          <div className="grid grid-cols-12 items-end gap-4">
+            <div className="col-span-7 flex flex-col gap-1 text-[11.5px]">
+              {(() => {
+                const debtPortionFooter = forgiveDebt ? 0 : dueAmount;
+                return (
+                  <>
+                    {debtPortionFooter > 0 && (
+                      <FooterRow
+                        label={`Закрытие просрочки${overdueDaysHeader > 0 ? ` · ${overdueDaysHeader} дн` : ""}`}
+                        value={`${fmt(debtPortionFooter)} ₽`}
+                        tone="red"
+                      />
+                    )}
+                    {forgiveDebt && overdueBalanceRaw > 0 && (
+                      <FooterRow
+                        label="Просрочка прощена"
+                        value={`−${fmt(overdueBalanceRaw)} ₽`}
+                        tone="green"
+                      />
+                    )}
+                    {extDays > 0 && (
+                      <FooterRow
+                        label={`Аренда ${extDays} × ${extDailyRate} ₽`}
+                        value={`${fmt(extDailyRate * extDays)} ₽`}
+                      />
+                    )}
+                    {extDays > 0 && equipDaily > 0 && (
+                      <FooterRow
+                        label={`Экипировка ${extDays} × ${equipDaily} ₽`}
+                        value={`${fmt(equipDaily * extDays)} ₽`}
+                      />
+                    )}
+                    {depositToUse > 0 && (
+                      <FooterRow
+                        label="Списано с депозита"
+                        value={`−${fmt(depositToUse)} ₽`}
+                        tone="green"
+                      />
+                    )}
+                  </>
+                );
+              })()}
+              {depositBalance > 0 && (
+                <label className="mt-1 flex cursor-pointer items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={useDeposit}
+                    onChange={(e) => setUseDeposit(e.target.checked)}
+                    disabled={depositBalance === 0}
+                    className="h-3.5 w-3.5 accent-blue-600"
+                  />
+                  <span className="text-[11.5px] text-ink-2">
+                    Списать с депозита ({fmt(depositBalance)} ₽)
+                  </span>
+                </label>
+              )}
+            </div>
+            <div className="col-span-5 text-right">
+              <div className="text-[10.5px] font-bold uppercase tracking-wider text-muted-2">
+                К приёму
+              </div>
+              <div className="font-display text-[28px] font-extrabold leading-none tabular-nums text-blue-700 mt-0.5">
+                {fmt(Math.max(0, accepted))} ₽
+              </div>
+              <div className="mt-2 flex items-center justify-end gap-2">
+                <div className="flex rounded-full border border-border bg-white p-0.5">
+                  {METHODS.map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => setMethod(m.id)}
+                      className={cn(
+                        "rounded-full px-3 py-1 text-[11.5px] font-semibold transition-colors",
+                        method === m.id
+                          ? "bg-blue-600 text-white"
+                          : "text-muted hover:text-ink-2",
+                      )}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={requestClose}
+                  className="rounded-full px-3 py-2 text-[12.5px] font-semibold text-muted hover:text-ink-2"
+                >
+                  Отмена
+                </button>
+                <button
+                  type="button"
+                  onClick={submit}
+                  disabled={
+                    saving ||
+                    (totalReceived <= 0 && !forgiveDebt)
+                  }
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-[12.5px] font-bold text-white",
+                    saving || (totalReceived <= 0 && !forgiveDebt)
+                      ? "cursor-not-allowed bg-surface text-muted-2"
+                      : "bg-blue-600 hover:bg-blue-700",
+                  )}
+                >
+                  <Check size={14} />{" "}
+                  {extDays > 0 && (forgiveDebt || dueAmount > 0)
+                    ? "Принять и продлить"
+                    : extDays > 0
+                      ? "Принять и продлить"
+                      : forgiveDebt
+                        ? "Простить и закрыть"
+                        : "Принять"}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1504,6 +1667,8 @@ export function PaymentAcceptDialog({
           newEnd={newEnd}
           hasOverdue={isOverdueState}
           forgiveDebt={forgiveDebt}
+          coveredDays={coveredDaysShortage}
+          extDays={extDays}
         />
       )}
 
@@ -1534,6 +1699,8 @@ function CompactExtendCalendar({
   newEnd,
   hasOverdue,
   forgiveDebt,
+  coveredDays,
+  extDays,
 }: {
   startDate: Date;
   anchor: Date;
@@ -1541,6 +1708,10 @@ function CompactExtendCalendar({
   newEnd: Date;
   hasOverdue: boolean;
   forgiveDebt: boolean;
+  /** v0.6.5: сколько дней продления оплачены (для жёлтой зоны). */
+  coveredDays: number;
+  /** v0.6.5: всего дней продления (для определения uncovered). */
+  extDays: number;
 }) {
   const dayMs = 86_400_000;
   const stripTime = (d: Date) =>
@@ -1608,6 +1779,17 @@ function CompactExtendCalendar({
                 hasOverdue && !forgiveDebt && c.ms > anchorMs && c.ms <= todayMs;
               const greenStart = hasOverdue ? todayMs : anchorMs;
               const inExtension = c.ms > greenStart && c.ms <= endMs;
+              // v0.6.5: dayOffset считаем от первого дня продления.
+              // Если день продления больше coveredDays — это «жёлтая зона».
+              const dayOffset =
+                inExtension
+                  ? Math.round((c.ms - greenStart) / dayMs)
+                  : 0;
+              const uncoveredZone =
+                inExtension &&
+                extDays > 0 &&
+                coveredDays < extDays &&
+                dayOffset > coveredDays;
               const isNewEnd = c.ms === endMs && endMs > anchorMs;
               const wd = c.d.getDay();
               let bg = "transparent";
@@ -1627,6 +1809,13 @@ function CompactExtendCalendar({
                 bg = "hsl(var(--green-soft))";
                 border = "hsl(var(--green-ink))";
                 ink = "hsl(var(--green-ink))";
+              }
+              if (uncoveredZone) {
+                // Жёлтая «не хватает» зона — продление выбрано, но клиент
+                // ввёл сумму меньше нужной.
+                bg = "#fef3c7"; // amber-100
+                border = "#d97706"; // amber-700
+                ink = "#92400e"; // amber-900
               }
               return (
                 <div
@@ -1664,6 +1853,39 @@ function Row({ label, value }: { label: string; value: string }) {
     <div className="flex justify-between">
       <span>{label}</span>
       <span className="tabular-nums">{value}</span>
+    </div>
+  );
+}
+
+/**
+ * v0.6.5: строка футера в 2-колоночном layout — слева подпись, справа
+ * сумма. Tones: 'red'/'green' для просрочки/прощения, undefined — нейтр.
+ */
+function FooterRow({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone?: "red" | "green";
+}) {
+  const labelClass =
+    tone === "red"
+      ? "text-red-ink"
+      : tone === "green"
+        ? "text-green-ink"
+        : "text-muted";
+  const valueClass =
+    tone === "red"
+      ? "text-red-ink"
+      : tone === "green"
+        ? "text-green-ink"
+        : "text-ink-2";
+  return (
+    <div className="flex items-center justify-between">
+      <span className={labelClass}>{label}</span>
+      <span className={cn("tabular-nums font-semibold", valueClass)}>{value}</span>
     </div>
   );
 }
