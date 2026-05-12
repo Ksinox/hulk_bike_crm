@@ -32,7 +32,6 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
-  DEPOSIT_AMOUNT,
   MODEL_LABEL,
   PAYMENT_LABEL,
   TARIFF_PERIOD_LABEL,
