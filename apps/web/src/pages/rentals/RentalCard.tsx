@@ -42,7 +42,6 @@ import { PaymentAcceptDialog } from "./PaymentAcceptDialog";
 import { SwapScooterDialog } from "./SwapScooterDialog";
 import { DamageReportDialog } from "./DamageReportDialog";
 import { DamageReportPaymentDialog } from "./DamageReportPaymentDialog";
-import { SecurityTopupDialog } from "./SecurityTopupDialog";
 import { EquipmentChangeDialog } from "./EquipmentChangeDialog";
 import { DocumentPreviewModal } from "./DocumentPreviewModal";
 import { useChainDamageReports } from "@/lib/api/damage-reports";
@@ -275,7 +274,6 @@ export function RentalCard({
   // на новой связке. Хранится rentalId, чтобы пережить перерендер.
   const [paymentRentalId, setPaymentRentalId] = useState<number | null>(null);
   // v0.4.49: модалки пополнения залога и изменения экипировки
-  const [securityTopupOpen, setSecurityTopupOpen] = useState(false);
   const [equipmentChangeOpen, setEquipmentChangeOpen] = useState(false);
   const [damageOpen, setDamageOpen] = useState(false);
   const [editingReportId, setEditingReportId] = useState<number | null>(null);
@@ -1379,10 +1377,13 @@ export function RentalCard({
         </div>
       )}
 
-      {/* v0.4.49: плашка залога — показывается только когда:
+      {/* v0.5.7: плашка залога — показывается только когда:
           - залог денежный (depositItem == null)
           - текущий deposit < исходного (deposit_original)
-          Кнопка «Пополнить» открывает SecurityTopupDialog. */}
+          Кнопка «Пополнить» теперь открывает PaymentAcceptDialog (единый
+          поток приёма оплат) — раньше был отдельный SecurityTopupDialog,
+          убрали ради единообразия: все денежные операции через одну
+          кнопку приёма. */}
       {(() => {
         const isItem =
           (rental as { depositItem?: string | null }).depositItem != null;
@@ -1414,7 +1415,7 @@ export function RentalCard({
             </div>
             <button
               type="button"
-              onClick={() => setSecurityTopupOpen(true)}
+              onClick={() => setPaymentRentalId(rental.id)}
               className={cn(
                 "shrink-0 rounded-full px-3 py-1 text-[11px] font-bold text-white transition-colors",
                 isEmpty
@@ -1636,17 +1637,6 @@ export function RentalCard({
         <PaymentAcceptDialogContainer
           rentalId={paymentRentalId}
           onClose={() => setPaymentRentalId(null)}
-        />
-      )}
-      {securityTopupOpen && (
-        <SecurityTopupDialog
-          rentalId={rental.id}
-          currentDeposit={rental.deposit ?? 0}
-          originalDeposit={
-            (rental as { depositOriginal?: number }).depositOriginal ??
-            (rental.deposit ?? 0)
-          }
-          onClose={() => setSecurityTopupOpen(false)}
         />
       )}
       {equipmentChangeOpen && (
