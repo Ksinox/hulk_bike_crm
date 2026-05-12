@@ -322,6 +322,12 @@ function ActivityRow({
   type: FeedType;
   amount: number;
 }) {
+  // v0.6.8: open/hover state для плавной раскрывашки.
+  //   • setOpen(true)  — onMouseEnter / клик / focus.
+  //   • setOpen(false) — onMouseLeave / повторный клик / blur.
+  // Анимация — через CSS-grid (grid-template-rows 0fr ↔ 1fr) — это
+  // даёт плавное «складывание» БЕЗ фиксированного max-height; высота
+  // блока считается браузером по контенту.
   const [open, setOpen] = useState(false);
   const meta = FEED_TYPE[type];
   const IconC = meta.icon;
@@ -343,17 +349,29 @@ function ActivityRow({
         onClick={() => setOpen((o) => !o)}
         onMouseEnter={() => setOpen(true)}
         onMouseLeave={() => setOpen(false)}
-        className="flex-1 min-w-0 text-left rounded-[14px] border border-transparent hover:border-border hover:shadow-card-sm hover:bg-surface transition-all cursor-pointer"
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        className={cn(
+          "flex-1 min-w-0 text-left rounded-[14px] border border-transparent cursor-pointer",
+          // v0.6.8: плавный hover — background и border одновременно.
+          "transition-[background-color,border-color,box-shadow] duration-200 ease-out",
+          "hover:border-border hover:shadow-card-sm",
+          open ? "bg-blue-50/40" : "hover:bg-surface",
+        )}
       >
         <div className="flex items-stretch">
+          {/* v0.6.8: type-stripe — на hover/open становится толще и насыщеннее. */}
           <div
-            className="w-[3px] rounded-l-[14px] shrink-0"
+            className={cn(
+              "rounded-l-[14px] shrink-0 transition-[width,opacity] duration-200 ease-out",
+              open ? "w-[4px] opacity-100" : "w-[3px] opacity-80",
+            )}
             style={{ background: TONE_RAW[meta.tone] }}
           />
           <div className="flex-1 min-w-0 p-2.5 pl-3">
             <div className="flex items-start gap-3">
               <div
-                className="relative h-9 w-9 shrink-0 rounded-full flex items-center justify-center"
+                className="relative h-9 w-9 shrink-0 rounded-full flex items-center justify-center transition-transform duration-200 ease-out group-hover:scale-[1.04]"
                 style={{ background: TONE_BG[meta.tone], color: TONE_INK[meta.tone] }}
               >
                 <IconC size={15} />
@@ -383,16 +401,44 @@ function ActivityRow({
                   {item.summary}
                 </div>
 
+                {/* v0.6.8: CSS-grid плавная раскрывашка.
+                    Wrapper: grid-template-rows 0fr → 1fr (250ms ease-out).
+                    Inner: overflow-hidden — обрезает контент пока он
+                    «складывается». Padding-top анимируется отдельно
+                    чтобы между основной строкой и diff'ом плавно
+                    появлялся зазор. */}
                 {hasDiff && diff && (
                   <div
                     className={cn(
-                      "grid grid-cols-1 gap-1.5 mt-2 transition-all overflow-hidden",
-                      open ? "max-h-[400px] opacity-100" : "max-h-0 opacity-0",
+                      "grid transition-[grid-template-rows,padding-top,opacity] duration-[250ms] ease-out",
+                      open
+                        ? "grid-rows-[1fr] opacity-100 pt-2"
+                        : "grid-rows-[0fr] opacity-0 pt-0",
                     )}
+                    aria-hidden={!open}
                   >
-                    {Object.entries(diff).map(([k, d]) => (
-                      <DiffRow key={k} field={d} />
-                    ))}
+                    <div className="overflow-hidden">
+                      <div className="grid grid-cols-1 gap-1.5">
+                        {Object.entries(diff).map(([k, d], idx) => (
+                          <div
+                            key={k}
+                            className={cn(
+                              "transition-[opacity,transform] duration-200 ease-out",
+                              open
+                                ? "opacity-100 translate-y-0"
+                                : "opacity-0 -translate-y-1",
+                            )}
+                            style={{
+                              transitionDelay: open
+                                ? `${Math.min(idx * 30, 120)}ms`
+                                : "0ms",
+                            }}
+                          >
+                            <DiffRow field={d} />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
@@ -487,6 +533,9 @@ function DiffPill({
     <span
       className={cn(
         "inline-flex items-center px-1.5 py-0.5 rounded-md tabular-nums font-semibold",
+        // v0.6.8: лёгкая scale-in анимация (origin центр), идёт вместе
+        // с раскрытием diff-блока через CSS-grid.
+        "transition-transform duration-200 ease-out",
         isFrom
           ? "bg-red-soft text-red-ink line-through decoration-red-ink/40"
           : "bg-emerald-100 text-emerald-700",
