@@ -50,12 +50,52 @@ const PatchClientBody = CreateClientBody.partial().extend({
 
 export async function clientsRoutes(app: FastifyInstance) {
   // GET /api/clients
+  // v0.5.6: дополнительно агрегируем долг по ущербу клиента из ВСЕХ его
+  // аренд (включая завершённые). Поле `unpaidDamageDebt` используется
+  // фронтом для метки «опасный клиент» в пикере при создании новой
+  // аренды + для плашки на карточке клиента «висит долг X ₽».
   app.get("/", async () => {
     const rows = await db.select().from(clients).orderBy(clients.name);
-    return { items: rows };
+    // Один SQL-запрос: для каждого клиента считаем сумму
+    // (damage_reports.total − depositCovered − Σ paid damage payments).
+    // GROUP BY clients.id, JOIN с rentals → damage_reports → payments.
+    const debtsRaw = await db.execute(sql`
+      SELECT
+        r.client_id AS "clientId",
+        COALESCE(SUM(
+          GREATEST(
+            0,
+            dr.total - dr.deposit_covered - COALESCE((
+              SELECT SUM(p.amount)
+                FROM payments p
+               WHERE p.damage_report_id = dr.id
+                 AND p.type = 'damage'
+                 AND p.paid = true
+            ), 0)
+          )
+        ), 0)::int AS "unpaidDamageDebt"
+      FROM damage_reports dr
+      JOIN rentals r ON r.id = dr.rental_id
+      GROUP BY r.client_id
+    `);
+    const debtRows = (debtsRaw as unknown as { rows?: Array<{ clientId: number; unpaidDamageDebt: number }> }).rows
+      ?? (debtsRaw as unknown as Array<{ clientId: number; unpaidDamageDebt: number }>);
+    const debtMap = new Map<number, number>(
+      (Array.isArray(debtRows) ? debtRows : []).map((d) => [
+        Number(d.clientId),
+        Number(d.unpaidDamageDebt),
+      ]),
+    );
+    return {
+      items: rows.map((r) => ({
+        ...r,
+        unpaidDamageDebt: debtMap.get(r.id) ?? 0,
+      })),
+    };
   });
 
   // GET /api/clients/:id
+  // v0.5.6: тот же агрегат unpaidDamageDebt что в /api/clients.
   app.get<{ Params: { id: string } }>("/:id", async (req, reply) => {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) {
@@ -63,7 +103,29 @@ export async function clientsRoutes(app: FastifyInstance) {
     }
     const [row] = await db.select().from(clients).where(eq(clients.id, id));
     if (!row) return reply.code(404).send({ error: "not found" });
-    return row;
+    const debtRaw = await db.execute(sql`
+      SELECT COALESCE(SUM(
+        GREATEST(
+          0,
+          dr.total - dr.deposit_covered - COALESCE((
+            SELECT SUM(p.amount)
+              FROM payments p
+             WHERE p.damage_report_id = dr.id
+               AND p.type = 'damage'
+               AND p.paid = true
+          ), 0)
+        )
+      ), 0)::int AS "unpaidDamageDebt"
+      FROM damage_reports dr
+      JOIN rentals r ON r.id = dr.rental_id
+      WHERE r.client_id = ${id}
+    `);
+    const debtRow = ((debtRaw as unknown as { rows?: Array<{ unpaidDamageDebt: number }> }).rows
+      ?? (debtRaw as unknown as Array<{ unpaidDamageDebt: number }>))?.[0];
+    return {
+      ...row,
+      unpaidDamageDebt: Number(debtRow?.unpaidDamageDebt ?? 0),
+    };
   });
 
   // POST /api/clients

@@ -71,6 +71,8 @@ export type Rental = {
   days: number;
   sum: number;
   deposit: number;
+  /** Описание предмета, если залог не деньгами (паспорт, телефон и т.д.). */
+  depositItem?: string | null;
   depositReturned?: boolean;
   equipment: string[];
   /**

@@ -457,13 +457,20 @@ export function TermsTab({
           <InfoCell
             icon={ShieldCheck}
             label="Залог"
-            value={`${fmt(rental.deposit ?? DEPOSIT_AMOUNT)} ₽`}
+            value={
+              // v0.5.6: если залог — предмет, показываем его, а не «0 ₽».
+              rental.depositItem
+                ? rental.depositItem
+                : `${fmt(rental.deposit ?? DEPOSIT_AMOUNT)} ₽`
+            }
             hint={
               rental.depositReturned === true
                 ? "возвращён клиенту"
                 : rental.depositReturned === false
                   ? "удержан"
-                  : "на балансе компании"
+                  : rental.depositItem
+                    ? "предмет залога"
+                    : "на балансе компании"
             }
           />
           <InfoCell

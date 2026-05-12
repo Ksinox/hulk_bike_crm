@@ -435,7 +435,14 @@ export function NewRentalModal({
                               Свободные клиенты ({filteredClients.length})
                             </div>
                           )}
-                          {filteredClients.map((c) => (
+                          {filteredClients.map((c) => {
+                            // v0.5.6: метка о непогашенном ущербе. Если у
+                            // клиента висит долг по прошлым актам — красный
+                            // бейдж, чтобы оператор подумал прежде чем
+                            // выдавать ему новый скутер.
+                            const debt = c.unpaidDamageDebt ?? 0;
+                            const hasDebt = debt > 0;
+                            return (
                             <button
                               key={c.id}
                               type="button"
@@ -444,6 +451,11 @@ export function NewRentalModal({
                                 setClientOpen(false);
                               }}
                               className="flex w-full items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-blue-50"
+                              title={
+                                hasDebt
+                                  ? `Висит долг по ущербу: ${debt.toLocaleString("ru-RU")} ₽`
+                                  : undefined
+                              }
                             >
                               <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-surface-soft text-[10px] font-bold text-ink-2">
                                 {initialsOf(c.name)}
@@ -456,11 +468,17 @@ export function NewRentalModal({
                                   {c.phone}
                                 </div>
                               </div>
+                              {hasDebt && (
+                                <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-red-soft px-2 py-0.5 text-[10px] font-bold text-red-ink tabular-nums">
+                                  ⚠ долг {debt.toLocaleString("ru-RU")} ₽
+                                </span>
+                              )}
                               <span className="shrink-0 text-[11px] font-semibold text-muted-2">
                                 {c.rating}
                               </span>
                             </button>
-                          ))}
+                            );
+                          })}
                           </>
                         )}
                       </div>

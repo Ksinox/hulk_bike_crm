@@ -373,6 +373,23 @@ export function ClientCard({ client }: { client: Client }) {
           </div>
         </div>
       )}
+      {/* v0.5.6: отдельная плашка по долгу за УЩЕРБ — агрегат по всем
+          арендам клиента (включая завершённые). Это «висит на клиенте»
+          поведение, которое заказчик просил: после завершения аренды с
+          ущербом долг не теряется, а отображается на профиле клиента. */}
+      {(client.unpaidDamageDebt ?? 0) > 0 && (
+        <div className="flex items-center gap-2 rounded-[14px] bg-red-soft/70 p-3 text-[13px] text-red-ink">
+          <AlertTriangle size={16} className="shrink-0" />
+          <div className="min-w-0 flex-1">
+            <b>
+              Долг по ущербу: {fmt(client.unpaidDamageDebt ?? 0)} ₽
+            </b>
+            <span className="ml-2 text-[12px] text-red-ink/80">
+              по всем актам клиента (включая завершённые аренды)
+            </span>
+          </div>
+        </div>
+      )}
       {client.debt > 0 && (
         <div className="flex items-center gap-2 rounded-[14px] bg-orange-soft/70 p-3 text-[13px] text-orange-ink">
           <AlertTriangle size={16} className="shrink-0" />

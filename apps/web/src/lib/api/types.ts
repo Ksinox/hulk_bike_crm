@@ -30,6 +30,14 @@ export type ApiClient = {
   unreachable: boolean;
   /** v0.3.9: баланс депозита (неиспользованные средства). */
   depositBalance?: number;
+  /**
+   * v0.5.6: агрегат непогашенного долга по ущербу клиента по ВСЕМ его
+   * арендам (включая завершённые). Сумма = Σ(damage_reports.total
+   * − depositCovered − Σ paid damage payments) по всем damage_reports
+   * клиента. Используется для метки «опасный клиент» в пикере и для
+   * плашки на карточке.
+   */
+  unpaidDamageDebt?: number;
 
   birthDate: string | null;
   passportSeries: string | null;

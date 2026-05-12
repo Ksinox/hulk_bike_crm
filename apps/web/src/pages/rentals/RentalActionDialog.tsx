@@ -323,7 +323,7 @@ export function RentalActionDialog({
       return;
     }
     const totalAmount = items.reduce((s, it) => s + it.finalPrice, 0);
-    const depositCovered = Math.min(totalAmount, rental.deposit || 2000);
+    const depositCovered = Math.min(totalAmount, rental.deposit ?? 0);
     try {
       await api.post("/api/damage-reports", {
         rentalId: rental.id,
