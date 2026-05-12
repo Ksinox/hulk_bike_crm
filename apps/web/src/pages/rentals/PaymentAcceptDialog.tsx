@@ -39,6 +39,7 @@ import { useApiPayments } from "@/lib/api/payments";
 import { useRentalDebt } from "@/lib/api/debt";
 import { extendInplaceAsync } from "./rentalsStore";
 import { EquipmentChangeDialog } from "./EquipmentChangeDialog";
+import { PaymentAcceptCalendar } from "./PaymentAcceptCalendar";
 import type { Rental } from "@/lib/mock/rentals";
 import type { PaymentMethod } from "@/lib/mock/rentals";
 import {
@@ -140,6 +141,30 @@ export function PaymentAcceptDialog({
     if (hasOverdueDays) setCountOverdueDays(false);
     if (hasOverdueFine) setCountOverdueFine(false);
   };
+  // v0.6.9: раскрытие «Простить просрочку» в 3 sub-варианта
+  // (как в RentalActionsMenu для action='forgive-overdue'):
+  //   forgive-days → countOverdueDays=false, countOverdueFine=true
+  //   forgive-fine → countOverdueDays=true,  countOverdueFine=false
+  //   forgive-all  → countOverdueDays=false, countOverdueFine=false (= setForgiveDebt)
+  const setForgiveDays = () => {
+    if (hasOverdueDays) setCountOverdueDays(false);
+    if (hasOverdueFine) setCountOverdueFine(true);
+  };
+  const setForgiveFine = () => {
+    if (hasOverdueDays) setCountOverdueDays(true);
+    if (hasOverdueFine) setCountOverdueFine(false);
+  };
+  // Подсветка «какой sub-вариант сейчас активен» — нужна только когда
+  // оператор уже выбрал «Простить X» (не «Погасить долг»).
+  const forgivingDaysOnly =
+    hasOverdueDays &&
+    !countOverdueDays &&
+    (!hasOverdueFine || countOverdueFine);
+  const forgivingFineOnly =
+    hasOverdueFine &&
+    !countOverdueFine &&
+    (!hasOverdueDays || countOverdueDays);
+  const forgivingAll = forgiveDebt;
 
   // v0.6.3: Step 2 — toggle режима ввода периода продления.
   // 'days' — спиннер + quick-presets.
@@ -793,11 +818,18 @@ export function PaymentAcceptDialog({
           // v0.6.2: bottom-drawer вместо центрированной модалки —
           // согласно design/claude-design/Hulk Bike CRM/extension-drawer.jsx.
           // Прижат к низу экрана, slide-up появление, max-h:88vh.
-          "flex w-full max-w-[1200px] mb-3 mx-3 flex-col overflow-hidden rounded-2xl bg-surface border border-border shadow-card-lg",
+          // v0.6.9: при появлении floating-календаря drawer плавно
+          // приподнимается на ~30px (transition transform 300ms ease-out),
+          // чтобы календарь поместился над ним и не загораживал контент.
+          "flex w-full max-w-[1200px] mb-3 mx-3 flex-col overflow-hidden rounded-2xl bg-surface border border-border shadow-card-lg transition-transform duration-300 ease-out",
           closing ? "animate-slide-down-out" : "animate-slide-up",
         )}
         onClick={(e) => e.stopPropagation()}
-        style={{ maxHeight: "88vh" }}
+        style={{
+          maxHeight: "88vh",
+          // v0.6.9: drawer уезжает вверх когда календарь активен (extDays>0).
+          transform: extDays > 0 && !closing ? "translateY(-24px)" : undefined,
+        }}
       >
         <div className="flex items-center gap-3 border-b border-border bg-gradient-to-r from-blue-50 to-surface px-5 py-3">
           <div className="h-9 w-9 rounded-full bg-blue-600 text-white flex items-center justify-center shrink-0">
@@ -861,12 +893,22 @@ export function PaymentAcceptDialog({
                   {overdueDaysHeader > 0 ? ` · ${overdueDaysHeader} дн` : ""}
                 </span>
               </div>
-              <div className="grid grid-cols-2 gap-2">
+              {/* v0.6.9: 4 кнопки в одну линию — «Погасить долг» + 3 sub-варианта
+                  «Простить ...» (дни / штраф / всё). Если есть только один тип
+                  просрочки (только дни ИЛИ только штраф), скрываем неактуальные. */}
+              <div
+                className={cn(
+                  "grid gap-2",
+                  hasOverdueDays && hasOverdueFine
+                    ? "grid-cols-4"
+                    : "grid-cols-2",
+                )}
+              >
                 <button
                   type="button"
                   onClick={setClearDebt}
                   className={cn(
-                    "rounded-[10px] border-2 bg-white px-3 py-2 text-left transition-colors",
+                    "rounded-[10px] border-2 bg-white px-2.5 py-2 text-left transition-colors",
                     clearDebt && !forgiveDebt
                       ? "border-blue-600"
                       : "border-transparent bg-white/60 hover:bg-white",
@@ -875,25 +917,65 @@ export function PaymentAcceptDialog({
                   <div className="text-[12px] font-bold text-ink">
                     Погасить долг
                   </div>
-                  <div className="mt-0.5 text-[10.5px] text-muted">
-                    включить {fmt(overdueBalanceRaw)} ₽ в эту оплату
+                  <div className="mt-0.5 text-[10.5px] text-muted tabular-nums">
+                    {fmt(overdueBalanceRaw)} ₽
                   </div>
                 </button>
+                {hasOverdueDays && hasOverdueFine && (
+                  <button
+                    type="button"
+                    onClick={setForgiveDays}
+                    className={cn(
+                      "rounded-[10px] border-2 bg-white px-2.5 py-2 text-left transition-colors",
+                      forgivingDaysOnly
+                        ? "border-emerald-500"
+                        : "border-transparent bg-white/60 hover:bg-white",
+                    )}
+                  >
+                    <div className="text-[12px] font-bold text-green-ink">
+                      Простить дни
+                    </div>
+                    <div className="mt-0.5 text-[10.5px] text-muted tabular-nums">
+                      −{fmt(overdueDaysBalanceRaw)} ₽
+                    </div>
+                  </button>
+                )}
+                {hasOverdueDays && hasOverdueFine && (
+                  <button
+                    type="button"
+                    onClick={setForgiveFine}
+                    className={cn(
+                      "rounded-[10px] border-2 bg-white px-2.5 py-2 text-left transition-colors",
+                      forgivingFineOnly
+                        ? "border-emerald-500"
+                        : "border-transparent bg-white/60 hover:bg-white",
+                    )}
+                  >
+                    <div className="text-[12px] font-bold text-green-ink">
+                      Простить штраф
+                    </div>
+                    <div className="mt-0.5 text-[10.5px] text-muted tabular-nums">
+                      −{fmt(overdueFineBalanceRaw)} ₽
+                    </div>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={setForgiveDebt}
                   className={cn(
-                    "rounded-[10px] border-2 bg-white px-3 py-2 text-left transition-colors",
-                    forgiveDebt
+                    "rounded-[10px] border-2 bg-white px-2.5 py-2 text-left transition-colors",
+                    forgivingAll
                       ? "border-emerald-500"
                       : "border-transparent bg-white/60 hover:bg-white",
                   )}
                 >
                   <div className="text-[12px] font-bold text-green-ink">
-                    Простить просрочку
+                    {hasOverdueDays && hasOverdueFine
+                      ? "Простить всё"
+                      : "Простить просрочку"}
                   </div>
-                  <div className="mt-0.5 text-[10.5px] text-muted">
-                    −{fmt(overdueBalanceRaw)} ₽ списать на компанию
+                  <div className="mt-0.5 text-[10.5px] text-muted tabular-nums">
+                    −{fmt(overdueBalanceRaw)} ₽
                   </div>
                 </button>
               </div>
@@ -1256,10 +1338,15 @@ export function PaymentAcceptDialog({
         </div>
       </div>
 
-      {/* v0.6.3: floating compact calendar — read-only превью периода
-          (аренда + просрочка + продление). Зависает НАД drawer'ом. */}
-      {parsedDates && newEnd && (
-        <CompactExtendCalendar
+      {/* v0.6.9: floating month-grid календарь — заменил старый
+          CompactExtendCalendar (полоску ячеек). Появляется когда
+          оператор выбрал период продления (extDays > 0) — Step 2.
+          Анимация slide-in-down (выезжает сверху), bottom-drawer'ов
+          одновременно подъезжает чуть вверх через animate-slide-up
+          (см. style.transform у drawer'а ниже). */}
+      {parsedDates && newEnd && extDays > 0 && (
+        <PaymentAcceptCalendarSlide
+          closing={closing}
           startDate={parsedDates.startDate}
           anchor={parsedDates.anchor}
           today={parsedDates.today}
@@ -1285,13 +1372,19 @@ export function PaymentAcceptDialog({
 }
 
 /**
- * Compact floating calendar для PaymentAcceptDialog (v0.6.3).
- * Без drag — только показ периодов:
- *  · синие ячейки = аренда (start..anchor)
- *  · красные = просрочка (anchor..today) если просрочка
- *  · зелёные = продление (today..newEnd или anchor..newEnd)
+ * v0.6.9: обёртка над PaymentAcceptCalendar — позиционирует его как
+ * floating элемент над bottom-drawer'ом и анимирует выезжание
+ * (slide-in-down при появлении / slide-out-up при закрытии диалога).
+ *
+ * Реализация slide-down: контейнер рендерится в fixed-позиции по центру
+ * экрана, чуть выше уровня drawer'а. Само появление — keyframe
+ * animate-slide-in-down (translateY(-24px) → 0). Уход — animate-slide-out-up
+ * (когда closing=true, синхронно с drawer'ом).
+ *
+ * Mount/unmount управляется родителем (рендерится только когда extDays>0).
  */
-function CompactExtendCalendar({
+function PaymentAcceptCalendarSlide({
+  closing,
   startDate,
   anchor,
   today,
@@ -1301,147 +1394,43 @@ function CompactExtendCalendar({
   coveredDays,
   extDays,
 }: {
+  closing: boolean;
   startDate: Date;
   anchor: Date;
   today: Date;
   newEnd: Date;
   hasOverdue: boolean;
   forgiveDebt: boolean;
-  /** v0.6.5: сколько дней продления оплачены (для жёлтой зоны). */
   coveredDays: number;
-  /** v0.6.5: всего дней продления (для определения uncovered). */
   extDays: number;
 }) {
-  const dayMs = 86_400_000;
-  const stripTime = (d: Date) =>
-    new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-  const startMs = stripTime(startDate);
-  const anchorMs = stripTime(anchor);
-  const todayMs = stripTime(today);
-  const endMs = stripTime(newEnd);
-  const lastMs = Math.max(endMs, anchorMs, todayMs);
-  const totalSpan = Math.max(
-    10,
-    Math.round((lastMs - startMs) / dayMs) + 2,
-  );
-  // ограничиваем чтобы не разрослось
-  const maxCells = 21;
-  const cells: Array<{ d: Date; ms: number }> = [];
-  for (let i = 0; i < Math.min(totalSpan, maxCells); i++) {
-    const d = new Date(startMs + i * dayMs);
-    cells.push({ d, ms: stripTime(d) });
-  }
-
   return (
     <div
-      className="fixed inset-x-0 z-30 flex pointer-events-none justify-center"
-      style={{ bottom: "calc(min(86vh, 540px) + 14px)" }}
+      className={cn(
+        "pointer-events-none fixed inset-x-0 z-[130] flex justify-center",
+        // Над bottom-drawer'ом. Drawer max-h=88vh + mb-3 ≈ под нижним
+        // краем экрана. Календарь зависает над drawer'ом, чуть выше.
+        // ~ 540px типичный drawer; ставим bottom = max(86vh, 480px) + 16px,
+        // чтоб гарантированно не пересечься.
+      )}
+      style={{ bottom: "calc(min(82vh, 520px) + 20px)" }}
     >
-      <div className="pointer-events-auto rounded-[12px] border border-border bg-white shadow-card-lg overflow-hidden max-w-[760px]">
-        <div className="flex items-center justify-between border-b border-border bg-surface-soft/50 px-3 py-1.5">
-          <div className="text-[10.5px] font-bold uppercase tracking-wider text-muted-2">
-            Период аренды
-          </div>
-          <div className="flex items-center gap-3 text-[10px] text-muted">
-            <span className="inline-flex items-center gap-1">
-              <span className="h-2.5 w-2.5 rounded border border-blue-300 bg-blue-100" />
-              аренда
-            </span>
-            {hasOverdue && !forgiveDebt && (
-              <span className="inline-flex items-center gap-1">
-                <span
-                  className="h-2.5 w-2.5 rounded border"
-                  style={{
-                    borderColor: "hsl(var(--red))",
-                    background: "hsl(var(--red-soft))",
-                  }}
-                />
-                просрочка
-              </span>
-            )}
-            <span className="inline-flex items-center gap-1">
-              <span className="h-2.5 w-2.5 rounded border border-emerald-500 bg-emerald-100" />
-              продление
-            </span>
-          </div>
-        </div>
-        <div className="p-2">
-          <div
-            className="grid gap-1"
-            style={{
-              gridTemplateColumns: `repeat(${cells.length}, minmax(0, 1fr))`,
-            }}
-          >
-            {cells.map((c, i) => {
-              const inRental = c.ms >= startMs && c.ms <= anchorMs;
-              const inOverdue =
-                hasOverdue && !forgiveDebt && c.ms > anchorMs && c.ms <= todayMs;
-              const greenStart = hasOverdue ? todayMs : anchorMs;
-              const inExtension = c.ms > greenStart && c.ms <= endMs;
-              // v0.6.5: dayOffset считаем от первого дня продления.
-              // Если день продления больше coveredDays — это «жёлтая зона».
-              const dayOffset =
-                inExtension
-                  ? Math.round((c.ms - greenStart) / dayMs)
-                  : 0;
-              const uncoveredZone =
-                inExtension &&
-                extDays > 0 &&
-                coveredDays < extDays &&
-                dayOffset > coveredDays;
-              const isNewEnd = c.ms === endMs && endMs > anchorMs;
-              const wd = c.d.getDay();
-              let bg = "transparent";
-              let border = "hsl(var(--border))";
-              let ink = "hsl(var(--muted-2))";
-              if (inRental) {
-                bg = "hsl(var(--blue-50))";
-                border = "hsl(var(--blue-100))";
-                ink = "hsl(var(--blue-700))";
-              }
-              if (inOverdue) {
-                bg = "hsl(var(--red-soft))";
-                border = "hsl(var(--red))";
-                ink = "hsl(var(--red-ink))";
-              }
-              if (inExtension) {
-                bg = "hsl(var(--green-soft))";
-                border = "hsl(var(--green-ink))";
-                ink = "hsl(var(--green-ink))";
-              }
-              if (uncoveredZone) {
-                // Жёлтая «не хватает» зона — продление выбрано, но клиент
-                // ввёл сумму меньше нужной.
-                bg = "#fef3c7"; // amber-100
-                border = "#d97706"; // amber-700
-                ink = "#92400e"; // amber-900
-              }
-              return (
-                <div
-                  key={i}
-                  className={cn(
-                    "relative rounded-[7px] py-1 text-center",
-                    isNewEnd && "ring-2 ring-emerald-500 ring-offset-1",
-                  )}
-                  style={{
-                    background: bg,
-                    borderWidth: 1,
-                    borderStyle: "solid",
-                    borderColor: border,
-                    color: ink,
-                  }}
-                >
-                  <div className="text-[8.5px] font-bold uppercase tracking-wider opacity-70">
-                    {["вс", "пн", "вт", "ср", "чт", "пт", "сб"][wd]}
-                  </div>
-                  <div className="font-display text-[12px] font-extrabold tabular-nums leading-none">
-                    {c.d.getDate()}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+      <div
+        className={cn(
+          "pointer-events-auto w-fit max-w-[560px]",
+          closing ? "animate-slide-out-up" : "animate-slide-in-down",
+        )}
+      >
+        <PaymentAcceptCalendar
+          startDate={startDate}
+          anchor={anchor}
+          today={today}
+          newEnd={newEnd}
+          hasOverdue={hasOverdue}
+          forgiveDebt={forgiveDebt}
+          coveredDays={coveredDays}
+          extDays={extDays}
+        />
       </div>
     </div>
   );
