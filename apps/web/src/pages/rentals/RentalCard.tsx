@@ -1253,7 +1253,7 @@ export function RentalCard({
           // rental.deposit. Раньше «списано» считалось через payments.method='deposit',
           // что давало расхождение с плашкой залога — теперь оба места
           // читают одни и те же поля.
-          const currentDeposit = rental.deposit || DEPOSIT_AMOUNT;
+          const currentDeposit = rental.deposit ?? DEPOSIT_AMOUNT;
           const originalDeposit =
             (rental as { depositOriginal?: number }).depositOriginal ??
             currentDeposit;

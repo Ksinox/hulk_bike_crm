@@ -218,6 +218,14 @@ export function useDamagePayment() {
       qc.invalidateQueries({ queryKey: damageReportsKeys.all });
       qc.invalidateQueries({ queryKey: ["rentals"] });
       qc.invalidateQueries({ queryKey: ["payments"] });
+      // v0.5.4: критично инвалидировать сводку долга и aggregate —
+      // KPI «Долг» в карточке аренды читает из rental-debt, KPI на
+      // дашборде из debt-aggregate. Без этого damage payment делался,
+      // damage_report.paidSum рос (видно в баннере), но KPI «Долг»
+      // оставался стейл и пользователь думал что оплата не учлась.
+      qc.invalidateQueries({ queryKey: ["rental-debt"] });
+      qc.invalidateQueries({ queryKey: ["debt-aggregate"] });
+      qc.invalidateQueries({ queryKey: ["activity"] });
     },
   });
 }

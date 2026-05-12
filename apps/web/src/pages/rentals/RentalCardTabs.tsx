@@ -457,7 +457,7 @@ export function TermsTab({
           <InfoCell
             icon={ShieldCheck}
             label="Залог"
-            value={`${fmt(rental.deposit || DEPOSIT_AMOUNT)} ₽`}
+            value={`${fmt(rental.deposit ?? DEPOSIT_AMOUNT)} ₽`}
             hint={
               rental.depositReturned === true
                 ? "возвращён клиенту"
@@ -1977,16 +1977,6 @@ export function HistoryTab({
                     <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-800">
                       акт #{rep.id}
                     </span>
-                    {rep.clientAgreement === "agreed" && (
-                      <span className="rounded-full bg-green-soft px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-green-ink">
-                        клиент согласен
-                      </span>
-                    )}
-                    {rep.clientAgreement === "disputed" && (
-                      <span className="rounded-full bg-red-soft px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-ink">
-                        не согласен
-                      </span>
-                    )}
                   </div>
                   <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-muted">
                     <Calendar size={11} />
@@ -2509,13 +2499,6 @@ export function DebtHistoryTab({ rental }: { rental: Rental }) {
                       · из залога {fmt(r.depositCovered)} ₽
                     </span>
                   )}
-                  <span className="ml-1">
-                    · реакция: {r.clientAgreement === "agreed"
-                      ? "согласен"
-                      : r.clientAgreement === "disputed"
-                        ? "не согласен"
-                        : "не выбрана"}
-                  </span>
                 </div>
                 <span className="tabular-nums font-semibold text-ink">
                   {fmt(r.total)} ₽
