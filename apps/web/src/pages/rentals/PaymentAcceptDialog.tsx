@@ -22,7 +22,17 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, Check, X, Wallet, Shield, Repeat } from "lucide-react";
+import {
+  Check,
+  X,
+  Wallet,
+  Shield,
+  Repeat,
+  Coins,
+  Calendar as CalendarIcon,
+  Shirt,
+  Pencil,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
 import { api } from "@/lib/api";
@@ -30,269 +40,7 @@ import { useApiClients } from "@/lib/api/clients";
 import { useApiPayments } from "@/lib/api/payments";
 import { useRentalDebt } from "@/lib/api/debt";
 import { extendInplaceAsync } from "./rentalsStore";
-/**
- * v0.4.84: inline-календарь для выбора периода продления.
- * Якорная дата (anchor) — текущий endPlanned. Кликая по будущей дате,
- * оператор устанавливает новый endPlanned. Range start..end подсвечивается
- * синим. На hover показывается preview. В weekly-режиме клик округляется
- * до целых недель (snap-to-7).
- */
-function ExtensionRangeCalendar({
-  rentalStartDate,
-  anchorDate,
-  endDate,
-  isWeekly,
-  affordableDays,
-  onPickDays,
-  onHoverDays,
-}: {
-  rentalStartDate: Date;
-  /** Текущий endPlanned (граница «текущая аренда / зона ниже»). */
-  anchorDate: Date;
-  /** Новый endPlanned после продления (конец зелёной зоны). */
-  endDate: Date;
-  isWeekly: boolean;
-  /** v0.4.95: Сколько дней реально оплачено суммой клиента
-   *  (overpay / dailyRate). Дни сверх этого подсвечиваются как
-   *  «не хватает оплаты». */
-  affordableDays?: number;
-  onPickDays: (days: number) => void;
-  onHoverDays?: (days: number | null) => void;
-}) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const [viewYear, setViewYear] = useState(anchorDate.getFullYear());
-  const [viewMonth, setViewMonth] = useState(anchorDate.getMonth());
-  const [hoverDate, setHoverDate] = useState<Date | null>(null);
-
-  // Грид: первый день недели (пн), 6 строк × 7 столбцов.
-  const monthStart = new Date(viewYear, viewMonth, 1);
-  // js: 0=Sun..6=Sat. Москва: Mon=0
-  const startWeekday = (monthStart.getDay() + 6) % 7;
-  const gridStart = new Date(monthStart);
-  gridStart.setDate(monthStart.getDate() - startWeekday);
-
-  const days: Date[] = [];
-  for (let i = 0; i < 42; i++) {
-    const d = new Date(gridStart);
-    d.setDate(gridStart.getDate() + i);
-    days.push(d);
-  }
-
-  const monthName = new Intl.DateTimeFormat("ru-RU", {
-    month: "long",
-    year: "numeric",
-  }).format(new Date(viewYear, viewMonth, 1));
-
-  const fmtAnchorDay = (d: Date) =>
-    new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-  const anchorMs = fmtAnchorDay(anchorDate);
-  const endMs = fmtAnchorDay(endDate);
-  const todayMs = fmtAnchorDay(today);
-  // v0.4.94: продление считается ОТ today (не от endPlanned). Между
-  // endPlanned и today — просрочка (красная зона). Если endPlanned
-  // в будущем — overdueStartMs = anchorMs + 1 день (нет просрочки).
-  const hasOverdue = anchorMs < todayMs;
-  // База для подсчёта продления = today (если просрочка) или endPlanned
-  const extBaseMs = hasOverdue ? todayMs : anchorMs;
-  const minPickableMs = extBaseMs + 86_400_000;
-  const previewMs = hoverDate ? fmtAnchorDay(hoverDate) : null;
-  const effEnd = previewMs && previewMs >= minPickableMs ? previewMs : endMs;
-  // v0.4.95: граница «оплачено» = extBase + affordableDays
-  const affordableMs =
-    affordableDays != null && affordableDays >= 0
-      ? extBaseMs + affordableDays * 86_400_000
-      : null;
-
-  const handlePick = (d: Date) => {
-    const dMs = fmtAnchorDay(d);
-    if (dMs < minPickableMs) return;
-    // v0.4.94: считаем дни ОТ extBaseMs (today если просрочка)
-    const diffDays = Math.round((dMs - extBaseMs) / 86_400_000);
-    if (diffDays <= 0) return;
-    if (isWeekly) {
-      const weeks = Math.max(1, Math.ceil(diffDays / 7));
-      onPickDays(weeks * 7);
-    } else {
-      onPickDays(diffDays);
-    }
-  };
-
-  return (
-    <div className="mx-auto inline-block rounded-[10px] border border-blue-200 bg-white p-1.5 select-none">
-      <div className="flex items-center justify-between mb-1 px-0.5">
-        <button
-          type="button"
-          onClick={() => {
-            const d = new Date(viewYear, viewMonth - 1, 1);
-            setViewYear(d.getFullYear());
-            setViewMonth(d.getMonth());
-          }}
-          className="flex h-5 w-5 items-center justify-center rounded text-muted-2 hover:bg-blue-50 hover:text-blue-600"
-        >
-          <ChevronLeft size={12} />
-        </button>
-        <span className="text-[11px] font-bold text-ink capitalize">
-          {monthName}
-        </span>
-        <button
-          type="button"
-          onClick={() => {
-            const d = new Date(viewYear, viewMonth + 1, 1);
-            setViewYear(d.getFullYear());
-            setViewMonth(d.getMonth());
-          }}
-          className="flex h-5 w-5 items-center justify-center rounded text-muted-2 hover:bg-blue-50 hover:text-blue-600"
-        >
-          <ChevronRight size={12} />
-        </button>
-      </div>
-      <div className="grid grid-cols-7 gap-y-0.5 mb-0.5">
-        {["п", "в", "с", "ч", "п", "с", "в"].map((w, i) => (
-          <div
-            key={i}
-            className="flex size-7 items-center justify-center text-[9px] font-semibold uppercase text-muted-2"
-          >
-            {w}
-          </div>
-        ))}
-      </div>
-      <div className="grid grid-cols-7 gap-y-0.5">
-        {days.map((d, i) => {
-          const dMs = fmtAnchorDay(d);
-          const rentalStartMs = fmtAnchorDay(rentalStartDate);
-          const isOtherMonth = d.getMonth() !== viewMonth;
-          const isAnchor = dMs === anchorMs;
-          const isEnd = dMs === effEnd;
-          const isRentalStart = dMs === rentalStartMs;
-          const isInBlueRange = dMs >= rentalStartMs && dMs < anchorMs;
-          // v0.4.94: красная зона = просрочка (между endPlanned и today)
-          const isInRedRange = hasOverdue && dMs > anchorMs && dMs < todayMs;
-          const isOverdueEnd = hasOverdue && dMs === todayMs;
-          // Зелёная зона = продление (от today+1 или endPlanned+1 до newEnd)
-          const greenStartMs = hasOverdue ? todayMs : anchorMs;
-          const isInGreenRange = dMs > greenStartMs && dMs < effEnd;
-          // v0.4.95: «не хватает оплаты» — день в зелёной зоне ИЛИ конец,
-          // но за пределами affordable.
-          const isUnaffordable =
-            affordableMs != null &&
-            dMs > affordableMs &&
-            (isInGreenRange || dMs === effEnd);
-          const isPickable = dMs >= minPickableMs;
-          const isToday = dMs === todayMs;
-          return (
-            <button
-              key={i}
-              type="button"
-              disabled={!isPickable && !isAnchor}
-              onMouseEnter={() => {
-                if (!isPickable) return;
-                setHoverDate(d);
-                if (onHoverDays) {
-                  const diff = Math.round((dMs - extBaseMs) / 86_400_000);
-                  if (diff > 0) {
-                    const days = isWeekly
-                      ? Math.max(1, Math.ceil(diff / 7)) * 7
-                      : diff;
-                    onHoverDays(days);
-                  }
-                }
-              }}
-              onMouseLeave={() => {
-                setHoverDate(null);
-                onHoverDays?.(null);
-              }}
-              onClick={() => handlePick(d)}
-              className={cn(
-                "relative flex size-7 items-center justify-center text-[11px] font-medium tabular-nums transition-colors",
-                isOtherMonth && "text-muted-2/40",
-                !isOtherMonth &&
-                  !isPickable &&
-                  !isAnchor &&
-                  !isInBlueRange &&
-                  !isInRedRange &&
-                  !isRentalStart &&
-                  "text-ink",
-                !isOtherMonth &&
-                  isPickable &&
-                  !isInGreenRange &&
-                  !isEnd &&
-                  "text-ink hover:bg-emerald-100",
-                // Синий период (текущая аренда)
-                isInBlueRange &&
-                  !isRentalStart &&
-                  !isAnchor &&
-                  "bg-blue-200 text-blue-900",
-                isRentalStart && "rounded-s-lg bg-ink text-white",
-                isAnchor &&
-                  (hasOverdue
-                    ? "bg-blue-200 text-blue-900 cursor-default"
-                    : "bg-ink text-white cursor-default"),
-                // Красная зона (просрочка между endPlanned и today)
-                isInRedRange && "bg-red-200 text-red-900",
-                isOverdueEnd && "bg-red-600 text-white font-bold",
-                // Зелёный период (продление, оплачено)
-                isInGreenRange && !isUnaffordable && "bg-emerald-200 text-emerald-900",
-                // Жёлтая зона — продление выбрано но НЕ ХВАТАЕТ денег
-                isUnaffordable && !isEnd && "bg-amber-200 text-amber-900",
-                isEnd &&
-                  !isAnchor &&
-                  !isOverdueEnd &&
-                  isUnaffordable &&
-                  "rounded-e-lg bg-amber-500 text-white",
-                isEnd &&
-                  !isAnchor &&
-                  !isOverdueEnd &&
-                  !isUnaffordable &&
-                  "rounded-e-lg bg-emerald-600 text-white",
-                isToday &&
-                  !isAnchor &&
-                  !isEnd &&
-                  !isOverdueEnd &&
-                  !isRentalStart &&
-                  cn(
-                    "after:pointer-events-none after:absolute after:bottom-1 after:start-1/2 after:z-10 after:size-[3px] after:-translate-x-1/2 after:rounded-full",
-                    isInBlueRange || isInGreenRange || isInRedRange
-                      ? "after:bg-white"
-                      : "after:bg-ink",
-                  ),
-              )}
-            >
-              {d.getDate()}
-            </button>
-          );
-        })}
-      </div>
-      <div className="mt-1.5 flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5 text-[9px] text-muted-2">
-        <span className="flex items-center gap-1">
-          <span className="inline-block h-1.5 w-1.5 rounded-sm bg-blue-600" />
-          аренда
-        </span>
-        {hasOverdue && (
-          <span className="flex items-center gap-1">
-            <span className="inline-block h-1.5 w-1.5 rounded-sm bg-red-600" />
-            просрочка
-          </span>
-        )}
-        <span className="flex items-center gap-1">
-          <span className="inline-block h-1.5 w-1.5 rounded-sm bg-emerald-600" />
-          продление
-        </span>
-        {affordableDays != null && (
-          <span className="flex items-center gap-1">
-            <span className="inline-block h-1.5 w-1.5 rounded-sm bg-amber-500" />
-            не хватает
-          </span>
-        )}
-        {isWeekly && (
-          <span className="text-emerald-600 font-semibold">
-            шаг 7 дн
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
+import { EquipmentChangeDialog } from "./EquipmentChangeDialog";
 import type { Rental } from "@/lib/mock/rentals";
 import type { PaymentMethod } from "@/lib/mock/rentals";
 import {
@@ -377,6 +125,30 @@ export function PaymentAcceptDialog({
   const overdueDaysBalance = countOverdueDays ? overdueDaysBalanceRaw : 0;
   const overdueFineBalance = countOverdueFine ? overdueFineBalanceRaw : 0;
 
+  // v0.6.3: step-based UX — Step 1 «Сначала просрочка».
+  // Две карточки-кнопки: «Погасить долг» / «Простить просрочку».
+  // Жёстко связаны с countOverdueDays/Fine (бэкенд-логика не меняется):
+  //   clearDebt=true  → countOverdueDays=true,  countOverdueFine=true
+  //   forgiveDebt=true → countOverdueDays=false, countOverdueFine=false
+  const overdueBalanceRaw = overdueDaysBalanceRaw + overdueFineBalanceRaw;
+  const clearDebt = countOverdueDays || countOverdueFine;
+  const forgiveDebt =
+    hasOverdue && !countOverdueDays && !countOverdueFine;
+  const setClearDebt = () => {
+    if (hasOverdueDays) setCountOverdueDays(true);
+    if (hasOverdueFine) setCountOverdueFine(true);
+  };
+  const setForgiveDebt = () => {
+    if (hasOverdueDays) setCountOverdueDays(false);
+    if (hasOverdueFine) setCountOverdueFine(false);
+  };
+
+  // v0.6.3: Step 2 — toggle режима ввода периода продления.
+  // 'days' — спиннер + quick-presets.
+  // 'amount' — оператор вводит «сколько даёт клиент» → пересчёт в дни.
+  const [mode, setMode] = useState<"days" | "amount">("days");
+  const [amountInput, setAmountInput] = useState<string>("");
+
   // v0.4.79: переплата может пойти в депозит или в продление.
   // Заменяет старый Mode toggle «Только оплата / Оплата с продлением» —
   // теперь оператор сначала вводит сумму, потом видит что делать с
@@ -414,16 +186,10 @@ export function PaymentAcceptDialog({
     }
     return initialExtDays;
   });
-  const [extCustomMode, setExtCustomMode] = useState<boolean>(false);
-  const [extCustomUnit, setExtCustomUnit] = useState<"day" | "week">("day");
-  const [extCustomRate, setExtCustomRate] = useState<number>(0);
-  // Тариф продления = тариф аренды, если оператор не включил custom
-  const extIsWeekly = extCustomMode
-    ? extCustomUnit === "week"
-    : rental.rateUnit === "week";
-  const extRate = extCustomMode
-    ? Math.max(0, extCustomRate)
-    : rental.rate;
+  // v0.6.3: custom-тариф убран из нового UX (Step 2 — фиксированный
+  // тариф аренды). Тариф продления = тариф аренды.
+  const extIsWeekly = rental.rateUnit === "week";
+  const extRate = rental.rate;
   const extDailyRate = extIsWeekly ? Math.round(extRate / 7) : extRate;
   // Долги (без extend — он считается по переплате)
   const totalDebt =
@@ -500,10 +266,13 @@ export function PaymentAcceptDialog({
       extPrefilledRef.current = false;
       return;
     }
+    // v0.6.3: в amount-mode синхронизацию делает отдельный effect ниже.
+    if (mode === "amount") return;
     setAcceptedStr(
       remainingAfterSecurity > 0 ? String(remainingAfterSecurity) : "",
     );
-  }, [remainingAfterSecurity]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [remainingAfterSecurity, mode]);
 
   const accepted = Number(acceptedStr.replace(/\D/g, "")) || 0;
   const totalReceived = depositToUse + securityToUse + accepted;
@@ -515,7 +284,9 @@ export function PaymentAcceptDialog({
   // weeklyRate), целое количество идёт в продление, остаток в депозит.
   // Оператор может переопределить число дней/недель через extInputOverride.
   // v0.4.85: hoverDays — preview когда оператор водит мышью по календарю.
-  const [hoverDays, setHoverDays] = useState<number | null>(null);
+  // v0.6.3: новый floating-календарь read-only, hover не нужен — но
+  // переменная участвует в формулах displayDays. Оставляем как null.
+  const hoverDays: number | null = null;
   const extEnabled = overpay > 0 && overpayDest === "extend";
   const extAutoUnits = extEnabled
     ? Math.floor(overpay / Math.max(1, extIsWeekly ? extRate : extDailyRate))
@@ -534,21 +305,50 @@ export function PaymentAcceptDialog({
     ? ("week" as const)
     : periodForDays(extDays);
   const extSum = extIsWeekly ? extRate * extWeeks : extDailyRate * extDays;
-  // Display (для плашки превью в UI) — учитывает hover.
-  const displayDays = hoverDays != null ? hoverDays : extDays;
-  const displayWeeks = extIsWeekly ? Math.ceil(displayDays / 7) : 0;
-  const displaySum = extIsWeekly
-    ? extRate * displayWeeks
-    : extDailyRate * displayDays;
+  // v0.6.3: hover-preview больше не нужен (read-only calendar).
+  void hoverDays;
 
   // v0.4.93: если переплата слишком мала для продления — авто-переключение
   // на «депозит». Иначе пользователь видит «продление невозможно» при
   // выборе extend по дефолту, что сбивает.
+  // v0.6.3: в amount-mode НЕ переключаем — оператор сам контролирует
+  // сумму, нулевые дни — нормальная промежуточная ситуация при наборе.
   useEffect(() => {
+    if (mode === "amount") return;
     if (overpay > 0 && overpayDest === "extend" && extAutoUnits === 0) {
       setOverpayDest("deposit");
     }
-  }, [overpay, overpayDest, extAutoUnits]);
+  }, [overpay, overpayDest, extAutoUnits, mode]);
+
+  // v0.6.3: amount-mode → days. Оператор вводит сумму, которую даёт
+  // клиент, мы считаем сколько дней продления это даёт сверх долга.
+  //   amount = клиент платит
+  //   debtPortion = долг (если clearDebt) или 0 (если forgiveDebt)
+  //   possibleUnits = floor( (amount - debtPortion) / rate )
+  // Записываем в acceptedStr (для distribute) и extInputOverride
+  // (для рендера/submit продления).
+  useEffect(() => {
+    if (mode !== "amount") return;
+    const amt = Math.max(0, parseInt(amountInput || "0", 10));
+    setAcceptedStr(amt > 0 ? String(amt) : "");
+    const debtPortion = forgiveDebt ? 0 : dueAmount;
+    const available = Math.max(0, amt - debtPortion);
+    const unitRate = Math.max(1, extIsWeekly ? extRate : extDailyRate);
+    const possibleUnits = Math.floor(available / unitRate);
+    setExtInputOverride(possibleUnits > 0 ? possibleUnits : 1);
+    if (possibleUnits > 0 && overpayDest !== "extend") {
+      setOverpayDest("extend");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    amountInput,
+    mode,
+    forgiveDebt,
+    dueAmount,
+    extIsWeekly,
+    extRate,
+    extDailyRate,
+  ]);
   // Остаток после продления → в депозит
   const extResidualToDeposit = Math.max(0, overpay - extSum);
 
@@ -983,6 +783,50 @@ export function PaymentAcceptDialog({
   // v0.6.2: вычисляем суммарный долг и просрочку для шапки drawer'а
   const isOverdueState = (overdueDaysBalanceRaw + overdueFineBalanceRaw) > 0;
   const overdueDaysHeader = debt?.overdueDays ?? 0;
+
+  // v0.6.3: парсим даты аренды один раз для floating calendar и
+  // вычисления newEnd (новой даты возврата) в Step 2.
+  const parsedDates = useMemo(() => {
+    const sm = /^(\d{2})\.(\d{2})\.(\d{4})/.exec(rental.start);
+    const em = /^(\d{2})\.(\d{2})\.(\d{4})/.exec(rental.endPlanned);
+    if (!sm || !em) return null;
+    const startDate = new Date(
+      Number(sm[3]),
+      Number(sm[2]) - 1,
+      Number(sm[1]),
+    );
+    const anchor = new Date(
+      Number(em[3]),
+      Number(em[2]) - 1,
+      Number(em[1]),
+    );
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const extBase = anchor.getTime() < today.getTime() ? today : anchor;
+    return { startDate, anchor, extBase, today };
+  }, [rental.start, rental.endPlanned]);
+
+  const newEnd = useMemo(() => {
+    if (!parsedDates) return null;
+    if (extDays <= 0) return parsedDates.anchor;
+    const d = new Date(parsedDates.extBase);
+    d.setDate(d.getDate() + extDays);
+    return d;
+  }, [parsedDates, extDays]);
+
+  const fmtDDMMYYYY = (d: Date) =>
+    `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}`;
+
+  // v0.6.3: экипировка inline (только показ + редактирование через
+  // существующий EquipmentChangeDialog). Сама структура хранится в
+  // rental.equipmentJson, никаких локальных копий тут не делаем —
+  // диалог обновляет аренду через invalidateQueries.
+  const equipment = rental.equipmentJson ?? [];
+  const equipDaily = equipment.reduce(
+    (s, e) => s + (e.free ? 0 : e.price),
+    0,
+  );
+  const [equipDialogOpen, setEquipDialogOpen] = useState(false);
   return (
     <div
       className={cn(
@@ -1035,101 +879,459 @@ export function PaymentAcceptDialog({
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-5 py-4 text-[13px] text-ink-2 md:columns-2 md:gap-4 [&>*]:mb-3 [&>*]:break-inside-avoid">
-          {/* Сумма */}
-          <div className="rounded-[10px] bg-blue-50 px-3 py-2.5">
-            <div className="text-[11px] text-blue-700">К оплате</div>
-            <div className="font-display text-[26px] font-extrabold tabular-nums text-blue-700">
-              {fmt(dueAmount)} ₽
+        <div className="flex-1 overflow-y-auto scrollbar-thin text-[13px] text-ink-2">
+          {/* ─── STEP 1 (если есть просрочка) ─────────────────────────── */}
+          {isOverdueState && (
+            <div
+              className="border-b border-border px-5 py-4"
+              style={{ background: "hsl(var(--red-soft) / 0.3)" }}
+            >
+              <div className="mb-2.5 flex items-center gap-2">
+                <span
+                  className="inline-flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-bold text-white"
+                  style={{ background: "hsl(var(--red))" }}
+                >
+                  1
+                </span>
+                <div
+                  className="text-[11px] font-bold uppercase tracking-wider"
+                  style={{ color: "hsl(var(--red-ink))" }}
+                >
+                  Сначала — просрочка
+                </div>
+                <span
+                  className="ml-auto font-display text-[18px] font-extrabold tabular-nums"
+                  style={{ color: "hsl(var(--red-ink))" }}
+                >
+                  {fmt(overdueBalanceRaw)} ₽
+                  {overdueDaysHeader > 0 ? ` · ${overdueDaysHeader} дн` : ""}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={setClearDebt}
+                  className={cn(
+                    "rounded-[10px] border-2 bg-white px-3 py-2 text-left transition-colors",
+                    clearDebt && !forgiveDebt
+                      ? "border-blue-600"
+                      : "border-transparent bg-white/60 hover:bg-white",
+                  )}
+                >
+                  <div className="text-[12px] font-bold text-ink">
+                    Погасить долг
+                  </div>
+                  <div className="mt-0.5 text-[10.5px] text-muted">
+                    включить {fmt(overdueBalanceRaw)} ₽ в эту оплату
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={setForgiveDebt}
+                  className={cn(
+                    "rounded-[10px] border-2 bg-white px-3 py-2 text-left transition-colors",
+                    forgiveDebt
+                      ? "border-emerald-500"
+                      : "border-transparent bg-white/60 hover:bg-white",
+                  )}
+                >
+                  <div className="text-[12px] font-bold text-green-ink">
+                    Простить просрочку
+                  </div>
+                  <div className="mt-0.5 text-[10.5px] text-muted">
+                    −{fmt(overdueBalanceRaw)} ₽ списать на компанию
+                  </div>
+                </button>
+              </div>
             </div>
-            {debtParts.length > 0 ? (
-              <div className="mt-0.5 text-[11px] text-blue-700/80">
-                {debtParts
-                  .map((d) => `${d.label} ${fmt(d.amount)} ₽`)
-                  .join(" · ")}
+          )}
+
+          {/* ─── STEP 2: период продления ─────────────────────────────── */}
+          <div className="border-b border-border px-5 py-4">
+            <div className="mb-2.5 flex items-center gap-2">
+              <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-[11px] font-bold text-white">
+                {isOverdueState ? "2" : "1"}
+              </span>
+              <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
+                Период продления
+              </div>
+              <div className="ml-auto inline-flex rounded-full border border-border bg-surface-soft p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setMode("days")}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11.5px] font-semibold transition-colors",
+                    mode === "days"
+                      ? "bg-white text-ink shadow-card-sm"
+                      : "text-muted hover:text-ink-2",
+                  )}
+                >
+                  <CalendarIcon size={11} /> по дням
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMode("amount")}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11.5px] font-semibold transition-colors",
+                    mode === "amount"
+                      ? "bg-white text-ink shadow-card-sm"
+                      : "text-muted hover:text-ink-2",
+                  )}
+                >
+                  <Coins size={11} /> по сумме клиента
+                </button>
+              </div>
+            </div>
+
+            {mode === "days" ? (
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="inline-flex items-stretch overflow-hidden rounded-[12px] border border-border">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOverpayDest("extend");
+                      const cur = extInputOverride ?? extInputBase;
+                      setExtInputOverride(Math.max(1, cur - 1));
+                    }}
+                    className="flex w-10 items-center justify-center bg-surface-soft text-[18px] text-muted hover:text-ink"
+                  >
+                    −
+                  </button>
+                  <div className="bg-white px-5 py-2 text-center">
+                    <div className="font-display text-[26px] font-extrabold leading-none tabular-nums text-ink">
+                      {extIsWeekly ? extDays : extInput}
+                    </div>
+                    <div className="text-[10px] text-muted">
+                      {(extIsWeekly ? extDays : extInput) === 1
+                        ? "день"
+                        : (extIsWeekly ? extDays : extInput) < 5
+                          ? "дня"
+                          : "дней"}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOverpayDest("extend");
+                      setExtInputOverride((extInputOverride ?? extInputBase) + 1);
+                    }}
+                    className="flex w-10 items-center justify-center bg-surface-soft text-[18px] text-muted hover:text-ink"
+                  >
+                    +
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {[3, 7, 14, 30].map((n) => {
+                    const active = extDays === n;
+                    return (
+                      <button
+                        key={n}
+                        type="button"
+                        onClick={() => {
+                          setOverpayDest("extend");
+                          setExtInputOverride(
+                            extIsWeekly ? Math.max(1, Math.round(n / 7)) : n,
+                          );
+                        }}
+                        className={cn(
+                          "rounded-full border px-3 py-1.5 text-[11px] font-semibold transition-colors",
+                          active
+                            ? "border-blue-100 bg-blue-50 text-blue-700"
+                            : "border-border text-muted hover:bg-surface-soft hover:text-ink-2",
+                        )}
+                      >
+                        {n}д
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="ml-auto text-right">
+                  <div className="text-[10.5px] font-bold uppercase tracking-wider text-muted-2">
+                    Новый возврат
+                  </div>
+                  <div className="font-display text-[18px] font-extrabold tabular-nums text-blue-700">
+                    {newEnd && extDays > 0 ? fmtDDMMYYYY(newEnd) : "—"}
+                  </div>
+                </div>
               </div>
             ) : (
-              <div className="mt-0.5 text-[11px] text-blue-700/70">
-                {rental.rate} ₽/{rental.rateUnit === "week" ? "нед" : "сут"} ·{" "}
-                {rental.days} дн (предоплата)
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="inline-flex items-stretch overflow-hidden rounded-[12px] border border-border">
+                  <input
+                    value={amountInput}
+                    onChange={(e) =>
+                      setAmountInput(e.target.value.replace(/[^0-9]/g, ""))
+                    }
+                    autoFocus
+                    placeholder="2000"
+                    className="w-[140px] bg-white px-4 py-2 font-display text-[24px] font-extrabold tabular-nums text-ink outline-none placeholder:text-muted-2"
+                  />
+                  <span className="flex items-center bg-surface-soft px-3 text-[14px] font-bold text-muted">
+                    ₽
+                  </span>
+                </label>
+                <div className="max-w-[220px] text-[11.5px] text-muted">
+                  введите сумму, которую <b className="text-ink-2">даёт клиент</b> — посчитаем до какой даты можем продлить
+                </div>
+                <div className="ml-auto text-right">
+                  <div className="text-[10.5px] font-bold uppercase tracking-wider text-muted-2">
+                    Хватит до
+                  </div>
+                  <div className="font-display text-[20px] font-extrabold tabular-nums text-blue-700">
+                    {newEnd && extDays > 0 ? fmtDDMMYYYY(newEnd) : "—"}
+                  </div>
+                  <div className="text-[10.5px] text-muted-2">
+                    {extDays > 0
+                      ? `${extDays} ${extDays === 1 ? "день" : "дн"}`
+                      : "недостаточно"}
+                  </div>
+                </div>
               </div>
             )}
           </div>
 
-          {/* v0.4.49: ДВЕ независимые галки — учитывать штраф / учитывать
-              дни просрочки. По умолчанию обе ✅ — стандартный сценарий
-              «клиент-должник платит всё». Снятие = forgive соответствующего
-              kind в submit (бэк создаёт debt_entry). Подпись рядом
-              показывает фактическую сумму компонента и количество дней. */}
-          {hasOverdue && (
-            <div className="flex flex-col gap-2 rounded-[10px] border border-amber-200 bg-amber-50/30 px-3 py-2.5">
-              <div className="text-[11px] font-bold uppercase tracking-wider text-amber-800">
-                Просрочка по аренде
+          {/* ─── STEP 3: экипировка inline (только если есть) ─────────── */}
+          {equipment.length > 0 && (
+            <div className="border-b border-border px-5 py-4">
+              <div className="mb-2 flex items-center gap-2">
+                <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-[11px] font-bold text-white">
+                  {isOverdueState ? "3" : "2"}
+                </span>
+                <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
+                  Экипировка
+                </div>
+                <span className="ml-auto text-[11px] text-muted">
+                  {equipDaily > 0 ? `+${equipDaily} ₽/сут` : "бесплатно"}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setEquipDialogOpen(true)}
+                  className="inline-flex items-center gap-1 rounded-full border border-border bg-white px-2.5 py-1 text-[11px] font-semibold text-ink-2 hover:border-blue-400"
+                >
+                  <Pencil size={10} /> Изменить
+                </button>
               </div>
-              {hasOverdueDays && (
-                <label className="flex cursor-pointer items-start gap-2.5">
-                  <input
-                    type="checkbox"
-                    checked={countOverdueDays}
-                    onChange={(e) => setCountOverdueDays(e.target.checked)}
-                    className="mt-0.5 h-4 w-4 accent-amber-600"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="text-[12px] font-semibold text-ink">
-                      Учитывать просроченные дни ·{" "}
-                      <span className="text-amber-700 tabular-nums">
-                        {fmt(overdueDaysBalanceRaw)} ₽
-                      </span>
-                      {(debt?.overdueDays ?? 0) > 0 && (
-                        <span className="text-[11px] font-normal text-muted-2">
-                          {" "}
-                          ({rental.rate} ₽/{rental.rateUnit === "week" ? "нед" : "сут"} ×{" "}
-                          {debt?.overdueDays ?? 0} дн)
-                        </span>
-                      )}
-                    </div>
-                    <div className="mt-0.5 text-[11px] leading-snug text-muted-2">
-                      Снять — клиент-«свой», стоимость дней не считаем.
-                    </div>
+              <div className="flex flex-wrap gap-1.5 rounded-[10px] border border-border bg-white p-2">
+                {equipment.map((it, idx) => (
+                  <span
+                    key={`${it.itemId ?? "noid"}-${idx}`}
+                    className={cn(
+                      "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11.5px] font-semibold",
+                      it.free
+                        ? "text-green-ink"
+                        : "text-orange-ink",
+                    )}
+                    style={{
+                      background: it.free
+                        ? "hsl(var(--green-soft))"
+                        : "hsl(var(--orange-soft))",
+                    }}
+                  >
+                    <Shirt size={11} />
+                    {it.name}
+                    {!it.free && (
+                      <span className="tabular-nums">·{it.price}₽</span>
+                    )}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ─── STEP: депозит клиента ────────────────────────────────── */}
+          {depositBalance > 0 && (
+            <div className="border-b border-border px-5 py-4">
+              <label className="flex cursor-pointer items-start gap-2.5">
+                <input
+                  type="checkbox"
+                  checked={useDeposit}
+                  onChange={(e) => setUseDeposit(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 accent-emerald-600"
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="text-[12px] font-semibold text-ink">
+                    Использовать депозит клиента ·{" "}
+                    <span className="tabular-nums text-green-ink">
+                      {fmt(depositBalance)} ₽
+                    </span>
                   </div>
-                </label>
-              )}
-              {hasOverdueFine && (
-                <label className="flex cursor-pointer items-start gap-2.5">
-                  <input
-                    type="checkbox"
-                    checked={countOverdueFine}
-                    onChange={(e) => setCountOverdueFine(e.target.checked)}
-                    className="mt-0.5 h-4 w-4 accent-amber-600"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="text-[12px] font-semibold text-ink">
-                      Учитывать штраф просрочки ·{" "}
-                      <span className="text-amber-700 tabular-nums">
-                        {fmt(overdueFineBalanceRaw)} ₽
-                      </span>
-                      {(debt?.overdueDays ?? 0) > 0 && (
-                        <span className="text-[11px] font-normal text-muted-2">
-                          {" "}
-                          (50% × {debt?.overdueDays ?? 0} дн)
-                        </span>
-                      )}
-                    </div>
-                    <div className="mt-0.5 text-[11px] leading-snug text-muted-2">
-                      Снять — клиент предупредил, штрафной % не считаем.
-                    </div>
+                  <div className="mt-0.5 text-[11px] text-muted">
+                    {useDeposit
+                      ? `Зачтём ${fmt(depositToUse)} ₽ из депозита`
+                      : "Депозит не трогаем — клиент платит сейчас"}
                   </div>
-                </label>
+                </div>
+              </label>
+              {useDeposit && (
+                <div className="mt-2 flex items-center gap-2 pl-7">
+                  <span className="text-[11px] text-muted">Сумма:</span>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={useDepositAmountStr}
+                    onChange={(e) =>
+                      setUseDepositAmountStr(
+                        e.target.value.replace(/\D/g, ""),
+                      )
+                    }
+                    placeholder={`всё (${fmt(depositBalance)})`}
+                    className="h-7 w-32 rounded-[6px] border border-border bg-white px-2 text-[12px] tabular-nums outline-none focus:border-emerald-500"
+                  />
+                  <span className="text-[11px] text-muted">₽</span>
+                </div>
               )}
             </div>
           )}
 
-          {/* v0.4.79: переплата → выбор «в депозит / в продление». */}
+          {/* ─── STEP: списать с залога аренды ────────────────────────── */}
+          {securityAllowed && (
+            <div className="border-b border-border px-5 py-4">
+              <label className="flex cursor-pointer items-start gap-2.5">
+                <input
+                  type="checkbox"
+                  checked={useSecurity}
+                  onChange={(e) => setUseSecurity(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 accent-amber-600"
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 text-[12px] font-semibold text-ink">
+                    <Shield size={12} className="text-amber-700" />
+                    Списать с залога · max{" "}
+                    <span className="tabular-nums">
+                      {fmt(Math.min(securityMax, securityCoverable))} ₽
+                    </span>
+                  </div>
+                  <div className="mt-0.5 text-[11px] text-muted">
+                    Только в счёт ущерба и просрочки. Аренду из залога
+                    оплатить нельзя.
+                  </div>
+                </div>
+              </label>
+              {useSecurity && (
+                <div className="mt-2 pl-7">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="range"
+                      min={0}
+                      max={Math.min(securityMax, securityCoverable)}
+                      step={100}
+                      value={Math.min(
+                        Number(securityStr.replace(/\D/g, "")) || 0,
+                        Math.min(securityMax, securityCoverable),
+                      )}
+                      onChange={(e) => setSecurityStr(e.target.value)}
+                      className="flex-1 accent-amber-600"
+                    />
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={securityStr}
+                      onChange={(e) =>
+                        setSecurityStr(e.target.value.replace(/[^\d]/g, ""))
+                      }
+                      className="h-8 w-24 rounded-[8px] border border-border bg-white px-2 text-right text-[13px] tabular-nums outline-none focus:border-amber-600"
+                    />
+                    <span className="text-[11px] text-muted">₽</span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSecurityStr(
+                          String(Math.min(securityMax, securityCoverable)),
+                        )
+                      }
+                      className="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-semibold text-amber-800 hover:bg-amber-200"
+                    >
+                      max
+                    </button>
+                  </div>
+                  <div className="mt-1.5 flex items-center justify-between text-[11px] text-muted">
+                    <span>Останется в залоге:</span>
+                    <span className="tabular-nums font-semibold text-ink-2">
+                      {fmt(Math.max(0, securityMax - securityToUse))} ₽
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ─── STEP: Принято от клиента + способ ────────────────────── */}
+          {mode === "days" && (
+            <div className="border-b border-border px-5 py-4">
+              <div className="mb-1.5 flex items-center gap-2">
+                <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
+                  Принято от клиента, ₽
+                </div>
+                <div className="ml-auto inline-flex rounded-full border border-border bg-white p-0.5">
+                  {METHODS.map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => setMethod(m.id)}
+                      className={cn(
+                        "rounded-full px-3 py-1 text-[11.5px] font-semibold transition-colors",
+                        method === m.id
+                          ? "bg-blue-600 text-white"
+                          : "text-muted hover:text-ink-2",
+                      )}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={acceptedStr}
+                onChange={(e) =>
+                  setAcceptedStr(e.target.value.replace(/[^\d]/g, ""))
+                }
+                onFocus={(e) => e.currentTarget.select()}
+                placeholder="0"
+                className="h-10 w-full rounded-[10px] border border-border bg-white px-3 text-[16px] font-semibold tabular-nums text-ink outline-none focus:border-blue-600"
+              />
+            </div>
+          )}
+          {mode === "amount" && (
+            <div className="border-b border-border px-5 py-4">
+              <div className="mb-1.5 flex items-center gap-2">
+                <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
+                  Способ оплаты
+                </div>
+                <div className="ml-auto inline-flex rounded-full border border-border bg-white p-0.5">
+                  {METHODS.map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => setMethod(m.id)}
+                      className={cn(
+                        "rounded-full px-3 py-1 text-[11.5px] font-semibold transition-colors",
+                        method === m.id
+                          ? "bg-blue-600 text-white"
+                          : "text-muted hover:text-ink-2",
+                      )}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="text-[11px] text-muted">
+                Принято от клиента:{" "}
+                <span className="font-semibold text-ink-2 tabular-nums">
+                  {fmt(accepted)} ₽
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* ─── Куда направить переплату ─────────────────────────────── */}
           {overpay > 0 && (
-            <div className="flex flex-col gap-2 rounded-[10px] border border-blue-200 bg-blue-50/30 px-3 py-2.5">
-              <div className="flex items-center justify-between">
+            <div className="border-b border-border px-5 py-4">
+              <div className="mb-2 flex items-center gap-2">
                 <div className="text-[11px] font-bold uppercase tracking-wider text-blue-800">
-                  Переплата · {fmt(overpay)} ₽
+                  Переплата · {fmt(overpay)} ₽ — куда направить?
                 </div>
               </div>
               <div className="flex flex-wrap gap-1.5">
@@ -1139,8 +1341,6 @@ export function PaymentAcceptDialog({
                     label: string;
                     icon: typeof Wallet;
                   }> = [];
-                  // v0.5.9: «Пополнить залог» — показывается только если
-                  // залог денежный И ниже исходного. Иначе скрыто.
                   if (needsSecurityTopup) {
                     opts.push({
                       id: "security",
@@ -1155,7 +1355,7 @@ export function PaymentAcceptDialog({
                   });
                   opts.push({
                     id: "extend",
-                    label: "В продление аренды",
+                    label: "В продление",
                     icon: Repeat,
                   });
                   return opts;
@@ -1165,10 +1365,10 @@ export function PaymentAcceptDialog({
                     type="button"
                     onClick={() => {
                       setOverpayDest(opt.id);
-                      setExtInputOverride(null);
+                      if (opt.id !== "extend") setExtInputOverride(null);
                     }}
                     className={cn(
-                      "flex flex-1 items-center justify-center gap-1.5 rounded-[8px] border px-3 py-1.5 text-[12px] font-semibold transition-colors",
+                      "inline-flex flex-1 items-center justify-center gap-1.5 rounded-[8px] border px-3 py-1.5 text-[12px] font-semibold transition-colors",
                       overpayDest === opt.id
                         ? "border-blue-500 bg-blue-600 text-white"
                         : "border-border bg-white text-ink-2 hover:border-blue-400",
@@ -1179,459 +1379,93 @@ export function PaymentAcceptDialog({
                   </button>
                 ))}
               </div>
-              {/* В депозит — просто описание */}
-              {overpayDest === "deposit" && (
-                <div className="text-[11px] text-blue-700/80">
-                  {fmt(overpay)} ₽ положим на депозит клиента — пойдут в счёт
-                  будущих аренд / продлений / штрафов.
+              {overpayDest === "extend" && extEnabled && extResidualToDeposit > 0 && (
+                <div className="mt-1.5 text-[10.5px] text-muted">
+                  Остаток {fmt(extResidualToDeposit)} ₽ (меньше одного дня
+                  тарифа) уйдёт в депозит клиента.
                 </div>
               )}
-              {/* v0.5.9: В залог — описание + сколько до полного пополнения */}
-              {overpayDest === "security" && (() => {
-                const original =
-                  (rental as { depositOriginal?: number }).depositOriginal ?? 0;
-                const current = rental.deposit ?? 0;
-                const shortage = Math.max(0, original - current);
-                const willTopup = Math.min(overpay, shortage);
-                const willOverflow = overpay - willTopup;
-                return (
-                  <div className="text-[11px] text-blue-700/80">
-                    {fmt(willTopup)} ₽ пополним залог аренды (нужно ещё{" "}
-                    {fmt(shortage)} ₽ до исходных {fmt(original)} ₽).
-                    {willOverflow > 0 && (
-                      <span>
-                        {" "}Сверх — {fmt(willOverflow)} ₽ — уйдёт в депозит
-                        клиента.
-                      </span>
-                    )}
-                  </div>
-                );
-              })()}
-              {/* В продление — большая сумма + расчёт */}
-              {overpayDest === "extend" && (
-                <>
-                  {extEnabled && extAutoUnits > 0 ? (
-                    <div
-                      className={cn(
-                        "rounded-[10px] bg-emerald-50 px-3 py-2 ring-1 transition-colors",
-                        hoverDays != null
-                          ? "ring-emerald-400"
-                          : "ring-emerald-200",
-                      )}
-                    >
-                      <div className="flex items-baseline justify-between gap-2">
-                        <div className="text-[11px] font-bold uppercase tracking-wider text-emerald-700">
-                          Продление
-                          {hoverDays != null && (
-                            <span className="ml-1.5 normal-case font-semibold opacity-80">
-                              · превью
-                            </span>
-                          )}
-                        </div>
-                        <div className="font-display text-[20px] font-extrabold tabular-nums text-emerald-700">
-                          {fmt(displaySum)} ₽
-                        </div>
-                      </div>
-                      <div className="mt-0.5 text-[12px] text-emerald-700/90">
-                        {displayDays} дн
-                        {extIsWeekly ? ` · ${displayWeeks} нед` : ""}
-                        {" × "}
-                        {extIsWeekly
-                          ? `${fmt(extRate)} ₽/нед`
-                          : `${fmt(extDailyRate)} ₽/сут`}
-                        {extResidualToDeposit > 0 && hoverDays == null && (
-                          <>
-                            {" · остаток "}
-                            <b>{fmt(extResidualToDeposit)} ₽</b> → депозит
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="text-[11px] text-orange-ink">
-                      Переплата меньше дневной ставки — продление невозможно,
-                      положим в депозит.
-                    </div>
-                  )}
-                  {extAutoUnits > 0 && (
-                    <div className="flex flex-col gap-2">
-                      {(() => {
-                        // Парсинг дат аренды.
-                        const sm = /^(\d{2})\.(\d{2})\.(\d{4})/.exec(rental.start);
-                        const em = /^(\d{2})\.(\d{2})\.(\d{4})/.exec(rental.endPlanned);
-                        if (!sm || !em) return null;
-                        const rentalStart = new Date(
-                          Number(sm[3]),
-                          Number(sm[2]) - 1,
-                          Number(sm[1]),
-                        );
-                        const anchor = new Date(
-                          Number(em[3]),
-                          Number(em[2]) - 1,
-                          Number(em[1]),
-                        );
-                        // v0.4.94: продление считается ОТ today если есть
-                        // просрочка (endPlanned уже в прошлом). Иначе
-                        // от endPlanned. extBase = max(endPlanned, today).
-                        const todayDate = new Date();
-                        todayDate.setHours(0, 0, 0, 0);
-                        const extBase =
-                          anchor.getTime() < todayDate.getTime()
-                            ? todayDate
-                            : anchor;
-                        const newEnd = new Date(extBase);
-                        newEnd.setDate(newEnd.getDate() + extDays);
-                        const fmtRu = (d: Date) =>
-                          `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}`;
-                        const displayEnd = new Date(extBase);
-                        displayEnd.setDate(displayEnd.getDate() + displayDays);
-                        return (
-                          <>
-                            <div className="flex items-center justify-between text-[11px]">
-                              <span className="text-muted">
-                                {fmtRu(anchor)} → {fmtRu(newEnd)}
-                              </span>
-                              <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
-                                +{displayDays} дн{extIsWeekly ? ` · ${displayWeeks} нед` : ""}
-                              </span>
-                            </div>
-                            <div className="flex justify-center">
-                              <ExtensionRangeCalendar
-                                rentalStartDate={rentalStart}
-                                anchorDate={anchor}
-                                endDate={displayEnd}
-                                isWeekly={extIsWeekly}
-                                affordableDays={extAutoUnits * (extIsWeekly ? 7 : 1)}
-                                onHoverDays={setHoverDays}
-                                onPickDays={(days) => {
-                                  setHoverDays(null);
-                                  if (extIsWeekly) {
-                                    setExtInputOverride(
-                                      Math.max(1, Math.round(days / 7)),
-                                    );
-                                  } else {
-                                    setExtInputOverride(days);
-                                  }
-                                }}
-                              />
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-[11px] text-muted">
-                                {extIsWeekly ? `Недель (= ${extDays} дн)` : "Дней"}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setExtInputOverride(Math.max(1, extInput - 1))
-                                }
-                                className="flex h-7 w-7 items-center justify-center rounded-[6px] border border-border bg-white text-[14px] font-bold text-ink-2 hover:border-emerald-400 hover:text-emerald-600"
-                                title="Уменьшить"
-                              >
-                                −
-                              </button>
-                              <input
-                                type="number"
-                                min={1}
-                                value={extInput}
-                                onFocus={(e) => e.currentTarget.select()}
-                                onChange={(e) =>
-                                  setExtInputOverride(
-                                    Math.max(1, Number(e.target.value) || 1),
-                                  )
-                                }
-                                className="h-7 w-14 rounded-[6px] border border-border bg-white px-2 text-center text-[12px] tabular-nums outline-none focus:border-emerald-500"
-                              />
-                              <button
-                                type="button"
-                                onClick={() => setExtInputOverride(extInput + 1)}
-                                className="flex h-7 w-7 items-center justify-center rounded-[6px] border border-border bg-white text-[14px] font-bold text-ink-2 hover:border-emerald-400 hover:text-emerald-600"
-                                title="Увеличить"
-                              >
-                                +
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setExtInputOverride(null)}
-                                className="text-[10px] text-emerald-700 hover:underline"
-                                title="Сбросить ручную правку — авто-расчёт по переплате"
-                              >
-                                авто
-                              </button>
-                            </div>
-                          </>
-                        );
-                      })()}
-                    </div>
-                  )}
-                </>
-              )}
-              {/* v0.5.9: «Произвольный тариф» относится только к продлению.
-                  Для «В залог» / «В депозит» бессмысленно — там нет тарифа.
-                  Поэтому показываем только когда overpayDest === 'extend'. */}
-              {overpayDest === "extend" && (
-                <label className="flex cursor-pointer items-center gap-2 text-[11px]">
-                  <input
-                    type="checkbox"
-                    checked={extCustomMode}
-                    onChange={(e) => setExtCustomMode(e.target.checked)}
-                    className="h-3.5 w-3.5 accent-blue-600"
-                  />
-                  Произвольный тариф
-                </label>
-              )}
-              {overpayDest === "extend" && extCustomMode && (
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    min={0}
-                    // v0.4.72: показываем пусто если 0, чтобы оператор
-                    // мог сразу набирать сумму без удаления нолика.
-                    value={extCustomRate === 0 ? "" : extCustomRate}
-                    onChange={(e) =>
-                      setExtCustomRate(Math.max(0, Number(e.target.value) || 0))
-                    }
-                    onFocus={(e) => e.currentTarget.select()}
-                    placeholder="0"
-                    className="h-7 w-24 rounded-[6px] border border-border bg-white px-2 text-[12px] tabular-nums outline-none focus:border-blue-500"
-                  />
-                  <div className="inline-flex rounded-[6px] bg-white p-0.5 ring-1 ring-border">
-                    {(["day", "week"] as const).map((u) => (
-                      <button
-                        key={u}
-                        type="button"
-                        onClick={() => setExtCustomUnit(u)}
-                        className={cn(
-                          "rounded-[4px] px-2 py-0.5 text-[10px] font-semibold transition-colors",
-                          extCustomUnit === u
-                            ? "bg-blue-600 text-white"
-                            : "text-muted hover:text-ink",
-                        )}
-                      >
-                        {u === "day" ? "₽/сут" : "₽/нед"}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {overpayDest === "extend" && (
-                <div className="text-[10px] text-blue-700/70">
-                  После продления endPlannedAt увеличится на {extDays} дн.
-                  Текущая аренда продолжается, без отдельной «новой».
+              {overpayDest === "extend" && extEnabled && extSum > overpay && (
+                <div className="mt-1.5 text-[10.5px] font-semibold text-amber-700">
+                  ⚠ Выбрано больше дней, чем покрывает переплата —
+                  не хватает {fmt(extSum - overpay)} ₽.
                 </div>
               )}
             </div>
           )}
 
-          {/* Депозит клиента */}
-          {depositBalance > 0 && (
-            <div className="rounded-[10px] border border-green-300 bg-green-soft/40 px-3 py-2 text-[12px] text-green-ink">
-              <label className="flex items-start gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={useDeposit}
-                  onChange={(e) => setUseDeposit(e.target.checked)}
-                  className="mt-0.5"
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="font-semibold">
-                    Депозит клиента — {fmt(depositBalance)} ₽
-                  </div>
-                  <div className="text-[11px] opacity-80">
-                    {useDeposit
-                      ? `Зачтём ${fmt(depositToUse)} ₽`
-                      : "Не использовать"}
-                  </div>
-                </div>
-              </label>
-              {useDeposit && (
-                <div className="mt-2 flex items-center gap-2">
-                  <span className="text-[11px] opacity-80">Сумма с депозита:</span>
-                  <input
-                    type="number"
-                    min={0}
-                    max={depositBalance}
-                    value={useDepositAmountStr}
-                    onChange={(e) =>
-                      setUseDepositAmountStr(
-                        e.target.value.replace(/\D/g, ""),
-                      )
-                    }
-                    placeholder={`всё (${fmt(depositBalance)})`}
-                    className="h-7 w-32 rounded-[6px] border border-green-300 bg-white px-2 text-[12px] tabular-nums outline-none focus:border-green-600"
-                  />
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Залог. v0.4.49: видим только когда:
-              - залог денежный (не предмет)
-              - есть что покрывать из залога (overdue/damage в долге)
-              На rent/manual залог ставить нельзя по бизнес-правилу. */}
-          {securityAllowed && (
-            <div className="rounded-[10px] border border-amber-300 bg-amber-50 px-3 py-2 text-[12px] text-amber-900">
-              <label className="flex items-start gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={useSecurity}
-                  onChange={(e) => setUseSecurity(e.target.checked)}
-                  className="mt-0.5"
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5 font-semibold">
-                    <Shield size={12} /> Списать с залога — макс {fmt(Math.min(securityMax, securityCoverable))} ₽
-                  </div>
-                  <div className="text-[11px] opacity-80">
-                    Только в счёт ущерба и просрочки. Аренду из залога
-                    оплатить нельзя — он остаётся как страховой счёт.
-                  </div>
-                </div>
-              </label>
-              {useSecurity && (
-                <>
-                  <div className="mt-2 flex items-center gap-2">
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      value={securityStr}
-                      onChange={(e) =>
-                        setSecurityStr(e.target.value.replace(/[^\d]/g, ""))
-                      }
-                      className="h-9 w-32 rounded-[8px] border border-border bg-white px-2 text-[13px] tabular-nums text-ink outline-none focus:border-blue-600"
-                    />
-                    <span className="text-[11px]">₽ из залога</span>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setSecurityStr(
-                          String(Math.min(securityMax, securityCoverable)),
-                        )
-                      }
-                      className="ml-auto rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-semibold hover:bg-amber-200"
-                    >
-                      Покрыть полностью
-                    </button>
-                  </div>
-                  {/* v0.4.81: показываем что останется в залоге к выдаче
-                      клиенту при завершении аренды без ущерба. */}
-                  <div className="mt-1.5 flex items-center justify-between text-[11px] opacity-90">
-                    <span>Останется в залоге (вернётся клиенту при сдаче):</span>
-                    <span className="tabular-nums font-semibold">
-                      {fmt(Math.max(0, securityMax - securityToUse))} ₽
-                    </span>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-
-          {/* Принято от клиента */}
-          <div>
-            <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-2">
-              Принято от клиента, ₽
-            </div>
-            <input
-              type="text"
-              inputMode="numeric"
-              value={acceptedStr}
-              onChange={(e) =>
-                setAcceptedStr(e.target.value.replace(/[^\d]/g, ""))
-              }
-              onFocus={(e) => e.currentTarget.select()}
-              placeholder="0"
-              className="h-10 w-full rounded-[10px] border border-border bg-white px-3 text-[16px] font-semibold tabular-nums text-ink outline-none focus:border-blue-600"
-            />
-          </div>
-
-          {/* Метод */}
-          <div>
-            <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-2">
-              Способ
-            </div>
-            <div className="grid grid-cols-3 gap-1.5">
-              {METHODS.map((m) => (
-                <button
-                  key={m.id}
-                  type="button"
-                  onClick={() => setMethod(m.id)}
-                  className={cn(
-                    "rounded-[10px] border px-2.5 py-1.5 text-[12px] font-semibold transition-colors",
-                    method === m.id
-                      ? "border-blue-500 bg-blue-50 text-blue-700"
-                      : "border-border bg-white text-ink-2 hover:border-blue-400",
-                  )}
-                >
-                  {m.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Превью */}
-          <div className="rounded-[10px] bg-surface-soft px-3 py-2 text-[12px]">
-            <div className="font-semibold text-ink">Будет проведено</div>
-            <div className="mt-1 flex flex-col gap-0.5 text-muted">
-              {depositToUse > 0 && (
-                <Row label="Из депозита клиента" value={`− ${fmt(depositToUse)} ₽`} />
-              )}
-              {securityToUse > 0 && (
-                <Row label="Списано с залога" value={`− ${fmt(securityToUse)} ₽`} />
-              )}
-              {accepted > 0 && (
-                <Row
-                  label={`Принято (${METHODS.find((m) => m.id === method)?.label})`}
-                  value={`+ ${fmt(accepted)} ₽`}
-                />
-              )}
-              <div className="mt-1 flex justify-between border-t border-border pt-1 text-ink">
-                <span className="font-semibold">Зачтено в долг/аренду</span>
-                <span className="tabular-nums font-semibold">
-                  {fmt(Math.min(dueAmount, totalReceived))} ₽
-                </span>
+          {/* ─── Финальная карточка «Будет проведено» ─────────────────── */}
+          <div className="px-5 py-4">
+            <div className="rounded-[12px] border border-border bg-surface-soft px-4 py-3">
+              <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-2">
+                Будет проведено
               </div>
-              {/* v0.4.93/95: при «В продление» переплата делится на:
-                  · сумму продления (extSum) → в саму аренду
-                  · остаток (extResidualToDeposit) → в депозит
-                  · недоплата если extSum > overpay (оператор выбрал
-                    больше дней чем хватает) → ! недоплата */}
-              {overpay > 0 && extEnabled && extSum > 0 && (
-                <>
-                  <div className="flex justify-between text-emerald-700">
-                    <span>Продление аренды (+{extDays} дн)</span>
-                    <span className="tabular-nums">+ {fmt(extSum)} ₽</span>
+              <div className="flex flex-col gap-0.5 text-[12px]">
+                {accepted > 0 && (
+                  <Row
+                    label={`Принято (${METHODS.find((m) => m.id === method)?.label})`}
+                    value={`+ ${fmt(accepted)} ₽`}
+                  />
+                )}
+                {depositToUse > 0 && (
+                  <Row
+                    label="Из депозита клиента"
+                    value={`− ${fmt(depositToUse)} ₽`}
+                  />
+                )}
+                {securityToUse > 0 && (
+                  <Row
+                    label="Списано с залога"
+                    value={`− ${fmt(securityToUse)} ₽`}
+                  />
+                )}
+                {forgiveDebt && overdueBalanceRaw > 0 && (
+                  <Row
+                    label="Просрочка прощена"
+                    value={`−${fmt(overdueBalanceRaw)} ₽`}
+                  />
+                )}
+                <div className="mt-1 flex justify-between border-t border-border pt-1 text-ink">
+                  <span className="font-semibold">Зачтено в долг/аренду</span>
+                  <span className="tabular-nums font-semibold">
+                    {fmt(Math.min(dueAmount, totalReceived))} ₽
+                  </span>
+                </div>
+                {overpay > 0 && extEnabled && extSum > 0 && (
+                  <>
+                    <div className="flex justify-between text-emerald-700">
+                      <span>Продление аренды (+{extDays} дн)</span>
+                      <span className="tabular-nums">+ {fmt(extSum)} ₽</span>
+                    </div>
+                    {extResidualToDeposit > 0 && (
+                      <div className="flex justify-between text-green-700">
+                        <span>Остаток → депозит клиента</span>
+                        <span className="tabular-nums">
+                          + {fmt(extResidualToDeposit)} ₽
+                        </span>
+                      </div>
+                    )}
+                  </>
+                )}
+                {overpay > 0 && overpayDest === "security" && (
+                  <div className="flex justify-between text-blue-700">
+                    <span>Залог пополнен</span>
+                    <span className="tabular-nums">+ {fmt(overpay)} ₽</span>
                   </div>
-                  {extResidualToDeposit > 0 && (
-                    <div className="flex justify-between text-green-700">
-                      <span>Остаток → депозит клиента</span>
-                      <span className="tabular-nums">
-                        + {fmt(extResidualToDeposit)} ₽
-                      </span>
-                    </div>
-                  )}
-                  {extSum > overpay && (
-                    <div className="flex justify-between text-amber-700 font-semibold">
-                      <span>
-                        ⚠ Не хватает на продление {extDays} дн
-                      </span>
-                      <span className="tabular-nums">
-                        −{fmt(extSum - overpay)} ₽
-                      </span>
-                    </div>
-                  )}
-                </>
-              )}
-              {overpay > 0 && (!extEnabled || extSum === 0) && (
-                <div className="flex justify-between text-green-700">
-                  <span>Переплата → депозит клиента</span>
-                  <span className="tabular-nums">+ {fmt(overpay)} ₽</span>
-                </div>
-              )}
-              {underpay > 0 && (
-                <div className="flex justify-between text-red-600">
-                  <span>Недоплата (висит за клиентом)</span>
-                  <span className="tabular-nums">{fmt(underpay)} ₽</span>
-                </div>
-              )}
+                )}
+                {overpay > 0 && overpayDest === "deposit" && (
+                  <div className="flex justify-between text-green-700">
+                    <span>Переплата → депозит клиента</span>
+                    <span className="tabular-nums">+ {fmt(overpay)} ₽</span>
+                  </div>
+                )}
+                {underpay > 0 && (
+                  <div className="flex justify-between text-red-600">
+                    <span>Недоплата (висит за клиентом)</span>
+                    <span className="tabular-nums">{fmt(underpay)} ₽</span>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -1657,6 +1491,168 @@ export function PaymentAcceptDialog({
           >
             <Check size={13} /> Принять оплату
           </button>
+        </div>
+      </div>
+
+      {/* v0.6.3: floating compact calendar — read-only превью периода
+          (аренда + просрочка + продление). Зависает НАД drawer'ом. */}
+      {parsedDates && newEnd && (
+        <CompactExtendCalendar
+          startDate={parsedDates.startDate}
+          anchor={parsedDates.anchor}
+          today={parsedDates.today}
+          newEnd={newEnd}
+          hasOverdue={isOverdueState}
+          forgiveDebt={forgiveDebt}
+        />
+      )}
+
+      {/* v0.6.3: редактор экипировки открывается из Step 3 — отдельный
+          диалог. После закрытия React Query инвалидирует rental,
+          equipmentJson обновится автоматически. */}
+      {equipDialogOpen && (
+        <EquipmentChangeDialog
+          rental={rental}
+          onClose={() => setEquipDialogOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Compact floating calendar для PaymentAcceptDialog (v0.6.3).
+ * Без drag — только показ периодов:
+ *  · синие ячейки = аренда (start..anchor)
+ *  · красные = просрочка (anchor..today) если просрочка
+ *  · зелёные = продление (today..newEnd или anchor..newEnd)
+ */
+function CompactExtendCalendar({
+  startDate,
+  anchor,
+  today,
+  newEnd,
+  hasOverdue,
+  forgiveDebt,
+}: {
+  startDate: Date;
+  anchor: Date;
+  today: Date;
+  newEnd: Date;
+  hasOverdue: boolean;
+  forgiveDebt: boolean;
+}) {
+  const dayMs = 86_400_000;
+  const stripTime = (d: Date) =>
+    new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const startMs = stripTime(startDate);
+  const anchorMs = stripTime(anchor);
+  const todayMs = stripTime(today);
+  const endMs = stripTime(newEnd);
+  const lastMs = Math.max(endMs, anchorMs, todayMs);
+  const totalSpan = Math.max(
+    10,
+    Math.round((lastMs - startMs) / dayMs) + 2,
+  );
+  // ограничиваем чтобы не разрослось
+  const maxCells = 21;
+  const cells: Array<{ d: Date; ms: number }> = [];
+  for (let i = 0; i < Math.min(totalSpan, maxCells); i++) {
+    const d = new Date(startMs + i * dayMs);
+    cells.push({ d, ms: stripTime(d) });
+  }
+
+  return (
+    <div
+      className="fixed inset-x-0 z-30 flex pointer-events-none justify-center"
+      style={{ bottom: "calc(min(86vh, 540px) + 14px)" }}
+    >
+      <div className="pointer-events-auto rounded-[12px] border border-border bg-white shadow-card-lg overflow-hidden max-w-[760px]">
+        <div className="flex items-center justify-between border-b border-border bg-surface-soft/50 px-3 py-1.5">
+          <div className="text-[10.5px] font-bold uppercase tracking-wider text-muted-2">
+            Период аренды
+          </div>
+          <div className="flex items-center gap-3 text-[10px] text-muted">
+            <span className="inline-flex items-center gap-1">
+              <span className="h-2.5 w-2.5 rounded border border-blue-300 bg-blue-100" />
+              аренда
+            </span>
+            {hasOverdue && !forgiveDebt && (
+              <span className="inline-flex items-center gap-1">
+                <span
+                  className="h-2.5 w-2.5 rounded border"
+                  style={{
+                    borderColor: "hsl(var(--red))",
+                    background: "hsl(var(--red-soft))",
+                  }}
+                />
+                просрочка
+              </span>
+            )}
+            <span className="inline-flex items-center gap-1">
+              <span className="h-2.5 w-2.5 rounded border border-emerald-500 bg-emerald-100" />
+              продление
+            </span>
+          </div>
+        </div>
+        <div className="p-2">
+          <div
+            className="grid gap-1"
+            style={{
+              gridTemplateColumns: `repeat(${cells.length}, minmax(0, 1fr))`,
+            }}
+          >
+            {cells.map((c, i) => {
+              const inRental = c.ms >= startMs && c.ms <= anchorMs;
+              const inOverdue =
+                hasOverdue && !forgiveDebt && c.ms > anchorMs && c.ms <= todayMs;
+              const greenStart = hasOverdue ? todayMs : anchorMs;
+              const inExtension = c.ms > greenStart && c.ms <= endMs;
+              const isNewEnd = c.ms === endMs && endMs > anchorMs;
+              const wd = c.d.getDay();
+              let bg = "transparent";
+              let border = "hsl(var(--border))";
+              let ink = "hsl(var(--muted-2))";
+              if (inRental) {
+                bg = "hsl(var(--blue-50))";
+                border = "hsl(var(--blue-100))";
+                ink = "hsl(var(--blue-700))";
+              }
+              if (inOverdue) {
+                bg = "hsl(var(--red-soft))";
+                border = "hsl(var(--red))";
+                ink = "hsl(var(--red-ink))";
+              }
+              if (inExtension) {
+                bg = "hsl(var(--green-soft))";
+                border = "hsl(var(--green-ink))";
+                ink = "hsl(var(--green-ink))";
+              }
+              return (
+                <div
+                  key={i}
+                  className={cn(
+                    "relative rounded-[7px] py-1 text-center",
+                    isNewEnd && "ring-2 ring-emerald-500 ring-offset-1",
+                  )}
+                  style={{
+                    background: bg,
+                    borderWidth: 1,
+                    borderStyle: "solid",
+                    borderColor: border,
+                    color: ink,
+                  }}
+                >
+                  <div className="text-[8.5px] font-bold uppercase tracking-wider opacity-70">
+                    {["вс", "пн", "вт", "ср", "чт", "пт", "сб"][wd]}
+                  </div>
+                  <div className="font-display text-[12px] font-extrabold tabular-nums leading-none">
+                    {c.d.getDate()}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
     </div>
