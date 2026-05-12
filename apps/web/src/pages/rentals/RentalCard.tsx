@@ -87,7 +87,7 @@ import { DocsInline } from "./rental-card/DocsInline";
 import { DebtsList } from "./rental-card/DebtsList";
 import { SideDrawer } from "./rental-card/SideDrawer";
 import { OverdueActionsPopover } from "./rental-card/OverdueActionsPopover";
-import { ActivityTimelineSection } from "./ActivityTimelineSection";
+import { ActivityFeed } from "./rental-card/ActivityFeed";
 
 type DrawerKind = "history" | "debts" | "profile" | null;
 
@@ -879,15 +879,14 @@ export function RentalCard({
         open={drawer === "history"}
         onClose={() => setDrawer(null)}
         title="История аренды"
-        subtitle="Все события · клик по строке открывает связанную сущность"
-        width={620}
+        subtitle="Поиск, фильтры, «было → стало» при hover"
+        width={680}
       >
-        <div className="p-4">
-          <ActivityTimelineSection
-            items={activityItems}
-            loading={activityQ.isLoading}
-          />
-        </div>
+        {/* v0.6.6: новый ActivityFeed с фильтрами/поиском/diff/group-by-day */}
+        <ActivityFeed
+          items={activityItems}
+          loading={activityQ.isLoading}
+        />
       </SideDrawer>
 
       <SideDrawer

@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/index.js";
 import {
@@ -1305,6 +1305,35 @@ export async function rentalsRoutes(app: FastifyInstance) {
         summary: withDamage
           ? `Завершена аренда ${summary} · зафиксирован ущерб ${(d.damageAmount ?? 0).toLocaleString("ru-RU")} ₽`
           : `Завершена аренда ${summary} · без ущерба, залог ${d.depositReturned ? "возвращён клиенту" : "удержан"}`,
+        diff: {
+          status: {
+            label: "Статус",
+            from: "active",
+            to: "completed",
+            kind: "text",
+          },
+          ...(result.mileageBefore != null && result.mileageAfter != null
+            ? {
+                mileage: {
+                  label: "Пробег",
+                  from: result.mileageBefore,
+                  to: result.mileageAfter,
+                  kind: "number",
+                  suffix: "км",
+                },
+              }
+            : {}),
+          ...(withDamage && d.damageAmount && d.damageAmount > 0
+            ? {
+                damage: {
+                  label: "Ущерб",
+                  from: 0,
+                  to: d.damageAmount,
+                  kind: "money",
+                },
+              }
+            : {}),
+        },
       });
       // v0.4.60: лог изменения пробега скутера (на сущность scooter,
       // чтобы запись была видна в карточке скутера и в его таймлайне).
@@ -1418,6 +1447,14 @@ export async function rentalsRoutes(app: FastifyInstance) {
         entityId: id,
         action: "revert_completion",
         summary: `Аренда #${id} возвращена из «завершённых» в активные`,
+        diff: {
+          status: {
+            label: "Статус",
+            from: "completed",
+            to: "active",
+            kind: "text",
+          },
+        },
       });
       const [updated] = await db
         .select()
@@ -1624,7 +1661,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
               : `продление на ${d.extraDays} дн (ожидает оплаты)`,
           });
         }
-        return updated;
+        return { updated, old, extraSum };
       });
 
       const summary = await summaryForRental(id);
@@ -1632,15 +1669,36 @@ export async function rentalsRoutes(app: FastifyInstance) {
         entity: "rental",
         entityId: id,
         action: "rental_extended",
-        summary: `Продление аренды ${summary} на ${d.extraDays} дн (${result.rate} ₽/${result.rateUnit === "week" ? "нед" : "сут"})`,
+        summary: `Продление аренды ${summary} на ${d.extraDays} дн (${result.updated.rate} ₽/${result.updated.rateUnit === "week" ? "нед" : "сут"})`,
         meta: {
           extraDays: d.extraDays,
           newRate: d.newRate,
           newRateUnit: d.newRateUnit ?? "day",
-          newEndPlannedAt: result.endPlannedAt,
+          newEndPlannedAt: result.updated.endPlannedAt,
+        },
+        diff: {
+          endPlannedAt: {
+            label: "Возврат",
+            from: result.old.endPlannedAt.toISOString(),
+            to: result.updated.endPlannedAt.toISOString(),
+            kind: "date",
+          },
+          days: {
+            label: "Дней",
+            from: result.old.days,
+            to: result.updated.days,
+            kind: "number",
+            suffix: "дн",
+          },
+          sum: {
+            label: "Сумма аренды",
+            from: result.old.sum,
+            to: result.updated.sum,
+            kind: "money",
+          },
         },
       });
-      return result;
+      return result.updated;
     },
   );
 
@@ -1722,6 +1780,14 @@ export async function rentalsRoutes(app: FastifyInstance) {
           method: parsed.data.method,
           newDeposit: result?.deposit,
           newOriginal: result?.depositOriginal,
+        },
+        diff: {
+          deposit: {
+            label: "Залог",
+            from: rental.deposit ?? 0,
+            to: result?.deposit ?? 0,
+            kind: "money",
+          },
         },
       });
       return result;
@@ -1878,6 +1944,10 @@ export async function rentalsRoutes(app: FastifyInstance) {
       });
 
       const summary = await summaryForRental(id);
+      // v0.6.6: для diff собираем список названий экипировки (was/now).
+      const oldNames = ((rental.equipmentJson ?? []) as Array<{ name: string }>)
+        .map((i) => i.name);
+      const newNames = newItems.map((i) => i.name);
       await logActivity(req, {
         entity: "rental",
         entityId: id,
@@ -1895,6 +1965,24 @@ export async function rentalsRoutes(app: FastifyInstance) {
           remainingDays,
           totalDelta,
           payNow: parsed.data.payNow,
+        },
+        diff: {
+          items: {
+            label: "Экипировка",
+            from: oldNames,
+            to: newNames,
+            kind: "list",
+          },
+          ...(totalDelta !== 0
+            ? {
+                fee: {
+                  label: totalDelta > 0 ? "Доплата" : "Возврат",
+                  from: 0,
+                  to: Math.abs(totalDelta),
+                  kind: "money",
+                },
+              }
+            : {}),
         },
       });
       return result;
@@ -2097,8 +2185,25 @@ export async function rentalsRoutes(app: FastifyInstance) {
           })
           .where(eq(rentals.id, id));
 
-        return { rentalId: id, feeAmount };
+        return { rentalId: id, feeAmount, prevScooterId };
       });
+
+      // v0.6.6: для diff достанем человекочитаемые имена скутеров.
+      const swapScooterIds: number[] = [];
+      if (result.prevScooterId) swapScooterIds.push(result.prevScooterId);
+      swapScooterIds.push(d.newScooterId);
+      const swapScootersRows = swapScooterIds.length
+        ? await db
+            .select({ id: scooters.id, name: scooters.name })
+            .from(scooters)
+            .where(inArray(scooters.id, swapScooterIds))
+        : [];
+      const prevScooterName =
+        swapScootersRows.find((s) => s.id === result.prevScooterId)?.name ??
+        (result.prevScooterId ? `#${result.prevScooterId}` : "—");
+      const newScooterName =
+        swapScootersRows.find((s) => s.id === d.newScooterId)?.name ??
+        `#${d.newScooterId}`;
 
       await logActivity(req, {
         entity: "rental",
@@ -2106,6 +2211,24 @@ export async function rentalsRoutes(app: FastifyInstance) {
         action: "scooter_swapped",
         summary: `Замена скутера в аренде #${String(id).padStart(4, "0")}${result.feeAmount > 0 ? ` (доплата ${result.feeAmount} ₽)` : ""}`,
         meta: { newScooterId: d.newScooterId, feeAmount: result.feeAmount },
+        diff: {
+          scooter: {
+            label: "Скутер",
+            from: prevScooterName,
+            to: newScooterName,
+            kind: "text",
+          },
+          ...(result.feeAmount > 0
+            ? {
+                fee: {
+                  label: "Доплата",
+                  from: 0,
+                  to: result.feeAmount,
+                  kind: "money",
+                },
+              }
+            : {}),
+        },
       });
 
       // Возвращаем актуальную аренду — фронту удобно показать обновлённый
@@ -2755,6 +2878,14 @@ export async function rentalsRoutes(app: FastifyInstance) {
           ? `Оплата ${parsed.data.amount} ₽ по аренде #${id} (${parsed.data.kind}) — endPlanned сдвинут на ${endPlannedShift} дн${newStatus ? ", статус → active" : ""}${residualToDeposit > 0 ? `, остаток ${residualToDeposit} ₽ → депозит клиента` : ""}`
           : `Оплата ${parsed.data.amount} ₽ по аренде #${id} (${parsed.data.kind})`,
       meta: { endPlannedShift, newStatus, residualToDeposit },
+      diff: {
+        payment: {
+          label: "Принято",
+          from: 0,
+          to: parsed.data.amount,
+          kind: "money",
+        },
+      },
     });
     return row;
   });
@@ -2806,6 +2937,14 @@ export async function rentalsRoutes(app: FastifyInstance) {
       entityId: id,
       action: "debt_manual",
       summary: `Начислен долг ${parsed.data.amount} ₽ по аренде #${id}: ${parsed.data.comment}`,
+      diff: {
+        debt: {
+          label: "Долг",
+          from: 0,
+          to: parsed.data.amount,
+          kind: "money",
+        },
+      },
     });
     return row;
   });
@@ -2978,6 +3117,14 @@ export async function rentalsRoutes(app: FastifyInstance) {
         action: "debt_overdue_fine_forgiven",
         summary: `Списан штраф просрочки ${fineRemaining} ₽ по аренде #${id}${parsed.data.comment ? `: ${parsed.data.comment}` : ""}${norm.newStatus ? " · статус → active" : ""}`,
         meta: { daysShift: norm.shift, newStatus: norm.newStatus },
+        diff: {
+          fine: {
+            label: "Штраф",
+            from: fineRemaining,
+            to: 0,
+            kind: "money",
+          },
+        },
       });
       return {
         row,
@@ -3061,6 +3208,21 @@ export async function rentalsRoutes(app: FastifyInstance) {
           daysToShift,
           newStatus: finalStatus,
         },
+        diff: {
+          debt: {
+            label: "Долг по дням",
+            from: requestedAmount,
+            to: 0,
+            kind: "money",
+          },
+          overdueDays: {
+            label: "Дней просрочки",
+            from: daysToShift,
+            to: 0,
+            kind: "number",
+            suffix: "дн",
+          },
+        },
       });
       return {
         row,
@@ -3130,6 +3292,14 @@ export async function rentalsRoutes(app: FastifyInstance) {
       meta: {
         daysShift: finalShiftAll,
         newStatus: finalStatusAll,
+      },
+      diff: {
+        debt: {
+          label: "Просрочка",
+          from: total,
+          to: 0,
+          kind: "money",
+        },
       },
     });
     return {
