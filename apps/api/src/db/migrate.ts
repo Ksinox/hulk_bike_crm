@@ -51,6 +51,12 @@ async function applyMigrationsIdempotent(
     "42P07", // duplicate_table
     "23505", // unique_violation
     "42P16", // invalid_table_definition (если ALTER уже применён)
+    // v0.5.1: некоторые старые миграции (0027, ...) ссылаются на enum-значения
+    // (problem, completed_damage и т.д.), которые мы дропнули миграцией 0042.
+    // Postgres не парсит литералы → 22P02 invalid_text_representation. Это
+    // безопасно скипать: WHERE-условие всё равно бы не совпало (rentals
+    // уже не имеют тех статусов).
+    "22P02", // invalid_text_representation (enum value не существует)
   ]);
 
   for (const file of files) {
