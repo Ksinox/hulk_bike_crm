@@ -20,7 +20,7 @@
  *  5. Неоплаченная аренда (rent payments)
  *  6. Излишек → депозит клиента
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Check,
@@ -30,6 +30,8 @@ import {
   Calendar as CalendarIcon,
   Shirt,
   Pencil,
+  ChevronRight,
+  Wallet,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
@@ -111,60 +113,76 @@ export function PaymentAcceptDialog({
   const damageBalance = debt?.damageBalance ?? 0;
   const manualBalance = debt?.manualBalance ?? 0;
 
-  // v0.4.49: ДВЕ независимые галки про просрочку.
-  //  - countOverdueFine=true (default) → штраф 50% входит в «К оплате»
-  //  - countOverdueDays=true (default) → дни просрочки входят в «К оплате»
-  // Снятие любой → forgive соответствующего kind перед distribute.
-  // Чекбоксы показываются только если есть начисленная просрочка.
+  // v0.6.11: одно состояние выбора действия по просрочке (Step 1).
+  //   'clear'    — погасить долг (без forgive)
+  //   'days-all' — простить ВСЕ неоплаченные дни (target='days' с daysCount=overdueDays;
+  //                бэкенд авто-снимет fine за эти дни + сдвинет endPlanned на overdueDays)
+  //   'days-n'   — простить только N дней (target='days', daysCount=N)
+  //   'fine'     — простить только штраф (target='fine')
+  //   'all'      — простить ВСЁ (target='all')
+  // Дни/штраф учёт для расчёта «к приёму» производный (см. ниже).
+  type ForgiveChoice = "clear" | "days-all" | "days-n" | "fine" | "all";
   const hasOverdueFine = overdueFineBalanceRaw > 0;
   const hasOverdueDays = overdueDaysBalanceRaw > 0;
   const hasOverdue = hasOverdueFine || hasOverdueDays;
-  const [countOverdueFine, setCountOverdueFine] = useState<boolean>(true);
-  const [countOverdueDays, setCountOverdueDays] = useState<boolean>(true);
-  const overdueDaysBalance = countOverdueDays ? overdueDaysBalanceRaw : 0;
-  const overdueFineBalance = countOverdueFine ? overdueFineBalanceRaw : 0;
-
-  // v0.6.3: step-based UX — Step 1 «Сначала просрочка».
-  // Две карточки-кнопки: «Погасить долг» / «Простить просрочку».
-  // Жёстко связаны с countOverdueDays/Fine (бэкенд-логика не меняется):
-  //   clearDebt=true  → countOverdueDays=true,  countOverdueFine=true
-  //   forgiveDebt=true → countOverdueDays=false, countOverdueFine=false
   const overdueBalanceRaw = overdueDaysBalanceRaw + overdueFineBalanceRaw;
-  const clearDebt = countOverdueDays || countOverdueFine;
-  const forgiveDebt =
-    hasOverdue && !countOverdueDays && !countOverdueFine;
-  const setClearDebt = () => {
-    if (hasOverdueDays) setCountOverdueDays(true);
-    if (hasOverdueFine) setCountOverdueFine(true);
-  };
-  const setForgiveDebt = () => {
-    if (hasOverdueDays) setCountOverdueDays(false);
-    if (hasOverdueFine) setCountOverdueFine(false);
-  };
-  // v0.6.9: раскрытие «Простить просрочку» в 3 sub-варианта
-  // (как в RentalActionsMenu для action='forgive-overdue'):
-  //   forgive-days → countOverdueDays=false, countOverdueFine=true
-  //   forgive-fine → countOverdueDays=true,  countOverdueFine=false
-  //   forgive-all  → countOverdueDays=false, countOverdueFine=false (= setForgiveDebt)
-  const setForgiveDays = () => {
-    if (hasOverdueDays) setCountOverdueDays(false);
-    if (hasOverdueFine) setCountOverdueFine(true);
-  };
-  const setForgiveFine = () => {
-    if (hasOverdueDays) setCountOverdueDays(true);
-    if (hasOverdueFine) setCountOverdueFine(false);
-  };
-  // Подсветка «какой sub-вариант сейчас активен» — нужна только когда
-  // оператор уже выбрал «Простить X» (не «Погасить долг»).
-  const forgivingDaysOnly =
-    hasOverdueDays &&
-    !countOverdueDays &&
-    (!hasOverdueFine || countOverdueFine);
-  const forgivingFineOnly =
-    hasOverdueFine &&
-    !countOverdueFine &&
-    (!hasOverdueDays || countOverdueDays);
-  const forgivingAll = forgiveDebt;
+  const overdueDaysCount = debt?.overdueDays ?? 0;
+  const dailyRateBase = rental.rateUnit === "week"
+    ? Math.max(1, Math.round(rental.rate / 7))
+    : Math.max(1, rental.rate);
+  const fineDailyRate = Math.round(dailyRateBase * 0.5);
+  const [forgiveChoice, setForgiveChoice] = useState<ForgiveChoice>("clear");
+  // Количество дней для частичного прощения (forgiveChoice='days-n').
+  // Ограничено [1, overdueDaysCount] — больше прощать нельзя.
+  const [forgiveDaysN, setForgiveDaysN] = useState<number>(1);
+  useEffect(() => {
+    // При смене аренды сбрасываем выбор + ограничиваем N.
+    if (forgiveDaysN > Math.max(1, overdueDaysCount)) {
+      setForgiveDaysN(Math.max(1, overdueDaysCount));
+    }
+  }, [overdueDaysCount, forgiveDaysN]);
+
+  // Эффективный остаток дней/штрафа просрочки после применения выбора.
+  // 'days-n' — линейное уменьшение на N×dailyRate (плюс fine за эти N дней).
+  // 'days-all' — все дни и весь fine за них прощены целиком.
+  // 'fine' — только fine.
+  // 'all' — оба = 0.
+  const partialDaysAmount =
+    forgiveChoice === "days-n"
+      ? Math.min(overdueDaysBalanceRaw, forgiveDaysN * dailyRateBase)
+      : 0;
+  const partialFineAmount =
+    forgiveChoice === "days-n"
+      ? Math.min(overdueFineBalanceRaw, forgiveDaysN * fineDailyRate)
+      : 0;
+  const overdueDaysBalance =
+    forgiveChoice === "all" || forgiveChoice === "days-all"
+      ? 0
+      : Math.max(0, overdueDaysBalanceRaw - partialDaysAmount);
+  const overdueFineBalance =
+    forgiveChoice === "all" || forgiveChoice === "fine"
+      ? 0
+      : forgiveChoice === "days-all"
+        ? 0
+        : Math.max(0, overdueFineBalanceRaw - partialFineAmount);
+
+  // Сдвиг endPlanned за счёт прощения дней — в днях:
+  //   'days-all' — все дни просрочки (overdueDaysCount)
+  //   'days-n'   — N (но не больше overdueDaysCount)
+  //   'all'      — все дни (бэкенд тоже сдвигает)
+  // Используется во floating calendar (yellow → green ячейки).
+  const forgiveShiftDays =
+    forgiveChoice === "days-all"
+      ? overdueDaysCount
+      : forgiveChoice === "days-n"
+        ? Math.min(forgiveDaysN, overdueDaysCount)
+        : forgiveChoice === "all"
+          ? overdueDaysCount
+          : 0;
+
+  // Обратносовместимые алиасы для существующего UI/submit-кода.
+  const forgiveDebt = forgiveChoice !== "clear";
+  const setClearDebt = () => setForgiveChoice("clear");
 
   // v0.6.3: Step 2 — toggle режима ввода периода продления.
   // 'days' — спиннер + quick-presets.
@@ -232,6 +250,29 @@ export function PaymentAcceptDialog({
   const depositToUse = useDeposit ? depositBalance : 0;
   const remainingAfterDeposit = Math.max(0, dueAmount - depositToUse);
 
+  // v0.6.11: пополнение залога. Доступно когда:
+  //  - залог денежный (depositItem === null/undefined)
+  //  - rental.deposit < rental.depositOriginal (есть «недостача»)
+  // По умолчанию сумма = shortage, оператор может править input.
+  const rentalDepositCurrent = rental.deposit ?? 0;
+  const rentalDepositOriginal =
+    (rental as { depositOriginal?: number }).depositOriginal ?? rentalDepositCurrent;
+  const securityShortage = Math.max(
+    0,
+    rentalDepositOriginal - rentalDepositCurrent,
+  );
+  const canTopupSecurity = !rental.depositItem && securityShortage > 0;
+  const [topupSecurity, setTopupSecurity] = useState<boolean>(false);
+  const [topupAmountStr, setTopupAmountStr] = useState<string>(() =>
+    canTopupSecurity ? String(securityShortage) : "",
+  );
+  const topupAmount = topupSecurity
+    ? Math.min(
+        securityShortage,
+        Math.max(0, parseInt(topupAmountStr.replace(/\D/g, "") || "0", 10)),
+      )
+    : 0;
+
   // v0.6.7: списание с залога аренды убрано из UI — функциональность
   // не входит в новый дизайн (extension-drawer.jsx). securityToUse=0
   // всегда. Если когда-то понадобится — добавить через отдельный flow,
@@ -260,7 +301,8 @@ export function PaymentAcceptDialog({
   // Долг к закрытию (с учётом forgive).
   const debtPortion = forgiveDebt ? 0 : dueAmount;
   // Общая сумма «всё что нужно собрать» (до учёта депозита).
-  const grossTotal = debtPortion + periodTotal;
+  // v0.6.11: + пополнение залога (если оператор включил).
+  const grossTotal = debtPortion + periodTotal + topupAmount;
   // v0.4.83: «Принято от клиента» — пустое поле когда сумма 0, чтоб
   // оператор не стирал нолик при наборе.
   const [acceptedStr, setAcceptedStr] = useState<string>(() => {
@@ -279,8 +321,10 @@ export function PaymentAcceptDialog({
 
   const accepted = Number(acceptedStr.replace(/\D/g, "")) || 0;
   const totalReceived = depositToUse + securityToUse + accepted;
-  const overpay = Math.max(0, totalReceived - dueAmount);
-  const underpay = Math.max(0, dueAmount - totalReceived);
+  // v0.6.11: вычитаем topup из подсчёта overpay/underpay — пополнение
+  // залога это «своя» строка платежа, не относится к закрытию долга.
+  const overpay = Math.max(0, totalReceived - dueAmount - topupAmount);
+  const underpay = Math.max(0, dueAmount + topupAmount - totalReceived);
 
   // v0.6.7: extension всегда «включён» когда extDays > 0 — оператор
   // явно выбрал период (через спиннер/preset/amount). Старая логика
@@ -353,7 +397,7 @@ export function PaymentAcceptDialog({
    * Это нужно чтобы revenue не задваивался: залог/депозит уже были
    * учтены раньше, повторный учёт исключается фильтром revenue.ts.
    */
-  const distribute = (): Op[] => {
+  const distribute = (acceptedAvail: number = accepted): Op[] => {
     // Шаг 1 — разложили общий totalReceived на «что именно платим»
     const queue: {
       cap: number;
@@ -420,7 +464,7 @@ export function PaymentAcceptDialog({
     // 2B — основной funding: clientDeposit → accepted
     const funding: { amount: number; method: PaymentMethod }[] = [
       { amount: depositToUse, method: "deposit" },
-      { amount: accepted, method },
+      { amount: acceptedAvail, method },
     ];
     let fundIdx = 0;
     let fundLeft = funding[0]?.amount ?? 0;
@@ -472,28 +516,37 @@ export function PaymentAcceptDialog({
     if (saving) return;
     setSaving(true);
     try {
-      // v0.4.49: 0. Раздельное списание просрочки по галкам.
-      //   - !countOverdueFine && hasOverdueFine → forgive(target='fine')
-      //   - !countOverdueDays && hasOverdueDays → forgive(target='days')
-      //   - оба сняты → target='all' (одним запросом).
-      const wantWaiveDays = !countOverdueDays && hasOverdueDays;
-      const wantWaiveFine = !countOverdueFine && hasOverdueFine;
-      if (wantWaiveDays && wantWaiveFine) {
-        await api.post(`/api/rentals/${rental.id}/debt/forgive-overdue`, {
-          target: "all",
-          comment:
-            "Прощение просрочки целиком при приёме оплаты (предупредил заранее)",
-        });
-      } else if (wantWaiveDays) {
-        await api.post(`/api/rentals/${rental.id}/debt/forgive-overdue`, {
-          target: "days",
-          comment: "Прощение просроченных дней при приёме оплаты",
-        });
-      } else if (wantWaiveFine) {
-        await api.post(`/api/rentals/${rental.id}/debt/forgive-overdue`, {
-          target: "fine",
-          comment: "Прощение штрафа просрочки при приёме оплаты",
-        });
+      // v0.6.11: новая модель Step 1 — единый forgiveChoice.
+      //   'clear'    — ничего не прощаем (только погашаем).
+      //   'days-all' — все неоплаченные дни (+ fine за эти дни авто).
+      //   'days-n'   — ровно N дней (бэкенд cap'ит по реальному остатку).
+      //   'fine'     — только штраф 50%.
+      //   'all'      — всё (дни + штраф).
+      if (hasOverdue && forgiveChoice !== "clear") {
+        if (forgiveChoice === "all") {
+          await api.post(`/api/rentals/${rental.id}/debt/forgive-overdue`, {
+            target: "all",
+            comment:
+              "Прощение просрочки целиком при приёме оплаты",
+          });
+        } else if (forgiveChoice === "fine") {
+          await api.post(`/api/rentals/${rental.id}/debt/forgive-overdue`, {
+            target: "fine",
+            comment: "Прощение штрафа просрочки при приёме оплаты",
+          });
+        } else if (forgiveChoice === "days-all") {
+          await api.post(`/api/rentals/${rental.id}/debt/forgive-overdue`, {
+            target: "days",
+            daysCount: Math.max(1, overdueDaysCount),
+            comment: "Прощение всех неоплаченных дней при приёме оплаты",
+          });
+        } else if (forgiveChoice === "days-n") {
+          await api.post(`/api/rentals/${rental.id}/debt/forgive-overdue`, {
+            target: "days",
+            daysCount: Math.max(1, Math.min(forgiveDaysN, overdueDaysCount)),
+            comment: `Прощение ${forgiveDaysN} дн просрочки при приёме оплаты`,
+          });
+        }
       }
       // 1. Списать депозит клиента (clients.deposit_balance), если используется
       if (depositToUse > 0) {
@@ -524,6 +577,16 @@ export function PaymentAcceptDialog({
         });
       }
       // 3. Выполнить распределение всех принятых средств.
+      // v0.6.11: пополнение залога — отдельный POST /security-topup,
+      // ДО distribute (чтобы не путать с overpay). topupAmount уже
+      // включён в acceptedStr → вычитаем его из accepted-аргумента
+      // distribute, чтобы distribute не отправил эти деньги в долги.
+      if (topupAmount > 0) {
+        await api.post(`/api/rentals/${rental.id}/security-topup`, {
+          amount: topupAmount,
+          method: method === "cash" ? "cash" : "transfer",
+        });
+      }
       // v0.4.77: ПОРЯДОК ВАЖЕН. Раньше extend шёл ДО payment-операций,
       // и overdue_days_payment не сдвигал endPlanned (его уже сдвинул
       // extend в будущее). Теперь:
@@ -532,7 +595,8 @@ export function PaymentAcceptDialog({
       //   3b. extendInplaceAsync — сдвигает дальше за продление,
       //       создаёт rent placeholder paid=false.
       //   3c. Платежи по rent — PATCH placeholder paid=true.
-      const ops = distribute();
+      const acceptedForDistribute = Math.max(0, accepted - topupAmount);
+      const ops = distribute(acceptedForDistribute);
       // Первый проход: всё кроме rent.
       for (const op of ops) {
         if (op.amount <= 0) continue;
@@ -895,92 +959,23 @@ export function PaymentAcceptDialog({
                   {overdueDaysHeader > 0 ? ` · ${overdueDaysHeader} дн` : ""}
                 </span>
               </div>
-              {/* v0.6.9: 4 кнопки в одну линию — «Погасить долг» + 3 sub-варианта
-                  «Простить ...» (дни / штраф / всё). Если есть только один тип
-                  просрочки (только дни ИЛИ только штраф), скрываем неактуальные. */}
-              <div
-                className={cn(
-                  "grid gap-2",
-                  hasOverdueDays && hasOverdueFine
-                    ? "grid-cols-4"
-                    : "grid-cols-2",
-                )}
-              >
-                <button
-                  type="button"
-                  onClick={setClearDebt}
-                  className={cn(
-                    "rounded-[10px] border-2 bg-white px-2.5 py-2 text-left transition-colors",
-                    clearDebt && !forgiveDebt
-                      ? "border-blue-600"
-                      : "border-transparent bg-white/60 hover:bg-white",
-                  )}
-                >
-                  <div className="text-[12px] font-bold text-ink">
-                    Погасить долг
-                  </div>
-                  <div className="mt-0.5 text-[10.5px] text-muted tabular-nums">
-                    {fmt(overdueBalanceRaw)} ₽
-                  </div>
-                </button>
-                {hasOverdueDays && hasOverdueFine && (
-                  <button
-                    type="button"
-                    onClick={setForgiveDays}
-                    className={cn(
-                      "rounded-[10px] border-2 bg-white px-2.5 py-2 text-left transition-colors",
-                      forgivingDaysOnly
-                        ? "border-emerald-500"
-                        : "border-transparent bg-white/60 hover:bg-white",
-                    )}
-                  >
-                    <div className="text-[12px] font-bold text-green-ink">
-                      Простить дни
-                    </div>
-                    <div className="mt-0.5 text-[10.5px] text-muted tabular-nums">
-                      −{fmt(overdueDaysBalanceRaw)} ₽
-                    </div>
-                  </button>
-                )}
-                {hasOverdueDays && hasOverdueFine && (
-                  <button
-                    type="button"
-                    onClick={setForgiveFine}
-                    className={cn(
-                      "rounded-[10px] border-2 bg-white px-2.5 py-2 text-left transition-colors",
-                      forgivingFineOnly
-                        ? "border-emerald-500"
-                        : "border-transparent bg-white/60 hover:bg-white",
-                    )}
-                  >
-                    <div className="text-[12px] font-bold text-green-ink">
-                      Простить штраф
-                    </div>
-                    <div className="mt-0.5 text-[10.5px] text-muted tabular-nums">
-                      −{fmt(overdueFineBalanceRaw)} ₽
-                    </div>
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={setForgiveDebt}
-                  className={cn(
-                    "rounded-[10px] border-2 bg-white px-2.5 py-2 text-left transition-colors",
-                    forgivingAll
-                      ? "border-emerald-500"
-                      : "border-transparent bg-white/60 hover:bg-white",
-                  )}
-                >
-                  <div className="text-[12px] font-bold text-green-ink">
-                    {hasOverdueDays && hasOverdueFine
-                      ? "Простить всё"
-                      : "Простить просрочку"}
-                  </div>
-                  <div className="mt-0.5 text-[10.5px] text-muted tabular-nums">
-                    −{fmt(overdueBalanceRaw)} ₽
-                  </div>
-                </button>
-              </div>
+              {/* v0.6.11: 2 карточки grid-cols-2 — «Погасить долг» / «Простить».
+                  На «Простить» при hover/click показывается side popover со
+                  списком 4 вариантов (все дни / N дней / только штраф / всё). */}
+              <ForgiveStepCards
+                forgiveChoice={forgiveChoice}
+                setForgiveChoice={setForgiveChoice}
+                forgiveDaysN={forgiveDaysN}
+                setForgiveDaysN={setForgiveDaysN}
+                overdueBalanceRaw={overdueBalanceRaw}
+                overdueDaysBalanceRaw={overdueDaysBalanceRaw}
+                overdueFineBalanceRaw={overdueFineBalanceRaw}
+                overdueDaysCount={overdueDaysCount}
+                hasOverdueDays={hasOverdueDays}
+                hasOverdueFine={hasOverdueFine}
+                onClear={setClearDebt}
+                fmt={fmt}
+              />
             </div>
           )}
 
@@ -1188,6 +1183,75 @@ export function PaymentAcceptDialog({
             </div>
           </div>
 
+          {/* v0.6.11: «Пополнение залога» — отдельная секция, видна
+              когда залог денежный и rental.deposit < depositOriginal. */}
+          {canTopupSecurity && (
+            <div className="border-b border-border px-5 py-3">
+              <div className="mb-2 flex items-center gap-2">
+                <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-amber-500 text-[11px] font-bold text-white">
+                  <Wallet size={11} />
+                </span>
+                <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
+                  Пополнение залога
+                </div>
+                <div className="ml-auto text-[11px] text-muted">
+                  Залог{" "}
+                  <span className="font-semibold text-ink-2 tabular-nums">
+                    {fmt(rentalDepositCurrent)} ₽
+                  </span>{" "}
+                  из{" "}
+                  <span className="font-semibold text-ink-2 tabular-nums">
+                    {fmt(rentalDepositOriginal)} ₽
+                  </span>{" "}
+                  — не хватает{" "}
+                  <span className="font-semibold text-red-ink tabular-nums">
+                    {fmt(securityShortage)} ₽
+                  </span>
+                </div>
+              </div>
+              <label className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  checked={topupSecurity}
+                  onChange={(e) => {
+                    setTopupSecurity(e.target.checked);
+                    if (e.target.checked && !topupAmountStr) {
+                      setTopupAmountStr(String(securityShortage));
+                    }
+                  }}
+                  className="h-3.5 w-3.5 accent-amber-500"
+                />
+                <span className="text-[12px] font-semibold text-ink-2">
+                  Пополнить залог
+                </span>
+                <span className="inline-flex items-stretch overflow-hidden rounded-[10px] border border-border">
+                  <span className="bg-surface-soft px-2 py-1 text-[12px] font-bold text-muted">
+                    +
+                  </span>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={topupAmountStr}
+                    disabled={!topupSecurity}
+                    onChange={(e) =>
+                      setTopupAmountStr(e.target.value.replace(/\D/g, ""))
+                    }
+                    className={cn(
+                      "w-[100px] bg-white px-2 py-1 text-[14px] font-bold tabular-nums text-ink outline-none",
+                      !topupSecurity && "text-muted-2",
+                    )}
+                  />
+                  <span className="flex items-center bg-surface-soft px-2 text-[12px] font-bold text-muted">
+                    ₽
+                  </span>
+                </span>
+                <span className="text-[11px] text-muted-2">
+                  макс {fmt(securityShortage)} ₽
+                </span>
+              </label>
+            </div>
+          )}
+
           {/* v0.6.7: предупреждение «не хватает» — над footer'ом
               в режиме «по сумме клиента» (как в дизайне line 343-349). */}
           {shortageAmount > 0 && (
@@ -1259,6 +1323,12 @@ export function PaymentAcceptDialog({
                         label="Списано с депозита"
                         value={`−${fmt(depositToUse)} ₽`}
                         tone="green"
+                      />
+                    )}
+                    {topupAmount > 0 && (
+                      <FooterRow
+                        label="Пополнение залога"
+                        value={`+${fmt(topupAmount)} ₽`}
                       />
                     )}
                   </>
@@ -1347,12 +1417,28 @@ export function PaymentAcceptDialog({
           Drag-handle в этом календаре live обновляет extInputOverride
           через onPreviewExtend → footer drawer'а пересчитывается
           мгновенно. */}
-      {parsedDates && (
+      {parsedDates && (() => {
+        // v0.6.11: live-preview прощения дней в floating calendar.
+        // При forgive-days/days-n/all сдвигаем plannedEnd вперёд на
+        // forgiveShiftDays — жёлтые ячейки просрочки превращаются в
+        // зелёные (часть периода аренды). Если все дни просрочки
+        // прощены и forgiveShiftDays >= overdueDays — isOverdue=false.
+        const shiftedPlannedEnd = new Date(parsedDates.anchor);
+        if (forgiveShiftDays > 0) {
+          shiftedPlannedEnd.setDate(
+            shiftedPlannedEnd.getDate() + forgiveShiftDays,
+          );
+        }
+        const stillOverdue =
+          isOverdueState &&
+          forgiveShiftDays < overdueDaysCount &&
+          forgiveChoice !== "all";
+        return (
         <FloatingDragExtendCalendar
           closing={closing}
           startDate={parsedDates.startDate}
-          plannedEnd={parsedDates.anchor}
-          isOverdue={isOverdueState && !forgiveDebt}
+          plannedEnd={shiftedPlannedEnd}
+          isOverdue={stillOverdue}
           dailyRate={extDailyRate}
           initialDays={extDays}
           onPreviewExtend={(days) => {
@@ -1374,7 +1460,8 @@ export function PaymentAcceptDialog({
             setOverpayDest("extend");
           }}
         />
-      )}
+        );
+      })()}
 
       {/* v0.6.3: редактор экипировки открывается из Step 3 — отдельный
           диалог. После закрытия React Query инвалидирует rental,
@@ -1489,5 +1576,332 @@ function FooterRow({
       <span className={labelClass}>{label}</span>
       <span className={cn("tabular-nums font-semibold", valueClass)}>{value}</span>
     </div>
+  );
+}
+
+/**
+ * v0.6.11: Step 1 — две карточки «Погасить долг» / «Простить».
+ *
+ * Карточка «Простить» на hover (с 200ms delay) или click открывает side
+ * popover со списком 4 вариантов:
+ *   • Все неоплаченные дни ({overdueDaysCount} дн)
+ *   • Только N дней (укажу сколько) — inline-input для N
+ *   • Только штраф (без дней)
+ *   • Всю просрочку (дни + штраф)
+ *
+ * Поведение:
+ *  - hover «Простить» → через 200ms popover открывается
+ *  - click → popover открывается мгновенно, не закрывается на mouseleave
+ *  - клик на вариант → выставляет forgiveChoice + закрывает popover
+ *  - клик вне popover (на overlay) → закрывает popover
+ *  - при выборе «N дней» → inline-input для редактирования; popover при
+ *    этом остаётся открытым, чтобы оператор мог поправить N
+ */
+function ForgiveStepCards({
+  forgiveChoice,
+  setForgiveChoice,
+  forgiveDaysN,
+  setForgiveDaysN,
+  overdueBalanceRaw,
+  overdueDaysBalanceRaw,
+  overdueFineBalanceRaw,
+  overdueDaysCount,
+  hasOverdueDays,
+  hasOverdueFine,
+  onClear,
+  fmt,
+}: {
+  forgiveChoice: "clear" | "days-all" | "days-n" | "fine" | "all";
+  setForgiveChoice: (c: "clear" | "days-all" | "days-n" | "fine" | "all") => void;
+  forgiveDaysN: number;
+  setForgiveDaysN: (n: number) => void;
+  overdueBalanceRaw: number;
+  overdueDaysBalanceRaw: number;
+  overdueFineBalanceRaw: number;
+  overdueDaysCount: number;
+  hasOverdueDays: boolean;
+  hasOverdueFine: boolean;
+  onClear: () => void;
+  fmt: (n: number) => string;
+}) {
+  const [popoverOpen, setPopoverOpen] = useState(false);
+  const [popoverPinned, setPopoverPinned] = useState(false);
+  const hoverTimer = useRef<number | null>(null);
+  const forgiveSelected = forgiveChoice !== "clear";
+
+  const openOnHover = () => {
+    if (hoverTimer.current != null) window.clearTimeout(hoverTimer.current);
+    hoverTimer.current = window.setTimeout(() => setPopoverOpen(true), 200);
+  };
+  const cancelHover = () => {
+    if (hoverTimer.current != null) {
+      window.clearTimeout(hoverTimer.current);
+      hoverTimer.current = null;
+    }
+    if (!popoverPinned) setPopoverOpen(false);
+  };
+  const pinOpen = () => {
+    setPopoverOpen(true);
+    setPopoverPinned(true);
+  };
+  const closeAll = () => {
+    setPopoverOpen(false);
+    setPopoverPinned(false);
+  };
+
+  // Подпись под карточкой «Простить» — какой выбран вариант.
+  const forgiveLabel: string =
+    forgiveChoice === "days-all"
+      ? "Все дни (+штраф за них)"
+      : forgiveChoice === "days-n"
+        ? `Только ${forgiveDaysN} ${forgiveDaysN === 1 ? "день" : forgiveDaysN < 5 ? "дня" : "дней"}`
+        : forgiveChoice === "fine"
+          ? "Только штраф"
+          : forgiveChoice === "all"
+            ? "Всю просрочку"
+            : "Выберите вариант →";
+
+  const fineTotal = overdueFineBalanceRaw;
+  const daysAmount = overdueDaysBalanceRaw;
+  const totalForgive = overdueBalanceRaw;
+
+  return (
+    <div className="relative grid grid-cols-2 gap-2">
+      {/* «Погасить долг» */}
+      <button
+        type="button"
+        onClick={() => {
+          onClear();
+          closeAll();
+        }}
+        className={cn(
+          "rounded-[10px] border-2 bg-white px-3 py-2.5 text-left transition-colors",
+          !forgiveSelected
+            ? "border-blue-600"
+            : "border-transparent bg-white/60 hover:bg-white",
+        )}
+      >
+        <div className="text-[12.5px] font-bold text-ink">Погасить долг</div>
+        <div className="mt-0.5 text-[11px] text-muted tabular-nums">
+          {fmt(overdueBalanceRaw)} ₽
+        </div>
+      </button>
+
+      {/* «Простить» с popover */}
+      <div
+        className="relative"
+        onMouseEnter={openOnHover}
+        onMouseLeave={cancelHover}
+      >
+        <button
+          type="button"
+          onClick={() => {
+            if (popoverOpen && popoverPinned) {
+              closeAll();
+            } else {
+              pinOpen();
+            }
+          }}
+          className={cn(
+            "w-full rounded-[10px] border-2 bg-white px-3 py-2.5 text-left transition-colors",
+            forgiveSelected
+              ? "border-emerald-500"
+              : "border-transparent bg-white/60 hover:bg-white",
+          )}
+        >
+          <div className="flex items-center gap-1.5">
+            <div className="text-[12.5px] font-bold text-green-ink">
+              Простить
+            </div>
+            <ChevronRight
+              size={12}
+              className="text-muted-2"
+            />
+          </div>
+          <div
+            className={cn(
+              "mt-0.5 text-[11px] tabular-nums",
+              forgiveSelected ? "text-emerald-700 font-semibold" : "text-muted",
+            )}
+          >
+            {forgiveLabel}
+          </div>
+        </button>
+
+        {popoverOpen && (
+          <>
+            {/* overlay для click-outside */}
+            <div
+              className="fixed inset-0 z-[140]"
+              onClick={closeAll}
+            />
+            <div
+              className="absolute left-full top-0 z-[141] ml-2 w-[340px] rounded-[12px] border border-border bg-white shadow-card-lg"
+              onClick={(e) => e.stopPropagation()}
+              onMouseEnter={() => setPopoverOpen(true)}
+            >
+              {/* Все неоплаченные дни */}
+              {hasOverdueDays && (
+                <ForgiveOption
+                  active={forgiveChoice === "days-all"}
+                  onClick={() => {
+                    setForgiveChoice("days-all");
+                    closeAll();
+                  }}
+                  title={`Все неоплаченные дни (${overdueDaysCount} дн)`}
+                  description={`−${fmt(daysAmount + fineTotal)} ₽: дни ${fmt(daysAmount)} ₽ + штраф за эти дни ${fmt(fineTotal)} ₽. endPlanned +${overdueDaysCount} дн.`}
+                />
+              )}
+              {/* Только N дней */}
+              {hasOverdueDays && overdueDaysCount > 1 && (
+                <div
+                  className={cn(
+                    "border-t border-border",
+                    forgiveChoice === "days-n" ? "bg-emerald-50" : "",
+                  )}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setForgiveChoice("days-n")}
+                    className="w-full px-3 py-2.5 text-left hover:bg-surface-soft"
+                  >
+                    <div className="text-[12.5px] font-bold text-ink">
+                      Только N дней (укажу сколько)
+                    </div>
+                    <div className="mt-0.5 text-[11px] text-muted">
+                      Простит выбранные дни (включая штраф за эти же дни).
+                      Остальные останутся в долге.
+                    </div>
+                  </button>
+                  {forgiveChoice === "days-n" && (
+                    <div className="flex items-center gap-2 border-t border-border bg-white px-3 py-2">
+                      <span className="text-[11.5px] font-semibold text-ink-2">
+                        N =
+                      </span>
+                      <div className="inline-flex items-stretch overflow-hidden rounded-[8px] border border-border">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setForgiveDaysN(Math.max(1, forgiveDaysN - 1))
+                          }
+                          className="flex w-7 items-center justify-center bg-surface-soft text-[14px] text-muted hover:text-ink"
+                        >
+                          −
+                        </button>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={forgiveDaysN}
+                          onChange={(e) => {
+                            const n = Math.max(
+                              1,
+                              Math.min(
+                                overdueDaysCount,
+                                parseInt(
+                                  e.target.value.replace(/\D/g, "") || "1",
+                                  10,
+                                ),
+                              ),
+                            );
+                            setForgiveDaysN(n);
+                          }}
+                          className="w-10 bg-white px-1 py-1 text-center text-[13px] font-bold tabular-nums text-ink outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setForgiveDaysN(
+                              Math.min(overdueDaysCount, forgiveDaysN + 1),
+                            )
+                          }
+                          className="flex w-7 items-center justify-center bg-surface-soft text-[14px] text-muted hover:text-ink"
+                        >
+                          +
+                        </button>
+                      </div>
+                      <span className="text-[10.5px] text-muted-2">
+                        из {overdueDaysCount} дн
+                      </span>
+                      <button
+                        type="button"
+                        onClick={closeAll}
+                        className="ml-auto rounded-full bg-emerald-500 px-2.5 py-1 text-[10.5px] font-bold text-white hover:bg-emerald-600"
+                      >
+                        OK
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+              {/* Только штраф */}
+              {hasOverdueFine && (
+                <ForgiveOption
+                  topBorder
+                  active={forgiveChoice === "fine"}
+                  onClick={() => {
+                    setForgiveChoice("fine");
+                    closeAll();
+                  }}
+                  title="Только штраф (без дней)"
+                  description={`−${fmt(fineTotal)} ₽ — штраф 50% × дни. Дни просрочки и endPlanned не меняются.`}
+                />
+              )}
+              {/* Всю просрочку */}
+              {hasOverdueDays && hasOverdueFine && (
+                <ForgiveOption
+                  topBorder
+                  active={forgiveChoice === "all"}
+                  onClick={() => {
+                    setForgiveChoice("all");
+                    closeAll();
+                  }}
+                  title="Всю просрочку (дни + штраф)"
+                  description={`−${fmt(totalForgive)} ₽. endPlanned +${overdueDaysCount} дн.`}
+                  tone="red"
+                />
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ForgiveOption({
+  active,
+  topBorder,
+  onClick,
+  title,
+  description,
+  tone,
+}: {
+  active: boolean;
+  topBorder?: boolean;
+  onClick: () => void;
+  title: string;
+  description: string;
+  tone?: "red";
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "block w-full px-3 py-2.5 text-left hover:bg-surface-soft transition-colors",
+        topBorder && "border-t border-border",
+        active && "bg-emerald-50",
+      )}
+    >
+      <div
+        className={cn(
+          "text-[12.5px] font-bold",
+          tone === "red" ? "text-red-ink" : "text-ink",
+        )}
+      >
+        {title}
+      </div>
+      <div className="mt-0.5 text-[11px] text-muted">{description}</div>
+    </button>
   );
 }
