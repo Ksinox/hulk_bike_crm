@@ -37,7 +37,7 @@ _NO_VERIFY_CTX.verify_mode = ssl.CERT_NONE
 DOKPLOY_BASE = os.environ.get("DOKPLOY_BASE", "http://104.128.128.96:3000")
 TOKEN = os.environ.get("DOKPLOY_TOKEN")
 
-PREVIEW_API_APP_ID = "kn-1-nwxlACOqiOnIjJDq"
+PREVIEW_API_APP_ID = "8kPYu5M59D2_TP9h4hoxx"
 PREVIEW_WEB_APP_ID = "nOTMp8wvR-co0HGXA5gkZ"
 PREVIEW_API_BASE = "https://api-preview.104-128-128-96.sslip.io"
 PREVIEW_WEB_BASE = "https://crm-preview.104-128-128-96.sslip.io"

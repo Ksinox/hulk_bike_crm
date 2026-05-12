@@ -6,6 +6,7 @@ import {
   activityLog,
   clients,
   damageReports,
+  damageReportItems,
   debtEntries,
   payments,
   rentals,
@@ -1201,16 +1202,39 @@ export async function rentalsRoutes(app: FastifyInstance) {
             },
           });
 
+        // v0.5.1: при завершении с ущербом создаём полноценный
+        // damage_report — раньше создавался только payment(type='damage',
+        // paid=false) без damage_report, и debt-aggregator его не цеплял
+        // (unassignedPaid падал в 0 потому что damageBalance считается по
+        // damage_reports). Из-за этого после /complete долг по ущербу
+        // не отображался — оператор завершал аренду «без видимого долга»
+        // и сумма пропадала. Теперь создаётся настоящий акт с одной
+        // авто-позицией; оператор позже может его отредактировать через
+        // обычный DamageReportDialog и добавить позиции из прейскуранта.
         if (withDamage && d.damageAmount && d.damageAmount > 0) {
-          await tx.insert(payments).values({
-            rentalId: id,
-            type: "damage",
-            amount: d.damageAmount,
-            method: "cash",
-            paid: false,
-            scheduledOn: d.dateActual,
-            note: d.damageNotes ?? "ущерб при возврате",
-          });
+          const userId = req.user?.userId ?? null;
+          const [report] = await tx
+            .insert(damageReports)
+            .values({
+              rentalId: id,
+              createdByUserId: userId,
+              total: d.damageAmount,
+              depositCovered: 0,
+              note: d.damageNotes ?? "Ущерб зафиксирован при возврате",
+            })
+            .returning();
+          if (report) {
+            await tx.insert(damageReportItems).values({
+              reportId: report.id,
+              priceItemId: null,
+              name: "Ущерб при возврате",
+              originalPrice: d.damageAmount,
+              finalPrice: d.damageAmount,
+              quantity: 1,
+              comment: d.damageNotes ?? null,
+              sortOrder: 0,
+            });
+          }
         }
         // v0.4.34/v0.5: при возврате залога создаём payment(type='refund')
         // чтобы отразить выплату в учёте. Refund исключён из revenue.
@@ -1305,6 +1329,84 @@ export async function rentalsRoutes(app: FastifyInstance) {
         }
       }
       return result.rental;
+    },
+  );
+
+  /**
+   * POST /api/rentals/:id/revert-completion
+   *
+   * v0.5.1: возврат завершённой аренды обратно в active. На случай если
+   * оператор случайно нажал «Завершить» или клиент передумал возвращать.
+   *
+   * Что делает:
+   *  • status='completed' → 'active'
+   *  • endActualAt → null
+   *  • depositReturned, damageAmount → null
+   *  • archivedAt → null (если был выставлен)
+   *  • удаляет return_inspections запись
+   *  • удаляет refund-платежи если были созданы при /complete
+   *  • скутер возвращается в 'rental_pool' (если был в этой аренде)
+   *
+   * НЕ трогает damage_reports — если оператор создал акт ущерба при
+   * завершении, акт остаётся, его можно удалить/изменить отдельно.
+   */
+  app.post<{ Params: { id: string } }>(
+    "/:id/revert-completion",
+    async (req, reply) => {
+      if (!assertFinancialRole(req, reply)) return;
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id))
+        return reply.code(400).send({ error: "bad id" });
+      const [rental] = await db
+        .select()
+        .from(rentals)
+        .where(eq(rentals.id, id));
+      if (!rental) return reply.code(404).send({ error: "not found" });
+      if (rental.status !== "completed") {
+        return reply
+          .code(409)
+          .send({ error: "not_completed", current: rental.status });
+      }
+      await db.transaction(async (tx) => {
+        await tx
+          .update(rentals)
+          .set({
+            status: "active",
+            endActualAt: null,
+            depositReturned: null,
+            damageAmount: null,
+            archivedAt: null,
+            archivedBy: null,
+            updatedAt: sql`now()`,
+          })
+          .where(eq(rentals.id, id));
+        await tx
+          .delete(returnInspections)
+          .where(eq(returnInspections.rentalId, id));
+        // Удаляем refund-платёж за возврат залога — он был создан в /complete,
+        // теперь не актуален.
+        await tx
+          .delete(payments)
+          .where(and(eq(payments.rentalId, id), eq(payments.type, "refund")));
+        // Скутер обратно в rental_pool (если ещё назначен этой аренде).
+        if (rental.scooterId) {
+          await tx
+            .update(scooters)
+            .set({ baseStatus: "rental_pool", updatedAt: sql`now()` })
+            .where(eq(scooters.id, rental.scooterId));
+        }
+      });
+      await logActivity(req, {
+        entity: "rental",
+        entityId: id,
+        action: "revert_completion",
+        summary: `Аренда #${id} возвращена из «завершённых» в активные`,
+      });
+      const [updated] = await db
+        .select()
+        .from(rentals)
+        .where(eq(rentals.id, id));
+      return updated;
     },
   );
 
@@ -2609,6 +2711,21 @@ export async function rentalsRoutes(app: FastifyInstance) {
         paid: true,
         paidAt: new Date(),
         note: "Оплата штрафа просрочки",
+      });
+    } else if (parsed.data.kind === "manual_payment") {
+      // v0.5.1: оплата ручного долга = выручка по аренде. Раньше
+      // создавался только debt_entry(kind='manual_forgive'), но
+      // payment row не было — KPI «За всё время аренды» не рос,
+      // в выручке деньги не отражались. Теперь пишем payment(type='rent')
+      // чтобы доход попал в paidIn и в общую выручку.
+      await db.insert(payments).values({
+        rentalId: id,
+        type: "rent",
+        amount: parsed.data.amount,
+        method: "cash",
+        paid: true,
+        paidAt: new Date(),
+        note: `Оплата ручного долга${parsed.data.comment ? ": " + parsed.data.comment : ""}`,
       });
     }
 

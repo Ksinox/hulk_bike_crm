@@ -191,7 +191,7 @@ function statusActions(
       ]);
     case "completed":
       return [
-        { id: "clone", label: "Создать аналогичную", icon: Repeat, tone: "primary" },
+        { id: "revert-completion", label: "Перевести в активную", icon: RotateCcw, tone: "primary" },
       ];
     case "completed_damage":
       return withExtras([
@@ -497,20 +497,22 @@ export function RentalCard({
         ];
 
   // Финансы — считаются по ВСЕЙ цепочке продлений.
-  // В «Получено от клиента» (paidIn) НЕ включаем депозит — он возвратный
-  // и не является заработком. Если депозит был списан в ущерб, отдельный
-  // платёж типа 'damage' создаётся в модалке возврата — он сюда попадёт.
-  // ВАЖНО: «За всё время аренды» — это доход именно от АРЕНДЫ. Платежи за
-  // ущерб (damage) сюда НЕ попадают — это закрытие долга по инциденту, а
-  // не оплата проката. Иначе при погашении ущерба плашка «За всё время»
-  // ошибочно растёт, а Долг падает (см. правки заказчика по v0.2.91).
+  // v0.5.1: KPI «За всё время аренды» = СУММА ВСЕХ платежей по аренде
+  // (rent + fine + damage + manual + swap_fee + equipment_fee), которые
+  // клиент реально внёс. Раньше damage был исключён (бизнес-правка v0.2.91:
+  // «ущерб ≠ доход от аренды»), но заказчик уточнил по v0.5: «должна
+  // складывать за аренды, оплаты за просрочки, долги — все платежи которые
+  // были в этой аренде». Из расчёта по-прежнему исключаем:
+  //   • refund — возврат залога клиенту (отрицательная операция)
+  //   • deposit — приём залога (возвратный, не доход)
+  //   • method='deposit' — оплата за счёт залога/депозита клиента (уже учли)
   const paidIn = chainPayments
     .filter(
       (p) =>
         p.paid &&
         p.type !== "refund" &&
         p.type !== "deposit" &&
-        p.type !== "damage",
+        p.method !== "deposit",
     )
     .reduce((s, p) => s + p.amount, 0);
   // pending (плашка «Долг») — суммируем неоплаченные платежи ТОЛЬКО
@@ -543,8 +545,28 @@ export function RentalCard({
   void chainExpected;
 
   const handleAction = async (id: string) => {
-    if (id === "extend" || id === "clone") return setExtendOpen(true);
+    if (id === "extend") return setExtendOpen(true);
     if (id === "edit") return setEditRentalOpen(true);
+    if (id === "revert-completion") {
+      // v0.5.1: возврат завершённой аренды в active. Используется когда
+      // оператор случайно нажал «Завершить» или клиент передумал.
+      if (
+        !window.confirm(
+          "Перевести завершённую аренду обратно в активную? Будет снят флаг возврата залога и удалена запись приёмки.",
+        )
+      )
+        return;
+      try {
+        await api.post(`/api/rentals/${rental.id}/revert-completion`, {});
+        toast.success(
+          "Аренда возвращена в активные",
+          "Завершение откатано — можно продолжать работу.",
+        );
+      } catch (e) {
+        toast.error("Не удалось вернуть", (e as Error).message ?? "");
+      }
+      return;
+    }
     if (id === "resume-damage") {
       // v0.2.91: возобновление аренды требует ВАЛИДНОГО скутера —
       // active rental не может быть без скутера или со скутером в

@@ -33,6 +33,7 @@ import { ensureBucket } from "./storage/index.js";
 import rateLimit from "@fastify/rate-limit";
 import bcrypt from "bcryptjs";
 import { users } from "./db/schema.js";
+import { seedPriceListIfEmpty } from "./routes/price-list.js";
 
 /**
  * Bootstrap-юзеры. На preview/staging-окружениях БД создаётся чистая,
@@ -235,6 +236,18 @@ async function bootstrap() {
   bootstrapUsersIfEmpty().catch((e) => {
     app.log.warn({ err: e }, "bootstrapUsersIfEmpty failed");
   });
+
+  // Bootstrap дефолтного прейскуранта если БД пустая. Идемпотентно.
+  // Гейтится тем же ALLOW_BOOTSTRAP_USERS, чтобы на проде не сработало.
+  if (process.env.ALLOW_BOOTSTRAP_USERS === "1") {
+    seedPriceListIfEmpty()
+      .then((seeded) => {
+        if (seeded) console.log("[bootstrap-pricelist] прейскурант засеян");
+      })
+      .catch((e) => {
+        app.log.warn({ err: e }, "seedPriceListIfEmpty failed");
+      });
+  }
 
   // ==== graceful shutdown ====
   const shutdown = async (signal: string) => {
