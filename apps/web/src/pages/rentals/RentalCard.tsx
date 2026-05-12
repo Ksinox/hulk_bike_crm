@@ -1275,8 +1275,12 @@ export function RentalCard({
             extendCount > 0
               ? `продлений · ${extendCount}`
               : "сумма этой аренды";
-          const hint =
-            depositSpent > 0
+          // v0.5.9: если залог — предмет (паспорт и т.п.), показываем
+          // его название в хинте вместо «0 ₽».
+          const isItemDeposit = !!rental.depositItem;
+          const hint = isItemDeposit
+            ? `${hintBase} · залог: ${rental.depositItem}`
+            : depositSpent > 0
               ? `${hintBase} · залог: ${fmt(originalDeposit)} ₽ (списано ${fmt(depositSpent)} ₽)`
               : `${hintBase} · + залог: ${fmt(currentDeposit)} ₽`;
           return (
@@ -1377,14 +1381,13 @@ export function RentalCard({
         </div>
       )}
 
-      {/* v0.5.7: плашка залога — показывается только когда:
-          - залог денежный (depositItem == null)
-          - текущий deposit < исходного (deposit_original)
-          Кнопка «Пополнить» теперь открывает PaymentAcceptDialog (единый
-          поток приёма оплат) — раньше был отдельный SecurityTopupDialog,
-          убрали ради единообразия: все денежные операции через одну
-          кнопку приёма. */}
+      {/* v0.5.9: плашка залога — только для активных аренд. У завершённых
+          аренд (status='completed') не показываем — там либо залог
+          возвращён клиенту, либо удержан, либо ушёл в погашение долга,
+          и состояние «нужно пополнить» уже не имеет смысла. Кнопка
+          «Пополнить» теперь открывает PaymentAcceptDialog. */}
       {(() => {
+        if (rental.status === "completed") return null;
         const isItem =
           (rental as { depositItem?: string | null }).depositItem != null;
         if (isItem) return null;

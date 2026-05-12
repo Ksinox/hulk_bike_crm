@@ -211,11 +211,14 @@ export function revertOverdue(id: number) {
     .catch(logErr("revertOverdue"));
 }
 
-export function completeRentalNoDamage(id: number, inspection: ReturnInspection) {
+export function completeRentalNoDamage(
+  id: number,
+  inspection: ReturnInspection,
+): Promise<void> {
   // Локально кешируем inspection (сервер хранит в returnInspections — приходит отдельным запросом, но для UI нужен synchronous hook)
   state.inspections = new Map(state.inspections).set(id, inspection);
   emit();
-  api
+  return api
     .post(`/api/rentals/${id}/complete`, {
       dateActual: toIsoDay(inspection.dateActual),
       conditionOk: inspection.conditionOk,
@@ -224,7 +227,10 @@ export function completeRentalNoDamage(id: number, inspection: ReturnInspection)
       mileageAtReturn: inspection.mileage,
     })
     .then(invAll)
-    .catch(logErr("completeRentalNoDamage"));
+    .catch((e) => {
+      logErr("completeRentalNoDamage")(e);
+      throw e;
+    });
 }
 
 export function completeRentalWithDamage(
@@ -232,10 +238,10 @@ export function completeRentalWithDamage(
   inspection: ReturnInspection,
   damageAmount: number,
   note?: string,
-) {
+): Promise<void> {
   state.inspections = new Map(state.inspections).set(id, inspection);
   emit();
-  api
+  return api
     .post(`/api/rentals/${id}/complete`, {
       dateActual: toIsoDay(inspection.dateActual),
       conditionOk: inspection.conditionOk,
@@ -249,7 +255,10 @@ export function completeRentalWithDamage(
       queryClient.invalidateQueries({ queryKey: ["incidents"] });
       invAll();
     })
-    .catch(logErr("completeRentalWithDamage"));
+    .catch((e) => {
+      logErr("completeRentalWithDamage")(e);
+      throw e;
+    });
 }
 
 export function addPayment(p: Omit<Payment, "id">) {
