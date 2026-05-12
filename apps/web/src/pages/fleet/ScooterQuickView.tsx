@@ -22,7 +22,7 @@ import { useFleetScooters } from "./fleetStore";
 import { useApiClients } from "@/lib/api/clients";
 import { useRentals, useArchivedRentals } from "@/pages/rentals/rentalsStore";
 import { useActivityTimeline } from "@/lib/api/activity";
-import { ActivityTimelineSection } from "@/pages/rentals/RentalCardTabs";
+import { ActivityTimelineSection } from "@/pages/rentals/ActivityTimelineSection";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { fileUrl } from "@/lib/files";
 

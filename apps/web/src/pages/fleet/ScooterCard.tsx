@@ -33,7 +33,7 @@ import { ScooterPhotosGallery } from "./ScooterPhotosGallery";
 import { ScooterStatusModal } from "./ScooterStatusModal";
 import { RepairsTab, ExpensesTab } from "./MaintenanceTab";
 import { useActivityTimeline } from "@/lib/api/activity";
-import { ActivityTimelineSection } from "@/pages/rentals/RentalCardTabs";
+import { ActivityTimelineSection } from "@/pages/rentals/ActivityTimelineSection";
 import { useArchiveScooter } from "@/lib/api/scooters";
 import { useMe } from "@/lib/api/auth";
 import { Archive, Loader2 } from "lucide-react";

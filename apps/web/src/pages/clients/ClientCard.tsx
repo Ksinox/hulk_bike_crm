@@ -35,7 +35,7 @@ import type { UploadedFile } from "./DocUpload";
 import { ClientPhoto } from "./ClientPhoto";
 import { CreateDealMenu } from "./CreateDealMenu";
 import { useActivityTimeline } from "@/lib/api/activity";
-import { ActivityTimelineSection } from "@/pages/rentals/RentalCardTabs";
+import { ActivityTimelineSection } from "@/pages/rentals/ActivityTimelineSection";
 import { useDashboardDrawer } from "@/pages/dashboard/DashboardDrawer";
 import { useApplicationsByClient } from "@/lib/api/clientApplications";
 import { NewApplicationModal } from "./NewApplicationModal";
