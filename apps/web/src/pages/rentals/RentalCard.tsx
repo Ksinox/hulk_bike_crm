@@ -87,6 +87,7 @@ import { HistoryStrip } from "./rental-card/HistoryStrip";
 import { DocsInline } from "./rental-card/DocsInline";
 import { DebtsList } from "./rental-card/DebtsList";
 import { SideDrawer } from "./rental-card/SideDrawer";
+import { OverdueActionsPopover } from "./rental-card/OverdueActionsPopover";
 import { ActivityTimelineSection } from "./ActivityTimelineSection";
 
 type DrawerKind = "history" | "debts" | "profile" | null;
@@ -219,6 +220,10 @@ export function RentalCard({
   const [clientQuickView, setClientQuickView] = useState(false);
   // ── drawers ──────────────────────────────────────────────────────
   const [drawer, setDrawer] = useState<DrawerKind>(null);
+  // ── overdue popover ──────────────────────────────────────────────
+  const [overdueAnchor, setOverdueAnchor] = useState<DOMRect | null>(null);
+  // ── prefill для PaymentAcceptDialog (drag-to-extend) ─────────────
+  const [paymentPrefillExtDays, setPaymentPrefillExtDays] = useState<number>(0);
 
   const drawerCtx = useDashboardDrawer();
   /** Открыть клиента: если мы внутри dashboard-drawer'а — кладём поверх
@@ -718,6 +723,15 @@ export function RentalCard({
     }
   };
 
+  /** v0.6.1: drag-to-extend на основном календаре. Открывает обычный
+   *  PaymentAcceptDialog, но с предзаполненным числом дней. */
+  const handleCommitExtend = (days: number) => {
+    if (!isLive) return;
+    if (days <= 0) return;
+    setPaymentPrefillExtDays(days);
+    setPaymentRentalId(rental.id);
+  };
+
   const handleComplete = () => {
     setAction("complete");
   };
@@ -838,7 +852,7 @@ export function RentalCard({
           onAcceptPayment={handleAcceptPayment}
           onComplete={handleComplete}
           onOpenDebts={() => setDrawer("debts")}
-          onOverdueClick={() => setDrawer("debts")}
+          onOverdueClick={(rect) => setOverdueAnchor(rect)}
         />
 
         {/* Inline note */}
@@ -850,7 +864,11 @@ export function RentalCard({
 
         {/* Calendar + History side by side */}
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-3">
-          <CalendarPanel rental={rental} effectiveStatus={effectiveStatus} />
+          <CalendarPanel
+            rental={rental}
+            effectiveStatus={effectiveStatus}
+            onCommitExtend={isLive ? handleCommitExtend : undefined}
+          />
           <HistoryStrip
             items={activityItems}
             loading={activityQ.isLoading}
@@ -939,7 +957,27 @@ export function RentalCard({
       {paymentRentalId != null && (
         <PaymentAcceptDialogContainer
           rentalId={paymentRentalId}
-          onClose={() => setPaymentRentalId(null)}
+          initialExtDays={paymentPrefillExtDays || undefined}
+          onClose={() => {
+            setPaymentRentalId(null);
+            setPaymentPrefillExtDays(0);
+          }}
+        />
+      )}
+
+      {/* v0.6.1: popover быстрых действий по просрочке */}
+      {overdueAnchor && (
+        <OverdueActionsPopover
+          rentalId={rental.id}
+          anchorRect={overdueAnchor}
+          debtSummary={debtSummary}
+          dailyRate={
+            rental.rateUnit === "week"
+              ? Math.round(rental.rate / 7)
+              : rental.rate
+          }
+          onClose={() => setOverdueAnchor(null)}
+          onAcceptPayment={handleAcceptPayment}
         />
       )}
       {equipmentChangeOpen && (
@@ -1022,9 +1060,11 @@ export function RentalCard({
 function PaymentAcceptDialogContainer({
   rentalId,
   onClose,
+  initialExtDays,
 }: {
   rentalId: number;
   onClose: () => void;
+  initialExtDays?: number;
 }) {
   const all = useRentals();
   const r = all.find((x) => x.id === rentalId);
@@ -1033,6 +1073,7 @@ function PaymentAcceptDialogContainer({
     <PaymentAcceptDialog
       rental={r}
       onClose={onClose}
+      initialExtDays={initialExtDays}
       onPaid={() => {
         /* invalidations происходят в dialog'е */
       }}

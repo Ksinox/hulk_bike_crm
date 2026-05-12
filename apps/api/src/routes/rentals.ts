@@ -96,6 +96,18 @@ const PatchRentalBody = z
   })
   .strict();
 
+// v0.6.1: scooterNextStatus — выбор оператора что делать со скутером после
+// завершения. Если не задан — старое поведение (rental_pool). Допустимые
+// варианты соответствуют scooterBaseStatusEnum (не все — `ready` и `sold`
+// для /complete нерелевантны).
+const SCOOTER_NEXT_STATUSES = [
+  "rental_pool",
+  "repair",
+  "for_sale",
+  "disassembly",
+  "buyout",
+] as const;
+
 const CompleteBody = z
   .object({
     dateActual: z.string(), // YYYY-MM-DD
@@ -105,6 +117,7 @@ const CompleteBody = z
     damageAmount: z.number().int().min(0).optional(),
     damageNotes: z.string().optional().nullable(),
     mileageAtReturn: z.number().int().min(0).optional(),
+    scooterNextStatus: z.enum(SCOOTER_NEXT_STATUSES).optional(),
   })
   .strict();
 
@@ -1150,8 +1163,12 @@ export async function rentalsRoutes(app: FastifyInstance) {
         let mileageBefore: number | null = null;
         let mileageAfter: number | null = null;
         if (r.scooterId) {
+          // v0.6.1: оператор может выбрать что делать со скутером (ремонт/
+          // продажа/разборка/выкуп/назад в парк). Если не указано — старое
+          // поведение «обратно в парк».
+          const nextStatus = d.scooterNextStatus ?? "rental_pool";
           const setVals: Record<string, unknown> = {
-            baseStatus: "rental_pool",
+            baseStatus: nextStatus,
             updatedAt: sql`now()`,
           };
           if (

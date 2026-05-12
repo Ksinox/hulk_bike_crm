@@ -211,9 +211,21 @@ export function revertOverdue(id: number) {
     .catch(logErr("revertOverdue"));
 }
 
+/**
+ * v0.6.1: scooterNextStatus — что делать со скутером после завершения.
+ * Если не передан — бэк ставит rental_pool (старое поведение).
+ */
+export type ScooterNextStatus =
+  | "rental_pool"
+  | "repair"
+  | "for_sale"
+  | "disassembly"
+  | "buyout";
+
 export function completeRentalNoDamage(
   id: number,
   inspection: ReturnInspection,
+  scooterNextStatus?: ScooterNextStatus,
 ): Promise<void> {
   // Локально кешируем inspection (сервер хранит в returnInspections — приходит отдельным запросом, но для UI нужен synchronous hook)
   state.inspections = new Map(state.inspections).set(id, inspection);
@@ -225,6 +237,7 @@ export function completeRentalNoDamage(
       equipmentOk: inspection.equipmentOk,
       depositReturned: inspection.depositReturned,
       mileageAtReturn: inspection.mileage,
+      ...(scooterNextStatus ? { scooterNextStatus } : {}),
     })
     .then(invAll)
     .catch((e) => {
@@ -238,6 +251,7 @@ export function completeRentalWithDamage(
   inspection: ReturnInspection,
   damageAmount: number,
   note?: string,
+  scooterNextStatus?: ScooterNextStatus,
 ): Promise<void> {
   state.inspections = new Map(state.inspections).set(id, inspection);
   emit();
@@ -250,6 +264,7 @@ export function completeRentalWithDamage(
       damageAmount,
       damageNotes: note ?? inspection.damageNotes ?? null,
       mileageAtReturn: inspection.mileage,
+      ...(scooterNextStatus ? { scooterNextStatus } : {}),
     })
     .then(() => {
       queryClient.invalidateQueries({ queryKey: ["incidents"] });

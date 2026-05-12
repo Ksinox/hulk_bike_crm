@@ -163,6 +163,20 @@ export function RentalActionDialog({
   // бизнесы ведут учёт пробега (для ТО / страховки). Пустое значение
   // не передаётся в API.
   const [mileageAtReturn, setMileageAtReturn] = useState<string>("");
+  // v0.6.1: статус скутера после завершения аренды. По умолчанию
+  // «обратно в парк». При наличии ущерба меняется на «в ремонт» автоматически
+  // в effect-е ниже (до явного выбора оператора).
+  type ScooterNextStatus =
+    | "rental_pool"
+    | "repair"
+    | "for_sale"
+    | "disassembly"
+    | "buyout";
+  const [scooterNextStatus, setScooterNextStatus] =
+    useState<ScooterNextStatus>("rental_pool");
+  // v0.6.1: оператор ещё ни разу не трогал dropdown → подсказываем «в ремонт»
+  // при появлении любого ущерба. Если уже трогал — не перезатираем выбор.
+  const [scooterStatusTouched, setScooterStatusTouched] = useState(false);
   // Legacy-флаг для action="complete-damage" — в новом flow «Завершить»
   // ущерб открывается через onOpenDamage callback, без чекбокса.
   const [hasDamage] = useState(false);
@@ -271,13 +285,17 @@ export function RentalActionDialog({
     }
     await Promise.all(charges).catch(() => {});
     try {
-      await completeRentalNoDamage(rental.id, {
-        dateActual: dateActualForApi(),
-        conditionOk: true,
-        equipmentOk: true,
-        depositReturned: true,
-        mileage: mileageForApi(),
-      });
+      await completeRentalNoDamage(
+        rental.id,
+        {
+          dateActual: dateActualForApi(),
+          conditionOk: true,
+          equipmentOk: true,
+          depositReturned: true,
+          mileage: mileageForApi(),
+        },
+        scooterNextStatus,
+      );
     } catch (e) {
       console.error("completeRentalNoDamage failed", e);
     }
@@ -359,6 +377,7 @@ export function RentalActionDialog({
         },
         0,
         "",
+        scooterNextStatus,
       );
     } catch (e) {
       console.error("completeRentalWithDamage failed", e);
@@ -376,6 +395,17 @@ export function RentalActionDialog({
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // v0.6.1: если у скутера есть повреждения и оператор ещё не трогал
+  // dropdown — предлагаем «В ремонт» по умолчанию.
+  useEffect(() => {
+    if (scooterStatusTouched) return;
+    if (scooterDamages.length > 0) {
+      setScooterNextStatus("repair");
+    } else {
+      setScooterNextStatus("rental_pool");
+    }
+  }, [scooterDamages.length, scooterStatusTouched]);
 
   const spec: Spec = (() => {
     if (action === "complete") {
@@ -585,6 +615,34 @@ export function RentalActionDialog({
               </div>
             )}
 
+            {/* v0.6.1: выбор статуса скутера после завершения */}
+            {rental.scooterId != null && (
+              <div>
+                <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-2">
+                  Что делать со скутером?
+                </label>
+                <select
+                  value={scooterNextStatus}
+                  onChange={(e) => {
+                    setScooterStatusTouched(true);
+                    setScooterNextStatus(
+                      e.target.value as typeof scooterNextStatus,
+                    );
+                  }}
+                  className="mt-1 h-9 w-full rounded-[10px] border border-border bg-surface px-3 text-[13px] text-ink outline-none focus:border-blue-600"
+                >
+                  <option value="rental_pool">Готов к аренде (в парк)</option>
+                  <option value="repair">В ремонт</option>
+                  <option value="for_sale">Выставить на продажу</option>
+                  <option value="disassembly">На разборку</option>
+                  <option value="buyout">Передать клиенту в выкуп</option>
+                </select>
+                <div className="mt-1 text-[10.5px] text-muted-2">
+                  По умолчанию — назад в парк. При ущербе обычно выбирают «В ремонт».
+                </div>
+              </div>
+            )}
+
             {/* Финансовая сводка по залогу */}
             <div className="rounded-xl border border-border bg-surface-soft/60 p-3.5">
               <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-2 mb-2.5">
@@ -751,13 +809,17 @@ export function RentalActionDialog({
         );
         if (!anyScooterDamage && !anyEquipDamage) {
           // Чисто закрытие без ущерба
-          completeRentalNoDamage(rental.id, {
-            dateActual: returnDate ? isoDateToRu(returnDate) : todayStr(),
-            conditionOk: true,
-            equipmentOk: true,
-            depositReturned: true,
-            mileage: mileageAtReturn ? Number(mileageAtReturn) : undefined,
-          });
+          completeRentalNoDamage(
+            rental.id,
+            {
+              dateActual: returnDate ? isoDateToRu(returnDate) : todayStr(),
+              conditionOk: true,
+              equipmentOk: true,
+              depositReturned: true,
+              mileage: mileageAtReturn ? Number(mileageAtReturn) : undefined,
+            },
+            scooterNextStatus,
+          );
           break;
         }
         // Есть хоть одно повреждение → показываем финальный диалог.
@@ -778,6 +840,7 @@ export function RentalActionDialog({
           },
           Number(damageAmount) || 0,
           damageNote,
+          scooterNextStatus,
         );
         break;
       case "police":

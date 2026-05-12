@@ -20,7 +20,7 @@
  *  5. Неоплаченная аренда (rent payments)
  *  6. Излишек → депозит клиента
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, Check, X, Wallet, Shield, Repeat } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -312,10 +312,18 @@ export function PaymentAcceptDialog({
   rental,
   onClose,
   onPaid,
+  initialExtDays,
 }: {
   rental: Rental;
   onClose: () => void;
   onPaid?: () => void;
+  /**
+   * v0.6.1: предзаполнение числа дней продления при открытии
+   * диалога. Используется при drag-to-extend на основном календаре:
+   * RentalCard передаёт сюда число дней, диалог сразу показывает их
+   * в поле «Продлить на N дней» и в overpay-блоке «В продление».
+   */
+  initialExtDays?: number;
 }) {
   const [closing, setClosing] = useState(false);
   const requestClose = () => {
@@ -385,13 +393,27 @@ export function PaymentAcceptDialog({
       ((rental as { depositOriginal?: number }).depositOriginal ?? 0);
   // v0.5.9: дефолт зависит от ситуации. Если залог нужно пополнить —
   // приоритет на пополнение залога. Иначе — extend (продление).
+  // v0.6.1: если пришёл prefill из drag-to-extend — целимся в «продление»
+  // даже если залог недопополнен (явный жест пользователя в календаре).
   const [overpayDest, setOverpayDest] = useState<OverpayDest>(
-    needsSecurityTopup ? "security" : "extend",
+    (initialExtDays ?? 0) > 0
+      ? "extend"
+      : needsSecurityTopup
+        ? "security"
+        : "extend",
   );
 
   // Параметры продления — авто-расчёт по тарифу аренды.
   // Оператор может править вручную через extInputOverride (по умолчанию null).
-  const [extInputOverride, setExtInputOverride] = useState<number | null>(null);
+  // v0.6.1: при drag-to-extend инициализируем override переданным числом дней
+  // (для week-тарифа округляем вверх до недель).
+  const [extInputOverride, setExtInputOverride] = useState<number | null>(() => {
+    if (!initialExtDays || initialExtDays <= 0) return null;
+    if (rental.rateUnit === "week") {
+      return Math.max(1, Math.ceil(initialExtDays / 7));
+    }
+    return initialExtDays;
+  });
   const [extCustomMode, setExtCustomMode] = useState<boolean>(false);
   const [extCustomUnit, setExtCustomUnit] = useState<"day" | "week">("day");
   const [extCustomRate, setExtCustomRate] = useState<number>(0);
@@ -453,11 +475,31 @@ export function PaymentAcceptDialog({
   // v0.4.83: «Принято от клиента» — пустое поле когда сумма 0, чтоб
   // оператор не стирал нолик при наборе. Внутри в submit пустая строка
   // = 0.
-  const [acceptedStr, setAcceptedStr] = useState<string>(
-    remainingAfterSecurity > 0 ? String(remainingAfterSecurity) : "",
-  );
+  // v0.6.1: при drag-to-extend поле сразу заполняется на сумму долга +
+  // стоимость продления (extDays × dailyRate). Это превращает дёрг
+  // календаря в готовый payload — оператору остаётся только подтвердить.
+  const prefillExtensionSum = (() => {
+    if (!initialExtDays || initialExtDays <= 0) return 0;
+    const isWeek = rental.rateUnit === "week";
+    const dayRate = isWeek ? Math.round(rental.rate / 7) : rental.rate;
+    return dayRate * initialExtDays;
+  })();
+  const [acceptedStr, setAcceptedStr] = useState<string>(() => {
+    const initial = remainingAfterSecurity + prefillExtensionSum;
+    return initial > 0 ? String(initial) : "";
+  });
+  // v0.6.1: «следили ли мы за initial-extension prefill уже один раз».
+  // Без флага useEffect ниже мгновенно затёр бы prefill сразу после
+  // монтажа (remainingAfterSecurity вычисляется на 2-м рендере).
+  const extPrefilledRef = useRef<boolean>((initialExtDays ?? 0) > 0);
   // Sync «принято» при изменении источников. Если становится 0 — пустая.
+  // Первый эффект пропускаем, если был prefill — иначе оператор увидит
+  // суммы долга без надбавки за продление.
   useEffect(() => {
+    if (extPrefilledRef.current) {
+      extPrefilledRef.current = false;
+      return;
+    }
     setAcceptedStr(
       remainingAfterSecurity > 0 ? String(remainingAfterSecurity) : "",
     );

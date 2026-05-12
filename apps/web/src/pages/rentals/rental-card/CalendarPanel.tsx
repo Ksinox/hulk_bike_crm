@@ -2,15 +2,16 @@
  * CalendarPanel — левая часть нижнего ряда v0.6 карточки. Показывает:
  *   • Блок «Выдача» (дата + время)
  *   • Блок «Возврат» (план или просрочка, дата + время)
- *   • Месячный календарь с подсветкой периода (синий) и хвоста просрочки (красный)
+ *   • Месячный календарь с drag-to-extend (синий период, красная просрочка,
+ *     зелёный preview продления). Реализация — DragExtendCalendar.
  *
- * v0.6 Phase 2 start: drag-to-extend ещё НЕ реализован — только статический
- * RentalPeriodCalendar в режиме read-only. Drag-зона и preview зелёных
- * дней — в следующей итерации (Phase 2.5).
+ * v0.6.1: drag-to-extend подключён. Mouse-drag по правому handle последнего
+ * дня запускает preview, на mouse-up вызывается onCommitExtend(days) — RentalCard
+ * открывает PaymentAcceptDialog с предзаполненным числом дней.
  */
 import { Calendar, MapPin } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { RentalPeriodCalendar } from "@/components/ui/date-picker";
+import { DragExtendCalendar } from "./DragExtendCalendar";
 import type { Rental, RentalStatus } from "@/lib/mock/rentals";
 
 /** DD.MM.YYYY → YYYY-MM-DD */
@@ -21,6 +22,12 @@ function ruToIso(ru: string | undefined | null): string | null {
   return `${m[3]}-${m[2]}-${m[1]}`;
 }
 
+function diffDaysIso(fromIso: string, toIso: string): number {
+  const a = new Date(fromIso).getTime();
+  const b = new Date(toIso).getTime();
+  return Math.max(0, Math.round((b - a) / 86400000));
+}
+
 function todayIso(): string {
   const d = new Date();
   const y = d.getFullYear();
@@ -29,40 +36,30 @@ function todayIso(): string {
   return `${y}-${mo}-${da}`;
 }
 
-function diffDays(fromRu: string | undefined, toRu: string | undefined): number {
-  if (!fromRu || !toRu) return 0;
-  const f = ruToIso(fromRu);
-  const t = ruToIso(toRu);
-  if (!f || !t) return 0;
-  const a = new Date(f).getTime();
-  const b = new Date(t).getTime();
-  return Math.max(0, Math.round((b - a) / 86400000));
-}
-
 export function CalendarPanel({
   rental,
   effectiveStatus,
+  onCommitExtend,
 }: {
   rental: Rental;
   effectiveStatus: RentalStatus;
+  /** Вызывается на mouse-up после drag, если выбрано > 0 дней. */
+  onCommitExtend?: (days: number) => void;
 }) {
   const startIso = ruToIso(rental.start);
   const endIso = ruToIso(rental.endPlanned);
   const isOverdue = effectiveStatus === "overdue";
-  const overdueUntilIso = isOverdue ? todayIso() : null;
-  const total = diffDays(rental.start, rental.endPlanned);
-  const overdueDays = isOverdue
-    ? diffDays(rental.endPlanned, todayIso().split("-").reverse().join(".").replace(/^(\d{2})-(\d{2})-(\d{4})$/, "$3.$2.$1"))
-    : 0;
+  const total = startIso && endIso ? diffDaysIso(startIso, endIso) : 0;
+  const overdueDays = isOverdue && endIso ? diffDaysIso(endIso, todayIso()) : 0;
 
-  // Workaround: чтобы посчитать дни просрочки между endPlanned и today
-  const computedOverdueDays = (() => {
-    if (!isOverdue || !endIso) return 0;
-    const today = new Date(todayIso()).getTime();
-    const planned = new Date(endIso).getTime();
-    return Math.max(0, Math.round((today - planned) / 86400000));
-  })();
-  void overdueDays;
+  const dailyRate =
+    rental.rateUnit === "week" ? Math.round(rental.rate / 7) : rental.rate;
+
+  // Запрет drag для архивных/завершённых
+  const isArchived = !!rental.archivedAt;
+  const isCompleted =
+    rental.status === "completed" || rental.status === "completed_damage";
+  const dragDisabled = isArchived || isCompleted || !onCommitExtend;
 
   return (
     <div className="rounded-2xl bg-surface border border-border shadow-card-sm p-4">
@@ -86,20 +83,19 @@ export function CalendarPanel({
           date={rental.endPlanned}
           time={rental.startTime ?? "12:00"}
           overdue={isOverdue}
-          overdueDays={computedOverdueDays}
+          overdueDays={overdueDays}
         />
       </div>
       {startIso && endIso && (
-        <RentalPeriodCalendar
+        <DragExtendCalendar
           startIso={startIso}
           plannedEndIso={endIso}
-          overdueUntilIso={overdueUntilIso}
+          isOverdue={isOverdue}
+          dailyRate={dailyRate}
+          onCommitExtend={onCommitExtend}
+          disabled={dragDisabled}
         />
       )}
-      <div className="mt-3 pt-3 border-t border-border text-[10.5px] text-muted-2">
-        v0.6 · drag-to-extend появится в следующей итерации. Сейчас календарь —
-        только для просмотра. Для продления используйте «Принять оплату».
-      </div>
     </div>
   );
 }

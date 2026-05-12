@@ -146,6 +146,53 @@
   }
 }
 
+/* v0.6.1: side-drawer slide-in/out animations */
+@keyframes slide-in-right {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+@keyframes slide-out-right {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.animate-slide-in-right {
+  animation: slide-in-right 250ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.animate-slide-out-right {
+  animation: slide-out-right 200ms ease-in both;
+}
+.animate-fade-in {
+  animation: fade-in 200ms ease-out both;
+}
+.animate-fade-out {
+  animation: fade-out 180ms ease-in both;
+}
+
 @keyframes task-flyaway {
   0% {
     transform: translate(0, 0) scale(1) rotate(0deg);

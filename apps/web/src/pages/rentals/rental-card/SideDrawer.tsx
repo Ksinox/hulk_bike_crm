@@ -8,8 +8,10 @@
  *    основную информацию краем экрана через overlay (bg-ink/30).
  *  • z-index подбирается так чтобы быть НИЖЕ dialog'ов
  *    (PaymentAcceptDialog и т.п. — у них z-[100]+).
+ *  • v0.6.1: добавлены slide-in/out + fade анимации overlay и panel.
+ *    При close сначала идёт reverse-анимация (~200ms), потом onClose.
  */
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -29,16 +31,43 @@ export function SideDrawer({
   width?: number;
   children: ReactNode;
 }) {
+  // v0.6.1: localOpen позволяет смонтировать узел при open=true и
+  // отложить демонтаж до завершения slide-out.
+  const [mounted, setMounted] = useState(open);
+  const [closing, setClosing] = useState(false);
+
   useEffect(() => {
-    if (!open) return;
+    if (open) {
+      setMounted(true);
+      setClosing(false);
+    } else if (mounted) {
+      // Запустить reverse-анимацию и снять с монтажа после неё.
+      setClosing(true);
+      const t = window.setTimeout(() => {
+        setMounted(false);
+        setClosing(false);
+      }, 220);
+      return () => window.clearTimeout(t);
+    }
+    return undefined;
+  }, [open, mounted]);
+
+  const requestClose = () => {
+    if (closing) return;
+    onClose();
+  };
+
+  useEffect(() => {
+    if (!mounted) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") requestClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mounted]);
 
-  if (!open) return null;
+  if (!mounted) return null;
   const w = Math.min(width, typeof window === "undefined" ? width : window.innerWidth * 0.95);
 
   return (
@@ -46,12 +75,16 @@ export function SideDrawer({
       <button
         type="button"
         aria-label="Закрыть"
-        onClick={onClose}
-        className="absolute inset-0 bg-ink/30 backdrop-blur-[1px]"
+        onClick={requestClose}
+        className={cn(
+          "absolute inset-0 bg-ink/30 backdrop-blur-[1px]",
+          closing ? "animate-fade-out" : "animate-fade-in",
+        )}
       />
       <aside
         className={cn(
           "absolute right-0 top-0 h-full bg-surface shadow-card-lg flex flex-col",
+          closing ? "animate-slide-out-right" : "animate-slide-in-right",
         )}
         style={{ width: w }}
       >
@@ -66,7 +99,7 @@ export function SideDrawer({
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={requestClose}
             className="h-8 w-8 shrink-0 rounded-full bg-surface-soft hover:bg-border text-muted hover:text-ink flex items-center justify-center"
             title="Закрыть (Esc)"
           >

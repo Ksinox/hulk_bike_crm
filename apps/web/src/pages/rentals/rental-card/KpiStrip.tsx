@@ -9,6 +9,7 @@
  * Цвета и компактная плотность подобраны под дизайн v0.6
  * (см. design/claude-design/Hulk Bike CRM/rental-card.jsx ~258-340).
  */
+import type React from "react";
 import { AlertTriangle, Check, Wallet } from "lucide-react";
 import type { Rental, RentalStatus } from "@/lib/mock/rentals";
 import type { DebtSummary } from "@/lib/api/debt";
@@ -63,7 +64,12 @@ export function KpiStrip({
   onAcceptPayment: () => void;
   onComplete: () => void;
   onOpenDebts: () => void;
-  onOverdueClick?: () => void;
+  /**
+   * v0.6.1: вызывается при клике на ячейку «Долг»/«Просрочка». Получает
+   * DOMRect самого элемента — родитель использует его для позиционирования
+   * OverdueActionsPopover.
+   */
+  onOverdueClick?: (rect: DOMRect) => void;
 }) {
   const isOverdue = effectiveStatus === "overdue";
 
@@ -85,7 +91,11 @@ export function KpiStrip({
     value: string;
     sub?: string;
     tone: Tone;
-    onClick?: () => void;
+    /**
+     * v0.6.1: получает DOMRect нажатой ячейки — для popover-якоря. Если
+     * обработчику rect не нужен, можно его проигнорировать.
+     */
+    onClick?: (rect: DOMRect) => void;
     action?: { icon: typeof AlertTriangle; onClick: () => void; title: string };
   }> = [];
 
@@ -96,7 +106,9 @@ export function KpiStrip({
       value: `${overdueDays} дн`,
       sub: endDate ? `с ${rental.endPlanned.slice(0, 5)}` : undefined,
       tone: "red",
-      onClick: onOverdueClick,
+      onClick: onOverdueClick
+        ? (rect) => onOverdueClick(rect)
+        : undefined,
     });
   } else if (startDate && daysBetween(today, startDate) > 0) {
     cells.push({
@@ -144,8 +156,15 @@ export function KpiStrip({
       value: `${fmt(totalDebt)} ₽`,
       sub: parts.join(" + "),
       tone: "red",
-      onClick: onOpenDebts,
-      action: { icon: AlertTriangle, onClick: onOpenDebts, title: "История долгов" },
+      // v0.6.1: клик по «Долг» открывает popover с быстрыми действиями
+      // через onOverdueClick (рядом с просрочкой). Иконка-action остаётся
+      // для перехода в полный drawer «История долгов».
+      onClick: onOverdueClick ? (rect) => onOverdueClick(rect) : onOpenDebts,
+      action: {
+        icon: AlertTriangle,
+        onClick: onOpenDebts,
+        title: "История долгов",
+      },
     });
   }
 
@@ -196,7 +215,7 @@ function KpiCell({
   value: string;
   sub?: string;
   tone: Tone;
-  onClick?: () => void;
+  onClick?: (rect: DOMRect) => void;
   action?: { icon: typeof AlertTriangle; onClick: () => void; title: string };
 }) {
   const toneStyles: Record<Tone, { bg: string; text: string; sub: string }> = {
@@ -210,7 +229,12 @@ function KpiCell({
   return (
     <Component
       type={onClick ? ("button" as const) : undefined}
-      onClick={onClick}
+      onClick={
+        onClick
+          ? (e: React.MouseEvent<HTMLElement>) =>
+              onClick((e.currentTarget as HTMLElement).getBoundingClientRect())
+          : undefined
+      }
       className={`relative px-3.5 py-3 text-left min-w-0 w-full ${t.bg} ${onClick ? "hover:brightness-95 cursor-pointer" : ""}`}
     >
       <div className="text-[9.5px] uppercase tracking-wider font-bold text-muted-2 truncate">
