@@ -17,8 +17,12 @@
  *     для ячеек не нужен — мы не используем стандартный data-selected, а
  *     рисуем СВОИ цвет-зоны через className-функцию ячейки);
  *   • Три зоны: blue (start → plannedEnd), red (overdue), green (preview).
- *     На крайних днях зон — чёрные «handle»-квадраты bg-ink. Today —
- *     ring-обводка, если не совпадает с чёрным квадратом.
+ *     v0.6.20: повторяем поведение оригинального RangeCalendar — зона
+ *     однотонная, rounded-l-lg на самом левом дне всего диапазона,
+ *     rounded-r-lg на самом правом, middle rounded-none. Чёрных «handle»-
+ *     квадратов НЕТ (они уместны только для одиночной даты, не для
+ *     диапазона). Today — точка под цифрой если внутри зоны, ring-обводка
+ *     если снаружи.
  *   • На текущем end-handle (previewEnd или plannedEnd / today-при-overdue)
  *     рендерится drag-handle справа — синяя полоска с GripVertical.
  *     onMouseDown → начинается drag. onMouseMove на grid'е находит
@@ -248,24 +252,31 @@ export function DragExtendCalendar({
         ? "text-[12.5px]"
         : "text-[15px]";
 
-  /* ---- классы ячейки (наши цвет-зоны) ---- */
+  /* ---- классы ячейки (наши цвет-зоны) ----
+   * v0.6.20: повторяем поведение оригинального RangeCalendar —
+   * период однотонный, скругление только на самом левом и правом краях
+   * (rounded-l-lg / rounded-r-lg), середина rounded-none. Чёрных
+   * «handle»-квадратов больше нет: они уместны только когда выбран
+   * одиночный день, не диапазон. Зона blue/red/ext различаются цветом,
+   * но образуют единый визуально-сплошной диапазон без разрывов. */
+  type Zone = "blue" | "red" | "ext" | null;
+  const zoneOf = (k: DateKey): Zone => {
+    const t = keyToTime(k);
+    // ext имеет приоритет (он перекрывает день после plannedEnd)
+    if (previewT != null && t > baseT && t <= previewT) return "ext";
+    if (isOverdue && t > plannedT && t <= todayT) return "red";
+    if (t >= startT && t <= plannedT) return "blue";
+    return null;
+  };
+
   const cellClass = (date: CalendarDate): string => {
     const k = calendarDateToKey(date);
-    const t = keyToTime(k);
-
-    const inBlue = t >= startT && t <= plannedT;
-    const inRed = isOverdue && t > plannedT && t <= todayT;
-    const inExt = previewT != null && t > baseT && t <= previewT;
-    const isBlueStart = isSame(k, startKey);
-    const isBlueEnd = isSame(k, plannedEndKey);
-    const isRedEnd =
-      isOverdue && t === todayT && todayT > plannedT && !inExt;
-    const isExtEnd = previewEnd != null && isSame(k, previewEnd);
+    const zone = zoneOf(k);
     const isTodayCell = isSame(k, todayKey);
 
     const parts: string[] = [
       // База — структурно как в calendar-rac.tsx, но размер свой.
-      "relative flex items-center justify-center whitespace-nowrap rounded-lg border border-transparent p-0 font-medium text-ink outline-offset-2 duration-150 [transition-property:color,background-color,border-radius,box-shadow] focus:outline-none tabular-nums",
+      "relative flex items-center justify-center whitespace-nowrap border border-transparent p-0 font-medium text-ink outline-offset-2 duration-150 [transition-property:color,background-color,border-radius,box-shadow] focus:outline-none tabular-nums",
       fontSizeCls,
       // react-aria состояния (hover / focus)
       "data-[hovered]:bg-blue-50/60",
@@ -274,50 +285,50 @@ export function DragExtendCalendar({
       "data-[disabled]:opacity-30 data-[unavailable]:opacity-30",
     ];
 
-    // СИНЯЯ ЗОНА — start → plannedEnd.
-    if (inBlue) {
-      if (isBlueStart) {
-        parts.push("rounded-lg bg-ink text-white");
-      } else if (isBlueEnd) {
-        const hasContinuation = isOverdue || inExt;
+    if (zone) {
+      // Соседи — для определения левого/правого края всего диапазона.
+      const prevK = fromJsDate(new Date(k.y, k.m, k.d - 1));
+      const nextK = fromJsDate(new Date(k.y, k.m, k.d + 1));
+      const isLeftEdge = zoneOf(prevK) == null;
+      const isRightEdge = zoneOf(nextK) == null;
+
+      // Цвет — по зоне (однородно на всём отрезке).
+      const colorCls =
+        zone === "blue"
+          ? "bg-blue-200 text-blue-900"
+          : zone === "red"
+            ? "bg-red-200 text-red-900"
+            : "bg-emerald-200 text-emerald-900";
+
+      // Скругления — только на крайних днях диапазона; одиночный день =
+      // полное скругление (как в оригинальном RangeCalendar).
+      const roundCls =
+        isLeftEdge && isRightEdge
+          ? "rounded-lg"
+          : isLeftEdge
+            ? "rounded-l-lg"
+            : isRightEdge
+              ? "rounded-r-lg"
+              : "rounded-none";
+
+      parts.push(colorCls, roundCls);
+    } else {
+      // Не в зоне — стандартное скругление как у обычных ячеек.
+      parts.push("rounded-lg");
+    }
+
+    // TODAY — если внутри зоны: маленькая точка под цифрой (как в
+    // оригинале); если снаружи: ring-обводка.
+    if (isTodayCell) {
+      if (zone) {
         parts.push(
-          hasContinuation
-            ? "rounded-l-lg bg-ink text-white"
-            : "rounded-lg bg-ink text-white",
+          "after:pointer-events-none after:absolute after:bottom-1 after:left-1/2 after:-translate-x-1/2 after:size-1 after:rounded-full after:bg-current",
         );
       } else {
-        parts.push("rounded-none bg-blue-200 text-blue-900");
+        parts.push("ring-2 ring-ink ring-inset");
       }
     }
-    // КРАСНАЯ ЗОНА — plannedEnd+1 → today (если просрочена).
-    if (inRed) {
-      if (isRedEnd) {
-        const hasContinuation = inExt;
-        parts.push(
-          hasContinuation
-            ? "rounded-l-lg bg-ink text-white"
-            : "rounded-r-lg bg-ink text-white",
-        );
-      } else {
-        parts.push("rounded-none bg-red-200 text-red-900");
-      }
-    }
-    // ЗЕЛЁНАЯ ЗОНА — продление preview.
-    if (inExt) {
-      if (isExtEnd) {
-        parts.push("rounded-r-lg bg-ink text-white");
-      } else {
-        parts.push("rounded-none bg-emerald-200 text-emerald-900");
-      }
-    }
-    // TODAY — обводка кружком, только если ячейка не чёрный handle.
-    const isBlackHandle =
-      (inBlue && (isBlueStart || isBlueEnd)) ||
-      (inRed && isRedEnd) ||
-      (inExt && isExtEnd);
-    if (isTodayCell && !isBlackHandle) {
-      parts.push("ring-2 ring-ink ring-inset rounded-full");
-    }
+
     return cn(...parts);
   };
 
