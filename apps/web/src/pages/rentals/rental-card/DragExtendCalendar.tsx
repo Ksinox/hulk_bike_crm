@@ -1,46 +1,54 @@
 /**
- * DragExtendCalendar — основной календарь карточки аренды v0.6.1
- * с drag-to-extend.
+ * DragExtendCalendar v0.6.18 — переписан на react-aria-components.
  *
- * Три зоны (по дизайн-референсу design/claude-design/Hulk Bike CRM/calendar.jsx):
- *   • Синяя       — текущий период аренды (start → endPlanned)
- *   • Красная     — просрочка (endPlanned+1 → today), если просрочена
- *   • Зелёная     — preview продления (формируется во время drag)
+ * База: apps/web/src/components/ui/calendar-rac.tsx (оригинальный shadcn-
+ * адаптированный компонент). Здесь та же структура:
+ *   <CalendarRac>
+ *     <CalendarHeader /> — Button slot="previous" + HeadingRac + Button slot="next"
+ *     <CalendarGridRac>
+ *       <CalendarGridHeaderRac>{...}</CalendarGridHeaderRac>
+ *       <CalendarGridBodyRac>{(date) => <CalendarCellRac date={date} className={fn} />}</CalendarGridBodyRac>
+ *     </CalendarGridRac>
+ *   </CalendarRac>
  *
- * Взаимодействие:
- *   • На правом краю последнего дня (endPlanned, или today если просрочена)
- *     отрисован drag-handle (синяя «полоска» с иконкой grip).
- *   • Mouse-down на handle → начинается drag. Mouse-move по календарю
- *     ищет ячейку под курсором (через data-date атрибут) и расширяет
- *     preview-зону вправо. Mouse-up завершает drag:
- *       — если новых дней нет (drop назад/на handle) → preview сбрасывается;
- *       — если есть → вызывается onCommitExtend(days), родитель открывает
- *         PaymentAcceptDialog с предзаполненным числом дней.
+ * Отличия от calendar-rac.tsx:
+ *   • Размер ячейки size-11 (44px) вместо size-9; шрифт text-[15px];
+ *   • Selection полностью выключен (defaultValue не задан + visuallyDisabled
+ *     для ячеек не нужен — мы не используем стандартный data-selected, а
+ *     рисуем СВОИ цвет-зоны через className-функцию ячейки);
+ *   • Три зоны: blue (start → plannedEnd), red (overdue), green (preview).
+ *     На крайних днях зон — чёрные «handle»-квадраты bg-ink. Today —
+ *     ring-обводка, если не совпадает с чёрным квадратом.
+ *   • На текущем end-handle (previewEnd или plannedEnd / today-при-overdue)
+ *     рендерится drag-handle справа — синяя полоска с GripVertical.
+ *     onMouseDown → начинается drag. onMouseMove на grid'е находит
+ *     ячейку под курсором через [data-date]-атрибут (передаётся как
+ *     обычный data-attr на CalendarCellRac, который пробрасывает его
+ *     на td). По iso дате считаем delta и обновляем preview.
+ *   • После mouse-up preview ОСТАЁТСЯ (v0.6.17 поведение): сбрасывается
+ *     только resetSignal'ом от родителя или новым drag'ом.
  *
- * Реализация координат: data-date на каждой ячейке = YYYY-MM-DD строка.
- * В onMouseMove ищем e.target.closest('[data-date]'), парсим дату, делаем
- * diff в днях от точки отсчёта (originalEnd для активной аренды, today
- * для просроченной). Если diff > 0 — preview становится этой ячейкой.
+ * Внешний интерфейс полностью совместим с предыдущей реализацией —
+ * CalendarPanel и RentalCard работают без правок.
  */
-import { useEffect, useRef, useState } from "react";
-import { GripVertical } from "lucide-react";
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  Button,
+  CalendarCell as CalendarCellRac,
+  CalendarGridBody as CalendarGridBodyRac,
+  CalendarGridHeader as CalendarGridHeaderRac,
+  CalendarGrid as CalendarGridRac,
+  CalendarHeaderCell as CalendarHeaderCellRac,
+  Calendar as CalendarRac,
+  Heading as HeadingRac,
+} from "react-aria-components";
+import { CalendarDate } from "@internationalized/date";
+import { ChevronLeft, ChevronRight, GripVertical } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const RU_MONTHS = [
-  "Январь",
-  "Февраль",
-  "Март",
-  "Апрель",
-  "Май",
-  "Июнь",
-  "Июль",
-  "Август",
-  "Сентябрь",
-  "Октябрь",
-  "Ноябрь",
-  "Декабрь",
-];
-const RU_DOW = ["П", "В", "С", "Ч", "П", "С", "В"];
+/* ---------- helpers ------------------------------------------------------ */
 
 type DateKey = { y: number; m: number; d: number };
 
@@ -61,47 +69,36 @@ function diffDays(a: DateKey, b: DateKey): number {
 function isSame(a: DateKey, b: DateKey): boolean {
   return a.y === b.y && a.m === b.m && a.d === b.d;
 }
-function todayKey(): DateKey {
-  const d = new Date();
-  return { y: d.getFullYear(), m: d.getMonth(), d: d.getDate() };
+function calendarDateToKey(cd: CalendarDate): DateKey {
+  // CalendarDate.month — 1-based
+  return { y: cd.year, m: cd.month - 1, d: cd.day };
 }
-function fromDate(dt: Date): DateKey {
+function keyToCalendarDate(k: DateKey): CalendarDate {
+  return new CalendarDate(k.y, k.m + 1, k.d);
+}
+function fromJsDate(dt: Date): DateKey {
   return { y: dt.getFullYear(), m: dt.getMonth(), d: dt.getDate() };
 }
+
+/* ---------- component ---------------------------------------------------- */
+
+/**
+ * Размер ячейки. По умолчанию 11 (44px) — основной размер v0.6.18.
+ * Можно увеличить до 13 в drawer-открытии (overlay paradigm).
+ */
+type CellSize = 9 | 11 | 13;
 
 export function DragExtendCalendar({
   startIso,
   plannedEndIso,
   isOverdue,
-  /** Опционально: ставка/сутки для подсказки в плашке во время drag. */
   dailyRate,
-  /** Вызывается на mouse-up если новых дней > 0. */
   onCommitExtend,
-  /**
-   * v0.6.10: вызывается на каждое изменение preview во время drag.
-   * Используется в floating-режиме (overlay paradigm): bottom-drawer
-   * PaymentAcceptDialog подписывается на live-изменения и сразу
-   * пересчитывает acceptedStr/footer.
-   */
   onPreviewExtend,
-  /** v0.6.10: начальное число дней продления — для рендера зелёной зоны
-   * при первом монтировании floating-календаря, когда extDays>0 уже
-   * выбран через спиннер в drawer'е. */
   initialDays,
-  /**
-   * v0.6.17: «сигнал сброса» preview-зоны. Родитель меняет это значение
-   * (любое — обычно incrementing number), когда нужно стереть зелёную
-   * зону (закрытие PaymentAcceptDialog без подтверждения). После
-   * mouse-up preview ОСТАЁТСЯ на месте до тех пор, пока:
-   *   • оператор не подтвердит оплату (commitExtend → переоткрытие
-   *     карточки с новым plannedEnd — зона сама становится «обычной» синей);
-   *   • оператор не закроет side panel (родитель меняет resetSignal,
-   *     preview очищается);
-   *   • оператор не начнёт новый drag (локально перетирается).
-   */
   resetSignal,
-  /** Опционально, чтобы заблокировать drag (например, в архивных). */
   disabled,
+  cellSize = 11,
 }: {
   startIso: string;
   plannedEndIso: string;
@@ -112,45 +109,56 @@ export function DragExtendCalendar({
   initialDays?: number;
   resetSignal?: number;
   disabled?: boolean;
+  cellSize?: CellSize;
 }) {
   const startKey = isoToKey(startIso);
   const plannedEndKey = isoToKey(plannedEndIso);
-  const today = todayKey();
+  const todayKey = useMemo<DateKey>(() => {
+    const d = new Date();
+    return { y: d.getFullYear(), m: d.getMonth(), d: d.getDate() };
+  }, []);
 
   // Точка отсчёта продления:
-  //   • для просроченной — после сегодняшнего дня
-  //   • иначе — после плана возврата
-  const baseEndKey = isOverdue && plannedEndKey && diffDays(plannedEndKey, today) > 0 ? today : plannedEndKey;
+  //   • если просрочена и today > plannedEnd → today;
+  //   • иначе — plannedEnd.
+  const baseEndKey =
+    isOverdue && plannedEndKey && diffDays(plannedEndKey, todayKey) > 0
+      ? todayKey
+      : plannedEndKey;
 
-  const [viewMonth, setViewMonth] = useState<{ y: number; m: number }>(() => {
-    if (baseEndKey) return { y: baseEndKey.y, m: baseEndKey.m };
-    return { y: today.y, m: today.m };
-  });
+  // Focus / view month: на baseEnd при первом монтировании. react-aria
+  // управляет навигацией стрелками самостоятельно через focusedValue.
+  const initialFocus = useMemo<CalendarDate | undefined>(() => {
+    const k = baseEndKey ?? todayKey;
+    return k ? keyToCalendarDate(k) : undefined;
+  }, [baseEndKey, todayKey]);
+  const [focusedDate, setFocusedDate] = useState<CalendarDate | undefined>(
+    initialFocus,
+  );
 
-  // v0.6.10: если родитель передал initialDays — сразу рисуем preview зелёным
-  // (см. floating-режим в PaymentAcceptDialog). Когда пользователь начнёт
-  // drag — setDragEnd перетрёт значение, а после mouse-up зафиксируется.
+  // Preview drag-end.
   const computeInitialDragEnd = (): DateKey | null => {
     if (!initialDays || initialDays <= 0 || !baseEndKey) return null;
     const dt = new Date(baseEndKey.y, baseEndKey.m, baseEndKey.d + initialDays);
-    return fromDate(dt);
+    return fromJsDate(dt);
   };
   const [dragEnd, setDragEnd] = useState<DateKey | null>(computeInitialDragEnd);
   const dragging = useRef(false);
-  const gridRef = useRef<HTMLDivElement | null>(null);
+  const gridWrapRef = useRef<HTMLDivElement | null>(null);
 
-  // Если initialDays меняется снаружи (пользователь жмёт +/- в drawer'е) —
-  // синхронизируем preview-зону.
+  // Синхронизация с initialDays извне (спиннер в drawer).
   useEffect(() => {
     if (dragging.current) return;
-    setDragEnd(computeInitialDragEnd());
+    if (!initialDays || initialDays <= 0 || !baseEndKey) {
+      setDragEnd(null);
+      return;
+    }
+    const dt = new Date(baseEndKey.y, baseEndKey.m, baseEndKey.d + initialDays);
+    setDragEnd(fromJsDate(dt));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialDays]);
 
-  // mouse-up глобально — даже если отпустить вне сетки
-  // v0.6.17: после mouse-up preview ОСТАЁТСЯ на месте (не сбрасываем
-  // dragEnd). Зелёная зона очистится только через resetSignal от
-  // родителя (закрытие PaymentAcceptDialog) либо через новый drag.
+  // mouse-up глобально.
   useEffect(() => {
     const onUp = () => {
       if (!dragging.current) return;
@@ -159,9 +167,8 @@ export function DragExtendCalendar({
       const days = dragEnd && baseEndKey ? diffDays(baseEndKey, dragEnd) : 0;
       if (days > 0) {
         onCommitExtend?.(days);
-        // не сбрасываем dragEnd — preview сохраняется до закрытия panel
+        // preview остаётся (v0.6.17)
       } else {
-        // drag без новых дней — preview сбрасывается, как было раньше
         setDragEnd(null);
       }
     };
@@ -169,9 +176,7 @@ export function DragExtendCalendar({
     return () => window.removeEventListener("mouseup", onUp);
   }, [dragEnd, baseEndKey, onCommitExtend]);
 
-  // v0.6.17: сброс preview-зоны по сигналу от родителя.
-  // Срабатывает когда RentalCard инкрементирует resetSignal — например,
-  // оператор закрыл PaymentAcceptDialog без подтверждения.
+  // resetSignal от родителя → стираем preview-зону.
   useEffect(() => {
     if (resetSignal === undefined) return;
     if (dragging.current) return;
@@ -182,20 +187,24 @@ export function DragExtendCalendar({
 
   if (!startKey || !plannedEndKey || !baseEndKey) {
     return (
-      <div className="text-[11px] text-muted-2">Недостаточно данных для календаря.</div>
+      <div className="text-[11px] text-muted-2">
+        Недостаточно данных для календаря.
+      </div>
     );
   }
 
-  const cells: DateKey[] = [];
-  const firstOfMonth = new Date(viewMonth.y, viewMonth.m, 1);
-  const dowMon = (firstOfMonth.getDay() + 6) % 7; // пн=0
-  const gridStart = new Date(viewMonth.y, viewMonth.m, 1 - dowMon);
-  for (let i = 0; i < 42; i++) {
-    const dt = new Date(gridStart);
-    dt.setDate(gridStart.getDate() + i);
-    cells.push(fromDate(dt));
-  }
+  /* ---- timestamps для расчёта зон ---- */
+  const startT = keyToTime(startKey);
+  const plannedT = keyToTime(plannedEndKey);
+  const baseT = keyToTime(baseEndKey);
+  const todayT = keyToTime(todayKey);
+  const previewEnd = dragEnd;
+  const previewT = previewEnd ? keyToTime(previewEnd) : null;
+  const previewDays = previewEnd ? diffDays(baseEndKey, previewEnd) : 0;
+  const previewSum =
+    dailyRate && previewDays > 0 ? dailyRate * previewDays : null;
 
+  /* ---- drag handlers ---- */
   const startDrag = (e: React.MouseEvent) => {
     if (disabled) return;
     e.preventDefault();
@@ -203,16 +212,16 @@ export function DragExtendCalendar({
     dragging.current = true;
     document.body.classList.add("select-none");
   };
-
   const onMouseMoveGrid = (e: React.MouseEvent) => {
     if (!dragging.current) return;
-    const tgt = (e.target as HTMLElement).closest("[data-date]") as HTMLElement | null;
+    const tgt = (e.target as HTMLElement).closest(
+      "[data-date]",
+    ) as HTMLElement | null;
     if (!tgt) return;
-    const iso = tgt.dataset.date;
+    const iso = tgt.getAttribute("data-date");
     if (!iso) return;
     const k = isoToKey(iso);
     if (!k) return;
-    // не разрешаем тянуть «назад» в сторону baseEnd — это уже учтённые дни
     const delta = diffDays(baseEndKey, k);
     if (delta <= 0) {
       setDragEnd(null);
@@ -223,195 +232,185 @@ export function DragExtendCalendar({
     onPreviewExtend?.(delta);
   };
 
-  const previewEnd = dragEnd;
-  const previewDays = previewEnd ? diffDays(baseEndKey, previewEnd) : 0;
-  const previewSum = dailyRate && previewDays > 0 ? dailyRate * previewDays : null;
-
-  // navigation
-  const prevMonth = () => {
-    const dt = new Date(viewMonth.y, viewMonth.m - 1, 1);
-    setViewMonth({ y: dt.getFullYear(), m: dt.getMonth() });
+  /* ---- размеры ----
+   * cellSize задаёт сторону ячейки в кратных к 4px (tailwind unit).
+   * Используем inline-style чтобы поддержать произвольный размер
+   * (включая 13 = 52px, которого нет в дефолтном tailwind). */
+  const cellPx = cellSize === 13 ? 52 : cellSize === 9 ? 36 : 44;
+  const cellBoxStyle: React.CSSProperties = {
+    width: cellPx,
+    height: cellPx,
   };
-  const nextMonth = () => {
-    const dt = new Date(viewMonth.y, viewMonth.m + 1, 1);
-    setViewMonth({ y: dt.getFullYear(), m: dt.getMonth() });
+  const fontSizeCls =
+    cellSize === 13
+      ? "text-[16px]"
+      : cellSize === 9
+        ? "text-[12.5px]"
+        : "text-[15px]";
+
+  /* ---- классы ячейки (наши цвет-зоны) ---- */
+  const cellClass = (date: CalendarDate): string => {
+    const k = calendarDateToKey(date);
+    const t = keyToTime(k);
+
+    const inBlue = t >= startT && t <= plannedT;
+    const inRed = isOverdue && t > plannedT && t <= todayT;
+    const inExt = previewT != null && t > baseT && t <= previewT;
+    const isBlueStart = isSame(k, startKey);
+    const isBlueEnd = isSame(k, plannedEndKey);
+    const isRedEnd =
+      isOverdue && t === todayT && todayT > plannedT && !inExt;
+    const isExtEnd = previewEnd != null && isSame(k, previewEnd);
+    const isTodayCell = isSame(k, todayKey);
+
+    const parts: string[] = [
+      // База — структурно как в calendar-rac.tsx, но размер свой.
+      "relative flex items-center justify-center whitespace-nowrap rounded-lg border border-transparent p-0 font-medium text-ink outline-offset-2 duration-150 [transition-property:color,background-color,border-radius,box-shadow] focus:outline-none tabular-nums",
+      fontSizeCls,
+      // react-aria состояния (hover / focus)
+      "data-[hovered]:bg-blue-50/60",
+      "data-[focus-visible]:z-10 data-[focus-visible]:outline data-[focus-visible]:outline-2 data-[focus-visible]:outline-blue-200",
+      "data-[outside-month]:text-muted-2 data-[outside-month]:opacity-40",
+      "data-[disabled]:opacity-30 data-[unavailable]:opacity-30",
+    ];
+
+    // СИНЯЯ ЗОНА — start → plannedEnd.
+    if (inBlue) {
+      if (isBlueStart) {
+        parts.push("rounded-lg bg-ink text-white");
+      } else if (isBlueEnd) {
+        const hasContinuation = isOverdue || inExt;
+        parts.push(
+          hasContinuation
+            ? "rounded-l-lg bg-ink text-white"
+            : "rounded-lg bg-ink text-white",
+        );
+      } else {
+        parts.push("rounded-none bg-blue-200 text-blue-900");
+      }
+    }
+    // КРАСНАЯ ЗОНА — plannedEnd+1 → today (если просрочена).
+    if (inRed) {
+      if (isRedEnd) {
+        const hasContinuation = inExt;
+        parts.push(
+          hasContinuation
+            ? "rounded-l-lg bg-ink text-white"
+            : "rounded-r-lg bg-ink text-white",
+        );
+      } else {
+        parts.push("rounded-none bg-red-200 text-red-900");
+      }
+    }
+    // ЗЕЛЁНАЯ ЗОНА — продление preview.
+    if (inExt) {
+      if (isExtEnd) {
+        parts.push("rounded-r-lg bg-ink text-white");
+      } else {
+        parts.push("rounded-none bg-emerald-200 text-emerald-900");
+      }
+    }
+    // TODAY — обводка кружком, только если ячейка не чёрный handle.
+    const isBlackHandle =
+      (inBlue && (isBlueStart || isBlueEnd)) ||
+      (inRed && isRedEnd) ||
+      (inExt && isExtEnd);
+    if (isTodayCell && !isBlackHandle) {
+      parts.push("ring-2 ring-ink ring-inset rounded-full");
+    }
+    return cn(...parts);
   };
 
-  // Сравнения дат через timestamp baseline.
-  const startT = keyToTime(startKey);
-  const plannedT = keyToTime(plannedEndKey);
-  const baseT = keyToTime(baseEndKey);
-  const todayT = keyToTime(today);
+  /* ---- решаем где рендерить drag-handle ---- */
+  const handleAt: DateKey | null = previewEnd ?? baseEndKey;
 
   return (
-    <div className="w-full select-none rounded-2xl bg-surface p-2">
-      {/* v0.6.14: шапка месяца — крупнее на 15px и адаптивная.
-          Календарь занимает 100% ширины контейнера; ячейки — aspect-square
-          + minmax(0,1fr) в grid-template-columns. */}
-      <div className="flex w-full items-center gap-1 pb-1 px-1">
-        <button
-          type="button"
-          onClick={prevMonth}
-          className="flex h-10 w-10 items-center justify-center rounded-lg text-muted-2 transition-colors hover:bg-blue-50 hover:text-blue-700"
-          aria-label="Предыдущий месяц"
-        >
-          ‹
-        </button>
-        <div className="grow text-center text-[15px] font-semibold capitalize text-ink">
-          {RU_MONTHS[viewMonth.m].toLowerCase()} {viewMonth.y}
-        </div>
-        <button
-          type="button"
-          onClick={nextMonth}
-          className="flex h-10 w-10 items-center justify-center rounded-lg text-muted-2 transition-colors hover:bg-blue-50 hover:text-blue-700"
-          aria-label="Следующий месяц"
-        >
-          ›
-        </button>
-      </div>
-      <div
-        className="grid w-full"
-        style={{ gridTemplateColumns: "repeat(7, minmax(0, 1fr))" }}
+    <div
+      ref={gridWrapRef}
+      onMouseMove={onMouseMoveGrid}
+      className="w-full select-none rounded-2xl bg-surface p-2"
+    >
+      <CalendarRac
+        aria-label="Календарь аренды"
+        className="w-full"
+        focusedValue={focusedDate}
+        onFocusChange={setFocusedDate}
+        // Полностью отключаем выбор (мы рисуем свои зоны).
+        isReadOnly
       >
-        {RU_DOW.map((d, i) => (
-          <div
-            key={i}
-            className="flex aspect-square items-center justify-center text-[11.5px] font-semibold uppercase tracking-wide text-muted-2"
+        {/* Шапка */}
+        <header className="flex w-full items-center gap-1 pb-1 px-1">
+          <Button
+            slot="previous"
+            className="flex size-10 items-center justify-center rounded-lg text-muted-2 outline-offset-2 transition-colors hover:bg-blue-50 hover:text-blue-700 focus:outline-none data-[focus-visible]:outline data-[focus-visible]:outline-2 data-[focus-visible]:outline-blue-200"
           >
-            {d}
-          </div>
-        ))}
-      </div>
-      <div
-        ref={gridRef}
-        className="grid w-full"
-        style={{ gridTemplateColumns: "repeat(7, minmax(0, 1fr))" }}
-        onMouseMove={onMouseMoveGrid}
-      >
-        {cells.map((d) => {
-          const iso = keyToIso(d);
-          const t = keyToTime(d);
-          const inMonth = d.m === viewMonth.m;
-          // Синяя зона (текущий период аренды): start → plannedEnd
-          const inBlueRange = t >= startT && t <= plannedT;
-          // Красная зона (просрочка): plannedEnd+1 → today (если просрочена)
-          const inRedRange =
-            isOverdue && t > plannedT && t <= todayT;
-          // Жёлтая «не хватает» зона — пока не реализуем, нужна shortage
-          // (TODO: пробросить из родителя если потребуется).
-          // Зелёная зона (продление preview): после baseEnd → previewEnd
-          const inExtension =
-            previewEnd != null && t > baseT && t <= keyToTime(previewEnd);
-          const isBlueStart = isSame(d, startKey);
-          const isBlueEnd = isSame(d, plannedEndKey);
-          const isRedEnd =
-            isOverdue && plannedEndKey && t === todayT && todayT > plannedT;
-          const isExtEnd =
-            previewEnd != null && isSame(d, previewEnd);
-          const isToday = isSame(d, today);
-          const isCurrentEnd = previewEnd
-            ? isSame(d, previewEnd)
-            : isSame(d, baseEndKey);
+            <ChevronLeft size={18} strokeWidth={2} />
+          </Button>
+          <HeadingRac className="grow text-center text-[15px] font-semibold capitalize text-ink" />
+          <Button
+            slot="next"
+            className="flex size-10 items-center justify-center rounded-lg text-muted-2 outline-offset-2 transition-colors hover:bg-blue-50 hover:text-blue-700 focus:outline-none data-[focus-visible]:outline data-[focus-visible]:outline-2 data-[focus-visible]:outline-blue-200"
+          >
+            <ChevronRight size={18} strokeWidth={2} />
+          </Button>
+        </header>
 
-          // v0.6.14: ячейки занимают всю ширину колонки grid (1fr) и
-          // делают себя квадратными через aspect-square. Текст — 14.5px.
-          const classes: string[] = [
-            "relative flex h-full w-full items-center justify-center whitespace-nowrap p-0 text-[14.5px] font-medium tabular-nums",
-            inMonth ? "text-ink" : "text-muted-2 opacity-40",
-          ];
+        {/* Сетка */}
+        <CalendarGridRac className="w-full">
+          <CalendarGridHeaderRac>
+            {(day) => (
+              <CalendarHeaderCellRac
+                style={cellBoxStyle}
+                className="rounded-lg p-0 text-[11px] font-semibold uppercase tracking-wide text-muted-2"
+              >
+                {day}
+              </CalendarHeaderCellRac>
+            )}
+          </CalendarGridHeaderRac>
+          <CalendarGridBodyRac className="[&_td]:p-0">
+            {(date) => {
+              const k = calendarDateToKey(date);
+              const iso = keyToIso(k);
+              const isHandle = handleAt != null && isSame(k, handleAt);
+              return (
+                <CalendarCellRac
+                  date={date}
+                  data-date={iso}
+                  style={cellBoxStyle}
+                  className={cellClass(date)}
+                >
+                  {({ formattedDate }) => (
+                    <>
+                      <span className="pointer-events-none">
+                        {formattedDate || String(k.d)}
+                      </span>
+                      {isHandle && !disabled && (
+                        <button
+                          type="button"
+                          onMouseDown={startDrag}
+                          title="Тяните вправо чтобы продлить"
+                          aria-label="Продлить аренду — потяните вправо"
+                          className="absolute -right-1.5 top-1/2 z-20 -translate-y-1/2 h-7 w-3.5 rounded-r-md bg-blue-600 cursor-ew-resize flex items-center justify-center text-white hover:bg-blue-700 active:scale-110 transition-transform shadow-card-sm"
+                        >
+                          <GripVertical size={11} strokeWidth={2.5} />
+                        </button>
+                      )}
+                    </>
+                  )}
+                </CalendarCellRac>
+              );
+            }}
+          </CalendarGridBodyRac>
+        </CalendarGridRac>
+      </CalendarRac>
 
-          // v0.6.15: rounded применяется ТОЛЬКО на крайних днях зоны.
-          // middle-дни всегда без rounded. Если day — start И end одной
-          // зоны (single day) — rounded со всех сторон (rounded-lg).
-          // Если start, но дальше идёт другая зона (overdue/extension) —
-          // НЕ скругляем правый край (зоны должны стыковаться без зазора).
-          //
-          // v0.6.16: СИНЯЯ ЗОНА (start → plannedEnd).
-          // Start & End — это чёрные квадраты (drag handles). Middle —
-          // синяя заливка. По дизайну: handle'ы всегда выделены как
-          // отдельные «маркеры» начала/конца периода.
-          if (inBlueRange) {
-            if (isBlueStart) {
-              // start всегда чёрный квадратик
-              classes.push("rounded-lg bg-ink text-white");
-            } else if (isBlueEnd) {
-              // end — чёрный, но если есть продолжение (overdue / extension),
-              // правый угол не скругляем для стыковки.
-              const hasContinuation = isOverdue || inExtension;
-              if (hasContinuation) {
-                classes.push("rounded-l-lg bg-ink text-white");
-              } else {
-                classes.push("rounded-lg bg-ink text-white");
-              }
-            } else {
-              // middle: синяя заливка без round
-              classes.push("bg-blue-200 text-blue-900");
-            }
-          }
-          // v0.6.16: КРАСНАЯ ЗОНА (plannedEnd+1 → today, если просрочена).
-          // RedEnd (today) — чёрный квадратик (это «текущий конец» при
-          // просрочке). Middle — красная заливка.
-          if (inRedRange) {
-            if (isRedEnd) {
-              const hasContinuation = inExtension;
-              if (hasContinuation) {
-                classes.push("rounded-l-lg bg-ink text-white");
-              } else {
-                classes.push("rounded-lg bg-ink text-white");
-              }
-            } else {
-              classes.push("bg-red-200 text-red-900");
-            }
-          }
-          // v0.6.16: ЗЕЛЁНАЯ ЗОНА (продление). ExtEnd — чёрный квадратик
-          // (новый end после drag). Middle — зелёная заливка.
-          if (inExtension) {
-            if (isExtEnd) {
-              classes.push("rounded-lg bg-ink text-white");
-            } else {
-              classes.push("bg-emerald-200 text-emerald-900");
-            }
-          }
-          // v0.6.16: «сегодня» — обводка кругом (ring + rounded-full),
-          // НЕ заливка. Применяется только если today НЕ совпадает с
-          // чёрными квадратиками (start/end/redEnd/extEnd).
-          const isBlackHandle =
-            isBlueStart || isBlueEnd || isRedEnd || isExtEnd;
-          if (isToday && !isBlackHandle) {
-            classes.push("ring-2 ring-ink ring-inset rounded-full");
-          }
-
-          const showHandle = isCurrentEnd && !disabled;
-
-          return (
-            <div
-              key={iso}
-              data-date={iso}
-              className="relative flex aspect-square w-full items-center justify-center"
-            >
-              <div className={cn(...classes)}>
-                {d.d}
-                {showHandle && (
-                  <button
-                    type="button"
-                    onMouseDown={startDrag}
-                    title="Тяните вправо чтобы продлить"
-                    aria-label="Продлить аренду — потяните вправо"
-                    className="absolute -right-1.5 top-1/2 z-20 -translate-y-1/2 h-7 w-3.5 rounded-r-md bg-blue-600 cursor-ew-resize flex items-center justify-center text-white hover:bg-blue-700 active:scale-110 transition-transform shadow-card-sm"
-                  >
-                    <GripVertical size={10} strokeWidth={2.5} />
-                  </button>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-      {/* Подсказка-плашка во время drag */}
+      {/* Подсказка-плашка во время / после drag */}
       {previewDays > 0 && (
         <div className="mt-2 mx-1 rounded-[10px] bg-emerald-50 border border-emerald-200 px-3 py-2 text-[11.5px] text-emerald-700 flex items-center justify-between gap-3">
           <div>
-            <b>Продление +{previewDays} {previewDays === 1 ? "день" : "дн"}</b>
+            <b>
+              Продление +{previewDays} {previewDays === 1 ? "день" : "дн"}
+            </b>
             {previewEnd && (
               <span className="ml-1 text-emerald-700/80">
                 до {String(previewEnd.d).padStart(2, "0")}.
@@ -426,6 +425,7 @@ export function DragExtendCalendar({
           )}
         </div>
       )}
+
       {/* Легенда снизу */}
       <div className="mt-2 px-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10.5px] text-muted">
         <Legend swatch="bg-blue-200" label="текущий период" />
@@ -449,3 +449,4 @@ function Legend({ swatch, label }: { swatch: string; label: string }) {
     </div>
   );
 }
+
