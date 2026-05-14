@@ -179,6 +179,11 @@ export function Rentals() {
     (s) => s.baseStatus === "rental_pool" && !s.archivedAt,
   ).length;
   const today = todayRu();
+  // TODO (B1, v0.6.15+): добавить фильтр «по дате завершения» —
+  // выбор даты или периода для endPlannedAt. Сейчас dateFrom/dateTo
+  // фильтруют по rental.start. Нужны 2 дополнительные поля
+  // endPlannedFrom/endPlannedTo + соответствующая UI-секция в
+  // RentalsFilters.tsx.
   const [filters, setFilters] = useState<FiltersState>({
     search: "",
     status: "active",

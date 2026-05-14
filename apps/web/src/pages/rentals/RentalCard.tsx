@@ -794,6 +794,11 @@ export function RentalCard({
     rental.status === "returning";
 
   // ── render ────────────────────────────────────────────────────────
+  // TODO (B3, v0.6.15+): сворачивание карточки аренды. Нужна кнопка
+  // «свернуть» рядом с RentalActionsMenu — при клике карточка сжимается
+  // и показывает компактный список аренд клиента во всю ширину
+  // (одна строка на аренду: статус + #ID + скутер + endPlanned + долг).
+  // Развёрнутая карточка возвращается кликом по строке.
   return (
     <div className="w-full">
       <div className="w-full max-w-[1180px] mx-auto p-4 lg:p-5 flex flex-col gap-3">
@@ -867,6 +872,9 @@ export function RentalCard({
           onSwapScooter={handleSwapScooter}
           onChangeEquipment={
             canEditEquipment ? () => setEquipmentChangeOpen(true) : undefined
+          }
+          onIncident={
+            isLive ? () => setAction("incident") : undefined
           }
         />
 

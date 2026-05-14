@@ -74,6 +74,10 @@ function matchClient(
 }
 
 export function Clients() {
+  // TODO (B1, v0.6.15+): фильтр «по дате завершения» аренды клиента —
+  // показывать только клиентов, чьи аренды завершаются в выбранном
+  // периоде (endPlannedAt). Сейчас dateFrom/dateTo не подключены к
+  // endPlannedAt. См. matchClient() — нужно расширить FiltersState.
   const [filters, setFilters] = useState<FiltersState>({
     search: "",
     status: "all",

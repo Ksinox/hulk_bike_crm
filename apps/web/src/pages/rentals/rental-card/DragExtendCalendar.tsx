@@ -214,34 +214,39 @@ export function DragExtendCalendar({
   const todayT = keyToTime(today);
 
   return (
-    <div className="select-none rounded-2xl bg-surface p-2">
-      {/* v0.6.13: шапка месяца в стиле RentalPeriodCalendar (date-picker.tsx) */}
+    <div className="w-full select-none rounded-2xl bg-surface p-2">
+      {/* v0.6.14: шапка месяца — крупнее на 15px и адаптивная.
+          Календарь занимает 100% ширины контейнера; ячейки — aspect-square
+          + minmax(0,1fr) в grid-template-columns. */}
       <div className="flex w-full items-center gap-1 pb-1 px-1">
         <button
           type="button"
           onClick={prevMonth}
-          className="flex size-9 items-center justify-center rounded-lg text-muted-2 transition-colors hover:bg-blue-50 hover:text-blue-700"
+          className="flex h-10 w-10 items-center justify-center rounded-lg text-muted-2 transition-colors hover:bg-blue-50 hover:text-blue-700"
           aria-label="Предыдущий месяц"
         >
           ‹
         </button>
-        <div className="grow text-center text-[13px] font-semibold capitalize text-ink">
+        <div className="grow text-center text-[15px] font-semibold capitalize text-ink">
           {RU_MONTHS[viewMonth.m].toLowerCase()} {viewMonth.y}
         </div>
         <button
           type="button"
           onClick={nextMonth}
-          className="flex size-9 items-center justify-center rounded-lg text-muted-2 transition-colors hover:bg-blue-50 hover:text-blue-700"
+          className="flex h-10 w-10 items-center justify-center rounded-lg text-muted-2 transition-colors hover:bg-blue-50 hover:text-blue-700"
           aria-label="Следующий месяц"
         >
           ›
         </button>
       </div>
-      <div className="grid grid-cols-7">
+      <div
+        className="grid w-full"
+        style={{ gridTemplateColumns: "repeat(7, minmax(0, 1fr))" }}
+      >
         {RU_DOW.map((d, i) => (
           <div
             key={i}
-            className="flex size-9 items-center justify-center text-[10.5px] font-semibold uppercase tracking-wide text-muted-2"
+            className="flex aspect-square items-center justify-center text-[11.5px] font-semibold uppercase tracking-wide text-muted-2"
           >
             {d}
           </div>
@@ -249,7 +254,8 @@ export function DragExtendCalendar({
       </div>
       <div
         ref={gridRef}
-        className="grid grid-cols-7"
+        className="grid w-full"
+        style={{ gridTemplateColumns: "repeat(7, minmax(0, 1fr))" }}
         onMouseMove={onMouseMoveGrid}
       >
         {cells.map((d) => {
@@ -277,9 +283,10 @@ export function DragExtendCalendar({
             ? isSame(d, previewEnd)
             : isSame(d, baseEndKey);
 
-          // Базовый цвет текста для дней вне месяца.
+          // v0.6.14: ячейки занимают всю ширину колонки grid (1fr) и
+          // делают себя квадратными через aspect-square. Текст — 14.5px.
           const classes: string[] = [
-            "relative flex size-9 items-center justify-center whitespace-nowrap p-0 text-[12.5px] font-medium tabular-nums",
+            "relative flex h-full w-full items-center justify-center whitespace-nowrap p-0 text-[14.5px] font-medium tabular-nums",
             inMonth ? "text-ink" : "text-muted-2 opacity-40",
           ];
 
@@ -325,7 +332,7 @@ export function DragExtendCalendar({
             <div
               key={iso}
               data-date={iso}
-              className="relative flex size-9 items-center justify-center"
+              className="relative flex aspect-square w-full items-center justify-center"
             >
               <div className={cn(...classes)}>
                 {d.d}
@@ -335,9 +342,9 @@ export function DragExtendCalendar({
                     onMouseDown={startDrag}
                     title="Тяните вправо чтобы продлить"
                     aria-label="Продлить аренду — потяните вправо"
-                    className="absolute -right-1.5 top-1/2 z-20 -translate-y-1/2 h-6 w-3 rounded-r-md bg-blue-600 cursor-ew-resize flex items-center justify-center text-white hover:bg-blue-700 active:scale-110 transition-transform shadow-card-sm"
+                    className="absolute -right-1.5 top-1/2 z-20 -translate-y-1/2 h-7 w-3.5 rounded-r-md bg-blue-600 cursor-ew-resize flex items-center justify-center text-white hover:bg-blue-700 active:scale-110 transition-transform shadow-card-sm"
                   >
-                    <GripVertical size={9} strokeWidth={2.5} />
+                    <GripVertical size={10} strokeWidth={2.5} />
                   </button>
                 )}
               </div>

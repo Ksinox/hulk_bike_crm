@@ -257,6 +257,10 @@ export function PaymentAcceptDialog({
   const initialTariff: TariffSel = (rental.tariffPeriod ?? "day") as TariffSel;
   const [selectedTariff, setSelectedTariff] =
     useState<TariffSel>(initialTariff);
+  // v0.6.14: tariffPinned — флаг, что оператор вручную выбрал тариф.
+  // Тогда useEffect ниже НЕ перетирает selectedTariff при изменении extDays.
+  // Сбрасывается только при выборе custom (через checkbox).
+  const [tariffPinned, setTariffPinned] = useState<boolean>(false);
   const [extCustomRate, setExtCustomRate] = useState<number>(rental.rate);
   const [extCustomUnit, setExtCustomUnit] = useState<"day" | "week">(
     rental.rateUnit === "week" ? "week" : "day",
@@ -361,6 +365,30 @@ export function PaymentAcceptDialog({
     if (selectedTariff === "day") return periodForDays(Math.max(1, extDays));
     return selectedTariff;
   })();
+  // v0.6.14: авто-подбор тарифа по числу дней продления.
+  //   1-2 дн   → 'day'    (label "1–2 дня")
+  //   3-6 дн   → 'short'  (label "3–6 дней")
+  //   7-29 дн  → 'week'   (label "7–29 дней")
+  //   30+ дн   → 'month'  (label "30+ дней")
+  // Если оператор уже выбрал тариф вручную (tariffPinned=true) или включил
+  // 'custom' — не перетираем выбор. Иначе при каждом изменении extDays
+  // подсветка переключается на соответствующий пресет.
+  useEffect(() => {
+    if (tariffPinned) return;
+    if (selectedTariff === "custom") return;
+    if (extDays <= 0) return;
+    const auto: TariffPeriod =
+      extDays <= 2
+        ? "day"
+        : extDays <= 6
+          ? "short"
+          : extDays <= 29
+            ? "week"
+            : "month";
+    if (auto !== selectedTariff) {
+      setSelectedTariff(auto);
+    }
+  }, [extDays, tariffPinned, selectedTariff]);
   // extSum считается «по аренде» (без экипировки) — для extend-inplace.
   const extSum = extIsWeekly ? extRate * extWeeks : extDailyRate * extDays;
   // v0.6.7: dailyTotal = аренда + экипировка/сут (как в дизайне line 15).
@@ -1223,7 +1251,11 @@ export function PaymentAcceptDialog({
                   <button
                     key={p}
                     type="button"
-                    onClick={() => setSelectedTariff(p)}
+                    onClick={() => {
+                      // v0.6.14: ручной выбор тарифа — пинним.
+                      setSelectedTariff(p);
+                      setTariffPinned(true);
+                    }}
                     className={cn(
                       "rounded-full border px-3 py-1.5 text-[11px] font-semibold transition-colors flex items-center gap-1.5",
                       active
@@ -1241,9 +1273,13 @@ export function PaymentAcceptDialog({
                 <input
                   type="checkbox"
                   checked={selectedTariff === "custom"}
-                  onChange={(e) =>
-                    setSelectedTariff(e.target.checked ? "custom" : initialTariff)
-                  }
+                  onChange={(e) => {
+                    // v0.6.14: вход/выход из custom — снимаем pin, чтобы
+                    // авто-подбор по дням снова заработал при возврате
+                    // в пресеты.
+                    setSelectedTariff(e.target.checked ? "custom" : initialTariff);
+                    setTariffPinned(e.target.checked);
+                  }}
                   className="h-3.5 w-3.5 accent-blue-600"
                 />
                 <span className="text-[11px] font-semibold text-ink-2">
