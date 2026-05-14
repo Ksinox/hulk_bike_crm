@@ -17,12 +17,14 @@
  *     для ячеек не нужен — мы не используем стандартный data-selected, а
  *     рисуем СВОИ цвет-зоны через className-функцию ячейки);
  *   • Три зоны: blue (start → plannedEnd), red (overdue), green (preview).
- *     v0.6.20: повторяем поведение оригинального RangeCalendar — зона
- *     однотонная, rounded-l-lg на самом левом дне всего диапазона,
- *     rounded-r-lg на самом правом, middle rounded-none. Чёрных «handle»-
- *     квадратов НЕТ (они уместны только для одиночной даты, не для
- *     диапазона). Today — точка под цифрой если внутри зоны, ring-обводка
- *     если снаружи.
+ *     v0.6.21: повторяем поведение оригинального RangeCalendar —
+ *     самый левый день ВСЕГО диапазона = чёрный квадрат с rounded-l-lg
+ *     (как data-selection-start), самый правый = чёрный с rounded-r-lg
+ *     (data-selection-end), середина — bg-blue-200/red-200/emerald-200
+ *     с rounded-none. Внутренние стыки зон (blue→red, red→ext) — НЕ
+ *     края, цвет меняется, но скруглений и чёрных квадратов нет.
+ *     Today — точка под цифрой если внутри зоны, ring-обводка если
+ *     снаружи.
  *   • На текущем end-handle (previewEnd или plannedEnd / today-при-overdue)
  *     рендерится drag-handle справа — синяя полоска с GripVertical.
  *     onMouseDown → начинается drag. onMouseMove на grid'е находит
@@ -287,14 +289,18 @@ export function DragExtendCalendar({
 
     if (zone) {
       // Соседи — для определения левого/правого края всего диапазона.
+      // Внутренние стыки зон (blue→red, red→ext) НЕ считаются краями.
       const prevK = fromJsDate(new Date(k.y, k.m, k.d - 1));
       const nextK = fromJsDate(new Date(k.y, k.m, k.d + 1));
       const isLeftEdge = zoneOf(prevK) == null;
       const isRightEdge = zoneOf(nextK) == null;
+      const isEdge = isLeftEdge || isRightEdge;
 
-      // Цвет — по зоне (однородно на всём отрезке).
-      const colorCls =
-        zone === "blue"
+      // Цвет: на edge-днях — чёрный «handle» (как data-selection-start/end
+      // в оригинальном RangeCalendar). В середине — фон зоны.
+      const colorCls = isEdge
+        ? "bg-ink text-white"
+        : zone === "blue"
           ? "bg-blue-200 text-blue-900"
           : zone === "red"
             ? "bg-red-200 text-red-900"
