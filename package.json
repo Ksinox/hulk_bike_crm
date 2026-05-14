@@ -8,7 +8,10 @@
     "node": ">=20.0.0"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["electron", "esbuild"]
+    "onlyBuiltDependencies": [
+      "electron",
+      "esbuild"
+    ]
   },
   "scripts": {
     "dev": "pnpm --filter web dev",
@@ -33,5 +36,9 @@
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
     "changelog:draft": "node scripts/changelog/draft.mjs"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^4.1.6",
+    "vitest": "^4.1.6"
   }
 }
