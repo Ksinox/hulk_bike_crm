@@ -307,8 +307,11 @@ export function MasterBlock({
             </button>
           )}
 
-          {/* Money row — залог + депозит клиента (2-col) */}
-          <div className="mt-auto pt-3 grid grid-cols-2 gap-2">
+          {/* Money row — залог + депозит клиента (2-col).
+              v0.6.32: убран mt-auto, чтобы блок шёл сразу под кнопкой
+              «Зафиксировать ущерб» без огромной пустоты. Колонка
+              скутера всё равно задаёт высоту через аватарку 9:12. */}
+          <div className="pt-2 grid grid-cols-2 gap-2">
             <div className="rounded-[10px] border border-border bg-surface-soft px-3 py-2">
               <div className="text-[9.5px] uppercase tracking-wider font-bold text-muted-2 inline-flex items-center gap-1">
                 <Shield size={10} /> Залог
