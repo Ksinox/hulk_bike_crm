@@ -1020,25 +1020,15 @@ export function PaymentAcceptDialog({
         )
       : 0;
   return (
-    <div
-      className={cn(
-        // v0.6.16: side panel вместо bottom drawer. БЕЗ blur'а — карточка
-        // слева остаётся интерактивной. Сам контейнер прозрачен и не
-        // ловит клики (pointer-events-none); сам panel (right side) перехватывает.
-        "fixed inset-0 z-[120] flex items-stretch justify-end pointer-events-none",
-      )}
-    >
+    <>
       <div
         className={cn(
-          // v0.6.16: правый side panel. Slide-in from right, 480-560px шир.
-          // Карточка слева остаётся интерактивной (card calendar = primary).
-          "pointer-events-auto flex w-full max-w-[480px] lg:max-w-[560px] flex-col overflow-hidden border-l border-border bg-surface shadow-card-lg transition-transform duration-300 ease-out",
-          closing ? "animate-slide-out-right" : "animate-slide-in-right",
+          // v0.6.x: inline-режим — панель встроена в layout RentalCard
+          // (между CalendarPanel и HistoryStrip), вытесняя историю вправо.
+          // Без fixed/backdrop/slide-in — просто блок в гриде.
+          "flex h-full max-h-[820px] flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-card-sm",
+          closing && "opacity-0 transition-opacity duration-150",
         )}
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          height: "100vh",
-        }}
       >
         <div className="flex items-center gap-3 border-b border-border bg-gradient-to-r from-blue-50 to-surface px-5 py-3">
           <div className="h-9 w-9 rounded-full bg-blue-600 text-white flex items-center justify-center shrink-0">
@@ -1711,7 +1701,7 @@ export function PaymentAcceptDialog({
           onClose={() => setEquipDialogOpen(false)}
         />
       )}
-    </div>
+    </>
   );
 }
 

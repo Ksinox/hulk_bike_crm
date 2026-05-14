@@ -213,18 +213,15 @@ export function DragExtendCalendar({
     onCommitExtend?.(delta);
   };
 
-  /* ---- размеры ---- */
-  const cellPx = cellSize === 13 ? 52 : cellSize === 9 ? 36 : 44;
-  const cellBoxStyle: React.CSSProperties = {
-    width: cellPx,
-    height: cellPx,
-  };
-  const fontSizeCls =
-    cellSize === 13
-      ? "text-[16px]"
-      : cellSize === 9
-        ? "text-[12.5px]"
-        : "text-[15px]";
+  /* ---- размеры ----
+   * v0.6.30: ячейки FLUID — заполняют 1/7 ширины родителя через
+   * table-fixed на CalendarGrid + aspect-square на ячейке. Размер
+   * шрифта вырос пропорционально (~17px) — при широком блоке всё
+   * выглядит крупно и читаемо, при узком сжимается естественно.
+   * cellSize оставлен для совместимости, но не используется. */
+  void cellSize;
+  const cellBoxClass = "w-full aspect-square";
+  const fontSizeCls = "text-[17px]";
 
   /* ---- классы ячейки (наши цвет-зоны) ----
    * Edge-дни всего диапазона — чёрные «handle» (bg-ink) с rounded-l-lg
@@ -340,19 +337,21 @@ export function DragExtendCalendar({
           </Button>
         </header>
 
-        {/* Сетка месяца */}
-        <CalendarGridRac className="w-full">
+        {/* Сетка месяца — table-fixed чтобы 7 колонок были равной
+            ширины, а ячейки aspect-square → высота = ширина. Так
+            календарь fluid: при широком блоке ячейки большие, при
+            узком сжимается. */}
+        <CalendarGridRac className="w-full table-fixed">
           <CalendarGridHeaderRac>
             {(day) => (
               <CalendarHeaderCellRac
-                style={cellBoxStyle}
-                className="rounded-lg p-0 text-[11px] font-semibold uppercase tracking-wide text-muted-2"
+                className="rounded-lg p-0 pb-2 text-[12px] font-semibold uppercase tracking-wide text-muted-2"
               >
                 {day}
               </CalendarHeaderCellRac>
             )}
           </CalendarGridHeaderRac>
-          <CalendarGridBodyRac className="[&_td]:p-0">
+          <CalendarGridBodyRac className="[&_td]:p-0.5">
             {(date) => {
               const k = calendarDateToKey(date);
               const iso = keyToIso(k);
@@ -360,8 +359,7 @@ export function DragExtendCalendar({
                 <CalendarCellRac
                   date={date}
                   data-date={iso}
-                  style={cellBoxStyle}
-                  className={cellClass(date)}
+                  className={cn(cellBoxClass, cellClass(date))}
                 >
                   {({ formattedDate }) => (
                     <span className="pointer-events-none">

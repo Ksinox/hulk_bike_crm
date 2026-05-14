@@ -14,7 +14,7 @@
  *
  * Phase 2 start: drag-to-extend и polish-анимации добавятся отдельно.
  */
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   ArrowRight,
@@ -238,44 +238,11 @@ export function RentalCard({
   // v0.6.17: сигнал для DragExtendCalendar — сбросить зелёную preview-зону.
   // Инкрементим при закрытии PaymentAcceptDialog без подтверждения.
   const [calendarResetSignal, setCalendarResetSignal] = useState<number>(0);
-  // ── FLIP-анимация календаря (v0.6.13) ─────────────────────────────
-  // Когда открывается PaymentAcceptDialog — измеряем bounding rect
-  // оригинального CalendarPanel и пробрасываем его в диалог.
-  // Floating-копия использует этот rect как FIRST-позицию для transform-
-  // анимации (FLIP: translate из original в floating-позицию).
+  // v0.6.x: PaymentAcceptDialog теперь inline-панель в гриде с календарём
+  // и историей — FLIP-анимация и liftedFromRect больше не нужны.
+  // calendarBoxRef оставлен — может использоваться CalendarPanel'ом.
   const calendarBoxRef = useRef<HTMLDivElement | null>(null);
-  const [liftedFromRect, setLiftedFromRect] = useState<{
-    top: number;
-    left: number;
-    width: number;
-    height: number;
-  } | null>(null);
-  const [paymentRentalId, _setPaymentRentalIdRaw] = useState<number | null>(null);
-  const setPaymentRentalId = (id: number | null) => {
-    if (id != null) {
-      const el = calendarBoxRef.current;
-      if (el) {
-        const r = el.getBoundingClientRect();
-        setLiftedFromRect({
-          top: r.top,
-          left: r.left,
-          width: r.width,
-          height: r.height,
-        });
-      }
-    }
-    _setPaymentRentalIdRaw(id);
-  };
-  // При закрытии — useLayoutEffect ниже сбросит liftedFromRect.
-  useLayoutEffect(() => {
-    if (paymentRentalId == null) {
-      // Сбросим с небольшой задержкой, чтобы FLIP-out анимация в диалоге
-      // успела отыграть. Но сам state в диалоге уже закрывается своим
-      // animateOut'ом, поэтому достаточно сразу обнулить — лифтнутая
-      // копия исчезнет вместе с диалогом.
-      setLiftedFromRect(null);
-    }
-  }, [paymentRentalId]);
+  const [paymentRentalId, setPaymentRentalId] = useState<number | null>(null);
 
   const drawerCtx = useDashboardDrawer();
   /** Открыть клиента: если мы внутри dashboard-drawer'а — кладём поверх
@@ -948,8 +915,17 @@ export function RentalCard({
           </div>
         )}
 
-        {/* Calendar + History side by side */}
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-3">
+        {/* Calendar + (PaymentAcceptPanel) + History side by side.
+            v0.6.x: PaymentAcceptDialog теперь inline-панель — встраивается
+            между календарём и историей, вытесняя её вправо. */}
+        <div
+          className={cn(
+            "grid grid-cols-1 gap-3 transition-[grid-template-columns] duration-300 ease-out",
+            paymentRentalId != null
+              ? "lg:grid-cols-[minmax(0,1fr)_minmax(380px,440px)_320px]"
+              : "lg:grid-cols-[1fr_360px]",
+          )}
+        >
           <CalendarPanel
             rental={rental}
             effectiveStatus={effectiveStatus}
@@ -971,6 +947,22 @@ export function RentalCard({
               paymentRentalId != null ? paymentPrefillExtDays : undefined
             }
           />
+          {paymentRentalId != null && (
+            <div className="animate-in fade-in slide-in-from-right-4 duration-300">
+              <PaymentAcceptDialogContainer
+                rentalId={paymentRentalId}
+                initialExtDays={paymentPrefillExtDays || undefined}
+                onExtDaysChange={setPaymentPrefillExtDays}
+                onClose={() => {
+                  setPaymentRentalId(null);
+                  setPaymentPrefillExtDays(0);
+                  // v0.6.17: оператор закрыл panel без подтверждения →
+                  // сбросим зелёную preview-зону на календаре.
+                  setCalendarResetSignal((n) => n + 1);
+                }}
+              />
+            </div>
+          )}
           <HistoryStrip
             items={activityItems}
             loading={activityQ.isLoading}
@@ -1055,24 +1047,8 @@ export function RentalCard({
           }}
         />
       )}
-      {paymentRentalId != null && (
-        <PaymentAcceptDialogContainer
-          rentalId={paymentRentalId}
-          initialExtDays={paymentPrefillExtDays || undefined}
-          // v0.6.24: при изменении extDays в диалоге (input/spinner/
-          // quick-pills/amount) обновляем prefill — CalendarPanel
-          // пересчитает preview-зону календаря.
-          onExtDaysChange={setPaymentPrefillExtDays}
-          liftedFromRect={liftedFromRect}
-          onClose={() => {
-            setPaymentRentalId(null);
-            setPaymentPrefillExtDays(0);
-            // v0.6.17: оператор закрыл side panel без подтверждения →
-            // сбросим зелёную preview-зону на календаре.
-            setCalendarResetSignal((n) => n + 1);
-          }}
-        />
-      )}
+      {/* v0.6.x: PaymentAcceptDialogContainer теперь рендерится inline
+          внутри grid'а Calendar+History (см. выше), а не как overlay. */}
 
       {/* v0.6.1: popover быстрых действий по просрочке */}
       {overdueAnchor && (
@@ -1172,19 +1148,12 @@ function PaymentAcceptDialogContainer({
   onClose,
   initialExtDays,
   onExtDaysChange,
-  liftedFromRect,
 }: {
   rentalId: number;
   onClose: () => void;
   initialExtDays?: number;
   /** v0.6.24: callback для синхронизации календаря в карточке. */
   onExtDaysChange?: (days: number) => void;
-  liftedFromRect?: {
-    top: number;
-    left: number;
-    width: number;
-    height: number;
-  } | null;
 }) {
   const all = useRentals();
   const r = all.find((x) => x.id === rentalId);
@@ -1195,7 +1164,6 @@ function PaymentAcceptDialogContainer({
       onClose={onClose}
       initialExtDays={initialExtDays}
       onExtDaysChange={onExtDaysChange}
-      liftedFromRect={liftedFromRect}
       onPaid={() => {
         /* invalidations происходят в dialog'е */
       }}
