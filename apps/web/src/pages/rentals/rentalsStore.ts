@@ -184,26 +184,6 @@ export function confirmRentalPayment(
     .catch(logErr("confirmRentalPayment"));
 }
 
-export function addRentalIncident(
-  rentalId: number,
-  data: { type: string; date: string; damage: number; note?: string },
-): void {
-  const [d, m, y] = data.date.split(".");
-  api
-    .post(`/api/incidents`, {
-      rentalId,
-      type: data.type,
-      occurredOn: `${y}-${m}-${d}`,
-      damage: data.damage,
-      note: data.note ?? null,
-    })
-    .then(() => {
-      queryClient.invalidateQueries({ queryKey: ["incidents"] });
-      invAll();
-    })
-    .catch(logErr("addRentalIncident"));
-}
-
 export function revertOverdue(id: number) {
   api
     .post(`/api/rentals/${id}/revert-overdue`, {})

@@ -4,13 +4,11 @@
  *   • SCOOTER     (вертикальная аватарка + номер/модель + пробег)
  *   • EQUIPMENT   (2×2 grid: аватарка СВЕРХУ + подпись ОТДЕЛЬНО ПОД ней)
  *
- * v0.6.15:
- *   - CLIENT: правая часть колонки клиента (под телефонами) — 3 равных
- *     мини-колонки в одном grid-cols-3:
+ * v0.6.15 (обновлено v0.6.28 — кнопка «Инцидент» убрана):
+ *   - CLIENT: правая часть колонки клиента (под телефонами) — 2 равных
+ *     мини-колонки в grid-cols-2:
  *       1) «Дней в аренде» — сумма по всем арендам клиента
  *       2) «Принёс за всё время аренд» — сумма всех payments
- *       3) Кнопка «Создать инцидент» — AlertCircle сверху, «Инцидент» снизу,
- *          ton orange/red. Заменила старую иконку-кнопку в identity strip.
  *     Карточки Залог/Депозит остаются внизу как 2-col grid.
  *   - SCOOTER: аватарка ВЕРТИКАЛЬНАЯ (aspect-[9/12]), hover-overlay
  *     «Заменить». Текст ПОД аватаркой: номер крупно (font-display
@@ -22,7 +20,6 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  AlertCircle,
   AlertTriangle,
   Clock,
   Package,
@@ -93,7 +90,6 @@ export function MasterBlock({
   onOpenClientProfile,
   onSwapScooter,
   onChangeEquipment,
-  onIncident,
 }: {
   rental: Rental;
   client: ApiClient | null | undefined;
@@ -109,9 +105,6 @@ export function MasterBlock({
   /** Если undefined — кнопка изменения экипировки не отображается
    *  (для архивных или completed аренд, где править нельзя). */
   onChangeEquipment?: () => void;
-  /** v0.6.14: открыть RentalActionDialog с action='incident'. Если
-   *  undefined — кнопка не отображается (для архивных/completed). */
-  onIncident?: () => void;
 }) {
   const equipmentJson = rental.equipmentJson ?? [];
 
@@ -294,10 +287,9 @@ export function MasterBlock({
             </div>
           </div>
 
-          {/* v0.6.15: 3 равных мини-колонки — KPI и большая кнопка инцидента.
-              По эскизу заказчика: правая часть колонки клиента под телефонами
-              делится на 3 равных колонки (grid-cols-3). */}
-          <div className="grid grid-cols-3 gap-2">
+          {/* v0.6.28: кнопка «Инцидент» убрана по запросу заказчика.
+              KPI — теперь две равных мини-колонки. */}
+          <div className="grid grid-cols-2 gap-2">
             <div className="rounded-[10px] bg-surface-soft px-2 py-2 flex flex-col items-center text-center justify-center min-h-[64px]">
               <div className="text-[9px] uppercase tracking-wider font-bold text-muted-2 leading-tight">
                 Дней в аренде
@@ -314,27 +306,6 @@ export function MasterBlock({
                 {fmt(clientStats.totalPaid)} ₽
               </div>
             </div>
-            {onIncident ? (
-              <button
-                type="button"
-                onClick={onIncident}
-                title="Зафиксировать инцидент (ДТП/угон/повреждение)"
-                aria-label="Создать инцидент"
-                className="rounded-[10px] border-2 border-red-soft bg-red-soft/40 hover:bg-red-soft hover:border-red-300 px-2 py-2 flex flex-col items-center text-center justify-center min-h-[64px] text-red-ink transition-colors"
-              >
-                <AlertCircle size={18} strokeWidth={2.2} />
-                <div className="mt-1 text-[11px] font-bold uppercase tracking-wider leading-none">
-                  Инцидент
-                </div>
-              </button>
-            ) : (
-              <div className="rounded-[10px] bg-surface-soft px-2 py-2 flex flex-col items-center text-center justify-center min-h-[64px] opacity-50">
-                <AlertCircle size={18} strokeWidth={2.2} className="text-muted-2" />
-                <div className="mt-1 text-[11px] font-bold uppercase tracking-wider leading-none text-muted-2">
-                  Инцидент
-                </div>
-              </div>
-            )}
           </div>
 
           {/* Money row — залог + депозит клиента (2-col) */}

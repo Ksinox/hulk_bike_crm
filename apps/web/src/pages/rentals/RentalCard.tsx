@@ -959,9 +959,6 @@ export function RentalCard({
           onChangeEquipment={
             canEditEquipment ? () => setEquipmentChangeOpen(true) : undefined
           }
-          onIncident={
-            isLive ? () => setAction("incident") : undefined
-          }
         />
 
         {/* KPI STRIP */}

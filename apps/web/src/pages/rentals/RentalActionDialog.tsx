@@ -10,7 +10,6 @@ import { useApiClientDocs } from "@/lib/api/documents";
 import { fileUrl } from "@/lib/files";
 import {
   addPayment,
-  addRentalIncident,
   completeRentalNoDamage,
   completeRentalWithDamage,
   revertOverdue,
@@ -55,7 +54,6 @@ export type ActionKind =
   | "police"
   // v0.4.36: вернуть аренду из police/court обратно в работу
   | "revert-police"
-  | "incident"
   | "record-damage"
   | "claim"
   | "lawyer"
@@ -181,9 +179,6 @@ export function RentalActionDialog({
   // ущерб открывается через onOpenDamage callback, без чекбокса.
   const [hasDamage] = useState(false);
   void hasDamage;
-
-  // Для инцидента посреди аренды
-  const [incidentType, setIncidentType] = useState("ДТП");
 
   // Для принятия платежа
   const [payType, setPayType] = useState<"rent" | "fine" | "damage" | "deposit">("rent");
@@ -864,14 +859,6 @@ export function RentalActionDialog({
       case "lawyer":
         setRentalStatus(rental.id, "court");
         break;
-      case "incident":
-        addRentalIncident(rental.id, {
-          type: incidentType,
-          date: todayStr(),
-          damage: Number(damageAmount) || 0,
-          note: damageNote,
-        });
-        break;
       case "record-damage": {
         const amt = Number(damageAmount) || 0;
         if (amt > 0) {
@@ -1020,48 +1007,6 @@ export function RentalActionDialog({
            * лейблами, привязанный к тому же state — оператор видел
            * «всё уже отмечено» и жал «Завершить» не глядя.
            */}
-
-          {action === "incident" && (
-            <div className="mt-3 flex flex-col gap-2">
-              <label className="text-[12px] font-semibold text-ink">
-                Тип инцидента
-                <select
-                  value={incidentType}
-                  onChange={(e) => setIncidentType(e.target.value)}
-                  className="mt-1 h-9 w-full rounded-[10px] border border-border bg-surface px-3 text-[13px] text-ink outline-none focus:border-blue-600"
-                >
-                  <option value="ДТП">ДТП</option>
-                  <option value="Повреждение скутера">Повреждение скутера</option>
-                  <option value="Эвакуация на штрафстоянку">Эвакуация на штрафстоянку</option>
-                  <option value="Кража / пропажа">Кража / пропажа</option>
-                  <option value="Жалоба">Жалоба</option>
-                  <option value="Другое">Другое</option>
-                </select>
-              </label>
-              <label className="text-[12px] font-semibold text-ink">
-                Оценка ущерба, ₽
-                <input
-                  type="number"
-                  value={damageAmount}
-                  onChange={(e) => setDamageAmount(e.target.value)}
-                  className="mt-1 h-9 w-full rounded-[10px] border border-border bg-surface px-3 text-[13px] text-ink outline-none focus:border-blue-600"
-                />
-                <div className="mt-0.5 text-[10px] text-muted-2">
-                  можно 0 — если ущерб ещё не посчитан
-                </div>
-              </label>
-              <label className="text-[12px] font-semibold text-ink">
-                Описание
-                <textarea
-                  value={damageNote}
-                  onChange={(e) => setDamageNote(e.target.value)}
-                  placeholder="Например: клиент попал в ДТП на перекрёстке, повреждено переднее крыло и фонарь"
-                  rows={3}
-                  className="mt-1 w-full resize-y rounded-[10px] border border-border bg-surface px-3 py-2 text-[13px] text-ink outline-none focus:border-blue-600"
-                />
-              </label>
-            </div>
-          )}
 
           {action === "addPayment" && (
             <div className="mt-3 flex flex-col gap-2">
@@ -1435,19 +1380,6 @@ function specFor(action: ActionKind, rental: Rental): Spec {
         ),
         cta: "Передать юристу",
         ctaTone: "danger",
-      };
-    case "incident":
-      return {
-        title: "Зафиксировать инцидент",
-        body: (
-          <div className="text-[12px]">
-            Инцидент посреди аренды: ДТП, эвакуация на штрафстоянку, сломанный
-            скутер и т.п. Запись появится в истории этой аренды, в профиле
-            клиента и в общем разделе инцидентов.
-          </div>
-        ),
-        cta: "Создать инцидент",
-        ctaTone: "warn",
       };
     case "record-damage":
       return {
