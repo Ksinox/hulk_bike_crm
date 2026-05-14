@@ -25,9 +25,10 @@
  *     Hover не действует на зональные ячейки (фон зоны не «отбеливается»
  *     при наведении).
  *     Today — точка под цифрой если внутри зоны, ring-обводка снаружи.
- *   • Multi-month: visibleDuration={{months: 2..4}}. Начинаем с месяца
- *     startKey слева → весь period виден сразу. Если drag preview
- *     уезжает за visible — растягиваем вправо (до max 4 месяцев).
+ *   • Multi-month: visibleDuration={{months: 1..4}}. По умолчанию 1
+ *     месяц (когда зона помещается в текущий), 2 — если уходит на
+ *     следующий, 3+ — дальше. Растягиваем вправо при drag preview;
+ *     авто-скролл фокуса когда курсор близок к правому/левому краю.
  *   • На текущем end-handle (previewEnd или plannedEnd / today-при-overdue)
  *     рендерится drag-handle справа — синяя полоска с GripVertical.
  *     onMouseDown → начинается drag. onMouseMove на grid'е находит
@@ -80,9 +81,6 @@ function isSame(a: DateKey, b: DateKey): boolean {
 function calendarDateToKey(cd: CalendarDate): DateKey {
   // CalendarDate.month — 1-based
   return { y: cd.year, m: cd.month - 1, d: cd.day };
-}
-function keyToCalendarDate(k: DateKey): CalendarDate {
-  return new CalendarDate(k.y, k.m + 1, k.d);
 }
 function fromJsDate(dt: Date): DateKey {
   return { y: dt.getFullYear(), m: dt.getMonth(), d: dt.getDate() };
@@ -376,19 +374,21 @@ export function DragExtendCalendar({
   const handleAt: DateKey | null = previewEnd ?? baseEndKey;
 
   /* ---- сколько месяцев показывать ----
-   * v0.6.22: multi-month как в эталоне (calendar-1 с numberOfMonths=2).
-   * Минимум 2 месяца. Если preview уезжает за пределы видимой области,
-   * растягиваем вправо до max 4. focusedValue определяет первый видимый
-   * месяц; стрелки prev/next двигают focus на ±visibleDuration. */
+   * v0.6.23: динамически. Минимум 1 (если весь период умещается в
+   * текущий месяц), 2 — если зона перетекает на следующий, 3+ — дальше.
+   * Считаем по самой правой точке зоны (preview ?? baseEnd) — сколько
+   * месяцев от focusedDate до неё. focusedValue определяет левый
+   * видимый месяц; стрелки prev/next двигают его на ±1 месяц
+   * (pageBehavior="single"). */
   const focusedKey: DateKey = focusedDate
     ? calendarDateToKey(focusedDate)
     : startKey;
-  const previewOrBase = previewEnd ?? baseEndKey;
+  const rangeEndKey = previewEnd ?? baseEndKey;
   const monthsFromFocus = Math.max(
     0,
-    previewOrBase.y * 12 + previewOrBase.m - (focusedKey.y * 12 + focusedKey.m),
+    rangeEndKey.y * 12 + rangeEndKey.m - (focusedKey.y * 12 + focusedKey.m),
   );
-  const visibleMonths = Math.min(4, Math.max(2, monthsFromFocus + 1));
+  const visibleMonths = Math.min(4, Math.max(1, monthsFromFocus + 1));
 
   /* ---- подпись месяца с offset ---- */
   const monthLabel = (offset: number): string => {
