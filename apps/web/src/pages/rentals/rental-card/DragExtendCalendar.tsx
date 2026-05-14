@@ -244,8 +244,9 @@ export function DragExtendCalendar({
     const isTodayCell = isSame(k, todayKey);
 
     const parts: string[] = [
-      // База — структурно как в calendar-rac.tsx, но с нашим размером.
-      "relative flex items-center justify-center whitespace-nowrap border border-transparent p-0 font-medium text-ink outline-offset-2 duration-150 [transition-property:color,background-color,border-radius,box-shadow] focus:outline-none tabular-nums",
+      // База. border убран чтобы соседние ячейки одной зоны
+      // стыковались без 1-px зазора.
+      "relative flex items-center justify-center whitespace-nowrap p-0 font-medium text-ink outline-offset-2 duration-150 [transition-property:color,background-color,border-radius,box-shadow] focus:outline-none tabular-nums",
       fontSizeCls,
       // focus + outside / disabled
       "data-[focus-visible]:z-10 data-[focus-visible]:outline data-[focus-visible]:outline-2 data-[focus-visible]:outline-blue-200",
@@ -337,21 +338,21 @@ export function DragExtendCalendar({
           </Button>
         </header>
 
-        {/* Сетка месяца — table-fixed чтобы 7 колонок были равной
-            ширины, а ячейки aspect-square → высота = ширина. Так
-            календарь fluid: при широком блоке ячейки большие, при
-            узком сжимается. */}
-        <CalendarGridRac className="w-full table-fixed">
+        {/* Сетка месяца — table-fixed + border-collapse чтобы соседние
+            цветные ячейки одной зоны стыковались БЕЗ зазоров (как в
+            оригинальном RangeCalendar). border-spacing 0 и padding 0
+            на td. */}
+        <CalendarGridRac className="w-full table-fixed border-collapse">
           <CalendarGridHeaderRac>
             {(day) => (
               <CalendarHeaderCellRac
-                className="rounded-lg p-0 pb-2 text-[12px] font-semibold uppercase tracking-wide text-muted-2"
+                className="p-0 pb-2 text-[12px] font-semibold uppercase tracking-wide text-muted-2"
               >
                 {day}
               </CalendarHeaderCellRac>
             )}
           </CalendarGridHeaderRac>
-          <CalendarGridBodyRac className="[&_td]:p-0.5">
+          <CalendarGridBodyRac className="[&_td]:p-0">
             {(date) => {
               const k = calendarDateToKey(date);
               const iso = keyToIso(k);

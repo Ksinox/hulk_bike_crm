@@ -92,6 +92,16 @@ import { ActivityFeed } from "./rental-card/ActivityFeed";
 
 type DrawerKind = "history" | "debts" | "profile" | null;
 
+// v0.6.12: фикс layout «Принять оплату + Календарь + История».
+// Inner-ширина flex-контейнера при открытом payment-панели становится
+// (контейнер + PAYMENT_PANEL_W + LAYOUT_GAP) — Calendar остаётся той же
+// ширины что в closed (container - HISTORY_PANEL_W - LAYOUT_GAP),
+// payment рендерится в видимой области справа от Calendar, History
+// уезжает за правый край (родитель имеет lg:overflow-hidden).
+const PAYMENT_PANEL_W = 440;
+const HISTORY_PANEL_W = 360;
+const LAYOUT_GAP = 12; // gap-3 (3 * 4px)
+
 function parseDate(s: string): Date | null {
   const m = s.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
   if (!m) return null;
@@ -803,6 +813,26 @@ export function RentalCard({
     rental.status === "overdue" ||
     rental.status === "returning";
 
+  // v0.6.30: дублирует логику action «set-damage» из statusActions().
+  // Кнопка доступна для не-архивных аренд в статусах, где есть смысл
+  // фиксировать ущерб (active/overdue/returning + проблемные статусы).
+  const canRecordDamage =
+    !isArchived &&
+    (rental.status === "active" ||
+      rental.status === "overdue" ||
+      rental.status === "returning" ||
+      rental.status === "completed_damage" ||
+      rental.status === "problem" ||
+      rental.status === "police" ||
+      rental.status === "court");
+
+  const handleRecordDamage = () => {
+    // Точное дублирование ветки case "set-damage" из handleAction.
+    const last = reportLatest;
+    if (last) setEditingReportId(last.id);
+    else setDamageOpen(true);
+  };
+
   // ── render ────────────────────────────────────────────────────────
   return (
     <div className="w-full">
@@ -888,6 +918,7 @@ export function RentalCard({
           onChangeEquipment={
             canEditEquipment ? () => setEquipmentChangeOpen(true) : undefined
           }
+          onRecordDamage={canRecordDamage ? handleRecordDamage : undefined}
         />
 
         {/* KPI STRIP */}
@@ -916,58 +947,74 @@ export function RentalCard({
         )}
 
         {/* Calendar + (PaymentAcceptPanel) + History side by side.
-            v0.6.x: PaymentAcceptDialog теперь inline-панель — встраивается
-            между календарём и историей, вытесняя её вправо. */}
-        <div
-          className={cn(
-            "grid grid-cols-1 gap-3 transition-[grid-template-columns] duration-300 ease-out",
-            paymentRentalId != null
-              ? "lg:grid-cols-[minmax(0,1fr)_minmax(380px,440px)_320px]"
-              : "lg:grid-cols-[1fr_360px]",
-          )}
-        >
-          <CalendarPanel
-            rental={rental}
-            effectiveStatus={effectiveStatus}
-            onCommitExtend={isLive ? handleCommitExtend : undefined}
-            calendarBoxRef={calendarBoxRef}
-            // v0.6.16: card calendar = PRIMARY controller. Не прячем
-            // когда открыт side panel — оператор продолжает кликать
-            // на дни в карточке, side panel live обновляется.
-            hideCalendar={false}
-            // v0.6.17: сигнал для сброса зелёной preview-зоны (при
-            // закрытии PaymentAcceptDialog оператором).
-            resetSignal={calendarResetSignal}
-            // v0.6.24: когда диалог открыт — синхронизируем preview-зону
-            // календаря с количеством дней продления из диалога.
-            // initialExtDays меняется, когда оператор правит input/
-            // spinner в side panel — onExtDaysChange callback обновляет
-            // paymentPrefillExtDays.
-            initialExtDays={
-              paymentRentalId != null ? paymentPrefillExtDays : undefined
-            }
-          />
-          {paymentRentalId != null && (
-            <div className="animate-in fade-in slide-in-from-right-4 duration-300">
-              <PaymentAcceptDialogContainer
-                rentalId={paymentRentalId}
-                initialExtDays={paymentPrefillExtDays || undefined}
-                onExtDaysChange={setPaymentPrefillExtDays}
-                onClose={() => {
-                  setPaymentRentalId(null);
-                  setPaymentPrefillExtDays(0);
-                  // v0.6.17: оператор закрыл panel без подтверждения →
-                  // сбросим зелёную preview-зону на календаре.
-                  setCalendarResetSignal((n) => n + 1);
-                }}
+            v0.6.x: PaymentAcceptDialog теперь inline-панель.
+            v0.6.12 layout fix: при открытии Payment Calendar НЕ сжимается —
+            inner-ширина растёт за пределы контейнера на (PAY_W + GAP),
+            History уезжает вправо за overflow-hidden. См. RentalCard.tsx
+            подробный комментарий в PR. */}
+        <div className="flex flex-col gap-3 lg:flex-row lg:overflow-hidden">
+          <div
+            className="flex flex-col gap-3 lg:flex-row lg:gap-3 lg:transition-[width] lg:duration-300 lg:ease-out"
+            style={{
+              width:
+                paymentRentalId != null
+                  ? `calc(100% + ${PAYMENT_PANEL_W + LAYOUT_GAP}px)`
+                  : "100%",
+            }}
+          >
+            <div className="flex-1 min-w-0">
+              <CalendarPanel
+                rental={rental}
+                effectiveStatus={effectiveStatus}
+                onCommitExtend={isLive ? handleCommitExtend : undefined}
+                calendarBoxRef={calendarBoxRef}
+                // v0.6.16: card calendar = PRIMARY controller. Не прячем
+                // когда открыт side panel — оператор продолжает кликать
+                // на дни в карточке, side panel live обновляется.
+                hideCalendar={false}
+                // v0.6.17: сигнал для сброса зелёной preview-зоны (при
+                // закрытии PaymentAcceptDialog оператором).
+                resetSignal={calendarResetSignal}
+                // v0.6.24: когда диалог открыт — синхронизируем preview-зону
+                // календаря с количеством дней продления из диалога.
+                // initialExtDays меняется, когда оператор правит input/
+                // spinner в side panel — onExtDaysChange callback обновляет
+                // paymentPrefillExtDays.
+                initialExtDays={
+                  paymentRentalId != null ? paymentPrefillExtDays : undefined
+                }
               />
             </div>
-          )}
-          <HistoryStrip
-            items={activityItems}
-            loading={activityQ.isLoading}
-            onExpand={() => setDrawer("history")}
-          />
+            {paymentRentalId != null && (
+              <div
+                className="shrink-0 animate-in fade-in slide-in-from-right-4 duration-300"
+                style={{ width: PAYMENT_PANEL_W }}
+              >
+                <PaymentAcceptDialogContainer
+                  rentalId={paymentRentalId}
+                  initialExtDays={paymentPrefillExtDays || undefined}
+                  onExtDaysChange={setPaymentPrefillExtDays}
+                  onClose={() => {
+                    setPaymentRentalId(null);
+                    setPaymentPrefillExtDays(0);
+                    // v0.6.17: оператор закрыл panel без подтверждения →
+                    // сбросим зелёную preview-зону на календаре.
+                    setCalendarResetSignal((n) => n + 1);
+                  }}
+                />
+              </div>
+            )}
+            <div
+              className="shrink-0 lg:w-auto"
+              style={{ width: HISTORY_PANEL_W }}
+            >
+              <HistoryStrip
+                items={activityItems}
+                loading={activityQ.isLoading}
+                onExpand={() => setDrawer("history")}
+              />
+            </div>
+          </div>
         </div>
 
         {/* Documents */}

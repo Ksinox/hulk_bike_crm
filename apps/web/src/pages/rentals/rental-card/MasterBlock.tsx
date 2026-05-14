@@ -31,6 +31,7 @@ import {
   Star,
   Trash2,
   Wallet,
+  Wrench,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -90,6 +91,7 @@ export function MasterBlock({
   onOpenClientProfile,
   onSwapScooter,
   onChangeEquipment,
+  onRecordDamage,
 }: {
   rental: Rental;
   client: ApiClient | null | undefined;
@@ -105,6 +107,10 @@ export function MasterBlock({
   /** Если undefined — кнопка изменения экипировки не отображается
    *  (для архивных или completed аренд, где править нельзя). */
   onChangeEquipment?: () => void;
+  /** Если undefined — кнопка «Зафиксировать ущерб» не отображается
+   *  (для архивных или completed аренд). Открывает DamageReportDialog
+   *  или редактирование существующего акта. */
+  onRecordDamage?: () => void;
 }) {
   const equipmentJson = rental.equipmentJson ?? [];
 
@@ -287,26 +293,19 @@ export function MasterBlock({
             </div>
           </div>
 
-          {/* v0.6.28: кнопка «Инцидент» убрана по запросу заказчика.
-              KPI — теперь две равных мини-колонки. */}
-          <div className="grid grid-cols-2 gap-2">
-            <div className="rounded-[10px] bg-surface-soft px-2 py-2 flex flex-col items-center text-center justify-center min-h-[64px]">
-              <div className="text-[9px] uppercase tracking-wider font-bold text-muted-2 leading-tight">
-                Дней в аренде
-              </div>
-              <div className="mt-1 font-display text-[18px] font-extrabold tabular-nums text-ink leading-none">
-                {fmt(clientStats.totalDays)}
-              </div>
-            </div>
-            <div className="rounded-[10px] bg-surface-soft px-2 py-2 flex flex-col items-center text-center justify-center min-h-[64px]">
-              <div className="text-[9px] uppercase tracking-wider font-bold text-muted-2 leading-tight">
-                Принёс за всё время аренд
-              </div>
-              <div className="mt-1 font-display text-[14px] font-extrabold tabular-nums text-blue-700 leading-none">
-                {fmt(clientStats.totalPaid)} ₽
-              </div>
-            </div>
-          </div>
+          {/* v0.6.30: KPI клиента перенесены в колонку SCOOTER (над аватаркой).
+              На освободившееся место — кнопка «Зафиксировать ущерб»,
+              дублирующая action из меню «Действия». */}
+          {onRecordDamage && (
+            <button
+              type="button"
+              onClick={onRecordDamage}
+              className="w-full inline-flex items-center justify-center gap-2 rounded-[10px] border border-orange-200 bg-orange-soft px-3 py-2.5 text-[12.5px] font-bold text-orange-ink hover:bg-orange-100 transition-colors"
+              title="Зафиксировать ущерб по этой аренде"
+            >
+              <Wrench size={14} /> Зафиксировать ущерб
+            </button>
+          )}
 
           {/* Money row — залог + депозит клиента (2-col) */}
           <div className="mt-auto pt-3 grid grid-cols-2 gap-2">
@@ -344,6 +343,26 @@ export function MasterBlock({
           <div className="flex items-center justify-between mb-3">
             <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
               Скутер
+            </div>
+          </div>
+          {/* v0.6.30: KPI клиента (дней / принёс) — над аватаркой скутера.
+              Перенесено из колонки клиента. */}
+          <div className="grid grid-cols-2 gap-2 mb-3">
+            <div className="rounded-[10px] bg-surface-soft px-2 py-1.5 flex flex-col items-center text-center justify-center min-h-[52px]">
+              <div className="text-[9px] uppercase tracking-wider font-bold text-muted-2 leading-tight">
+                Дней в аренде
+              </div>
+              <div className="mt-0.5 font-display text-[16px] font-extrabold tabular-nums text-ink leading-none">
+                {fmt(clientStats.totalDays)}
+              </div>
+            </div>
+            <div className="rounded-[10px] bg-surface-soft px-2 py-1.5 flex flex-col items-center text-center justify-center min-h-[52px]">
+              <div className="text-[9px] uppercase tracking-wider font-bold text-muted-2 leading-tight">
+                Принёс за всё время аренд
+              </div>
+              <div className="mt-0.5 font-display text-[13px] font-extrabold tabular-nums text-blue-700 leading-none">
+                {fmt(clientStats.totalPaid)} ₽
+              </div>
             </div>
           </div>
           <div className="flex flex-col items-center">

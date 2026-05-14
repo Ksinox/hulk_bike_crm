@@ -1267,120 +1267,129 @@ export function PaymentAcceptDialog({
                 Логика: при выборе пресета пересчитывается extRate из
                 TARIFF[model][period]. При custom — поле ставки + toggle
                 единиц (₽/сут / ₽/нед). См. блок выше где extRate/
-                extDailyRate/extIsWeekly вычисляются из selectedTariff. */}
-            <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-              <div className="text-[10.5px] font-bold uppercase tracking-wider text-muted-2 mr-1">
-                Тариф
-              </div>
-              {(["short", "day", "week", "month"] as const).map((p) => {
-                const r = TARIFF[rental.model][p];
-                const active = selectedTariff === p;
-                return (
-                  <button
-                    key={p}
-                    type="button"
-                    onClick={() => {
-                      // v0.6.14: ручной выбор тарифа — пинним.
-                      setSelectedTariff(p);
-                      setTariffPinned(true);
-                      // v0.6.15: при клике на тариф устанавливаем
-                      // МИНИМАЛЬНОЕ число дней этого тарифа (по
-                      // TARIFF_PERIOD_LABEL):
-                      //   day   "1–2 дня"  → 1
-                      //   short "3–6 дней" → 3
-                      //   week  "7–29 дней"→ 7
-                      //   month "30+ дней" → 30
-                      // А не оставляем текущие 35 дней с пересчётом по
-                      // ставке выбранного тарифа — это было ошибочное
-                      // поведение. Заказчик хочет: «период сменится на 1
-                      // день, а не пересчитаем 35 дней по новой цене».
-                      const minDays =
-                        p === "day"
-                          ? 1
-                          : p === "short"
-                            ? 3
-                            : p === "week"
-                              ? 7
-                              : 30;
-                      // В week-режиме (extIsWeekly) extInputOverride
-                      // хранит НЕДЕЛИ. Здесь мы переключаемся в day-режим
-                      // (selectedTariff !== 'custom' → extIsWeekly=false),
-                      // поэтому пишем дни.
-                      setExtInputOverride(minDays);
-                    }}
-                    className={cn(
-                      "rounded-full border px-3 py-1.5 text-[11px] font-semibold transition-colors flex items-center gap-1.5",
-                      active
-                        ? "border-blue-600 bg-blue-50 text-blue-700"
-                        : "border-border text-muted hover:bg-surface-soft hover:text-ink-2",
-                    )}
-                    title={TARIFF_PERIOD_LABEL[p]}
-                  >
-                    <span>{TARIFF_PERIOD_LABEL[p]}</span>
-                    <span className="tabular-nums">{r} ₽/сут</span>
-                  </button>
-                );
-              })}
-              <label className="ml-1 inline-flex items-center gap-1.5 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={selectedTariff === "custom"}
-                  onChange={(e) => {
-                    // v0.6.14: вход/выход из custom — снимаем pin, чтобы
-                    // авто-подбор по дням снова заработал при возврате
-                    // в пресеты.
-                    setSelectedTariff(e.target.checked ? "custom" : initialTariff);
-                    setTariffPinned(e.target.checked);
-                  }}
-                  className="h-3.5 w-3.5 accent-blue-600"
-                />
-                <span className="text-[11px] font-semibold text-ink-2">
-                  Свой тариф
-                </span>
-              </label>
-              {selectedTariff === "custom" && (
-                <div className="inline-flex items-stretch overflow-hidden rounded-[10px] border border-border">
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    value={extCustomRate || ""}
-                    onChange={(e) =>
-                      setExtCustomRate(
-                        Math.max(
-                          0,
-                          parseInt(
-                            e.target.value.replace(/\D/g, "") || "0",
-                            10,
-                          ),
-                        ),
-                      )
-                    }
-                    placeholder="3000"
-                    className="w-[80px] bg-white px-2 py-1 text-[12.5px] font-bold tabular-nums text-ink outline-none placeholder:text-muted-2"
-                  />
-                  <div className="inline-flex bg-surface-soft p-0.5">
-                    {(["day", "week"] as const).map((u) => (
-                      <button
-                        key={u}
-                        type="button"
-                        onClick={() => setExtCustomUnit(u)}
-                        className={cn(
-                          "rounded-[6px] px-2 py-0.5 text-[10.5px] font-semibold transition-colors",
-                          extCustomUnit === u
-                            ? "bg-blue-600 text-white"
-                            : "text-muted hover:text-ink",
-                        )}
-                      >
-                        {u === "day" ? "₽/сут" : "₽/нед"}
-                      </button>
-                    ))}
-                  </div>
+                extDailyRate/extIsWeekly вычисляются из selectedTariff.
+                v0.6.12 fix: вертикальный layout, пилюли в flex-wrap чтобы
+                нормально жили при 440px ширины. «Свой тариф» отдельной
+                строкой под пилюлями. */}
+            <div className="mt-2.5 flex flex-col gap-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-[10.5px] font-bold uppercase tracking-wider text-muted-2">
+                  Тариф
                 </div>
-              )}
-              <div className="ml-auto text-[10.5px] text-muted-2">
-                {extIsWeekly
-                  ? `${extRate} ₽/нед · ≈${extDailyRate} ₽/сут`
-                  : `${extRate} ₽/сут`}
+                <div className="text-[10.5px] text-muted-2 tabular-nums">
+                  {extIsWeekly
+                    ? `${extRate} ₽/нед · ≈${extDailyRate} ₽/сут`
+                    : `${extRate} ₽/сут`}
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {(["short", "day", "week", "month"] as const).map((p) => {
+                  const r = TARIFF[rental.model][p];
+                  const active = selectedTariff === p;
+                  return (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => {
+                        // v0.6.14: ручной выбор тарифа — пинним.
+                        setSelectedTariff(p);
+                        setTariffPinned(true);
+                        // v0.6.15: при клике на тариф устанавливаем
+                        // МИНИМАЛЬНОЕ число дней этого тарифа (по
+                        // TARIFF_PERIOD_LABEL):
+                        //   day   "1–2 дня"  → 1
+                        //   short "3–6 дней" → 3
+                        //   week  "7–29 дней"→ 7
+                        //   month "30+ дней" → 30
+                        // А не оставляем текущие 35 дней с пересчётом по
+                        // ставке выбранного тарифа — это было ошибочное
+                        // поведение. Заказчик хочет: «период сменится на 1
+                        // день, а не пересчитаем 35 дней по новой цене».
+                        const minDays =
+                          p === "day"
+                            ? 1
+                            : p === "short"
+                              ? 3
+                              : p === "week"
+                                ? 7
+                                : 30;
+                        // В week-режиме (extIsWeekly) extInputOverride
+                        // хранит НЕДЕЛИ. Здесь мы переключаемся в day-режим
+                        // (selectedTariff !== 'custom' → extIsWeekly=false),
+                        // поэтому пишем дни.
+                        setExtInputOverride(minDays);
+                      }}
+                      className={cn(
+                        "rounded-full border px-2.5 py-1.5 text-[11.5px] font-semibold transition-colors inline-flex items-center gap-1.5 whitespace-nowrap",
+                        active
+                          ? "border-blue-600 bg-blue-50 text-blue-700"
+                          : "border-border text-muted hover:bg-surface-soft hover:text-ink-2",
+                      )}
+                      title={TARIFF_PERIOD_LABEL[p]}
+                    >
+                      <span>{TARIFF_PERIOD_LABEL[p]}</span>
+                      <span className="tabular-nums">{r} ₽/сут</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={selectedTariff === "custom"}
+                    onChange={(e) => {
+                      // v0.6.14: вход/выход из custom — снимаем pin, чтобы
+                      // авто-подбор по дням снова заработал при возврате
+                      // в пресеты.
+                      setSelectedTariff(e.target.checked ? "custom" : initialTariff);
+                      setTariffPinned(e.target.checked);
+                    }}
+                    className="h-3.5 w-3.5 accent-blue-600"
+                  />
+                  <span className="text-[11.5px] font-semibold text-ink-2">
+                    Свой тариф
+                  </span>
+                </label>
+                {selectedTariff === "custom" && (
+                  <div className="inline-flex items-stretch overflow-hidden rounded-[10px] border border-border">
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={extCustomRate || ""}
+                      onChange={(e) =>
+                        setExtCustomRate(
+                          Math.max(
+                            0,
+                            parseInt(
+                              e.target.value.replace(/\D/g, "") || "0",
+                              10,
+                            ),
+                          ),
+                        )
+                      }
+                      placeholder="3000"
+                      className="w-[80px] bg-white px-2 py-1 text-[12.5px] font-bold tabular-nums text-ink outline-none placeholder:text-muted-2"
+                    />
+                    <div className="inline-flex bg-surface-soft p-0.5">
+                      {(["day", "week"] as const).map((u) => (
+                        <button
+                          key={u}
+                          type="button"
+                          onClick={() => setExtCustomUnit(u)}
+                          className={cn(
+                            "rounded-[6px] px-2 py-0.5 text-[10.5px] font-semibold transition-colors",
+                            extCustomUnit === u
+                              ? "bg-blue-600 text-white"
+                              : "text-muted hover:text-ink",
+                          )}
+                        >
+                          {u === "day" ? "₽/сут" : "₽/нед"}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -1546,141 +1555,155 @@ export function PaymentAcceptDialog({
               · «Будет проведено» — итог теперь только в footer'е (2-кол) */}
         </div>
 
-        {/* ─── FOOTER v0.6.5 ─── 2 колонки: краткая раскладка + К ПРИЁМУ ─── */}
-        <div className="rounded-b-2xl border-t border-border bg-surface-soft px-5 py-3">
-          <div className="grid grid-cols-12 items-end gap-4">
-            <div className="col-span-7 flex flex-col gap-1 text-[11.5px]">
-              {(() => {
-                // v0.6.12: footer показывает реальные компоненты «К приёму»:
-                //   - overdue (post-forgive остаток)
-                //   - сколько прощено (если есть)
-                //   - damage/manual/pendingRent (как «прочий долг»)
-                //   - продление/экипировка
-                //   - депозит/topup
-                const overdueAfterForgive = overdueDaysBalance + overdueFineBalance;
-                const overdueForgiven = overdueBalanceRaw - overdueAfterForgive;
-                const otherDebt = pendingRent + damageBalance + manualBalance;
-                return (
-                  <>
-                    {overdueAfterForgive > 0 && (
-                      <FooterRow
-                        label={`Закрытие просрочки${overdueDaysHeader > 0 ? ` · ${overdueDaysHeader} дн` : ""}`}
-                        value={`${fmt(overdueAfterForgive)} ₽`}
-                        tone="red"
-                      />
-                    )}
-                    {overdueForgiven > 0 && (
-                      <FooterRow
-                        label="Просрочка прощена"
-                        value={`−${fmt(overdueForgiven)} ₽`}
-                        tone="green"
-                      />
-                    )}
-                    {otherDebt > 0 && (
-                      <FooterRow
-                        label="Прочий долг (аренда/ущерб/ручной)"
-                        value={`${fmt(otherDebt)} ₽`}
-                      />
-                    )}
-                    {extDays > 0 && (
-                      <FooterRow
-                        label={`Аренда ${extDays} × ${extDailyRate} ₽`}
-                        value={`${fmt(extDailyRate * extDays)} ₽`}
-                      />
-                    )}
-                    {extDays > 0 && equipDaily > 0 && (
-                      <FooterRow
-                        label={`Экипировка ${extDays} × ${equipDaily} ₽`}
-                        value={`${fmt(equipDaily * extDays)} ₽`}
-                      />
-                    )}
-                    {depositToUse > 0 && (
-                      <FooterRow
-                        label="Списано с депозита"
-                        value={`−${fmt(depositToUse)} ₽`}
-                        tone="green"
-                      />
-                    )}
-                    {topupAmount > 0 && (
-                      <FooterRow
-                        label="Пополнение залога"
-                        value={`+${fmt(topupAmount)} ₽`}
-                      />
-                    )}
-                  </>
-                );
-              })()}
-              {depositBalance > 0 && (
-                <label className="mt-1 flex cursor-pointer items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={useDeposit}
-                    onChange={(e) => setUseDeposit(e.target.checked)}
-                    disabled={depositBalance === 0}
-                    className="h-3.5 w-3.5 accent-blue-600"
-                  />
-                  <span className="text-[11.5px] text-ink-2">
-                    Списать с депозита ({fmt(depositBalance)} ₽)
-                  </span>
-                </label>
-              )}
-            </div>
-            <div className="col-span-5 text-right">
-              <div className="text-[10.5px] font-bold uppercase tracking-wider text-muted-2">
-                К приёму
-              </div>
-              <div className="font-display text-[28px] font-extrabold leading-none tabular-nums text-blue-700 mt-0.5">
-                {fmt(Math.max(0, grossTotal - depositToUse))} ₽
-              </div>
-              <div className="mt-2 flex items-center justify-end gap-2">
-                <div className="flex rounded-full border border-border bg-white p-0.5">
-                  {METHODS.map((m) => (
-                    <button
-                      key={m.id}
-                      type="button"
-                      onClick={() => setMethod(m.id)}
-                      className={cn(
-                        "rounded-full px-3 py-1 text-[11.5px] font-semibold transition-colors",
-                        method === m.id
-                          ? "bg-blue-600 text-white"
-                          : "text-muted hover:text-ink-2",
-                      )}
-                    >
-                      {m.label}
-                    </button>
-                  ))}
-                </div>
-                <button
-                  type="button"
-                  onClick={requestClose}
-                  className="rounded-full px-3 py-2 text-[12.5px] font-semibold text-muted hover:text-ink-2"
-                >
-                  Отмена
-                </button>
-                <button
-                  type="button"
-                  onClick={submit}
-                  disabled={
-                    saving ||
-                    (totalReceived <= 0 && !forgiveDebt)
-                  }
-                  className={cn(
-                    "inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-[12.5px] font-bold text-white",
-                    saving || (totalReceived <= 0 && !forgiveDebt)
-                      ? "cursor-not-allowed bg-surface text-muted-2"
-                      : "bg-blue-600 hover:bg-blue-700",
+        {/* ─── FOOTER v0.6.12 ─── вертикальные блоки:
+            (1) итемизация построчно, (2) total «К приёму»,
+            (3) способ оплаты + кнопки действия.
+            Узкая ширина 440px требует разделения блоков по вертикали —
+            раньше итог теснил итемизацию и кнопки сжимались. */}
+        <div className="rounded-b-2xl border-t border-border bg-surface-soft">
+          {/* (1) Итемизация — каждая составляющая на своей строке */}
+          <div className="flex flex-col gap-1 px-5 py-3 text-[11.5px]">
+            {(() => {
+              // v0.6.12: footer показывает реальные компоненты «К приёму»:
+              //   - overdue (post-forgive остаток)
+              //   - сколько прощено (если есть)
+              //   - damage/manual/pendingRent (как «прочий долг»)
+              //   - продление/экипировка
+              //   - депозит/topup
+              const overdueAfterForgive = overdueDaysBalance + overdueFineBalance;
+              const overdueForgiven = overdueBalanceRaw - overdueAfterForgive;
+              const otherDebt = pendingRent + damageBalance + manualBalance;
+              return (
+                <>
+                  {overdueAfterForgive > 0 && (
+                    <FooterRow
+                      label={`Закрытие просрочки${overdueDaysHeader > 0 ? ` · ${overdueDaysHeader} дн` : ""}`}
+                      value={`${fmt(overdueAfterForgive)} ₽`}
+                      tone="red"
+                    />
                   )}
-                >
-                  <Check size={14} />{" "}
-                  {extDays > 0 && (forgiveDebt || dueAmount > 0)
-                    ? "Принять и продлить"
-                    : extDays > 0
-                      ? "Принять и продлить"
-                      : forgiveDebt
-                        ? "Простить и закрыть"
-                        : "Принять"}
-                </button>
+                  {overdueForgiven > 0 && (
+                    <FooterRow
+                      label="Просрочка прощена"
+                      value={`−${fmt(overdueForgiven)} ₽`}
+                      tone="green"
+                    />
+                  )}
+                  {otherDebt > 0 && (
+                    <FooterRow
+                      label="Прочий долг (аренда/ущерб/ручной)"
+                      value={`${fmt(otherDebt)} ₽`}
+                    />
+                  )}
+                  {extDays > 0 && (
+                    <FooterRow
+                      label={`Аренда: ${extDays} дн × ${extDailyRate} ₽`}
+                      value={`${fmt(extDailyRate * extDays)} ₽`}
+                    />
+                  )}
+                  {extDays > 0 && equipDaily > 0 && (
+                    <FooterRow
+                      label={`Экипировка: ${extDays} дн × ${equipDaily} ₽`}
+                      value={`${fmt(equipDaily * extDays)} ₽`}
+                    />
+                  )}
+                  {depositToUse > 0 && (
+                    <FooterRow
+                      label="Списано с депозита"
+                      value={`−${fmt(depositToUse)} ₽`}
+                      tone="green"
+                    />
+                  )}
+                  {topupAmount > 0 && (
+                    <FooterRow
+                      label="Пополнение залога"
+                      value={`+${fmt(topupAmount)} ₽`}
+                    />
+                  )}
+                </>
+              );
+            })()}
+            {depositBalance > 0 && (
+              <label className="mt-1 flex cursor-pointer items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={useDeposit}
+                  onChange={(e) => setUseDeposit(e.target.checked)}
+                  disabled={depositBalance === 0}
+                  className="h-3.5 w-3.5 accent-blue-600"
+                />
+                <span className="text-[11.5px] text-ink-2">
+                  Списать с депозита ({fmt(depositBalance)} ₽)
+                </span>
+              </label>
+            )}
+          </div>
+
+          {/* (2) Итого — крупная сумма «К приёму» */}
+          <div className="flex items-baseline justify-between border-t border-border px-5 py-3">
+            <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
+              К приёму
+            </div>
+            <div className="font-display text-[22px] font-extrabold leading-none tabular-nums text-blue-700">
+              {fmt(Math.max(0, grossTotal - depositToUse))} ₽
+            </div>
+          </div>
+
+          {/* (3) Способ оплаты + действия */}
+          <div className="flex flex-col gap-2 border-t border-border px-5 py-3">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[10.5px] font-bold uppercase tracking-wider text-muted-2">
+                Способ
+              </span>
+              <div className="flex rounded-full border border-border bg-white p-0.5">
+                {METHODS.map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => setMethod(m.id)}
+                    className={cn(
+                      "rounded-full px-3 py-1 text-[11.5px] font-semibold transition-colors",
+                      method === m.id
+                        ? "bg-blue-600 text-white"
+                        : "text-muted hover:text-ink-2",
+                    )}
+                  >
+                    {m.label}
+                  </button>
+                ))}
               </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={requestClose}
+                className="flex-1 rounded-full border border-border bg-white px-3 py-2.5 text-[12.5px] font-semibold text-muted-2 hover:bg-surface-soft hover:text-ink-2"
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                onClick={submit}
+                disabled={
+                  saving ||
+                  (totalReceived <= 0 && !forgiveDebt)
+                }
+                className={cn(
+                  "inline-flex flex-[2] items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-[13px] font-bold text-white",
+                  saving || (totalReceived <= 0 && !forgiveDebt)
+                    ? "cursor-not-allowed bg-surface text-muted-2"
+                    : "bg-blue-600 hover:bg-blue-700",
+                )}
+              >
+                <Check size={14} />{" "}
+                {extDays > 0 && (forgiveDebt || dueAmount > 0)
+                  ? "Принять и продлить"
+                  : extDays > 0
+                    ? "Принять и продлить"
+                    : forgiveDebt
+                      ? "Простить и закрыть"
+                      : "Принять"}
+              </button>
             </div>
           </div>
         </div>
