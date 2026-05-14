@@ -205,6 +205,11 @@ async function bootstrap() {
     await protectedApp.register(appSettingsRoutes, {
       prefix: "/api/app-settings",
     });
+    // v0.7: история переключений расчётного периода
+    const { billingPeriodRoutes } = await import("./routes/billing-period.js");
+    await protectedApp.register(billingPeriodRoutes, {
+      prefix: "/api/billing-period",
+    });
     // Диагностика — только creator
     const { diagRoutes } = await import("./routes/diag.js");
     await protectedApp.register(diagRoutes, { prefix: "/api/_diag" });
