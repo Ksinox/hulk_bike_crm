@@ -397,6 +397,31 @@ export function RentalCard({
     (p) => p.type === "rent" && !!p.note && /^продлен/i.test(p.note),
   ).length;
 
+  // v0.6.19: «Эта аренда» = сумма последнего СЕГМЕНТА аренды.
+  //   • Без продлений → стартовая стоимость (первый rent payment).
+  //   • С продлениями → сумма последнего extend-платежа (или группы
+  //     близких extend платежей если оператор оплачивал частями).
+  // В v0.5.2 ошибочно поставил `rental.sum` (полный накопленный) — это
+  // дублировало «За всё время аренды» и было непонятно оператору.
+  const lastSegmentSum = (() => {
+    const rentPays = chainPayments
+      .filter((p) => p.type === "rent")
+      .sort((a, b) => a.id - b.id);
+    const isExtendNote = (n?: string | null) => !!n && /^продлен/i.test(n);
+    const extendPays = rentPays.filter((p) => isExtendNote(p.note));
+    if (extendPays.length > 0) {
+      // последняя группа extend-платежей (близкие по ID, gap ≤ 5)
+      let sum = extendPays[extendPays.length - 1]!.amount;
+      for (let i = extendPays.length - 2; i >= 0; i--) {
+        if (extendPays[i + 1]!.id - extendPays[i]!.id <= 5) {
+          sum += extendPays[i]!.amount;
+        } else break;
+      }
+      return sum;
+    }
+    return rentPays.length > 0 ? rentPays[0]!.amount : rental.sum;
+  })();
+
   // overdueDays для бейджа в IdentityStrip
   const endDate = parseDate(rental.endPlanned);
   const overdueDays =
@@ -945,6 +970,7 @@ export function RentalCard({
           totalDamageDebt={totalDebt}
           effectiveStatus={effectiveStatus}
           extensionsCount={extensionsCount}
+          lastSegmentSum={lastSegmentSum}
           canAcceptPayment={canAcceptPayment}
           canComplete={canComplete}
           onAcceptPayment={handleAcceptPayment}

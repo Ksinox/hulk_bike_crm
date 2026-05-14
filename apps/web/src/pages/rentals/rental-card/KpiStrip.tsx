@@ -41,6 +41,7 @@ export function KpiStrip({
   totalDamageDebt,
   effectiveStatus,
   extensionsCount,
+  lastSegmentSum,
   canAcceptPayment,
   canComplete,
   onAcceptPayment,
@@ -59,6 +60,12 @@ export function KpiStrip({
   effectiveStatus: RentalStatus;
   /** Кол-во продлений по аренде (chain отменены, считается по note='Продление…') */
   extensionsCount: number;
+  /**
+   * v0.6.19: сумма последнего сегмента аренды. Если продлений не было —
+   * стартовая стоимость, иначе сумма последнего extend-платежа. НЕ
+   * полный rental.sum (тот в «За всё время»).
+   */
+  lastSegmentSum: number;
   canAcceptPayment: boolean;
   canComplete: boolean;
   onAcceptPayment: () => void;
@@ -166,8 +173,11 @@ export function KpiStrip({
   cells.push({
     key: "this",
     label: "Эта аренда",
-    value: `${fmt(rental.sum)} ₽`,
-    sub: extensionsCount > 0 ? `продлений · ${extensionsCount}` : "сумма этой аренды",
+    value: `${fmt(lastSegmentSum)} ₽`,
+    sub:
+      extensionsCount > 0
+        ? `последнее продление · всего: ${extensionsCount}`
+        : "сумма этой аренды",
     tone: "ink",
   });
 
