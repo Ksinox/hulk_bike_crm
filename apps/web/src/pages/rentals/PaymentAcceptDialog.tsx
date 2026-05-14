@@ -42,7 +42,6 @@ import { useApiPayments } from "@/lib/api/payments";
 import { useRentalDebt } from "@/lib/api/debt";
 import { extendInplaceAsync } from "./rentalsStore";
 import { EquipmentChangeDialog } from "./EquipmentChangeDialog";
-import { DragExtendCalendar } from "./rental-card/DragExtendCalendar";
 import type { Rental } from "@/lib/mock/rentals";
 import type { PaymentMethod } from "@/lib/mock/rentals";
 import {
@@ -92,6 +91,10 @@ export function PaymentAcceptDialog({
     height: number;
   } | null;
 }) {
+  // v0.6.16: liftedFromRect больше не используется (floating-календарь
+  // убран). Оставлен в API ради backwards-compat — RentalCard всё ещё
+  // передаёт, но мы игнорируем.
+  void liftedFromRect;
   const [closing, setClosing] = useState(false);
   const requestClose = () => {
     if (closing) return;
@@ -207,6 +210,9 @@ export function PaymentAcceptDialog({
   //   'fine'     — НЕ сдвигаем (дни остаются в долге)
   //   'all'      — все дни (бэкенд тоже сдвигает)
   // Используется во floating calendar (yellow → blue ячейки).
+  // v0.6.16: forgiveShiftDays больше не используется (floating-календарь
+  // убран; sidebar полагается на live drag в карточке). Оставлен ради
+  // ясности логики, но помечен void чтобы TS не ругался на unused.
   const forgiveShiftDays =
     forgiveChoice === "days-all"
       ? overdueDaysCount
@@ -217,6 +223,7 @@ export function PaymentAcceptDialog({
           : forgiveChoice === "clear"
             ? overdueDaysCount
             : 0;
+  void forgiveShiftDays;
 
   // Обратносовместимые алиасы для существующего UI/submit-кода.
   const forgiveDebt = forgiveChoice !== "clear";
@@ -277,6 +284,19 @@ export function PaymentAcceptDialog({
     }
     return initialExtDays;
   });
+
+  // v0.6.16: card calendar = primary controller. Когда оператор тащит
+  // ручку в карточке (слева, viewable), initialExtDays меняется. Мы это
+  // ловим и пересинхронизируем extInputOverride/footer в side panel'е.
+  useEffect(() => {
+    if (initialExtDays == null || initialExtDays <= 0) return;
+    const next =
+      rental.rateUnit === "week"
+        ? Math.max(1, Math.ceil(initialExtDays / 7))
+        : initialExtDays;
+    setExtInputOverride(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialExtDays]);
   // v0.6.13: тариф продления вычисляется из selectedTariff.
   //   - preset (short/day/week/month) → ставка из TARIFF, unit = 'day'
   //     (период недельного тарифа всё равно считается в днях по ставке/сут;
@@ -984,28 +1004,22 @@ export function PaymentAcceptDialog({
   return (
     <div
       className={cn(
-        "fixed inset-0 z-[120] flex items-end justify-center bg-ink/55 backdrop-blur-sm",
-        closing ? "animate-backdrop-out" : "animate-backdrop-in",
+        // v0.6.16: side panel вместо bottom drawer. БЕЗ blur'а — карточка
+        // слева остаётся интерактивной. Сам контейнер прозрачен и не
+        // ловит клики (pointer-events-none); сам panel (right side) перехватывает.
+        "fixed inset-0 z-[120] flex items-stretch justify-end pointer-events-none",
       )}
     >
       <div
         className={cn(
-          // v0.6.2: bottom-drawer вместо центрированной модалки —
-          // согласно design/claude-design/Hulk Bike CRM/extension-drawer.jsx.
-          // Прижат к низу экрана, slide-up появление, max-h:88vh.
-          // v0.6.9: при появлении floating-календаря drawer плавно
-          // приподнимается на ~30px (transition transform 300ms ease-out),
-          // чтобы календарь поместился над ним и не загораживал контент.
-          // v0.6.10: drawer уже (max-w 820px вместо 1200px) — раньше
-          // контент был слишком растянут по горизонтали.
-          "flex w-full max-w-[760px] lg:max-w-[820px] mb-3 mx-3 flex-col overflow-hidden rounded-2xl bg-surface border border-border shadow-card-lg transition-transform duration-300 ease-out",
-          closing ? "animate-slide-down-out" : "animate-slide-up",
+          // v0.6.16: правый side panel. Slide-in from right, 480-560px шир.
+          // Карточка слева остаётся интерактивной (card calendar = primary).
+          "pointer-events-auto flex w-full max-w-[480px] lg:max-w-[560px] flex-col overflow-hidden border-l border-border bg-surface shadow-card-lg transition-transform duration-300 ease-out",
+          closing ? "animate-slide-out-right" : "animate-slide-in-right",
         )}
         onClick={(e) => e.stopPropagation()}
         style={{
-          maxHeight: "88vh",
-          // v0.6.9: drawer уезжает вверх когда календарь активен (extDays>0).
-          transform: extDays > 0 && !closing ? "translateY(-24px)" : undefined,
+          height: "100vh",
         }}
       >
         <div className="flex items-center gap-3 border-b border-border bg-gradient-to-r from-blue-50 to-surface px-5 py-3">
@@ -1664,67 +1678,11 @@ export function PaymentAcceptDialog({
         </div>
       </div>
 
-      {/* v0.6.10: overlay paradigm — floating интерактивный DragExtendCalendar
-          (тот же что в карточке аренды) появляется над bottom-drawer'ом
-          сразу при открытии диалога. Backdrop с blur уже закрывает
-          карточку под ним (см. fixed inset-0 outer + backdrop-blur-sm).
-          Drag-handle в этом календаре live обновляет extInputOverride
-          через onPreviewExtend → footer drawer'а пересчитывается
-          мгновенно. */}
-      {parsedDates && (() => {
-        // v0.6.11: live-preview прощения дней в floating calendar.
-        // При forgive-days/days-n/all сдвигаем plannedEnd вперёд на
-        // forgiveShiftDays — жёлтые ячейки просрочки превращаются в
-        // зелёные (часть периода аренды). Если все дни просрочки
-        // прощены и forgiveShiftDays >= overdueDays — isOverdue=false.
-        const shiftedPlannedEnd = new Date(parsedDates.anchor);
-        if (forgiveShiftDays > 0) {
-          shiftedPlannedEnd.setDate(
-            shiftedPlannedEnd.getDate() + forgiveShiftDays,
-          );
-        }
-        // v0.6.15: isOverdue для календаря — ИСКЛЮЧИТЕЛЬНО по дате
-        // (shiftedPlannedEnd < today). Это синхронизирует поведение с
-        // CalendarPanel в карточке аренды, который тоже работает чисто
-        // по датам через effectiveStatus. Раньше использовали
-        // isOverdueState (по балансу overdueDaysBalanceRaw) — это давало
-        // расхождение когда долг прощён, но дата ещё не подвинута, и
-        // наоборот.
-        const calendarToday = new Date();
-        calendarToday.setHours(0, 0, 0, 0);
-        const stillOverdue =
-          shiftedPlannedEnd.getTime() < calendarToday.getTime() &&
-          forgiveChoice !== "all";
-        return (
-        <FloatingDragExtendCalendar
-          closing={closing}
-          startDate={parsedDates.startDate}
-          plannedEnd={shiftedPlannedEnd}
-          isOverdue={stillOverdue}
-          dailyRate={extDailyRate}
-          initialDays={extDays}
-          liftedFromRect={liftedFromRect}
-          onPreviewExtend={(days) => {
-            if (extIsWeekly) {
-              const weeks = Math.max(0, Math.ceil(days / 7));
-              setExtInputOverride(weeks);
-            } else {
-              setExtInputOverride(days);
-            }
-            setOverpayDest("extend");
-          }}
-          onCommitExtend={(days) => {
-            if (extIsWeekly) {
-              const weeks = Math.max(0, Math.ceil(days / 7));
-              setExtInputOverride(weeks);
-            } else {
-              setExtInputOverride(days);
-            }
-            setOverpayDest("extend");
-          }}
-        />
-        );
-      })()}
+      {/* v0.6.16: FloatingDragExtendCalendar убран. Календарь теперь живёт
+          ТОЛЬКО в CalendarPanel карточки аренды (primary controller).
+          Drag-to-extend в карточке обновляет initialExtDays при открытии
+          этого side panel; дальше оператор может менять extDays
+          спиннером прямо в panel'е. */}
 
       {/* v0.6.3: редактор экипировки открывается из Step 3 — отдельный
           диалог. После закрытия React Query инвалидирует rental,
@@ -1739,146 +1697,6 @@ export function PaymentAcceptDialog({
   );
 }
 
-/**
- * v0.6.10: floating DragExtendCalendar — overlay paradigm.
- *
- * Этот компонент рендерится в fixed-позиции над bottom-drawer'ом
- * PaymentAcceptDialog. Сам drawer уже имеет backdrop с blur'ом (см.
- * fixed inset-0 + backdrop-blur-sm на родителе), который размывает
- * карточку аренды под ним.
- *
- * Календарь использует тот же DragExtendCalendar что и в карточке —
- * full interactive drag-to-extend. onPreviewExtend пробрасывается
- * вверх в state PaymentAcceptDialog, мгновенно обновляя extDays и
- * пересчитывая footer (К приёму, новый возврат). onCommitExtend
- * фиксирует значение на mouse-up.
- */
-function FloatingDragExtendCalendar({
-  closing,
-  startDate,
-  plannedEnd,
-  isOverdue,
-  dailyRate,
-  initialDays,
-  liftedFromRect,
-  onPreviewExtend,
-  onCommitExtend,
-}: {
-  closing: boolean;
-  startDate: Date;
-  plannedEnd: Date;
-  isOverdue: boolean;
-  dailyRate: number;
-  initialDays: number;
-  liftedFromRect?: {
-    top: number;
-    left: number;
-    width: number;
-    height: number;
-  } | null;
-  onPreviewExtend: (days: number) => void;
-  onCommitExtend: (days: number) => void;
-}) {
-  const startIso = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, "0")}-${String(startDate.getDate()).padStart(2, "0")}`;
-  const endIso = `${plannedEnd.getFullYear()}-${String(plannedEnd.getMonth() + 1).padStart(2, "0")}-${String(plannedEnd.getDate()).padStart(2, "0")}`;
-
-  // v0.6.13: FLIP-анимация.
-  //   1. Замеряем LAST-rect (финальная floating-позиция) в layoutEffect.
-  //   2. transform = translate(first.left - last.left, first.top - last.top)
-  //                 * scale(first.width / last.width, first.height / last.height)
-  //      применяется мгновенно (transition: none) — визуально календарь
-  //      на первоначальном месте.
-  //   3. Через rAF снимаем transform на 'none' с transition — плеер
-  //      запускается, календарь плавно «прилетает» в новую позицию.
-  //   4. При закрытии (closing=true) выполняем обратный FLIP.
-  const boxRef = useRef<HTMLDivElement | null>(null);
-  const [flipStyle, setFlipStyle] = useState<React.CSSProperties>({});
-  const FLIP_MS = 350;
-
-  useLayoutEffect(() => {
-    const el = boxRef.current;
-    if (!el || !liftedFromRect) return;
-    if (closing) {
-      // FLIP-OUT: текущий rect (LAST) → liftedFromRect (FIRST)
-      const last = el.getBoundingClientRect();
-      const dx = liftedFromRect.left - last.left;
-      const dy = liftedFromRect.top - last.top;
-      const sx = Math.max(0.1, liftedFromRect.width / Math.max(1, last.width));
-      const sy = Math.max(
-        0.1,
-        liftedFromRect.height / Math.max(1, last.height),
-      );
-      setFlipStyle({
-        transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`,
-        transformOrigin: "top left",
-        opacity: 0.5,
-        transition: `transform ${FLIP_MS}ms cubic-bezier(0.4, 0, 0.2, 1), opacity ${FLIP_MS}ms ease-out`,
-      });
-      return;
-    }
-    // FLIP-IN: liftedFromRect (FIRST) → текущий rect (LAST)
-    const last = el.getBoundingClientRect();
-    const dx = liftedFromRect.left - last.left;
-    const dy = liftedFromRect.top - last.top;
-    const sx = Math.max(0.1, liftedFromRect.width / Math.max(1, last.width));
-    const sy = Math.max(0.1, liftedFromRect.height / Math.max(1, last.height));
-    // Шаг 2: мгновенно перенесли в FIRST-позицию.
-    setFlipStyle({
-      transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`,
-      transformOrigin: "top left",
-      transition: "none",
-    });
-    // Шаг 3: следующий tick — запускаем анимацию в LAST.
-    const id = requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        setFlipStyle({
-          transform: "none",
-          transformOrigin: "top left",
-          transition: `transform ${FLIP_MS}ms cubic-bezier(0.4, 0, 0.2, 1)`,
-        });
-      });
-    });
-    return () => cancelAnimationFrame(id);
-  }, [closing, liftedFromRect]);
-
-  return (
-    <div
-      className="pointer-events-none fixed inset-x-0 z-[130] flex justify-center"
-      style={{ bottom: "calc(min(82vh, 520px) + 20px)" }}
-    >
-      <div
-        ref={boxRef}
-        className={cn(
-          "pointer-events-auto w-fit max-w-[560px]",
-          // Если liftedFromRect задан — FLIP управляет позицией через
-          // transform. Иначе fallback на старые slide-анимации.
-          !liftedFromRect && (closing ? "animate-slide-out-up" : "animate-slide-in-down"),
-        )}
-        style={liftedFromRect ? flipStyle : undefined}
-      >
-        <div className="rounded-2xl border border-border bg-white p-4 shadow-card-lg w-[460px]">
-          <div className="mb-2 flex items-center justify-between">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
-              График аренды и продления
-            </div>
-            <div className="text-[11px] text-muted">
-              Потяните за ручку — пересчитаем&nbsp;footer
-            </div>
-          </div>
-          <DragExtendCalendar
-            startIso={startIso}
-            plannedEndIso={endIso}
-            isOverdue={isOverdue}
-            dailyRate={dailyRate}
-            initialDays={initialDays}
-            onPreviewExtend={onPreviewExtend}
-            onCommitExtend={onCommitExtend}
-          />
-        </div>
-      </div>
-    </div>
-  );
-}
 
 /**
  * v0.6.5: строка футера в 2-колоночном layout — слева подпись, справа

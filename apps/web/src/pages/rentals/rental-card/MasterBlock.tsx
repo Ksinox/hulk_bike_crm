@@ -117,7 +117,20 @@ export function MasterBlock({
 
   // v0.6.10: inline popover для замены экипировки (см. дизайн
   // rental-card.jsx стр. 504-535 + pickers.jsx EquipmentSwapPicker).
+  // v0.6.16: значение -1 = add-режим (popover открыт для добавления новой
+  // позиции, а не для замены существующей).
   const [swapIdx, setSwapIdx] = useState<number | null>(null);
+  // v0.6.16: hover на тайле экипировки → показать overlay «Заменить».
+  const [hoverEqIdx, setHoverEqIdx] = useState<number | null>(null);
+  // v0.6.16: preview-режим — popover выбирает позицию, тайл в гриде
+  // отображается с pulse-анимацией, но изменения НЕ применены до клика
+  // «Подтвердить».
+  const [pendingItem, setPendingItem] = useState<{
+    itemId: number | null;
+    name: string;
+    price: number;
+    free: boolean;
+  } | null>(null);
   // v0.6.14: hover на аватарке скутера → показать overlay с «Заменить».
   const [scooterHover, setScooterHover] = useState(false);
 
@@ -423,56 +436,99 @@ export function MasterBlock({
                 {pluralPos(equipmentJson.length)}
               </div>
             </div>
-            {onChangeEquipment && equipmentJson.length > 0 && (
-              <button
-                type="button"
-                onClick={onChangeEquipment}
-                className="inline-flex items-center gap-1 rounded-full bg-blue-600 text-white px-2.5 py-1 text-[11px] font-semibold hover:bg-blue-700 shrink-0"
-                title="Изменить состав экипировки"
-              >
-                <Plus size={11} /> Добавить
-              </button>
-            )}
+            {/* v0.6.16: кнопка «+ Добавить» в шапке убрана — есть inline-tile
+                «+ Добавить» в самой сетке, дублировать не нужно. */}
           </div>
           {equipmentJson.length === 0 ? (
             // v0.6.14: пустой state — большой плейсхолдер с «+».
-            <button
-              type="button"
-              onClick={onChangeEquipment}
-              disabled={!onChangeEquipment}
-              className={cn(
-                "flex-1 min-h-[180px] flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-border bg-surface-soft/60 text-muted-2 transition-colors",
-                onChangeEquipment
-                  ? "hover:border-blue-600 hover:bg-blue-50 hover:text-blue-700 cursor-pointer"
-                  : "cursor-default opacity-70",
+            // v0.6.16: открывает inline-popover (swapIdx=-1) вместо
+            // EquipmentChangeDialog.
+            <div className="relative flex-1">
+              <button
+                type="button"
+                onClick={() => onChangeEquipment && setSwapIdx(swapIdx === -1 ? null : -1)}
+                disabled={!onChangeEquipment}
+                className={cn(
+                  "w-full min-h-[180px] flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-border bg-surface-soft/60 text-muted-2 transition-colors",
+                  onChangeEquipment
+                    ? "hover:border-blue-600 hover:bg-blue-50 hover:text-blue-700 cursor-pointer"
+                    : "cursor-default opacity-70",
+                  swapIdx === -1 &&
+                    "ring-2 ring-blue-600 ring-offset-1 border-blue-600 bg-blue-50 text-blue-700",
+                  swapIdx === -1 && pendingItem && "animate-pulse opacity-80",
+                )}
+              >
+                {swapIdx === -1 && pendingItem ? (
+                  <>
+                    <div className="rounded-[10px] border-2 border-blue-200 bg-blue-50 w-16 h-16 p-2 flex items-center justify-center">
+                      <EquipmentThumb
+                        item={{
+                          itemId: pendingItem.itemId,
+                          name: pendingItem.name,
+                          free: pendingItem.free,
+                        }}
+                      />
+                    </div>
+                    <div className="text-[12px] font-bold text-blue-700">
+                      {pendingItem.name}
+                    </div>
+                    <div className="text-[10.5px] text-blue-700/70">
+                      превью — нажмите «Подтвердить»
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-[12px] font-bold uppercase tracking-wider">
+                      Пока пусто
+                    </div>
+                    <div className="rounded-full bg-surface w-12 h-12 flex items-center justify-center shadow-card-sm">
+                      <Plus size={26} strokeWidth={2.2} />
+                    </div>
+                    <div className="text-[11px]">
+                      {onChangeEquipment
+                        ? "Нажмите, чтобы добавить экипировку"
+                        : "Экипировки нет"}
+                    </div>
+                  </>
+                )}
+              </button>
+              {swapIdx === -1 && onChangeEquipment && (
+                <EquipmentSwapPopover
+                  rental={rental}
+                  replacingIdx={-1}
+                  onClose={() => {
+                    setSwapIdx(null);
+                    setPendingItem(null);
+                  }}
+                  onPreviewChange={setPendingItem}
+                />
               )}
-            >
-              <div className="text-[12px] font-bold uppercase tracking-wider">
-                Пока пусто
-              </div>
-              <div className="rounded-full bg-surface w-12 h-12 flex items-center justify-center shadow-card-sm">
-                <Plus size={26} strokeWidth={2.2} />
-              </div>
-              <div className="text-[11px]">
-                {onChangeEquipment
-                  ? "Нажмите, чтобы добавить экипировку"
-                  : "Экипировки нет"}
-              </div>
-            </button>
+            </div>
           ) : (
             <div className="grid grid-cols-2 gap-x-2 gap-y-3 content-start">
-              {equipmentJson.slice(0, 4).map((it, idx) => {
+              {equipmentJson.slice(0, 4).map((origIt, idx) => {
                 const canSwap = !!onChangeEquipment;
                 const isOpen = swapIdx === idx;
+                // v0.6.16: если позиция заменяется и есть pending — рисуем
+                // pending вместо текущей, с pulse-анимацией.
+                const showingPending = isOpen && pendingItem != null;
+                const it = showingPending ? pendingItem : origIt;
                 const isFree = it.free;
+                const isHover = hoverEqIdx === idx;
                 return (
                   <div
-                    key={`${it.itemId ?? "na"}-${idx}`}
-                    className="relative flex flex-col"
+                    key={`${origIt.itemId ?? "na"}-${idx}`}
+                    className={cn(
+                      "relative flex flex-col",
+                      showingPending && "animate-pulse opacity-80",
+                    )}
+                    onMouseEnter={() => canSwap && setHoverEqIdx(idx)}
+                    onMouseLeave={() => setHoverEqIdx((v) => (v === idx ? null : v))}
                   >
                     {/* v0.6.15: квадратная аватарка СВЕРХУ с бейджем цены
                         ПОВЕРХ. Подпись названия — ОТДЕЛЬНЫМ блоком ПОД
-                        аватаркой (см. ниже), без рамки, может в 2 строки. */}
+                        аватаркой (см. ниже), без рамки, может в 2 строки.
+                        v0.6.16: hover → blue overlay с иконкой Repeat. */}
                     <button
                       type="button"
                       onClick={() => {
@@ -504,6 +560,14 @@ export function MasterBlock({
                           free
                         </span>
                       )}
+                      {/* v0.6.16: hover overlay «Заменить» */}
+                      {canSwap && isHover && !isOpen && (
+                        <div className="absolute inset-0 rounded-[10px] bg-blue-600/80 backdrop-blur-[1px] flex items-center justify-center pointer-events-none">
+                          <span className="inline-flex items-center gap-1 rounded-full bg-white text-blue-700 px-2 py-1 text-[10.5px] font-bold shadow-card-sm">
+                            <Repeat size={11} /> Заменить
+                          </span>
+                        </div>
+                      )}
                     </button>
                     {/* Подпись названия — отдельный блок под аватаркой,
                         без рамки, серым мелким, до 2 строк. */}
@@ -525,12 +589,21 @@ export function MasterBlock({
                       <EquipmentSwapPopover
                         rental={rental}
                         replacingIdx={idx}
-                        onClose={() => setSwapIdx(null)}
+                        onClose={() => {
+                          setSwapIdx(null);
+                          setPendingItem(null);
+                        }}
+                        onPreviewChange={setPendingItem}
                       />
                     )}
                   </div>
                 );
               })}
+              {/* v0.6.16: pending preview-тайл — если открыт popover на
+                  add-режиме (swapIdx === -1) и выбран pendingItem, он
+                  показывается в гриде с pulse-анимацией. Реальный рендер
+                  внутри popover'а через portal — а здесь только пустой
+                  слот «+ Добавить» если рендер popover'а сам открыт. */}
               {/* «+N» если >4 — pivot на onChangeEquipment.
                   Иначе если есть свободный слот и canEdit — кнопка «+». */}
               {equipmentJson.length > 4 ? (
@@ -552,18 +625,71 @@ export function MasterBlock({
                 </div>
               ) : (
                 onChangeEquipment && (
-                  <div className="flex flex-col">
+                  <div
+                    className={cn(
+                      "relative flex flex-col",
+                      swapIdx === -1 && pendingItem && "animate-pulse opacity-80",
+                    )}
+                  >
                     <button
                       type="button"
-                      onClick={onChangeEquipment}
-                      className="w-full aspect-square rounded-[12px] border-2 border-dashed border-border flex items-center justify-center text-muted-2 hover:border-blue-600 hover:bg-blue-50 hover:text-blue-700"
+                      onClick={() =>
+                        setSwapIdx(swapIdx === -1 ? null : -1)
+                      }
+                      className={cn(
+                        "w-full aspect-square rounded-[12px] border-2 flex items-center justify-center transition-colors p-2",
+                        swapIdx === -1 && pendingItem
+                          ? pendingItem.free
+                            ? "border-green bg-green-soft/50"
+                            : "border-blue-200 bg-blue-50"
+                          : "border-dashed border-border text-muted-2 hover:border-blue-600 hover:bg-blue-50 hover:text-blue-700",
+                        swapIdx === -1 &&
+                          !pendingItem &&
+                          "ring-2 ring-blue-600 ring-offset-1 border-blue-600 bg-blue-50 text-blue-700",
+                      )}
                       title="Добавить экипировку"
                     >
-                      <Plus size={26} strokeWidth={2} />
+                      {swapIdx === -1 && pendingItem ? (
+                        <EquipmentThumb
+                          item={{
+                            itemId: pendingItem.itemId,
+                            name: pendingItem.name,
+                            free: pendingItem.free,
+                          }}
+                        />
+                      ) : (
+                        <Plus size={26} strokeWidth={2} />
+                      )}
                     </button>
-                    <div className="mt-1.5 text-[10.5px] font-semibold text-center text-muted-2">
-                      Добавить
+                    <div
+                      className={cn(
+                        "mt-1.5 text-[10.5px] font-semibold text-center break-words leading-tight",
+                        swapIdx === -1 && pendingItem
+                          ? pendingItem.free
+                            ? "text-green-ink"
+                            : "text-blue-700"
+                          : "text-muted-2",
+                      )}
+                      style={{
+                        display: "-webkit-box",
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: "vertical",
+                        overflow: "hidden",
+                      }}
+                    >
+                      {swapIdx === -1 && pendingItem ? pendingItem.name : "Добавить"}
                     </div>
+                    {swapIdx === -1 && (
+                      <EquipmentSwapPopover
+                        rental={rental}
+                        replacingIdx={-1}
+                        onClose={() => {
+                          setSwapIdx(null);
+                          setPendingItem(null);
+                        }}
+                        onPreviewChange={setPendingItem}
+                      />
+                    )}
                   </div>
                 )
               )}
@@ -657,31 +783,41 @@ function pluralPos(n: number): string {
 }
 
 /**
- * v0.6.10: inline popover для замены/удаления экипировки.
+ * v0.6.16: inline popover для замены/добавления экипировки — grid layout.
  *
- * Дизайн — pickers.jsx EquipmentSwapPicker (стр. 41-83):
- *   • Заголовок «Заменить «X»»
+ * Дизайн (rental-card.jsx + pickers.jsx):
+ *   • Заголовок «Заменить «X»» / «Добавить экипировку»
  *   • Поиск по каталогу
- *   • Список альтернатив (free → бесплатно, иначе +N ₽/сут)
- *   • Footer: «Убрать» / «пересчёт за остаток дней»
+ *   • СЕТКА квадратных тайлов (аватарка + подпись) — как в карточке
+ *   • При наведении на тайл — рядом виджет с расчётом «Доплатить за N дн»
+ *   • Footer: [Убрать (если заменяем)] · [Отмена] [Подтвердить]
  *
- * Реализация через existing equipmentChangeAsync — собираем newEquipmentJson
- * вручную (replaced или removed) и шлём.
+ * Preview-режим: setPendingItem(тайл) — карточка показывает мерцающую
+ * позицию. При [Подтвердить] вызывается equipmentChangeAsync.
+ *
+ * replacingIdx === -1 → add-режим.
  */
 function EquipmentSwapPopover({
   rental,
   replacingIdx,
   onClose,
+  onPreviewChange,
 }: {
   rental: Rental;
   replacingIdx: number;
   onClose: () => void;
+  onPreviewChange?: (
+    item: { itemId: number | null; name: string; price: number; free: boolean } | null,
+  ) => void;
 }) {
   const equipment = rental.equipmentJson ?? [];
-  const replacing = equipment[replacingIdx];
+  const replacing = replacingIdx >= 0 ? equipment[replacingIdx] : null;
+  const isAddMode = replacingIdx === -1;
   const { data: catalog = [] } = useApiEquipment();
   const [filter, setFilter] = useState("");
   const [saving, setSaving] = useState(false);
+  const [pendingId, setPendingId] = useState<number | null>(null);
+  const [hoverId, setHoverId] = useState<number | null>(null);
   const ref = useRef<HTMLDivElement | null>(null);
 
   // ESC + клик мимо закрывают
@@ -696,8 +832,6 @@ function EquipmentSwapPopover({
       }
     };
     window.addEventListener("keydown", onKey);
-    // отложить регистрацию click — иначе тот же клик что открыл popover
-    // его сразу закроет
     const id = window.setTimeout(() => {
       window.addEventListener("mousedown", onDocClick);
     }, 0);
@@ -708,31 +842,104 @@ function EquipmentSwapPopover({
     };
   }, [onClose]);
 
-  if (!replacing) return null;
+  if (!isAddMode && !replacing) return null;
+
+  // v0.6.16: оставшиеся дни до конца аренды — для расчёта доплаты.
+  const daysRemaining = (() => {
+    const m = rental.endPlanned.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+    if (!m) return 0;
+    const end = new Date(+m[3], +m[2] - 1, +m[1]);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const diff = Math.round((end.getTime() - today.getTime()) / 86400000);
+    return Math.max(0, diff);
+  })();
+  const isLiveRental =
+    rental.status === "active" || rental.status === "overdue";
+  const canCharge = isLiveRental && daysRemaining > 0;
 
   const items = catalog.filter(
     (c) =>
       c.name.toLowerCase().includes(filter.toLowerCase()) &&
-      c.id !== replacing.itemId,
+      (isAddMode || c.id !== replacing?.itemId),
   );
 
-  const apply = async (
-    next: Array<{
-      itemId?: number | null;
-      name: string;
-      price: number;
-      free: boolean;
-    }>,
-  ) => {
-    if (saving) return;
+  const previewItem = (() => {
+    if (pendingId == null) return null;
+    const cat = catalog.find((c) => c.id === pendingId);
+    if (!cat) return null;
+    return {
+      itemId: cat.id,
+      name: cat.name,
+      price: cat.price,
+      free: cat.isFree,
+    };
+  })();
+
+  // Уведомляем родителя об изменении preview — он покажет мерцающий
+  // тайл в карточке.
+  useEffect(() => {
+    onPreviewChange?.(previewItem);
+    return () => onPreviewChange?.(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingId]);
+
+  const hoverItem = (() => {
+    if (hoverId == null) return null;
+    return catalog.find((c) => c.id === hoverId) ?? null;
+  })();
+
+  // Расчёт «доплатить за оставшиеся дни» — если позиция платная и live
+  // аренда. При замене вычитаем старую стоимость (delta), при добавлении —
+  // полная стоимость.
+  const calcDoplata = (
+    target: { price: number; isFree: boolean } | null,
+  ): number => {
+    if (!target || target.isFree || !canCharge) return 0;
+    const newPrice = target.price;
+    const oldPrice =
+      !isAddMode && replacing && !replacing.free ? replacing.price : 0;
+    const delta = Math.max(0, newPrice - oldPrice);
+    return delta * daysRemaining;
+  };
+
+  const previewDoplata = calcDoplata(
+    previewItem ? { price: previewItem.price, isFree: previewItem.free } : null,
+  );
+  const hoverDoplata = calcDoplata(hoverItem);
+
+  const confirm = async () => {
+    if (saving || !previewItem) return;
     setSaving(true);
     try {
+      const newJson = isAddMode
+        ? [
+            ...equipment.map((e) => ({
+              itemId: e.itemId ?? null,
+              name: e.name,
+              price: e.price,
+              free: e.free,
+            })),
+            previewItem,
+          ]
+        : equipment.map((e, i) =>
+            i === replacingIdx
+              ? previewItem
+              : {
+                  itemId: e.itemId ?? null,
+                  name: e.name,
+                  price: e.price,
+                  free: e.free,
+                },
+          );
       await equipmentChangeAsync({
         rentalId: rental.id,
-        newEquipmentJson: next,
-        payNow: false,
+        newEquipmentJson: newJson,
+        // v0.6.16: payNow=true когда есть остаток дней и позиция платная —
+        // оператор сразу принимает деньги. Иначе через manual_charge.
+        payNow: previewDoplata > 0,
       });
-      toast.success("Экипировка изменена", "");
+      toast.success(isAddMode ? "Позиция добавлена" : "Экипировка заменена", "");
       onClose();
     } catch (e) {
       toast.error("Не удалось изменить", (e as Error).message ?? "");
@@ -741,46 +948,44 @@ function EquipmentSwapPopover({
     }
   };
 
-  const handleSelect = (catId: number) => {
-    const cat = catalog.find((c) => c.id === catId);
-    if (!cat) return;
-    const next = equipment.map((e, i) =>
-      i === replacingIdx
-        ? {
-            itemId: cat.id,
-            name: cat.name,
-            price: cat.price,
-            free: cat.isFree,
-          }
-        : { itemId: e.itemId ?? null, name: e.name, price: e.price, free: e.free },
-    );
-    void apply(next);
-  };
-
-  const handleRemove = () => {
-    const next = equipment
-      .filter((_, i) => i !== replacingIdx)
-      .map((e) => ({
-        itemId: e.itemId ?? null,
-        name: e.name,
-        price: e.price,
-        free: e.free,
-      }));
-    void apply(next);
+  const handleRemove = async () => {
+    if (saving || isAddMode) return;
+    setSaving(true);
+    try {
+      const next = equipment
+        .filter((_, i) => i !== replacingIdx)
+        .map((e) => ({
+          itemId: e.itemId ?? null,
+          name: e.name,
+          price: e.price,
+          free: e.free,
+        }));
+      await equipmentChangeAsync({
+        rentalId: rental.id,
+        newEquipmentJson: next,
+        payNow: false,
+      });
+      toast.success("Позиция убрана", "");
+      onClose();
+    } catch (e) {
+      toast.error("Не удалось убрать", (e as Error).message ?? "");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
     <div
       ref={ref}
       role="dialog"
-      aria-label={`Заменить ${replacing.name}`}
-      className="absolute left-0 top-full z-50 mt-1.5 w-[300px] rounded-2xl border border-border bg-surface shadow-card-lg overflow-hidden animate-fade-in"
+      aria-label={isAddMode ? "Добавить экипировку" : `Заменить ${replacing?.name}`}
+      className="absolute left-0 top-full z-50 mt-1.5 w-[340px] rounded-2xl border border-border bg-surface shadow-card-lg overflow-hidden animate-fade-in"
     >
       <div className="border-b border-border px-3 pt-3 pb-2">
         <div className="flex items-start gap-2">
           <div className="flex-1 min-w-0">
             <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2 truncate">
-              Заменить «{replacing.name}»
+              {isAddMode ? "Добавить экипировку" : `Заменить «${replacing?.name}»`}
             </div>
           </div>
           <button
@@ -800,41 +1005,131 @@ function EquipmentSwapPopover({
           className="mt-2 h-8 w-full rounded-[8px] border border-border bg-white px-2.5 text-[12px] text-ink outline-none focus:border-blue-600"
         />
       </div>
-      <div className="max-h-[260px] overflow-y-auto scrollbar-thin px-1.5 py-1.5">
+      {/* hover-плашка с расчётом */}
+      {hoverItem && hoverDoplata > 0 && (
+        <div className="border-b border-border bg-blue-50 px-3 py-1.5 text-[11px] text-blue-700">
+          Доплатить за оставшиеся {daysRemaining} дн:{" "}
+          <span className="font-bold tabular-nums">{fmt(hoverDoplata)} ₽</span>
+        </div>
+      )}
+      <div className="max-h-[280px] overflow-y-auto scrollbar-thin px-2 py-2">
         {items.length === 0 && (
           <div className="px-3 py-4 text-center text-[12px] text-muted-2">
             Ничего не найдено
           </div>
         )}
-        {items.map((it) => (
-          <button
-            key={it.id}
-            type="button"
-            disabled={saving}
-            onClick={() => handleSelect(it.id)}
-            className="w-full flex items-center gap-2 px-2 py-1.5 rounded-[8px] hover:bg-blue-50 text-left disabled:opacity-50"
-          >
-            <span className="flex-1 text-[12px] text-ink-2 truncate">{it.name}</span>
-            {it.isFree ? (
-              <span className="text-[10px] font-bold text-green-ink">бесплатно</span>
-            ) : (
-              <span className="text-[10.5px] font-semibold text-orange-ink tabular-nums">
-                +{it.price} ₽/сут
-              </span>
-            )}
-          </button>
-        ))}
+        <div className="grid grid-cols-3 gap-2">
+          {items.map((it) => {
+            const isPending = pendingId === it.id;
+            const src = fileUrl(it.avatarThumbKey ?? it.avatarKey ?? null, {
+              variant: "view",
+            });
+            return (
+              <button
+                key={it.id}
+                type="button"
+                disabled={saving}
+                onClick={() => setPendingId(it.id)}
+                onMouseEnter={() => setHoverId(it.id)}
+                onMouseLeave={() => setHoverId((v) => (v === it.id ? null : v))}
+                className={cn(
+                  "relative flex flex-col items-center disabled:opacity-50 group",
+                )}
+                title={it.name}
+              >
+                <div
+                  className={cn(
+                    "w-full aspect-square rounded-[10px] border-2 p-1.5 flex items-center justify-center transition-colors",
+                    it.isFree
+                      ? "border-green/60 bg-green-soft/40 group-hover:bg-green-soft"
+                      : "border-blue-200 bg-blue-50 group-hover:bg-blue-100",
+                    isPending &&
+                      (it.isFree
+                        ? "ring-2 ring-green ring-offset-1"
+                        : "ring-2 ring-blue-600 ring-offset-1"),
+                  )}
+                >
+                  {src ? (
+                    <img
+                      src={src}
+                      alt={it.name}
+                      className="h-full w-full object-contain"
+                    />
+                  ) : (
+                    <Package
+                      size={26}
+                      strokeWidth={1.5}
+                      className={
+                        it.isFree ? "text-green-ink/60" : "text-blue-700/60"
+                      }
+                    />
+                  )}
+                  {!it.isFree && it.price > 0 && (
+                    <span className="absolute top-0.5 right-0.5 rounded-full bg-blue-600 text-white px-1 py-0.5 text-[8.5px] font-bold tabular-nums">
+                      +{it.price}
+                    </span>
+                  )}
+                  {it.isFree && (
+                    <span className="absolute top-0.5 right-0.5 rounded-full bg-green text-white px-1 py-0.5 text-[8.5px] font-bold">
+                      free
+                    </span>
+                  )}
+                </div>
+                <div
+                  className={cn(
+                    "mt-1 text-[9.5px] font-semibold text-center leading-tight px-0.5 break-words w-full",
+                    it.isFree ? "text-green-ink" : "text-blue-700",
+                  )}
+                  style={{
+                    display: "-webkit-box",
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: "vertical",
+                    overflow: "hidden",
+                  }}
+                >
+                  {it.name}
+                </div>
+              </button>
+            );
+          })}
+        </div>
       </div>
-      <div className="border-t border-border bg-surface-soft px-3 py-2 flex items-center justify-between">
-        <button
-          type="button"
-          onClick={handleRemove}
-          disabled={saving}
-          className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-ink hover:underline disabled:opacity-50"
-        >
-          <Trash2 size={11} /> Убрать
-        </button>
-        <span className="text-[10.5px] text-muted-2">пересчёт за остаток дней</span>
+      <div className="border-t border-border bg-surface-soft px-3 py-2 flex items-center justify-between gap-2">
+        {!isAddMode ? (
+          <button
+            type="button"
+            onClick={handleRemove}
+            disabled={saving}
+            className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-ink hover:underline disabled:opacity-50"
+          >
+            <Trash2 size={11} /> Убрать
+          </button>
+        ) : (
+          <span />
+        )}
+        <div className="flex items-center gap-1.5">
+          {previewItem && previewDoplata > 0 && (
+            <span className="text-[10.5px] font-semibold text-blue-700 tabular-nums">
+              +{fmt(previewDoplata)} ₽
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={saving}
+            className="rounded-[8px] bg-surface border border-border px-2.5 py-1 text-[11px] font-semibold text-ink-2 hover:bg-surface-soft disabled:opacity-50"
+          >
+            Отмена
+          </button>
+          <button
+            type="button"
+            onClick={() => void confirm()}
+            disabled={saving || !previewItem}
+            className="rounded-[8px] bg-blue-600 text-white px-3 py-1 text-[11px] font-bold hover:bg-blue-700 disabled:opacity-50"
+          >
+            Подтвердить
+          </button>
+        </div>
       </div>
     </div>
   );

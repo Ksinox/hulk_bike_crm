@@ -964,7 +964,10 @@ export function RentalCard({
             effectiveStatus={effectiveStatus}
             onCommitExtend={isLive ? handleCommitExtend : undefined}
             calendarBoxRef={calendarBoxRef}
-            hideCalendar={paymentRentalId != null}
+            // v0.6.16: card calendar = PRIMARY controller. Не прячем
+            // когда открыт side panel — оператор продолжает таскать
+            // ручку календаря в карточке, side panel live обновляется.
+            hideCalendar={false}
           />
           <HistoryStrip
             items={activityItems}

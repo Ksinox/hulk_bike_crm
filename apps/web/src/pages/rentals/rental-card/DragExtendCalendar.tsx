@@ -296,58 +296,59 @@ export function DragExtendCalendar({
           // Если start, но дальше идёт другая зона (overdue/extension) —
           // НЕ скругляем правый край (зоны должны стыковаться без зазора).
           //
-          // СИНЯЯ ЗОНА (start → plannedEnd)
+          // v0.6.16: СИНЯЯ ЗОНА (start → plannedEnd).
+          // Start & End — это чёрные квадраты (drag handles). Middle —
+          // синяя заливка. По дизайну: handle'ы всегда выделены как
+          // отдельные «маркеры» начала/конца периода.
           if (inBlueRange) {
-            const hasContinuation = isOverdue || inExtension;
-            // single day: blue start === blue end и нет продолжения
-            const isBlueSingle =
-              isBlueStart && isBlueEnd && !hasContinuation;
-            if (isBlueSingle) {
+            if (isBlueStart) {
+              // start всегда чёрный квадратик
               classes.push("rounded-lg bg-ink text-white");
-            } else if (isBlueStart) {
-              // start, есть продолжение через blueEnd → не скругляем правый край
-              classes.push("rounded-l-lg bg-ink text-white");
             } else if (isBlueEnd) {
+              // end — чёрный, но если есть продолжение (overdue / extension),
+              // правый угол не скругляем для стыковки.
+              const hasContinuation = isOverdue || inExtension;
               if (hasContinuation) {
-                // продолжение справа — без round-конца
-                classes.push("bg-ink text-white");
+                classes.push("rounded-l-lg bg-ink text-white");
               } else {
-                classes.push("rounded-r-lg bg-ink text-white");
+                classes.push("rounded-lg bg-ink text-white");
               }
             } else {
-              // middle: ровный bg без round
+              // middle: синяя заливка без round
               classes.push("bg-blue-200 text-blue-900");
             }
           }
-          // КРАСНАЯ ЗОНА (plannedEnd+1 → today, если просрочена).
-          // Красная зона стыкуется слева с синей (без round-l), справа —
-          // если продление preview активно, тоже без round; иначе rounded-r
-          // на isRedEnd.
+          // v0.6.16: КРАСНАЯ ЗОНА (plannedEnd+1 → today, если просрочена).
+          // RedEnd (today) — чёрный квадратик (это «текущий конец» при
+          // просрочке). Middle — красная заливка.
           if (inRedRange) {
             if (isRedEnd) {
-              if (inExtension) {
-                classes.push("bg-red-600 text-white");
+              const hasContinuation = inExtension;
+              if (hasContinuation) {
+                classes.push("rounded-l-lg bg-ink text-white");
               } else {
-                classes.push("rounded-r-lg bg-red-600 text-white");
+                classes.push("rounded-lg bg-ink text-white");
               }
             } else {
               classes.push("bg-red-200 text-red-900");
             }
           }
-          // ЗЕЛЁНАЯ ЗОНА (продление). Слева стыкуется с blue/red (без
-          // round-l), справа — rounded-r на isExtEnd.
+          // v0.6.16: ЗЕЛЁНАЯ ЗОНА (продление). ExtEnd — чёрный квадратик
+          // (новый end после drag). Middle — зелёная заливка.
           if (inExtension) {
             if (isExtEnd) {
-              classes.push("rounded-r-lg bg-emerald-600 text-white");
+              classes.push("rounded-lg bg-ink text-white");
             } else {
               classes.push("bg-emerald-200 text-emerald-900");
             }
           }
-          // Маркер «сегодня» — точка снизу (как в RentalPeriodCalendar).
-          if (isToday && !isRedEnd && !isExtEnd && !isBlueStart && !isBlueEnd) {
-            classes.push(
-              "after:pointer-events-none after:absolute after:bottom-1 after:start-1/2 after:z-10 after:size-[3px] after:-translate-x-1/2 after:rounded-full after:bg-ink",
-            );
+          // v0.6.16: «сегодня» — обводка кругом (ring + rounded-full),
+          // НЕ заливка. Применяется только если today НЕ совпадает с
+          // чёрными квадратиками (start/end/redEnd/extEnd).
+          const isBlackHandle =
+            isBlueStart || isBlueEnd || isRedEnd || isExtEnd;
+          if (isToday && !isBlackHandle) {
+            classes.push("ring-2 ring-ink ring-inset rounded-full");
           }
 
           const showHandle = isCurrentEnd && !disabled;

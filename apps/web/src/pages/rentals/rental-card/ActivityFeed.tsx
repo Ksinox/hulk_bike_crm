@@ -19,7 +19,7 @@ import {
   Wallet,
   Repeat,
   Lock,
-  Shirt,
+  HardHat,
   Bike,
   AlertTriangle,
   Gift,
@@ -29,6 +29,9 @@ import {
   ArrowRight,
   Plus,
   Eye,
+  FileText,
+  RefreshCw,
+  RotateCcw,
   MoreHorizontal,
   type LucideIcon,
 } from "lucide-react";
@@ -48,6 +51,11 @@ type FeedType =
   | "forgive"
   | "tariff"
   | "created"
+  | "damage"
+  | "document"
+  | "status"
+  | "manual-debt"
+  | "refund"
   | "other";
 
 const FEED_TYPE: Record<
@@ -58,12 +66,17 @@ const FEED_TYPE: Record<
   extend: { icon: Repeat, tone: "blue", label: "Продление" },
   deposit: { icon: Lock, tone: "blue", label: "Залог" },
   "deposit-up": { icon: Plus, tone: "blue", label: "Залог" },
-  equipment: { icon: Shirt, tone: "orange", label: "Экипировка" },
+  equipment: { icon: HardHat, tone: "orange", label: "Экипировка" },
   scooter: { icon: Bike, tone: "ink", label: "Скутер" },
   overdue: { icon: AlertTriangle, tone: "red", label: "Просрочка" },
   forgive: { icon: Gift, tone: "green", label: "Прощение" },
   tariff: { icon: Coins, tone: "blue", label: "Тариф" },
   created: { icon: Sparkles, tone: "ink", label: "Старт" },
+  damage: { icon: AlertTriangle, tone: "red", label: "Ущерб" },
+  document: { icon: FileText, tone: "blue", label: "Документ" },
+  status: { icon: RefreshCw, tone: "ink", label: "Статус" },
+  "manual-debt": { icon: Plus, tone: "red", label: "Ручной долг" },
+  refund: { icon: RotateCcw, tone: "green", label: "Возврат" },
   other: { icon: MoreHorizontal, tone: "ink", label: "Событие" },
 };
 
@@ -115,17 +128,22 @@ function mapType(item: ApiActivityItem): FeedType {
   if (a === "rental_extended" || a === "extended") return "extend";
   if (a === "scooter_swapped") return "scooter";
   if (a === "equipment_changed") return "equipment";
-  if (a === "completed" || a === "status_changed") return "scooter";
+  if (a === "completed") return "status";
+  if (a === "status_changed") return "status";
   if (a === "security_topped_up") return "deposit-up";
-  if (a === "debt_payment") return "payment";
+  if (a === "debt_payment" || a === "payment_received") return "payment";
+  if (a === "refund_issued" || a === "deposit_returned") return "refund";
   if (
     a === "debt_overdue_forgiven" ||
     a === "debt_overdue_fine_forgiven" ||
-    a === "debt_overdue_days_forgiven"
+    a === "debt_overdue_days_forgiven" ||
+    a === "debt_manual_forgiven"
   )
     return "forgive";
-  if (a === "debt_manual") return "overdue";
-  if (a.includes("damage")) return "overdue";
+  if (a === "debt_manual") return "manual-debt";
+  if (a.includes("damage")) return "damage";
+  if (a === "document_saved" || a === "document_downloaded" || a === "document_printed" || a === "document_snapshot_deleted")
+    return "document";
   return "other";
 }
 
@@ -312,6 +330,22 @@ export function ActivityFeed({
   );
 }
 
+/**
+ * v0.6.16: вернуть URL сохранённого снапшота документа, если событие
+ * связано с документом. Используется для onClick — оператор кликает по
+ * строке «Документ» и снапшот открывается в новой вкладке.
+ */
+function snapshotUrl(item: ApiActivityItem): string | null {
+  const meta = (item.meta ?? {}) as Record<string, unknown>;
+  const snapshotId =
+    typeof meta.snapshotId === "number" ? meta.snapshotId : null;
+  if (snapshotId == null) return null;
+  const base =
+    (import.meta.env.VITE_API_URL?.replace(/\/$/, "") as string | undefined) ??
+    "";
+  return `${base}/api/rental-document-snapshots/${snapshotId}/file?format=html`;
+}
+
 function ActivityRow({
   item,
   type,
@@ -349,12 +383,22 @@ function ActivityRow({
     return raw && raw !== item.summary ? raw : "";
   })();
 
+  const docUrl = snapshotUrl(item);
+
   return (
     <div className="relative flex items-stretch gap-3 group">
       <div
         role="button"
         tabIndex={0}
-        onClick={() => setOpen((o) => !o)}
+        onClick={(e) => {
+          // v0.6.16: для документов — открыть сохранённый снапшот в новой
+          // вкладке. Игнорируем если был зажат meta/shift (свои интенты).
+          if (docUrl && !e.metaKey && !e.shiftKey) {
+            window.open(docUrl, "_blank", "noopener");
+            return;
+          }
+          setOpen((o) => !o);
+        }}
         onMouseEnter={() => setOpen(true)}
         onMouseLeave={() => setOpen(false)}
         onFocus={() => setOpen(true)}

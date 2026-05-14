@@ -81,6 +81,8 @@ export function KpiStrip({
     isOverdue && endDate ? Math.abs(daysBetween(today, endDate)) : 0;
 
   const overdueBalance = debtSummary?.overdueBalance ?? 0;
+  const overdueDaysBalance = debtSummary?.overdueDaysBalance ?? 0;
+  const overdueFineBalance = debtSummary?.overdueFineBalance ?? 0;
   const manualBalance = debtSummary?.manualBalance ?? 0;
   const damageBalance = debtSummary?.damageBalance ?? totalDamageDebt;
   const totalDebt = pending + overdueBalance + damageBalance + manualBalance;
@@ -134,16 +136,20 @@ export function KpiStrip({
   }
 
   if (totalDebt > 0) {
+    // v0.6.16: раскладываем долг по компонентам — дни/штраф просрочки
+    // показываем отдельно (важно для оператора видеть штраф). Главное
+    // число — полный долг, sub — компоненты через middot.
     const parts: string[] = [];
-    if (pending > 0) parts.push(`не опл ${fmt(pending)}`);
-    if (overdueBalance > 0) parts.push(`просрочка ${fmt(overdueBalance)}`);
-    if (damageBalance > 0) parts.push(`ущерб ${fmt(damageBalance)}`);
-    if (manualBalance > 0) parts.push(`ручной ${fmt(manualBalance)}`);
+    if (overdueDaysBalance > 0) parts.push(`дни ${fmt(overdueDaysBalance)} ₽`);
+    if (overdueFineBalance > 0) parts.push(`штраф ${fmt(overdueFineBalance)} ₽`);
+    if (damageBalance > 0) parts.push(`ущерб ${fmt(damageBalance)} ₽`);
+    if (manualBalance > 0) parts.push(`ручной ${fmt(manualBalance)} ₽`);
+    if (pending > 0) parts.push(`не опл ${fmt(pending)} ₽`);
     cells.push({
       key: "debt",
       label: "Долг",
       value: `${fmt(totalDebt)} ₽`,
-      sub: parts.join(" + "),
+      sub: parts.join(" · "),
       tone: "red",
       // v0.6.1: клик по «Долг» открывает popover с быстрыми действиями
       // через onOverdueClick (рядом с просрочкой). Иконка-action остаётся
