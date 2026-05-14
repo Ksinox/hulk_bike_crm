@@ -20,7 +20,8 @@
  *  5. Неоплаченная аренда (rent payments)
  *  6. Излишек → депозит клиента
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Check,
@@ -166,11 +167,14 @@ export function PaymentAcceptDialog({
         ? 0
         : Math.max(0, overdueFineBalanceRaw - partialFineAmount);
 
-  // Сдвиг endPlanned за счёт прощения дней — в днях:
+  // Сдвиг endPlanned за счёт прощения/оплаты дней — в днях:
+  //   'clear'    — оператор ПЛАТИТ за дни (kind=overdue_days_payment),
+  //                бэкенд сдвигает endPlanned на overdueDaysCount.
   //   'days-all' — все дни просрочки (overdueDaysCount)
   //   'days-n'   — N (но не больше overdueDaysCount)
+  //   'fine'     — НЕ сдвигаем (дни остаются в долге)
   //   'all'      — все дни (бэкенд тоже сдвигает)
-  // Используется во floating calendar (yellow → green ячейки).
+  // Используется во floating calendar (yellow → blue ячейки).
   const forgiveShiftDays =
     forgiveChoice === "days-all"
       ? overdueDaysCount
@@ -178,7 +182,9 @@ export function PaymentAcceptDialog({
         ? Math.min(forgiveDaysN, overdueDaysCount)
         : forgiveChoice === "all"
           ? overdueDaysCount
-          : 0;
+          : forgiveChoice === "clear"
+            ? overdueDaysCount
+            : 0;
 
   // Обратносовместимые алиасы для существующего UI/submit-кода.
   const forgiveDebt = forgiveChoice !== "clear";
@@ -298,8 +304,13 @@ export function PaymentAcceptDialog({
   const equipSum = equipDaily * extDays;
   // Грубая сумма продления: аренда + экипировка за выбранные дни.
   const periodTotal = extSum + equipSum;
-  // Долг к закрытию (с учётом forgive).
-  const debtPortion = forgiveDebt ? 0 : dueAmount;
+  // Долг к закрытию.
+  // v0.6.12: dueAmount УЖЕ содержит post-forgive балансы overdueDays/Fine
+  // (см. overdueDaysBalance/overdueFineBalance выше). А damage/manual/
+  // pendingRent в forgive НЕ участвуют — их всё равно надо собрать.
+  // Старый код `forgiveDebt ? 0 : dueAmount` зануливал и damage/manual,
+  // что приводило к недосбору при любом частичном прощении.
+  const debtPortion = dueAmount;
   // Общая сумма «всё что нужно собрать» (до учёта депозита).
   // v0.6.11: + пополнение залога (если оператор включил).
   const grossTotal = debtPortion + periodTotal + topupAmount;
@@ -1289,21 +1300,35 @@ export function PaymentAcceptDialog({
           <div className="grid grid-cols-12 items-end gap-4">
             <div className="col-span-7 flex flex-col gap-1 text-[11.5px]">
               {(() => {
-                const debtPortionFooter = forgiveDebt ? 0 : dueAmount;
+                // v0.6.12: footer показывает реальные компоненты «К приёму»:
+                //   - overdue (post-forgive остаток)
+                //   - сколько прощено (если есть)
+                //   - damage/manual/pendingRent (как «прочий долг»)
+                //   - продление/экипировка
+                //   - депозит/topup
+                const overdueAfterForgive = overdueDaysBalance + overdueFineBalance;
+                const overdueForgiven = overdueBalanceRaw - overdueAfterForgive;
+                const otherDebt = pendingRent + damageBalance + manualBalance;
                 return (
                   <>
-                    {debtPortionFooter > 0 && (
+                    {overdueAfterForgive > 0 && (
                       <FooterRow
                         label={`Закрытие просрочки${overdueDaysHeader > 0 ? ` · ${overdueDaysHeader} дн` : ""}`}
-                        value={`${fmt(debtPortionFooter)} ₽`}
+                        value={`${fmt(overdueAfterForgive)} ₽`}
                         tone="red"
                       />
                     )}
-                    {forgiveDebt && overdueBalanceRaw > 0 && (
+                    {overdueForgiven > 0 && (
                       <FooterRow
                         label="Просрочка прощена"
-                        value={`−${fmt(overdueBalanceRaw)} ₽`}
+                        value={`−${fmt(overdueForgiven)} ₽`}
                         tone="green"
+                      />
+                    )}
+                    {otherDebt > 0 && (
+                      <FooterRow
+                        label="Прочий долг (аренда/ущерб/ручной)"
+                        value={`${fmt(otherDebt)} ₽`}
                       />
                     )}
                     {extDays > 0 && (
@@ -1627,7 +1652,55 @@ function ForgiveStepCards({
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [popoverPinned, setPopoverPinned] = useState(false);
   const hoverTimer = useRef<number | null>(null);
+  const anchorRef = useRef<HTMLDivElement | null>(null);
+  // v0.6.12: позиция popover через portal — вычисляется по
+  // getBoundingClientRect карточки «Простить». Iframe drawer'а имеет
+  // overflow-hidden, поэтому absolute-popover обрезался — теперь
+  // через React Portal с position:fixed.
+  const [popoverPos, setPopoverPos] = useState<{
+    top: number;
+    left: number;
+  } | null>(null);
   const forgiveSelected = forgiveChoice !== "clear";
+
+  useLayoutEffect(() => {
+    if (!popoverOpen) {
+      setPopoverPos(null);
+      return;
+    }
+    const updatePos = () => {
+      const el = anchorRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const popoverW = 340;
+      const popoverH = 280; // примерная высота — корректируется ниже
+      const gap = 8;
+      // По умолчанию справа от карточки.
+      let left = rect.right + gap;
+      let top = rect.top;
+      // Если справа не хватает места — рисуем слева.
+      if (left + popoverW > window.innerWidth - 8) {
+        left = rect.left - popoverW - gap;
+      }
+      // Если слева тоже не хватает — рисуем по центру/снизу карточки.
+      if (left < 8) {
+        left = Math.max(8, rect.left);
+        top = rect.bottom + gap;
+      }
+      // Не даём popover уйти ниже видимой области — поднимем при нужде.
+      if (top + popoverH > window.innerHeight - 8) {
+        top = Math.max(8, window.innerHeight - popoverH - 8);
+      }
+      setPopoverPos({ top, left });
+    };
+    updatePos();
+    window.addEventListener("resize", updatePos);
+    window.addEventListener("scroll", updatePos, true);
+    return () => {
+      window.removeEventListener("resize", updatePos);
+      window.removeEventListener("scroll", updatePos, true);
+    };
+  }, [popoverOpen, forgiveChoice]);
 
   const openOnHover = () => {
     if (hoverTimer.current != null) window.clearTimeout(hoverTimer.current);
@@ -1689,6 +1762,7 @@ function ForgiveStepCards({
 
       {/* «Простить» с popover */}
       <div
+        ref={anchorRef}
         className="relative"
         onMouseEnter={openOnHover}
         onMouseLeave={cancelHover}
@@ -1728,15 +1802,17 @@ function ForgiveStepCards({
           </div>
         </button>
 
-        {popoverOpen && (
+        {popoverOpen && popoverPos != null && createPortal(
           <>
-            {/* overlay для click-outside */}
+            {/* overlay для click-outside — рендерится в портале поверх
+                bottom-drawer'а (z выше drawer z-[120]). */}
             <div
-              className="fixed inset-0 z-[140]"
+              className="fixed inset-0 z-[200]"
               onClick={closeAll}
             />
             <div
-              className="absolute left-full top-0 z-[141] ml-2 w-[340px] rounded-[12px] border border-border bg-white shadow-card-lg"
+              className="fixed z-[201] w-[340px] rounded-[12px] border border-border bg-white shadow-card-lg"
+              style={{ top: popoverPos.top, left: popoverPos.left }}
               onClick={(e) => e.stopPropagation()}
               onMouseEnter={() => setPopoverOpen(true)}
             >
@@ -1861,7 +1937,8 @@ function ForgiveStepCards({
                 />
               )}
             </div>
-          </>
+          </>,
+          document.body,
         )}
       </div>
     </div>

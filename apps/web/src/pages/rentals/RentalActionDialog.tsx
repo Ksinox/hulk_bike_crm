@@ -924,9 +924,20 @@ export function RentalActionDialog({
   // отображаем DocumentPreviewModal с актом возврата — оператор
   // печатает/скачивает и закрывает превью.
   if (returnDocPreview != null) {
-    const base = window.location.origin.includes("localhost")
-      ? "http://localhost:4000"
-      : window.location.origin.replace("crm.", "api.");
+    // v0.6.12: base API URL берём из VITE_API_URL — он выставляется
+    // в Dokploy для каждой среды (prod/preview/dev). Старый хак с
+    // replace("crm.", "api.") ломался на preview-доменах вида
+    // crm-preview.104-128-128-96.sslip.io (нет точки после "crm")
+    // и iframe загружал CRM-страницу вместо документа.
+    const base = (() => {
+      const envBase = import.meta.env.VITE_API_URL as string | undefined;
+      if (envBase) return envBase.replace(/\/$/, "");
+      return window.location.origin.includes("localhost")
+        ? "http://localhost:4000"
+        : window.location.origin
+            .replace("crm-preview.", "api-preview.")
+            .replace("crm.", "api.");
+    })();
     const htmlUrl = `${base}/api/rentals/${returnDocPreview}/document/act_return?format=html`;
     const docxUrl = `${base}/api/rentals/${returnDocPreview}/document/act_return?format=docx`;
     return (
@@ -2216,9 +2227,16 @@ function RentalExtensionsHint({ rentalId }: { rentalId: number }) {
  */
 function ReturnDocPreviewLink({ rentalId }: { rentalId: number }) {
   const [open, setOpen] = useState(false);
-  const base = window.location.origin.includes("localhost")
-    ? "http://localhost:4000"
-    : window.location.origin.replace("crm.", "api.");
+  // v0.6.12: см. комментарий выше — VITE_API_URL вместо replace("crm.", "api.").
+  const base = (() => {
+    const envBase = import.meta.env.VITE_API_URL as string | undefined;
+    if (envBase) return envBase.replace(/\/$/, "");
+    return window.location.origin.includes("localhost")
+      ? "http://localhost:4000"
+      : window.location.origin
+          .replace("crm-preview.", "api-preview.")
+          .replace("crm.", "api.");
+  })();
   const htmlUrl = `${base}/api/rentals/${rentalId}/document/act_return?format=html`;
   const docxUrl = `${base}/api/rentals/${rentalId}/document/act_return?format=docx`;
   return (
