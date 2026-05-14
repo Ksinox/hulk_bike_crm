@@ -26,6 +26,15 @@ type Props = {
   from: string | null;
   to: string | null;
   onChange: (next: { from: string | null; to: string | null }) => void;
+  /**
+   * v0.6.15: текст плейсхолдера на кнопке когда фильтр не применён.
+   * По умолчанию «Дата добавления» (исторический use-case в Клиентах).
+   * Для фильтра «Завершаются» в Арендах/Клиентах передаём «Завершаются».
+   */
+  placeholder?: string;
+  /** v0.6.15: title для кнопки и aria-сценариев. */
+  titleApplied?: string;
+  titleNotApplied?: string;
 };
 
 const PRESETS = [
@@ -100,7 +109,14 @@ function detectActivePreset(
   return null;
 }
 
-export function DateRangeFilter({ from, to, onChange }: Props) {
+export function DateRangeFilter({
+  from,
+  to,
+  onChange,
+  placeholder = "Дата добавления",
+  titleApplied = "Изменить диапазон дат добавления клиентов",
+  titleNotApplied = "Фильтр по дате добавления клиента",
+}: Props) {
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
@@ -123,7 +139,7 @@ export function DateRangeFilter({ from, to, onChange }: Props) {
   const isApplied = !!(from || to);
 
   const buttonLabel = (() => {
-    if (!isApplied) return "Дата добавления";
+    if (!isApplied) return placeholder;
     if (activePreset && activePreset !== "all") {
       return PRESETS.find((p) => p.id === activePreset)!.label;
     }
@@ -163,11 +179,7 @@ export function DateRangeFilter({ from, to, onChange }: Props) {
             ? "bg-blue-50 text-blue-700 hover:bg-blue-100"
             : "bg-surface-soft text-muted hover:text-ink",
         )}
-        title={
-          isApplied
-            ? "Изменить диапазон дат добавления клиентов"
-            : "Фильтр по дате добавления клиента"
-        }
+        title={isApplied ? titleApplied : titleNotApplied}
       >
         <CalendarDays size={13} />
         {buttonLabel}

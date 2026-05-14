@@ -179,16 +179,17 @@ export function Rentals() {
     (s) => s.baseStatus === "rental_pool" && !s.archivedAt,
   ).length;
   const today = todayRu();
-  // TODO (B1, v0.6.15+): добавить фильтр «по дате завершения» —
-  // выбор даты или периода для endPlannedAt. Сейчас dateFrom/dateTo
-  // фильтруют по rental.start. Нужны 2 дополнительные поля
-  // endPlannedFrom/endPlannedTo + соответствующая UI-секция в
-  // RentalsFilters.tsx.
+  // v0.6.15: B1 — фильтр «по дате завершения» (endPlannedAt) добавлен
+  // через endDateFrom/endDateTo в FiltersState. dateFrom/dateTo
+  // фильтруют по rental.start (дата выдачи), endDateFrom/endDateTo —
+  // по rental.endPlanned (дата планового возврата).
   const [filters, setFilters] = useState<FiltersState>({
     search: "",
     status: "active",
     dateFrom: null,
     dateTo: null,
+    endDateFrom: null,
+    endDateTo: null,
   });
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [newOpen, setNewOpen] = useState(false);
@@ -291,6 +292,18 @@ export function Rentals() {
       if (filters.dateTo && startIso > filters.dateTo) return false;
       return true;
     };
+    // v0.6.15: B1 — фильтр по дате завершения (endPlanned).
+    const inEndPeriod = (r: Rental): boolean => {
+      const ef = filters.endDateFrom ?? null;
+      const et = filters.endDateTo ?? null;
+      if (!ef && !et) return true;
+      const [d, m, y] = r.endPlanned.split(".").map(Number);
+      if (!d || !m || !y) return false;
+      const endIso = `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+      if (ef && endIso < ef) return false;
+      if (et && endIso > et) return false;
+      return true;
+    };
     return rentals
       .filter(
         (r) =>
@@ -302,7 +315,8 @@ export function Rentals() {
             debtByRentalId.get(r.id),
           ) &&
           matchSearch(r, filters.search, apiClients ?? []) &&
-          inPeriod(r),
+          inPeriod(r) &&
+          inEndPeriod(r),
       )
       .sort((a, b) => {
         const sr = statusRank(a.status) - statusRank(b.status);

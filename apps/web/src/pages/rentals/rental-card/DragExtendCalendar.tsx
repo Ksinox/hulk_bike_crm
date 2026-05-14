@@ -290,34 +290,58 @@ export function DragExtendCalendar({
             inMonth ? "text-ink" : "text-muted-2 opacity-40",
           ];
 
-          // Синий период
-          if (inBlueRange && !isBlueStart && !isBlueEnd) {
-            classes.push("bg-blue-200 text-blue-900");
+          // v0.6.15: rounded применяется ТОЛЬКО на крайних днях зоны.
+          // middle-дни всегда без rounded. Если day — start И end одной
+          // зоны (single day) — rounded со всех сторон (rounded-lg).
+          // Если start, но дальше идёт другая зона (overdue/extension) —
+          // НЕ скругляем правый край (зоны должны стыковаться без зазора).
+          //
+          // СИНЯЯ ЗОНА (start → plannedEnd)
+          if (inBlueRange) {
+            const hasContinuation = isOverdue || inExtension;
+            // single day: blue start === blue end и нет продолжения
+            const isBlueSingle =
+              isBlueStart && isBlueEnd && !hasContinuation;
+            if (isBlueSingle) {
+              classes.push("rounded-lg bg-ink text-white");
+            } else if (isBlueStart) {
+              // start, есть продолжение через blueEnd → не скругляем правый край
+              classes.push("rounded-l-lg bg-ink text-white");
+            } else if (isBlueEnd) {
+              if (hasContinuation) {
+                // продолжение справа — без round-конца
+                classes.push("bg-ink text-white");
+              } else {
+                classes.push("rounded-r-lg bg-ink text-white");
+              }
+            } else {
+              // middle: ровный bg без round
+              classes.push("bg-blue-200 text-blue-900");
+            }
           }
-          if (isBlueStart) {
-            classes.push("rounded-s-lg bg-ink text-white");
+          // КРАСНАЯ ЗОНА (plannedEnd+1 → today, если просрочена).
+          // Красная зона стыкуется слева с синей (без round-l), справа —
+          // если продление preview активно, тоже без round; иначе rounded-r
+          // на isRedEnd.
+          if (inRedRange) {
+            if (isRedEnd) {
+              if (inExtension) {
+                classes.push("bg-red-600 text-white");
+              } else {
+                classes.push("rounded-r-lg bg-red-600 text-white");
+              }
+            } else {
+              classes.push("bg-red-200 text-red-900");
+            }
           }
-          if (isBlueEnd && !isRedEnd && !isExtEnd) {
-            // Если есть продолжение (overdue/extension) — без round-конца.
-            classes.push(
-              isOverdue || inExtension
-                ? "bg-ink text-white"
-                : "rounded-e-lg bg-ink text-white",
-            );
-          }
-          // Красный хвост просрочки
-          if (inRedRange && !isRedEnd && !inExtension) {
-            classes.push("bg-red-200 text-red-900");
-          }
-          if (isRedEnd && !inExtension && !isExtEnd) {
-            classes.push("rounded-e-lg bg-red-600 text-white");
-          }
-          // Зелёная зона продления (preview)
-          if (inExtension && !isExtEnd) {
-            classes.push("bg-emerald-200 text-emerald-900");
-          }
-          if (isExtEnd) {
-            classes.push("rounded-e-lg bg-emerald-600 text-white");
+          // ЗЕЛЁНАЯ ЗОНА (продление). Слева стыкуется с blue/red (без
+          // round-l), справа — rounded-r на isExtEnd.
+          if (inExtension) {
+            if (isExtEnd) {
+              classes.push("rounded-r-lg bg-emerald-600 text-white");
+            } else {
+              classes.push("bg-emerald-200 text-emerald-900");
+            }
           }
           // Маркер «сегодня» — точка снизу (как в RentalPeriodCalendar).
           if (isToday && !isRedEnd && !isExtEnd && !isBlueStart && !isBlueEnd) {

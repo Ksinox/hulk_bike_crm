@@ -32,6 +32,10 @@ export type FiltersState = {
   dateFrom: string | null;
   /** ISO YYYY-MM-DD — верхняя граница даты выдачи аренды. */
   dateTo: string | null;
+  /** v0.6.15: ISO YYYY-MM-DD — нижняя граница endPlanned. */
+  endDateFrom?: string | null;
+  /** v0.6.15: ISO YYYY-MM-DD — верхняя граница endPlanned. */
+  endDateTo?: string | null;
 };
 
 // v0.4.47: убран таб «Все» — он дублировал «Активные». «Активные»
@@ -100,6 +104,19 @@ export function RentalsFilters({
         onChange={(r) =>
           onChange({ ...value, dateFrom: r.from, dateTo: r.to })
         }
+      />
+
+      {/* v0.6.15: B1 — фильтр по дате завершения (endPlanned). Тот же
+          DateRangeFilter с другим placeholder/title. */}
+      <DateRangeFilter
+        from={value.endDateFrom ?? null}
+        to={value.endDateTo ?? null}
+        onChange={(r) =>
+          onChange({ ...value, endDateFrom: r.from, endDateTo: r.to })
+        }
+        placeholder="Завершаются"
+        titleApplied="Изменить диапазон дат завершения аренды"
+        titleNotApplied="Фильтр по дате завершения аренды (endPlanned)"
       />
     </div>
   );

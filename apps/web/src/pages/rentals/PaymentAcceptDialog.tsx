@@ -1179,6 +1179,12 @@ export function PaymentAcceptDialog({
                           setExtInputOverride(
                             extIsWeekly ? Math.max(1, Math.round(n / 7)) : n,
                           );
+                          // v0.6.15: при клике на пресет N дней — снимаем
+                          // pin тарифа (если не custom), чтобы авто-подбор
+                          // selectedTariff заработал по числу дней.
+                          if (selectedTariff !== "custom") {
+                            setTariffPinned(false);
+                          }
                         }}
                         className={cn(
                           "rounded-full border px-3 py-1.5 text-[11px] font-semibold transition-colors",
@@ -1255,6 +1261,30 @@ export function PaymentAcceptDialog({
                       // v0.6.14: ручной выбор тарифа — пинним.
                       setSelectedTariff(p);
                       setTariffPinned(true);
+                      // v0.6.15: при клике на тариф устанавливаем
+                      // МИНИМАЛЬНОЕ число дней этого тарифа (по
+                      // TARIFF_PERIOD_LABEL):
+                      //   day   "1–2 дня"  → 1
+                      //   short "3–6 дней" → 3
+                      //   week  "7–29 дней"→ 7
+                      //   month "30+ дней" → 30
+                      // А не оставляем текущие 35 дней с пересчётом по
+                      // ставке выбранного тарифа — это было ошибочное
+                      // поведение. Заказчик хочет: «период сменится на 1
+                      // день, а не пересчитаем 35 дней по новой цене».
+                      const minDays =
+                        p === "day"
+                          ? 1
+                          : p === "short"
+                            ? 3
+                            : p === "week"
+                              ? 7
+                              : 30;
+                      // В week-режиме (extIsWeekly) extInputOverride
+                      // хранит НЕДЕЛИ. Здесь мы переключаемся в day-режим
+                      // (selectedTariff !== 'custom' → extIsWeekly=false),
+                      // поэтому пишем дни.
+                      setExtInputOverride(minDays);
                     }}
                     className={cn(
                       "rounded-full border px-3 py-1.5 text-[11px] font-semibold transition-colors flex items-center gap-1.5",
@@ -1653,9 +1683,17 @@ export function PaymentAcceptDialog({
             shiftedPlannedEnd.getDate() + forgiveShiftDays,
           );
         }
+        // v0.6.15: isOverdue для календаря — ИСКЛЮЧИТЕЛЬНО по дате
+        // (shiftedPlannedEnd < today). Это синхронизирует поведение с
+        // CalendarPanel в карточке аренды, который тоже работает чисто
+        // по датам через effectiveStatus. Раньше использовали
+        // isOverdueState (по балансу overdueDaysBalanceRaw) — это давало
+        // расхождение когда долг прощён, но дата ещё не подвинута, и
+        // наоборот.
+        const calendarToday = new Date();
+        calendarToday.setHours(0, 0, 0, 0);
         const stillOverdue =
-          isOverdueState &&
-          forgiveShiftDays < overdueDaysCount &&
+          shiftedPlannedEnd.getTime() < calendarToday.getTime() &&
           forgiveChoice !== "all";
         return (
         <FloatingDragExtendCalendar

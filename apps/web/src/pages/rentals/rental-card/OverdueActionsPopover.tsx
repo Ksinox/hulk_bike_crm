@@ -8,17 +8,17 @@
  *   • Простить 1 день — forgive-overdue target=days, daysCount=1
  *   • Простить всю просрочку — target=all
  *
- * Каждая строка: иконка слева + title жирным + subtitle серым + chevron справа.
+ * v0.6.15 (B2): popover расширен — вверху показывается список ВСЕХ
+ * долгов клиента (агрегат по всем арендам через useDebtAggregate +
+ * фильтр по clientId). Группировка по аренде (rentalId), а внутри
+ * аренды — типы долга (overdue, damage, manual, pending). Ширина
+ * увеличена до 440px.
+ *
+ * Каждая строка действия: иконка слева + title жирным + subtitle серым + chevron.
  * Tones: primary (синий — Принять оплату), default (нейтр — 1 день), warn
  * (оранжевый — Всю просрочку, как destructive-подсветка).
- *
- * TODO (B2, v0.6.15+): расширить popover «Долг» — при клике на KPI
- * «Долг» (KpiStrip) показывать ВСЕ долги клиента с детализацией по
- * каждой аренде, а не только текущую просрочку текущей аренды.
- * Нужны секции: «Просрочка дни/штраф», «Ущерб», «Ручные начисления»,
- * «Платежи pending». См. /debt-aggregate API — там уже есть данные.
  */
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import {
   AlertTriangle,
   ChevronRight,
@@ -26,7 +26,7 @@ import {
   Wallet,
   Waves,
 } from "lucide-react";
-import { useForgiveOverdue } from "@/lib/api/debt";
+import { useDebtAggregate, useForgiveOverdue } from "@/lib/api/debt";
 import { toast } from "@/lib/toast";
 import type { DebtSummary } from "@/lib/api/debt";
 
@@ -36,6 +36,7 @@ function fmt(n: number) {
 
 export function OverdueActionsPopover({
   rentalId,
+  clientId,
   anchorRect,
   debtSummary,
   dailyRate,
@@ -43,6 +44,8 @@ export function OverdueActionsPopover({
   onAcceptPayment,
 }: {
   rentalId: number;
+  /** v0.6.15: B2 — для агрегата всех долгов клиента по всем арендам. */
+  clientId?: number | null;
   /** Прямоугольник якорной кнопки (KPI-ячейки) — для позиционирования. */
   anchorRect: DOMRect | null;
   debtSummary: DebtSummary | undefined;
@@ -53,6 +56,18 @@ export function OverdueActionsPopover({
 }) {
   const forgiveMut = useForgiveOverdue();
   const popRef = useRef<HTMLDivElement | null>(null);
+  // v0.6.15: B2 — все долги клиента по всем арендам.
+  const { data: aggregateAll = [] } = useDebtAggregate();
+  const clientDebts = useMemo(() => {
+    if (clientId == null) return [];
+    return aggregateAll.filter(
+      (d) => d.clientId === clientId && d.totalDebt > 0,
+    );
+  }, [aggregateAll, clientId]);
+  const totalClientDebt = useMemo(
+    () => clientDebts.reduce((s, d) => s + d.totalDebt, 0),
+    [clientDebts],
+  );
 
   // ESC + клик вне popover закрывают
   useEffect(() => {
@@ -72,8 +87,10 @@ export function OverdueActionsPopover({
 
   // Позиционирование: выровнять верхний-левый угол popover'а под нижним-левым
   // углом якоря. Если popover выйдет за низ viewport — поднять над якорем.
-  const POP_WIDTH = 340;
-  const POP_HEIGHT_EST = 220;
+  // v0.6.15: ширина увеличена до 440 — теперь поверху есть список всех
+  // долгов клиента, height-estimate тоже больше.
+  const POP_WIDTH = 440;
+  const POP_HEIGHT_EST = clientDebts.length > 0 ? 380 : 220;
   const vw = typeof window === "undefined" ? 1024 : window.innerWidth;
   const vh = typeof window === "undefined" ? 768 : window.innerHeight;
   let left = anchorRect.left;
@@ -121,16 +138,49 @@ export function OverdueActionsPopover({
             <div className="h-7 w-7 rounded-full bg-red-soft text-red-ink flex items-center justify-center shrink-0">
               <AlertTriangle size={13} />
             </div>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <div className="text-[12.5px] font-bold text-ink">
                 Просрочка {overdueDays} дн
               </div>
               <div className="text-[10.5px] text-muted truncate">
-                {fmt(totalOverdue)} ₽ долга по {fmt(dailyRate)} ₽/сут
+                {fmt(totalOverdue)} ₽ по этой аренде · {fmt(dailyRate)} ₽/сут
               </div>
             </div>
+            {totalClientDebt > totalOverdue && (
+              <div className="text-right shrink-0">
+                <div className="text-[9.5px] uppercase tracking-wider font-bold text-muted-2">
+                  Всего у клиента
+                </div>
+                <div className="text-[12px] font-extrabold tabular-nums text-red-ink">
+                  {fmt(totalClientDebt)} ₽
+                </div>
+              </div>
+            )}
           </div>
         </div>
+        {/* v0.6.15: B2 — список всех долгов клиента по всем арендам. */}
+        {clientDebts.length > 0 && (
+          <div className="max-h-[200px] overflow-y-auto scrollbar-thin px-3 py-2 border-b border-border bg-surface-soft/50">
+            <div className="text-[9.5px] uppercase tracking-wider font-bold text-muted-2 mb-1.5">
+              Все долги клиента
+            </div>
+            <div className="flex flex-col gap-1.5">
+              {clientDebts.map((d) => (
+                <ClientDebtRow
+                  key={d.rentalId}
+                  rentalId={d.rentalId}
+                  highlight={d.rentalId === rentalId}
+                  overdueBalance={d.overdueBalance}
+                  damageBalance={d.damageBalance}
+                  manualBalance={d.manualBalance}
+                  pendingRent={d.pendingRent}
+                  overdueDays={d.overdueDays}
+                  totalDebt={d.totalDebt}
+                />
+              ))}
+            </div>
+          </div>
+        )}
         <div className="py-1.5">
           <ActionRow
             icon={Wallet}
@@ -159,6 +209,82 @@ export function OverdueActionsPopover({
           />
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * v0.6.15: B2 — строка долга по одной аренде клиента в popover'е «Долг».
+ *
+ * Группирует долг по типам: просрочка / ущерб / ручной / pending.
+ * Highlight=true — для текущей аренды (с которой open'нули popover).
+ */
+function ClientDebtRow({
+  rentalId,
+  highlight,
+  overdueBalance,
+  damageBalance,
+  manualBalance,
+  pendingRent,
+  overdueDays,
+  totalDebt,
+}: {
+  rentalId: number;
+  highlight: boolean;
+  overdueBalance: number;
+  damageBalance: number;
+  manualBalance: number;
+  pendingRent: number;
+  overdueDays: number;
+  totalDebt: number;
+}) {
+  const parts: Array<{ label: string; amount: number }> = [];
+  if (overdueBalance > 0) {
+    parts.push({
+      label: overdueDays > 0 ? `Просрочка ${overdueDays} дн` : "Просрочка",
+      amount: overdueBalance,
+    });
+  }
+  if (damageBalance > 0) parts.push({ label: "Ущерб по акту", amount: damageBalance });
+  if (manualBalance > 0) parts.push({ label: "Ручное начисление", amount: manualBalance });
+  if (pendingRent > 0) parts.push({ label: "Неоплаченные платежи", amount: pendingRent });
+  return (
+    <div
+      className={
+        "rounded-[10px] border px-2.5 py-1.5 " +
+        (highlight
+          ? "border-red-300 bg-red-soft/30"
+          : "border-border bg-surface")
+      }
+    >
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-[11px] font-bold text-ink">
+          Аренда #{String(rentalId).padStart(4, "0")}
+          {highlight && (
+            <span className="ml-1 text-[9.5px] font-bold text-red-ink uppercase tracking-wider">
+              · текущая
+            </span>
+          )}
+        </div>
+        <div className="text-[12px] font-extrabold tabular-nums text-red-ink shrink-0">
+          {fmt(totalDebt)} ₽
+        </div>
+      </div>
+      {parts.length > 0 && (
+        <div className="mt-1 flex flex-col gap-0.5">
+          {parts.map((p, i) => (
+            <div
+              key={i}
+              className="flex items-center justify-between gap-2 text-[10.5px]"
+            >
+              <span className="text-muted">{p.label}</span>
+              <span className="tabular-nums font-semibold text-ink-2">
+                {fmt(p.amount)} ₽
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -1,19 +1,24 @@
 /**
  * MasterBlock — основной 3-колоночный блок карточки аренды:
- *   • CLIENT      (identity strip + фото-карточка + ФИО + контакты + KPI)
- *   • SCOOTER     (большая аватарка + номер/модель + пробег + кнопка инцидента)
- *   • EQUIPMENT   (2×2 grid позиций экипировки + кнопка добавления)
+ *   • CLIENT      (identity strip + фото-карточка + ФИО + контакты + 3 KPI-блока)
+ *   • SCOOTER     (вертикальная аватарка + номер/модель + пробег)
+ *   • EQUIPMENT   (2×2 grid: аватарка СВЕРХУ + подпись ОТДЕЛЬНО ПОД ней)
  *
- * v0.6.14:
- *   - CLIENT: убраны ДР и адрес. Под контактами 2 KPI:
- *       «Дней в аренде» (сумма ВСЕХ дней клиента) и
- *       «Принёс за всё время» (сумма ВСЕХ payments клиента).
- *     Добавлена кнопка-иконка инцидента (AlertCircle).
- *   - SCOOTER: большая аватарка с hover-overlay «Заменить».
- *     Номер крупно, модель и пробег под ним. Тариф убран (KPI Strip
- *     показывает тариф в KPI «Срок/Тариф»).
- *   - EQUIPMENT: 2×2 grid аватарок с цветными border'ами (зелёный
- *     бесплатно, синий платно). Пустой state — большой плейсхолдер с «+».
+ * v0.6.15:
+ *   - CLIENT: правая часть колонки клиента (под телефонами) — 3 равных
+ *     мини-колонки в одном grid-cols-3:
+ *       1) «Дней в аренде» — сумма по всем арендам клиента
+ *       2) «Принёс за всё время аренд» — сумма всех payments
+ *       3) Кнопка «Создать инцидент» — AlertCircle сверху, «Инцидент» снизу,
+ *          ton orange/red. Заменила старую иконку-кнопку в identity strip.
+ *     Карточки Залог/Депозит остаются внизу как 2-col grid.
+ *   - SCOOTER: аватарка ВЕРТИКАЛЬНАЯ (aspect-[9/12]), hover-overlay
+ *     «Заменить». Текст ПОД аватаркой: номер крупно (font-display
+ *     text-[20px]), модель мельче серым, пробег ещё мельче.
+ *   - EQUIPMENT: каждая позиция — 2 ОТДЕЛЬНЫХ блока: квадратная аватарка
+ *     сверху (с бейджем +N ₽ поверх) + подпись названия под ней (без рамки,
+ *     серым, 2 строки). Free → зелёный border + bg-tint, Paid → синий
+ *     border + bg-tint.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -184,18 +189,8 @@ export function MasterBlock({
                 <PhoneOff size={10} /> Не выходит
               </span>
             )}
-            {/* v0.6.14: кнопка инцидента (ДТП/угон/повреждение) */}
-            {onIncident && (
-              <button
-                type="button"
-                onClick={onIncident}
-                title="Зафиксировать инцидент"
-                aria-label="Зафиксировать инцидент"
-                className="ml-auto inline-flex items-center gap-1 rounded-full border border-red-soft bg-red-soft/70 px-2 py-0.5 text-[10.5px] font-bold text-red-ink hover:bg-red-soft"
-              >
-                <AlertCircle size={11} /> Инцидент
-              </button>
-            )}
+            {/* v0.6.15: старая кнопка-иконка инцидента из identity strip
+                удалена — она переехала в правую мини-колонку KPI ниже. */}
           </div>
 
           <div className="flex gap-3">
@@ -286,24 +281,47 @@ export function MasterBlock({
             </div>
           </div>
 
-          {/* v0.6.14: KPI клиента — 2 строки в одну линию */}
-          <div className="grid grid-cols-2 gap-1.5">
-            <div className="rounded-[8px] bg-surface-soft px-2 py-1.5">
-              <div className="text-[9px] uppercase tracking-wider font-bold text-muted-2">
+          {/* v0.6.15: 3 равных мини-колонки — KPI и большая кнопка инцидента.
+              По эскизу заказчика: правая часть колонки клиента под телефонами
+              делится на 3 равных колонки (grid-cols-3). */}
+          <div className="grid grid-cols-3 gap-2">
+            <div className="rounded-[10px] bg-surface-soft px-2 py-2 flex flex-col items-center text-center justify-center min-h-[64px]">
+              <div className="text-[9px] uppercase tracking-wider font-bold text-muted-2 leading-tight">
                 Дней в аренде
               </div>
-              <div className="font-display text-[13px] font-extrabold tabular-nums text-ink leading-tight">
+              <div className="mt-1 font-display text-[18px] font-extrabold tabular-nums text-ink leading-none">
                 {fmt(clientStats.totalDays)}
               </div>
             </div>
-            <div className="rounded-[8px] bg-surface-soft px-2 py-1.5">
-              <div className="text-[9px] uppercase tracking-wider font-bold text-muted-2">
-                Принёс
+            <div className="rounded-[10px] bg-surface-soft px-2 py-2 flex flex-col items-center text-center justify-center min-h-[64px]">
+              <div className="text-[9px] uppercase tracking-wider font-bold text-muted-2 leading-tight">
+                Принёс за всё время аренд
               </div>
-              <div className="font-display text-[13px] font-extrabold tabular-nums text-blue-700 leading-tight">
+              <div className="mt-1 font-display text-[14px] font-extrabold tabular-nums text-blue-700 leading-none">
                 {fmt(clientStats.totalPaid)} ₽
               </div>
             </div>
+            {onIncident ? (
+              <button
+                type="button"
+                onClick={onIncident}
+                title="Зафиксировать инцидент (ДТП/угон/повреждение)"
+                aria-label="Создать инцидент"
+                className="rounded-[10px] border-2 border-red-soft bg-red-soft/40 hover:bg-red-soft hover:border-red-300 px-2 py-2 flex flex-col items-center text-center justify-center min-h-[64px] text-red-ink transition-colors"
+              >
+                <AlertCircle size={18} strokeWidth={2.2} />
+                <div className="mt-1 text-[11px] font-bold uppercase tracking-wider leading-none">
+                  Инцидент
+                </div>
+              </button>
+            ) : (
+              <div className="rounded-[10px] bg-surface-soft px-2 py-2 flex flex-col items-center text-center justify-center min-h-[64px] opacity-50">
+                <AlertCircle size={18} strokeWidth={2.2} className="text-muted-2" />
+                <div className="mt-1 text-[11px] font-bold uppercase tracking-wider leading-none text-muted-2">
+                  Инцидент
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Money row — залог + депозит клиента (2-col) */}
@@ -345,15 +363,18 @@ export function MasterBlock({
             </div>
           </div>
           <div className="flex flex-col items-center">
+            {/* v0.6.15: вертикальная аватарка (aspect 9/12 — портретная),
+                hover-overlay с кнопкой «Заменить». Текст идёт ПОД аватаркой
+                отдельным блоком, а не поверх. */}
             <div
-              className="relative w-full max-w-[180px]"
+              className="relative w-full max-w-[170px]"
               onMouseEnter={() => setScooterHover(true)}
               onMouseLeave={() => setScooterHover(false)}
             >
               <ScooterPosterAvatar
                 scooter={scooter ?? null}
                 size="md"
-                className="!h-auto aspect-square w-full"
+                className="!h-auto aspect-[9/12] w-full"
               />
               {/* hover overlay с кнопкой «Заменить» */}
               {scooterHover && (
@@ -373,12 +394,12 @@ export function MasterBlock({
               <div className="font-display text-[20px] font-extrabold text-ink leading-tight truncate">
                 {scooter?.name ?? rental.scooter ?? "—"}
               </div>
-              <div className="text-[12px] font-semibold text-muted-2 mt-0.5 truncate">
+              <div className="text-[12px] font-semibold text-muted-2 mt-1 truncate">
                 <ScooterModelLabel scooter={scooter ?? null} fallback={rental.model} />
               </div>
               {scooter && (
-                <div className="mt-1.5 text-[11px] text-muted inline-flex items-center gap-1">
-                  <Clock size={11} /> Пробег{" "}
+                <div className="mt-1 text-[10.5px] text-muted-2 inline-flex items-center gap-1">
+                  <Clock size={10} /> Пробег{" "}
                   <span className="tabular-nums text-ink-2 font-semibold">
                     {fmt(scooter.mileage)} км
                   </span>
@@ -439,7 +460,7 @@ export function MasterBlock({
               </div>
             </button>
           ) : (
-            <div className="grid grid-cols-2 gap-2 content-start">
+            <div className="grid grid-cols-2 gap-x-2 gap-y-3 content-start">
               {equipmentJson.slice(0, 4).map((it, idx) => {
                 const canSwap = !!onChangeEquipment;
                 const isOpen = swapIdx === idx;
@@ -447,8 +468,11 @@ export function MasterBlock({
                 return (
                   <div
                     key={`${it.itemId ?? "na"}-${idx}`}
-                    className="relative"
+                    className="relative flex flex-col"
                   >
+                    {/* v0.6.15: квадратная аватарка СВЕРХУ с бейджем цены
+                        ПОВЕРХ. Подпись названия — ОТДЕЛЬНЫМ блоком ПОД
+                        аватаркой (см. ниже), без рамки, может в 2 строки. */}
                     <button
                       type="button"
                       onClick={() => {
@@ -457,10 +481,10 @@ export function MasterBlock({
                       }}
                       disabled={!canSwap}
                       className={cn(
-                        "w-full aspect-square rounded-[12px] border-2 p-1.5 flex flex-col items-center justify-between transition-colors relative",
+                        "w-full aspect-square rounded-[12px] border-2 p-2 flex items-center justify-center transition-colors relative",
                         isFree
                           ? "border-green bg-green-soft/50 hover:bg-green-soft"
-                          : "border-blue-100 bg-blue-50 hover:bg-blue-100",
+                          : "border-blue-200 bg-blue-50 hover:bg-blue-100",
                         isOpen &&
                           (isFree
                             ? "ring-2 ring-green ring-offset-1"
@@ -470,20 +494,33 @@ export function MasterBlock({
                       title={canSwap ? "Заменить или убрать" : it.name}
                     >
                       <EquipmentThumb item={it} />
-                      <div
-                        className={cn(
-                          "text-[10px] font-bold w-full truncate text-center",
-                          isFree ? "text-green-ink" : "text-blue-700",
-                        )}
-                      >
-                        {it.name}
-                      </div>
                       {!isFree && it.price > 0 && (
-                        <span className="absolute -top-1.5 -right-1.5 rounded-full bg-blue-600 text-white px-1.5 py-0.5 text-[9px] font-bold tabular-nums shadow-card-sm">
+                        <span className="absolute top-1 right-1 rounded-full bg-blue-600 text-white px-1.5 py-0.5 text-[9px] font-bold tabular-nums shadow-card-sm">
                           +{it.price} ₽
                         </span>
                       )}
+                      {isFree && (
+                        <span className="absolute top-1 right-1 rounded-full bg-green text-white px-1.5 py-0.5 text-[9px] font-bold tabular-nums shadow-card-sm">
+                          free
+                        </span>
+                      )}
                     </button>
+                    {/* Подпись названия — отдельный блок под аватаркой,
+                        без рамки, серым мелким, до 2 строк. */}
+                    <div
+                      className={cn(
+                        "mt-1.5 text-[10.5px] font-semibold text-center leading-tight px-0.5 break-words",
+                        isFree ? "text-green-ink" : "text-blue-700",
+                      )}
+                      style={{
+                        display: "-webkit-box",
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: "vertical",
+                        overflow: "hidden",
+                      }}
+                    >
+                      {it.name}
+                    </div>
                     {isOpen && (
                       <EquipmentSwapPopover
                         rental={rental}
@@ -497,29 +534,37 @@ export function MasterBlock({
               {/* «+N» если >4 — pivot на onChangeEquipment.
                   Иначе если есть свободный слот и canEdit — кнопка «+». */}
               {equipmentJson.length > 4 ? (
-                <button
-                  type="button"
-                  onClick={onChangeEquipment}
-                  disabled={!onChangeEquipment}
-                  className="aspect-square rounded-[12px] border-2 border-dashed border-border flex flex-col items-center justify-center gap-1 text-muted-2 hover:border-blue-600 hover:bg-blue-50 hover:text-blue-700 disabled:opacity-50"
-                  title="Показать все"
-                >
-                  <span className="font-display text-[20px] font-extrabold tabular-nums">
-                    +{equipmentJson.length - 4}
-                  </span>
-                  <span className="text-[10px]">ещё</span>
-                </button>
-              ) : (
-                onChangeEquipment && (
+                <div className="flex flex-col">
                   <button
                     type="button"
                     onClick={onChangeEquipment}
-                    className="aspect-square rounded-[12px] border-2 border-dashed border-border flex flex-col items-center justify-center gap-1 text-muted-2 hover:border-blue-600 hover:bg-blue-50 hover:text-blue-700"
-                    title="Добавить экипировку"
+                    disabled={!onChangeEquipment}
+                    className="w-full aspect-square rounded-[12px] border-2 border-dashed border-border flex flex-col items-center justify-center gap-1 text-muted-2 hover:border-blue-600 hover:bg-blue-50 hover:text-blue-700 disabled:opacity-50"
+                    title="Показать все"
                   >
-                    <Plus size={22} strokeWidth={2} />
-                    <span className="text-[10px] font-bold">Добавить</span>
+                    <span className="font-display text-[20px] font-extrabold tabular-nums">
+                      +{equipmentJson.length - 4}
+                    </span>
                   </button>
+                  <div className="mt-1.5 text-[10.5px] font-semibold text-center text-muted-2">
+                    ещё
+                  </div>
+                </div>
+              ) : (
+                onChangeEquipment && (
+                  <div className="flex flex-col">
+                    <button
+                      type="button"
+                      onClick={onChangeEquipment}
+                      className="w-full aspect-square rounded-[12px] border-2 border-dashed border-border flex items-center justify-center text-muted-2 hover:border-blue-600 hover:bg-blue-50 hover:text-blue-700"
+                      title="Добавить экипировку"
+                    >
+                      <Plus size={26} strokeWidth={2} />
+                    </button>
+                    <div className="mt-1.5 text-[10.5px] font-semibold text-center text-muted-2">
+                      Добавить
+                    </div>
+                  </div>
                 )
               )}
             </div>
@@ -587,18 +632,18 @@ function EquipmentThumb({
       <img
         src={src}
         alt={item.name}
-        className="flex-1 min-h-0 w-full object-contain"
+        className="h-full w-full object-contain"
       />
     );
   }
   return (
     <div
       className={cn(
-        "flex-1 min-h-0 w-full flex items-center justify-center",
+        "h-full w-full flex items-center justify-center",
         item.free ? "text-green-ink/60" : "text-blue-700/60",
       )}
     >
-      <Package size={32} strokeWidth={1.5} />
+      <Package size={40} strokeWidth={1.5} />
     </div>
   );
 }
