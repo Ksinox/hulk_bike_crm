@@ -20,20 +20,18 @@ import {
   ArrowRight,
   Calendar,
   CheckCircle2,
-  ChevronDown,
-  ChevronUp,
   PhoneOff,
   Plus,
   Repeat,
   ShieldAlert,
   Wrench,
+  X,
   XCircle,
   Eraser,
   Pencil,
   Trash2,
   RotateCcw,
 } from "lucide-react";
-import { STATUS_LABEL } from "@/lib/mock/rentals";
 import { cn } from "@/lib/utils";
 import {
   type Rental,
@@ -196,6 +194,7 @@ function statusActions(
 export function RentalCard({
   rental,
   onSwapped,
+  onClose,
   /** Игнорируется в v0.6 — табы отменены. Сохраняем prop для обратной
    *  совместимости с Rentals.tsx (он передаёт initialTab при навигации
    *  с дашборда). Логика «открыть драверы по типу» отложена. */
@@ -203,6 +202,9 @@ export function RentalCard({
 }: {
   rental: Rental;
   onSwapped?: (newRentalId: number) => void;
+  /** v0.6.29: закрытие карточки — список аренд раскрывается на всю
+   *  ширину. Управляется родителем (Rentals.tsx) через selectedId=null. */
+  onClose?: () => void;
   initialTab?: string;
 }) {
   void _initialTab;
@@ -211,9 +213,8 @@ export function RentalCard({
   // показывает компактную одну строку: #ID, клиент, статус, просрочка,
   // долг. Кнопка «Развернуть» возвращает полный вид. TODO: расширить
   // до режима «список аренд во всю ширину» — по эскизу заказчика в
-  // свернутом виде нужен табличный список других аренд клиента (этот
-  // пункт заказчиком описан туманно — реализуем после уточнения).
-  const [collapsed, setCollapsed] = useState(false);
+  // v0.6.29: collapsed-режим убран — закрытие карточки теперь
+  // делается через onClose (родитель Rentals.tsx сбрасывает selectedId).
 
   // ── dialogs ──────────────────────────────────────────────────────
   const [action, setAction] = useState<ActionKind | null>(null);
@@ -836,60 +837,21 @@ export function RentalCard({
     rental.status === "returning";
 
   // ── render ────────────────────────────────────────────────────────
-  // v0.6.15: B3 — collapsed-режим. Свёрнутая карточка показывает
-  // одну строку c основной инфой и кнопкой «Развернуть».
-  if (collapsed) {
-    return (
-      <div className="w-full">
-        <div className="w-full max-w-[1180px] mx-auto p-4 lg:p-5">
-          <div className="flex items-center gap-3 rounded-2xl border border-border bg-surface px-4 py-3 shadow-card-sm">
-            <span className="text-[12.5px] uppercase tracking-wider font-bold text-muted-2 tabular-nums">
-              #{String(rental.id).padStart(4, "0")}
-            </span>
-            <span className="text-[14px] font-bold text-ink truncate">
-              {client?.name ?? "Клиент"}
-            </span>
-            <span className="text-[11px] font-semibold text-ink-2 rounded-full bg-surface-soft px-2 py-0.5">
-              {STATUS_LABEL[effectiveStatus] ?? STATUS_LABEL[rental.status]}
-            </span>
-            {overdueDays > 0 && (
-              <span className="text-[11px] font-bold text-red-ink rounded-full bg-red-soft px-2 py-0.5">
-                Просрочка {overdueDays} дн
-              </span>
-            )}
-            {overdueRelatedDebt + pending > 0 && (
-              <span className="text-[11px] font-bold text-red-ink rounded-full bg-red-soft px-2 py-0.5 tabular-nums">
-                Долг {(overdueRelatedDebt + pending).toLocaleString("ru-RU")} ₽
-              </span>
-            )}
-            <div className="ml-auto flex items-center gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={() => setCollapsed(false)}
-                className="inline-flex items-center gap-1.5 rounded-full bg-blue-600 px-3 py-1.5 text-[12px] font-bold text-white hover:bg-blue-700"
-                title="Развернуть карточку"
-              >
-                <ChevronDown size={13} /> Развернуть
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
   return (
     <div className="w-full">
       <div className="w-full max-w-[1180px] mx-auto p-4 lg:p-5 flex flex-col gap-3">
         {/* Header row: collapse button + actions menu */}
         <div className="flex items-center justify-end gap-2 flex-wrap">
-          <button
-            type="button"
-            onClick={() => setCollapsed(true)}
-            className="inline-flex items-center gap-1.5 rounded-full bg-surface-soft px-3 py-1.5 text-[12px] font-semibold text-muted hover:bg-border hover:text-ink"
-            title="Свернуть карточку"
-          >
-            <ChevronUp size={13} /> Свернуть
-          </button>
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex items-center gap-1.5 rounded-full bg-surface-soft px-3 py-1.5 text-[12px] font-semibold text-muted hover:bg-border hover:text-ink"
+              title="Закрыть карточку"
+            >
+              <X size={13} /> Закрыть
+            </button>
+          )}
           <RentalActionsMenu actions={actions} onAction={handleAction} />
         </div>
 

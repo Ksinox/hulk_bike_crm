@@ -20,6 +20,7 @@ import { useDebtAggregate } from "@/lib/api/debt";
 import { useApiScooters } from "@/lib/api/scooters";
 import { useBillingPeriodRevenue } from "@/lib/useRevenue";
 import { ErrorBoundary } from "@/app/ErrorBoundary";
+import { cn } from "@/lib/utils";
 import type { ApiClient } from "@/lib/api/types";
 import {
   matchId,
@@ -426,45 +427,50 @@ export function Rentals() {
 
       <RentalsFilters value={filters} onChange={setFilters} />
 
-      <div className="grid flex-1 gap-4 lg:grid-cols-[420px_1fr]">
-        <RentalsList
-          items={filtered}
-          selectedId={selectedId}
-          onSelect={setSelectedId}
-        />
-
-        {(() => {
-          const selected = rentals.find((r) => r.id === selectedId);
-          if (!selected) {
-            return (
-              <div className="flex min-h-[400px] items-center justify-center rounded-2xl bg-surface p-10 text-center shadow-card-sm">
-                <div className="text-[13px] text-muted">
-                  Выберите аренду из списка
+      {/* v0.6.29: layout зависит от того, выбрана ли аренда.
+            • Выбрана → grid [420px | 1fr] (список + карточка).
+            • Не выбрана → список во всю ширину; карточка не рендерится.
+          Переключение плавное через transition grid-template-columns. */}
+      {(() => {
+        const selected = rentals.find((r) => r.id === selectedId);
+        const hasSelected = !!selected;
+        return (
+          <div
+            className={cn(
+              "grid flex-1 gap-4 transition-[grid-template-columns] duration-300 ease-out",
+              hasSelected
+                ? "lg:grid-cols-[420px_minmax(0,1fr)]"
+                : "lg:grid-cols-1",
+            )}
+          >
+            <RentalsList
+              items={filtered}
+              selectedId={selectedId}
+              onSelect={setSelectedId}
+            />
+            {selected && (
+              <ErrorBoundary key={selected.id}>
+                <div className="animate-in fade-in slide-in-from-right-4 duration-300">
+                  <RentalCard
+                    rental={selected}
+                    initialTab={pendingTab ?? undefined}
+                    onClose={() => setSelectedId(null)}
+                    onSwapped={(newId) => {
+                      // Свап успешен: одновременно (1) переключаем фокус
+                      // на новую связку — старая ушла в архив и пропадёт
+                      // из списка, (2) поднимаем превью акта замены поверх
+                      // карточки. RentalCard ремаунтится с key=newId, но
+                      // превью живёт в state Rentals и переживает ремаунт.
+                      setSelectedId(newId);
+                      setSwapActPreviewId(newId);
+                    }}
+                  />
                 </div>
-              </div>
-            );
-          }
-          return (
-            <ErrorBoundary
-              key={selected.id}
-            >
-              <RentalCard
-                rental={selected}
-                initialTab={pendingTab ?? undefined}
-                onSwapped={(newId) => {
-                  // Свап успешен: одновременно (1) переключаем фокус
-                  // на новую связку — старая ушла в архив и пропадёт
-                  // из списка, (2) поднимаем превью акта замены поверх
-                  // карточки. RentalCard ремаунтится с key=newId, но
-                  // превью живёт в state Rentals и переживает ремаунт.
-                  setSelectedId(newId);
-                  setSwapActPreviewId(newId);
-                }}
-              />
-            </ErrorBoundary>
-          );
-        })()}
-      </div>
+              </ErrorBoundary>
+            )}
+          </div>
+        );
+      })()}
 
       {swapActPreviewId != null && (
         <ActTransferPreview
