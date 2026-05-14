@@ -31,7 +31,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  Button,
   CalendarCell as CalendarCellRac,
   CalendarGridBody as CalendarGridBodyRac,
   CalendarGridHeader as CalendarGridHeaderRac,
@@ -125,16 +124,24 @@ export function DragExtendCalendar({
       ? todayKey
       : plannedEndKey;
 
-  // Focus / view month: 1-го числа месяца startKey (multi-month layout
-  // покажет start слева, end/preview справа).
-  const initialFocus = useMemo<CalendarDate | undefined>(() => {
+  // v0.6.26: фокус фиксирован на месяце startKey (1-го числа). Не
+  // даём react-aria сдвинуть его при клике в другом месяце — иначе
+  // visibleMonths считалось бы от смещённого фокуса и второй календарь
+  // схлопывался в один (баг v0.6.25 на скриншоте). Стрелки prev/next
+  // вместо листания управляют extraMonths (см. ниже).
+  const focusForView = useMemo<CalendarDate | undefined>(() => {
     const k = startKey ?? baseEndKey ?? todayKey;
     return k ? new CalendarDate(k.y, k.m + 1, 1) : undefined;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [startKey?.y, startKey?.m]);
-  const [focusedDate, setFocusedDate] = useState<CalendarDate | undefined>(
-    initialFocus,
-  );
+
+  // Доп. месяцы справа (через кнопку next) — для будущего просмотра/
+  // продления за пределами текущей зоны. Reset при изменении start.
+  const [extraMonths, setExtraMonths] = useState(0);
+  useEffect(() => {
+    setExtraMonths(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startKey?.y, startKey?.m]);
 
   // Preview-конец продления (state, контролируется click'ом или initialDays).
   const computeInitialPreview = (): DateKey | null => {
@@ -304,26 +311,22 @@ export function DragExtendCalendar({
   };
 
   /* ---- сколько месяцев показывать ----
-   * v0.6.24: считаем по правому краю зоны (preview ?? baseEnd). Min 1
-   * месяц (период умещается в один), 2 — если уходит на следующий,
-   * 3+ — дальше. Max 4 для безопасности layout'a. focusedValue
-   * определяет левый видимый месяц; стрелки prev/next двигают его на
-   * ±1 месяц (pageBehavior="single"). */
-  const focusedKey: DateKey = focusedDate
-    ? calendarDateToKey(focusedDate)
-    : startKey;
+   * v0.6.26: считаем span от месяца startKey (= левый видимый) до
+   * правого края зоны (preview ?? baseEnd). Это даёт «1 месяц если
+   * период умещается в один, 2 если уходит на второй, 3+ дальше».
+   * Не зависит от того куда react-aria подвинул бы focus.
+   * Плюс extraMonths — добавочные месяцы справа через кнопку next.
+   * Clamp 1..6. */
+  const startMonthIdx = startKey.y * 12 + startKey.m;
   const rangeEndKey = previewEnd ?? baseEndKey;
-  const monthsFromFocus = Math.max(
-    0,
-    rangeEndKey.y * 12 + rangeEndKey.m - (focusedKey.y * 12 + focusedKey.m),
-  );
-  const visibleMonths = Math.min(4, Math.max(1, monthsFromFocus + 1));
+  const endMonthIdx = rangeEndKey.y * 12 + rangeEndKey.m;
+  const naturalSpan = Math.max(1, endMonthIdx - startMonthIdx + 1);
+  const visibleMonths = Math.min(6, naturalSpan + extraMonths);
 
   /* ---- подпись месяца с offset ---- */
   const monthLabel = (offset: number): string => {
-    const base = focusedDate ?? initialFocus;
-    if (!base) return "";
-    const cd = base.add({ months: offset });
+    if (!focusForView) return "";
+    const cd = focusForView.add({ months: offset });
     return new Date(cd.year, cd.month - 1, 1).toLocaleDateString("ru-RU", {
       month: "long",
       year: "numeric",
@@ -378,31 +381,41 @@ export function DragExtendCalendar({
       <CalendarRac
         aria-label="Календарь аренды"
         className="w-full"
-        focusedValue={focusedDate}
-        onFocusChange={setFocusedDate}
+        // v0.6.26: focus фиксирован на месяце start. Не контролируем
+        // через onFocusChange — иначе react-aria сдвигал бы его при
+        // клике в другом месяце и multi-month схлопывался.
+        focusedValue={focusForView}
         visibleDuration={{ months: visibleMonths }}
-        // Стрелки листают по 1 месяцу, не по visibleDuration.
-        pageBehavior="single"
         // Полностью отключаем стандартный select (мы сами обрабатываем
         // клик через делегирование на корневой div).
         isReadOnly
       >
-        {/* Шапка: prev | spacer | next (без названий месяцев — они
-            подписями над каждой сеткой ниже, чтобы flex-wrap работал
-            корректно при недостатке ширины). */}
+        {/* Шапка: prev (убавить кол-во месяцев) | spacer | next
+            (добавить ещё месяц справа). Заголовки месяцев — над
+            каждой сеткой ниже, чтобы flex-wrap корректно работал. */}
         <header className="flex w-full items-center justify-between gap-1 pb-1 px-1">
-          <Button
-            slot="previous"
-            className="flex size-9 items-center justify-center rounded-lg text-muted-2 outline-offset-2 transition-colors hover:bg-blue-50 hover:text-blue-700 focus:outline-none data-[focus-visible]:outline data-[focus-visible]:outline-2 data-[focus-visible]:outline-blue-200"
+          <button
+            type="button"
+            onClick={() => setExtraMonths((n) => Math.max(0, n - 1))}
+            disabled={extraMonths <= 0}
+            aria-label="Меньше месяцев"
+            className="flex size-9 items-center justify-center rounded-lg text-muted-2 transition-colors hover:bg-blue-50 hover:text-blue-700 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-2 disabled:cursor-not-allowed focus:outline-none"
           >
             <ChevronLeft size={18} strokeWidth={2} />
-          </Button>
-          <Button
-            slot="next"
-            className="flex size-9 items-center justify-center rounded-lg text-muted-2 outline-offset-2 transition-colors hover:bg-blue-50 hover:text-blue-700 focus:outline-none data-[focus-visible]:outline data-[focus-visible]:outline-2 data-[focus-visible]:outline-blue-200"
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              setExtraMonths((n) =>
+                Math.min(6 - naturalSpan, n + 1),
+              )
+            }
+            disabled={visibleMonths >= 6}
+            aria-label="Показать ещё месяц"
+            className="flex size-9 items-center justify-center rounded-lg text-muted-2 transition-colors hover:bg-blue-50 hover:text-blue-700 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-muted-2 disabled:cursor-not-allowed focus:outline-none"
           >
             <ChevronRight size={18} strokeWidth={2} />
-          </Button>
+          </button>
         </header>
 
         {/* Сетки месяцев с собственными заголовками. flex-wrap, чтобы
