@@ -17,14 +17,17 @@
  *     для ячеек не нужен — мы не используем стандартный data-selected, а
  *     рисуем СВОИ цвет-зоны через className-функцию ячейки);
  *   • Три зоны: blue (start → plannedEnd), red (overdue), green (preview).
- *     v0.6.21: повторяем поведение оригинального RangeCalendar —
- *     самый левый день ВСЕГО диапазона = чёрный квадрат с rounded-l-lg
- *     (как data-selection-start), самый правый = чёрный с rounded-r-lg
- *     (data-selection-end), середина — bg-blue-200/red-200/emerald-200
- *     с rounded-none. Внутренние стыки зон (blue→red, red→ext) — НЕ
- *     края, цвет меняется, но скруглений и чёрных квадратов нет.
- *     Today — точка под цифрой если внутри зоны, ring-обводка если
- *     снаружи.
+ *     v0.6.22: edge-дни всего диапазона = чёрный квадрат (bg-ink) с
+ *     rounded-l-lg / rounded-r-lg (как data-selection-start/end в
+ *     оригинальном RangeCalendar). Середина — bg-blue-200/red-200/
+ *     emerald-200, rounded-none. Внутренние стыки зон (blue→red,
+ *     red→ext) — НЕ края: цвет меняется, чёрных квадратов нет.
+ *     Hover не действует на зональные ячейки (фон зоны не «отбеливается»
+ *     при наведении).
+ *     Today — точка под цифрой если внутри зоны, ring-обводка снаружи.
+ *   • Multi-month: visibleDuration={{months: 2..4}}. Начинаем с месяца
+ *     startKey слева → весь period виден сразу. Если drag preview
+ *     уезжает за visible — растягиваем вправо (до max 4 месяцев).
  *   • На текущем end-handle (previewEnd или plannedEnd / today-при-overdue)
  *     рендерится drag-handle справа — синяя полоска с GripVertical.
  *     onMouseDown → начинается drag. onMouseMove на grid'е находит
@@ -48,7 +51,6 @@ import {
   CalendarGrid as CalendarGridRac,
   CalendarHeaderCell as CalendarHeaderCellRac,
   Calendar as CalendarRac,
-  Heading as HeadingRac,
 } from "react-aria-components";
 import { CalendarDate } from "@internationalized/date";
 import { ChevronLeft, ChevronRight, GripVertical } from "lucide-react";
@@ -132,12 +134,14 @@ export function DragExtendCalendar({
       ? todayKey
       : plannedEndKey;
 
-  // Focus / view month: на baseEnd при первом монтировании. react-aria
-  // управляет навигацией стрелками самостоятельно через focusedValue.
+  // Focus / view month: на месяце startKey (1-го числа). В multi-month
+  // виде это даёт start слева, baseEnd справа. react-aria управляет
+  // стрелочной навигацией через focusedValue.
   const initialFocus = useMemo<CalendarDate | undefined>(() => {
-    const k = baseEndKey ?? todayKey;
-    return k ? keyToCalendarDate(k) : undefined;
-  }, [baseEndKey, todayKey]);
+    const k = startKey ?? baseEndKey ?? todayKey;
+    return k ? new CalendarDate(k.y, k.m + 1, 1) : undefined;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startKey?.y, startKey?.m]);
   const [focusedDate, setFocusedDate] = useState<CalendarDate | undefined>(
     initialFocus,
   );
@@ -151,6 +155,8 @@ export function DragExtendCalendar({
   const [dragEnd, setDragEnd] = useState<DateKey | null>(computeInitialDragEnd);
   const dragging = useRef(false);
   const gridWrapRef = useRef<HTMLDivElement | null>(null);
+  // v0.6.22: для авто-скролла во время drag (когда курсор у краёв).
+  const lastAutoScrollRef = useRef(0);
 
   // Синхронизация с initialDays извне (спиннер в drawer).
   useEffect(() => {
@@ -220,6 +226,28 @@ export function DragExtendCalendar({
   };
   const onMouseMoveGrid = (e: React.MouseEvent) => {
     if (!dragging.current) return;
+
+    // Авто-скролл когда курсор близко к правому краю — листаем focusedDate
+    // на +1 месяц каждые 400ms. Это даёт пользователю возможность тянуть
+    // продление на месяцы вперёд, даже если они изначально не видны.
+    const wrap = gridWrapRef.current;
+    if (wrap) {
+      const rect = wrap.getBoundingClientRect();
+      const now = Date.now();
+      if (e.clientX > rect.right - 60 && now - lastAutoScrollRef.current > 400) {
+        lastAutoScrollRef.current = now;
+        setFocusedDate((d) => (d ? d.add({ months: 1 }) : initialFocus));
+      } else if (
+        e.clientX < rect.left + 60 &&
+        now - lastAutoScrollRef.current > 400
+      ) {
+        lastAutoScrollRef.current = now;
+        setFocusedDate((d) =>
+          d ? d.subtract({ months: 1 }) : initialFocus,
+        );
+      }
+    }
+
     const tgt = (e.target as HTMLElement).closest(
       "[data-date]",
     ) as HTMLElement | null;
@@ -255,12 +283,12 @@ export function DragExtendCalendar({
         : "text-[15px]";
 
   /* ---- классы ячейки (наши цвет-зоны) ----
-   * v0.6.20: повторяем поведение оригинального RangeCalendar —
-   * период однотонный, скругление только на самом левом и правом краях
-   * (rounded-l-lg / rounded-r-lg), середина rounded-none. Чёрных
-   * «handle»-квадратов больше нет: они уместны только когда выбран
-   * одиночный день, не диапазон. Зона blue/red/ext различаются цветом,
-   * но образуют единый визуально-сплошной диапазон без разрывов. */
+   * v0.6.22: edge-дни всего диапазона — чёрные «handle»-квадраты
+   * (bg-ink) с rounded-l-lg / rounded-r-lg, середина — bg-blue-200/
+   * red-200/emerald-200 с rounded-none (как data-selection-start/end
+   * и .range-middle в оригинальном RangeCalendar). Hover НЕ
+   * применяется на зональных ячейках — иначе чёрные edge'и
+   * «отбеливались» бы при наведении (баг v0.6.21). */
   type Zone = "blue" | "red" | "ext" | null;
   const zoneOf = (k: DateKey): Zone => {
     const t = keyToTime(k);
@@ -280,12 +308,18 @@ export function DragExtendCalendar({
       // База — структурно как в calendar-rac.tsx, но размер свой.
       "relative flex items-center justify-center whitespace-nowrap border border-transparent p-0 font-medium text-ink outline-offset-2 duration-150 [transition-property:color,background-color,border-radius,box-shadow] focus:outline-none tabular-nums",
       fontSizeCls,
-      // react-aria состояния (hover / focus)
-      "data-[hovered]:bg-blue-50/60",
+      // focus + outside / disabled
       "data-[focus-visible]:z-10 data-[focus-visible]:outline data-[focus-visible]:outline-2 data-[focus-visible]:outline-blue-200",
       "data-[outside-month]:text-muted-2 data-[outside-month]:opacity-40",
       "data-[disabled]:opacity-30 data-[unavailable]:opacity-30",
     ];
+
+    // Hover — ТОЛЬКО для ячеек вне зоны. В зоне фон уже задан и hover
+    // не должен его перебивать (как в оригинальном RangeCalendar, где
+    // hover не действует на data-selected).
+    if (!zone) {
+      parts.push("data-[hovered]:bg-blue-50/60");
+    }
 
     if (zone) {
       // Соседи — для определения левого/правого края всего диапазона.
@@ -341,84 +375,138 @@ export function DragExtendCalendar({
   /* ---- решаем где рендерить drag-handle ---- */
   const handleAt: DateKey | null = previewEnd ?? baseEndKey;
 
+  /* ---- сколько месяцев показывать ----
+   * v0.6.22: multi-month как в эталоне (calendar-1 с numberOfMonths=2).
+   * Минимум 2 месяца. Если preview уезжает за пределы видимой области,
+   * растягиваем вправо до max 4. focusedValue определяет первый видимый
+   * месяц; стрелки prev/next двигают focus на ±visibleDuration. */
+  const focusedKey: DateKey = focusedDate
+    ? calendarDateToKey(focusedDate)
+    : startKey;
+  const previewOrBase = previewEnd ?? baseEndKey;
+  const monthsFromFocus = Math.max(
+    0,
+    previewOrBase.y * 12 + previewOrBase.m - (focusedKey.y * 12 + focusedKey.m),
+  );
+  const visibleMonths = Math.min(4, Math.max(2, monthsFromFocus + 1));
+
+  /* ---- подпись месяца с offset ---- */
+  const monthLabel = (offset: number): string => {
+    const base = focusedDate ?? initialFocus;
+    if (!base) return "";
+    const cd = base.add({ months: offset });
+    return new Date(cd.year, cd.month - 1, 1).toLocaleDateString("ru-RU", {
+      month: "long",
+      year: "numeric",
+    });
+  };
+
+  /* ---- рендер одной сетки месяца ---- */
+  const renderMonthGrid = (offset: number) => (
+    <CalendarGridRac
+      key={offset}
+      offset={offset > 0 ? { months: offset } : undefined}
+      className="shrink-0"
+    >
+      <CalendarGridHeaderRac>
+        {(day) => (
+          <CalendarHeaderCellRac
+            style={cellBoxStyle}
+            className="rounded-lg p-0 text-[11px] font-semibold uppercase tracking-wide text-muted-2"
+          >
+            {day}
+          </CalendarHeaderCellRac>
+        )}
+      </CalendarGridHeaderRac>
+      <CalendarGridBodyRac className="[&_td]:p-0">
+        {(date) => {
+          const k = calendarDateToKey(date);
+          const iso = keyToIso(k);
+          const isHandle = handleAt != null && isSame(k, handleAt);
+          return (
+            <CalendarCellRac
+              date={date}
+              data-date={iso}
+              style={cellBoxStyle}
+              className={cellClass(date)}
+            >
+              {({ formattedDate }) => (
+                <>
+                  <span className="pointer-events-none">
+                    {formattedDate || String(k.d)}
+                  </span>
+                  {isHandle && !disabled && (
+                    <button
+                      type="button"
+                      onMouseDown={startDrag}
+                      title="Тяните вправо чтобы продлить"
+                      aria-label="Продлить аренду — потяните вправо"
+                      className="absolute -right-1.5 top-1/2 z-20 -translate-y-1/2 h-7 w-3.5 rounded-r-md bg-blue-600 cursor-ew-resize flex items-center justify-center text-white hover:bg-blue-700 active:scale-110 transition-transform shadow-card-sm"
+                    >
+                      <GripVertical size={11} strokeWidth={2.5} />
+                    </button>
+                  )}
+                </>
+              )}
+            </CalendarCellRac>
+          );
+        }}
+      </CalendarGridBodyRac>
+    </CalendarGridRac>
+  );
+
   return (
     <div
       ref={gridWrapRef}
       onMouseMove={onMouseMoveGrid}
-      className="w-full select-none rounded-2xl bg-surface p-2"
+      className="w-full select-none rounded-2xl bg-surface p-2 overflow-x-auto"
     >
       <CalendarRac
         aria-label="Календарь аренды"
         className="w-full"
         focusedValue={focusedDate}
         onFocusChange={setFocusedDate}
+        // visibleDuration: пересоздаём CalendarRac при изменении числа
+        // месяцев чтобы react-aria подцепил новое значение (он берёт
+        // duration на mount). key — самый надёжный способ.
+        visibleDuration={{ months: visibleMonths }}
+        // Стрелки листают по 1 месяцу, не по visibleDuration.
+        pageBehavior="single"
         // Полностью отключаем выбор (мы рисуем свои зоны).
         isReadOnly
       >
-        {/* Шапка */}
+        {/* Шапка: prev | подписи месяцев | next */}
         <header className="flex w-full items-center gap-1 pb-1 px-1">
           <Button
             slot="previous"
-            className="flex size-10 items-center justify-center rounded-lg text-muted-2 outline-offset-2 transition-colors hover:bg-blue-50 hover:text-blue-700 focus:outline-none data-[focus-visible]:outline data-[focus-visible]:outline-2 data-[focus-visible]:outline-blue-200"
+            className="flex size-9 items-center justify-center rounded-lg text-muted-2 outline-offset-2 transition-colors hover:bg-blue-50 hover:text-blue-700 focus:outline-none data-[focus-visible]:outline data-[focus-visible]:outline-2 data-[focus-visible]:outline-blue-200"
           >
             <ChevronLeft size={18} strokeWidth={2} />
           </Button>
-          <HeadingRac className="grow text-center text-[15px] font-semibold capitalize text-ink" />
+          <div className="flex flex-1 items-center justify-between gap-4 px-2">
+            {Array.from({ length: visibleMonths }, (_, i) => (
+              <div
+                key={i}
+                className="flex-1 text-center text-[15px] font-semibold capitalize text-ink"
+              >
+                {monthLabel(i)}
+              </div>
+            ))}
+          </div>
           <Button
             slot="next"
-            className="flex size-10 items-center justify-center rounded-lg text-muted-2 outline-offset-2 transition-colors hover:bg-blue-50 hover:text-blue-700 focus:outline-none data-[focus-visible]:outline data-[focus-visible]:outline-2 data-[focus-visible]:outline-blue-200"
+            className="flex size-9 items-center justify-center rounded-lg text-muted-2 outline-offset-2 transition-colors hover:bg-blue-50 hover:text-blue-700 focus:outline-none data-[focus-visible]:outline data-[focus-visible]:outline-2 data-[focus-visible]:outline-blue-200"
           >
             <ChevronRight size={18} strokeWidth={2} />
           </Button>
         </header>
 
-        {/* Сетка */}
-        <CalendarGridRac className="w-full">
-          <CalendarGridHeaderRac>
-            {(day) => (
-              <CalendarHeaderCellRac
-                style={cellBoxStyle}
-                className="rounded-lg p-0 text-[11px] font-semibold uppercase tracking-wide text-muted-2"
-              >
-                {day}
-              </CalendarHeaderCellRac>
-            )}
-          </CalendarGridHeaderRac>
-          <CalendarGridBodyRac className="[&_td]:p-0">
-            {(date) => {
-              const k = calendarDateToKey(date);
-              const iso = keyToIso(k);
-              const isHandle = handleAt != null && isSame(k, handleAt);
-              return (
-                <CalendarCellRac
-                  date={date}
-                  data-date={iso}
-                  style={cellBoxStyle}
-                  className={cellClass(date)}
-                >
-                  {({ formattedDate }) => (
-                    <>
-                      <span className="pointer-events-none">
-                        {formattedDate || String(k.d)}
-                      </span>
-                      {isHandle && !disabled && (
-                        <button
-                          type="button"
-                          onMouseDown={startDrag}
-                          title="Тяните вправо чтобы продлить"
-                          aria-label="Продлить аренду — потяните вправо"
-                          className="absolute -right-1.5 top-1/2 z-20 -translate-y-1/2 h-7 w-3.5 rounded-r-md bg-blue-600 cursor-ew-resize flex items-center justify-center text-white hover:bg-blue-700 active:scale-110 transition-transform shadow-card-sm"
-                        >
-                          <GripVertical size={11} strokeWidth={2.5} />
-                        </button>
-                      )}
-                    </>
-                  )}
-                </CalendarCellRac>
-              );
-            }}
-          </CalendarGridBodyRac>
-        </CalendarGridRac>
+        {/* Сетка(и) — рядом по горизонтали */}
+        <div className="flex gap-4 items-start">
+          {Array.from({ length: visibleMonths }, (_, i) =>
+            renderMonthGrid(i),
+          )}
+        </div>
       </CalendarRac>
 
       {/* Подсказка-плашка во время / после drag */}
