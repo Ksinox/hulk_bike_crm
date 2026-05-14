@@ -65,6 +65,7 @@ export function PaymentAcceptDialog({
   onClose,
   onPaid,
   initialExtDays,
+  onExtDaysChange,
   liftedFromRect,
 }: {
   rental: Rental;
@@ -77,6 +78,13 @@ export function PaymentAcceptDialog({
    * в поле «Продлить на N дней» и в overpay-блоке «В продление».
    */
   initialExtDays?: number;
+  /**
+   * v0.6.24: callback наверх при изменении extDays через input/
+   * spinner/quick-pills/amount. Используется RentalCard'ом для
+   * пересинхронизации календаря в карточке (баг v0.6.23: input
+   * менялся, календарь не реагировал).
+   */
+  onExtDaysChange?: (days: number) => void;
   /**
    * v0.6.13: исходная позиция оригинального CalendarPanel в карточке
    * аренды. Используется для FLIP-анимации: floating-копия календаря
@@ -374,6 +382,16 @@ export function PaymentAcceptDialog({
   const extInputBase = Math.max(0, extInputOverride ?? 0);
   const extDays = extIsWeekly ? extInputBase * 7 : extInputBase;
   const extWeeks = extIsWeekly ? extInputBase : 0;
+
+  // v0.6.24: сообщаем наверх когда extDays меняется — родитель
+  // (RentalCard) пересинхронизирует календарь в карточке. Защита от
+  // петли: useEffect диалога обновляет extInputOverride только если
+  // initialExtDays реально меняется; setState с тем же значением
+  // React пропускает.
+  useEffect(() => {
+    onExtDaysChange?.(extDays);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [extDays]);
   // v0.6.13: tariffPeriod для extend-inplace.
   //   - custom + week → 'week'
   //   - custom + day → periodForDays(extDays) (бэкенд enum принимает short/week/month)

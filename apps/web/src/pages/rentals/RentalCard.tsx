@@ -799,13 +799,16 @@ export function RentalCard({
     }
   };
 
-  /** v0.6.1: drag-to-extend на основном календаре. Открывает обычный
-   *  PaymentAcceptDialog, но с предзаполненным числом дней. */
+  /** v0.6.24: click-to-extend на основном календаре. Click по дню
+   *  > baseEnd → открыть PaymentAcceptDialog с предзаполненным числом
+   *  дней. Click <= baseEnd → days=0, ничего не открываем; если диалог
+   *  уже открыт, сбросим prefill (он отзовётся в side panel). */
   const handleCommitExtend = (days: number) => {
     if (!isLive) return;
-    if (days <= 0) return;
-    setPaymentPrefillExtDays(days);
-    setPaymentRentalId(rental.id);
+    setPaymentPrefillExtDays(Math.max(0, days));
+    if (days > 0 && paymentRentalId == null) {
+      setPaymentRentalId(rental.id);
+    }
   };
 
   const handleComplete = () => {
@@ -994,12 +997,20 @@ export function RentalCard({
             onCommitExtend={isLive ? handleCommitExtend : undefined}
             calendarBoxRef={calendarBoxRef}
             // v0.6.16: card calendar = PRIMARY controller. Не прячем
-            // когда открыт side panel — оператор продолжает таскать
-            // ручку календаря в карточке, side panel live обновляется.
+            // когда открыт side panel — оператор продолжает кликать
+            // на дни в карточке, side panel live обновляется.
             hideCalendar={false}
             // v0.6.17: сигнал для сброса зелёной preview-зоны (при
             // закрытии PaymentAcceptDialog оператором).
             resetSignal={calendarResetSignal}
+            // v0.6.24: когда диалог открыт — синхронизируем preview-зону
+            // календаря с количеством дней продления из диалога.
+            // initialExtDays меняется, когда оператор правит input/
+            // spinner в side panel — onExtDaysChange callback обновляет
+            // paymentPrefillExtDays.
+            initialExtDays={
+              paymentRentalId != null ? paymentPrefillExtDays : undefined
+            }
           />
           <HistoryStrip
             items={activityItems}
@@ -1089,6 +1100,10 @@ export function RentalCard({
         <PaymentAcceptDialogContainer
           rentalId={paymentRentalId}
           initialExtDays={paymentPrefillExtDays || undefined}
+          // v0.6.24: при изменении extDays в диалоге (input/spinner/
+          // quick-pills/amount) обновляем prefill — CalendarPanel
+          // пересчитает preview-зону календаря.
+          onExtDaysChange={setPaymentPrefillExtDays}
           liftedFromRect={liftedFromRect}
           onClose={() => {
             setPaymentRentalId(null);
@@ -1197,11 +1212,14 @@ function PaymentAcceptDialogContainer({
   rentalId,
   onClose,
   initialExtDays,
+  onExtDaysChange,
   liftedFromRect,
 }: {
   rentalId: number;
   onClose: () => void;
   initialExtDays?: number;
+  /** v0.6.24: callback для синхронизации календаря в карточке. */
+  onExtDaysChange?: (days: number) => void;
   liftedFromRect?: {
     top: number;
     left: number;
@@ -1217,6 +1235,7 @@ function PaymentAcceptDialogContainer({
       rental={r}
       onClose={onClose}
       initialExtDays={initialExtDays}
+      onExtDaysChange={onExtDaysChange}
       liftedFromRect={liftedFromRect}
       onPaid={() => {
         /* invalidations происходят в dialog'е */

@@ -44,10 +44,11 @@ export function CalendarPanel({
   calendarBoxRef,
   hideCalendar,
   resetSignal,
+  initialExtDays,
 }: {
   rental: Rental;
   effectiveStatus: RentalStatus;
-  /** Вызывается на mouse-up после drag, если выбрано > 0 дней. */
+  /** v0.6.24: вызывается на click по дню > baseEnd с числом дней. */
   onCommitExtend?: (days: number) => void;
   /** v0.6.13: ref на обёртку DragExtendCalendar — нужен для FLIP-измерения
    *  начальной позиции при подъёме календаря в floating-режим. */
@@ -58,6 +59,9 @@ export function CalendarPanel({
   hideCalendar?: boolean;
   /** v0.6.17: сигнал родителя для сброса зелёной preview-зоны. */
   resetSignal?: number;
+  /** v0.6.24: текущее число дней продления из PaymentAcceptDialog
+   *  (когда диалог открыт). Синхронизирует календарь с input'ом. */
+  initialExtDays?: number;
 }) {
   const startIso = ruToIso(rental.start);
   const endIso = ruToIso(rental.endPlanned);
@@ -114,6 +118,7 @@ export function CalendarPanel({
             onCommitExtend={onCommitExtend}
             resetSignal={resetSignal}
             disabled={dragDisabled}
+            initialDays={initialExtDays}
           />
         </div>
       )}

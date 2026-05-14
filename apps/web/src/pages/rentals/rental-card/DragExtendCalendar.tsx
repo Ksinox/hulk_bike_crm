@@ -1,49 +1,35 @@
 /**
- * DragExtendCalendar v0.6.18 — переписан на react-aria-components.
+ * DragExtendCalendar v0.6.24 — click-to-extend calendar.
  *
  * База: apps/web/src/components/ui/calendar-rac.tsx (оригинальный shadcn-
- * адаптированный компонент). Здесь та же структура:
- *   <CalendarRac>
- *     <CalendarHeader /> — Button slot="previous" + HeadingRac + Button slot="next"
- *     <CalendarGridRac>
- *       <CalendarGridHeaderRac>{...}</CalendarGridHeaderRac>
- *       <CalendarGridBodyRac>{(date) => <CalendarCellRac date={date} className={fn} />}</CalendarGridBodyRac>
- *     </CalendarGridRac>
- *   </CalendarRac>
+ * адаптированный компонент на react-aria-components). Здесь та же
+ * структура; внешние пропсы совместимы с предыдущими версиями.
  *
- * Отличия от calendar-rac.tsx:
- *   • Размер ячейки size-11 (44px) вместо size-9; шрифт text-[15px];
- *   • Selection полностью выключен (defaultValue не задан + visuallyDisabled
- *     для ячеек не нужен — мы не используем стандартный data-selected, а
- *     рисуем СВОИ цвет-зоны через className-функцию ячейки);
- *   • Три зоны: blue (start → plannedEnd), red (overdue), green (preview).
- *     v0.6.22: edge-дни всего диапазона = чёрный квадрат (bg-ink) с
+ * Особенности:
+ *   • Drag-to-extend УБРАН (v0.6.24). Продление выбирается одним
+ *     кликом по нужной дате (как в оригинальном RangeCalendar).
+ *     Click на день > baseEnd → новый preview-конец продления +
+ *     onCommitExtend(days). Click на baseEnd или ранее → сброс.
+ *   • Three zones: blue (start → plannedEnd), red (overdue), green
+ *     (preview). Edge-дни ВСЕГО диапазона = чёрные «handle» с
  *     rounded-l-lg / rounded-r-lg (как data-selection-start/end в
- *     оригинальном RangeCalendar). Середина — bg-blue-200/red-200/
- *     emerald-200, rounded-none. Внутренние стыки зон (blue→red,
- *     red→ext) — НЕ края: цвет меняется, чёрных квадратов нет.
- *     Hover не действует на зональные ячейки (фон зоны не «отбеливается»
- *     при наведении).
- *     Today — точка под цифрой если внутри зоны, ring-обводка снаружи.
- *   • Multi-month: visibleDuration={{months: 1..4}}. По умолчанию 1
- *     месяц (когда зона помещается в текущий), 2 — если уходит на
- *     следующий, 3+ — дальше. Растягиваем вправо при drag preview;
- *     авто-скролл фокуса когда курсор близок к правому/левому краю.
- *   • На текущем end-handle (previewEnd или plannedEnd / today-при-overdue)
- *     рендерится drag-handle справа — синяя полоска с GripVertical.
- *     onMouseDown → начинается drag. onMouseMove на grid'е находит
- *     ячейку под курсором через [data-date]-атрибут (передаётся как
- *     обычный data-attr на CalendarCellRac, который пробрасывает его
- *     на td). По iso дате считаем delta и обновляем preview.
- *   • После mouse-up preview ОСТАЁТСЯ (v0.6.17 поведение): сбрасывается
- *     только resetSignal'ом от родителя или новым drag'ом.
- *
- * Внешний интерфейс полностью совместим с предыдущей реализацией —
- * CalendarPanel и RentalCard работают без правок.
+ *     оригинале), middle — bg-blue-200/red-200/emerald-200 с
+ *     rounded-none. Внутренние стыки зон НЕ края (диапазон визуально
+ *     сплошной).
+ *   • Hover не действует на зональные ячейки (фон не «отбеливается»).
+ *   • Today: точка под цифрой если в зоне, ring-обводка снаружи.
+ *   • Multi-month: visibleDuration={{months: 1..4}}. Показываем столько
+ *     месяцев, чтобы вся зона (от focusedKey до preview ?? baseEnd)
+ *     умещалась. Минимум 1 (период в одном месяце), 2 — если уходит
+ *     на следующий, 3+ — дальше.
+ *   • initialDays (контролируется родителем, например PaymentAcceptDialog
+ *     через RentalCard): синхронизирует preview-конец с input'ом
+ *     продления — изменил число дней в диалоге, календарь сразу
+ *     обновился.
  */
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Button,
   CalendarCell as CalendarCellRac,
@@ -54,7 +40,7 @@ import {
   Calendar as CalendarRac,
 } from "react-aria-components";
 import { CalendarDate } from "@internationalized/date";
-import { ChevronLeft, ChevronRight, GripVertical } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /* ---------- helpers ------------------------------------------------------ */
@@ -89,8 +75,7 @@ function fromJsDate(dt: Date): DateKey {
 /* ---------- component ---------------------------------------------------- */
 
 /**
- * Размер ячейки. По умолчанию 11 (44px) — основной размер v0.6.18.
- * Можно увеличить до 13 в drawer-открытии (overlay paradigm).
+ * Размер ячейки.  По умолчанию 11 (44px). 13 — для drawer (overlay).
  */
 type CellSize = 9 | 11 | 13;
 
@@ -110,8 +95,16 @@ export function DragExtendCalendar({
   plannedEndIso: string;
   isOverdue: boolean;
   dailyRate?: number;
+  /** Вызывается при click на день > baseEnd с числом дней продления. */
   onCommitExtend?: (days: number) => void;
+  /** Вызывается при каждом изменении preview (синхрон с initialDays). */
   onPreviewExtend?: (days: number) => void;
+  /**
+   * Внешнее число дней продления (например, из PaymentAcceptDialog).
+   * Меняется → preview мгновенно подтягивается. Это решает баг
+   * v0.6.23 когда изменение input в диалоге не отражалось на
+   * календаре.
+   */
   initialDays?: number;
   resetSignal?: number;
   disabled?: boolean;
@@ -132,9 +125,8 @@ export function DragExtendCalendar({
       ? todayKey
       : plannedEndKey;
 
-  // Focus / view month: на месяце startKey (1-го числа). В multi-month
-  // виде это даёт start слева, baseEnd справа. react-aria управляет
-  // стрелочной навигацией через focusedValue.
+  // Focus / view month: 1-го числа месяца startKey (multi-month layout
+  // покажет start слева, end/preview справа).
   const initialFocus = useMemo<CalendarDate | undefined>(() => {
     const k = startKey ?? baseEndKey ?? todayKey;
     return k ? new CalendarDate(k.y, k.m + 1, 1) : undefined;
@@ -144,53 +136,34 @@ export function DragExtendCalendar({
     initialFocus,
   );
 
-  // Preview drag-end.
-  const computeInitialDragEnd = (): DateKey | null => {
+  // Preview-конец продления (state, контролируется click'ом или initialDays).
+  const computeInitialPreview = (): DateKey | null => {
     if (!initialDays || initialDays <= 0 || !baseEndKey) return null;
     const dt = new Date(baseEndKey.y, baseEndKey.m, baseEndKey.d + initialDays);
     return fromJsDate(dt);
   };
-  const [dragEnd, setDragEnd] = useState<DateKey | null>(computeInitialDragEnd);
-  const dragging = useRef(false);
-  const gridWrapRef = useRef<HTMLDivElement | null>(null);
-  // v0.6.22: для авто-скролла во время drag (когда курсор у краёв).
-  const lastAutoScrollRef = useRef(0);
+  const [previewEnd, setPreviewEnd] = useState<DateKey | null>(
+    computeInitialPreview,
+  );
 
-  // Синхронизация с initialDays извне (спиннер в drawer).
+  // Синхронизация с initialDays извне (input в PaymentAcceptDialog / drawer).
+  // Это решает баг v0.6.23 — изменение в input не реактивно обновляло
+  // календарь, потому что хук стоял на dragging.current.
   useEffect(() => {
-    if (dragging.current) return;
-    if (!initialDays || initialDays <= 0 || !baseEndKey) {
-      setDragEnd(null);
+    if (!baseEndKey) return;
+    if (initialDays == null || initialDays <= 0) {
+      setPreviewEnd(null);
       return;
     }
     const dt = new Date(baseEndKey.y, baseEndKey.m, baseEndKey.d + initialDays);
-    setDragEnd(fromJsDate(dt));
+    setPreviewEnd(fromJsDate(dt));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialDays]);
 
-  // mouse-up глобально.
-  useEffect(() => {
-    const onUp = () => {
-      if (!dragging.current) return;
-      dragging.current = false;
-      document.body.classList.remove("select-none");
-      const days = dragEnd && baseEndKey ? diffDays(baseEndKey, dragEnd) : 0;
-      if (days > 0) {
-        onCommitExtend?.(days);
-        // preview остаётся (v0.6.17)
-      } else {
-        setDragEnd(null);
-      }
-    };
-    window.addEventListener("mouseup", onUp);
-    return () => window.removeEventListener("mouseup", onUp);
-  }, [dragEnd, baseEndKey, onCommitExtend]);
-
-  // resetSignal от родителя → стираем preview-зону.
+  // resetSignal от родителя → стираем preview.
   useEffect(() => {
     if (resetSignal === undefined) return;
-    if (dragging.current) return;
-    setDragEnd(null);
+    setPreviewEnd(null);
     onPreviewExtend?.(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resetSignal]);
@@ -208,44 +181,16 @@ export function DragExtendCalendar({
   const plannedT = keyToTime(plannedEndKey);
   const baseT = keyToTime(baseEndKey);
   const todayT = keyToTime(todayKey);
-  const previewEnd = dragEnd;
   const previewT = previewEnd ? keyToTime(previewEnd) : null;
   const previewDays = previewEnd ? diffDays(baseEndKey, previewEnd) : 0;
   const previewSum =
     dailyRate && previewDays > 0 ? dailyRate * previewDays : null;
 
-  /* ---- drag handlers ---- */
-  const startDrag = (e: React.MouseEvent) => {
+  /* ---- click handler (через делегирование на корневой div) ----
+   * v0.6.24: drag убран. Click на день > baseEnd → новый preview-конец
+   * продления + commit. Click на baseEnd или ранее → сброс. */
+  const onClickGrid = (e: React.MouseEvent) => {
     if (disabled) return;
-    e.preventDefault();
-    e.stopPropagation();
-    dragging.current = true;
-    document.body.classList.add("select-none");
-  };
-  const onMouseMoveGrid = (e: React.MouseEvent) => {
-    if (!dragging.current) return;
-
-    // Авто-скролл когда курсор близко к правому краю — листаем focusedDate
-    // на +1 месяц каждые 400ms. Это даёт пользователю возможность тянуть
-    // продление на месяцы вперёд, даже если они изначально не видны.
-    const wrap = gridWrapRef.current;
-    if (wrap) {
-      const rect = wrap.getBoundingClientRect();
-      const now = Date.now();
-      if (e.clientX > rect.right - 60 && now - lastAutoScrollRef.current > 400) {
-        lastAutoScrollRef.current = now;
-        setFocusedDate((d) => (d ? d.add({ months: 1 }) : initialFocus));
-      } else if (
-        e.clientX < rect.left + 60 &&
-        now - lastAutoScrollRef.current > 400
-      ) {
-        lastAutoScrollRef.current = now;
-        setFocusedDate((d) =>
-          d ? d.subtract({ months: 1 }) : initialFocus,
-        );
-      }
-    }
-
     const tgt = (e.target as HTMLElement).closest(
       "[data-date]",
     ) as HTMLElement | null;
@@ -256,18 +201,17 @@ export function DragExtendCalendar({
     if (!k) return;
     const delta = diffDays(baseEndKey, k);
     if (delta <= 0) {
-      setDragEnd(null);
+      setPreviewEnd(null);
       onPreviewExtend?.(0);
+      onCommitExtend?.(0);
       return;
     }
-    setDragEnd(k);
+    setPreviewEnd(k);
     onPreviewExtend?.(delta);
+    onCommitExtend?.(delta);
   };
 
-  /* ---- размеры ----
-   * cellSize задаёт сторону ячейки в кратных к 4px (tailwind unit).
-   * Используем inline-style чтобы поддержать произвольный размер
-   * (включая 13 = 52px, которого нет в дефолтном tailwind). */
+  /* ---- размеры ---- */
   const cellPx = cellSize === 13 ? 52 : cellSize === 9 ? 36 : 44;
   const cellBoxStyle: React.CSSProperties = {
     width: cellPx,
@@ -281,16 +225,14 @@ export function DragExtendCalendar({
         : "text-[15px]";
 
   /* ---- классы ячейки (наши цвет-зоны) ----
-   * v0.6.22: edge-дни всего диапазона — чёрные «handle»-квадраты
-   * (bg-ink) с rounded-l-lg / rounded-r-lg, середина — bg-blue-200/
-   * red-200/emerald-200 с rounded-none (как data-selection-start/end
-   * и .range-middle в оригинальном RangeCalendar). Hover НЕ
-   * применяется на зональных ячейках — иначе чёрные edge'и
-   * «отбеливались» бы при наведении (баг v0.6.21). */
+   * Edge-дни всего диапазона — чёрные «handle» (bg-ink) с rounded-l-lg
+   * / rounded-r-lg (как data-selection-start/end в оригинальном
+   * RangeCalendar). Середина — bg-blue-200/red-200/emerald-200 с
+   * rounded-none. Hover НЕ применяется на зональных ячейках. */
   type Zone = "blue" | "red" | "ext" | null;
   const zoneOf = (k: DateKey): Zone => {
     const t = keyToTime(k);
-    // ext имеет приоритет (он перекрывает день после plannedEnd)
+    // ext имеет приоритет (перекрывает день после plannedEnd)
     if (previewT != null && t > baseT && t <= previewT) return "ext";
     if (isOverdue && t > plannedT && t <= todayT) return "red";
     if (t >= startT && t <= plannedT) return "blue";
@@ -303,33 +245,29 @@ export function DragExtendCalendar({
     const isTodayCell = isSame(k, todayKey);
 
     const parts: string[] = [
-      // База — структурно как в calendar-rac.tsx, но размер свой.
+      // База — структурно как в calendar-rac.tsx, но с нашим размером.
       "relative flex items-center justify-center whitespace-nowrap border border-transparent p-0 font-medium text-ink outline-offset-2 duration-150 [transition-property:color,background-color,border-radius,box-shadow] focus:outline-none tabular-nums",
       fontSizeCls,
       // focus + outside / disabled
       "data-[focus-visible]:z-10 data-[focus-visible]:outline data-[focus-visible]:outline-2 data-[focus-visible]:outline-blue-200",
       "data-[outside-month]:text-muted-2 data-[outside-month]:opacity-40",
       "data-[disabled]:opacity-30 data-[unavailable]:opacity-30",
+      // Cursor — кликабельный когда не disabled.
+      disabled ? "" : "cursor-pointer",
     ];
 
-    // Hover — ТОЛЬКО для ячеек вне зоны. В зоне фон уже задан и hover
-    // не должен его перебивать (как в оригинальном RangeCalendar, где
-    // hover не действует на data-selected).
+    // Hover — только для ячеек вне зоны.
     if (!zone) {
       parts.push("data-[hovered]:bg-blue-50/60");
     }
 
     if (zone) {
-      // Соседи — для определения левого/правого края всего диапазона.
-      // Внутренние стыки зон (blue→red, red→ext) НЕ считаются краями.
       const prevK = fromJsDate(new Date(k.y, k.m, k.d - 1));
       const nextK = fromJsDate(new Date(k.y, k.m, k.d + 1));
       const isLeftEdge = zoneOf(prevK) == null;
       const isRightEdge = zoneOf(nextK) == null;
       const isEdge = isLeftEdge || isRightEdge;
 
-      // Цвет: на edge-днях — чёрный «handle» (как data-selection-start/end
-      // в оригинальном RangeCalendar). В середине — фон зоны.
       const colorCls = isEdge
         ? "bg-ink text-white"
         : zone === "blue"
@@ -338,8 +276,6 @@ export function DragExtendCalendar({
             ? "bg-red-200 text-red-900"
             : "bg-emerald-200 text-emerald-900";
 
-      // Скругления — только на крайних днях диапазона; одиночный день =
-      // полное скругление (как в оригинальном RangeCalendar).
       const roundCls =
         isLeftEdge && isRightEdge
           ? "rounded-lg"
@@ -351,12 +287,9 @@ export function DragExtendCalendar({
 
       parts.push(colorCls, roundCls);
     } else {
-      // Не в зоне — стандартное скругление как у обычных ячеек.
       parts.push("rounded-lg");
     }
 
-    // TODAY — если внутри зоны: маленькая точка под цифрой (как в
-    // оригинале); если снаружи: ring-обводка.
     if (isTodayCell) {
       if (zone) {
         parts.push(
@@ -370,16 +303,12 @@ export function DragExtendCalendar({
     return cn(...parts);
   };
 
-  /* ---- решаем где рендерить drag-handle ---- */
-  const handleAt: DateKey | null = previewEnd ?? baseEndKey;
-
   /* ---- сколько месяцев показывать ----
-   * v0.6.23: динамически. Минимум 1 (если весь период умещается в
-   * текущий месяц), 2 — если зона перетекает на следующий, 3+ — дальше.
-   * Считаем по самой правой точке зоны (preview ?? baseEnd) — сколько
-   * месяцев от focusedDate до неё. focusedValue определяет левый
-   * видимый месяц; стрелки prev/next двигают его на ±1 месяц
-   * (pageBehavior="single"). */
+   * v0.6.24: считаем по правому краю зоны (preview ?? baseEnd). Min 1
+   * месяц (период умещается в один), 2 — если уходит на следующий,
+   * 3+ — дальше. Max 4 для безопасности layout'a. focusedValue
+   * определяет левый видимый месяц; стрелки prev/next двигают его на
+   * ±1 месяц (pageBehavior="single"). */
   const focusedKey: DateKey = focusedDate
     ? calendarDateToKey(focusedDate)
     : startKey;
@@ -422,7 +351,6 @@ export function DragExtendCalendar({
         {(date) => {
           const k = calendarDateToKey(date);
           const iso = keyToIso(k);
-          const isHandle = handleAt != null && isSame(k, handleAt);
           return (
             <CalendarCellRac
               date={date}
@@ -431,22 +359,9 @@ export function DragExtendCalendar({
               className={cellClass(date)}
             >
               {({ formattedDate }) => (
-                <>
-                  <span className="pointer-events-none">
-                    {formattedDate || String(k.d)}
-                  </span>
-                  {isHandle && !disabled && (
-                    <button
-                      type="button"
-                      onMouseDown={startDrag}
-                      title="Тяните вправо чтобы продлить"
-                      aria-label="Продлить аренду — потяните вправо"
-                      className="absolute -right-1.5 top-1/2 z-20 -translate-y-1/2 h-7 w-3.5 rounded-r-md bg-blue-600 cursor-ew-resize flex items-center justify-center text-white hover:bg-blue-700 active:scale-110 transition-transform shadow-card-sm"
-                    >
-                      <GripVertical size={11} strokeWidth={2.5} />
-                    </button>
-                  )}
-                </>
+                <span className="pointer-events-none">
+                  {formattedDate || String(k.d)}
+                </span>
               )}
             </CalendarCellRac>
           );
@@ -457,22 +372,19 @@ export function DragExtendCalendar({
 
   return (
     <div
-      ref={gridWrapRef}
-      onMouseMove={onMouseMoveGrid}
-      className="w-full select-none rounded-2xl bg-surface p-2 overflow-x-auto"
+      onClick={onClickGrid}
+      className="w-full rounded-2xl bg-surface p-2 overflow-x-auto"
     >
       <CalendarRac
         aria-label="Календарь аренды"
         className="w-full"
         focusedValue={focusedDate}
         onFocusChange={setFocusedDate}
-        // visibleDuration: пересоздаём CalendarRac при изменении числа
-        // месяцев чтобы react-aria подцепил новое значение (он берёт
-        // duration на mount). key — самый надёжный способ.
         visibleDuration={{ months: visibleMonths }}
         // Стрелки листают по 1 месяцу, не по visibleDuration.
         pageBehavior="single"
-        // Полностью отключаем выбор (мы рисуем свои зоны).
+        // Полностью отключаем стандартный select (мы сами обрабатываем
+        // клик через делегирование на корневой div).
         isReadOnly
       >
         {/* Шапка: prev | подписи месяцев | next */}
@@ -509,7 +421,7 @@ export function DragExtendCalendar({
         </div>
       </CalendarRac>
 
-      {/* Подсказка-плашка во время / после drag */}
+      {/* Подсказка-плашка во время / после выбора дня продления */}
       {previewDays > 0 && (
         <div className="mt-2 mx-1 rounded-[10px] bg-emerald-50 border border-emerald-200 px-3 py-2 text-[11.5px] text-emerald-700 flex items-center justify-between gap-3">
           <div>
@@ -538,7 +450,7 @@ export function DragExtendCalendar({
         <Legend swatch="bg-emerald-200" label="продление" />
         {!disabled && (
           <div className="ml-auto inline-flex items-center gap-1 text-blue-700 font-semibold">
-            <GripVertical size={10} /> тяните за ручку
+            кликните на день — продлить
           </div>
         )}
       </div>
@@ -554,4 +466,3 @@ function Legend({ swatch, label }: { swatch: string; label: string }) {
     </div>
   );
 }
-
