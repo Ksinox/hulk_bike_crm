@@ -234,6 +234,9 @@ export function RentalCard({
   const [overdueAnchor, setOverdueAnchor] = useState<DOMRect | null>(null);
   // ── prefill для PaymentAcceptDialog (drag-to-extend) ─────────────
   const [paymentPrefillExtDays, setPaymentPrefillExtDays] = useState<number>(0);
+  // v0.6.17: сигнал для DragExtendCalendar — сбросить зелёную preview-зону.
+  // Инкрементим при закрытии PaymentAcceptDialog без подтверждения.
+  const [calendarResetSignal, setCalendarResetSignal] = useState<number>(0);
   // ── FLIP-анимация календаря (v0.6.13) ─────────────────────────────
   // Когда открывается PaymentAcceptDialog — измеряем bounding rect
   // оригинального CalendarPanel и пробрасываем его в диалог.
@@ -968,6 +971,9 @@ export function RentalCard({
             // когда открыт side panel — оператор продолжает таскать
             // ручку календаря в карточке, side panel live обновляется.
             hideCalendar={false}
+            // v0.6.17: сигнал для сброса зелёной preview-зоны (при
+            // закрытии PaymentAcceptDialog оператором).
+            resetSignal={calendarResetSignal}
           />
           <HistoryStrip
             items={activityItems}
@@ -1061,6 +1067,9 @@ export function RentalCard({
           onClose={() => {
             setPaymentRentalId(null);
             setPaymentPrefillExtDays(0);
+            // v0.6.17: оператор закрыл side panel без подтверждения →
+            // сбросим зелёную preview-зону на календаре.
+            setCalendarResetSignal((n) => n + 1);
           }}
         />
       )}

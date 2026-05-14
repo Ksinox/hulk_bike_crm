@@ -43,6 +43,7 @@ export function CalendarPanel({
   onCommitExtend,
   calendarBoxRef,
   hideCalendar,
+  resetSignal,
 }: {
   rental: Rental;
   effectiveStatus: RentalStatus;
@@ -55,6 +56,8 @@ export function CalendarPanel({
    *  чтобы не дублировать с floating-копией. Сохраняем место в layout, чтобы
    *  карточка не «дёргалась». */
   hideCalendar?: boolean;
+  /** v0.6.17: сигнал родителя для сброса зелёной preview-зоны. */
+  resetSignal?: number;
 }) {
   const startIso = ruToIso(rental.start);
   const endIso = ruToIso(rental.endPlanned);
@@ -109,6 +112,7 @@ export function CalendarPanel({
             isOverdue={isOverdue}
             dailyRate={dailyRate}
             onCommitExtend={onCommitExtend}
+            resetSignal={resetSignal}
             disabled={dragDisabled}
           />
         </div>

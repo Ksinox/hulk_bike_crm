@@ -88,6 +88,18 @@ export function DragExtendCalendar({
    * при первом монтировании floating-календаря, когда extDays>0 уже
    * выбран через спиннер в drawer'е. */
   initialDays,
+  /**
+   * v0.6.17: «сигнал сброса» preview-зоны. Родитель меняет это значение
+   * (любое — обычно incrementing number), когда нужно стереть зелёную
+   * зону (закрытие PaymentAcceptDialog без подтверждения). После
+   * mouse-up preview ОСТАЁТСЯ на месте до тех пор, пока:
+   *   • оператор не подтвердит оплату (commitExtend → переоткрытие
+   *     карточки с новым plannedEnd — зона сама становится «обычной» синей);
+   *   • оператор не закроет side panel (родитель меняет resetSignal,
+   *     preview очищается);
+   *   • оператор не начнёт новый drag (локально перетирается).
+   */
+  resetSignal,
   /** Опционально, чтобы заблокировать drag (например, в архивных). */
   disabled,
 }: {
@@ -98,6 +110,7 @@ export function DragExtendCalendar({
   onCommitExtend?: (days: number) => void;
   onPreviewExtend?: (days: number) => void;
   initialDays?: number;
+  resetSignal?: number;
   disabled?: boolean;
 }) {
   const startKey = isoToKey(startIso);
@@ -135,6 +148,9 @@ export function DragExtendCalendar({
   }, [initialDays]);
 
   // mouse-up глобально — даже если отпустить вне сетки
+  // v0.6.17: после mouse-up preview ОСТАЁТСЯ на месте (не сбрасываем
+  // dragEnd). Зелёная зона очистится только через resetSignal от
+  // родителя (закрытие PaymentAcceptDialog) либо через новый drag.
   useEffect(() => {
     const onUp = () => {
       if (!dragging.current) return;
@@ -143,12 +159,26 @@ export function DragExtendCalendar({
       const days = dragEnd && baseEndKey ? diffDays(baseEndKey, dragEnd) : 0;
       if (days > 0) {
         onCommitExtend?.(days);
+        // не сбрасываем dragEnd — preview сохраняется до закрытия panel
+      } else {
+        // drag без новых дней — preview сбрасывается, как было раньше
+        setDragEnd(null);
       }
-      setDragEnd(null);
     };
     window.addEventListener("mouseup", onUp);
     return () => window.removeEventListener("mouseup", onUp);
   }, [dragEnd, baseEndKey, onCommitExtend]);
+
+  // v0.6.17: сброс preview-зоны по сигналу от родителя.
+  // Срабатывает когда RentalCard инкрементирует resetSignal — например,
+  // оператор закрыл PaymentAcceptDialog без подтверждения.
+  useEffect(() => {
+    if (resetSignal === undefined) return;
+    if (dragging.current) return;
+    setDragEnd(null);
+    onPreviewExtend?.(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resetSignal]);
 
   if (!startKey || !plannedEndKey || !baseEndKey) {
     return (
