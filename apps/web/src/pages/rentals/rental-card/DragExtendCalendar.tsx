@@ -373,7 +373,7 @@ export function DragExtendCalendar({
   return (
     <div
       onClick={onClickGrid}
-      className="w-full rounded-2xl bg-surface p-2 overflow-x-auto"
+      className="w-full rounded-2xl bg-surface p-2"
     >
       <CalendarRac
         aria-label="Календарь аренды"
@@ -387,24 +387,16 @@ export function DragExtendCalendar({
         // клик через делегирование на корневой div).
         isReadOnly
       >
-        {/* Шапка: prev | подписи месяцев | next */}
-        <header className="flex w-full items-center gap-1 pb-1 px-1">
+        {/* Шапка: prev | spacer | next (без названий месяцев — они
+            подписями над каждой сеткой ниже, чтобы flex-wrap работал
+            корректно при недостатке ширины). */}
+        <header className="flex w-full items-center justify-between gap-1 pb-1 px-1">
           <Button
             slot="previous"
             className="flex size-9 items-center justify-center rounded-lg text-muted-2 outline-offset-2 transition-colors hover:bg-blue-50 hover:text-blue-700 focus:outline-none data-[focus-visible]:outline data-[focus-visible]:outline-2 data-[focus-visible]:outline-blue-200"
           >
             <ChevronLeft size={18} strokeWidth={2} />
           </Button>
-          <div className="flex flex-1 items-center justify-between gap-4 px-2">
-            {Array.from({ length: visibleMonths }, (_, i) => (
-              <div
-                key={i}
-                className="flex-1 text-center text-[15px] font-semibold capitalize text-ink"
-              >
-                {monthLabel(i)}
-              </div>
-            ))}
-          </div>
           <Button
             slot="next"
             className="flex size-9 items-center justify-center rounded-lg text-muted-2 outline-offset-2 transition-colors hover:bg-blue-50 hover:text-blue-700 focus:outline-none data-[focus-visible]:outline data-[focus-visible]:outline-2 data-[focus-visible]:outline-blue-200"
@@ -413,11 +405,18 @@ export function DragExtendCalendar({
           </Button>
         </header>
 
-        {/* Сетка(и) — рядом по горизонтали */}
-        <div className="flex gap-4 items-start">
-          {Array.from({ length: visibleMonths }, (_, i) =>
-            renderMonthGrid(i),
-          )}
+        {/* Сетки месяцев с собственными заголовками. flex-wrap, чтобы
+            второй (третий…) календарь при недостатке ширины переходил
+            на новую строку, а не вытеснялся в overflow. */}
+        <div className="flex flex-wrap gap-4 items-start justify-center">
+          {Array.from({ length: visibleMonths }, (_, i) => (
+            <div key={i} className="flex flex-col items-center">
+              <div className="mb-1 text-center text-[15px] font-semibold capitalize text-ink">
+                {monthLabel(i)}
+              </div>
+              {renderMonthGrid(i)}
+            </div>
+          ))}
         </div>
       </CalendarRac>
 
