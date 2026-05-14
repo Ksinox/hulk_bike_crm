@@ -3097,12 +3097,24 @@ export async function rentalsRoutes(app: FastifyInstance) {
           message: "Штраф просрочки уже списан/оплачен.",
         });
       }
+      // v0.6.13: частичное прощение штрафа — daysCount × fineDailyRate.
+      // Если daysCount задан → прощаем только эту часть. Иначе — весь
+      // остаток (старое поведение). endPlanned НЕ сдвигаем (дни остаются
+      // в долге, мы прощаем только их штраф).
+      const fineDailyRateLocal = Math.round(dailyRate * 0.5);
+      const fineAmount =
+        parsed.data.daysCount && parsed.data.daysCount > 0
+          ? Math.min(
+              fineRemaining,
+              parsed.data.daysCount * Math.max(1, fineDailyRateLocal),
+            )
+          : fineRemaining;
       const [row] = await db
         .insert(debtEntries)
         .values({
           rentalId: id,
           kind: "overdue_fine_forgive",
-          amount: fineRemaining,
+          amount: fineAmount,
           comment: parsed.data.comment ?? null,
           createdByUserId: userId,
           createdByName: userName,
@@ -3110,17 +3122,22 @@ export async function rentalsRoutes(app: FastifyInstance) {
         .returning();
       // v0.4.68: после прощения штрафа — нормализуем status, если
       // суммарная просрочка обнулилась.
-      const norm = await normalizeIfFullyResolved(daysRemaining, 0);
+      const fineLeftAfter = Math.max(0, fineRemaining - fineAmount);
+      const norm = await normalizeIfFullyResolved(daysRemaining, fineLeftAfter);
       await logActivity(req, {
         entity: "rental",
         entityId: id,
         action: "debt_overdue_fine_forgiven",
-        summary: `Списан штраф просрочки ${fineRemaining} ₽ по аренде #${id}${parsed.data.comment ? `: ${parsed.data.comment}` : ""}${norm.newStatus ? " · статус → active" : ""}`,
-        meta: { daysShift: norm.shift, newStatus: norm.newStatus },
+        summary: `Списан штраф просрочки ${fineAmount} ₽${parsed.data.daysCount ? ` (за ${parsed.data.daysCount} дн)` : ""} по аренде #${id}${parsed.data.comment ? `: ${parsed.data.comment}` : ""}${norm.newStatus ? " · статус → active" : ""}`,
+        meta: {
+          daysShift: norm.shift,
+          newStatus: norm.newStatus,
+          daysCount: parsed.data.daysCount ?? null,
+        },
         diff: {
           fine: {
             label: "Штраф",
-            from: fineRemaining,
+            from: fineAmount,
             to: 0,
             kind: "money",
           },
@@ -3129,7 +3146,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
       return {
         row,
         mode: "fine",
-        amount: fineRemaining,
+        amount: fineAmount,
         daysShift: norm.shift,
         newStatus: norm.newStatus,
       };

@@ -14,7 +14,7 @@
  *
  * Phase 2 start: drag-to-extend и polish-анимации добавятся отдельно.
  */
-import { useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   ArrowRight,
@@ -208,7 +208,7 @@ export function RentalCard({
   const [action, setAction] = useState<ActionKind | null>(null);
   const [editRentalOpen, setEditRentalOpen] = useState(false);
   const [extendOpen, setExtendOpen] = useState(false);
-  const [paymentRentalId, setPaymentRentalId] = useState<number | null>(null);
+  // v0.6.13: paymentRentalId объявлен ниже как обёртка (для FLIP-измерения).
   const [equipmentChangeOpen, setEquipmentChangeOpen] = useState(false);
   const [damageOpen, setDamageOpen] = useState(false);
   const [editingReportId, setEditingReportId] = useState<number | null>(null);
@@ -223,6 +223,44 @@ export function RentalCard({
   const [overdueAnchor, setOverdueAnchor] = useState<DOMRect | null>(null);
   // ── prefill для PaymentAcceptDialog (drag-to-extend) ─────────────
   const [paymentPrefillExtDays, setPaymentPrefillExtDays] = useState<number>(0);
+  // ── FLIP-анимация календаря (v0.6.13) ─────────────────────────────
+  // Когда открывается PaymentAcceptDialog — измеряем bounding rect
+  // оригинального CalendarPanel и пробрасываем его в диалог.
+  // Floating-копия использует этот rect как FIRST-позицию для transform-
+  // анимации (FLIP: translate из original в floating-позицию).
+  const calendarBoxRef = useRef<HTMLDivElement | null>(null);
+  const [liftedFromRect, setLiftedFromRect] = useState<{
+    top: number;
+    left: number;
+    width: number;
+    height: number;
+  } | null>(null);
+  const [paymentRentalId, _setPaymentRentalIdRaw] = useState<number | null>(null);
+  const setPaymentRentalId = (id: number | null) => {
+    if (id != null) {
+      const el = calendarBoxRef.current;
+      if (el) {
+        const r = el.getBoundingClientRect();
+        setLiftedFromRect({
+          top: r.top,
+          left: r.left,
+          width: r.width,
+          height: r.height,
+        });
+      }
+    }
+    _setPaymentRentalIdRaw(id);
+  };
+  // При закрытии — useLayoutEffect ниже сбросит liftedFromRect.
+  useLayoutEffect(() => {
+    if (paymentRentalId == null) {
+      // Сбросим с небольшой задержкой, чтобы FLIP-out анимация в диалоге
+      // успела отыграть. Но сам state в диалоге уже закрывается своим
+      // animateOut'ом, поэтому достаточно сразу обнулить — лифтнутая
+      // копия исчезнет вместе с диалогом.
+      setLiftedFromRect(null);
+    }
+  }, [paymentRentalId]);
 
   const drawerCtx = useDashboardDrawer();
   /** Открыть клиента: если мы внутри dashboard-drawer'а — кладём поверх
@@ -862,6 +900,8 @@ export function RentalCard({
             rental={rental}
             effectiveStatus={effectiveStatus}
             onCommitExtend={isLive ? handleCommitExtend : undefined}
+            calendarBoxRef={calendarBoxRef}
+            hideCalendar={paymentRentalId != null}
           />
           <HistoryStrip
             items={activityItems}
@@ -951,6 +991,7 @@ export function RentalCard({
         <PaymentAcceptDialogContainer
           rentalId={paymentRentalId}
           initialExtDays={paymentPrefillExtDays || undefined}
+          liftedFromRect={liftedFromRect}
           onClose={() => {
             setPaymentRentalId(null);
             setPaymentPrefillExtDays(0);
@@ -1054,10 +1095,17 @@ function PaymentAcceptDialogContainer({
   rentalId,
   onClose,
   initialExtDays,
+  liftedFromRect,
 }: {
   rentalId: number;
   onClose: () => void;
   initialExtDays?: number;
+  liftedFromRect?: {
+    top: number;
+    left: number;
+    width: number;
+    height: number;
+  } | null;
 }) {
   const all = useRentals();
   const r = all.find((x) => x.id === rentalId);
@@ -1067,6 +1115,7 @@ function PaymentAcceptDialogContainer({
       rental={r}
       onClose={onClose}
       initialExtDays={initialExtDays}
+      liftedFromRect={liftedFromRect}
       onPaid={() => {
         /* invalidations происходят в dialog'е */
       }}

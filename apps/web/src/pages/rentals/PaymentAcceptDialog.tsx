@@ -47,6 +47,9 @@ import type { Rental } from "@/lib/mock/rentals";
 import type { PaymentMethod } from "@/lib/mock/rentals";
 import {
   periodForDays,
+  TARIFF,
+  TARIFF_PERIOD_LABEL,
+  type TariffPeriod,
 } from "@/lib/mock/rentals";
 
 // v0.4.30: терминала для карт у бизнеса нет — только наличные и
@@ -63,6 +66,7 @@ export function PaymentAcceptDialog({
   onClose,
   onPaid,
   initialExtDays,
+  liftedFromRect,
 }: {
   rental: Rental;
   onClose: () => void;
@@ -74,6 +78,19 @@ export function PaymentAcceptDialog({
    * в поле «Продлить на N дней» и в overpay-блоке «В продление».
    */
   initialExtDays?: number;
+  /**
+   * v0.6.13: исходная позиция оригинального CalendarPanel в карточке
+   * аренды. Используется для FLIP-анимации: floating-копия календаря
+   * стартует с translate( fromRect - finalRect ) и плавно переходит
+   * в финальную позицию над bottom-drawer'ом. На закрытии — обратный
+   * FLIP. Если не передан — анимация отключается (fallback fade).
+   */
+  liftedFromRect?: {
+    top: number;
+    left: number;
+    width: number;
+    height: number;
+  } | null;
 }) {
   const [closing, setClosing] = useState(false);
   const requestClose = () => {
@@ -120,9 +137,16 @@ export function PaymentAcceptDialog({
   //                бэкенд авто-снимет fine за эти дни + сдвинет endPlanned на overdueDays)
   //   'days-n'   — простить только N дней (target='days', daysCount=N)
   //   'fine'     — простить только штраф (target='fine')
+  //   'fine-n'   — простить штраф только за N дней (v0.6.13)
   //   'all'      — простить ВСЁ (target='all')
   // Дни/штраф учёт для расчёта «к приёму» производный (см. ниже).
-  type ForgiveChoice = "clear" | "days-all" | "days-n" | "fine" | "all";
+  type ForgiveChoice =
+    | "clear"
+    | "days-all"
+    | "days-n"
+    | "fine"
+    | "fine-n"
+    | "all";
   const hasOverdueFine = overdueFineBalanceRaw > 0;
   const hasOverdueDays = overdueDaysBalanceRaw > 0;
   const hasOverdue = hasOverdueFine || hasOverdueDays;
@@ -136,18 +160,24 @@ export function PaymentAcceptDialog({
   // Количество дней для частичного прощения (forgiveChoice='days-n').
   // Ограничено [1, overdueDaysCount] — больше прощать нельзя.
   const [forgiveDaysN, setForgiveDaysN] = useState<number>(1);
+  // v0.6.13: для 'fine-n' — N дней штрафа, тоже [1, overdueDaysCount].
+  const [forgiveFineN, setForgiveFineN] = useState<number>(1);
   useEffect(() => {
     // При смене аренды сбрасываем выбор + ограничиваем N.
     if (forgiveDaysN > Math.max(1, overdueDaysCount)) {
       setForgiveDaysN(Math.max(1, overdueDaysCount));
     }
-  }, [overdueDaysCount, forgiveDaysN]);
+    if (forgiveFineN > Math.max(1, overdueDaysCount)) {
+      setForgiveFineN(Math.max(1, overdueDaysCount));
+    }
+  }, [overdueDaysCount, forgiveDaysN, forgiveFineN]);
 
   // Эффективный остаток дней/штрафа просрочки после применения выбора.
-  // 'days-n' — линейное уменьшение на N×dailyRate (плюс fine за эти N дней).
-  // 'days-all' — все дни и весь fine за них прощены целиком.
-  // 'fine' — только fine.
-  // 'all' — оба = 0.
+  // 'days-n'  — линейное уменьшение на N×dailyRate (плюс fine за эти N дней).
+  // 'days-all'— все дни и весь fine за них прощены целиком.
+  // 'fine'    — только fine.
+  // 'fine-n'  — fine только за N дней (N × fineDailyRate, дни остаются).
+  // 'all'     — оба = 0.
   const partialDaysAmount =
     forgiveChoice === "days-n"
       ? Math.min(overdueDaysBalanceRaw, forgiveDaysN * dailyRateBase)
@@ -155,7 +185,9 @@ export function PaymentAcceptDialog({
   const partialFineAmount =
     forgiveChoice === "days-n"
       ? Math.min(overdueFineBalanceRaw, forgiveDaysN * fineDailyRate)
-      : 0;
+      : forgiveChoice === "fine-n"
+        ? Math.min(overdueFineBalanceRaw, forgiveFineN * fineDailyRate)
+        : 0;
   const overdueDaysBalance =
     forgiveChoice === "all" || forgiveChoice === "days-all"
       ? 0
@@ -213,6 +245,23 @@ export function PaymentAcceptDialog({
   type OverpayDest = "deposit" | "extend" | "security";
   const [overpayDest, setOverpayDest] = useState<OverpayDest>("extend");
 
+  // v0.6.13: тариф продления — selectedTariff. По умолчанию = текущий
+  // тариф аренды (rental.tariffPeriod). Оператор может переключить на
+  // другой пресет (short/day/week/month) из тарифной сетки модели или
+  // включить custom-режим (своя ставка).
+  //   - 'short' | 'day' | 'week' | 'month' → TARIFF[model][period]
+  //   - 'custom' → extCustomRate с extCustomUnit ('day'|'week')
+  // tariffPeriod в rental может быть 'day'/'short'/'week'/'month' — все
+  // 4 показываем как pills.
+  type TariffSel = TariffPeriod | "custom";
+  const initialTariff: TariffSel = (rental.tariffPeriod ?? "day") as TariffSel;
+  const [selectedTariff, setSelectedTariff] =
+    useState<TariffSel>(initialTariff);
+  const [extCustomRate, setExtCustomRate] = useState<number>(rental.rate);
+  const [extCustomUnit, setExtCustomUnit] = useState<"day" | "week">(
+    rental.rateUnit === "week" ? "week" : "day",
+  );
+
   // Параметры продления — авто-расчёт по тарифу аренды.
   // Оператор может править вручную через extInputOverride (по умолчанию null).
   // v0.6.1: при drag-to-extend инициализируем override переданным числом дней
@@ -224,11 +273,18 @@ export function PaymentAcceptDialog({
     }
     return initialExtDays;
   });
-  // v0.6.3: custom-тариф убран из нового UX (Step 2 — фиксированный
-  // тариф аренды). Тариф продления = тариф аренды.
-  const extIsWeekly = rental.rateUnit === "week";
-  const extRate = rental.rate;
-  const extDailyRate = extIsWeekly ? Math.round(extRate / 7) : extRate;
+  // v0.6.13: тариф продления вычисляется из selectedTariff.
+  //   - preset (short/day/week/month) → ставка из TARIFF, unit = 'day'
+  //     (период недельного тарифа всё равно считается в днях по ставке/сут;
+  //     только если оператор явно выбрал custom unit='week' — тогда week).
+  //   - 'custom' → extCustomRate + extCustomUnit
+  const extIsWeekly =
+    selectedTariff === "custom" && extCustomUnit === "week";
+  const extRate = (() => {
+    if (selectedTariff === "custom") return Math.max(0, extCustomRate);
+    return TARIFF[rental.model][selectedTariff];
+  })();
+  const extDailyRate = extIsWeekly ? Math.max(1, Math.round(extRate / 7)) : extRate;
   // v0.6.7: экипировка ВСЕГДА учитывается в формуле дней/суммы продления
   // (см. extension-drawer.jsx line 14-15: dailyTotal = rate + equipDaily).
   // Перенесли определение equipment/equipDaily сюда (выше acceptedStr),
@@ -294,9 +350,17 @@ export function PaymentAcceptDialog({
   const extInputBase = Math.max(0, extInputOverride ?? 0);
   const extDays = extIsWeekly ? extInputBase * 7 : extInputBase;
   const extWeeks = extIsWeekly ? extInputBase : 0;
-  const extEffectivePeriod = extIsWeekly
-    ? ("week" as const)
-    : periodForDays(Math.max(1, extDays));
+  // v0.6.13: tariffPeriod для extend-inplace.
+  //   - custom + week → 'week'
+  //   - custom + day → periodForDays(extDays) (бэкенд enum принимает short/week/month)
+  //   - preset → если 'day' — мапим в periodForDays (БД не знает 'day')
+  //     иначе передаём как есть.
+  const extEffectivePeriod: TariffPeriod = (() => {
+    if (extIsWeekly) return "week";
+    if (selectedTariff === "custom") return periodForDays(Math.max(1, extDays));
+    if (selectedTariff === "day") return periodForDays(Math.max(1, extDays));
+    return selectedTariff;
+  })();
   // extSum считается «по аренде» (без экипировки) — для extend-inplace.
   const extSum = extIsWeekly ? extRate * extWeeks : extDailyRate * extDays;
   // v0.6.7: dailyTotal = аренда + экипировка/сут (как в дизайне line 15).
@@ -544,6 +608,14 @@ export function PaymentAcceptDialog({
           await api.post(`/api/rentals/${rental.id}/debt/forgive-overdue`, {
             target: "fine",
             comment: "Прощение штрафа просрочки при приёме оплаты",
+          });
+        } else if (forgiveChoice === "fine-n") {
+          // v0.6.13: частичное прощение штрафа за N дней. Бэкенд при
+          // target='fine' с daysCount списывает N × fineDailyRate.
+          await api.post(`/api/rentals/${rental.id}/debt/forgive-overdue`, {
+            target: "fine",
+            daysCount: Math.max(1, Math.min(forgiveFineN, overdueDaysCount)),
+            comment: `Прощение штрафа за ${forgiveFineN} дн просрочки при приёме оплаты`,
           });
         } else if (forgiveChoice === "days-all") {
           await api.post(`/api/rentals/${rental.id}/debt/forgive-overdue`, {
@@ -978,6 +1050,9 @@ export function PaymentAcceptDialog({
                 setForgiveChoice={setForgiveChoice}
                 forgiveDaysN={forgiveDaysN}
                 setForgiveDaysN={setForgiveDaysN}
+                forgiveFineN={forgiveFineN}
+                setForgiveFineN={setForgiveFineN}
+                fineDailyRate={fineDailyRate}
                 overdueBalanceRaw={overdueBalanceRaw}
                 overdueDaysBalanceRaw={overdueDaysBalanceRaw}
                 overdueFineBalanceRaw={overdueFineBalanceRaw}
@@ -1132,6 +1207,94 @@ export function PaymentAcceptDialog({
                 </div>
               </div>
             )}
+            {/* v0.6.13: Тариф продления — pills + custom.
+                Логика: при выборе пресета пересчитывается extRate из
+                TARIFF[model][period]. При custom — поле ставки + toggle
+                единиц (₽/сут / ₽/нед). См. блок выше где extRate/
+                extDailyRate/extIsWeekly вычисляются из selectedTariff. */}
+            <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+              <div className="text-[10.5px] font-bold uppercase tracking-wider text-muted-2 mr-1">
+                Тариф
+              </div>
+              {(["short", "day", "week", "month"] as const).map((p) => {
+                const r = TARIFF[rental.model][p];
+                const active = selectedTariff === p;
+                return (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => setSelectedTariff(p)}
+                    className={cn(
+                      "rounded-full border px-3 py-1.5 text-[11px] font-semibold transition-colors flex items-center gap-1.5",
+                      active
+                        ? "border-blue-600 bg-blue-50 text-blue-700"
+                        : "border-border text-muted hover:bg-surface-soft hover:text-ink-2",
+                    )}
+                    title={TARIFF_PERIOD_LABEL[p]}
+                  >
+                    <span>{TARIFF_PERIOD_LABEL[p]}</span>
+                    <span className="tabular-nums">{r} ₽/сут</span>
+                  </button>
+                );
+              })}
+              <label className="ml-1 inline-flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={selectedTariff === "custom"}
+                  onChange={(e) =>
+                    setSelectedTariff(e.target.checked ? "custom" : initialTariff)
+                  }
+                  className="h-3.5 w-3.5 accent-blue-600"
+                />
+                <span className="text-[11px] font-semibold text-ink-2">
+                  Свой тариф
+                </span>
+              </label>
+              {selectedTariff === "custom" && (
+                <div className="inline-flex items-stretch overflow-hidden rounded-[10px] border border-border">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={extCustomRate || ""}
+                    onChange={(e) =>
+                      setExtCustomRate(
+                        Math.max(
+                          0,
+                          parseInt(
+                            e.target.value.replace(/\D/g, "") || "0",
+                            10,
+                          ),
+                        ),
+                      )
+                    }
+                    placeholder="3000"
+                    className="w-[80px] bg-white px-2 py-1 text-[12.5px] font-bold tabular-nums text-ink outline-none placeholder:text-muted-2"
+                  />
+                  <div className="inline-flex bg-surface-soft p-0.5">
+                    {(["day", "week"] as const).map((u) => (
+                      <button
+                        key={u}
+                        type="button"
+                        onClick={() => setExtCustomUnit(u)}
+                        className={cn(
+                          "rounded-[6px] px-2 py-0.5 text-[10.5px] font-semibold transition-colors",
+                          extCustomUnit === u
+                            ? "bg-blue-600 text-white"
+                            : "text-muted hover:text-ink",
+                        )}
+                      >
+                        {u === "day" ? "₽/сут" : "₽/нед"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div className="ml-auto text-[10.5px] text-muted-2">
+                {extIsWeekly
+                  ? `${extRate} ₽/нед · ≈${extDailyRate} ₽/сут`
+                  : `${extRate} ₽/сут`}
+              </div>
+            </div>
           </div>
 
           {/* ─── STEP 3: экипировка на новый период ─────────────────────
@@ -1466,6 +1629,7 @@ export function PaymentAcceptDialog({
           isOverdue={stillOverdue}
           dailyRate={extDailyRate}
           initialDays={extDays}
+          liftedFromRect={liftedFromRect}
           onPreviewExtend={(days) => {
             if (extIsWeekly) {
               const weeks = Math.max(0, Math.ceil(days / 7));
@@ -1522,6 +1686,7 @@ function FloatingDragExtendCalendar({
   isOverdue,
   dailyRate,
   initialDays,
+  liftedFromRect,
   onPreviewExtend,
   onCommitExtend,
 }: {
@@ -1531,21 +1696,91 @@ function FloatingDragExtendCalendar({
   isOverdue: boolean;
   dailyRate: number;
   initialDays: number;
+  liftedFromRect?: {
+    top: number;
+    left: number;
+    width: number;
+    height: number;
+  } | null;
   onPreviewExtend: (days: number) => void;
   onCommitExtend: (days: number) => void;
 }) {
   const startIso = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, "0")}-${String(startDate.getDate()).padStart(2, "0")}`;
   const endIso = `${plannedEnd.getFullYear()}-${String(plannedEnd.getMonth() + 1).padStart(2, "0")}-${String(plannedEnd.getDate()).padStart(2, "0")}`;
+
+  // v0.6.13: FLIP-анимация.
+  //   1. Замеряем LAST-rect (финальная floating-позиция) в layoutEffect.
+  //   2. transform = translate(first.left - last.left, first.top - last.top)
+  //                 * scale(first.width / last.width, first.height / last.height)
+  //      применяется мгновенно (transition: none) — визуально календарь
+  //      на первоначальном месте.
+  //   3. Через rAF снимаем transform на 'none' с transition — плеер
+  //      запускается, календарь плавно «прилетает» в новую позицию.
+  //   4. При закрытии (closing=true) выполняем обратный FLIP.
+  const boxRef = useRef<HTMLDivElement | null>(null);
+  const [flipStyle, setFlipStyle] = useState<React.CSSProperties>({});
+  const FLIP_MS = 350;
+
+  useLayoutEffect(() => {
+    const el = boxRef.current;
+    if (!el || !liftedFromRect) return;
+    if (closing) {
+      // FLIP-OUT: текущий rect (LAST) → liftedFromRect (FIRST)
+      const last = el.getBoundingClientRect();
+      const dx = liftedFromRect.left - last.left;
+      const dy = liftedFromRect.top - last.top;
+      const sx = Math.max(0.1, liftedFromRect.width / Math.max(1, last.width));
+      const sy = Math.max(
+        0.1,
+        liftedFromRect.height / Math.max(1, last.height),
+      );
+      setFlipStyle({
+        transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`,
+        transformOrigin: "top left",
+        opacity: 0.5,
+        transition: `transform ${FLIP_MS}ms cubic-bezier(0.4, 0, 0.2, 1), opacity ${FLIP_MS}ms ease-out`,
+      });
+      return;
+    }
+    // FLIP-IN: liftedFromRect (FIRST) → текущий rect (LAST)
+    const last = el.getBoundingClientRect();
+    const dx = liftedFromRect.left - last.left;
+    const dy = liftedFromRect.top - last.top;
+    const sx = Math.max(0.1, liftedFromRect.width / Math.max(1, last.width));
+    const sy = Math.max(0.1, liftedFromRect.height / Math.max(1, last.height));
+    // Шаг 2: мгновенно перенесли в FIRST-позицию.
+    setFlipStyle({
+      transform: `translate(${dx}px, ${dy}px) scale(${sx}, ${sy})`,
+      transformOrigin: "top left",
+      transition: "none",
+    });
+    // Шаг 3: следующий tick — запускаем анимацию в LAST.
+    const id = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        setFlipStyle({
+          transform: "none",
+          transformOrigin: "top left",
+          transition: `transform ${FLIP_MS}ms cubic-bezier(0.4, 0, 0.2, 1)`,
+        });
+      });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [closing, liftedFromRect]);
+
   return (
     <div
       className="pointer-events-none fixed inset-x-0 z-[130] flex justify-center"
       style={{ bottom: "calc(min(82vh, 520px) + 20px)" }}
     >
       <div
+        ref={boxRef}
         className={cn(
           "pointer-events-auto w-fit max-w-[560px]",
-          closing ? "animate-slide-out-up" : "animate-slide-in-down",
+          // Если liftedFromRect задан — FLIP управляет позицией через
+          // transform. Иначе fallback на старые slide-анимации.
+          !liftedFromRect && (closing ? "animate-slide-out-up" : "animate-slide-in-down"),
         )}
+        style={liftedFromRect ? flipStyle : undefined}
       >
         <div className="rounded-2xl border border-border bg-white p-4 shadow-card-lg w-[460px]">
           <div className="mb-2 flex items-center justify-between">
@@ -1627,6 +1862,9 @@ function ForgiveStepCards({
   setForgiveChoice,
   forgiveDaysN,
   setForgiveDaysN,
+  forgiveFineN,
+  setForgiveFineN,
+  fineDailyRate,
   overdueBalanceRaw,
   overdueDaysBalanceRaw,
   overdueFineBalanceRaw,
@@ -1636,10 +1874,15 @@ function ForgiveStepCards({
   onClear,
   fmt,
 }: {
-  forgiveChoice: "clear" | "days-all" | "days-n" | "fine" | "all";
-  setForgiveChoice: (c: "clear" | "days-all" | "days-n" | "fine" | "all") => void;
+  forgiveChoice: "clear" | "days-all" | "days-n" | "fine" | "fine-n" | "all";
+  setForgiveChoice: (
+    c: "clear" | "days-all" | "days-n" | "fine" | "fine-n" | "all",
+  ) => void;
   forgiveDaysN: number;
   setForgiveDaysN: (n: number) => void;
+  forgiveFineN: number;
+  setForgiveFineN: (n: number) => void;
+  fineDailyRate: number;
   overdueBalanceRaw: number;
   overdueDaysBalanceRaw: number;
   overdueFineBalanceRaw: number;
@@ -1730,9 +1973,11 @@ function ForgiveStepCards({
         ? `Только ${forgiveDaysN} ${forgiveDaysN === 1 ? "день" : forgiveDaysN < 5 ? "дня" : "дней"}`
         : forgiveChoice === "fine"
           ? "Только штраф"
-          : forgiveChoice === "all"
-            ? "Всю просрочку"
-            : "Выберите вариант →";
+          : forgiveChoice === "fine-n"
+            ? `Штраф за ${forgiveFineN} ${forgiveFineN === 1 ? "день" : forgiveFineN < 5 ? "дня" : "дней"}`
+            : forgiveChoice === "all"
+              ? "Всю просрочку"
+              : "Выберите вариант →";
 
   const fineTotal = overdueFineBalanceRaw;
   const daysAmount = overdueDaysBalanceRaw;
@@ -1921,6 +2166,90 @@ function ForgiveStepCards({
                   title="Только штраф (без дней)"
                   description={`−${fmt(fineTotal)} ₽ — штраф 50% × дни. Дни просрочки и endPlanned не меняются.`}
                 />
+              )}
+              {/* v0.6.13: «Штраф за N дней» — частичное прощение штрафа.
+                  Бэкенд расширен: target='fine' + daysCount = N. Дни и
+                  endPlanned не двигаются, прощается только N × fineDaily. */}
+              {hasOverdueFine && overdueDaysCount > 1 && (
+                <div
+                  className={cn(
+                    "border-t border-border",
+                    forgiveChoice === "fine-n" ? "bg-emerald-50" : "",
+                  )}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setForgiveChoice("fine-n")}
+                    className="w-full px-3 py-2.5 text-left hover:bg-surface-soft"
+                  >
+                    <div className="text-[12.5px] font-bold text-ink">
+                      Штраф за N дней
+                    </div>
+                    <div className="mt-0.5 text-[11px] text-muted">
+                      Простит штраф только за выбранные дни просрочки
+                      ({fmt(fineDailyRate)} ₽/день). Сами дни и
+                      endPlanned не двигаются.
+                    </div>
+                  </button>
+                  {forgiveChoice === "fine-n" && (
+                    <div className="flex items-center gap-2 border-t border-border bg-white px-3 py-2">
+                      <span className="text-[11.5px] font-semibold text-ink-2">
+                        N =
+                      </span>
+                      <div className="inline-flex items-stretch overflow-hidden rounded-[8px] border border-border">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setForgiveFineN(Math.max(1, forgiveFineN - 1))
+                          }
+                          className="flex w-7 items-center justify-center bg-surface-soft text-[14px] text-muted hover:text-ink"
+                        >
+                          −
+                        </button>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={forgiveFineN}
+                          onChange={(e) => {
+                            const n = Math.max(
+                              1,
+                              Math.min(
+                                overdueDaysCount,
+                                parseInt(
+                                  e.target.value.replace(/\D/g, "") || "1",
+                                  10,
+                                ),
+                              ),
+                            );
+                            setForgiveFineN(n);
+                          }}
+                          className="w-10 bg-white px-1 py-1 text-center text-[13px] font-bold tabular-nums text-ink outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setForgiveFineN(
+                              Math.min(overdueDaysCount, forgiveFineN + 1),
+                            )
+                          }
+                          className="flex w-7 items-center justify-center bg-surface-soft text-[14px] text-muted hover:text-ink"
+                        >
+                          +
+                        </button>
+                      </div>
+                      <span className="text-[10.5px] text-muted-2">
+                        ≈ {fmt(forgiveFineN * fineDailyRate)} ₽
+                      </span>
+                      <button
+                        type="button"
+                        onClick={closeAll}
+                        className="ml-auto rounded-full bg-emerald-500 px-2.5 py-1 text-[10.5px] font-bold text-white hover:bg-emerald-600"
+                      >
+                        OK
+                      </button>
+                    </div>
+                  )}
+                </div>
               )}
               {/* Всю просрочку */}
               {hasOverdueDays && hasOverdueFine && (

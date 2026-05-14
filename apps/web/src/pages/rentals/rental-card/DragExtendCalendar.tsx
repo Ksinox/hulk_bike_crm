@@ -207,34 +207,41 @@ export function DragExtendCalendar({
     setViewMonth({ y: dt.getFullYear(), m: dt.getMonth() });
   };
 
+  // Сравнения дат через timestamp baseline.
+  const startT = keyToTime(startKey);
+  const plannedT = keyToTime(plannedEndKey);
+  const baseT = keyToTime(baseEndKey);
+  const todayT = keyToTime(today);
+
   return (
-    <div className="select-none">
-      <div className="flex items-center justify-between mb-2 px-1">
+    <div className="select-none rounded-2xl bg-surface p-2">
+      {/* v0.6.13: шапка месяца в стиле RentalPeriodCalendar (date-picker.tsx) */}
+      <div className="flex w-full items-center gap-1 pb-1 px-1">
         <button
           type="button"
           onClick={prevMonth}
-          className="h-7 w-7 rounded-full hover:bg-surface-soft flex items-center justify-center text-muted"
+          className="flex size-9 items-center justify-center rounded-lg text-muted-2 transition-colors hover:bg-blue-50 hover:text-blue-700"
           aria-label="Предыдущий месяц"
         >
           ‹
         </button>
-        <div className="font-display text-[13px] font-extrabold text-ink tracking-wide">
-          {RU_MONTHS[viewMonth.m]} {viewMonth.y}
+        <div className="grow text-center text-[13px] font-semibold capitalize text-ink">
+          {RU_MONTHS[viewMonth.m].toLowerCase()} {viewMonth.y}
         </div>
         <button
           type="button"
           onClick={nextMonth}
-          className="h-7 w-7 rounded-full hover:bg-surface-soft flex items-center justify-center text-muted"
+          className="flex size-9 items-center justify-center rounded-lg text-muted-2 transition-colors hover:bg-blue-50 hover:text-blue-700"
           aria-label="Следующий месяц"
         >
           ›
         </button>
       </div>
-      <div className="grid grid-cols-7 mb-1">
+      <div className="grid grid-cols-7">
         {RU_DOW.map((d, i) => (
           <div
             key={i}
-            className="text-center text-[10px] font-bold text-muted-2 uppercase"
+            className="flex size-9 items-center justify-center text-[10.5px] font-semibold uppercase tracking-wide text-muted-2"
           >
             {d}
           </div>
@@ -242,75 +249,85 @@ export function DragExtendCalendar({
       </div>
       <div
         ref={gridRef}
-        className="grid grid-cols-7 gap-y-0.5"
+        className="grid grid-cols-7"
         onMouseMove={onMouseMoveGrid}
       >
         {cells.map((d) => {
           const iso = keyToIso(d);
+          const t = keyToTime(d);
           const inMonth = d.m === viewMonth.m;
-          const inSelected =
-            keyToTime(d) >= keyToTime(startKey) &&
-            keyToTime(d) <= keyToTime(plannedEndKey);
-          const inOverdue =
-            isOverdue &&
-            keyToTime(d) > keyToTime(plannedEndKey) &&
-            keyToTime(d) <= keyToTime(today);
+          // Синяя зона (текущий период аренды): start → plannedEnd
+          const inBlueRange = t >= startT && t <= plannedT;
+          // Красная зона (просрочка): plannedEnd+1 → today (если просрочена)
+          const inRedRange =
+            isOverdue && t > plannedT && t <= todayT;
+          // Жёлтая «не хватает» зона — пока не реализуем, нужна shortage
+          // (TODO: пробросить из родителя если потребуется).
+          // Зелёная зона (продление preview): после baseEnd → previewEnd
           const inExtension =
-            previewEnd != null &&
-            keyToTime(d) > keyToTime(baseEndKey) &&
-            keyToTime(d) <= keyToTime(previewEnd);
-          const isStart = isSame(d, startKey);
-          const isEnd = previewEnd ? isSame(d, previewEnd) : isSame(d, baseEndKey);
-          const isPlannedEnd = isSame(d, plannedEndKey);
+            previewEnd != null && t > baseT && t <= keyToTime(previewEnd);
+          const isBlueStart = isSame(d, startKey);
+          const isBlueEnd = isSame(d, plannedEndKey);
+          const isRedEnd =
+            isOverdue && plannedEndKey && t === todayT && todayT > plannedT;
+          const isExtEnd =
+            previewEnd != null && isSame(d, previewEnd);
           const isToday = isSame(d, today);
+          const isCurrentEnd = previewEnd
+            ? isSame(d, previewEnd)
+            : isSame(d, baseEndKey);
 
-          let bg = "";
-          let text = inMonth ? "text-ink-2" : "text-muted-2 opacity-50";
-          let extra = "";
-          if (inSelected && !isStart && !isPlannedEnd) {
-            bg = "bg-blue-50";
-            text = "text-blue-700";
+          // Базовый цвет текста для дней вне месяца.
+          const classes: string[] = [
+            "relative flex size-9 items-center justify-center whitespace-nowrap p-0 text-[12.5px] font-medium tabular-nums",
+            inMonth ? "text-ink" : "text-muted-2 opacity-40",
+          ];
+
+          // Синий период
+          if (inBlueRange && !isBlueStart && !isBlueEnd) {
+            classes.push("bg-blue-200 text-blue-900");
           }
-          if (inOverdue) {
-            bg = "bg-red-soft";
-            text = "text-red-ink font-bold";
+          if (isBlueStart) {
+            classes.push("rounded-s-lg bg-ink text-white");
           }
-          if (inExtension) {
-            bg = "bg-green-soft";
-            text = "text-green-ink font-bold";
+          if (isBlueEnd && !isRedEnd && !isExtEnd) {
+            // Если есть продолжение (overdue/extension) — без round-конца.
+            classes.push(
+              isOverdue || inExtension
+                ? "bg-ink text-white"
+                : "rounded-e-lg bg-ink text-white",
+            );
           }
-          if (isPlannedEnd && !isEnd) {
-            extra = "ring-2 ring-ink ring-inset";
-            text = "text-ink font-extrabold";
+          // Красный хвост просрочки
+          if (inRedRange && !isRedEnd && !inExtension) {
+            classes.push("bg-red-200 text-red-900");
           }
-          if (isStart) {
-            bg = "bg-ink";
-            text = "text-white font-bold";
+          if (isRedEnd && !inExtension && !isExtEnd) {
+            classes.push("rounded-e-lg bg-red-600 text-white");
           }
-          if (isEnd) {
-            bg = previewEnd ? "bg-green-ink" : "bg-ink";
-            text = "text-white font-bold";
+          // Зелёная зона продления (preview)
+          if (inExtension && !isExtEnd) {
+            classes.push("bg-emerald-200 text-emerald-900");
           }
-          if (isToday && !isEnd && !isStart) {
-            extra = "ring-2 ring-blue-600 ring-inset";
+          if (isExtEnd) {
+            classes.push("rounded-e-lg bg-emerald-600 text-white");
+          }
+          // Маркер «сегодня» — точка снизу (как в RentalPeriodCalendar).
+          if (isToday && !isRedEnd && !isExtEnd && !isBlueStart && !isBlueEnd) {
+            classes.push(
+              "after:pointer-events-none after:absolute after:bottom-1 after:start-1/2 after:z-10 after:size-[3px] after:-translate-x-1/2 after:rounded-full after:bg-ink",
+            );
           }
 
-          const showHandle = isEnd && !disabled;
+          const showHandle = isCurrentEnd && !disabled;
 
           return (
             <div
               key={iso}
               data-date={iso}
-              className="relative h-9 flex items-center justify-center"
+              className="relative flex size-9 items-center justify-center"
             >
-              <div
-                className={cn(
-                  "relative h-8 w-8 rounded-full flex items-center justify-center text-[12px] tabular-nums",
-                  bg,
-                  text,
-                  extra,
-                )}
-              >
+              <div className={cn(...classes)}>
                 {d.d}
                 {showHandle && (
                   <button
@@ -318,7 +335,7 @@ export function DragExtendCalendar({
                     onMouseDown={startDrag}
                     title="Тяните вправо чтобы продлить"
                     aria-label="Продлить аренду — потяните вправо"
-                    className="absolute -right-2 top-1/2 -translate-y-1/2 h-8 w-3 rounded-r-full bg-blue-600 cursor-ew-resize flex items-center justify-center text-white hover:bg-blue-700 active:scale-110 transition-transform shadow-card-sm"
+                    className="absolute -right-1.5 top-1/2 z-20 -translate-y-1/2 h-6 w-3 rounded-r-md bg-blue-600 cursor-ew-resize flex items-center justify-center text-white hover:bg-blue-700 active:scale-110 transition-transform shadow-card-sm"
                   >
                     <GripVertical size={9} strokeWidth={2.5} />
                   </button>
@@ -330,11 +347,11 @@ export function DragExtendCalendar({
       </div>
       {/* Подсказка-плашка во время drag */}
       {previewDays > 0 && (
-        <div className="mt-3 rounded-[10px] bg-green-soft/70 border border-green-ink/20 px-3 py-2 text-[11.5px] text-green-ink flex items-center justify-between gap-3">
+        <div className="mt-2 mx-1 rounded-[10px] bg-emerald-50 border border-emerald-200 px-3 py-2 text-[11.5px] text-emerald-700 flex items-center justify-between gap-3">
           <div>
             <b>Продление +{previewDays} {previewDays === 1 ? "день" : "дн"}</b>
             {previewEnd && (
-              <span className="ml-1 text-green-ink/80">
+              <span className="ml-1 text-emerald-700/80">
                 до {String(previewEnd.d).padStart(2, "0")}.
                 {String(previewEnd.m + 1).padStart(2, "0")}.{previewEnd.y}
               </span>
@@ -347,11 +364,11 @@ export function DragExtendCalendar({
           )}
         </div>
       )}
-      {/* Легенда */}
-      <div className="mt-2 px-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10.5px] text-muted">
-        <Legend swatch="bg-blue-50" label="текущий период" />
-        <Legend swatch="bg-red-soft" label="просрочка" />
-        <Legend swatch="bg-green-soft" label="продление" />
+      {/* Легенда снизу */}
+      <div className="mt-2 px-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10.5px] text-muted">
+        <Legend swatch="bg-blue-200" label="текущий период" />
+        {isOverdue && <Legend swatch="bg-red-200" label="просрочка" />}
+        <Legend swatch="bg-emerald-200" label="продление" />
         {!disabled && (
           <div className="ml-auto inline-flex items-center gap-1 text-blue-700 font-semibold">
             <GripVertical size={10} /> тяните за ручку
@@ -365,7 +382,7 @@ export function DragExtendCalendar({
 function Legend({ swatch, label }: { swatch: string; label: string }) {
   return (
     <div className="flex items-center gap-1">
-      <span className={cn("inline-block w-2.5 h-2.5 rounded-sm", swatch)} />
+      <span className={cn("inline-block size-2.5 rounded-sm", swatch)} />
       <span>{label}</span>
     </div>
   );

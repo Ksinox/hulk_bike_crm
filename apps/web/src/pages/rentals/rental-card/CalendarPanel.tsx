@@ -9,6 +9,7 @@
  * дня запускает preview, на mouse-up вызывается onCommitExtend(days) — RentalCard
  * открывает PaymentAcceptDialog с предзаполненным числом дней.
  */
+import type { Ref } from "react";
 import { Calendar } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DragExtendCalendar } from "./DragExtendCalendar";
@@ -40,11 +41,20 @@ export function CalendarPanel({
   rental,
   effectiveStatus,
   onCommitExtend,
+  calendarBoxRef,
+  hideCalendar,
 }: {
   rental: Rental;
   effectiveStatus: RentalStatus;
   /** Вызывается на mouse-up после drag, если выбрано > 0 дней. */
   onCommitExtend?: (days: number) => void;
+  /** v0.6.13: ref на обёртку DragExtendCalendar — нужен для FLIP-измерения
+   *  начальной позиции при подъёме календаря в floating-режим. */
+  calendarBoxRef?: Ref<HTMLDivElement>;
+  /** v0.6.13: когда true — оригинальный календарь скрыт (visibility:hidden),
+   *  чтобы не дублировать с floating-копией. Сохраняем место в layout, чтобы
+   *  карточка не «дёргалась». */
+  hideCalendar?: boolean;
 }) {
   const startIso = ruToIso(rental.start);
   const endIso = ruToIso(rental.endPlanned);
@@ -87,14 +97,21 @@ export function CalendarPanel({
         />
       </div>
       {startIso && endIso && (
-        <DragExtendCalendar
-          startIso={startIso}
-          plannedEndIso={endIso}
-          isOverdue={isOverdue}
-          dailyRate={dailyRate}
-          onCommitExtend={onCommitExtend}
-          disabled={dragDisabled}
-        />
+        <div
+          ref={calendarBoxRef}
+          style={{
+            visibility: hideCalendar ? "hidden" : undefined,
+          }}
+        >
+          <DragExtendCalendar
+            startIso={startIso}
+            plannedEndIso={endIso}
+            isOverdue={isOverdue}
+            dailyRate={dailyRate}
+            onCommitExtend={onCommitExtend}
+            disabled={dragDisabled}
+          />
+        </div>
       )}
     </div>
   );
