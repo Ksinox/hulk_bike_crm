@@ -293,24 +293,28 @@ export function MasterBlock({
             </div>
           </div>
 
-          {/* v0.6.30: KPI клиента перенесены в колонку SCOOTER (над аватаркой).
-              На освободившееся место — кнопка «Зафиксировать ущерб»,
-              дублирующая action из меню «Действия». */}
-          {onRecordDamage && (
-            <button
-              type="button"
-              onClick={onRecordDamage}
-              className="w-full inline-flex items-center justify-center gap-2 rounded-[10px] border border-orange-200 bg-orange-soft px-3 py-2.5 text-[12.5px] font-bold text-orange-ink hover:bg-orange-100 transition-colors"
-              title="Зафиксировать ущерб по этой аренде"
-            >
-              <Wrench size={14} /> Зафиксировать ущерб
-            </button>
-          )}
+          {/* v0.6.33: KPI клиента (дни/принёс) — компактная строка
+              иконка+цифра под телефонами. Перенесено из колонки скутера.
+              Кнопка «Зафиксировать ущерб» уехала в колонку SCOOTER под
+              аватарку. */}
+          <div className="flex items-center gap-4 pt-1">
+            <div className="inline-flex items-center gap-1.5 text-[12.5px]">
+              <Clock size={14} className="text-blue-600" />
+              <span className="font-bold tabular-nums text-ink">
+                {fmt(clientStats.totalDays)}
+              </span>
+              <span className="text-muted-2 text-[11px]">дн в аренде</span>
+            </div>
+            <div className="inline-flex items-center gap-1.5 text-[12.5px]">
+              <Wallet size={14} className="text-green-ink" />
+              <span className="font-bold tabular-nums text-ink">
+                {fmt(clientStats.totalPaid)}
+              </span>
+              <span className="text-muted-2 text-[11px]">₽ принёс</span>
+            </div>
+          </div>
 
-          {/* Money row — залог + депозит клиента (2-col).
-              v0.6.32: убран mt-auto, чтобы блок шёл сразу под кнопкой
-              «Зафиксировать ущерб» без огромной пустоты. Колонка
-              скутера всё равно задаёт высоту через аватарку 9:12. */}
+          {/* Money row — залог + депозит клиента (2-col). */}
           <div className="pt-2 grid grid-cols-2 gap-2">
             <div className="rounded-[10px] border border-border bg-surface-soft px-3 py-2">
               <div className="text-[9.5px] uppercase tracking-wider font-bold text-muted-2 inline-flex items-center gap-1">
@@ -348,30 +352,10 @@ export function MasterBlock({
               Скутер
             </div>
           </div>
-          {/* v0.6.30: KPI клиента (дней / принёс) — над аватаркой скутера.
-              Перенесено из колонки клиента. */}
-          <div className="grid grid-cols-2 gap-2 mb-3">
-            <div className="rounded-[10px] bg-surface-soft px-2 py-1.5 flex flex-col items-center text-center justify-center min-h-[52px]">
-              <div className="text-[9px] uppercase tracking-wider font-bold text-muted-2 leading-tight">
-                Дней в аренде
-              </div>
-              <div className="mt-0.5 font-display text-[16px] font-extrabold tabular-nums text-ink leading-none">
-                {fmt(clientStats.totalDays)}
-              </div>
-            </div>
-            <div className="rounded-[10px] bg-surface-soft px-2 py-1.5 flex flex-col items-center text-center justify-center min-h-[52px]">
-              <div className="text-[9px] uppercase tracking-wider font-bold text-muted-2 leading-tight">
-                Принёс за всё время аренд
-              </div>
-              <div className="mt-0.5 font-display text-[13px] font-extrabold tabular-nums text-blue-700 leading-none">
-                {fmt(clientStats.totalPaid)} ₽
-              </div>
-            </div>
-          </div>
           <div className="flex flex-col items-center">
-            {/* v0.6.15: вертикальная аватарка (aspect 9/12 — портретная),
-                hover-overlay с кнопкой «Заменить». Текст идёт ПОД аватаркой
-                отдельным блоком, а не поверх. */}
+            {/* v0.6.33: вертикальная аватарка скутера. Поверх аватарки
+                сверху-по-центру — overlay-плашка с номером скутера,
+                моделью и пробегом. Текст ПОД аватаркой убран. */}
             <div
               className="relative w-full max-w-[170px]"
               onMouseEnter={() => setScooterHover(true)}
@@ -382,9 +366,26 @@ export function MasterBlock({
                 size="md"
                 className="!h-auto aspect-[9/12] w-full"
               />
+              {/* v0.6.33: overlay с номером/моделью/пробегом наверху
+                  аватарки. backdrop-blur для читаемости. */}
+              <div className="absolute top-2 left-2 right-2 z-10 rounded-[10px] bg-white/85 backdrop-blur-sm px-2.5 py-1.5 text-center shadow-card-sm pointer-events-none">
+                <div className="font-display text-[16px] font-extrabold text-ink leading-none truncate">
+                  {scooter?.name ?? rental.scooter ?? "—"}
+                </div>
+                <div className="mt-0.5 text-[10.5px] text-muted-2 truncate">
+                  <ScooterModelLabel scooter={scooter ?? null} fallback={rental.model} />
+                  {scooter && (
+                    <>
+                      {" · Пробег "}
+                      <b className="tabular-nums text-ink-2">{fmt(scooter.mileage)}</b>
+                      {" км"}
+                    </>
+                  )}
+                </div>
+              </div>
               {/* hover overlay с кнопкой «Заменить» */}
               {scooterHover && (
-                <div className="absolute inset-0 rounded-2xl bg-ink/45 backdrop-blur-[1px] flex items-center justify-center pointer-events-none">
+                <div className="absolute inset-0 rounded-2xl bg-ink/45 backdrop-blur-[1px] flex items-center justify-center pointer-events-none z-20">
                   <button
                     type="button"
                     onClick={onSwapScooter}
@@ -396,22 +397,19 @@ export function MasterBlock({
                 </div>
               )}
             </div>
-            <div className="mt-3 text-center w-full min-w-0">
-              <div className="font-display text-[20px] font-extrabold text-ink leading-tight truncate">
-                {scooter?.name ?? rental.scooter ?? "—"}
-              </div>
-              <div className="text-[12px] font-semibold text-muted-2 mt-1 truncate">
-                <ScooterModelLabel scooter={scooter ?? null} fallback={rental.model} />
-              </div>
-              {scooter && (
-                <div className="mt-1 text-[10.5px] text-muted-2 inline-flex items-center gap-1">
-                  <Clock size={10} /> Пробег{" "}
-                  <span className="tabular-nums text-ink-2 font-semibold">
-                    {fmt(scooter.mileage)} км
-                  </span>
-                </div>
-              )}
-            </div>
+            {/* v0.6.33: кнопка «Зафиксировать ущерб» — под аватаркой
+                скутера, занимает всю ширину колонки. Перенесена сюда из
+                колонки клиента. */}
+            {onRecordDamage && (
+              <button
+                type="button"
+                onClick={onRecordDamage}
+                className="mt-3 w-full inline-flex items-center justify-center gap-2 rounded-[10px] border border-orange-200 bg-orange-soft px-3 py-2 text-[12.5px] font-bold text-orange-ink hover:bg-orange-100 transition-colors"
+                title="Зафиксировать ущерб по этой аренде"
+              >
+                <Wrench size={14} /> Зафиксировать ущерб
+              </button>
+            )}
           </div>
         </div>
 
