@@ -29,9 +29,8 @@ import {
   Repeat,
   Coins,
   Calendar as CalendarIcon,
-  Shirt,
-  Pencil,
   ChevronRight,
+  Plus,
   Wallet,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -41,7 +40,10 @@ import { useApiClients } from "@/lib/api/clients";
 import { useApiPayments } from "@/lib/api/payments";
 import { useRentalDebt } from "@/lib/api/debt";
 import { extendInplaceAsync } from "./rentalsStore";
-import { EquipmentChangeDialog } from "./EquipmentChangeDialog";
+import {
+  EquipmentInlinePicker,
+  EquipmentThumb,
+} from "./rental-card/EquipmentInlinePicker";
 import type { Rental } from "@/lib/mock/rentals";
 import type { PaymentMethod } from "@/lib/mock/rentals";
 import {
@@ -984,13 +986,11 @@ export function PaymentAcceptDialog({
   const fmtDDMMYYYY = (d: Date) =>
     `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}`;
 
-  // v0.6.3: экипировка inline (только показ + редактирование через
-  // существующий EquipmentChangeDialog). Сама структура хранится в
-  // rental.equipmentJson, никаких локальных копий тут не делаем —
-  // диалог обновляет аренду через invalidateQueries.
-  // v0.6.7: equipment/equipDaily объявлены выше (после dueAmount), здесь
-  // только state открытия модалки экипировки.
-  const [equipDialogOpen, setEquipDialogOpen] = useState(false);
+  // v0.6.12: экипировка inline — управляется EquipmentInlinePicker
+  // (общий компонент с MasterBlock). Сама структура хранится в
+  // rental.equipmentJson, picker дёргает equipmentChangeAsync который
+  // инвалидирует queries → equipmentJson обновится автоматически.
+  // Старый EquipmentChangeDialog убран — теперь inline popover.
 
   // v0.6.5: «жёлтая зона» в floating-календаре + предупреждение «не хватает».
   // Считаем только в режиме «по сумме клиента» — там оператор сам вводит
@@ -1019,6 +1019,93 @@ export function PaymentAcceptDialog({
           extDays * dailyExtTotalBase + debtPortion - accepted,
         )
       : 0;
+
+  // v0.6.12: подсказки прозрачности в режиме «по сумме клиента».
+  //
+  // Case A — «Не хватает X ₽ до N+1 дней»:
+  //   Когда forExt оставляет осколок меньше extDailyRate, оператору
+  //   полезно видеть «попроси у клиента ещё X ₽» — особенно когда
+  //   получилось 0 дней (даже на 1 день не хватает).
+  //
+  // Case B — «Выгоднее тариф ...»:
+  //   Перебираем все 4 пресета TARIFF[rental.model] + их минимальные
+  //   сроки. Для каждого считаем сколько денег нужно (minDays × rate +
+  //   debt + equipDaily × minDays). Если введённой суммы хватает И
+  //   получаем больше дней чем сейчас — это «выгодная» рекомендация.
+  //   Берём вариант с минимальной стоимостью среди возможных.
+  //   Если ни один не подходит — берём ближайший «недотянувший» с
+  //   текстом «Докиньте Z ₽ — попадёте на тариф ...».
+  type TariffRec = {
+    period: TariffPeriod;
+    rate: number;          // ₽/сут по пресету
+    minDays: number;       // мин-срок тарифа
+    daysAtThisTariff: number; // сколько дней даст текущая сумма
+    needForMin: number;    // сколько денег нужно для minDays
+    shortToMin: number;    // сколько докинуть до minDays (0 если хватает)
+  };
+  const tariffMinDays = (p: TariffPeriod): number =>
+    p === "day" ? 1 : p === "short" ? 3 : p === "week" ? 7 : 30;
+  const forExt = Math.max(0, accepted - debtPortion - topupAmount);
+  // Сколько денег нужно чтобы получить ещё +1 день при текущем тарифе.
+  // Используется как Case A: если extDays===0, это «до 1 дня».
+  const shortageToNextDay =
+    mode === "amount" && accepted > 0
+      ? (() => {
+          const needForNext = (extDays + 1) * dailyExtTotalBase;
+          return Math.max(0, needForNext - forExt);
+        })()
+      : 0;
+  // Перебор пресетов.
+  const tariffRecs: TariffRec[] = (
+    ["day", "short", "week", "month"] as const
+  ).map((p) => {
+    const rate = TARIFF[rental.model][p];
+    const minDays = tariffMinDays(p);
+    const unitDaily = rate + equipDaily;
+    const daysAtThisTariff = Math.floor(forExt / Math.max(1, unitDaily));
+    const needForMin = minDays * unitDaily + debtPortion + topupAmount;
+    const shortToMin = Math.max(0, needForMin - accepted);
+    return { period: p, rate, minDays, daysAtThisTariff, needForMin, shortToMin };
+  });
+  // Лучшая «достижимая» рекомендация: даёт больше дней чем сейчас и
+  // на неё хватает (shortToMin === 0). Из них берём ту с минимальной
+  // стоимостью minDays × rate (т.е. где сэкономит максимум).
+  const currentExtDays = extDays;
+  const currentTariffCost = extDays * dailyExtTotalBase;
+  const reachableBetter = tariffRecs
+    .filter(
+      (r) =>
+        r.shortToMin === 0 &&
+        r.period !== selectedTariff &&
+        // Условие «выгоднее»: либо больше дней, либо столько же дней но
+        // дешевле периодическая стоимость.
+        ((r.daysAtThisTariff > currentExtDays) ||
+          (r.daysAtThisTariff >= currentExtDays &&
+            r.daysAtThisTariff * (r.rate + equipDaily) < currentTariffCost)),
+    )
+    .sort(
+      (a, b) =>
+        a.minDays * (a.rate + equipDaily) -
+        b.minDays * (b.rate + equipDaily),
+    );
+  const betterTariff: TariffRec | null = reachableBetter[0] ?? null;
+  // Если ни один не достижим — выбираем ближайший «недотянувший»: с
+  // минимальным shortToMin > 0 среди тех, что дадут больше дней
+  // (на текущей сумме у нас 0 дней).
+  const upgradeTariff: TariffRec | null = (() => {
+    if (betterTariff) return null;
+    if (mode !== "amount" || accepted <= 0) return null;
+    const cands = tariffRecs
+      .filter(
+        (r) =>
+          r.shortToMin > 0 &&
+          r.period !== selectedTariff &&
+          r.minDays > currentExtDays,
+      )
+      .sort((a, b) => a.shortToMin - b.shortToMin);
+    return cands[0] ?? null;
+  })();
+
   return (
     <>
       <div
@@ -1263,6 +1350,108 @@ export function PaymentAcceptDialog({
                 </div>
               </div>
             )}
+            {/* v0.6.12: подсказки в режиме «по сумме клиента» — прозрачность.
+                Приоритет:
+                  1) betterTariff (зелёная плашка «Выгоднее: тариф ...»)
+                  2) upgradeTariff (жёлтая плашка «Докиньте Z ₽ — попадёте
+                     на тариф ...»)
+                  3) shortageToNextDay (жёлтая плашка «Не хватает X ₽ до
+                     N+1 дней»). */}
+            {mode === "amount" && accepted > 0 && betterTariff && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedTariff(betterTariff.period);
+                  setTariffPinned(true);
+                  setExtInputOverride(betterTariff.daysAtThisTariff);
+                }}
+                className="mt-2 w-full rounded-[10px] px-3 py-2 text-left text-[11.5px] font-semibold transition-colors hover:brightness-105"
+                style={{
+                  background: "hsl(var(--green-soft))",
+                  color: "hsl(var(--green-ink))",
+                }}
+                title="Применить рекомендуемый тариф"
+              >
+                Выгоднее: тариф «{TARIFF_PERIOD_LABEL[betterTariff.period]}»{" "}
+                {betterTariff.rate} ₽/сут → даст{" "}
+                <span className="tabular-nums">
+                  {betterTariff.daysAtThisTariff}
+                </span>{" "}
+                {betterTariff.daysAtThisTariff === 1
+                  ? "день"
+                  : betterTariff.daysAtThisTariff < 5
+                    ? "дня"
+                    : "дней"}{" "}
+                вместо{" "}
+                <span className="tabular-nums">{currentExtDays}</span>.{" "}
+                {(() => {
+                  const newCost =
+                    betterTariff.minDays * (betterTariff.rate + equipDaily);
+                  const economy = currentTariffCost - newCost;
+                  return economy > 0
+                    ? `Экономия ${fmt(economy)} ₽`
+                    : "Тариф выгоднее";
+                })()}
+              </button>
+            )}
+            {mode === "amount" &&
+              accepted > 0 &&
+              !betterTariff &&
+              upgradeTariff && (
+                <div
+                  className="mt-2 rounded-[10px] px-3 py-2 text-[11.5px] font-semibold"
+                  style={{
+                    background: "hsl(var(--orange-soft))",
+                    color: "hsl(var(--orange-ink))",
+                  }}
+                >
+                  Докиньте{" "}
+                  <span className="tabular-nums">
+                    {fmt(upgradeTariff.shortToMin)} ₽
+                  </span>{" "}
+                  — попадёте на тариф «
+                  {TARIFF_PERIOD_LABEL[upgradeTariff.period]}»{" "}
+                  {upgradeTariff.rate} ₽/сут, получите{" "}
+                  <span className="tabular-nums">
+                    {upgradeTariff.minDays}
+                  </span>{" "}
+                  {upgradeTariff.minDays === 1
+                    ? "день"
+                    : upgradeTariff.minDays < 5
+                      ? "дня"
+                      : "дней"}{" "}
+                  вместо{" "}
+                  <span className="tabular-nums">{currentExtDays}</span>.
+                </div>
+              )}
+            {mode === "amount" &&
+              accepted > 0 &&
+              !betterTariff &&
+              !upgradeTariff &&
+              shortageToNextDay > 0 &&
+              shortageToNextDay < extDailyRate + equipDaily && (
+                <div
+                  className="mt-2 rounded-[10px] px-3 py-2 text-[11.5px] font-semibold"
+                  style={{
+                    background: "hsl(var(--orange-soft))",
+                    color: "hsl(var(--orange-ink))",
+                  }}
+                >
+                  Не хватает{" "}
+                  <span className="tabular-nums">
+                    {fmt(shortageToNextDay)} ₽
+                  </span>{" "}
+                  до{" "}
+                  <span className="tabular-nums">{extDays + 1}</span>{" "}
+                  {extDays + 1 === 1
+                    ? "дня"
+                    : extDays + 1 < 5
+                      ? "дней"
+                      : "дней"}{" "}
+                  (тариф {extDailyRate} ₽/сут
+                  {equipDaily > 0 ? ` + ${equipDaily} ₽ экипировка` : ""}).
+                </div>
+              )}
             {/* v0.6.13: Тариф продления — pills + custom.
                 Логика: при выборе пресета пересчитывается extRate из
                 TARIFF[model][period]. При custom — поле ставки + toggle
@@ -1395,64 +1584,15 @@ export function PaymentAcceptDialog({
           </div>
 
           {/* ─── STEP 3: экипировка на новый период ─────────────────────
-              v0.6.5: чипы кликабельны — открывают EquipmentChangeDialog
-              для свапа (replaceAt) и добавления. По дизайну в правом
-              верхнем углу — итог +N ₽/сут, и pill «+ Добавить». */}
-          <div className="border-b border-border px-5 py-3">
-            <div className="mb-2 flex items-center gap-2">
-              <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-[11px] font-bold text-white">
-                {isOverdueState ? "3" : "2"}
-              </span>
-              <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
-                Экипировка на новый период
-              </div>
-              <span className="ml-auto text-[11px] text-muted">
-                {equipDaily > 0 ? `+${equipDaily} ₽/сут` : "бесплатно"}
-              </span>
-            </div>
-            <div className="flex flex-wrap gap-1.5 rounded-[12px] border border-border bg-white p-2 min-h-[60px]">
-              {equipment.length === 0 && (
-                <div className="px-2 py-2 text-[11.5px] text-muted-2">
-                  Без экипировки
-                </div>
-              )}
-              {equipment.map((it, idx) => (
-                <button
-                  key={`${it.itemId ?? "noid"}-${idx}`}
-                  type="button"
-                  onClick={() => setEquipDialogOpen(true)}
-                  className={cn(
-                    "inline-flex items-center gap-1.5 rounded-full pl-2.5 pr-1.5 py-1 text-[11.5px] font-semibold border border-transparent transition-colors hover:ring-2 hover:ring-blue-100",
-                    it.free
-                      ? "text-green-ink"
-                      : "text-orange-ink",
-                  )}
-                  style={{
-                    background: it.free
-                      ? "hsl(var(--green-soft))"
-                      : "hsl(var(--orange-soft))",
-                  }}
-                  title="Поменять / убрать"
-                >
-                  <Shirt size={11} />
-                  {it.name}
-                  {!it.free && (
-                    <span className="tabular-nums">·{it.price}₽</span>
-                  )}
-                  <span className="ml-0.5 inline-flex h-4 w-4 items-center justify-center rounded-full bg-white/70">
-                    <Repeat size={9} />
-                  </span>
-                </button>
-              ))}
-              <button
-                type="button"
-                onClick={() => setEquipDialogOpen(true)}
-                className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11.5px] font-semibold text-blue-700 border border-dashed border-blue-100 hover:bg-blue-50"
-              >
-                <Pencil size={10} /> Изменить
-              </button>
-            </div>
-          </div>
+              v0.6.12: тайлы экипировки с hover-overlay «Заменить» +
+              inline popover (EquipmentInlinePicker — общий с MasterBlock).
+              Старая EquipmentChangeDialog убрана. */}
+          <EquipmentStep
+            rental={rental}
+            equipment={equipment}
+            equipDaily={equipDaily}
+            isOverdueState={isOverdueState}
+          />
 
           {/* v0.6.11: «Пополнение залога» — отдельная секция, видна
               когда залог денежный и rental.deposit < depositOriginal. */}
@@ -1715,15 +1855,8 @@ export function PaymentAcceptDialog({
           этого side panel; дальше оператор может менять extDays
           спиннером прямо в panel'е. */}
 
-      {/* v0.6.3: редактор экипировки открывается из Step 3 — отдельный
-          диалог. После закрытия React Query инвалидирует rental,
-          equipmentJson обновится автоматически. */}
-      {equipDialogOpen && (
-        <EquipmentChangeDialog
-          rental={rental}
-          onClose={() => setEquipDialogOpen(false)}
-        />
-      )}
+      {/* v0.6.12: EquipmentChangeDialog убран — теперь inline picker
+          живёт прямо в Step 3 (см. EquipmentStep ниже). */}
     </>
   );
 }
@@ -2232,5 +2365,220 @@ function ForgiveOption({
       </div>
       <div className="mt-0.5 text-[11px] text-muted">{description}</div>
     </button>
+  );
+}
+
+/**
+ * v0.6.12: Step 3 — экипировка на новый период через inline-picker.
+ *
+ * Тайлы как в MasterBlock (см. rental-card/MasterBlock.tsx COLUMN 3),
+ * но компактнее: квадратные аватарки в flex-wrap, hover → overlay
+ * «Заменить», клик → EquipmentInlinePicker под тайлом.
+ *
+ * Тайл «+ Добавить» открывает picker в add-режиме (replacingIdx=-1).
+ *
+ * Подтверждение в picker'е вызывает equipmentChangeAsync — react-query
+ * инвалидирует rental, equipmentJson обновится автоматически.
+ */
+function EquipmentStep({
+  rental,
+  equipment,
+  equipDaily,
+  isOverdueState,
+}: {
+  rental: Rental;
+  equipment: Array<{ itemId?: number | null; name: string; price: number; free: boolean }>;
+  equipDaily: number;
+  isOverdueState: boolean;
+}) {
+  // -1 = add-mode, >=0 = replacing existing index, null = closed.
+  const [swapIdx, setSwapIdx] = useState<number | null>(null);
+  const [hoverEqIdx, setHoverEqIdx] = useState<number | null>(null);
+  const [pendingItem, setPendingItem] = useState<{
+    itemId: number | null;
+    name: string;
+    price: number;
+    free: boolean;
+  } | null>(null);
+
+  const isLive =
+    rental.status === "active" || rental.status === "overdue";
+
+  return (
+    <div className="border-b border-border px-5 py-3">
+      <div className="mb-2 flex items-center gap-2">
+        <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-[11px] font-bold text-white">
+          {isOverdueState ? "3" : "2"}
+        </span>
+        <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
+          Экипировка на новый период
+        </div>
+        <span className="ml-auto text-[11px] text-muted">
+          {equipDaily > 0 ? `+${equipDaily} ₽/сут` : "бесплатно"}
+        </span>
+      </div>
+      <div className="rounded-[12px] border border-border bg-white p-2 min-h-[64px]">
+        <div className="flex flex-wrap items-start gap-2">
+          {equipment.length === 0 && swapIdx !== -1 && (
+            <div className="px-2 py-2 text-[11.5px] text-muted-2">
+              Без экипировки
+            </div>
+          )}
+          {equipment.map((origIt, idx) => {
+            const isOpen = swapIdx === idx;
+            const showingPending = isOpen && pendingItem != null;
+            const it = showingPending ? pendingItem : origIt;
+            const isFree = it.free;
+            const isHover = hoverEqIdx === idx;
+            return (
+              <div
+                key={`${origIt.itemId ?? "noid"}-${idx}`}
+                className={cn(
+                  "relative flex flex-col items-center w-[68px]",
+                  showingPending && "animate-pulse opacity-80",
+                )}
+                onMouseEnter={() => isLive && setHoverEqIdx(idx)}
+                onMouseLeave={() =>
+                  setHoverEqIdx((v) => (v === idx ? null : v))
+                }
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!isLive) return;
+                    setSwapIdx(isOpen ? null : idx);
+                  }}
+                  disabled={!isLive}
+                  className={cn(
+                    "w-[68px] h-[68px] rounded-[10px] border-2 p-1.5 flex items-center justify-center transition-colors relative",
+                    isFree
+                      ? "border-green bg-green-soft/50 hover:bg-green-soft"
+                      : "border-blue-200 bg-blue-50 hover:bg-blue-100",
+                    isOpen &&
+                      (isFree
+                        ? "ring-2 ring-green ring-offset-1"
+                        : "ring-2 ring-blue-600 ring-offset-1"),
+                    isLive ? "cursor-pointer" : "cursor-default",
+                  )}
+                  title={isLive ? "Заменить или убрать" : it.name}
+                >
+                  <EquipmentThumb item={it} />
+                  {!isFree && it.price > 0 && (
+                    <span className="absolute top-0.5 right-0.5 rounded-full bg-blue-600 text-white px-1 py-0.5 text-[8.5px] font-bold tabular-nums shadow-card-sm">
+                      +{it.price}
+                    </span>
+                  )}
+                  {isFree && (
+                    <span className="absolute top-0.5 right-0.5 rounded-full bg-green text-white px-1 py-0.5 text-[8.5px] font-bold shadow-card-sm">
+                      free
+                    </span>
+                  )}
+                  {isLive && isHover && !isOpen && (
+                    <div className="absolute inset-0 rounded-[8px] bg-blue-600/80 backdrop-blur-[1px] flex items-center justify-center pointer-events-none">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-white text-blue-700 px-1.5 py-0.5 text-[9px] font-bold shadow-card-sm">
+                        <Repeat size={9} /> Заменить
+                      </span>
+                    </div>
+                  )}
+                </button>
+                <div
+                  className={cn(
+                    "mt-1 text-[9.5px] font-semibold text-center leading-tight px-0.5 break-words w-full",
+                    isFree ? "text-green-ink" : "text-blue-700",
+                  )}
+                  style={{
+                    display: "-webkit-box",
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: "vertical",
+                    overflow: "hidden",
+                  }}
+                >
+                  {it.name}
+                </div>
+                {isOpen && (
+                  <EquipmentInlinePicker
+                    rental={rental}
+                    replacingIdx={idx}
+                    onClose={() => {
+                      setSwapIdx(null);
+                      setPendingItem(null);
+                    }}
+                    onPreviewChange={setPendingItem}
+                  />
+                )}
+              </div>
+            );
+          })}
+          {isLive && (
+            <div
+              className={cn(
+                "relative flex flex-col items-center w-[68px]",
+                swapIdx === -1 && pendingItem && "animate-pulse opacity-80",
+              )}
+            >
+              <button
+                type="button"
+                onClick={() => setSwapIdx(swapIdx === -1 ? null : -1)}
+                className={cn(
+                  "w-[68px] h-[68px] rounded-[10px] border-2 flex items-center justify-center transition-colors p-1.5",
+                  swapIdx === -1 && pendingItem
+                    ? pendingItem.free
+                      ? "border-green bg-green-soft/50"
+                      : "border-blue-200 bg-blue-50"
+                    : "border-dashed border-border text-muted-2 hover:border-blue-600 hover:bg-blue-50 hover:text-blue-700",
+                  swapIdx === -1 &&
+                    !pendingItem &&
+                    "ring-2 ring-blue-600 ring-offset-1 border-blue-600 bg-blue-50 text-blue-700",
+                )}
+                title="Добавить экипировку"
+              >
+                {swapIdx === -1 && pendingItem ? (
+                  <EquipmentThumb
+                    item={{
+                      itemId: pendingItem.itemId,
+                      name: pendingItem.name,
+                      free: pendingItem.free,
+                    }}
+                  />
+                ) : (
+                  <Plus size={22} strokeWidth={2} />
+                )}
+              </button>
+              <div
+                className={cn(
+                  "mt-1 text-[9.5px] font-semibold text-center break-words leading-tight",
+                  swapIdx === -1 && pendingItem
+                    ? pendingItem.free
+                      ? "text-green-ink"
+                      : "text-blue-700"
+                    : "text-muted-2",
+                )}
+                style={{
+                  display: "-webkit-box",
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: "vertical",
+                  overflow: "hidden",
+                }}
+              >
+                {swapIdx === -1 && pendingItem
+                  ? pendingItem.name
+                  : "Добавить"}
+              </div>
+              {swapIdx === -1 && (
+                <EquipmentInlinePicker
+                  rental={rental}
+                  replacingIdx={-1}
+                  onClose={() => {
+                    setSwapIdx(null);
+                    setPendingItem(null);
+                  }}
+                  onPreviewChange={setPendingItem}
+                />
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
