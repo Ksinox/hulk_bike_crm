@@ -18,6 +18,7 @@ import { loadRoute, saveRoute, type RouteId } from "./route";
 import { onNavigate } from "./navigationStore";
 import { useMe } from "@/lib/api/auth";
 import { useAppSettings } from "@/lib/api/app-settings";
+import { useBillingPeriodAnchors } from "@/lib/api/billing-period";
 import { setRole } from "@/lib/role";
 import { Login } from "./Login";
 import { ForceChangePassword } from "./ForceChangePassword";
@@ -28,8 +29,12 @@ import { NewApplicationDetector } from "@/pages/clients/NewApplicationDetector";
 export function App() {
   const { data: me, isLoading, isError } = useMe();
   // v0.4.1: подгружаем глобальные настройки на старте — внутри хука
-  // billing_period_start_day прокидывается в lib/billingPeriod.
+  // billing_period_start_day прокидывается в lib/billingPeriod (legacy
+  // single-anchor fallback, пока не приедут реальные anchors).
   useAppSettings();
+  // v0.7: anchor'ы расчётного периода. На onSuccess перезаписывают
+  // single-anchor от useAppSettings полной историей переключений.
+  useBillingPeriodAnchors();
   const [webUpdate, setWebUpdate] = useState<string | null>(null);
   const [route, setRoute] = useState<RouteId>(() => loadRoute());
 
