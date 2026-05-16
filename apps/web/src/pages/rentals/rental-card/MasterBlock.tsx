@@ -210,11 +210,11 @@ export function MasterBlock({
             <button
               type="button"
               onClick={onOpenClientProfile}
-              className="w-[88px] shrink-0 self-stretch group cursor-pointer text-left"
+              className="shrink-0 self-stretch group cursor-pointer text-left"
               title="Открыть профиль клиента"
             >
               <div
-                className="h-full min-h-[140px] rounded-[12px] overflow-hidden flex flex-col border border-border group-hover:border-blue-600 transition-colors"
+                className="h-full aspect-[9/16] rounded-[12px] overflow-hidden flex flex-col border border-border group-hover:border-blue-600 transition-colors"
                 style={{
                   background: client
                     ? `linear-gradient(135deg, ${clientColor(client.id)}33, ${clientColor(client.id)}11)`
