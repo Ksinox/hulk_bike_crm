@@ -439,12 +439,16 @@ export async function equipmentChangeAsync(args: {
   payNow: boolean;
   method?: "cash" | "transfer";
   comment?: string;
+  refundTo?: "cash" | "deposit";
+  refundMethod?: "cash" | "transfer";
 }): Promise<void> {
   await api.post(`/api/rentals/${args.rentalId}/equipment-change`, {
     newEquipmentJson: args.newEquipmentJson,
     payNow: args.payNow,
     method: args.method,
     comment: args.comment,
+    refundTo: args.refundTo,
+    refundMethod: args.refundMethod,
   });
   invAll();
 }

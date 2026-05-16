@@ -569,8 +569,12 @@ export function PaymentAcceptDialog({
     // последним перед излишком. Маркер damageReportId=-1 — чтобы submit()
     // понимал что это продление и вызывал extend-inplace вместо обычного
     // payment(rent).
-    if (extEnabled && extSum > 0) {
-      queue.push({ cap: extSum, target: "rent", damageReportId: -1 });
+    // Правка 3: бэк extend-inplace создаёт placeholder на
+    // (extRate + equipDaily) × extDays = periodTotal. Cap слота должен
+    // быть periodTotal (а не чистый extSum), иначе equip-часть
+    // placeholder'а останется неоплаченным долгом при PATCH-погашении.
+    if (extEnabled && periodTotal > 0) {
+      queue.push({ cap: periodTotal, target: "rent", damageReportId: -1 });
     }
 
     // Шаг 2 — funding-источники в порядке списания.

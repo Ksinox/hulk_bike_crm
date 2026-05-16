@@ -37,6 +37,7 @@ import { useApiRentals } from "@/lib/api/rentals";
 import { useApiPayments } from "@/lib/api/payments";
 import { ScooterPosterAvatar } from "@/pages/rentals/ScooterPosterAvatar";
 import { initialsOf } from "@/lib/mock/clients";
+import { useClientPhoto } from "@/pages/clients/clientStore";
 import {
   EquipmentInlinePicker,
   EquipmentThumb,
@@ -110,6 +111,8 @@ export function MasterBlock({
   onRecordDamage?: () => void;
 }) {
   const equipmentJson = rental.equipmentJson ?? [];
+  // v0.6.37: фото клиента — тот же источник что в RentalsList.
+  const clientPhoto = useClientPhoto(rental.clientId);
 
   // v0.6.10: inline popover для замены экипировки (см. дизайн
   // rental-card.jsx стр. 504-535 + pickers.jsx EquipmentSwapPicker).
@@ -221,26 +224,39 @@ export function MasterBlock({
                     : "var(--surface-soft)",
                 }}
               >
-                <div className="flex-1 flex items-center justify-center">
-                  <span
-                    className="font-display text-[30px] font-extrabold"
-                    style={{
-                      color: client ? clientColor(client.id) : "#94a3b8",
-                      opacity: 0.55,
-                    }}
-                  >
-                    {client ? initialsOf(client.name) : "?"}
-                  </span>
-                </div>
-                <div
-                  className="px-1 py-0.5 text-center text-[8px] font-bold uppercase tracking-wider text-white"
-                  style={{
-                    background: client ? clientColor(client.id) : "#94a3b8",
-                    opacity: 0.85,
-                  }}
-                >
-                  фото
-                </div>
+                {/* v0.6.37: подтягиваем фото клиента (как в RentalsList
+                    через useClientPhoto). Если фото нет — fallback на
+                    инициалы + плашку «фото». */}
+                {clientPhoto?.thumbUrl ? (
+                  <img
+                    src={clientPhoto.thumbUrl}
+                    alt=""
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <>
+                    <div className="flex-1 flex items-center justify-center">
+                      <span
+                        className="font-display text-[30px] font-extrabold"
+                        style={{
+                          color: client ? clientColor(client.id) : "#94a3b8",
+                          opacity: 0.55,
+                        }}
+                      >
+                        {client ? initialsOf(client.name) : "?"}
+                      </span>
+                    </div>
+                    <div
+                      className="px-1 py-0.5 text-center text-[8px] font-bold uppercase tracking-wider text-white"
+                      style={{
+                        background: client ? clientColor(client.id) : "#94a3b8",
+                        opacity: 0.85,
+                      }}
+                    >
+                      фото
+                    </div>
+                  </>
+                )}
               </div>
             </button>
             <div className="flex-1 min-w-0">

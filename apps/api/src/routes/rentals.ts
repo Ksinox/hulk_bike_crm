@@ -1512,10 +1512,19 @@ export async function rentalsRoutes(app: FastifyInstance) {
           throw new Error(`extend_blocked_status:${old.status}`);
         }
 
+        // Правка 3: продление учитывает дневную стоимость платной экипировки.
+        const equipmentDaily = (
+          (old.equipmentJson ?? []) as Array<{
+            price?: number;
+            free?: boolean;
+          }>
+        ).reduce((s, it) => s + (it.free ? 0 : it.price ?? 0), 0);
+
+        const baseDaily = d.newRate + equipmentDaily;
         const extraSum =
           d.newRateUnit === "week"
-            ? d.newRate * Math.max(1, Math.round(d.extraDays / 7))
-            : d.newRate * d.extraDays;
+            ? baseDaily * Math.max(1, Math.round(d.extraDays / 7))
+            : baseDaily * d.extraDays;
 
         const newEndPlanned = new Date(
           old.endPlannedAt.getTime() + d.extraDays * 86_400_000,
@@ -1538,6 +1547,10 @@ export async function rentalsRoutes(app: FastifyInstance) {
         if (!updated) throw new Error("update failed");
 
         if (extraSum > 0) {
+          const equipNote =
+            equipmentDaily > 0
+              ? ` · вкл. экипировку ${equipmentDaily} ₽/сут`
+              : "";
           await tx.insert(payments).values({
             rentalId: id,
             type: "rent",
@@ -1546,8 +1559,8 @@ export async function rentalsRoutes(app: FastifyInstance) {
             paid: d.autoMarkPaid,
             paidAt: d.autoMarkPaid ? new Date() : null,
             note: d.autoMarkPaid
-              ? `продление на ${d.extraDays} дн (оплачено)`
-              : `продление на ${d.extraDays} дн (ожидает оплаты)`,
+              ? `продление на ${d.extraDays} дн (оплачено)${equipNote}`
+              : `продление на ${d.extraDays} дн (ожидает оплаты)${equipNote}`,
           });
         }
         return updated;
@@ -1619,10 +1632,19 @@ export async function rentalsRoutes(app: FastifyInstance) {
           throw new Error(`extend_blocked_status:${old.status}`);
         }
 
+        // Правка 3: продление учитывает дневную стоимость платной экипировки.
+        const equipmentDaily = (
+          (old.equipmentJson ?? []) as Array<{
+            price?: number;
+            free?: boolean;
+          }>
+        ).reduce((s, it) => s + (it.free ? 0 : it.price ?? 0), 0);
+
+        const baseDaily = d.newRate + equipmentDaily;
         const extraSum =
           d.newRateUnit === "week"
-            ? d.newRate * Math.max(1, Math.round(d.extraDays / 7))
-            : d.newRate * d.extraDays;
+            ? baseDaily * Math.max(1, Math.round(d.extraDays / 7))
+            : baseDaily * d.extraDays;
 
         const newEndPlanned = new Date(
           old.endPlannedAt.getTime() + d.extraDays * 86_400_000,
@@ -1649,6 +1671,10 @@ export async function rentalsRoutes(app: FastifyInstance) {
         if (!updated) throw new Error("update failed");
 
         if (extraSum > 0) {
+          const equipNote =
+            equipmentDaily > 0
+              ? ` · вкл. экипировку ${equipmentDaily} ₽/сут`
+              : "";
           await tx.insert(payments).values({
             rentalId: id,
             type: "rent",
@@ -1657,8 +1683,8 @@ export async function rentalsRoutes(app: FastifyInstance) {
             paid: d.autoMarkPaid,
             paidAt: d.autoMarkPaid ? new Date() : null,
             note: d.autoMarkPaid
-              ? `продление на ${d.extraDays} дн (оплачено)`
-              : `продление на ${d.extraDays} дн (ожидает оплаты)`,
+              ? `продление на ${d.extraDays} дн (оплачено)${equipNote}`
+              : `продление на ${d.extraDays} дн (ожидает оплаты)${equipNote}`,
           });
         }
         return { updated, old, extraSum };
@@ -1826,6 +1852,9 @@ export async function rentalsRoutes(app: FastifyInstance) {
           payNow: z.boolean().default(false),
           method: z.enum(["cash", "transfer"]).optional(),
           comment: z.string().max(300).optional(),
+          // Правка 1: куда возвращать разницу при удешевлении экипировки.
+          refundTo: z.enum(["cash", "deposit"]).default("deposit"),
+          refundMethod: z.enum(["cash", "transfer"]).optional(),
         })
         .strict();
       const parsed = schema.safeParse(req.body);
@@ -1839,10 +1868,12 @@ export async function rentalsRoutes(app: FastifyInstance) {
         .from(rentals)
         .where(eq(rentals.id, id));
       if (!rental) return reply.code(404).send({ error: "not found" });
-      if (rental.status !== "active") {
+      // Правка 2: смена экипировки разрешена на любой живой аренде.
+      const allowed = ["active", "overdue", "returning"];
+      if (!allowed.includes(rental.status) || rental.archivedAt) {
         return reply.code(409).send({
           error: "not_editable",
-          message: `Экипировка меняется только на активной аренде. Текущий статус: ${rental.status}.`,
+          message: `Экипировка меняется только на живой аренде. Статус: ${rental.status}.`,
         });
       }
 
@@ -1923,22 +1954,34 @@ export async function rentalsRoutes(app: FastifyInstance) {
             });
           }
         } else if (totalDelta < 0) {
-          // Возврат на депозит клиента — используем существующий update
-          // на clients.deposit_balance напрямую (минуя HTTP slag).
-          await tx.execute(sql`
-            UPDATE clients SET deposit_balance = deposit_balance + ${-totalDelta}
-             WHERE id = ${rental.clientId}
-          `);
-          // payment(type='refund') чтобы был учётный след
-          await tx.insert(payments).values({
-            rentalId: id,
-            type: "refund",
-            amount: -totalDelta,
-            method: "cash",
-            paid: true,
-            paidAt: new Date(),
-            note: `Возврат за уменьшение экипировки (${remainingDays} дн × ${-dailyDelta} ₽) → депозит клиента`,
-          });
+          if (parsed.data.refundTo === "cash") {
+            // Возврат налом из кассы — НЕ трогаем deposit_balance.
+            await tx.insert(payments).values({
+              rentalId: id,
+              type: "refund",
+              amount: -totalDelta,
+              method: parsed.data.refundMethod ?? "cash",
+              paid: true,
+              paidAt: new Date(),
+              note: `Возврат за уменьшение экипировки (${remainingDays} дн × ${-dailyDelta} ₽) — выдан клиенту`,
+            });
+          } else {
+            // refundTo === 'deposit' (default): возврат на депозит клиента.
+            await tx.execute(sql`
+              UPDATE clients SET deposit_balance = deposit_balance + ${-totalDelta}
+               WHERE id = ${rental.clientId}
+            `);
+            // payment(type='refund') чтобы был учётный след
+            await tx.insert(payments).values({
+              rentalId: id,
+              type: "refund",
+              amount: -totalDelta,
+              method: "cash",
+              paid: true,
+              paidAt: new Date(),
+              note: `Возврат за уменьшение экипировки (${remainingDays} дн × ${-dailyDelta} ₽) → депозит клиента`,
+            });
+          }
         }
         return updated;
       });
@@ -1957,7 +2000,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
             ? `Изменена экипировка по аренде ${summary} (без доплаты)`
             : totalDelta > 0
               ? `Изменена экипировка по аренде ${summary} · доплата ${totalDelta} ₽${parsed.data.payNow ? " (оплачено)" : " (в долг)"}`
-              : `Изменена экипировка по аренде ${summary} · возврат ${-totalDelta} ₽ → депозит клиента`,
+              : `Изменена экипировка по аренде ${summary} · возврат ${-totalDelta} ₽ ${parsed.data.refundTo === "cash" ? "налом клиенту" : "→ депозит клиента"}`,
         meta: {
           oldItems,
           newItems,

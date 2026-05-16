@@ -91,6 +91,21 @@ export function EquipmentInlinePicker({
   const [saving, setSaving] = useState(false);
   const [pendingId, setPendingId] = useState<number | null>(null);
   const [hoverId, setHoverId] = useState<number | null>(null);
+  // Правка 1: выбор «куда вернуть разницу» при удешевлении.
+  // refundStep: какой возврат подтверждаем (replace/remove) + сколько.
+  const [refundStep, setRefundStep] = useState<{
+    amount: number;
+    newJson: Array<{
+      itemId: number | null;
+      name: string;
+      price: number;
+      free: boolean;
+    }>;
+    kind: "replace" | "remove";
+  } | null>(null);
+  const [refundMethod, setRefundMethod] = useState<"cash" | "transfer" | null>(
+    null,
+  );
   const ref = useRef<HTMLDivElement | null>(null);
 
   // ESC + клик мимо закрывают
@@ -126,7 +141,9 @@ export function EquipmentInlinePicker({
     return Math.max(0, diff);
   })();
   const isLiveRental =
-    rental.status === "active" || rental.status === "overdue";
+    rental.status === "active" ||
+    rental.status === "overdue" ||
+    rental.status === "returning";
   const canCharge = isLiveRental && daysRemaining > 0;
 
   const items = catalog.filter(
@@ -178,70 +195,135 @@ export function EquipmentInlinePicker({
   );
   const hoverDoplata = calcDoplata(hoverItem);
 
-  const confirm = async () => {
-    if (saving || !previewItem) return;
+  // Подписанный totalDelta (может быть < 0 при удешевлении/удалении).
+  // remainingDays здесь = daysRemaining (Math.max(0,…)).
+  const signedTotalDelta = (() => {
+    if (!previewItem || !canCharge) return 0;
+    const newPrice = previewItem.free ? 0 : previewItem.price;
+    const oldPrice =
+      !isAddMode && replacing && !replacing.free ? replacing.price : 0;
+    return (newPrice - oldPrice) * daysRemaining;
+  })();
+
+  const removeTotalDelta = (() => {
+    if (isAddMode || !replacing || replacing.free || !canCharge) return 0;
+    return -replacing.price * daysRemaining;
+  })();
+
+  const performChange = async (
+    newJson: Array<{
+      itemId: number | null;
+      name: string;
+      price: number;
+      free: boolean;
+    }>,
+    opts: {
+      payNow: boolean;
+      refundTo?: "cash" | "deposit";
+      refundMethod?: "cash" | "transfer";
+    },
+    okMsg: string,
+    errMsg: string,
+  ) => {
     setSaving(true);
     try {
-      const newJson = isAddMode
-        ? [
-            ...equipment.map((e) => ({
-              itemId: e.itemId ?? null,
-              name: e.name,
-              price: e.price,
-              free: e.free,
-            })),
-            previewItem,
-          ]
-        : equipment.map((e, i) =>
-            i === replacingIdx
-              ? previewItem
-              : {
-                  itemId: e.itemId ?? null,
-                  name: e.name,
-                  price: e.price,
-                  free: e.free,
-                },
-          );
       await equipmentChangeAsync({
         rentalId: rental.id,
         newEquipmentJson: newJson,
-        // payNow=true когда есть остаток дней и позиция платная —
-        // оператор сразу принимает деньги. Иначе через manual_charge.
-        payNow: previewDoplata > 0,
+        payNow: opts.payNow,
+        refundTo: opts.refundTo,
+        refundMethod: opts.refundMethod,
       });
-      toast.success(isAddMode ? "Позиция добавлена" : "Экипировка заменена", "");
+      toast.success(okMsg, "");
       onClose();
     } catch (e) {
-      toast.error("Не удалось изменить", (e as Error).message ?? "");
+      toast.error(errMsg, (e as Error).message ?? "");
     } finally {
       setSaving(false);
     }
   };
 
+  const confirm = async () => {
+    if (saving || !previewItem) return;
+    const newJson = isAddMode
+      ? [
+          ...equipment.map((e) => ({
+            itemId: e.itemId ?? null,
+            name: e.name,
+            price: e.price,
+            free: e.free,
+          })),
+          previewItem,
+        ]
+      : equipment.map((e, i) =>
+          i === replacingIdx
+            ? previewItem
+            : {
+                itemId: e.itemId ?? null,
+                name: e.name,
+                price: e.price,
+                free: e.free,
+              },
+        );
+    // Удешевление → спрашиваем, куда вернуть разницу.
+    if (signedTotalDelta < 0) {
+      setRefundStep({
+        amount: -signedTotalDelta,
+        newJson,
+        kind: "replace",
+      });
+      return;
+    }
+    await performChange(
+      newJson,
+      // payNow=true когда есть остаток дней и позиция платная —
+      // оператор сразу принимает деньги. Иначе через manual_charge.
+      { payNow: previewDoplata > 0 },
+      isAddMode ? "Позиция добавлена" : "Экипировка заменена",
+      "Не удалось изменить",
+    );
+  };
+
   const handleRemove = async () => {
     if (saving || isAddMode) return;
-    setSaving(true);
-    try {
-      const next = equipment
-        .filter((_, i) => i !== replacingIdx)
-        .map((e) => ({
-          itemId: e.itemId ?? null,
-          name: e.name,
-          price: e.price,
-          free: e.free,
-        }));
-      await equipmentChangeAsync({
-        rentalId: rental.id,
-        newEquipmentJson: next,
-        payNow: false,
+    const next = equipment
+      .filter((_, i) => i !== replacingIdx)
+      .map((e) => ({
+        itemId: e.itemId ?? null,
+        name: e.name,
+        price: e.price,
+        free: e.free,
+      }));
+    // Удаление платной позиции → возврат, спрашиваем куда.
+    if (removeTotalDelta < 0) {
+      setRefundStep({
+        amount: -removeTotalDelta,
+        newJson: next,
+        kind: "remove",
       });
-      toast.success("Позиция убрана", "");
-      onClose();
-    } catch (e) {
-      toast.error("Не удалось убрать", (e as Error).message ?? "");
-    } finally {
-      setSaving(false);
+      return;
     }
+    await performChange(
+      next,
+      { payNow: false },
+      "Позиция убрана",
+      "Не удалось убрать",
+    );
+  };
+
+  const submitRefund = async (refundTo: "cash" | "deposit") => {
+    if (!refundStep || saving) return;
+    await performChange(
+      refundStep.newJson,
+      {
+        payNow: false,
+        refundTo,
+        refundMethod:
+          refundTo === "cash" ? refundMethod ?? "cash" : undefined,
+      },
+      refundStep.kind === "remove" ? "Позиция убрана" : "Экипировка заменена",
+      "Не удалось изменить",
+    );
   };
 
   if (!isAddMode && !replacing) return null;
@@ -257,7 +339,11 @@ export function EquipmentInlinePicker({
         <div className="flex items-start gap-2">
           <div className="flex-1 min-w-0">
             <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2 truncate">
-              {isAddMode ? "Добавить экипировку" : `Заменить «${replacing?.name}»`}
+              {refundStep
+                ? "Возврат за экипировку"
+                : isAddMode
+                  ? "Добавить экипировку"
+                  : `Заменить «${replacing?.name}»`}
             </div>
           </div>
           <button
@@ -269,21 +355,104 @@ export function EquipmentInlinePicker({
             <X size={12} />
           </button>
         </div>
-        <input
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          autoFocus
-          placeholder="Найти…"
-          className="mt-2 h-8 w-full rounded-[8px] border border-border bg-white px-2.5 text-[12px] text-ink outline-none focus:border-blue-600"
-        />
+        {!refundStep && (
+          <input
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            autoFocus
+            placeholder="Найти…"
+            className="mt-2 h-8 w-full rounded-[8px] border border-border bg-white px-2.5 text-[12px] text-ink outline-none focus:border-blue-600"
+          />
+        )}
       </div>
+      {refundStep && (
+        <div className="px-3 py-3">
+          <div className="text-[12px] text-ink">
+            Возврат{" "}
+            <span className="font-bold tabular-nums">
+              {fmt(refundStep.amount)} ₽
+            </span>{" "}
+            — куда?
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => void submitRefund("deposit")}
+              className="rounded-[10px] border-2 border-blue-200 bg-blue-50 px-2 py-2.5 text-[11.5px] font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-50"
+            >
+              В депозит клиента
+            </button>
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() =>
+                setRefundMethod((v) => (v == null ? "cash" : v))
+              }
+              className={cn(
+                "rounded-[10px] border-2 px-2 py-2.5 text-[11.5px] font-semibold disabled:opacity-50",
+                refundMethod != null
+                  ? "border-green bg-green-soft/40 text-green-ink"
+                  : "border-border bg-surface text-ink-2 hover:bg-surface-soft",
+              )}
+            >
+              Вернуть налом
+            </button>
+          </div>
+          {refundMethod != null && (
+            <div className="mt-3">
+              <div className="text-[10.5px] font-semibold uppercase tracking-wider text-muted-2">
+                Способ выдачи
+              </div>
+              <div className="mt-1.5 flex gap-2">
+                {(["cash", "transfer"] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setRefundMethod(m)}
+                    className={cn(
+                      "flex-1 rounded-[8px] border px-2 py-1.5 text-[11px] font-semibold",
+                      refundMethod === m
+                        ? "border-green bg-green-soft/40 text-green-ink"
+                        : "border-border bg-surface text-ink-2 hover:bg-surface-soft",
+                    )}
+                  >
+                    {m === "cash" ? "Наличные" : "Перевод"}
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => void submitRefund("cash")}
+                className="mt-3 w-full rounded-[8px] bg-blue-600 text-white px-3 py-1.5 text-[11px] font-bold hover:bg-blue-700 disabled:opacity-50"
+              >
+                Подтвердить возврат налом
+              </button>
+            </div>
+          )}
+          <button
+            type="button"
+            disabled={saving}
+            onClick={() => {
+              setRefundStep(null);
+              setRefundMethod(null);
+            }}
+            className="mt-3 w-full rounded-[8px] bg-surface border border-border px-2.5 py-1.5 text-[11px] font-semibold text-ink-2 hover:bg-surface-soft disabled:opacity-50"
+          >
+            Назад
+          </button>
+        </div>
+      )}
       {/* hover-плашка с расчётом */}
-      {hoverItem && hoverDoplata > 0 && (
+      {!refundStep && hoverItem && hoverDoplata > 0 && (
         <div className="border-b border-border bg-blue-50 px-3 py-1.5 text-[11px] text-blue-700">
           Доплатить за оставшиеся {daysRemaining} дн:{" "}
           <span className="font-bold tabular-nums">{fmt(hoverDoplata)} ₽</span>
         </div>
       )}
+      {!refundStep && (
+      <>
       <div className="max-h-[280px] overflow-y-auto scrollbar-thin px-2 py-2">
         {items.length === 0 && (
           <div className="px-3 py-4 text-center text-[12px] text-muted-2">
@@ -403,6 +572,8 @@ export function EquipmentInlinePicker({
           </button>
         </div>
       </div>
+      </>
+      )}
     </div>
   );
 }

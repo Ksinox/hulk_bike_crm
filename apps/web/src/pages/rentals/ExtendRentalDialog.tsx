@@ -86,7 +86,15 @@ export function ExtendRentalDialog({
     : TARIFF[rental.model][period];
   const isWeeklyCustom = customMode && customUnit === "week";
   const weeks = isWeeklyCustom ? Math.max(1, Math.round(days / 7)) : 0;
-  const sum = isWeeklyCustom ? rate * weeks : rate * days;
+  // Правка 3: бэк добавляет дневную стоимость платной экипировки к
+  // сумме продления. Для отображения считаем то же самое, но в API
+  // отправляем чистый rate (бэк сам прибавит equipmentDaily).
+  const equipmentDaily = equipment.reduce(
+    (s, it) => s + (it.free ? 0 : it.price ?? 0),
+    0,
+  );
+  const dailyTotal = rate + equipmentDaily;
+  const sum = isWeeklyCustom ? dailyTotal * weeks : dailyTotal * days;
 
   const newEndPlanned = useMemo(() => {
     const [d, m, y] = rental.endPlanned.split(".").map(Number);
@@ -144,7 +152,7 @@ export function ExtendRentalDialog({
         ...rental,
         days: rental.days + days,
         rate,
-        sum: rental.sum + rate * days,
+        sum: rental.sum + sum,
         endPlanned: newEndPlanned,
         equipmentJson: equipment as Rental["equipmentJson"],
         equipment: equipment.map((e) => e.name),
