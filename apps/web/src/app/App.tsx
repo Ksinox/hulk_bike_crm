@@ -3,6 +3,7 @@ import { Sidebar } from "./Sidebar";
 import { Dashboard } from "@/pages/dashboard/Dashboard";
 import { Clients } from "@/pages/clients/Clients";
 import { Rentals } from "@/pages/rentals/Rentals";
+import { Debtors } from "@/pages/debtors/Debtors";
 import { Documents } from "@/pages/documents/Documents";
 import { Garage } from "@/pages/fleet/Garage";
 import { Service } from "@/pages/service/Service";
@@ -98,6 +99,8 @@ export function App() {
           <Applications />
         ) : route === "rentals" ? (
           <Rentals />
+        ) : route === "debtors" ? (
+          <Debtors />
         ) : route === "fleet" ? (
           <Garage />
         ) : route === "service" ? (
