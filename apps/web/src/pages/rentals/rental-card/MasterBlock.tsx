@@ -165,8 +165,12 @@ export function MasterBlock({
   return (
     <div className="rounded-2xl bg-surface border border-border shadow-card-sm">
       <div className="grid grid-cols-1 lg:grid-cols-[2fr_1px_1fr_1px_1fr]">
-        {/* COLUMN 1 — CLIENT */}
-        <div className="p-5 flex flex-col gap-3">
+        {/* COLUMN 1 — CLIENT.
+            v0.6.34: flex-col + h-full, чтобы аватарка слева растянулась
+            от верха identity strip до низа всей колонки. Money row
+            остаётся отдельным блоком внизу, а блок «фото + инфа»
+            (flex-1) тянет аватарку. */}
+        <div className="p-5 flex flex-col gap-3 h-full">
           {/* Identity strip — мелкая полоса сверху */}
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-[10.5px] uppercase tracking-wider font-bold text-muted-2 tabular-nums">
@@ -205,15 +209,15 @@ export function MasterBlock({
                 удалена — она переехала в правую мини-колонку KPI ниже. */}
           </div>
 
-          <div className="flex gap-3">
+          <div className="flex gap-3 items-stretch flex-1">
             <button
               type="button"
               onClick={onOpenClientProfile}
-              className="w-[88px] shrink-0 group cursor-pointer text-left"
+              className="w-[88px] shrink-0 self-stretch group cursor-pointer text-left"
               title="Открыть профиль клиента"
             >
               <div
-                className="aspect-[9/12] rounded-[12px] overflow-hidden flex flex-col border border-border group-hover:border-blue-600 transition-colors"
+                className="h-full min-h-[140px] rounded-[12px] overflow-hidden flex flex-col border border-border group-hover:border-blue-600 transition-colors"
                 style={{
                   background: client
                     ? `linear-gradient(135deg, ${clientColor(client.id)}33, ${clientColor(client.id)}11)`
@@ -290,27 +294,27 @@ export function MasterBlock({
                   }
                 />
               </div>
-            </div>
-          </div>
 
-          {/* v0.6.33: KPI клиента (дни/принёс) — компактная строка
-              иконка+цифра под телефонами. Перенесено из колонки скутера.
-              Кнопка «Зафиксировать ущерб» уехала в колонку SCOOTER под
-              аватарку. */}
-          <div className="flex items-center gap-4 pt-1">
-            <div className="inline-flex items-center gap-1.5 text-[12.5px]">
-              <Clock size={14} className="text-blue-600" />
-              <span className="font-bold tabular-nums text-ink">
-                {fmt(clientStats.totalDays)}
-              </span>
-              <span className="text-muted-2 text-[11px]">дн в аренде</span>
-            </div>
-            <div className="inline-flex items-center gap-1.5 text-[12.5px]">
-              <Wallet size={14} className="text-green-ink" />
-              <span className="font-bold tabular-nums text-ink">
-                {fmt(clientStats.totalPaid)}
-              </span>
-              <span className="text-muted-2 text-[11px]">₽ принёс</span>
+              {/* v0.6.34: KPI клиента (дни/принёс) теперь ВНУТРИ правой
+                  части блока, после телефонов — это инфа о клиенте,
+                  не про аренду. Аватарка слева тянется на всю высоту
+                  благодаря items-stretch + self-stretch + h-full. */}
+              <div className="mt-3 flex items-center gap-4 flex-wrap">
+                <div className="inline-flex items-center gap-1.5 text-[12.5px]">
+                  <Clock size={14} className="text-blue-600" />
+                  <span className="font-bold tabular-nums text-ink">
+                    {fmt(clientStats.totalDays)}
+                  </span>
+                  <span className="text-muted-2 text-[11px]">дн в аренде</span>
+                </div>
+                <div className="inline-flex items-center gap-1.5 text-[12.5px]">
+                  <Wallet size={14} className="text-green-ink" />
+                  <span className="font-bold tabular-nums text-ink">
+                    {fmt(clientStats.totalPaid)}
+                  </span>
+                  <span className="text-muted-2 text-[11px]">₽ принёс</span>
+                </div>
+              </div>
             </div>
           </div>
 
