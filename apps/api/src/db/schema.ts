@@ -1540,3 +1540,195 @@ export const debtEntries = pgTable(
     kindIdx: index("debt_entries_kind_idx").on(t.kind),
   }),
 );
+
+/* ============================================================
+ * Должники (v0.8) — standalone-модуль для контроля долгов.
+ *
+ * Жизненный цикл стадий — конечный автомат в services/debtorStages.ts.
+ * БД хранит текущую stage; переходы валидируются на бэке.
+ * ============================================================ */
+
+export const debtorTypeEnum = pgEnum("debtor_type", [
+  "dtp_guilty",
+  "dtp_victim",
+  "damage",
+  "theft",
+  "rental_overdue",
+]);
+
+export const debtorStageEnum = pgEnum("debtor_stage", [
+  "created",
+  "pretrial",
+  "lawyer",
+  "court",
+  "insurance_docs",
+  "insurance_eval",
+  "insurance_wait",
+  "payment_schedule",
+  "police",
+  "criminal_case",
+  "closed_paid",
+  "closed_written_off",
+  "closed_settled",
+  "closed_court",
+]);
+
+export const debtorClientStatusEnum = pgEnum("debtor_client_status", [
+  "active",
+  "closed",
+]);
+
+export const debtorPaymentMethodEnum = pgEnum("debtor_payment_method", [
+  "transfer",
+  "cash",
+]);
+
+export const debtorCallOutcomeEnum = pgEnum("debtor_call_outcome", [
+  "answered",
+  "no_answer",
+  "promised",
+  "refused",
+]);
+
+export const debtors = pgTable(
+  "debtors",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    caseNumber: text("case_number").notNull().unique(),
+    // person
+    clientId: bigint("client_id", { mode: "number" }).references(
+      () => clients.id,
+      { onDelete: "set null" },
+    ),
+    externalName: text("external_name"),
+    externalPhone: text("external_phone"),
+    // debt
+    type: debtorTypeEnum("type").notNull(),
+    stage: debtorStageEnum("stage").notNull().default("created"),
+    stageEnteredAt: timestamp("stage_entered_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    totalAmount: integer("total_amount").notNull(),
+    psyRating: integer("psy_rating").notNull().default(3),
+    clientStatus: debtorClientStatusEnum("client_status")
+      .notNull()
+      .default("active"),
+    comment: text("comment"),
+    // insurance (dtp_victim)
+    insuranceCompany: text("insurance_company"),
+    insuranceEstimate: integer("insurance_estimate"),
+    insurancePayout: integer("insurance_payout"),
+    repairCost: integer("repair_cost"),
+    // lawyer
+    lawyerName: text("lawyer_name"),
+    lastLawyerUpdateAt: timestamp("last_lawyer_update_at", {
+      withTimezone: true,
+    }),
+    // related
+    relatedRentalId: bigint("related_rental_id", { mode: "number" }).references(
+      () => rentals.id,
+      { onDelete: "set null" },
+    ),
+    // closing
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    closedReason: text("closed_reason"),
+    // audit
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    createdByUserId: bigint("created_by_user_id", {
+      mode: "number",
+    }).references(() => users.id, { onDelete: "set null" }),
+  },
+  (t) => ({
+    stageIdx: index("debtors_stage_idx").on(t.stage),
+    clientIdx: index("debtors_client_idx").on(t.clientId),
+    rentalIdx: index("debtors_rental_idx").on(t.relatedRentalId),
+    createdAtIdx: index("debtors_created_at_idx").on(t.createdAt),
+  }),
+);
+
+export const debtorPayments = pgTable(
+  "debtor_payments",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    debtorId: bigint("debtor_id", { mode: "number" })
+      .notNull()
+      .references(() => debtors.id, { onDelete: "cascade" }),
+    n: integer("n").notNull(),
+    scheduledDate: date("scheduled_date").notNull(),
+    scheduledAmount: integer("scheduled_amount").notNull(),
+    paidAt: timestamp("paid_at", { withTimezone: true }),
+    paidAmount: integer("paid_amount"),
+    paidMethod: debtorPaymentMethodEnum("paid_method"),
+    paidByUserId: bigint("paid_by_user_id", { mode: "number" }).references(
+      () => users.id,
+      { onDelete: "set null" },
+    ),
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    uniqueN: uniqueIndex("debtor_payments_unique_n").on(t.debtorId, t.n),
+  }),
+);
+
+export const debtorCalls = pgTable("debtor_calls", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  debtorId: bigint("debtor_id", { mode: "number" })
+    .notNull()
+    .references(() => debtors.id, { onDelete: "cascade" }),
+  outcome: debtorCallOutcomeEnum("outcome").notNull(),
+  promisedDate: date("promised_date"),
+  note: text("note"),
+  userId: bigint("user_id", { mode: "number" }).references(() => users.id, {
+    onDelete: "set null",
+  }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const debtorStageEvents = pgTable(
+  "debtor_stage_events",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    debtorId: bigint("debtor_id", { mode: "number" })
+      .notNull()
+      .references(() => debtors.id, { onDelete: "cascade" }),
+    fromStage: debtorStageEnum("from_stage"),
+    toStage: debtorStageEnum("to_stage").notNull(),
+    reason: text("reason"),
+    userId: bigint("user_id", { mode: "number" }).references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    debtorIdx: index("debtor_stage_events_debtor_idx").on(
+      t.debtorId,
+      t.createdAt,
+    ),
+  }),
+);
+
+export const debtorNotes = pgTable("debtor_notes", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  debtorId: bigint("debtor_id", { mode: "number" })
+    .notNull()
+    .references(() => debtors.id, { onDelete: "cascade" }),
+  text: text("text").notNull(),
+  userId: bigint("user_id", { mode: "number" }).references(() => users.id, {
+    onDelete: "set null",
+  }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
