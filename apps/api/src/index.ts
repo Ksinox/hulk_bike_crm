@@ -205,6 +205,9 @@ async function bootstrap() {
     await protectedApp.register(appSettingsRoutes, {
       prefix: "/api/app-settings",
     });
+    // v0.8: модуль «Должники»
+    const { debtorsRoutes } = await import("./routes/debtors.js");
+    await protectedApp.register(debtorsRoutes, { prefix: "/api/debtors" });
     // Диагностика — только creator
     const { diagRoutes } = await import("./routes/diag.js");
     await protectedApp.register(diagRoutes, { prefix: "/api/_diag" });

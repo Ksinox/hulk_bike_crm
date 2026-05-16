@@ -9,6 +9,8 @@ export type PaymentForOverdue = {
   scheduledDate: string | Date;
   scheduledAmount: number;
   paidAt: Date | string | null;
+  /** Опциональное поле, нужно для isFullyPaid из debtorSchedule. */
+  paidAmount?: number | null;
 };
 
 /** Дата → начало дня в локальной TZ (00:00:00). */

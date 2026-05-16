@@ -3,6 +3,7 @@ export type RouteId =
   | "clients"
   | "applications"
   | "rentals"
+  | "debtors"
   | "rassrochki"
   | "sales"
   | "service"
@@ -22,6 +23,7 @@ const READY: RouteId[] = [
   "clients",
   "applications",
   "rentals",
+  "debtors",
   "fleet",
   "service",
   "docs",

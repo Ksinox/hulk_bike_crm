@@ -63,13 +63,16 @@ export function buildSchedule(params: ScheduleParams): ScheduledPayment[] {
   }));
 }
 
+type PaidLike = {
+  paidAt: Date | string | null;
+  paidAmount?: number | null;
+};
+
 /**
  * Сумма уже зачисленных платежей (paidAmount). Используется в UI:
  *  «погашено 36 000 / 90 000 ₽».
  */
-export function paidSoFar(
-  payments: { paidAt: Date | string | null; paidAmount: number | null }[],
-): number {
+export function paidSoFar(payments: PaidLike[]): number {
   return payments
     .filter((p) => p.paidAt)
     .reduce((s, p) => s + (p.paidAmount ?? 0), 0);
@@ -81,9 +84,6 @@ export function progressPercent(totalAmount: number, paidAmount: number): number
 }
 
 /** Полностью закрыто (paid >= total) — критерий авто-закрытия дела. */
-export function isFullyPaid(
-  totalAmount: number,
-  payments: { paidAt: Date | string | null; paidAmount: number | null }[],
-): boolean {
+export function isFullyPaid(totalAmount: number, payments: PaidLike[]): boolean {
   return paidSoFar(payments) >= totalAmount;
 }
