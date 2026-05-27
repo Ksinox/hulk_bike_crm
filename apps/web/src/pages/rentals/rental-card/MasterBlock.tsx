@@ -125,9 +125,9 @@ export function MasterBlock({
   }, [client, allRentals, allPayments]);
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="overflow-hidden rounded-2xl border border-border bg-surface shadow-card-sm">
       {/* ── БЛОК 1 — Карточка клиента (фото слева, инфа справа) ── */}
-      <div className="rounded-2xl bg-surface border border-border shadow-card-sm p-5">
+      <div className="border-b border-border p-5">
         <div className="flex gap-4">
           {/* Квадратное фото с иконкой камеры в углу. */}
           <button
@@ -135,7 +135,7 @@ export function MasterBlock({
             onClick={onOpenClientProfile}
             className="shrink-0 group cursor-pointer text-left relative"
             title="Открыть профиль клиента"
-            style={{ width: 118, height: 118 }}
+            style={{ width: 124, height: 124 }}
           >
             <div
               className="h-full w-full rounded-[14px] overflow-hidden flex items-center justify-center border border-border group-hover:border-blue-600 transition-colors relative"
@@ -248,12 +248,12 @@ export function MasterBlock({
       {/* ── БЛОК 2 — СКУТЕР | ЭКИПИРОВКА (grid-cols-2) ──
           v0.6.40: высоты блоков определяются контентом (без h-full).
           Скутер использует фиксированную невысокую аватарку. */}
-      <div className="grid grid-cols-2 gap-3 items-start">
+      <div className="grid grid-cols-[minmax(0,1.25fr)_minmax(0,0.75fr)] gap-4 border-b border-border p-5 items-stretch">
         {/* СКУТЕР */}
-        <div className="rounded-2xl bg-surface border border-border shadow-card-sm p-4 flex flex-col">
+        <div className="rounded-[14px] bg-surface-soft/55 p-4 flex flex-col">
           <div className="mb-2 min-w-0">
             <div className="text-[11px] font-semibold text-muted-2">
-              Скутер
+              СКУТЕР
             </div>
             <div className="mt-0.5 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
               <span className="font-display text-[17px] font-extrabold leading-tight text-ink">
@@ -274,7 +274,7 @@ export function MasterBlock({
             <ScooterPosterAvatar
               scooter={scooter ?? null}
               size="md"
-              className="!h-[132px] !w-full"
+              className="!h-[140px] !w-full"
             />
             {/* hover overlay с кнопкой «Заменить» */}
             {scooterHover && (
@@ -297,10 +297,10 @@ export function MasterBlock({
         </div>
 
         {/* ЭКИПИРОВКА */}
-        <div className="rounded-2xl bg-surface border border-border shadow-card-sm p-4 flex flex-col">
+        <div className="rounded-[14px] bg-surface-soft/55 p-4 flex flex-col">
           <div className="flex items-center justify-between mb-2">
             <div className="text-[11px] font-semibold text-muted-2">
-              Экипировка
+              ЭКИПИРОВКА
             </div>
             <div className="text-[10.5px] text-muted-2">
               {equipmentJson.length} {pluralPos(equipmentJson.length)}
@@ -361,7 +361,7 @@ export function MasterBlock({
               )}
             </div>
           ) : (
-            <div className="grid min-h-[172px] grid-cols-2 content-start gap-2 rounded-[14px] bg-surface-soft/35 p-2">
+            <div className="grid min-h-[172px] grid-cols-1 content-start gap-2 rounded-[14px] p-0">
               {equipmentJson.slice(0, 6).map((origIt, idx) => {
                 const canSwap = !!onChangeEquipment;
                 const isOpen = swapIdx === idx;
@@ -373,7 +373,7 @@ export function MasterBlock({
                   <div
                     key={`${origIt.itemId ?? "na"}-${idx}`}
                     className={cn(
-                      "relative flex min-w-0 flex-col",
+                      "relative min-w-0",
                       showingPending && "animate-pulse opacity-80",
                     )}
                     onMouseEnter={() => canSwap && setHoverEqIdx(idx)}
@@ -387,7 +387,7 @@ export function MasterBlock({
                       }}
                       disabled={!canSwap}
                       className={cn(
-                        "flex h-[72px] w-full items-center justify-center rounded-[12px] border-2 bg-white p-2 transition-colors relative",
+                        "flex min-h-[72px] w-full items-center gap-2.5 rounded-[12px] border-2 bg-white px-3 py-2 text-left transition-colors relative",
                         isFree
                           ? "border-green bg-green-soft/50 hover:bg-green-soft"
                           : "border-blue-200 bg-blue-50 hover:bg-blue-100",
@@ -399,7 +399,17 @@ export function MasterBlock({
                       )}
                       title={canSwap ? "Заменить или убрать" : it.name}
                     >
-                      <EquipmentThumb item={it} />
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center">
+                        <EquipmentThumb item={it} />
+                      </span>
+                      <span
+                        className={cn(
+                          "min-w-0 flex-1 text-[12px] font-bold leading-tight",
+                          isFree ? "text-green-ink" : "text-blue-700",
+                        )}
+                      >
+                        {it.name}
+                      </span>
                       {!isFree && it.price > 0 && (
                         <span className="absolute top-0.5 right-0.5 rounded-full bg-blue-600 text-white px-1 py-0 text-[8.5px] font-bold tabular-nums shadow-card-sm">
                           +{it.price}
@@ -418,20 +428,6 @@ export function MasterBlock({
                         </div>
                       )}
                     </button>
-                    <div
-                      className={cn(
-                        "mt-1 text-[9.5px] font-semibold text-center leading-tight px-0.5 break-words",
-                        isFree ? "text-green-ink" : "text-blue-700",
-                      )}
-                      style={{
-                        display: "-webkit-box",
-                        WebkitLineClamp: 2,
-                        WebkitBoxOrient: "vertical",
-                        overflow: "hidden",
-                      }}
-                    >
-                      {it.name}
-                    </div>
                     {isOpen && (
                       <EquipmentInlinePicker
                         rental={rental}
@@ -449,7 +445,7 @@ export function MasterBlock({
               {onChangeEquipment && equipmentJson.length < 6 && (
                 <div
                   className={cn(
-                      "relative flex min-w-0 flex-col",
+                      "relative min-w-0",
                     swapIdx === -1 && pendingItem && "animate-pulse opacity-80",
                   )}
                 >
@@ -457,7 +453,7 @@ export function MasterBlock({
                     type="button"
                     onClick={() => setSwapIdx(swapIdx === -1 ? null : -1)}
                     className={cn(
-                      "flex h-[72px] w-full items-center justify-center rounded-[12px] border-2 bg-white p-2 transition-colors",
+                      "flex min-h-[72px] w-full items-center justify-center gap-2 rounded-[12px] border-2 bg-white px-3 py-2 transition-colors",
                       swapIdx === -1 && pendingItem
                         ? pendingItem.free
                           ? "border-green bg-green-soft/50"
@@ -515,7 +511,7 @@ export function MasterBlock({
           v0.6.40: жёсткий 50/50 grid, min-w-0 на обеих ячейках
           чтобы ни одна не растягивала соседа. */}
       <div className="grid grid-cols-2 gap-3">
-        <div className="min-w-0 rounded-2xl border border-border bg-surface shadow-card-sm px-3 py-2.5">
+        <div className="min-w-0 rounded-[12px] border border-border bg-surface px-4 py-3">
           <div className="text-[11px] font-semibold text-muted-2 inline-flex items-center gap-1">
             <Shield size={11} /> Залог
           </div>
@@ -530,7 +526,7 @@ export function MasterBlock({
                 : "на балансе компании"}
           </div>
         </div>
-        <div className="min-w-0 rounded-2xl border border-border bg-surface shadow-card-sm px-3 py-2.5">
+        <div className="min-w-0 rounded-[12px] border border-border bg-surface px-4 py-3">
           <div className="text-[11px] font-semibold text-muted-2 inline-flex items-center gap-1">
             <Wallet size={11} /> Депозит
           </div>
