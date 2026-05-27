@@ -94,7 +94,10 @@ export function DocsInline({ rental }: { rental: Rental }) {
           {Object.keys(DOC_META).length} шаблона
         </span>
       </div>
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+      {/* v0.6.47: всегда 1 в ряд — в зажатой карточке (≈400-500px)
+          3 в ряд давали 130px тайлы, «Договор + акт» переносилось
+          посимвольно. Один в ряд = текст всегда читается. */}
+      <div className="grid grid-cols-1 gap-2">
         {(Object.keys(DOC_META) as DocType[]).map((t) => {
           const meta = DOC_META[t];
           const Icon = meta.icon;
