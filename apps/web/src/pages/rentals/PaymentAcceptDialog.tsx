@@ -1490,7 +1490,8 @@ export function PaymentAcceptDialog({
                 </div>
               </div>
               <div className="flex flex-wrap gap-1.5">
-                {(["short", "day", "week", "month"] as const).map((p) => {
+                {/* v0.6.43: порядок по возрастанию срока — 1-2 / 3-6 / 7-29 / 30+ */}
+                {(["day", "short", "week", "month"] as const).map((p) => {
                   const r = TARIFF[rental.model][p];
                   const active = selectedTariff === p;
                   return (
