@@ -350,6 +350,12 @@ export function PaymentAcceptDialog({
   const depositToUse = useDeposit ? depositBalance : 0;
   const remainingAfterDeposit = Math.max(0, dueAmount - depositToUse);
 
+  // v0.6.52: при ЗАВЕРШЕНИИ аренды (extDays === 0) и наличии залога —
+  // оператор может ввести сумму к списанию из залога в счёт долга.
+  // UI-демонстрация: уменьшает «К приёму», на backend пока не отправляется
+  // (бэкенд не поддерживает прямое списание залога без damage report).
+  const [useDepositAmount, setUseDepositAmount] = useState<number>(0);
+
   // v0.6.11: пополнение залога. Доступно когда:
   //  - залог денежный (depositItem === null/undefined)
   //  - rental.deposit < rental.depositOriginal (есть «недостача»)
@@ -1198,38 +1204,9 @@ export function PaymentAcceptDialog({
                   {overdueDaysHeader > 0 ? ` · ${overdueDaysHeader} дн` : ""}
                 </span>
               </div>
-              {/* v0.6.51: если у аренды есть залог (rental.deposit > 0) —
-                  показываем информационный блок «можно закрыть просрочку
-                  из залога». Сам бэк такой опции пока не поддерживает
-                  (списание залога идёт только через DamageReportDialog).
-                  Поэтому кнопка показывает toast «функция в разработке» —
-                  оператор видит что фича предполагается. */}
-              {(rental.deposit ?? 0) > 0 && (
-                <div className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-[10px] border border-blue-200 bg-blue-50/70 px-3 py-2 text-[12px] text-blue-800">
-                  <div className="flex items-start gap-2 min-w-0">
-                    <Shield size={14} className="mt-0.5 shrink-0" />
-                    <div className="min-w-0">
-                      У клиента залог{" "}
-                      <span className="font-bold tabular-nums">
-                        {fmt(rental.deposit ?? 0)} ₽
-                      </span>
-                      {" "}— можно закрыть просрочку из залога.
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      toast.info(
-                        "Функция в разработке",
-                        "Закрытие просрочки из залога планируется в следующем релизе. Сейчас залог можно использовать только через акт ущерба.",
-                      )
-                    }
-                    className="shrink-0 inline-flex items-center gap-1 rounded-[8px] bg-blue-600 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-blue-700"
-                  >
-                    Закрыть из залога
-                  </button>
-                </div>
-              )}
+              {/* v0.6.52: блок «У клиента залог — закрыть из залога»
+                  перенесён в footer (отображается только при завершении
+                  аренды, когда extDays === 0). */}
               {/* v0.6.11: 2 карточки grid-cols-2 — «Погасить долг» / «Простить».
                   На «Простить» при hover/click показывается side popover со
                   списком 4 вариантов (все дни / N дней / только штраф / всё). */}
@@ -1831,13 +1808,53 @@ export function PaymentAcceptDialog({
             )}
           </div>
 
+          {/* v0.6.52: блок «Закрыть из залога» — показывается только при
+              ЗАВЕРШЕНИИ аренды (extDays === 0) и наличии залога. Введённая
+              сумма уменьшает «К приёму». UI-демонстрация: на backend пока
+              не отправляется (бэк не поддерживает прямое списание залога). */}
+          {extDays === 0 && (rental.deposit ?? 0) > 0 && (
+            <div className="px-5 pb-2">
+              <div className="rounded-[12px] border border-amber-200 bg-amber-50 px-3 py-2 flex items-center gap-2">
+                <Shield size={16} className="text-amber-700 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <div className="text-[12px] font-semibold text-amber-900">
+                    Залог клиента: {fmt(rental.deposit ?? 0)} ₽
+                  </div>
+                  <div className="text-[11px] text-amber-700/80 mt-0.5">
+                    При завершении аренды залог возвращается клиенту или списывается на долг.
+                  </div>
+                </div>
+                <input
+                  type="number"
+                  min={0}
+                  max={Math.min(rental.deposit ?? 0, totalDebt)}
+                  value={useDepositAmount}
+                  onChange={(e) =>
+                    setUseDepositAmount(
+                      Math.max(
+                        0,
+                        Math.min(
+                          rental.deposit ?? 0,
+                          Number(e.target.value),
+                        ),
+                      ),
+                    )
+                  }
+                  className="w-24 rounded-md border border-amber-300 px-2 py-1 text-[12px] text-right tabular-nums"
+                  placeholder="0"
+                />
+                <span className="text-[11px] text-amber-800">₽</span>
+              </div>
+            </div>
+          )}
+
           {/* (2) Итого — крупная сумма «К приёму» */}
           <div className="flex items-baseline justify-between border-t border-border px-5 py-3">
             <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
               К приёму
             </div>
             <div className="font-display text-[22px] font-extrabold leading-none tabular-nums text-blue-700">
-              {fmt(Math.max(0, grossTotal - depositToUse))} ₽
+              {fmt(Math.max(0, grossTotal - depositToUse - (extDays === 0 ? useDepositAmount : 0)))} ₽
             </div>
           </div>
 

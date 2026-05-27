@@ -12,7 +12,7 @@
  *   • Активная строка — bg-blue-50 (или красная если долг) + правый край
  *     не скруглён (rounded-r-none) и упирается в карточку справа.
  */
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, SearchX } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { type Rental } from "@/lib/mock/rentals";
 import { effectiveRentalStatus } from "@/lib/rentalStatus";
@@ -54,7 +54,7 @@ export function RentalsList({
   if (items.length === 0) {
     return (
       <div className="flex h-full min-h-[180px] flex-col items-center justify-center gap-2 p-8 text-center">
-        <div className="text-2xl">🔍</div>
+        <SearchX size={36} className="text-muted-2" />
         <div className="text-[14px] font-semibold text-ink">
           Аренд не найдено
         </div>
