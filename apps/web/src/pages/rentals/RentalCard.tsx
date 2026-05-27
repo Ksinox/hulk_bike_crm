@@ -14,7 +14,7 @@
  *
  * Phase 2 start: drag-to-extend и polish-анимации добавятся отдельно.
  */
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -202,6 +202,7 @@ export function RentalCard({
   rental,
   onSwapped,
   onClose,
+  onPaymentOpenChange,
   /** Игнорируется в v0.6 — табы отменены. Сохраняем prop для обратной
    *  совместимости с Rentals.tsx (он передаёт initialTab при навигации
    *  с дашборда). Логика «открыть драверы по типу» отложена. */
@@ -212,6 +213,7 @@ export function RentalCard({
   /** v0.6.29: закрытие карточки — список аренд раскрывается на всю
    *  ширину. Управляется родителем (Rentals.tsx) через selectedId=null. */
   onClose?: () => void;
+  onPaymentOpenChange?: (open: boolean) => void;
   initialTab?: string;
 }) {
   void _initialTab;
@@ -868,6 +870,10 @@ export function RentalCard({
   const headerTotalDebt =
     pending + overdueBalance + damageBalance + manualBalance;
   const paymentOpen = paymentRentalId != null;
+
+  useEffect(() => {
+    onPaymentOpenChange?.(paymentOpen);
+  }, [onPaymentOpenChange, paymentOpen]);
 
   return (
     <div className="w-full">

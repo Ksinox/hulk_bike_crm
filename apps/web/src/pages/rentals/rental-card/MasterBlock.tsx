@@ -361,7 +361,7 @@ export function MasterBlock({
               )}
             </div>
           ) : (
-            <div className="grid min-h-[172px] grid-cols-1 content-start gap-2 rounded-[14px] p-0">
+            <div className="grid min-h-[172px] grid-cols-2 content-start gap-2 rounded-[14px] bg-surface-soft/35 p-2">
               {equipmentJson.slice(0, 6).map((origIt, idx) => {
                 const canSwap = !!onChangeEquipment;
                 const isOpen = swapIdx === idx;
@@ -387,7 +387,7 @@ export function MasterBlock({
                       }}
                       disabled={!canSwap}
                       className={cn(
-                        "flex min-h-[72px] w-full items-center gap-2.5 rounded-[12px] border-2 bg-white px-3 py-2 text-left transition-colors relative",
+                        "relative flex h-[72px] w-full items-center justify-center rounded-[12px] border-2 bg-white p-2 transition-colors",
                         isFree
                           ? "border-green bg-green-soft/50 hover:bg-green-soft"
                           : "border-blue-200 bg-blue-50 hover:bg-blue-100",
@@ -399,16 +399,8 @@ export function MasterBlock({
                       )}
                       title={canSwap ? "Заменить или убрать" : it.name}
                     >
-                      <span className="flex h-10 w-10 shrink-0 items-center justify-center">
+                      <span className="flex h-12 w-12 shrink-0 items-center justify-center">
                         <EquipmentThumb item={it} />
-                      </span>
-                      <span
-                        className={cn(
-                          "min-w-0 flex-1 text-[12px] font-bold leading-tight",
-                          isFree ? "text-green-ink" : "text-blue-700",
-                        )}
-                      >
-                        {it.name}
                       </span>
                       {!isFree && it.price > 0 && (
                         <span className="absolute top-0.5 right-0.5 rounded-full bg-blue-600 text-white px-1 py-0 text-[8.5px] font-bold tabular-nums shadow-card-sm">
@@ -428,6 +420,14 @@ export function MasterBlock({
                         </div>
                       )}
                     </button>
+                    <div
+                      className={cn(
+                        "mt-1 text-center text-[9.5px] font-bold leading-tight break-words",
+                        isFree ? "text-green-ink" : "text-blue-700",
+                      )}
+                    >
+                      {it.name}
+                    </div>
                     {isOpen && (
                       <EquipmentInlinePicker
                         rental={rental}
@@ -453,7 +453,7 @@ export function MasterBlock({
                     type="button"
                     onClick={() => setSwapIdx(swapIdx === -1 ? null : -1)}
                     className={cn(
-                      "flex min-h-[72px] w-full items-center justify-center gap-2 rounded-[12px] border-2 bg-white px-3 py-2 transition-colors",
+                      "flex h-[72px] w-full items-center justify-center rounded-[12px] border-2 bg-white p-2 transition-colors",
                       swapIdx === -1 && pendingItem
                         ? pendingItem.free
                           ? "border-green bg-green-soft/50"
@@ -510,7 +510,7 @@ export function MasterBlock({
       {/* ── БЛОК 3 — Залог | Депозит (grid-cols-2) ──
           v0.6.40: жёсткий 50/50 grid, min-w-0 на обеих ячейках
           чтобы ни одна не растягивала соседа. */}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 gap-3 p-5">
         <div className="min-w-0 rounded-[12px] border border-border bg-surface px-4 py-3">
           <div className="text-[11px] font-semibold text-muted-2 inline-flex items-center gap-1">
             <Shield size={11} /> Залог

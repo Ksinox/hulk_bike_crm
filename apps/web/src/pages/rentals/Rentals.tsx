@@ -28,6 +28,7 @@ import {
   matchText,
   normalizeQuery,
 } from "@/lib/search";
+import { cn } from "@/lib/utils";
 
 /** Сегодня в формате DD.MM.YYYY (локальное время) */
 function todayRu(): string {
@@ -192,6 +193,7 @@ export function Rentals() {
     endDateTo: null,
   });
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [cardPaymentOpen, setCardPaymentOpen] = useState(false);
   const [newOpen, setNewOpen] = useState(false);
   /**
    * После создания аренды — автоматически открываем превью документа
@@ -392,6 +394,10 @@ export function Rentals() {
 
   const selectedRental = rentals.find((r) => r.id === selectedId) ?? null;
 
+  useEffect(() => {
+    setCardPaymentOpen(false);
+  }, [selectedId]);
+
   return (
     <main className="flex min-w-0 flex-1 flex-col gap-4">
       {!selectedRental && <Topbar />}
@@ -438,8 +444,18 @@ export function Rentals() {
           Это даёт focus mode карточке: вся ширина под layout 2-col. */}
       {(() => {
         const selected = selectedRental;
+        const showSideList = selected && !cardPaymentOpen;
         return (
-          <div className="flex flex-1 flex-col gap-4">
+          <div
+            className={cn(
+              "grid flex-1 gap-4 transition-[grid-template-columns] duration-300 ease-out",
+              selected
+                ? cardPaymentOpen
+                  ? "grid-cols-[0fr_minmax(0,1fr)]"
+                  : "xl:grid-cols-[360px_minmax(0,1fr)] 2xl:grid-cols-[400px_minmax(0,1fr)]"
+                : "grid-cols-1",
+            )}
+          >
             {!selected && (
               <RentalsList
                 items={filtered}
@@ -448,12 +464,35 @@ export function Rentals() {
               />
             )}
             {selected && (
+              <div
+                className={cn(
+                  "min-w-0 overflow-hidden transition-all duration-300 ease-out",
+                  showSideList
+                    ? "translate-x-0 opacity-100"
+                    : "pointer-events-none -translate-x-4 opacity-0",
+                )}
+              >
+                {showSideList && (
+                  <RentalsList
+                    items={filtered}
+                    selectedId={selectedId}
+                    onSelect={setSelectedId}
+                    focusMode
+                  />
+                )}
+              </div>
+            )}
+            {selected && (
               <ErrorBoundary key={selected.id}>
-                <div className="animate-in fade-in slide-in-from-right-4 duration-300 min-w-0">
+                <div className="min-w-0 animate-in fade-in slide-in-from-right-4 duration-300">
                   <RentalCard
                     rental={selected}
                     initialTab={pendingTab ?? undefined}
-                    onClose={() => setSelectedId(null)}
+                    onPaymentOpenChange={setCardPaymentOpen}
+                    onClose={() => {
+                      setSelectedId(null);
+                      setCardPaymentOpen(false);
+                    }}
                     onSwapped={(newId) => {
                       // Свап успешен: одновременно (1) переключаем фокус
                       // на новую связку — старая ушла в архив и пропадёт
@@ -461,6 +500,7 @@ export function Rentals() {
                       // карточки. RentalCard ремаунтится с key=newId, но
                       // превью живёт в state Rentals и переживает ремаунт.
                       setSelectedId(newId);
+                      setCardPaymentOpen(false);
                       setSwapActPreviewId(newId);
                     }}
                   />

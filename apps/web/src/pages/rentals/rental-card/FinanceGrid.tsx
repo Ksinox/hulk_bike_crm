@@ -66,9 +66,18 @@ export function FinanceGrid({
     isOverdue && endDate ? Math.abs(daysBetween(today, endDate)) : 0;
 
   const overdueBalance = debtSummary?.overdueBalance ?? 0;
+  const overdueDaysBalance = debtSummary?.overdueDaysBalance ?? 0;
+  const overdueFineBalance = debtSummary?.overdueFineBalance ?? 0;
   const manualBalance = debtSummary?.manualBalance ?? 0;
   const damageBalance = debtSummary?.damageBalance ?? totalDamageDebt;
   const totalDebt = pending + overdueBalance + damageBalance + manualBalance;
+  const debtParts = [
+    overdueDaysBalance > 0 ? `дни ${fmt(overdueDaysBalance)} ₽` : null,
+    overdueFineBalance > 0 ? `штраф ${fmt(overdueFineBalance)} ₽` : null,
+    damageBalance > 0 ? `ущерб ${fmt(damageBalance)} ₽` : null,
+    manualBalance > 0 ? `ручной ${fmt(manualBalance)} ₽` : null,
+    pending > 0 ? `аренда ${fmt(pending)} ₽` : null,
+  ].filter(Boolean);
 
   // «платёж DD.MM» — если есть оплаченный платёж сегмента.
   let lastPaidLabel: string | null = null;
@@ -114,7 +123,7 @@ export function FinanceGrid({
         <FinCell
           label="Долг"
           value={`${fmt(totalDebt)} ₽`}
-          sub={totalDebt > 0 ? "дни + штраф" : "нет"}
+          sub={totalDebt > 0 ? debtParts.join(" + ") : "нет"}
           tone={totalDebt > 0 ? "red" : "neutral"}
           icon={totalDebt > 0 ? AlertTriangle : undefined}
           onClick={
