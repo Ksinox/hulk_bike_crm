@@ -69,6 +69,7 @@ export function PaymentAcceptDialog({
   initialExtDays,
   onExtDaysChange,
   liftedFromRect,
+  inline = false,
 }: {
   rental: Rental;
   onClose: () => void;
@@ -100,6 +101,8 @@ export function PaymentAcceptDialog({
     width: number;
     height: number;
   } | null;
+  /** Встроенный режим для карточки аренды: панель занимает третью колонку, без overlay. */
+  inline?: boolean;
 }) {
   // v0.6.16: liftedFromRect больше не используется (floating-календарь
   // убран). Оставлен в API ради backwards-compat — RentalCard всё ещё
@@ -1110,31 +1113,9 @@ export function PaymentAcceptDialog({
     return cands[0] ?? null;
   })();
 
-  return (
-    <>
-      {/* v0.6.38: PaymentAcceptDialog снова drawer-overlay (как до v0.6.30).
-          Backdrop semi-transparent, клик закрывает. Панель slide-in справа,
-          фиксированной ширины. Календарь под ним НЕ сжимается. */}
-      <div className="fixed inset-0 z-[90]">
-        <button
-          type="button"
-          aria-label="Закрыть"
-          onClick={requestClose}
-          className={cn(
-            "absolute inset-0 bg-ink/30 backdrop-blur-[1px]",
-            closing ? "animate-fade-out" : "animate-fade-in",
-          )}
-        />
-        <aside
-          className={cn(
-            "absolute right-0 top-0 h-full w-[min(95vw,480px)] bg-surface shadow-card-lg flex flex-col",
-            closing ? "animate-slide-out-right" : "animate-slide-in-right",
-          )}
-        >
+  const panel = (
       <div
         className={cn(
-          // v0.6.38: внутренний контейнер — без rounded/border (drawer уже
-          // прижат к краю), просто flex-col на всю высоту aside'а.
           "flex h-full flex-col overflow-hidden bg-surface",
           closing && "opacity-0 transition-opacity duration-150",
         )}
@@ -1871,14 +1852,38 @@ export function PaymentAcceptDialog({
         </div>
       </div>
 
-      {/* v0.6.16: FloatingDragExtendCalendar убран. Календарь теперь живёт
-          ТОЛЬКО в CalendarPanel карточки аренды (primary controller).
-          Drag-to-extend в карточке обновляет initialExtDays при открытии
-          этого side panel; дальше оператор может менять extDays
-          спиннером прямо в panel'е. */}
+  );
 
-      {/* v0.6.12: EquipmentChangeDialog убран — теперь inline picker
-          живёт прямо в Step 3 (см. EquipmentStep ниже). */}
+  if (inline) {
+    return (
+      <aside className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-card-sm">
+        {panel}
+      </aside>
+    );
+  }
+
+  return (
+    <>
+      {/* v0.6.38: PaymentAcceptDialog снова drawer-overlay (как до v0.6.30).
+          Backdrop semi-transparent, клик закрывает. Панель slide-in справа,
+          фиксированной ширины. Календарь под ним НЕ сжимается. */}
+      <div className="fixed inset-0 z-[90]">
+        <button
+          type="button"
+          aria-label="Закрыть"
+          onClick={requestClose}
+          className={cn(
+            "absolute inset-0 bg-ink/30 backdrop-blur-[1px]",
+            closing ? "animate-fade-out" : "animate-fade-in",
+          )}
+        />
+        <aside
+          className={cn(
+            "absolute right-0 top-0 h-full w-[min(95vw,480px)] bg-surface shadow-card-lg flex flex-col",
+            closing ? "animate-slide-out-right" : "animate-slide-in-right",
+          )}
+        >
+          {panel}
         </aside>
       </div>
     </>

@@ -867,6 +867,7 @@ export function RentalCard({
   const damageBalance = debtSummary?.damageBalance ?? totalDebt;
   const headerTotalDebt =
     pending + overdueBalance + damageBalance + manualBalance;
+  const paymentOpen = paymentRentalId != null;
 
   return (
     <div className="w-full">
@@ -874,7 +875,12 @@ export function RentalCard({
           статуса/просрочки/долга, и primary-actions (Завершить, Принять
           оплату) + «⋯» menu. Остаётся сверху при скролле. */}
       <div className="sticky top-0 z-30 bg-surface border-b border-border shadow-card-sm">
-        <div className="w-full max-w-[1480px] mx-auto px-4 lg:px-6 py-3 flex items-center gap-3 flex-wrap">
+        <div
+          className={cn(
+            "w-full mx-auto px-4 lg:px-6 py-3 flex items-center gap-3 flex-wrap",
+            paymentOpen ? "max-w-[1760px]" : "max-w-[1480px]",
+          )}
+        >
           {onClose && (
             <button
               type="button"
@@ -945,7 +951,12 @@ export function RentalCard({
         </div>
       </div>
 
-      <div className="w-full max-w-[1480px] mx-auto p-4 lg:p-5 flex flex-col gap-3">
+      <div
+        className={cn(
+          "w-full mx-auto p-4 lg:p-5 flex flex-col gap-3",
+          paymentOpen ? "max-w-[1760px]" : "max-w-[1480px]",
+        )}
+      >
         {/* Archived banner — оставляем простым */}
         {isArchived && (
           <div className="flex items-center gap-2 rounded-[12px] bg-surface-soft px-3 py-2 text-[12px] text-muted ring-1 ring-inset ring-border">
@@ -1001,10 +1012,15 @@ export function RentalCard({
           </div>
         )}
 
-        {/* v0.6.39: 2-col layout 50/50 — обе колонки равной ширины.
-            Левая: MasterBlock (vertical) + FinanceGrid; правая:
-            CalendarPanel + InlineHistory + DocsInline. */}
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        {/* При открытой оплате панель становится третьей колонкой, как в референсе. */}
+        <div
+          className={cn(
+            "grid grid-cols-1 gap-4 items-start",
+            paymentOpen
+              ? "xl:grid-cols-[minmax(360px,1fr)_minmax(380px,1fr)_minmax(380px,1fr)]"
+              : "lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]",
+          )}
+        >
           {/* LEFT COLUMN — клиент + скутер + экипировка + финансы */}
           <div className="flex flex-col gap-3 min-w-0">
             <MasterBlock
@@ -1063,25 +1079,25 @@ export function RentalCard({
               onExpand={() => setDrawer("history")}
             />
             {/* Documents — внизу правой колонки */}
-            <DocsInline rental={rental} />
+            {!paymentOpen && <DocsInline rental={rental} />}
           </div>
-        </div>
 
-        {/* v0.6.38: PaymentAcceptDialog снова drawer-overlay (fixed
-            справа). Рендерится поверх 2-col layout, календарь под ним
-            НЕ сжимается. */}
-        {paymentRentalId != null && (
-          <PaymentAcceptDialogContainer
-            rentalId={paymentRentalId}
-            initialExtDays={paymentPrefillExtDays || undefined}
-            onExtDaysChange={setPaymentPrefillExtDays}
-            onClose={() => {
-              setPaymentRentalId(null);
-              setPaymentPrefillExtDays(0);
-              setCalendarResetSignal((n) => n + 1);
-            }}
-          />
-        )}
+          {paymentOpen && (
+            <div className="min-w-0 self-stretch">
+              <PaymentAcceptDialogContainer
+                rentalId={paymentRentalId}
+                initialExtDays={paymentPrefillExtDays || undefined}
+                onExtDaysChange={setPaymentPrefillExtDays}
+                inline
+                onClose={() => {
+                  setPaymentRentalId(null);
+                  setPaymentPrefillExtDays(0);
+                  setCalendarResetSignal((n) => n + 1);
+                }}
+              />
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ─── DRAWERS ───────────────────────────────────────────── */}
@@ -1258,12 +1274,14 @@ function PaymentAcceptDialogContainer({
   onClose,
   initialExtDays,
   onExtDaysChange,
+  inline,
 }: {
   rentalId: number;
   onClose: () => void;
   initialExtDays?: number;
   /** v0.6.24: callback для синхронизации календаря в карточке. */
   onExtDaysChange?: (days: number) => void;
+  inline?: boolean;
 }) {
   const all = useRentals();
   const r = all.find((x) => x.id === rentalId);
@@ -1274,6 +1292,7 @@ function PaymentAcceptDialogContainer({
       onClose={onClose}
       initialExtDays={initialExtDays}
       onExtDaysChange={onExtDaysChange}
+      inline={inline}
       onPaid={() => {
         /* invalidations происходят в dialog'е */
       }}
