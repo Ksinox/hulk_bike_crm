@@ -31,6 +31,7 @@ import {
   Calendar as CalendarIcon,
   ChevronRight,
   Plus,
+  Shield,
   Wallet,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -1197,6 +1198,38 @@ export function PaymentAcceptDialog({
                   {overdueDaysHeader > 0 ? ` · ${overdueDaysHeader} дн` : ""}
                 </span>
               </div>
+              {/* v0.6.51: если у аренды есть залог (rental.deposit > 0) —
+                  показываем информационный блок «можно закрыть просрочку
+                  из залога». Сам бэк такой опции пока не поддерживает
+                  (списание залога идёт только через DamageReportDialog).
+                  Поэтому кнопка показывает toast «функция в разработке» —
+                  оператор видит что фича предполагается. */}
+              {(rental.deposit ?? 0) > 0 && (
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-[10px] border border-blue-200 bg-blue-50/70 px-3 py-2 text-[12px] text-blue-800">
+                  <div className="flex items-start gap-2 min-w-0">
+                    <Shield size={14} className="mt-0.5 shrink-0" />
+                    <div className="min-w-0">
+                      У клиента залог{" "}
+                      <span className="font-bold tabular-nums">
+                        {fmt(rental.deposit ?? 0)} ₽
+                      </span>
+                      {" "}— можно закрыть просрочку из залога.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      toast.info(
+                        "Функция в разработке",
+                        "Закрытие просрочки из залога планируется в следующем релизе. Сейчас залог можно использовать только через акт ущерба.",
+                      )
+                    }
+                    className="shrink-0 inline-flex items-center gap-1 rounded-[8px] bg-blue-600 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-blue-700"
+                  >
+                    Закрыть из залога
+                  </button>
+                </div>
+              )}
               {/* v0.6.11: 2 карточки grid-cols-2 — «Погасить долг» / «Простить».
                   На «Простить» при hover/click показывается side popover со
                   списком 4 вариантов (все дни / N дней / только штраф / всё). */}

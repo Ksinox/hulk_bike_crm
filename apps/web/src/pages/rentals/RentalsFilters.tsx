@@ -1,4 +1,3 @@
-import { Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DateRangeFilter } from "@/pages/clients/DateRangeFilter";
 
@@ -55,6 +54,13 @@ const STATUS_TABS: { id: StatusFilter; label: string }[] = [
   { id: "archived", label: "Архив" },
 ];
 
+/**
+ * v0.6.51: RentalsFilters раскрывается в основном блоке Аренд по клику
+ * на иконку-фильтр. Статусные чипы (Активные/Просрочка/...) выведены
+ * отдельно в RentalsFiltersChips и всегда видны — здесь оставлены ТОЛЬКО
+ * дополнительные фильтры (диапазоны дат «Дата выдачи» / «Завершаются»).
+ * Это убирает дубль чипов между основным блоком и поповером.
+ */
 export function RentalsFilters({
   value,
   onChange,
@@ -63,44 +69,10 @@ export function RentalsFilters({
   onChange: (next: FiltersState) => void;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-3 rounded-2xl bg-surface p-3 shadow-card-sm">
-      <div className="relative min-w-[240px] flex-1">
-        <Search
-          size={16}
-          className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-2"
-        />
-        <input
-          type="text"
-          value={value.search}
-          onChange={(e) => onChange({ ...value, search: e.target.value })}
-          placeholder="Клиент, скутер или номер аренды…"
-          className="h-9 w-full rounded-full bg-surface-soft pl-9 pr-3 text-[13px] text-ink outline-none placeholder:text-muted-2 focus:ring-2 focus:ring-blue-100"
-        />
+    <div className="flex flex-wrap items-center gap-2 rounded-[12px] bg-surface-soft/60 p-2.5">
+      <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2 mr-1">
+        По датам
       </div>
-
-      <div className="inline-flex flex-wrap rounded-full bg-surface-soft p-0.5">
-        {STATUS_TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => onChange({ ...value, status: t.id })}
-            className={cn(
-              "rounded-full px-3 py-1 text-[12px] font-semibold transition-colors",
-              value.status === t.id
-                ? "bg-white text-ink shadow-card-sm"
-                : "text-muted hover:text-ink",
-            )}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Фильтр по дате выдачи аренды — поповер с пресетами «Сегодня /
-          Вчера / За неделю / За месяц» + Range-календарь. Заменил
-          старый select по биллинговым периодам (15→14): пользователь
-          жаловался что неудобно, а пикером можно выбрать любой
-          произвольный диапазон. */}
       <DateRangeFilter
         from={value.dateFrom}
         to={value.dateTo}
@@ -108,9 +80,6 @@ export function RentalsFilters({
           onChange({ ...value, dateFrom: r.from, dateTo: r.to })
         }
       />
-
-      {/* v0.6.15: B1 — фильтр по дате завершения (endPlanned). Тот же
-          DateRangeFilter с другим placeholder/title. */}
       <DateRangeFilter
         from={value.endDateFrom ?? null}
         to={value.endDateTo ?? null}

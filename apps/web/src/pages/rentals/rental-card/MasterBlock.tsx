@@ -30,7 +30,6 @@ import {
   Plus,
   Repeat,
   Shield,
-  Star,
   Wallet,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -220,14 +219,6 @@ export function MasterBlock({
                 <h2 className="font-display text-[20px] leading-[1.15] font-bold text-ink tracking-tight truncate group-hover:text-blue-700">
                   {client?.name ?? "Клиент не найден"}
                 </h2>
-                {client && (
-                  <span className="inline-flex items-center gap-0.5 shrink-0">
-                    <Star size={12} className="text-orange" />
-                    <span className="tabular-nums font-semibold text-[12px] text-muted-2">
-                      {client.rating}
-                    </span>
-                  </span>
-                )}
               </button>
               <button
                 type="button"
@@ -388,8 +379,8 @@ export function MasterBlock({
                       className={cn(
                         "relative flex h-[72px] w-full items-center justify-center rounded-[12px] border-2 bg-white p-2 transition-colors",
                         isFree
-                          ? "border-green bg-green-soft/50 hover:bg-green-soft"
-                          : "border-blue-200 bg-blue-50 hover:bg-blue-100",
+                          ? "border-green bg-green-soft/50"
+                          : "border-blue-200 bg-blue-50",
                         isOpen &&
                           (isFree
                             ? "ring-2 ring-green ring-offset-1"
@@ -411,12 +402,12 @@ export function MasterBlock({
                           free
                         </span>
                       )}
+                      {/* v0.6.51: hover показывает только иконку Repeat в
+                          правом нижнем углу — без заливки тайла. */}
                       {canSwap && isHover && !isOpen && (
-                        <div className="absolute inset-0 rounded-[10px] bg-blue-600/80 backdrop-blur-[1px] flex items-center justify-center pointer-events-none">
-                          <span className="inline-flex items-center gap-1 rounded-full bg-white text-blue-700 px-1.5 py-0.5 text-[9.5px] font-bold shadow-card-sm">
-                            <Repeat size={10} />
-                          </span>
-                        </div>
+                        <span className="absolute bottom-1 right-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-white shadow-card-sm pointer-events-none">
+                          <Repeat size={11} />
+                        </span>
                       )}
                     </button>
                     <div
@@ -570,9 +561,15 @@ function ScooterHorizontalRow({
   const displayModel = model?.name ?? fallbackModel ?? "";
 
   return (
-    <div className="relative flex items-center gap-4 rounded-2xl border border-border bg-surface p-3">
-      {/* Фото скутера 88×88 */}
-      <div className="shrink-0 h-[88px] w-[88px] rounded-[12px] bg-surface-soft overflow-hidden flex items-center justify-center">
+    <button
+      type="button"
+      onClick={onSwap}
+      title="Заменить скутер"
+      className="group relative flex items-center gap-4 rounded-2xl border border-border bg-surface p-3 text-left w-full transition-colors"
+    >
+      {/* Фото скутера 88×88 (v0.6.51: иконка Repeat показывается в правом
+          нижнем углу фото при hover на весь блок). */}
+      <div className="relative shrink-0 h-[88px] w-[88px] rounded-[12px] bg-surface-soft overflow-hidden flex items-center justify-center">
         {avatarSrc ? (
           <img
             src={avatarSrc}
@@ -582,6 +579,9 @@ function ScooterHorizontalRow({
         ) : (
           <Bike size={32} strokeWidth={1.5} className="text-muted-2" />
         )}
+        <span className="absolute bottom-1 right-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-white shadow-card-sm opacity-0 group-hover:opacity-100 transition-opacity">
+          <Repeat size={12} />
+        </span>
       </div>
 
       {/* Метаданные справа */}
@@ -604,17 +604,7 @@ function ScooterHorizontalRow({
           </div>
         )}
       </div>
-
-      {/* Иконка-карандаш в правом верхнем углу — открывает swap */}
-      <button
-        type="button"
-        onClick={onSwap}
-        title="Заменить скутер"
-        className="absolute top-2 right-2 inline-flex h-7 w-7 items-center justify-center rounded-full text-muted-2 hover:bg-blue-50 hover:text-blue-700 transition-colors"
-      >
-        <Pencil size={14} />
-      </button>
-    </div>
+    </button>
   );
 }
 

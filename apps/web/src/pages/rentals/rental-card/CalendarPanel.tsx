@@ -10,7 +10,7 @@
  * открывает PaymentAcceptDialog с предзаполненным числом дней.
  */
 import type { Ref } from "react";
-import { Calendar, HelpCircle } from "lucide-react";
+import { Calendar } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DragExtendCalendar } from "./DragExtendCalendar";
 import type { Rental, RentalStatus } from "@/lib/mock/rentals";
@@ -83,13 +83,6 @@ export function CalendarPanel({
       <div className="flex items-center justify-between mb-2.5">
         <div className="inline-flex items-center gap-1.5 text-[13px] font-semibold uppercase tracking-wide text-muted-2">
           Дата возврата
-          <span
-            title="Календарь аренды: синяя зона — оплаченный период, красная — просрочка, зелёная — выбранное продление. Клик по дню после планового конца — продлить."
-            className="inline-flex items-center justify-center h-4 w-4 rounded-full text-muted-2 hover:text-ink cursor-help"
-            aria-label="Подсказка по зонам календаря"
-          >
-            <HelpCircle size={11} />
-          </span>
         </div>
       </div>
       {/* v0.6.49: легенда — простые цветные точки без рамок. */}

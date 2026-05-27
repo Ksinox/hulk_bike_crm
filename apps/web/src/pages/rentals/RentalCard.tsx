@@ -10,7 +10,6 @@ import {
   Plus,
   Repeat,
   ShieldAlert,
-  Star,
   Wallet,
   Wrench,
   XCircle,
@@ -24,7 +23,6 @@ import {
   type RentalStatus,
 } from "@/lib/mock/rentals";
 import { effectiveRentalStatus } from "@/lib/rentalStatus";
-import { ratingTier } from "@/lib/mock/clients";
 import { useClientUnreachable } from "@/pages/clients/clientStore";
 import { useApiClients } from "@/lib/api/clients";
 import { useApiScooters } from "@/lib/api/scooters";
@@ -353,7 +351,6 @@ export function RentalCard({
   // под календарём. Полный список — в drawer'е (HistoryTab).
   const activityQ = useActivityTimeline("rental", rental.id, 50);
   const activityItems = activityQ.data?.items ?? [];
-  const tier = client ? ratingTier(client.rating) : null;
 
   // Корневая (первая) аренда цепочки — её start показываем в шапке
   // карточки как «оригинальную» дату выдачи, даже если сейчас открыто
@@ -996,21 +993,7 @@ export function RentalCard({
               <PhoneOff size={11} /> Не выходит на связь
             </span>
           )}
-          {client && tier && (
-            <span
-              className={cn(
-                "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold",
-                tier.tone === "good"
-                  ? "bg-green-soft text-green-ink"
-                  : tier.tone === "bad"
-                    ? "bg-red-soft text-red-ink"
-                    : "bg-surface-soft text-ink",
-              )}
-              title={tier.label}
-            >
-              <Star size={11} /> {client.rating}
-            </span>
-          )}
+          {/* v0.6.51: рейтинг клиента убран из UI везде. */}
         </h2>
 
         {/* v0.6.42: порядок в шапке — [⋯ dots] [Завершить] [Принять оплату].
