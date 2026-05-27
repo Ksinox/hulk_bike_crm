@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus } from "lucide-react";
+import { Plus, Search, SlidersHorizontal, CalendarDays } from "lucide-react";
 import { Topbar } from "@/pages/dashboard/Topbar";
 import { type Rental, type RentalStatus } from "@/lib/mock/rentals";
 import { RentalsFilters, type FiltersState } from "./RentalsFilters";
 import { RentalsList } from "./RentalsList";
-import { RentalsKpi, type Kpi } from "./RentalsKpi";
+import { type Kpi } from "./RentalsKpi";
 import { RentalCard, ActTransferPreview } from "./RentalCard";
+import { cn } from "@/lib/utils";
 import { DocumentPreviewModal } from "./DocumentPreviewModal";
 import { consumePending, onNavigate } from "@/app/navigationStore";
 import {
@@ -193,6 +194,10 @@ export function Rentals() {
   });
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [newOpen, setNewOpen] = useState(false);
+  // v0.6.44: блок RentalsFilters (поповеры дат, набор табов) скрыт по
+  // умолчанию — header'а нового дизайна достаточно. Открывается кнопкой
+  // SlidersHorizontal справа от поиска.
+  const [filtersOpen, setFiltersOpen] = useState(false);
   /**
    * После создания аренды — автоматически открываем превью документа
    * «Договор + акт». Сценарий: оператор создал → сразу нажал «Печать» →
@@ -390,41 +395,143 @@ export function Rentals() {
     ];
   }, [rentals, revenue]);
 
+  // v0.6.44: счётчики для таб-чипов нового header'а.
+  const counts = useMemo(() => {
+    const activeLike = rentals.filter(
+      (r) =>
+        r.status !== "completed" &&
+        r.status !== "cancelled",
+    ).length;
+    const overdue = rentals.filter((r) => {
+      const real = debtByRentalId.get(r.id) ?? 0;
+      if (real <= 0) return false;
+      if (r.status === "overdue") return true;
+      if (r.status === "active") {
+        const [d, m, y] = r.endPlanned.split(".").map(Number);
+        const [td, tm, ty] = today.split(".").map(Number);
+        return (
+          new Date(y!, m! - 1, d!).getTime() <
+          new Date(ty!, tm! - 1, td!).getTime()
+        );
+      }
+      return false;
+    }).length;
+    const todayReturn = rentals.filter(
+      (r) =>
+        r.status === "returning" ||
+        ((r.status === "active" || r.status === "overdue") &&
+          r.endPlanned === today),
+    ).length;
+    return { activeLike, overdue, todayReturn };
+  }, [rentals, debtByRentalId, today]);
+
+  // Для использования kpi массив не выкидываем чтобы не сломать импорт,
+  // но KPI-полоску с него больше не рендерим (она переехала в карточку).
+  void kpi;
+
+  const TAB_LABELS: Array<{
+    id: FiltersState["status"];
+    label: string;
+    count?: number;
+    icon?: typeof CalendarDays;
+  }> = [
+    { id: "active", label: "Все", count: counts.activeLike },
+    { id: "overdue", label: "Просроченные", count: counts.overdue },
+    { id: "return_today", label: "Возврат сегодня", count: counts.todayReturn, icon: CalendarDays },
+    { id: "new_request", label: "Выданы сегодня" },
+    { id: "completed", label: "Завершённые" },
+    { id: "archived", label: "Архив" },
+  ];
+
   return (
     <main className="flex min-w-0 flex-1 flex-col gap-4">
       <Topbar />
 
-      <header className="flex items-center justify-between gap-3">
-        <div className="flex items-baseline gap-3">
-          <h1 className="font-display text-[34px] font-extrabold leading-none text-ink">
-            Аренды
-          </h1>
-          <span className="rounded-full bg-surface-soft px-3 py-1 text-[13px] font-semibold text-muted">
-            {
-              rentals.filter(
-                (r) =>
-                  (r.status === "active" ||
-                    r.status === "overdue" ||
-                    r.status === "returning") &&
-                  r.scooter,
-              ).length
-            }{" "}
-            активных
-          </span>
+      {/* v0.6.44: единый header страницы. Сверху — крупный заголовок
+          «Аренды», под ним строка поиска + фильтр-иконка + «+», под
+          ними — таб-чипы со счётчиками. */}
+      <header className="flex flex-col gap-3">
+        <h1 className="font-display text-[34px] font-extrabold leading-none text-ink">
+          Аренды
+        </h1>
+
+        <div className="flex items-center gap-2">
+          <div className="relative min-w-[240px] flex-1">
+            <Search
+              size={16}
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-2"
+            />
+            <input
+              type="text"
+              value={filters.search}
+              onChange={(e) =>
+                setFilters({ ...filters, search: e.target.value })
+              }
+              placeholder="Поиск аренды, клиента, скутера…"
+              className="h-10 w-full rounded-full bg-surface pl-9 pr-3 text-[13px] text-ink outline-none shadow-card-sm placeholder:text-muted-2 focus:ring-2 focus:ring-blue-100"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => setFiltersOpen((v) => !v)}
+            title="Дополнительные фильтры"
+            className={cn(
+              "inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface shadow-card-sm text-muted hover:text-ink",
+              filtersOpen && "bg-blue-50 text-blue-700",
+            )}
+          >
+            <SlidersHorizontal size={16} />
+          </button>
+          <button
+            type="button"
+            onClick={() => setNewOpen(true)}
+            title="Новая аренда"
+            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white shadow-card-sm hover:bg-blue-700"
+          >
+            <Plus size={18} />
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={() => setNewOpen(true)}
-          className="inline-flex items-center gap-1.5 rounded-full bg-ink px-4 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-ink-2"
-        >
-          <Plus size={16} />
-          Новая аренда
-        </button>
+
+        {/* Таб-чипы со счётчиками */}
+        <div className="flex flex-wrap items-center gap-2">
+          {TAB_LABELS.map((t) => {
+            const Icon = t.icon;
+            const isActive = filters.status === t.id;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setFilters({ ...filters, status: t.id })}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[13px] font-semibold transition-colors",
+                  isActive
+                    ? "bg-ink text-white shadow-card-sm"
+                    : "bg-surface text-ink-2 hover:bg-surface-soft",
+                )}
+              >
+                {Icon && <Icon size={13} />}
+                <span>{t.label}</span>
+                {t.count != null && (
+                  <span
+                    className={cn(
+                      "ml-0.5 rounded-full px-1.5 py-0.5 text-[10.5px] tabular-nums font-bold",
+                      isActive
+                        ? "bg-white/20 text-white"
+                        : "bg-surface-soft text-muted",
+                    )}
+                  >
+                    {t.count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
       </header>
 
-      <RentalsKpi items={kpi} />
-
-      <RentalsFilters value={filters} onChange={setFilters} />
+      {filtersOpen && (
+        <RentalsFilters value={filters} onChange={setFilters} />
+      )}
 
       <div className="grid flex-1 gap-4 lg:grid-cols-[420px_1fr]">
         <RentalsList

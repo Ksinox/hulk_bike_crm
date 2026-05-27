@@ -156,11 +156,17 @@ export function DragExtendCalendar({
     return { y: d.getFullYear(), m: d.getMonth(), d: d.getDate() };
   }, []);
 
-  // Точка отсчёта продления:
-  //   • если просрочена и today > plannedEnd → today;
-  //   • иначе — plannedEnd.
+  // Точка отсчёта продления (v0.6.44 — фикс рассинхронизации с
+  // PaymentAcceptDialog):
+  //   • Если today > plannedEnd (фактическая просрочка по дате) → today;
+  //   • Иначе — plannedEnd.
+  // Раньше зависело от пропса `isOverdue`, но он мог приходить false
+  // когда rental.status в БД ещё «active», хотя по дате уже просрочка.
+  // PaymentAcceptDialog использует `extBase = max(today, anchor)` — тут
+  // делаем то же, чтобы плашка «Хватит до» и зелёная зона/плашка
+  // календаря считались от одной точки.
   const baseEndKey =
-    isOverdue && plannedEndKey && diffDays(plannedEndKey, todayKey) > 0
+    plannedEndKey && diffDays(plannedEndKey, todayKey) > 0
       ? todayKey
       : plannedEndKey;
 

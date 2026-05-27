@@ -29,13 +29,12 @@ import { useClientUnreachable } from "@/pages/clients/clientStore";
 import { useApiClients } from "@/lib/api/clients";
 import { useApiScooters } from "@/lib/api/scooters";
 import { navigate } from "@/app/navigationStore";
-import {
-  DebtHistoryTab,
-  DocumentsTab,
-  HistoryTab,
-  TasksTab,
-  TermsTab,
-} from "./RentalCardTabs";
+// v0.6.44: tabs убраны из карточки — новый 2-col layout (MasterBlock +
+// CalendarPanel/DocsInline). Сами компоненты табов остаются доступны
+// для других мест (например, drawer-режим использует HistoryTab).
+import { MasterBlock } from "./rental-card/MasterBlock";
+import { CalendarPanel } from "./rental-card/CalendarPanel";
+import { DocsInline } from "./rental-card/DocsInline";
 import { RentalActionDialog, type ActionKind } from "./RentalActionDialog";
 import { ExtendRentalDialog } from "./ExtendRentalDialog";
 import { PaymentAcceptDialog } from "./PaymentAcceptDialog";
@@ -72,15 +71,10 @@ import { confirmDialog, pickAction } from "@/lib/toast";
 import { toast } from "@/lib/toast";
 import { ApiError, api } from "@/lib/api";
 
+// v0.6.44: tabs убраны, оставлен type-alias для совместимости с props
+// (initialTab — может прийти при navigate с дашборда через openTab).
+// Сам выбор таба никуда не идёт.
 type TabId = "terms" | "history" | "debt" | "tasks" | "docs";
-
-const TABS: { id: TabId; label: string }[] = [
-  { id: "terms", label: "Условия" },
-  { id: "history", label: "История" },
-  { id: "debt", label: "История долгов" },
-  { id: "tasks", label: "Задачи" },
-  { id: "docs", label: "Документы" },
-];
 
 function fmt(n: number | null | undefined): string {
   if (n == null || Number.isNaN(n)) return "0";
@@ -270,7 +264,7 @@ export function RentalCard({
   initialTab?: TabId;
 }) {
   void onPaymentOpenChange;
-  const [tab, setTab] = useState<TabId>(initialTab ?? "terms");
+  void initialTab; // v0.6.44: tabs убраны, prop оставлен для совместимости.
   const [action, setAction] = useState<ActionKind | null>(null);
   const [editRentalOpen, setEditRentalOpen] = useState(false);
   const [extendOpen, setExtendOpen] = useState(false);
@@ -1479,34 +1473,18 @@ export function RentalCard({
         </div>
       )}
 
-      {/* =========== TABS =========== */}
-      <div className="mt-1 flex gap-1 border-b border-border overflow-x-auto scrollbar-thin">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => setTab(t.id)}
-            className={cn(
-              "relative -mb-px shrink-0 px-3 py-2 text-[13px] font-semibold transition-colors",
-              tab === t.id
-                ? "border-b-2 border-blue-600 text-blue-600"
-                : "border-b-2 border-transparent text-muted hover:text-ink",
-            )}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {/* v0.6.41: большой CTA «Принять платёж» удалён — действие
-          вынесено в кнопку шапки. Сумма долга остаётся в KPI-блоке
-          и в баннере просрочки выше. */}
-
-      <div className="flex-1 pt-3">
-        {tab === "terms" && (
-          <TermsTab
+      {/* =========== ОСНОВНОЕ ТЕЛО — 2 колонки (v0.6.44) ===========
+          ЛЕВО: MasterBlock — клиент + скутер + экипировка
+          ПРАВО: CalendarPanel + DocsInline (документы)
+          Старые табы «Условия/История/Задачи/Документы» убраны. */}
+      <div className="grid flex-1 gap-4 lg:grid-cols-2 min-h-0">
+        {/* Левая колонка */}
+        <div className="flex flex-col gap-4 min-w-0">
+          <MasterBlock
             rental={rental}
-            onClientClick={() => client && openClient(client.id)}
+            client={client ?? null}
+            scooter={currentScooter}
+            onOpenClientProfile={() => client && openClient(client.id)}
             onSwapScooter={() => {
               if (!rental.scooterId) {
                 toast.info("Нет скутера", "К аренде не привязан скутер");
@@ -1531,21 +1509,20 @@ export function RentalCard({
                 ? () => setEquipmentChangeOpen(true)
                 : undefined
             }
-            onCommitExtend={handleCommitExtend}
-            initialExtDays={paymentPrefillExtDays || undefined}
-            resetSignal={calendarResetSignal}
           />
-        )}
-        {tab === "history" && (
-          <HistoryTab
+        </div>
+
+        {/* Правая колонка */}
+        <div className="flex flex-col gap-4 min-w-0">
+          <CalendarPanel
             rental={rental}
-            chainRentals={chainRentals}
-            damageReports={reports}
+            effectiveStatus={effectiveStatus}
+            onCommitExtend={handleCommitExtend}
+            resetSignal={calendarResetSignal}
+            initialExtDays={paymentPrefillExtDays || undefined}
           />
-        )}
-        {tab === "debt" && <DebtHistoryTab rental={rental} />}
-        {tab === "tasks" && <TasksTab rental={rental} />}
-        {tab === "docs" && <DocumentsTab rental={rental} />}
+          <DocsInline rental={rental} />
+        </div>
       </div>
 
       {action && (
