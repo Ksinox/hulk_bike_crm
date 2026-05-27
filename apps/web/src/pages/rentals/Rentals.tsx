@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Search, SlidersHorizontal, CalendarDays } from "lucide-react";
+import { Plus, Search, SlidersHorizontal } from "lucide-react";
 import { Topbar } from "@/pages/dashboard/Topbar";
 import { type Rental, type RentalStatus } from "@/lib/mock/rentals";
 import { RentalsFilters, type FiltersState } from "./RentalsFilters";
@@ -395,53 +395,61 @@ export function Rentals() {
     ];
   }, [rentals, revenue]);
 
-  // v0.6.44: счётчики для таб-чипов нового header'а.
-  const counts = useMemo(() => {
-    const activeLike = rentals.filter(
-      (r) =>
-        r.status !== "completed" &&
-        r.status !== "cancelled",
-    ).length;
-    const overdue = rentals.filter((r) => {
-      const real = debtByRentalId.get(r.id) ?? 0;
-      if (real <= 0) return false;
-      if (r.status === "overdue") return true;
-      if (r.status === "active") {
-        const [d, m, y] = r.endPlanned.split(".").map(Number);
-        const [td, tm, ty] = today.split(".").map(Number);
-        return (
-          new Date(y!, m! - 1, d!).getTime() <
-          new Date(ty!, tm! - 1, td!).getTime()
-        );
-      }
-      return false;
-    }).length;
-    const todayReturn = rentals.filter(
-      (r) =>
-        r.status === "returning" ||
-        ((r.status === "active" || r.status === "overdue") &&
-          r.endPlanned === today),
-    ).length;
-    return { activeLike, overdue, todayReturn };
-  }, [rentals, debtByRentalId, today]);
-
   // Для использования kpi массив не выкидываем чтобы не сломать импорт,
   // но KPI-полоску с него больше не рендерим (она переехала в карточку).
   void kpi;
 
-  const TAB_LABELS: Array<{
-    id: FiltersState["status"];
-    label: string;
-    count?: number;
-    icon?: typeof CalendarDays;
-  }> = [
-    { id: "active", label: "Все", count: counts.activeLike },
-    { id: "overdue", label: "Просроченные", count: counts.overdue },
-    { id: "return_today", label: "Возврат сегодня", count: counts.todayReturn, icon: CalendarDays },
-    { id: "new_request", label: "Выданы сегодня" },
-    { id: "completed", label: "Завершённые" },
-    { id: "archived", label: "Архив" },
-  ];
+  // v0.6.46: выбранная аренда занимает весь контейнер — список + header
+  // страницы скрываются, чтобы у карточки была полная ширина (минус
+  // sidebar). Иначе при открытой карточке `grid-cols-3` (документы) и
+  // `xl:grid-cols-2` (карточка) ломались из-за зажатой колонки ~520px.
+  const selectedRental = selectedId != null
+    ? rentals.find((r) => r.id === selectedId)
+    : undefined;
+  const hasSelected = selectedRental != null;
+
+  if (hasSelected) {
+    return (
+      <main className="flex min-w-0 flex-1 flex-col gap-4">
+        <Topbar />
+        <ErrorBoundary key={selectedRental.id}>
+          <RentalCard
+            rental={selectedRental}
+            initialTab={pendingTab ?? undefined}
+            onClose={() => setSelectedId(null)}
+            onSwapped={(newId) => {
+              setSelectedId(newId);
+              setSwapActPreviewId(newId);
+            }}
+          />
+        </ErrorBoundary>
+
+        {swapActPreviewId != null && (
+          <ActTransferPreview
+            rentalId={swapActPreviewId}
+            onClose={() => setSwapActPreviewId(null)}
+          />
+        )}
+
+        {newOpen && (
+          <NewRentalModal
+            onClose={() => setNewOpen(false)}
+            onCreated={(r) => {
+              setSelectedId(r.id);
+              setAutoDocRentalId(r.id);
+            }}
+          />
+        )}
+
+        {autoDocRentalId != null && (
+          <AutoContractPreview
+            rentalId={autoDocRentalId}
+            onClose={() => setAutoDocRentalId(null)}
+          />
+        )}
+      </main>
+    );
+  }
 
   return (
     <main className="flex min-w-0 flex-1 flex-col gap-4">
@@ -492,85 +500,18 @@ export function Rentals() {
           </button>
         </div>
 
-        {/* Таб-чипы со счётчиками */}
-        <div className="flex flex-wrap items-center gap-2">
-          {TAB_LABELS.map((t) => {
-            const Icon = t.icon;
-            const isActive = filters.status === t.id;
-            return (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => setFilters({ ...filters, status: t.id })}
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[13px] font-semibold transition-colors",
-                  isActive
-                    ? "bg-ink text-white shadow-card-sm"
-                    : "bg-surface text-ink-2 hover:bg-surface-soft",
-                )}
-              >
-                {Icon && <Icon size={13} />}
-                <span>{t.label}</span>
-                {t.count != null && (
-                  <span
-                    className={cn(
-                      "ml-0.5 rounded-full px-1.5 py-0.5 text-[10.5px] tabular-nums font-bold",
-                      isActive
-                        ? "bg-white/20 text-white"
-                        : "bg-surface-soft text-muted",
-                    )}
-                  >
-                    {t.count}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
       </header>
 
       {filtersOpen && (
         <RentalsFilters value={filters} onChange={setFilters} />
       )}
 
-      <div className="grid flex-1 gap-4 lg:grid-cols-[420px_1fr]">
+      <div className="flex-1">
         <RentalsList
           items={filtered}
           selectedId={selectedId}
           onSelect={setSelectedId}
         />
-
-        {(() => {
-          const selected = rentals.find((r) => r.id === selectedId);
-          if (!selected) {
-            return (
-              <div className="flex min-h-[400px] items-center justify-center rounded-2xl bg-surface p-10 text-center shadow-card-sm">
-                <div className="text-[13px] text-muted">
-                  Выберите аренду из списка
-                </div>
-              </div>
-            );
-          }
-          return (
-            <ErrorBoundary
-              key={selected.id}
-            >
-              <RentalCard
-                rental={selected}
-                initialTab={pendingTab ?? undefined}
-                onSwapped={(newId) => {
-                  // Свап успешен: одновременно (1) переключаем фокус
-                  // на новую связку — старая ушла в архив и пропадёт
-                  // из списка, (2) поднимаем превью акта замены поверх
-                  // карточки. RentalCard ремаунтится с key=newId, но
-                  // превью живёт в state Rentals и переживает ремаунт.
-                  setSelectedId(newId);
-                  setSwapActPreviewId(newId);
-                }}
-              />
-            </ErrorBoundary>
-          );
-        })()}
       </div>
 
       {swapActPreviewId != null && (

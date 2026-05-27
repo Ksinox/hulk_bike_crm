@@ -23,8 +23,10 @@
  */
 import { useState } from "react";
 import {
+  Bike,
   Camera,
   Clock,
+  Pencil,
   Phone,
   Plus,
   Repeat,
@@ -33,10 +35,10 @@ import {
   Wallet,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { fileUrl } from "@/lib/files";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { useApiRentals } from "@/lib/api/rentals";
 import { useApiPayments } from "@/lib/api/payments";
-import { ScooterPosterAvatar } from "@/pages/rentals/ScooterPosterAvatar";
 import { initialsOf } from "@/lib/mock/clients";
 import { useClientPhoto } from "@/pages/clients/clientStore";
 import {
@@ -96,7 +98,6 @@ export function MasterBlock({
     price: number;
     free: boolean;
   } | null>(null);
-  const [scooterHover, setScooterHover] = useState(false);
 
   const currentDeposit = rental.deposit ?? DEPOSIT_AMOUNT;
   const originalDeposit = rental.depositOriginal ?? currentDeposit;
@@ -244,58 +245,19 @@ export function MasterBlock({
         </div>
       </div>
 
-      {/* ── БЛОК 2 — СКУТЕР / ЭКИПИРОВКА (вертикально, v0.6.46) ──
-          Каждый блок на всю ширину контейнера.
-          Скутер: название «Jog #02» + пробег overlay'ом поверх фото.
-          Экипировка: grid тайлов 72px на полную ширину. */}
+      {/* ── БЛОК 2 — СКУТЕР / ЭКИПИРОВКА (вертикально, v0.6.48) ──
+          СКУТЕР: горизонтальный low-profile блок — фото слева 88px,
+          справа название + модель + пробег, в правом верхнем углу
+          иконка карандаша для swap.
+          ЭКИПИРОВКА: grid тайлов 72px на полную ширину. */}
       <div className="flex flex-col gap-4 border-b border-border p-5">
-        {/* СКУТЕР — полная ширина */}
-        <div className="rounded-[14px] bg-surface-soft/55 p-4 flex flex-col">
-          <div className="text-[11px] font-semibold text-muted-2 mb-1">
-            СКУТЕР
-          </div>
-          <div
-            className="relative w-full"
-            onMouseEnter={() => setScooterHover(true)}
-            onMouseLeave={() => setScooterHover(false)}
-          >
-            <ScooterPosterAvatar
-              scooter={scooter ?? null}
-              size="md"
-              className="!h-[150px] !w-full"
-            />
-            {/* Название + пробег overlay'ом по центру сверху */}
-            <div className="pointer-events-none absolute top-2 left-1/2 -translate-x-1/2 text-center px-2 z-10">
-              <div className="inline-block rounded-md bg-white/80 backdrop-blur-[2px] px-2 py-0.5 shadow-card-sm">
-                <span className="font-display text-[18px] font-extrabold leading-tight text-ink tracking-tight">
-                  {scooter?.name ?? rental.scooter ?? "—"}
-                </span>
-                {scooter && (
-                  <span className="ml-1.5 text-[11px] font-semibold tabular-nums text-muted-2">
-                    Пробег {fmt(scooter.mileage)} км
-                  </span>
-                )}
-              </div>
-            </div>
-            {/* hover overlay с кнопкой «Заменить» */}
-            {scooterHover && (
-              <div className="absolute inset-0 rounded-2xl bg-ink/45 backdrop-blur-[1px] flex items-center justify-center pointer-events-none z-20">
-                <button
-                  type="button"
-                  onClick={onSwapScooter}
-                  className="pointer-events-auto inline-flex items-center gap-1.5 rounded-full bg-white text-ink px-3 py-1.5 text-[12px] font-bold shadow-card-sm hover:bg-blue-50 hover:text-blue-700"
-                  title="Заменить скутер"
-                >
-                  <Repeat size={12} /> Заменить
-                </button>
-              </div>
-            )}
-          </div>
-          {/* Модель — под аватаркой мелким серым. */}
-          <div className="mt-1.5 text-[10.5px] text-muted truncate text-center">
-            <ScooterModelLabel scooter={scooter ?? null} fallback={rental.model} />
-          </div>
-        </div>
+        {/* СКУТЕР — горизонтальный layout */}
+        <ScooterHorizontalRow
+          scooter={scooter ?? null}
+          fallbackName={rental.scooter}
+          fallbackModel={rental.model}
+          onSwap={onSwapScooter}
+        />
 
         {/* ЭКИПИРОВКА — полная ширина */}
         <div className="rounded-[14px] bg-surface-soft/55 p-4 flex flex-col">
@@ -560,19 +522,81 @@ function PhoneLine({
   );
 }
 
-function ScooterModelLabel({
+/**
+ * Горизонтальная карточка «Скутер» — компактная строка с фото слева,
+ * метаданными справа и кнопкой-карандаш в правом верхнем углу
+ * (swap/edit). По эталону v0.6.48.
+ */
+function ScooterHorizontalRow({
   scooter,
-  fallback,
+  fallbackName,
+  fallbackModel,
+  onSwap,
 }: {
   scooter: ApiScooter | null;
-  fallback: string;
+  fallbackName: string;
+  fallbackModel: string;
+  onSwap: () => void;
 }) {
   const { data: models = [] } = useApiScooterModels();
-  if (!scooter) return <>{fallback}</>;
-  const model = scooter.modelId
-    ? models.find((m) => m.id === scooter.modelId)
+  const model = scooter
+    ? scooter.modelId
+      ? models.find((m) => m.id === scooter.modelId)
+      : models.find((m) =>
+          m.name.toLowerCase().includes(scooter.model.toLowerCase()),
+        )
     : null;
-  return <>{model?.name ?? fallback}</>;
+  const avatarSrc = fileUrl(model?.avatarKey, { variant: "view" });
+  const displayName = scooter?.name ?? fallbackName ?? "—";
+  const displayModel = model?.name ?? fallbackModel ?? "";
+
+  return (
+    <div className="relative flex items-center gap-4 rounded-2xl border border-border bg-surface p-3">
+      {/* Фото скутера 88×88 */}
+      <div className="shrink-0 h-[88px] w-[88px] rounded-[12px] bg-surface-soft overflow-hidden flex items-center justify-center">
+        {avatarSrc ? (
+          <img
+            src={avatarSrc}
+            alt={displayName}
+            className="h-full w-full object-contain"
+          />
+        ) : (
+          <Bike size={32} strokeWidth={1.5} className="text-muted-2" />
+        )}
+      </div>
+
+      {/* Метаданные справа */}
+      <div className="flex-1 min-w-0">
+        <div className="font-display text-[18px] font-bold leading-tight text-ink tracking-tight truncate">
+          {displayName}
+        </div>
+        {displayModel && (
+          <div className="mt-0.5 text-[12.5px] text-muted truncate">
+            {displayModel}
+          </div>
+        )}
+        {scooter && (
+          <div className="mt-2 text-[12px] text-muted">
+            Пробег:{" "}
+            <span className="font-bold tabular-nums text-ink">
+              {fmt(scooter.mileage)}
+            </span>{" "}
+            км
+          </div>
+        )}
+      </div>
+
+      {/* Иконка-карандаш в правом верхнем углу — открывает swap */}
+      <button
+        type="button"
+        onClick={onSwap}
+        title="Заменить скутер"
+        className="absolute top-2 right-2 inline-flex h-7 w-7 items-center justify-center rounded-full text-muted-2 hover:bg-blue-50 hover:text-blue-700 transition-colors"
+      >
+        <Pencil size={14} />
+      </button>
+    </div>
+  );
 }
 
 function pluralPos(n: number): string {
