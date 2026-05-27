@@ -874,10 +874,10 @@ export function RentalCard({
       {/* v0.6.38: sticky-header — широкий ряд с back-кнопкой, ID, бейджами
           статуса/просрочки/долга, и primary-actions (Завершить, Принять
           оплату) + «⋯» menu. Остаётся сверху при скролле. */}
-      <div className="sticky top-0 z-30 bg-surface border-b border-border shadow-card-sm">
+      <div className="sticky top-0 z-30 px-4 pt-3">
         <div
           className={cn(
-            "w-full mx-auto px-4 lg:px-6 py-3 flex items-center gap-3 flex-wrap",
+            "w-full mx-auto rounded-2xl border border-border bg-surface px-4 py-3 shadow-card-sm lg:px-5 flex items-center gap-3 flex-wrap",
             paymentOpen ? "max-w-[1760px]" : "max-w-[1480px]",
           )}
         >
@@ -953,7 +953,7 @@ export function RentalCard({
 
       <div
         className={cn(
-          "w-full mx-auto p-4 lg:p-5 flex flex-col gap-3",
+          "w-full mx-auto px-4 pb-4 pt-3 lg:px-5 lg:pb-5 flex flex-col gap-3",
           paymentOpen ? "max-w-[1760px]" : "max-w-[1480px]",
         )}
       >

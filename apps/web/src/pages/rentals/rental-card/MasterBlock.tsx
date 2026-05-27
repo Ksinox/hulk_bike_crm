@@ -127,15 +127,15 @@ export function MasterBlock({
   return (
     <div className="flex flex-col gap-3">
       {/* ── БЛОК 1 — Карточка клиента (фото слева, инфа справа) ── */}
-      <div className="rounded-2xl bg-surface border border-border shadow-card-sm p-4">
-        <div className="flex gap-3.5">
-          {/* Квадратное фото ~104px с иконкой камеры в углу. */}
+      <div className="rounded-2xl bg-surface border border-border shadow-card-sm p-5">
+        <div className="flex gap-4">
+          {/* Квадратное фото с иконкой камеры в углу. */}
           <button
             type="button"
             onClick={onOpenClientProfile}
             className="shrink-0 group cursor-pointer text-left relative"
             title="Открыть профиль клиента"
-            style={{ width: 104, height: 104 }}
+            style={{ width: 124, height: 124 }}
           >
             <div
               className="h-full w-full rounded-[14px] overflow-hidden flex items-center justify-center border border-border group-hover:border-blue-600 transition-colors relative"
@@ -179,7 +179,7 @@ export function MasterBlock({
                 className="text-left group min-w-0"
                 title="Открыть профиль клиента"
               >
-                <h2 className="font-display text-[19px] leading-[1.1] font-extrabold text-ink tracking-tight truncate group-hover:text-blue-700 group-hover:underline decoration-2 underline-offset-2">
+                <h2 className="font-display text-[21px] leading-[1.1] font-extrabold text-ink tracking-tight truncate group-hover:text-blue-700 group-hover:underline decoration-2 underline-offset-2">
                   {client?.name ?? "Клиент не найден"}
                 </h2>
               </button>
@@ -194,7 +194,7 @@ export function MasterBlock({
             </div>
 
             {/* Телефоны двухколоночные (label слева, value справа). */}
-            <div className="flex flex-col gap-0.5 text-[12px]">
+            <div className="flex flex-col gap-1 text-[12px]">
               <PhoneLine
                 label="Телефон"
                 value={
@@ -225,7 +225,7 @@ export function MasterBlock({
             </div>
 
             {/* KPI «N дней в аренде | Y₽ принёс» — внутри той же карточки. */}
-            <div className="mt-1 flex items-center gap-4 flex-wrap text-[12px]">
+            <div className="mt-auto flex items-center gap-4 flex-wrap text-[12px]">
               <div className="inline-flex items-center gap-1.5">
                 <Clock size={13} className="text-blue-600" />
                 <span className="font-bold tabular-nums text-ink">
@@ -250,7 +250,7 @@ export function MasterBlock({
           Скутер использует фиксированную невысокую аватарку. */}
       <div className="grid grid-cols-2 gap-3 items-start">
         {/* СКУТЕР */}
-        <div className="rounded-2xl bg-surface border border-border shadow-card-sm p-3 flex flex-col">
+        <div className="rounded-2xl bg-surface border border-border shadow-card-sm p-3.5 flex flex-col">
           <div className="flex items-center justify-between mb-1.5 min-w-0 gap-2">
             <div className="text-[11px] font-semibold text-muted-2 shrink-0">
               Скутер
@@ -275,7 +275,7 @@ export function MasterBlock({
             <ScooterPosterAvatar
               scooter={scooter ?? null}
               size="md"
-              className="!h-[120px] !w-full"
+              className="!h-[136px] !w-full"
             />
             {/* hover overlay с кнопкой «Заменить» */}
             {scooterHover && (
@@ -298,7 +298,7 @@ export function MasterBlock({
         </div>
 
         {/* ЭКИПИРОВКА */}
-        <div className="rounded-2xl bg-surface border border-border shadow-card-sm p-3 flex flex-col">
+        <div className="rounded-2xl bg-surface border border-border shadow-card-sm p-3.5 flex flex-col">
           <div className="flex items-center justify-between mb-1.5">
             <div className="text-[11px] font-semibold text-muted-2">
               Экипировка
@@ -314,7 +314,7 @@ export function MasterBlock({
                 onClick={() => onChangeEquipment && setSwapIdx(swapIdx === -1 ? null : -1)}
                 disabled={!onChangeEquipment}
                 className={cn(
-                  "w-full min-h-[150px] flex flex-col items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-border bg-surface-soft/60 text-muted-2 transition-colors",
+                  "w-full min-h-[166px] flex flex-col items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-border bg-surface-soft/60 text-muted-2 transition-colors",
                   onChangeEquipment
                     ? "hover:border-blue-600 hover:bg-blue-50 hover:text-blue-700 cursor-pointer"
                     : "cursor-default opacity-70",

@@ -83,8 +83,8 @@ export function FinanceGrid({
 
   return (
     <div className="rounded-2xl bg-surface border border-border shadow-card-sm overflow-hidden">
-      <div className="flex items-center justify-between px-3 pt-3 pb-2">
-        <div className="text-[11px] font-semibold text-muted-2">
+      <div className="flex items-center justify-between px-4 pt-4 pb-3">
+        <div className="text-[13px] font-semibold text-ink">
           Финансы по аренде
         </div>
         <button
@@ -95,7 +95,7 @@ export function FinanceGrid({
           Подробнее <ArrowRight size={10} />
         </button>
       </div>
-      <div className="grid grid-cols-4 gap-2 px-3 pb-3">
+      <div className="grid grid-cols-4 gap-2 px-4 pb-4">
         <FinCell
           label="Просрочка"
           value={overdueDays > 0 ? `${overdueDays} дн` : "—"}
@@ -188,14 +188,14 @@ function FinCell({
               onClick((e.currentTarget as HTMLElement).getBoundingClientRect())
           : undefined
       }
-      className={`relative rounded-[10px] border ${t.border} px-2.5 py-2 text-left min-w-0 w-full ${t.bg} ${onClick ? "hover:brightness-95 cursor-pointer" : ""}`}
+      className={`relative rounded-[10px] border ${t.border} px-3 py-2.5 text-left min-w-0 w-full ${t.bg} ${onClick ? "hover:brightness-95 cursor-pointer" : ""}`}
     >
       <div className="flex items-center gap-1 text-[10.5px] font-semibold text-muted-2 truncate">
         {Icon && <Icon size={10} className="text-red-ink" />}
         {label}
       </div>
       <div
-        className={`mt-0.5 font-display text-[18px] font-bold tabular-nums leading-tight truncate ${t.text}`}
+        className={`mt-1 font-display text-[19px] font-bold tabular-nums leading-tight truncate ${t.text}`}
       >
         {value}
       </div>

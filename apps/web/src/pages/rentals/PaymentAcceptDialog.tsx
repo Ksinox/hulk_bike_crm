@@ -1120,17 +1120,32 @@ export function PaymentAcceptDialog({
           closing && "opacity-0 transition-opacity duration-150",
         )}
       >
-        <div className="flex items-center gap-3 border-b border-border bg-gradient-to-r from-blue-50 to-surface px-5 py-3">
-          <div className="h-9 w-9 rounded-full bg-blue-600 text-white flex items-center justify-center shrink-0">
+        <div
+          className={cn(
+            "flex items-center gap-3 border-b border-border px-5",
+            inline ? "bg-surface py-4" : "bg-gradient-to-r from-blue-50 to-surface py-3",
+          )}
+        >
+          <div
+            className={cn(
+              "h-9 w-9 rounded-full bg-blue-600 text-white flex items-center justify-center shrink-0",
+              inline && "h-8 w-8",
+            )}
+          >
             <Repeat size={16} />
           </div>
           <div className="min-w-0 flex-1">
-            <div className="text-[14px] font-bold text-ink">
+            <div
+              className={cn(
+                "font-bold text-ink",
+                inline ? "text-[16px] leading-tight" : "text-[14px]",
+              )}
+            >
               {isOverdueState
                 ? `Закрыть просрочку и продлить · #${String(rental.id).padStart(4, "0")}`
                 : `Продление аренды · #${String(rental.id).padStart(4, "0")}`}
             </div>
-            <div className="text-[11.5px] text-muted">
+            <div className="mt-1 text-[11.5px] leading-snug text-muted">
               {isOverdueState ? (
                 <>
                   Просрочка{" "}
@@ -1158,7 +1173,7 @@ export function PaymentAcceptDialog({
           {/* ─── STEP 1 (если есть просрочка) ─────────────────────────── */}
           {isOverdueState && (
             <div
-              className="border-b border-border px-5 py-3"
+              className="border-b border-border px-5 py-3.5"
               style={{ background: "hsl(var(--red-soft) / 0.3)" }}
             >
               <div className="mb-2.5 flex items-center gap-2">
@@ -1206,7 +1221,7 @@ export function PaymentAcceptDialog({
           )}
 
           {/* ─── STEP 2: период продления ─────────────────────────────── */}
-          <div className="border-b border-border px-5 py-3">
+          <div className="border-b border-border px-5 py-3.5">
             <div className="mb-2.5 flex items-center gap-2">
               <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-[11px] font-bold text-white">
                 {isOverdueState ? "2" : "1"}
