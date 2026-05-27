@@ -4,7 +4,6 @@ import { Topbar } from "@/pages/dashboard/Topbar";
 import { type Rental, type RentalStatus } from "@/lib/mock/rentals";
 import {
   RentalsFilters,
-  RentalsFiltersChips,
   type FiltersState,
 } from "./RentalsFilters";
 import { RentalsList } from "./RentalsList";
@@ -457,9 +456,9 @@ export function Rentals() {
               </button>
             </div>
 
-            {/* Таб-чипы статусов — встроены в общий блок. */}
-            <RentalsFiltersChips value={filters} onChange={setFilters} />
-
+            {/* v0.6.53: чипы статусов + даты — оба скрыты по умолчанию.
+                Открываются вместе по клику на иконку-фильтр. Интерфейс
+                «по умолчанию» — только заголовок + поиск + плюс. */}
             {filtersOpen && (
               <div className="-mx-1">
                 <RentalsFilters value={filters} onChange={setFilters} />

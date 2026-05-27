@@ -19,7 +19,8 @@
  * Позиционирование: компонент использует `absolute left-0 top-full`,
  * поэтому контейнер-родитель должен быть `relative`.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Package, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useApiEquipment } from "@/lib/api/equipment";
@@ -107,6 +108,42 @@ export function EquipmentInlinePicker({
     null,
   );
   const ref = useRef<HTMLDivElement | null>(null);
+  // v0.6.53: «якорь» — приёмник позиции popover'а. Раньше popover
+  // позиционировался как absolute внутри тайла-родителя; при близости
+  // тайла к границе overflow:hidden родителя popover обрезался.
+  // Теперь рендерим popover через React Portal в body, position:fixed.
+  // anchorRef — невидимый span, который рендерим в исходной точке
+  // (для совместимости со старым API: родитель просто рендерит
+  // <EquipmentInlinePicker/> как сейчас, не передавая rect извне).
+  const anchorRef = useRef<HTMLSpanElement | null>(null);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+
+  useLayoutEffect(() => {
+    const updatePos = () => {
+      const el = anchorRef.current?.parentElement;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const popW = 340;
+      const popH = 380;
+      const gap = 6;
+      let left = r.left;
+      let top = r.bottom + gap;
+      if (left + popW > window.innerWidth - 8) {
+        left = Math.max(8, window.innerWidth - popW - 8);
+      }
+      if (top + popH > window.innerHeight - 8) {
+        top = Math.max(8, r.top - popH - gap);
+      }
+      setPos({ top, left });
+    };
+    updatePos();
+    window.addEventListener("resize", updatePos);
+    window.addEventListener("scroll", updatePos, true);
+    return () => {
+      window.removeEventListener("resize", updatePos);
+      window.removeEventListener("scroll", updatePos, true);
+    };
+  }, []);
 
   // ESC + клик мимо закрывают
   useEffect(() => {
@@ -328,13 +365,18 @@ export function EquipmentInlinePicker({
 
   if (!isAddMode && !replacing) return null;
 
+  // v0.6.53: невидимый «якорь» в исходной точке + portal в body.
   return (
-    <div
-      ref={ref}
-      role="dialog"
-      aria-label={isAddMode ? "Добавить экипировку" : `Заменить ${replacing?.name}`}
-      className="absolute left-0 top-full z-50 mt-1.5 w-[340px] rounded-2xl border border-border bg-surface shadow-card-lg overflow-hidden animate-fade-in"
-    >
+    <>
+      <span ref={anchorRef} aria-hidden style={{ display: "none" }} />
+      {pos && createPortal(
+        <div
+          ref={ref}
+          role="dialog"
+          aria-label={isAddMode ? "Добавить экипировку" : `Заменить ${replacing?.name}`}
+          className="fixed z-[100] w-[340px] rounded-2xl border border-border bg-surface shadow-card-lg overflow-hidden animate-fade-in"
+          style={{ top: pos.top, left: pos.left }}
+        >
       <div className="border-b border-border px-3 pt-3 pb-2">
         <div className="flex items-start gap-2">
           <div className="flex-1 min-w-0">
@@ -574,6 +616,9 @@ export function EquipmentInlinePicker({
       </div>
       </>
       )}
-    </div>
+        </div>,
+        document.body,
+      )}
+    </>
   );
 }

@@ -1275,7 +1275,9 @@ export function PaymentAcceptDialog({
                     onClick={() => {
                       setOverpayDest("extend");
                       const cur = extInputOverride ?? extInputBase;
-                      setExtInputOverride(Math.max(1, cur - 1));
+                      // v0.6.53: разрешаем 0 дней — оператор хочет только
+                      // закрыть долг без продления.
+                      setExtInputOverride(Math.max(0, cur - 1));
                     }}
                     className="flex w-10 items-center justify-center bg-surface-soft text-[18px] text-muted hover:text-ink"
                   >
@@ -1305,8 +1307,9 @@ export function PaymentAcceptDialog({
                   </button>
                 </div>
                 <div className="flex flex-wrap gap-1.5">
-                  {[3, 7, 14, 30].map((n) => {
+                  {[0, 3, 7, 14, 30].map((n) => {
                     const active = extDays === n;
+                    const label = n === 0 ? "Без продления" : `${n}д`;
                     return (
                       <button
                         key={n}
@@ -1330,7 +1333,7 @@ export function PaymentAcceptDialog({
                             : "border-border text-muted hover:bg-surface-soft hover:text-ink-2",
                         )}
                       >
-                        {n}д
+                        {label}
                       </button>
                     );
                   })}
@@ -1729,9 +1732,10 @@ export function PaymentAcceptDialog({
             (3) способ оплаты + кнопки действия.
             Узкая ширина 440px требует разделения блоков по вертикали —
             раньше итог теснил итемизацию и кнопки сжимались. */}
-        <div className="rounded-b-2xl border-t border-border bg-surface-soft">
-          {/* (1) Итемизация — каждая составляющая на своей строке */}
-          <div className="flex flex-col gap-1 px-5 py-3 text-[11.5px]">
+        <div className="rounded-b-2xl border-t border-border bg-surface-soft pb-6">
+          {/* (1) Итемизация — каждая составляющая на своей строке.
+              v0.6.53: цифры крупнее (text-[13.5px] вместо 11.5px). */}
+          <div className="flex flex-col gap-2 px-5 py-3 text-[13.5px] font-semibold">
             {(() => {
               // v0.6.12: footer показывает реальные компоненты «К приёму»:
               //   - overdue (post-forgive остаток)
@@ -1848,12 +1852,14 @@ export function PaymentAcceptDialog({
             </div>
           )}
 
-          {/* (2) Итого — крупная сумма «К приёму» */}
-          <div className="flex items-baseline justify-between border-t border-border px-5 py-3">
-            <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
+          {/* (2) Итого — крупная сумма «К приёму».
+              v0.6.53: text-[28px] font-extrabold — самое важное число
+              для оператора, делаем максимально заметным. */}
+          <div className="flex items-baseline justify-between border-t border-border px-5 py-4">
+            <div className="text-[12px] font-bold uppercase tracking-wider text-muted-2">
               К приёму
             </div>
-            <div className="font-display text-[22px] font-extrabold leading-none tabular-nums text-blue-700">
+            <div className="font-display text-[28px] font-extrabold leading-none tabular-nums text-blue-700">
               {fmt(Math.max(0, grossTotal - depositToUse - (extDays === 0 ? useDepositAmount : 0)))} ₽
             </div>
           </div>
@@ -1886,7 +1892,7 @@ export function PaymentAcceptDialog({
               <button
                 type="button"
                 onClick={requestClose}
-                className="flex-1 rounded-full border border-border bg-white px-3 py-2.5 text-[12.5px] font-semibold text-muted-2 hover:bg-surface-soft hover:text-ink-2"
+                className="h-12 flex-1 rounded-full border border-border bg-white px-3 text-[14px] font-semibold text-muted-2 hover:bg-surface-soft hover:text-ink-2"
               >
                 Отмена
               </button>
@@ -1898,7 +1904,7 @@ export function PaymentAcceptDialog({
                   (totalReceived <= 0 && !forgiveDebt)
                 }
                 className={cn(
-                  "inline-flex flex-[2] items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-[13px] font-bold text-white",
+                  "inline-flex h-12 flex-[2] items-center justify-center gap-1.5 rounded-full px-4 text-[14px] font-bold text-white",
                   saving || (totalReceived <= 0 && !forgiveDebt)
                     ? "cursor-not-allowed bg-surface text-muted-2"
                     : "bg-blue-600 hover:bg-blue-700",
@@ -2557,12 +2563,12 @@ function EquipmentStep({
                       free
                     </span>
                   )}
+                  {/* v0.6.53: Repeat-иконка в углу при hover без синего
+                      overlay — как в карточке аренды (MasterBlock). */}
                   {isLive && isHover && !isOpen && (
-                    <div className="absolute inset-0 rounded-[8px] bg-blue-600/80 backdrop-blur-[1px] flex items-center justify-center pointer-events-none">
-                      <span className="inline-flex items-center gap-1 rounded-full bg-white text-blue-700 px-1.5 py-0.5 text-[9px] font-bold shadow-card-sm">
-                        <Repeat size={9} /> Заменить
-                      </span>
-                    </div>
+                    <span className="absolute bottom-0.5 left-0.5 inline-flex items-center justify-center rounded-full bg-white/95 text-blue-700 shadow-card-sm h-5 w-5 pointer-events-none">
+                      <Repeat size={10} />
+                    </span>
                   )}
                 </button>
                 <div

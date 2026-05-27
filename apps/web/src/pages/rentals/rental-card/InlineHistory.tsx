@@ -189,6 +189,10 @@ function InlineRow({ item }: { item: ApiActivityItem }) {
   const amount = extractAmount(item);
   const positive = amount != null && amount > 0;
   const shortText = formatActivityShort(item);
+  // v0.6.53: вытаскиваем структурированный diff (было → стало) из
+  // meta.diff (API логирует через logActivity({diff})). Используется
+  // для замены экипировки / скутера / редактирования аренды и т.п.
+  const diffLine = renderDiffLine(item);
   return (
     <div className="flex items-center gap-2.5 px-1.5 py-1.5 rounded-[10px] hover:bg-surface-soft">
       <span
@@ -203,6 +207,11 @@ function InlineRow({ item }: { item: ApiActivityItem }) {
         <div className="text-[11.5px] font-bold text-ink truncate leading-tight">
           {shortText}
         </div>
+        {diffLine && (
+          <div className="text-[10.5px] text-muted-2 truncate leading-tight mt-0.5">
+            {diffLine}
+          </div>
+        )}
         <div className="text-[10px] text-muted tabular-nums leading-tight mt-0.5">
           {new Date(item.createdAt).toLocaleString("ru-RU", {
             day: "2-digit",
@@ -231,6 +240,64 @@ function InlineRow({ item }: { item: ApiActivityItem }) {
       )}
     </div>
   );
+}
+
+/**
+ * v0.6.53: рендер «было → стало» из meta.diff.
+ *
+ * Бэкенд (apps/api/src/services/activityLog.ts) пишет в meta.diff поля
+ * `from`/`to` с типом DiffFieldKind (money/date/list/text/number). Здесь
+ * мы достаём нужное поле по action и форматируем одной строкой.
+ *
+ *  • equipment_changed → meta.diff.items {from: string[], to: string[]}
+ *  • scooter_swapped   → meta.diff.scooter {from: string, to: string}
+ *  • rental_extended   → meta.diff.days {to: число}  → «+N дней»
+ *  • payment_*         → handled через extractAmount (не нужен diff)
+ *
+ * Если нет diff'а — возвращаем null, строка не показывается.
+ */
+function renderDiffLine(item: ApiActivityItem): string | null {
+  const meta = (item.meta ?? null) as Record<string, unknown> | null;
+  const diff = meta && typeof meta === "object" ? (meta.diff as Record<string, { from?: unknown; to?: unknown; kind?: string }> | undefined) : undefined;
+  if (!diff) return null;
+  // Замена экипировки
+  if (diff.items && (Array.isArray(diff.items.from) || Array.isArray(diff.items.to))) {
+    const from = Array.isArray(diff.items.from) ? (diff.items.from as string[]) : [];
+    const to = Array.isArray(diff.items.to) ? (diff.items.to as string[]) : [];
+    // Найдём дельту: что было «заменено» (наиболее частый кейс — один в один).
+    const added = to.filter((n) => !from.includes(n));
+    const removed = from.filter((n) => !to.includes(n));
+    if (added.length === 1 && removed.length === 1) {
+      return `${removed[0]} → ${added[0]}`;
+    }
+    if (added.length > 0 && removed.length === 0) {
+      return `+ ${added.join(", ")}`;
+    }
+    if (removed.length > 0 && added.length === 0) {
+      return `− ${removed.join(", ")}`;
+    }
+    return `${from.join(", ") || "—"} → ${to.join(", ") || "—"}`;
+  }
+  // Замена скутера
+  if (diff.scooter && typeof diff.scooter.from === "string" && typeof diff.scooter.to === "string") {
+    return `${diff.scooter.from} → ${diff.scooter.to}`;
+  }
+  // Продление: meta.diff.days = {to: число дней extraDays}
+  if (diff.days && typeof diff.days.to === "number") {
+    const n = diff.days.to as number;
+    return `+${n} ${n === 1 ? "день" : n < 5 ? "дня" : "дней"}`;
+  }
+  // Редактирование аренды: множество полей diff → перечисляем подписи.
+  const keys = Object.keys(diff);
+  if (keys.length > 0) {
+    const labels = keys
+      .map((k) => (diff[k] as { label?: string } | undefined)?.label)
+      .filter(Boolean) as string[];
+    if (labels.length > 0 && labels.length <= 4) {
+      return labels.join(", ");
+    }
+  }
+  return null;
 }
 
 function extractAmount(item: ApiActivityItem): number | null {

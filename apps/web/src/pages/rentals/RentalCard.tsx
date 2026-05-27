@@ -1002,11 +1002,6 @@ export function RentalCard({
             через actions[], а в шапке остался компактный Flag-вариант.
             Primary CTA — зелёный «Принять оплату» справа. */}
         <div className="flex shrink-0 items-center gap-2">
-          <RentalActionsMenu
-            actions={actions}
-            onAction={handleAction}
-            triggerStyle="dots"
-          />
           {(() => {
             const isLive = rental.status === "active";
             const canComplete = isLive && !isArchived;
@@ -1036,6 +1031,12 @@ export function RentalCard({
               </>
             );
           })()}
+          {/* v0.6.53: три точки перенесены в самый конец справа. */}
+          <RentalActionsMenu
+            actions={actions}
+            onAction={handleAction}
+            triggerStyle="dots"
+          />
         </div>
       </header>
 

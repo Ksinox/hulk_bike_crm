@@ -61,6 +61,11 @@ const STATUS_TABS: { id: StatusFilter; label: string }[] = [
  * дополнительные фильтры (диапазоны дат «Дата выдачи» / «Завершаются»).
  * Это убирает дубль чипов между основным блоком и поповером.
  */
+/**
+ * v0.6.53: при кликe на иконку-фильтр раскрывается ВСЕ доп. фильтры:
+ * чипы статусов + диапазоны дат. По умолчанию (filtersOpen=false) ничего
+ * не видно — чище интерфейс «по умолчанию».
+ */
 export function RentalsFilters({
   value,
   onChange,
@@ -69,27 +74,37 @@ export function RentalsFilters({
   onChange: (next: FiltersState) => void;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-[12px] bg-surface-soft/60 p-2.5">
-      <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2 mr-1">
-        По датам
+    <div className="flex flex-col gap-2.5 rounded-[12px] bg-surface-soft/60 p-2.5">
+      <div className="flex flex-col gap-1.5">
+        <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
+          Статус
+        </div>
+        <RentalsFiltersChips value={value} onChange={onChange} />
       </div>
-      <DateRangeFilter
-        from={value.dateFrom}
-        to={value.dateTo}
-        onChange={(r) =>
-          onChange({ ...value, dateFrom: r.from, dateTo: r.to })
-        }
-      />
-      <DateRangeFilter
-        from={value.endDateFrom ?? null}
-        to={value.endDateTo ?? null}
-        onChange={(r) =>
-          onChange({ ...value, endDateFrom: r.from, endDateTo: r.to })
-        }
-        placeholder="Завершаются"
-        titleApplied="Изменить диапазон дат завершения аренды"
-        titleNotApplied="Фильтр по дате завершения аренды (endPlanned)"
-      />
+      <div className="flex flex-col gap-1.5">
+        <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
+          По датам
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <DateRangeFilter
+            from={value.dateFrom}
+            to={value.dateTo}
+            onChange={(r) =>
+              onChange({ ...value, dateFrom: r.from, dateTo: r.to })
+            }
+          />
+          <DateRangeFilter
+            from={value.endDateFrom ?? null}
+            to={value.endDateTo ?? null}
+            onChange={(r) =>
+              onChange({ ...value, endDateFrom: r.from, endDateTo: r.to })
+            }
+            placeholder="Завершаются"
+            titleApplied="Изменить диапазон дат завершения аренды"
+            titleNotApplied="Фильтр по дате завершения аренды (endPlanned)"
+          />
+        </div>
+      </div>
     </div>
   );
 }
