@@ -135,7 +135,7 @@ export function MasterBlock({
             onClick={onOpenClientProfile}
             className="shrink-0 group cursor-pointer text-left relative"
             title="Открыть профиль клиента"
-            style={{ width: 124, height: 124 }}
+            style={{ width: 118, height: 118 }}
           >
             <div
               className="h-full w-full rounded-[14px] overflow-hidden flex items-center justify-center border border-border group-hover:border-blue-600 transition-colors relative"
@@ -554,10 +554,10 @@ function PhoneLine({
 }) {
   return (
     <div className="flex items-baseline gap-2">
-      <span className="text-[11px] font-semibold text-muted-2 w-[92px] shrink-0">
+      <span className="text-[11px] font-semibold text-muted-2 w-[84px] shrink-0">
         {label}
       </span>
-      <span className="flex-1 min-w-0 truncate text-right">{value}</span>
+      <span className="flex-1 min-w-0 text-right whitespace-nowrap">{value}</span>
     </div>
   );
 }
