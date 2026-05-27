@@ -28,7 +28,6 @@ import {
   matchText,
   normalizeQuery,
 } from "@/lib/search";
-import { cn } from "@/lib/utils";
 
 /** Сегодня в формате DD.MM.YYYY (локальное время) */
 function todayRu(): string {
@@ -193,7 +192,6 @@ export function Rentals() {
     endDateTo: null,
   });
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [cardPaymentOpen, setCardPaymentOpen] = useState(false);
   const [newOpen, setNewOpen] = useState(false);
   /**
    * После создания аренды — автоматически открываем превью документа
@@ -392,123 +390,81 @@ export function Rentals() {
     ];
   }, [rentals, revenue]);
 
-  const selectedRental = rentals.find((r) => r.id === selectedId) ?? null;
-
-  useEffect(() => {
-    setCardPaymentOpen(false);
-  }, [selectedId]);
-
   return (
     <main className="flex min-w-0 flex-1 flex-col gap-4">
-      {!selectedRental && <Topbar />}
+      <Topbar />
 
-      {!selectedRental && (
-        <>
-          <header className="flex items-center justify-between gap-3">
-            <div className="flex items-baseline gap-3">
-              <h1 className="font-display text-[34px] font-extrabold leading-none text-ink">
-                Аренды
-              </h1>
-              <span className="rounded-full bg-surface-soft px-3 py-1 text-[13px] font-semibold text-muted">
-                {
-                  rentals.filter(
-                    (r) =>
-                      (r.status === "active" ||
-                        r.status === "overdue" ||
-                        r.status === "returning") &&
-                      r.scooter,
-                  ).length
-                }{" "}
-                активных
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={() => setNewOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-full bg-ink px-4 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-ink-2"
-            >
-              <Plus size={16} />
-              Новая аренда
-            </button>
-          </header>
+      <header className="flex items-center justify-between gap-3">
+        <div className="flex items-baseline gap-3">
+          <h1 className="font-display text-[34px] font-extrabold leading-none text-ink">
+            Аренды
+          </h1>
+          <span className="rounded-full bg-surface-soft px-3 py-1 text-[13px] font-semibold text-muted">
+            {
+              rentals.filter(
+                (r) =>
+                  (r.status === "active" ||
+                    r.status === "overdue" ||
+                    r.status === "returning") &&
+                  r.scooter,
+              ).length
+            }{" "}
+            активных
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={() => setNewOpen(true)}
+          className="inline-flex items-center gap-1.5 rounded-full bg-ink px-4 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-ink-2"
+        >
+          <Plus size={16} />
+          Новая аренда
+        </button>
+      </header>
 
-          <RentalsKpi items={kpi} />
+      <RentalsKpi items={kpi} />
 
-          <RentalsFilters value={filters} onChange={setFilters} />
-        </>
-      )}
+      <RentalsFilters value={filters} onChange={setFilters} />
 
-      {/* v0.6.38: layout зависит от того, выбрана ли аренда.
-            • Выбрана → карточка раскрывается на ВСЮ ширину, список скрыт.
-            • Не выбрана → список во всю ширину; карточка не рендерится.
-          Это даёт focus mode карточке: вся ширина под layout 2-col. */}
-      {(() => {
-        const selected = selectedRental;
-        const showSideList = selected && !cardPaymentOpen;
-        return (
-          <div
-            className={cn(
-              "grid flex-1 gap-4 transition-[grid-template-columns] duration-300 ease-out",
-              selected
-                ? cardPaymentOpen
-                  ? "grid-cols-[0fr_minmax(0,1fr)]"
-                  : "xl:grid-cols-[360px_minmax(0,1fr)] 2xl:grid-cols-[400px_minmax(0,1fr)]"
-                : "grid-cols-1",
-            )}
-          >
-            {!selected && (
-              <RentalsList
-                items={filtered}
-                selectedId={selectedId}
-                onSelect={setSelectedId}
-              />
-            )}
-            {selected && (
-              <div
-                className={cn(
-                  "min-w-0 overflow-hidden transition-all duration-300 ease-out",
-                  showSideList
-                    ? "translate-x-0 opacity-100"
-                    : "pointer-events-none -translate-x-4 opacity-0",
-                )}
-              >
-                {showSideList && (
-                  <RentalsList
-                    items={filtered}
-                    selectedId={selectedId}
-                    onSelect={setSelectedId}
-                  />
-                )}
-              </div>
-            )}
-            {selected && (
-              <ErrorBoundary key={selected.id}>
-                <div className="min-w-0 animate-in fade-in slide-in-from-right-4 duration-300">
-                  <RentalCard
-                    rental={selected}
-                    initialTab={pendingTab ?? undefined}
-                    onPaymentOpenChange={setCardPaymentOpen}
-                    onClose={() => {
-                      setSelectedId(null);
-                      setCardPaymentOpen(false);
-                    }}
-                    onSwapped={(newId) => {
-                      // Свап успешен: одновременно (1) переключаем фокус
-                      // на новую связку — старая ушла в архив и пропадёт
-                      // из списка, (2) поднимаем превью акта замены поверх
-                      // карточки. RentalCard ремаунтится с key=newId, но
-                      // превью живёт в state Rentals и переживает ремаунт.
-                      setSelectedId(newId);
-                      setCardPaymentOpen(false);
-                      setSwapActPreviewId(newId);
-                    }}
-                  />
+      <div className="grid flex-1 gap-4 lg:grid-cols-[420px_1fr]">
+        <RentalsList
+          items={filtered}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+        />
+
+        {(() => {
+          const selected = rentals.find((r) => r.id === selectedId);
+          if (!selected) {
+            return (
+              <div className="flex min-h-[400px] items-center justify-center rounded-2xl bg-surface p-10 text-center shadow-card-sm">
+                <div className="text-[13px] text-muted">
+                  Выберите аренду из списка
                 </div>
-              </ErrorBoundary>
-            )}
-          </div>
-        );
-      })()}
+              </div>
+            );
+          }
+          return (
+            <ErrorBoundary
+              key={selected.id}
+            >
+              <RentalCard
+                rental={selected}
+                initialTab={pendingTab ?? undefined}
+                onSwapped={(newId) => {
+                  // Свап успешен: одновременно (1) переключаем фокус
+                  // на новую связку — старая ушла в архив и пропадёт
+                  // из списка, (2) поднимаем превью акта замены поверх
+                  // карточки. RentalCard ремаунтится с key=newId, но
+                  // превью живёт в state Rentals и переживает ремаунт.
+                  setSelectedId(newId);
+                  setSwapActPreviewId(newId);
+                }}
+              />
+            </ErrorBoundary>
+          );
+        })()}
+      </div>
 
       {swapActPreviewId != null && (
         <ActTransferPreview

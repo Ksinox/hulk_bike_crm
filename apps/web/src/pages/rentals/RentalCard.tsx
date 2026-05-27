@@ -960,7 +960,7 @@ export function RentalCard({
                 type="button"
                 onClick={() => openClient(client.id)}
                 title={client.name}
-                className="block min-w-0 max-w-full break-words text-left rounded decoration-2 underline-offset-4 hover:underline"
+                className="block min-w-0 max-w-full truncate whitespace-nowrap text-left rounded decoration-2 underline-offset-4 hover:underline"
               >
                 {client.name}
               </button>
@@ -996,42 +996,47 @@ export function RentalCard({
           )}
         </h2>
 
-        {/* v0.6.41: быстрые действия в шапке — «Завершить аренду» и
-            «Принять оплату». Заменяют большие плашки внизу карточки,
-            экономят место и держат основные кнопки на виду при скролле. */}
-        {(() => {
-          const isLive = rental.status === "active";
-          const canComplete = isLive && !isArchived;
-          const canAcceptPayment = isLive && !isArchived;
-          if (!canComplete && !canAcceptPayment) return null;
-          return (
-            <div className="flex shrink-0 items-center gap-2">
-              {canComplete && (
-                <button
-                  type="button"
-                  onClick={() => setAction("complete")}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1.5 text-[12px] font-semibold text-ink-2 hover:bg-surface-soft hover:text-ink"
-                  title="Завершить аренду"
-                >
-                  <Flag size={13} /> Завершить
-                </button>
-              )}
-              {canAcceptPayment && (
-                <button
-                  type="button"
-                  onClick={() => setPaymentRentalId(rental.id)}
-                  className="inline-flex items-center gap-1.5 rounded-full bg-green-600 px-3 py-1.5 text-[12px] font-bold text-white shadow-card-sm hover:bg-green-700"
-                  title="Принять оплату"
-                >
-                  <Wallet size={13} /> Принять оплату
-                </button>
-              )}
-            </div>
-          );
-        })()}
-
-        {/* ACTIONS — одна primary + dropdown */}
-        <RentalActionsMenu actions={actions} onAction={handleAction} />
+        {/* v0.6.42: порядок в шапке — [⋯ dots] [Завершить] [Принять оплату].
+            Меню действий сжато до иконки-кружочка (triggerStyle="dots"),
+            «Завершить аренду» (ArrowRight) перенесено внутрь dropdown'а
+            через actions[], а в шапке остался компактный Flag-вариант.
+            Primary CTA — зелёный «Принять оплату» справа. */}
+        <div className="flex shrink-0 items-center gap-2">
+          <RentalActionsMenu
+            actions={actions}
+            onAction={handleAction}
+            triggerStyle="dots"
+          />
+          {(() => {
+            const isLive = rental.status === "active";
+            const canComplete = isLive && !isArchived;
+            const canAcceptPayment = isLive && !isArchived;
+            return (
+              <>
+                {canComplete && (
+                  <button
+                    type="button"
+                    onClick={() => setAction("complete")}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1.5 text-[12px] font-semibold text-ink-2 hover:bg-surface-soft hover:text-ink"
+                    title="Завершить аренду"
+                  >
+                    <Flag size={13} /> Завершить
+                  </button>
+                )}
+                {canAcceptPayment && (
+                  <button
+                    type="button"
+                    onClick={() => setPaymentRentalId(rental.id)}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-green-600 px-3 py-1.5 text-[12px] font-bold text-white shadow-card-sm hover:bg-green-700"
+                    title="Принять оплату"
+                  >
+                    <Wallet size={13} /> Принять оплату
+                  </button>
+                )}
+              </>
+            );
+          })()}
+        </div>
       </header>
 
       {/* =========== BANNERS =========== */}
