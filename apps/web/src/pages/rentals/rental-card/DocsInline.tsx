@@ -81,48 +81,58 @@ export function DocsInline({ rental }: { rental: Rental }) {
 
   return (
     <div className="rounded-2xl bg-surface border border-border shadow-card-sm p-4">
-      <div className="flex items-center justify-between mb-3">
+      <div className="mb-3 flex items-start justify-between gap-3">
         <div>
-          <div className="text-[11px] font-semibold text-muted-2">
+          <div className="text-[13px] font-semibold text-ink">
             Документы
           </div>
-          <div className="text-[11px] text-muted">
-            договоры, акты, фото · клик для просмотра
+          <div className="mt-0.5 text-[11px] text-muted">
+            договоры, акты и сохранённые версии
           </div>
         </div>
+        <span className="rounded-full bg-surface-soft px-2 py-1 text-[10.5px] font-semibold text-muted-2">
+          {Object.keys(DOC_META).length} шаблона
+        </span>
       </div>
-      {/* v0.6.40: компактные тайлы, имя файла переносится по словам
-          (whitespace-normal) — не должно быть «До...»/«Ак...». */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
         {(Object.keys(DOC_META) as DocType[]).map((t) => {
           const meta = DOC_META[t];
           const Icon = meta.icon;
           return (
-            <button
+            <div
               key={t}
-              type="button"
-              onClick={() => setPreview(t)}
               title={meta.title}
-              className="rounded-[12px] border border-border p-2 flex items-center gap-2 hover:border-blue-100 hover:bg-blue-50/40 cursor-pointer text-left transition-colors"
+              className="group flex min-w-0 items-center gap-2 rounded-[12px] border border-border bg-white p-2.5 shadow-[0_1px_0_rgba(15,23,42,0.02)] transition-colors hover:border-blue-100 hover:bg-blue-50/40"
             >
-              <div className="h-9 w-9 rounded-[9px] bg-blue-50 text-blue-700 flex items-center justify-center flex-col shrink-0">
+              <button
+                type="button"
+                onClick={() => setPreview(t)}
+                className="flex min-w-0 flex-1 items-center gap-2 text-left"
+              >
+                <div className="h-10 w-10 rounded-[10px] bg-blue-50 text-blue-700 flex items-center justify-center flex-col shrink-0">
                 <Icon size={12} />
                 <span className="text-[7px] font-bold uppercase tabular-nums mt-0.5">
                   {meta.badge}
                 </span>
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-[11.5px] font-semibold text-ink leading-tight whitespace-normal break-words">
+                </div>
+                <div className="min-w-0 flex-1">
+                <div className="text-[12px] font-bold text-ink leading-tight whitespace-normal break-words">
                   {meta.title}
                 </div>
-                <div className="text-[9.5px] text-muted leading-tight mt-0.5">
+                <div className="text-[10px] text-muted leading-tight mt-0.5">
                   {meta.short}
                 </div>
-              </div>
-              <span className="h-6 w-6 rounded-full hover:bg-white text-muted hover:text-ink flex items-center justify-center shrink-0">
+                </div>
+              </button>
+              <a
+                href={downloadUrl(t)}
+                className="h-7 w-7 rounded-full text-muted hover:bg-white hover:text-blue-700 flex items-center justify-center shrink-0"
+                title="Скачать DOCX"
+                onClick={(e) => e.stopPropagation()}
+              >
                 <Download size={11} />
-              </span>
-            </button>
+              </a>
+            </div>
           );
         })}
         <SnapshotsBlock rental={rental} />

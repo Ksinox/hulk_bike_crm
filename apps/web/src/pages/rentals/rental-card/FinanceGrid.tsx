@@ -95,7 +95,7 @@ export function FinanceGrid({
           Подробнее <ArrowRight size={10} />
         </button>
       </div>
-      <div className="grid grid-cols-4 gap-1.5 px-4 pb-4">
+      <div className="grid grid-cols-4 gap-2 px-4 pb-4">
         <FinCell
           label="Просрочка"
           value={overdueDays > 0 ? `${overdueDays} дн` : "—"}
@@ -188,14 +188,14 @@ function FinCell({
               onClick((e.currentTarget as HTMLElement).getBoundingClientRect())
           : undefined
       }
-      className={`relative rounded-[10px] border ${t.border} px-2.5 py-2.5 text-left min-w-0 w-full ${t.bg} ${onClick ? "hover:brightness-95 cursor-pointer" : ""}`}
+      className={`relative min-h-[92px] rounded-[10px] border ${t.border} px-2.5 py-2.5 text-left min-w-0 w-full ${t.bg} ${onClick ? "hover:brightness-95 cursor-pointer" : ""}`}
     >
-      <div className="flex items-center gap-1 text-[10.5px] font-semibold text-muted-2 truncate">
+      <div className="flex min-h-[26px] items-start gap-1 text-[10.5px] font-semibold leading-tight text-muted-2">
         {Icon && <Icon size={10} className="text-red-ink" />}
-        {label}
+        <span>{label}</span>
       </div>
       <div
-        className={`mt-1 font-display text-[17px] font-bold tabular-nums leading-tight whitespace-nowrap ${t.text}`}
+        className={`mt-1 font-display text-[18px] font-bold tabular-nums leading-tight whitespace-nowrap ${t.text}`}
       >
         {value}
       </div>

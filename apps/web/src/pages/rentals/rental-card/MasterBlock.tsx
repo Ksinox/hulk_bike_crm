@@ -250,20 +250,19 @@ export function MasterBlock({
           Скутер использует фиксированную невысокую аватарку. */}
       <div className="grid grid-cols-2 gap-3 items-start">
         {/* СКУТЕР */}
-        <div className="rounded-2xl bg-surface border border-border shadow-card-sm p-3.5 flex flex-col">
-          <div className="flex items-center justify-between mb-1.5 min-w-0 gap-2">
-            <div className="text-[11px] font-semibold text-muted-2 shrink-0">
+        <div className="rounded-2xl bg-surface border border-border shadow-card-sm p-4 flex flex-col">
+          <div className="mb-2 min-w-0">
+            <div className="text-[11px] font-semibold text-muted-2">
               Скутер
             </div>
-            <div className="text-[10.5px] text-muted-2 truncate tabular-nums min-w-0">
-              {scooter?.name ?? rental.scooter ?? "—"}
+            <div className="mt-0.5 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
+              <span className="font-display text-[17px] font-extrabold leading-tight text-ink">
+                {scooter?.name ?? rental.scooter ?? "—"}
+              </span>
               {scooter && (
-                <>
-                  {" · "}
-                  <span className="font-semibold text-ink-2">
-                    Пробег {fmt(scooter.mileage)} км
-                  </span>
-                </>
+                <span className="text-[11px] font-semibold tabular-nums text-ink-2">
+                  · Пробег {fmt(scooter.mileage)} км
+                </span>
               )}
             </div>
           </div>
@@ -275,7 +274,7 @@ export function MasterBlock({
             <ScooterPosterAvatar
               scooter={scooter ?? null}
               size="md"
-              className="!h-[136px] !w-full"
+              className="!h-[132px] !w-full"
             />
             {/* hover overlay с кнопкой «Заменить» */}
             {scooterHover && (
@@ -298,8 +297,8 @@ export function MasterBlock({
         </div>
 
         {/* ЭКИПИРОВКА */}
-        <div className="rounded-2xl bg-surface border border-border shadow-card-sm p-3.5 flex flex-col">
-          <div className="flex items-center justify-between mb-1.5">
+        <div className="rounded-2xl bg-surface border border-border shadow-card-sm p-4 flex flex-col">
+          <div className="flex items-center justify-between mb-2">
             <div className="text-[11px] font-semibold text-muted-2">
               Экипировка
             </div>
@@ -362,7 +361,7 @@ export function MasterBlock({
               )}
             </div>
           ) : (
-            <div className="flex flex-wrap gap-2 content-start">
+            <div className="flex min-h-[172px] flex-wrap content-start gap-2 rounded-[14px] bg-surface-soft/35 p-2">
               {equipmentJson.slice(0, 6).map((origIt, idx) => {
                 const canSwap = !!onChangeEquipment;
                 const isOpen = swapIdx === idx;
@@ -374,7 +373,7 @@ export function MasterBlock({
                   <div
                     key={`${origIt.itemId ?? "na"}-${idx}`}
                     className={cn(
-                      "relative flex flex-col w-[68px]",
+                      "relative flex flex-col w-[72px]",
                       showingPending && "animate-pulse opacity-80",
                     )}
                     onMouseEnter={() => canSwap && setHoverEqIdx(idx)}
@@ -388,7 +387,7 @@ export function MasterBlock({
                       }}
                       disabled={!canSwap}
                       className={cn(
-                        "w-full aspect-square rounded-[12px] border-2 p-2 flex items-center justify-center transition-colors relative",
+                        "w-full aspect-square rounded-[12px] border-2 p-2 flex items-center justify-center transition-colors relative bg-white",
                         isFree
                           ? "border-green bg-green-soft/50 hover:bg-green-soft"
                           : "border-blue-200 bg-blue-50 hover:bg-blue-100",
@@ -450,7 +449,7 @@ export function MasterBlock({
               {onChangeEquipment && equipmentJson.length < 6 && (
                 <div
                   className={cn(
-                    "relative flex flex-col w-[68px]",
+                    "relative flex flex-col w-[72px]",
                     swapIdx === -1 && pendingItem && "animate-pulse opacity-80",
                   )}
                 >
@@ -458,7 +457,7 @@ export function MasterBlock({
                     type="button"
                     onClick={() => setSwapIdx(swapIdx === -1 ? null : -1)}
                     className={cn(
-                      "w-full aspect-square rounded-[12px] border-2 flex items-center justify-center transition-colors p-2",
+                      "w-full aspect-square rounded-[12px] border-2 flex items-center justify-center transition-colors p-2 bg-white",
                       swapIdx === -1 && pendingItem
                         ? pendingItem.free
                           ? "border-green bg-green-soft/50"
