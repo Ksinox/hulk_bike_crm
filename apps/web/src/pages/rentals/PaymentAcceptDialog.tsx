@@ -1880,28 +1880,17 @@ export function PaymentAcceptDialog({
 
   return (
     <>
-      {/* v0.6.38: PaymentAcceptDialog снова drawer-overlay (как до v0.6.30).
-          Backdrop semi-transparent, клик закрывает. Панель slide-in справа,
-          фиксированной ширины. Календарь под ним НЕ сжимается. */}
-      <div className="fixed inset-0 z-[90]">
-        <button
-          type="button"
-          aria-label="Закрыть"
-          onClick={requestClose}
-          className={cn(
-            "absolute inset-0 bg-ink/30 backdrop-blur-[1px]",
-            closing ? "animate-fade-out" : "animate-fade-in",
-          )}
-        />
-        <aside
-          className={cn(
-            "absolute right-0 top-0 h-full w-[min(95vw,480px)] bg-surface shadow-card-lg flex flex-col",
-            closing ? "animate-slide-out-right" : "animate-slide-in-right",
-          )}
-        >
-          {panel}
-        </aside>
-      </div>
+      {/* v0.6.46: drawer без backdrop'a — календарь и левая колонка карточки
+          остаются чёткими и интерактивными. Панель slide-in справа, поверх
+          контента, закрытие — крестик внутри / Escape. */}
+      <aside
+        className={cn(
+          "fixed right-0 top-0 bottom-0 z-[90] w-[min(95vw,480px)] bg-surface shadow-card-lg ring-1 ring-border flex flex-col",
+          closing ? "animate-slide-out-right" : "animate-slide-in-right",
+        )}
+      >
+        {panel}
+      </aside>
     </>
   );
 }

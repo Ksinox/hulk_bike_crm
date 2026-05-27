@@ -244,26 +244,15 @@ export function MasterBlock({
         </div>
       </div>
 
-      {/* ── БЛОК 2 — СКУТЕР | ЭКИПИРОВКА (grid-cols-2) ──
-          v0.6.40: высоты блоков определяются контентом (без h-full).
-          Скутер использует фиксированную невысокую аватарку. */}
-      <div className="grid grid-cols-[minmax(0,1.25fr)_minmax(0,0.75fr)] gap-4 border-b border-border p-5 items-stretch">
-        {/* СКУТЕР */}
+      {/* ── БЛОК 2 — СКУТЕР / ЭКИПИРОВКА (вертикально, v0.6.46) ──
+          Каждый блок на всю ширину контейнера.
+          Скутер: название «Jog #02» + пробег overlay'ом поверх фото.
+          Экипировка: grid тайлов 72px на полную ширину. */}
+      <div className="flex flex-col gap-4 border-b border-border p-5">
+        {/* СКУТЕР — полная ширина */}
         <div className="rounded-[14px] bg-surface-soft/55 p-4 flex flex-col">
-          <div className="mb-2 min-w-0">
-            <div className="text-[11px] font-semibold text-muted-2">
-              СКУТЕР
-            </div>
-            <div className="mt-0.5 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
-              <span className="font-display text-[17px] font-extrabold leading-tight text-ink">
-                {scooter?.name ?? rental.scooter ?? "—"}
-              </span>
-              {scooter && (
-                <span className="text-[11px] font-semibold tabular-nums text-ink-2">
-                  · Пробег {fmt(scooter.mileage)} км
-                </span>
-              )}
-            </div>
+          <div className="text-[11px] font-semibold text-muted-2 mb-1">
+            СКУТЕР
           </div>
           <div
             className="relative w-full"
@@ -273,8 +262,21 @@ export function MasterBlock({
             <ScooterPosterAvatar
               scooter={scooter ?? null}
               size="md"
-              className="!h-[140px] !w-full"
+              className="!h-[150px] !w-full"
             />
+            {/* Название + пробег overlay'ом по центру сверху */}
+            <div className="pointer-events-none absolute top-2 left-1/2 -translate-x-1/2 text-center px-2 z-10">
+              <div className="inline-block rounded-md bg-white/80 backdrop-blur-[2px] px-2 py-0.5 shadow-card-sm">
+                <span className="font-display text-[18px] font-extrabold leading-tight text-ink tracking-tight">
+                  {scooter?.name ?? rental.scooter ?? "—"}
+                </span>
+                {scooter && (
+                  <span className="ml-1.5 text-[11px] font-semibold tabular-nums text-muted-2">
+                    Пробег {fmt(scooter.mileage)} км
+                  </span>
+                )}
+              </div>
+            </div>
             {/* hover overlay с кнопкой «Заменить» */}
             {scooterHover && (
               <div className="absolute inset-0 rounded-2xl bg-ink/45 backdrop-blur-[1px] flex items-center justify-center pointer-events-none z-20">
@@ -295,7 +297,7 @@ export function MasterBlock({
           </div>
         </div>
 
-        {/* ЭКИПИРОВКА */}
+        {/* ЭКИПИРОВКА — полная ширина */}
         <div className="rounded-[14px] bg-surface-soft/55 p-4 flex flex-col">
           <div className="flex items-center justify-between mb-2">
             <div className="text-[11px] font-semibold text-muted-2">
@@ -312,7 +314,7 @@ export function MasterBlock({
                 onClick={() => onChangeEquipment && setSwapIdx(swapIdx === -1 ? null : -1)}
                 disabled={!onChangeEquipment}
                 className={cn(
-                  "w-full min-h-[166px] flex flex-col items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-border bg-surface-soft/60 text-muted-2 transition-colors",
+                  "w-full min-h-[96px] flex flex-col items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-border bg-surface-soft/60 text-muted-2 transition-colors",
                   onChangeEquipment
                     ? "hover:border-blue-600 hover:bg-blue-50 hover:text-blue-700 cursor-pointer"
                     : "cursor-default opacity-70",
@@ -360,7 +362,7 @@ export function MasterBlock({
               )}
             </div>
           ) : (
-            <div className="grid min-h-[172px] grid-cols-2 content-start gap-2 rounded-[14px] bg-surface-soft/35 p-2">
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(72px,1fr))] content-start gap-2 rounded-[14px] bg-surface-soft/35 p-2">
               {equipmentJson.slice(0, 6).map((origIt, idx) => {
                 const canSwap = !!onChangeEquipment;
                 const isOpen = swapIdx === idx;
