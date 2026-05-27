@@ -361,7 +361,7 @@ export function MasterBlock({
               )}
             </div>
           ) : (
-            <div className="flex min-h-[172px] flex-wrap content-start gap-2 rounded-[14px] bg-surface-soft/35 p-2">
+            <div className="grid min-h-[172px] grid-cols-2 content-start gap-2 rounded-[14px] bg-surface-soft/35 p-2">
               {equipmentJson.slice(0, 6).map((origIt, idx) => {
                 const canSwap = !!onChangeEquipment;
                 const isOpen = swapIdx === idx;
@@ -373,7 +373,7 @@ export function MasterBlock({
                   <div
                     key={`${origIt.itemId ?? "na"}-${idx}`}
                     className={cn(
-                      "relative flex flex-col w-[72px]",
+                      "relative flex min-w-0 flex-col",
                       showingPending && "animate-pulse opacity-80",
                     )}
                     onMouseEnter={() => canSwap && setHoverEqIdx(idx)}
@@ -387,7 +387,7 @@ export function MasterBlock({
                       }}
                       disabled={!canSwap}
                       className={cn(
-                        "w-full aspect-square rounded-[12px] border-2 p-2 flex items-center justify-center transition-colors relative bg-white",
+                        "flex h-[72px] w-full items-center justify-center rounded-[12px] border-2 bg-white p-2 transition-colors relative",
                         isFree
                           ? "border-green bg-green-soft/50 hover:bg-green-soft"
                           : "border-blue-200 bg-blue-50 hover:bg-blue-100",
@@ -449,7 +449,7 @@ export function MasterBlock({
               {onChangeEquipment && equipmentJson.length < 6 && (
                 <div
                   className={cn(
-                    "relative flex flex-col w-[72px]",
+                      "relative flex min-w-0 flex-col",
                     swapIdx === -1 && pendingItem && "animate-pulse opacity-80",
                   )}
                 >
@@ -457,7 +457,7 @@ export function MasterBlock({
                     type="button"
                     onClick={() => setSwapIdx(swapIdx === -1 ? null : -1)}
                     className={cn(
-                      "w-full aspect-square rounded-[12px] border-2 flex items-center justify-center transition-colors p-2 bg-white",
+                      "flex h-[72px] w-full items-center justify-center rounded-[12px] border-2 bg-white p-2 transition-colors",
                       swapIdx === -1 && pendingItem
                         ? pendingItem.free
                           ? "border-green bg-green-soft/50"
