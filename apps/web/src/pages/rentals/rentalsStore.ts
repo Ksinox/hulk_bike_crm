@@ -283,6 +283,25 @@ export function markPaymentPaid(id: number, paid = true) {
     .catch(logErr("markPaymentPaid"));
 }
 
+export function addRentalIncident(
+  rentalId: number,
+  inc: Omit<RentalIncident, "id" | "rentalId" | "paid"> & { paid?: number },
+) {
+  api
+    .post(`/api/incidents`, {
+      rentalId,
+      type: inc.type,
+      occurredOn: ruToIso(inc.date).slice(0, 10),
+      damage: inc.damage,
+      note: inc.note ?? null,
+    })
+    .then(() => {
+      queryClient.invalidateQueries({ queryKey: ["incidents", rentalId] });
+      invAll();
+    })
+    .catch(logErr("addRentalIncident"));
+}
+
 /**
  * Создание аренды.
  *

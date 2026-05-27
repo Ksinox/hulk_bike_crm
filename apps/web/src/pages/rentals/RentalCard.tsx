@@ -1,50 +1,41 @@
-/**
- * RentalCard v0.6 — редизайн (Phase 2).
- *
- * Структура:
- *   1. IdentityStrip   — #ID + статус + бейдж долга
- *   2. MasterBlock     — клиент / скутер / экипировка (3 колонки)
- *   3. KpiStrip        — Срок / Эта аренда / За всё время / Долг + CTA
- *   4. CalendarPanel + HistoryStrip
- *   5. DocsInline      — плитки документов
- *   6. SideDrawer'ы    — история, история долгов, профиль клиента
- *   7. Существующие диалоги (PaymentAcceptDialog, RentalActionDialog,
- *      EquipmentChangeDialog, SwapScooterDialog, DamageReportDialog,
- *      DocumentPreviewModal) — реюзаются без изменений.
- *
- * Phase 2 start: drag-to-extend и polish-анимации добавятся отдельно.
- */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   AlertTriangle,
-  ArrowLeft,
   ArrowRight,
   Calendar,
-  Check,
   CheckCircle2,
   PhoneOff,
+  ThumbsUp,
   Plus,
   Repeat,
+  Shield,
   ShieldAlert,
+  Star,
   Wallet,
   Wrench,
   XCircle,
-  Eraser,
-  Pencil,
-  Trash2,
-  RotateCcw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
+  DEPOSIT_AMOUNT,
+  STATUS_LABEL,
+  STATUS_TONE,
   type Rental,
   type RentalStatus,
 } from "@/lib/mock/rentals";
 import { effectiveRentalStatus } from "@/lib/rentalStatus";
+import { ratingTier } from "@/lib/mock/clients";
 import { useClientUnreachable } from "@/pages/clients/clientStore";
-import { useAllClients } from "@/pages/clients/clientStore";
 import { useApiClients } from "@/lib/api/clients";
 import { useApiScooters } from "@/lib/api/scooters";
 import { navigate } from "@/app/navigationStore";
+import {
+  DebtHistoryTab,
+  DocumentsTab,
+  HistoryTab,
+  TasksTab,
+  TermsTab,
+} from "./RentalCardTabs";
 import { RentalActionDialog, type ActionKind } from "./RentalActionDialog";
 import { ExtendRentalDialog } from "./ExtendRentalDialog";
 import { PaymentAcceptDialog } from "./PaymentAcceptDialog";
@@ -59,7 +50,6 @@ import {
   useChargeManualDebt,
   useForgiveOverdue,
 } from "@/lib/api/debt";
-import { useActivityTimeline } from "@/lib/api/activity";
 import { RentalActionsMenu, type MenuAction } from "./RentalActionsMenu";
 import {
   getRentalChainIds,
@@ -67,9 +57,9 @@ import {
   useRentals,
   useArchivedRentals,
 } from "./rentalsStore";
-import { ClientCard } from "@/pages/clients/ClientCard";
 import { ClientQuickView } from "@/pages/clients/ClientQuickView";
 import { RentalEditModal } from "./RentalEditModal";
+import { Eraser, Pencil, Trash2, RotateCcw } from "lucide-react";
 import {
   useDeleteRental,
   usePurgeRental,
@@ -82,22 +72,20 @@ import { confirmDialog, pickAction } from "@/lib/toast";
 import { toast } from "@/lib/toast";
 import { ApiError, api } from "@/lib/api";
 
-import { MasterBlock } from "./rental-card/MasterBlock";
-import { CalendarPanel } from "./rental-card/CalendarPanel";
-import { DocsInline } from "./rental-card/DocsInline";
-import { DebtsList } from "./rental-card/DebtsList";
-import { SideDrawer } from "./rental-card/SideDrawer";
-import { OverdueActionsPopover } from "./rental-card/OverdueActionsPopover";
-import { ActivityFeed } from "./rental-card/ActivityFeed";
-import { FinanceGrid } from "./rental-card/FinanceGrid";
-import { InlineHistory } from "./rental-card/InlineHistory";
-import { STATUS_LABEL, STATUS_TONE } from "@/lib/mock/rentals";
+type TabId = "terms" | "history" | "debt" | "tasks" | "docs";
 
-type DrawerKind = "history" | "debts" | "profile" | null;
+const TABS: { id: TabId; label: string }[] = [
+  { id: "terms", label: "Условия" },
+  { id: "history", label: "История" },
+  { id: "debt", label: "История долгов" },
+  { id: "tasks", label: "Задачи" },
+  { id: "docs", label: "Документы" },
+];
 
-// v0.6.32: layout констант больше не нужны — теперь grid-cols
-// переключается между [1fr_360px] (calendar+history) и
-// [1fr_440px] (calendar+payment). См. ниже секцию Calendar+Payment.
+function fmt(n: number | null | undefined): string {
+  if (n == null || Number.isNaN(n)) return "0";
+  return n.toLocaleString("ru-RU");
+}
 
 function parseDate(s: string): Date | null {
   const m = s.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
@@ -106,9 +94,15 @@ function parseDate(s: string): Date | null {
 }
 
 function daysBetween(a: Date, b: Date): number {
+  // разница в календарных днях: нормализуем оба к началу дня
   const aD = new Date(a.getFullYear(), a.getMonth(), a.getDate()).getTime();
   const bD = new Date(b.getFullYear(), b.getMonth(), b.getDate()).getTime();
   return Math.round((bD - aD) / 86400000);
+}
+
+/** Текущая дата/время — пересоздаётся при каждом рендере компонента */
+function now(): Date {
+  return new Date();
 }
 
 function statusActions(
@@ -122,12 +116,15 @@ function statusActions(
       icon: Wrench,
       tone: "warn",
     },
+    // v0.3.8: ручное начисление долга — на любых живых статусах.
     {
       id: "charge-debt",
       label: "Начислить долг",
       icon: Plus,
       tone: "warn",
     },
+    // v0.3.8: списание просрочки — только если есть начисленная просрочка.
+    // Само действие проверит наличие на сервере и вернёт ошибку если нет.
     {
       id: "forgive-overdue",
       label: "Сбросить просрочку",
@@ -157,15 +154,31 @@ function statusActions(
         { id: "cancel", label: "Отменить", icon: XCircle, tone: "ghost" },
       ];
     case "active":
+      // v0.4.48: убрали «Принять платёж» из меню действий — он
+      // дублировал основной CTA на карточке аренды (PaymentAcceptDialog),
+      // вёл на старый RentalActionDialog (legacy форма с типами
+      // rent/fine/damage/deposit без депозита/залога/просрочки).
       return withExtras([
-        { id: "extend", label: "Продлить", icon: Repeat, tone: "primary" },
         { id: "complete", label: "Завершить аренду", icon: ArrowRight, tone: "ghost" },
       ]);
     case "overdue":
+      // v0.4.68: убраны «Снять просрочку» и «Подать в полицию».
+      //  • «Снять просрочку» (revert-overdue) дублировал «Сбросить
+      //    просрочку» из withExtras (forgive-overdue) — оставляем
+      //    только последний (он уже добавляется через withExtras).
+      //  • «Подать в полицию» — исключение из обычного flow; если
+      //    реально нужно — оператор фиксирует ущерб (Зафиксировать
+      //    ущерб) и далее работает по акту, претензии и/или
+      //    отдельным процедурам, без отдельной кнопки в карточке.
       return withExtras([
         { id: "complete", label: "Завершить аренду", icon: ArrowRight, tone: "primary" },
       ]);
     case "returning":
+      // Единое окно завершения. Чек-лист (экипировка/состояние) +
+      // галка «Есть ущерб?» внутри одного диалога — пользователь
+      // решает прямо там, без отдельных кнопок «без ущерба / с ущербом».
+      // Также «Отменить возврат» — если нажали «Завершить аренду»
+      // случайно и хотим вернуть аренду в активный режим.
       return withExtras([
         { id: "complete", label: "Завершить аренду", icon: CheckCircle2, tone: "primary" },
         { id: "cancel-return", label: "Отменить возврат", icon: XCircle, tone: "ghost" },
@@ -176,26 +189,65 @@ function statusActions(
       ];
     case "completed_damage":
       return withExtras([
-        { id: "normalize-status", label: "Сбросить «проблемная»", icon: CheckCircle2, tone: "primary" },
+        { id: "normalize-status", label: "Сбросить «проблемная» (если долгов нет)", icon: CheckCircle2, tone: "primary" },
         { id: "resume-damage", label: "Возобновить аренду", icon: RotateCcw, tone: "ghost" },
         { id: "claim", label: "Досудебная претензия", icon: AlertTriangle, tone: "warn" },
       ]);
     case "problem":
       return withExtras([
-        { id: "normalize-status", label: "Сбросить «проблемная»", icon: CheckCircle2, tone: "primary" },
+        { id: "normalize-status", label: "Сбросить «проблемная» (если долгов нет)", icon: CheckCircle2, tone: "primary" },
         { id: "claim", label: "Распечатать претензию", icon: AlertTriangle, tone: "warn" },
         { id: "resume-damage", label: "Возобновить аренду", icon: RotateCcw, tone: "ghost" },
       ]);
     case "police":
     case "court":
+      // v0.4.36: добавлены действия выхода. Раньше из police/court
+      // нельзя было ничего сделать — аренда зависала. Теперь:
+      //  • «Скутер вернулся» — закрываем как completed (пишем когда дело
+      //    разрешилось — клиент вернул скутер либо разбирательство
+      //    окончено и скутер фактически вернулся в парк).
+      //  • «Закрыть с ущербом» — переводим в problem чтобы оператор
+      //    оформил damage_report и взыскал убытки штатно.
+      //  • «Отменить дело» — аренда возвращается в overdue (если
+      //    непросрочена — в active), оператор продолжает обычную
+      //    работу с долгом.
       return withExtras([
-        { id: "complete", label: "Скутер вернулся — завершить", icon: CheckCircle2, tone: "primary" },
-        { id: "set-damage", label: "Закрыть с ущербом", icon: Wrench, tone: "warn" },
-        { id: "revert-police", label: "Отменить дело", icon: RotateCcw, tone: "ghost" },
+        {
+          id: "complete",
+          label: "Скутер вернулся — завершить",
+          icon: CheckCircle2,
+          tone: "primary",
+        },
+        {
+          id: "set-damage",
+          label: "Закрыть с ущербом",
+          icon: Wrench,
+          tone: "warn",
+        },
+        {
+          id: "revert-police",
+          label: "Отменить дело — вернуть в работу",
+          icon: RotateCcw,
+          tone: "ghost",
+        },
       ]);
     default:
       return [];
   }
+}
+
+function statusChipClass(tone: string): string {
+  return tone === "green"
+    ? "bg-green-soft text-green-ink"
+    : tone === "red"
+      ? "bg-red-soft text-red-ink"
+      : tone === "orange"
+        ? "bg-orange-soft text-orange-ink"
+        : tone === "blue"
+          ? "bg-blue-50 text-blue-700"
+          : tone === "purple"
+            ? "bg-purple-soft text-purple-ink"
+            : "bg-surface-soft text-muted";
 }
 
 export function RentalCard({
@@ -203,33 +255,31 @@ export function RentalCard({
   onSwapped,
   onClose,
   onPaymentOpenChange,
-  /** Игнорируется в v0.6 — табы отменены. Сохраняем prop для обратной
-   *  совместимости с Rentals.tsx (он передаёт initialTab при навигации
-   *  с дашборда). Логика «открыть драверы по типу» отложена. */
-  initialTab: _initialTab,
+  initialTab,
 }: {
   rental: Rental;
+  /** Callback в Rentals при успешной замене скутера. Rentals переключает
+   *  selectedId на новую связку и поднимает превью акта замены поверх
+   *  карточки — иначе при ремаунте RentalCard локальный state превью
+   *  терялся, и превью никогда не показывалось. */
   onSwapped?: (newRentalId: number) => void;
-  /** v0.6.29: закрытие карточки — список аренд раскрывается на всю
-   *  ширину. Управляется родителем (Rentals.tsx) через selectedId=null. */
   onClose?: () => void;
   onPaymentOpenChange?: (open: boolean) => void;
-  initialTab?: string;
+  /** v0.3.8: какой таб открыть по умолчанию (используется при навигации
+   *  с дашборда: клик по должнику → openTab='debt' → таб «История долгов»). */
+  initialTab?: TabId;
 }) {
-  void _initialTab;
-
-  // v0.6.15: B3 — сворачивание карточки. В свернутом виде карточка
-  // показывает компактную одну строку: #ID, клиент, статус, просрочка,
-  // долг. Кнопка «Развернуть» возвращает полный вид. TODO: расширить
-  // до режима «список аренд во всю ширину» — по эскизу заказчика в
-  // v0.6.29: collapsed-режим убран — закрытие карточки теперь
-  // делается через onClose (родитель Rentals.tsx сбрасывает selectedId).
-
-  // ── dialogs ──────────────────────────────────────────────────────
+  void onPaymentOpenChange;
+  const [tab, setTab] = useState<TabId>(initialTab ?? "terms");
   const [action, setAction] = useState<ActionKind | null>(null);
   const [editRentalOpen, setEditRentalOpen] = useState(false);
   const [extendOpen, setExtendOpen] = useState(false);
-  // v0.6.13: paymentRentalId объявлен ниже как обёртка (для FLIP-измерения).
+  // v0.3.9: после продления / оплаты — открываем диалог приёма оплаты
+  // на новой связке. Хранится rentalId, чтобы пережить перерендер.
+  const [paymentRentalId, setPaymentRentalId] = useState<number | null>(null);
+  const [paymentPrefillExtDays, setPaymentPrefillExtDays] = useState(0);
+  const [calendarResetSignal, setCalendarResetSignal] = useState(0);
+  // v0.4.49: модалки пополнения залога и изменения экипировки
   const [equipmentChangeOpen, setEquipmentChangeOpen] = useState(false);
   const [damageOpen, setDamageOpen] = useState(false);
   const [editingReportId, setEditingReportId] = useState<number | null>(null);
@@ -238,33 +288,19 @@ export function RentalCard({
   const [previewClaimId, setPreviewClaimId] = useState<number | null>(null);
   const [swapOpen, setSwapOpen] = useState(false);
   const [clientQuickView, setClientQuickView] = useState(false);
-  // ── drawers ──────────────────────────────────────────────────────
-  const [drawer, setDrawer] = useState<DrawerKind>(null);
-  // ── overdue popover ──────────────────────────────────────────────
-  const [overdueAnchor, setOverdueAnchor] = useState<DOMRect | null>(null);
-  // ── prefill для PaymentAcceptDialog (drag-to-extend) ─────────────
-  const [paymentPrefillExtDays, setPaymentPrefillExtDays] = useState<number>(0);
-  // v0.6.17: сигнал для DragExtendCalendar — сбросить зелёную preview-зону.
-  // Инкрементим при закрытии PaymentAcceptDialog без подтверждения.
-  const [calendarResetSignal, setCalendarResetSignal] = useState<number>(0);
-  // v0.6.x: PaymentAcceptDialog теперь inline-панель в гриде с календарём
-  // и историей — FLIP-анимация и liftedFromRect больше не нужны.
-  // calendarBoxRef оставлен — может использоваться CalendarPanel'ом.
-  const calendarBoxRef = useRef<HTMLDivElement | null>(null);
-  const [paymentRentalId, setPaymentRentalId] = useState<number | null>(null);
-
-  const drawerCtx = useDashboardDrawer();
-  /** Открыть клиента: если мы внутри dashboard-drawer'а — кладём поверх
-   *  стека; иначе — открываем правый side-drawer карточки. */
+  // v0.3.1 (idea 2: stacking drawers): когда RentalCard рендерится
+  // ВНУТРИ drawer'а на дашборде — клик на клиента не должен открывать
+  // отдельный ClientQuickView, а должен класть «client» поверх стека
+  // drawer'а. Эффект: над текущим rental drawer'ом всплывает client
+  // view; Esc / X возвращает к rental drawer'у.
+  // Если RentalCard на странице аренд (вне drawer'а) — useDashboardDrawer
+  // вернёт inDrawer=false, поведение сохранится прежнее (локальная
+  // ClientQuickView через setClientQuickView).
+  const drawer = useDashboardDrawer();
   const openClient = (clientId: number) => {
-    if (drawerCtx.inDrawer) {
-      drawerCtx.openClient(clientId);
-    } else {
-      setDrawer("profile");
-      void clientId;
-    }
+    if (drawer.inDrawer) drawer.openClient(clientId);
+    else setClientQuickView(true);
   };
-
   const { data: me } = useMe();
   const deleteRental = useDeleteRental();
   const unarchiveRental = useUnarchiveRental();
@@ -273,31 +309,29 @@ export function RentalCard({
   const isArchived = !!rental.archivedAt;
   const isCreator = me?.role === "creator";
 
-  // ── data ─────────────────────────────────────────────────────────
   const { data: apiClients } = useApiClients();
   const client = useMemo(
-    () => apiClients?.find((c) => c.id === rental.clientId) ?? null,
+    () => apiClients?.find((c) => c.id === rental.clientId),
     [rental.clientId, apiClients],
   );
-
-  // ClientCard в drawer'е принимает локальный Client (с депозитами/
-  // documents-снапшотами). useAllClients() мерджит ApiClient + локальную часть.
-  const allLocalClients = useAllClients();
-  const localClient = useMemo(
-    () => allLocalClients.find((c) => c.id === rental.clientId) ?? null,
-    [allLocalClients, rental.clientId],
-  );
-
+  // ВАЖНО: для построения цепочки продлений берём И активные И архивные
+  // аренды. При продлении parent rental уходит в архив, и без archivedRentals
+  // мы бы потеряли его платежи в расчёте «За всё время».
   const activeRentals = useRentals();
   const archivedRentals = useArchivedRentals();
   const allRentals = useMemo(
     () => [...activeRentals, ...archivedRentals],
     [activeRentals, archivedRentals],
   );
+  // Полная цепочка (включая авто-архивных родителей и вручную удалённые
+  // связки) — нужна, чтобы найти rootRental.
   const chainIdsFull = useMemo(
     () => getRentalChainIds(rental.id, allRentals),
     [rental.id, allRentals],
   );
+  // Активные связки цепочки (для метрик): исключаем сегменты, удалённые
+  // вручную (archivedBy != null). Авто-архивные родители при продлении
+  // (archivedBy == null) остаются в расчётах.
   const chainIds = useMemo(
     () =>
       chainIdsFull.filter((id) => {
@@ -307,7 +341,45 @@ export function RentalCard({
     [chainIdsFull, allRentals],
   );
   const chainPayments = useChainPayments(chainIds);
+  const tier = client ? ratingTier(client.rating) : null;
 
+  // Корневая (первая) аренда цепочки — её start показываем в шапке
+  // карточки как «оригинальную» дату выдачи, даже если сейчас открыто
+  // продление (child).
+  const rootRental = useMemo(
+    () => allRentals.find((r) => chainIdsFull[0] === r.id) ?? rental,
+    [allRentals, chainIdsFull, rental],
+  );
+
+  // Суммарные ожидаемые (аренда+залог) по всей цепочке продлений.
+  // Залог один на серию — берём только один раз.
+  const chainRentals = useMemo(
+    () => allRentals.filter((r) => chainIds.includes(r.id)),
+    [allRentals, chainIds],
+  );
+  const chainRentSum = chainRentals.reduce((s, r) => s + (r.sum || 0), 0);
+  // Выручка по цепочке — только аренды без залога. Залог — возвратный,
+  // он не наш доход (кроме случая, когда списан на покрытие ущерба —
+  // тогда создаётся отдельный платёж типа 'damage').
+  const chainExpected = chainRentSum;
+  /** Сумма дней по всей цепочке продлений (текущая + родители + потомки) */
+  const chainDaysTotal = chainRentals.reduce((s, r) => s + (r.days || 0), 0);
+  const isExtended = chainRentals.length > 1;
+
+  const startDate = parseDate(rental.start);
+  const endDate = parseDate(rental.endPlanned);
+  const daysLeft =
+    startDate && endDate ? daysBetween(now(), endDate) : null;
+
+  // v0.4.53: effectiveStatus теперь учитывает долг — если 0, не
+  // показываем красную просрочку даже когда endPlanned в прошлом.
+  // Реальный totalDebt считается ниже (debtSummary), так что
+  // initial значение — обычная формула без долга. Перевычислим
+  // когда debtSummary подгрузится (см. ниже useEffect не нужен,
+  // useMemo сам пересчитает на render).
+  const isUnreachable = useClientUnreachable(rental.clientId);
+  // Текущий статус скутера — нужен для проверки конфликта (active rental
+  // + scooter в repair). См. блок «Скутер в ремонте» ниже.
   const { data: apiScooters = [] } = useApiScooters();
   const currentScooter =
     rental.scooterId != null
@@ -317,12 +389,24 @@ export function RentalCard({
     currentScooter?.baseStatus === "repair" &&
     (rental.status === "active" || rental.status === "overdue");
 
+  // Акты о повреждениях по ВСЕЙ цепочке аренд (включая удалённые
+  // сегменты — chainIdsFull, не chainIds). Заказчик в задаче 2 v0.2.91:
+  //   «если мы продлили аренду, погасили долг, потом удалили связку
+  //    продления — инфа по оплаченному долгу должна оставаться,
+  //    мы же не откатились назад, мы просто передумали учитывать
+  //    продление».
+  // Долг по ущербу живёт независимо от структуры цепочки — фиксируется
+  // на damage_report и никуда не пропадает при удалении связок.
   const damageReports = useChainDamageReports(chainIdsFull);
   const reports = damageReports.data;
   const totalDebt = reports.reduce((s, r) => s + r.debt, 0);
-
+  // v0.3.8: серверная сводка по долгу — просрочка/ручной/ущерб + лента
+  // событий (для таба «История долгов»). Источник правды для KPI «Долг».
   const debtQ = useRentalDebt(rental.id);
   const debtSummary = debtQ.data;
+  // v0.4.53: суммарный долг для определения «просрочка / просто
+  // ожидаем возврата». Pending rent (paid=false) НЕ считаем —
+  // это плановая оплата, не просрочка.
   const overdueRelatedDebt =
     (debtSummary?.overdueBalance ?? 0) +
     (debtSummary?.damageBalance ?? totalDebt) +
@@ -332,98 +416,19 @@ export function RentalCard({
     rental.endPlanned,
     overdueRelatedDebt,
   );
-  const reportWithDebt = reports.find((r) => r.debt > 0) ?? null;
-  const reportLatest = reports.length > 0 ? reports[reports.length - 1]! : null;
-  const hasDamage = reports.length > 0;
-  const isUnreachable = useClientUnreachable(rental.clientId);
-
-  // Лента событий — для HistoryStrip и для drawer'а «История»
-  const activityQ = useActivityTimeline("rental", rental.id);
-  const activityItems = activityQ.data?.items ?? [];
-
-  // ── финансы ───────────────────────────────────────────────────────
-  const paidIn = chainPayments
-    .filter(
-      (p) =>
-        p.paid &&
-        p.type !== "refund" &&
-        p.type !== "deposit" &&
-        p.method !== "deposit",
-    )
-    .reduce((s, p) => s + p.amount, 0);
-  const activeRentalIdsForPending = useMemo(
-    () =>
-      new Set(
-        allRentals
-          .filter(
-            (r) =>
-              chainIds.includes(r.id) &&
-              !r.archivedBy &&
-              r.archivedAt == null,
-          )
-          .map((r) => r.id),
-      ),
-    [allRentals, chainIds],
-  );
-  const pending = chainPayments
-    .filter((p) => !p.paid && p.type !== "deposit")
-    .filter((p) => activeRentalIdsForPending.has(p.rentalId))
-    .reduce((s, p) => s + p.amount, 0);
-
-  // v0.6.38: extensionsCount больше не отображается в карточке (KpiStrip
-  // убран). Оставлен расчёт на будущее, но через void чтобы не падать на
-  // unused-warning.
-  const extensionsCount = chainPayments.filter(
-    (p) => p.type === "rent" && !!p.note && /^продлен/i.test(p.note),
-  ).length;
-  void extensionsCount;
-
-  // v0.6.x (Правка 4): «Эта аренда» = последний rent-платёж (старт
-  // текущего сегмента) + все equipment_fee платежи, появившиеся ПОСЛЕ
-  // него (id > lastRent.id, только оплаченные). Fallback rental.sum
-  // если rent-платежей нет вовсе.
-  const lastSegmentSum = (() => {
-    const sorted = [...chainPayments].sort((a, b) => a.id - b.id);
-    const rentPays = sorted.filter((p) => p.type === "rent");
-    if (rentPays.length === 0) return rental.sum;
-    const lastRent = rentPays[rentPays.length - 1]!;
-    const equipAfter = sorted
-      .filter(
-        (p) =>
-          p.type === "equipment_fee" && p.paid && p.id > lastRent.id,
-      )
-      .reduce((s, p) => s + p.amount, 0);
-    return lastRent.amount + equipAfter;
-  })();
-
-  // v0.6.39: дата последнего оплаченного rent-платежа — для сабписи
-  // «платёж DD.MM» в ячейке «Оплачено» FinanceGrid. chainPayments —
-  // UI-Payment (date в формате DD.MM.YYYY); сортируем по id (новые ближе
-  // к концу), берём дату последнего paid rent-платежа.
-  const lastPaidAt: string | null = (() => {
-    const sorted = [...chainPayments]
-      .filter((p) => p.paid && p.type === "rent" && p.date)
-      .sort((a, b) => a.id - b.id);
-    if (sorted.length === 0) return null;
-    const last = sorted[sorted.length - 1]!;
-    // date в DD.MM.YYYY → ISO YYYY-MM-DD для new Date()
-    const m = last.date.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
-    if (!m) return null;
-    return `${m[3]}-${m[2]}-${m[1]}`;
-  })();
-
-  // overdueDays для бейджа в IdentityStrip
-  const endDate = parseDate(rental.endPlanned);
-  const overdueDays =
-    effectiveStatus === "overdue" && endDate
-      ? Math.abs(daysBetween(new Date(), endDate))
-      : 0;
-
-  // ── actions menu ─────────────────────────────────────────────────
+  const tone = STATUS_TONE[effectiveStatus] ?? STATUS_TONE[rental.status];
   const chargeManualMut = useChargeManualDebt();
   const forgiveOverdueMut = useForgiveOverdue();
-
+  const reportWithDebt = reports.find((r) => r.debt > 0) ?? null;
+  const reportLatest =
+    reports.length > 0 ? reports[reports.length - 1]! : null;
+  // v0.2.75: hasDamage опирается только на формальные акты о повреждениях.
+  // Старое поле rental.damageAmount больше не учитываем — в UI его нет.
+  const hasDamage = reports.length > 0;
   const baseActions = statusActions(rental.status, { hasDamage, isUnreachable });
+  // «Завершить аренду» — должна быть главной кнопкой в шапке (primary).
+  // Если она доступна для статуса — ставим её первой, а «Изменить» уходит
+  // во вторичные действия в дропдауне.
   const completeAction = baseActions.find((a) => a.id === "complete");
   const actionsWithoutComplete = baseActions.filter((a) => a.id !== "complete");
   const editAction: MenuAction = {
@@ -432,6 +437,7 @@ export function RentalCard({
     icon: Pencil,
     tone: "ghost",
   };
+  // «Удалить» — только директор/создатель, но БЕЗ условий (soft-delete = архив).
   const canDelete = me?.role === "director" || me?.role === "creator";
   const deleteAction: MenuAction = {
     id: "delete",
@@ -439,18 +445,30 @@ export function RentalCard({
     icon: Trash2,
     tone: "danger",
   };
+
+  // Состав меню действий:
+  //  1. primary — completeAction если есть, иначе editAction
+  //  2. далее — остальные действия по статусу + edit (если не primary)
+  //  3. в конце — delete (опасная операция)
+  // Для архивных аренд показываем только «Восстановить».
   const restoreAction: MenuAction = {
     id: "unarchive",
     label: "Восстановить из архива",
     icon: RotateCcw,
     tone: "primary",
   };
+  // Жёсткое удаление — ТОЛЬКО для creator, без следов в БД и активити-логе.
   const purgeAction: MenuAction = {
     id: "purge",
     label: "Удалить навсегда (без следа)",
     icon: Trash2,
     tone: "danger",
   };
+  // «Очистить все действия» — ТОЛЬКО creator. Удаляет всех потомков
+  // базовой связки (продления + замены) физически, плюс связанные
+  // платежи/инспекции/swaps/activity_log. Корень разархивируется и
+  // возвращается в active. Используется когда оператор перенакрутил
+  // и нужно вернуться к чистому состоянию.
   const resetChainAction: MenuAction = {
     id: "reset-chain",
     label: "Очистить все действия по этой аренде",
@@ -477,10 +495,60 @@ export function RentalCard({
           ...(isCreator ? [resetChainAction, purgeAction] : []),
         ];
 
+  // Финансы — считаются по ВСЕЙ цепочке продлений.
+  // v0.5.1: KPI «За всё время аренды» = СУММА ВСЕХ платежей по аренде
+  // (rent + fine + damage + manual + swap_fee + equipment_fee), которые
+  // клиент реально внёс. Раньше damage был исключён (бизнес-правка v0.2.91:
+  // «ущерб ≠ доход от аренды»), но заказчик уточнил по v0.5: «должна
+  // складывать за аренды, оплаты за просрочки, долги — все платежи которые
+  // были в этой аренде». Из расчёта по-прежнему исключаем:
+  //   • refund — возврат залога клиенту (отрицательная операция)
+  //   • deposit — приём залога (возвратный, не доход)
+  //   • method='deposit' — оплата за счёт залога/депозита клиента (уже учли)
+  const paidIn = chainPayments
+    .filter(
+      (p) =>
+        p.paid &&
+        p.type !== "refund" &&
+        p.type !== "deposit" &&
+        p.method !== "deposit",
+    )
+    .reduce((s, p) => s + p.amount, 0);
+  // pending (плашка «Долг») — суммируем неоплаченные платежи ТОЛЬКО
+  // по полностью активным связкам цепочки (archivedAt == null).
+  // Auto-archived родители (после extend) могли оставить orphan-платежи
+  // от старой логики — они задолженности не отражают, бизнес-периодически
+  // закрыты следующей связкой. Без этого фильтра карточка показывала
+  // фантомный долг типа 3000 ₽ при полностью оплаченной активной аренде.
+  const activeRentalIdsForPending = useMemo(
+    () =>
+      new Set(
+        allRentals
+          .filter(
+            (r) =>
+              chainIds.includes(r.id) &&
+              !r.archivedBy &&
+              r.archivedAt == null,
+          )
+          .map((r) => r.id),
+      ),
+    [allRentals, chainIds],
+  );
+  const pending = chainPayments
+    .filter((p) => !p.paid && p.type !== "deposit")
+    .filter((p) => activeRentalIdsForPending.has(p.rentalId))
+    .reduce((s, p) => s + p.amount, 0);
+  // chainExpected больше не используется в UI карточки (убрали «X% по
+  // цепочке»). Оставляем переменную для будущих метрик/отчётов —
+  // void чтобы линтер не ругался.
+  void chainExpected;
+
   const handleAction = async (id: string) => {
     if (id === "extend") return setExtendOpen(true);
     if (id === "edit") return setEditRentalOpen(true);
     if (id === "revert-completion") {
+      // v0.5.1: возврат завершённой аренды в active. Используется когда
+      // оператор случайно нажал «Завершить» или клиент передумал.
       if (
         !window.confirm(
           "Перевести завершённую аренду обратно в активную? Будет снят флаг возврата залога и удалена запись приёмки.",
@@ -499,6 +567,12 @@ export function RentalCard({
       return;
     }
     if (id === "resume-damage") {
+      // v0.2.91: возобновление аренды требует ВАЛИДНОГО скутера —
+      // active rental не может быть без скутера или со скутером в
+      // статусе repair. Если такая ситуация — открываем диалог замены,
+      // оператор подберёт новый. После успешной замены аренда автоматом
+      // окажется active (swap-scooter сам ставит status='active'). Если
+      // прежний скутер в parke — возвращаем как есть.
       const debtSum = reports.reduce((s, r) => s + r.debt, 0);
       const noScooter = rental.scooterId == null;
       const oldInRepair = currentScooter?.baseStatus === "repair";
@@ -515,10 +589,11 @@ export function RentalCard({
         setSwapOpen(true);
         return;
       }
+      // Стандартный путь — скутер на месте, просто возвращаем active.
       const msg =
         debtSum > 0
-          ? `У клиента ещё висит долг по ущербу ${debtSum.toLocaleString("ru-RU")} ₽. Возобновить аренду?`
-          : "Долг по ущербу погашен. Возобновить аренду?";
+          ? `У клиента ещё висит долг по ущербу ${debtSum.toLocaleString("ru-RU")} ₽. Возобновить аренду? Долг останется на клиенте, скутер вернётся в активный статус.`
+          : `Долг по ущербу погашен. Возобновить аренду? Скутер вернётся в активный статус, аренда — в active.`;
       const ok = await confirmDialog({
         title: "Возобновить аренду?",
         message: msg,
@@ -528,13 +603,18 @@ export function RentalCard({
       if (!ok) return;
       try {
         await api.patch(`/api/rentals/${rental.id}`, { status: "active" });
-        toast.success("Аренда возобновлена", "Скутер активен.");
+        toast.success(
+          "Аренда возобновлена",
+          "Скутер активен, можно продолжить работу с клиентом.",
+        );
       } catch (e) {
         toast.error("Не удалось возобновить", (e as Error).message ?? "");
       }
       return;
     }
     if (id === "normalize-status") {
+      // v0.4.26: ручная нормализация статуса проблемной аренды.
+      // Бэк сам решит active vs completed по endActualAt.
       try {
         const res = await api.post<{ ok: true; newStatus: string }>(
           `/api/rentals/${rental.id}/normalize-status`,
@@ -542,12 +622,15 @@ export function RentalCard({
         );
         toast.success(
           "Статус сброшен",
-          `Новый статус: «${res.newStatus === "active" ? "Активная" : "Завершена"}».`,
+          `Новый статус: «${res.newStatus === "active" ? "Активная" : "Завершена"}». Запись в Истории.`,
         );
       } catch (e) {
         const msg = (e as { body?: { error?: string } }).body?.error;
         if (msg === "wrong_status") {
-          toast.info("Статус нормальный", "Аренда уже не в проблемном статусе.");
+          toast.info(
+            "Статус нормальный",
+            "Аренда уже не в проблемном статусе.",
+          );
         } else {
           toast.error("Не удалось", (e as Error).message ?? "");
         }
@@ -555,12 +638,19 @@ export function RentalCard({
       return;
     }
     if (id === "set-damage") {
+      // Если уже есть акт — открываем последний для редактирования.
       const last = reportLatest;
-      if (last) setEditingReportId(last.id);
-      else setDamageOpen(true);
+      if (last) {
+        setEditingReportId(last.id);
+      } else {
+        setDamageOpen(true);
+      }
       return;
     }
     if (id === "charge-debt") {
+      // v0.3.8: ручное начисление долга. Минимум сумма + комментарий.
+      // Используем простую цепочку prompt() — отдельной модалки не делаем,
+      // действие редкое и хочется один клик-ответ.
       const amountStr = window.prompt("Сумма долга, ₽");
       if (!amountStr) return;
       const amount = Number(amountStr.replace(/\D/g, ""));
@@ -568,7 +658,9 @@ export function RentalCard({
         toast.error("Неверная сумма", "Введите положительное число.");
         return;
       }
-      const comment = window.prompt("Комментарий — за что начисляем долг:");
+      const comment = window.prompt(
+        "Комментарий — за что начисляем долг (видно всем):",
+      );
       if (comment == null || !comment.trim()) {
         toast.error("Нужен комментарий", "Без него начисление недопустимо.");
         return;
@@ -581,7 +673,7 @@ export function RentalCard({
         });
         toast.success(
           "Долг начислен",
-          `+${amount.toLocaleString("ru-RU")} ₽`,
+          `+${amount.toLocaleString("ru-RU")} ₽ по аренде. Запись в Истории долгов.`,
         );
       } catch (e) {
         toast.error("Не удалось начислить", (e as Error).message ?? "");
@@ -589,6 +681,12 @@ export function RentalCard({
       return;
     }
     if (id === "forgive-overdue") {
+      // v0.4.3: списание просрочки с выбором — ВСЯ просрочка или только
+      // штраф 50%. Просрочка состоит из двух компонентов:
+      //   • неоплаченные дни (rate × дни)
+      //   • штраф 50% (rate × 0.5 × дни)
+      // Постоянному клиенту можно простить штраф, оставив дни как
+      // обычную аренду.
       const days = debtSummary?.overdueDaysBalance ?? 0;
       const fine = debtSummary?.overdueFineBalance ?? 0;
       const total = days + fine;
@@ -596,7 +694,14 @@ export function RentalCard({
         toast.info("Нет просрочки", "Сбрасывать нечего.");
         return;
       }
+      // v0.4.55: четвёртый вариант — частичное прощение N дней.
+      // При выборе оператор вводит число дней; ENPlanned сдвинется
+      // на эти дни автоматически (бэк), статус нормализуется в active
+      // если новый endPlanned в будущем.
       const overdueDaysCount = debtSummary?.overdueDays ?? 0;
+      // v0.4.73: при прощении дней автоматически списывается штраф за эти
+      // же дни (бэк делает это в одной транзакции). Считаем сколько именно
+      // дней покрывает текущий days-balance и сколько штрафа уйдёт вместе.
       const dailyRateLocal =
         rental.rateUnit === "week"
           ? Math.round(rental.rate / 7)
@@ -615,30 +720,32 @@ export function RentalCard({
           {
             id: "days",
             label: `Все неоплаченные дни (${daysCovered} дн)`,
-            hint: `${totalIfDays.toLocaleString("ru-RU")} ₽`,
+            hint: `${totalIfDays.toLocaleString("ru-RU")} ₽: дни ${days.toLocaleString("ru-RU")} ₽ + штраф за эти дни ${fineCoveredByDays.toLocaleString("ru-RU")} ₽. endPlanned +${daysCovered} дн.`,
             disabled: days <= 0,
           },
           {
             id: "days_partial",
             label: "Только N дней (укажу сколько)",
-            hint: "Простит выбранные дни (включая штраф за эти же дни).",
+            hint: `Простит выбранные дни (включая штраф за эти же дни). Остальные останутся в долге.`,
             disabled: days <= 0,
           },
           {
             id: "fine",
             label: "Только штраф (без дней)",
-            hint: `${fine.toLocaleString("ru-RU")} ₽`,
+            hint: `${fine.toLocaleString("ru-RU")} ₽ — штраф 50% × дни. Дни просрочки и endPlanned не меняются.`,
             disabled: fine <= 0,
           },
           {
             id: "all",
             label: "Всю просрочку (дни + штраф)",
-            hint: `${total.toLocaleString("ru-RU")} ₽`,
+            hint: `${total.toLocaleString("ru-RU")} ₽. endPlanned +${daysCovered} дн.`,
             tone: "danger",
           },
         ],
       });
       if (choice == null) return;
+
+      // Если выбрано «частичное» — спрашиваем число дней
       let daysCount: number | undefined;
       if (choice === "days_partial") {
         const raw = window.prompt(
@@ -653,8 +760,13 @@ export function RentalCard({
         }
         daysCount = n;
       }
+
       const target: "all" | "fine" | "days" =
         choice === "days_partial" ? "days" : choice;
+      if (target === "fine" && fine <= 0) {
+        toast.info("Нет штрафа", "Штраф уже списан или оплачен.");
+        return;
+      }
       const comment = window.prompt("Причина списания (необязательно):", "");
       try {
         const r = await forgiveOverdueMut.mutateAsync({
@@ -663,12 +775,36 @@ export function RentalCard({
           target,
           daysCount,
         });
+        const successTitle =
+          choice === "days_partial"
+            ? `Прощено ${daysCount} дн просрочки`
+            : target === "all"
+              ? "Просрочка сброшена полностью"
+              : target === "days"
+                ? "Долг по дням списан"
+                : "Штраф списан";
+        const shiftHint = r.daysShift
+          ? ` · endPlanned +${r.daysShift} дн${r.newStatus ? ", статус → active" : ""}`
+          : "";
         toast.success(
-          "Списано",
-          `${(r.amount ?? 0).toLocaleString("ru-RU")} ₽`,
+          successTitle,
+          `Списано ${(r.amount ?? 0).toLocaleString("ru-RU")} ₽. Запись в Истории долгов.${shiftHint}`,
         );
       } catch (e) {
-        toast.error("Не удалось", (e as Error).message ?? "");
+        const msg = (e as { body?: { error?: string } }).body?.error;
+        if (msg === "no_overdue") {
+          toast.info(
+            "Нет начисленной просрочки",
+            "Сбрасывать нечего — клиент не в просрочке.",
+          );
+        } else if (msg === "already_zero") {
+          toast.info(
+            "Уже сброшена",
+            "Долг по просрочке уже 0 — повторно сбрасывать нечего.",
+          );
+        } else {
+          toast.error("Не удалось", (e as Error).message ?? "");
+        }
       }
       return;
     }
@@ -693,7 +829,10 @@ export function RentalCard({
     if (id === "unarchive") {
       try {
         await unarchiveRental.mutateAsync(rental.id);
-        toast.success("Аренда восстановлена", `#${String(rental.id).padStart(4, "0")}`);
+        toast.success(
+          "Аренда восстановлена",
+          `#${String(rental.id).padStart(4, "0")}`,
+        );
       } catch (e) {
         toast.error("Не удалось восстановить", (e as Error).message ?? "");
       }
@@ -702,7 +841,7 @@ export function RentalCard({
     if (id === "purge") {
       const ok = await confirmDialog({
         title: "Удалить аренду НАВСЕГДА?",
-        message: `Аренда #${String(rental.id).padStart(4, "0")}, её платежи и активность будут стёрты из БД. Операция необратима.`,
+        message: `Аренда #${String(rental.id).padStart(4, "0")}, все её платежи, инспекции возврата и записи активности будут УДАЛЕНЫ ИЗ БД. Никакого следа не останется. Операция необратима. Использовать только когда точно нужно стереть данные.`,
         confirmText: "Стереть навсегда",
         cancelText: "Отмена",
         danger: true,
@@ -710,12 +849,18 @@ export function RentalCard({
       if (!ok) return;
       try {
         await purgeRental.mutateAsync(rental.id);
-        toast.success("Аренда стёрта без следа", `#${String(rental.id).padStart(4, "0")}`);
+        toast.success(
+          "Аренда стёрта без следа",
+          `#${String(rental.id).padStart(4, "0")}`,
+        );
       } catch (e) {
         if (e instanceof ApiError) {
           const body = e.body as { error?: string } | null;
           if (body?.error === "creator_only") {
-            toast.error("Запрещено", "Только создатель может стирать данные.");
+            toast.error(
+              "Запрещено",
+              "Только создатель системы может стирать данные без следа.",
+            );
             return;
           }
         }
@@ -726,7 +871,7 @@ export function RentalCard({
     if (id === "reset-chain") {
       const ok = await confirmDialog({
         title: "Очистить все действия?",
-        message: `Все продления и замены по аренде #${String(rental.id).padStart(4, "0")} будут УДАЛЕНЫ. Останется только базовая связка в active.`,
+        message: `Все продления и замены по аренде #${String(rental.id).padStart(4, "0")} будут УДАЛЕНЫ ИЗ БД (вместе с платежами и историей замен). Останется только базовая связка, она вернётся в активный статус. Операция необратима — используйте когда нужно вернуться к чистому состоянию.`,
         confirmText: "Очистить",
         cancelText: "Отмена",
         danger: true,
@@ -734,12 +879,18 @@ export function RentalCard({
       if (!ok) return;
       try {
         const res = await resetChain.mutateAsync(rental.id);
-        toast.success("Цепочка очищена", `Удалено связок: ${res.removed}.`);
+        toast.success(
+          "Цепочка очищена",
+          `Удалено связок: ${res.removed}. Базовая #${String(res.rootId).padStart(4, "0")} активна.`,
+        );
       } catch (e) {
         if (e instanceof ApiError) {
           const body = e.body as { error?: string } | null;
           if (body?.error === "creator_only") {
-            toast.error("Запрещено", "Только создатель может очищать цепочку.");
+            toast.error(
+              "Запрещено",
+              "Только создатель системы может очищать цепочку.",
+            );
             return;
           }
         }
@@ -750,7 +901,7 @@ export function RentalCard({
     if (id === "delete") {
       const ok = await confirmDialog({
         title: "Удалить аренду?",
-        message: `Аренда #${String(rental.id).padStart(4, "0")} будет перемещена в архив.`,
+        message: `Аренда #${String(rental.id).padStart(4, "0")} будет перемещена в архив. Историю клиента и платежи система сохранит. Восстановить аренду можно из архива на этой же странице.`,
         confirmText: "Удалить",
         cancelText: "Отмена",
         danger: true,
@@ -772,235 +923,212 @@ export function RentalCard({
     setAction(id as ActionKind);
   };
 
-  // ── handlers для KpiStrip / MasterBlock ───────────────────────────
-  const isLive = !isArchived && rental.status !== "completed";
-  const canAcceptPayment = isLive;
-  const canComplete =
-    isLive && (rental.status === "active" || rental.status === "overdue");
-
-  const handleAcceptPayment = () => {
-    // Если есть долг по ущербу — открываем DamageReportPaymentDialog,
-    // он умеет распределять оплату на damage_report и оставлять остаток
-    // как обычную оплату по аренде. Иначе — стандартный поток.
-    if (reportWithDebt && reportWithDebt.debt > 0) {
-      setPaymentReportId(reportWithDebt.id);
-    } else {
-      setPaymentRentalId(rental.id);
-    }
-  };
-
-  /** v0.6.24: click-to-extend на основном календаре. Click по дню
-   *  > baseEnd → открыть PaymentAcceptDialog с предзаполненным числом
-   *  дней. Click <= baseEnd → days=0, ничего не открываем; если диалог
-   *  уже открыт, сбросим prefill (он отзовётся в side panel). */
   const handleCommitExtend = (days: number) => {
-    if (!isLive) return;
-    setPaymentPrefillExtDays(Math.max(0, days));
-    if (days > 0 && paymentRentalId == null) {
+    if (rental.archivedAt || rental.status === "completed") return;
+    const nextDays = Math.max(0, days);
+    setPaymentPrefillExtDays(nextDays);
+    if (nextDays > 0 && paymentRentalId == null) {
       setPaymentRentalId(rental.id);
     }
   };
-
-  const handleComplete = () => {
-    setAction("complete");
-  };
-
-  const handleSwapScooter = () => {
-    if (!rental.scooterId) {
-      toast.info("Нет скутера", "К аренде не привязан скутер");
-      return;
-    }
-    if (rental.status !== "active" && rental.status !== "overdue") {
-      toast.info(
-        "Нельзя заменить",
-        "Замена скутера доступна только для активных аренд",
-      );
-      return;
-    }
-    setSwapOpen(true);
-  };
-
-  const canEditEquipment =
-    rental.status === "active" ||
-    rental.status === "overdue" ||
-    rental.status === "returning";
-
-  // v0.6.30: дублирует логику action «set-damage» из statusActions().
-  // Кнопка доступна для не-архивных аренд в статусах, где есть смысл
-  // фиксировать ущерб (active/overdue/returning + проблемные статусы).
-  const canRecordDamage =
-    !isArchived &&
-    (rental.status === "active" ||
-      rental.status === "overdue" ||
-      rental.status === "returning" ||
-      rental.status === "completed_damage" ||
-      rental.status === "problem" ||
-      rental.status === "police" ||
-      rental.status === "court");
-
-  const handleRecordDamage = () => {
-    // Точное дублирование ветки case "set-damage" из handleAction.
-    const last = reportLatest;
-    if (last) setEditingReportId(last.id);
-    else setDamageOpen(true);
-  };
-
-  // ── render ────────────────────────────────────────────────────────
-  // v0.6.38: бейдж статуса для sticky-header'а.
-  const headerTone = STATUS_TONE[effectiveStatus] ?? STATUS_TONE[rental.status];
-  const headerStatusLabel =
-    STATUS_LABEL[effectiveStatus] ?? STATUS_LABEL[rental.status];
-  const statusChipClass = (tone: string): string =>
-    tone === "green"
-      ? "bg-green-soft text-green-ink"
-      : tone === "red"
-        ? "bg-red-soft text-red-ink"
-        : tone === "orange"
-          ? "bg-orange-soft text-orange-ink"
-          : tone === "blue"
-            ? "bg-blue-50 text-blue-700"
-            : tone === "purple"
-              ? "bg-purple-soft text-purple-ink"
-              : "bg-surface-soft text-muted";
-
-  // Долг для бейджа в header'е (сумма как в FinanceGrid)
-  const overdueBalance = debtSummary?.overdueBalance ?? 0;
-  const manualBalance = debtSummary?.manualBalance ?? 0;
-  const damageBalance = debtSummary?.damageBalance ?? totalDebt;
-  const headerTotalDebt =
-    pending + overdueBalance + damageBalance + manualBalance;
-  const paymentOpen = paymentRentalId != null;
-
-  useEffect(() => {
-    onPaymentOpenChange?.(paymentOpen);
-  }, [onPaymentOpenChange, paymentOpen]);
 
   return (
-    <div className="w-full">
-      {/* v0.6.38: sticky-header — широкий ряд с back-кнопкой, ID, бейджами
-          статуса/просрочки/долга, и primary-actions (Завершить, Принять
-          оплату) + «⋯» menu. Остаётся сверху при скролле. */}
-      <div className="sticky top-0 z-30 px-4 pt-3">
-        <div
-          className={cn(
-            "w-full mx-auto rounded-2xl border border-border bg-surface px-4 py-3 shadow-card-sm lg:px-5 flex items-center gap-3 flex-wrap",
-            paymentOpen ? "max-w-[1760px]" : "max-w-[1480px]",
-          )}
-        >
-          {onClose && (
-            <button
-              type="button"
-              onClick={onClose}
-              className="inline-flex items-center gap-1.5 rounded-full bg-surface-soft px-3 py-1.5 text-[12px] font-semibold text-ink-2 hover:bg-border hover:text-ink whitespace-nowrap"
-              title="Вернуться к списку аренд"
-            >
-              <ArrowLeft size={14} /> К арендам
-            </button>
-          )}
-          <div className="font-display text-[18px] lg:text-[20px] font-extrabold text-ink tracking-tight whitespace-nowrap">
+    <div className="flex min-h-0 flex-col gap-3 rounded-2xl bg-surface p-5 shadow-card-sm">
+      {/* =========== HEADER =========== */}
+      <header className="flex flex-wrap items-center gap-3">
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full bg-surface-soft px-3 py-1.5 text-[12px] font-semibold text-ink-2 hover:bg-border hover:text-ink"
+          >
+            К арендам
+          </button>
+        )}
+        {/* v0.4.5: «Аренда #0001» — фикс. ширина, имя клиента —
+            отдельным элементом с переносом на новую строку. Раньше всё
+            это лежало в одном <span class=truncate>, и в drawer-режиме
+            «Аренда #0062 — Абдулазизов…» обрезалось до «Аренда #0062 — …». */}
+        <h2 className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-0.5 font-display text-[22px] font-extrabold leading-tight text-ink">
+          <span className="shrink-0">
             Аренда #{String(rental.id).padStart(4, "0")}
-          </div>
+          </span>
+          {client && (
+            <span className="flex min-w-0 max-w-full items-baseline gap-1">
+              <span className="text-muted-2">—</span>
+              <button
+                type="button"
+                onClick={() => openClient(client.id)}
+                title={client.name}
+                className="block min-w-0 max-w-full break-words text-left rounded decoration-2 underline-offset-4 hover:underline"
+              >
+                {client.name}
+              </button>
+            </span>
+          )}
           <span
             className={cn(
-              "inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold whitespace-nowrap",
-              statusChipClass(headerTone),
+              "inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold",
+              statusChipClass(tone),
             )}
           >
-            {headerStatusLabel}
+            {STATUS_LABEL[effectiveStatus] ?? STATUS_LABEL[rental.status]}
           </span>
-          {effectiveStatus === "overdue" && overdueDays > 0 && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-red-soft text-red-ink px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide whitespace-nowrap">
-              <AlertTriangle size={11} /> Просрочка · {overdueDays} дн
+          {isUnreachable && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-orange-soft px-2.5 py-1 text-[11px] font-bold text-orange-ink">
+              <PhoneOff size={11} /> Не выходит на связь
             </span>
           )}
-          {headerTotalDebt > 0 && (
-            <button
-              type="button"
-              onClick={() => setDrawer("debts")}
-              className="inline-flex items-center gap-1 rounded-full bg-red-600 text-white px-2.5 py-1 text-[11px] font-bold whitespace-nowrap hover:brightness-110"
-              title="История долгов"
+          {client && tier && (
+            <span
+              className={cn(
+                "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold",
+                tier.tone === "good"
+                  ? "bg-green-soft text-green-ink"
+                  : tier.tone === "bad"
+                    ? "bg-red-soft text-red-ink"
+                    : "bg-surface-soft text-ink",
+              )}
+              title={tier.label}
             >
-              Долг: {headerTotalDebt.toLocaleString("ru-RU")} ₽
-            </button>
-          )}
-          {isArchived && (
-            <span className="inline-flex items-center rounded-full bg-surface-soft px-2.5 py-1 text-[11px] font-bold text-muted ring-1 ring-inset ring-border">
-              в архиве
+              <Star size={11} /> {client.rating}
             </span>
           )}
+        </h2>
 
-          <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">
-            <RentalActionsMenu
-              actions={actions}
-              onAction={handleAction}
-              triggerStyle="dots"
-            />
-            {canComplete && (
-              <button
-                type="button"
-                onClick={handleComplete}
-                className="inline-flex items-center gap-1.5 rounded-full bg-surface border border-border text-ink-2 px-3.5 py-2 text-[12.5px] font-bold hover:bg-surface-soft whitespace-nowrap"
-              >
-                <Check size={14} /> Завершить аренду
-              </button>
-            )}
-            {canAcceptPayment && (
-              <button
-                type="button"
-                onClick={handleAcceptPayment}
-                className="inline-flex items-center gap-1.5 rounded-full bg-green text-white px-4 py-2 text-[13px] font-bold hover:brightness-110 shadow-card-sm whitespace-nowrap"
-              >
-                <Wallet size={14} /> Принять оплату
-              </button>
-            )}
+        {/* ACTIONS — одна primary + dropdown */}
+        <RentalActionsMenu actions={actions} onAction={handleAction} />
+      </header>
+
+      {/* =========== BANNERS =========== */}
+      {isArchived && (
+        <div className="flex items-center gap-2 rounded-[12px] bg-surface-soft px-3 py-2 text-[12px] text-muted ring-1 ring-inset ring-border">
+          <Trash2 size={14} className="shrink-0" />
+          <div className="min-w-0 flex-1">
+            <b>Аренда в архиве.</b> Удалена{" "}
+            {rental.archivedBy ? `пользователем ${rental.archivedBy}` : ""}
+            {rental.archivedAt
+              ? ` ${new Date(rental.archivedAt).toLocaleString("ru-RU", {
+                  day: "2-digit",
+                  month: "2-digit",
+                  year: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}`
+              : ""}
+            . Восстановите через меню действий, если удаление было ошибкой.
           </div>
         </div>
-      </div>
-
-      <div
-        className={cn(
-          "w-full mx-auto px-4 pb-4 pt-3 lg:px-5 lg:pb-5 flex flex-col gap-3",
-          paymentOpen ? "max-w-[1760px]" : "max-w-[1480px]",
-        )}
-      >
-        {/* Archived banner — оставляем простым */}
-        {isArchived && (
-          <div className="flex items-center gap-2 rounded-[12px] bg-surface-soft px-3 py-2 text-[12px] text-muted ring-1 ring-inset ring-border">
-            <Trash2 size={14} className="shrink-0" />
+      )}
+      {/*
+        Баннер «Требуется подтверждение выдачи» убран по решению заказчика.
+        Аренда сразу считается полностью оформленной — оператор подписывает
+        договор на месте и нажимает «Создать», CRM не должна добавлять
+        лишний шаг подтверждения. Если позже нужно вернуть учёт «договор
+        получен» — это будет отдельный лёгкий чекбокс, не блокирующий поток.
+      */}
+      {rental.status === "overdue" && endDate && (() => {
+        // v0.4.3: просрочка раскладывается на «дни» (rate × days) и
+        // «штраф 50%» (round(rate*0.5) × days). В баннере показываем
+        // ТЕКУЩИЕ остатки из API (с учётом списаний и оплат).
+        // v0.4.53: если фактический долг просрочки 0 (всё погашено или
+        // прощено) — баннер не показываем, оператор видит «нет долгов»
+        // в KPI и больше его ничего не сбивает с толку.
+        if ((debtSummary?.overdueBalance ?? -1) === 0) return null;
+        const d = Math.max(1, daysLeft !== null ? Math.abs(daysLeft) : 1);
+        // v0.4.25: dailyRate учитывает rateUnit. При week-тарифе
+        // dailyRate = round(rate/7), штраф = round(dailyRate × 0.5).
+        const dailyRate =
+          rental.rateUnit === "week"
+            ? Math.round(rental.rate / 7)
+            : rental.rate;
+        const fineDaily = Math.round(dailyRate * 0.5);
+        const fallbackDays = dailyRate * d;
+        const fallbackFine = fineDaily * d;
+        const daysBalance =
+          debtSummary?.overdueDaysBalance ?? fallbackDays;
+        const fineBalance =
+          debtSummary?.overdueFineBalance ?? fallbackFine;
+        const totalBalance = daysBalance + fineBalance;
+        // v0.4.73: показываем расчёт в ДНЯХ, как мыслит оператор:
+        // «10 дней просрочки, 1 простили, осталось 9 × 500 = 4500».
+        // forgivenDays = forgive рублях / ставку (округление вниз).
+        const daysCharge = dailyRate * d;
+        const fineCharge = fineDaily * d;
+        const daysForgivenRub = Math.max(0, daysCharge - daysBalance);
+        const fineForgivenRub = Math.max(0, fineCharge - fineBalance);
+        const forgivenDays = dailyRate > 0 ? Math.floor(daysForgivenRub / dailyRate) : 0;
+        const payDays = Math.max(0, d - forgivenDays); // дни к оплате
+        const hasForgive = daysForgivenRub > 0 || fineForgivenRub > 0;
+        return (
+          <div className="flex flex-wrap items-start gap-2 rounded-[12px] bg-red-soft/70 px-3 py-2 text-[12px] text-red-ink">
+            <AlertTriangle size={14} className="mt-0.5 shrink-0" />
             <div className="min-w-0 flex-1">
-              <b>Аренда в архиве.</b>{" "}
-              {rental.archivedBy
-                ? `Удалена пользователем ${rental.archivedBy}.`
-                : ""}
-            </div>
-          </div>
-        )}
-
-        {/* Police banner */}
-        {rental.status === "police" && (
-          <div className="flex items-center gap-2 rounded-[12px] bg-red-soft/70 px-3 py-2 text-[12px] text-red-ink">
-            <ShieldAlert size={14} className="shrink-0" />
-            <span>
-              <b>Заявление в полицию подано.</b>{" "}
-              {rental.note ?? "скутер не возвращён"}
-            </span>
-          </div>
-        )}
-
-        {/* Scooter-in-repair banner */}
-        {scooterInRepair && (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-[12px] border-2 border-orange-500 bg-orange-soft/70 px-3 py-2 text-[13px] text-orange-ink">
-            <div className="flex items-start gap-2">
-              <Wrench size={16} className="mt-0.5 shrink-0" />
-              <div className="min-w-0">
-                <div className="font-bold">
-                  Скутер ушёл в ремонт — нужно решение по аренде
+              <div className="font-semibold">
+                Просрочка {d} дн.
+                {forgivenDays > 0 && (
+                  <span className="font-normal opacity-80">
+                    {" "}(прощено {forgivenDays} дн → к оплате {payDays} дн)
+                  </span>
+                )}
+                {" "}— {fmt(totalBalance)} ₽
+              </div>
+              {hasForgive ? (
+                <div className="text-[11px] opacity-90 leading-snug">
+                  дни: <b>{fmt(daysBalance)} ₽</b>
+                  {" "}({fmt(dailyRate)} × {payDays} дн)
+                  <br />
+                  штраф: <b>{fmt(fineBalance)} ₽</b>
+                  {" "}(начислено {fmt(fineCharge)} ₽
+                  {fineForgivenRub > 0 && <> − прощено {fmt(fineForgivenRub)} ₽</>})
                 </div>
-                <div className="text-[11px] opacity-80">
-                  {currentScooter?.name ?? "Скутер"} в статусе «На ремонте».
+              ) : (
+                <div className="text-[11px] opacity-90">
+                  дни {fmt(daysBalance)} ₽ ({fmt(dailyRate)} ₽ × {d}) ·
+                  штраф {fmt(fineBalance)} ₽ ({fmt(fineDaily)} ₽/день × {d})
                 </div>
+              )}
+              <div className="text-[11px] opacity-80">
+                Плановый возврат — {rental.endPlanned} {rental.startTime || "12:00"}
               </div>
             </div>
+          </div>
+        );
+      })()}
+      {rental.status === "police" && (
+        <div className="flex items-center gap-2 rounded-[12px] bg-red-soft/70 px-3 py-2 text-[12px] text-red-ink">
+          <ShieldAlert size={14} className="shrink-0" />
+          <span>
+            <b>Заявление в полицию подано.</b>{" "}
+            {rental.note ?? "скутер не возвращён"}
+          </span>
+        </div>
+      )}
+      {/*
+        v0.2.91: Скутер ушёл в ремонт, а аренда всё ещё активна — это
+        несогласованное состояние. Предлагаем оператору выбор:
+          • Заменить скутер на другой (открывает SwapScooterDialog)
+          • Перевести аренду в «Проблемную» (без скутера)
+        Эта плашка появляется автоматически после печати акта о
+        повреждениях с галкой «отправить в ремонт» и не уходит, пока
+        оператор явно не примет решение.
+      */}
+      {scooterInRepair && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-[12px] border-2 border-orange-500 bg-orange-soft/70 px-3 py-2 text-[13px] text-orange-ink">
+          <div className="flex items-start gap-2">
+            <Wrench size={16} className="mt-0.5 shrink-0" />
+            <div className="min-w-0">
+              <div className="font-bold">
+                Скутер ушёл в ремонт — нужно решение по аренде
+              </div>
+              <div className="text-[11px] opacity-80">
+                {currentScooter?.name ?? "Скутер"} переведён в статус
+                «На ремонте». Активная аренда не может оставаться на
+                ремонтном скутере. Выберите дальнейший шаг:
+              </div>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={() => setSwapOpen(true)}
@@ -1009,155 +1137,507 @@ export function RentalCard({
               <Repeat size={12} /> Заменить скутер
             </button>
           </div>
-        )}
-
-        {/* Inline note */}
-        {rental.note && (
-          <div className="rounded-[10px] bg-surface-soft px-3 py-1.5 text-[12px] text-ink-2">
-            <b>Заметка:</b> {rental.note}
-          </div>
-        )}
-
-        {/* При открытой оплате панель становится третьей колонкой, как в референсе. */}
-        <div
-          className={cn(
-            "grid grid-cols-1 gap-4 items-start",
-            paymentOpen
-              ? "xl:grid-cols-[minmax(360px,1fr)_minmax(380px,1fr)_minmax(380px,1fr)]"
-              : "lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]",
-          )}
-        >
-          {/* LEFT COLUMN — клиент + скутер + экипировка + финансы */}
-          <div className="flex flex-col gap-3 min-w-0">
-            <MasterBlock
-              rental={rental}
-              client={client}
-              scooter={currentScooter}
-              effectiveStatus={effectiveStatus}
-              isUnreachable={isUnreachable}
-              isArchived={isArchived}
-              totalDebt={overdueRelatedDebt + pending}
-              overdueDays={overdueDays}
-              onOpenDebts={() => setDrawer("debts")}
-              onOpenClientProfile={() => {
-                if (client) openClient(client.id);
-              }}
-              onSwapScooter={handleSwapScooter}
-              onChangeEquipment={
-                canEditEquipment
-                  ? () => setEquipmentChangeOpen(true)
-                  : undefined
-              }
-              onRecordDamage={canRecordDamage ? handleRecordDamage : undefined}
-              layout="vertical"
-            />
-            {/* Финансы по аренде — 4-ячеечный блок, заменяет KpiStrip */}
-            <FinanceGrid
-              rental={rental}
-              debtSummary={debtSummary}
-              paidIn={paidIn}
-              pending={pending}
-              totalDamageDebt={totalDebt}
-              effectiveStatus={effectiveStatus}
-              lastSegmentSum={lastSegmentSum}
-              lastPaidAt={lastPaidAt}
-              onOverdueClick={(rect) => setOverdueAnchor(rect)}
-              onOpenDebts={() => setDrawer("debts")}
-            />
-          </div>
-
-          {/* RIGHT COLUMN — календарь + история + документы */}
-          <div className="flex flex-col gap-3 min-w-0">
-            <CalendarPanel
-              rental={rental}
-              effectiveStatus={effectiveStatus}
-              onCommitExtend={isLive ? handleCommitExtend : undefined}
-              calendarBoxRef={calendarBoxRef}
-              hideCalendar={false}
-              resetSignal={calendarResetSignal}
-              initialExtDays={
-                paymentRentalId != null ? paymentPrefillExtDays : undefined
-              }
-            />
-            <InlineHistory
-              items={activityItems}
-              loading={activityQ.isLoading}
-              onExpand={() => setDrawer("history")}
-            />
-            {/* Documents — внизу правой колонки */}
-            {!paymentOpen && <DocsInline rental={rental} />}
-          </div>
-
-          {paymentOpen && (
-            <div className="min-w-0 self-stretch">
-              <PaymentAcceptDialogContainer
-                rentalId={paymentRentalId}
-                initialExtDays={paymentPrefillExtDays || undefined}
-                onExtDaysChange={setPaymentPrefillExtDays}
-                inline
-                onClose={() => {
-                  setPaymentRentalId(null);
-                  setPaymentPrefillExtDays(0);
-                  setCalendarResetSignal((n) => n + 1);
-                }}
-              />
-            </div>
-          )}
         </div>
+      )}
+
+      {/* v0.5.2: баннер «Долг по ущербу» упрощён — реакция клиента
+          (Согласен/Не согласен) убрана полностью (заказчик: «досудебную
+          претензию печатают всегда, независимо от согласия»). Теперь:
+          • показывается долг + кнопка «Внести платёж»
+          • кнопка «Распечатать претензию» доступна всегда
+          • статус аренды никуда не уходит — оператор сам решит. */}
+      {totalDebt > 0 && reportWithDebt && (
+        <div className="flex flex-col gap-2 rounded-[12px] border-2 border-red-500 bg-red-soft/70 px-3 py-2 text-[13px] text-red-ink">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-start gap-2">
+              <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+              <div className="min-w-0">
+                <div className="font-bold">
+                  Долг по ущербу:{" "}
+                  <span className="tabular-nums">{fmt(totalDebt)} ₽</span>
+                </div>
+                <div className="text-[11px] opacity-80">
+                  Всего по акту {fmt(reportWithDebt.total)} ₽, зачтено из залога{" "}
+                  {fmt(reportWithDebt.depositCovered)} ₽
+                  {reportWithDebt.paidSum > 0
+                    ? `, оплачено ${fmt(reportWithDebt.paidSum)} ₽`
+                    : ""}
+                  .
+                </div>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPreviewClaimId(reportWithDebt.id)}
+                className="inline-flex items-center gap-1.5 rounded-[10px] border border-red-500 bg-white px-3 py-2 text-[12px] font-bold text-red-700 hover:bg-red-50"
+              >
+                Досудебная претензия
+              </button>
+              <button
+                type="button"
+                onClick={() => setPaymentReportId(reportWithDebt.id)}
+                className="inline-flex items-center gap-1.5 rounded-[10px] bg-red-600 px-3 py-2 text-[12px] font-bold text-white hover:bg-red-700"
+              >
+                <Plus size={12} /> Внести платёж
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* v0.5.2: плашка «ущерб полностью оплачен» для завершённых аренд. */}
+      {totalDebt === 0 &&
+        reports.length > 0 &&
+        !rental.archivedAt &&
+        rental.status === "completed" && (
+          <div className="flex items-center gap-2 rounded-[12px] bg-green-soft/70 px-3 py-2 text-[12px] text-green-ink">
+            <CheckCircle2 size={14} className="shrink-0" />
+            <span>
+              <b>Ущерб полностью оплачен.</b>
+            </span>
+          </div>
+        )}
+      {rental.status === "returning" && (
+        <div className="flex items-center gap-2 rounded-[12px] bg-orange-soft/70 px-3 py-2 text-[12px] text-orange-ink">
+          <Calendar size={14} className="shrink-0" />
+          <span>
+            <b>Идёт возврат.</b> Осмотреть скутер, сверить с видео при выдаче.
+          </span>
+        </div>
+      )}
+
+      {/* =========== KPI STRIP =========== */}
+      <div
+        className={cn(
+          "grid grid-cols-2 gap-3 sm:grid-cols-4",
+          isExtended && "lg:grid-cols-5",
+        )}
+      >
+        {(() => {
+          let label = "Срок";
+          const totalDays = isExtended
+            ? chainRentals.reduce((s, r) => s + (r.days || 0), 0)
+            : rental.days;
+          let value = `${totalDays} дн`;
+          const hint = `${rootRental.start.slice(0, 5)} — ${rental.endPlanned.slice(0, 5)}`;
+          let accent: KpiAccent = "default";
+          // v0.4.66: всегда показываем «Просрочен N дн» когда endPlanned
+          // прошёл, даже если долг 0 — оператор должен видеть срочность
+          // возврата скутера. Цвет (red/default) теперь зависит от долга:
+          // долг 0 → серый/амбер (без паники), долг > 0 → красный.
+          // Раньше при долге 0 показывало «Возврат был DD.MM» — это
+          // не передавало срочности и сбивало оператора.
+          const debtZero = overdueRelatedDebt === 0;
+          // v0.4.80: бронь заранее — start_at в будущем. Аренда висит
+          // как 'active', но фактически не началась. Показываем «До
+          // выдачи N дн» вместо «осталось N дн до конца».
+          const daysUntilStart = startDate
+            ? daysBetween(now(), startDate)
+            : null;
+          if (
+            rental.status === "active" &&
+            daysUntilStart !== null &&
+            daysUntilStart > 0
+          ) {
+            label = "До выдачи";
+            value = `${daysUntilStart} дн`;
+            accent = "default";
+          } else if (rental.status === "active" && daysLeft !== null) {
+            if (daysLeft > 0) {
+              value = `осталось ${daysLeft} дн`;
+              accent = daysLeft <= 2 ? "red" : "default";
+            } else if (daysLeft === 0) {
+              value = `возврат сегодня`;
+              accent = "red";
+            } else {
+              label = "Просрочен";
+              value = `${Math.abs(daysLeft)} дн`;
+              accent = debtZero ? "default" : "red";
+            }
+          } else if (rental.status === "overdue") {
+            label = "Просрочен";
+            value =
+              daysLeft !== null && daysLeft < 0
+                ? `${Math.abs(daysLeft)} дн`
+                : "сегодня";
+            accent = debtZero ? "default" : "red";
+          }
+          return (
+            <KpiCard label={label} value={value} hint={hint} accent={accent} />
+          );
+        })()}
+        {(() => {
+          // v0.4.97: единый источник правды по залогу — поля
+          //   rental.deposit (текущий остаток на счёте залога)
+          //   rental.depositOriginal (исторический максимум, «исходно»)
+          // Любая операция, уменьшающая залог (акт ущерба с depositCovered,
+          // PaymentAcceptDialog со списанием на долг), уменьшает именно
+          // rental.deposit. Раньше «списано» считалось через payments.method='deposit',
+          // что давало расхождение с плашкой залога — теперь оба места
+          // читают одни и те же поля.
+          const currentDeposit = rental.deposit ?? DEPOSIT_AMOUNT;
+          const originalDeposit =
+            (rental as { depositOriginal?: number }).depositOriginal ??
+            currentDeposit;
+          const depositSpent = Math.max(0, originalDeposit - currentDeposit);
+          // v0.5.1: «Эта аренда» = rental.sum, который API правильно
+          // поддерживает:
+          //   • при создании: rate × days
+          //   • при extend-inplace: += addedDays × rate
+          //   • при overdue_days_payment: += daysAdded × rate (v0.4.81)
+          // Раньше показывали сумму последнего ПРОДЛЕНИЯ через фильтр
+          // payments по note='Продление…'. Это ломалось когда клиент
+          // оплачивал просроченные дни — они тоже rent-платежи, но с
+          // другим note, и KPI не рос. Заказчик хочет видеть РЕАЛЬНУЮ
+          // суммарную стоимость текущей аренды (с учётом купленных
+          // просроченных дней) — это и есть rental.sum.
+          const rentPays = chainPayments.filter((p) => p.type === "rent");
+          const extendCount = rentPays.filter(
+            (p) => !!p.note && /^продлен/i.test(p.note),
+          ).length;
+          const hintBase =
+            extendCount > 0
+              ? `продлений · ${extendCount}`
+              : "сумма этой аренды";
+          // v0.5.9: если залог — предмет (паспорт и т.п.), показываем
+          // его название в хинте вместо «0 ₽».
+          const isItemDeposit = !!rental.depositItem;
+          const hint = isItemDeposit
+            ? `${hintBase} · залог: ${rental.depositItem}`
+            : depositSpent > 0
+              ? `${hintBase} · залог: ${fmt(originalDeposit)} ₽ (списано ${fmt(depositSpent)} ₽)`
+              : `${hintBase} · + залог: ${fmt(currentDeposit)} ₽`;
+          return (
+            <KpiCard
+              label="Эта аренда"
+              value={`${fmt(rental.sum)} ₽`}
+              hint={hint}
+            />
+          );
+        })()}
+        <KpiCard
+          label="За всё время аренды"
+          value={`${fmt(paidIn)} ₽`}
+          accent={paidIn > 0 ? "blue" : "default"}
+          hint={
+            isExtended
+              ? `за ${chainRentals.length} ${pluralRental(chainRentals.length)} (без залога)`
+              : "сумма аренды без залога"
+          }
+          badgeIcon={paidIn > 0 ? CheckCircle2 : undefined}
+        />
+        {(() => {
+          // v0.3.8: разложение долга на компоненты:
+          //   • неоплачено = pending (rent-платежи без paid)
+          //   • просрочка  = debtSummary.overdueBalance (1.5×rate×days, − списания)
+          //   • ущерб      = debtSummary.damageBalance (Σ damage_reports.debt)
+          //   • ручной     = debtSummary.manualBalance (Σ manual_charge − manual_forgive)
+          //
+          // Источник правды — debtSummary с сервера. Если сводка ещё не
+          // загрузилась — graceful fallback на старый расчёт (просрочка
+          // по локальной формуле + totalDebt).
+          const overdueLocal =
+            rental.status === "overdue"
+              ? Math.max(1, daysLeft !== null ? Math.abs(daysLeft) : 1) *
+                Math.round(
+                  (rental.rateUnit === "week"
+                    ? rental.rate / 7
+                    : rental.rate) * 1.5,
+                )
+              : 0;
+          const overdueBalance =
+            debtSummary?.overdueBalance ?? overdueLocal;
+          const damageBalance = debtSummary?.damageBalance ?? totalDebt;
+          const manualBalance = debtSummary?.manualBalance ?? 0;
+          const debt = pending + overdueBalance + damageBalance + manualBalance;
+          const parts: string[] = [];
+          if (pending > 0) parts.push(`не оплачено ${fmt(pending)} ₽`);
+          if (overdueBalance > 0)
+            parts.push(`просрочка ${fmt(overdueBalance)} ₽`);
+          if (damageBalance > 0) parts.push(`ущерб ${fmt(damageBalance)} ₽`);
+          if (manualBalance > 0) parts.push(`ручной ${fmt(manualBalance)} ₽`);
+          const debtHint = debt === 0 ? "нет долгов" : parts.join(" + ");
+          return (
+            <KpiCard
+              label="Долг"
+              value={debt > 0 ? `${fmt(debt)} ₽` : "0 ₽"}
+              hint={debtHint}
+              accent={debt > 0 ? "red" : "muted"}
+            />
+          );
+        })()}
+        {isExtended && (
+          <KpiCard
+            label="Всего по сделке"
+            value={`${fmt(chainDaysTotal)} дн`}
+            hint={`${chainRentals.length} ${chainRentals.length === 1 ? "аренда" : chainRentals.length < 5 ? "аренды" : "аренд"} в серии`}
+            accent="blue"
+          />
+        )}
       </div>
 
-      {/* ─── DRAWERS ───────────────────────────────────────────── */}
-      <SideDrawer
-        open={drawer === "history"}
-        onClose={() => setDrawer(null)}
-        title="История аренды"
-        subtitle="Поиск, фильтры, «было → стало» при hover"
-        width={680}
-      >
-        {/* v0.6.6: новый ActivityFeed с фильтрами/поиском/diff/group-by-day */}
-        <ActivityFeed
-          items={activityItems}
-          loading={activityQ.isLoading}
-        />
-      </SideDrawer>
-
-      <SideDrawer
-        open={drawer === "debts"}
-        onClose={() => setDrawer(null)}
-        title="История долгов"
-        subtitle="Открытые периоды, ущерб, ручные начисления"
-        width={520}
-      >
-        <DebtsList
-          rentalId={rental.id}
-          chainIds={chainIdsFull}
-          onOpenDamage={(reportId) => setPreviewDamageId(reportId)}
-        />
-      </SideDrawer>
-
-      <SideDrawer
-        open={drawer === "profile"}
-        onClose={() => setDrawer(null)}
-        title={localClient?.name ?? client?.name ?? "Клиент"}
-        subtitle="Профиль клиента"
-        width={560}
-      >
-        <div className="p-5">
-          {localClient ? (
-            <ClientCard client={localClient} />
-          ) : (
-            <div className="text-[12px] text-muted">Клиент не найден.</div>
-          )}
+      {/*
+        v0.2.91: компактная панель платежа по ущербу для случая когда
+        клиент согласился (баннер скрыт). Долг виден в KPI «Долг», а
+        кнопка позволяет сразу внести очередной платёж в счёт погашения.
+      */}
+      {totalDebt > 0 &&
+        reportWithDebt &&
+        reportWithDebt.clientAgreement === "agreed" && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-[10px] border border-red-300 bg-red-soft/40 px-3 py-2 text-[12px] text-red-ink">
+          <div className="flex items-center gap-2">
+            <ThumbsUp size={13} className="text-green-700" />
+            <span>
+              <b>Клиент гасит ущерб.</b> Остаток долга{" "}
+              <b className="tabular-nums">{fmt(totalDebt)} ₽</b>
+              {reportWithDebt.paidSum > 0
+                ? ` (уже оплачено ${fmt(reportWithDebt.paidSum)} ₽)`
+                : ""}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setPaymentReportId(reportWithDebt.id)}
+            className="inline-flex items-center gap-1.5 rounded-[10px] bg-red-600 px-3 py-1.5 text-[12px] font-bold text-white hover:bg-red-700"
+          >
+            <Plus size={12} /> Внести платёж по ущербу
+          </button>
         </div>
-      </SideDrawer>
+      )}
 
-      {/* ─── DIALOGS ───────────────────────────────────────────── */}
+      {/* v0.5.9: плашка залога — только для активных аренд. У завершённых
+          аренд (status='completed') не показываем — там либо залог
+          возвращён клиенту, либо удержан, либо ушёл в погашение долга,
+          и состояние «нужно пополнить» уже не имеет смысла. Кнопка
+          «Пополнить» теперь открывает PaymentAcceptDialog. */}
+      {(() => {
+        if (rental.status === "completed") return null;
+        const isItem =
+          (rental as { depositItem?: string | null }).depositItem != null;
+        if (isItem) return null;
+        const current = rental.deposit ?? 0;
+        const original =
+          (rental as { depositOriginal?: number }).depositOriginal ?? current;
+        if (current >= original) return null;
+        const isEmpty = current === 0;
+        return (
+          <div
+            className={cn(
+              "flex items-center justify-between gap-3 rounded-[10px] border px-3 py-2 text-[12px]",
+              isEmpty
+                ? "border-red-300 bg-red-soft/40 text-red-ink animate-pulse"
+                : "border-amber-300 bg-amber-50 text-amber-900",
+            )}
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <Shield
+                size={14}
+                className={isEmpty ? "text-red-600" : "text-amber-600"}
+              />
+              <span className="font-semibold">
+                {isEmpty
+                  ? "Залог исчерпан"
+                  : `Залог ${fmt(current)} ₽ из ${fmt(original)} ₽ — списано ${fmt(original - current)} ₽`}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setPaymentRentalId(rental.id)}
+              className={cn(
+                "shrink-0 rounded-full px-3 py-1 text-[11px] font-bold text-white transition-colors",
+                isEmpty
+                  ? "bg-red-600 hover:bg-red-700"
+                  : "bg-amber-600 hover:bg-amber-700",
+              )}
+            >
+              Пополнить
+            </button>
+          </div>
+        );
+      })()}
+
+      {/* v0.4.49: плашка «Депозит клиента» — отдельный счёт сверх залога.
+          Показывается только если depositBalance > 0. Кликом открывает
+          карточку клиента. */}
+      {client && (client.depositBalance ?? 0) > 0 && (
+        <button
+          type="button"
+          onClick={() => openClient(client.id)}
+          className="flex items-center justify-between gap-3 rounded-[10px] border border-green-200 bg-green-soft/40 px-3 py-2 text-[12px] text-green-ink transition-colors hover:bg-green-soft/60"
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            <Wallet size={14} className="text-green-600" />
+            <span className="font-semibold">
+              Депозит клиента: {fmt(client.depositBalance ?? 0)} ₽
+            </span>
+            <span className="text-[11px] opacity-75">
+              · сверхлимитный счёт, можно зачесть в продление/долг
+            </span>
+          </div>
+          <span className="shrink-0 text-[11px] opacity-75">→ карточка</span>
+        </button>
+      )}
+
+      {rental.note && (
+        <div className="rounded-[10px] bg-surface-soft px-3 py-1.5 text-[12px] text-ink-2">
+          <b>Заметка:</b> {rental.note}
+        </div>
+      )}
+
+      {/* =========== TABS =========== */}
+      <div className="mt-1 flex gap-1 border-b border-border overflow-x-auto scrollbar-thin">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setTab(t.id)}
+            className={cn(
+              "relative -mb-px shrink-0 px-3 py-2 text-[13px] font-semibold transition-colors",
+              tab === t.id
+                ? "border-b-2 border-blue-600 text-blue-600"
+                : "border-b-2 border-transparent text-muted hover:text-ink",
+            )}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* v0.4.49: CTA «Принять платёж» виден на ЛЮБОЙ live-аренде.
+          Долг есть → красная плашка с суммой. Долгов нет → синяя
+          нейтральная (для предоплаты-за-продление через переключатель
+          в модалке). На completed/cancelled — скрыта. */}
+      {(() => {
+        // v0.5: status в БД только active/completed; legacy-литералы
+        // (overdue/returning/problem/completed_damage) оставлены в этом
+        // месте на случай если фронт получил аренду со старой реплики —
+        // безопасно для рантайма.
+        const isLive = rental.status === "active";
+        if (!isLive) return null;
+        const overdueB = debtSummary?.overdueBalance ?? 0;
+        const damageB = debtSummary?.damageBalance ?? totalDebt;
+        const manualB = debtSummary?.manualBalance ?? 0;
+        const totalDebtSum = pending + overdueB + damageB + manualB;
+        const hasDebt = totalDebtSum > 0;
+        const parts: string[] = [];
+        if (pending > 0) parts.push(`не оплачено ${fmt(pending)} ₽`);
+        if (overdueB > 0) parts.push(`просрочка ${fmt(overdueB)} ₽`);
+        if (damageB > 0) parts.push(`ущерб ${fmt(damageB)} ₽`);
+        if (manualB > 0) parts.push(`ручной ${fmt(manualB)} ₽`);
+
+        if (hasDebt) {
+          return (
+            <button
+              type="button"
+              onClick={() => {
+                if (damageB > 0 && reportWithDebt) {
+                  setPaymentReportId(reportWithDebt.id);
+                } else {
+                  setPaymentRentalId(rental.id);
+                }
+              }}
+              className="flex items-center justify-between gap-3 rounded-[14px] bg-red-soft/60 px-4 py-3 text-left ring-1 ring-inset ring-red-300 transition-colors hover:bg-red-soft"
+            >
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-600 text-white shadow-card-sm">
+                  <Plus size={18} />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-[15px] font-bold text-red-ink">
+                    Принять платёж — {fmt(totalDebtSum)} ₽
+                  </div>
+                  <div className="mt-0.5 text-[11px] text-red-ink/80">
+                    {parts.join(" · ")}
+                  </div>
+                </div>
+              </div>
+              <span className="rounded-full bg-white px-3 py-1.5 text-[12px] font-bold text-red-ink shadow-card-sm">
+                Принять →
+              </span>
+            </button>
+          );
+        }
+        // Долгов нет — нейтральный CTA для предоплаты/продления
+        return (
+          <button
+            type="button"
+            onClick={() => setPaymentRentalId(rental.id)}
+            className="flex items-center justify-between gap-3 rounded-[14px] bg-blue-50 px-4 py-3 text-left ring-1 ring-inset ring-blue-200 transition-colors hover:bg-blue-100"
+          >
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white shadow-card-sm">
+                <Plus size={18} />
+              </div>
+              <div className="min-w-0">
+                <div className="text-[15px] font-bold text-blue-900">
+                  Принять платёж
+                </div>
+                <div className="mt-0.5 text-[11px] text-blue-900/70">
+                  Долгов нет — оплата с продлением или в депозит клиента.
+                </div>
+              </div>
+            </div>
+            <span className="rounded-full bg-white px-3 py-1.5 text-[12px] font-bold text-blue-700 shadow-card-sm">
+              Принять →
+            </span>
+          </button>
+        );
+      })()}
+
+      <div className="flex-1 pt-3">
+        {tab === "terms" && (
+          <TermsTab
+            rental={rental}
+            onClientClick={() => client && openClient(client.id)}
+            onSwapScooter={() => {
+              if (!rental.scooterId) {
+                toast.info("Нет скутера", "К аренде не привязан скутер");
+                return;
+              }
+              if (
+                rental.status !== "active" &&
+                rental.status !== "overdue"
+              ) {
+                toast.info(
+                  "Нельзя заменить",
+                  "Замена скутера доступна только для активных аренд",
+                );
+                return;
+              }
+              setSwapOpen(true);
+            }}
+            onChangeEquipment={
+              rental.status === "active" ||
+              rental.status === "overdue" ||
+              rental.status === "returning"
+                ? () => setEquipmentChangeOpen(true)
+                : undefined
+            }
+            onCommitExtend={handleCommitExtend}
+            initialExtDays={paymentPrefillExtDays || undefined}
+            resetSignal={calendarResetSignal}
+          />
+        )}
+        {tab === "history" && (
+          <HistoryTab
+            rental={rental}
+            chainRentals={chainRentals}
+            damageReports={reports}
+          />
+        )}
+        {tab === "debt" && <DebtHistoryTab rental={rental} />}
+        {tab === "tasks" && <TasksTab rental={rental} />}
+        {tab === "docs" && <DocumentsTab rental={rental} />}
+      </div>
+
       {action && (
         <RentalActionDialog
           rental={rental}
           action={action}
           onClose={() => setAction(null)}
           onOpenDamage={() => {
+            // Закрытие RentalActionDialog уже происходит у себя —
+            // мы только открываем damage окно.
             setAction(null);
             setDamageOpen(true);
           }}
@@ -1169,33 +1649,30 @@ export function RentalCard({
           onClose={() => setEditRentalOpen(false)}
         />
       )}
+      {/* ConfirmPaymentDialog больше не используется — функционал убран. */}
       {extendOpen && (
         <ExtendRentalDialog
           rental={rental}
           onClose={() => setExtendOpen(false)}
           onExtended={(r) => {
+            // v0.3.9: после продления переключаем фокус на новую связку
+            // и сразу открываем диалог приёма оплаты — оператор вводит
+            // принятую сумму, переплата уходит в депозит.
             navigate({ route: "rentals", rentalId: r.id });
             setPaymentRentalId(r.id);
           }}
         />
       )}
-      {/* v0.6.38: PaymentAcceptDialogContainer — снова drawer-overlay
-          (см. рендер выше внутри 2-col layout). */}
-
-      {/* v0.6.1: popover быстрых действий по просрочке */}
-      {overdueAnchor && (
-        <OverdueActionsPopover
-          rentalId={rental.id}
-          clientId={rental.clientId}
-          anchorRect={overdueAnchor}
-          debtSummary={debtSummary}
-          dailyRate={
-            rental.rateUnit === "week"
-              ? Math.round(rental.rate / 7)
-              : rental.rate
-          }
-          onClose={() => setOverdueAnchor(null)}
-          onAcceptPayment={handleAcceptPayment}
+      {paymentRentalId != null && (
+        <PaymentAcceptDialogContainer
+          rentalId={paymentRentalId}
+          initialExtDays={paymentPrefillExtDays || undefined}
+          onExtDaysChange={setPaymentPrefillExtDays}
+          onClose={() => {
+            setPaymentRentalId(null);
+            setPaymentPrefillExtDays(0);
+            setCalendarResetSignal((n) => n + 1);
+          }}
         />
       )}
       {equipmentChangeOpen && (
@@ -1219,6 +1696,11 @@ export function RentalCard({
           onClose={() => setSwapOpen(false)}
           onSwapped={(newId) => {
             setSwapOpen(false);
+            // Сообщаем родительскому Rentals о свапе. Rentals одновременно
+            // переключит selectedId на newId и поднимет превью акта замены
+            // в собственном state — там оно переживает ремаунт RentalCard.
+            // Если onSwapped не передан (изолированное использование) —
+            // просто остаёмся на старой карточке без превью.
             onSwapped?.(newId);
           }}
         />
@@ -1229,6 +1711,7 @@ export function RentalCard({
           rental={rental}
           onClose={() => setDamageOpen(false)}
           onCreated={(reportId) => {
+            // После создания акта — открываем превью для печати.
             setDamageOpen(false);
             setPreviewDamageId(reportId);
           }}
@@ -1273,21 +1756,28 @@ export function RentalCard({
   );
 }
 
-// v0.3.9: контейнер-фасад над PaymentAcceptDialog. Берёт rental из
-// глобального списка по id — пережимает refетч/ремаунт.
+/** Превью акта приёма-передачи и замены скутера (после замены).
+ *  Открывается из SwapScooterDialog по кнопке «Заменить и распечатать
+ *  акт» — использует новый шаблон act_swap, в котором есть блок про
+ *  возвращённый скутер, причину замены и переданный новый скутер.
+ *  Экспортируется чтобы Rentals.tsx мог рендерить превью у себя поверх
+ *  любой карточки (см. RentalCard.onSwapped). */
+/**
+ * v0.3.9: контейнер-фасад над PaymentAcceptDialog. Берёт rental из
+ * глобального списка по id (после продления selectedId переключается
+ * на новый id, и Rentals перерендеривает RentalCard с новой rental —
+ * но в момент открытия диалога мы держим rentalId отдельно от prop).
+ */
 function PaymentAcceptDialogContainer({
   rentalId,
   onClose,
   initialExtDays,
   onExtDaysChange,
-  inline,
 }: {
   rentalId: number;
   onClose: () => void;
   initialExtDays?: number;
-  /** v0.6.24: callback для синхронизации календаря в карточке. */
   onExtDaysChange?: (days: number) => void;
-  inline?: boolean;
 }) {
   const all = useRentals();
   const r = all.find((x) => x.id === rentalId);
@@ -1298,7 +1788,6 @@ function PaymentAcceptDialogContainer({
       onClose={onClose}
       initialExtDays={initialExtDays}
       onExtDaysChange={onExtDaysChange}
-      inline={inline}
       onPaid={() => {
         /* invalidations происходят в dialog'е */
       }}
@@ -1306,24 +1795,27 @@ function PaymentAcceptDialogContainer({
   );
 }
 
-/** Превью акта о повреждениях для печати. */
-function DamageDocumentPreview({
-  reportId,
+export function ActTransferPreview({
+  rentalId,
   onClose,
 }: {
-  reportId: number;
+  rentalId: number;
   onClose: () => void;
 }) {
   const base =
     import.meta.env.VITE_API_URL?.replace(/\/$/, "") ?? "http://localhost:4000";
-  const htmlUrl = `${base}/api/damage-reports/${reportId}/document?format=html`;
-  const docxUrl = `${base}/api/damage-reports/${reportId}/document?format=docx`;
+  const htmlUrl = `${base}/api/rentals/${rentalId}/document/act_swap?format=html`;
+  const docxUrl = `${base}/api/rentals/${rentalId}/document/act_swap?format=docx`;
   return (
     <DocumentPreviewModal
-      title={`Акт о повреждениях #${reportId}`}
+      title="Акт приёма-передачи и замены скутера"
       htmlUrl={htmlUrl}
       docxUrl={docxUrl}
-      docxFilename={`Акт о повреждениях ${String(reportId).padStart(4, "0")}.doc`}
+      docxFilename={`Акт замены скутера ${String(rentalId).padStart(4, "0")}.doc`}
+      templateKey="act_swap"
+      templateName="Акт приёма-передачи и замены скутера"
+      rentalId={rentalId}
+      documentType="act_swap"
       onClose={onClose}
     />
   );
@@ -1352,35 +1844,109 @@ function ClaimDocumentPreview({
   );
 }
 
-/**
- * Экспортируется чтобы Rentals.tsx мог рендерить превью у себя поверх
- * любой карточки (см. RentalCard.onSwapped).
- */
-export function ActTransferPreview({
-  rentalId,
+/** Превью акта о повреждениях для печати. */
+function DamageDocumentPreview({
+  reportId,
   onClose,
 }: {
-  rentalId: number;
+  reportId: number;
   onClose: () => void;
 }) {
   const base =
     import.meta.env.VITE_API_URL?.replace(/\/$/, "") ?? "http://localhost:4000";
-  const htmlUrl = `${base}/api/rentals/${rentalId}/document/act_swap?format=html`;
-  const docxUrl = `${base}/api/rentals/${rentalId}/document/act_swap?format=docx`;
+  const htmlUrl = `${base}/api/damage-reports/${reportId}/document?format=html`;
+  const docxUrl = `${base}/api/damage-reports/${reportId}/document?format=docx`;
   return (
     <DocumentPreviewModal
-      title="Акт приёма-передачи и замены скутера"
+      title={`Акт о повреждениях #${reportId}`}
       htmlUrl={htmlUrl}
       docxUrl={docxUrl}
-      docxFilename={`Акт замены скутера ${String(rentalId).padStart(4, "0")}.doc`}
-      templateKey="act_swap"
-      templateName="Акт приёма-передачи и замены скутера"
-      rentalId={rentalId}
-      documentType="act_swap"
+      docxFilename={`Акт о повреждениях ${String(reportId).padStart(4, "0")}.doc`}
       onClose={onClose}
     />
   );
 }
 
-// keep cn import used (avoid TS6133)
-void cn;
+type KpiAccent = "default" | "blue" | "red" | "muted";
+
+function KpiCard({
+  label,
+  value,
+  hint,
+  hintIcon: HintIcon,
+  badgeIcon: BadgeIcon,
+  accent = "default",
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+  hintIcon?: React.ComponentType<{ size?: number | string; className?: string }>;
+  badgeIcon?: React.ComponentType<{ size?: number | string; className?: string }>;
+  accent?: KpiAccent;
+}) {
+  return (
+    <div
+      className={cn(
+        "relative rounded-[14px] border px-4 py-3 shadow-card-sm",
+        accent === "muted"
+          ? "border-border bg-surface-soft/60"
+          : accent === "red"
+            ? "border-red-soft bg-surface shadow-[0_0_16px_-2px_hsl(var(--red-ink)/0.35),0_0_0_1px_hsl(var(--red-soft))]"
+            : "border-border bg-surface",
+      )}
+    >
+      {BadgeIcon && (
+        <BadgeIcon
+          size={18}
+          className={cn(
+            "absolute right-3 top-3 shrink-0",
+            accent === "blue" ? "text-blue-600" : "text-muted-2",
+          )}
+        />
+      )}
+      <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
+        {label}
+      </div>
+      <div
+        className={cn(
+          "mt-1 font-display text-[20px] font-extrabold leading-tight tabular-nums",
+          accent === "blue"
+            ? "text-blue-600"
+            : accent === "red"
+              ? "text-red-ink"
+              : accent === "muted"
+                ? "text-muted"
+                : "text-ink",
+        )}
+      >
+        {value}
+      </div>
+      {hint && (
+        <div
+          className={cn(
+            "mt-1 inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider",
+            accent === "blue"
+              ? "text-blue-600"
+              : accent === "red"
+                ? "text-red-ink"
+                : "text-muted-2",
+          )}
+        >
+          {HintIcon && <HintIcon size={12} className="shrink-0" />}
+          {hint}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function pluralRental(n: number): string {
+  const a = Math.abs(n);
+  const n10 = a % 10;
+  const n100 = a % 100;
+  if (n10 === 1 && n100 !== 11) return "аренду";
+  if (n10 >= 2 && n10 <= 4 && (n100 < 10 || n100 >= 20)) return "аренды";
+  return "аренд";
+}
+
+
