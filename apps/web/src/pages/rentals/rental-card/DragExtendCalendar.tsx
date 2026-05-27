@@ -72,6 +72,41 @@ function fromJsDate(dt: Date): DateKey {
   return { y: dt.getFullYear(), m: dt.getMonth(), d: dt.getDate() };
 }
 
+/**
+ * v0.6.40: маппинг локального однобуквенного/короткого названия дня
+ * недели на двухбуквенное русское «Пн Вт Ср Чт Пт Сб Вс».
+ * react-aria для русской локали даёт «пн/вт/ср/чт/пт/сб/вс» (lowercase,
+ * двухбуквенно) либо «п/в/с/ч/п/с/в» (однобуквенно) в зависимости от
+ * системы. Делаем устойчивый маппинг по первому символу + второму
+ * (для пар п-п и с-с).
+ */
+function ruWeekday(input: string): string {
+  const s = String(input || "").trim().toLowerCase();
+  if (!s) return input;
+  // Если уже 2-буквенное в нужном виде — нормализуем регистр.
+  const map: Record<string, string> = {
+    пн: "Пн",
+    вт: "Вт",
+    ср: "Ср",
+    чт: "Чт",
+    пт: "Пт",
+    сб: "Сб",
+    вс: "Вс",
+    mon: "Пн",
+    tue: "Вт",
+    wed: "Ср",
+    thu: "Чт",
+    fri: "Пт",
+    sat: "Сб",
+    sun: "Вс",
+  };
+  const two = s.slice(0, 2);
+  if (map[two]) return map[two];
+  if (map[s]) return map[s];
+  // Однобуквенный fallback (п/в/с/ч): не уникально, оставим как есть.
+  return input.charAt(0).toUpperCase() + input.slice(1);
+}
+
 /* ---------- component ---------------------------------------------------- */
 
 /**
@@ -218,14 +253,13 @@ export function DragExtendCalendar({
   };
 
   /* ---- размеры ----
-   * v0.6.30: ячейки FLUID — заполняют 1/7 ширины родителя через
-   * table-fixed на CalendarGrid + aspect-square на ячейке. Размер
-   * шрифта вырос пропорционально (~17px) — при широком блоке всё
-   * выглядит крупно и читаемо, при узком сжимается естественно.
+   * v0.6.40: календарь компактнее. Жёсткая высота 44px на ячейку
+   * (вместо aspect-square который давал ~80px на широких экранах),
+   * шрифт 14px — читаемо, но без огромной пустоты.
    * cellSize оставлен для совместимости, но не используется. */
   void cellSize;
-  const cellBoxClass = "w-full aspect-square";
-  const fontSizeCls = "text-[17px]";
+  const cellBoxClass = "w-full h-11";
+  const fontSizeCls = "text-[14px]";
 
   /* ---- классы ячейки (наши цвет-зоны) ----
    * Edge-дни всего диапазона — чёрные «handle» (bg-ink) с rounded-l-lg
@@ -350,9 +384,11 @@ export function DragExtendCalendar({
           <CalendarGridHeaderRac>
             {(day) => (
               <CalendarHeaderCellRac
-                className="p-0 pb-2 text-[12px] font-semibold uppercase tracking-wide text-muted-2"
+                className="p-0 pb-2 text-[11px] font-semibold text-muted-2"
               >
-                {day}
+                {/* v0.6.40: react-aria для русской локали отдаёт «пн/вт/...»
+                    однобуквенно. Маппим на «Пн Вт Ср Чт Пт Сб Вс». */}
+                {ruWeekday(day)}
               </CalendarHeaderCellRac>
             )}
           </CalendarGridHeaderRac>

@@ -43,7 +43,7 @@ const DOC_META: Record<
   }
 > = {
   contract_full: {
-    title: "Договор + акт ПП",
+    title: "Договор + акт",
     short: "Договор и приём",
     badge: "ДОГ",
     icon: FileSignature,
@@ -55,7 +55,7 @@ const DOC_META: Record<
     icon: FileText,
   },
   act_swap: {
-    title: "Акт замены скутера",
+    title: "Акт замены",
     short: "При замене",
     badge: "ЗМ",
     icon: ArrowLeftRight,
@@ -83,7 +83,7 @@ export function DocsInline({ rental }: { rental: Rental }) {
     <div className="rounded-2xl bg-surface border border-border shadow-card-sm p-4">
       <div className="flex items-center justify-between mb-3">
         <div>
-          <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
+          <div className="text-[11px] font-semibold text-muted-2">
             Документы
           </div>
           <div className="text-[11px] text-muted">
@@ -91,7 +91,9 @@ export function DocsInline({ rental }: { rental: Rental }) {
           </div>
         </div>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
+      {/* v0.6.40: компактные тайлы, имя файла переносится по словам
+          (whitespace-normal) — не должно быть «До...»/«Ак...». */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
         {(Object.keys(DOC_META) as DocType[]).map((t) => {
           const meta = DOC_META[t];
           const Icon = meta.icon;
@@ -100,22 +102,25 @@ export function DocsInline({ rental }: { rental: Rental }) {
               key={t}
               type="button"
               onClick={() => setPreview(t)}
-              className="rounded-[12px] border border-border p-2.5 flex items-center gap-2.5 hover:border-blue-100 hover:bg-blue-50/40 cursor-pointer text-left transition-colors"
+              title={meta.title}
+              className="rounded-[12px] border border-border p-2 flex items-center gap-2 hover:border-blue-100 hover:bg-blue-50/40 cursor-pointer text-left transition-colors"
             >
-              <div className="h-10 w-10 rounded-[10px] bg-blue-50 text-blue-700 flex items-center justify-center flex-col shrink-0">
-                <Icon size={13} />
-                <span className="text-[7.5px] font-bold uppercase tabular-nums mt-0.5">
+              <div className="h-9 w-9 rounded-[9px] bg-blue-50 text-blue-700 flex items-center justify-center flex-col shrink-0">
+                <Icon size={12} />
+                <span className="text-[7px] font-bold uppercase tabular-nums mt-0.5">
                   {meta.badge}
                 </span>
               </div>
               <div className="flex-1 min-w-0">
-                <div className="text-[12px] font-bold text-ink truncate">
+                <div className="text-[11.5px] font-semibold text-ink leading-tight whitespace-normal break-words">
                   {meta.title}
                 </div>
-                <div className="text-[10px] text-muted">{meta.short}</div>
+                <div className="text-[9.5px] text-muted leading-tight mt-0.5">
+                  {meta.short}
+                </div>
               </div>
-              <span className="h-7 w-7 rounded-full hover:bg-white text-muted hover:text-ink flex items-center justify-center shrink-0">
-                <Download size={12} />
+              <span className="h-6 w-6 rounded-full hover:bg-white text-muted hover:text-ink flex items-center justify-center shrink-0">
+                <Download size={11} />
               </span>
             </button>
           );
@@ -162,19 +167,20 @@ function SnapshotsBlock({ rental }: { rental: Rental }) {
       {items.map((s) => (
         <div
           key={s.id}
-          className="rounded-[12px] border border-blue-100 bg-blue-50/30 p-2.5 flex items-center gap-2.5"
+          title={s.title}
+          className="rounded-[12px] border border-blue-100 bg-blue-50/30 p-2 flex items-center gap-2"
         >
-          <div className="h-10 w-10 rounded-[10px] bg-white text-blue-700 flex items-center justify-center flex-col shrink-0 border border-blue-100">
-            <FileText size={13} />
-            <span className="text-[7.5px] font-bold uppercase tabular-nums mt-0.5">
+          <div className="h-9 w-9 rounded-[9px] bg-white text-blue-700 flex items-center justify-center flex-col shrink-0 border border-blue-100">
+            <FileText size={12} />
+            <span className="text-[7px] font-bold uppercase tabular-nums mt-0.5">
               СН
             </span>
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-[12px] font-bold text-ink truncate">
+            <div className="text-[11.5px] font-semibold text-ink leading-tight whitespace-normal break-words">
               {s.title}
             </div>
-            <div className="text-[10px] text-muted">
+            <div className="text-[9.5px] text-muted leading-tight mt-0.5">
               {new Date(s.savedAt).toLocaleDateString("ru-RU")}
             </div>
           </div>

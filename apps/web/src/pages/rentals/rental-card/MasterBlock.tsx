@@ -224,14 +224,14 @@ export function MasterBlock({
               />
             </div>
 
-            {/* KPI «N дн в аренде | Y₽ принёс» — внутри той же карточки. */}
+            {/* KPI «N дней в аренде | Y₽ принёс» — внутри той же карточки. */}
             <div className="mt-1 flex items-center gap-4 flex-wrap text-[12px]">
               <div className="inline-flex items-center gap-1.5">
                 <Clock size={13} className="text-blue-600" />
                 <span className="font-bold tabular-nums text-ink">
                   {fmt(clientStats.totalDays)}
                 </span>
-                <span className="text-muted-2 text-[11px]">дн в аренде</span>
+                <span className="text-muted-2 text-[11px]">{pluralDays(clientStats.totalDays)} в аренде</span>
               </div>
               <div className="inline-flex items-center gap-1.5">
                 <Wallet size={13} className="text-green-ink" />
@@ -245,21 +245,23 @@ export function MasterBlock({
         </div>
       </div>
 
-      {/* ── БЛОК 2 — СКУТЕР | ЭКИПИРОВКА (grid-cols-2) ── */}
-      <div className="grid grid-cols-2 gap-3">
+      {/* ── БЛОК 2 — СКУТЕР | ЭКИПИРОВКА (grid-cols-2) ──
+          v0.6.40: высоты блоков определяются контентом (без h-full).
+          Скутер использует фиксированную невысокую аватарку. */}
+      <div className="grid grid-cols-2 gap-3 items-start">
         {/* СКУТЕР */}
         <div className="rounded-2xl bg-surface border border-border shadow-card-sm p-3 flex flex-col">
-          <div className="flex items-center justify-between mb-1.5 min-w-0">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2 shrink-0">
+          <div className="flex items-center justify-between mb-1.5 min-w-0 gap-2">
+            <div className="text-[11px] font-semibold text-muted-2 shrink-0">
               Скутер
             </div>
-            <div className="text-[10.5px] text-muted-2 truncate ml-2 tabular-nums">
+            <div className="text-[10.5px] text-muted-2 truncate tabular-nums min-w-0">
               {scooter?.name ?? rental.scooter ?? "—"}
               {scooter && (
                 <>
                   {" · "}
                   <span className="font-semibold text-ink-2">
-                    {fmt(scooter.mileage)} км
+                    Пробег {fmt(scooter.mileage)} км
                   </span>
                 </>
               )}
@@ -273,7 +275,7 @@ export function MasterBlock({
             <ScooterPosterAvatar
               scooter={scooter ?? null}
               size="md"
-              className="!h-auto aspect-[9/12] w-full"
+              className="!h-[120px] !w-full"
             />
             {/* hover overlay с кнопкой «Заменить» */}
             {scooterHover && (
@@ -298,7 +300,7 @@ export function MasterBlock({
         {/* ЭКИПИРОВКА */}
         <div className="rounded-2xl bg-surface border border-border shadow-card-sm p-3 flex flex-col">
           <div className="flex items-center justify-between mb-1.5">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
+            <div className="text-[11px] font-semibold text-muted-2">
               Экипировка
             </div>
             <div className="text-[10.5px] text-muted-2">
@@ -510,16 +512,18 @@ export function MasterBlock({
         </div>
       </div>
 
-      {/* ── БЛОК 3 — Залог | Депозит (grid-cols-2) ── */}
+      {/* ── БЛОК 3 — Залог | Депозит (grid-cols-2) ──
+          v0.6.40: жёсткий 50/50 grid, min-w-0 на обеих ячейках
+          чтобы ни одна не растягивала соседа. */}
       <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-2xl border border-border bg-surface shadow-card-sm px-3 py-2.5">
-          <div className="text-[9.5px] uppercase tracking-wider font-bold text-muted-2 inline-flex items-center gap-1">
+        <div className="min-w-0 rounded-2xl border border-border bg-surface shadow-card-sm px-3 py-2.5">
+          <div className="text-[11px] font-semibold text-muted-2 inline-flex items-center gap-1">
             <Shield size={11} /> Залог
           </div>
-          <div className="mt-0.5 font-display text-[16px] font-extrabold tabular-nums text-ink leading-tight">
+          <div className="mt-0.5 font-display text-[16px] font-extrabold tabular-nums text-ink leading-tight truncate">
             {depositItem ? depositItem : `${fmt(currentDeposit)} ₽`}
           </div>
-          <div className="mt-0.5 text-[10px] text-muted">
+          <div className="mt-0.5 text-[10px] text-muted truncate">
             {depositItem
               ? "предметный залог"
               : depositSpent > 0
@@ -527,14 +531,14 @@ export function MasterBlock({
                 : "на балансе компании"}
           </div>
         </div>
-        <div className="rounded-2xl border border-border bg-surface shadow-card-sm px-3 py-2.5">
-          <div className="text-[9.5px] uppercase tracking-wider font-bold text-muted-2 inline-flex items-center gap-1">
+        <div className="min-w-0 rounded-2xl border border-border bg-surface shadow-card-sm px-3 py-2.5">
+          <div className="text-[11px] font-semibold text-muted-2 inline-flex items-center gap-1">
             <Wallet size={11} /> Депозит
           </div>
-          <div className="mt-0.5 font-display text-[16px] font-extrabold tabular-nums text-blue-700 leading-tight">
+          <div className="mt-0.5 font-display text-[16px] font-extrabold tabular-nums text-blue-700 leading-tight truncate">
             {fmt(client?.depositBalance ?? 0)} ₽
           </div>
-          <div className="mt-0.5 text-[10px] text-muted">свободные средства</div>
+          <div className="mt-0.5 text-[10px] text-muted truncate">свободные средства</div>
         </div>
       </div>
     </div>
@@ -550,7 +554,7 @@ function PhoneLine({
 }) {
   return (
     <div className="flex items-baseline gap-2">
-      <span className="text-[10.5px] uppercase tracking-wider font-bold text-muted-2 w-[78px] shrink-0">
+      <span className="text-[11px] font-semibold text-muted-2 w-[92px] shrink-0">
         {label}
       </span>
       <span className="flex-1 min-w-0 truncate text-right">{value}</span>
@@ -579,4 +583,12 @@ function pluralPos(n: number): string {
   if (n10 === 1 && n100 !== 11) return "позиция";
   if (n10 >= 2 && n10 <= 4 && (n100 < 10 || n100 >= 20)) return "позиции";
   return "позиций";
+}
+
+function pluralDays(n: number): string {
+  const n10 = n % 10;
+  const n100 = n % 100;
+  if (n10 === 1 && n100 !== 11) return "день";
+  if (n10 >= 2 && n10 <= 4 && (n100 < 10 || n100 >= 20)) return "дня";
+  return "дней";
 }

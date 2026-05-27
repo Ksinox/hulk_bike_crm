@@ -78,7 +78,7 @@ export function CalendarPanel({
   const dragDisabled = isArchived || isCompleted || !onCommitExtend;
 
   return (
-    <div className="rounded-2xl bg-surface border border-border shadow-card-sm p-4">
+    <div className="rounded-2xl bg-surface border border-border shadow-card-sm p-4">{/* v0.6.40: padding p-4 — компактнее */}
       {/* v0.6.39: заголовок «Дата возврата» — обычным регистром, без
           uppercase, шрифт побольше. Срок аренды справа УБРАН (есть в header). */}
       <div className="flex items-center justify-between mb-2.5">
@@ -169,12 +169,12 @@ function ScheduleBlock({
     <div className="rounded-[12px] border border-border bg-surface-soft px-3 py-2.5">
       <div
         className={cn(
-          "flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-wider",
+          "flex items-center gap-1.5 text-[11px] font-semibold",
           isOut ? "text-blue-700" : "text-ink-2",
         )}
       >
         <Calendar size={11} />
-        {isOut ? "Выдача" : "Возврат (план)"}
+        {isOut ? "Выдано" : "Текущий возврат"}
       </div>
       <div className="mt-1 font-display text-[15px] font-extrabold text-ink tabular-nums">
         {date} · {time}

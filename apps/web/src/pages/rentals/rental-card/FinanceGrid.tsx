@@ -70,7 +70,7 @@ export function FinanceGrid({
   const damageBalance = debtSummary?.damageBalance ?? totalDamageDebt;
   const totalDebt = pending + overdueBalance + damageBalance + manualBalance;
 
-  // «последний платёж DD.MM» — если есть оплаченный платёж сегмента.
+  // «платёж DD.MM» — если есть оплаченный платёж сегмента.
   let lastPaidLabel: string | null = null;
   if (lastPaidAt) {
     const d = new Date(lastPaidAt);
@@ -84,7 +84,7 @@ export function FinanceGrid({
   return (
     <div className="rounded-2xl bg-surface border border-border shadow-card-sm overflow-hidden">
       <div className="flex items-center justify-between px-3 pt-3 pb-2">
-        <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
+        <div className="text-[11px] font-semibold text-muted-2">
           Финансы по аренде
         </div>
         <button
@@ -134,7 +134,7 @@ export function FinanceGrid({
         <FinCell
           label="За всё время"
           value={`${fmt(paidIn)} ₽`}
-          sub="всех аренд"
+          sub="всех аренд клиента"
           tone="blue"
         />
       </div>
@@ -190,16 +190,22 @@ function FinCell({
       }
       className={`relative rounded-[10px] border ${t.border} px-2.5 py-2 text-left min-w-0 w-full ${t.bg} ${onClick ? "hover:brightness-95 cursor-pointer" : ""}`}
     >
-      <div className="flex items-center gap-1 text-[9.5px] uppercase tracking-wider font-bold text-muted-2 truncate">
+      <div className="flex items-center gap-1 text-[10.5px] font-semibold text-muted-2 truncate">
         {Icon && <Icon size={10} className="text-red-ink" />}
         {label}
       </div>
       <div
-        className={`mt-0.5 font-display text-[15px] font-extrabold tabular-nums leading-tight truncate ${t.text}`}
+        className={`mt-0.5 font-display text-[18px] font-bold tabular-nums leading-tight truncate ${t.text}`}
       >
         {value}
       </div>
-      {sub && <div className={`mt-0.5 text-[10px] truncate ${t.sub}`}>{sub}</div>}
+      {sub && (
+        <div
+          className={`mt-0.5 text-[10px] leading-tight whitespace-normal break-words ${t.sub}`}
+        >
+          {sub}
+        </div>
+      )}
     </Component>
   );
 }

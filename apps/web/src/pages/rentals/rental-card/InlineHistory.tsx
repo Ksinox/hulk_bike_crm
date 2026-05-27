@@ -123,7 +123,7 @@ export function InlineHistory({
     <div className="rounded-2xl bg-surface border border-border shadow-card-sm overflow-hidden">
       <div className="px-4 pt-3 pb-2 flex items-center justify-between border-b border-border">
         <div className="min-w-0">
-          <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2 inline-flex items-center gap-1.5">
+          <div className="text-[11px] font-semibold text-muted-2 inline-flex items-center gap-1.5">
             <History size={11} /> Последние события
           </div>
         </div>
@@ -165,12 +165,21 @@ export function InlineHistory({
  */
 function formatActivityShort(item: ApiActivityItem): string {
   let s = item.summary || "";
-  // отсечь хвост «по аренде #N ...»
-  s = s.replace(/\s*по\s+аренде\s+#\d+.*$/i, "");
-  // отсечь «· Аренда #N ...» если такое формирование
-  s = s.replace(/\s*[·•|]\s*Аренда\s+#\d+.*$/i, "");
-  // отсечь «по скутеру #N ...»
-  s = s.replace(/\s*по\s+скутеру\s+#\d+.*$/i, "");
+  // v0.6.40: точечные регексы — режем только «избыточные» хвосты,
+  // полезный контекст («Шлем на голову» и т.п.) сохраняется.
+  // 1) «по аренде #N ...» / «по скутеру #N ...»
+  s = s.replace(/\s+по\s+аренде\s+#?\d+(?:\s.*)?$/i, "");
+  s = s.replace(/\s+по\s+скутеру\s+#?\d+(?:\s.*)?$/i, "");
+  // 2) «· Аренда #N ...» (любой хвост после)
+  s = s.replace(/\s*[·•|]\s*Аренда\s+#?\d+.*$/i, "");
+  // 3) «· Jog #X ...» / «· Gear #X ...» — модель скутера
+  s = s.replace(/\s*[·•|]\s*(?:Jog|Gear)[^·•|]*$/i, "");
+  // 4) «· Имя Фамилия» (две слова с заглавной кириллицей) — режем
+  //    только если стоит в конце или перед другим «·».
+  s = s.replace(
+    /\s*[·•|]\s*[А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ][а-яё]+)+(?=\s*(?:[·•|]|$))/g,
+    "",
+  );
   return s.trim();
 }
 
