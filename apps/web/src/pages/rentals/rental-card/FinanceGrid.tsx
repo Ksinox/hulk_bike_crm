@@ -1,21 +1,21 @@
 /**
- * FinanceGrid — блок «Финансы по аренде» (2×2 ячейки) для левой колонки
- * карточки аренды v0.6.38. Заменяет горизонтальный KpiStrip.
+ * FinanceGrid — блок «Финансы по аренде» (1 ряд из 4 ячеек) для левой
+ * колонки карточки аренды v0.6.39.
  *
- * Ячейки:
- *   • Просрочка (дни)         — красный, кликабельный → onOverdueClick
- *   • Долг (₽)                — красный, кликабельный → onOverdueClick
- *   • Оплачено (₽)            — зелёный, lastSegmentSum (эта аренда)
- *   • За всё время (₽)        — синий, paidIn (по всему клиенту)
+ * Ячейки (слева направо):
+ *   • Просрочка (дни)         — красный фон, дата начала просрочки
+ *   • Долг (₽)                — красный фон, totalDebt по аренде
+ *   • Оплачено (₽)            — нейтральный, lastSegmentSum
+ *   • За всё время (₽)        — нейтральный, paidIn по клиенту
  *
- * Под сеткой — кнопка «Подробнее →» открывает DebtsList drawer.
- * Бизнес-логика не пересчитывается, только presentation.
+ * Кнопка «Подробнее →» в header'е открывает DebtsList drawer.
+ * Бизнес-логика totalDebt / lastSegmentSum / paidIn не пересчитывается.
  */
 import { AlertTriangle, ArrowRight } from "lucide-react";
 import type { Rental, RentalStatus } from "@/lib/mock/rentals";
 import type { DebtSummary } from "@/lib/api/debt";
 
-type Tone = "ink" | "blue" | "red" | "green";
+type Tone = "red" | "neutral" | "blue";
 
 function fmt(n: number | null | undefined): string {
   if (n == null || Number.isNaN(n)) return "0";
@@ -42,6 +42,7 @@ export function FinanceGrid({
   totalDamageDebt,
   effectiveStatus,
   lastSegmentSum,
+  lastPaidAt,
   onOverdueClick,
   onOpenDebts,
 }: {
@@ -52,6 +53,9 @@ export function FinanceGrid({
   totalDamageDebt: number;
   effectiveStatus: RentalStatus;
   lastSegmentSum: number;
+  /** v0.6.39: ISO/строка даты последнего оплаченного rent-платежа —
+   *  если есть, идёт сабпись в ячейке «Оплачено» как «последний платёж DD.MM». */
+  lastPaidAt?: string | null;
   onOverdueClick?: (rect: DOMRect) => void;
   onOpenDebts: () => void;
 }) {
@@ -66,9 +70,20 @@ export function FinanceGrid({
   const damageBalance = debtSummary?.damageBalance ?? totalDamageDebt;
   const totalDebt = pending + overdueBalance + damageBalance + manualBalance;
 
+  // «последний платёж DD.MM» — если есть оплаченный платёж сегмента.
+  let lastPaidLabel: string | null = null;
+  if (lastPaidAt) {
+    const d = new Date(lastPaidAt);
+    if (!Number.isNaN(d.getTime())) {
+      const dd = String(d.getDate()).padStart(2, "0");
+      const mm = String(d.getMonth() + 1).padStart(2, "0");
+      lastPaidLabel = `платёж ${dd}.${mm}`;
+    }
+  }
+
   return (
     <div className="rounded-2xl bg-surface border border-border shadow-card-sm overflow-hidden">
-      <div className="flex items-center justify-between px-3 pt-3 pb-1.5">
+      <div className="flex items-center justify-between px-3 pt-3 pb-2">
         <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
           Финансы по аренде
         </div>
@@ -80,12 +95,16 @@ export function FinanceGrid({
           Подробнее <ArrowRight size={10} />
         </button>
       </div>
-      <div className="grid grid-cols-2 divide-x divide-y divide-border border-t border-border">
+      <div className="grid grid-cols-4 gap-2 px-3 pb-3">
         <FinCell
           label="Просрочка"
           value={overdueDays > 0 ? `${overdueDays} дн` : "—"}
-          sub={isOverdue && endDate ? `с ${rental.endPlanned.slice(0, 5)}` : "нет"}
-          tone={overdueDays > 0 ? "red" : "ink"}
+          sub={
+            isOverdue && endDate
+              ? `с ${rental.endPlanned.slice(0, 5)}`
+              : "нет"
+          }
+          tone={overdueDays > 0 ? "red" : "neutral"}
           onClick={
             overdueDays > 0 && onOverdueClick
               ? (rect) => onOverdueClick(rect)
@@ -95,8 +114,8 @@ export function FinanceGrid({
         <FinCell
           label="Долг"
           value={`${fmt(totalDebt)} ₽`}
-          sub={totalDebt > 0 ? "к погашению" : "нет"}
-          tone={totalDebt > 0 ? "red" : "ink"}
+          sub={totalDebt > 0 ? "дни + штраф" : "нет"}
+          tone={totalDebt > 0 ? "red" : "neutral"}
           icon={totalDebt > 0 ? AlertTriangle : undefined}
           onClick={
             totalDebt > 0
@@ -107,15 +126,15 @@ export function FinanceGrid({
           }
         />
         <FinCell
-          label="Эта аренда"
+          label="Оплачено"
           value={`${fmt(lastSegmentSum)} ₽`}
-          sub="сумма текущего сегмента"
-          tone="ink"
+          sub={lastPaidLabel ?? "текущий сегмент"}
+          tone="neutral"
         />
         <FinCell
           label="За всё время"
           value={`${fmt(paidIn)} ₽`}
-          sub="всех аренд клиента"
+          sub="всех аренд"
           tone="blue"
         />
       </div>
@@ -138,11 +157,25 @@ function FinCell({
   icon?: typeof AlertTriangle;
   onClick?: (rect: DOMRect) => void;
 }) {
-  const toneStyles: Record<Tone, { bg: string; text: string; sub: string }> = {
-    ink: { bg: "bg-transparent", text: "text-ink", sub: "text-muted" },
-    blue: { bg: "bg-transparent", text: "text-blue-700", sub: "text-muted" },
-    red: { bg: "bg-red-soft/60", text: "text-red-ink", sub: "text-red-ink/80" },
-    green: { bg: "bg-transparent", text: "text-green-ink", sub: "text-muted" },
+  const toneStyles: Record<Tone, { bg: string; text: string; sub: string; border: string }> = {
+    neutral: {
+      bg: "bg-surface-soft",
+      text: "text-ink",
+      sub: "text-muted",
+      border: "border-border",
+    },
+    blue: {
+      bg: "bg-surface-soft",
+      text: "text-blue-700",
+      sub: "text-muted",
+      border: "border-border",
+    },
+    red: {
+      bg: "bg-red-soft/60",
+      text: "text-red-ink",
+      sub: "text-red-ink/80",
+      border: "border-red-200",
+    },
   };
   const t = toneStyles[tone];
   const Component = onClick ? "button" : "div";
@@ -155,7 +188,7 @@ function FinCell({
               onClick((e.currentTarget as HTMLElement).getBoundingClientRect())
           : undefined
       }
-      className={`relative px-3 py-2.5 text-left min-w-0 w-full ${t.bg} ${onClick ? "hover:brightness-95 cursor-pointer" : ""}`}
+      className={`relative rounded-[10px] border ${t.border} px-2.5 py-2 text-left min-w-0 w-full ${t.bg} ${onClick ? "hover:brightness-95 cursor-pointer" : ""}`}
     >
       <div className="flex items-center gap-1 text-[9.5px] uppercase tracking-wider font-bold text-muted-2 truncate">
         {Icon && <Icon size={10} className="text-red-ink" />}

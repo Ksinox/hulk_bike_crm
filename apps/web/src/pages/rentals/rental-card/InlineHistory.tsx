@@ -154,11 +154,32 @@ export function InlineHistory({
   );
 }
 
+/**
+ * v0.6.39: формирует короткий текст для inline-строки.
+ * Полный summary с сервера обычно выглядит как:
+ *   «Изменена экипировка по аренде #6 · Гамадов Недир · Jog #02»
+ * В контексте текущей карточки префикс «по аренде #N · {имя} · {модель}»
+ * избыточен — пользователь уже знает где находится. Отрезаем всё после
+ * первого « по аренде #» / « по скутеру #» / « · Аренда #» — оставляем
+ * только заголовок действия.
+ */
+function formatActivityShort(item: ApiActivityItem): string {
+  let s = item.summary || "";
+  // отсечь хвост «по аренде #N ...»
+  s = s.replace(/\s*по\s+аренде\s+#\d+.*$/i, "");
+  // отсечь «· Аренда #N ...» если такое формирование
+  s = s.replace(/\s*[·•|]\s*Аренда\s+#\d+.*$/i, "");
+  // отсечь «по скутеру #N ...»
+  s = s.replace(/\s*по\s+скутеру\s+#\d+.*$/i, "");
+  return s.trim();
+}
+
 function InlineRow({ item }: { item: ApiActivityItem }) {
   const meta = actionMeta(item.action);
   const Icon = meta.icon;
   const amount = extractAmount(item);
   const positive = amount != null && amount > 0;
+  const shortText = formatActivityShort(item);
   return (
     <div className="flex items-center gap-2.5 px-1.5 py-1.5 rounded-[10px] hover:bg-surface-soft">
       <span
@@ -171,7 +192,7 @@ function InlineRow({ item }: { item: ApiActivityItem }) {
       </span>
       <div className="flex-1 min-w-0">
         <div className="text-[11.5px] font-bold text-ink truncate leading-tight">
-          {item.summary}
+          {shortText}
         </div>
         <div className="text-[10px] text-muted tabular-nums leading-tight mt-0.5">
           {new Date(item.createdAt).toLocaleString("ru-RU", {

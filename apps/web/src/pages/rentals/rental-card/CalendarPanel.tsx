@@ -66,7 +66,6 @@ export function CalendarPanel({
   const startIso = ruToIso(rental.start);
   const endIso = ruToIso(rental.endPlanned);
   const isOverdue = effectiveStatus === "overdue";
-  const total = startIso && endIso ? diffDaysIso(startIso, endIso) : 0;
   const overdueDays = isOverdue && endIso ? diffDaysIso(endIso, todayIso()) : 0;
 
   const dailyRate =
@@ -80,30 +79,25 @@ export function CalendarPanel({
 
   return (
     <div className="rounded-2xl bg-surface border border-border shadow-card-sm p-4">
-      {/* v0.6.38: заголовок «Дата возврата» (раньше «График аренды») +
-          иконка (?) с tooltip, объясняющим зоны календаря. */}
+      {/* v0.6.39: заголовок «Дата возврата» — обычным регистром, без
+          uppercase, шрифт побольше. Срок аренды справа УБРАН (есть в header). */}
       <div className="flex items-center justify-between mb-2.5">
-        <div className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-2">
-          <Calendar size={11} />
+        <div className="inline-flex items-center gap-1.5 text-[14px] font-semibold text-ink">
+          <Calendar size={14} />
           Дата возврата
           <span
-            title="Календарь аренды: синяя зона — выданный период, красная — просрочка, зелёная — выбранное продление. Клик по дню после планового конца — продлить."
+            title="Календарь аренды: синяя зона — оплаченный период, красная — просрочка, зелёная — выбранное продление. Клик по дню после планового конца — продлить."
             className="inline-flex items-center justify-center h-4 w-4 rounded-full bg-surface-soft text-muted-2 hover:bg-border hover:text-ink cursor-help"
             aria-label="Подсказка по зонам календаря"
           >
             <HelpCircle size={10} />
           </span>
         </div>
-        <div className="text-[11.5px] text-muted">
-          Срок этой аренды{" "}
-          <span className="font-bold text-blue-700 tabular-nums">{total} дн</span>
-        </div>
       </div>
-      {/* v0.6.38: легенда зон календаря — поднята НАД ScheduleBlock'ами,
-          по дизайн-референсу. */}
+      {/* v0.6.39: легенда — «текущий период» переименован в «оплачено». */}
       <div className="mb-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10.5px] text-muted">
         <LegendDot swatch="bg-blue-200" label="выдача" />
-        <LegendDot swatch="bg-blue-200" label="текущий период" />
+        <LegendDot swatch="bg-blue-200" label="оплачено" />
         {isOverdue && <LegendDot swatch="bg-red-200" label="просрочка" />}
         <LegendDot swatch="bg-emerald-200" label="продление" />
       </div>
@@ -168,35 +162,28 @@ function ScheduleBlock({
   overdueDays?: number;
 }) {
   const isOut = kind === "out";
+  // v0.6.39: 2-й блок «Возврат» НЕ красится в красный при просрочке —
+  // статус о просрочке уже есть в header'е карточки. Бордер/фон
+  // нейтральные; «просрочен N дн» — мелкий красный текст внутри блока.
   return (
-    <div
-      className={cn(
-        "rounded-[12px] border px-3 py-2.5",
-        overdue && !isOut
-          ? "border-red-soft bg-red-soft/40"
-          : "border-border bg-surface-soft",
-      )}
-    >
+    <div className="rounded-[12px] border border-border bg-surface-soft px-3 py-2.5">
       <div
         className={cn(
           "flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-wider",
-          overdue && !isOut
-            ? "text-red-ink"
-            : isOut
-              ? "text-blue-700"
-              : "text-ink-2",
+          isOut ? "text-blue-700" : "text-ink-2",
         )}
       >
         <Calendar size={11} />
-        {isOut
-          ? "Выдача"
-          : overdue
-            ? `Просрочен · ${overdueDays} дн`
-            : "Возврат (план)"}
+        {isOut ? "Выдача" : "Возврат (план)"}
       </div>
       <div className="mt-1 font-display text-[15px] font-extrabold text-ink tabular-nums">
         {date} · {time}
       </div>
+      {overdue && !isOut && (
+        <div className="mt-0.5 text-[10.5px] font-semibold text-red-ink">
+          просрочен на {overdueDays} дн
+        </div>
+      )}
     </div>
   );
 }

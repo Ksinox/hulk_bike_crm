@@ -394,6 +394,22 @@ export function RentalCard({
     return lastRent.amount + equipAfter;
   })();
 
+  // v0.6.39: дата последнего оплаченного rent-платежа — для сабписи
+  // «платёж DD.MM» в ячейке «Оплачено» FinanceGrid. chainPayments —
+  // UI-Payment (date в формате DD.MM.YYYY); сортируем по id (новые ближе
+  // к концу), берём дату последнего paid rent-платежа.
+  const lastPaidAt: string | null = (() => {
+    const sorted = [...chainPayments]
+      .filter((p) => p.paid && p.type === "rent" && p.date)
+      .sort((a, b) => a.id - b.id);
+    if (sorted.length === 0) return null;
+    const last = sorted[sorted.length - 1]!;
+    // date в DD.MM.YYYY → ISO YYYY-MM-DD для new Date()
+    const m = last.date.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+    if (!m) return null;
+    return `${m[3]}-${m[2]}-${m[1]}`;
+  })();
+
   // overdueDays для бейджа в IdentityStrip
   const endDate = parseDate(rental.endPlanned);
   const overdueDays =
@@ -985,10 +1001,10 @@ export function RentalCard({
           </div>
         )}
 
-        {/* v0.6.38: 2-col layout — левая узкая колонка (~360px) с
-            MasterBlock (vertical) + FinanceGrid, правая широкая с
+        {/* v0.6.39: 2-col layout 50/50 — обе колонки равной ширины.
+            Левая: MasterBlock (vertical) + FinanceGrid; правая:
             CalendarPanel + InlineHistory + DocsInline. */}
-        <div className="grid grid-cols-1 gap-3 lg:grid-cols-[360px_minmax(0,1fr)]">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
           {/* LEFT COLUMN — клиент + скутер + экипировка + финансы */}
           <div className="flex flex-col gap-3 min-w-0">
             <MasterBlock
@@ -1022,6 +1038,7 @@ export function RentalCard({
               totalDamageDebt={totalDebt}
               effectiveStatus={effectiveStatus}
               lastSegmentSum={lastSegmentSum}
+              lastPaidAt={lastPaidAt}
               onOverdueClick={(rect) => setOverdueAnchor(rect)}
               onOpenDebts={() => setDrawer("debts")}
             />
