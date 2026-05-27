@@ -1,15 +1,16 @@
 /**
- * RentalsList v0.6.49 — список аренд по эталону.
- *
- * Каждый элемент шире (p-3) и воздушнее:
+ * RentalsList v0.6.50 — список аренд как ряд строк внутри ОБЩЕГО
+ * белого блока (см. Rentals.tsx). Строки больше не имеют собственной
+ * рамки/скругления — они просто разделены `border-b`. Каждая строка:
  *   • Слева — круглая аватарка 56px (фото или цветной круг с инициалами).
  *     Снизу аватарки — бейдж с количеством дней («12д» красным при
  *     просрочке, зелёным/синим иначе).
  *   • Центр — ФИО (font-bold 14px), «Jog #02 · 11 111 км», дата+время.
  *   • Справа — крупно сумма долга красным + «долг»; либо «0 ₽» серым +
  *     «платежей нет». Дальше ChevronRight.
- *   • Красная рамка (border-2 border-red-200) если есть долг/overdue.
- *   • Активная — ring-2 ring-blue-400.
+ *   • Красная подсветка строки (bg-red-soft/30) если есть долг/overdue.
+ *   • Активная строка — bg-blue-50 (или красная если долг) + правый край
+ *     не скруглён (rounded-r-none) и упирается в карточку справа.
  */
 import { ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -52,7 +53,7 @@ export function RentalsList({
 }) {
   if (items.length === 0) {
     return (
-      <div className="flex h-full min-h-[240px] flex-col items-center justify-center gap-2 rounded-2xl bg-surface p-8 text-center shadow-card-sm">
+      <div className="flex h-full min-h-[180px] flex-col items-center justify-center gap-2 p-8 text-center">
         <div className="text-2xl">🔍</div>
         <div className="text-[14px] font-semibold text-ink">
           Аренд не найдено
@@ -65,7 +66,7 @@ export function RentalsList({
   }
 
   return (
-    <div className="scrollbar-thin max-h-[calc(100vh-260px)] overflow-y-auto overflow-x-hidden flex flex-col gap-2 pr-1">
+    <div className="scrollbar-thin max-h-[calc(100vh-300px)] overflow-y-auto overflow-x-hidden">
       {items.map((r) => (
         <RentalRow
           key={r.id}
@@ -129,18 +130,36 @@ function RentalRow({
 
   const danger = isOverdue || hasDebt;
 
+  // v0.6.50: подсветка строки — фон + опциональная синяя «полоска»
+  // слева у активной строки. Активная строка визуально «упирается» в
+  // карточку справа: рамка не рисуется, gap=0 между колонками.
   return (
     <button
       type="button"
       onClick={() => onSelect(r.id)}
       className={cn(
-        "w-full flex items-center gap-3 rounded-2xl p-3 text-left transition-colors",
+        "relative w-full flex items-center gap-3 px-4 py-3 text-left border-b border-border last:border-b-0 transition-colors",
+        // Базовый фон по состоянию.
         danger
-          ? "border-2 border-red-200 bg-red-soft/20 hover:bg-red-soft/30"
-          : "border border-border bg-surface hover:bg-surface-soft/70",
-        active && "ring-2 ring-blue-400",
+          ? active
+            ? "bg-red-soft/55"
+            : "bg-red-soft/30 hover:bg-red-soft/45"
+          : active
+            ? "bg-blue-50"
+            : "hover:bg-surface-soft/70",
       )}
     >
+      {/* Цветная «полоска» слева для активной строки. */}
+      {active && (
+        <span
+          aria-hidden
+          className={cn(
+            "absolute left-0 top-0 bottom-0 w-1",
+            danger ? "bg-red-500" : "bg-blue-500",
+          )}
+        />
+      )}
+
       {/* Аватарка 56×56 + бейдж дней снизу. */}
       <div className="relative shrink-0">
         <span

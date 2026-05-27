@@ -2,9 +2,13 @@ import { useEffect, useMemo, useState } from "react";
 import { Plus, Search, SlidersHorizontal } from "lucide-react";
 import { Topbar } from "@/pages/dashboard/Topbar";
 import { type Rental, type RentalStatus } from "@/lib/mock/rentals";
-import { RentalsFilters, type FiltersState } from "./RentalsFilters";
+import {
+  RentalsFilters,
+  RentalsFiltersChips,
+  type FiltersState,
+} from "./RentalsFilters";
 import { RentalsList } from "./RentalsList";
-import { type Kpi } from "./RentalsKpi";
+import { RentalsKpi, type Kpi } from "./RentalsKpi";
 import { RentalCard, ActTransferPreview } from "./RentalCard";
 import { cn } from "@/lib/utils";
 import { DocumentPreviewModal } from "./DocumentPreviewModal";
@@ -395,80 +399,93 @@ export function Rentals() {
     ];
   }, [rentals, revenue]);
 
-  // Для использования kpi массив не выкидываем чтобы не сломать импорт,
-  // но KPI-полоску с него больше не рендерим (она переехала в карточку).
-  void kpi;
-
-  // v0.6.49: ВЕРНУТЬ split-layout — список аренд ВСЕГДА слева 420px,
-  // карточка справа. Условную ветку «hasSelected → full-screen» убрали
-  // (она сломалась в v0.6.48).
+  // v0.6.50: split-layout — список аренд слева 420px, карточка справа.
+  // Список+фильтры+поиск+заголовок объединены в ОДИН белый rounded-2xl
+  // блок. Карточка справа упирается в этот блок (gap=0), визуально они
+  // «сливаются» в одну поверхность. KPI-плашки RentalsKpi вернулись
+  // сверху страницы (как было в main до v0.6.42).
   return (
     <main className="flex min-w-0 flex-1 flex-col gap-4">
       <Topbar />
 
-      {/* v0.6.44: единый header страницы. Сверху — крупный заголовок
-          «Аренды», под ним строка поиска + фильтр-иконка + «+», под
-          ними — таб-чипы со счётчиками. */}
-      <header className="flex flex-col gap-3">
-        <h1 className="font-display text-[34px] font-extrabold leading-none text-ink">
-          Аренды
-        </h1>
+      {/* v0.6.50: KPI-плашки (5 шт) — Активные / Просрочки / Возврат
+          сегодня / Долг по просрочкам / Выручка. Над основным блоком. */}
+      <RentalsKpi items={kpi} />
 
-        <div className="flex items-center gap-2">
-          <div className="relative min-w-[240px] flex-1">
-            <Search
-              size={16}
-              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-2"
-            />
-            <input
-              type="text"
-              value={filters.search}
-              onChange={(e) =>
-                setFilters({ ...filters, search: e.target.value })
-              }
-              placeholder="Поиск аренды, клиента, скутера…"
-              className="h-10 w-full rounded-full bg-surface pl-9 pr-3 text-[13px] text-ink outline-none shadow-card-sm placeholder:text-muted-2 focus:ring-2 focus:ring-blue-100"
+      <div className="grid flex-1 gap-0 lg:grid-cols-[420px_minmax(0,1fr)]">
+        {/* ======== ЛЕВО — единый белый блок: header+поиск+чипы+список ======== */}
+        <div className="flex flex-col rounded-2xl rounded-r-none bg-surface shadow-card-sm overflow-hidden border-r border-border">
+          <div className="flex flex-col gap-3 p-4 pb-3 border-b border-border">
+            <h1 className="font-display text-[26px] font-extrabold leading-none text-ink">
+              Аренды
+            </h1>
+
+            <div className="flex items-center gap-2">
+              <div className="relative min-w-[160px] flex-1">
+                <Search
+                  size={16}
+                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-2"
+                />
+                <input
+                  type="text"
+                  value={filters.search}
+                  onChange={(e) =>
+                    setFilters({ ...filters, search: e.target.value })
+                  }
+                  placeholder="Поиск аренды, клиента, скутера…"
+                  className="h-9 w-full rounded-full bg-surface-soft pl-9 pr-3 text-[13px] text-ink outline-none placeholder:text-muted-2 focus:ring-2 focus:ring-blue-100"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => setFiltersOpen((v) => !v)}
+                title="Дополнительные фильтры (даты)"
+                className={cn(
+                  "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-soft text-muted hover:text-ink",
+                  filtersOpen && "bg-blue-50 text-blue-700",
+                )}
+              >
+                <SlidersHorizontal size={15} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setNewOpen(true)}
+                title="Новая аренда"
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white hover:bg-blue-700"
+              >
+                <Plus size={16} />
+              </button>
+            </div>
+
+            {/* Таб-чипы статусов — встроены в общий блок. */}
+            <RentalsFiltersChips value={filters} onChange={setFilters} />
+
+            {filtersOpen && (
+              <div className="-mx-1">
+                <RentalsFilters value={filters} onChange={setFilters} />
+              </div>
+            )}
+          </div>
+
+          {/* Список аренд — строки внутри того же блока, без рамок. */}
+          <div className="flex-1 min-h-0">
+            <RentalsList
+              items={filtered}
+              selectedId={selectedId}
+              onSelect={setSelectedId}
             />
           </div>
-          <button
-            type="button"
-            onClick={() => setFiltersOpen((v) => !v)}
-            title="Дополнительные фильтры"
-            className={cn(
-              "inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface shadow-card-sm text-muted hover:text-ink",
-              filtersOpen && "bg-blue-50 text-blue-700",
-            )}
-          >
-            <SlidersHorizontal size={16} />
-          </button>
-          <button
-            type="button"
-            onClick={() => setNewOpen(true)}
-            title="Новая аренда"
-            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white shadow-card-sm hover:bg-blue-700"
-          >
-            <Plus size={18} />
-          </button>
         </div>
 
-      </header>
-
-      {filtersOpen && (
-        <RentalsFilters value={filters} onChange={setFilters} />
-      )}
-
-      <div className="grid flex-1 gap-4 lg:grid-cols-[420px_minmax(0,1fr)]">
-        <RentalsList
-          items={filtered}
-          selectedId={selectedId}
-          onSelect={setSelectedId}
-        />
-
+        {/* ======== ПРАВО — карточка аренды, упирается в список (без gap) ========
+            v0.6.50: RentalCard сам по себе rounded-2xl bg-surface. Чтобы
+            он визуально «слился» с блоком списка слева, RentalCard ожидает
+            className=rounded-l-none через prop `flushLeft`. */}
         {(() => {
           const selected = rentals.find((r) => r.id === selectedId);
           if (!selected) {
             return (
-              <div className="flex min-h-[400px] items-center justify-center rounded-2xl bg-surface p-10 text-center shadow-card-sm">
+              <div className="flex min-h-[400px] items-center justify-center rounded-2xl rounded-l-none bg-surface p-10 text-center shadow-card-sm">
                 <div className="text-[13px] text-muted">
                   Выберите аренду из списка
                 </div>
@@ -480,9 +497,8 @@ export function Rentals() {
               <RentalCard
                 rental={selected}
                 initialTab={pendingTab ?? undefined}
+                flushLeft
                 onSwapped={(newId) => {
-                  // Свап успешен: переключаем фокус на новую связку
-                  // и поднимаем превью акта замены поверх карточки.
                   setSelectedId(newId);
                   setSwapActPreviewId(newId);
                 }}

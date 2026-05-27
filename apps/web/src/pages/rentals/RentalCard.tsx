@@ -35,6 +35,10 @@ import { navigate } from "@/app/navigationStore";
 import { MasterBlock } from "./rental-card/MasterBlock";
 import { CalendarPanel } from "./rental-card/CalendarPanel";
 import { DocsInline } from "./rental-card/DocsInline";
+import { InlineHistory } from "./rental-card/InlineHistory";
+import { SideDrawer } from "./rental-card/SideDrawer";
+import { useActivityTimeline } from "@/lib/api/activity";
+import { HistoryTab } from "./RentalCardTabs";
 import { RentalActionDialog, type ActionKind } from "./RentalActionDialog";
 import { ExtendRentalDialog } from "./ExtendRentalDialog";
 import { PaymentAcceptDialog } from "./PaymentAcceptDialog";
@@ -250,6 +254,7 @@ export function RentalCard({
   onClose,
   onPaymentOpenChange,
   initialTab,
+  flushLeft = false,
 }: {
   rental: Rental;
   /** Callback в Rentals при успешной замене скутера. Rentals переключает
@@ -262,6 +267,11 @@ export function RentalCard({
   /** v0.3.8: какой таб открыть по умолчанию (используется при навигации
    *  с дашборда: клик по должнику → openTab='debt' → таб «История долгов»). */
   initialTab?: TabId;
+  /** v0.6.50: на странице Аренд карточка «упирается» в блок списка слева —
+   *  убираем левое скругление и добавляем `border-l` для разделителя.
+   *  Drawer-режим (DashboardDrawer) этот prop не передаёт — там карточка
+   *  остаётся полностью скруглённой. */
+  flushLeft?: boolean;
 }) {
   void onPaymentOpenChange;
   void initialTab; // v0.6.44: tabs убраны, prop оставлен для совместимости.
@@ -282,6 +292,10 @@ export function RentalCard({
   const [previewClaimId, setPreviewClaimId] = useState<number | null>(null);
   const [swapOpen, setSwapOpen] = useState(false);
   const [clientQuickView, setClientQuickView] = useState(false);
+  // v0.6.50: drawer полной истории по аренде — открывается из InlineHistory
+  // («Все события →»). Внутри drawer'а рендерим тот же HistoryTab что и
+  // в legacy-табе «История».
+  const [historyOpen, setHistoryOpen] = useState(false);
   // v0.3.1 (idea 2: stacking drawers): когда RentalCard рендерится
   // ВНУТРИ drawer'а на дашборде — клик на клиента не должен открывать
   // отдельный ClientQuickView, а должен класть «client» поверх стека
@@ -335,6 +349,10 @@ export function RentalCard({
     [chainIdsFull, allRentals],
   );
   const chainPayments = useChainPayments(chainIds);
+  // v0.6.50: лента событий по аренде для inline-блока «Последние события»
+  // под календарём. Полный список — в drawer'е (HistoryTab).
+  const activityQ = useActivityTimeline("rental", rental.id, 50);
+  const activityItems = activityQ.data?.items ?? [];
   const tier = client ? ratingTier(client.rating) : null;
 
   // Корневая (первая) аренда цепочки — её start показываем в шапке
@@ -927,7 +945,12 @@ export function RentalCard({
   };
 
   return (
-    <div className="flex min-h-0 flex-col gap-3 rounded-2xl bg-surface p-5 shadow-card-sm">
+    <div
+      className={cn(
+        "flex min-h-0 flex-col gap-3 rounded-2xl bg-surface p-5 shadow-card-sm",
+        flushLeft && "rounded-l-none",
+      )}
+    >
       {/* =========== HEADER =========== */}
       <header className="flex flex-wrap items-center gap-3">
         {onClose && (
@@ -1299,6 +1322,53 @@ export function RentalCard({
             <KpiCard label={label} value={value} hint={hint} accent={accent} />
           );
         })()}
+        {/* v0.6.50: порядок плашек — Просрочка → Долг → Эта аренда → За всё время.
+            Долг сразу после Просрочки: оператор видит связку «N дн просрочки →
+            X ₽ долга» как одну смысловую пару. */}
+        {(() => {
+          // v0.3.8: разложение долга на компоненты:
+          //   • неоплачено = pending (rent-платежи без paid)
+          //   • просрочка  = debtSummary.overdueBalance (1.5×rate×days, − списания)
+          //   • ущерб      = debtSummary.damageBalance (Σ damage_reports.debt)
+          //   • ручной     = debtSummary.manualBalance (Σ manual_charge − manual_forgive)
+          //
+          // Источник правды — debtSummary с сервера. Если сводка ещё не
+          // загрузилась — graceful fallback на старый расчёт (просрочка
+          // по локальной формуле + totalDebt).
+          const overdueLocal =
+            rental.status === "overdue"
+              ? Math.max(1, daysLeft !== null ? Math.abs(daysLeft) : 1) *
+                Math.round(
+                  (rental.rateUnit === "week"
+                    ? rental.rate / 7
+                    : rental.rate) * 1.5,
+                )
+              : 0;
+          const overdueBalance =
+            debtSummary?.overdueBalance ?? overdueLocal;
+          const overdueDaysBalance = debtSummary?.overdueDaysBalance ?? 0;
+          const overdueFineBalance = debtSummary?.overdueFineBalance ?? 0;
+          const damageBalance = debtSummary?.damageBalance ?? totalDebt;
+          const manualBalance = debtSummary?.manualBalance ?? 0;
+          const debt = pending + overdueBalance + damageBalance + manualBalance;
+          const parts: string[] = [];
+          if (pending > 0) parts.push(`не оплачено ${fmt(pending)} ₽`);
+          if (overdueDaysBalance > 0) parts.push(`дни ${fmt(overdueDaysBalance)} ₽`);
+          if (overdueFineBalance > 0) parts.push(`штраф ${fmt(overdueFineBalance)} ₽`);
+          if (overdueBalance > 0 && overdueDaysBalance + overdueFineBalance === 0)
+            parts.push(`просрочка ${fmt(overdueBalance)} ₽`);
+          if (damageBalance > 0) parts.push(`ущерб ${fmt(damageBalance)} ₽`);
+          if (manualBalance > 0) parts.push(`ручной ${fmt(manualBalance)} ₽`);
+          const debtHint = debt === 0 ? "нет долгов" : parts.join(" + ");
+          return (
+            <KpiCard
+              label="Долг"
+              value={debt > 0 ? `${fmt(debt)} ₽` : "0 ₽"}
+              hint={debtHint}
+              accent={debt > 0 ? "red" : "muted"}
+            />
+          );
+        })()}
         {(() => {
           // v0.4.97: единый источник правды по залогу — поля
           //   rental.deposit (текущий остаток на счёте залога)
@@ -1359,50 +1429,6 @@ export function RentalCard({
           }
           badgeIcon={paidIn > 0 ? CheckCircle2 : undefined}
         />
-        {(() => {
-          // v0.3.8: разложение долга на компоненты:
-          //   • неоплачено = pending (rent-платежи без paid)
-          //   • просрочка  = debtSummary.overdueBalance (1.5×rate×days, − списания)
-          //   • ущерб      = debtSummary.damageBalance (Σ damage_reports.debt)
-          //   • ручной     = debtSummary.manualBalance (Σ manual_charge − manual_forgive)
-          //
-          // Источник правды — debtSummary с сервера. Если сводка ещё не
-          // загрузилась — graceful fallback на старый расчёт (просрочка
-          // по локальной формуле + totalDebt).
-          const overdueLocal =
-            rental.status === "overdue"
-              ? Math.max(1, daysLeft !== null ? Math.abs(daysLeft) : 1) *
-                Math.round(
-                  (rental.rateUnit === "week"
-                    ? rental.rate / 7
-                    : rental.rate) * 1.5,
-                )
-              : 0;
-          const overdueBalance =
-            debtSummary?.overdueBalance ?? overdueLocal;
-          const overdueDaysBalance = debtSummary?.overdueDaysBalance ?? 0;
-          const overdueFineBalance = debtSummary?.overdueFineBalance ?? 0;
-          const damageBalance = debtSummary?.damageBalance ?? totalDebt;
-          const manualBalance = debtSummary?.manualBalance ?? 0;
-          const debt = pending + overdueBalance + damageBalance + manualBalance;
-          const parts: string[] = [];
-          if (pending > 0) parts.push(`не оплачено ${fmt(pending)} ₽`);
-          if (overdueDaysBalance > 0) parts.push(`дни ${fmt(overdueDaysBalance)} ₽`);
-          if (overdueFineBalance > 0) parts.push(`штраф ${fmt(overdueFineBalance)} ₽`);
-          if (overdueBalance > 0 && overdueDaysBalance + overdueFineBalance === 0)
-            parts.push(`просрочка ${fmt(overdueBalance)} ₽`);
-          if (damageBalance > 0) parts.push(`ущерб ${fmt(damageBalance)} ₽`);
-          if (manualBalance > 0) parts.push(`ручной ${fmt(manualBalance)} ₽`);
-          const debtHint = debt === 0 ? "нет долгов" : parts.join(" + ");
-          return (
-            <KpiCard
-              label="Долг"
-              value={debt > 0 ? `${fmt(debt)} ₽` : "0 ₽"}
-              hint={debtHint}
-              accent={debt > 0 ? "red" : "muted"}
-            />
-          );
-        })()}
         {isExtended && (
           <KpiCard
             label="Всего по сделке"
@@ -1521,9 +1547,38 @@ export function RentalCard({
             resetSignal={calendarResetSignal}
             initialExtDays={paymentPrefillExtDays || undefined}
           />
+          {/* v0.6.50: «Последние события» — InlineHistory под календарём.
+              Показывает 5 самых свежих событий с понятными иконками
+              (оплата → 💰 Wallet, продление → ⟳ Repeat, экипировка → 🪖
+              HardHat, прощено → 🎁 Gift и т.д.). Кнопка «Все события →»
+              открывает SideDrawer с полным HistoryTab. */}
+          <InlineHistory
+            items={activityItems}
+            loading={activityQ.isLoading}
+            onExpand={() => setHistoryOpen(true)}
+            limit={5}
+          />
           <DocsInline rental={rental} />
         </div>
       </div>
+
+      {historyOpen && (
+        <SideDrawer
+          open={historyOpen}
+          onClose={() => setHistoryOpen(false)}
+          title="История аренды"
+          subtitle={`#${String(rental.id).padStart(4, "0")} · все события`}
+          width={620}
+        >
+          <div className="p-4">
+            <HistoryTab
+              rental={rental}
+              chainRentals={chainRentals}
+              damageReports={reports}
+            />
+          </div>
+        </SideDrawer>
+      )}
 
       {action && (
         <RentalActionDialog

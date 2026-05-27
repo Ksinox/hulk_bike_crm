@@ -2,6 +2,9 @@ import { Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DateRangeFilter } from "@/pages/clients/DateRangeFilter";
 
+// v0.6.50: вынесли массив табов наружу — переиспользуем в RentalsFiltersChips
+// (раскрытом блоке без поиска), который рендерится прямо в общем блоке Аренд.
+
 export type StatusFilter =
   // v0.4.47: 'all' оставлен в типе для обратной совместимости со
   // старыми ссылками/URL — на UI больше не показывается. Логически
@@ -118,6 +121,40 @@ export function RentalsFilters({
         titleApplied="Изменить диапазон дат завершения аренды"
         titleNotApplied="Фильтр по дате завершения аренды (endPlanned)"
       />
+    </div>
+  );
+}
+
+/**
+ * v0.6.50: компактный ряд таб-чипов БЕЗ поиска и пресетов дат —
+ * предназначен для вставки прямо в общий белый блок страницы аренд
+ * (Rentals.tsx). Поиск + кнопка фильтра + плюс уже есть в шапке этого
+ * блока, дробить визуально не нужно.
+ */
+export function RentalsFiltersChips({
+  value,
+  onChange,
+}: {
+  value: FiltersState;
+  onChange: (next: FiltersState) => void;
+}) {
+  return (
+    <div className="inline-flex flex-wrap rounded-full bg-surface-soft p-0.5">
+      {STATUS_TABS.map((t) => (
+        <button
+          key={t.id}
+          type="button"
+          onClick={() => onChange({ ...value, status: t.id })}
+          className={cn(
+            "rounded-full px-3 py-1 text-[12px] font-semibold transition-colors",
+            value.status === t.id
+              ? "bg-white text-ink shadow-card-sm"
+              : "text-muted hover:text-ink",
+          )}
+        >
+          {t.label}
+        </button>
+      ))}
     </div>
   );
 }
