@@ -94,7 +94,7 @@ export function DocsInline({ rental }: { rental: Rental }) {
           {Object.keys(DOC_META).length} шаблона
         </span>
       </div>
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
         {(Object.keys(DOC_META) as DocType[]).map((t) => {
           const meta = DOC_META[t];
           const Icon = meta.icon;
@@ -102,24 +102,24 @@ export function DocsInline({ rental }: { rental: Rental }) {
             <div
               key={t}
               title={meta.title}
-              className="group flex min-w-0 items-center gap-2 rounded-[12px] border border-border bg-white p-2.5 shadow-[0_1px_0_rgba(15,23,42,0.02)] transition-colors hover:border-blue-100 hover:bg-blue-50/40"
+              className="group flex min-w-0 items-center gap-2 rounded-[12px] border border-border bg-white p-2 shadow-[0_1px_0_rgba(15,23,42,0.02)] transition-colors hover:border-blue-100 hover:bg-blue-50/40"
             >
               <button
                 type="button"
                 onClick={() => setPreview(t)}
                 className="flex min-w-0 flex-1 items-center gap-2 text-left"
               >
-                <div className="h-10 w-10 rounded-[10px] bg-blue-50 text-blue-700 flex items-center justify-center flex-col shrink-0">
+                <div className="h-9 w-9 rounded-[10px] bg-blue-50 text-blue-700 flex items-center justify-center flex-col shrink-0">
                 <Icon size={12} />
                 <span className="text-[7px] font-bold uppercase tabular-nums mt-0.5">
                   {meta.badge}
                 </span>
                 </div>
-                <div className="min-w-0 flex-1">
-                <div className="text-[12px] font-bold text-ink leading-tight whitespace-normal break-words">
+                <div className="min-w-0 flex-1" style={{ wordBreak: "normal", overflowWrap: "break-word" }}>
+                <div className="text-[11px] font-bold text-ink leading-tight whitespace-normal">
                   {meta.title}
                 </div>
-                <div className="text-[10px] text-muted leading-tight mt-0.5">
+                <div className="text-[10px] text-muted leading-tight mt-0.5 whitespace-normal">
                   {meta.short}
                 </div>
                 </div>

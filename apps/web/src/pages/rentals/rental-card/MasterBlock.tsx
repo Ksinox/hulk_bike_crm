@@ -141,7 +141,7 @@ export function MasterBlock({
               className="h-full w-full rounded-[14px] overflow-hidden flex items-center justify-center border border-border group-hover:border-blue-600 transition-colors relative"
               style={{
                 background: client
-                  ? `linear-gradient(135deg, ${clientColor(client.id)}33, ${clientColor(client.id)}11)`
+                  ? `linear-gradient(135deg, ${clientColor(client.id)}55, ${clientColor(client.id)}22)`
                   : "var(--surface-soft)",
               }}
             >
@@ -153,10 +153,9 @@ export function MasterBlock({
                 />
               ) : (
                 <span
-                  className="font-display text-[32px] font-extrabold"
+                  className="font-display text-[44px] font-extrabold leading-none tracking-tight"
                   style={{
                     color: client ? clientColor(client.id) : "#94a3b8",
-                    opacity: 0.55,
                   }}
                 >
                   {client ? initialsOf(client.name) : "?"}
@@ -422,9 +421,10 @@ export function MasterBlock({
                     </button>
                     <div
                       className={cn(
-                        "mt-1 text-center text-[9.5px] font-bold leading-tight break-words",
+                        "mt-1 text-center text-[10.5px] font-bold leading-tight whitespace-normal",
                         isFree ? "text-green-ink" : "text-blue-700",
                       )}
+                      style={{ wordBreak: "normal", overflowWrap: "break-word" }}
                     >
                       {it.name}
                     </div>
@@ -479,13 +479,14 @@ export function MasterBlock({
                   </button>
                   <div
                     className={cn(
-                      "mt-1 text-[9.5px] font-semibold text-center break-words leading-tight",
+                      "mt-1 text-[10.5px] font-semibold text-center leading-tight whitespace-normal",
                       swapIdx === -1 && pendingItem
                         ? pendingItem.free
                           ? "text-green-ink"
                           : "text-blue-700"
                         : "text-muted-2",
                     )}
+                    style={{ wordBreak: "normal", overflowWrap: "break-word" }}
                   >
                     {swapIdx === -1 && pendingItem ? pendingItem.name : "Добавить"}
                   </div>

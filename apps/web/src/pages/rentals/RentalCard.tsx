@@ -1477,7 +1477,7 @@ export function RentalCard({
           ЛЕВО: MasterBlock — клиент + скутер + экипировка
           ПРАВО: CalendarPanel + DocsInline (документы)
           Старые табы «Условия/История/Задачи/Документы» убраны. */}
-      <div className="grid flex-1 gap-4 lg:grid-cols-2 min-h-0">
+      <div className="grid flex-1 gap-4 xl:grid-cols-2 min-h-0">
         {/* Левая колонка */}
         <div className="flex flex-col gap-4 min-w-0">
           <MasterBlock
