@@ -1347,12 +1347,16 @@ export function RentalCard({
               : 0;
           const overdueBalance =
             debtSummary?.overdueBalance ?? overdueLocal;
+          const overdueDaysBalance = debtSummary?.overdueDaysBalance ?? 0;
+          const overdueFineBalance = debtSummary?.overdueFineBalance ?? 0;
           const damageBalance = debtSummary?.damageBalance ?? totalDebt;
           const manualBalance = debtSummary?.manualBalance ?? 0;
           const debt = pending + overdueBalance + damageBalance + manualBalance;
           const parts: string[] = [];
           if (pending > 0) parts.push(`не оплачено ${fmt(pending)} ₽`);
-          if (overdueBalance > 0)
+          if (overdueDaysBalance > 0) parts.push(`дни ${fmt(overdueDaysBalance)} ₽`);
+          if (overdueFineBalance > 0) parts.push(`штраф ${fmt(overdueFineBalance)} ₽`);
+          if (overdueBalance > 0 && overdueDaysBalance + overdueFineBalance === 0)
             parts.push(`просрочка ${fmt(overdueBalance)} ₽`);
           if (damageBalance > 0) parts.push(`ущерб ${fmt(damageBalance)} ₽`);
           if (manualBalance > 0) parts.push(`ручной ${fmt(manualBalance)} ₽`);
@@ -1515,13 +1519,18 @@ export function RentalCard({
         const isLive = rental.status === "active";
         if (!isLive) return null;
         const overdueB = debtSummary?.overdueBalance ?? 0;
+        const overdueDaysB = debtSummary?.overdueDaysBalance ?? 0;
+        const overdueFineB = debtSummary?.overdueFineBalance ?? 0;
         const damageB = debtSummary?.damageBalance ?? totalDebt;
         const manualB = debtSummary?.manualBalance ?? 0;
         const totalDebtSum = pending + overdueB + damageB + manualB;
         const hasDebt = totalDebtSum > 0;
         const parts: string[] = [];
         if (pending > 0) parts.push(`не оплачено ${fmt(pending)} ₽`);
-        if (overdueB > 0) parts.push(`просрочка ${fmt(overdueB)} ₽`);
+        if (overdueDaysB > 0) parts.push(`дни ${fmt(overdueDaysB)} ₽`);
+        if (overdueFineB > 0) parts.push(`штраф ${fmt(overdueFineB)} ₽`);
+        if (overdueB > 0 && overdueDaysB + overdueFineB === 0)
+          parts.push(`просрочка ${fmt(overdueB)} ₽`);
         if (damageB > 0) parts.push(`ущерб ${fmt(damageB)} ₽`);
         if (manualB > 0) parts.push(`ручной ${fmt(manualB)} ₽`);
 
