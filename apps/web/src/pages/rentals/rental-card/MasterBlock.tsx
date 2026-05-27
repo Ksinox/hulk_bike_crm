@@ -27,7 +27,6 @@ import {
   Camera,
   Clock,
   Pencil,
-  Phone,
   Plus,
   Repeat,
   Shield,
@@ -169,77 +168,75 @@ export function MasterBlock({
             </div>
           </button>
 
-          {/* Правая часть — имя, рейтинг, телефоны, KPI. */}
-          <div className="flex-1 min-w-0 flex flex-col gap-2">
-            {/* Имя + рейтинг ОДНОЙ строкой. */}
-            <div className="flex items-center gap-2 min-w-0">
+          {/* Правая часть — имя, рейтинг, телефоны без подписей, KPI inline.
+              v0.6.49: чищу — убираю двухколоночные label/value, телефоны
+              просто в столбик, KPI — одна строка с маленькими иконками. */}
+          <div className="flex-1 min-w-0">
+            {/* Имя + рейтинг ОДНОЙ строкой + карандаш справа. */}
+            <div className="flex items-start justify-between gap-2 min-w-0">
               <button
                 type="button"
                 onClick={onOpenClientProfile}
-                className="text-left group min-w-0"
+                className="text-left group min-w-0 inline-flex items-center gap-1.5"
                 title="Открыть профиль клиента"
               >
-                <h2 className="font-display text-[21px] leading-[1.1] font-extrabold text-ink tracking-tight truncate group-hover:text-blue-700 group-hover:underline decoration-2 underline-offset-2">
+                <h2 className="font-display text-[20px] leading-[1.15] font-bold text-ink tracking-tight truncate group-hover:text-blue-700">
                   {client?.name ?? "Клиент не найден"}
                 </h2>
-              </button>
-              {client && (
-                <div className="inline-flex items-center gap-0.5 text-[12px] shrink-0">
-                  <Star size={12} className="text-orange" />
-                  <span className="tabular-nums font-bold text-ink-2">
-                    {client.rating}
+                {client && (
+                  <span className="inline-flex items-center gap-0.5 shrink-0">
+                    <Star size={12} className="text-orange" />
+                    <span className="tabular-nums font-semibold text-[12px] text-muted-2">
+                      {client.rating}
+                    </span>
                   </span>
-                </div>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={onOpenClientProfile}
+                title="Редактировать клиента"
+                className="shrink-0 inline-flex h-7 w-7 items-center justify-center rounded-full text-muted-2 hover:bg-blue-50 hover:text-blue-700 transition-colors"
+              >
+                <Pencil size={14} />
+              </button>
+            </div>
+
+            {/* Телефоны без подписей — просто в столбик. */}
+            <div className="mt-2 flex flex-col gap-1">
+              {client?.phone ? (
+                <a
+                  href={`tel:${client.phone.replace(/[^+0-9]/g, "")}`}
+                  className="text-[13.5px] tabular-nums text-ink hover:text-blue-700"
+                >
+                  {client.phone}
+                </a>
+              ) : (
+                <span className="text-[13.5px] text-muted-2 italic">— нет телефона</span>
+              )}
+              {client?.extraPhone && (
+                <span className="text-[13.5px] tabular-nums text-ink">
+                  {client.extraPhone}
+                </span>
               )}
             </div>
 
-            {/* Телефоны двухколоночные (label слева, value справа). */}
-            <div className="flex flex-col gap-1 text-[12px]">
-              <PhoneLine
-                label="Телефон"
-                value={
-                  client?.phone ? (
-                    <a
-                      href={`tel:${client.phone.replace(/[^+0-9]/g, "")}`}
-                      className="tabular-nums font-semibold text-ink-2 hover:text-blue-700 inline-flex items-center gap-1"
-                    >
-                      <Phone size={11} /> {client.phone}
-                    </a>
-                  ) : (
-                    <span className="text-muted-2 italic">— нет</span>
-                  )
-                }
-              />
-              <PhoneLine
-                label="Доп. телефон"
-                value={
-                  client?.extraPhone ? (
-                    <span className="tabular-nums text-ink-2">
-                      {client.extraPhone}
-                    </span>
-                  ) : (
-                    <span className="text-muted-2 italic">— нет</span>
-                  )
-                }
-              />
-            </div>
-
-            {/* KPI «N дней в аренде | Y₽ принёс» — внутри той же карточки. */}
-            <div className="mt-auto flex items-center gap-4 flex-wrap text-[12px]">
-              <div className="inline-flex items-center gap-1.5">
-                <Clock size={13} className="text-blue-600" />
-                <span className="font-bold tabular-nums text-ink">
+            {/* KPI «N дней в аренде     Y₽ принёс» — одна строка. */}
+            <div className="mt-3 flex items-center gap-4 flex-wrap text-[12.5px] text-muted">
+              <span className="inline-flex items-center gap-1">
+                <Clock size={13} />
+                <span className="font-bold tabular-nums text-ink-2">
                   {fmt(clientStats.totalDays)}
                 </span>
-                <span className="text-muted-2 text-[11px]">{pluralDays(clientStats.totalDays)} в аренде</span>
-              </div>
-              <div className="inline-flex items-center gap-1.5">
-                <Wallet size={13} className="text-green-ink" />
-                <span className="font-bold tabular-nums text-ink">
-                  {fmt(clientStats.totalPaid)}
+                <span>{pluralDays(clientStats.totalDays)} в аренде</span>
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <Wallet size={13} />
+                <span className="font-bold tabular-nums text-ink-2">
+                  {fmt(clientStats.totalPaid)} ₽
                 </span>
-                <span className="text-muted-2 text-[11px]">₽ принёс</span>
-              </div>
+                <span>принёс</span>
+              </span>
             </div>
           </div>
         </div>
@@ -501,23 +498,6 @@ export function MasterBlock({
           <div className="mt-0.5 text-[10px] text-muted truncate">свободные средства</div>
         </div>
       </div>
-    </div>
-  );
-}
-
-function PhoneLine({
-  label,
-  value,
-}: {
-  label: string;
-  value: React.ReactNode;
-}) {
-  return (
-    <div className="flex items-baseline gap-2">
-      <span className="text-[11px] font-semibold text-muted-2 w-[84px] shrink-0">
-        {label}
-      </span>
-      <span className="flex-1 min-w-0 text-right whitespace-nowrap">{value}</span>
     </div>
   );
 }

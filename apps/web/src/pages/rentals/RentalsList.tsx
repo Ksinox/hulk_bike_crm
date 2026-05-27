@@ -1,16 +1,17 @@
 /**
- * RentalsList v0.6.44 — список аренд по новому эталону.
+ * RentalsList v0.6.49 — список аренд по эталону.
  *
- * Каждый элемент:
- *   • Слева — фото клиента 60×60 (или цветной круг с инициалами).
- *     Под фото — мелкий бейдж «N дн» (просрочка / до возврата).
- *   • Центр — ФИО (bold), «Jog #02 · 11 111 км», дата+время выдачи.
- *   • Справа — сумма долга красным (или «нет долга» серым).
- *   • Левый бордер 4px цвета статуса (red overdue / green active /
- *     orange returning / blue new / gray иначе).
- *   • Активная аренда подсвечивается мягким фоном (красноватым если
- *     есть долг, иначе нейтрально-голубым).
+ * Каждый элемент шире (p-3) и воздушнее:
+ *   • Слева — круглая аватарка 56px (фото или цветной круг с инициалами).
+ *     Снизу аватарки — бейдж с количеством дней («12д» красным при
+ *     просрочке, зелёным/синим иначе).
+ *   • Центр — ФИО (font-bold 14px), «Jog #02 · 11 111 км», дата+время.
+ *   • Справа — крупно сумма долга красным + «долг»; либо «0 ₽» серым +
+ *     «платежей нет». Дальше ChevronRight.
+ *   • Красная рамка (border-2 border-red-200) если есть долг/overdue.
+ *   • Активная — ring-2 ring-blue-400.
  */
+import { ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { type Rental } from "@/lib/mock/rentals";
 import { effectiveRentalStatus } from "@/lib/rentalStatus";
@@ -64,17 +65,15 @@ export function RentalsList({
   }
 
   return (
-    <div className="overflow-hidden rounded-2xl bg-surface shadow-card-sm">
-      <div className="scrollbar-thin max-h-[calc(100vh-260px)] overflow-y-auto overflow-x-hidden">
-        {items.map((r) => (
-          <RentalRow
-            key={r.id}
-            rental={r}
-            active={r.id === selectedId}
-            onSelect={onSelect}
-          />
-        ))}
-      </div>
+    <div className="scrollbar-thin max-h-[calc(100vh-260px)] overflow-y-auto overflow-x-hidden flex flex-col gap-2 pr-1">
+      {items.map((r) => (
+        <RentalRow
+          key={r.id}
+          rental={r}
+          active={r.id === selectedId}
+          onSelect={onSelect}
+        />
+      ))}
     </div>
   );
 }
@@ -99,49 +98,28 @@ function RentalRow({
     ? myDebt.overdueBalance + myDebt.damageBalance + myDebt.manualBalance
     : 0;
   const pendingRent = myDebt?.pendingRent ?? 0;
-  // Сумма для правой колонки: реальный долг (просрочка+ущерб+ручной).
-  // Если 0 — pending (плановые неоплаченные платежи). Если оба 0 — «—».
-  const rightSum = realDebt > 0 ? realDebt : pendingRent;
-  const rightLabel = realDebt > 0 ? "долг" : pendingRent > 0 ? "к оплате" : "";
+  const hasDebt = realDebt > 0;
+  const rightSum = hasDebt ? realDebt : pendingRent;
 
   const effStatus = effectiveRentalStatus(r.status, r.endPlanned, realDebt);
   const isOverdue = effStatus === "overdue";
-  const isReturning = effStatus === "returning";
-  const isActive = effStatus === "active";
 
-  // Бейдж дней слева под фото.
+  // Бейдж дней под аватаркой.
   const delta = daysToEnd(r.endPlanned);
+  const overdueDays = delta < 0 ? Math.abs(delta) : 0;
+  const daysLeft = delta > 0 ? delta : 0;
   const badgeText =
-    isOverdue && delta < 0
-      ? `${Math.abs(delta)}д`
+    isOverdue && overdueDays > 0
+      ? `${overdueDays}д`
       : delta === 0
-        ? "сегодня"
-        : delta > 0 && delta <= 7
-          ? `${delta}д`
-          : "";
+        ? "0д"
+        : `${daysLeft}д`;
   const badgeTone =
-    isOverdue
-      ? "bg-red-soft text-red-ink"
+    isOverdue || hasDebt
+      ? "bg-red-600 text-white"
       : delta === 0
-        ? "bg-orange-soft text-orange-ink"
-        : "bg-blue-50 text-blue-700";
-
-  // Левый бордер 4px по статусу.
-  const accentColor =
-    isOverdue
-      ? "bg-red"
-      : isReturning
-        ? "bg-orange"
-        : isActive
-          ? "bg-green"
-          : effStatus === "new_request" || effStatus === "meeting"
-            ? "bg-blue"
-            : "bg-border";
-
-  // Подсветка активной строки.
-  const activeBg = isOverdue
-    ? "bg-red-soft/35 hover:bg-red-soft/45"
-    : "bg-blue-50/60 hover:bg-blue-50";
+        ? "bg-orange-500 text-white"
+        : "bg-emerald-500 text-white";
 
   // Пробег скутера из API.
   const scooter = r.scooterId
@@ -149,36 +127,27 @@ function RentalRow({
     : null;
   const mileage = scooter?.mileage ?? null;
 
+  const danger = isOverdue || hasDebt;
+
   return (
     <button
       type="button"
       onClick={() => onSelect(r.id)}
       className={cn(
-        "relative flex w-full items-stretch gap-3 border-b border-border/60 px-3 py-3 pl-4 text-left transition-colors last:border-b-0",
-        "before:absolute before:left-0 before:top-0 before:h-full before:w-[4px]",
-        `before:${accentColor}`.replace("before:bg-", "before:!bg-"),
-        active ? activeBg : "hover:bg-surface-soft/70",
+        "w-full flex items-center gap-3 rounded-2xl p-3 text-left transition-colors",
+        danger
+          ? "border-2 border-red-200 bg-red-soft/20 hover:bg-red-soft/30"
+          : "border border-border bg-surface hover:bg-surface-soft/70",
+        active && "ring-2 ring-blue-400",
       )}
-      style={{
-        // динамический left-accent через CSS-переменную чтобы Tailwind
-        // JIT не выбрасывал из биндинга
-      }}
     >
-      <span
-        aria-hidden
-        className={cn(
-          "absolute left-0 top-0 h-full w-[4px]",
-          accentColor,
-        )}
-      />
-
-      {/* Фото клиента 60×60 + бейдж дней под ним. */}
-      <div className="flex shrink-0 flex-col items-center gap-1">
+      {/* Аватарка 56×56 + бейдж дней снизу. */}
+      <div className="relative shrink-0">
         <span
-          className="relative flex h-[60px] w-[60px] shrink-0 items-center justify-center overflow-hidden rounded-[12px] border border-border"
+          className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-full"
           style={{
             background: c
-              ? `linear-gradient(135deg, ${clientColor(c.id)}33, ${clientColor(c.id)}11)`
+              ? clientColor(c.id)
               : "var(--surface-soft)",
           }}
         >
@@ -189,73 +158,67 @@ function RentalRow({
               className="h-full w-full object-cover"
             />
           ) : (
-            <span
-              className="font-display text-[18px] font-extrabold"
-              style={{
-                color: c ? clientColor(c.id) : "#94a3b8",
-                opacity: 0.55,
-              }}
-            >
+            <span className="font-display text-[16px] font-bold leading-none text-white">
               {c ? initialsOf(c.name) : "?"}
             </span>
           )}
         </span>
-        {badgeText && (
-          <span
-            className={cn(
-              "rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none tabular-nums",
-              badgeTone,
-            )}
-          >
-            {badgeText}
-          </span>
-        )}
+        <span
+          className={cn(
+            "absolute -bottom-1 left-1/2 -translate-x-1/2 rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none tabular-nums shadow-card-sm",
+            badgeTone,
+          )}
+        >
+          {badgeText}
+        </span>
       </div>
 
-      {/* Центр — имя, скутер, дата выдачи. */}
-      <div className="min-w-0 flex-1 flex flex-col justify-center gap-0.5">
+      {/* Контент справа от аватарки. */}
+      <div className="min-w-0 flex-1 flex flex-col gap-0.5">
         <div
           className="text-[14px] font-bold leading-tight text-ink line-clamp-1"
           title={c?.name ?? undefined}
         >
           {c?.name ?? "Клиент #" + r.clientId}
         </div>
-        <div className="text-[11.5px] text-muted-2 leading-tight truncate">
-          <span className="font-semibold text-ink-2">{r.scooter}</span>
+        <div className="text-[12px] text-muted leading-tight truncate">
+          {r.scooter}
           {mileage != null && (
             <>
-              <span className="mx-1 opacity-40">·</span>
+              <span className="mx-1 opacity-50">·</span>
               <span className="tabular-nums">{fmt(mileage)} км</span>
             </>
           )}
         </div>
-        <div className="text-[11px] text-muted-2 leading-tight tabular-nums">
+        <div className="text-[11.5px] text-muted-2 leading-tight tabular-nums mt-0.5">
           {r.start} {r.startTime && <>· {r.startTime}</>}
         </div>
       </div>
 
-      {/* Правый верх — сумма долга. */}
-      <div className="shrink-0 flex flex-col items-end justify-center gap-0.5 pr-1">
-        {rightSum > 0 ? (
+      {/* Правая колонка — долг или 0. */}
+      <div className="shrink-0 text-right flex flex-col items-end gap-0.5">
+        {hasDebt ? (
           <>
-            <div className="text-[15px] font-extrabold tabular-nums text-red-ink leading-none">
+            <div className="text-[16px] font-bold tabular-nums text-red-ink leading-none">
               {fmt(rightSum)} ₽
             </div>
-            <div className="text-[10px] uppercase tracking-wider text-red-ink/70 font-semibold">
-              {rightLabel}
+            <div className="text-[10.5px] font-semibold text-red-ink/80">
+              долг
             </div>
           </>
         ) : (
           <>
-            <div className="text-[13px] font-bold tabular-nums text-muted leading-none">
-              0 ₽
+            <div className="text-[15px] font-semibold tabular-nums text-muted leading-none">
+              {pendingRent > 0 ? `${fmt(pendingRent)} ₽` : "0 ₽"}
             </div>
-            <div className="text-[10px] uppercase tracking-wider text-muted-2 font-semibold">
-              без долга
+            <div className="text-[10.5px] text-muted-2">
+              {pendingRent > 0 ? "к оплате" : "платежей нет"}
             </div>
           </>
         )}
       </div>
+
+      <ChevronRight size={16} className="shrink-0 text-muted-2" />
     </button>
   );
 }

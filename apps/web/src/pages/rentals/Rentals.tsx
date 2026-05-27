@@ -399,58 +399,9 @@ export function Rentals() {
   // но KPI-полоску с него больше не рендерим (она переехала в карточку).
   void kpi;
 
-  // v0.6.46: выбранная аренда занимает весь контейнер — список + header
-  // страницы скрываются, чтобы у карточки была полная ширина (минус
-  // sidebar). Иначе при открытой карточке `grid-cols-3` (документы) и
-  // `xl:grid-cols-2` (карточка) ломались из-за зажатой колонки ~520px.
-  const selectedRental = selectedId != null
-    ? rentals.find((r) => r.id === selectedId)
-    : undefined;
-  const hasSelected = selectedRental != null;
-
-  if (hasSelected) {
-    return (
-      <main className="flex min-w-0 flex-1 flex-col gap-4">
-        <Topbar />
-        <ErrorBoundary key={selectedRental.id}>
-          <RentalCard
-            rental={selectedRental}
-            initialTab={pendingTab ?? undefined}
-            onClose={() => setSelectedId(null)}
-            onSwapped={(newId) => {
-              setSelectedId(newId);
-              setSwapActPreviewId(newId);
-            }}
-          />
-        </ErrorBoundary>
-
-        {swapActPreviewId != null && (
-          <ActTransferPreview
-            rentalId={swapActPreviewId}
-            onClose={() => setSwapActPreviewId(null)}
-          />
-        )}
-
-        {newOpen && (
-          <NewRentalModal
-            onClose={() => setNewOpen(false)}
-            onCreated={(r) => {
-              setSelectedId(r.id);
-              setAutoDocRentalId(r.id);
-            }}
-          />
-        )}
-
-        {autoDocRentalId != null && (
-          <AutoContractPreview
-            rentalId={autoDocRentalId}
-            onClose={() => setAutoDocRentalId(null)}
-          />
-        )}
-      </main>
-    );
-  }
-
+  // v0.6.49: ВЕРНУТЬ split-layout — список аренд ВСЕГДА слева 420px,
+  // карточка справа. Условную ветку «hasSelected → full-screen» убрали
+  // (она сломалась в v0.6.48).
   return (
     <main className="flex min-w-0 flex-1 flex-col gap-4">
       <Topbar />
@@ -506,12 +457,39 @@ export function Rentals() {
         <RentalsFilters value={filters} onChange={setFilters} />
       )}
 
-      <div className="flex-1">
+      <div className="grid flex-1 gap-4 lg:grid-cols-[420px_minmax(0,1fr)]">
         <RentalsList
           items={filtered}
           selectedId={selectedId}
           onSelect={setSelectedId}
         />
+
+        {(() => {
+          const selected = rentals.find((r) => r.id === selectedId);
+          if (!selected) {
+            return (
+              <div className="flex min-h-[400px] items-center justify-center rounded-2xl bg-surface p-10 text-center shadow-card-sm">
+                <div className="text-[13px] text-muted">
+                  Выберите аренду из списка
+                </div>
+              </div>
+            );
+          }
+          return (
+            <ErrorBoundary key={selected.id}>
+              <RentalCard
+                rental={selected}
+                initialTab={pendingTab ?? undefined}
+                onSwapped={(newId) => {
+                  // Свап успешен: переключаем фокус на новую связку
+                  // и поднимаем превью акта замены поверх карточки.
+                  setSelectedId(newId);
+                  setSwapActPreviewId(newId);
+                }}
+              />
+            </ErrorBoundary>
+          );
+        })()}
       </div>
 
       {swapActPreviewId != null && (

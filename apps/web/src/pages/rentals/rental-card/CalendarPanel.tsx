@@ -78,28 +78,26 @@ export function CalendarPanel({
   const dragDisabled = isArchived || isCompleted || !onCommitExtend;
 
   return (
-    <div className="rounded-2xl bg-surface border border-border shadow-card-sm p-4">{/* v0.6.40: padding p-4 — компактнее */}
-      {/* v0.6.39: заголовок «Дата возврата» — обычным регистром, без
-          uppercase, шрифт побольше. Срок аренды справа УБРАН (есть в header). */}
+    <div className="rounded-2xl bg-surface border border-border shadow-card-sm p-4">
+      {/* v0.6.49: заголовок «ДАТА ВОЗВРАТА» — uppercase серым по эталону. */}
       <div className="flex items-center justify-between mb-2.5">
-        <div className="inline-flex items-center gap-1.5 text-[14px] font-semibold text-ink">
-          <Calendar size={14} />
+        <div className="inline-flex items-center gap-1.5 text-[13px] font-semibold uppercase tracking-wide text-muted-2">
           Дата возврата
           <span
             title="Календарь аренды: синяя зона — оплаченный период, красная — просрочка, зелёная — выбранное продление. Клик по дню после планового конца — продлить."
-            className="inline-flex items-center justify-center h-4 w-4 rounded-full bg-surface-soft text-muted-2 hover:bg-border hover:text-ink cursor-help"
+            className="inline-flex items-center justify-center h-4 w-4 rounded-full text-muted-2 hover:text-ink cursor-help"
             aria-label="Подсказка по зонам календаря"
           >
-            <HelpCircle size={10} />
+            <HelpCircle size={11} />
           </span>
         </div>
       </div>
-      {/* v0.6.39: легенда — «текущий период» переименован в «оплачено». */}
-      <div className="mb-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10.5px] text-muted">
-        <LegendDot swatch="bg-blue-200" label="выдача" />
-        <LegendDot swatch="bg-blue-200" label="оплачено" />
-        {isOverdue && <LegendDot swatch="bg-red-200" label="просрочка" />}
-        <LegendDot swatch="bg-emerald-200" label="продление" />
+      {/* v0.6.49: легенда — простые цветные точки без рамок. */}
+      <div className="mb-3 flex flex-wrap items-center gap-4 text-[12px] text-muted-2">
+        <LegendDot swatch="bg-blue-400" label="выдача" />
+        <LegendDot swatch="bg-blue-300" label="оплачено" />
+        {isOverdue && <LegendDot swatch="bg-red-400" label="просрочка" />}
+        <LegendDot swatch="bg-emerald-400" label="продление" />
       </div>
       <div className="grid grid-cols-2 gap-3 mb-3">
         <ScheduleBlock
@@ -141,8 +139,8 @@ export function CalendarPanel({
 
 function LegendDot({ swatch, label }: { swatch: string; label: string }) {
   return (
-    <div className="flex items-center gap-1">
-      <span className={cn("inline-block size-2.5 rounded-sm", swatch)} />
+    <div className="flex items-center gap-1.5">
+      <span className={cn("inline-block h-2 w-2 rounded-full", swatch)} />
       <span>{label}</span>
     </div>
   );
@@ -162,21 +160,15 @@ function ScheduleBlock({
   overdueDays?: number;
 }) {
   const isOut = kind === "out";
-  // v0.6.39: 2-й блок «Возврат» НЕ красится в красный при просрочке —
-  // статус о просрочке уже есть в header'е карточки. Бордер/фон
-  // нейтральные; «просрочен N дн» — мелкий красный текст внутри блока.
+  // v0.6.49: компактная карточка с тонким бордером, без яркого фона.
+  // Иконка-календарь + лейбл серым; дата + время крупно тёмным.
   return (
-    <div className="rounded-[12px] border border-border bg-surface-soft px-3 py-2.5">
-      <div
-        className={cn(
-          "flex items-center gap-1.5 text-[11px] font-semibold",
-          isOut ? "text-blue-700" : "text-ink-2",
-        )}
-      >
+    <div className="rounded-[12px] border border-border bg-surface px-3 py-2.5">
+      <div className="flex items-center gap-1.5 text-[11px] font-semibold text-muted-2">
         <Calendar size={11} />
-        {isOut ? "Выдано" : "Текущий возврат"}
+        {isOut ? "Выдано" : "Возврат"}
       </div>
-      <div className="mt-1 font-display text-[15px] font-extrabold text-ink tabular-nums">
+      <div className="mt-1 font-display text-[15px] font-bold text-ink tabular-nums">
         {date} · {time}
       </div>
       {overdue && !isOut && (
