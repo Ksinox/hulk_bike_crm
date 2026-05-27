@@ -34,12 +34,10 @@ export function RentalsList({
   items,
   selectedId,
   onSelect,
-  focusMode = false,
 }: {
   items: Rental[];
   selectedId: number | null;
   onSelect: (id: number) => void;
-  focusMode?: boolean;
 }) {
   if (items.length === 0) {
     return (
@@ -57,12 +55,7 @@ export function RentalsList({
 
   return (
     <div className="relative overflow-hidden rounded-2xl bg-surface shadow-card-sm">
-      <div
-        className={cn(
-          "scrollbar-thin overflow-y-auto overflow-x-hidden px-1.5 py-14",
-          focusMode ? "max-h-[calc(100vh-132px)]" : "max-h-[calc(100vh-340px)]",
-        )}
-      >
+      <div className="scrollbar-thin max-h-[calc(100vh-340px)] overflow-y-auto overflow-x-hidden px-1.5 py-14">
         {items.map((r) => (
           <RentalRow
             key={r.id}

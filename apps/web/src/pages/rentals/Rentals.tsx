@@ -477,7 +477,6 @@ export function Rentals() {
                     items={filtered}
                     selectedId={selectedId}
                     onSelect={setSelectedId}
-                    focusMode
                   />
                 )}
               </div>

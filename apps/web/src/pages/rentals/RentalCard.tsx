@@ -4,11 +4,11 @@ import {
   ArrowRight,
   Calendar,
   CheckCircle2,
+  Flag,
   PhoneOff,
   ThumbsUp,
   Plus,
   Repeat,
-  Shield,
   ShieldAlert,
   Star,
   Wallet,
@@ -996,6 +996,40 @@ export function RentalCard({
           )}
         </h2>
 
+        {/* v0.6.41: быстрые действия в шапке — «Завершить аренду» и
+            «Принять оплату». Заменяют большие плашки внизу карточки,
+            экономят место и держат основные кнопки на виду при скролле. */}
+        {(() => {
+          const isLive = rental.status === "active";
+          const canComplete = isLive && !isArchived;
+          const canAcceptPayment = isLive && !isArchived;
+          if (!canComplete && !canAcceptPayment) return null;
+          return (
+            <div className="flex shrink-0 items-center gap-2">
+              {canComplete && (
+                <button
+                  type="button"
+                  onClick={() => setAction("complete")}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1.5 text-[12px] font-semibold text-ink-2 hover:bg-surface-soft hover:text-ink"
+                  title="Завершить аренду"
+                >
+                  <Flag size={13} /> Завершить
+                </button>
+              )}
+              {canAcceptPayment && (
+                <button
+                  type="button"
+                  onClick={() => setPaymentRentalId(rental.id)}
+                  className="inline-flex items-center gap-1.5 rounded-full bg-green-600 px-3 py-1.5 text-[12px] font-bold text-white shadow-card-sm hover:bg-green-700"
+                  title="Принять оплату"
+                >
+                  <Wallet size={13} /> Принять оплату
+                </button>
+              )}
+            </div>
+          );
+        })()}
+
         {/* ACTIONS — одна primary + dropdown */}
         <RentalActionsMenu actions={actions} onAction={handleAction} />
       </header>
@@ -1409,56 +1443,8 @@ export function RentalCard({
         </div>
       )}
 
-      {/* v0.5.9: плашка залога — только для активных аренд. У завершённых
-          аренд (status='completed') не показываем — там либо залог
-          возвращён клиенту, либо удержан, либо ушёл в погашение долга,
-          и состояние «нужно пополнить» уже не имеет смысла. Кнопка
-          «Пополнить» теперь открывает PaymentAcceptDialog. */}
-      {(() => {
-        if (rental.status === "completed") return null;
-        const isItem =
-          (rental as { depositItem?: string | null }).depositItem != null;
-        if (isItem) return null;
-        const current = rental.deposit ?? 0;
-        const original =
-          (rental as { depositOriginal?: number }).depositOriginal ?? current;
-        if (current >= original) return null;
-        const isEmpty = current === 0;
-        return (
-          <div
-            className={cn(
-              "flex items-center justify-between gap-3 rounded-[10px] border px-3 py-2 text-[12px]",
-              isEmpty
-                ? "border-red-300 bg-red-soft/40 text-red-ink animate-pulse"
-                : "border-amber-300 bg-amber-50 text-amber-900",
-            )}
-          >
-            <div className="flex items-center gap-2 min-w-0">
-              <Shield
-                size={14}
-                className={isEmpty ? "text-red-600" : "text-amber-600"}
-              />
-              <span className="font-semibold">
-                {isEmpty
-                  ? "Залог исчерпан"
-                  : `Залог ${fmt(current)} ₽ из ${fmt(original)} ₽ — списано ${fmt(original - current)} ₽`}
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={() => setPaymentRentalId(rental.id)}
-              className={cn(
-                "shrink-0 rounded-full px-3 py-1 text-[11px] font-bold text-white transition-colors",
-                isEmpty
-                  ? "bg-red-600 hover:bg-red-700"
-                  : "bg-amber-600 hover:bg-amber-700",
-              )}
-            >
-              Пополнить
-            </button>
-          </div>
-        );
-      })()}
+      {/* v0.6.41: плашка «Пополнить залог» удалена — действие доступно
+          через кнопку «Принять оплату» в шапке (одна точка входа). */}
 
       {/* v0.4.49: плашка «Депозит клиента» — отдельный счёт сверх залога.
           Показывается только если depositBalance > 0. Кликом открывает
@@ -1507,91 +1493,9 @@ export function RentalCard({
         ))}
       </div>
 
-      {/* v0.4.49: CTA «Принять платёж» виден на ЛЮБОЙ live-аренде.
-          Долг есть → красная плашка с суммой. Долгов нет → синяя
-          нейтральная (для предоплаты-за-продление через переключатель
-          в модалке). На completed/cancelled — скрыта. */}
-      {(() => {
-        // v0.5: status в БД только active/completed; legacy-литералы
-        // (overdue/returning/problem/completed_damage) оставлены в этом
-        // месте на случай если фронт получил аренду со старой реплики —
-        // безопасно для рантайма.
-        const isLive = rental.status === "active";
-        if (!isLive) return null;
-        const overdueB = debtSummary?.overdueBalance ?? 0;
-        const overdueDaysB = debtSummary?.overdueDaysBalance ?? 0;
-        const overdueFineB = debtSummary?.overdueFineBalance ?? 0;
-        const damageB = debtSummary?.damageBalance ?? totalDebt;
-        const manualB = debtSummary?.manualBalance ?? 0;
-        const totalDebtSum = pending + overdueB + damageB + manualB;
-        const hasDebt = totalDebtSum > 0;
-        const parts: string[] = [];
-        if (pending > 0) parts.push(`не оплачено ${fmt(pending)} ₽`);
-        if (overdueDaysB > 0) parts.push(`дни ${fmt(overdueDaysB)} ₽`);
-        if (overdueFineB > 0) parts.push(`штраф ${fmt(overdueFineB)} ₽`);
-        if (overdueB > 0 && overdueDaysB + overdueFineB === 0)
-          parts.push(`просрочка ${fmt(overdueB)} ₽`);
-        if (damageB > 0) parts.push(`ущерб ${fmt(damageB)} ₽`);
-        if (manualB > 0) parts.push(`ручной ${fmt(manualB)} ₽`);
-
-        if (hasDebt) {
-          return (
-            <button
-              type="button"
-              onClick={() => {
-                if (damageB > 0 && reportWithDebt) {
-                  setPaymentReportId(reportWithDebt.id);
-                } else {
-                  setPaymentRentalId(rental.id);
-                }
-              }}
-              className="flex items-center justify-between gap-3 rounded-[14px] bg-red-soft/60 px-4 py-3 text-left ring-1 ring-inset ring-red-300 transition-colors hover:bg-red-soft"
-            >
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-600 text-white shadow-card-sm">
-                  <Plus size={18} />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-[15px] font-bold text-red-ink">
-                    Принять платёж — {fmt(totalDebtSum)} ₽
-                  </div>
-                  <div className="mt-0.5 text-[11px] text-red-ink/80">
-                    {parts.join(" · ")}
-                  </div>
-                </div>
-              </div>
-              <span className="rounded-full bg-white px-3 py-1.5 text-[12px] font-bold text-red-ink shadow-card-sm">
-                Принять →
-              </span>
-            </button>
-          );
-        }
-        // Долгов нет — нейтральный CTA для предоплаты/продления
-        return (
-          <button
-            type="button"
-            onClick={() => setPaymentRentalId(rental.id)}
-            className="flex items-center justify-between gap-3 rounded-[14px] bg-blue-50 px-4 py-3 text-left ring-1 ring-inset ring-blue-200 transition-colors hover:bg-blue-100"
-          >
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white shadow-card-sm">
-                <Plus size={18} />
-              </div>
-              <div className="min-w-0">
-                <div className="text-[15px] font-bold text-blue-900">
-                  Принять платёж
-                </div>
-                <div className="mt-0.5 text-[11px] text-blue-900/70">
-                  Долгов нет — оплата с продлением или в депозит клиента.
-                </div>
-              </div>
-            </div>
-            <span className="rounded-full bg-white px-3 py-1.5 text-[12px] font-bold text-blue-700 shadow-card-sm">
-              Принять →
-            </span>
-          </button>
-        );
-      })()}
+      {/* v0.6.41: большой CTA «Принять платёж» удалён — действие
+          вынесено в кнопку шапки. Сумма долга остаётся в KPI-блоке
+          и в баннере просрочки выше. */}
 
       <div className="flex-1 pt-3">
         {tab === "terms" && (

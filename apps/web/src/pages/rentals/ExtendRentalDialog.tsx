@@ -360,6 +360,33 @@ export function ExtendRentalDialog({
             />
           </div>
 
+          {/* v0.6.41: явный breakdown, чтобы оператор видел из чего
+              складывается итог (бэк добавляет дневную стоимость
+              платной экипировки). */}
+          {equipmentDaily > 0 && (
+            <div className="rounded-[10px] bg-surface-soft px-3 py-2 text-[11px] text-ink-2">
+              Аренда{" "}
+              <b className="tabular-nums">
+                {rate} ₽/{isWeeklyCustom ? "нед" : "сут"}
+              </b>{" "}
+              ×{" "}
+              <b className="tabular-nums">
+                {isWeeklyCustom ? `${weeks} нед` : `${days} дн`}
+              </b>{" "}
+              ={" "}
+              <b className="tabular-nums">
+                {fmt(isWeeklyCustom ? rate * weeks : rate * days)} ₽
+              </b>
+              {" + "}
+              Экипировка{" "}
+              <b className="tabular-nums">{equipmentDaily} ₽/сут</b> ×{" "}
+              <b className="tabular-nums">{days} дн</b> ={" "}
+              <b className="tabular-nums">{fmt(equipmentDaily * days)} ₽</b>
+              {" → Итого "}
+              <b className="tabular-nums text-blue-700">{fmt(sum)} ₽</b>
+            </div>
+          )}
+
           <div className="rounded-[10px] bg-blue-50 px-3 py-2 text-[11px] text-blue-700">
             По бизнес-логике при продлении подписывается{" "}
             <b>новый договор</b>: старая аренда закроется как «Завершена», будет
