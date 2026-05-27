@@ -20,7 +20,6 @@ import { useDebtAggregate } from "@/lib/api/debt";
 import { useApiScooters } from "@/lib/api/scooters";
 import { useBillingPeriodRevenue } from "@/lib/useRevenue";
 import { ErrorBoundary } from "@/app/ErrorBoundary";
-import { cn } from "@/lib/utils";
 import type { ApiClient } from "@/lib/api/types";
 import {
   matchId,
@@ -427,30 +426,24 @@ export function Rentals() {
 
       <RentalsFilters value={filters} onChange={setFilters} />
 
-      {/* v0.6.29: layout зависит от того, выбрана ли аренда.
-            • Выбрана → grid [420px | 1fr] (список + карточка).
+      {/* v0.6.38: layout зависит от того, выбрана ли аренда.
+            • Выбрана → карточка раскрывается на ВСЮ ширину, список скрыт.
             • Не выбрана → список во всю ширину; карточка не рендерится.
-          Переключение плавное через transition grid-template-columns. */}
+          Это даёт focus mode карточке: вся ширина под layout 2-col. */}
       {(() => {
         const selected = rentals.find((r) => r.id === selectedId);
-        const hasSelected = !!selected;
         return (
-          <div
-            className={cn(
-              "grid flex-1 gap-4 transition-[grid-template-columns] duration-300 ease-out",
-              hasSelected
-                ? "lg:grid-cols-[420px_minmax(0,1fr)]"
-                : "lg:grid-cols-1",
+          <div className="flex flex-1 flex-col gap-4">
+            {!selected && (
+              <RentalsList
+                items={filtered}
+                selectedId={selectedId}
+                onSelect={setSelectedId}
+              />
             )}
-          >
-            <RentalsList
-              items={filtered}
-              selectedId={selectedId}
-              onSelect={setSelectedId}
-            />
             {selected && (
               <ErrorBoundary key={selected.id}>
-                <div className="animate-in fade-in slide-in-from-right-4 duration-300">
+                <div className="animate-in fade-in slide-in-from-right-4 duration-300 min-w-0">
                   <RentalCard
                     rental={selected}
                     initialTab={pendingTab ?? undefined}

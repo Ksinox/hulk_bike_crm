@@ -90,11 +90,15 @@ export function DragExtendCalendar({
   resetSignal,
   disabled,
   cellSize = 11,
+  hideLegend,
 }: {
   startIso: string;
   plannedEndIso: string;
   isOverdue: boolean;
   dailyRate?: number;
+  /** v0.6.38: если true — встроенная легенда внизу скрывается; родитель
+   *  показывает её сам (например, над календарём). */
+  hideLegend?: boolean;
   /** Вызывается при click на день > baseEnd с числом дней продления. */
   onCommitExtend?: (days: number) => void;
   /** Вызывается при каждом изменении preview (синхрон с initialDays). */
@@ -396,17 +400,20 @@ export function DragExtendCalendar({
         </div>
       )}
 
-      {/* Легенда снизу */}
-      <div className="mt-2 px-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10.5px] text-muted">
-        <Legend swatch="bg-blue-200" label="текущий период" />
-        {isOverdue && <Legend swatch="bg-red-200" label="просрочка" />}
-        <Legend swatch="bg-emerald-200" label="продление" />
-        {!disabled && (
-          <div className="ml-auto inline-flex items-center gap-1 text-blue-700 font-semibold">
-            кликните на день — продлить
-          </div>
-        )}
-      </div>
+      {/* Легенда снизу. v0.6.38: если hideLegend — родитель показывает её
+          сам (например, в шапке CalendarPanel). */}
+      {!hideLegend && (
+        <div className="mt-2 px-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10.5px] text-muted">
+          <Legend swatch="bg-blue-200" label="текущий период" />
+          {isOverdue && <Legend swatch="bg-red-200" label="просрочка" />}
+          <Legend swatch="bg-emerald-200" label="продление" />
+          {!disabled && (
+            <div className="ml-auto inline-flex items-center gap-1 text-blue-700 font-semibold">
+              кликните на день — продлить
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

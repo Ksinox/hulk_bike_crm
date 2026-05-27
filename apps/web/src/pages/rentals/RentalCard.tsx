@@ -17,15 +17,17 @@
 import { useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
+  ArrowLeft,
   ArrowRight,
   Calendar,
+  Check,
   CheckCircle2,
   PhoneOff,
   Plus,
   Repeat,
   ShieldAlert,
+  Wallet,
   Wrench,
-  X,
   XCircle,
   Eraser,
   Pencil,
@@ -81,14 +83,15 @@ import { toast } from "@/lib/toast";
 import { ApiError, api } from "@/lib/api";
 
 import { MasterBlock } from "./rental-card/MasterBlock";
-import { KpiStrip } from "./rental-card/KpiStrip";
 import { CalendarPanel } from "./rental-card/CalendarPanel";
-import { HistoryStrip } from "./rental-card/HistoryStrip";
 import { DocsInline } from "./rental-card/DocsInline";
 import { DebtsList } from "./rental-card/DebtsList";
 import { SideDrawer } from "./rental-card/SideDrawer";
 import { OverdueActionsPopover } from "./rental-card/OverdueActionsPopover";
 import { ActivityFeed } from "./rental-card/ActivityFeed";
+import { FinanceGrid } from "./rental-card/FinanceGrid";
+import { InlineHistory } from "./rental-card/InlineHistory";
+import { STATUS_LABEL, STATUS_TONE } from "@/lib/mock/rentals";
 
 type DrawerKind = "history" | "debts" | "profile" | null;
 
@@ -365,9 +368,13 @@ export function RentalCard({
     .filter((p) => activeRentalIdsForPending.has(p.rentalId))
     .reduce((s, p) => s + p.amount, 0);
 
+  // v0.6.38: extensionsCount больше не отображается в карточке (KpiStrip
+  // убран). Оставлен расчёт на будущее, но через void чтобы не падать на
+  // unused-warning.
   const extensionsCount = chainPayments.filter(
     (p) => p.type === "rent" && !!p.note && /^продлен/i.test(p.note),
   ).length;
+  void extensionsCount;
 
   // v0.6.x (Правка 4): «Эта аренда» = последний rent-платёж (старт
   // текущего сегмента) + все equipment_fee платежи, появившиеся ПОСЛЕ
@@ -821,24 +828,108 @@ export function RentalCard({
   };
 
   // ── render ────────────────────────────────────────────────────────
+  // v0.6.38: бейдж статуса для sticky-header'а.
+  const headerTone = STATUS_TONE[effectiveStatus] ?? STATUS_TONE[rental.status];
+  const headerStatusLabel =
+    STATUS_LABEL[effectiveStatus] ?? STATUS_LABEL[rental.status];
+  const statusChipClass = (tone: string): string =>
+    tone === "green"
+      ? "bg-green-soft text-green-ink"
+      : tone === "red"
+        ? "bg-red-soft text-red-ink"
+        : tone === "orange"
+          ? "bg-orange-soft text-orange-ink"
+          : tone === "blue"
+            ? "bg-blue-50 text-blue-700"
+            : tone === "purple"
+              ? "bg-purple-soft text-purple-ink"
+              : "bg-surface-soft text-muted";
+
+  // Долг для бейджа в header'е (сумма как в FinanceGrid)
+  const overdueBalance = debtSummary?.overdueBalance ?? 0;
+  const manualBalance = debtSummary?.manualBalance ?? 0;
+  const damageBalance = debtSummary?.damageBalance ?? totalDebt;
+  const headerTotalDebt =
+    pending + overdueBalance + damageBalance + manualBalance;
+
   return (
     <div className="w-full">
-      <div className="w-full max-w-[1180px] mx-auto p-4 lg:p-5 flex flex-col gap-3">
-        {/* Header row: collapse button + actions menu */}
-        <div className="flex items-center justify-end gap-2 flex-wrap">
+      {/* v0.6.38: sticky-header — широкий ряд с back-кнопкой, ID, бейджами
+          статуса/просрочки/долга, и primary-actions (Завершить, Принять
+          оплату) + «⋯» menu. Остаётся сверху при скролле. */}
+      <div className="sticky top-0 z-30 bg-surface border-b border-border shadow-card-sm">
+        <div className="w-full max-w-[1480px] mx-auto px-4 lg:px-6 py-3 flex items-center gap-3 flex-wrap">
           {onClose && (
             <button
               type="button"
               onClick={onClose}
-              className="inline-flex items-center gap-1.5 rounded-full bg-surface-soft px-3 py-1.5 text-[12px] font-semibold text-muted hover:bg-border hover:text-ink"
-              title="Закрыть карточку"
+              className="inline-flex items-center gap-1.5 rounded-full bg-surface-soft px-3 py-1.5 text-[12px] font-semibold text-ink-2 hover:bg-border hover:text-ink whitespace-nowrap"
+              title="Вернуться к списку аренд"
             >
-              <X size={13} /> Закрыть
+              <ArrowLeft size={14} /> К арендам
             </button>
           )}
-          <RentalActionsMenu actions={actions} onAction={handleAction} />
-        </div>
+          <div className="font-display text-[18px] lg:text-[20px] font-extrabold text-ink tracking-tight whitespace-nowrap">
+            Аренда #{String(rental.id).padStart(4, "0")}
+          </div>
+          <span
+            className={cn(
+              "inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold whitespace-nowrap",
+              statusChipClass(headerTone),
+            )}
+          >
+            {headerStatusLabel}
+          </span>
+          {effectiveStatus === "overdue" && overdueDays > 0 && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-red-soft text-red-ink px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide whitespace-nowrap">
+              <AlertTriangle size={11} /> Просрочка · {overdueDays} дн
+            </span>
+          )}
+          {headerTotalDebt > 0 && (
+            <button
+              type="button"
+              onClick={() => setDrawer("debts")}
+              className="inline-flex items-center gap-1 rounded-full bg-red-600 text-white px-2.5 py-1 text-[11px] font-bold whitespace-nowrap hover:brightness-110"
+              title="История долгов"
+            >
+              Долг: {headerTotalDebt.toLocaleString("ru-RU")} ₽
+            </button>
+          )}
+          {isArchived && (
+            <span className="inline-flex items-center rounded-full bg-surface-soft px-2.5 py-1 text-[11px] font-bold text-muted ring-1 ring-inset ring-border">
+              в архиве
+            </span>
+          )}
 
+          <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">
+            <RentalActionsMenu
+              actions={actions}
+              onAction={handleAction}
+              triggerStyle="dots"
+            />
+            {canComplete && (
+              <button
+                type="button"
+                onClick={handleComplete}
+                className="inline-flex items-center gap-1.5 rounded-full bg-surface border border-border text-ink-2 px-3.5 py-2 text-[12.5px] font-bold hover:bg-surface-soft whitespace-nowrap"
+              >
+                <Check size={14} /> Завершить аренду
+              </button>
+            )}
+            {canAcceptPayment && (
+              <button
+                type="button"
+                onClick={handleAcceptPayment}
+                className="inline-flex items-center gap-1.5 rounded-full bg-green text-white px-4 py-2 text-[13px] font-bold hover:brightness-110 shadow-card-sm whitespace-nowrap"
+              >
+                <Wallet size={14} /> Принять оплату
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="w-full max-w-[1480px] mx-auto p-4 lg:p-5 flex flex-col gap-3">
         {/* Archived banner — оставляем простым */}
         {isArchived && (
           <div className="flex items-center gap-2 rounded-[12px] bg-surface-soft px-3 py-2 text-[12px] text-muted ring-1 ring-inset ring-border">
@@ -887,45 +978,6 @@ export function RentalCard({
           </div>
         )}
 
-        {/* MASTER BLOCK */}
-        <MasterBlock
-          rental={rental}
-          client={client}
-          scooter={currentScooter}
-          effectiveStatus={effectiveStatus}
-          isUnreachable={isUnreachable}
-          isArchived={isArchived}
-          totalDebt={overdueRelatedDebt + pending}
-          overdueDays={overdueDays}
-          onOpenDebts={() => setDrawer("debts")}
-          onOpenClientProfile={() => {
-            if (client) openClient(client.id);
-          }}
-          onSwapScooter={handleSwapScooter}
-          onChangeEquipment={
-            canEditEquipment ? () => setEquipmentChangeOpen(true) : undefined
-          }
-          onRecordDamage={canRecordDamage ? handleRecordDamage : undefined}
-        />
-
-        {/* KPI STRIP */}
-        <KpiStrip
-          rental={rental}
-          debtSummary={debtSummary}
-          paidIn={paidIn}
-          pending={pending}
-          totalDamageDebt={totalDebt}
-          effectiveStatus={effectiveStatus}
-          extensionsCount={extensionsCount}
-          lastSegmentSum={lastSegmentSum}
-          canAcceptPayment={canAcceptPayment}
-          canComplete={canComplete}
-          onAcceptPayment={handleAcceptPayment}
-          onComplete={handleComplete}
-          onOpenDebts={() => setDrawer("debts")}
-          onOverdueClick={(rect) => setOverdueAnchor(rect)}
-        />
-
         {/* Inline note */}
         {rental.note && (
           <div className="rounded-[10px] bg-surface-soft px-3 py-1.5 text-[12px] text-ink-2">
@@ -933,57 +985,86 @@ export function RentalCard({
           </div>
         )}
 
-        {/* Calendar + (Payment XOR History).
-            v0.6.32: упрощённый layout. Когда открыт Payment — История
-            ЗАМЕНЯЕТСЯ на Payment-панель в том же слоте, чуть шире
-            (440px вместо 360px). Calendar остаётся 1fr. Это даёт
-            ощущение «Calendar+Payment одно целое», История остаётся
-            доступной через клик «Развернуть» → SideDrawer.
-            Так избегаем overflow-трюка, который ломал layout на
-            экранах < xl. */}
-        <div
-          className={cn(
-            "grid grid-cols-1 gap-3 transition-[grid-template-columns] duration-300 ease-out",
-            paymentRentalId != null
-              ? "lg:grid-cols-[minmax(0,1fr)_minmax(380px,440px)]"
-              : "lg:grid-cols-[1fr_360px]",
-          )}
-        >
-          <CalendarPanel
-            rental={rental}
-            effectiveStatus={effectiveStatus}
-            onCommitExtend={isLive ? handleCommitExtend : undefined}
-            calendarBoxRef={calendarBoxRef}
-            hideCalendar={false}
-            resetSignal={calendarResetSignal}
-            initialExtDays={
-              paymentRentalId != null ? paymentPrefillExtDays : undefined
-            }
-          />
-          {paymentRentalId != null ? (
-            <div className="animate-in fade-in slide-in-from-right-4 duration-300 min-w-0">
-              <PaymentAcceptDialogContainer
-                rentalId={paymentRentalId}
-                initialExtDays={paymentPrefillExtDays || undefined}
-                onExtDaysChange={setPaymentPrefillExtDays}
-                onClose={() => {
-                  setPaymentRentalId(null);
-                  setPaymentPrefillExtDays(0);
-                  setCalendarResetSignal((n) => n + 1);
-                }}
-              />
-            </div>
-          ) : (
-            <HistoryStrip
+        {/* v0.6.38: 2-col layout — левая узкая колонка (~360px) с
+            MasterBlock (vertical) + FinanceGrid, правая широкая с
+            CalendarPanel + InlineHistory + DocsInline. */}
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-[360px_minmax(0,1fr)]">
+          {/* LEFT COLUMN — клиент + скутер + экипировка + финансы */}
+          <div className="flex flex-col gap-3 min-w-0">
+            <MasterBlock
+              rental={rental}
+              client={client}
+              scooter={currentScooter}
+              effectiveStatus={effectiveStatus}
+              isUnreachable={isUnreachable}
+              isArchived={isArchived}
+              totalDebt={overdueRelatedDebt + pending}
+              overdueDays={overdueDays}
+              onOpenDebts={() => setDrawer("debts")}
+              onOpenClientProfile={() => {
+                if (client) openClient(client.id);
+              }}
+              onSwapScooter={handleSwapScooter}
+              onChangeEquipment={
+                canEditEquipment
+                  ? () => setEquipmentChangeOpen(true)
+                  : undefined
+              }
+              onRecordDamage={canRecordDamage ? handleRecordDamage : undefined}
+              layout="vertical"
+            />
+            {/* Финансы по аренде — 4-ячеечный блок, заменяет KpiStrip */}
+            <FinanceGrid
+              rental={rental}
+              debtSummary={debtSummary}
+              paidIn={paidIn}
+              pending={pending}
+              totalDamageDebt={totalDebt}
+              effectiveStatus={effectiveStatus}
+              lastSegmentSum={lastSegmentSum}
+              onOverdueClick={(rect) => setOverdueAnchor(rect)}
+              onOpenDebts={() => setDrawer("debts")}
+            />
+          </div>
+
+          {/* RIGHT COLUMN — календарь + история + документы */}
+          <div className="flex flex-col gap-3 min-w-0">
+            <CalendarPanel
+              rental={rental}
+              effectiveStatus={effectiveStatus}
+              onCommitExtend={isLive ? handleCommitExtend : undefined}
+              calendarBoxRef={calendarBoxRef}
+              hideCalendar={false}
+              resetSignal={calendarResetSignal}
+              initialExtDays={
+                paymentRentalId != null ? paymentPrefillExtDays : undefined
+              }
+            />
+            <InlineHistory
               items={activityItems}
               loading={activityQ.isLoading}
               onExpand={() => setDrawer("history")}
             />
-          )}
+            {/* Documents — внизу правой колонки */}
+            <DocsInline rental={rental} />
+          </div>
         </div>
 
-        {/* Documents */}
-        <DocsInline rental={rental} />
+        {/* v0.6.38: PaymentAcceptDialog снова drawer-overlay (fixed
+            справа). Рендерится поверх 2-col layout, календарь под ним
+            НЕ сжимается. */}
+        {paymentRentalId != null && (
+          <PaymentAcceptDialogContainer
+            rentalId={paymentRentalId}
+            initialExtDays={paymentPrefillExtDays || undefined}
+            onExtDaysChange={setPaymentPrefillExtDays}
+            onClose={() => {
+              setPaymentRentalId(null);
+              setPaymentPrefillExtDays(0);
+              setCalendarResetSignal((n) => n + 1);
+            }}
+          />
+        )}
       </div>
 
       {/* ─── DRAWERS ───────────────────────────────────────────── */}
@@ -1059,8 +1140,8 @@ export function RentalCard({
           }}
         />
       )}
-      {/* v0.6.x: PaymentAcceptDialogContainer теперь рендерится inline
-          внутри grid'а Calendar+History (см. выше), а не как overlay. */}
+      {/* v0.6.38: PaymentAcceptDialogContainer — снова drawer-overlay
+          (см. рендер выше внутри 2-col layout). */}
 
       {/* v0.6.1: popover быстрых действий по просрочке */}
       {overdueAnchor && (

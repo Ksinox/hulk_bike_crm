@@ -1112,12 +1112,30 @@ export function PaymentAcceptDialog({
 
   return (
     <>
+      {/* v0.6.38: PaymentAcceptDialog снова drawer-overlay (как до v0.6.30).
+          Backdrop semi-transparent, клик закрывает. Панель slide-in справа,
+          фиксированной ширины. Календарь под ним НЕ сжимается. */}
+      <div className="fixed inset-0 z-[90]">
+        <button
+          type="button"
+          aria-label="Закрыть"
+          onClick={requestClose}
+          className={cn(
+            "absolute inset-0 bg-ink/30 backdrop-blur-[1px]",
+            closing ? "animate-fade-out" : "animate-fade-in",
+          )}
+        />
+        <aside
+          className={cn(
+            "absolute right-0 top-0 h-full w-[min(95vw,480px)] bg-surface shadow-card-lg flex flex-col",
+            closing ? "animate-slide-out-right" : "animate-slide-in-right",
+          )}
+        >
       <div
         className={cn(
-          // v0.6.x: inline-режим — панель встроена в layout RentalCard
-          // (между CalendarPanel и HistoryStrip), вытесняя историю вправо.
-          // Без fixed/backdrop/slide-in — просто блок в гриде.
-          "flex h-full max-h-[820px] flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-card-sm",
+          // v0.6.38: внутренний контейнер — без rounded/border (drawer уже
+          // прижат к краю), просто flex-col на всю высоту aside'а.
+          "flex h-full flex-col overflow-hidden bg-surface",
           closing && "opacity-0 transition-opacity duration-150",
         )}
       >
@@ -1861,6 +1879,8 @@ export function PaymentAcceptDialog({
 
       {/* v0.6.12: EquipmentChangeDialog убран — теперь inline picker
           живёт прямо в Step 3 (см. EquipmentStep ниже). */}
+        </aside>
+      </div>
     </>
   );
 }

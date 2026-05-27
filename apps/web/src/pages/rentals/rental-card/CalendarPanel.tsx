@@ -10,7 +10,7 @@
  * открывает PaymentAcceptDialog с предзаполненным числом дней.
  */
 import type { Ref } from "react";
-import { Calendar } from "lucide-react";
+import { Calendar, HelpCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DragExtendCalendar } from "./DragExtendCalendar";
 import type { Rental, RentalStatus } from "@/lib/mock/rentals";
@@ -80,14 +80,32 @@ export function CalendarPanel({
 
   return (
     <div className="rounded-2xl bg-surface border border-border shadow-card-sm p-4">
-      <div className="flex items-center justify-between mb-3">
-        <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
-          График аренды
+      {/* v0.6.38: заголовок «Дата возврата» (раньше «График аренды») +
+          иконка (?) с tooltip, объясняющим зоны календаря. */}
+      <div className="flex items-center justify-between mb-2.5">
+        <div className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-2">
+          <Calendar size={11} />
+          Дата возврата
+          <span
+            title="Календарь аренды: синяя зона — выданный период, красная — просрочка, зелёная — выбранное продление. Клик по дню после планового конца — продлить."
+            className="inline-flex items-center justify-center h-4 w-4 rounded-full bg-surface-soft text-muted-2 hover:bg-border hover:text-ink cursor-help"
+            aria-label="Подсказка по зонам календаря"
+          >
+            <HelpCircle size={10} />
+          </span>
         </div>
         <div className="text-[11.5px] text-muted">
           Срок этой аренды{" "}
           <span className="font-bold text-blue-700 tabular-nums">{total} дн</span>
         </div>
+      </div>
+      {/* v0.6.38: легенда зон календаря — поднята НАД ScheduleBlock'ами,
+          по дизайн-референсу. */}
+      <div className="mb-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10.5px] text-muted">
+        <LegendDot swatch="bg-blue-200" label="выдача" />
+        <LegendDot swatch="bg-blue-200" label="текущий период" />
+        {isOverdue && <LegendDot swatch="bg-red-200" label="просрочка" />}
+        <LegendDot swatch="bg-emerald-200" label="продление" />
       </div>
       <div className="grid grid-cols-2 gap-3 mb-3">
         <ScheduleBlock
@@ -119,9 +137,19 @@ export function CalendarPanel({
             resetSignal={resetSignal}
             disabled={dragDisabled}
             initialDays={initialExtDays}
+            hideLegend
           />
         </div>
       )}
+    </div>
+  );
+}
+
+function LegendDot({ swatch, label }: { swatch: string; label: string }) {
+  return (
+    <div className="flex items-center gap-1">
+      <span className={cn("inline-block size-2.5 rounded-sm", swatch)} />
+      <span>{label}</span>
     </div>
   );
 }

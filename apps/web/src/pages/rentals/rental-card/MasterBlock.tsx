@@ -90,6 +90,7 @@ export function MasterBlock({
   onSwapScooter,
   onChangeEquipment,
   onRecordDamage,
+  layout = "horizontal",
 }: {
   rental: Rental;
   client: ApiClient | null | undefined;
@@ -109,6 +110,11 @@ export function MasterBlock({
    *  (для архивных или completed аренд). Открывает DamageReportDialog
    *  или редактирование существующего акта. */
   onRecordDamage?: () => void;
+  /** v0.6.38: layout — "horizontal" (legacy 3-col) или "vertical"
+   *  (узкая левая колонка). В vertical-режиме CLIENT идёт сверху во
+   *  всю ширину, SCOOTER + EQUIPMENT — рядом 2-col, money row — 2-col,
+   *  кнопка damage — снизу. */
+  layout?: "horizontal" | "vertical";
 }) {
   const equipmentJson = rental.equipmentJson ?? [];
   // v0.6.37: фото клиента — тот же источник что в RentalsList.
@@ -162,9 +168,26 @@ export function MasterBlock({
     return { totalDays, totalPaid };
   }, [client, allRentals, allPayments]);
 
+  // v0.6.38: layout prop — ИНФОРМАЦИОННЫЙ. В vertical-режиме MasterBlock
+  //   рендерится в узкой левой колонке (~360px); сетка автоматически
+  //   коллапсируется в одну колонку (lg-breakpoint=1024px, у нас узко).
+  //   SCOOTER+EQUIPMENT — родитель карточки оборачивает MasterBlock в свой
+  //   2-col wrapper при необходимости. Здесь мы просто помечаем что в
+  //   vertical-режиме скрываем горизонтальные дивайдеры через дополнительный
+  //   класс (см. div'ы дивайдеров). Если layout==='vertical', дивайдеры
+  //   скрываются всегда, а вертикальный stack — natural flow.
+  const isVertical = layout === "vertical";
+
   return (
     <div className="rounded-2xl bg-surface border border-border shadow-card-sm">
-      <div className="grid grid-cols-1 lg:grid-cols-[2fr_1px_1fr_1px_1fr]">
+      <div
+        className={cn(
+          "grid grid-cols-1",
+          // В horizontal-режиме на широких экранах включаем 3-col grid с
+          // дивайдерами. В vertical-режиме всегда single-col stack.
+          !isVertical && "lg:grid-cols-[2fr_1px_1fr_1px_1fr]",
+        )}
+      >
         {/* COLUMN 1 — CLIENT.
             v0.6.34: flex-col + h-full, чтобы аватарка слева растянулась
             от верха identity strip до низа всей колонки. Money row
@@ -360,7 +383,7 @@ export function MasterBlock({
           </div>
         </div>
 
-        <div className="hidden lg:block bg-border"></div>
+        <div className={cn("hidden bg-border", !isVertical && "lg:block")}></div>
 
         {/* COLUMN 2 — SCOOTER (v0.6.14: большая аватарка + hover-overlay) */}
         <div className="p-5 flex flex-col bg-surface-soft/40">
@@ -430,7 +453,7 @@ export function MasterBlock({
           </div>
         </div>
 
-        <div className="hidden lg:block bg-border"></div>
+        <div className={cn("hidden bg-border", !isVertical && "lg:block")}></div>
 
         {/* COLUMN 3 — EQUIPMENT (v0.6.14: 2×2 grid) */}
         <div className="p-5 flex flex-col bg-surface-soft/40">

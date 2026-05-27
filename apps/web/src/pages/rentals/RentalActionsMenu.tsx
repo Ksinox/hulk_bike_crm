@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, type LucideIcon } from "lucide-react";
+import { ChevronDown, MoreHorizontal, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export type MenuAction = {
@@ -13,13 +13,20 @@ export type MenuAction = {
  * Выпадающее меню действий по аренде.
  * Первый action из списка — отдельная primary-кнопка слева от "Действия".
  * Остальные — в dropdown.
+ *
+ * v0.6.38: triggerStyle="dots" — компактный режим, без primary-кнопки и
+ * без надписи «Действия». Рисуется только круглая кнопка с тремя точками
+ * (MoreHorizontal), все actions попадают в dropdown. Используется в
+ * sticky-header'е карточки аренды, где primary-кнопки рендерятся отдельно.
  */
 export function RentalActionsMenu({
   actions,
   onAction,
+  triggerStyle = "button",
 }: {
   actions: MenuAction[];
   onAction: (id: string) => void;
+  triggerStyle?: "button" | "dots";
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -41,6 +48,60 @@ export function RentalActionsMenu({
   }, [open]);
 
   if (actions.length === 0) return null;
+
+  // v0.6.38: dots-режим — все actions в dropdown, primary-кнопка отсутствует.
+  if (triggerStyle === "dots") {
+    return (
+      <div ref={ref} className="relative inline-flex items-center">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className={cn(
+            "inline-flex h-9 w-9 items-center justify-center rounded-full border border-border bg-surface text-ink-2 transition-colors",
+            open ? "bg-surface-soft" : "hover:bg-surface-soft",
+          )}
+          title="Действия"
+          aria-label="Действия"
+        >
+          <MoreHorizontal size={16} />
+        </button>
+        {open && (
+          <div className="absolute right-0 top-full z-50 mt-2 w-[260px] origin-top-right animate-modal-in overflow-hidden rounded-[14px] border border-border bg-surface shadow-card-lg">
+            <div className="py-1">
+              {actions.map((a) => {
+                const Icon = a.icon;
+                const itemToneCls =
+                  a.tone === "danger"
+                    ? "text-red-ink hover:bg-red-soft/40"
+                    : a.tone === "warn"
+                      ? "text-orange-ink hover:bg-orange-soft/40"
+                      : a.tone === "primary"
+                        ? "text-blue-700 hover:bg-blue-50"
+                        : "text-ink-2 hover:bg-blue-50";
+                return (
+                  <button
+                    key={a.id}
+                    type="button"
+                    onClick={() => {
+                      setOpen(false);
+                      onAction(a.id);
+                    }}
+                    className={cn(
+                      "flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] font-semibold transition-colors",
+                      itemToneCls,
+                    )}
+                  >
+                    <Icon size={14} className="shrink-0" />
+                    {a.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   const primary = actions[0];
   const rest = actions.slice(1);
