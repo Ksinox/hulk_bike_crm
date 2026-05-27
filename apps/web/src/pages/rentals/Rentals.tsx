@@ -390,48 +390,54 @@ export function Rentals() {
     ];
   }, [rentals, revenue]);
 
+  const selectedRental = rentals.find((r) => r.id === selectedId) ?? null;
+
   return (
     <main className="flex min-w-0 flex-1 flex-col gap-4">
       <Topbar />
 
-      <header className="flex items-center justify-between gap-3">
-        <div className="flex items-baseline gap-3">
-          <h1 className="font-display text-[34px] font-extrabold leading-none text-ink">
-            Аренды
-          </h1>
-          <span className="rounded-full bg-surface-soft px-3 py-1 text-[13px] font-semibold text-muted">
-            {
-              rentals.filter(
-                (r) =>
-                  (r.status === "active" ||
-                    r.status === "overdue" ||
-                    r.status === "returning") &&
-                  r.scooter,
-              ).length
-            }{" "}
-            активных
-          </span>
-        </div>
-        <button
-          type="button"
-          onClick={() => setNewOpen(true)}
-          className="inline-flex items-center gap-1.5 rounded-full bg-ink px-4 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-ink-2"
-        >
-          <Plus size={16} />
-          Новая аренда
-        </button>
-      </header>
+      {!selectedRental && (
+        <>
+          <header className="flex items-center justify-between gap-3">
+            <div className="flex items-baseline gap-3">
+              <h1 className="font-display text-[34px] font-extrabold leading-none text-ink">
+                Аренды
+              </h1>
+              <span className="rounded-full bg-surface-soft px-3 py-1 text-[13px] font-semibold text-muted">
+                {
+                  rentals.filter(
+                    (r) =>
+                      (r.status === "active" ||
+                        r.status === "overdue" ||
+                        r.status === "returning") &&
+                      r.scooter,
+                  ).length
+                }{" "}
+                активных
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setNewOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-full bg-ink px-4 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-ink-2"
+            >
+              <Plus size={16} />
+              Новая аренда
+            </button>
+          </header>
 
-      <RentalsKpi items={kpi} />
+          <RentalsKpi items={kpi} />
 
-      <RentalsFilters value={filters} onChange={setFilters} />
+          <RentalsFilters value={filters} onChange={setFilters} />
+        </>
+      )}
 
       {/* v0.6.38: layout зависит от того, выбрана ли аренда.
             • Выбрана → карточка раскрывается на ВСЮ ширину, список скрыт.
             • Не выбрана → список во всю ширину; карточка не рендерится.
           Это даёт focus mode карточке: вся ширина под layout 2-col. */}
       {(() => {
-        const selected = rentals.find((r) => r.id === selectedId);
+        const selected = selectedRental;
         return (
           <div className="flex flex-1 flex-col gap-4">
             {!selected && (
