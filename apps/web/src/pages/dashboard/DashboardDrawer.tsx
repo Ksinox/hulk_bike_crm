@@ -3,7 +3,6 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -135,18 +134,29 @@ export function DashboardDrawerProvider({ children }: { children: ReactNode }) {
   return (
     <DashboardDrawerCtx.Provider value={ctx}>
       {children}
-      <DrawerHost ctx={ctx} />
     </DashboardDrawerCtx.Provider>
   );
 }
 
-function DrawerHost({ ctx }: { ctx: Ctx }) {
-  const { stack } = ctx;
-  const scrollRef = useRef<HTMLDivElement>(null);
+/**
+ * v0.7.18: drawer-стек больше НЕ overlay (fixed inset-0 + backdrop).
+ * Теперь это набор inline push-колонок, которые рендерятся ВНУТРИ общего
+ * горизонтально-скроллящегося контейнера в App-shell, справа от контента
+ * страницы. Открытие drawer'а сдвигает контент влево (а не перекрывает),
+ * несколько drawer'ов выстраиваются цепочкой, при переполнении —
+ * горизонтальный скролл. Поведение идентично push-колонкам в «Аренды».
+ *
+ * Авто-скролл вправо и wheel→horizontal живут в App-shell (он владеет
+ * scroll-контейнером). Здесь — только Esc (закрыть верхнюю панель) и
+ * рендер колонок в прямом порядке (старые слева, свежая справа).
+ */
+export function DashboardDrawerStack() {
+  const ctx = useContext(DashboardDrawerCtx);
+  const stack = ctx?.stack ?? [];
 
-  // Esc — закрывает верхнюю панель (pop стека, не all).
+  // Esc — закрывает верхнюю (последнюю открытую) панель.
   useEffect(() => {
-    if (stack.length === 0) return;
+    if (!ctx || stack.length === 0) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.stopPropagation();
@@ -157,101 +167,24 @@ function DrawerHost({ ctx }: { ctx: Ctx }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [stack.length, ctx]);
 
-  // Когда добавляется новая панель — скроллим контейнер вправо до конца,
-  // чтобы новая была в фокусе.
-  useEffect(() => {
-    if (stack.length === 0) return;
-    const el = scrollRef.current;
-    if (!el) return;
-    // Небольшая задержка, чтобы успел применился layout новой панели.
-    const t = window.setTimeout(() => {
-      el.scrollTo({ left: el.scrollWidth, behavior: "smooth" });
-    }, 60);
-    return () => window.clearTimeout(t);
-  }, [stack.length]);
+  if (!ctx || stack.length === 0) return null;
 
-  // v0.4.28: колесо мыши вешаем НЕ через React `onWheel` (он passive
-  // по умолчанию в актуальных Chromium → preventDefault даёт warning
-  // в консоли и не работает), а через нативный addEventListener с
-  // {passive:false}. Логика та же: над контейнером крутим в
-  // горизонталь, над scroll-able элементом — даём ему работать.
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const onWheel = (e: WheelEvent) => {
-      const target = e.target as HTMLElement | null;
-      let cur: HTMLElement | null = target;
-      while (cur && cur !== el) {
-        const cs = window.getComputedStyle(cur);
-        if (
-          (cs.overflowY === "auto" || cs.overflowY === "scroll") &&
-          cur.scrollHeight > cur.clientHeight
-        ) {
-          return; // вертикальный скролл внутри карточки
-        }
-        cur = cur.parentElement;
-      }
-      if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
-        el.scrollLeft += e.deltaY;
-        e.preventDefault();
-      }
-    };
-    el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
-  }, []);
-
-  if (stack.length === 0) return null;
-
-  // v0.4.11: плавная анимация без «дыр» через flex-row-reverse +
-  // width-анимацию. Каждая панель имеет внешний контейнер, который
-  // растёт от 0 до DRAWER_W через transition:width. Внутри —
-  // фиксированной ширины контент. Соседи равномерно сдвигаются по
-  // мере роста новой панели, без скачков и пустого места.
-  // row-reverse: первый в DOM-массиве (idx=0, корневой) на ЭКРАНЕ
-  // оказывается слева, последний (свежий) — справа. Идеально под
-  // «новая выезжает справа».
-  const DRAWER_W = 820;
+  // Ширина колонки = как у карточки в «Аренды» (600px) для единообразия.
+  const DRAWER_W = 600;
   return (
-    <div
-      className="fixed inset-0 z-[100] bg-ink/40 animate-backdrop-in"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) ctx.close();
-      }}
-    >
-      <div
-        ref={scrollRef}
-        className="ml-auto h-full w-full overflow-x-auto overflow-y-hidden"
-        onClick={(e) => {
-          if (e.target === e.currentTarget) ctx.close();
-        }}
-      >
-        {/* v0.4.32: пустая зона слева от панелей (когда стек короче
-            ширины экрана) — это de-facto «вне drawer'а», клик там
-            должен закрывать. Раньше клик попадал в этот flex-контейнер
-            и не доходил до scrollRef → закрытие не срабатывало. */}
-        <div
-          className="flex h-full min-w-full flex-row-reverse justify-start"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) ctx.close();
-          }}
-        >
-          {[...stack].reverse().map((target, revIdx) => {
-            const idx = stack.length - 1 - revIdx;
-            return (
-              <DrawerCard
-                key={drawerKey(target)}
-                target={target}
-                width={DRAWER_W}
-                onCloseSelf={() => ctx.closeAt(idx)}
-                onOpenRental={ctx.openRental}
-                onOpenClient={ctx.openClient}
-                onOpenScooter={ctx.openScooter}
-              />
-            );
-          })}
-        </div>
-      </div>
-    </div>
+    <>
+      {stack.map((target, idx) => (
+        <DrawerColumn
+          key={drawerKey(target)}
+          target={target}
+          width={DRAWER_W}
+          onCloseSelf={() => ctx.closeAt(idx)}
+          onOpenRental={ctx.openRental}
+          onOpenClient={ctx.openClient}
+          onOpenScooter={ctx.openScooter}
+        />
+      ))}
+    </>
   );
 }
 
@@ -271,7 +204,7 @@ function drawerKey(t: Target): string {
   return `${t.kind}-${t.id}`;
 }
 
-function DrawerCard({
+function DrawerColumn({
   target,
   width,
   onCloseSelf,
@@ -309,31 +242,31 @@ function DrawerCard({
   const requestClose = () => {
     if (closing) return;
     setClosing(true);
-    // ждём окончания transition (320ms) — потом убираем из стека
-    window.setTimeout(onCloseSelf, 320);
+    // ждём окончания transition (300ms) — потом убираем из стека
+    window.setTimeout(onCloseSelf, 300);
   };
 
   // open=true для рендера content; на exit фазе тоже true чтобы
   // содержимое не пропадало мгновенно при сжатии ширины.
   const isOpen = entered && !closing;
 
+  // v0.7.18: inline push-колонка (не overlay). h-full = высота
+  // scroll-контейнера в App-shell (вьюпорт минус titlebar). Левая
+  // граница ml-3 отделяет от контента/предыдущей колонки.
   return (
     <aside
       className={cn(
-        "h-full overflow-hidden bg-surface shadow-card-lg",
-        "transition-[width,opacity] duration-[320ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
-        isOpen ? "opacity-100" : "opacity-80",
+        "h-full min-h-0 shrink-0 overflow-hidden transition-[width,opacity,margin] duration-300 ease-in-out",
+        isOpen ? "ml-3 opacity-100" : "ml-0 opacity-0",
       )}
       style={{
         width: isOpen ? `min(${width}px, 92vw)` : "0px",
-        flexShrink: 0,
       }}
-      onClick={(e) => e.stopPropagation()}
     >
       {/* Внутренний контейнер с ФИКСИРОВАННОЙ шириной — чтобы content
           не сжимался по мере роста outer width. Outer обрезает overflow. */}
       <div
-        className="flex h-full flex-col border-l border-border"
+        className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-card-sm"
         style={{ width: `min(${width}px, 92vw)` }}
       >
         {target.kind === "rental" && (
