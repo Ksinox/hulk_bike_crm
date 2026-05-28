@@ -149,6 +149,7 @@ export function AvatarUpload({
         file={pendingFile}
         aspect={cropAspect}
         title={cropTitle}
+        format="webp"
         onClose={() => setPendingFile(null)}
         onSave={async (result) => {
           await onUpload(result);

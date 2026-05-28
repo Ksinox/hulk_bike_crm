@@ -57,18 +57,23 @@ async function maybeConvertHeic(file: File | Blob): Promise<File | Blob> {
 
 /**
  * Кропает изображение по area (в пикселях оригинала) и масштабирует
- * длинную сторону до targetSize. Возвращает JPEG-blob.
+ * длинную сторону до targetSize.
  *
  * @param input файл/blob (включая HEIC — будет автоконвертирован)
  * @param area результат от react-easy-crop (croppedAreaPixels)
  * @param targetSize длинная сторона результата в px
- * @param quality JPEG quality 0..1
+ * @param quality качество 0..1
+ * @param format v0.7.7: 'webp' — сохраняет прозрачность (предметы:
+ *        скутеры/экипировка/модели), фон под предметом просвечивает
+ *        на любой теме. 'jpeg' — для фото людей/документов (нет
+ *        альфы, компактнее) с белой заливкой фона.
  */
-export async function cropImageToJpeg(
+export async function cropImageToBlob(
   input: File | Blob,
   area: CropArea,
   targetSize: number,
   quality = 0.85,
+  format: "jpeg" | "webp" = "jpeg",
 ): Promise<Blob> {
   const normalized = await maybeConvertHeic(input);
   const img = await loadImage(normalized);
@@ -83,22 +88,35 @@ export async function cropImageToJpeg(
   canvas.height = outH;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("no 2d ctx");
-  // v0.7.6: JPEG не поддерживает альфа-канал — прозрачные пиксели PNG/WEBP
-  // при экспорте в JPEG становятся ЧЁРНЫМИ. Заливаем canvas белым ДО
-  // drawImage, чтобы прозрачность стала белой (предмет «лежит на белом»),
-  // а не чёрной. Для фото людей/документов заливка незаметна (нет альфы).
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, outW, outH);
+  // JPEG не умеет альфа — заливаем белым, чтобы прозрачность не стала
+  // чёрной. WebP умеет альфа — НЕ заливаем, сохраняем прозрачность
+  // (предмет ляжет на подложку любой темы).
+  if (format === "jpeg") {
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, outW, outH);
+  }
   // Рисуем именно вырезанный регион оригинала
   ctx.drawImage(img, area.x, area.y, area.width, area.height, 0, 0, outW, outH);
 
+  const mime = format === "webp" ? "image/webp" : "image/jpeg";
   return await new Promise<Blob>((resolve, reject) => {
     canvas.toBlob(
       (blob) => (blob ? resolve(blob) : reject(new Error("toBlob failed"))),
-      "image/jpeg",
+      mime,
       quality,
     );
   });
+}
+
+/** @deprecated используйте cropImageToBlob. Оставлено для совместимости —
+ *  всегда JPEG с белой заливкой. */
+export async function cropImageToJpeg(
+  input: File | Blob,
+  area: CropArea,
+  targetSize: number,
+  quality = 0.85,
+): Promise<Blob> {
+  return cropImageToBlob(input, area, targetSize, quality, "jpeg");
 }
 
 /** Сжимает оригинал (без кропа) до разумного размера. Используется когда

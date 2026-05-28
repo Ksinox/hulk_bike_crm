@@ -2,7 +2,7 @@ import { useCallback, useState } from "react";
 import Cropper, { type Area } from "react-easy-crop";
 import { Check, Crosshair, Loader2, RotateCw, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { cropImageToJpeg, type CropArea } from "@/lib/imageCrop";
+import { cropImageToBlob, type CropArea } from "@/lib/imageCrop";
 
 /**
  * Диалог кропа аватарки. Принимает выбранный пользователем файл,
@@ -36,6 +36,9 @@ type Props = {
   onSave: (result: CropResult) => unknown | Promise<unknown>;
   /** Заголовок над кроппером. */
   title?: string;
+  /** v0.7.7: формат экспорта. 'webp' — сохраняет прозрачность (предметы:
+   *  скутеры/экипировка/модели). 'jpeg' (default) — фото людей/документы. */
+  format?: "jpeg" | "webp";
 };
 
 export function ImageCropDialog({
@@ -46,6 +49,7 @@ export function ImageCropDialog({
   onClose,
   onSave,
   title = "Обрежьте фото",
+  format = "jpeg",
 }: Props) {
   // v0.7.4: разрешаем zoom-out (scale < 1). Раньше min был 1 и можно
   // было только увеличивать — кадр с краями не помещался.
@@ -84,8 +88,8 @@ export function ImageCropDialog({
       // постера/карточки), thumb — мельче (для плиток/списков). Качество
       // выше для full, чтобы крупное превью не было замыленным.
       const [full, thumb] = await Promise.all([
-        cropImageToJpeg(file, croppedArea, fullSize, 0.9),
-        cropImageToJpeg(file, croppedArea, thumbSize, 0.85),
+        cropImageToBlob(file, croppedArea, fullSize, 0.9, format),
+        cropImageToBlob(file, croppedArea, thumbSize, 0.85, format),
       ]);
       await onSave({ full, thumb });
       onClose();
