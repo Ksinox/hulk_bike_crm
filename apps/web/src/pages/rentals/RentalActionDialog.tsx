@@ -1586,7 +1586,7 @@ function ReturnItemCard({
           )}
         >
           {imageUrl ? (
-            <img src={imageUrl} alt="" className="h-full w-full object-contain" />
+            <img src={imageUrl} alt="" className="h-full w-full bg-white object-contain" />
           ) : fallbackIcon === "scooter" ? (
             <Bike
               size={isCompact ? 22 : 26}

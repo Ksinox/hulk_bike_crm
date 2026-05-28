@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import Cropper, { type Area } from "react-easy-crop";
-import { Check, Loader2, RotateCw, X } from "lucide-react";
+import { Check, Crosshair, Loader2, RotateCw, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   compressOriginal,
@@ -44,9 +44,19 @@ export function ImageCropDialog({
   onSave,
   title = "Обрежьте фото",
 }: Props) {
+  // v0.7.4: разрешаем zoom-out (scale < 1). Раньше min был 1 и можно
+  // было только увеличивать — кадр с краями не помещался.
+  const MIN_ZOOM = 0.5;
+  const MAX_ZOOM = 3;
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
+
+  // «Отцентровать» — сброс позиции и зума в дефолт.
+  const recenter = useCallback(() => {
+    setCrop({ x: 0, y: 0 });
+    setZoom(1);
+  }, []);
   const [croppedArea, setCroppedArea] = useState<CropArea | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -114,8 +124,11 @@ export function ImageCropDialog({
             image={fileUrl}
             crop={crop}
             zoom={zoom}
+            minZoom={MIN_ZOOM}
+            maxZoom={MAX_ZOOM}
             rotation={rotation}
             aspect={aspect}
+            restrictPosition={false}
             onCropChange={setCrop}
             onZoomChange={setZoom}
             onRotationChange={setRotation}
@@ -134,8 +147,8 @@ export function ImageCropDialog({
             </span>
             <input
               type="range"
-              min={1}
-              max={3}
+              min={MIN_ZOOM}
+              max={MAX_ZOOM}
               step={0.05}
               value={zoom}
               onChange={(e) => setZoom(Number(e.target.value))}
@@ -144,10 +157,19 @@ export function ImageCropDialog({
             />
             <button
               type="button"
+              onClick={recenter}
+              disabled={busy}
+              title="Отцентровать (сбросить зум и позицию)"
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-ink transition-colors hover:bg-border disabled:opacity-50"
+            >
+              <Crosshair size={14} />
+            </button>
+            <button
+              type="button"
               onClick={() => setRotation((r) => (r + 90) % 360)}
               disabled={busy}
               title="Повернуть на 90°"
-              className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-ink hover:bg-border disabled:opacity-50"
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-ink transition-colors hover:bg-border disabled:opacity-50"
             >
               <RotateCw size={14} />
             </button>

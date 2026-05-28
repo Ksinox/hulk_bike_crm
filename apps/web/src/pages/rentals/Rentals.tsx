@@ -551,7 +551,7 @@ export function Rentals() {
             v0.7.3: фикс. высота вьюпорта + overflow-hidden + min-h-0 —
             footer карточки всегда виден, скроллится только её тело. */}
         {selected && panelOpen && (
-          <div className="ml-4 flex h-full min-h-0 w-[760px] shrink-0 flex-col overflow-hidden rounded-2xl border-l border-border bg-surface shadow-card-sm animate-in slide-in-from-right duration-200">
+          <div className="ml-4 flex h-full min-h-0 w-[760px] shrink-0 flex-col overflow-hidden rounded-2xl border-l border-border bg-surface shadow-card-sm animate-in fade-in slide-in-from-right-4 duration-300 ease-out">
             <ErrorBoundary key={selected.id}>
               <RentalCard
                 rental={selected}
@@ -577,7 +577,7 @@ export function Rentals() {
             и сжимает список. Своя фикс. высота вьюпорта + внутренний скролл
             (footer «Отмена»/«Принять» — часть тела диалога, inline-режим). */}
         {paymentRental && (
-          <div className="ml-4 flex h-full min-h-0 w-[480px] shrink-0 flex-col overflow-hidden animate-in slide-in-from-right duration-200">
+          <div className="ml-4 flex h-full min-h-0 w-[480px] shrink-0 flex-col overflow-hidden animate-in fade-in slide-in-from-right-4 duration-300 ease-out">
             <ErrorBoundary key={`pay-${paymentRental.id}`}>
               <PaymentAcceptDialog
                 rental={paymentRental}

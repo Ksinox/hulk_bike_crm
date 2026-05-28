@@ -55,7 +55,7 @@ export function EquipmentThumb({
       <img
         src={src}
         alt={item.name}
-        className="h-full w-full object-contain"
+        className="h-full w-full bg-white object-contain"
       />
     );
   }
@@ -536,7 +536,7 @@ export function EquipmentInlinePicker({
                     <img
                       src={src}
                       alt={it.name}
-                      className="h-full w-full object-contain"
+                      className="h-full w-full rounded-[6px] bg-white object-contain"
                     />
                   ) : (
                     <Package

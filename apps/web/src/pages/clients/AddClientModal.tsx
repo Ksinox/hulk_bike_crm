@@ -22,10 +22,39 @@ import {
   type UploadedFile,
 } from "./DocUpload";
 import { clientStore } from "./clientStore";
+import { clientDocsKeys } from "@/lib/api/documents";
+import { queryClient } from "@/lib/queryClient";
 import { DatePicker } from "@/components/ui/date-picker";
 import { toast } from "@/lib/toast";
 import type { ApplicationFormInit } from "./applicationConvert";
 import { toTitleCaseRu } from "@/lib/textCase";
+
+/**
+ * v0.7.4: заливает выбранное фото клиента в client_documents
+ * (kind='photo'), чтобы оно переживало reload. До этого фото жило
+ * только в локальном clientStore.photos и пропадало после F5.
+ */
+const PHOTO_API_BASE =
+  import.meta.env.VITE_API_URL?.replace(/\/$/, "") ?? "http://localhost:4000";
+
+async function uploadClientPhoto(
+  clientId: number,
+  file: File,
+  title: string,
+): Promise<void> {
+  const fd = new FormData();
+  fd.append("clientId", String(clientId));
+  fd.append("kind", "photo");
+  fd.append("title", title);
+  fd.append("file", file);
+  const res = await fetch(`${PHOTO_API_BASE}/api/client-documents/upload`, {
+    method: "POST",
+    credentials: "include",
+    body: fd,
+  });
+  if (!res.ok) throw new Error(`upload ${res.status}`);
+  queryClient.invalidateQueries({ queryKey: clientDocsKeys.byClient(clientId) });
+}
 
 const SOURCE_OPTIONS: { id: ClientSource; label: string }[] = [
   { id: "avito", label: SOURCE_LABEL.avito },
@@ -1001,7 +1030,23 @@ export function AddClientModal({
                           : null,
                         ...passportFields,
                       });
+                      // Фото: оптимистично показываем локально + грузим
+                      // в client_documents если выбран новый файл.
                       clientStore.setPhoto(editing.id, f.photoFile);
+                      if (f.photoFile?.file) {
+                        uploadClientPhoto(
+                          editing.id,
+                          f.photoFile.file,
+                          `Фото · ${f.name.trim()}`,
+                        )
+                          .then(() => clientStore.setPhoto(editing.id, null))
+                          .catch((e) =>
+                            toast.error(
+                              "Фото не сохранилось на сервере",
+                              (e as Error).message ?? "",
+                            ),
+                          );
+                      }
                       clientStore.setExtraPhone(
                         editing.id,
                         f.phone2 || null,
@@ -1103,7 +1148,23 @@ export function AddClientModal({
                       comment: f.blReason || undefined,
                       ...passportFields,
                     });
-                    if (f.photoFile) clientStore.setPhoto(created.id, f.photoFile);
+                    if (f.photoFile) {
+                      clientStore.setPhoto(created.id, f.photoFile);
+                      if (f.photoFile.file) {
+                        uploadClientPhoto(
+                          created.id,
+                          f.photoFile.file,
+                          `Фото · ${f.name.trim()}`,
+                        )
+                          .then(() => clientStore.setPhoto(created.id, null))
+                          .catch((e) =>
+                            toast.error(
+                              "Фото не сохранилось на сервере",
+                              (e as Error).message ?? "",
+                            ),
+                          );
+                      }
+                    }
                     if (f.phone2) clientStore.setExtraPhone(created.id, f.phone2);
                     onCreated?.(created);
                     requestClose();
@@ -1230,6 +1291,9 @@ function PhotoSlot({
       name: f.name,
       size: f.size,
       thumbUrl: URL.createObjectURL(f),
+      // v0.7.4: сырой File — нужен чтобы при сохранении формы залить
+      // фото в client_documents (kind='photo'), иначе оно теряется при F5.
+      file: f,
     };
     onChange(uf);
   };
