@@ -251,6 +251,9 @@ export function RentalCard({
   rental,
   onSwapped,
   onClose,
+  onRequestPayment,
+  paymentExtDays,
+  paymentResetSignal,
   onPaymentOpenChange,
   initialTab,
   flushLeft = false,
@@ -263,6 +266,21 @@ export function RentalCard({
    *  терялся, и превью никогда не показывалось. */
   onSwapped?: (newRentalId: number) => void;
   onClose?: () => void;
+  /** v0.7.3: запрос на открытие Payment-панели у родителя (Rentals).
+   *  Payment теперь рендерится как третья колонка на уровне страницы
+   *  (push, не overlay внутри карточки). extDays — предзаполнение числа
+   *  дней продления (приходит из drag-to-extend на календаре карточки;
+   *  для кнопки footer'а «Принять оплату» = 0). Если prop не передан
+   *  (DashboardDrawer) — карточка открывает Payment внутри себя как
+   *  раньше (inline-fallback через paymentRentalId). */
+  onRequestPayment?: (rentalId: number, extDays: number) => void;
+  /** v0.7.3: при parent-managed Payment — текущее число дней продления
+   *  (живёт в Rentals, синхронизируется с Payment-колонкой). Календарь
+   *  карточки отражает это значение, чтобы drag/Payment были согласованы. */
+  paymentExtDays?: number;
+  /** v0.7.3: сигнал сброса календаря карточки — родитель бампает его при
+   *  закрытии Payment-колонки, чтобы drag-extend на календаре обнулился. */
+  paymentResetSignal?: number;
   onPaymentOpenChange?: (open: boolean) => void;
   /** v0.3.8: какой таб открыть по умолчанию (используется при навигации
    *  с дашборда: клик по должнику → openTab='debt' → таб «История долгов»). */
@@ -943,9 +961,24 @@ export function RentalCard({
     if (rental.archivedAt || rental.status === "completed") return;
     const nextDays = Math.max(0, days);
     setPaymentPrefillExtDays(nextDays);
-    if (nextDays > 0 && paymentRentalId == null) {
-      setPaymentRentalId(rental.id);
+    if (nextDays > 0) {
+      // v0.7.3: если родитель управляет Payment-колонкой (Rentals) —
+      // делегируем открытие туда (push-колонка). Иначе (DashboardDrawer) —
+      // открываем Payment внутри карточки как раньше.
+      if (onRequestPayment) {
+        onRequestPayment(rental.id, nextDays);
+      } else if (paymentRentalId == null) {
+        setPaymentRentalId(rental.id);
+      }
     }
+  };
+
+  // v0.7.3: единая точка открытия Payment. Делегирует родителю (push-
+  // колонка на странице Аренд) либо открывает inline-диалог внутри
+  // карточки (drawer на дашборде, где родитель prop не передал).
+  const requestPayment = (extDays = 0) => {
+    if (onRequestPayment) onRequestPayment(rental.id, extDays);
+    else setPaymentRentalId(rental.id);
   };
 
   // v0.7.0: «Закрыть аренду» / «Принять оплату» — доступность кнопок.
@@ -1041,7 +1074,7 @@ export function RentalCard({
               {canAcceptPayment && (
                 <button
                   type="button"
-                  onClick={() => setPaymentRentalId(rental.id)}
+                  onClick={() => requestPayment(0)}
                   className="inline-flex items-center gap-1.5 rounded-full bg-green-600 px-3 py-1.5 text-[12px] font-bold text-white shadow-card-sm hover:bg-green-700"
                   title="Принять оплату"
                 >
@@ -1549,8 +1582,14 @@ export function RentalCard({
             rental={rental}
             effectiveStatus={effectiveStatus}
             onCommitExtend={handleCommitExtend}
-            resetSignal={calendarResetSignal}
-            initialExtDays={paymentPrefillExtDays || undefined}
+            // v0.7.3: при parent-managed Payment календарь синхронизируется
+            // с состоянием в Rentals (число дней + сигнал сброса); иначе —
+            // с локальным fallback-состоянием карточки.
+            resetSignal={onRequestPayment ? paymentResetSignal : calendarResetSignal}
+            initialExtDays={
+              (onRequestPayment ? paymentExtDays : paymentPrefillExtDays) ||
+              undefined
+            }
           />
           {/* v0.6.50: «Последние события» — InlineHistory под календарём.
               Показывает 5 самых свежих событий с понятными иконками
@@ -1614,11 +1653,18 @@ export function RentalCard({
             // и сразу открываем диалог приёма оплаты — оператор вводит
             // принятую сумму, переплата уходит в депозит.
             navigate({ route: "rentals", rentalId: r.id });
-            setPaymentRentalId(r.id);
+            // v0.7.3: делегируем открытие Payment родителю (push-колонка),
+            // иначе открываем inline внутри карточки.
+            if (onRequestPayment) onRequestPayment(r.id, 0);
+            else setPaymentRentalId(r.id);
           }}
         />
       )}
-      {paymentRentalId != null && (
+      {/* v0.7.3: inline-Payment (overlay внутри карточки) рендерим ТОЛЬКО
+          в fallback-режиме — когда родитель не управляет Payment-колонкой
+          (DashboardDrawer). На странице Аренд Payment рендерится как push-
+          колонка в Rentals.tsx (см. onRequestPayment). */}
+      {!onRequestPayment && paymentRentalId != null && (
         <PaymentAcceptDialogContainer
           rentalId={paymentRentalId}
           initialExtDays={paymentPrefillExtDays || undefined}
@@ -1735,7 +1781,7 @@ export function RentalCard({
             {canAcceptPayment && (
               <button
                 type="button"
-                onClick={() => setPaymentRentalId(rental.id)}
+                onClick={() => requestPayment(0)}
                 className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-full bg-green-600 px-4 py-2.5 text-[13px] font-bold text-white shadow-card-sm hover:bg-green-700"
                 title="Принять оплату"
               >

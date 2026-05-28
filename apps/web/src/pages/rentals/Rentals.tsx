@@ -24,6 +24,8 @@ import { useDebtAggregate } from "@/lib/api/debt";
 import { useApiScooters } from "@/lib/api/scooters";
 import { useBillingPeriodRevenue } from "@/lib/useRevenue";
 import { ErrorBoundary } from "@/app/ErrorBoundary";
+import { isElectron } from "@/platform";
+import { PaymentAcceptDialog } from "./PaymentAcceptDialog";
 import type { ApiClient } from "@/lib/api/types";
 import {
   matchId,
@@ -201,6 +203,25 @@ export function Rentals() {
   // оператор может скрыть панель (список растянется на всю ширину),
   // при этом выбранная строка остаётся подсвеченной. По умолчанию открыта.
   const [panelOpen, setPanelOpen] = useState(true);
+  // v0.7.3: Payment-панель поднята на уровень страницы — рендерится как
+  // третья колонка справа от карточки (push, не overlay). paymentRentalId
+  // хранит id связки, по которой принимаем оплату (может отличаться от
+  // selectedId — например, после продления фокус на новой связке).
+  const [paymentRentalId, setPaymentRentalId] = useState<number | null>(null);
+  // v0.7.3: число дней продления (синхрон календарь карточки ↔ Payment-
+  // колонка) + сигнал сброса календаря при закрытии Payment.
+  const [paymentExtDays, setPaymentExtDays] = useState(0);
+  const [calendarResetSignal, setCalendarResetSignal] = useState(0);
+  const openPayment = (rentalId: number, extDays: number) => {
+    setPaymentExtDays(extDays);
+    setPaymentRentalId(rentalId);
+  };
+  const closePayment = () => {
+    setPaymentRentalId(null);
+    setPaymentExtDays(0);
+    // Бампаем сигнал — календарь карточки обнулит drag-extend.
+    setCalendarResetSignal((n) => n + 1);
+  };
   const [newOpen, setNewOpen] = useState(false);
   // v0.6.44: блок RentalsFilters (поповеры дат, набор табов) скрыт по
   // умолчанию — header'а нового дизайна достаточно. Открывается кнопкой
@@ -410,13 +431,33 @@ export function Rentals() {
   // выбранная строка останется подсвеченной. Клик по строке снова
   // открывает панель. Раньше (v0.7.0) была fixed overlay-drawer.
   const selected = rentals.find((r) => r.id === selectedId) ?? null;
+  // v0.7.3: высота прилипающих колонок (карточка/payment) = высота вьюпорта
+  // минус electron-titlebar (36px). В web — чистые 100vh. Так footer карточки
+  // и payment всегда виден: скроллится только внутреннее тело колонки.
+  const panelHeight = isElectron ? "calc(100vh - 36px)" : "100vh";
+  // v0.7.3: payment-связка должна существовать в текущем списке. Если её нет
+  // (например, ушла в архив) — колонка не рендерится.
+  const paymentRental =
+    paymentRentalId != null
+      ? rentals.find((r) => r.id === paymentRentalId) ?? null
+      : null;
   // Выбор строки: подсветить + всегда открыть панель (даже если была скрыта).
+  // v0.7.3: при переходе на другую аренду закрываем Payment-колонку, чтобы
+  // не висела открытая оплата от прежней связки.
   const handleSelect = (id: number) => {
+    if (id !== selectedId) closePayment();
     setSelectedId(id);
     setPanelOpen(true);
   };
   return (
-    <main className="flex min-w-0 flex-1 flex-col gap-4 p-4 lg:p-6">
+    <main
+      className="flex min-w-0 flex-1 flex-col gap-4 overflow-hidden p-4 lg:p-6"
+      // v0.7.3: страница фиксирована по высоте вьюпорта (минус electron-
+      // titlebar). overflow-hidden запрещает скролл всей страницы — вместо
+      // этого скроллятся внутренние области колонок (список / тело карточки /
+      // тело payment), а их header'ы и footer'ы остаются на месте.
+      style={{ height: panelHeight }}
+    >
       <Topbar />
 
       {/* v0.6.50: KPI-плашки (5 шт) — Активные / Просрочки / Возврат
@@ -506,19 +547,46 @@ export function Rentals() {
 
         {/* ======== КАРТОЧКА АРЕНДЫ = PUSH-ПАНЕЛЬ (v0.7.2) ========
             В потоке справа, сжимает список. «Скрыть» (onClose) убирает
-            панель, selectedId не сбрасывается (строка остаётся выбранной). */}
+            панель, selectedId не сбрасывается (строка остаётся выбранной).
+            v0.7.3: фикс. высота вьюпорта + overflow-hidden + min-h-0 —
+            footer карточки всегда виден, скроллится только её тело. */}
         {selected && panelOpen && (
-          <div className="ml-4 w-[760px] shrink-0 overflow-hidden rounded-2xl border-l border-border bg-surface shadow-card-sm flex flex-col animate-in slide-in-from-right duration-200">
+          <div className="ml-4 flex h-full min-h-0 w-[760px] shrink-0 flex-col overflow-hidden rounded-2xl border-l border-border bg-surface shadow-card-sm animate-in slide-in-from-right duration-200">
             <ErrorBoundary key={selected.id}>
               <RentalCard
                 rental={selected}
                 initialTab={pendingTab ?? undefined}
                 drawerChrome
                 onClose={() => setPanelOpen(false)}
+                onRequestPayment={openPayment}
+                paymentExtDays={paymentExtDays}
+                paymentResetSignal={calendarResetSignal}
                 onSwapped={(newId) => {
                   setSelectedId(newId);
                   setPanelOpen(true);
                   setSwapActPreviewId(newId);
+                }}
+              />
+            </ErrorBoundary>
+          </div>
+        )}
+
+        {/* ======== PAYMENT = ТРЕТЬЯ PUSH-КОЛОНКА (v0.7.3) ========
+            Открывается по «Принять оплату» / drag-to-extend на календаре
+            карточки. В потоке справа (не overlay) — сдвигает карточку влево
+            и сжимает список. Своя фикс. высота вьюпорта + внутренний скролл
+            (footer «Отмена»/«Принять» — часть тела диалога, inline-режим). */}
+        {paymentRental && (
+          <div className="ml-4 flex h-full min-h-0 w-[480px] shrink-0 flex-col overflow-hidden animate-in slide-in-from-right duration-200">
+            <ErrorBoundary key={`pay-${paymentRental.id}`}>
+              <PaymentAcceptDialog
+                rental={paymentRental}
+                inline
+                initialExtDays={paymentExtDays || undefined}
+                onExtDaysChange={setPaymentExtDays}
+                onClose={closePayment}
+                onPaid={() => {
+                  /* invalidations происходят внутри диалога */
                 }}
               />
             </ErrorBoundary>

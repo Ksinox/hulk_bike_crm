@@ -66,7 +66,7 @@ export function RentalsList({
   }
 
   return (
-    <div className="scrollbar-thin max-h-[calc(100vh-300px)] overflow-y-auto overflow-x-hidden">
+    <div className="scrollbar-thin h-full overflow-y-auto overflow-x-hidden">
       {items.map((r) => (
         <RentalRow
           key={r.id}
