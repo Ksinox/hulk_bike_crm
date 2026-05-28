@@ -537,8 +537,17 @@ export function Rentals() {
       {/* ======== Split: список (flex-1) + push-панель карточки (600px) ========
           Карточка в потоке справа, сжимает список, не перекрывает. */}
       <div className="flex h-full min-h-0 flex-1 gap-0">
-        {/* Левая часть — единый белый блок: header+поиск+чипы+список. */}
-        <div className="flex min-w-0 flex-1 flex-col rounded-2xl bg-surface shadow-card-sm overflow-hidden min-h-0">
+        {/* Левая часть — единый белый блок: header+поиск+чипы+список.
+            v0.7.25: в режиме «Список» (таблица) блок сжимается до ~880px
+            (ширина под фильтры в одну строку + таблицу), карточка
+            придвигается вплотную, лишнее место уходит вправо за карточку.
+            В «Плитках» — заполняет всю доступную ширину (flex-1). */}
+        <div
+          className={cn(
+            "flex min-w-0 flex-1 flex-col rounded-2xl bg-surface shadow-card-sm overflow-hidden min-h-0",
+            viewMode === "list" && "max-w-[880px]",
+          )}
+        >
           <div className="flex flex-col gap-3 p-4 pb-3 border-b border-border">
             <div className="flex items-center gap-2">
               <h1 className="font-display text-[26px] font-extrabold leading-none text-ink">
