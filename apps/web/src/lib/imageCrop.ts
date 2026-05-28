@@ -83,6 +83,12 @@ export async function cropImageToJpeg(
   canvas.height = outH;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("no 2d ctx");
+  // v0.7.6: JPEG не поддерживает альфа-канал — прозрачные пиксели PNG/WEBP
+  // при экспорте в JPEG становятся ЧЁРНЫМИ. Заливаем canvas белым ДО
+  // drawImage, чтобы прозрачность стала белой (предмет «лежит на белом»),
+  // а не чёрной. Для фото людей/документов заливка незаметна (нет альфы).
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, outW, outH);
   // Рисуем именно вырезанный регион оригинала
   ctx.drawImage(img, area.x, area.y, area.width, area.height, 0, 0, outW, outH);
 

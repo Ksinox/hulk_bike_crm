@@ -2,20 +2,20 @@ import { useCallback, useState } from "react";
 import Cropper, { type Area } from "react-easy-crop";
 import { Check, Crosshair, Loader2, RotateCw, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import {
-  compressOriginal,
-  cropImageToJpeg,
-  type CropArea,
-} from "@/lib/imageCrop";
+import { cropImageToJpeg, type CropArea } from "@/lib/imageCrop";
 
 /**
  * Диалог кропа аватарки. Принимает выбранный пользователем файл,
  * показывает интерфейс drag/zoom (как в Telegram/Slack при загрузке
  * фото профиля). По клику «Сохранить» возвращает два blob'а:
- *  - full: оригинальный файл (после ресайза до 2048px и сжатия до ≤1.5 МБ)
- *  - thumb: вырезанная часть, ужатая до thumbSize × thumbSize, JPEG
+ *  - full: ЗАКРОПАННАЯ область, ужатая до fullSize (длинная сторона), JPEG
+ *  - thumb: та же закропанная область, ужатая до thumbSize, JPEG
  *
- * Оригинал нужен для full-screen просмотра. Thumb — для плиток/списков.
+ * v0.7.6: раньше `full` был оригиналом целиком (compressOriginal) — кроп
+ * терялся, т.к. крупные превью (ModelCard, ScooterPosterAvatar) рендерят
+ * именно avatarKey (full). Теперь ОБА blob'а вырезаны по одной области
+ * croppedAreaPixels — то что оператор видит в рамке = то что сохраняется
+ * и подтягивается везде.
  */
 
 export type CropResult = {
@@ -26,8 +26,10 @@ export type CropResult = {
 type Props = {
   /** Исходный файл от пользователя (или null = диалог закрыт). */
   file: File | null;
-  /** Соотношение сторон кропа. 1 = квадрат (для аватарок). */
+  /** Соотношение сторон кропа. 1 = квадрат, 4/3 для постеров скутера/модели. */
   aspect?: number;
+  /** Размер закропанного оригинала (длинная сторона), по умолчанию 800. */
+  fullSize?: number;
   /** Размер итоговой миниатюры (длинная сторона), по умолчанию 512. */
   thumbSize?: number;
   onClose: () => void;
@@ -39,6 +41,7 @@ type Props = {
 export function ImageCropDialog({
   file,
   aspect = 1,
+  fullSize = 800,
   thumbSize = 512,
   onClose,
   onSave,
@@ -77,8 +80,11 @@ export function ImageCropDialog({
     setError(null);
     setBusy(true);
     try {
+      // v0.7.6: оба blob'а вырезаны по croppedArea. full — крупнее (для
+      // постера/карточки), thumb — мельче (для плиток/списков). Качество
+      // выше для full, чтобы крупное превью не было замыленным.
       const [full, thumb] = await Promise.all([
-        compressOriginal(file),
+        cropImageToJpeg(file, croppedArea, fullSize, 0.9),
         cropImageToJpeg(file, croppedArea, thumbSize, 0.85),
       ]);
       await onSave({ full, thumb });
@@ -133,7 +139,7 @@ export function ImageCropDialog({
             onZoomChange={setZoom}
             onRotationChange={setRotation}
             onCropComplete={onCropComplete}
-            cropShape={aspect === 1 ? "round" : "rect"}
+            cropShape="rect"
             showGrid={false}
             objectFit="contain"
           />

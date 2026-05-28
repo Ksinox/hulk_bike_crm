@@ -2524,7 +2524,7 @@ function EquipmentStep({
               <div
                 key={`${origIt.itemId ?? "noid"}-${idx}`}
                 className={cn(
-                  "relative flex flex-col items-center w-[68px]",
+                  "relative flex flex-col items-center w-[72px]",
                   showingPending && "animate-pulse opacity-80",
                 )}
                 onMouseEnter={() => isLive && setHoverEqIdx(idx)}
@@ -2540,7 +2540,7 @@ function EquipmentStep({
                   }}
                   disabled={!isLive}
                   className={cn(
-                    "w-[68px] h-[68px] rounded-[10px] border-2 p-1.5 flex items-center justify-center transition-colors relative",
+                    "w-[72px] h-[72px] rounded-[12px] border-2 p-2 flex items-center justify-center transition-colors relative",
                     isFree
                       ? "border-green bg-green-soft/50 hover:bg-green-soft"
                       : "border-blue-200 bg-blue-50 hover:bg-blue-100",
@@ -2552,7 +2552,12 @@ function EquipmentStep({
                   )}
                   title={isLive ? "Заменить или убрать" : it.name}
                 >
-                  <EquipmentThumb item={it} />
+                  {/* v0.7.6: тот же фиксированный 48×48 контейнер, что и в
+                      карточке аренды (MasterBlock) — чтобы тайл экипировки
+                      выглядел идентично в обоих местах. */}
+                  <span className="flex h-12 w-12 shrink-0 items-center justify-center">
+                    <EquipmentThumb item={it} />
+                  </span>
                   {!isFree && it.price > 0 && (
                     <span className="absolute top-0.5 right-0.5 rounded-full bg-blue-600 text-white px-1 py-0.5 text-[8.5px] font-bold tabular-nums shadow-card-sm">
                       +{it.price}
@@ -2602,7 +2607,7 @@ function EquipmentStep({
           {isLive && (
             <div
               className={cn(
-                "relative flex flex-col items-center w-[68px]",
+                "relative flex flex-col items-center w-[72px]",
                 swapIdx === -1 && pendingItem && "animate-pulse opacity-80",
               )}
             >
@@ -2610,7 +2615,7 @@ function EquipmentStep({
                 type="button"
                 onClick={() => setSwapIdx(swapIdx === -1 ? null : -1)}
                 className={cn(
-                  "w-[68px] h-[68px] rounded-[10px] border-2 flex items-center justify-center transition-colors p-1.5",
+                  "w-[72px] h-[72px] rounded-[12px] border-2 flex items-center justify-center transition-colors p-2",
                   swapIdx === -1 && pendingItem
                     ? pendingItem.free
                       ? "border-green bg-green-soft/50"
@@ -2623,13 +2628,15 @@ function EquipmentStep({
                 title="Добавить экипировку"
               >
                 {swapIdx === -1 && pendingItem ? (
-                  <EquipmentThumb
-                    item={{
-                      itemId: pendingItem.itemId,
-                      name: pendingItem.name,
-                      free: pendingItem.free,
-                    }}
-                  />
+                  <span className="flex h-12 w-12 shrink-0 items-center justify-center">
+                    <EquipmentThumb
+                      item={{
+                        itemId: pendingItem.itemId,
+                        name: pendingItem.name,
+                        free: pendingItem.free,
+                      }}
+                    />
+                  </span>
                 ) : (
                   <Plus size={22} strokeWidth={2} />
                 )}

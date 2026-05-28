@@ -403,13 +403,15 @@ export function MasterBlock({
                     title="Добавить экипировку"
                   >
                     {swapIdx === -1 && pendingItem ? (
-                      <EquipmentThumb
-                        item={{
-                          itemId: pendingItem.itemId,
-                          name: pendingItem.name,
-                          free: pendingItem.free,
-                        }}
-                      />
+                      <span className="flex h-12 w-12 shrink-0 items-center justify-center">
+                        <EquipmentThumb
+                          item={{
+                            itemId: pendingItem.itemId,
+                            name: pendingItem.name,
+                            free: pendingItem.free,
+                          }}
+                        />
+                      </span>
                     ) : (
                       <Plus size={22} strokeWidth={2} />
                     )}
