@@ -8,7 +8,7 @@ import {
 } from "./RentalsFilters";
 import { RentalsList } from "./RentalsList";
 import { RentalsKpi, type Kpi } from "./RentalsKpi";
-import { RentalCard, ActTransferPreview } from "./RentalCard";
+import { RentalCard, ActTransferPreview, RentalHistoryColumn } from "./RentalCard";
 import { cn } from "@/lib/utils";
 import { DocumentPreviewModal } from "./DocumentPreviewModal";
 import { consumePending, onNavigate } from "@/app/navigationStore";
@@ -212,7 +212,12 @@ export function Rentals() {
   // колонка) + сигнал сброса календаря при закрытии Payment.
   const [paymentExtDays, setPaymentExtDays] = useState(0);
   const [calendarResetSignal, setCalendarResetSignal] = useState(0);
+  // v0.7.9: история аренды — четвёртая push-колонка (как Payment). Хранит
+  // id связки, по которой открыта полная история. Взаимоисключение с
+  // Payment: открытие истории закрывает Payment и наоборот.
+  const [historyRentalId, setHistoryRentalId] = useState<number | null>(null);
   const openPayment = (rentalId: number, extDays: number) => {
+    setHistoryRentalId(null); // взаимоисключение с историей
     setPaymentExtDays(extDays);
     setPaymentRentalId(rentalId);
   };
@@ -222,6 +227,11 @@ export function Rentals() {
     // Бампаем сигнал — календарь карточки обнулит drag-extend.
     setCalendarResetSignal((n) => n + 1);
   };
+  const openHistory = (rentalId: number) => {
+    closePayment(); // взаимоисключение с Payment
+    setHistoryRentalId(rentalId);
+  };
+  const closeHistory = () => setHistoryRentalId(null);
   const [newOpen, setNewOpen] = useState(false);
   // v0.6.44: блок RentalsFilters (поповеры дат, набор табов) скрыт по
   // умолчанию — header'а нового дизайна достаточно. Открывается кнопкой
@@ -457,11 +467,30 @@ export function Rentals() {
     const t = window.setTimeout(() => setLastPaymentRental(null), 320);
     return () => window.clearTimeout(t);
   }, [paymentRental]);
+  // v0.7.9: история-связка должна существовать в текущем списке.
+  const historyRental =
+    historyRentalId != null
+      ? rentals.find((r) => r.id === historyRentalId) ?? null
+      : null;
+  // Держим id истории смонтированным во время exit-анимации (width 420→0),
+  // чтобы уезд был плавным (аналогично lastPaymentRental).
+  const [lastHistoryId, setLastHistoryId] = useState<number | null>(null);
+  useEffect(() => {
+    if (historyRental) {
+      setLastHistoryId(historyRental.id);
+      return;
+    }
+    const t = window.setTimeout(() => setLastHistoryId(null), 320);
+    return () => window.clearTimeout(t);
+  }, [historyRental]);
   // Выбор строки: подсветить + всегда открыть панель (даже если была скрыта).
   // v0.7.3: при переходе на другую аренду закрываем Payment-колонку, чтобы
   // не висела открытая оплата от прежней связки.
   const handleSelect = (id: number) => {
-    if (id !== selectedId) closePayment();
+    if (id !== selectedId) {
+      closePayment();
+      closeHistory();
+    }
     setSelectedId(id);
     setPanelOpen(true);
   };
@@ -590,6 +619,7 @@ export function Rentals() {
                   drawerChrome
                   onClose={() => setPanelOpen(false)}
                   onRequestPayment={openPayment}
+                  onOpenHistory={openHistory}
                   paymentExtDays={paymentExtDays}
                   paymentResetSignal={calendarResetSignal}
                   onSwapped={(newId) => {
@@ -629,6 +659,29 @@ export function Rentals() {
                   onPaid={() => {
                     /* invalidations происходят внутри диалога */
                   }}
+                />
+              </ErrorBoundary>
+            </div>
+          )}
+        </div>
+
+        {/* ======== ИСТОРИЯ = PUSH-КОЛОНКА (v0.7.9) ========
+            Открывается по «Все события →» в карточке. В потоке справа
+            (не overlay) — сдвигает карточку влево. Взаимоисключение с
+            Payment (открытие одной закрывает другую). Width-transition
+            0↔420px, контент держим смонтированным во время exit-анимации. */}
+        <div
+          className={cn(
+            "h-full min-h-0 shrink-0 overflow-hidden transition-[width,opacity,margin] duration-300 ease-in-out",
+            historyRental ? "ml-4 w-[420px] opacity-100" : "ml-0 w-0 opacity-0",
+          )}
+        >
+          {lastHistoryId != null && (
+            <div className="flex h-full min-h-0 w-[420px] flex-col overflow-hidden">
+              <ErrorBoundary key={`hist-${lastHistoryId}`}>
+                <RentalHistoryColumn
+                  rentalId={lastHistoryId}
+                  onClose={closeHistory}
                 />
               </ErrorBoundary>
             </div>

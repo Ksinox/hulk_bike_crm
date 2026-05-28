@@ -109,6 +109,10 @@ export function CalendarPanel({
       {startIso && endIso && (
         <div
           ref={calendarBoxRef}
+          // v0.7.9: ограничиваем ширину сетки месяца (~380px), чтобы
+          // календарь «считывался сразу» компактным блоком, а не
+          // растягивался на всю ширину панели 760px.
+          className="max-w-[380px]"
           style={{
             visibility: hideCalendar ? "hidden" : undefined,
           }}

@@ -260,6 +260,7 @@ export function RentalCard({
   paymentExtDays,
   paymentResetSignal,
   onPaymentOpenChange,
+  onOpenHistory,
   initialTab,
   flushLeft = false,
   drawerChrome = false,
@@ -287,6 +288,12 @@ export function RentalCard({
    *  закрытии Payment-колонки, чтобы drag-extend на календаре обнулился. */
   paymentResetSignal?: number;
   onPaymentOpenChange?: (open: boolean) => void;
+  /** v0.7.9: запрос на открытие полной истории аренды у родителя (Rentals).
+   *  История теперь рендерится как push-колонка на уровне страницы (как
+   *  Payment), а не overlay-SideDrawer поверх карточки. Если prop не передан
+   *  (DashboardDrawer) — карточка открывает историю в себе через
+   *  overlay-SideDrawer (historyOpen fallback). */
+  onOpenHistory?: (rentalId: number) => void;
   /** v0.3.8: какой таб открыть по умолчанию (используется при навигации
    *  с дашборда: клик по должнику → openTab='debt' → таб «История долгов»). */
   initialTab?: TabId;
@@ -1021,6 +1028,14 @@ export function RentalCard({
     else setPaymentRentalId(rental.id);
   };
 
+  // v0.7.9: единая точка открытия полной истории. Делегирует родителю
+  // (push-колонка на странице Аренд) либо открывает overlay-SideDrawer
+  // внутри карточки (DashboardDrawer, где родитель prop не передал).
+  const requestHistory = () => {
+    if (onOpenHistory) onOpenHistory(rental.id);
+    else setHistoryOpen(true);
+  };
+
   // v0.7.8: общие обработчики MasterBlock — используются и в обычном
   // layout'е, и в accordion-секциях drawer-режима (не дублируем).
   const handleSwapScooter = () => {
@@ -1646,6 +1661,21 @@ export function RentalCard({
             />
           </AccordionSection>
 
+          {/* v0.7.9: Календарь — ВСЕГДА виден, БЕЗ accordion. Заказчик:
+              календарь первостепенный, не должен прятаться/сворачиваться.
+              Рендерится сразу после «Скутер и экипировка». CalendarPanel
+              сам рисует блок «Дата возврата» (Выдано / Возврат) + сетку. */}
+          <CalendarPanel
+            rental={rental}
+            effectiveStatus={effectiveStatus}
+            onCommitExtend={handleCommitExtend}
+            resetSignal={onRequestPayment ? paymentResetSignal : calendarResetSignal}
+            initialExtDays={
+              (onRequestPayment ? paymentExtDays : paymentPrefillExtDays) ||
+              undefined
+            }
+          />
+
           <AccordionSection
             title="Финансовая информация"
             icon={<Wallet size={15} className="text-muted-2" />}
@@ -1707,23 +1737,6 @@ export function RentalCard({
           </AccordionSection>
 
           <AccordionSection
-            title="Календарь аренды"
-            icon={<Calendar size={15} className="text-muted-2" />}
-            defaultOpen
-          >
-            <CalendarPanel
-              rental={rental}
-              effectiveStatus={effectiveStatus}
-              onCommitExtend={handleCommitExtend}
-              resetSignal={onRequestPayment ? paymentResetSignal : calendarResetSignal}
-              initialExtDays={
-                (onRequestPayment ? paymentExtDays : paymentPrefillExtDays) ||
-                undefined
-              }
-            />
-          </AccordionSection>
-
-          <AccordionSection
             title="Хронология событий"
             icon={<Clock size={15} className="text-muted-2" />}
             defaultOpen={false}
@@ -1731,7 +1744,7 @@ export function RentalCard({
             <InlineHistory
               items={activityItems}
               loading={activityQ.isLoading}
-              onExpand={() => setHistoryOpen(true)}
+              onExpand={requestHistory}
               limit={5}
             />
           </AccordionSection>
@@ -1777,7 +1790,7 @@ export function RentalCard({
             <InlineHistory
               items={activityItems}
               loading={activityQ.isLoading}
-              onExpand={() => setHistoryOpen(true)}
+              onExpand={requestHistory}
               limit={5}
             />
             <DocsInline rental={rental} />
@@ -2021,6 +2034,78 @@ function PaymentAcceptDialogContainer({
         /* invalidations происходят в dialog'е */
       }}
     />
+  );
+}
+
+/**
+ * v0.7.9: история аренды как push-колонка (рендерится в Rentals.tsx справа,
+ * как Payment-колонка). Self-contained: сама резолвит цепочку продлений и
+ * акты о повреждениях по rentalId (как RentalCard), чтобы родителю не нужно
+ * было прокидывать вычисленные данные. Внутри — заголовок «История аренды
+ * #N» + кнопка X + скроллируемый HistoryTab.
+ */
+export function RentalHistoryColumn({
+  rentalId,
+  onClose,
+}: {
+  rentalId: number;
+  onClose: () => void;
+}) {
+  const activeRentals = useRentals();
+  const archivedRentals = useArchivedRentals();
+  const allRentals = useMemo(
+    () => [...activeRentals, ...archivedRentals],
+    [activeRentals, archivedRentals],
+  );
+  const rental = allRentals.find((r) => r.id === rentalId) ?? null;
+  const chainIdsFull = useMemo(
+    () => (rental ? getRentalChainIds(rental.id, allRentals) : []),
+    [rental, allRentals],
+  );
+  const chainIds = useMemo(
+    () =>
+      chainIdsFull.filter((id) => {
+        const r = allRentals.find((x) => x.id === id);
+        return !r || !r.archivedBy;
+      }),
+    [chainIdsFull, allRentals],
+  );
+  const chainRentals = useMemo(
+    () => allRentals.filter((r) => chainIds.includes(r.id)),
+    [allRentals, chainIds],
+  );
+  const damageReports = useChainDamageReports(chainIdsFull);
+
+  return (
+    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden rounded-2xl border-l border-border bg-surface shadow-card-sm">
+      <header className="flex items-center justify-between gap-3 border-b border-border px-5 py-3.5">
+        <div className="min-w-0">
+          <div className="font-display text-[16px] font-extrabold leading-tight text-ink truncate">
+            История аренды #{String(rentalId).padStart(4, "0")}
+          </div>
+          <div className="mt-0.5 text-[11.5px] text-muted">все события</div>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          title="Закрыть"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-soft text-muted hover:bg-border hover:text-ink"
+        >
+          <XCircle size={16} />
+        </button>
+      </header>
+      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        {rental ? (
+          <HistoryTab
+            rental={rental}
+            chainRentals={chainRentals}
+            damageReports={damageReports.data}
+          />
+        ) : (
+          <div className="text-[13px] text-muted">Аренда не найдена.</div>
+        )}
+      </div>
+    </div>
   );
 }
 
