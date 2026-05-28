@@ -70,6 +70,7 @@ function useInvalidateParking() {
     qc.invalidateQueries({ queryKey: ["rentals"] });
     qc.invalidateQueries({ queryKey: ["rentals-archived"] });
     qc.invalidateQueries({ queryKey: ["debt-aggregate"] });
+    qc.invalidateQueries({ queryKey: ["rental-debt"] });
     qc.invalidateQueries({ queryKey: ["clients"] });
     qc.invalidateQueries({ queryKey: ["activity"] });
   };

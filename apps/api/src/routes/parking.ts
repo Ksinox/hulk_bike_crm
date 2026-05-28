@@ -133,6 +133,20 @@ export async function parkingRoutes(app: FastifyInstance) {
       .where(eq(rentals.id, rentalId));
     if (!rental) return reply.code(404).send({ error: "rental not found" });
 
+    // Паркинг не может начинаться раньше выдачи скутера.
+    const rentalStartYmd = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Europe/Moscow",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(rental.startAt);
+    if (startDate < rentalStartYmd) {
+      return reply.code(400).send({
+        error: "before_issue",
+        message: "Паркинг не может начинаться раньше выдачи скутера.",
+      });
+    }
+
     const amount = parkingAmount(days);
     const session = await db.transaction(async (tx) => {
       const [s] = await tx

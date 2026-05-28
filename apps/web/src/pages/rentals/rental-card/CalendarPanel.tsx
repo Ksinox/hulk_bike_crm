@@ -145,8 +145,9 @@ export function CalendarPanel({
     return ranges;
   }, [sessions, draftStart, draftEnd]);
 
-  // Окно выбора конца: от начала до начала+6 (≤7 суток).
-  const selFrom = draftStart && !draftEnd ? draftStart : null;
+  // Окно выбора: начало паркинга не раньше выдачи; конец — ≤7 суток от
+  // начала. (Паркинг возможен задним числом, но не до выдачи скутера.)
+  const selFrom = draftStart && !draftEnd ? draftStart : startIso;
   const selTo =
     draftStart && !draftEnd
       ? addDaysIso(draftStart, PARKING_MAX_DAYS - 1)
