@@ -13,7 +13,7 @@
  * списка и прокидываются в строки — это нужно и для сортировки таблицы.
  */
 import { useMemo, useState } from "react";
-import { ChevronRight, SearchX, ChevronUp, ChevronDown, Bike } from "lucide-react";
+import { SearchX, ChevronUp, ChevronDown, Bike } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { type Rental } from "@/lib/mock/rentals";
 import { effectiveRentalStatus } from "@/lib/rentalStatus";
