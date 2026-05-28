@@ -8,6 +8,7 @@ import {
   damageReports,
   damageReportItems,
   debtEntries,
+  parkingSessions,
   payments,
   rentals,
   returnInspections,
@@ -2514,6 +2515,16 @@ export async function rentalsRoutes(app: FastifyInstance) {
         sql`${payments.rentalId} IN (${idsList}) AND ${payments.type} = 'rent' AND ${payments.paid} = false`,
       );
 
+    // Паркинг: неоплаченный остаток (amount − paid_amount) → в долг.
+    const parkingRows = await db
+      .select({
+        rentalId: parkingSessions.rentalId,
+        amount: parkingSessions.amount,
+        paidAmount: parkingSessions.paidAmount,
+      })
+      .from(parkingSessions)
+      .where(sql`${parkingSessions.rentalId} IN (${idsList})`);
+
     // v0.4.67: считаем «сегодня» по МСК, не по UTC сервера. Иначе
     // вечером по МСК (когда UTC всё ещё прошлый день) overdueDays=0.
     const toMsk = (d: Date) =>
@@ -2626,9 +2637,21 @@ export async function rentalsRoutes(app: FastifyInstance) {
         .filter((p) => p.rentalId === r.id)
         .reduce((s, p) => s + (p.amount ?? 0), 0);
 
+      // Паркинг: неоплаченный остаток.
+      const parkingBalance = parkingRows
+        .filter((p) => p.rentalId === r.id)
+        .reduce(
+          (s, p) => s + Math.max(0, (p.amount ?? 0) - (p.paidAmount ?? 0)),
+          0,
+        );
+
       const overdueBalance = daysBalance + fineBalance;
       const totalDebt =
-        overdueBalance + damageBalance + manualBalance + pendingRent;
+        overdueBalance +
+        damageBalance +
+        manualBalance +
+        pendingRent +
+        parkingBalance;
 
       return {
         rentalId: r.id,
@@ -2643,6 +2666,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
         damageBalance,
         manualBalance,
         pendingRent,
+        parkingBalance,
         totalDebt,
       };
     });

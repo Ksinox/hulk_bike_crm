@@ -8,6 +8,7 @@ import { closeDb, db } from "./db/index.js";
 import { clientsRoutes } from "./routes/clients.js";
 import { scootersRoutes } from "./routes/scooters.js";
 import { rentalsRoutes } from "./routes/rentals.js";
+import { parkingRoutes } from "./routes/parking.js";
 import { paymentsRoutes } from "./routes/payments.js";
 import { incidentsRoutes } from "./routes/incidents.js";
 import { tasksRoutes } from "./routes/tasks.js";
@@ -176,6 +177,7 @@ async function bootstrap() {
     await protectedApp.register(clientsRoutes, { prefix: "/api/clients" });
     await protectedApp.register(scootersRoutes, { prefix: "/api/scooters" });
     await protectedApp.register(rentalsRoutes, { prefix: "/api/rentals" });
+    await protectedApp.register(parkingRoutes, { prefix: "/api/rentals" });
     await protectedApp.register(paymentsRoutes, { prefix: "/api/payments" });
     await protectedApp.register(incidentsRoutes, { prefix: "/api/incidents" });
     await protectedApp.register(tasksRoutes, { prefix: "/api/tasks" });

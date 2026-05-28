@@ -1540,3 +1540,56 @@ export const debtEntries = pgTable(
     kindIdx: index("debt_entries_kind_idx").on(t.kind),
   }),
 );
+
+/* ============================================================
+ * parking_sessions — паркинг (пауза аренды)
+ *
+ * Клиент держит скутер у себя, но не катается. Дни паркинга НЕ
+ * «съедают» оплаченные дни аренды — плановый возврат (rentals.end_planned_at)
+ * сдвигается вперёд на число дней паркинга. За паркинг берётся льготная
+ * плата: 1-е сутки бесплатно, далее 250 ₽/сут. Максимум 7 суток за сессию.
+ *
+ * Инвариант: rentals.end_planned_at = базовый возврат + Σ days всех сессий.
+ * Поэтому просрочка (она считается от end_planned_at) автоматически
+ * пересчитывается — в т.ч. при паркинге задним числом по просроченным дням.
+ *
+ * Неоплаченная стоимость паркинга (amount − paid_amount) попадает в долг
+ * по аренде с подписью «паркинг», но не блокирует операции.
+ * ============================================================ */
+export const parkingSessions = pgTable(
+  "parking_sessions",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    rentalId: bigint("rental_id", { mode: "number" })
+      .notNull()
+      .references(() => rentals.id, { onDelete: "cascade" }),
+    /** Дата начала паркинга (включительно), YYYY-MM-DD. */
+    startDate: date("start_date").notNull(),
+    /** Дата конца паркинга (включительно), YYYY-MM-DD. */
+    endDate: date("end_date").notNull(),
+    /** Кол-во суток = endDate − startDate + 1 (1..7). */
+    days: integer("days").notNull(),
+    /** Ставка за платные сутки (по умолчанию 250 ₽). */
+    ratePerDay: integer("rate_per_day").notNull().default(250),
+    /** 1-е сутки бесплатные. */
+    freeFirstDay: boolean("free_first_day").notNull().default(true),
+    /** Стоимость = ratePerDay × (days − 1) при freeFirstDay. */
+    amount: integer("amount").notNull(),
+    /** Сколько уже оплачено по этой сессии. */
+    paidAmount: integer("paid_amount").notNull().default(0),
+    /** active — действует/запланирован; ended — снят вручную/закрыт. */
+    status: text("status").notNull().default("active"),
+    createdByUserId: bigint("created_by_user_id", {
+      mode: "number",
+    }).references(() => users.id, { onDelete: "set null" }),
+    createdByName: text("created_by_name"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+  },
+  (t) => ({
+    rentalIdx: index("parking_sessions_rental_idx").on(t.rentalId),
+    statusIdx: index("parking_sessions_status_idx").on(t.status),
+  }),
+);
