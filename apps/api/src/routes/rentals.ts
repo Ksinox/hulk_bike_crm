@@ -2808,6 +2808,19 @@ export async function rentalsRoutes(app: FastifyInstance) {
     // v0.5: автонормализация статуса убрана — модель статусов плоская
     // (active/completed), просрочка и проблемность — computed на фронте.
 
+    // === Паркинг — неоплаченный остаток (amount − paid_amount) ===
+    const parkingRows = await db
+      .select({
+        amount: parkingSessions.amount,
+        paidAmount: parkingSessions.paidAmount,
+      })
+      .from(parkingSessions)
+      .where(eq(parkingSessions.rentalId, id));
+    const parkingBalance = parkingRows.reduce(
+      (s, p) => s + Math.max(0, (p.amount ?? 0) - (p.paidAmount ?? 0)),
+      0,
+    );
+
     return {
       overdueDays,
       overdueRate: rental.rate,
@@ -2823,7 +2836,8 @@ export async function rentalsRoutes(app: FastifyInstance) {
       overdueBalance,
       manualBalance,
       damageBalance,
-      total: overdueBalance + manualBalance + damageBalance,
+      parkingBalance,
+      total: overdueBalance + manualBalance + damageBalance + parkingBalance,
       events,
       damageReports: damageRows,
       payments: allPayments,

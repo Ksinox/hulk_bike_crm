@@ -644,7 +644,10 @@ export function RentalCard({
   const overdueFineBalance = debtSummary?.overdueFineBalance ?? 0;
   const damageBalance = debtSummary?.damageBalance ?? totalDebt;
   const manualBalance = debtSummary?.manualBalance ?? 0;
-  const debtTotal = pending + overdueBalance + damageBalance + manualBalance;
+  // v0.8.0: неоплаченный паркинг — часть долга (с подписью «паркинг»).
+  const parkingBalance = debtSummary?.parkingBalance ?? 0;
+  const debtTotal =
+    pending + overdueBalance + damageBalance + manualBalance + parkingBalance;
   const debtParts: string[] = [];
   if (pending > 0) debtParts.push(`не оплачено ${fmt(pending)} ₽`);
   if (overdueDaysBalance > 0) debtParts.push(`дни ${fmt(overdueDaysBalance)} ₽`);
@@ -653,6 +656,7 @@ export function RentalCard({
     debtParts.push(`просрочка ${fmt(overdueBalance)} ₽`);
   if (damageBalance > 0) debtParts.push(`ущерб ${fmt(damageBalance)} ₽`);
   if (manualBalance > 0) debtParts.push(`ручной ${fmt(manualBalance)} ₽`);
+  if (parkingBalance > 0) debtParts.push(`паркинг ${fmt(parkingBalance)} ₽`);
   const debtHint = debtTotal === 0 ? "нет долгов" : debtParts.join(" + ");
   // Просрочка — дни + дата + ставка/сут (для hover плашки «Просрочка»).
   const overdueDaysCount =
@@ -1211,6 +1215,9 @@ export function RentalCard({
               )}
               {manualBalance > 0 && (
                 <div>ручной: <b>{fmt(manualBalance)} ₽</b></div>
+              )}
+              {parkingBalance > 0 && (
+                <div>паркинг: <b>{fmt(parkingBalance)} ₽</b></div>
               )}
             </div>
           ) : undefined

@@ -59,7 +59,9 @@ export type DebtSummary = {
   manualBalance: number;
   /** Остаток долга по ущербу (Σ damage_reports.debt). */
   damageBalance: number;
-  /** Итого: overdueBalance + manualBalance + damageBalance. */
+  /** v0.8.0: неоплаченный остаток паркинга. */
+  parkingBalance?: number;
+  /** Итого: overdueBalance + manualBalance + damageBalance + parkingBalance. */
   total: number;
   /** Лента событий долга (последние сверху). */
   events: DebtEntry[];
