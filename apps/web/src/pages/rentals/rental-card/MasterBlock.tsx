@@ -35,9 +35,7 @@ import {
 import { cn } from "@/lib/utils";
 import { fileUrl } from "@/lib/files";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
-import { useApiRentals } from "@/lib/api/rentals";
-import { useApiPayments } from "@/lib/api/payments";
-import type { ApiRental } from "@/lib/api/types";
+import { useClientStats } from "@/lib/useClientStats";
 import { initialsOf } from "@/lib/mock/clients";
 import { useClientPhoto } from "@/pages/clients/clientStore";
 import {
@@ -50,38 +48,10 @@ import {
   type RentalStatus,
 } from "@/lib/mock/rentals";
 import type { ApiClient, ApiScooter } from "@/lib/api/types";
-import { useMemo } from "react";
 
 function fmt(n: number | null | undefined): string {
   if (n == null || Number.isNaN(n)) return "0";
   return n.toLocaleString("ru-RU");
-}
-
-/**
- * v0.6.50: фактическое число дней «в аренде» = max(today, endPlanned) − start
- * для активных аренд (включая просрочку), либо endActual − start для
- * завершённых. Это и есть реальный срок, который видит клиент: для
- * просроченной 14.05 → 16.05 (today=27.05) вернёт 13, а не 2 (плановое).
- *
- * Принимает ApiRental (startAt/endPlannedAt/endActualAt — ISO-строки),
- * т.к. useApiRentals возвращает именно их. Минимум 1.
- */
-function rentalActualDays(r: ApiRental): number {
-  const start = r.startAt ? new Date(r.startAt) : null;
-  if (!start || Number.isNaN(start.getTime())) return r.days ?? 0;
-  const endPlanned = r.endPlannedAt ? new Date(r.endPlannedAt) : null;
-  const endActual = r.endActualAt ? new Date(r.endActualAt) : null;
-  const today = new Date();
-  let endMs: number;
-  if (endActual && !Number.isNaN(endActual.getTime())) {
-    endMs = endActual.getTime();
-  } else if (endPlanned && !Number.isNaN(endPlanned.getTime())) {
-    endMs = Math.max(endPlanned.getTime(), today.getTime());
-  } else {
-    endMs = today.getTime();
-  }
-  const days = Math.ceil((endMs - start.getTime()) / 86_400_000);
-  return Math.max(1, days);
 }
 
 /** Цвет аватарки клиента — детерминирован от id для стабильности. */
@@ -130,35 +100,11 @@ export function MasterBlock({
   const depositSpent = Math.max(0, originalDeposit - currentDeposit);
   const depositItem = rental.depositItem ?? null;
 
-  // KPI клиента — сумма ФАКТИЧЕСКИХ дней в аренде по всем арендам +
-  // сумма всех оплаченных платежей (исключая deposit/refund).
-  //
-  // v0.6.50: «N дней в аренде» считалось по полю rental.days — это
-  // плановый срок (rate × days). Для просроченной аренды (start=14.05,
-  // endPlanned=16.05, today=27.05) days=2, хотя клиент уже 14 дней
-  // ездит. Теперь считаем фактически прошедшие дни:
-  //   • если есть endActual — берём его как конец
-  //   • иначе — max(endPlanned, today) как конец (для просроченных
-  //     это today; для будущих и активных без просрочки — endPlanned).
-  // Это даёт реальное «N дней в аренде» включая просрочку.
-  const { data: allRentals = [] } = useApiRentals();
-  const { data: allPayments = [] } = useApiPayments();
-  const clientStats = useMemo(() => {
-    if (!client) return { totalDays: 0, totalPaid: 0 };
-    const clientRentals = allRentals.filter((r) => r.clientId === client.id);
-    const rentalIds = new Set(clientRentals.map((r) => r.id));
-    const totalDays = clientRentals.reduce(
-      (s, r) => s + rentalActualDays(r),
-      0,
-    );
-    const totalPaid = allPayments.reduce((s, p) => {
-      if (!p.paid) return s;
-      if (!rentalIds.has(p.rentalId)) return s;
-      if (p.type === "deposit" || p.type === "refund") return s;
-      return s + p.amount;
-    }, 0);
-    return { totalDays, totalPaid };
-  }, [client, allRentals, allPayments]);
+  // KPI клиента — единый источник: useClientStats считает фактические
+  // дни в аренде (с учётом просрочки) и реально оплаченное за всё время
+  // (paid платежи, кроме deposit/refund). Те же числа показывает
+  // ClientQuickView.
+  const clientStats = useClientStats(client?.id);
 
   return (
     <div className="overflow-hidden rounded-2xl border border-border bg-surface shadow-card-sm">

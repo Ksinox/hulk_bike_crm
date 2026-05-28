@@ -35,6 +35,7 @@ import type { UploadedFile } from "./DocUpload";
 import { ClientPhoto } from "./ClientPhoto";
 import { CreateDealMenu } from "./CreateDealMenu";
 import { useActivityTimeline } from "@/lib/api/activity";
+import { useClientStats } from "@/lib/useClientStats";
 import { ActivityTimelineSection } from "@/pages/rentals/ActivityTimelineSection";
 import { useDashboardDrawer } from "@/pages/dashboard/DashboardDrawer";
 import { useApplicationsByClient } from "@/lib/api/clientApplications";
@@ -97,15 +98,11 @@ export function ClientCard({ client }: { client: Client }) {
     () => getActiveRentalByClient(client.id, rentalsForClient),
     [client.id, rentalsForClient],
   );
-  // сумма всех арендных дней по истории
-  const totalRentedDays = useMemo(
-    () => rentalsForClient.reduce((s, r) => s + (r.days || 0), 0),
-    [rentalsForClient],
-  );
-  const totalTurnover = useMemo(
-    () => rentalsForClient.reduce((s, r) => s + (r.sum || 0), 0),
-    [rentalsForClient],
-  );
+  // Единый источник статистики клиента (тот же, что в карточке аренды
+  // и быстром просмотре): фактические дни в аренде (с учётом просрочки)
+  // и реально оплаченное за всё время.
+  const { totalPaid: totalTurnover, totalDays: totalRentedDays } =
+    useClientStats(client.id);
 
   /**
    * Остаток по клиенту — сумма накопленных штрафов за просрочки.
