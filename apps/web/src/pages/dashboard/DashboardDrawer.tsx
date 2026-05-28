@@ -1,5 +1,6 @@
 import {
   createContext,
+  Fragment,
   useContext,
   useEffect,
   useMemo,
@@ -255,31 +256,44 @@ export function DashboardDrawerStack() {
   const DRAWER_W = 600;
   return (
     <>
-      {stack.map((target, idx) => (
-        <DrawerColumn
-          key={drawerKey(target)}
-          target={target}
-          width={DRAWER_W}
-          onCloseSelf={() => ctx.closeAt(idx)}
-          onOpenRental={ctx.openRental}
-          onOpenClient={ctx.openClient}
-          onOpenScooter={ctx.openScooter}
-        />
-      ))}
-      {/* v0.7.20: side-колонка (оплата/история) — справа от стека, push.
-          Тот же механизм, что и в «Аренды»: оплата сдвигает карточку
-          влево, не перекрывает. key по kind — смена payment↔history даёт
-          корректную enter-анимацию новой. */}
-      {renderedSide && (
-        <SideDrawerColumn
-          key={renderedSide.kind}
-          data={renderedSide}
-          closing={!side || side.kind !== renderedSide.kind}
-          onClosePayment={ctx.closePayment}
-          onCloseHistory={ctx.closeHistory}
-          onExtDaysChange={ctx.setPaymentExtDays}
-        />
-      )}
+      {stack.map((target, idx) => {
+        // v0.7.20: side-колонка (оплата/история) выезжает СРАЗУ справа от
+        // своей аренды (а не в глобальный конец цепочки) — так оплата
+        // примыкает к карточке, как в «Аренды». Fragment с устойчивым key
+        // по target: переключение оплаты НЕ ремаунтит карточку.
+        const sideForThis =
+          renderedSide &&
+          target.kind === "rental" &&
+          renderedSide.rentalId === target.id
+            ? renderedSide
+            : null;
+        return (
+          <Fragment key={drawerKey(target)}>
+            <DrawerColumn
+              target={target}
+              width={DRAWER_W}
+              onCloseSelf={() => ctx.closeAt(idx)}
+              onOpenRental={ctx.openRental}
+              onOpenClient={ctx.openClient}
+              onOpenScooter={ctx.openScooter}
+            />
+            {sideForThis && (
+              <SideDrawerColumn
+                key={`side-${sideForThis.kind}`}
+                data={sideForThis}
+                closing={
+                  !side ||
+                  side.rentalId !== sideForThis.rentalId ||
+                  side.kind !== sideForThis.kind
+                }
+                onClosePayment={ctx.closePayment}
+                onCloseHistory={ctx.closeHistory}
+                onExtDaysChange={ctx.setPaymentExtDays}
+              />
+            )}
+          </Fragment>
+        );
+      })}
     </>
   );
 }
