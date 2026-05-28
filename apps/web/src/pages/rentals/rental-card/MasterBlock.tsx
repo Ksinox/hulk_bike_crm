@@ -225,8 +225,8 @@ export function MasterBlock({
   // + тайлы flex-wrap (переносятся при многих позициях). Скутер слева
   // прижат к верху (items-start), правая половина растёт при необходимости.
   const scooterBlock = (
-    <div className="grid grid-cols-2 items-start gap-3">
-      {/* ЛЕВО — СКУТЕР, компактно */}
+    <div className="grid grid-cols-[minmax(140px,0.42fr)_1fr] items-start gap-3">
+      {/* ЛЕВО — СКУТЕР, компактно (текст слева, фото справа) */}
       <ScooterCompact
         scooter={scooter ?? null}
         fallbackName={rental.scooter}
@@ -968,27 +968,11 @@ function ScooterCompact({
       type="button"
       onClick={onSwap}
       title="Заменить скутер"
-      className="group relative flex w-full min-w-0 items-center gap-3 rounded-2xl border border-border bg-surface p-3 text-left transition-colors hover:border-blue-300"
+      className="group relative flex w-full min-w-0 items-center gap-2.5 rounded-2xl border border-border bg-surface p-3 text-left transition-colors hover:border-blue-300"
     >
-      {/* Фото скутера 80×80 */}
-      <div className="relative shrink-0 h-[80px] w-[80px] rounded-[12px] bg-white overflow-hidden flex items-center justify-center">
-        {avatarSrc ? (
-          <img
-            src={avatarSrc}
-            alt={displayName}
-            className="h-full w-full object-contain"
-          />
-        ) : (
-          <Bike size={30} strokeWidth={1.5} className="text-muted-2" />
-        )}
-        <span className="absolute bottom-1 right-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-white shadow-card-sm opacity-0 group-hover:opacity-100 transition-opacity">
-          <Repeat size={12} />
-        </span>
-      </div>
-
-      {/* Метаданные */}
+      {/* Метаданные — СЛЕВА (текст) */}
       <div className="flex-1 min-w-0">
-        <div className="font-display text-[16px] font-bold leading-tight text-ink tracking-tight truncate">
+        <div className="font-display text-[15px] font-bold leading-tight text-ink tracking-tight truncate">
           {displayName}
         </div>
         {displayModel && (
@@ -1005,6 +989,22 @@ function ScooterCompact({
             км
           </div>
         )}
+      </div>
+
+      {/* Фото скутера 64×64 — СПРАВА, компактное */}
+      <div className="relative shrink-0 h-[64px] w-[64px] rounded-[12px] bg-white overflow-hidden flex items-center justify-center">
+        {avatarSrc ? (
+          <img
+            src={avatarSrc}
+            alt={displayName}
+            className="h-full w-full object-contain"
+          />
+        ) : (
+          <Bike size={26} strokeWidth={1.5} className="text-muted-2" />
+        )}
+        <span className="absolute bottom-1 right-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-white shadow-card-sm opacity-0 group-hover:opacity-100 transition-opacity">
+          <Repeat size={12} />
+        </span>
       </div>
     </button>
   );

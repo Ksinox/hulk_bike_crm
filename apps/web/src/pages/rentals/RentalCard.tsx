@@ -1379,10 +1379,13 @@ export function RentalCard({
       )}
 
       {/* =========== KPI STRIP =========== */}
+      {/* v0.7.11: «За всё время аренды» убрана из ряда → 3 плашки
+          (Срок/Просрочка · Долг · Эта аренда). Значение перенесено в
+          секцию «Финансовая информация». Узкая панель 600px → grid-cols-3. */}
       <div
         className={cn(
-          "grid grid-cols-2 gap-3 sm:grid-cols-4",
-          isExtended && "lg:grid-cols-5",
+          "grid grid-cols-3 gap-3",
+          isExtended && "lg:grid-cols-4",
         )}
       >
         {(() => {
@@ -1542,17 +1545,8 @@ export function RentalCard({
             />
           );
         })()}
-        <KpiCard
-          label="За всё время аренды"
-          value={`${fmt(paidIn)} ₽`}
-          accent={paidIn > 0 ? "blue" : "default"}
-          hint={
-            isExtended
-              ? `за ${chainRentals.length} ${pluralRental(chainRentals.length)} (без залога)`
-              : "сумма аренды без залога"
-          }
-          badgeIcon={paidIn > 0 ? CheckCircle2 : undefined}
-        />
+        {/* v0.7.11: «За всё время аренды» (paidIn) перенесена в секцию
+            «Финансовая информация» — здесь больше не рендерится. */}
         {isExtended && (
           <KpiCard
             label="Всего по сделке"
@@ -1698,6 +1692,23 @@ export function RentalCard({
                 onSwapScooter={handleSwapScooter}
                 onChangeEquipment={changeEquipmentHandler}
               />
+              {/* v0.7.11: «За всё время аренд клиента» (paidIn) — перенесено
+                  из KPI-ряда сюда. Сумма всех платежей по цепочке (без залога). */}
+              <div className="flex items-center justify-between rounded-[12px] border border-border bg-surface-soft/40 px-4 py-3">
+                <div className="min-w-0">
+                  <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-2">
+                    За всё время аренд клиента
+                  </div>
+                  <div className="mt-0.5 text-[11px] text-muted">
+                    {isExtended
+                      ? `за ${chainRentals.length} ${pluralRental(chainRentals.length)} (без залога)`
+                      : "сумма аренды без залога"}
+                  </div>
+                </div>
+                <div className="shrink-0 font-display text-[18px] font-extrabold tabular-nums text-blue-700">
+                  {fmt(paidIn)} ₽
+                </div>
+              </div>
               {/* Детальный состав долга (если есть). */}
               <div className="rounded-[12px] border border-border bg-surface-soft/40 px-4 py-3">
                 <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-2">

@@ -509,7 +509,7 @@ export function Rentals() {
           сегодня / Долг по просрочкам / Выручка. Над основным блоком. */}
       <RentalsKpi items={kpi} />
 
-      {/* ======== Split: список (flex-1) + push-панель карточки (760px) ========
+      {/* ======== Split: список (flex-1) + push-панель карточки (600px) ========
           Карточка в потоке справа, сжимает список, не перекрывает. */}
       <div className="flex h-full min-h-0 flex-1 gap-0">
         {/* Левая часть — единый белый блок: header+поиск+чипы+список. */}
@@ -606,12 +606,12 @@ export function Rentals() {
           className={cn(
             "h-full min-h-0 shrink-0 overflow-hidden transition-[width,opacity,margin] duration-300 ease-in-out",
             selected && panelOpen
-              ? "ml-4 w-[760px] opacity-100"
+              ? "ml-4 w-[600px] opacity-100"
               : "ml-0 w-0 opacity-0",
           )}
         >
           {selected && (
-            <div className="flex h-full min-h-0 w-[760px] flex-col overflow-hidden rounded-2xl border-l border-border bg-surface shadow-card-sm">
+            <div className="flex h-full min-h-0 w-[600px] flex-col overflow-hidden rounded-2xl border-l border-border bg-surface shadow-card-sm">
               <ErrorBoundary key={selected.id}>
                 <RentalCard
                   rental={selected}
