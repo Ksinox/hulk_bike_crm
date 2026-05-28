@@ -1064,6 +1064,159 @@ export function RentalCard({
   const canComplete = isLive && !isArchived;
   const canAcceptPayment = isLive && !isArchived;
 
+  // v0.7.12: KPI-ряд (Срок/Просрочка · Долг · Эта аренда) вынесен в
+  // переменную, чтобы рендерить его в разных местах: в обычном режиме —
+  // в потоке body, в drawer-режиме — между секциями «Клиент» и «Скутер».
+  const kpiStrip = (
+    <div
+      className={cn(
+        "grid grid-cols-3 gap-3",
+        isExtended && "lg:grid-cols-4",
+      )}
+    >
+      {(() => {
+        let label = "Срок";
+        const totalDays = isExtended
+          ? chainRentals.reduce((s, r) => s + (r.days || 0), 0)
+          : rental.days;
+        let value = `${totalDays} дн`;
+        const hint = `${rootRental.start.slice(0, 5)} — ${rental.endPlanned.slice(0, 5)}`;
+        let accent: KpiAccent = "default";
+        // v0.4.66: всегда показываем «Просрочен N дн» когда endPlanned
+        // прошёл, даже если долг 0 — оператор должен видеть срочность
+        // возврата скутера. Цвет (red/default) зависит от долга.
+        const debtZero = overdueRelatedDebt === 0;
+        // v0.4.80: бронь заранее — start_at в будущем.
+        const daysUntilStart = startDate
+          ? daysBetween(now(), startDate)
+          : null;
+        if (
+          rental.status === "active" &&
+          daysUntilStart !== null &&
+          daysUntilStart > 0
+        ) {
+          label = "До выдачи";
+          value = `${daysUntilStart} дн`;
+          accent = "default";
+        } else if (rental.status === "active" && daysLeft !== null) {
+          if (daysLeft > 0) {
+            value = `осталось ${daysLeft} дн`;
+            accent = daysLeft <= 2 ? "red" : "default";
+          } else if (daysLeft === 0) {
+            value = `возврат сегодня`;
+            accent = "red";
+          } else {
+            label = "Просрочен";
+            value = `${Math.abs(daysLeft)} дн`;
+            accent = debtZero ? "default" : "red";
+          }
+        } else if (rental.status === "overdue") {
+          label = "Просрочен";
+          value =
+            daysLeft !== null && daysLeft < 0
+              ? `${Math.abs(daysLeft)} дн`
+              : "сегодня";
+          accent = debtZero ? "default" : "red";
+        }
+        // v0.7.8: для просрочки — hover-поповер с днями/датой/ставкой.
+        const isOverdueKpi =
+          label === "Просрочен" && overdueDaysCount > 0;
+        return (
+          <KpiCard
+            label={label}
+            value={value}
+            hint={hint}
+            accent={accent}
+            popover={
+              isOverdueKpi ? (
+                <div className="space-y-0.5">
+                  <div className="font-bold text-ink">Просрочка</div>
+                  <div>{overdueHint}</div>
+                </div>
+              ) : undefined
+            }
+          />
+        );
+      })()}
+      {/* v0.7.8: «Долг» — состав вынесен наверх компонента (debtParts),
+          здесь только рендер + hover-поповер с детальным составом. */}
+      <KpiCard
+        label="Долг"
+        value={debtTotal > 0 ? `${fmt(debtTotal)} ₽` : "0 ₽"}
+        hint={debtHint}
+        accent={debtTotal > 0 ? "red" : "muted"}
+        popover={
+          debtTotal > 0 ? (
+            <div className="space-y-1">
+              <div className="font-bold text-ink">
+                Состав долга — {fmt(debtTotal)} ₽
+              </div>
+              {pending > 0 && (
+                <div>не оплачено: <b>{fmt(pending)} ₽</b></div>
+              )}
+              {overdueDaysBalance > 0 && (
+                <div>дни просрочки: <b>{fmt(overdueDaysBalance)} ₽</b></div>
+              )}
+              {overdueFineBalance > 0 && (
+                <div>штраф: <b>{fmt(overdueFineBalance)} ₽</b></div>
+              )}
+              {overdueBalance > 0 &&
+                overdueDaysBalance + overdueFineBalance === 0 && (
+                  <div>просрочка: <b>{fmt(overdueBalance)} ₽</b></div>
+                )}
+              {damageBalance > 0 && (
+                <div>ущерб: <b>{fmt(damageBalance)} ₽</b></div>
+              )}
+              {manualBalance > 0 && (
+                <div>ручной: <b>{fmt(manualBalance)} ₽</b></div>
+              )}
+            </div>
+          ) : undefined
+        }
+      />
+      {(() => {
+        // v0.4.97: единый источник правды по залогу.
+        const currentDeposit = rental.deposit ?? DEPOSIT_AMOUNT;
+        const originalDeposit =
+          (rental as { depositOriginal?: number }).depositOriginal ??
+          currentDeposit;
+        const depositSpent = Math.max(0, originalDeposit - currentDeposit);
+        // v0.5.1: «Эта аренда» = rental.sum.
+        const rentPays = chainPayments.filter((p) => p.type === "rent");
+        const extendCount = rentPays.filter(
+          (p) => !!p.note && /^продлен/i.test(p.note),
+        ).length;
+        const hintBase =
+          extendCount > 0
+            ? `продлений · ${extendCount}`
+            : "сумма этой аренды";
+        const isItemDeposit = !!rental.depositItem;
+        const hint = isItemDeposit
+          ? `${hintBase} · залог: ${rental.depositItem}`
+          : depositSpent > 0
+            ? `${hintBase} · залог: ${fmt(originalDeposit)} ₽ (списано ${fmt(depositSpent)} ₽)`
+            : `${hintBase} · + залог: ${fmt(currentDeposit)} ₽`;
+        return (
+          <KpiCard
+            label="Эта аренда"
+            value={`${fmt(rental.sum)} ₽`}
+            hint={hint}
+          />
+        );
+      })()}
+      {/* v0.7.11: «За всё время аренды» (paidIn) перенесена в секцию
+          «Финансовая информация» — здесь больше не рендерится. */}
+      {isExtended && (
+        <KpiCard
+          label="Всего по сделке"
+          value={`${fmt(chainDaysTotal)} дн`}
+          hint={`${chainRentals.length} ${chainRentals.length === 1 ? "аренда" : chainRentals.length < 5 ? "аренды" : "аренд"} в серии`}
+          accent="blue"
+        />
+      )}
+    </div>
+  );
+
   // Внутреннее тело карточки (header + баннеры + KPI + основной блок +
   // все модалки). В drawer-режиме оборачивается в скроллируемую область,
   // в обычном — просто рендерится как раньше.
@@ -1092,42 +1245,63 @@ export function RentalCard({
             <PanelRightClose size={14} /> Скрыть
           </button>
         )}
-        {/* v0.4.5: «Аренда #0001» — фикс. ширина, имя клиента —
-            отдельным элементом с переносом на новую строку. Раньше всё
-            это лежало в одном <span class=truncate>, и в drawer-режиме
-            «Аренда #0062 — Абдулазизов…» обрезалось до «Аренда #0062 — …». */}
-        <h2 className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-0.5 font-display text-[22px] font-extrabold leading-tight text-ink">
-          <span className="shrink-0">
-            Аренда #{String(rental.id).padStart(4, "0")}
-          </span>
-          {client && (
-            <span className="flex min-w-0 max-w-full items-baseline gap-1">
-              <span className="text-muted-2">—</span>
-              <button
-                type="button"
-                onClick={() => openClient(client.id)}
-                title={client.name}
-                className="block min-w-0 max-w-full truncate whitespace-nowrap text-left rounded decoration-2 underline-offset-4 hover:underline"
-              >
-                {client.name}
-              </button>
+        {/* v0.7.12: в drawer-режиме громоздкий заголовок «Аренда #N — Имя»
+            убран (имя клиента уже в первой секции «Информация о клиенте»).
+            Header минимальный: мелкий «#N» + бейдж статуса. В обычном
+            (non-drawer) режиме — прежний полный заголовок с именем. */}
+        {drawerChrome ? (
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+            <span className="shrink-0 font-display text-[13px] font-bold text-muted-2 tabular-nums">
+              #{String(rental.id).padStart(4, "0")}
             </span>
-          )}
-          <span
-            className={cn(
-              "inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold",
-              statusChipClass(tone),
+            <span
+              className={cn(
+                "inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold",
+                statusChipClass(tone),
+              )}
+            >
+              {STATUS_LABEL[effectiveStatus] ?? STATUS_LABEL[rental.status]}
+            </span>
+            {isUnreachable && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-orange-soft px-2.5 py-1 text-[11px] font-bold text-orange-ink">
+                <PhoneOff size={11} /> Не выходит на связь
+              </span>
             )}
-          >
-            {STATUS_LABEL[effectiveStatus] ?? STATUS_LABEL[rental.status]}
-          </span>
-          {isUnreachable && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-orange-soft px-2.5 py-1 text-[11px] font-bold text-orange-ink">
-              <PhoneOff size={11} /> Не выходит на связь
+          </div>
+        ) : (
+          <h2 className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-0.5 font-display text-[22px] font-extrabold leading-tight text-ink">
+            <span className="shrink-0">
+              Аренда #{String(rental.id).padStart(4, "0")}
             </span>
-          )}
-          {/* v0.6.51: рейтинг клиента убран из UI везде. */}
-        </h2>
+            {client && (
+              <span className="flex min-w-0 max-w-full items-baseline gap-1">
+                <span className="text-muted-2">—</span>
+                <button
+                  type="button"
+                  onClick={() => openClient(client.id)}
+                  title={client.name}
+                  className="block min-w-0 max-w-full truncate whitespace-nowrap text-left rounded decoration-2 underline-offset-4 hover:underline"
+                >
+                  {client.name}
+                </button>
+              </span>
+            )}
+            <span
+              className={cn(
+                "inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold",
+                statusChipClass(tone),
+              )}
+            >
+              {STATUS_LABEL[effectiveStatus] ?? STATUS_LABEL[rental.status]}
+            </span>
+            {isUnreachable && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-orange-soft px-2.5 py-1 text-[11px] font-bold text-orange-ink">
+                <PhoneOff size={11} /> Не выходит на связь
+              </span>
+            )}
+            {/* v0.6.51: рейтинг клиента убран из UI везде. */}
+          </h2>
+        )}
 
         {/* v0.6.42: порядок в шапке — [⋯ dots] [Завершить] [Принять оплату].
             Меню действий сжато до иконки-кружочка (triggerStyle="dots"),
@@ -1381,181 +1555,11 @@ export function RentalCard({
       {/* =========== KPI STRIP =========== */}
       {/* v0.7.11: «За всё время аренды» убрана из ряда → 3 плашки
           (Срок/Просрочка · Долг · Эта аренда). Значение перенесено в
-          секцию «Финансовая информация». Узкая панель 600px → grid-cols-3. */}
-      <div
-        className={cn(
-          "grid grid-cols-3 gap-3",
-          isExtended && "lg:grid-cols-4",
-        )}
-      >
-        {(() => {
-          let label = "Срок";
-          const totalDays = isExtended
-            ? chainRentals.reduce((s, r) => s + (r.days || 0), 0)
-            : rental.days;
-          let value = `${totalDays} дн`;
-          const hint = `${rootRental.start.slice(0, 5)} — ${rental.endPlanned.slice(0, 5)}`;
-          let accent: KpiAccent = "default";
-          // v0.4.66: всегда показываем «Просрочен N дн» когда endPlanned
-          // прошёл, даже если долг 0 — оператор должен видеть срочность
-          // возврата скутера. Цвет (red/default) теперь зависит от долга:
-          // долг 0 → серый/амбер (без паники), долг > 0 → красный.
-          // Раньше при долге 0 показывало «Возврат был DD.MM» — это
-          // не передавало срочности и сбивало оператора.
-          const debtZero = overdueRelatedDebt === 0;
-          // v0.4.80: бронь заранее — start_at в будущем. Аренда висит
-          // как 'active', но фактически не началась. Показываем «До
-          // выдачи N дн» вместо «осталось N дн до конца».
-          const daysUntilStart = startDate
-            ? daysBetween(now(), startDate)
-            : null;
-          if (
-            rental.status === "active" &&
-            daysUntilStart !== null &&
-            daysUntilStart > 0
-          ) {
-            label = "До выдачи";
-            value = `${daysUntilStart} дн`;
-            accent = "default";
-          } else if (rental.status === "active" && daysLeft !== null) {
-            if (daysLeft > 0) {
-              value = `осталось ${daysLeft} дн`;
-              accent = daysLeft <= 2 ? "red" : "default";
-            } else if (daysLeft === 0) {
-              value = `возврат сегодня`;
-              accent = "red";
-            } else {
-              label = "Просрочен";
-              value = `${Math.abs(daysLeft)} дн`;
-              accent = debtZero ? "default" : "red";
-            }
-          } else if (rental.status === "overdue") {
-            label = "Просрочен";
-            value =
-              daysLeft !== null && daysLeft < 0
-                ? `${Math.abs(daysLeft)} дн`
-                : "сегодня";
-            accent = debtZero ? "default" : "red";
-          }
-          // v0.7.8: для просрочки — hover-поповер с днями/датой/ставкой.
-          const isOverdueKpi =
-            label === "Просрочен" && overdueDaysCount > 0;
-          return (
-            <KpiCard
-              label={label}
-              value={value}
-              hint={hint}
-              accent={accent}
-              popover={
-                isOverdueKpi ? (
-                  <div className="space-y-0.5">
-                    <div className="font-bold text-ink">Просрочка</div>
-                    <div>{overdueHint}</div>
-                  </div>
-                ) : undefined
-              }
-            />
-          );
-        })()}
-        {/* v0.6.50: порядок плашек — Просрочка → Долг → Эта аренда → За всё время.
-            Долг сразу после Просрочки: оператор видит связку «N дн просрочки →
-            X ₽ долга» как одну смысловую пару. */}
-        {/* v0.7.8: «Долг» — состав вынесен наверх компонента (debtParts),
-            здесь только рендер + hover-поповер с детальным составом. */}
-        <KpiCard
-          label="Долг"
-          value={debtTotal > 0 ? `${fmt(debtTotal)} ₽` : "0 ₽"}
-          hint={debtHint}
-          accent={debtTotal > 0 ? "red" : "muted"}
-          popover={
-            debtTotal > 0 ? (
-              <div className="space-y-1">
-                <div className="font-bold text-ink">
-                  Состав долга — {fmt(debtTotal)} ₽
-                </div>
-                {pending > 0 && (
-                  <div>не оплачено: <b>{fmt(pending)} ₽</b></div>
-                )}
-                {overdueDaysBalance > 0 && (
-                  <div>дни просрочки: <b>{fmt(overdueDaysBalance)} ₽</b></div>
-                )}
-                {overdueFineBalance > 0 && (
-                  <div>штраф: <b>{fmt(overdueFineBalance)} ₽</b></div>
-                )}
-                {overdueBalance > 0 &&
-                  overdueDaysBalance + overdueFineBalance === 0 && (
-                    <div>просрочка: <b>{fmt(overdueBalance)} ₽</b></div>
-                  )}
-                {damageBalance > 0 && (
-                  <div>ущерб: <b>{fmt(damageBalance)} ₽</b></div>
-                )}
-                {manualBalance > 0 && (
-                  <div>ручной: <b>{fmt(manualBalance)} ₽</b></div>
-                )}
-              </div>
-            ) : undefined
-          }
-        />
-        {(() => {
-          // v0.4.97: единый источник правды по залогу — поля
-          //   rental.deposit (текущий остаток на счёте залога)
-          //   rental.depositOriginal (исторический максимум, «исходно»)
-          // Любая операция, уменьшающая залог (акт ущерба с depositCovered,
-          // PaymentAcceptDialog со списанием на долг), уменьшает именно
-          // rental.deposit. Раньше «списано» считалось через payments.method='deposit',
-          // что давало расхождение с плашкой залога — теперь оба места
-          // читают одни и те же поля.
-          const currentDeposit = rental.deposit ?? DEPOSIT_AMOUNT;
-          const originalDeposit =
-            (rental as { depositOriginal?: number }).depositOriginal ??
-            currentDeposit;
-          const depositSpent = Math.max(0, originalDeposit - currentDeposit);
-          // v0.5.1: «Эта аренда» = rental.sum, который API правильно
-          // поддерживает:
-          //   • при создании: rate × days
-          //   • при extend-inplace: += addedDays × rate
-          //   • при overdue_days_payment: += daysAdded × rate (v0.4.81)
-          // Раньше показывали сумму последнего ПРОДЛЕНИЯ через фильтр
-          // payments по note='Продление…'. Это ломалось когда клиент
-          // оплачивал просроченные дни — они тоже rent-платежи, но с
-          // другим note, и KPI не рос. Заказчик хочет видеть РЕАЛЬНУЮ
-          // суммарную стоимость текущей аренды (с учётом купленных
-          // просроченных дней) — это и есть rental.sum.
-          const rentPays = chainPayments.filter((p) => p.type === "rent");
-          const extendCount = rentPays.filter(
-            (p) => !!p.note && /^продлен/i.test(p.note),
-          ).length;
-          const hintBase =
-            extendCount > 0
-              ? `продлений · ${extendCount}`
-              : "сумма этой аренды";
-          // v0.5.9: если залог — предмет (паспорт и т.п.), показываем
-          // его название в хинте вместо «0 ₽».
-          const isItemDeposit = !!rental.depositItem;
-          const hint = isItemDeposit
-            ? `${hintBase} · залог: ${rental.depositItem}`
-            : depositSpent > 0
-              ? `${hintBase} · залог: ${fmt(originalDeposit)} ₽ (списано ${fmt(depositSpent)} ₽)`
-              : `${hintBase} · + залог: ${fmt(currentDeposit)} ₽`;
-          return (
-            <KpiCard
-              label="Эта аренда"
-              value={`${fmt(rental.sum)} ₽`}
-              hint={hint}
-            />
-          );
-        })()}
-        {/* v0.7.11: «За всё время аренды» (paidIn) перенесена в секцию
-            «Финансовая информация» — здесь больше не рендерится. */}
-        {isExtended && (
-          <KpiCard
-            label="Всего по сделке"
-            value={`${fmt(chainDaysTotal)} дн`}
-            hint={`${chainRentals.length} ${chainRentals.length === 1 ? "аренда" : chainRentals.length < 5 ? "аренды" : "аренд"} в серии`}
-            accent="blue"
-          />
-        )}
-      </div>
+          секцию «Финансовая информация». Узкая панель 600px → grid-cols-3.
+          v0.7.12: KPI-ряд вынесен в kpiStrip (определён выше body). В обычном
+          режиме рендерится здесь; в drawer-режиме — после секции «Информация
+          о клиенте» (см. блок accordion-секций ниже). */}
+      {!drawerChrome && kpiStrip}
 
       {/*
         v0.2.91: компактная панель платежа по ущербу для случая когда
@@ -1638,6 +1642,10 @@ export function RentalCard({
               onChangeEquipment={changeEquipmentHandler}
             />
           </AccordionSection>
+
+          {/* v0.7.12: KPI-ряд — сразу после секции «Информация о клиенте»,
+              перед «Скутер и экипировка» (заказчик: Клиент → KPI → Скутер). */}
+          {kpiStrip}
 
           <AccordionSection
             title="Скутер и экипировка"

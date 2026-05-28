@@ -10,7 +10,6 @@
  * открывает PaymentAcceptDialog с предзаполненным числом дней.
  */
 import type { Ref } from "react";
-import { Calendar } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DragExtendCalendar } from "./DragExtendCalendar";
 import type { Rental, RentalStatus } from "@/lib/mock/rentals";
@@ -85,51 +84,55 @@ export function CalendarPanel({
           Дата возврата
         </div>
       </div>
-      {/* v0.6.49: легенда — простые цветные точки без рамок. */}
+      {/* v0.6.49: легенда — простые цветные точки без рамок.
+          v0.7.12: добавлен пункт «возврат» (тонкая обводка-рамка) —
+          образец маркера дня планового возврата в сетке календаря. */}
       <div className="mb-3 flex flex-wrap items-center gap-4 text-[12px] text-muted-2">
         <LegendDot swatch="bg-blue-400" label="выдача" />
         <LegendDot swatch="bg-blue-300" label="оплачено" />
         {isOverdue && <LegendDot swatch="bg-red-400" label="просрочка" />}
         <LegendDot swatch="bg-emerald-400" label="продление" />
+        {/* образец «день возврата» — рамка вместо заливки */}
+        <div className="flex items-center gap-1.5">
+          <span className="inline-block h-2.5 w-2.5 rounded-[3px] ring-2 ring-inset ring-ink/40" />
+          <span>возврат</span>
+        </div>
       </div>
-      <div className="grid grid-cols-2 gap-3 mb-3">
-        <ScheduleBlock
-          kind="out"
-          date={rental.start}
-          time={rental.startTime ?? "12:00"}
-        />
-        <ScheduleBlock
-          kind="back"
-          date={rental.endPlanned}
-          time={rental.startTime ?? "12:00"}
+      {/* v0.7.12: сетка календаря СЛЕВА, вертикальный timeline дат СПРАВА
+          (Выдано сверху → линия → Возврат снизу). Раньше Выдано/Возврат
+          были двумя блоками в ряд НАД календарём. */}
+      <div className="flex items-start gap-3">
+        {startIso && endIso && (
+          <div
+            ref={calendarBoxRef}
+            // v0.7.9: ограничиваем ширину сетки месяца (~380px).
+            className="min-w-0 flex-1 max-w-[380px]"
+            style={{
+              visibility: hideCalendar ? "hidden" : undefined,
+            }}
+          >
+            <DragExtendCalendar
+              startIso={startIso}
+              plannedEndIso={endIso}
+              isOverdue={isOverdue}
+              dailyRate={dailyRate}
+              onCommitExtend={onCommitExtend}
+              resetSignal={resetSignal}
+              disabled={dragDisabled}
+              initialDays={initialExtDays}
+              hideLegend
+            />
+          </div>
+        )}
+        <DateTimeline
+          startDate={rental.start}
+          startTime={rental.startTime ?? "12:00"}
+          endDate={rental.endPlanned}
+          endTime={rental.startTime ?? "12:00"}
           overdue={isOverdue}
           overdueDays={overdueDays}
         />
       </div>
-      {startIso && endIso && (
-        <div
-          ref={calendarBoxRef}
-          // v0.7.9: ограничиваем ширину сетки месяца (~380px), чтобы
-          // календарь «считывался сразу» компактным блоком, а не
-          // растягивался на всю ширину панели 760px.
-          className="max-w-[380px]"
-          style={{
-            visibility: hideCalendar ? "hidden" : undefined,
-          }}
-        >
-          <DragExtendCalendar
-            startIso={startIso}
-            plannedEndIso={endIso}
-            isOverdue={isOverdue}
-            dailyRate={dailyRate}
-            onCommitExtend={onCommitExtend}
-            resetSignal={resetSignal}
-            disabled={dragDisabled}
-            initialDays={initialExtDays}
-            hideLegend
-          />
-        </div>
-      )}
     </div>
   );
 }
@@ -143,36 +146,94 @@ function LegendDot({ swatch, label }: { swatch: string; label: string }) {
   );
 }
 
-function ScheduleBlock({
-  kind,
-  date,
-  time,
+/**
+ * v0.7.12: вертикальный timeline «Выдано → Возврат» справа от календаря.
+ * Точки: выдача — синяя, возврат — красная при просрочке, иначе тёмная.
+ * Между точками — вертикальная линия. Дата крупнее, время мельче под ней.
+ * БЕЗ склада (его нет).
+ */
+function DateTimeline({
+  startDate,
+  startTime,
+  endDate,
+  endTime,
   overdue,
   overdueDays,
 }: {
-  kind: "out" | "back";
-  date: string;
-  time: string;
+  startDate: string;
+  startTime: string;
+  endDate: string;
+  endTime: string;
   overdue?: boolean;
   overdueDays?: number;
 }) {
-  const isOut = kind === "out";
-  // v0.6.49: компактная карточка с тонким бордером, без яркого фона.
-  // Иконка-календарь + лейбл серым; дата + время крупно тёмным.
   return (
-    <div className="rounded-[12px] border border-border bg-surface px-3 py-2.5">
-      <div className="flex items-center gap-1.5 text-[11px] font-semibold text-muted-2">
-        <Calendar size={11} />
-        {isOut ? "Выдано" : "Возврат"}
+    <div className="w-[150px] shrink-0 pt-1">
+      {/* Выдано */}
+      <TimelinePoint
+        label="Выдано"
+        date={startDate}
+        time={startTime}
+        dotClass="bg-blue-500"
+        connector
+      />
+      {/* Возврат */}
+      <TimelinePoint
+        label="Возврат"
+        date={endDate}
+        time={endTime}
+        dotClass={overdue ? "bg-red-500" : "bg-ink"}
+        sub={
+          overdue ? (
+            <span className="text-[10.5px] font-semibold text-red-ink">
+              просрочен на {overdueDays} дн
+            </span>
+          ) : undefined
+        }
+      />
+    </div>
+  );
+}
+
+function TimelinePoint({
+  label,
+  date,
+  time,
+  dotClass,
+  connector,
+  sub,
+}: {
+  label: string;
+  date: string;
+  time: string;
+  dotClass: string;
+  /** Рисовать вертикальную линию вниз от точки (для верхнего пункта). */
+  connector?: boolean;
+  sub?: React.ReactNode;
+}) {
+  return (
+    <div className="flex gap-2.5">
+      {/* Колонка с точкой и линией */}
+      <div className="flex flex-col items-center">
+        <span
+          className={cn(
+            "mt-1 inline-block h-2.5 w-2.5 shrink-0 rounded-full ring-2 ring-surface",
+            dotClass,
+          )}
+        />
+        {connector && <span className="my-1 w-px flex-1 bg-border" />}
       </div>
-      <div className="mt-1 font-display text-[15px] font-bold text-ink tabular-nums">
-        {date} · {time}
-      </div>
-      {overdue && !isOut && (
-        <div className="mt-0.5 text-[10.5px] font-semibold text-red-ink">
-          просрочен на {overdueDays} дн
+      {/* Контент */}
+      <div className={cn("min-w-0", connector ? "pb-3" : "")}>
+        <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-2">
+          {label}
         </div>
-      )}
+        <div className="mt-0.5 font-display text-[15px] font-bold leading-tight text-ink tabular-nums">
+          {date}
+        </div>
+        <div className="text-[12px] text-muted tabular-nums">{time}</div>
+        {sub && <div className="mt-0.5">{sub}</div>}
+      </div>
     </div>
   );
 }

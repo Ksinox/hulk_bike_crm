@@ -287,6 +287,10 @@ export function DragExtendCalendar({
     const k = calendarDateToKey(date);
     const zone = zoneOf(k);
     const isTodayCell = isSame(k, todayKey);
+    // v0.7.12: день планового возврата — тонкая обводка ячейки (доп.
+    // маркер). НЕ влияет на зональную логику/цвета/края — просто ring
+    // поверх. Помогает оператору сразу увидеть «вот день возврата».
+    const isPlannedEndCell = isSame(k, plannedEndKey);
 
     const parts: string[] = [
       // База. border убран чтобы соседние ячейки одной зоны
@@ -343,6 +347,13 @@ export function DragExtendCalendar({
       } else {
         parts.push("ring-2 ring-ink ring-inset");
       }
+    }
+
+    // v0.7.12: тонкая обводка дня планового возврата. ring-inset поверх
+    // зональной заливки/края — не трогает зоны. Если ячейка совпадает с
+    // today (которая уже даёт ring-ink), не дублируем.
+    if (isPlannedEndCell && !(isTodayCell && !zone)) {
+      parts.push("ring-2 ring-inset ring-ink/40");
     }
 
     return cn(...parts);

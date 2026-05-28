@@ -219,14 +219,15 @@ export function MasterBlock({
   );
 
   // ── БЛОК 2 — СКУТЕР / ЭКИПИРОВКА ──
-  // v0.7.10 (drawer): скутер и экипировка В ОДИН РЯД 50/50 — компактно,
-  // без вертикального растягивания. Левая половина — компактный скутер
-  // (фото 80px + название/модель/пробег). Правая — экипировка: заголовок
-  // + тайлы flex-wrap (переносятся при многих позициях). Скутер слева
-  // прижат к верху (items-start), правая половина растёт при необходимости.
+  // v0.7.12 (drawer): скутер и экипировка В ОДИН РЯД 50/50 (вернули равные
+  // половины — в v0.7.11 был 30/70 и текст скутера съезжал). Левая
+  // половина — скутер (текст слева, крупная аватарка справа «по высоте»
+  // с лёгким «вылезанием» за рамку). Правая — экипировка: заголовок +
+  // тайлы flex-wrap (переносятся при многих позициях). overflow-visible
+  // на ряду, чтобы фото скутера могло выходить за границы блока.
   const scooterBlock = (
-    <div className="grid grid-cols-[minmax(140px,0.42fr)_1fr] items-start gap-3">
-      {/* ЛЕВО — СКУТЕР, компактно (текст слева, фото справа) */}
+    <div className="grid grid-cols-2 items-stretch gap-3 overflow-visible">
+      {/* ЛЕВО — СКУТЕР, текст слева + крупная аватарка справа */}
       <ScooterCompact
         scooter={scooter ?? null}
         fallbackName={rental.scooter}
@@ -968,10 +969,13 @@ function ScooterCompact({
       type="button"
       onClick={onSwap}
       title="Заменить скутер"
-      className="group relative flex w-full min-w-0 items-center gap-2.5 rounded-2xl border border-border bg-surface p-3 text-left transition-colors hover:border-blue-300"
+      // v0.7.12: overflow-visible — крупная аватарка справа может «вылезать»
+      // за границы блока (живой эффект). min-h фиксирует высоту, чтобы фото
+      // было крупным и заполняло её.
+      className="group relative flex min-h-[112px] w-full min-w-0 items-center gap-2 overflow-visible rounded-2xl border border-border bg-surface p-3 text-left transition-colors hover:border-blue-300"
     >
       {/* Метаданные — СЛЕВА (текст) */}
-      <div className="flex-1 min-w-0">
+      <div className="relative z-10 flex-1 min-w-0">
         <div className="font-display text-[15px] font-bold leading-tight text-ink tracking-tight truncate">
           {displayName}
         </div>
@@ -991,18 +995,19 @@ function ScooterCompact({
         )}
       </div>
 
-      {/* Фото скутера 64×64 — СПРАВА, компактное */}
-      <div className="relative shrink-0 h-[64px] w-[64px] rounded-[12px] bg-white overflow-hidden flex items-center justify-center">
+      {/* Фото скутера — СПРАВА, крупное по высоте блока, с «вылезанием»
+          за рамку (scale-110 + overflow-visible на контейнере). */}
+      <div className="relative flex h-full min-h-[96px] w-[44%] shrink-0 items-center justify-center self-stretch overflow-visible">
         {avatarSrc ? (
           <img
             src={avatarSrc}
             alt={displayName}
-            className="h-full w-full object-contain"
+            className="h-full max-h-[120px] w-full origin-center scale-110 object-contain drop-shadow-[0_4px_10px_rgba(0,0,0,0.12)]"
           />
         ) : (
-          <Bike size={26} strokeWidth={1.5} className="text-muted-2" />
+          <Bike size={40} strokeWidth={1.5} className="text-muted-2" />
         )}
-        <span className="absolute bottom-1 right-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-white shadow-card-sm opacity-0 group-hover:opacity-100 transition-opacity">
+        <span className="absolute bottom-0 right-0 z-10 inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-white shadow-card-sm opacity-0 group-hover:opacity-100 transition-opacity">
           <Repeat size={12} />
         </span>
       </div>
