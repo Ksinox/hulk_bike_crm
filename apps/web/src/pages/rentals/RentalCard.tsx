@@ -1709,8 +1709,8 @@ export function RentalCard({
                   </div>
                   <div className="mt-0.5 text-[11px] text-muted">
                     {isExtended
-                      ? `за ${chainRentals.length} ${pluralRental(chainRentals.length)} (без залога)`
-                      : "сумма аренды без залога"}
+                      ? `всего получено за ${chainRentals.length} ${pluralRental(chainRentals.length)}: аренда, продления, штрафы, ущерб — кроме залога`
+                      : "всего получено от клиента: аренда, продления, штрафы, ущерб — кроме залога"}
                   </div>
                 </div>
                 <div className="shrink-0 font-display text-[18px] font-extrabold tabular-nums text-blue-700">
@@ -2160,6 +2160,7 @@ export function RentalHistoryColumn({
             rental={rental}
             chainRentals={chainRentals}
             damageReports={damageReports.data}
+            withFilters
           />
         ) : (
           <div className="text-[13px] text-muted">Аренда не найдена.</div>

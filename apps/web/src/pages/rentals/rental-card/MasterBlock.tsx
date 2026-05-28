@@ -211,7 +211,7 @@ export function MasterBlock({
             <span className="font-bold tabular-nums text-ink-2">
               {fmt(clientStats.totalPaid)} ₽
             </span>
-            <span>принёс</span>
+            <span>за всё время</span>
           </span>
         </div>
       </div>
@@ -591,7 +591,7 @@ export function MasterBlock({
                 <span className="font-bold tabular-nums text-ink-2">
                   {fmt(clientStats.totalPaid)} ₽
                 </span>
-                <span>принёс</span>
+                <span>за всё время</span>
               </span>
             </div>
           </div>
