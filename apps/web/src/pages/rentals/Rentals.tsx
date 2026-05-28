@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Search, SlidersHorizontal } from "lucide-react";
+import { Plus, Search, SlidersHorizontal, PanelRightOpen } from "lucide-react";
 import { Topbar } from "@/pages/dashboard/Topbar";
 import { type Rental, type RentalStatus } from "@/lib/mock/rentals";
 import {
@@ -196,6 +196,11 @@ export function Rentals() {
     endDateTo: null,
   });
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  // v0.7.2: карточка теперь push-панель (сдвигает список), а не overlay.
+  // panelOpen управляет видимостью панели независимо от selectedId:
+  // оператор может скрыть панель (список растянется на всю ширину),
+  // при этом выбранная строка остаётся подсвеченной. По умолчанию открыта.
+  const [panelOpen, setPanelOpen] = useState(true);
   const [newOpen, setNewOpen] = useState(false);
   // v0.6.44: блок RentalsFilters (поповеры дат, набор табов) скрыт по
   // умолчанию — header'а нового дизайна достаточно. Открывается кнопкой
@@ -248,6 +253,7 @@ export function Rentals() {
     return onNavigate((req) => {
       if (req.route === "rentals" && req.rentalId != null) {
         setSelectedId(req.rentalId);
+        setPanelOpen(true);
         // openContract=true приходит при продлении — сразу открываем
         // превью документа с новыми датами для печати.
         if (req.openContract) {
@@ -398,10 +404,17 @@ export function Rentals() {
     ];
   }, [rentals, revenue]);
 
-  // v0.7.0: full-width layout — список аренд занимает всю ширину страницы,
-  // карточка выбранной аренды выезжает справа как drawer (overlay). Раньше
-  // (v0.6.50) был split-grid [420px_1fr] с карточкой в правой колонке.
+  // v0.7.2: push-панель — карточка выбранной аренды живёт в потоке справа
+  // и сдвигает/сжимает список (не overlay, не затемнение). Панель можно
+  // скрыть вручную (panelOpen=false) — список растянется на всю ширину,
+  // выбранная строка останется подсвеченной. Клик по строке снова
+  // открывает панель. Раньше (v0.7.0) была fixed overlay-drawer.
   const selected = rentals.find((r) => r.id === selectedId) ?? null;
+  // Выбор строки: подсветить + всегда открыть панель (даже если была скрыта).
+  const handleSelect = (id: number) => {
+    setSelectedId(id);
+    setPanelOpen(true);
+  };
   return (
     <main className="flex min-w-0 flex-1 flex-col gap-4 p-4 lg:p-6">
       <Topbar />
@@ -410,12 +423,29 @@ export function Rentals() {
           сегодня / Долг по просрочкам / Выручка. Над основным блоком. */}
       <RentalsKpi items={kpi} />
 
-      {/* ======== Единый белый блок: header+поиск+чипы+список на всю ширину ======== */}
-      <div className="flex flex-col rounded-2xl bg-surface shadow-card-sm overflow-hidden flex-1 min-h-0">
+      {/* ======== Split: список (flex-1) + push-панель карточки (760px) ========
+          Карточка в потоке справа, сжимает список, не перекрывает. */}
+      <div className="flex h-full min-h-0 flex-1 gap-0">
+        {/* Левая часть — единый белый блок: header+поиск+чипы+список. */}
+        <div className="flex min-w-0 flex-1 flex-col rounded-2xl bg-surface shadow-card-sm overflow-hidden min-h-0">
           <div className="flex flex-col gap-3 p-4 pb-3 border-b border-border">
-            <h1 className="font-display text-[26px] font-extrabold leading-none text-ink">
-              Аренды
-            </h1>
+            <div className="flex items-center gap-2">
+              <h1 className="font-display text-[26px] font-extrabold leading-none text-ink">
+                Аренды
+              </h1>
+              {/* v0.7.2: когда панель скрыта, но аренда выбрана — вкладка
+                  «Показать карточку» возвращает панель. */}
+              {selected && !panelOpen && (
+                <button
+                  type="button"
+                  onClick={() => setPanelOpen(true)}
+                  className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1.5 text-[12px] font-semibold text-blue-700 hover:bg-blue-100"
+                  title="Показать карточку аренды"
+                >
+                  <PanelRightOpen size={14} /> Показать карточку
+                </button>
+              )}
+            </div>
 
             <div className="flex items-center gap-2">
               <div className="relative min-w-[160px] flex-1">
@@ -469,39 +499,32 @@ export function Rentals() {
             <RentalsList
               items={filtered}
               selectedId={selectedId}
-              onSelect={setSelectedId}
+              onSelect={handleSelect}
             />
           </div>
         </div>
 
-      {/* ======== КАРТОЧКА АРЕНДЫ = ПРАВЫЙ DRAWER (v0.7.0) ========
-          При выборе аренды карточка выезжает справа поверх контента.
-          Лёгкий backdrop (без блюра) — клик закрывает drawer. Payment-
-          drawer (z-[90]) и прочие диалоги внутри карточки открываются
-          поверх (z-40 < z-90). */}
-      {selected && (
-        <>
-          <div
-            className="fixed inset-0 z-30 bg-ink/20"
-            onClick={() => setSelectedId(null)}
-            aria-hidden
-          />
-          <div className="fixed right-0 top-0 bottom-0 z-40 w-[min(680px,92vw)] animate-in slide-in-from-right duration-200">
+        {/* ======== КАРТОЧКА АРЕНДЫ = PUSH-ПАНЕЛЬ (v0.7.2) ========
+            В потоке справа, сжимает список. «Скрыть» (onClose) убирает
+            панель, selectedId не сбрасывается (строка остаётся выбранной). */}
+        {selected && panelOpen && (
+          <div className="ml-4 w-[760px] shrink-0 overflow-hidden rounded-2xl border-l border-border bg-surface shadow-card-sm flex flex-col animate-in slide-in-from-right duration-200">
             <ErrorBoundary key={selected.id}>
               <RentalCard
                 rental={selected}
                 initialTab={pendingTab ?? undefined}
                 drawerChrome
-                onClose={() => setSelectedId(null)}
+                onClose={() => setPanelOpen(false)}
                 onSwapped={(newId) => {
                   setSelectedId(newId);
+                  setPanelOpen(true);
                   setSwapActPreviewId(newId);
                 }}
               />
             </ErrorBoundary>
           </div>
-        </>
-      )}
+        )}
+      </div>
 
       {swapActPreviewId != null && (
         <ActTransferPreview

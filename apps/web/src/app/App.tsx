@@ -88,43 +88,50 @@ export function App() {
   return (
     <DashboardDrawerProvider>
       <TitleBar />
+      {/* v0.7.2: sidebar вынесен из центрирующего контейнера — он всегда
+          прижат к левому краю экрана на ВСЕХ страницах. Контент-обёртка
+          центрируется (max-w-[1440px]) только для не-fullWidth страниц;
+          для rentals — full-width в оставшемся месте. */}
       <div
-        className={cn(
-          "flex min-h-screen",
-          fullWidth ? "" : "mx-auto max-w-[1440px] gap-[18px] p-[18px]",
-        )}
+        className="flex min-h-screen"
         style={
           isElectron
             ? {
-                // titlebar (36px) высота; для fullWidth внешнего p-[18px] нет,
-                // поэтому верхний отступ = только под titlebar.
-                paddingTop: fullWidth ? "36px" : "calc(18px + 36px)",
+                // titlebar (36px) высота — отступ под него на всех страницах.
+                paddingTop: "36px",
               }
             : undefined
         }
       >
         <Sidebar activeId={route} onSelect={onSelect} />
-        {route === "clients" ? (
-          <Clients />
-        ) : route === "applications" ? (
-          <Applications />
-        ) : route === "rentals" ? (
-          <Rentals />
-        ) : route === "fleet" ? (
-          <Garage />
-        ) : route === "service" ? (
-          <Service />
-        ) : route === "staff" ? (
-          <Staff />
-        ) : route === "docs" ? (
-          <Documents />
-        ) : route === "whats-new" ? (
-          <WhatsNew />
-        ) : route === "settings" ? (
-          <Settings />
-        ) : (
-          <Dashboard />
-        )}
+        <div
+          className={cn(
+            "flex min-w-0 flex-1",
+            fullWidth ? "" : "mx-auto max-w-[1440px] gap-[18px] p-[18px]",
+          )}
+        >
+          {route === "clients" ? (
+            <Clients />
+          ) : route === "applications" ? (
+            <Applications />
+          ) : route === "rentals" ? (
+            <Rentals />
+          ) : route === "fleet" ? (
+            <Garage />
+          ) : route === "service" ? (
+            <Service />
+          ) : route === "staff" ? (
+            <Staff />
+          ) : route === "docs" ? (
+            <Documents />
+          ) : route === "whats-new" ? (
+            <WhatsNew />
+          ) : route === "settings" ? (
+            <Settings />
+          ) : (
+            <Dashboard />
+          )}
+        </div>
         {webUpdate && (
           <UpdateToast
             title="Доступна новая версия"

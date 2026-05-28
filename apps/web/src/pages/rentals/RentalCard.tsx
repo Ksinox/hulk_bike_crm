@@ -6,13 +6,13 @@ import {
   CheckCircle2,
   Flag,
   PhoneOff,
+  PanelRightClose,
   ThumbsUp,
   Plus,
   Repeat,
   ShieldAlert,
   Wallet,
   Wrench,
-  X,
   XCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -969,13 +969,16 @@ export function RentalCard({
             "sticky top-0 z-10 -mx-5 -mt-5 border-b border-border bg-surface px-5 py-4",
         )}
       >
+        {/* v0.7.2: панель push (не overlay) — кнопка скрывает её, список
+            растягивается на всю ширину. Раньше «К арендам» (закрывала drawer). */}
         {onClose && (
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full bg-surface-soft px-3 py-1.5 text-[12px] font-semibold text-ink-2 hover:bg-border hover:text-ink"
+            title="Скрыть панель"
+            className="inline-flex items-center gap-1.5 rounded-full bg-surface-soft px-3 py-1.5 text-[12px] font-semibold text-ink-2 hover:bg-border hover:text-ink"
           >
-            К арендам
+            <PanelRightClose size={14} /> Скрыть
           </button>
         )}
         {/* v0.4.5: «Аренда #0001» — фикс. ширина, имя клиента —
@@ -1053,17 +1056,8 @@ export function RentalCard({
             onAction={handleAction}
             triggerStyle="dots"
           />
-          {/* v0.7.0: «X» закрыть drawer — справа от меню действий. */}
-          {drawerChrome && onClose && (
-            <button
-              type="button"
-              onClick={onClose}
-              title="Закрыть"
-              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted hover:bg-surface-soft hover:text-ink"
-            >
-              <X size={18} />
-            </button>
-          )}
+          {/* v0.7.2: кнопка скрытия панели — слева в header'е («Скрыть»),
+              здесь дубль X убран. */}
         </div>
       </header>
 
