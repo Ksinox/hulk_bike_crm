@@ -219,18 +219,23 @@ export function MasterBlock({
   );
 
   // ── БЛОК 2 — СКУТЕР / ЭКИПИРОВКА ──
+  // v0.7.10 (drawer): скутер и экипировка В ОДИН РЯД 50/50 — компактно,
+  // без вертикального растягивания. Левая половина — компактный скутер
+  // (фото 80px + название/модель/пробег). Правая — экипировка: заголовок
+  // + тайлы flex-wrap (переносятся при многих позициях). Скутер слева
+  // прижат к верху (items-start), правая половина растёт при необходимости.
   const scooterBlock = (
-    <div className="flex flex-col gap-4">
-      {/* СКУТЕР — горизонтальный layout */}
-      <ScooterHorizontalRow
+    <div className="grid grid-cols-2 items-start gap-3">
+      {/* ЛЕВО — СКУТЕР, компактно */}
+      <ScooterCompact
         scooter={scooter ?? null}
         fallbackName={rental.scooter}
         fallbackModel={rental.model}
         onSwap={onSwapScooter}
       />
 
-      {/* ЭКИПИРОВКА — полная ширина */}
-      <div className="rounded-[14px] bg-surface-soft/55 p-4 flex flex-col">
+      {/* ПРАВО — ЭКИПИРОВКА */}
+      <div className="min-w-0 rounded-[14px] bg-surface-soft/55 p-3 flex flex-col">
         <div className="flex items-center justify-between mb-2">
           <div className="text-[11px] font-semibold text-muted-2">
             ЭКИПИРОВКА
@@ -240,13 +245,13 @@ export function MasterBlock({
           </div>
         </div>
         {equipmentJson.length === 0 ? (
-          <div className="relative flex-1">
+          <div className="relative">
             <button
               type="button"
               onClick={() => onChangeEquipment && setSwapIdx(swapIdx === -1 ? null : -1)}
               disabled={!onChangeEquipment}
               className={cn(
-                "w-full min-h-[96px] flex flex-col items-center justify-center gap-1.5 rounded-2xl border-2 border-dashed border-border bg-surface-soft/60 text-muted-2 transition-colors",
+                "w-full min-h-[72px] flex flex-col items-center justify-center gap-1 rounded-2xl border-2 border-dashed border-border bg-surface-soft/60 text-muted-2 transition-colors",
                 onChangeEquipment
                   ? "hover:border-blue-600 hover:bg-blue-50 hover:text-blue-700 cursor-pointer"
                   : "cursor-default opacity-70",
@@ -257,7 +262,7 @@ export function MasterBlock({
             >
               {swapIdx === -1 && pendingItem ? (
                 <>
-                  <div className="rounded-[10px] border-2 border-blue-200 bg-blue-50 w-14 h-14 p-2 flex items-center justify-center">
+                  <div className="rounded-[10px] border-2 border-blue-200 bg-blue-50 w-12 h-12 p-1.5 flex items-center justify-center">
                     <EquipmentThumb
                       item={{
                         itemId: pendingItem.itemId,
@@ -272,8 +277,8 @@ export function MasterBlock({
                 </>
               ) : (
                 <>
-                  <div className="rounded-full bg-surface w-10 h-10 flex items-center justify-center shadow-card-sm">
-                    <Plus size={22} strokeWidth={2.2} />
+                  <div className="rounded-full bg-surface w-9 h-9 flex items-center justify-center shadow-card-sm">
+                    <Plus size={20} strokeWidth={2.2} />
                   </div>
                   <div className="text-[11px]">
                     {onChangeEquipment ? "Добавить" : "Экипировки нет"}
@@ -294,7 +299,7 @@ export function MasterBlock({
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(72px,1fr))] content-start gap-2 rounded-[14px] bg-surface-soft/35 p-2">
+          <div className="flex flex-wrap content-start gap-2">
             {equipmentJson.slice(0, 6).map((origIt, idx) => {
               const canSwap = !!onChangeEquipment;
               const isOpen = swapIdx === idx;
@@ -306,7 +311,7 @@ export function MasterBlock({
                 <div
                   key={`${origIt.itemId ?? "na"}-${idx}`}
                   className={cn(
-                    "relative min-w-0",
+                    "relative w-[60px]",
                     showingPending && "animate-pulse opacity-80",
                   )}
                   onMouseEnter={() => canSwap && setHoverEqIdx(idx)}
@@ -320,7 +325,7 @@ export function MasterBlock({
                     }}
                     disabled={!canSwap}
                     className={cn(
-                      "relative flex h-[72px] w-full items-center justify-center rounded-[12px] border-2 bg-white p-2 transition-colors",
+                      "relative flex h-[60px] w-full items-center justify-center rounded-[12px] border-2 bg-white p-1.5 transition-colors",
                       isFree
                         ? "border-green bg-green-soft/50"
                         : "border-blue-200 bg-blue-50",
@@ -332,7 +337,7 @@ export function MasterBlock({
                     )}
                     title={canSwap ? "Заменить или убрать" : it.name}
                   >
-                    <span className="flex h-12 w-12 shrink-0 items-center justify-center">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center">
                       <EquipmentThumb item={it} />
                     </span>
                     {!isFree && it.price > 0 && (
@@ -347,14 +352,14 @@ export function MasterBlock({
                     )}
                     {/* hover показывает только иконку Repeat в правом нижнем углу */}
                     {canSwap && isHover && !isOpen && (
-                      <span className="absolute bottom-1 right-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-white shadow-card-sm pointer-events-none">
+                      <span className="absolute bottom-0.5 right-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-white shadow-card-sm pointer-events-none">
                         <Repeat size={11} />
                       </span>
                     )}
                   </button>
                   <div
                     className={cn(
-                      "mt-1 text-center text-[10.5px] font-bold leading-tight whitespace-normal",
+                      "mt-1 text-center text-[10px] font-bold leading-tight whitespace-normal",
                       isFree ? "text-green-ink" : "text-blue-700",
                     )}
                     style={{ wordBreak: "normal", overflowWrap: "break-word" }}
@@ -378,7 +383,7 @@ export function MasterBlock({
             {onChangeEquipment && equipmentJson.length < 6 && (
               <div
                 className={cn(
-                    "relative min-w-0",
+                  "relative w-[60px]",
                   swapIdx === -1 && pendingItem && "animate-pulse opacity-80",
                 )}
               >
@@ -386,7 +391,7 @@ export function MasterBlock({
                   type="button"
                   onClick={() => setSwapIdx(swapIdx === -1 ? null : -1)}
                   className={cn(
-                    "flex h-[72px] w-full items-center justify-center rounded-[12px] border-2 bg-white p-2 transition-colors",
+                    "flex h-[60px] w-full items-center justify-center rounded-[12px] border-2 bg-white p-1.5 transition-colors",
                     swapIdx === -1 && pendingItem
                       ? pendingItem.free
                         ? "border-green bg-green-soft/50"
@@ -399,7 +404,7 @@ export function MasterBlock({
                   title="Добавить экипировку"
                 >
                   {swapIdx === -1 && pendingItem ? (
-                    <span className="flex h-12 w-12 shrink-0 items-center justify-center">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center">
                       <EquipmentThumb
                         item={{
                           itemId: pendingItem.itemId,
@@ -409,12 +414,12 @@ export function MasterBlock({
                       />
                     </span>
                   ) : (
-                    <Plus size={22} strokeWidth={2} />
+                    <Plus size={20} strokeWidth={2} />
                   )}
                 </button>
                 <div
                   className={cn(
-                    "mt-1 text-[10.5px] font-semibold text-center leading-tight whitespace-normal",
+                    "mt-1 text-[10px] font-semibold text-center leading-tight whitespace-normal",
                     swapIdx === -1 && pendingItem
                       ? pendingItem.free
                         ? "text-green-ink"
@@ -919,6 +924,81 @@ function ScooterHorizontalRow({
         {scooter && (
           <div className="mt-2 text-[12px] text-muted">
             Пробег:{" "}
+            <span className="font-bold tabular-nums text-ink">
+              {fmt(scooter.mileage)}
+            </span>{" "}
+            км
+          </div>
+        )}
+      </div>
+    </button>
+  );
+}
+
+/**
+ * Компактная карточка «Скутер» для drawer-режима (50/50 ряд) — v0.7.10.
+ * Фото 80×80 сверху + название/модель/пробег под ним. Прижата к верху
+ * (align-start от родителя), не растягивается по высоте экипировки.
+ */
+function ScooterCompact({
+  scooter,
+  fallbackName,
+  fallbackModel,
+  onSwap,
+}: {
+  scooter: ApiScooter | null;
+  fallbackName: string;
+  fallbackModel: string;
+  onSwap: () => void;
+}) {
+  const { data: models = [] } = useApiScooterModels();
+  const model = scooter
+    ? scooter.modelId
+      ? models.find((m) => m.id === scooter.modelId)
+      : models.find((m) =>
+          m.name.toLowerCase().includes(scooter.model.toLowerCase()),
+        )
+    : null;
+  const avatarSrc = fileUrl(model?.avatarKey, { variant: "view" });
+  const displayName = scooter?.name ?? fallbackName ?? "—";
+  const displayModel = model?.name ?? fallbackModel ?? "";
+
+  return (
+    <button
+      type="button"
+      onClick={onSwap}
+      title="Заменить скутер"
+      className="group relative flex w-full min-w-0 items-center gap-3 rounded-2xl border border-border bg-surface p-3 text-left transition-colors hover:border-blue-300"
+    >
+      {/* Фото скутера 80×80 */}
+      <div className="relative shrink-0 h-[80px] w-[80px] rounded-[12px] bg-white overflow-hidden flex items-center justify-center">
+        {avatarSrc ? (
+          <img
+            src={avatarSrc}
+            alt={displayName}
+            className="h-full w-full object-contain"
+          />
+        ) : (
+          <Bike size={30} strokeWidth={1.5} className="text-muted-2" />
+        )}
+        <span className="absolute bottom-1 right-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-white shadow-card-sm opacity-0 group-hover:opacity-100 transition-opacity">
+          <Repeat size={12} />
+        </span>
+      </div>
+
+      {/* Метаданные */}
+      <div className="flex-1 min-w-0">
+        <div className="font-display text-[16px] font-bold leading-tight text-ink tracking-tight truncate">
+          {displayName}
+        </div>
+        {displayModel && (
+          <div className="mt-0.5 text-[12px] text-muted truncate">
+            {displayModel}
+          </div>
+        )}
+        {scooter && (
+          <div className="mt-1.5 text-[11.5px] text-muted">
+            Пробег{" "}
             <span className="font-bold tabular-nums text-ink">
               {fmt(scooter.mileage)}
             </span>{" "}
