@@ -1831,11 +1831,11 @@ function SwapHistoryAvatar({ scooterId }: { scooterId: number }) {
   const avatarSrc = fileUrl(model?.avatarKey, { variant: "thumb" });
   if (avatarSrc) {
     return (
-      <div className="h-7 w-7 shrink-0 overflow-hidden rounded-full bg-surface-soft">
+      <div className="h-7 w-7 shrink-0 overflow-hidden rounded-full bg-white">
         <img
           src={avatarSrc}
           alt={model?.name ?? sc.name}
-          className="h-full w-full object-cover"
+          className="h-full w-full object-contain"
         />
       </div>
     );
@@ -1866,11 +1866,11 @@ function ScooterThumb({ rental }: { rental: Rental }) {
 
   if (avatarSrc) {
     return (
-      <div className="h-20 w-20 shrink-0 overflow-hidden rounded-full bg-surface-soft">
+      <div className="h-20 w-20 shrink-0 overflow-hidden rounded-full bg-white">
         <img
           src={avatarSrc}
           alt={model?.name ?? ""}
-          className="h-full w-full object-cover"
+          className="h-full w-full object-contain"
         />
       </div>
     );

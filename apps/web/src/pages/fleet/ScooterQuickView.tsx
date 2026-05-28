@@ -115,7 +115,7 @@ export function ScooterQuickView({
     <div className="flex flex-col gap-4 p-5">
       {/* Шапка с аватаркой */}
       <div className="flex items-start gap-4 rounded-2xl bg-surface p-4 shadow-card-sm">
-        <div className="flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-surface-soft">
+        <div className="flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white">
           {modelAvatar ? (
             <img src={modelAvatar} alt="" className="h-full w-full object-contain" />
           ) : (

@@ -1143,7 +1143,7 @@ function ScooterPhotoArea({ scooter }: { scooter: FleetScooter }) {
   const modelAvatar = fileUrl(model?.avatarKey, { variant: "view" });
 
   return (
-    <div className="relative flex min-h-[480px] flex-col items-center justify-end gap-2 overflow-visible bg-surface-soft p-5 pb-4 text-muted-2 md:border-r md:border-border">
+    <div className="relative flex min-h-[480px] flex-col items-center justify-end gap-2 overflow-visible bg-white p-5 pb-4 text-muted-2 md:border-r md:border-border">
       {modelAvatar ? (
         <>
           {/*

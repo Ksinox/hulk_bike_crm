@@ -515,7 +515,7 @@ function ScooterHorizontalRow({
     >
       {/* Фото скутера 88×88 (v0.6.51: иконка Repeat показывается в правом
           нижнем углу фото при hover на весь блок). */}
-      <div className="relative shrink-0 h-[88px] w-[88px] rounded-[12px] bg-surface-soft overflow-hidden flex items-center justify-center">
+      <div className="relative shrink-0 h-[88px] w-[88px] rounded-[12px] bg-white overflow-hidden flex items-center justify-center">
         {avatarSrc ? (
           <img
             src={avatarSrc}

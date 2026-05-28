@@ -441,6 +441,22 @@ export function Rentals() {
     paymentRentalId != null
       ? rentals.find((r) => r.id === paymentRentalId) ?? null
       : null;
+  // v0.7.5: «последняя» оплачиваемая связка — держим контент Payment-колонки
+  // смонтированным во время exit-анимации (width 480→0). При закрытии
+  // paymentRental становится null мгновенно, но lastPaymentRental ещё
+  // хранит связку ~320ms, пока ширина едет в 0 — уезд получается плавным.
+  const [lastPaymentRental, setLastPaymentRental] = useState<Rental | null>(
+    null,
+  );
+  useEffect(() => {
+    if (paymentRental) {
+      setLastPaymentRental(paymentRental);
+      return;
+    }
+    // Закрытие — снимаем контент после завершения transition (320ms).
+    const t = window.setTimeout(() => setLastPaymentRental(null), 320);
+    return () => window.clearTimeout(t);
+  }, [paymentRental]);
   // Выбор строки: подсветить + всегда открыть панель (даже если была скрыта).
   // v0.7.3: при переходе на другую аренду закрываем Payment-колонку, чтобы
   // не висела открытая оплата от прежней связки.
@@ -550,48 +566,74 @@ export function Rentals() {
             панель, selectedId не сбрасывается (строка остаётся выбранной).
             v0.7.3: фикс. высота вьюпорта + overflow-hidden + min-h-0 —
             footer карточки всегда виден, скроллится только её тело. */}
-        {selected && panelOpen && (
-          <div className="ml-4 flex h-full min-h-0 w-[760px] shrink-0 flex-col overflow-hidden rounded-2xl border-l border-border bg-surface shadow-card-sm animate-in fade-in slide-in-from-right-4 duration-300 ease-out">
-            <ErrorBoundary key={selected.id}>
-              <RentalCard
-                rental={selected}
-                initialTab={pendingTab ?? undefined}
-                drawerChrome
-                onClose={() => setPanelOpen(false)}
-                onRequestPayment={openPayment}
-                paymentExtDays={paymentExtDays}
-                paymentResetSignal={calendarResetSignal}
-                onSwapped={(newId) => {
-                  setSelectedId(newId);
-                  setPanelOpen(true);
-                  setSwapActPreviewId(newId);
-                }}
-              />
-            </ErrorBoundary>
-          </div>
-        )}
+        {/* v0.7.5: width-transition вместо mount/unmount — панель плавно
+            «подъезжает» (0→760px) и «уезжает» (760→0). Контейнер всегда в
+            DOM, анимируется width+opacity. Контент держим смонтированным
+            пока выбрана аренда (selected != null), даже когда панель скрыта
+            (panelOpen=false) — тогда ширина едет в 0, контент уезжает за
+            overflow-hidden, exit-анимация плавная. Внутренний враппер имеет
+            фикс. ширину 760px чтобы при сжатии контента не корёжило. */}
+        <div
+          className={cn(
+            "h-full min-h-0 shrink-0 overflow-hidden transition-[width,opacity,margin] duration-300 ease-in-out",
+            selected && panelOpen
+              ? "ml-4 w-[760px] opacity-100"
+              : "ml-0 w-0 opacity-0",
+          )}
+        >
+          {selected && (
+            <div className="flex h-full min-h-0 w-[760px] flex-col overflow-hidden rounded-2xl border-l border-border bg-surface shadow-card-sm">
+              <ErrorBoundary key={selected.id}>
+                <RentalCard
+                  rental={selected}
+                  initialTab={pendingTab ?? undefined}
+                  drawerChrome
+                  onClose={() => setPanelOpen(false)}
+                  onRequestPayment={openPayment}
+                  paymentExtDays={paymentExtDays}
+                  paymentResetSignal={calendarResetSignal}
+                  onSwapped={(newId) => {
+                    setSelectedId(newId);
+                    setPanelOpen(true);
+                    setSwapActPreviewId(newId);
+                  }}
+                />
+              </ErrorBoundary>
+            </div>
+          )}
+        </div>
 
         {/* ======== PAYMENT = ТРЕТЬЯ PUSH-КОЛОНКА (v0.7.3) ========
             Открывается по «Принять оплату» / drag-to-extend на календаре
             карточки. В потоке справа (не overlay) — сдвигает карточку влево
             и сжимает список. Своя фикс. высота вьюпорта + внутренний скролл
             (footer «Отмена»/«Принять» — часть тела диалога, inline-режим). */}
-        {paymentRental && (
-          <div className="ml-4 flex h-full min-h-0 w-[480px] shrink-0 flex-col overflow-hidden animate-in fade-in slide-in-from-right-4 duration-300 ease-out">
-            <ErrorBoundary key={`pay-${paymentRental.id}`}>
-              <PaymentAcceptDialog
-                rental={paymentRental}
-                inline
-                initialExtDays={paymentExtDays || undefined}
-                onExtDaysChange={setPaymentExtDays}
-                onClose={closePayment}
-                onPaid={() => {
-                  /* invalidations происходят внутри диалога */
-                }}
-              />
-            </ErrorBoundary>
-          </div>
-        )}
+        {/* v0.7.5: width-transition. Контейнер всегда в DOM; ширина едет
+            0↔480px при открытии/закрытии. Контент = lastPaymentRental, он
+            переживает exit-анимацию (см. useEffect выше). */}
+        <div
+          className={cn(
+            "h-full min-h-0 shrink-0 overflow-hidden transition-[width,opacity,margin] duration-300 ease-in-out",
+            paymentRental ? "ml-4 w-[480px] opacity-100" : "ml-0 w-0 opacity-0",
+          )}
+        >
+          {lastPaymentRental && (
+            <div className="flex h-full min-h-0 w-[480px] flex-col overflow-hidden">
+              <ErrorBoundary key={`pay-${lastPaymentRental.id}`}>
+                <PaymentAcceptDialog
+                  rental={lastPaymentRental}
+                  inline
+                  initialExtDays={paymentExtDays || undefined}
+                  onExtDaysChange={setPaymentExtDays}
+                  onClose={closePayment}
+                  onPaid={() => {
+                    /* invalidations происходят внутри диалога */
+                  }}
+                />
+              </ErrorBoundary>
+            </div>
+          )}
+        </div>
       </div>
 
       {swapActPreviewId != null && (
