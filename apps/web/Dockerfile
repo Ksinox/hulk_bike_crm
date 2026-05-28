@@ -20,6 +20,12 @@ RUN corepack enable
 ARG VITE_API_URL
 ENV VITE_API_URL=$VITE_API_URL
 
+# Поднимаем heap Node для сборки: vite/rollup минификация большого
+# бандла (~1.8MB + heic2any 1.3MB) упирается в дефолтный лимит кучи и
+# падает с «JavaScript heap out of memory». Затрагивает ТОЛЬКО этап
+# сборки (runtime — nginx со статикой), на прод-артефакт не влияет.
+ENV NODE_OPTIONS=--max-old-space-size=4096
+
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/web/package.json ./apps/web/package.json
 
