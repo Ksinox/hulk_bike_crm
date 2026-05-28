@@ -10,6 +10,7 @@ import { Check, ExternalLink, Eye, MailQuestion, Trash2, X } from "lucide-react"
 import { cn } from "@/lib/utils";
 import { navigate } from "@/app/navigationStore";
 import { RentalCard } from "@/pages/rentals/RentalCard";
+import { ErrorBoundary } from "@/app/ErrorBoundary";
 import {
   useRentals,
   useArchivedRentals,
@@ -273,6 +274,7 @@ function DrawerColumn({
           <RentalDrawerContent
             rentalId={target.id}
             onClose={requestClose}
+            onOpenRental={onOpenRental}
             onOpenClient={onOpenClient}
             onOpenScooter={onOpenScooter}
           />
@@ -361,9 +363,11 @@ function DrawerHeader({
 function RentalDrawerContent({
   rentalId,
   onClose,
+  onOpenRental,
 }: {
   rentalId: number;
   onClose: () => void;
+  onOpenRental: (id: number) => void;
   onOpenClient: (id: number) => void;
   onOpenScooter: (id: number) => void;
 }) {
@@ -373,27 +377,38 @@ function RentalDrawerContent({
     () => [...active, ...archived].find((r) => r.id === rentalId) ?? null,
     [active, archived, rentalId],
   );
+  // v0.7.18: рендерим ТУ ЖЕ карточку, что в «Аренды» (drawerChrome) — со
+  // своей шапкой (#ID + статус + Скрыть + ⋯), KPI-плашками, аккордеоном и
+  // sticky-футером. Payment/История карточка ведёт сама (внутренними
+  // overlay'ями), т.к. onRequestPayment/onOpenHistory не передаём. Так
+  // quick-view выглядит идентично странице аренд, а не «странно».
+  if (!rental) {
+    return (
+      <>
+        <DrawerHeader
+          kind="Быстрый просмотр аренды"
+          title={`Аренда #${String(rentalId).padStart(4, "0")}`}
+          onClose={onClose}
+          onOpenFull={() => {
+            navigate({ route: "rentals", rentalId });
+            onClose();
+          }}
+        />
+        <div className="flex h-full items-center justify-center text-muted">
+          Аренда не найдена.
+        </div>
+      </>
+    );
+  }
   return (
-    <>
-      <DrawerHeader
-        kind="Быстрый просмотр аренды"
-        title={`Аренда #${String(rentalId).padStart(4, "0")}`}
+    <ErrorBoundary key={rental.id}>
+      <RentalCard
+        rental={rental}
+        drawerChrome
         onClose={onClose}
-        onOpenFull={() => {
-          navigate({ route: "rentals", rentalId });
-          onClose();
-        }}
+        onSwapped={(newId) => onOpenRental(newId)}
       />
-      <div className="flex-1 min-h-0 overflow-y-auto p-5">
-        {rental ? (
-          <RentalCard rental={rental} />
-        ) : (
-          <div className="flex h-full items-center justify-center text-muted">
-            Аренда не найдена.
-          </div>
-        )}
-      </div>
-    </>
+    </ErrorBoundary>
   );
 }
 
