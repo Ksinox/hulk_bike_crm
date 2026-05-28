@@ -14,6 +14,7 @@ import {
   Plus,
   Repeat,
   ShieldAlert,
+  SquareParking,
   User,
   Wallet,
   Wrench,
@@ -57,6 +58,7 @@ import {
   useChargeManualDebt,
   useForgiveOverdue,
 } from "@/lib/api/debt";
+import { useRentalParking, useEndParking } from "@/lib/api/parking";
 import { RentalActionsMenu, type MenuAction } from "./RentalActionsMenu";
 import {
   getRentalChainIds,
@@ -124,6 +126,13 @@ function statusActions(
       label: "Начислить долг",
       icon: Plus,
       tone: "warn",
+    },
+    // v0.8.0: паркинг — дубль точки входа (основная кнопка 🅿 в календаре).
+    {
+      id: "set-parking",
+      label: "Поставить на паркинг",
+      icon: SquareParking,
+      tone: "primary",
     },
     // v0.3.8: списание просрочки — только если есть начисленная просрочка.
     // Само действие проверит наличие на сервере и вернёт ошибку если нет.
@@ -313,6 +322,8 @@ export function RentalCard({
   const [action, setAction] = useState<ActionKind | null>(null);
   const [editRentalOpen, setEditRentalOpen] = useState(false);
   const [extendOpen, setExtendOpen] = useState(false);
+  // v0.8.0: бамп для входа в режим паркинга из ⋯-меню (CalendarPanel слушает).
+  const [armParkingSignal, setArmParkingSignal] = useState(0);
   // v0.3.9: после продления / оплаты — открываем диалог приёма оплаты
   // на новой связке. Хранится rentalId, чтобы пережить перерендер.
   const [paymentRentalId, setPaymentRentalId] = useState<number | null>(null);
@@ -463,6 +474,35 @@ export function RentalCard({
     overdueRelatedDebt,
   );
   const tone = STATUS_TONE[effectiveStatus] ?? STATUS_TONE[rental.status];
+
+  // v0.8.0: состояние паркинга для баннера/пилюли.
+  const { sessions: parkingList } = useRentalParking(rental.id);
+  const endParkingMut = useEndParking();
+  const todayYmd = useMemo(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }, []);
+  const activeParking =
+    parkingList.find(
+      (s) =>
+        s.status === "active" &&
+        s.startDate <= todayYmd &&
+        s.endDate >= todayYmd,
+    ) ?? null;
+  const scheduledParking =
+    parkingList.find((s) => s.status === "active" && s.startDate > todayYmd) ??
+    null;
+  const parkingDayN = activeParking
+    ? Math.min(
+        activeParking.days,
+        Math.floor(
+          (Date.parse(`${todayYmd}T00:00:00Z`) -
+            Date.parse(`${activeParking.startDate}T00:00:00Z`)) /
+            86_400_000,
+        ) + 1,
+      )
+    : 0;
+
   const chargeManualMut = useChargeManualDebt();
   const forgiveOverdueMut = useForgiveOverdue();
   const reportWithDebt = reports.find((r) => r.debt > 0) ?? null;
@@ -627,6 +667,8 @@ export function RentalCard({
   const handleAction = async (id: string) => {
     if (id === "extend") return setExtendOpen(true);
     if (id === "edit") return setEditRentalOpen(true);
+    // v0.8.0: вход в режим паркинга (основная кнопка 🅿 — в календаре).
+    if (id === "set-parking") return setArmParkingSignal((n) => n + 1);
     if (id === "revert-completion") {
       // v0.5.1: возврат завершённой аренды в active. Используется когда
       // оператор случайно нажал «Завершить» или клиент передумал.
@@ -1262,6 +1304,11 @@ export function RentalCard({
             >
               {STATUS_LABEL[effectiveStatus] ?? STATUS_LABEL[rental.status]}
             </span>
+            {activeParking && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2.5 py-1 text-[11px] font-bold text-violet-700">
+                <SquareParking size={11} /> паркинг
+              </span>
+            )}
             {isUnreachable && (
               <span className="inline-flex items-center gap-1 rounded-full bg-orange-soft px-2.5 py-1 text-[11px] font-bold text-orange-ink">
                 <PhoneOff size={11} /> Не выходит на связь
@@ -1347,6 +1394,48 @@ export function RentalCard({
       </header>
 
       {/* =========== BANNERS =========== */}
+      {/* v0.8.0: паркинг — явно видно что аренда на паузе и сколько дней. */}
+      {activeParking && (
+        <div className="flex items-center gap-3 rounded-[12px] bg-violet-50 px-3 py-2.5 text-[12.5px] text-violet-800 ring-1 ring-inset ring-violet-200">
+          <SquareParking size={18} className="shrink-0 text-violet-600" />
+          <div className="min-w-0 flex-1 leading-tight">
+            <b>На паркинге</b> · день {parkingDayN} из {activeParking.days} · с{" "}
+            {activeParking.startDate.slice(8, 10)}.
+            {activeParking.startDate.slice(5, 7)}
+            {activeParking.amount > 0 && (
+              <span className="ml-1 text-violet-700/80">
+                · начислено {activeParking.amount.toLocaleString("ru-RU")} ₽
+              </span>
+            )}
+          </div>
+          <button
+            type="button"
+            disabled={endParkingMut.isPending}
+            onClick={() =>
+              endParkingMut.mutate(
+                { rentalId: rental.id, sessionId: activeParking.id },
+                {
+                  onSuccess: () =>
+                    toast.success("Снят с паркинга", "Возврат пересчитан"),
+                  onError: () => toast.error("Не удалось снять с паркинга"),
+                },
+              )
+            }
+            className="shrink-0 rounded-full bg-violet-600 px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-violet-700 disabled:opacity-50"
+          >
+            Снять с паркинга
+          </button>
+        </div>
+      )}
+      {!activeParking && scheduledParking && (
+        <div className="flex items-center gap-3 rounded-[12px] bg-violet-50/60 px-3 py-2 text-[12.5px] text-violet-800 ring-1 ring-inset ring-violet-200">
+          <SquareParking size={16} className="shrink-0 text-violet-500" />
+          <div className="min-w-0 flex-1 leading-tight">
+            Запланирован паркинг с {scheduledParking.startDate.slice(8, 10)}.
+            {scheduledParking.startDate.slice(5, 7)} ({scheduledParking.days} дн)
+          </div>
+        </div>
+      )}
       {isArchived && (
         <div className="flex items-center gap-2 rounded-[12px] bg-surface-soft px-3 py-2 text-[12px] text-muted ring-1 ring-inset ring-border">
           <Trash2 size={14} className="shrink-0" />
@@ -1676,6 +1765,7 @@ export function RentalCard({
               (onRequestPayment ? paymentExtDays : paymentPrefillExtDays) ||
               undefined
             }
+            armParkingSignal={armParkingSignal}
           />
 
           <AccordionSection
@@ -1845,6 +1935,7 @@ export function RentalCard({
                 (onRequestPayment ? paymentExtDays : paymentPrefillExtDays) ||
                 undefined
               }
+              armParkingSignal={armParkingSignal}
             />
             {/* v0.6.50: «Последние события» — InlineHistory под календарём. */}
             <InlineHistory

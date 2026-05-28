@@ -123,6 +123,8 @@ export type AggregateDebtItem = {
   damageBalance: number;
   manualBalance: number;
   pendingRent: number;
+  /** v0.8.0: неоплаченный остаток паркинга по аренде. */
+  parkingBalance?: number;
   totalDebt: number;
 };
 

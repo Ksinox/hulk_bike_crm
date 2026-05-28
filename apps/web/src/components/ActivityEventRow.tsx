@@ -28,6 +28,7 @@ import {
   Repeat,
   RotateCcw,
   Sparkles,
+  SquareParking,
   Wallet,
   X,
 } from "lucide-react";
@@ -63,7 +64,7 @@ export function actionCategory(action: string): ActivityCategory | null {
 
 /* ============================ Иконки / тона ============================ */
 
-type EventTone = "green" | "red" | "blue" | "orange" | "ink" | "amber";
+type EventTone = "green" | "red" | "blue" | "orange" | "ink" | "amber" | "violet";
 
 const EVENT_TONE_CLASS: Record<EventTone, string> = {
   green: "bg-green-soft text-green-ink",
@@ -71,10 +72,12 @@ const EVENT_TONE_CLASS: Record<EventTone, string> = {
   blue: "bg-blue-50 text-blue-700",
   orange: "bg-orange-soft text-orange-ink",
   amber: "bg-amber-100 text-amber-800",
+  violet: "bg-violet-100 text-violet-700",
   ink: "bg-surface-soft text-ink-2",
 };
 
 function eventVisual(action: string): { icon: LucideIcon; tone: EventTone } {
+  if (action.includes("parking")) return { icon: SquareParking, tone: "violet" };
   if (action.includes("equipment")) return { icon: HardHat, tone: "orange" };
   if (action.includes("scooter_swap") || action === "scooter_swapped")
     return { icon: Bike, tone: "ink" };
@@ -173,6 +176,31 @@ export function formatActivitySummary(
     const label = typeof fee.label === "string" ? fee.label : "Доплата";
     return `${label}: ${money(fee.to)}`;
   };
+
+  // ── Паркинг ──
+  if (action.includes("parking")) {
+    const p = readRecord(readRecord(item.meta)?.parking);
+    const short = (s: unknown) => {
+      const m = String(s ?? "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      return m ? `${m[3]}.${m[2]}` : String(s ?? "");
+    };
+    const title =
+      action === "parking_set"
+        ? "Поставлен на паркинг"
+        : action === "parking_ended"
+          ? "Снят с паркинга"
+          : action === "parking_edited"
+            ? "Паркинг изменён"
+            : action === "parking_deleted"
+              ? "Паркинг удалён"
+              : "Паркинг";
+    const extras: string[] = [];
+    if (p?.startDate && p?.endDate)
+      extras.push(`${short(p.startDate)}–${short(p.endDate)}`);
+    if (p?.days != null) extras.push(`${Number(p.days)} дн`);
+    if (p?.amount != null) extras.push(money(p.amount));
+    return { title, change: null, extras };
+  }
 
   // ── Экипировка ──
   if (action.includes("equipment")) {

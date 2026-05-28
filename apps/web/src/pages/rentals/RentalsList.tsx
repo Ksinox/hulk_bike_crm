@@ -13,7 +13,7 @@
  * списка и прокидываются в строки — это нужно и для сортировки таблицы.
  */
 import { useMemo, useState } from "react";
-import { SearchX, ChevronUp, ChevronDown, Bike } from "lucide-react";
+import { SearchX, ChevronUp, ChevronDown, Bike, SquareParking } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { type Rental } from "@/lib/mock/rentals";
 import { effectiveRentalStatus } from "@/lib/rentalStatus";
@@ -23,6 +23,7 @@ import { useApiClients } from "@/lib/api/clients";
 import { useApiScooters } from "@/lib/api/scooters";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { useDebtAggregate } from "@/lib/api/debt";
+import { useParkingSessions } from "@/lib/api/parking";
 import { fileUrl } from "@/lib/files";
 import type { RentalsViewMode } from "./rentalsViewMode";
 
@@ -99,6 +100,7 @@ type Row = {
   rightSum: number;
   pendingRent: number;
   danger: boolean;
+  onParking: boolean;
 };
 
 type SortCol =
@@ -126,6 +128,11 @@ export function RentalsList({
   const { data: apiScooters = [] } = useApiScooters();
   const { data: models = [] } = useApiScooterModels();
   const { data: debtAgg } = useDebtAggregate();
+  const { data: parkingAll = [] } = useParkingSessions();
+  const todayYmd = useMemo(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }, []);
 
   // Локальная сортировка только для табличного режима.
   const [sort, setSort] = useState<{ col: SortCol; dir: "asc" | "desc" } | null>(
@@ -185,9 +192,16 @@ export function RentalsList({
         rightSum: hasDebt ? realDebt : pendingRent,
         pendingRent,
         danger: isOverdue || hasDebt,
+        onParking: parkingAll.some(
+          (p) =>
+            p.rentalId === r.id &&
+            p.status === "active" &&
+            p.startDate <= todayYmd &&
+            p.endDate >= todayYmd,
+        ),
       };
     });
-  }, [items, apiClients, apiScooters, models, debtAgg]);
+  }, [items, apiClients, apiScooters, models, debtAgg, parkingAll, todayYmd]);
 
   const sortedRows = useMemo<Row[]>(() => {
     if (!sort) return rows;
@@ -459,7 +473,17 @@ function RentalTableRow({
         )}
       </td>
       <td className="px-4 py-5 whitespace-nowrap">
-        <StatusPill status={row.effStatus} />
+        <span className="inline-flex items-center gap-1.5">
+          <StatusPill status={row.effStatus} />
+          {row.onParking && (
+            <span
+              className="inline-flex items-center rounded-full bg-violet-100 px-1.5 py-0.5 text-violet-700"
+              title="На паркинге"
+            >
+              <SquareParking size={12} />
+            </span>
+          )}
+        </span>
       </td>
     </tr>
   );
@@ -540,7 +564,16 @@ function RentalTile({
           {row.rental.start} → {row.rental.endPlanned}
         </div>
         <div className="mt-0.5 flex items-center justify-between gap-2">
-          <StatusPill status={row.effStatus} />
+          <span className="inline-flex items-center gap-1">
+            <StatusPill status={row.effStatus} />
+            {row.onParking && (
+              <SquareParking
+                size={13}
+                className="text-violet-600"
+                aria-label="на паркинге"
+              />
+            )}
+          </span>
           {row.hasDebt ? (
             <span className="text-[14px] font-bold tabular-nums text-red-ink">
               {fmt(row.rightSum)} ₽

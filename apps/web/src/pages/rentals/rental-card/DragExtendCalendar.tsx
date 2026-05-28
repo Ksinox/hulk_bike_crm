@@ -126,6 +126,11 @@ export function DragExtendCalendar({
   disabled,
   cellSize = 11,
   hideLegend,
+  parkingMode = false,
+  parkingRanges,
+  onParkingPick,
+  parkingSelectableFromIso,
+  parkingSelectableToIso,
 }: {
   startIso: string;
   plannedEndIso: string;
@@ -148,6 +153,18 @@ export function DragExtendCalendar({
   resetSignal?: number;
   disabled?: boolean;
   cellSize?: CellSize;
+  /**
+   * v0.8.0 — режим паркинга. В нём клик по дню НЕ продлевает, а вызывает
+   * onParkingPick(iso); продление приостановлено. Фиолетовые зоны
+   * parkingRanges рисуются всегда (и вне режима — показ зафиксированных
+   * сессий). parkingSelectableFrom/To ограничивают окно выбора конца
+   * (≤7 суток) — дни вне окна гасятся и не кликабельны.
+   */
+  parkingMode?: boolean;
+  parkingRanges?: { startIso: string; endIso: string }[];
+  onParkingPick?: (iso: string) => void;
+  parkingSelectableFromIso?: string | null;
+  parkingSelectableToIso?: string | null;
 }) {
   const startKey = isoToKey(startIso);
   const plannedEndKey = isoToKey(plannedEndIso);
@@ -233,6 +250,33 @@ export function DragExtendCalendar({
   const previewSum =
     dailyRate && previewDays > 0 ? dailyRate * previewDays : null;
 
+  /* ---- паркинг: интервалы зон + окно выбора ---- */
+  const parkingIntervals = useMemo(() => {
+    return (parkingRanges ?? [])
+      .map((r) => {
+        const s = isoToKey(r.startIso);
+        const e = isoToKey(r.endIso);
+        return s && e ? { s: keyToTime(s), e: keyToTime(e) } : null;
+      })
+      .filter((x): x is { s: number; e: number } => x != null);
+  }, [parkingRanges]);
+  const isParkingDay = (t: number): boolean =>
+    parkingIntervals.some((iv) => t >= iv.s && t <= iv.e);
+  const selFromT = parkingSelectableFromIso
+    ? (isoToKey(parkingSelectableFromIso) &&
+        keyToTime(isoToKey(parkingSelectableFromIso)!))
+    : null;
+  const selToT = parkingSelectableToIso
+    ? (isoToKey(parkingSelectableToIso) &&
+        keyToTime(isoToKey(parkingSelectableToIso)!))
+    : null;
+  const isOutsideParkingWindow = (t: number): boolean => {
+    if (!parkingMode) return false;
+    if (selFromT != null && t < selFromT) return true;
+    if (selToT != null && t > selToT) return true;
+    return false;
+  };
+
   /* ---- click handler (через делегирование на корневой div) ----
    * v0.6.24: drag убран. Click на день > baseEnd → новый preview-конец
    * продления + commit. Click на baseEnd или ранее → сброс. */
@@ -246,6 +290,12 @@ export function DragExtendCalendar({
     if (!iso) return;
     const k = isoToKey(iso);
     if (!k) return;
+    // v0.8.0: режим паркинга — клик выбирает дату, продление не трогаем.
+    if (parkingMode) {
+      if (isOutsideParkingWindow(keyToTime(k))) return;
+      onParkingPick?.(iso);
+      return;
+    }
     const delta = diffDays(baseEndKey, k);
     if (delta <= 0) {
       setPreviewEnd(null);
@@ -273,9 +323,11 @@ export function DragExtendCalendar({
    * / rounded-r-lg (как data-selection-start/end в оригинальном
    * RangeCalendar). Середина — bg-blue-200/red-200/emerald-200 с
    * rounded-none. Hover НЕ применяется на зональных ячейках. */
-  type Zone = "blue" | "red" | "ext" | null;
+  type Zone = "blue" | "red" | "ext" | "parking" | null;
   const zoneOf = (k: DateKey): Zone => {
     const t = keyToTime(k);
+    // Паркинг имеет наивысший приоритет — перекрывает rent/overdue/ext.
+    if (isParkingDay(t)) return "parking";
     // ext имеет приоритет (перекрывает день после plannedEnd)
     if (previewT != null && t > baseT && t <= previewT) return "ext";
     if (isOverdue && t > plannedT && t <= todayT) return "red";
@@ -287,6 +339,9 @@ export function DragExtendCalendar({
     const k = calendarDateToKey(date);
     const zone = zoneOf(k);
     const isTodayCell = isSame(k, todayKey);
+    // v0.8.0: в режиме паркинга дни вне окна выбора (≤7 суток / раньше
+    // начала) — приглушены и некликабельны.
+    const outsideParking = isOutsideParkingWindow(keyToTime(k));
     // v0.7.12: день планового возврата — тонкая обводка ячейки (доп.
     // маркер). НЕ влияет на зональную логику/цвета/края — просто ring
     // поверх. Помогает оператору сразу увидеть «вот день возврата».
@@ -303,6 +358,8 @@ export function DragExtendCalendar({
       "data-[disabled]:opacity-30 data-[unavailable]:opacity-30",
       // Cursor — кликабельный когда не disabled.
       disabled ? "" : "cursor-pointer",
+      // Паркинг: дни вне окна выбора приглушены/некликабельны.
+      outsideParking ? "pointer-events-none opacity-30" : "",
     ];
 
     // Hover — только для ячеек вне зоны.
@@ -317,13 +374,18 @@ export function DragExtendCalendar({
       const isRightEdge = zoneOf(nextK) == null;
       const isEdge = isLeftEdge || isRightEdge;
 
-      const colorCls = isEdge
-        ? "bg-ink text-white"
-        : zone === "blue"
-          ? "bg-blue-200 text-blue-900"
-          : zone === "red"
-            ? "bg-red-200 text-red-900"
-            : "bg-emerald-200 text-emerald-900";
+      const colorCls =
+        zone === "parking"
+          ? isEdge
+            ? "bg-violet-500 text-white"
+            : "bg-violet-200 text-violet-900"
+          : isEdge
+            ? "bg-ink text-white"
+            : zone === "blue"
+              ? "bg-blue-200 text-blue-900"
+              : zone === "red"
+                ? "bg-red-200 text-red-900"
+                : "bg-emerald-200 text-emerald-900";
 
       const roundCls =
         isLeftEdge && isRightEdge
@@ -443,7 +505,7 @@ export function DragExtendCalendar({
       </CalendarRac>
 
       {/* Подсказка-плашка во время / после выбора дня продления */}
-      {previewDays > 0 && (
+      {previewDays > 0 && !parkingMode && (
         <div className="mt-2 mx-1 rounded-[10px] bg-emerald-50 border border-emerald-200 px-3 py-2 text-[11.5px] text-emerald-700 flex items-center justify-between gap-3">
           <div>
             <b>
