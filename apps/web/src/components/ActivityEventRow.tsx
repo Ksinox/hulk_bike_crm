@@ -578,6 +578,41 @@ function EquipmentThumb({
   );
 }
 
+/** Миниатюра экипировки + подпись ПОД ней (название или «пусто»). */
+function EquipmentThumbLabeled({
+  name,
+  resolveThumb,
+  size,
+}: {
+  name: string | null;
+  resolveThumb: (name: string) => string | null;
+  size: number;
+}) {
+  return (
+    <div
+      className="flex shrink-0 flex-col items-center gap-1 text-center"
+      style={{ width: size + 18 }}
+    >
+      <EquipmentThumb name={name} resolveThumb={resolveThumb} size={size} />
+      <span
+        className={cn(
+          "leading-tight",
+          name ? "font-semibold text-ink-2" : "italic text-muted-2",
+          size <= 24 ? "text-[9.5px]" : "text-[10.5px]",
+        )}
+        style={{
+          display: "-webkit-box",
+          WebkitLineClamp: 2,
+          WebkitBoxOrient: "vertical",
+          overflow: "hidden",
+        }}
+      >
+        {name ?? "пусто"}
+      </span>
+    </div>
+  );
+}
+
 function EquipmentChangeBlock({
   items,
   resolveThumb,
@@ -587,39 +622,46 @@ function EquipmentChangeBlock({
   resolveThumb: (name: string) => string | null;
   compact?: boolean;
 }) {
-  const thumbSize = compact ? 24 : 30;
+  const thumbSize = compact ? 28 : 36;
   return (
-    <div className={cn("flex flex-col", compact ? "gap-1" : "gap-1.5")}>
+    <div className={cn("flex flex-col", compact ? "gap-1.5" : "gap-2")}>
       {items.map((it, i) => (
-        <div key={i} className="flex items-center gap-1.5">
-          <EquipmentThumb
-            name={it.fromName}
-            resolveThumb={resolveThumb}
-            size={thumbSize}
-          />
-          <ArrowRight
-            size={compact ? 11 : 13}
-            className={cn(
-              it.kind === "added"
-                ? "text-green-ink"
-                : it.kind === "removed"
-                  ? "text-red-ink"
-                  : "text-muted-2",
-            )}
-          />
-          <EquipmentThumb
-            name={it.toName}
-            resolveThumb={resolveThumb}
-            size={thumbSize}
-          />
-          <span
-            className={cn(
-              "ml-1 min-w-0 truncate font-semibold text-ink-2",
-              compact ? "text-[11px]" : "text-[11.5px]",
-            )}
-          >
-            {it.caption}
-          </span>
+        <div key={i} className="flex flex-col gap-0.5">
+          {/* Пары: [миниатюра + подпись] → [миниатюра + подпись] */}
+          <div className="flex items-start gap-2">
+            <EquipmentThumbLabeled
+              name={it.fromName}
+              resolveThumb={resolveThumb}
+              size={thumbSize}
+            />
+            <ArrowRight
+              size={compact ? 12 : 14}
+              className={cn(
+                "mt-2 shrink-0",
+                it.kind === "added"
+                  ? "text-green-ink"
+                  : it.kind === "removed"
+                    ? "text-red-ink"
+                    : "text-muted-2",
+              )}
+            />
+            <EquipmentThumbLabeled
+              name={it.toName}
+              resolveThumb={resolveThumb}
+              size={thumbSize}
+            />
+          </div>
+          {/* Сумма — отдельной строкой под парой. */}
+          {it.caption && (
+            <span
+              className={cn(
+                "text-muted",
+                compact ? "text-[10.5px]" : "text-[11px]",
+              )}
+            >
+              {it.caption}
+            </span>
+          )}
         </div>
       ))}
     </div>
