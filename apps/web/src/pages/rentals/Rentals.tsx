@@ -398,22 +398,20 @@ export function Rentals() {
     ];
   }, [rentals, revenue]);
 
-  // v0.6.50: split-layout — список аренд слева 420px, карточка справа.
-  // Список+фильтры+поиск+заголовок объединены в ОДИН белый rounded-2xl
-  // блок. Карточка справа упирается в этот блок (gap=0), визуально они
-  // «сливаются» в одну поверхность. KPI-плашки RentalsKpi вернулись
-  // сверху страницы (как было в main до v0.6.42).
+  // v0.7.0: full-width layout — список аренд занимает всю ширину страницы,
+  // карточка выбранной аренды выезжает справа как drawer (overlay). Раньше
+  // (v0.6.50) был split-grid [420px_1fr] с карточкой в правой колонке.
+  const selected = rentals.find((r) => r.id === selectedId) ?? null;
   return (
-    <main className="flex min-w-0 flex-1 flex-col gap-4">
+    <main className="flex min-w-0 flex-1 flex-col gap-4 p-4 lg:p-6">
       <Topbar />
 
       {/* v0.6.50: KPI-плашки (5 шт) — Активные / Просрочки / Возврат
           сегодня / Долг по просрочкам / Выручка. Над основным блоком. */}
       <RentalsKpi items={kpi} />
 
-      <div className="grid flex-1 gap-0 lg:grid-cols-[420px_minmax(0,1fr)]">
-        {/* ======== ЛЕВО — единый белый блок: header+поиск+чипы+список ======== */}
-        <div className="flex flex-col rounded-2xl rounded-r-none bg-surface shadow-card-sm overflow-hidden border-r border-border">
+      {/* ======== Единый белый блок: header+поиск+чипы+список на всю ширину ======== */}
+      <div className="flex flex-col rounded-2xl bg-surface shadow-card-sm overflow-hidden flex-1 min-h-0">
           <div className="flex flex-col gap-3 p-4 pb-3 border-b border-border">
             <h1 className="font-display text-[26px] font-extrabold leading-none text-ink">
               Аренды
@@ -476,36 +474,34 @@ export function Rentals() {
           </div>
         </div>
 
-        {/* ======== ПРАВО — карточка аренды, упирается в список (без gap) ========
-            v0.6.50: RentalCard сам по себе rounded-2xl bg-surface. Чтобы
-            он визуально «слился» с блоком списка слева, RentalCard ожидает
-            className=rounded-l-none через prop `flushLeft`. */}
-        {(() => {
-          const selected = rentals.find((r) => r.id === selectedId);
-          if (!selected) {
-            return (
-              <div className="flex min-h-[400px] items-center justify-center rounded-2xl rounded-l-none bg-surface p-10 text-center shadow-card-sm">
-                <div className="text-[13px] text-muted">
-                  Выберите аренду из списка
-                </div>
-              </div>
-            );
-          }
-          return (
+      {/* ======== КАРТОЧКА АРЕНДЫ = ПРАВЫЙ DRAWER (v0.7.0) ========
+          При выборе аренды карточка выезжает справа поверх контента.
+          Лёгкий backdrop (без блюра) — клик закрывает drawer. Payment-
+          drawer (z-[90]) и прочие диалоги внутри карточки открываются
+          поверх (z-40 < z-90). */}
+      {selected && (
+        <>
+          <div
+            className="fixed inset-0 z-30 bg-ink/20"
+            onClick={() => setSelectedId(null)}
+            aria-hidden
+          />
+          <div className="fixed right-0 top-0 bottom-0 z-40 w-[min(680px,92vw)] animate-in slide-in-from-right duration-200">
             <ErrorBoundary key={selected.id}>
               <RentalCard
                 rental={selected}
                 initialTab={pendingTab ?? undefined}
-                flushLeft
+                drawerChrome
+                onClose={() => setSelectedId(null)}
                 onSwapped={(newId) => {
                   setSelectedId(newId);
                   setSwapActPreviewId(newId);
                 }}
               />
             </ErrorBoundary>
-          );
-        })()}
-      </div>
+          </div>
+        </>
+      )}
 
       {swapActPreviewId != null && (
         <ActTransferPreview

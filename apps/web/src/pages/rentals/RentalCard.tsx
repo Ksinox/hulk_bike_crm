@@ -12,6 +12,7 @@ import {
   ShieldAlert,
   Wallet,
   Wrench,
+  X,
   XCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -253,6 +254,7 @@ export function RentalCard({
   onPaymentOpenChange,
   initialTab,
   flushLeft = false,
+  drawerChrome = false,
 }: {
   rental: Rental;
   /** Callback в Rentals при успешной замене скутера. Rentals переключает
@@ -270,6 +272,11 @@ export function RentalCard({
    *  Drawer-режим (DashboardDrawer) этот prop не передаёт — там карточка
    *  остаётся полностью скруглённой. */
   flushLeft?: boolean;
+  /** v0.7.0: карточка рендерится как правый drawer на странице Аренд.
+   *  Включает «хром» drawer'а: sticky-header (закрыть/меню), скроллируемое
+   *  тело, sticky-footer с кнопками «Закрыть аренду» / «Принять оплату».
+   *  Без этого prop'а (DashboardDrawer) карточка остаётся плоским блоком. */
+  drawerChrome?: boolean;
 }) {
   void onPaymentOpenChange;
   void initialTab; // v0.6.44: tabs убраны, prop оставлен для совместимости.
@@ -941,15 +948,27 @@ export function RentalCard({
     }
   };
 
-  return (
-    <div
-      className={cn(
-        "flex min-h-0 flex-col gap-3 rounded-2xl bg-surface p-5 shadow-card-sm",
-        flushLeft && "rounded-l-none",
-      )}
-    >
+  // v0.7.0: «Закрыть аренду» / «Принять оплату» — доступность кнопок.
+  const isLive = rental.status === "active";
+  const canComplete = isLive && !isArchived;
+  const canAcceptPayment = isLive && !isArchived;
+
+  // Внутреннее тело карточки (header + баннеры + KPI + основной блок +
+  // все модалки). В drawer-режиме оборачивается в скроллируемую область,
+  // в обычном — просто рендерится как раньше.
+  const body = (
+    <>
       {/* =========== HEADER =========== */}
-      <header className="flex flex-wrap items-center gap-3">
+      <header
+        className={cn(
+          "flex flex-wrap items-center gap-3",
+          // v0.7.0: в drawer'е header «прилипает» к верху скролл-области.
+          // -m + p компенсируют внешний p-5 контейнера, чтобы фон header'а
+          // перекрывал контент при скролле на всю ширину.
+          drawerChrome &&
+            "sticky top-0 z-10 -mx-5 -mt-5 border-b border-border bg-surface px-5 py-4",
+        )}
+      >
         {onClose && (
           <button
             type="button"
@@ -1002,41 +1021,49 @@ export function RentalCard({
             через actions[], а в шапке остался компактный Flag-вариант.
             Primary CTA — зелёный «Принять оплату» справа. */}
         <div className="flex shrink-0 items-center gap-2">
-          {(() => {
-            const isLive = rental.status === "active";
-            const canComplete = isLive && !isArchived;
-            const canAcceptPayment = isLive && !isArchived;
-            return (
-              <>
-                {canComplete && (
-                  <button
-                    type="button"
-                    onClick={() => setAction("complete")}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1.5 text-[12px] font-semibold text-ink-2 hover:bg-surface-soft hover:text-ink"
-                    title="Завершить аренду"
-                  >
-                    <Flag size={13} /> Завершить
-                  </button>
-                )}
-                {canAcceptPayment && (
-                  <button
-                    type="button"
-                    onClick={() => setPaymentRentalId(rental.id)}
-                    className="inline-flex items-center gap-1.5 rounded-full bg-green-600 px-3 py-1.5 text-[12px] font-bold text-white shadow-card-sm hover:bg-green-700"
-                    title="Принять оплату"
-                  >
-                    <Wallet size={13} /> Принять оплату
-                  </button>
-                )}
-              </>
-            );
-          })()}
+          {/* v0.7.0: в drawer-режиме кнопки «Завершить»/«Принять оплату»
+              живут в sticky-footer, в шапке их не дублируем. */}
+          {!drawerChrome && (
+            <>
+              {canComplete && (
+                <button
+                  type="button"
+                  onClick={() => setAction("complete")}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1.5 text-[12px] font-semibold text-ink-2 hover:bg-surface-soft hover:text-ink"
+                  title="Завершить аренду"
+                >
+                  <Flag size={13} /> Завершить
+                </button>
+              )}
+              {canAcceptPayment && (
+                <button
+                  type="button"
+                  onClick={() => setPaymentRentalId(rental.id)}
+                  className="inline-flex items-center gap-1.5 rounded-full bg-green-600 px-3 py-1.5 text-[12px] font-bold text-white shadow-card-sm hover:bg-green-700"
+                  title="Принять оплату"
+                >
+                  <Wallet size={13} /> Принять оплату
+                </button>
+              )}
+            </>
+          )}
           {/* v0.6.53: три точки перенесены в самый конец справа. */}
           <RentalActionsMenu
             actions={actions}
             onAction={handleAction}
             triggerStyle="dots"
           />
+          {/* v0.7.0: «X» закрыть drawer — справа от меню действий. */}
+          {drawerChrome && onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              title="Закрыть"
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted hover:bg-surface-soft hover:text-ink"
+            >
+              <X size={18} />
+            </button>
+          )}
         </div>
       </header>
 
@@ -1686,6 +1713,55 @@ export function RentalCard({
           onClose={() => setPaymentReportId(null)}
         />
       )}
+    </>
+  );
+
+  // v0.7.0: drawer-режим — sticky header уже внутри body (header сделан
+  // sticky ниже), скроллируемое тело и sticky footer с кнопками.
+  if (drawerChrome) {
+    return (
+      <div className="flex h-full flex-col bg-surface shadow-card-lg">
+        {/* Скроллируемое тело: header «прилипает» сверху внутри скролла. */}
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+          <div className="flex flex-col gap-3 p-5">{body}</div>
+        </div>
+        {/* Sticky footer: «Закрыть аренду» (нейтр.) / «Принять оплату» (зелёная) */}
+        {(canComplete || canAcceptPayment) && (
+          <div className="sticky bottom-0 flex gap-3 border-t border-border bg-surface p-4">
+            {canComplete && (
+              <button
+                type="button"
+                onClick={() => setAction("complete")}
+                className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-full border border-border bg-surface px-4 py-2.5 text-[13px] font-semibold text-ink-2 hover:bg-surface-soft hover:text-ink"
+                title="Завершить аренду"
+              >
+                <Flag size={14} /> Закрыть аренду
+              </button>
+            )}
+            {canAcceptPayment && (
+              <button
+                type="button"
+                onClick={() => setPaymentRentalId(rental.id)}
+                className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-full bg-green-600 px-4 py-2.5 text-[13px] font-bold text-white shadow-card-sm hover:bg-green-700"
+                title="Принять оплату"
+              >
+                <Wallet size={14} /> Принять оплату
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={cn(
+        "flex min-h-0 flex-col gap-3 rounded-2xl bg-surface p-5 shadow-card-sm",
+        flushLeft && "rounded-l-none",
+      )}
+    >
+      {body}
     </div>
   );
 }

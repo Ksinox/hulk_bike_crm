@@ -24,6 +24,7 @@ import { ForceChangePassword } from "./ForceChangePassword";
 import { ToastContainer, ConfirmContainer, PickContainer } from "@/lib/toast";
 import { DashboardDrawerProvider } from "@/pages/dashboard/DashboardDrawer";
 import { NewApplicationDetector } from "@/pages/clients/NewApplicationDetector";
+import { cn } from "@/lib/utils";
 
 export function App() {
   const { data: me, isLoading, isError } = useMe();
@@ -79,12 +80,28 @@ export function App() {
     return <ForceChangePassword />;
   }
 
+  // v0.7.0: страница «Аренды» — на всю ширину (sidebar прижат к левому
+  // краю, контент занимает остаток, правое «ушко» свободно для дроверов).
+  // Остальные страницы остаются в центрированном контейнере max-w-[1440px].
+  const fullWidth = route === "rentals";
+
   return (
     <DashboardDrawerProvider>
       <TitleBar />
       <div
-        className="mx-auto flex min-h-screen max-w-[1440px] gap-[18px] p-[18px]"
-        style={isElectron ? { paddingTop: "calc(18px + 36px)" } : undefined}
+        className={cn(
+          "flex min-h-screen",
+          fullWidth ? "" : "mx-auto max-w-[1440px] gap-[18px] p-[18px]",
+        )}
+        style={
+          isElectron
+            ? {
+                // titlebar (36px) высота; для fullWidth внешнего p-[18px] нет,
+                // поэтому верхний отступ = только под titlebar.
+                paddingTop: fullWidth ? "36px" : "calc(18px + 36px)",
+              }
+            : undefined
+        }
       >
         <Sidebar activeId={route} onSelect={onSelect} />
         {route === "clients" ? (
