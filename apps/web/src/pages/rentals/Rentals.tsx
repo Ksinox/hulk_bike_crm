@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus, Search, SlidersHorizontal, PanelRightOpen } from "lucide-react";
+import {
+  Plus,
+  Search,
+  SlidersHorizontal,
+  PanelRightOpen,
+  LayoutGrid,
+  Rows3,
+} from "lucide-react";
 import { Topbar } from "@/pages/dashboard/Topbar";
 import { type Rental, type RentalStatus } from "@/lib/mock/rentals";
 import {
@@ -34,6 +41,12 @@ import {
   matchText,
   normalizeQuery,
 } from "@/lib/search";
+import { useMe } from "@/lib/api/auth";
+import {
+  loadRentalsViewMode,
+  saveRentalsViewMode,
+  type RentalsViewMode,
+} from "./rentalsViewMode";
 
 /** Сегодня в формате DD.MM.YYYY (локальное время) */
 function todayRu(): string {
@@ -237,6 +250,20 @@ export function Rentals() {
   // умолчанию — header'а нового дизайна достаточно. Открывается кнопкой
   // SlidersHorizontal справа от поиска.
   const [filtersOpen, setFiltersOpen] = useState(false);
+  // v0.7.22: режим списка (таблица/плитки) — пер-пользовательское
+  // предпочтение. До загрузки me берём дефолт, затем подтягиваем выбор
+  // конкретного пользователя (у директора и админа он независим).
+  const { data: me } = useMe();
+  const [viewMode, setViewMode] = useState<RentalsViewMode>(() =>
+    loadRentalsViewMode(undefined),
+  );
+  useEffect(() => {
+    if (me?.id != null) setViewMode(loadRentalsViewMode(me.id));
+  }, [me?.id]);
+  const changeViewMode = (m: RentalsViewMode) => {
+    setViewMode(m);
+    saveRentalsViewMode(me?.id, m);
+  };
   /**
    * После создания аренды — автоматически открываем превью документа
    * «Договор + акт». Сценарий: оператор создал → сразу нажал «Печать» →
@@ -560,6 +587,36 @@ export function Rentals() {
               >
                 <SlidersHorizontal size={15} />
               </button>
+              {/* v0.7.22: переключатель вида списка — две иконки (список /
+                  плитки). Выбор запоминается пер-пользователь. */}
+              <div className="flex shrink-0 items-center rounded-full bg-surface-soft p-0.5">
+                <button
+                  type="button"
+                  onClick={() => changeViewMode("list")}
+                  title="Список (таблица)"
+                  className={cn(
+                    "inline-flex h-8 w-8 items-center justify-center rounded-full transition-colors",
+                    viewMode === "list"
+                      ? "bg-white text-blue-700 shadow-card-sm"
+                      : "text-muted hover:text-ink",
+                  )}
+                >
+                  <Rows3 size={15} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => changeViewMode("tiles")}
+                  title="Плитки"
+                  className={cn(
+                    "inline-flex h-8 w-8 items-center justify-center rounded-full transition-colors",
+                    viewMode === "tiles"
+                      ? "bg-white text-blue-700 shadow-card-sm"
+                      : "text-muted hover:text-ink",
+                  )}
+                >
+                  <LayoutGrid size={15} />
+                </button>
+              </div>
               <button
                 type="button"
                 onClick={() => setNewOpen(true)}
@@ -586,6 +643,7 @@ export function Rentals() {
               items={filtered}
               selectedId={selectedId}
               onSelect={handleSelect}
+              viewMode={viewMode}
             />
           </div>
         </div>
