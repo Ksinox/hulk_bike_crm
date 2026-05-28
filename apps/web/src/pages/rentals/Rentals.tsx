@@ -544,8 +544,8 @@ export function Rentals() {
             В «Плитках» — заполняет всю доступную ширину (flex-1). */}
         <div
           className={cn(
-            "flex min-w-0 flex-1 flex-col rounded-2xl bg-surface shadow-card-sm overflow-hidden min-h-0",
-            viewMode === "list" && "max-w-[880px]",
+            "flex min-w-0 flex-col rounded-2xl bg-surface shadow-card-sm overflow-hidden min-h-0",
+            viewMode === "list" ? "w-[880px] max-w-full" : "flex-1",
           )}
         >
           <div className="flex flex-col gap-3 p-4 pb-3 border-b border-border">
