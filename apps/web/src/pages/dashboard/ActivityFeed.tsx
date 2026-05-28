@@ -1,16 +1,9 @@
 import { useState } from "react";
 import {
   Activity,
-  Bike,
   ChevronLeft,
   ChevronRight,
-  CreditCard,
   Maximize2,
-  Package,
-  Tag,
-  User,
-  UserCog,
-  Wrench,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -20,28 +13,8 @@ import {
   useActivityPage,
   type ApiActivityItem,
 } from "@/lib/api/activity";
-
-const ENTITY_ICON: Record<string, typeof Bike> = {
-  client: User,
-  scooter: Bike,
-  rental: Bike,
-  payment: CreditCard,
-  user: UserCog,
-  model: Tag,
-  equipment: Package,
-  maintenance: Wrench,
-};
-
-const ENTITY_COLOR: Record<string, string> = {
-  client: "bg-blue-50 text-blue-700",
-  scooter: "bg-emerald-50 text-emerald-700",
-  rental: "bg-indigo-50 text-indigo-700",
-  payment: "bg-green-soft text-green-ink",
-  user: "bg-purple-soft text-purple-ink",
-  model: "bg-amber-100 text-amber-700",
-  equipment: "bg-pink-50 text-pink-700",
-  maintenance: "bg-orange-soft text-orange-ink",
-};
+import { ActivityEventRow } from "@/components/ActivityEventRow";
+import { useDashboardDrawer } from "./DashboardDrawer";
 
 const FEED_LIMIT = 5;
 
@@ -95,9 +68,9 @@ export function ActivityFeed({
           </div>
         </div>
       ) : (
-        <div className="flex flex-col divide-y divide-border">
+        <div className="flex flex-col gap-0.5">
           {items.map((it) => (
-            <Row key={it.id} it={it} />
+            <FeedRow key={it.id} it={it} />
           ))}
         </div>
       )}
@@ -107,52 +80,31 @@ export function ActivityFeed({
   );
 }
 
-function Row({ it }: { it: ApiActivityItem }) {
-  const Icon = ENTITY_ICON[it.entity] ?? Activity;
-  const cls = ENTITY_COLOR[it.entity] ?? "bg-surface-soft text-muted-2";
-  const dt = new Date(it.createdAt);
-
+/**
+ * v0.7.15: строка ленты на дашборде — общий <ActivityEventRow compact>
+ * (единый визуальный язык «было → стало» с иконками). Клик открывает
+ * связанную сущность в drawer-стеке.
+ */
+function FeedRow({ it }: { it: ApiActivityItem }) {
+  const drawer = useDashboardDrawer();
+  const clickable =
+    it.entityId != null &&
+    (it.entity === "rental" ||
+      it.entity === "scooter" ||
+      it.entity === "client");
+  const handleClick = () => {
+    if (it.entityId == null) return;
+    if (it.entity === "rental") drawer.openRental(it.entityId);
+    else if (it.entity === "scooter") drawer.openScooter(it.entityId);
+    else if (it.entity === "client") drawer.openClient(it.entityId);
+  };
   return (
-    <div className="flex items-start gap-2.5 py-2">
-      <div
-        className={cn(
-          "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
-          cls,
-        )}
-      >
-        <Icon size={14} />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="text-[13px] text-ink">{it.summary}</div>
-        <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-muted">
-          <UserBadge name={it.userName} role={it.userRole} />
-          <span>·</span>
-          <span className="tabular-nums">{formatDateTime(dt)}</span>
-          <span className="text-muted-2">({formatAgo(dt)})</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function UserBadge({ name, role }: { name: string; role: string | null }) {
-  const cls =
-    role === "creator"
-      ? "bg-purple-soft text-purple-ink"
-      : role === "director"
-        ? "bg-blue-50 text-blue-700"
-        : role === "admin"
-          ? "bg-emerald-50 text-emerald-700"
-          : "bg-surface-soft text-muted-2";
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold",
-        cls,
-      )}
-    >
-      {name}
-    </span>
+    <ActivityEventRow
+      item={it}
+      compact
+      clickable={clickable}
+      onOpen={handleClick}
+    />
   );
 }
 
@@ -204,9 +156,9 @@ function FullJournalModal({ onClose }: { onClose: () => void }) {
               Журнал пуст
             </div>
           ) : (
-            <div className="flex flex-col divide-y divide-border">
+            <div className="flex flex-col gap-0.5">
               {items.map((it) => (
-                <Row key={it.id} it={it} />
+                <FeedRow key={it.id} it={it} />
               ))}
             </div>
           )}
@@ -253,28 +205,3 @@ function FullJournalModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-function formatDateTime(d: Date): string {
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-function formatAgo(d: Date): string {
-  const diffSec = Math.max(0, Math.floor((Date.now() - d.getTime()) / 1000));
-  if (diffSec < 60) return "только что";
-  const diffMin = Math.floor(diffSec / 60);
-  if (diffMin < 60)
-    return `${diffMin} ${plural(diffMin, ["минуту", "минуты", "минут"])} назад`;
-  const diffH = Math.floor(diffMin / 60);
-  if (diffH < 24) return `${diffH} ${plural(diffH, ["час", "часа", "часов"])} назад`;
-  const diffD = Math.floor(diffH / 24);
-  if (diffD < 30) return `${diffD} ${plural(diffD, ["день", "дня", "дней"])} назад`;
-  return d.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" });
-}
-
-function plural(n: number, forms: [string, string, string]): string {
-  const mod10 = n % 10;
-  const mod100 = n % 100;
-  if (mod10 === 1 && mod100 !== 11) return forms[0];
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return forms[1];
-  return forms[2];
-}
