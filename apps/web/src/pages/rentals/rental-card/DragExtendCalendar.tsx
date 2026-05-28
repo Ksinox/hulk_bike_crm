@@ -349,11 +349,19 @@ export function DragExtendCalendar({
       }
     }
 
-    // v0.7.12: тонкая обводка дня планового возврата. ring-inset поверх
-    // зональной заливки/края — не трогает зоны. Если ячейка совпадает с
-    // today (которая уже даёт ring-ink), не дублируем.
+    // v0.7.13: день планового возврата — круг с обводкой БЕЗ заливки
+    // (before-псевдоэлемент поверх ячейки). Синяя обводка обычно /
+    // красная при просрочке (today > plannedEnd). Не трогает зональную
+    // заливку/края — рисуется поверх. Если ячейка совпадает с today
+    // (даёт ring-ink), не дублируем.
     if (isPlannedEndCell && !(isTodayCell && !zone)) {
-      parts.push("ring-2 ring-inset ring-ink/40");
+      const ringColor = isOverdue
+        ? "before:border-red-500"
+        : "before:border-blue-500";
+      parts.push(
+        "before:pointer-events-none before:absolute before:left-1/2 before:top-1/2 before:size-7 before:-translate-x-1/2 before:-translate-y-1/2 before:rounded-full before:border-2",
+        ringColor,
+      );
     }
 
     return cn(...parts);
@@ -366,7 +374,9 @@ export function DragExtendCalendar({
   return (
     <div
       onClick={onClickGrid}
-      className="w-full rounded-2xl bg-surface p-2"
+      // v0.7.13: тонкая рамка вокруг сетки месяца — чтобы календарь
+      // визуально выделялся в блоке (раньше цифры «парили в воздухе»).
+      className="w-full rounded-xl border border-border bg-surface p-2.5"
     >
       <CalendarRac
         aria-label="Календарь аренды"

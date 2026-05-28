@@ -1717,33 +1717,74 @@ export function RentalCard({
                   {fmt(paidIn)} ₽
                 </div>
               </div>
-              {/* Детальный состав долга (если есть). */}
+              {/* v0.7.13: детальный «бухгалтерский» состав долга — каждая
+                  строка с формулой расчёта (слева мелким серым), чтобы
+                  объяснить клиенту из чего сложился долг. Цифры берём из
+                  тех же debtSummary-полей (НЕ пересчитываем) — формула в
+                  подписи лишь иллюстрирует фактический баланс. Штраф-ставка
+                  = round(dailyRate × 0.5) (как overdueComponents на бэке). */}
               <div className="rounded-[12px] border border-border bg-surface-soft/40 px-4 py-3">
                 <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-2">
                   Состав долга
                 </div>
                 {debtTotal > 0 ? (
-                  <div className="mt-1.5 space-y-1 text-[13px] text-ink-2">
-                    {pending > 0 && (
-                      <Row label="Не оплачено" value={`${fmt(pending)} ₽`} />
-                    )}
+                  <div className="mt-2 space-y-2 text-[13px] text-ink-2">
                     {overdueDaysBalance > 0 && (
-                      <Row label="Дни просрочки" value={`${fmt(overdueDaysBalance)} ₽`} />
+                      <DebtRow
+                        label="Дни просрочки"
+                        formula={
+                          overdueDaysCount > 0
+                            ? `${overdueDaysCount} ${overdueDaysCount === 1 ? "день" : "дн"} × ${fmt(dailyRateForHint)} ₽/день`
+                            : undefined
+                        }
+                        value={overdueDaysBalance}
+                      />
                     )}
                     {overdueFineBalance > 0 && (
-                      <Row label="Штраф" value={`${fmt(overdueFineBalance)} ₽`} />
+                      <DebtRow
+                        label="Штраф за просрочку"
+                        formula={
+                          overdueDaysCount > 0
+                            ? `${overdueDaysCount} ${overdueDaysCount === 1 ? "день" : "дн"} × ${fmt(Math.round(dailyRateForHint * 0.5))} ₽ (50% ставки)`
+                            : "штраф 50% от ставки"
+                        }
+                        value={overdueFineBalance}
+                      />
                     )}
                     {overdueBalance > 0 &&
                       overdueDaysBalance + overdueFineBalance === 0 && (
-                        <Row label="Просрочка" value={`${fmt(overdueBalance)} ₽`} />
+                        <DebtRow
+                          label="Просрочка"
+                          formula={
+                            overdueDaysCount > 0
+                              ? `${overdueDaysCount} ${overdueDaysCount === 1 ? "день" : "дн"} просрочки`
+                              : undefined
+                          }
+                          value={overdueBalance}
+                        />
                       )}
                     {damageBalance > 0 && (
-                      <Row label="Ущерб" value={`${fmt(damageBalance)} ₽`} />
+                      <DebtRow
+                        label="Ущерб по акту"
+                        formula="зафиксирован в акте о повреждениях"
+                        value={damageBalance}
+                      />
                     )}
                     {manualBalance > 0 && (
-                      <Row label="Ручной долг" value={`${fmt(manualBalance)} ₽`} />
+                      <DebtRow
+                        label="Ручное начисление"
+                        formula="начислено оператором вручную"
+                        value={manualBalance}
+                      />
                     )}
-                    <div className="mt-1.5 flex items-center justify-between border-t border-border pt-1.5 text-[13px] font-bold text-red-ink">
+                    {pending > 0 && (
+                      <DebtRow
+                        label="Не оплачено по аренде"
+                        formula="плановая оплата аренды"
+                        value={pending}
+                      />
+                    )}
+                    <div className="mt-1.5 flex items-center justify-between border-t border-border pt-2 text-[15px] font-extrabold text-red-ink">
                       <span>Итого долг</span>
                       <span className="tabular-nums">{fmt(debtTotal)} ₽</span>
                     </div>
@@ -2284,11 +2325,33 @@ function KpiCard({
 }
 
 /** v0.7.8: строка «лейбл — значение» для состава долга в accordion'е. */
-function Row({ label, value }: { label: string; value: string }) {
+/**
+ * v0.7.13: строка детального состава долга. Слева — название компонента
+ * + мелкая серая формула расчёта (как считается), справа — сумма
+ * (tabular-nums). Используется в секции «Финансовая информация».
+ */
+function DebtRow({
+  label,
+  formula,
+  value,
+}: {
+  label: string;
+  formula?: string;
+  value: number;
+}) {
   return (
-    <div className="flex items-center justify-between">
-      <span className="text-muted">{label}</span>
-      <span className="font-semibold tabular-nums text-ink">{value}</span>
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0">
+        <div className="text-ink-2">{label}</div>
+        {formula && (
+          <div className="text-[11px] leading-tight text-muted-2">
+            {formula}
+          </div>
+        )}
+      </div>
+      <span className="shrink-0 font-semibold tabular-nums text-ink">
+        {fmt(value)} ₽
+      </span>
     </div>
   );
 }

@@ -84,20 +84,8 @@ export function CalendarPanel({
           Дата возврата
         </div>
       </div>
-      {/* v0.6.49: легенда — простые цветные точки без рамок.
-          v0.7.12: добавлен пункт «возврат» (тонкая обводка-рамка) —
-          образец маркера дня планового возврата в сетке календаря. */}
-      <div className="mb-3 flex flex-wrap items-center gap-4 text-[12px] text-muted-2">
-        <LegendDot swatch="bg-blue-400" label="выдача" />
-        <LegendDot swatch="bg-blue-300" label="оплачено" />
-        {isOverdue && <LegendDot swatch="bg-red-400" label="просрочка" />}
-        <LegendDot swatch="bg-emerald-400" label="продление" />
-        {/* образец «день возврата» — рамка вместо заливки */}
-        <div className="flex items-center gap-1.5">
-          <span className="inline-block h-2.5 w-2.5 rounded-[3px] ring-2 ring-inset ring-ink/40" />
-          <span>возврат</span>
-        </div>
-      </div>
+      {/* v0.7.13: легенда перенесена в правый столбик ПОД timeline (см.
+          DateTimeline ниже) — над календарём теперь чисто. */}
       {/* v0.7.12: сетка календаря СЛЕВА, вертикальный timeline дат СПРАВА
           (Выдано сверху → линия → Возврат снизу). Раньше Выдано/Возврат
           были двумя блоками в ряд НАД календарём. */}
@@ -124,14 +112,33 @@ export function CalendarPanel({
             />
           </div>
         )}
-        <DateTimeline
-          startDate={rental.start}
-          startTime={rental.startTime ?? "12:00"}
-          endDate={rental.endPlanned}
-          endTime={rental.startTime ?? "12:00"}
-          overdue={isOverdue}
-          overdueDays={overdueDays}
-        />
+        <div className="w-[150px] shrink-0">
+          <DateTimeline
+            startDate={rental.start}
+            startTime={rental.startTime ?? "12:00"}
+            endDate={rental.endPlanned}
+            endTime={rental.startTime ?? "12:00"}
+            overdue={isOverdue}
+            overdueDays={overdueDays}
+          />
+          {/* v0.7.13: легенда компактно под timeline в правом столбике. */}
+          <div className="mt-3 flex flex-col gap-1.5 border-t border-border pt-3 text-[11.5px] text-muted-2">
+            <LegendDot swatch="bg-blue-400" label="выдача" />
+            <LegendDot swatch="bg-blue-300" label="оплачено" />
+            {isOverdue && <LegendDot swatch="bg-red-400" label="просрочка" />}
+            <LegendDot swatch="bg-emerald-400" label="продление" />
+            {/* образец «день возврата» — круг с обводкой (синий/красный) */}
+            <div className="flex items-center gap-1.5">
+              <span
+                className={cn(
+                  "inline-block h-2.5 w-2.5 rounded-full border-2 bg-transparent",
+                  isOverdue ? "border-red-500" : "border-blue-500",
+                )}
+              />
+              <span>возврат</span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -168,8 +175,8 @@ function DateTimeline({
   overdueDays?: number;
 }) {
   return (
-    <div className="w-[150px] shrink-0 pt-1">
-      {/* Выдано */}
+    <div className="pt-1">
+      {/* Выдача — синий залитый круг (старт). */}
       <TimelinePoint
         label="Выдано"
         date={startDate}
@@ -177,12 +184,16 @@ function DateTimeline({
         dotClass="bg-blue-500"
         connector
       />
-      {/* Возврат */}
+      {/* v0.7.13: Возврат — круг с обводкой БЕЗ заливки. Синий обычный /
+          красный при просрочке. */}
       <TimelinePoint
         label="Возврат"
         date={endDate}
         time={endTime}
-        dotClass={overdue ? "bg-red-500" : "bg-ink"}
+        dotClass={cn(
+          "bg-transparent border-2",
+          overdue ? "border-red-500" : "border-blue-500",
+        )}
         sub={
           overdue ? (
             <span className="text-[10.5px] font-semibold text-red-ink">
