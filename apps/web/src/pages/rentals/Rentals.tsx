@@ -534,9 +534,13 @@ export function Rentals() {
           сегодня / Долг по просрочкам / Выручка. Над основным блоком. */}
       <RentalsKpi items={kpi} />
 
-      {/* ======== Split: список (flex-1) + push-панель карточки (600px) ========
-          Карточка в потоке справа, сжимает список, не перекрывает. */}
-      <div className="flex h-full min-h-0 flex-1 gap-0">
+      {/* ======== Split: список + push-панель карточки ========
+          v0.7.27: justify-center — группа [список(+карточка)] центрируется
+          по экрану. В режиме «Список» блок ограничен max-w → грузится по
+          центру (без карточки) либо группой с карточкой; в «Плитках» блок
+          заполняет ширину (max-w большой). При смене режима max-width
+          анимируется → плавное расширение/сжатие. */}
+      <div className="flex h-full min-h-0 flex-1 justify-center gap-0">
         {/* Левая часть — единый белый блок: header+поиск+чипы+список.
             v0.7.25: в режиме «Список» (таблица) блок сжимается до ~880px
             (ширина под фильтры в одну строку + таблицу), карточка
@@ -544,8 +548,8 @@ export function Rentals() {
             В «Плитках» — заполняет всю доступную ширину (flex-1). */}
         <div
           className={cn(
-            "flex min-w-0 flex-col rounded-2xl bg-surface shadow-card-sm overflow-hidden min-h-0",
-            viewMode === "list" ? "w-[880px] max-w-full" : "flex-1",
+            "flex min-w-0 flex-1 flex-col rounded-2xl bg-surface shadow-card-sm overflow-hidden min-h-0 transition-[max-width] duration-300 ease-in-out",
+            viewMode === "list" ? "max-w-[880px]" : "max-w-[3000px]",
           )}
         >
           <div className="flex flex-col gap-3 p-4 pb-3 border-b border-border">
