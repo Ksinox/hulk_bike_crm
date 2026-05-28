@@ -137,7 +137,12 @@ export async function scootersRoutes(app: FastifyInstance) {
         .where(
           and(
             eq(rentals.scooterId, id),
-            sql`${rentals.status} IN ('active', 'overdue', 'returning')`,
+            // v0.7.1: enum rental_status = только active|completed.
+            // overdue/returning вычисляются на фронте (effectiveRentalStatus),
+            // в БД все живые аренды = 'active'. Старое IN(...) с
+            // несуществующими значениями enum роняло запрос:
+            // "invalid input value for enum rental_status: overdue".
+            eq(rentals.status, "active"),
           ),
         );
       if (active.length > 0) {
