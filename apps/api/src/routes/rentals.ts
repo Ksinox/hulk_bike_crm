@@ -31,6 +31,7 @@ function pickRateByPeriod(
   return null;
 }
 import { logActivity } from "../services/activityLog.js";
+import type { DiffPayload } from "../services/activityLog.js";
 import { rentalStatusLabel } from "../services/activityMessages.js";
 
 const RentalStatusEnum = z.enum(["active", "completed"]);
@@ -451,11 +452,84 @@ export async function rentalsRoutes(app: FastifyInstance) {
         summary: `Аренда ${summary}: «${rentalStatusLabel(before.status)}» → «${rentalStatusLabel(row.status)}»`,
       });
     } else {
+      // v0.7.16: собираем структурированный diff изменённых полей, чтобы
+      // в ленте показывать «Тариф: 500 → 600 ₽», «Дата возврата: …» и т.п.
+      const editDiff: DiffPayload = {};
+      const dateOnly = (v: unknown): string | null =>
+        v ? new Date(v as string).toISOString().slice(0, 10) : null;
+      if (parsed.data.rate !== undefined && parsed.data.rate !== before.rate) {
+        editDiff.rate = {
+          label: "Тариф",
+          from: before.rate,
+          to: parsed.data.rate,
+          kind: "money",
+        };
+      }
+      if (parsed.data.sum !== undefined && parsed.data.sum !== before.sum) {
+        editDiff.sum = {
+          label: "Сумма аренды",
+          from: before.sum,
+          to: parsed.data.sum,
+          kind: "money",
+        };
+      }
+      if (parsed.data.days !== undefined && parsed.data.days !== before.days) {
+        editDiff.days = {
+          label: "Срок",
+          from: before.days,
+          to: parsed.data.days,
+          kind: "number",
+          suffix: "дн",
+        };
+      }
+      if (parsed.data.deposit !== undefined && parsed.data.deposit !== before.deposit) {
+        editDiff.deposit = {
+          label: "Залог",
+          from: before.deposit,
+          to: parsed.data.deposit,
+          kind: "money",
+        };
+      }
+      if (
+        parsed.data.endPlannedAt !== undefined &&
+        dateOnly(parsed.data.endPlannedAt) !==
+          dateOnly(before.endPlannedAt as unknown)
+      ) {
+        editDiff.endPlanned = {
+          label: "Дата возврата",
+          from: dateOnly(before.endPlannedAt as unknown),
+          to: dateOnly(parsed.data.endPlannedAt),
+          kind: "date",
+        };
+      }
+      if (
+        parsed.data.startAt !== undefined &&
+        dateOnly(parsed.data.startAt) !== dateOnly(before.startAt as unknown)
+      ) {
+        editDiff.start = {
+          label: "Дата начала",
+          from: dateOnly(before.startAt as unknown),
+          to: dateOnly(parsed.data.startAt),
+          kind: "date",
+        };
+      }
+      if (
+        parsed.data.depositItem !== undefined &&
+        (parsed.data.depositItem ?? "") !== (before.depositItem ?? "")
+      ) {
+        editDiff.depositItem = {
+          label: "Залог-предмет",
+          from: before.depositItem ?? "—",
+          to: parsed.data.depositItem ?? "—",
+          kind: "text",
+        };
+      }
       await logActivity(req, {
         entity: "rental",
         entityId: id,
         action: "updated",
         summary: `Отредактирована аренда ${summary}`,
+        ...(Object.keys(editDiff).length > 0 ? { diff: editDiff } : {}),
       });
     }
     return row;

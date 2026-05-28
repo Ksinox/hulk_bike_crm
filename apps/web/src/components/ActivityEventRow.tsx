@@ -34,6 +34,8 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ApiActivityItem } from "@/lib/api/activity";
+import { useApiEquipment } from "@/lib/api/equipment";
+import { fileUrl } from "@/lib/files";
 
 /* ============================ Категории / фильтры ============================ */
 
@@ -128,10 +130,27 @@ type ChangeView = {
   tone?: "blue" | "green" | "red";
 };
 
+/**
+ * v0.7.16: визуальное изменение экипировки как пара медиа-миниатюр
+ * «было → стало». name — подпись, from/to — название экипировки для
+ * матчинга миниатюры (или null = пустой квадрат-заглушка).
+ */
+export type EquipmentChangeView = {
+  kind: "added" | "removed" | "replaced";
+  /** Название для матчинга миниатюры слева (null = заглушка). */
+  fromName: string | null;
+  /** Название для матчинга миниатюры справа (null = заглушка). */
+  toName: string | null;
+  /** Подпись под парой (название + сумма). */
+  caption: string;
+};
+
 export type ActivitySummaryView = {
   title: string;
   change: ChangeView | null;
   extras: string[];
+  /** v0.7.16: изменения экипировки с миниатюрами (вместо change-пилюль). */
+  equipment?: EquipmentChangeView[];
 };
 
 /**
@@ -164,37 +183,68 @@ export function formatActivitySummary(
     const removed = from.filter((n) => !to.includes(n));
     const extras: string[] = [];
     const fl = feeLine();
-    if (fl) extras.push(fl);
-    // замена 1↔1
+    // подпись суммы для пары миниатюр: «+N ₽» / «−N ₽» / «сумма не изменилась»
+    const feeAmount = fee && fee.to != null ? Number(fee.to) : 0;
+    const isRefund = fee?.label === "Возврат";
+    const feeCaption =
+      feeAmount !== 0
+        ? `${isRefund ? "−" : "+"}${money(feeAmount)}`
+        : "сумма не изменилась";
+
+    const equipment: EquipmentChangeView[] = [];
+    // Замена 1↔1 — одна пара «старая → новая».
     if (added.length === 1 && removed.length === 1) {
-      return {
-        title: "Заменена экипировка",
-        change: { from: removed[0], to: added[0], tone: "blue" },
-        extras,
-      };
+      equipment.push({
+        kind: "replaced",
+        fromName: removed[0]!,
+        toName: added[0]!,
+        caption: `${removed[0]} → ${added[0]}`,
+      });
+    } else {
+      // Добавленные: пустой квадрат → миниатюра.
+      for (const n of added) {
+        equipment.push({
+          kind: "added",
+          fromName: null,
+          toName: n,
+          caption: `${n} · ${feeCaption}`,
+        });
+      }
+      // Убранные: миниатюра → пустой квадрат.
+      for (const n of removed) {
+        equipment.push({
+          kind: "removed",
+          fromName: n,
+          toName: null,
+          caption: n,
+        });
+      }
     }
-    if (added.length > 0 && removed.length === 0) {
-      return {
-        title: "Добавлена экипировка",
-        change: { from: "—", to: added.join(", "), tone: "green" },
-        extras,
-      };
-    }
-    if (removed.length > 0 && added.length === 0) {
-      return {
-        title: "Убрана экипировка",
-        change: { from: removed.join(", "), to: "—", tone: "red" },
-        extras,
-      };
-    }
+
+    const title =
+      added.length === 1 && removed.length === 1
+        ? "Заменена экипировка"
+        : added.length > 0 && removed.length === 0
+          ? "Добавлена экипировка"
+          : removed.length > 0 && added.length === 0
+            ? "Убрана экипировка"
+            : "Изменена экипировка";
+
+    // fee показываем строкой только если миниатюр нет (нет diff.items).
+    if (equipment.length === 0 && fl) extras.push(fl);
+
     return {
-      title: "Изменена экипировка",
-      change: {
-        from: from.length ? from.join(", ") : "—",
-        to: to.length ? to.join(", ") : "—",
-        tone: "blue",
-      },
+      title,
+      change:
+        equipment.length === 0
+          ? {
+              from: from.length ? from.join(", ") : "—",
+              to: to.length ? to.join(", ") : "—",
+              tone: "blue",
+            }
+          : null,
       extras,
+      equipment: equipment.length ? equipment : undefined,
     };
   }
 
@@ -257,12 +307,37 @@ export function formatActivitySummary(
 
   // ── Прощение долга ──
   if (action.includes("forgiv")) {
-    const key = ["fine", "debt", "overdueDays"].find((k) => diff?.[k]);
-    const f = key ? readRecord(diff?.[key]) : null;
+    // diff может содержать: debt/fine (money) + overdueDays (number, дни).
+    const debt = readRecord(diff?.debt);
+    const fine = readRecord(diff?.fine);
+    const overdueDays = readRecord(diff?.overdueDays);
+    const amountRec = debt ?? fine;
+    // Заголовок поясняет ЧТО прощено.
+    const title = fine
+      ? "Прощён штраф просрочки"
+      : action.includes("days")
+        ? "Прощены дни просрочки"
+        : "Прощена просрочка";
+    const extras: string[] = [];
+    if (
+      overdueDays &&
+      typeof overdueDays.from === "number" &&
+      overdueDays.from > 0
+    ) {
+      const d = overdueDays.from;
+      extras.push(`Снято дней просрочки: ${d} ${plural(d, "день", "дня", "дней")}`);
+    }
+    const fineLineForgiven = readRecord(diff?.fine);
+    if (debt && fineLineForgiven && fineLineForgiven !== amountRec) {
+      // target='all' иногда кладёт и debt, и fine — покажем штраф отдельно.
+      extras.push(`Штраф: ${money(fineLineForgiven.from)}`);
+    }
     return {
-      title: "Долг прощён",
-      change: f ? { from: money(f.from), to: "0 ₽", tone: "green" } : null,
-      extras: [],
+      title,
+      change: amountRec
+        ? { from: money(amountRec.from), to: "0 ₽", tone: "green" }
+        : null,
+      extras,
     };
   }
 
@@ -317,11 +392,25 @@ export function formatActivitySummary(
       .map((k) => {
         const f = readRecord(diff?.[k]);
         if (!f || typeof f.label !== "string") return null;
-        return `${f.label}: ${String(f.from ?? "—")} → ${String(f.to ?? "—")}`;
+        const fmt = (v: unknown): string => {
+          if (v == null || v === "") return "—";
+          switch (f.kind) {
+            case "money":
+              return money(v);
+            case "number":
+              return `${Number(v).toLocaleString("ru-RU")}${f.suffix ? ` ${f.suffix}` : ""}`;
+            case "date":
+              return formatDateLabel(v);
+            default:
+              return String(v);
+          }
+        };
+        return `${f.label}: ${fmt(f.from)} → ${fmt(f.to)}`;
       })
       .filter((x): x is string => x != null)
-      .slice(0, 4);
-    return { title: "Изменена аренда", change: null, extras };
+      .slice(0, 5);
+    // Если diff не дал человекочитаемых полей — оставляем заголовок без хвоста.
+    return { title: "Отредактирована аренда", change: null, extras };
   }
 
   // ── Fallback — короткий заголовок без «#N · Имя · Модель» ──
@@ -353,6 +442,23 @@ function statusLabel(s: string): string {
     default:
       return s;
   }
+}
+
+/** Склонение по числу: 1 день, 2 дня, 5 дней. */
+function plural(n: number, one: string, few: string, many: string): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return one;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return few;
+  return many;
+}
+
+/** Дата «дд.мм» для diff-полей (бэк кладёт YYYY-MM-DD или ISO). */
+function formatDateLabel(v: unknown): string {
+  if (typeof v !== "string" && typeof v !== "number") return "—";
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return String(v);
+  return d.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" });
 }
 
 function readRecord(value: unknown): Record<string, unknown> | null {
@@ -424,6 +530,102 @@ function ChangePills({
   );
 }
 
+/* ============================ Миниатюры экипировки ============================ */
+
+/**
+ * Квадрат-миниатюра экипировки. name=null → пустой квадрат-заглушка
+ * (пунктир + иконка). Иначе — фото экипировки (bg-white object-contain),
+ * fallback на иконку HardHat если миниатюры нет.
+ */
+function EquipmentThumb({
+  name,
+  resolveThumb,
+  size = 30,
+}: {
+  name: string | null;
+  resolveThumb: (name: string) => string | null;
+  size?: number;
+}) {
+  const dim = { width: size, height: size };
+  if (!name) {
+    return (
+      <span
+        style={dim}
+        className="flex shrink-0 items-center justify-center rounded-md border border-dashed border-border bg-surface-soft text-muted-2"
+      >
+        <X size={size <= 24 ? 11 : 13} />
+      </span>
+    );
+  }
+  const url = resolveThumb(name);
+  if (url) {
+    return (
+      <img
+        src={url}
+        alt={name}
+        style={dim}
+        className="shrink-0 rounded-md bg-white object-contain ring-1 ring-inset ring-border"
+      />
+    );
+  }
+  return (
+    <span
+      style={dim}
+      className="flex shrink-0 items-center justify-center rounded-md bg-orange-soft text-orange-ink ring-1 ring-inset ring-border"
+    >
+      <HardHat size={size <= 24 ? 12 : 15} />
+    </span>
+  );
+}
+
+function EquipmentChangeBlock({
+  items,
+  resolveThumb,
+  compact = false,
+}: {
+  items: EquipmentChangeView[];
+  resolveThumb: (name: string) => string | null;
+  compact?: boolean;
+}) {
+  const thumbSize = compact ? 24 : 30;
+  return (
+    <div className={cn("flex flex-col", compact ? "gap-1" : "gap-1.5")}>
+      {items.map((it, i) => (
+        <div key={i} className="flex items-center gap-1.5">
+          <EquipmentThumb
+            name={it.fromName}
+            resolveThumb={resolveThumb}
+            size={thumbSize}
+          />
+          <ArrowRight
+            size={compact ? 11 : 13}
+            className={cn(
+              it.kind === "added"
+                ? "text-green-ink"
+                : it.kind === "removed"
+                  ? "text-red-ink"
+                  : "text-muted-2",
+            )}
+          />
+          <EquipmentThumb
+            name={it.toName}
+            resolveThumb={resolveThumb}
+            size={thumbSize}
+          />
+          <span
+            className={cn(
+              "ml-1 min-w-0 truncate font-semibold text-ink-2",
+              compact ? "text-[11px]" : "text-[11.5px]",
+            )}
+          >
+            {it.caption}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /* ============================ Основной компонент ============================ */
 
 export function ActivityEventRow({
@@ -443,6 +645,18 @@ export function ActivityEventRow({
   const Icon = vis.icon;
   const view = formatActivitySummary(item);
   const interactive = clickable && !!onOpen;
+
+  // v0.7.16: резолвер миниатюры экипировки по названию.
+  // Матчим название из meta.diff.items → equipment row → thumb-ключ → URL.
+  // (а) из task: подтягиваем avatarThumbKey/avatarKey по уникальному названию.
+  const { data: equipmentList } = useApiEquipment();
+  const resolveThumb = (name: string): string | null => {
+    const eq = equipmentList?.find(
+      (e) => e.name.trim().toLowerCase() === name.trim().toLowerCase(),
+    );
+    if (!eq) return null;
+    return fileUrl(eq.avatarThumbKey ?? eq.avatarKey, { variant: "thumb" });
+  };
 
   if (compact) {
     return (
@@ -471,9 +685,24 @@ export function ActivityEventRow({
           <div className="truncate text-[12px] font-bold leading-tight text-ink">
             {view.title}
           </div>
+          {view.equipment && view.equipment.length > 0 && (
+            <div className="mt-1">
+              <EquipmentChangeBlock
+                items={view.equipment}
+                resolveThumb={resolveThumb}
+                compact
+              />
+            </div>
+          )}
           {view.change && (
             <div className="mt-0.5 flex flex-wrap items-center gap-1 leading-tight">
               <ChangePills change={view.change} size="sm" />
+            </div>
+          )}
+          {/* v0.7.16: краткое первое последствие (доплата/сумма) и в compact */}
+          {view.extras.length > 0 && (
+            <div className="mt-0.5 truncate text-[10.5px] font-semibold leading-tight text-ink-2">
+              {view.extras[0]}
             </div>
           )}
           <div className="mt-0.5 text-[10px] leading-tight text-muted tabular-nums">
@@ -514,6 +743,15 @@ export function ActivityEventRow({
         <div className="text-[13px] font-bold leading-snug text-ink">
           {view.title}
         </div>
+        {/* v0.7.16: экипировка — медиа-миниатюры «было → стало» */}
+        {view.equipment && view.equipment.length > 0 && (
+          <div className="mt-1.5">
+            <EquipmentChangeBlock
+              items={view.equipment}
+              resolveThumb={resolveThumb}
+            />
+          </div>
+        )}
         {/* основное «было → стало» */}
         {view.change && (
           <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[12px] leading-snug">
