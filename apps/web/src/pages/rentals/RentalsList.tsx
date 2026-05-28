@@ -411,21 +411,21 @@ function RentalTableRow({
             : "hover:bg-surface-soft/70",
       )}
     >
-      <td className="px-4 py-3.5 tabular-nums font-mono text-[12px] text-muted-2 whitespace-nowrap">
+      <td className="px-4 py-5 tabular-nums font-mono text-[12px] text-muted-2 whitespace-nowrap">
         #{String(row.rental.id).padStart(4, "0")}
       </td>
-      <td className="px-4 py-3.5">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <ClientAvatar clientId={row.clientId} name={row.clientName} w={34} h={34} />
+      <td className="px-4 py-5">
+        <div className="flex items-center gap-3 min-w-0">
+          <ClientAvatar clientId={row.clientId} name={row.clientName} w={42} h={42} />
           <span
-            className="truncate font-semibold text-ink"
+            className="truncate text-[14px] font-semibold text-ink"
             title={row.clientName}
           >
             {row.clientName}
           </span>
         </div>
       </td>
-      <td className="px-4 py-3.5 text-muted whitespace-nowrap">
+      <td className="px-4 py-5 text-muted whitespace-nowrap">
         {row.scooterLabel}
         {row.mileage != null && (
           <span className="ml-1 text-[11px] text-muted-2 tabular-nums">
@@ -433,13 +433,13 @@ function RentalTableRow({
           </span>
         )}
       </td>
-      <td className="px-4 py-3.5 tabular-nums text-muted whitespace-nowrap">
+      <td className="px-4 py-5 tabular-nums text-muted whitespace-nowrap">
         {row.rental.start}
       </td>
-      <td className="px-4 py-3.5 tabular-nums text-muted whitespace-nowrap">
+      <td className="px-4 py-5 tabular-nums text-muted whitespace-nowrap">
         {row.rental.endPlanned}
       </td>
-      <td className="px-4 py-3.5 text-center">
+      <td className="px-4 py-5 text-center">
         <span
           className={cn(
             "inline-block rounded-full px-2 py-0.5 text-[11px] font-bold tabular-nums",
@@ -449,7 +449,7 @@ function RentalTableRow({
           {row.badgeText}
         </span>
       </td>
-      <td className="px-4 py-3.5 text-right tabular-nums whitespace-nowrap">
+      <td className="px-4 py-5 text-right tabular-nums whitespace-nowrap">
         {row.hasDebt ? (
           <span className="font-bold text-red-ink">{fmt(row.rightSum)} ₽</span>
         ) : row.pendingRent > 0 ? (
@@ -458,7 +458,7 @@ function RentalTableRow({
           <span className="text-muted-2">0 ₽</span>
         )}
       </td>
-      <td className="px-4 py-3.5 whitespace-nowrap">
+      <td className="px-4 py-5 whitespace-nowrap">
         <StatusPill status={row.effStatus} />
       </td>
     </tr>
