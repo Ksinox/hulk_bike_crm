@@ -1,19 +1,19 @@
 /**
- * RentalsList — список аренд в двух режимах (v0.7.22):
- *   • "tiles"  — сетка компактных карточек-плиток (аватар, ФИО, скутер,
- *     даты, бейдж дней, долг, статус). Адаптивная: число колонок зависит
- *     от ширины колонки списка (auto-fill).
- *   • "list"   — плотная таблица по столбцам (Клиент / Скутер / Выдан /
- *     Возврат / Дней / Сумма / Статус) с сортировкой по клику на заголовок.
+ * RentalsList — список аренд в двух режимах (v0.7.23):
+ *   • "tiles"  — сетка карточек-плиток. ОСНОВНОЕ изображение плитки —
+ *     фото скутера (модельный avatar) сверху; поверх него в левом нижнем
+ *     углу — прямоугольная (со скруглением) аватарка клиента. Ниже —
+ *     ФИО, скутер, даты, статус, долг.
+ *   • "list"   — плотная таблица по столбцам (№ / Клиент / Скутер /
+ *     Выдан / Возврат / Дней / Сумма / Статус) с сортировкой по клику на
+ *     заголовок. Колонки прижаты к содержимому (не растянуты), строки
+ *     крупные и читаемые. Аватарки — квадрат со скруглением (не круг).
  *
- * Выбранная строка/плитка подсвечивается; есть долг/просрочка — красная
- * подсветка. Клик → onSelect(id) (открывает карточку аренды).
- *
- * Данные (клиенты / скутеры / долги) грузятся ОДИН раз на уровне списка и
- * прокидываются в строки — это нужно и для сортировки таблицы по столбцам.
+ * Данные (клиенты / скутеры / модели / долги) грузятся ОДИН раз на уровне
+ * списка и прокидываются в строки — это нужно и для сортировки таблицы.
  */
 import { useMemo, useState } from "react";
-import { ChevronRight, SearchX, ChevronUp, ChevronDown } from "lucide-react";
+import { ChevronRight, SearchX, ChevronUp, ChevronDown, Bike } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { type Rental } from "@/lib/mock/rentals";
 import { effectiveRentalStatus } from "@/lib/rentalStatus";
@@ -21,7 +21,9 @@ import { initialsOf } from "@/lib/mock/clients";
 import { useClientPhoto } from "@/pages/clients/clientStore";
 import { useApiClients } from "@/lib/api/clients";
 import { useApiScooters } from "@/lib/api/scooters";
+import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { useDebtAggregate } from "@/lib/api/debt";
+import { fileUrl } from "@/lib/files";
 import type { RentalsViewMode } from "./rentalsViewMode";
 
 function fmt(n: number) {
@@ -85,6 +87,7 @@ type Row = {
   clientId: number;
   clientName: string;
   scooterLabel: string;
+  scooterAvatarSrc: string | null;
   mileage: number | null;
   startKey: number;
   endKey: number;
@@ -99,6 +102,7 @@ type Row = {
 };
 
 type SortCol =
+  | "id"
   | "client"
   | "scooter"
   | "start"
@@ -120,10 +124,10 @@ export function RentalsList({
 }) {
   const { data: apiClients } = useApiClients();
   const { data: apiScooters = [] } = useApiScooters();
+  const { data: models = [] } = useApiScooterModels();
   const { data: debtAgg } = useDebtAggregate();
 
-  // Локальная сортировка только для табличного режима. null → исходный
-  // порядок (по статусу, как пришёл из Rentals).
+  // Локальная сортировка только для табличного режима.
   const [sort, setSort] = useState<{ col: SortCol; dir: "asc" | "desc" } | null>(
     null,
   );
@@ -157,11 +161,19 @@ export function RentalsList({
       const scooter = r.scooterId
         ? apiScooters.find((s) => s.id === r.scooterId)
         : null;
+      const model = scooter
+        ? scooter.modelId
+          ? models.find((m) => m.id === scooter.modelId)
+          : models.find((m) =>
+              m.name.toLowerCase().includes((scooter.model ?? "").toLowerCase()),
+            )
+        : null;
       return {
         rental: r,
         clientId: r.clientId,
         clientName: c?.name ?? `Клиент #${r.clientId}`,
         scooterLabel: r.scooter,
+        scooterAvatarSrc: fileUrl(model?.avatarKey, { variant: "view" }),
         mileage: scooter?.mileage ?? null,
         startKey: dateKey(r.start),
         endKey: dateKey(r.endPlanned),
@@ -175,13 +187,15 @@ export function RentalsList({
         danger: isOverdue || hasDebt,
       };
     });
-  }, [items, apiClients, apiScooters, debtAgg]);
+  }, [items, apiClients, apiScooters, models, debtAgg]);
 
   const sortedRows = useMemo<Row[]>(() => {
     if (!sort) return rows;
     const dir = sort.dir === "asc" ? 1 : -1;
     const cmp = (a: Row, b: Row): number => {
       switch (sort.col) {
+        case "id":
+          return (a.rental.id - b.rental.id) * dir;
         case "client":
           return a.clientName.localeCompare(b.clientName, "ru") * dir;
         case "scooter":
@@ -223,7 +237,7 @@ export function RentalsList({
   if (viewMode === "tiles") {
     return (
       <div className="scrollbar-thin h-full overflow-y-auto overflow-x-hidden p-3">
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(210px,1fr))] gap-3">
           {rows.map((row) => (
             <RentalTile
               key={row.rental.id}
@@ -248,10 +262,12 @@ export function RentalsList({
     );
 
   return (
-    <div className="scrollbar-thin h-full overflow-auto">
-      <table className="w-full border-collapse text-left">
-        <thead className="sticky top-0 z-10 bg-surface-soft">
+    <div className="scrollbar-thin h-full overflow-auto px-2">
+      {/* w-auto: колонки прижаты к содержимому (не растянуты на всю ширину). */}
+      <table className="w-auto border-collapse text-left">
+        <thead className="sticky top-0 z-10 bg-surface">
           <tr className="text-[11px] font-semibold uppercase tracking-wide text-muted-2">
+            <Th label="№" col="id" sort={sort} onSort={toggleSort} />
             <Th label="Клиент" col="client" sort={sort} onSort={toggleSort} />
             <Th label="Скутер" col="scooter" sort={sort} onSort={toggleSort} />
             <Th label="Выдан" col="start" sort={sort} onSort={toggleSort} />
@@ -293,7 +309,7 @@ function Th({
   return (
     <th
       className={cn(
-        "border-b border-border px-3 py-2 font-semibold select-none",
+        "whitespace-nowrap border-b border-border px-4 py-2.5 font-semibold select-none",
         align === "right" && "text-right",
         align === "center" && "text-center",
       )}
@@ -319,28 +335,38 @@ function Th({
   );
 }
 
-/** Маленькая аватарка клиента (фото или инициалы). */
-function MiniAvatar({
+/**
+ * Аватарка клиента — квадрат/прямоугольник со скруглением (не круг).
+ * w/h задаются явно; для таблицы — квадрат, для плитки — портрет.
+ */
+function ClientAvatar({
   clientId,
   name,
-  size = 28,
+  w,
+  h,
+  ring = false,
 }: {
   clientId: number;
   name: string;
-  size?: number;
+  w: number;
+  h: number;
+  ring?: boolean;
 }) {
   const photo = useClientPhoto(clientId);
   return (
     <span
-      className="flex shrink-0 items-center justify-center overflow-hidden rounded-full"
-      style={{ width: size, height: size, background: clientColor(clientId) }}
+      className={cn(
+        "flex shrink-0 items-center justify-center overflow-hidden rounded-lg",
+        ring && "ring-2 ring-white shadow-card-sm",
+      )}
+      style={{ width: w, height: h, background: clientColor(clientId) }}
     >
       {photo?.thumbUrl ? (
         <img src={photo.thumbUrl} alt="" className="h-full w-full object-cover" />
       ) : (
         <span
           className="font-display font-bold leading-none text-white"
-          style={{ fontSize: size * 0.4 }}
+          style={{ fontSize: Math.min(w, h) * 0.42 }}
         >
           {initialsOf(name)}
         </span>
@@ -375,7 +401,7 @@ function RentalTableRow({
     <tr
       onClick={() => onSelect(row.rental.id)}
       className={cn(
-        "cursor-pointer border-b border-border text-[12.5px] transition-colors",
+        "cursor-pointer border-b border-border text-[13px] transition-colors",
         row.danger
           ? active
             ? "bg-red-soft/55"
@@ -385,39 +411,45 @@ function RentalTableRow({
             : "hover:bg-surface-soft/70",
       )}
     >
-      <td className="px-3 py-2">
-        <div className="flex items-center gap-2 min-w-0">
-          <MiniAvatar clientId={row.clientId} name={row.clientName} size={26} />
-          <span className="truncate font-semibold text-ink" title={row.clientName}>
+      <td className="px-4 py-3.5 tabular-nums font-mono text-[12px] text-muted-2 whitespace-nowrap">
+        #{String(row.rental.id).padStart(4, "0")}
+      </td>
+      <td className="px-4 py-3.5">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <ClientAvatar clientId={row.clientId} name={row.clientName} w={34} h={34} />
+          <span
+            className="truncate font-semibold text-ink"
+            title={row.clientName}
+          >
             {row.clientName}
           </span>
         </div>
       </td>
-      <td className="px-3 py-2 text-muted">
-        <span className="whitespace-nowrap">{row.scooterLabel}</span>
+      <td className="px-4 py-3.5 text-muted whitespace-nowrap">
+        {row.scooterLabel}
         {row.mileage != null && (
           <span className="ml-1 text-[11px] text-muted-2 tabular-nums">
             · {fmt(row.mileage)} км
           </span>
         )}
       </td>
-      <td className="px-3 py-2 tabular-nums text-muted whitespace-nowrap">
+      <td className="px-4 py-3.5 tabular-nums text-muted whitespace-nowrap">
         {row.rental.start}
       </td>
-      <td className="px-3 py-2 tabular-nums text-muted whitespace-nowrap">
+      <td className="px-4 py-3.5 tabular-nums text-muted whitespace-nowrap">
         {row.rental.endPlanned}
       </td>
-      <td className="px-3 py-2 text-center">
+      <td className="px-4 py-3.5 text-center">
         <span
           className={cn(
-            "inline-block rounded-full px-1.5 py-0.5 text-[10px] font-bold tabular-nums",
+            "inline-block rounded-full px-2 py-0.5 text-[11px] font-bold tabular-nums",
             row.badgeTone,
           )}
         >
           {row.badgeText}
         </span>
       </td>
-      <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap">
+      <td className="px-4 py-3.5 text-right tabular-nums whitespace-nowrap">
         {row.hasDebt ? (
           <span className="font-bold text-red-ink">{fmt(row.rightSum)} ₽</span>
         ) : row.pendingRent > 0 ? (
@@ -426,7 +458,7 @@ function RentalTableRow({
           <span className="text-muted-2">0 ₽</span>
         )}
       </td>
-      <td className="px-3 py-2">
+      <td className="px-4 py-3.5 whitespace-nowrap">
         <StatusPill status={row.effStatus} />
       </td>
     </tr>
@@ -447,67 +479,80 @@ function RentalTile({
       type="button"
       onClick={() => onSelect(row.rental.id)}
       className={cn(
-        "relative flex flex-col gap-2 rounded-xl border p-3 text-left transition-colors",
+        "group flex flex-col overflow-hidden rounded-2xl border text-left transition-colors",
         row.danger
           ? active
-            ? "border-red-300 bg-red-soft/55"
-            : "border-red-200 bg-red-soft/25 hover:bg-red-soft/40"
+            ? "border-red-300 bg-red-soft/40"
+            : "border-red-200 bg-surface hover:bg-red-soft/20"
           : active
             ? "border-blue-300 bg-blue-50"
-            : "border-border bg-surface hover:bg-surface-soft/70",
+            : "border-border bg-surface hover:bg-surface-soft/60",
       )}
     >
-      <div className="flex items-start gap-2">
-        <div className="relative shrink-0">
-          <MiniAvatar clientId={row.clientId} name={row.clientName} size={40} />
-          <span
-            className={cn(
-              "absolute -bottom-1 left-1/2 -translate-x-1/2 rounded-full px-1 py-0.5 text-[9px] font-bold leading-none tabular-nums shadow-card-sm",
-              row.badgeTone,
-            )}
-          >
-            {row.badgeText}
-          </span>
-        </div>
-        <div className="min-w-0 flex-1">
-          <div
-            className="truncate text-[13px] font-bold leading-tight text-ink"
-            title={row.clientName}
-          >
-            {row.clientName}
+      {/* Основная зона — фото скутера; поверх неё аватарка клиента слева
+          снизу + бейдж дней справа сверху. */}
+      <div className="relative h-[136px] w-full bg-white">
+        {row.scooterAvatarSrc ? (
+          <img
+            src={row.scooterAvatarSrc}
+            alt={row.scooterLabel}
+            className="h-full w-full object-contain p-2"
+          />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center">
+            <Bike size={40} strokeWidth={1.5} className="text-muted-2" />
           </div>
-          <div className="truncate text-[11.5px] text-muted leading-tight">
-            {row.scooterLabel}
-          </div>
-        </div>
-        <ChevronRight size={14} className="shrink-0 text-muted-2" />
-      </div>
-
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-[11px] tabular-nums text-muted-2 whitespace-nowrap">
-          {row.rental.start} → {row.rental.endPlanned}
+        )}
+        {/* Бейдж дней — правый верхний угол. */}
+        <span
+          className={cn(
+            "absolute right-2 top-2 rounded-full px-2 py-0.5 text-[11px] font-bold tabular-nums shadow-card-sm",
+            row.badgeTone,
+          )}
+        >
+          {row.badgeText}
         </span>
-        <StatusPill status={row.effStatus} />
+        {/* Аватарка клиента — портрет со скруглением, левый нижний угол. */}
+        <div className="absolute bottom-2 left-2">
+          <ClientAvatar
+            clientId={row.clientId}
+            name={row.clientName}
+            w={44}
+            h={56}
+            ring
+          />
+        </div>
+        {/* Метка скутера — правый нижний угол. */}
+        <span className="absolute bottom-2 right-2 rounded-md bg-ink/70 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+          {row.scooterLabel}
+        </span>
       </div>
 
-      <div className="flex items-end justify-between">
-        {row.hasDebt ? (
-          <div>
-            <span className="text-[15px] font-bold tabular-nums text-red-ink">
+      {/* Инфо. */}
+      <div className="flex flex-col gap-1.5 p-2.5">
+        <div
+          className="truncate text-[13px] font-bold leading-tight text-ink"
+          title={row.clientName}
+        >
+          {row.clientName}
+        </div>
+        <div className="text-[11px] tabular-nums text-muted-2 whitespace-nowrap">
+          {row.rental.start} → {row.rental.endPlanned}
+        </div>
+        <div className="mt-0.5 flex items-center justify-between gap-2">
+          <StatusPill status={row.effStatus} />
+          {row.hasDebt ? (
+            <span className="text-[14px] font-bold tabular-nums text-red-ink">
               {fmt(row.rightSum)} ₽
             </span>
-            <span className="ml-1 text-[10px] font-semibold text-red-ink/80">долг</span>
-          </div>
-        ) : row.pendingRent > 0 ? (
-          <div>
-            <span className="text-[14px] font-semibold tabular-nums text-ink-2">
+          ) : row.pendingRent > 0 ? (
+            <span className="text-[13px] font-semibold tabular-nums text-ink-2">
               {fmt(row.pendingRent)} ₽
             </span>
-            <span className="ml-1 text-[10px] text-muted-2">к оплате</span>
-          </div>
-        ) : (
-          <span className="text-[12px] text-muted-2">платежей нет</span>
-        )}
+          ) : (
+            <span className="text-[11px] text-muted-2">оплачено</span>
+          )}
+        </div>
       </div>
     </button>
   );

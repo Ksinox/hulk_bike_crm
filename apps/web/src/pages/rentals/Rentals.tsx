@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Plus,
   Search,
-  SlidersHorizontal,
   PanelRightOpen,
   LayoutGrid,
   Rows3,
@@ -249,7 +248,6 @@ export function Rentals() {
   // v0.6.44: блок RentalsFilters (поповеры дат, набор табов) скрыт по
   // умолчанию — header'а нового дизайна достаточно. Открывается кнопкой
   // SlidersHorizontal справа от поиска.
-  const [filtersOpen, setFiltersOpen] = useState(false);
   // v0.7.22: режим списка (таблица/плитки) — пер-пользовательское
   // предпочтение. До загрузки me берём дефолт, затем подтягиваем выбор
   // конкретного пользователя (у директора и админа он независим).
@@ -576,17 +574,6 @@ export function Rentals() {
                   className="h-9 w-full rounded-full bg-surface-soft pl-9 pr-3 text-[13px] text-ink outline-none placeholder:text-muted-2 focus:ring-2 focus:ring-blue-100"
                 />
               </div>
-              <button
-                type="button"
-                onClick={() => setFiltersOpen((v) => !v)}
-                title="Дополнительные фильтры (даты)"
-                className={cn(
-                  "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-soft text-muted hover:text-ink",
-                  filtersOpen && "bg-blue-50 text-blue-700",
-                )}
-              >
-                <SlidersHorizontal size={15} />
-              </button>
               {/* v0.7.22: переключатель вида списка — две иконки (список /
                   плитки). Выбор запоминается пер-пользователь. */}
               <div className="flex shrink-0 items-center rounded-full bg-surface-soft p-0.5">
@@ -627,14 +614,9 @@ export function Rentals() {
               </button>
             </div>
 
-            {/* v0.6.53: чипы статусов + даты — оба скрыты по умолчанию.
-                Открываются вместе по клику на иконку-фильтр. Интерфейс
-                «по умолчанию» — только заголовок + поиск + плюс. */}
-            {filtersOpen && (
-              <div className="-mx-1">
-                <RentalsFilters value={filters} onChange={setFilters} />
-              </div>
-            )}
+            {/* v0.7.23: фильтры всегда видимы единым рядом (страница
+                full-width — прятать незачем). */}
+            <RentalsFilters value={filters} onChange={setFilters} />
           </div>
 
           {/* Список аренд — строки внутри того же блока, без рамок. */}
