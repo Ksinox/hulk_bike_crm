@@ -1179,7 +1179,9 @@ export function PaymentAcceptDialog({
             >
               {isOverdueState
                 ? `Закрыть просрочку и продлить · #${String(rental.id).padStart(4, "0")}`
-                : `Продление аренды · #${String(rental.id).padStart(4, "0")}`}
+                : totalDebt > 0 || unpaidParking > 0
+                  ? `Приём оплаты · #${String(rental.id).padStart(4, "0")}`
+                  : `Продление аренды · #${String(rental.id).padStart(4, "0")}`}
             </div>
             <div className="mt-1 text-[11.5px] leading-snug text-muted">
               {isOverdueState ? (
@@ -1276,7 +1278,9 @@ export function PaymentAcceptDialog({
                 {isOverdueState ? "2" : "1"}
               </span>
               <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
-                Период продления
+                {totalDebt > 0 || unpaidParking > 0
+                  ? "Продление (по желанию)"
+                  : "Период продления"}
               </div>
               <div className="ml-auto inline-flex rounded-full border border-border bg-surface-soft p-0.5">
                 <button
