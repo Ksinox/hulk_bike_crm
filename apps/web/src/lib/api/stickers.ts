@@ -11,7 +11,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 
 export type StickerEntity = "rental" | "client";
-export type StickerKind = "note" | "contact";
+export type StickerKind = "note" | "contact" | "parking";
 
 export type NoteSticker = {
   id: number;
@@ -96,6 +96,16 @@ export function useUnpinSticker() {
   return useMutation({
     mutationFn: (args: { id: number }) =>
       api.post<NoteSticker>(`/api/stickers/${args.id}/dismiss`, {}),
+    onSuccess: invalidate,
+  });
+}
+
+/** Подкрепить откреплённый стикер обратно на карточку. */
+export function useRepinSticker() {
+  const invalidate = useInvalidateStickers();
+  return useMutation({
+    mutationFn: (args: { id: number }) =>
+      api.post<NoteSticker>(`/api/stickers/${args.id}/pin`, {}),
     onSuccess: invalidate,
   });
 }

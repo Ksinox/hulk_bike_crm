@@ -18,6 +18,7 @@ import {
   ShieldAlert,
   SquareParking,
   StickyNote,
+  Pin,
   User,
   Wallet,
   Wrench,
@@ -38,6 +39,7 @@ import {
   useCreateSticker,
   useUnpinSticker,
   useDeleteSticker,
+  useRepinSticker,
 } from "@/lib/api/stickers";
 import { useApiClients } from "@/lib/api/clients";
 import { useApiScooters } from "@/lib/api/scooters";
@@ -465,6 +467,7 @@ export function RentalCard({
   const createStickerMut = useCreateSticker();
   const unpinStickerMut = useUnpinSticker();
   const deleteStickerMut = useDeleteSticker();
+  const repinStickerMut = useRepinSticker();
   const [addNoteOpen, setAddNoteOpen] = useState(false);
   // v0.8.18: якорь правого края карточки — оверлей стикеров рендерим порталом
   // поверх (вне клиппящего фрейма), позиционируем по rect карточки. rAF
@@ -513,6 +516,11 @@ export function RentalCard({
       },
     );
   const deleteSticker = (id: number) => deleteStickerMut.mutate({ id });
+  const repinSticker = (id: number) =>
+    repinStickerMut.mutate(
+      { id },
+      { onSuccess: () => toast.success("Заметка снова на карточке") },
+    );
   // Переключение статуса связи клиента прямо из карточки. При включении —
   // сразу предлагаем прикрепить комментарий-стикер (kind=contact на клиента).
   const toggleUnreachable = () => {
@@ -2141,7 +2149,11 @@ export function RentalCard({
                   >
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-2">
-                        {s.kind === "contact" ? "Связь" : "Заметка"}
+                        {s.kind === "contact"
+                          ? "Связь"
+                          : s.kind === "parking"
+                            ? "Паркинг"
+                            : "Заметка"}
                         {s.dismissedAt ? (
                           <span className="rounded-full bg-surface px-1.5 py-0.5 text-[9px] font-medium text-muted">
                             откреплена
@@ -2166,14 +2178,26 @@ export function RentalCard({
                         })}
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => deleteSticker(s.id)}
-                      title="Удалить заметку полностью"
-                      className="shrink-0 rounded-md p-1 text-muted-2 transition-colors hover:bg-red-soft hover:text-red-ink"
-                    >
-                      <Trash2 size={14} />
-                    </button>
+                    <div className="flex shrink-0 items-center gap-1">
+                      {s.dismissedAt && (
+                        <button
+                          type="button"
+                          onClick={() => repinSticker(s.id)}
+                          title="Подкрепить обратно на карточку"
+                          className="rounded-md p-1 text-muted-2 transition-colors hover:bg-amber-100 hover:text-amber-700"
+                        >
+                          <Pin size={14} />
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => deleteSticker(s.id)}
+                        title="Удалить заметку полностью"
+                        className="rounded-md p-1 text-muted-2 transition-colors hover:bg-red-soft hover:text-red-ink"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>

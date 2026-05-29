@@ -10,7 +10,7 @@
  * Вдохновлено CSS3 sticky-notes (habr 136238).
  */
 import { useState } from "react";
-import { X, StickyNote, PhoneOff } from "lucide-react";
+import { X, StickyNote, PhoneOff, SquareParking } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { NoteSticker } from "@/lib/api/stickers";
 
@@ -91,6 +91,7 @@ function Sticker({
   onUnpin?: (id: number) => void;
 }) {
   const isContact = sticker.kind === "contact";
+  const isParking = sticker.kind === "parking";
   return (
     <div
       style={{
@@ -98,7 +99,7 @@ function Sticker({
         marginTop: overlap ? -26 : 0,
       }}
       className={cn(
-        "group/sticker relative rounded-[3px] px-3 pb-2 pt-2.5 shadow-[3px_5px_10px_rgba(0,0,0,0.20)]",
+        "group/sticker relative overflow-hidden rounded-[3px] px-3 pb-2 pt-2.5 shadow-[3px_5px_10px_rgba(0,0,0,0.20)]",
         "transition-all duration-[260ms] ease-out",
         flying
           ? "pointer-events-none translate-y-24 scale-90 opacity-0"
@@ -106,6 +107,13 @@ function Sticker({
         colorClass(sticker.color, isContact),
       )}
     >
+      {/* v0.8.18: водяной знак «P» для паркинг-стикеров. */}
+      {isParking && (
+        <SquareParking
+          className="pointer-events-none absolute -bottom-2 -right-1 h-16 w-16 text-black/[0.07]"
+          strokeWidth={1.5}
+        />
+      )}
       {/* полупрозрачный «скотч» сверху по центру */}
       <span className="pointer-events-none absolute -top-2 left-1/2 h-3.5 w-12 -translate-x-1/2 rotate-1 bg-white/35 shadow-sm" />
 
@@ -120,14 +128,20 @@ function Sticker({
         </button>
       )}
 
-      <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide opacity-70">
-        {isContact ? <PhoneOff size={10} /> : <StickyNote size={10} />}
-        {isContact ? "Связь" : "Заметка"}
+      <div className="relative flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide opacity-70">
+        {isContact ? (
+          <PhoneOff size={10} />
+        ) : isParking ? (
+          <SquareParking size={10} />
+        ) : (
+          <StickyNote size={10} />
+        )}
+        {isContact ? "Связь" : isParking ? "Паркинг" : "Заметка"}
       </div>
-      <div className="mt-0.5 whitespace-pre-wrap break-words text-[12.5px] font-medium leading-snug">
+      <div className="relative mt-0.5 whitespace-pre-wrap break-words text-[12.5px] font-medium leading-snug">
         {sticker.text}
       </div>
-      <div className="mt-1 text-[9.5px] opacity-60">
+      <div className="relative mt-1 text-[9.5px] opacity-60">
         {sticker.createdByName ?? "—"} · {fmtDate(sticker.createdAt)}
       </div>
     </div>

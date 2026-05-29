@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/index.js";
-import { parkingSessions, payments, rentals } from "../db/schema.js";
+import { parkingSessions, payments, rentals, noteStickers } from "../db/schema.js";
 import { logActivity } from "../services/activityLog.js";
 
 /* ============================================================
@@ -176,6 +176,22 @@ export async function parkingRoutes(app: FastifyInstance) {
       action: "parking_set",
       summary: `Паркинг ${startDate}–${endDate} · ${days} дн · ${amount} ₽`,
       meta: { parking: { startDate, endDate, days, amount } },
+    });
+
+    // v0.8.18 (E2): инфо о паркинге уходит ещё и в стикер-заметку с водяным
+    // знаком «P» (kind=parking) — чтобы было видно на карточке.
+    const dm = (ymd: string) => {
+      const m = ymd.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      return m ? `${m[3]}.${m[2]}` : ymd;
+    };
+    await db.insert(noteStickers).values({
+      entity: "rental",
+      entityId: rentalId,
+      kind: "parking",
+      text: `Паркинг ${dm(startDate)}–${dm(endDate)} · ${days} дн${amount > 0 ? ` · ${amount} ₽` : ""}`,
+      color: "yellow",
+      createdByUserId: req.user?.userId ?? null,
+      createdByName: req.user?.login ?? null,
     });
 
     return { session };

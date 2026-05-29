@@ -17,6 +17,8 @@ import type { Rental, RentalStatus } from "@/lib/mock/rentals";
 import {
   useRentalParking,
   useCreateParking,
+  useEndParking,
+  useDeleteParking,
   PARKING_MAX_DAYS,
   parkingAmount,
 } from "@/lib/api/parking";
@@ -111,9 +113,33 @@ export function CalendarPanel({
   /* ---- v0.8.0 ПАРКИНГ ---- */
   const { sessions } = useRentalParking(rental.id);
   const createParking = useCreateParking();
+  const endParking = useEndParking();
+  const deleteParking = useDeleteParking();
   const [parkingMode, setParkingMode] = useState(false);
   const [draftStart, setDraftStart] = useState<string | null>(null);
   const [draftEnd, setDraftEnd] = useState<string | null>(null);
+
+  // v0.8.18 (E1): текущая активная/запланированная сессия — чтобы кнопка
+  // переключалась на «Снять с паркинга».
+  const activeSession = useMemo(
+    () =>
+      [...sessions]
+        .filter((s) => s.status === "active")
+        .sort((a, b) => a.startDate.localeCompare(b.startDate))
+        .pop() ?? null,
+    [sessions],
+  );
+  const removeParking = () => {
+    if (!activeSession) return;
+    const args = { rentalId: rental.id, sessionId: activeSession.id };
+    const opts = {
+      onSuccess: () => toast.success("Снят с паркинга", "Возврат пересчитан"),
+      onError: () => toast.error("Не удалось снять с паркинга"),
+    };
+    // Уже начавшийся паркинг — закрываем сегодня (end); будущий — удаляем.
+    if (activeSession.startDate <= todayIso()) endParking.mutate(args, opts);
+    else deleteParking.mutate(args, opts);
+  };
 
   // Вход в режим по сигналу из ⋯-меню.
   const [seenArm, setSeenArm] = useState(armParkingSignal);
@@ -222,34 +248,44 @@ export function CalendarPanel({
                 <X size={13} /> Отмена
               </button>
             )}
-            {/* v0.8.15: явная КНОПКА (скруглённый прямоугольник, рамка, тень),
-                полный текст «Поставить на паркинг» — чтобы читалось как кнопка,
-                а не статус. */}
-            <button
-              type="button"
-              onClick={toggleParkingButton}
-              disabled={parkingMode && !!draftStart && !draftEnd}
-              title={
-                parkingMode
-                  ? "Зафиксировать паркинг"
-                  : "Поставить на паркинг"
-              }
-              className={cn(
-                "inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-[12px] font-semibold shadow-sm transition-colors active:scale-[0.98] disabled:opacity-60",
-                parkingMode
+            {/* v0.8.15/0.8.18: явная КНОПКА. Без паркинга — «Поставить на
+                паркинг»; если паркинг уже есть — «Снять с паркинга» (красная);
+                в режиме выбора — «Выберите период»/«Зафиксировать». */}
+            {!parkingMode && activeSession ? (
+              <button
+                type="button"
+                onClick={removeParking}
+                disabled={endParking.isPending || deleteParking.isPending}
+                title="Снять с паркинга"
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-red-200 bg-red-soft/60 px-3 text-[12px] font-semibold text-red-ink shadow-sm transition-colors hover:bg-red-soft active:scale-[0.98] disabled:opacity-60"
+              >
+                <SquareParking size={14} /> Снять с паркинга
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={toggleParkingButton}
+                disabled={parkingMode && !!draftStart && !draftEnd}
+                title={
+                  parkingMode ? "Зафиксировать паркинг" : "Поставить на паркинг"
+                }
+                className={cn(
+                  "inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-[12px] font-semibold shadow-sm transition-colors active:scale-[0.98] disabled:opacity-60",
+                  parkingMode
+                    ? draftStart && draftEnd
+                      ? "border-yellow-500 bg-yellow-400 text-yellow-950 hover:bg-yellow-500"
+                      : "border-yellow-300 bg-yellow-100 text-yellow-800"
+                    : "border-yellow-300 bg-yellow-100 text-yellow-900 hover:border-yellow-400 hover:bg-yellow-200",
+                )}
+              >
+                <SquareParking size={14} />
+                {parkingMode
                   ? draftStart && draftEnd
-                    ? "border-yellow-500 bg-yellow-400 text-yellow-950 hover:bg-yellow-500"
-                    : "border-yellow-300 bg-yellow-100 text-yellow-800"
-                  : "border-yellow-300 bg-yellow-100 text-yellow-900 hover:border-yellow-400 hover:bg-yellow-200",
-              )}
-            >
-              <SquareParking size={14} />
-              {parkingMode
-                ? draftStart && draftEnd
-                  ? "Зафиксировать"
-                  : "Выберите период"
-                : "Поставить на паркинг"}
-            </button>
+                    ? "Зафиксировать"
+                    : "Выберите период"
+                  : "Поставить на паркинг"}
+              </button>
+            )}
           </div>
         )}
       </div>
