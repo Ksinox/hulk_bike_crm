@@ -1,0 +1,28 @@
+{
+   "author": "__MSG_author__",
+   "background": {
+      "service_worker": "background.js"
+   },
+   "content_scripts": [ {
+      "all_frames": true,
+      "js": [ "content.js" ],
+      "match_about_blank": true,
+      "matches": [ "\u003Call_urls>" ],
+      "run_at": "document_start"
+   } ],
+   "default_locale": "ru",
+   "description": "__MSG_description__",
+   "host_permissions": [ "\u003Call_urls>" ],
+   "icons": {
+      "128": "kontur-128.png",
+      "16": "kontur-16.png",
+      "48": "kontur-48.png"
+   },
+   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA97mOwBYRQ19T9SYX39vDHynM8uWMtzPL8EywS/eH4KIVTVD/O2JcegusngvFjUO6Wx9ITDMKQevYlbIbdl2nEzDcbAEVr9TyTOEHlpdYmExFW43/7V0/oMTvcuF5TPkl9N2ZExpBJcWdA8qHKy/GmELjZtBMEyolfx6ba62SjR1lQQhXh5rsjX6gHtHp14tAKtnv9P6z0tBg+tF9FwWDG53pH+Qudicvw5KSTJpaPw7GJh4VmBDGsQf8udKskjBJfs6ebW7BhzD1wEdWpr9o8YsVfNUx0pVMl8m0dtpcAQAKo5dTo9JT48+pgHH4T9pPo93N+o7lPagVzJEQZQuBtQIDAQAB",
+   "manifest_version": 3,
+   "minimum_chrome_version": "70.0.0.0",
+   "name": "__MSG_name__",
+   "permissions": [ "management", "nativeMessaging", "tabs", "scripting" ],
+   "update_url": "https://edge.microsoft.com/extensionwebstorebase/v1/crx",
+   "version": "3.2.11"
+}

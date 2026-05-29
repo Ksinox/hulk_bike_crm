@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Клиент</title>
+<link rel="stylesheet" href="../css/app.css">
+</head>
+<body>
+<div class="screen">
+  <header class="s-head">
+    <div class="s-head-row">
+      <button class="s-back" data-back aria-label="Назад"></button>
+      <div style="flex:1"><div class="s-title sm">Клиент</div><div class="s-sub" id="sub"></div></div>
+      <button class="s-head-act" data-ic="more" data-ic-cls="s18" onclick="act()"></button>
+    </div>
+  </header>
+  <div class="s-body with-fab">
+    <div class="stack">
+      <section class="card pad fly" id="hero"></section>
+      <div class="kpis c3 fly" id="kpis"></div>
+      <div class="seg fly" id="tabs">
+        <button class="on" data-t="info">Данные</button>
+        <button data-t="rent">Аренды</button>
+        <button data-t="rate">Рейтинг</button>
+      </div>
+      <section class="card fly" id="body"></section>
+    </div>
+  </div>
+  <div class="fab-bar"><button class="btn primary" style="flex:1" data-ic="plus" data-ic-cls="s18" onclick="go('new-rental.html')">&nbsp;Новая аренда</button></div>
+</div>
+
+<script src="../js/data.js"></script>
+<script src="../js/hb.js"></script>
+<script>
+  var params = new URLSearchParams(location.search);
+  var client = HB_DATA.clientById(Number(params.get('id'))) || HB_DATA.clients[0];
+  var rentals = HB_DATA.rentalsForClient(client.id);
+  var tier = HB_DATA.ratingTier(client.rating);
+  document.getElementById('sub').textContent = 'в базе с ' + client.added + ' · источник ' + (HB_DATA.sourceLabel[client.source] || client.source);
+  document.getElementById('hero').innerHTML =
+    '<div style="display:flex;align-items:flex-start;gap:14px"><div class="av" style="width:56px;height:56px;border-radius:14px;font-size:18px">' + HB_DATA.initials(client.name) + '</div>' +
+    '<div style="flex:1;min-width:0"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span class="font-display" style="font-size:21px">' + client.name + '</span>' +
+    '<span class="tag" style="background:hsl(var(--' + tier.tone + '-soft));color:hsl(var(--' + tier.tone + '-ink))">' + ic('star', 's14') + (client.rating / 20).toFixed(1) + '</span>' + (client.blacklisted ? '<span class="pill red">ЧС</span>' : '') + '</div>' +
+    '<a class="r-phone" href="tel:' + client.phone.replace(/\D/g, '') + '" style="display:inline-flex;align-items:center;gap:6px;font-size:18px;margin-top:7px;color:hsl(var(--blue-700))"><span data-ic="phone" data-ic-cls="s16"></span>' + client.phone + '</a></div></div>' +
+    '<div style="display:flex;gap:9px;margin-top:14px"><a class="btn primary" style="flex:1" href="tel:' + client.phone.replace(/\D/g, '') + '"><span data-ic="phone" data-ic-cls="s16"></span>&nbsp;Позвонить</a><button class="btn ghost btn-ic" data-ic="edit" data-ic-cls="s18"></button></div>';
+  document.getElementById('kpis').innerHTML =
+    '<div class="kpi"><div class="k-l">Аренд</div><div class="k-v tnum">' + rentals.length + '</div></div>' +
+    '<div class="kpi green"><div class="k-l">Рейтинг</div><div class="k-v tnum">' + client.rating + '</div></div>' +
+    '<div class="kpi gray"><div class="k-l">Долг</div><div class="k-v tnum">' + HB_DATA.fmtMoney(client.debt) + '</div></div>';
+
+  function kv(k, v) { return '<div class="kv"><span class="k">' + k + '</span><span class="v">' + v + '</span></div>'; }
+  function rentRow(r) {
+    return '<div class="row" onclick="go(\'rental-card.html?id=' + r.id + '\')"><div class="av">' + ic('scooter', 's16') + '</div><div class="r-main"><div class="r-top"><span class="pill ' + (r.status === 'overdue' ? 'red' : r.status === 'returning' ? 'orange' : 'green') + '"><span class="pd"></span>' + r.status + '</span><span class="r-name">' + r.scooter + '</span></div><div class="r-sub">' + r.start + ' → ' + r.endPlanned + '</div></div><div class="r-meta"><div class="m-v">' + HB_DATA.fmtMoney(r.sum) + '</div></div>' + ic('chevR', 's16 chev') + '</div>';
+  }
+  var tabs = {
+    info: '<div class="card-bd">' + kv('Телефон', client.phone) + kv('Источник', HB_DATA.sourceLabel[client.source] || client.source) + kv('Комментарий', client.comment || '—') + kv('В базе с', client.added) + '</div>',
+    rent: '<div class="card-bd"><div class="list">' + (rentals.map(rentRow).join('') || '<div class="empty"><div class="et">Аренд пока нет</div></div>') + '</div></div>',
+    rate: '<div class="card-bd">' + kv('Текущий рейтинг', client.rating + ' · ' + tier.label) + kv('Долг', HB_DATA.fmtMoney(client.debt)) + kv('Статус', client.blacklisted ? 'Чёрный список' : 'Разрешён') + '</div>'
+  };
+  function paint(t) {
+    document.querySelectorAll('#tabs button').forEach(function (b) { b.classList.toggle('on', b.dataset.t === t); });
+    document.getElementById('body').innerHTML = tabs[t];
+  }
+  document.querySelectorAll('#tabs button').forEach(function (b) { b.onclick = function () { paint(b.dataset.t); }; });
+  paint('info');
+  function act() {
+    sheet('<h3>Действия</h3><div class="act-list"><button onclick="closeSheet();go(\'new-rental.html\')"><span class="ai">' + ic('plus', 's16') + '</span>Новая аренда</button><button><span class="ai">' + ic('edit', 's16') + '</span>Редактировать</button></div>');
+  }
+</script>
+</body>
+</html>

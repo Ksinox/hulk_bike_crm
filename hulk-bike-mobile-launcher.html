@@ -1,0 +1,402 @@
+
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Халк Байк CRM Mobile</title>
+<link rel="stylesheet" href="mobile/css/app.css">
+<style>
+  :root{
+    --launcher-bg: linear-gradient(180deg, hsl(var(--bg)) 0%, hsl(var(--bg-soft)) 100%);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;min-height:100%}
+  body{
+    font-family:var(--font-body);
+    background:var(--launcher-bg);
+    color:hsl(var(--ink));
+  }
+  .shell{
+    min-height:100vh;
+    display:grid;
+    grid-template-columns:minmax(360px,430px) minmax(420px,1fr);
+    gap:28px;
+    padding:28px;
+  }
+  .hero,
+  .panel{
+    border:1px solid hsl(var(--border));
+    background:hsl(var(--surface));
+    box-shadow:var(--sh-md);
+  }
+  .hero{
+    border-radius:34px;
+    padding:22px;
+    position:sticky;
+    top:20px;
+    height:calc(100vh - 56px);
+    display:flex;
+    flex-direction:column;
+    gap:18px;
+  }
+  .eyebrow{
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    padding:8px 12px;
+    border-radius:999px;
+    background:hsl(var(--blue-50));
+    color:hsl(var(--blue-700));
+    font-size:12px;
+    font-weight:700;
+    letter-spacing:.02em;
+    text-transform:uppercase;
+  }
+  h1{
+    margin:0;
+    font-family:var(--font-display);
+    font-size:clamp(32px,4vw,44px);
+    line-height:1;
+    letter-spacing:-.04em;
+  }
+  .lead{
+    margin:0;
+    color:hsl(var(--muted-2));
+    line-height:1.55;
+    font-size:15px;
+  }
+  .kpis{
+    display:grid;
+    grid-template-columns:repeat(3,minmax(0,1fr));
+    gap:10px;
+  }
+  .kpi{
+    border:1px solid hsl(var(--border));
+    border-radius:18px;
+    padding:12px 13px;
+    background:hsl(var(--bg));
+  }
+  .kpi b{
+    display:block;
+    font-size:22px;
+    line-height:1;
+    margin-bottom:4px;
+    letter-spacing:-.03em;
+  }
+  .kpi span{
+    color:hsl(var(--muted));
+    font-size:12px;
+  }
+  .phone-wrap{
+    margin-top:auto;
+    border-radius:32px;
+    overflow:hidden;
+    border:1px solid hsl(var(--border));
+    background:hsl(var(--ink));
+    box-shadow:0 22px 60px hsl(var(--ink)/.22);
+  }
+  .phone-wrap iframe{
+    display:block;
+    width:100%;
+    height:780px;
+    border:0;
+    background:hsl(var(--bg));
+  }
+  .content{
+    display:flex;
+    flex-direction:column;
+    gap:18px;
+  }
+  .panel{
+    border-radius:28px;
+    padding:20px;
+  }
+  .panel h2{
+    margin:0 0 8px;
+    font-family:var(--font-display);
+    font-size:24px;
+    letter-spacing:-.03em;
+  }
+  .panel p{
+    margin:0;
+    color:hsl(var(--muted-2));
+    line-height:1.55;
+    font-size:14px;
+  }
+  .actions{
+    display:flex;
+    flex-wrap:wrap;
+    gap:10px;
+    margin-top:16px;
+  }
+  .btn{
+    appearance:none;
+    border:0;
+    cursor:pointer;
+    text-decoration:none;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    min-height:44px;
+    padding:0 16px;
+    border-radius:14px;
+    font-weight:700;
+    font-size:14px;
+    transition:transform .16s ease, background .16s ease, color .16s ease;
+  }
+  .btn:hover{transform:translateY(-1px)}
+  .btn-primary{
+    background:hsl(var(--blue-600));
+    color:#fff;
+  }
+  .btn-secondary{
+    background:hsl(var(--bg));
+    color:hsl(var(--ink));
+    border:1px solid hsl(var(--border));
+  }
+  .grid{
+    display:grid;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:14px;
+    margin-top:18px;
+  }
+  .card{
+    border:1px solid hsl(var(--border));
+    border-radius:22px;
+    overflow:hidden;
+    background:hsl(var(--bg));
+  }
+  .card iframe{
+    width:100%;
+    height:260px;
+    border:0;
+    display:block;
+    background:#fff;
+  }
+  .card-body{
+    padding:14px;
+  }
+  .card-top{
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap:10px;
+    margin-bottom:8px;
+  }
+  .card h3{
+    margin:0;
+    font-size:17px;
+    letter-spacing:-.02em;
+  }
+  .tag{
+    padding:6px 9px;
+    border-radius:999px;
+    background:hsl(var(--green)/.12);
+    color:hsl(var(--green-700));
+    font-size:11px;
+    font-weight:700;
+    white-space:nowrap;
+  }
+  .card p{
+    margin:0 0 14px;
+    color:hsl(var(--muted));
+    font-size:13px;
+    line-height:1.5;
+  }
+  .card-actions{
+    display:flex;
+    gap:8px;
+  }
+  .list{
+    margin:14px 0 0;
+    padding:0;
+    list-style:none;
+    display:grid;
+    gap:10px;
+  }
+  .list li{
+    display:flex;
+    justify-content:space-between;
+    gap:12px;
+    padding:12px 14px;
+    border:1px solid hsl(var(--border));
+    border-radius:16px;
+    background:hsl(var(--bg));
+    font-size:14px;
+  }
+  .list span{
+    color:hsl(var(--muted));
+  }
+  @media (max-width:1180px){
+    .shell{grid-template-columns:1fr;padding:18px}
+    .hero{position:static;height:auto}
+    .phone-wrap iframe{height:720px}
+  }
+  @media (max-width:760px){
+    .grid{grid-template-columns:1fr}
+    .kpis{grid-template-columns:1fr}
+    .phone-wrap iframe{height:640px}
+  }
+</style>
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <div class="eyebrow">Мобильный CRM launcher</div>
+      <div>
+        <h1>Весь мобильный Халк Байк CRM из одной точки</h1>
+        <p class="lead">Это главный вход для OpenDesign. Слева живое приложение целиком, справа все ключевые экраны и приоритетные сценарии: парк в реальном времени, создание аренды и оценка ущерба.</p>
+      </div>
+      <div class="kpis">
+        <div class="kpi"><b>5</b><span>основных модулей</span></div>
+        <div class="kpi"><b>10</b><span>детальных экранов</span></div>
+        <div class="kpi"><b>3</b><span>приоритетных flow</span></div>
+      </div>
+      <div class="actions">
+        <a class="btn btn-primary" href="mobile/index.html">Открыть приложение</a>
+        <a class="btn btn-secondary" href="mobile/screens/new-rental.html">Сразу в “Создать аренду”</a>
+      </div>
+      <div class="phone-wrap">
+        <iframe src="mobile/index.html" title="Халк Байк CRM mobile app"></iframe>
+      </div>
+    </section>
+
+    <section class="content">
+      <section class="panel">
+        <h2>Что смотреть</h2>
+        <p>Если нужен именно целостный обзор, оставайся на этой странице: здесь есть живое превью приложения и быстрые входы в каждый экран. Если нужен полноценный проход руками, жми “Открыть приложение” и ходи по нижнему таб-бару внутри телефона.</p>
+        <ul class="list">
+          <li><strong>Сводка</strong><span>выручка, парк, возвраты, задачи, активность</span></li>
+          <li><strong>Парк</strong><span>реальный статус скутеров, фильтры, карточка техники</span></li>
+          <li><strong>Аренды</strong><span>список, карточка аренды, продление, приём оплаты</span></li>
+          <li><strong>Клиенты</strong><span>база клиентов, рейтинг, документы, история</span></li>
+          <li><strong>Заявки</strong><span>входящий поток и конвертация в аренду</span></li>
+        </ul>
+      </section>
+
+      <section class="panel">
+        <h2>Карта экранов</h2>
+        <p>Каждая карточка открывает отдельный HTML-экран. Это удобно и для ревью, и для доработок без ручного поиска по папкам.</p>
+        <div class="grid">
+          <article class="card">
+            <iframe src="mobile/screens/dashboard.html" title="Dashboard preview"></iframe>
+            <div class="card-body">
+              <div class="card-top">
+                <h3>Сводка</h3>
+                <span class="tag">owner/admin</span>
+              </div>
+              <p>Главный экран с деньгами, возвратами, состоянием парка и тревожными задачами на день.</p>
+              <div class="card-actions">
+                <a class="btn btn-primary" href="mobile/screens/dashboard.html">Открыть</a>
+              </div>
+            </div>
+          </article>
+
+          <article class="card">
+            <iframe src="mobile/screens/fleet.html" title="Fleet preview"></iframe>
+            <div class="card-body">
+              <div class="card-top">
+                <h3>Парк</h3>
+                <span class="tag">priority</span>
+              </div>
+              <p>Живой парк скутеров с текущей доступностью, статусами и быстрым входом в карточку техники.</p>
+              <div class="card-actions">
+                <a class="btn btn-primary" href="mobile/screens/fleet.html">Открыть</a>
+                <a class="btn btn-secondary" href="mobile/screens/scooter-card.html">Карточка скутера</a>
+              </div>
+            </div>
+          </article>
+
+          <article class="card">
+            <iframe src="mobile/screens/rentals.html" title="Rentals preview"></iframe>
+            <div class="card-body">
+              <div class="card-top">
+                <h3>Аренды</h3>
+                <span class="tag">core flow</span>
+              </div>
+              <p>Список активных аренд, статусы оплат и быстрый переход в детальную карточку аренды.</p>
+              <div class="card-actions">
+                <a class="btn btn-primary" href="mobile/screens/rentals.html">Открыть</a>
+                <a class="btn btn-secondary" href="mobile/screens/rental-card.html">Карточка аренды</a>
+              </div>
+            </div>
+          </article>
+
+          <article class="card">
+            <iframe src="mobile/screens/new-rental.html" title="New rental preview"></iframe>
+            <div class="card-body">
+              <div class="card-top">
+                <h3>Создать аренду</h3>
+                <span class="tag">priority</span>
+              </div>
+              <p>Пошаговый flow выдачи: клиент, техника, тариф, экипировка, депозит и оплата.</p>
+              <div class="card-actions">
+                <a class="btn btn-primary" href="mobile/screens/new-rental.html">Открыть</a>
+              </div>
+            </div>
+          </article>
+
+          <article class="card">
+            <iframe src="mobile/screens/damage-report.html" title="Damage report preview"></iframe>
+            <div class="card-body">
+              <div class="card-top">
+                <h3>Оценка ущерба</h3>
+                <span class="tag">priority</span>
+              </div>
+              <p>Пробег, чек-лист повреждений, фотофиксация, распределение оплаты и акт на месте.</p>
+              <div class="card-actions">
+                <a class="btn btn-primary" href="mobile/screens/damage-report.html">Открыть</a>
+              </div>
+            </div>
+          </article>
+
+          <article class="card">
+            <iframe src="mobile/screens/clients.html" title="Clients preview"></iframe>
+            <div class="card-body">
+              <div class="card-top">
+                <h3>Клиенты</h3>
+                <span class="tag">crm base</span>
+              </div>
+              <p>Список клиентов с рейтингом, долгом и переходом в полную клиентскую карточку.</p>
+              <div class="card-actions">
+                <a class="btn btn-primary" href="mobile/screens/clients.html">Открыть</a>
+                <a class="btn btn-secondary" href="mobile/screens/client-card.html">Карточка клиента</a>
+              </div>
+            </div>
+          </article>
+
+          <article class="card">
+            <iframe src="mobile/screens/applications.html" title="Applications preview"></iframe>
+            <div class="card-body">
+              <div class="card-top">
+                <h3>Заявки</h3>
+                <span class="tag">inbound</span>
+              </div>
+              <p>Входящие заявки из каналов и переход в карточку с конвертацией в аренду.</p>
+              <div class="card-actions">
+                <a class="btn btn-primary" href="mobile/screens/applications.html">Открыть</a>
+                <a class="btn btn-secondary" href="mobile/screens/application-card.html">Карточка заявки</a>
+              </div>
+            </div>
+          </article>
+
+          <article class="card">
+            <iframe src="mobile/screens/new-client.html" title="New client preview"></iframe>
+            <div class="card-body">
+              <div class="card-top">
+                <h3>Новый клиент</h3>
+                <span class="tag">supporting</span>
+              </div>
+              <p>Быстрое создание клиента в полевых условиях без возврата в десктопный интерфейс.</p>
+              <div class="card-actions">
+                <a class="btn btn-primary" href="mobile/screens/new-client.html">Открыть</a>
+              </div>
+            </div>
+          </article>
+        </div>
+      </section>
+    </section>
+  </main>
+</body>
+</html>

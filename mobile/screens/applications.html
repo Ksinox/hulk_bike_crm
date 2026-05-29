@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Заявки</title>
+<link rel="stylesheet" href="../css/app.css">
+</head>
+<body>
+<div class="screen">
+  <header class="s-head">
+    <div class="s-head-row">
+      <div style="flex:1">
+        <div class="s-title">Заявки</div>
+        <div class="s-sub" id="sub"></div>
+      </div>
+      <button class="s-head-act" data-ic="sliders" data-ic-cls="s18"></button>
+    </div>
+  </header>
+  <div class="s-body">
+    <div class="chips" id="chips" style="margin-bottom:12px"></div>
+    <div class="list" id="list"></div>
+  </div>
+</div>
+
+<script src="../js/data.js"></script>
+<script src="../js/hb.js"></script>
+<script>
+  var rows = HB_DATA.applications();
+  var newCount = rows.filter(function (x) { return x.status === 'new'; }).length;
+  var workCount = rows.filter(function (x) { return x.status === 'work'; }).length;
+  document.getElementById('sub').textContent = newCount + ' новые · ' + workCount + ' в работе';
+
+  var filters = [
+    ['all', 'Все', rows.length],
+    ['new', 'Новые', newCount],
+    ['work', 'В работе', workCount]
+  ];
+  var cur = 'all';
+  document.getElementById('chips').innerHTML = filters.map(function (f) {
+    return '<button class="chip' + (f[0] === cur ? ' on' : '') + '" data-f="' + f[0] + '">' + f[1] + ' <span class="cn">' + f[2] + '</span></button>';
+  }).join('');
+  document.querySelectorAll('#chips .chip').forEach(function (b) {
+    b.onclick = function () {
+      cur = b.dataset.f;
+      document.querySelectorAll('#chips .chip').forEach(function (x) { x.classList.toggle('on', x.dataset.f === cur); });
+      render();
+    };
+  });
+
+  function render() {
+    var data = rows.filter(function (a) { return cur === 'all' || a.status === cur; });
+    document.getElementById('list').innerHTML = data.map(function (a) {
+      return '<div class="row ' + (a.status === 'new' ? 'acc-blue' : 'acc-orange') + '" onclick="go(\'application-card.html?id=' + a.id + '\')">' +
+        '<div class="av" style="background:hsl(var(--' + (a.source === 'Avito' ? 'blue-50' : 'purple-soft') + '));color:hsl(var(--' + (a.source === 'Avito' ? 'blue-700' : 'purple-ink') + '))">' + ic('inbox','s16') + '</div>' +
+        '<div class="r-main"><div class="r-top"><span class="pill ' + (a.status === 'new' ? 'blue' : 'orange') + '"><span class="pd"></span>' + (a.status === 'new' ? 'Новая' : 'В работе') + '</span><span class="r-name">' + a.name + '</span></div>' +
+        '<div class="r-sub"><span class="r-phone">' + a.phone + '</span><span class="sep"></span>' + a.source + '</div>' +
+        '<div class="r-sub" style="margin-top:4px;color:hsl(var(--ink-2));font-weight:600">' + a.model + ' на ' + a.days + ' дн</div></div>' +
+        '<div class="r-meta"><div class="m-l">' + a.when + '</div></div></div>';
+    }).join('') || '<div class="empty"><div class="ei">' + ic('inbox', 's22') + '</div><div class="et">Заявок нет</div></div>';
+  }
+
+  render();
+</script>
+</body>
+</html>

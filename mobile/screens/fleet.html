@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Парк</title>
+<link rel="stylesheet" href="../css/app.css">
+</head>
+<body>
+<div class="screen">
+  <header class="s-head">
+    <div class="s-head-row">
+      <div style="flex:1">
+        <div class="s-title">Парк</div>
+        <div class="s-sub">54 скутера · живой срез из CRM</div>
+      </div>
+      <button class="s-head-act" data-ic="refresh" data-ic-cls="s18" onclick="render()"></button>
+    </div>
+    <div style="margin-top:12px" class="search">
+      <span data-ic="search" data-ic-cls="s18"></span>
+      <input id="q" placeholder="Скутер, модель, клиент…" oninput="render()">
+    </div>
+  </header>
+
+  <div class="s-body with-fab">
+    <section class="card pad" style="margin-bottom:14px">
+      <div class="dotgrid" id="grid"></div>
+      <div class="legend">
+        <span><i style="background:hsl(var(--blue-600))"></i>В аренде</span>
+        <span><i style="background:hsl(var(--red))"></i>Просрочка</span>
+        <span><i style="background:hsl(var(--green))"></i>Свободно</span>
+        <span><i style="background:hsl(var(--orange))"></i>Ремонт</span>
+        <span><i style="background:hsl(var(--muted-2))"></i>Прочее</span>
+      </div>
+    </section>
+
+    <div class="chips" id="chips" style="margin-bottom:12px"></div>
+    <div class="list" id="list"></div>
+  </div>
+
+  <div class="fab-bar">
+    <button class="btn primary" style="flex:1" data-ic="plus" data-ic-cls="s18" onclick="go('new-rental.html')">&nbsp;Создать аренду</button>
+  </div>
+</div>
+
+<script src="../js/data.js"></script>
+<script src="../js/hb.js"></script>
+<script>
+  var ST = {
+    rented: { label: 'В аренде', pill: 'blue', dot: 's-rented' },
+    overdue: { label: 'Просрочка', pill: 'red', dot: 's-overdue' },
+    free: { label: 'Свободен', pill: 'green', dot: 's-free' },
+    repair: { label: 'Ремонт', pill: 'orange', dot: 's-repair' },
+    sale: { label: 'Продаётся', pill: 'gray', dot: 's-other' },
+    buyout: { label: 'Выкуп', pill: 'purple', dot: 's-other' },
+    sold: { label: 'Продан', pill: 'gray', dot: 's-other' }
+  };
+
+  var rows = HB_DATA.fleet.map(function (item) {
+    var rental = HB_DATA.currentRentalForScooter(item.id);
+    var client = rental ? HB_DATA.clientById(rental.clientId) : null;
+    return {
+      id: item.id,
+      name: item.name,
+      model: HB_DATA.modelLabel[item.model],
+      km: item.mileage,
+      note: item.note || '',
+      rentalId: rental ? rental.id : null,
+      status: HB_DATA.displayFleetStatus(item),
+      client: client,
+      until: rental ? rental.endPlanned : null
+    };
+  });
+
+  var stats = HB_DATA.fleetStats();
+  var FILTERS = [
+    ['all', 'Все', rows.length],
+    ['rented', 'В аренде', stats.rented],
+    ['overdue', 'Просрочка', stats.overdue],
+    ['free', 'Свободно', stats.free],
+    ['repair', 'Ремонт', stats.repair],
+    ['sale', 'Продажа', stats.sale]
+  ];
+  var cur = 'all';
+
+  document.getElementById('chips').innerHTML = FILTERS.map(function (f) {
+    return '<button class="chip' + (f[0] === cur ? ' on' : '') + '" data-f="' + f[0] + '">' + f[1] + ' <span class="cn">' + f[2] + '</span></button>';
+  }).join('');
+  document.querySelectorAll('#chips .chip').forEach(function (b) {
+    b.onclick = function () {
+      cur = b.dataset.f;
+      document.querySelectorAll('#chips .chip').forEach(function (x) { x.classList.toggle('on', x.dataset.f === cur); });
+      render();
+    };
+  });
+
+  document.getElementById('grid').innerHTML = rows.slice(0, 36).map(function (r) {
+    return '<div class="sc ' + ST[r.status].dot + '" title="' + r.name + ' · ' + ST[r.status].label + '">' + r.name.replace(/\D/g, '') + '</div>';
+  }).join('');
+
+  function render() {
+    var q = (document.getElementById('q').value || '').toLowerCase();
+    var data = rows.filter(function (r) {
+      if (cur !== 'all' && r.status !== cur) return false;
+      if (!q) return true;
+      return r.name.toLowerCase().indexOf(q) > -1 ||
+        r.model.toLowerCase().indexOf(q) > -1 ||
+        (r.client && r.client.name.toLowerCase().indexOf(q) > -1);
+    });
+    document.getElementById('list').innerHTML = data.map(function (r) {
+      var st = ST[r.status];
+      var acc = r.status === 'overdue' ? 'acc-red' : r.status === 'repair' ? 'acc-orange' : '';
+      var sub = r.client
+        ? '<span class="r-phone">' + r.client.phone + '</span><span class="sep"></span>' + r.client.name
+        : (r.note || r.model);
+      var meta = r.client
+        ? '<div class="m-v" style="font-size:12px">' + (r.until || '—') + '</div>'
+        : '<div class="m-v tnum" style="font-size:13px">' + r.km.toLocaleString('ru-RU') + '</div><div class="m-l">км</div>';
+      return '<div class="row ' + acc + '" onclick="go(\'scooter-card.html?id=' + r.id + '\')">' +
+        '<div class="av">' + ic('scooter', 's18') + '</div><div class="r-main">' +
+        '<div class="r-top"><span class="pill ' + st.pill + '"><span class="pd"></span>' + st.label + '</span><span class="r-name">' + r.name + '</span></div>' +
+        '<div class="r-sub">' + sub + '</div></div><div class="r-meta">' + meta + '</div>' + ic('chevR', 's16 chev') + '</div>';
+    }).join('') || '<div class="empty"><div class="ei">' + ic('scooter', 's22') + '</div><div class="et">Ничего не найдено</div><div class="es">Измени фильтр или поисковый запрос</div></div>';
+  }
+
+  render();
+</script>
+</body>
+</html>

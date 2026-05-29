@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Аренда</title>
+<link rel="stylesheet" href="../css/app.css">
+</head>
+<body>
+<div class="screen">
+  <header class="s-head">
+    <div class="s-head-row">
+      <button class="s-back" data-back aria-label="Назад"></button>
+      <div style="flex:1">
+        <div class="s-title sm" id="title">Аренда</div>
+        <div class="s-sub" id="subtitle"></div>
+      </div>
+      <button class="s-head-act" data-ic="more" data-ic-cls="s18" onclick="actions()"></button>
+    </div>
+  </header>
+
+  <div class="s-body with-fab">
+    <div class="stack">
+      <section class="card pad fly" id="entity"></section>
+      <div class="kpis c2 fly" id="kpis"></div>
+      <div class="seg fly" id="tabs">
+        <button class="on" data-t="cond">Условия</button>
+        <button data-t="pay">Оплата</button>
+        <button data-t="ret">Возврат</button>
+      </div>
+      <section class="card fly" id="tabBody"></section>
+    </div>
+  </div>
+
+  <div class="fab-bar" id="fab"></div>
+</div>
+
+<script src="../js/data.js"></script>
+<script src="../js/hb.js"></script>
+<script>
+  var params = new URLSearchParams(location.search);
+  var rental = HB_DATA.rentalById(Number(params.get('id'))) || HB_DATA.activeRentals()[0];
+  var client = HB_DATA.clientById(rental.clientId);
+  var scooter = rental.scooterId ? HB_DATA.fleetById(rental.scooterId) : HB_DATA.fleetByName(rental.scooter);
+  var tone = rental.status === 'overdue' ? 'red' : rental.status === 'returning' ? 'orange' : rental.status === 'meeting' ? 'blue' : 'green';
+
+  document.getElementById('title').textContent = 'Аренда №' + rental.id;
+  document.getElementById('subtitle').textContent = rental.start + ' → ' + rental.endPlanned;
+  document.getElementById('entity').innerHTML =
+    '<div class="r-top" style="gap:8px"><span class="pill ' + tone + '"><span class="pd"></span>' + (rental.status === 'overdue' ? 'Просрочка' : rental.status === 'returning' ? 'Возврат' : rental.status === 'meeting' ? 'Встреча' : 'Активна') + '</span><span class="pill gray">' + rental.days + ' дн</span></div>' +
+    '<div style="display:flex;align-items:center;gap:13px;margin-top:12px"><div class="av" style="width:50px;height:50px;border-radius:13px"><span data-ic="scooter" data-ic-cls="s22"></span></div>' +
+    '<div style="flex:1;min-width:0"><div class="font-display" style="font-size:22px">' + rental.scooter + '</div><div style="font-size:12.5px;color:hsl(var(--muted));margin-top:2px">' + (scooter ? HB_DATA.modelLabel[scooter.model] + ' · пробег ' + scooter.mileage.toLocaleString('ru-RU') + ' км' : 'снимок аренды') + '</div></div></div>' +
+    '<div class="divide"></div><div style="display:flex;align-items:center;gap:13px"><div class="av">' + HB_DATA.initials(client.name) + '</div><div style="flex:1;min-width:0"><div style="display:flex;align-items:center;gap:7px"><span style="font-size:15.5px;font-weight:700">' + client.name + '</span></div><a class="r-phone" href="tel:' + client.phone.replace(/\D/g, '') + '" style="display:inline-flex;align-items:center;gap:6px;font-size:17px;margin-top:5px;color:hsl(var(--blue-700))"><span data-ic="phone" data-ic-cls="s16"></span>' + client.phone + '</a></div><button class="btn-ic primary" data-ic="phone" data-ic-cls="s18" onclick="location.href=\'tel:' + client.phone.replace(/\D/g, '') + '\'"></button></div>';
+
+  document.getElementById('kpis').innerHTML =
+    '<div class="kpi"><div class="k-l">Сумма аренды</div><div class="k-v tnum">' + HB_DATA.fmtMoney(rental.sum) + '</div><div class="k-h">' + rental.days + ' дн · ' + rental.rate + ' ₽/сут</div></div>' +
+    '<div class="kpi green"><div class="k-l">Залог</div><div class="k-v tnum">' + HB_DATA.fmtMoney(rental.deposit) + '</div><div class="k-h">' + rental.paymentMethod + '</div></div>' +
+    '<div class="kpi ' + (rental.status === 'overdue' ? 'red' : 'orange') + '"><div class="k-l">Плановый возврат</div><div class="k-v">' + rental.endPlanned + '</div><div class="k-h">' + (rental.note || 'по договору') + '</div></div>' +
+    '<div class="kpi gray"><div class="k-l">Экипировка</div><div class="k-v tnum">' + rental.equipment.length + '</div><div class="k-h">' + (rental.equipment.join(', ') || 'без допов') + '</div></div>';
+
+  var tabs = {
+    cond: '<div class="card-bd">' +
+      kv('Тариф', rental.tariffPeriod + ' · ' + rental.rate + ' ₽') +
+      kv('Период', rental.start + ' → ' + rental.endPlanned) +
+      kv('Срок', rental.days + ' суток') +
+      kv('Залог', HB_DATA.fmtMoney(rental.deposit)) +
+      kv('Экипировка', rental.equipment.join(', ') || '—') +
+      kv('Комментарий', rental.note || '—') + '</div>',
+    pay: '<div class="card-bd">' +
+      kv('Оплата', HB_DATA.fmtMoney(rental.sum)) +
+      kv('Способ', rental.paymentMethod) +
+      kv('К получению с залогом', HB_DATA.fmtMoney(rental.sum + rental.deposit)) + '</div>',
+    ret: '<div class="card-bd">' +
+      kv('Статус возврата', rental.status === 'overdue' ? 'Просрочен' : rental.status === 'returning' ? 'Назначен осмотр' : 'Ожидается') +
+      kv('Дата', rental.endPlanned) +
+      kv('Действие', 'Через приёмку возврата и осмотр') + '</div>'
+  };
+
+  function kv(k, v) {
+    return '<div class="kv"><span class="k">' + k + '</span><span class="v">' + v + '</span></div>';
+  }
+
+  function paint(tab) {
+    document.querySelectorAll('#tabs button').forEach(function (b) { b.classList.toggle('on', b.dataset.t === tab); });
+    document.getElementById('tabBody').innerHTML = tabs[tab];
+  }
+  document.querySelectorAll('#tabs button').forEach(function (b) { b.onclick = function () { paint(b.dataset.t); }; });
+  paint('cond');
+
+  document.getElementById('fab').innerHTML =
+    '<button class="btn primary" style="flex:1.6" data-ic="checkc" data-ic-cls="s18" onclick="go(\'damage-report.html?id=' + rental.id + '\')">&nbsp;Принять возврат</button>' +
+    '<button class="btn ghost btn-ic" data-ic="more" data-ic-cls="s18" onclick="actions()"></button>';
+
+  function actions() {
+    sheet('<h3>Действия по аренде</h3><div class="sh-sub">' + rental.scooter + ' · ' + client.name + '</div><div class="act-list">' +
+      '<button onclick="closeSheet();go(\'damage-report.html?id=' + rental.id + '\')"><span class="ai">' + ic('checkc', 's16') + '</span>Принять возврат / осмотр</button>' +
+      '<button><span class="ai">' + ic('cal', 's16') + '</span>Продлить аренду</button>' +
+      '<button><span class="ai">' + ic('cash', 's16') + '</span>Принять оплату</button>' +
+      '<button><span class="ai">' + ic('refresh', 's16') + '</span>Заменить скутер</button>' +
+      '</div>');
+  }
+</script>
+</body>
+</html>

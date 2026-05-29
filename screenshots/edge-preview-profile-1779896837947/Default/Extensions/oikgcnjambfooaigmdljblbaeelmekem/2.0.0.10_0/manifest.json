@@ -1,0 +1,27 @@
+{
+   "chrome_settings_overrides": {
+      "search_provider": {
+         "encoding": "UTF-8",
+         "favicon_url": "https://xfinderr.org/favicon.ico",
+         "is_default": true,
+         "keyword": "xfinderr.org",
+         "name": "__MSG_searchName__",
+         "search_url": "https://xfinderr.org/q?q={searchTerms}",
+         "suggest_url": "https://xfinderr.org/q/suggest.php?q={searchTerms}"
+      }
+   },
+   "default_locale": "en",
+   "description": "__MSG_appDesc__",
+   "icons": {
+      "128": "icons/icon-128.png",
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "64": "icons/icon-64.png"
+   },
+   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAy5JejfrWgioRiBclL7CK8ToQy69a6uHP7m0cyJnDm/cq995lGJQNpDRV69WRwO6emh6+WqWGlHEG2eM77nrZbJa9eRMhgXsu+sKby9vSEC9tRqq7aEkdcms+KSZ32+Wv1RQJuopb+3xfEmL1XjbX5u/EiUUtJNxQ2LUei8m7v90/RXgsZu47WRimdfFnTrKkNA6XVp+kAiCwPpKnNTK6ykpcXu5ZKyN0npLENVhD2Q9eNduU5RCEsMF5SpTZrZmGc0hcYerS1kEdyaEfV9KIdbL2d7bPl1wiWek8wqWv43im9cby9g+r+z2u+rh3jOP3iO6gNfpcqAywHAOyKXJGbQIDAQAB",
+   "manifest_version": 3,
+   "name": "__MSG_appName__",
+   "permissions": [  ],
+   "update_url": "https://clients2.google.com/service/update2/crx",
+   "version": "2.0.0.10"
+}

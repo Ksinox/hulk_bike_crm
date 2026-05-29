@@ -1,0 +1,10 @@
+{
+   "extDesc": {
+      "description": "Extension description.",
+      "message": "Lets you use Blitz Smart Card Plugin for electronic signatures"
+   },
+   "extName": {
+      "description": "Extension name.",
+      "message": "Blitz Smart Card Plugin adapter"
+   }
+}

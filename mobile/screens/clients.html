@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Клиенты</title>
+<link rel="stylesheet" href="../css/app.css">
+</head>
+<body>
+<div class="screen">
+  <header class="s-head">
+    <div class="s-head-row">
+      <div style="flex:1">
+        <div class="s-title">Клиенты</div>
+        <div class="s-sub" id="sub"></div>
+      </div>
+      <button class="s-head-act" data-ic="plus" data-ic-cls="s18" onclick="go('new-client.html')"></button>
+    </div>
+    <div style="margin-top:12px" class="search">
+      <span data-ic="search" data-ic-cls="s18"></span>
+      <input id="q" placeholder="Имя или телефон…" oninput="render()">
+    </div>
+  </header>
+
+  <div class="s-body">
+    <div class="chips" id="chips" style="margin-bottom:12px"></div>
+    <div class="list" id="list"></div>
+  </div>
+</div>
+
+<script src="../js/data.js"></script>
+<script src="../js/hb.js"></script>
+<script>
+  var rows = HB_DATA.clients.map(function (c) {
+    return {
+      id: c.id,
+      name: c.name,
+      phone: c.phone,
+      rating: c.rating / 20,
+      rents: HB_DATA.rentalsForClient(c.id).length || c.rents,
+      source: HB_DATA.sourceLabel[c.source] || c.source,
+      debt: c.debt,
+      blacklisted: !!c.blacklisted
+    };
+  });
+
+  var debtCount = rows.filter(function (c) { return c.debt > 0; }).length;
+  var blCount = rows.filter(function (c) { return c.blacklisted; }).length;
+  document.getElementById('sub').textContent = rows.length + ' клиента · ' + debtCount + ' с долгом · ' + blCount + ' в ЧС';
+
+  var filters = [
+    ['all', 'Все', rows.length],
+    ['debt', 'Должники', debtCount],
+    ['bl', 'ЧС', blCount],
+    ['top', 'Постоянные', rows.filter(function (c) { return c.rents >= 2; }).length],
+    ['avito', 'Avito', rows.filter(function (c) { return c.source === 'Avito'; }).length]
+  ];
+  var cur = 'all';
+  document.getElementById('chips').innerHTML = filters.map(function (f) {
+    return '<button class="chip' + (f[0] === cur ? ' on' : '') + '" data-f="' + f[0] + '">' + f[1] + ' <span class="cn">' + f[2] + '</span></button>';
+  }).join('');
+  document.querySelectorAll('#chips .chip').forEach(function (b) {
+    b.onclick = function () {
+      cur = b.dataset.f;
+      document.querySelectorAll('#chips .chip').forEach(function (x) { x.classList.toggle('on', x.dataset.f === cur); });
+      render();
+    };
+  });
+
+  function tone(r) {
+    return r >= 4.5 ? 'green' : r >= 3.5 ? 'orange' : 'red';
+  }
+
+  function render() {
+    var q = (document.getElementById('q').value || '').toLowerCase();
+    var data = rows.filter(function (c) {
+      if (cur === 'debt' && !c.debt) return false;
+      if (cur === 'bl' && !c.blacklisted) return false;
+      if (cur === 'top' && c.rents < 2) return false;
+      if (cur === 'avito' && c.source !== 'Avito') return false;
+      if (q && (c.name + c.phone).toLowerCase().indexOf(q) < 0) return false;
+      return true;
+    });
+    document.getElementById('list').innerHTML = data.map(function (c) {
+      var acc = c.blacklisted ? 'acc-red' : c.debt ? 'acc-orange' : '';
+      return '<div class="row ' + acc + '" onclick="go(\'client-card.html?id=' + c.id + '\')">' +
+        '<div class="av">' + HB_DATA.initials(c.name) + '</div><div class="r-main"><div class="r-top">' +
+        '<span class="r-name">' + c.name + '</span>' +
+        '<span class="tag" style="background:hsl(var(--' + tone(c.rating) + '-soft));color:hsl(var(--' + tone(c.rating) + '-ink))">' + ic('star', 's14') + c.rating.toFixed(1) + '</span>' +
+        (c.blacklisted ? '<span class="pill red" style="font-size:10px">ЧС</span>' : '') + '</div>' +
+        '<div class="r-sub"><span class="r-phone">' + c.phone + '</span><span class="sep"></span>' + c.rents + ' аренд · ' + c.source + '</div></div>' +
+        (c.debt ? '<div class="r-meta"><div class="m-v" style="color:hsl(var(--red-ink));font-size:13px">' + c.debt.toLocaleString('ru-RU') + ' ₽</div><div class="m-l">долг</div></div>' : ic('chevR', 's16 chev')) + '</div>';
+    }).join('') || '<div class="empty"><div class="ei">' + ic('users', 's22') + '</div><div class="et">Не найдено</div></div>';
+  }
+
+  render();
+</script>
+</body>
+</html>

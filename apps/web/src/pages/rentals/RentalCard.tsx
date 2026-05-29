@@ -624,12 +624,9 @@ export function RentalCard({
     .map((p) => ({
       label: FIN_TYPE_LABEL[p.type] ?? p.type,
       amount: p.amount,
-      date: p.date
-        ? new Date(p.date).toLocaleDateString("ru-RU", {
-            day: "2-digit",
-            month: "2-digit",
-          })
-        : null,
+      // p.date уже в русском формате «dd.mm.yyyy[ HH:MM]» (isoToRu),
+      // new Date() его не парсит → берём «dd.mm» напрямую из строки.
+      date: p.date ? p.date.slice(0, 5) : null,
     }));
   // pending (плашка «Долг») — суммируем неоплаченные платежи ТОЛЬКО
   // по полностью активным связкам цепочки (archivedAt == null).

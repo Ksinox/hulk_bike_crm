@@ -1,0 +1,33 @@
+{
+   "action": {
+      "default_popup": "index.html"
+   },
+   "background": {
+      "service_worker": "service-worker-loader.js",
+      "type": "module"
+   },
+   "content_scripts": [ {
+      "js": [ "assets/content.ts-loader-DZH52rNx.js" ],
+      "matches": [ "https://*/*", "http://*/*" ]
+   } ],
+   "default_locale": "ru",
+   "description": "Extension for use with Blitz Smart Card Plugin",
+   "host_permissions": [ "http://*/*", "https://*/*" ],
+   "icons": {
+      "128": "icon/icon128.png",
+      "16": "icon/icon16.png",
+      "48": "icon/icon48.png",
+      "512": "icon/icon512.png"
+   },
+   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvh98vtRGWJeXzOjt6ztCfVyv6rvwRNtUH1l1HAuEuh4m5a7jJ+T2idqNw7Xs8n1KpZtD4Z20uQZfogBo0XAUJ+Ug4uJHZzjDYi9rzUoU8JzfR8nqxWwOeoPD1LRG5oMc9/SiUYWgJcto+OrO/xac4XU6XLfgSWNFJUFrPDe+Opw8k9t7RKkF09N1lsl824/TU+8MuHgbLEZzaLMI/P6VEBz9ofmH+p9zlrCisoLO66J6r9lIXiBpPsfRsa5wyEkGBTe5EPelIuvtTFsHaLePWRn7pBN21s8r3ctX63iss/jrV4TFK2WHsbtl9fyJp3PwqcHSrsrVYAtDyjYB1JjQzQIDAQAB",
+   "manifest_version": 3,
+   "name": "Blitz Smart Card Plugin",
+   "permissions": [ "activeTab", "nativeMessaging" ],
+   "update_url": "https://clients2.google.com/service/update2/crx",
+   "version": "2.3.0.3",
+   "web_accessible_resources": [ {
+      "matches": [ "http://*/*", "https://*/*" ],
+      "resources": [ "assets/**", "plugin/**", "assets/blitz-ext-De4c8IqC.js", "assets/sharedCode-DUWxCQ-o.js", "assets/content.ts-CABH3rPc.js", "assets/plugin.ts-q624DBEM.js" ],
+      "use_dynamic_url": false
+   } ]
+}

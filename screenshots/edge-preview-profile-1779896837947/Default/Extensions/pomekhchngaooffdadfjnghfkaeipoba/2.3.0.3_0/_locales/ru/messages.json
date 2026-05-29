@@ -1,0 +1,10 @@
+{
+   "extDesc": {
+      "description": "Extension description.",
+      "message": "Позволяет использовать плагин Blitz Smart Card Plugin для электронных подписей"
+   },
+   "extName": {
+      "description": "Extension name.",
+      "message": "Адаптер плагина Blitz Smart Card Plugin"
+   }
+}
