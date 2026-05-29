@@ -549,10 +549,11 @@ export function Rentals() {
         <div
           className={cn(
             "flex min-w-0 flex-col rounded-2xl bg-surface shadow-card-sm overflow-hidden min-h-0 transition-[max-width] duration-300 ease-in-out",
-            // v0.8.5: «Список» — ширина адаптивная по содержимому (таблица +
-            // фильтры), центрируется (justify-center ряда); добавляется
-            // колонка → блок сам расширяется. «Плитки» — всё свободное место.
-            viewMode === "list" ? "w-fit max-w-full" : "flex-1 max-w-[3000px]",
+            // v0.8.5/0.8.8: ОБА режима — адаптивная ширина по содержимому
+            // (w-fit), центрируются (justify-center ряда). «Список» растёт с
+            // колонками; «Плитки» — мало карточек → узкий блок по их ширине,
+            // много → до ширины экрана с переносом и вертикальным скроллом.
+            "w-fit max-w-full",
           )}
         >
           <div className="flex flex-col gap-3 p-4 pb-3 border-b border-border">
