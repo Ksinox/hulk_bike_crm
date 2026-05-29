@@ -30,7 +30,6 @@ import {
   Coins,
   Calendar as CalendarIcon,
   ChevronRight,
-  Plus,
   Shield,
   Wallet,
 } from "lucide-react";
@@ -43,10 +42,7 @@ import { useRentalDebt } from "@/lib/api/debt";
 import { useRentalParking, unpaidParkingTotal } from "@/lib/api/parking";
 import { SquareParking } from "lucide-react";
 import { extendInplaceAsync } from "./rentalsStore";
-import {
-  EquipmentInlinePicker,
-  EquipmentThumb,
-} from "./rental-card/EquipmentInlinePicker";
+import { EquipmentTile, EquipmentAddTile } from "./rental-card/EquipmentTile";
 import type { Rental } from "@/lib/mock/rentals";
 import type { PaymentMethod } from "@/lib/mock/rentals";
 import {
@@ -63,6 +59,22 @@ import {
 const METHODS: { id: PaymentMethod; label: string }[] = [
   { id: "cash", label: "Наличные" },
   { id: "transfer", label: "Перевод" },
+];
+
+// v0.8.32: тарифные «ступени» по числу дней продления. Источник истины
+// для согласованного расчёта в режиме «по сумме клиента»:
+//   1–2 дня   → day
+//   3–6 дней  → short
+//   7–29 дней → week
+//   30+ дней  → month
+// Ключевой инвариант: число дней, посчитанное по ставке ступени, должно
+// попадать в её же диапазон [min, max] — иначе ступень недопустима для
+// этой суммы (нельзя получить месячный тариф 400 ₽ всего на 7 дней).
+const EXT_TIERS: { period: TariffPeriod; min: number; max: number }[] = [
+  { period: "day", min: 1, max: 2 },
+  { period: "short", min: 3, max: 6 },
+  { period: "week", min: 7, max: 29 },
+  { period: "month", min: 30, max: Infinity },
 ];
 
 export function PaymentAcceptDialog({
@@ -436,6 +448,10 @@ export function PaymentAcceptDialog({
   // 'custom' — не перетираем выбор. Иначе при каждом изменении extDays
   // подсветка переключается на соответствующий пресет.
   useEffect(() => {
+    // v0.8.32: в режиме «по сумме клиента» тариф выбирается единым
+    // проходом в amount-effect (ниже) — здесь не вмешиваемся, иначе
+    // получается петля «сумма→дни→тариф→сумма».
+    if (mode === "amount") return;
     if (tariffPinned) return;
     if (selectedTariff === "custom") return;
     if (extDays <= 0) return;
@@ -450,7 +466,7 @@ export function PaymentAcceptDialog({
     if (auto !== selectedTariff) {
       setSelectedTariff(auto);
     }
-  }, [extDays, tariffPinned, selectedTariff]);
+  }, [extDays, tariffPinned, selectedTariff, mode]);
   // extSum считается «по аренде» (без экипировки) — для extend-inplace.
   const extSum = extIsWeekly ? extRate * extWeeks : extDailyRate * extDays;
   // v0.6.7: dailyTotal = аренда + экипировка/сут (как в дизайне line 15).
@@ -497,29 +513,77 @@ export function PaymentAcceptDialog({
   // когда оператор использует депозит как источник продления.
   const extEnabled = extDays > 0;
 
-  // v0.6.3: amount-mode → days. Оператор вводит сумму, которую даёт
-  // клиент, мы считаем сколько дней продления это даёт сверх долга.
-  //   amount = клиент платит
-  //   debtPortion = долг (если clearDebt) или 0 (если forgiveDebt)
-  //   possibleUnits = floor( (amount - debtPortion - equipPart) / dailyTotal )
+  // v0.8.32: amount-mode → days. Полностью переписано. Раньше эта логика
+  // считала дни по ТЕКУЩЕЙ ставке тарифа, а отдельный эффект менял тариф
+  // по числу дней — два эффекта дрались, итог скакал и попадал на
+  // невозможные сочетания (3000 ₽ → тариф «30+ дней» 400 ₽/сут, 7 дней).
+  //
+  // Теперь один проход:
+  //   forExtMoney = max(0, сумма − долг − пополнение залога)
+  //   • custom — считаем дни по ставке custom (оператор задал сам);
+  //   • tariffPinned — оператор закрепил пресет вручную: дни = floor по
+  //     его ставке (даже если выходит за «штатный» диапазон ступени —
+  //     это осознанное решение оператора);
+  //   • авто — перебираем ступени EXT_TIERS, для каждой считаем дни по её
+  //     ставке и оставляем только те, что реально попадают в [min,max]
+  //     ступени. Берём вариант с максимумом дней (выгоднее клиенту).
   useEffect(() => {
     if (mode !== "amount") return;
     const amt = Math.max(0, parseInt(amountInput || "0", 10));
     setAcceptedStr(amt > 0 ? String(amt) : "");
-    const available = Math.max(0, amt - debtPortion);
-    // v0.6.7: dailyTotal включает экипировку.
-    const unitDaily = Math.max(1, extIsWeekly ? extRate + equipDaily * 7 : dailyExtTotalBase);
-    const possibleUnits = Math.floor(available / unitDaily);
-    setExtInputOverride(possibleUnits > 0 ? possibleUnits : 0);
+    const forExtMoney = Math.max(0, amt - debtPortion - topupAmount);
+
+    if (selectedTariff === "custom") {
+      const unitDaily = Math.max(
+        1,
+        extIsWeekly ? extRate + equipDaily * 7 : dailyExtTotalBase,
+      );
+      const units = Math.floor(forExtMoney / unitDaily);
+      setExtInputOverride(units > 0 ? units : 0);
+      return;
+    }
+
+    if (tariffPinned) {
+      const unitDaily = Math.max(
+        1,
+        TARIFF[rental.model][selectedTariff] + equipDaily,
+      );
+      const days = Math.floor(forExtMoney / unitDaily);
+      setExtInputOverride(days > 0 ? days : 0);
+      return;
+    }
+
+    // авто-подбор согласованной ступени
+    let bestPeriod: TariffPeriod | null = null;
+    let bestDays = 0;
+    for (const t of EXT_TIERS) {
+      const unitDaily = Math.max(1, TARIFF[rental.model][t.period] + equipDaily);
+      const raw = Math.floor(forExtMoney / unitDaily);
+      const days = t.max === Infinity ? raw : Math.min(raw, t.max);
+      if (days >= t.min && days > bestDays) {
+        bestDays = days;
+        bestPeriod = t.period;
+      }
+    }
+    if (bestPeriod) {
+      setSelectedTariff(bestPeriod);
+      setExtInputOverride(bestDays);
+    } else {
+      setExtInputOverride(0);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     amountInput,
     mode,
     debtPortion,
+    topupAmount,
+    tariffPinned,
+    selectedTariff,
     extIsWeekly,
     extRate,
     equipDaily,
     dailyExtTotalBase,
+    rental.model,
   ]);
 
   // v0.6.7: при переключении mode='days' — если override был 0
@@ -1035,119 +1099,38 @@ export function PaymentAcceptDialog({
   // инвалидирует queries → equipmentJson обновится автоматически.
   // Старый EquipmentChangeDialog убран — теперь inline popover.
 
-  // v0.6.5: «жёлтая зона» в floating-календаре + предупреждение «не хватает».
-  // Считаем только в режиме «по сумме клиента» — там оператор сам вводит
-  // amount, и легко получить недопокрытие. Когда mode='days' — оператор
-  // явно выбрал N дней, формула «не хватает» теряет смысл.
-  // Логика (по ТЗ):
-  //   amount      = ввод клиента (acceptedStr)
-  //   debtPortion = долг (если clearDebt) или 0 (если forgiveDebt)
-  //   dailyTotal  = ставка аренды / сут + экипировка / сут (текущая)
-  //   coveredDays = floor( max(0, amount - debtPortion) / dailyTotal )
-  //   uncoveredDays = max(0, extDays - coveredDays)
-  //   shortage    = max(0, extDays * dailyTotal + debtPortion - amount)
-  const coveredDaysShortage =
-    mode === "amount"
-      ? Math.floor(
-          Math.max(0, accepted - debtPortion) /
-            Math.max(1, dailyExtTotalBase),
-        )
-      : extDays;
-  const uncoveredDaysShortage =
-    mode === "amount" ? Math.max(0, extDays - coveredDaysShortage) : 0;
-  const shortageAmount =
-    mode === "amount" && uncoveredDaysShortage > 0
-      ? Math.max(
-          0,
-          extDays * dailyExtTotalBase + debtPortion - accepted,
-        )
-      : 0;
-
-  // v0.6.12: подсказки прозрачности в режиме «по сумме клиента».
-  //
-  // Case A — «Не хватает X ₽ до N+1 дней»:
-  //   Когда forExt оставляет осколок меньше extDailyRate, оператору
-  //   полезно видеть «попроси у клиента ещё X ₽» — особенно когда
-  //   получилось 0 дней (даже на 1 день не хватает).
-  //
-  // Case B — «Выгоднее тариф ...»:
-  //   Перебираем все 4 пресета TARIFF[rental.model] + их минимальные
-  //   сроки. Для каждого считаем сколько денег нужно (minDays × rate +
-  //   debt + equipDaily × minDays). Если введённой суммы хватает И
-  //   получаем больше дней чем сейчас — это «выгодная» рекомендация.
-  //   Берём вариант с минимальной стоимостью среди возможных.
-  //   Если ни один не подходит — берём ближайший «недотянувший» с
-  //   текстом «Докиньте Z ₽ — попадёте на тариф ...».
-  type TariffRec = {
-    period: TariffPeriod;
-    rate: number;          // ₽/сут по пресету
-    minDays: number;       // мин-срок тарифа
-    daysAtThisTariff: number; // сколько дней даст текущая сумма
-    needForMin: number;    // сколько денег нужно для minDays
-    shortToMin: number;    // сколько докинуть до minDays (0 если хватает)
-  };
-  const tariffMinDays = (p: TariffPeriod): number =>
-    p === "day" ? 1 : p === "short" ? 3 : p === "week" ? 7 : 30;
+  // v0.8.32: подсказка прозрачности в режиме «по сумме клиента».
+  // extDays и selectedTariff уже согласованы (см. amount-effect выше):
+  // выбранное число дней ВСЕГДА полностью покрыто введённой суммой,
+  // поэтому «не хватает на выбранные дни» больше не возникает.
+  // Единственная полезная подсказка — «докиньте X ₽ → продлите до N дней»
+  // (ближайшее число дней, требующее минимальной доплаты; учитывает что
+  // на следующей ступени ставка/сут может быть дешевле).
   const forExt = Math.max(0, accepted - debtPortion - topupAmount);
-  // Сколько денег нужно чтобы получить ещё +1 день при текущем тарифе.
-  // Используется как Case A: если extDays===0, это «до 1 дня».
-  const shortageToNextDay =
-    mode === "amount" && accepted > 0
-      ? (() => {
-          const needForNext = (extDays + 1) * dailyExtTotalBase;
-          return Math.max(0, needForNext - forExt);
-        })()
-      : 0;
-  // Перебор пресетов.
-  const tariffRecs: TariffRec[] = (
-    ["day", "short", "week", "month"] as const
-  ).map((p) => {
-    const rate = TARIFF[rental.model][p];
-    const minDays = tariffMinDays(p);
-    const unitDaily = rate + equipDaily;
-    const daysAtThisTariff = Math.floor(forExt / Math.max(1, unitDaily));
-    const needForMin = minDays * unitDaily + debtPortion + topupAmount;
-    const shortToMin = Math.max(0, needForMin - accepted);
-    return { period: p, rate, minDays, daysAtThisTariff, needForMin, shortToMin };
-  });
-  // Лучшая «достижимая» рекомендация: даёт больше дней чем сейчас и
-  // на неё хватает (shortToMin === 0). Из них берём ту с минимальной
-  // стоимостью minDays × rate (т.е. где сэкономит максимум).
-  const currentExtDays = extDays;
-  const currentTariffCost = extDays * dailyExtTotalBase;
-  const reachableBetter = tariffRecs
-    .filter(
-      (r) =>
-        r.shortToMin === 0 &&
-        r.period !== selectedTariff &&
-        // Условие «выгоднее»: либо больше дней, либо столько же дней но
-        // дешевле периодическая стоимость.
-        ((r.daysAtThisTariff > currentExtDays) ||
-          (r.daysAtThisTariff >= currentExtDays &&
-            r.daysAtThisTariff * (r.rate + equipDaily) < currentTariffCost)),
-    )
-    .sort(
-      (a, b) =>
-        a.minDays * (a.rate + equipDaily) -
-        b.minDays * (b.rate + equipDaily),
-    );
-  const betterTariff: TariffRec | null = reachableBetter[0] ?? null;
-  // Если ни один не достижим — выбираем ближайший «недотянувший»: с
-  // минимальным shortToMin > 0 среди тех, что дадут больше дней
-  // (на текущей сумме у нас 0 дней).
-  const upgradeTariff: TariffRec | null = (() => {
-    if (betterTariff) return null;
-    if (mode !== "amount" || accepted <= 0) return null;
-    const cands = tariffRecs
-      .filter(
-        (r) =>
-          r.shortToMin > 0 &&
-          r.period !== selectedTariff &&
-          r.minDays > currentExtDays,
-      )
-      .sort((a, b) => a.shortToMin - b.shortToMin);
-    return cands[0] ?? null;
-  })();
+  // Стоимость ровно d дней продления по ставке той ступени, в диапазон
+  // которой попадает d (с учётом экипировки/сут).
+  const costForExtDays = (d: number): number => {
+    const tier =
+      EXT_TIERS.find((t) => d >= t.min && d <= t.max) ??
+      EXT_TIERS[EXT_TIERS.length - 1];
+    return d * (TARIFF[rental.model][tier.period] + equipDaily);
+  };
+  // Ближайшее число дней > текущего с минимальной доплатой.
+  const extUpsell: { days: number; add: number; period: TariffPeriod } | null =
+    (() => {
+      if (mode !== "amount" || accepted <= 0) return null;
+      let best: { days: number; add: number; period: TariffPeriod } | null =
+        null;
+      for (let d = extDays + 1; d <= extDays + 40; d++) {
+        const add = costForExtDays(d) - forExt;
+        if (add <= 0) continue;
+        if (!best || add < best.add) {
+          const tier = EXT_TIERS.find((t) => d >= t.min && d <= t.max)!;
+          best = { days: d, add, period: tier.period };
+        }
+      }
+      return best;
+    })();
 
   const panel = (
       <div
@@ -1271,11 +1254,89 @@ export function PaymentAcceptDialog({
             </div>
           )}
 
+          {/* ─── STEP 1 (если есть НЕпросроченный долг) ─────────────────
+              v0.8.32 (J3b): долг (паркинг/ущерб/ручной/неоплаченная аренда)
+              без просрочки — отдельным блоком ВЫШЕ продления, мирроринг
+              блока просрочки. Сначала оператор видит что закрыть, продление
+              явно опционально (Step 2). */}
+          {!isOverdueState && (totalDebt > 0 || unpaidParking > 0) && (
+            <div
+              className="border-b border-border px-5 py-3.5"
+              style={{ background: "hsl(var(--red-soft) / 0.3)" }}
+            >
+              <div className="mb-2.5 flex items-center gap-2">
+                <span
+                  className="inline-flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-bold text-white"
+                  style={{ background: "hsl(var(--red))" }}
+                >
+                  1
+                </span>
+                <div
+                  className="text-[11px] font-bold uppercase tracking-wider"
+                  style={{ color: "hsl(var(--red-ink))" }}
+                >
+                  Сначала — долг
+                </div>
+                <span
+                  className="ml-auto font-display text-[18px] font-extrabold tabular-nums"
+                  style={{ color: "hsl(var(--red-ink))" }}
+                >
+                  {fmt(totalDebt + parkingDue)} ₽
+                </span>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                {pendingRent > 0 && (
+                  <div className="flex items-center justify-between rounded-[10px] border border-border bg-surface px-3 py-2 text-[12px]">
+                    <span className="font-semibold text-ink">Неоплаченная аренда</span>
+                    <span className="font-bold tabular-nums text-ink">{fmt(pendingRent)} ₽</span>
+                  </div>
+                )}
+                {damageBalance > 0 && (
+                  <div className="flex items-center justify-between rounded-[10px] border border-border bg-surface px-3 py-2 text-[12px]">
+                    <span className="font-semibold text-ink">Ущерб по акту</span>
+                    <span className="font-bold tabular-nums text-ink">{fmt(damageBalance)} ₽</span>
+                  </div>
+                )}
+                {manualBalance > 0 && (
+                  <div className="flex items-center justify-between rounded-[10px] border border-border bg-surface px-3 py-2 text-[12px]">
+                    <span className="font-semibold text-ink">Начисленный долг</span>
+                    <span className="font-bold tabular-nums text-ink">{fmt(manualBalance)} ₽</span>
+                  </div>
+                )}
+                {unpaidParking > 0 && (
+                  <div className="flex items-center gap-2 rounded-[10px] border border-border bg-surface px-3 py-2">
+                    <SquareParking size={16} className="shrink-0 text-blue-600" />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[12px] font-semibold text-ink">
+                        Паркинг · {unpaidParkingDays}{" "}
+                        {unpaidParkingDays === 1 ? "день" : "дн"}: {fmt(unpaidParking)} ₽
+                      </div>
+                      <div className="mt-0.5 text-[11px] text-muted">
+                        1-е сутки бесплатно, далее 250 ₽/сут.
+                      </div>
+                    </div>
+                    <label className="inline-flex cursor-pointer items-center gap-1.5">
+                      <input
+                        type="checkbox"
+                        checked={payParking}
+                        onChange={(e) => setPayParking(e.target.checked)}
+                        className="h-3.5 w-3.5 accent-blue-600"
+                      />
+                      <span className="text-[11px] font-semibold text-ink-2">
+                        оплатить
+                      </span>
+                    </label>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* ─── STEP 2: период продления ─────────────────────────────── */}
           <div className="border-b border-border px-5 py-3.5">
             <div className="mb-2.5 flex items-center gap-2">
               <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-[11px] font-bold text-white">
-                {isOverdueState ? "2" : "1"}
+                {isOverdueState || totalDebt > 0 || unpaidParking > 0 ? "2" : "1"}
               </span>
               <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
                 {totalDebt > 0 || unpaidParking > 0
@@ -1297,7 +1358,13 @@ export function PaymentAcceptDialog({
                 </button>
                 <button
                   type="button"
-                  onClick={() => setMode("amount")}
+                  onClick={() => {
+                    setMode("amount");
+                    // v0.8.32: при входе в режим «по сумме» снимаем ручную
+                    // фиксацию тарифа, чтобы авто-подбор выбрал согласованную
+                    // ступень под введённую сумму.
+                    if (selectedTariff !== "custom") setTariffPinned(false);
+                  }}
                   className={cn(
                     "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11.5px] font-semibold transition-colors",
                     mode === "amount"
@@ -1424,108 +1491,34 @@ export function PaymentAcceptDialog({
                 </div>
               </div>
             )}
-            {/* v0.6.12: подсказки в режиме «по сумме клиента» — прозрачность.
-                Приоритет:
-                  1) betterTariff (зелёная плашка «Выгоднее: тариф ...»)
-                  2) upgradeTariff (жёлтая плашка «Докиньте Z ₽ — попадёте
-                     на тариф ...»)
-                  3) shortageToNextDay (жёлтая плашка «Не хватает X ₽ до
-                     N+1 дней»). */}
-            {mode === "amount" && accepted > 0 && betterTariff && (
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedTariff(betterTariff.period);
-                  setTariffPinned(true);
-                  setExtInputOverride(betterTariff.daysAtThisTariff);
-                }}
-                className="mt-2 w-full rounded-[10px] px-3 py-2 text-left text-[11.5px] font-semibold transition-colors hover:brightness-105"
-                style={{
-                  background: "hsl(var(--green-soft))",
-                  color: "hsl(var(--green-ink))",
-                }}
-                title="Применить рекомендуемый тариф"
-              >
-                Выгоднее: тариф «{TARIFF_PERIOD_LABEL[betterTariff.period]}»{" "}
-                {betterTariff.rate} ₽/сут → даст{" "}
-                <span className="tabular-nums">
-                  {betterTariff.daysAtThisTariff}
+            {/* v0.8.32: единая подсказка прозрачности в режиме «по сумме
+                клиента» — «докиньте X ₽ → продлите до N дней». Строгий
+                нейтральный стиль (без жёлтых плашек). */}
+            {mode === "amount" && accepted > 0 && extUpsell && (
+              <div className="mt-2 rounded-[10px] border border-border bg-surface-soft/50 px-3 py-2 text-[11.5px] font-medium text-ink-2">
+                Докиньте{" "}
+                <span className="font-bold tabular-nums text-ink">
+                  {fmt(extUpsell.add)} ₽
                 </span>{" "}
-                {betterTariff.daysAtThisTariff === 1
-                  ? "день"
-                  : betterTariff.daysAtThisTariff < 5
-                    ? "дня"
-                    : "дней"}{" "}
-                вместо{" "}
-                <span className="tabular-nums">{currentExtDays}</span>.{" "}
-                {(() => {
-                  const newCost =
-                    betterTariff.minDays * (betterTariff.rate + equipDaily);
-                  const economy = currentTariffCost - newCost;
-                  return economy > 0
-                    ? `Экономия ${fmt(economy)} ₽`
-                    : "Тариф выгоднее";
-                })()}
-              </button>
+                — {extDays > 0 ? "продлите до" : "хватит на"}{" "}
+                <span className="font-bold tabular-nums text-ink">
+                  {extUpsell.days}
+                </span>{" "}
+                {extUpsell.days === 1
+                  ? "дня"
+                  : extUpsell.days < 5
+                    ? "дней"
+                    : "дней"}
+                {extUpsell.period !== selectedTariff && (
+                  <>
+                    {" "}
+                    (тариф «{TARIFF_PERIOD_LABEL[extUpsell.period]}»{" "}
+                    {TARIFF[rental.model][extUpsell.period]} ₽/сут)
+                  </>
+                )}
+                .
+              </div>
             )}
-            {mode === "amount" &&
-              accepted > 0 &&
-              !betterTariff &&
-              upgradeTariff && (
-                <div
-                  className="mt-2 rounded-[10px] px-3 py-2 text-[11.5px] font-semibold"
-                  style={{
-                    background: "hsl(var(--orange-soft))",
-                    color: "hsl(var(--orange-ink))",
-                  }}
-                >
-                  Докиньте{" "}
-                  <span className="tabular-nums">
-                    {fmt(upgradeTariff.shortToMin)} ₽
-                  </span>{" "}
-                  — попадёте на тариф «
-                  {TARIFF_PERIOD_LABEL[upgradeTariff.period]}»{" "}
-                  {upgradeTariff.rate} ₽/сут, получите{" "}
-                  <span className="tabular-nums">
-                    {upgradeTariff.minDays}
-                  </span>{" "}
-                  {upgradeTariff.minDays === 1
-                    ? "день"
-                    : upgradeTariff.minDays < 5
-                      ? "дня"
-                      : "дней"}{" "}
-                  вместо{" "}
-                  <span className="tabular-nums">{currentExtDays}</span>.
-                </div>
-              )}
-            {mode === "amount" &&
-              accepted > 0 &&
-              !betterTariff &&
-              !upgradeTariff &&
-              shortageToNextDay > 0 &&
-              shortageToNextDay < extDailyRate + equipDaily && (
-                <div
-                  className="mt-2 rounded-[10px] px-3 py-2 text-[11.5px] font-semibold"
-                  style={{
-                    background: "hsl(var(--orange-soft))",
-                    color: "hsl(var(--orange-ink))",
-                  }}
-                >
-                  Не хватает{" "}
-                  <span className="tabular-nums">
-                    {fmt(shortageToNextDay)} ₽
-                  </span>{" "}
-                  до{" "}
-                  <span className="tabular-nums">{extDays + 1}</span>{" "}
-                  {extDays + 1 === 1
-                    ? "дня"
-                    : extDays + 1 < 5
-                      ? "дней"
-                      : "дней"}{" "}
-                  (тариф {extDailyRate} ₽/сут
-                  {equipDaily > 0 ? ` + ${equipDaily} ₽ экипировка` : ""}).
-                </div>
-              )}
             {/* v0.6.13: Тариф продления — pills + custom.
                 Логика: при выборе пресета пересчитывается extRate из
                 TARIFF[model][period]. При custom — поле ставки + toggle
@@ -1558,17 +1551,15 @@ export function PaymentAcceptDialog({
                         // v0.6.14: ручной выбор тарифа — пинним.
                         setSelectedTariff(p);
                         setTariffPinned(true);
-                        // v0.6.15: при клике на тариф устанавливаем
-                        // МИНИМАЛЬНОЕ число дней этого тарифа (по
-                        // TARIFF_PERIOD_LABEL):
-                        //   day   "1–2 дня"  → 1
-                        //   short "3–6 дней" → 3
-                        //   week  "7–29 дней"→ 7
-                        //   month "30+ дней" → 30
-                        // А не оставляем текущие 35 дней с пересчётом по
-                        // ставке выбранного тарифа — это было ошибочное
-                        // поведение. Заказчик хочет: «период сменится на 1
-                        // день, а не пересчитаем 35 дней по новой цене».
+                        // v0.8.32: в режиме «по сумме клиента» число дней
+                        // пересчитает amount-effect по введённой сумме и
+                        // ставке выбранного тарифа — НЕ трогаем здесь
+                        // (иначе сумма/дата прыгали при клике на тариф).
+                        if (mode === "amount") return;
+                        // v0.6.15: в режиме «по дням» при клике на тариф
+                        // устанавливаем МИНИМАЛЬНОЕ число дней этого тарифа:
+                        //   day "1–2"→1, short "3–6"→3, week "7–29"→7, month "30+"→30.
+                        // (а не пересчитываем текущие 35 дней по новой цене).
                         const minDays =
                           p === "day"
                             ? 1
@@ -1577,10 +1568,6 @@ export function PaymentAcceptDialog({
                               : p === "week"
                                 ? 7
                                 : 30;
-                        // В week-режиме (extIsWeekly) extInputOverride
-                        // хранит НЕДЕЛИ. Здесь мы переключаемся в day-режим
-                        // (selectedTariff !== 'custom' → extIsWeekly=false),
-                        // поэтому пишем дни.
                         setExtInputOverride(minDays);
                       }}
                       className={cn(
@@ -1666,7 +1653,7 @@ export function PaymentAcceptDialog({
             rental={rental}
             equipment={equipment}
             equipDaily={equipDaily}
-            isOverdueState={isOverdueState}
+            hasDebtStep={isOverdueState || totalDebt > 0 || unpaidParking > 0}
           />
 
           {/* v0.6.11: «Пополнение залога» — отдельная секция, видна
@@ -1738,29 +1725,9 @@ export function PaymentAcceptDialog({
             </div>
           )}
 
-          {/* v0.6.7: предупреждение «не хватает» — над footer'ом
-              в режиме «по сумме клиента» (как в дизайне line 343-349). */}
-          {shortageAmount > 0 && (
-            <div className="px-5 py-3">
-              <div
-                className="rounded-[10px] px-3 py-2 text-[11.5px] font-semibold"
-                style={{
-                  background: "hsl(var(--red-soft))",
-                  color: "hsl(var(--red-ink))",
-                }}
-              >
-                Не хватает {fmt(shortageAmount)} ₽ для {uncoveredDaysShortage}
-                {" "}
-                {uncoveredDaysShortage === 1
-                  ? "дня"
-                  : uncoveredDaysShortage < 5
-                    ? "дней"
-                    : "дней"}{" "}
-                продления — оператор может оставить меньше дней или
-                клиент доплатит позже.
-              </div>
-            </div>
-          )}
+          {/* v0.8.32: блок «не хватает на выбранные дни» удалён — в режиме
+              «по сумме клиента» число дней теперь всегда полностью покрыто
+              суммой (см. amount-effect), недопокрытия не бывает. */}
           {/* v0.6.7: удалены секции (дублирующие новый footer):
               · «Использовать депозит клиента» — checkbox в footer'е
               · «Списать с залога» — функциональность убрана из UI
@@ -1898,36 +1865,9 @@ export function PaymentAcceptDialog({
             </div>
           )}
 
-          {/* v0.8.0: паркинг — показывается ТОЛЬКО когда выставлен и не
-              оплачен. Стиль как у блока залога. Чекбокс включает оплату
-              паркинга в «К приёму». */}
-          {unpaidParking > 0 && (
-            <div className="px-5 pb-2">
-              <div className="flex items-center gap-2 rounded-[12px] border border-border bg-surface-soft/40 px-3 py-2">
-                <SquareParking size={16} className="shrink-0 text-blue-600" />
-                <div className="min-w-0 flex-1">
-                  <div className="text-[12px] font-semibold text-ink">
-                    Паркинг · {unpaidParkingDays}{" "}
-                    {unpaidParkingDays === 1 ? "день" : "дн"}: {fmt(unpaidParking)} ₽
-                  </div>
-                  <div className="mt-0.5 text-[11px] text-muted">
-                    1-е сутки бесплатно, далее 250 ₽/сут.
-                  </div>
-                </div>
-                <label className="inline-flex cursor-pointer items-center gap-1.5">
-                  <input
-                    type="checkbox"
-                    checked={payParking}
-                    onChange={(e) => setPayParking(e.target.checked)}
-                    className="h-3.5 w-3.5 accent-blue-600"
-                  />
-                  <span className="text-[11px] font-semibold text-ink-2">
-                    оплатить
-                  </span>
-                </label>
-              </div>
-            </div>
-          )}
+          {/* v0.8.32 (J3b): блок паркинга перенесён ВВЕРХ — в блок «Сначала
+              — долг» (или в просрочку), выше шага продления. Здесь, в
+              футере, паркинг отражается только строкой итемизации. */}
 
           {/* (2) Итого — крупная сумма «К приёму».
               v0.6.53: text-[28px] font-extrabold — самое важное число
@@ -2551,12 +2491,12 @@ function EquipmentStep({
   rental,
   equipment,
   equipDaily,
-  isOverdueState,
+  hasDebtStep,
 }: {
   rental: Rental;
   equipment: Array<{ itemId?: number | null; name: string; price: number; free: boolean }>;
   equipDaily: number;
-  isOverdueState: boolean;
+  hasDebtStep: boolean;
 }) {
   // -1 = add-mode, >=0 = replacing existing index, null = closed.
   const [swapIdx, setSwapIdx] = useState<number | null>(null);
@@ -2575,7 +2515,7 @@ function EquipmentStep({
     <div className="border-b border-border px-5 py-3">
       <div className="mb-2 flex items-center gap-2">
         <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-[11px] font-bold text-white">
-          {isOverdueState ? "3" : "2"}
+          {hasDebtStep ? "3" : "2"}
         </span>
         <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
           Экипировка на новый период
@@ -2595,159 +2535,42 @@ function EquipmentStep({
             const isOpen = swapIdx === idx;
             const showingPending = isOpen && pendingItem != null;
             const it = showingPending ? pendingItem : origIt;
-            const isFree = it.free;
-            const isHover = hoverEqIdx === idx;
             return (
-              <div
+              <EquipmentTile
                 key={`${origIt.itemId ?? "noid"}-${idx}`}
-                className={cn(
-                  "relative flex flex-col items-center w-[72px]",
-                  showingPending && "animate-pulse opacity-80",
-                )}
-                onMouseEnter={() => isLive && setHoverEqIdx(idx)}
-                onMouseLeave={() =>
-                  setHoverEqIdx((v) => (v === idx ? null : v))
-                }
-              >
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!isLive) return;
-                    setSwapIdx(isOpen ? null : idx);
-                  }}
-                  disabled={!isLive}
-                  className={cn(
-                    // v0.8.28 (H5): нейтральный тайл — без зелёной рамки/фона.
-                    // Экипировка на прозрачном фоне; подсветка — только при
-                    // наведении/выборе.
-                    "relative flex h-[72px] w-[72px] items-center justify-center rounded-[12px] border p-2 transition-colors",
-                    "border-border bg-surface",
-                    isHover && !isOpen && "border-blue-300 bg-surface-soft/60",
-                    isOpen && "border-blue-400 ring-2 ring-blue-200 ring-offset-1",
-                    isLive ? "cursor-pointer" : "cursor-default",
-                  )}
-                  title={isLive ? "Заменить или убрать" : it.name}
-                >
-                  {/* v0.7.6: тот же фиксированный 48×48 контейнер, что и в
-                      карточке аренды (MasterBlock) — чтобы тайл экипировки
-                      выглядел идентично в обоих местах. */}
-                  <span className="flex h-12 w-12 shrink-0 items-center justify-center">
-                    <EquipmentThumb item={it} />
-                  </span>
-                  {!isFree && it.price > 0 && (
-                    <span className="absolute top-0.5 right-0.5 rounded-full bg-blue-600 text-white px-1 py-0.5 text-[8.5px] font-bold tabular-nums shadow-card-sm">
-                      +{it.price}
-                    </span>
-                  )}
-                  {isFree && (
-                    <span className="absolute top-0.5 right-0.5 rounded-full bg-green text-white px-1 py-0.5 text-[8.5px] font-bold shadow-card-sm">
-                      free
-                    </span>
-                  )}
-                  {/* v0.6.53: Repeat-иконка в углу при hover без синего
-                      overlay — как в карточке аренды (MasterBlock). */}
-                  {isLive && isHover && !isOpen && (
-                    <span className="absolute bottom-0.5 left-0.5 inline-flex items-center justify-center rounded-full bg-white/95 text-blue-700 shadow-card-sm h-5 w-5 pointer-events-none">
-                      <Repeat size={10} />
-                    </span>
-                  )}
-                </button>
-                <div
-                  className={cn(
-                    "mt-1 w-full break-words px-0.5 text-center text-[9.5px] font-semibold leading-tight text-ink-2",
-                  )}
-                  style={{
-                    display: "-webkit-box",
-                    WebkitLineClamp: 2,
-                    WebkitBoxOrient: "vertical",
-                    overflow: "hidden",
-                  }}
-                >
-                  {it.name}
-                </div>
-                {isOpen && (
-                  <EquipmentInlinePicker
-                    rental={rental}
-                    replacingIdx={idx}
-                    onClose={() => {
-                      setSwapIdx(null);
-                      setPendingItem(null);
-                    }}
-                    onPreviewChange={setPendingItem}
-                  />
-                )}
-              </div>
+                rental={rental}
+                item={it}
+                idx={idx}
+                size="md"
+                wrapperClassName="w-[72px]"
+                canSwap={isLive}
+                isOpen={isOpen}
+                isHover={hoverEqIdx === idx}
+                showingPending={showingPending}
+                onHover={setHoverEqIdx}
+                onToggleOpen={setSwapIdx}
+                onClose={() => {
+                  setSwapIdx(null);
+                  setPendingItem(null);
+                }}
+                onPreviewChange={setPendingItem}
+              />
             );
           })}
           {isLive && (
-            <div
-              className={cn(
-                "relative flex flex-col items-center w-[72px]",
-                swapIdx === -1 && pendingItem && "animate-pulse opacity-80",
-              )}
-            >
-              <button
-                type="button"
-                onClick={() => setSwapIdx(swapIdx === -1 ? null : -1)}
-                className={cn(
-                  "w-[72px] h-[72px] rounded-[12px] border-2 flex items-center justify-center transition-colors p-2",
-                  swapIdx === -1 && pendingItem
-                    ? pendingItem.free
-                      ? "border-green bg-green-soft/50"
-                      : "border-blue-200 bg-blue-50"
-                    : "border-dashed border-border text-muted-2 hover:border-blue-600 hover:bg-blue-50 hover:text-blue-700",
-                  swapIdx === -1 &&
-                    !pendingItem &&
-                    "ring-2 ring-blue-600 ring-offset-1 border-blue-600 bg-blue-50 text-blue-700",
-                )}
-                title="Добавить экипировку"
-              >
-                {swapIdx === -1 && pendingItem ? (
-                  <span className="flex h-12 w-12 shrink-0 items-center justify-center">
-                    <EquipmentThumb
-                      item={{
-                        itemId: pendingItem.itemId,
-                        name: pendingItem.name,
-                        free: pendingItem.free,
-                      }}
-                    />
-                  </span>
-                ) : (
-                  <Plus size={22} strokeWidth={2} />
-                )}
-              </button>
-              <div
-                className={cn(
-                  "mt-1 text-[9.5px] font-semibold text-center break-words leading-tight",
-                  swapIdx === -1 && pendingItem
-                    ? pendingItem.free
-                      ? "text-green-ink"
-                      : "text-blue-700"
-                    : "text-muted-2",
-                )}
-                style={{
-                  display: "-webkit-box",
-                  WebkitLineClamp: 2,
-                  WebkitBoxOrient: "vertical",
-                  overflow: "hidden",
-                }}
-              >
-                {swapIdx === -1 && pendingItem
-                  ? pendingItem.name
-                  : "Добавить"}
-              </div>
-              {swapIdx === -1 && (
-                <EquipmentInlinePicker
-                  rental={rental}
-                  replacingIdx={-1}
-                  onClose={() => {
-                    setSwapIdx(null);
-                    setPendingItem(null);
-                  }}
-                  onPreviewChange={setPendingItem}
-                />
-              )}
-            </div>
+            <EquipmentAddTile
+              rental={rental}
+              size="md"
+              wrapperClassName="w-[72px]"
+              isOpen={swapIdx === -1}
+              pendingItem={pendingItem}
+              onToggleOpen={(open) => setSwapIdx(open ? -1 : null)}
+              onClose={() => {
+                setSwapIdx(null);
+                setPendingItem(null);
+              }}
+              onPreviewChange={setPendingItem}
+            />
           )}
         </div>
       </div>

@@ -43,6 +43,10 @@ import {
   EquipmentThumb,
 } from "@/pages/rentals/rental-card/EquipmentInlinePicker";
 import {
+  EquipmentTile,
+  EquipmentAddTile,
+} from "@/pages/rentals/rental-card/EquipmentTile";
+import {
   DEPOSIT_AMOUNT,
   type Rental,
   type RentalStatus,
@@ -302,144 +306,45 @@ export function MasterBlock({
         ) : (
           <div className="flex flex-wrap content-start gap-2">
             {equipmentJson.slice(0, 6).map((origIt, idx) => {
-              const canSwap = !!onChangeEquipment;
               const isOpen = swapIdx === idx;
               const showingPending = isOpen && pendingItem != null;
               const it = showingPending ? pendingItem : origIt;
-              const isFree = it.free;
-              const isHover = hoverEqIdx === idx;
               return (
-                <div
+                <EquipmentTile
                   key={`${origIt.itemId ?? "na"}-${idx}`}
-                  className={cn(
-                    "relative w-[60px]",
-                    showingPending && "animate-pulse opacity-80",
-                  )}
-                  onMouseEnter={() => canSwap && setHoverEqIdx(idx)}
-                  onMouseLeave={() => setHoverEqIdx((v) => (v === idx ? null : v))}
-                >
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!canSwap) return;
-                      setSwapIdx(isOpen ? null : idx);
-                    }}
-                    disabled={!canSwap}
-                    className={cn(
-                      // v0.8.30 (I1): нейтральный стиль как в диалоге оплаты —
-                      // без зелёной/синей рамки и фона; экипировка на прозрачном.
-                      "relative flex h-[60px] w-full items-center justify-center rounded-[12px] border p-1.5 transition-colors",
-                      "border-border bg-surface",
-                      isHover && !isOpen && "border-blue-300 bg-surface-soft/60",
-                      isOpen && "border-blue-400 ring-2 ring-blue-200 ring-offset-1",
-                      canSwap ? "cursor-pointer" : "cursor-default",
-                    )}
-                    title={canSwap ? "Заменить или убрать" : it.name}
-                  >
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center">
-                      <EquipmentThumb item={it} />
-                    </span>
-                    {!isFree && it.price > 0 && (
-                      <span className="absolute top-0.5 right-0.5 rounded-full bg-blue-600 text-white px-1 py-0 text-[8.5px] font-bold tabular-nums shadow-card-sm">
-                        +{it.price}
-                      </span>
-                    )}
-                    {isFree && (
-                      <span className="absolute top-0.5 right-0.5 rounded-full bg-green text-white px-1 py-0 text-[8.5px] font-bold tabular-nums shadow-card-sm">
-                        free
-                      </span>
-                    )}
-                    {/* hover показывает только иконку Repeat в правом нижнем углу */}
-                    {canSwap && isHover && !isOpen && (
-                      <span className="absolute bottom-0.5 right-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-white shadow-card-sm pointer-events-none">
-                        <Repeat size={11} />
-                      </span>
-                    )}
-                  </button>
-                  <div
-                    className={cn(
-                      "mt-1 whitespace-normal text-center text-[10px] font-bold leading-tight text-ink-2",
-                    )}
-                    style={{ wordBreak: "normal", overflowWrap: "break-word" }}
-                  >
-                    {it.name}
-                  </div>
-                  {isOpen && (
-                    <EquipmentInlinePicker
-                      rental={rental}
-                      replacingIdx={idx}
-                      onClose={() => {
-                        setSwapIdx(null);
-                        setPendingItem(null);
-                      }}
-                      onPreviewChange={setPendingItem}
-                    />
-                  )}
-                </div>
+                  rental={rental}
+                  item={it}
+                  idx={idx}
+                  size="sm"
+                  wrapperClassName="w-[60px]"
+                  canSwap={!!onChangeEquipment}
+                  isOpen={isOpen}
+                  isHover={hoverEqIdx === idx}
+                  showingPending={showingPending}
+                  onHover={setHoverEqIdx}
+                  onToggleOpen={setSwapIdx}
+                  onClose={() => {
+                    setSwapIdx(null);
+                    setPendingItem(null);
+                  }}
+                  onPreviewChange={setPendingItem}
+                />
               );
             })}
             {onChangeEquipment && equipmentJson.length < 6 && (
-              <div
-                className={cn(
-                  "relative w-[60px]",
-                  swapIdx === -1 && pendingItem && "animate-pulse opacity-80",
-                )}
-              >
-                <button
-                  type="button"
-                  onClick={() => setSwapIdx(swapIdx === -1 ? null : -1)}
-                  className={cn(
-                    "flex h-[60px] w-full items-center justify-center rounded-[12px] border-2 bg-white p-1.5 transition-colors",
-                    swapIdx === -1 && pendingItem
-                      ? pendingItem.free
-                        ? "border-border bg-surface-soft"
-                        : "border-border bg-surface-soft"
-                      : "border-dashed border-border text-muted-2 hover:border-blue-600 hover:bg-blue-50 hover:text-blue-700",
-                    swapIdx === -1 &&
-                      !pendingItem &&
-                      "ring-2 ring-blue-600 ring-offset-1 border-blue-600 bg-blue-50 text-blue-700",
-                  )}
-                  title="Добавить экипировку"
-                >
-                  {swapIdx === -1 && pendingItem ? (
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center">
-                      <EquipmentThumb
-                        item={{
-                          itemId: pendingItem.itemId,
-                          name: pendingItem.name,
-                          free: pendingItem.free,
-                        }}
-                      />
-                    </span>
-                  ) : (
-                    <Plus size={20} strokeWidth={2} />
-                  )}
-                </button>
-                <div
-                  className={cn(
-                    "mt-1 text-[10px] font-semibold text-center leading-tight whitespace-normal",
-                    swapIdx === -1 && pendingItem
-                      ? pendingItem.free
-                        ? "text-green-ink"
-                        : "text-blue-700"
-                      : "text-muted-2",
-                  )}
-                  style={{ wordBreak: "normal", overflowWrap: "break-word" }}
-                >
-                  {swapIdx === -1 && pendingItem ? pendingItem.name : "Добавить"}
-                </div>
-                {swapIdx === -1 && (
-                  <EquipmentInlinePicker
-                    rental={rental}
-                    replacingIdx={-1}
-                    onClose={() => {
-                      setSwapIdx(null);
-                      setPendingItem(null);
-                    }}
-                    onPreviewChange={setPendingItem}
-                  />
-                )}
-              </div>
+              <EquipmentAddTile
+                rental={rental}
+                size="sm"
+                wrapperClassName="w-[60px]"
+                isOpen={swapIdx === -1}
+                pendingItem={pendingItem}
+                onToggleOpen={(open) => setSwapIdx(open ? -1 : null)}
+                onClose={() => {
+                  setSwapIdx(null);
+                  setPendingItem(null);
+                }}
+                onPreviewChange={setPendingItem}
+              />
             )}
           </div>
         )}
@@ -676,144 +581,45 @@ export function MasterBlock({
           ) : (
             <div className="grid grid-cols-[repeat(auto-fill,minmax(72px,1fr))] content-start gap-2 rounded-[14px] bg-surface-soft/35 p-2">
               {equipmentJson.slice(0, 6).map((origIt, idx) => {
-                const canSwap = !!onChangeEquipment;
                 const isOpen = swapIdx === idx;
                 const showingPending = isOpen && pendingItem != null;
                 const it = showingPending ? pendingItem : origIt;
-                const isFree = it.free;
-                const isHover = hoverEqIdx === idx;
                 return (
-                  <div
+                  <EquipmentTile
                     key={`${origIt.itemId ?? "na"}-${idx}`}
-                    className={cn(
-                      "relative min-w-0",
-                      showingPending && "animate-pulse opacity-80",
-                    )}
-                    onMouseEnter={() => canSwap && setHoverEqIdx(idx)}
-                    onMouseLeave={() => setHoverEqIdx((v) => (v === idx ? null : v))}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!canSwap) return;
-                        setSwapIdx(isOpen ? null : idx);
-                      }}
-                      disabled={!canSwap}
-                      className={cn(
-                        // v0.8.30 (I1): нейтральный стиль (как в диалоге оплаты).
-                        "relative flex h-[72px] w-full items-center justify-center rounded-[12px] border p-2 transition-colors",
-                        "border-border bg-surface",
-                        isHover && !isOpen && "border-blue-300 bg-surface-soft/60",
-                        isOpen && "border-blue-400 ring-2 ring-blue-200 ring-offset-1",
-                        canSwap ? "cursor-pointer" : "cursor-default",
-                      )}
-                      title={canSwap ? "Заменить или убрать" : it.name}
-                    >
-                      <span className="flex h-12 w-12 shrink-0 items-center justify-center">
-                        <EquipmentThumb item={it} />
-                      </span>
-                      {!isFree && it.price > 0 && (
-                        <span className="absolute top-0.5 right-0.5 rounded-full bg-blue-600 text-white px-1 py-0 text-[8.5px] font-bold tabular-nums shadow-card-sm">
-                          +{it.price}
-                        </span>
-                      )}
-                      {isFree && (
-                        <span className="absolute top-0.5 right-0.5 rounded-full bg-green text-white px-1 py-0 text-[8.5px] font-bold tabular-nums shadow-card-sm">
-                          free
-                        </span>
-                      )}
-                      {/* v0.6.51: hover показывает только иконку Repeat в
-                          правом нижнем углу — без заливки тайла. */}
-                      {canSwap && isHover && !isOpen && (
-                        <span className="absolute bottom-1 right-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-white shadow-card-sm pointer-events-none">
-                          <Repeat size={11} />
-                        </span>
-                      )}
-                    </button>
-                    <div
-                      className={cn(
-                        "mt-1 whitespace-normal text-center text-[10.5px] font-bold leading-tight text-ink-2",
-                      )}
-                      style={{ wordBreak: "normal", overflowWrap: "break-word" }}
-                    >
-                      {it.name}
-                    </div>
-                    {isOpen && (
-                      <EquipmentInlinePicker
-                        rental={rental}
-                        replacingIdx={idx}
-                        onClose={() => {
-                          setSwapIdx(null);
-                          setPendingItem(null);
-                        }}
-                        onPreviewChange={setPendingItem}
-                      />
-                    )}
-                  </div>
+                    rental={rental}
+                    item={it}
+                    idx={idx}
+                    size="md"
+                    wrapperClassName="min-w-0"
+                    canSwap={!!onChangeEquipment}
+                    isOpen={isOpen}
+                    isHover={hoverEqIdx === idx}
+                    showingPending={showingPending}
+                    onHover={setHoverEqIdx}
+                    onToggleOpen={setSwapIdx}
+                    onClose={() => {
+                      setSwapIdx(null);
+                      setPendingItem(null);
+                    }}
+                    onPreviewChange={setPendingItem}
+                  />
                 );
               })}
               {onChangeEquipment && equipmentJson.length < 6 && (
-                <div
-                  className={cn(
-                      "relative min-w-0",
-                    swapIdx === -1 && pendingItem && "animate-pulse opacity-80",
-                  )}
-                >
-                  <button
-                    type="button"
-                    onClick={() => setSwapIdx(swapIdx === -1 ? null : -1)}
-                    className={cn(
-                      "flex h-[72px] w-full items-center justify-center rounded-[12px] border-2 bg-white p-2 transition-colors",
-                      swapIdx === -1 && pendingItem
-                        ? pendingItem.free
-                          ? "border-green bg-green-soft/50"
-                          : "border-blue-200 bg-blue-50"
-                        : "border-dashed border-border text-muted-2 hover:border-blue-600 hover:bg-blue-50 hover:text-blue-700",
-                      swapIdx === -1 &&
-                        !pendingItem &&
-                        "ring-2 ring-blue-600 ring-offset-1 border-blue-600 bg-blue-50 text-blue-700",
-                    )}
-                    title="Добавить экипировку"
-                  >
-                    {swapIdx === -1 && pendingItem ? (
-                      <span className="flex h-12 w-12 shrink-0 items-center justify-center">
-                        <EquipmentThumb
-                          item={{
-                            itemId: pendingItem.itemId,
-                            name: pendingItem.name,
-                            free: pendingItem.free,
-                          }}
-                        />
-                      </span>
-                    ) : (
-                      <Plus size={22} strokeWidth={2} />
-                    )}
-                  </button>
-                  <div
-                    className={cn(
-                      "mt-1 text-[10.5px] font-semibold text-center leading-tight whitespace-normal",
-                      swapIdx === -1 && pendingItem
-                        ? pendingItem.free
-                          ? "text-green-ink"
-                          : "text-blue-700"
-                        : "text-muted-2",
-                    )}
-                    style={{ wordBreak: "normal", overflowWrap: "break-word" }}
-                  >
-                    {swapIdx === -1 && pendingItem ? pendingItem.name : "Добавить"}
-                  </div>
-                  {swapIdx === -1 && (
-                    <EquipmentInlinePicker
-                      rental={rental}
-                      replacingIdx={-1}
-                      onClose={() => {
-                        setSwapIdx(null);
-                        setPendingItem(null);
-                      }}
-                      onPreviewChange={setPendingItem}
-                    />
-                  )}
-                </div>
+                <EquipmentAddTile
+                  rental={rental}
+                  size="md"
+                  wrapperClassName="min-w-0"
+                  isOpen={swapIdx === -1}
+                  pendingItem={pendingItem}
+                  onToggleOpen={(open) => setSwapIdx(open ? -1 : null)}
+                  onClose={() => {
+                    setSwapIdx(null);
+                    setPendingItem(null);
+                  }}
+                  onPreviewChange={setPendingItem}
+                />
               )}
             </div>
           )}
