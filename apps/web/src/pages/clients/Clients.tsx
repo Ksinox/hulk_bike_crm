@@ -1,10 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { flushSync } from "react-dom";
-import { ArrowLeft, Plus, Rows3, LayoutGrid } from "lucide-react";
+import { ArrowLeft, Plus } from "lucide-react";
 import { Topbar } from "@/pages/dashboard/Topbar";
-import { useMe } from "@/lib/api/auth";
-import { makeViewMode, runViewModeTransition, type ViewMode } from "@/lib/viewMode";
-import { cn } from "@/lib/utils";
 import { type Client } from "@/lib/mock/clients";
 import {
   consumePending,
@@ -131,19 +127,6 @@ export function Clients() {
   const [addOpen, setAddOpen] = useState(false);
   const [backTo, setBackTo] = useState<BackTarget | null>(null);
 
-  // v0.8.22: режим «Список/Плитки» (пер-пользователь, морфинг как в Арендах).
-  const { data: me } = useMe();
-  const clientsView = useMemo(() => makeViewMode("clients", "list"), []);
-  const [viewMode, setViewMode] = useState<ViewMode>(() => clientsView.load(undefined));
-  useEffect(() => {
-    if (me?.id != null) setViewMode(clientsView.load(me.id));
-  }, [me?.id, clientsView]);
-  const changeViewMode = (m: ViewMode) => {
-    if (m === viewMode) return;
-    clientsView.save(me?.id, m);
-    runViewModeTransition(() => flushSync(() => setViewMode(m)));
-  };
-
   useEffect(() => {
     const p = consumePending("clients");
     if (p?.clientId) setSelectedId(p.clientId);
@@ -224,35 +207,6 @@ export function Clients() {
           </span>
         </div>
         <div className="flex items-center gap-2">
-          {/* v0.8.22: переключатель Список/Плитки (как в Арендах). */}
-          <div className="flex shrink-0 items-center rounded-full bg-surface-soft p-0.5">
-            <button
-              type="button"
-              onClick={() => changeViewMode("list")}
-              title="Список"
-              className={cn(
-                "inline-flex h-8 w-8 items-center justify-center rounded-full transition-colors",
-                viewMode === "list"
-                  ? "bg-white text-blue-700 shadow-card-sm"
-                  : "text-muted hover:text-ink",
-              )}
-            >
-              <Rows3 size={15} />
-            </button>
-            <button
-              type="button"
-              onClick={() => changeViewMode("tiles")}
-              title="Плитки"
-              className={cn(
-                "inline-flex h-8 w-8 items-center justify-center rounded-full transition-colors",
-                viewMode === "tiles"
-                  ? "bg-white text-blue-700 shadow-card-sm"
-                  : "text-muted hover:text-ink",
-              )}
-            >
-              <LayoutGrid size={15} />
-            </button>
-          </div>
           <ShareApplicationButton />
           <button
             type="button"
@@ -272,19 +226,11 @@ export function Clients() {
       {filters.status === "applications" ? (
         <ApplicationsTab />
       ) : (
-      <div
-        className={cn(
-          "grid flex-1 gap-4",
-          viewMode === "tiles"
-            ? "lg:grid-cols-[1fr_440px]"
-            : "lg:grid-cols-[360px_1fr]",
-        )}
-      >
+      <div className="grid flex-1 gap-4 lg:grid-cols-[360px_1fr]">
         <ClientsList
           items={filtered}
           selectedId={selectedId}
           onSelect={setSelectedId}
-          viewMode={viewMode}
         />
 
         {(() => {

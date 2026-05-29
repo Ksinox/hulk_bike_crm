@@ -600,9 +600,6 @@ export function RentalCard({
         s.startDate <= todayYmd &&
         s.endDate >= todayYmd,
     ) ?? null;
-  const scheduledParking =
-    parkingList.find((s) => s.status === "active" && s.startDate > todayYmd) ??
-    null;
   const parkingDayN = activeParking
     ? Math.min(
         activeParking.days,
@@ -1486,10 +1483,10 @@ export function RentalCard({
                   : "Отметить «не выходит на связь»"
               }
               className={cn(
-                "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold transition-colors",
+                "inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-bold shadow-sm transition-colors active:scale-[0.98]",
                 isUnreachable
-                  ? "bg-orange-soft text-orange-ink hover:bg-orange-200"
-                  : "bg-surface-soft text-muted hover:bg-green-50 hover:text-green-700",
+                  ? "border-orange-300 bg-orange-soft text-orange-ink hover:bg-orange-200"
+                  : "border-border bg-surface text-muted hover:border-green-300 hover:bg-green-50 hover:text-green-700",
               )}
             >
               {isUnreachable ? (
@@ -1541,10 +1538,10 @@ export function RentalCard({
                   : "Отметить «не выходит на связь»"
               }
               className={cn(
-                "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold transition-colors",
+                "inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-bold shadow-sm transition-colors active:scale-[0.98]",
                 isUnreachable
-                  ? "bg-orange-soft text-orange-ink hover:bg-orange-200"
-                  : "bg-surface-soft text-muted hover:bg-green-50 hover:text-green-700",
+                  ? "border-orange-300 bg-orange-soft text-orange-ink hover:bg-orange-200"
+                  : "border-border bg-surface text-muted hover:border-green-300 hover:bg-green-50 hover:text-green-700",
               )}
             >
               {isUnreachable ? (
@@ -1638,15 +1635,8 @@ export function RentalCard({
           </button>
         </div>
       )}
-      {!activeParking && scheduledParking && (
-        <div className="flex items-center gap-3 rounded-[12px] bg-yellow-50/70 px-3 py-2 text-[12.5px] text-yellow-900 ring-1 ring-inset ring-yellow-300">
-          <SquareParking size={16} className="shrink-0 text-yellow-600" />
-          <div className="min-w-0 flex-1 leading-tight">
-            Запланирован паркинг с {scheduledParking.startDate.slice(8, 10)}.
-            {scheduledParking.startDate.slice(5, 7)} ({scheduledParking.days} дн)
-          </div>
-        </div>
-      )}
+      {/* v0.8.24: баннер «Запланирован паркинг» убран — эта информация теперь
+          отображается стикером-заметкой (kind=parking, создаётся при постановке). */}
       {isArchived && (
         <div className="flex items-center gap-2 rounded-[12px] bg-surface-soft px-3 py-2 text-[12px] text-muted ring-1 ring-inset ring-border">
           <Trash2 size={14} className="shrink-0" />

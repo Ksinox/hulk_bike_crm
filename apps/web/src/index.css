@@ -253,3 +253,16 @@
     border-bottom-width: 0;
   }
 }
+
+/* v0.8.24: плавный cross-fade областей «Список ↔ Плитки» (Apple-style).
+   Только named-контейнеры (rentals-area / fleet-area) — старый вид плавно
+   исчезает, новый появляется; без морфинга отдельных строк. */
+::view-transition-old(rentals-area),
+::view-transition-new(rentals-area),
+::view-transition-old(fleet-area),
+::view-transition-new(fleet-area) {
+  animation-duration: 300ms;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  /* перекрываем, чтобы был мягкий dissolve без «пустоты» между кадрами */
+  mix-blend-mode: normal;
+}

@@ -91,32 +91,91 @@ export function useCreateSticker() {
   });
 }
 
+/**
+ * v0.8.24: оптимистичный патч всех кешей стикеров — чтобы открепление/
+ * подкрепление/удаление отражалось МГНОВЕННО (без обновления страницы).
+ * Учитывает вариант запроса (active vs includeDismissed) по последнему
+ * элементу ключа.
+ */
+function useStickerOptimistic() {
+  const qc = useQueryClient();
+  const invalidate = useInvalidateStickers();
+  const patch = async (id: number, action: "unpin" | "repin" | "delete") => {
+    await qc.cancelQueries({ queryKey: stickerKeys.all });
+    const now = new Date().toISOString();
+    let found: NoteSticker | undefined;
+    qc.getQueriesData<NoteSticker[]>({ queryKey: stickerKeys.all }).forEach(
+      ([, data]) => {
+        const f = data?.find((s) => s.id === id);
+        if (f) found = f;
+      },
+    );
+    qc.getQueriesData<NoteSticker[]>({ queryKey: stickerKeys.all }).forEach(
+      ([key, data]) => {
+        if (!data) return;
+        const includeDismissed = key[key.length - 1] === true;
+        let next: NoteSticker[];
+        if (action === "delete") {
+          next = data.filter((s) => s.id !== id);
+        } else if (action === "unpin") {
+          next = includeDismissed
+            ? data.map((s) => (s.id === id ? { ...s, dismissedAt: now } : s))
+            : data.filter((s) => s.id !== id);
+        } else {
+          // repin
+          if (includeDismissed) {
+            next = data.map((s) =>
+              s.id === id ? { ...s, dismissedAt: null } : s,
+            );
+          } else if (data.some((s) => s.id === id)) {
+            next = data.map((s) =>
+              s.id === id ? { ...s, dismissedAt: null } : s,
+            );
+          } else if (found) {
+            next = [{ ...found, dismissedAt: null }, ...data];
+          } else {
+            next = data;
+          }
+        }
+        qc.setQueryData(key, next);
+      },
+    );
+  };
+  return { patch, invalidate };
+}
+
 /** Открепить стикер (мягко): уходит с карточки в раздел «Заметки». */
 export function useUnpinSticker() {
-  const invalidate = useInvalidateStickers();
+  const { patch, invalidate } = useStickerOptimistic();
   return useMutation({
     mutationFn: (args: { id: number }) =>
       api.post<NoteSticker>(`/api/stickers/${args.id}/dismiss`, {}),
-    onSuccess: invalidate,
+    onMutate: ({ id }) => patch(id, "unpin"),
+    onError: invalidate,
+    onSettled: invalidate,
   });
 }
 
 /** Подкрепить откреплённый стикер обратно на карточку. */
 export function useRepinSticker() {
-  const invalidate = useInvalidateStickers();
+  const { patch, invalidate } = useStickerOptimistic();
   return useMutation({
     mutationFn: (args: { id: number }) =>
       api.post<NoteSticker>(`/api/stickers/${args.id}/pin`, {}),
-    onSuccess: invalidate,
+    onMutate: ({ id }) => patch(id, "repin"),
+    onError: invalidate,
+    onSettled: invalidate,
   });
 }
 
 /** Полное удаление стикера (из раздела «Заметки»). */
 export function useDeleteSticker() {
-  const invalidate = useInvalidateStickers();
+  const { patch, invalidate } = useStickerOptimistic();
   return useMutation({
     mutationFn: (args: { id: number }) =>
       api.delete<{ ok: true }>(`/api/stickers/${args.id}`),
-    onSuccess: invalidate,
+    onMutate: ({ id }) => patch(id, "delete"),
+    onError: invalidate,
+    onSettled: invalidate,
   });
 }

@@ -422,6 +422,8 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
         </button>
       </div>
 
+      {/* v0.8.24: контейнер с view-transition-name — cross-fade при смене режима. */}
+      <div style={{ viewTransitionName: "fleet-area" }}>
       {/* =========== ПЛИТКИ =========== */}
       {viewMode === "tiles" ? (
         <div className="rounded-2xl bg-surface p-3 shadow-card-sm">
@@ -496,6 +498,7 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
         )}
       </div>
       )}
+      </div>
 
       {addOpen && <AddScooterModal onClose={() => setAddOpen(false)} />}
     </Root>
@@ -522,7 +525,6 @@ function FleetRow({
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") onOpen();
       }}
-      style={{ viewTransitionName: `fleet-${scooter.id}` }}
       className="grid cursor-pointer grid-cols-[2fr_1fr_1.5fr_1.3fr_1fr_auto] items-center gap-4 border-b border-border/60 px-5 py-3.5 transition-colors last:border-b-0 hover:bg-surface-soft/40"
     >
       {/* name + model */}
@@ -622,7 +624,6 @@ function FleetTile({
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") onOpen();
       }}
-      style={{ viewTransitionName: `fleet-${scooter.id}` }}
       className="flex w-[200px] cursor-pointer flex-col gap-2 rounded-2xl border border-border bg-surface p-3 transition-colors hover:bg-surface-soft/60"
     >
       <div className="flex items-center gap-2">

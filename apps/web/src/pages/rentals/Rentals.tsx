@@ -572,7 +572,7 @@ export function Rentals() {
             // (список «задаёт» ширину, плитки её повторяют) — при переключении
             // блок не «прыгает». Группа [блок+карточка] центрируется. Пустые
             // ячейки сетки плиток заполняются плиткой-заглушкой «+ Новая аренда».
-            "w-[1120px] max-w-full",
+            "w-[1180px] max-w-full",
           )}
         >
           <div className="flex flex-col gap-3 p-4 pb-3 border-b border-border">
@@ -649,8 +649,10 @@ export function Rentals() {
             <RentalsFilters value={filters} onChange={setFilters} />
           </div>
 
-          {/* Список аренд — строки внутри того же блока, без рамок. */}
-          <div className="flex-1 min-h-0">
+          {/* Список аренд — строки внутри того же блока, без рамок.
+              v0.8.24: view-transition-name на контейнере → при смене режима
+              область плавно «перетекает» cross-fade'ом (а не морфингом строк). */}
+          <div className="flex-1 min-h-0" style={{ viewTransitionName: "rentals-area" }}>
             <RentalsList
               items={filtered}
               selectedId={selectedId}

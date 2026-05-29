@@ -37,7 +37,8 @@ import { useApiScooters } from "@/lib/api/scooters";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { useDebtAggregate } from "@/lib/api/debt";
 import { useParkingSessions } from "@/lib/api/parking";
-import { useStickers } from "@/lib/api/stickers";
+import { useStickers, useCreateSticker } from "@/lib/api/stickers";
+import { promptDialog } from "@/lib/toast";
 import { fileUrl } from "@/lib/files";
 import type { RentalsViewMode } from "./rentalsViewMode";
 
@@ -178,6 +179,7 @@ function ContactToggle({
   // комментарий → показываем в тултипе при наведении. Запрос только если
   // клиент «не на связи» (enabled=unreachable).
   const { data: cstickers } = useStickers("client", clientId, true, unreachable);
+  const createSticker = useCreateSticker();
   const lastComment = unreachable
     ? cstickers
         ?.filter((s) => s.kind === "contact")
@@ -186,9 +188,30 @@ function ContactToggle({
   return (
     <button
       type="button"
-      onClick={(e) => {
+      onClick={async (e) => {
         e.stopPropagation();
-        clientStore.setUnreachable(clientId, !unreachable);
+        const next = !unreachable;
+        clientStore.setUnreachable(clientId, next);
+        // v0.8.24 (F2): при переключении в «не на связи» — предложить
+        // комментарий (стикер kind=contact на клиента), как в карточке.
+        if (next) {
+          const t = await promptDialog({
+            title: "Не выходит на связь",
+            message: "Комментарий (необязательно) — прикрепится стикером к клиенту.",
+            placeholder: "напр. звонили 29.05, не берёт трубку",
+            multiline: true,
+            confirmText: "Прикрепить",
+            cancelText: "Без комментария",
+          });
+          if (t)
+            createSticker.mutate({
+              entity: "client",
+              entityId: clientId,
+              kind: "contact",
+              text: t,
+              color: "orange",
+            });
+        }
       }}
       title={
         unreachable
@@ -220,7 +243,8 @@ type SortCol =
   | "sum"
   | "rentSum"
   | "status"
-  | "parking";
+  | "parking"
+  | "contact";
 
 export function RentalsList({
   items,
@@ -348,6 +372,11 @@ export function RentalsList({
           );
         case "parking":
           return (a.parkingDays - b.parkingDays) * dir;
+        case "contact":
+          // недоступные наверх при asc (по клику на заголовок).
+          return (
+            (a.unreachable === b.unreachable ? 0 : a.unreachable ? -1 : 1) * dir
+          );
         default:
           return 0;
       }
@@ -422,6 +451,7 @@ export function RentalsList({
             <Th label="Сумма аренды" col="rentSum" sort={sort} onSort={toggleSort} align="right" />
             <Th label="Долг" col="sum" sort={sort} onSort={toggleSort} align="right" />
             <Th label="Статус" col="status" sort={sort} onSort={toggleSort} />
+            <Th label="Связь" col="contact" sort={sort} onSort={toggleSort} align="center" />
           </tr>
         </thead>
         <tbody>
@@ -550,7 +580,6 @@ function RentalTableRow({
   return (
     <tr
       onClick={() => onSelect(row.rental.id)}
-      style={{ viewTransitionName: `rental-${row.rental.id}` }}
       className={cn(
         "cursor-pointer border-b border-border text-[13px] transition-colors",
         row.danger
@@ -574,7 +603,6 @@ function RentalTableRow({
           >
             {row.clientName}
           </span>
-          <ContactToggle clientId={row.clientId} unreachable={row.unreachable} />
         </div>
       </td>
       <td className="px-4 py-5 text-[13px] whitespace-nowrap">
@@ -628,6 +656,12 @@ function RentalTableRow({
       <td className="px-4 py-5 whitespace-nowrap">
         <StatusPill status={row.effStatus} />
       </td>
+      {/* v0.8.24 (F3): колонка «Связь» — сортируемая, тумблер доступности. */}
+      <td className="px-4 py-5 text-center">
+        <div className="flex justify-center">
+          <ContactToggle clientId={row.clientId} unreachable={row.unreachable} />
+        </div>
+      </td>
     </tr>
   );
 }
@@ -667,7 +701,6 @@ function RentalTile({
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") onSelect(row.rental.id);
       }}
-      style={{ viewTransitionName: `rental-${row.rental.id}` }}
       className={cn(
         "group flex w-[230px] cursor-pointer flex-col overflow-hidden rounded-2xl border text-left transition-colors",
         row.danger
@@ -679,36 +712,36 @@ function RentalTile({
             : "border-border bg-surface hover:bg-surface-soft/60",
       )}
     >
-      {/* Основная зона — фото скутера; поверх неё аватарка клиента слева
-          снизу + бейдж дней справа сверху. */}
-      <div className="relative h-[136px] w-full bg-white">
+      {/* v0.8.24: ГЛАВНОЕ — крупное лицо клиента по центру; скутер приглушён
+          на заднем фоне (лицо может перекрывать часть скутера — это норм). */}
+      <div className="relative h-[172px] w-full overflow-hidden bg-gradient-to-b from-surface-soft to-white">
         {row.scooterAvatarSrc ? (
           <img
             src={row.scooterAvatarSrc}
             alt={row.scooterLabel}
-            className="h-full w-full object-contain p-2"
+            className="absolute inset-0 h-full w-full object-contain p-2 opacity-35"
           />
         ) : (
-          <div className="flex h-full w-full items-center justify-center">
+          <div className="absolute inset-0 flex items-center justify-center opacity-35">
             <Bike size={40} strokeWidth={1.5} className="text-muted-2" />
           </div>
         )}
         {/* Бейдж дней — правый верхний угол. */}
         <span
           className={cn(
-            "absolute right-2 top-2 rounded-full px-2 py-0.5 text-[11px] font-bold tabular-nums shadow-card-sm",
+            "absolute right-2 top-2 z-10 rounded-full px-2 py-0.5 text-[11px] font-bold tabular-nums shadow-card-sm",
             row.badgeTone,
           )}
         >
           {row.badgeText}
         </span>
-        {/* Аватарка клиента — портрет со скруглением, левый нижний угол. */}
-        <div className="absolute bottom-2 left-2">
+        {/* Лицо клиента — крупный портрет по центру, поверх скутера. */}
+        <div className="absolute inset-0 flex items-center justify-center">
           <ClientAvatar
             clientId={row.clientId}
             name={row.clientName}
-            w={44}
-            h={56}
+            w={104}
+            h={124}
             ring
           />
         </div>
