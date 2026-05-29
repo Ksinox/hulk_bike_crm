@@ -177,20 +177,25 @@ export function formatActivitySummary(
     return `${label}: ${money(fee.to)}`;
   };
 
-  // ── Заметка-стикер (v0.8.14) ──
-  if (action === "note_added" || action === "note_removed") {
+  // ── Заметка-стикер (v0.8.14+) ──
+  if (action.startsWith("note_")) {
     const m = readRecord(item.meta);
     const text = typeof m?.text === "string" ? m.text : "";
     const isContact = m?.kind === "contact";
-    const title =
+    const what = isContact ? "Комментарий по связи" : "Заметка";
+    const verb =
       action === "note_added"
-        ? isContact
-          ? "Добавлен комментарий по связи"
-          : "Добавлена заметка"
-        : isContact
-          ? "Снят комментарий по связи"
-          : "Снята заметка";
-    return { title, change: null, extras: text ? [`«${text}»`] : [] };
+        ? "добавлена"
+        : action === "note_unpinned" || action === "note_removed"
+          ? "откреплена"
+          : action === "note_deleted"
+            ? "удалена"
+            : "изменена";
+    return {
+      title: `${what} ${verb}`,
+      change: null,
+      extras: text ? [`«${text}»`] : [],
+    };
   }
 
   // ── Паркинг ──

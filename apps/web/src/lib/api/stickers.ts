@@ -35,12 +35,13 @@ export const stickerKeys = {
 export function useStickers(
   entity: StickerEntity,
   entityId: number | null | undefined,
+  includeDismissed = false,
 ) {
   return useQuery({
-    queryKey: stickerKeys.list(entity, entityId ?? 0),
+    queryKey: [...stickerKeys.list(entity, entityId ?? 0), includeDismissed],
     queryFn: () =>
       api.get<NoteSticker[]>(
-        `/api/stickers?entity=${entity}&entityId=${entityId}`,
+        `/api/stickers?entity=${entity}&entityId=${entityId}${includeDismissed ? "&includeDismissed=1" : ""}`,
       ),
     enabled: entityId != null && entityId > 0,
     staleTime: 30_000,
@@ -50,13 +51,15 @@ export function useStickers(
 /**
  * Стикеры карточки аренды: заметки самой аренды + комментарии по связи
  * клиента. Возвращает объединённый список, свежие — первыми.
+ * includeDismissed=true — включая откреплённые (для раздела «Заметки»).
  */
 export function useRentalCardStickers(
   rentalId: number | null | undefined,
   clientId: number | null | undefined,
+  includeDismissed = false,
 ) {
-  const rentalQ = useStickers("rental", rentalId);
-  const clientQ = useStickers("client", clientId);
+  const rentalQ = useStickers("rental", rentalId, includeDismissed);
+  const clientQ = useStickers("client", clientId, includeDismissed);
   const stickers = useMemo(() => {
     const list = [...(rentalQ.data ?? []), ...(clientQ.data ?? [])];
     return list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -87,11 +90,22 @@ export function useCreateSticker() {
   });
 }
 
-export function useDismissSticker() {
+/** Открепить стикер (мягко): уходит с карточки в раздел «Заметки». */
+export function useUnpinSticker() {
   const invalidate = useInvalidateStickers();
   return useMutation({
     mutationFn: (args: { id: number }) =>
       api.post<NoteSticker>(`/api/stickers/${args.id}/dismiss`, {}),
+    onSuccess: invalidate,
+  });
+}
+
+/** Полное удаление стикера (из раздела «Заметки»). */
+export function useDeleteSticker() {
+  const invalidate = useInvalidateStickers();
+  return useMutation({
+    mutationFn: (args: { id: number }) =>
+      api.delete<{ ok: true }>(`/api/stickers/${args.id}`),
     onSuccess: invalidate,
   });
 }

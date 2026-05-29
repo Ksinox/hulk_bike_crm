@@ -204,6 +204,7 @@ type SortCol =
   | "end"
   | "days"
   | "sum"
+  | "rentSum"
   | "status"
   | "parking";
 
@@ -322,6 +323,8 @@ export function RentalsList({
           return (a.delta - b.delta) * dir;
         case "sum":
           return (a.rightSum - b.rightSum) * dir;
+        case "rentSum":
+          return ((a.rental.sum ?? 0) - (b.rental.sum ?? 0)) * dir;
         case "status":
           return (
             (STATUS_LABEL[a.effStatus] ?? a.effStatus).localeCompare(
@@ -402,7 +405,8 @@ export function RentalsList({
             {hasAnyParking && (
               <Th label="Паркинг" col="parking" sort={sort} onSort={toggleSort} align="center" />
             )}
-            <Th label="Сумма" col="sum" sort={sort} onSort={toggleSort} align="right" />
+            <Th label="Сумма аренды" col="rentSum" sort={sort} onSort={toggleSort} align="right" />
+            <Th label="Долг" col="sum" sort={sort} onSort={toggleSort} align="right" />
             <Th label="Статус" col="status" sort={sort} onSort={toggleSort} />
           </tr>
         </thead>
@@ -592,13 +596,18 @@ function RentalTableRow({
           )}
         </td>
       )}
+      {/* v0.8.15: «Сумма аренды» — сколько стоит/оплачена аренда (rental.sum). */}
+      <td className="px-4 py-5 text-right tabular-nums whitespace-nowrap font-semibold text-ink-2">
+        {fmt(row.rental.sum)} ₽
+      </td>
+      {/* «Долг» — задолженность (просрочка/ущерб/паркинг/неоплачено). */}
       <td className="px-4 py-5 text-right tabular-nums whitespace-nowrap">
         {row.hasDebt ? (
           <span className="font-bold text-red-ink">{fmt(row.rightSum)} ₽</span>
         ) : row.pendingRent > 0 ? (
-          <span className="font-semibold text-ink-2">{fmt(row.pendingRent)} ₽</span>
+          <span className="font-semibold text-orange-ink">{fmt(row.pendingRent)} ₽</span>
         ) : (
-          <span className="text-muted-2">0 ₽</span>
+          <span className="text-muted-2">—</span>
         )}
       </td>
       <td className="px-4 py-5 whitespace-nowrap">

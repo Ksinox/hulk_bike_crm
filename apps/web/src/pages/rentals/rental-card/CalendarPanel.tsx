@@ -222,6 +222,9 @@ export function CalendarPanel({
                 <X size={13} /> Отмена
               </button>
             )}
+            {/* v0.8.15: явная КНОПКА (скруглённый прямоугольник, рамка, тень),
+                полный текст «Поставить на паркинг» — чтобы читалось как кнопка,
+                а не статус. */}
             <button
               type="button"
               onClick={toggleParkingButton}
@@ -232,12 +235,12 @@ export function CalendarPanel({
                   : "Поставить на паркинг"
               }
               className={cn(
-                "inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 text-[12px] font-semibold transition-colors",
+                "inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-[12px] font-semibold shadow-sm transition-colors active:scale-[0.98] disabled:opacity-60",
                 parkingMode
                   ? draftStart && draftEnd
-                    ? "bg-yellow-400 text-yellow-950 hover:bg-yellow-500"
-                    : "bg-yellow-100 text-yellow-800"
-                  : "bg-yellow-50 text-yellow-800 hover:bg-yellow-100",
+                    ? "border-yellow-500 bg-yellow-400 text-yellow-950 hover:bg-yellow-500"
+                    : "border-yellow-300 bg-yellow-100 text-yellow-800"
+                  : "border-yellow-300 bg-yellow-100 text-yellow-900 hover:border-yellow-400 hover:bg-yellow-200",
               )}
             >
               <SquareParking size={14} />
@@ -245,7 +248,7 @@ export function CalendarPanel({
                 ? draftStart && draftEnd
                   ? "Зафиксировать"
                   : "Выберите период"
-                : "Паркинг"}
+                : "Поставить на паркинг"}
             </button>
           </div>
         )}

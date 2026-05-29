@@ -17,6 +17,7 @@ import {
   Repeat,
   ShieldAlert,
   SquareParking,
+  StickyNote,
   User,
   Wallet,
   Wrench,
@@ -31,11 +32,12 @@ import {
 } from "@/lib/mock/rentals";
 import { effectiveRentalStatus } from "@/lib/rentalStatus";
 import { useClientUnreachable, clientStore } from "@/pages/clients/clientStore";
-import { StickerStack } from "@/components/StickerStack";
+import { StickerStack, NoteComposer } from "@/components/StickerStack";
 import {
   useRentalCardStickers,
   useCreateSticker,
-  useDismissSticker,
+  useUnpinSticker,
+  useDeleteSticker,
 } from "@/lib/api/stickers";
 import { useApiClients } from "@/lib/api/clients";
 import { useApiScooters } from "@/lib/api/scooters";
@@ -121,6 +123,14 @@ function statusActions(
   opts: { hasDamage: boolean; isUnreachable: boolean },
 ): MenuAction[] {
   const extras: MenuAction[] = [
+    // v0.8.15: добавление заметки-стикера — вынесено в меню (раньше парящая
+    // кнопка «+ Заметка» рядом со стопкой).
+    {
+      id: "add-note",
+      label: "Добавить заметку",
+      icon: StickyNote,
+      tone: "ghost",
+    },
     {
       id: "set-damage",
       label: opts.hasDamage ? "Изменить ущерб" : "Зафиксировать ущерб",
@@ -443,19 +453,39 @@ export function RentalCard({
   // useMemo сам пересчитает на render).
   const isUnreachable = useClientUnreachable(rental.clientId);
 
-  // v0.8.12: стикеры-заметки карточки (заметки аренды + комментарии по связи
-  // клиента). Добавление/снятие пишется в журнал действий.
+  // v0.8.12+: стикеры-заметки карточки (заметки аренды + комментарии по связи
+  // клиента). Добавление/открепление/удаление пишется в журнал действий.
   const { stickers } = useRentalCardStickers(rental.id, rental.clientId);
+  // Все заметки (включая откреплённые) — для раздела «Заметки».
+  const { stickers: allStickers } = useRentalCardStickers(
+    rental.id,
+    rental.clientId,
+    true,
+  );
   const createStickerMut = useCreateSticker();
-  const dismissStickerMut = useDismissSticker();
-  const addRentalNote = (text: string) =>
+  const unpinStickerMut = useUnpinSticker();
+  const deleteStickerMut = useDeleteSticker();
+  const [addNoteOpen, setAddNoteOpen] = useState(false);
+  const addRentalNote = (text: string, color: string) =>
     createStickerMut.mutate({
       entity: "rental",
       entityId: rental.id,
       kind: "note",
       text,
+      color,
     });
-  const dismissSticker = (id: number) => dismissStickerMut.mutate({ id });
+  const unpinSticker = (id: number) =>
+    unpinStickerMut.mutate(
+      { id },
+      {
+        onSuccess: () =>
+          toast.success(
+            "Заметка откреплена",
+            "Хранится в разделе «Заметки» этой карточки",
+          ),
+      },
+    );
+  const deleteSticker = (id: number) => deleteStickerMut.mutate({ id });
   // Переключение статуса связи клиента прямо из карточки. При включении —
   // сразу предлагаем прикрепить комментарий-стикер (kind=contact на клиента).
   const toggleUnreachable = () => {
@@ -472,6 +502,7 @@ export function RentalCard({
           entityId: rental.clientId,
           kind: "contact",
           text: t,
+          color: "orange",
         });
     }
   };
@@ -743,6 +774,7 @@ export function RentalCard({
   const handleAction = async (id: string) => {
     if (id === "extend") return setExtendOpen(true);
     if (id === "edit") return setEditRentalOpen(true);
+    if (id === "add-note") return setAddNoteOpen(true);
     // v0.8.0: вход в режим паркинга (основная кнопка 🅿 — в календаре).
     if (id === "set-parking") return setArmParkingSignal((n) => n + 1);
     if (id === "revert-completion") {
@@ -2040,6 +2072,64 @@ export function RentalCard({
           >
             <DocsInline rental={rental} />
           </AccordionSection>
+
+          {/* v0.8.15: архив заметок — все заметки карточки (прикреплённые и
+              откреплённые) с датами/автором. Здесь заметку можно УДАЛИТЬ
+              полностью (на карточке стикер можно только открепить). */}
+          <AccordionSection
+            title={`Заметки${allStickers.length ? ` · ${allStickers.length}` : ""}`}
+            icon={<StickyNote size={15} className="text-muted-2" />}
+            defaultOpen={false}
+          >
+            {allStickers.length === 0 ? (
+              <div className="text-[12px] text-muted">Заметок пока нет</div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {allStickers.map((s) => (
+                  <div
+                    key={s.id}
+                    className="flex items-start gap-2 rounded-[10px] border border-border bg-surface-soft/40 px-3 py-2"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-2">
+                        {s.kind === "contact" ? "Связь" : "Заметка"}
+                        {s.dismissedAt ? (
+                          <span className="rounded-full bg-surface px-1.5 py-0.5 text-[9px] font-medium text-muted">
+                            откреплена
+                          </span>
+                        ) : (
+                          <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-medium text-amber-700">
+                            на карточке
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-0.5 whitespace-pre-wrap break-words text-[13px] text-ink-2">
+                        {s.text}
+                      </div>
+                      <div className="mt-0.5 text-[10px] text-muted-2">
+                        {s.createdByName ?? "—"} ·{" "}
+                        {new Date(s.createdAt).toLocaleString("ru-RU", {
+                          day: "2-digit",
+                          month: "2-digit",
+                          year: "2-digit",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => deleteSticker(s.id)}
+                      title="Удалить заметку полностью"
+                      className="shrink-0 rounded-md p-1 text-muted-2 transition-colors hover:bg-red-soft hover:text-red-ink"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </AccordionSection>
         </div>
       ) : (
         <div className="grid flex-1 gap-4 xl:grid-cols-2 min-h-0">
@@ -2238,16 +2328,20 @@ export function RentalCard({
   if (drawerChrome) {
     return (
       <div className="relative flex h-full flex-col bg-surface shadow-card-lg">
-        {/* v0.8.12: стикеры-заметки приклеены к верхне-правому краю карточки,
-            поверх контента, не скроллятся вместе с телом. pointer-events
-            только на самих стикерах — остальная карточка кликается насквозь. */}
-        <div className="pointer-events-none absolute -right-11 top-[60px] z-30 flex justify-end">
+        {/* v0.8.15: стикеры-заметки висят ЗА правым краём карточки — лишь
+            небольшой левый край касается её, не перекрывая контент. Не
+            скроллятся вместе с телом. pointer-events только на стикерах. */}
+        <div className="pointer-events-none absolute right-[-170px] top-[56px] z-30 flex w-[200px] flex-col items-end gap-2">
+          {addNoteOpen && (
+            <div className="pointer-events-auto">
+              <NoteComposer
+                onSubmit={addRentalNote}
+                onCancel={() => setAddNoteOpen(false)}
+              />
+            </div>
+          )}
           <div className="pointer-events-auto">
-            <StickerStack
-              stickers={stickers}
-              onAdd={addRentalNote}
-              onDismiss={dismissSticker}
-            />
+            <StickerStack stickers={stickers} onUnpin={unpinSticker} />
           </div>
         </div>
         {/* Скроллируемое тело: header «прилипает» сверху внутри скролла. */}

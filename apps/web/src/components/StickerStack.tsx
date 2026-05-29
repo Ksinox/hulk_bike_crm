@@ -1,20 +1,36 @@
 /**
  * v0.8.12 — стопка стикеров-«наклеек» поверх карточки.
  *
- * Жёлтые бумажные заметки, приклеенные слегка небрежно (наклон + «скотч» +
- * тень). Несколько штук складываются стопкой с нахлёстом; при наведении
- * стикер выпрямляется, увеличивается и выходит на передний план (z-index).
- * «×» — снять заметку. «+ Заметка» — прикрепить новую.
+ * Жёлтые (и других цветов) бумажные заметки, приклеенные слегка небрежно
+ * (наклон + «скотч» + тень). Несколько штук складываются стопкой с нахлёстом;
+ * при наведении стикер выпрямляется, увеличивается и выходит на передний план.
+ * «×» — ОТКРЕПИТЬ (не удалить): стикер плавно «улетает» вниз и уходит в раздел
+ * «Заметки» карточки. Добавление вынесено в ⋯-меню (NoteComposer).
  *
- * Вдохновлено CSS3 sticky-notes (habr 136238): rotate + box-shadow +
- * transition transform, hover → scale + z-index.
+ * Вдохновлено CSS3 sticky-notes (habr 136238).
  */
 import { useState } from "react";
-import { X, Plus, StickyNote, PhoneOff } from "lucide-react";
+import { X, StickyNote, PhoneOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { NoteSticker } from "@/lib/api/stickers";
 
 const ROTATIONS = ["-2deg", "1.6deg", "-1deg", "2.4deg", "-2.6deg", "0.8deg"];
+
+/** Палитра стикеров: ключ → классы фона/текста. */
+export const STICKER_COLORS: Record<string, string> = {
+  yellow: "bg-amber-200 text-amber-950",
+  orange: "bg-orange-200 text-orange-950",
+  pink: "bg-rose-200 text-rose-950",
+  green: "bg-emerald-200 text-emerald-950",
+  blue: "bg-sky-200 text-sky-950",
+  purple: "bg-violet-200 text-violet-950",
+};
+export const STICKER_COLOR_KEYS = Object.keys(STICKER_COLORS);
+
+function colorClass(color: string, isContact: boolean): string {
+  if (isContact && (!color || color === "yellow")) return STICKER_COLORS.orange!;
+  return STICKER_COLORS[color] ?? STICKER_COLORS.yellow!;
+}
 
 function fmtDate(iso: string): string {
   try {
@@ -29,23 +45,20 @@ function fmtDate(iso: string): string {
 
 export function StickerStack({
   stickers,
-  onAdd,
-  onDismiss,
+  onUnpin,
   className,
 }: {
   stickers: NoteSticker[];
-  onAdd?: (text: string) => void;
-  onDismiss?: (id: number) => void;
+  onUnpin?: (id: number) => void;
   className?: string;
 }) {
-  const [composing, setComposing] = useState(false);
-  const [text, setText] = useState("");
+  // id стикеров, которые сейчас «улетают» (анимация открепления).
+  const [flying, setFlying] = useState<Set<number>>(new Set());
 
-  const submit = () => {
-    const t = text.trim();
-    if (t && onAdd) onAdd(t);
-    setText("");
-    setComposing(false);
+  const handleUnpin = (id: number) => {
+    setFlying((s) => new Set(s).add(id));
+    // дать проиграть анимацию, затем мутация
+    window.setTimeout(() => onUnpin?.(id), 260);
   };
 
   return (
@@ -54,60 +67,12 @@ export function StickerStack({
         <Sticker
           key={s.id}
           sticker={s}
-          rotate={ROTATIONS[i % ROTATIONS.length]}
+          rotate={ROTATIONS[i % ROTATIONS.length]!}
           overlap={i > 0}
-          onDismiss={onDismiss}
+          flying={flying.has(s.id)}
+          onUnpin={onUnpin ? handleUnpin : undefined}
         />
       ))}
-
-      {onAdd &&
-        (composing ? (
-          <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 p-2 shadow-card-sm">
-            <textarea
-              autoFocus
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submit();
-                if (e.key === "Escape") {
-                  setComposing(false);
-                  setText("");
-                }
-              }}
-              rows={3}
-              placeholder="Текст заметки…"
-              className="w-full resize-none bg-transparent text-[12px] text-amber-950 outline-none placeholder:text-amber-700/50"
-            />
-            <div className="mt-1 flex justify-end gap-1">
-              <button
-                type="button"
-                onClick={() => {
-                  setComposing(false);
-                  setText("");
-                }}
-                className="rounded px-2 py-0.5 text-[11px] text-amber-700 hover:bg-amber-100"
-              >
-                Отмена
-              </button>
-              <button
-                type="button"
-                onClick={submit}
-                className="rounded bg-amber-400 px-2 py-0.5 text-[11px] font-semibold text-amber-950 hover:bg-amber-500"
-              >
-                Прикрепить
-              </button>
-            </div>
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => setComposing(true)}
-            title="Добавить заметку"
-            className="mt-2 inline-flex items-center justify-center gap-1 self-end rounded-full border border-dashed border-amber-300 bg-amber-50/70 px-2.5 py-1 text-[11px] font-semibold text-amber-700 transition-colors hover:bg-amber-100"
-          >
-            <Plus size={12} /> Заметка
-          </button>
-        ))}
     </div>
   );
 }
@@ -116,47 +81,121 @@ function Sticker({
   sticker,
   rotate,
   overlap,
-  onDismiss,
+  flying,
+  onUnpin,
 }: {
   sticker: NoteSticker;
   rotate: string;
   overlap: boolean;
-  onDismiss?: (id: number) => void;
+  flying: boolean;
+  onUnpin?: (id: number) => void;
 }) {
   const isContact = sticker.kind === "contact";
   return (
     <div
-      style={{ ["--rot" as string]: rotate, marginTop: overlap ? -26 : 0 }}
+      style={{
+        ["--rot" as string]: rotate,
+        marginTop: overlap ? -26 : 0,
+      }}
       className={cn(
         "group/sticker relative rounded-[3px] px-3 pb-2 pt-2.5 shadow-[3px_5px_10px_rgba(0,0,0,0.20)]",
-        "[transform:rotate(var(--rot))] transition-transform duration-200 ease-out",
-        "hover:z-20 hover:scale-[1.07] hover:[transform:rotate(0deg)_scale(1.07)]",
-        isContact ? "bg-orange-200" : "bg-amber-200",
+        "transition-all duration-[260ms] ease-out",
+        flying
+          ? "pointer-events-none translate-y-24 scale-90 opacity-0"
+          : "[transform:rotate(var(--rot))] hover:z-20 hover:scale-[1.07] hover:[transform:rotate(0deg)_scale(1.07)]",
+        colorClass(sticker.color, isContact),
       )}
     >
       {/* полупрозрачный «скотч» сверху по центру */}
       <span className="pointer-events-none absolute -top-2 left-1/2 h-3.5 w-12 -translate-x-1/2 rotate-1 bg-white/35 shadow-sm" />
 
-      {onDismiss && (
+      {onUnpin && (
         <button
           type="button"
-          onClick={() => onDismiss(sticker.id)}
-          title="Снять заметку"
-          className="absolute right-1 top-1 inline-flex h-4 w-4 items-center justify-center rounded-full text-amber-900/50 opacity-0 transition-opacity hover:bg-amber-300 hover:text-amber-950 group-hover/sticker:opacity-100"
+          onClick={() => onUnpin(sticker.id)}
+          title="Открепить (уйдёт в раздел «Заметки»)"
+          className="absolute right-1 top-1 inline-flex h-4 w-4 items-center justify-center rounded-full text-black/40 opacity-0 transition-opacity hover:bg-black/10 hover:text-black/70 group-hover/sticker:opacity-100"
         >
           <X size={11} />
         </button>
       )}
 
-      <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-amber-800/70">
+      <div className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide opacity-70">
         {isContact ? <PhoneOff size={10} /> : <StickyNote size={10} />}
         {isContact ? "Связь" : "Заметка"}
       </div>
-      <div className="mt-0.5 whitespace-pre-wrap break-words text-[12.5px] font-medium leading-snug text-amber-950">
+      <div className="mt-0.5 whitespace-pre-wrap break-words text-[12.5px] font-medium leading-snug">
         {sticker.text}
       </div>
-      <div className="mt-1 text-[9.5px] text-amber-800/60">
+      <div className="mt-1 text-[9.5px] opacity-60">
         {sticker.createdByName ?? "—"} · {fmtDate(sticker.createdAt)}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Композер новой заметки с выбором цвета. Рендерится из ⋯-меню карточки.
+ */
+export function NoteComposer({
+  onSubmit,
+  onCancel,
+}: {
+  onSubmit: (text: string, color: string) => void;
+  onCancel: () => void;
+}) {
+  const [text, setText] = useState("");
+  const [color, setColor] = useState("yellow");
+  const submit = () => {
+    const t = text.trim();
+    if (t) onSubmit(t, color);
+    onCancel();
+  };
+  return (
+    <div className="w-[230px] rounded-md border border-amber-300 bg-amber-50 p-2.5 shadow-card-lg">
+      <textarea
+        autoFocus
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submit();
+          if (e.key === "Escape") onCancel();
+        }}
+        rows={3}
+        placeholder="Текст заметки…"
+        className="w-full resize-none rounded bg-white/70 p-1.5 text-[12px] text-ink outline-none placeholder:text-muted-2"
+      />
+      <div className="mt-2 flex items-center gap-1.5">
+        <span className="text-[10px] uppercase tracking-wide text-muted-2">Цвет</span>
+        {STICKER_COLOR_KEYS.map((c) => (
+          <button
+            key={c}
+            type="button"
+            onClick={() => setColor(c)}
+            title={c}
+            className={cn(
+              "h-4 w-4 rounded-full ring-2 transition-transform hover:scale-110",
+              STICKER_COLORS[c]!.split(" ")[0],
+              color === c ? "ring-ink/60" : "ring-transparent",
+            )}
+          />
+        ))}
+      </div>
+      <div className="mt-2 flex justify-end gap-1">
+        <button
+          type="button"
+          onClick={onCancel}
+          className="rounded px-2 py-0.5 text-[11px] text-muted hover:bg-surface-soft"
+        >
+          Отмена
+        </button>
+        <button
+          type="button"
+          onClick={submit}
+          className="rounded bg-amber-400 px-2.5 py-0.5 text-[11px] font-semibold text-amber-950 hover:bg-amber-500"
+        >
+          Прикрепить
+        </button>
       </div>
     </div>
   );

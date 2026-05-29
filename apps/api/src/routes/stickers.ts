@@ -114,10 +114,31 @@ export async function stickersRoutes(app: FastifyInstance) {
     await logActivity(req, {
       entity: row.entity as (typeof ENTITIES)[number],
       entityId: row.entityId,
-      action: "note_removed",
-      summary: `${kindWord(row.kind)} снята: «${row.text}»`,
+      action: "note_unpinned",
+      summary: `${kindWord(row.kind)} откреплена: «${row.text}»`,
       meta: { kind: row.kind, text: row.text },
     });
     return row;
+  });
+
+  // DELETE /api/stickers/:id — полное удаление (из раздела «Заметки»).
+  // Аудит остаётся в журнале (note_deleted), сама запись удаляется.
+  app.delete<{ Params: { id: string } }>("/:id", async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
+    const [row] = await db
+      .delete(noteStickers)
+      .where(eq(noteStickers.id, id))
+      .returning();
+    if (!row) return reply.code(404).send({ error: "not found" });
+
+    await logActivity(req, {
+      entity: row.entity as (typeof ENTITIES)[number],
+      entityId: row.entityId,
+      action: "note_deleted",
+      summary: `${kindWord(row.kind)} удалена: «${row.text}»`,
+      meta: { kind: row.kind, text: row.text },
+    });
+    return { ok: true };
   });
 }
