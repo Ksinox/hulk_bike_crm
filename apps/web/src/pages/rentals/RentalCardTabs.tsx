@@ -1926,6 +1926,7 @@ export function HistoryTab({
   chainRentals,
   damageReports = [],
   withFilters = false,
+  initialFilter,
 }: {
   rental: Rental;
   chainRentals: Rental[];
@@ -1934,6 +1935,8 @@ export function HistoryTab({
   damageReports?: ApiDamageReport[];
   /** v0.7.14: показывать чипы-фильтры в ленте событий (полная колонка). */
   withFilters?: boolean;
+  /** v0.8.8: стартовый фильтр ленты. */
+  initialFilter?: HistoryFilter;
 }) {
   // v0.4.5: лента событий из activity_log по всей цепочке аренды.
   // Включает создание, продления, замены скутера, начисления долга,
@@ -2008,6 +2011,7 @@ export function HistoryTab({
         items={timeline}
         loading={timelineQ.isLoading}
         withFilters={withFilters}
+        initialFilter={initialFilter}
       />
 
       {/* v0.5.4: «Цепочка из N аренд» имеет смысл только при N > 1.
@@ -2252,7 +2256,7 @@ export function HistoryTab({
  * Иначе — навигация на полную страницу.
  */
 /** v0.7.14: категории-фильтры для полной истории-колонки. */
-type HistoryFilter = "all" | "extend" | "swap" | "equipment" | "money";
+export type HistoryFilter = "all" | "extend" | "swap" | "equipment" | "money";
 
 const HISTORY_FILTERS: { id: HistoryFilter; label: string }[] = [
   { id: "all", label: "Все" },
@@ -2266,15 +2270,18 @@ export function ActivityTimelineSection({
   items,
   loading,
   withFilters = false,
+  initialFilter,
 }: {
   items: ApiActivityItem[];
   loading?: boolean;
   /** v0.7.14: показывать чипы-фильтры по типам событий (только в полной
    *  истории-колонке; в inline-ленте фильтры не нужны). */
   withFilters?: boolean;
+  /** v0.8.8: стартовый фильтр (напр. «money» при открытии из «За всё время»). */
+  initialFilter?: HistoryFilter;
 }) {
   const drawer = useDashboardDrawer();
-  const [filter, setFilter] = useState<HistoryFilter>("all");
+  const [filter, setFilter] = useState<HistoryFilter>(initialFilter ?? "all");
   // v0.4.8: drawer-провайдер теперь поднят в App.tsx, поэтому стек
   // работает на любых страницах. Кликнул событие в Ленте → новая
   // панель выезжает справа, цепочка наслаивается. Fallback на navigate

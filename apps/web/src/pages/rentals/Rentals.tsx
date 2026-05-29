@@ -228,6 +228,10 @@ export function Rentals() {
   // id связки, по которой открыта полная история. Взаимоисключение с
   // Payment: открытие истории закрывает Payment и наоборот.
   const [historyRentalId, setHistoryRentalId] = useState<number | null>(null);
+  // v0.8.8: стартовый фильтр истории (напр. «money» из «За всё время»).
+  const [historyFilter, setHistoryFilter] = useState<
+    "all" | "extend" | "swap" | "equipment" | "money" | undefined
+  >(undefined);
   const openPayment = (rentalId: number, extDays: number) => {
     setHistoryRentalId(null); // взаимоисключение с историей
     setPaymentExtDays(extDays);
@@ -239,8 +243,12 @@ export function Rentals() {
     // Бампаем сигнал — календарь карточки обнулит drag-extend.
     setCalendarResetSignal((n) => n + 1);
   };
-  const openHistory = (rentalId: number) => {
+  const openHistory = (
+    rentalId: number,
+    filter?: "all" | "extend" | "swap" | "equipment" | "money",
+  ) => {
     closePayment(); // взаимоисключение с Payment
+    setHistoryFilter(filter);
     setHistoryRentalId(rentalId);
   };
   const closeHistory = () => setHistoryRentalId(null);
@@ -739,6 +747,7 @@ export function Rentals() {
                 <RentalHistoryColumn
                   rentalId={lastHistoryId}
                   onClose={closeHistory}
+                  initialFilter={historyFilter}
                 />
               </ErrorBoundary>
             </div>

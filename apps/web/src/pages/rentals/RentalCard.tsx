@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   AlertTriangle,
   ArrowRight,
@@ -43,7 +44,7 @@ import { DocsInline } from "./rental-card/DocsInline";
 import { InlineHistory } from "./rental-card/InlineHistory";
 import { SideDrawer } from "./rental-card/SideDrawer";
 import { useActivityTimeline } from "@/lib/api/activity";
-import { HistoryTab } from "./RentalCardTabs";
+import { HistoryTab, type HistoryFilter } from "./RentalCardTabs";
 import { RentalActionDialog, type ActionKind } from "./RentalActionDialog";
 import { ExtendRentalDialog } from "./ExtendRentalDialog";
 import { PaymentAcceptDialog } from "./PaymentAcceptDialog";
@@ -302,7 +303,7 @@ export function RentalCard({
    *  Payment), а не overlay-SideDrawer поверх карточки. Если prop не передан
    *  (DashboardDrawer) — карточка открывает историю в себе через
    *  overlay-SideDrawer (historyOpen fallback). */
-  onOpenHistory?: (rentalId: number) => void;
+  onOpenHistory?: (rentalId: number, filter?: HistoryFilter) => void;
   /** v0.3.8: какой таб открыть по умолчанию (используется при навигации
    *  с дашборда: клик по должнику → openTab='debt' → таб «История долгов»). */
   initialTab?: TabId;
@@ -600,6 +601,36 @@ export function RentalCard({
         p.method !== "deposit",
     )
     .reduce((s, p) => s + p.amount, 0);
+  // v0.8.8: список финопераций для ховера «За всё время» (оплаченные,
+  // кроме залога/возврата). Сверху — свежие.
+  const FIN_TYPE_LABEL: Record<string, string> = {
+    rent: "Аренда",
+    fine: "Штраф",
+    damage: "Оплата ущерба",
+    swap_fee: "Замена скутера",
+    equipment_fee: "Экипировка",
+    parking: "Паркинг",
+  };
+  const financeOps = chainPayments
+    .filter(
+      (p) =>
+        p.paid &&
+        p.type !== "refund" &&
+        p.type !== "deposit" &&
+        p.method !== "deposit",
+    )
+    .slice()
+    .sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""))
+    .map((p) => ({
+      label: FIN_TYPE_LABEL[p.type] ?? p.type,
+      amount: p.amount,
+      date: p.date
+        ? new Date(p.date).toLocaleDateString("ru-RU", {
+            day: "2-digit",
+            month: "2-digit",
+          })
+        : null,
+    }));
   // pending (плашка «Долг») — суммируем неоплаченные платежи ТОЛЬКО
   // по полностью активным связкам цепочки (archivedAt == null).
   // Auto-archived родители (после extend) могли оставить orphan-платежи
@@ -1083,6 +1114,11 @@ export function RentalCard({
   // внутри карточки (DashboardDrawer, где родитель prop не передал).
   const requestHistory = () => {
     if (onOpenHistory) onOpenHistory(rental.id);
+    else setHistoryOpen(true);
+  };
+  // v0.8.8: открыть историю сразу с фильтром «Долги и платежи».
+  const requestFinanceHistory = () => {
+    if (onOpenHistory) onOpenHistory(rental.id, "money");
     else setHistoryOpen(true);
   };
 
@@ -1801,23 +1837,30 @@ export function RentalCard({
                 onSwapScooter={handleSwapScooter}
                 onChangeEquipment={changeEquipmentHandler}
               />
-              {/* v0.7.11: «За всё время аренд клиента» (paidIn) — перенесено
-                  из KPI-ряда сюда. Сумма всех платежей по цепочке (без залога). */}
-              <div className="flex items-center justify-between rounded-[12px] border border-border bg-surface-soft/40 px-4 py-3">
-                <div className="min-w-0">
-                  <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-2">
-                    За всё время аренд клиента
+              {/* v0.7.11: «За всё время аренд клиента» (paidIn). v0.8.8: при
+                  наведении — ховер со сводкой финопераций + «Подробнее» →
+                  история по фильтру «Долги и платежи». */}
+              <FinanceHoverCard
+                total={paidIn}
+                ops={financeOps}
+                onDetails={requestFinanceHistory}
+              >
+                <div className="flex cursor-default items-center justify-between rounded-[12px] border border-border bg-surface-soft/40 px-4 py-3 transition-colors hover:border-blue-200 hover:bg-blue-50/40">
+                  <div className="min-w-0">
+                    <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-2">
+                      За всё время аренд клиента
+                    </div>
+                    <div className="mt-0.5 text-[11px] text-muted">
+                      {isExtended
+                        ? `всего получено за ${chainRentals.length} ${pluralRental(chainRentals.length)}: аренда, продления, штрафы, ущерб, паркинг`
+                        : "всего получено от клиента: аренда, продления, штрафы, ущерб, паркинг"}
+                    </div>
                   </div>
-                  <div className="mt-0.5 text-[11px] text-muted">
-                    {isExtended
-                      ? `всего получено за ${chainRentals.length} ${pluralRental(chainRentals.length)}: аренда, продления, штрафы, ущерб, паркинг`
-                      : "всего получено от клиента: аренда, продления, штрафы, ущерб, паркинг"}
+                  <div className="shrink-0 font-display text-[18px] font-extrabold tabular-nums text-blue-700">
+                    {fmt(paidIn)} ₽
                   </div>
                 </div>
-                <div className="shrink-0 font-display text-[18px] font-extrabold tabular-nums text-blue-700">
-                  {fmt(paidIn)} ₽
-                </div>
-              </div>
+              </FinanceHoverCard>
               {/* v0.7.13: детальный «бухгалтерский» состав долга — каждая
                   строка с формулой расчёта (слева мелким серым), чтобы
                   объяснить клиенту из чего сложился долг. Цифры берём из
@@ -2217,12 +2260,108 @@ function PaymentAcceptDialogContainer({
  * было прокидывать вычисленные данные. Внутри — заголовок «История аренды
  * #N» + кнопка X + скроллируемый HistoryTab.
  */
+/**
+ * v0.8.8: ховер на «За всё время» — портальный поповер со сводкой
+ * финансовых операций (платежи: аренда/продление/штраф/ущерб/паркинг) +
+ * кнопка «Подробнее» → полная история, отфильтрованная по финансам.
+ * Портал — чтобы не обрезался overflow-hidden аккордеона.
+ */
+function FinanceHoverCard({
+  total,
+  ops,
+  onDetails,
+  children,
+}: {
+  total: number;
+  ops: { label: string; amount: number; date: string | null }[];
+  onDetails: () => void;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{
+    top: number;
+    left: number;
+    width: number;
+  } | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+  const show = () => {
+    const r = ref.current?.getBoundingClientRect();
+    if (r) setPos({ top: r.bottom, left: r.left, width: r.width });
+    setOpen(true);
+  };
+  return (
+    <div ref={ref} onMouseEnter={show} onMouseLeave={() => setOpen(false)}>
+      {children}
+      {open &&
+        pos &&
+        createPortal(
+          <div
+            onMouseEnter={() => setOpen(true)}
+            onMouseLeave={() => setOpen(false)}
+            style={{
+              position: "fixed",
+              top: pos.top + 4,
+              left: pos.left,
+              minWidth: Math.max(pos.width, 300),
+              maxWidth: 380,
+              zIndex: 1000,
+            }}
+            className="rounded-xl border border-border bg-surface p-3 shadow-card-lg"
+          >
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-2">
+                Финансовые операции
+              </span>
+              <span className="text-[13px] font-extrabold tabular-nums text-blue-700">
+                {fmt(total)} ₽
+              </span>
+            </div>
+            {ops.length === 0 ? (
+              <div className="text-[12px] text-muted">Платежей пока нет</div>
+            ) : (
+              <div className="flex max-h-[260px] flex-col gap-1 overflow-y-auto">
+                {ops.map((o, i) => (
+                  <div
+                    key={i}
+                    className="flex items-center justify-between gap-3 text-[12.5px]"
+                  >
+                    <span className="min-w-0 truncate text-ink-2">
+                      {o.label}
+                      {o.date && (
+                        <span className="ml-1 text-[11px] text-muted-2 tabular-nums">
+                          {o.date}
+                        </span>
+                      )}
+                    </span>
+                    <span className="shrink-0 font-semibold tabular-nums text-ink">
+                      {fmt(o.amount)} ₽
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={onDetails}
+              className="mt-2.5 w-full rounded-lg bg-blue-50 px-3 py-1.5 text-[12px] font-semibold text-blue-700 hover:bg-blue-100"
+            >
+              Подробнее — вся история →
+            </button>
+          </div>,
+          document.body,
+        )}
+    </div>
+  );
+}
+
 export function RentalHistoryColumn({
   rentalId,
   onClose,
+  initialFilter,
 }: {
   rentalId: number;
   onClose: () => void;
+  initialFilter?: HistoryFilter;
 }) {
   const activeRentals = useRentals();
   const archivedRentals = useArchivedRentals();
@@ -2274,6 +2413,7 @@ export function RentalHistoryColumn({
             chainRentals={chainRentals}
             damageReports={damageReports.data}
             withFilters
+            initialFilter={initialFilter}
           />
         ) : (
           <div className="text-[13px] text-muted">Аренда не найдена.</div>
