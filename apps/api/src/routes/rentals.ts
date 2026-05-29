@@ -2328,7 +2328,17 @@ export async function rentalsRoutes(app: FastifyInstance) {
         entityId: id,
         action: "scooter_swapped",
         summary: `Замена скутера в аренде #${String(id).padStart(4, "0")}${result.feeAmount > 0 ? ` (доплата ${result.feeAmount} ₽)` : ""}`,
-        meta: { newScooterId: d.newScooterId, feeAmount: result.feeAmount },
+        // v0.8.14: «ревизорские» поля — кто на кого заменён, причина и куда
+        // ушёл старый скутер (в ремонт / обратно в парк) на момент замены.
+        meta: {
+          newScooterId: d.newScooterId,
+          prevScooterId: result.prevScooterId,
+          prevScooterName,
+          newScooterName,
+          feeAmount: result.feeAmount,
+          reason: d.reason ?? null,
+          oldScooterDestination: d.oldScooterStatus,
+        },
         diff: {
           scooter: {
             label: "Скутер",

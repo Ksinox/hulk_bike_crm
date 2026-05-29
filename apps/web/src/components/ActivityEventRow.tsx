@@ -177,6 +177,22 @@ export function formatActivitySummary(
     return `${label}: ${money(fee.to)}`;
   };
 
+  // ── Заметка-стикер (v0.8.14) ──
+  if (action === "note_added" || action === "note_removed") {
+    const m = readRecord(item.meta);
+    const text = typeof m?.text === "string" ? m.text : "";
+    const isContact = m?.kind === "contact";
+    const title =
+      action === "note_added"
+        ? isContact
+          ? "Добавлен комментарий по связи"
+          : "Добавлена заметка"
+        : isContact
+          ? "Снят комментарий по связи"
+          : "Снята заметка";
+    return { title, change: null, extras: text ? [`«${text}»`] : [] };
+  }
+
   // ── Паркинг ──
   if (action.includes("parking")) {
     const p = readRecord(readRecord(item.meta)?.parking);
@@ -283,9 +299,22 @@ export function formatActivitySummary(
     const sc = readRecord(diff?.scooter);
     const from = typeof sc?.from === "string" ? sc.from : null;
     const to = typeof sc?.to === "string" ? sc.to : null;
+    const m = readRecord(item.meta);
     const extras: string[] = [];
     const fl = feeLine();
     if (fl) extras.push(fl);
+    // v0.8.14 (ревизор): причина замены и судьба старого скутера на момент.
+    if (typeof m?.reason === "string" && m.reason.trim())
+      extras.push(`Причина: ${m.reason.trim()}`);
+    if (typeof m?.oldScooterDestination === "string") {
+      const dest =
+        m.oldScooterDestination === "repair"
+          ? "в ремонт"
+          : m.oldScooterDestination === "rental_pool"
+            ? "обратно в парк"
+            : null;
+      if (dest) extras.push(`Старый скутер: ${dest}`);
+    }
     return {
       title: "Замена скутера",
       change: from || to ? { from, to, tone: "blue" } : null,
@@ -307,6 +336,13 @@ export function formatActivitySummary(
       };
     } else if (days && typeof days.to === "number") {
       change = { from: "—", to: `${days.to} дн`, tone: "blue" };
+    }
+    // v0.8.14 (ревизор): период возврата «было → стало» по датам.
+    const endp = readRecord(diff?.endPlannedAt);
+    if (endp && (endp.from != null || endp.to != null)) {
+      extras.push(
+        `Возврат: ${formatDateLabel(endp.from)} → ${formatDateLabel(endp.to)}`,
+      );
     }
     const sum = readRecord(diff?.sum);
     if (sum && (sum.from != null || sum.to != null)) {
