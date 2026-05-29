@@ -30,7 +30,6 @@ import {
   Coins,
   Calendar as CalendarIcon,
   ChevronRight,
-  Shield,
   Wallet,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -374,11 +373,9 @@ export function PaymentAcceptDialog({
   const depositToUse = useDeposit ? depositBalance : 0;
   const remainingAfterDeposit = Math.max(0, dueAmount - depositToUse);
 
-  // v0.6.52: при ЗАВЕРШЕНИИ аренды (extDays === 0) и наличии залога —
-  // оператор может ввести сумму к списанию из залога в счёт долга.
-  // UI-демонстрация: уменьшает «К приёму», на backend пока не отправляется
-  // (бэкенд не поддерживает прямое списание залога без damage report).
-  const [useDepositAmount, setUseDepositAmount] = useState<number>(0);
+  // v0.8.33 (K1): блок «Закрыть из залога» удалён — функциональность
+  // переехала в RentalActionDialog («Закрыть аренду»). При продлении
+  // залог не трогаем, он лежит до завершения аренды.
 
   // v0.6.11: пополнение залога. Доступно когда:
   //  - залог денежный (depositItem === null/undefined)
@@ -1828,42 +1825,11 @@ export function PaymentAcceptDialog({
             )}
           </div>
 
-          {/* v0.6.52: блок «Закрыть из залога» — показывается только при
-              ЗАВЕРШЕНИИ аренды (extDays === 0) и наличии залога. Введённая
-              сумма уменьшает «К приёму». UI-демонстрация: на backend пока
-              не отправляется (бэк не поддерживает прямое списание залога). */}
-          {extDays === 0 && (rental.deposit ?? 0) > 0 && (
-            <div className="px-5 pb-2">
-              <div className="flex items-center gap-2 rounded-[12px] border border-border bg-surface-soft/40 px-3 py-2">
-                <Shield size={16} className="shrink-0 text-muted-2" />
-                <div className="min-w-0 flex-1">
-                  <div className="text-[12px] font-semibold text-ink">
-                    Залог клиента: {fmt(rental.deposit ?? 0)} ₽
-                  </div>
-                  <div className="mt-0.5 text-[11px] text-muted">
-                    При завершении аренды залог возвращается клиенту или списывается на долг.
-                  </div>
-                </div>
-                <input
-                  type="number"
-                  min={0}
-                  max={Math.min(rental.deposit ?? 0, totalDebt)}
-                  value={useDepositAmount}
-                  onChange={(e) =>
-                    setUseDepositAmount(
-                      Math.max(
-                        0,
-                        Math.min(rental.deposit ?? 0, Number(e.target.value)),
-                      ),
-                    )
-                  }
-                  className="w-24 rounded-md border border-border bg-surface px-2 py-1 text-right text-[12px] tabular-nums text-ink outline-none focus:ring-2 focus:ring-blue-100"
-                  placeholder="0"
-                />
-                <span className="text-[11px] text-muted">₽</span>
-              </div>
-            </div>
-          )}
+          {/* v0.8.33 (K1): блок «Закрыть из залога» убран. При продлении
+              залог не трогаем — он лежит до завершения аренды. Если нужно
+              закрыть аренду и списать с залога — это делается через
+              отдельный диалог «Закрыть аренду» (RentalActionDialog).
+              PaymentAcceptDialog теперь чисто про долг + продление. */}
 
           {/* v0.8.32 (J3b): блок паркинга перенесён ВВЕРХ — в блок «Сначала
               — долг» (или в просрочку), выше шага продления. Здесь, в
@@ -1877,7 +1843,7 @@ export function PaymentAcceptDialog({
               К приёму
             </div>
             <div className="font-display text-[28px] font-extrabold leading-none tabular-nums text-blue-700">
-              {fmt(Math.max(0, grossTotal - depositToUse - (extDays === 0 ? useDepositAmount : 0)))} ₽
+              {fmt(Math.max(0, grossTotal - depositToUse))} ₽
             </div>
           </div>
 
