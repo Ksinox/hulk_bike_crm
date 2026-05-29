@@ -20,7 +20,6 @@ import {
   useEndParking,
   useDeleteParking,
   PARKING_MAX_DAYS,
-  parkingAmount,
 } from "@/lib/api/parking";
 import { toast } from "@/lib/toast";
 
@@ -46,25 +45,10 @@ function todayIso(): string {
   return `${y}-${mo}-${da}`;
 }
 
-/** YYYY-MM-DD + n дней. */
-function addDaysIso(iso: string, n: number): string {
-  const d = new Date(`${iso}T00:00:00`);
-  d.setDate(d.getDate() + n);
-  const y = d.getFullYear();
-  const mo = String(d.getMonth() + 1).padStart(2, "0");
-  const da = String(d.getDate()).padStart(2, "0");
-  return `${y}-${mo}-${da}`;
-}
-
 /** YYYY-MM-DD → DD.MM */
 function isoToShort(iso: string): string {
   const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   return m ? `${m[3]}.${m[2]}` : iso;
-}
-
-/** Кол-во суток в [a,b] включительно (iso). */
-function inclusiveDaysIso(a: string, b: string): number {
-  return diffDaysIso(a, b) + 1;
 }
 
 export function CalendarPanel({
@@ -117,7 +101,9 @@ export function CalendarPanel({
   const deleteParking = useDeleteParking();
   const [parkingMode, setParkingMode] = useState(false);
   const [draftStart, setDraftStart] = useState<string | null>(null);
-  const [draftEnd, setDraftEnd] = useState<string | null>(null);
+  // v0.8.27 (G4): паркинг открытый — выбираем только дату начала; конец
+  // определяется ручным/авто снятием. Тумблер «первый день бесплатно».
+  const [freeFirstDay, setFreeFirstDay] = useState(true);
 
   // v0.8.18 (E1): текущая активная/запланированная сессия — чтобы кнопка
   // переключалась на «Снять с паркинга».
@@ -148,85 +134,63 @@ export function CalendarPanel({
     if (armParkingSignal !== undefined && !dragDisabled) {
       setParkingMode(true);
       setDraftStart(null);
-      setDraftEnd(null);
+      setFreeFirstDay(true);
     }
   }
 
-  const draftDays =
-    draftStart && draftEnd ? inclusiveDaysIso(draftStart, draftEnd) : 0;
+  // v0.8.27: открытый паркинг — конец не выбираем, поэтому превью-сдвига нет.
+  const calEndIso = endIso;
 
-  // Эффективный возврат для календаря: базовый + дни черновика паркинга
-  // (зафиксированные сессии уже сдвинули endPlanned на бэке).
-  const calEndIso =
-    endIso && draftDays > 0 ? addDaysIso(endIso, draftDays) : endIso;
-
-  // Фиолетовые зоны: зафиксированные сессии + черновик (если выбран период).
+  // Зоны: зафиксированные сессии + выбранный день начала (одиночный).
   const parkingRanges = useMemo(() => {
     const ranges = sessions.map((s) => ({
       startIso: s.startDate,
       endIso: s.endDate,
     }));
-    if (draftStart && draftEnd)
-      ranges.push({ startIso: draftStart, endIso: draftEnd });
+    if (draftStart) ranges.push({ startIso: draftStart, endIso: draftStart });
     return ranges;
-  }, [sessions, draftStart, draftEnd]);
+  }, [sessions, draftStart]);
 
-  // Окно выбора: начало паркинга не раньше выдачи; конец — ≤7 суток от
-  // начала. (Паркинг возможен задним числом, но не до выдачи скутера.)
-  const selFrom = draftStart && !draftEnd ? draftStart : startIso;
-  const selTo =
-    draftStart && !draftEnd
-      ? addDaysIso(draftStart, PARKING_MAX_DAYS - 1)
-      : null;
+  // Окно выбора: начало паркинга не раньше выдачи; конец открыт.
+  const selFrom = startIso;
+  const selTo: string | null = null;
 
   const handleParkingPick = (iso: string) => {
-    if (!draftStart || (draftStart && draftEnd)) {
-      // начинаем новый выбор
-      setDraftStart(iso);
-      setDraftEnd(null);
-      return;
-    }
-    // есть начало, выбираем конец
-    if (iso < draftStart) {
-      setDraftStart(iso);
-      setDraftEnd(null);
-      return;
-    }
-    setDraftEnd(iso);
+    setDraftStart(iso);
   };
 
   const exitParking = () => {
     setParkingMode(false);
     setDraftStart(null);
-    setDraftEnd(null);
+    setFreeFirstDay(true);
   };
 
   const toggleParkingButton = () => {
     if (!parkingMode) {
       setParkingMode(true);
       setDraftStart(null);
-      setDraftEnd(null);
+      setFreeFirstDay(true);
       return;
     }
-    // повторный клик = зафиксировать выбранный период
-    if (draftStart && draftEnd) {
+    // повторный клик = зафиксировать (нужна выбранная дата начала)
+    if (draftStart) {
       createParking.mutate(
-        { rentalId: rental.id, startDate: draftStart, endDate: draftEnd },
+        { rentalId: rental.id, startDate: draftStart, freeFirstDay },
         {
           onSuccess: () => {
-            toast.success("Паркинг поставлен", "Возврат сдвинут");
+            toast.success(
+              "Поставлен на паркинг",
+              "Идёт до снятия (макс 7 дн)",
+            );
             exitParking();
           },
           onError: () => toast.error("Не удалось поставить на паркинг"),
         },
       );
     } else {
-      // ничего не выбрано — просто выходим из режима
       exitParking();
     }
   };
-
-  const draftAmount = draftDays > 0 ? parkingAmount(draftDays) : 0;
 
   return (
     <div className="rounded-2xl bg-surface border border-border shadow-card-sm p-4">
@@ -265,14 +229,14 @@ export function CalendarPanel({
               <button
                 type="button"
                 onClick={toggleParkingButton}
-                disabled={parkingMode && !!draftStart && !draftEnd}
+                disabled={parkingMode && !draftStart}
                 title={
                   parkingMode ? "Зафиксировать паркинг" : "Поставить на паркинг"
                 }
                 className={cn(
                   "inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-[12px] font-semibold shadow-sm transition-colors active:scale-[0.98] disabled:opacity-60",
                   parkingMode
-                    ? draftStart && draftEnd
+                    ? draftStart
                       ? "border-yellow-500 bg-yellow-400 text-yellow-950 hover:bg-yellow-500"
                       : "border-yellow-300 bg-yellow-100 text-yellow-800"
                     : "border-yellow-300 bg-yellow-100 text-yellow-900 hover:border-yellow-400 hover:bg-yellow-200",
@@ -280,9 +244,9 @@ export function CalendarPanel({
               >
                 <SquareParking size={14} />
                 {parkingMode
-                  ? draftStart && draftEnd
+                  ? draftStart
                     ? "Зафиксировать"
-                    : "Выберите период"
+                    : "Выберите дату"
                   : "Поставить на паркинг"}
               </button>
             )}
@@ -290,30 +254,41 @@ export function CalendarPanel({
         )}
       </div>
 
-      {/* v0.8.0: подсказка/сводка режима паркинга над календарём. */}
+      {/* v0.8.27: сводка открытого паркинга + тумблер «1-й день бесплатно». */}
       {parkingMode && (
-        <div className="mb-2.5 rounded-[10px] border border-yellow-300 bg-yellow-50 px-3 py-2 text-[12px] text-yellow-900">
+        <div className="mb-2.5 flex flex-col gap-2 rounded-[10px] border border-yellow-300 bg-yellow-50 px-3 py-2 text-[12px] text-yellow-900">
           {!draftStart ? (
-            <span>🅿 Выберите <b>начало</b> паркинга на календаре (макс {PARKING_MAX_DAYS} суток)</span>
-          ) : !draftEnd ? (
             <span>
-              Начало: <b>{isoToShort(draftStart)}</b> · теперь выберите{" "}
-              <b>конец</b> (≤ {PARKING_MAX_DAYS} суток)
+              🅿 Выберите <b>дату начала</b> паркинга. Идёт до снятия вручную
+              (или авто через {PARKING_MAX_DAYS} дн).
             </span>
           ) : (
-            <div className="flex items-center justify-between gap-2">
-              <span>
-                Паркинг <b>{isoToShort(draftStart)}–{isoToShort(draftEnd)}</b> ·{" "}
-                {draftDays} дн · 1-е беспл. + {Math.max(0, draftDays - 1)}×250 ={" "}
-                <b>{draftAmount} ₽</b>
-              </span>
-              {calEndIso && (
-                <span className="shrink-0 text-yellow-800/80">
-                  возврат → {isoToShort(calEndIso)}
-                </span>
-              )}
-            </div>
+            <span>
+              Старт <b>{isoToShort(draftStart)}</b> · идёт до снятия ·{" "}
+              {freeFirstDay ? "1-й день 0 ₽ + " : ""}250 ₽/сут
+            </span>
           )}
+          {/* Тумблер «первый день бесплатно» (как в iOS). */}
+          <button
+            type="button"
+            onClick={() => setFreeFirstDay((v) => !v)}
+            className="flex items-center justify-between gap-2 text-[12px]"
+          >
+            <span>Первый день бесплатно</span>
+            <span
+              className={cn(
+                "relative inline-flex h-5 w-9 items-center rounded-full transition-colors",
+                freeFirstDay ? "bg-green-500" : "bg-border",
+              )}
+            >
+              <span
+                className={cn(
+                  "inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform",
+                  freeFirstDay ? "translate-x-4" : "translate-x-0.5",
+                )}
+              />
+            </span>
+          </button>
         </div>
       )}
 

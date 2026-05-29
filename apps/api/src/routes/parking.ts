@@ -25,10 +25,13 @@ const RATE_PER_DAY = 250;
 const MAX_DAYS = 7;
 const YMD = /^\d{4}-\d{2}-\d{2}$/;
 
-const PeriodBody = z
+// v0.8.27 (G4): паркинг открытый — задаём только дату начала + тумблер
+// «первый день бесплатно». Период не выбираем; идёт пока не снимут вручную
+// либо авто-снятие через MAX_DAYS.
+const StartBody = z
   .object({
     startDate: z.string().regex(YMD),
-    endDate: z.string().regex(YMD),
+    freeFirstDay: z.boolean().optional().default(true),
   })
   .strict();
 
@@ -39,9 +42,35 @@ function inclusiveDays(startYmd: string, endYmd: string): number {
   return Math.floor((e - s) / 86_400_000) + 1;
 }
 
-/** Стоимость паркинга: 1-е сутки бесплатно, далее RATE_PER_DAY/сут. */
-function parkingAmount(days: number): number {
-  return days > 1 ? RATE_PER_DAY * (days - 1) : 0;
+/** YYYY-MM-DD + n дней. */
+function addDaysYmd(ymd: string, n: number): string {
+  return new Date(Date.parse(`${ymd}T00:00:00Z`) + n * 86_400_000)
+    .toISOString()
+    .slice(0, 10);
+}
+
+/**
+ * Стоимость паркинга: при freeFirstDay 1-е сутки бесплатны, далее
+ * RATE_PER_DAY/сут. Без freeFirstDay — считаем с первого дня.
+ */
+function parkingAmount(days: number, freeFirstDay = true): number {
+  if (days <= 0) return 0;
+  return freeFirstDay
+    ? RATE_PER_DAY * Math.max(0, days - 1)
+    : RATE_PER_DAY * days;
+}
+
+/**
+ * Текущее состояние ОТКРЫТОЙ парковочной сессии на дату today:
+ * сколько дней насчитано, текущий конец, достигнут ли максимум.
+ */
+function activeParkingState(startYmd: string, todayYmd: string) {
+  const maxEndYmd = addDaysYmd(startYmd, MAX_DAYS - 1);
+  const started = todayYmd >= startYmd;
+  const capped = todayYmd > maxEndYmd; // прошло > MAX_DAYS суток
+  const endYmd = !started ? startYmd : capped ? maxEndYmd : todayYmd;
+  const days = !started ? 0 : inclusiveDays(startYmd, endYmd);
+  return { endYmd, days, capped };
 }
 
 /** Сегодня по Москве в формате YYYY-MM-DD. */
@@ -93,6 +122,9 @@ function blockMechanic(
 
 export async function parkingRoutes(app: FastifyInstance) {
   // Все сессии паркинга по неархивным арендам.
+  // v0.8.27 (G4): «ленивое» продвижение открытых сессий — на каждый запрос
+  // активный паркинг догоняется до сегодняшнего дня (растёт кол-во дней,
+  // сдвигается возврат), а при достижении MAX_DAYS — авто-снятие.
   app.get("/parking", async () => {
     const live = await db
       .select({ id: rentals.id })
@@ -100,11 +132,53 @@ export async function parkingRoutes(app: FastifyInstance) {
       .where(isNull(rentals.archivedAt));
     const ids = live.map((r) => r.id);
     if (ids.length === 0) return { items: [] };
-    const rows = await db
+    let rows = await db
       .select()
       .from(parkingSessions)
       .where(inArray(parkingSessions.rentalId, ids))
       .orderBy(desc(parkingSessions.id));
+
+    const today = todayMskYmd();
+    let mutated = false;
+    for (const s of rows) {
+      if (s.status !== "active") continue;
+      const { endYmd, days, capped } = activeParkingState(s.startDate, today);
+      if (days === s.days && endYmd === s.endDate && !capped) continue;
+      mutated = true;
+      const amount = parkingAmount(days, s.freeFirstDay);
+      await db.transaction(async (tx) => {
+        await tx
+          .update(parkingSessions)
+          .set({
+            endDate: endYmd,
+            days,
+            amount,
+            status: capped ? "ended" : "active",
+            endedAt: capped ? new Date() : null,
+          })
+          .where(eq(parkingSessions.id, s.id));
+        await shiftEndPlanned(tx, s.rentalId, days - s.days);
+      });
+      if (capped) {
+        await logActivity(null, {
+          entity: "rental",
+          entityId: s.rentalId,
+          action: "parking_ended",
+          summary: `Паркинг снят автоматически системой (достигнут максимум ${MAX_DAYS} дн): ${s.startDate}–${endYmd} · ${days} дн · ${amount} ₽`,
+          meta: {
+            parking: { startDate: s.startDate, endDate: endYmd, days, amount },
+            autoEnded: true,
+          },
+        });
+      }
+    }
+    if (mutated) {
+      rows = await db
+        .select()
+        .from(parkingSessions)
+        .where(inArray(parkingSessions.rentalId, ids))
+        .orderBy(desc(parkingSessions.id));
+    }
     return { items: rows };
   });
 
@@ -114,19 +188,12 @@ export async function parkingRoutes(app: FastifyInstance) {
     const rentalId = Number(req.params.id);
     if (!Number.isFinite(rentalId))
       return reply.code(400).send({ error: "bad id" });
-    const parsed = PeriodBody.safeParse(req.body);
+    const parsed = StartBody.safeParse(req.body);
     if (!parsed.success)
       return reply
         .code(400)
         .send({ error: "validation", issues: parsed.error.issues });
-    const { startDate, endDate } = parsed.data;
-    const days = inclusiveDays(startDate, endDate);
-    if (days < 1 || days > MAX_DAYS) {
-      return reply.code(400).send({
-        error: "bad_period",
-        message: `Период паркинга — от 1 до ${MAX_DAYS} суток.`,
-      });
-    }
+    const { startDate, freeFirstDay } = parsed.data;
     const [rental] = await db
       .select()
       .from(rentals)
@@ -147,17 +214,20 @@ export async function parkingRoutes(app: FastifyInstance) {
       });
     }
 
-    const amount = parkingAmount(days);
+    // Открытая сессия: считаем дни на сегодня (0 если старт в будущем).
+    const today = todayMskYmd();
+    const { endYmd, days } = activeParkingState(startDate, today);
+    const amount = parkingAmount(days, freeFirstDay);
     const session = await db.transaction(async (tx) => {
       const [s] = await tx
         .insert(parkingSessions)
         .values({
           rentalId,
           startDate,
-          endDate,
+          endDate: endYmd,
           days,
           ratePerDay: RATE_PER_DAY,
-          freeFirstDay: true,
+          freeFirstDay,
           amount,
           paidAmount: 0,
           status: "active",
@@ -165,30 +235,28 @@ export async function parkingRoutes(app: FastifyInstance) {
           createdByName: req.user?.login ?? null,
         })
         .returning();
-      // Дни паркинга сдвигают плановый возврат вперёд.
       await shiftEndPlanned(tx, rentalId, days);
       return s;
     });
 
-    await logActivity(req, {
-      entity: "rental",
-      entityId: rentalId,
-      action: "parking_set",
-      summary: `Паркинг ${startDate}–${endDate} · ${days} дн · ${amount} ₽`,
-      meta: { parking: { startDate, endDate, days, amount } },
-    });
-
-    // v0.8.18 (E2): инфо о паркинге уходит ещё и в стикер-заметку с водяным
-    // знаком «P» (kind=parking) — чтобы было видно на карточке.
     const dm = (ymd: string) => {
       const m = ymd.match(/^(\d{4})-(\d{2})-(\d{2})$/);
       return m ? `${m[3]}.${m[2]}` : ymd;
     };
+    await logActivity(req, {
+      entity: "rental",
+      entityId: rentalId,
+      action: "parking_set",
+      summary: `Поставлен на паркинг с ${startDate} (открытый, макс ${MAX_DAYS} дн; 1-й день ${freeFirstDay ? "бесплатно" : "платно"})`,
+      meta: { parking: { startDate, endDate: endYmd, days, amount, freeFirstDay, open: true } },
+    });
+
+    // v0.8.18/0.8.27: стикер-заметка с водяным знаком «P» (синий).
     await db.insert(noteStickers).values({
       entity: "rental",
       entityId: rentalId,
       kind: "parking",
-      text: `Паркинг ${dm(startDate)}–${dm(endDate)} · ${days} дн${amount > 0 ? ` · ${amount} ₽` : ""}`,
+      text: `Паркинг с ${dm(startDate)} · идёт${days > 0 ? ` · ${days} дн` : ""}`,
       color: "blue",
       createdByUserId: req.user?.userId ?? null,
       createdByName: req.user?.login ?? null,
@@ -197,61 +265,8 @@ export async function parkingRoutes(app: FastifyInstance) {
     return { session };
   });
 
-  // Изменить период паркинга.
-  app.patch<{ Params: { id: string; sid: string } }>(
-    "/:id/parking/:sid",
-    async (req, reply) => {
-      if (!blockMechanic(req, reply)) return;
-      const rentalId = Number(req.params.id);
-      const sid = Number(req.params.sid);
-      if (!Number.isFinite(rentalId) || !Number.isFinite(sid))
-        return reply.code(400).send({ error: "bad id" });
-      const parsed = PeriodBody.safeParse(req.body);
-      if (!parsed.success)
-        return reply
-          .code(400)
-          .send({ error: "validation", issues: parsed.error.issues });
-      const { startDate, endDate } = parsed.data;
-      const days = inclusiveDays(startDate, endDate);
-      if (days < 1 || days > MAX_DAYS)
-        return reply.code(400).send({
-          error: "bad_period",
-          message: `Период паркинга — от 1 до ${MAX_DAYS} суток.`,
-        });
-      const [existing] = await db
-        .select()
-        .from(parkingSessions)
-        .where(
-          and(
-            eq(parkingSessions.id, sid),
-            eq(parkingSessions.rentalId, rentalId),
-          ),
-        );
-      if (!existing) return reply.code(404).send({ error: "not found" });
-
-      const amount = parkingAmount(days);
-      const delta = days - existing.days;
-      const updated = await db.transaction(async (tx) => {
-        const [s] = await tx
-          .update(parkingSessions)
-          .set({ startDate, endDate, days, amount })
-          .where(eq(parkingSessions.id, sid))
-          .returning();
-        await shiftEndPlanned(tx, rentalId, delta);
-        return s;
-      });
-
-      await logActivity(req, {
-        entity: "rental",
-        entityId: rentalId,
-        action: "parking_edited",
-        summary: `Паркинг изменён: ${startDate}–${endDate} · ${days} дн · ${amount} ₽`,
-        meta: { parking: { startDate, endDate, days, amount } },
-      });
-
-      return { session: updated };
-    },
-  );
+  // v0.8.27: PATCH-редактирование периода удалено — паркинг теперь открытый
+  // (дата начала + ручное/авто снятие), фиксированный период не задаётся.
 
   // Снять с паркинга (закрыть сегодня).
   app.post<{ Params: { id: string; sid: string } }>(
@@ -274,12 +289,17 @@ export async function parkingRoutes(app: FastifyInstance) {
       if (!existing) return reply.code(404).send({ error: "not found" });
 
       const today = todayMskYmd();
-      // Новый конец — сегодня, но не раньше начала и не позже текущего конца.
-      let newEnd = today;
-      if (today < existing.startDate) newEnd = existing.startDate;
-      if (today > existing.endDate) newEnd = existing.endDate;
+      // v0.8.27: ручное снятие — сегодня ещё считается паркингом; ограничиваем
+      // диапазоном [старт, старт+MAX-1].
+      const maxEnd = addDaysYmd(existing.startDate, MAX_DAYS - 1);
+      const newEnd =
+        today < existing.startDate
+          ? existing.startDate
+          : today > maxEnd
+            ? maxEnd
+            : today;
       const newDays = inclusiveDays(existing.startDate, newEnd);
-      const newAmount = parkingAmount(newDays);
+      const newAmount = parkingAmount(newDays, existing.freeFirstDay);
       const delta = newDays - existing.days;
 
       const updated = await db.transaction(async (tx) => {
@@ -302,7 +322,7 @@ export async function parkingRoutes(app: FastifyInstance) {
         entity: "rental",
         entityId: rentalId,
         action: "parking_ended",
-        summary: `Паркинг снят: ${existing.startDate}–${newEnd} · ${newDays} дн · ${newAmount} ₽`,
+        summary: `Паркинг снят вручную: ${existing.startDate}–${newEnd} · ${newDays} дн · ${newAmount} ₽`,
         meta: {
           parking: {
             startDate: existing.startDate,

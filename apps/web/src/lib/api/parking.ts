@@ -30,9 +30,12 @@ export type ParkingSession = {
   endedAt: string | null;
 };
 
-/** Стоимость паркинга: 1-е сутки бесплатно, далее 250 ₽/сут. */
-export function parkingAmount(days: number): number {
-  return days > 1 ? PARKING_RATE_PER_DAY * (days - 1) : 0;
+/** Стоимость паркинга: при freeFirstDay 1-е сутки бесплатно, далее 250 ₽/сут. */
+export function parkingAmount(days: number, freeFirstDay = true): number {
+  if (days <= 0) return 0;
+  return freeFirstDay
+    ? PARKING_RATE_PER_DAY * Math.max(0, days - 1)
+    : PARKING_RATE_PER_DAY * days;
 }
 
 export const parkingKeys = {
@@ -79,10 +82,15 @@ function useInvalidateParking() {
 export function useCreateParking() {
   const invalidate = useInvalidateParking();
   return useMutation({
-    mutationFn: (args: { rentalId: number; startDate: string; endDate: string }) =>
+    // v0.8.27 (G4): открытый паркинг — задаём дату начала + «1-й день бесплатно».
+    mutationFn: (args: {
+      rentalId: number;
+      startDate: string;
+      freeFirstDay: boolean;
+    }) =>
       api.post<{ session: ParkingSession }>(
         `/api/rentals/${args.rentalId}/parking`,
-        { startDate: args.startDate, endDate: args.endDate },
+        { startDate: args.startDate, freeFirstDay: args.freeFirstDay },
       ),
     onSuccess: invalidate,
   });
