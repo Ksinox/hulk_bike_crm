@@ -37,6 +37,7 @@ import { useApiScooters } from "@/lib/api/scooters";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { useDebtAggregate } from "@/lib/api/debt";
 import { useParkingSessions } from "@/lib/api/parking";
+import { useStickers } from "@/lib/api/stickers";
 import { fileUrl } from "@/lib/files";
 import type { RentalsViewMode } from "./rentalsViewMode";
 
@@ -173,6 +174,15 @@ function ContactToggle({
   unreachable: boolean;
   className?: string;
 }) {
+  // v0.8.20 (E7): для недоступных клиентов подтягиваем последний contact-
+  // комментарий → показываем в тултипе при наведении. Запрос только если
+  // клиент «не на связи» (enabled=unreachable).
+  const { data: cstickers } = useStickers("client", clientId, true, unreachable);
+  const lastComment = unreachable
+    ? cstickers
+        ?.filter((s) => s.kind === "contact")
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]?.text
+    : undefined;
   return (
     <button
       type="button"
@@ -181,7 +191,11 @@ function ContactToggle({
         clientStore.setUnreachable(clientId, !unreachable);
       }}
       title={
-        unreachable ? "Не выходит на связь (клик — на связи)" : "На связи (клик — отметить «не выходит»)"
+        unreachable
+          ? lastComment
+            ? `Не выходит на связь: ${lastComment}`
+            : "Не выходит на связь (клик — на связи)"
+          : "На связи (клик — отметить «не выходит»)"
       }
       className={cn(
         "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full transition-colors",
@@ -536,6 +550,7 @@ function RentalTableRow({
   return (
     <tr
       onClick={() => onSelect(row.rental.id)}
+      style={{ viewTransitionName: `rental-${row.rental.id}` }}
       className={cn(
         "cursor-pointer border-b border-border text-[13px] transition-colors",
         row.danger
@@ -652,6 +667,7 @@ function RentalTile({
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") onSelect(row.rental.id);
       }}
+      style={{ viewTransitionName: `rental-${row.rental.id}` }}
       className={cn(
         "group flex w-[230px] cursor-pointer flex-col overflow-hidden rounded-2xl border text-left transition-colors",
         row.danger

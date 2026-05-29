@@ -88,7 +88,7 @@ import {
 } from "@/lib/api/rentals";
 import { useDashboardDrawer } from "@/pages/dashboard/DashboardDrawer";
 import { useMe } from "@/lib/api/auth";
-import { confirmDialog, pickAction } from "@/lib/toast";
+import { confirmDialog, pickAction, promptDialog } from "@/lib/toast";
 import { toast } from "@/lib/toast";
 import { ApiError, api } from "@/lib/api";
 
@@ -523,14 +523,18 @@ export function RentalCard({
     );
   // Переключение статуса связи клиента прямо из карточки. При включении —
   // сразу предлагаем прикрепить комментарий-стикер (kind=contact на клиента).
-  const toggleUnreachable = () => {
+  const toggleUnreachable = async () => {
     const next = !isUnreachable;
     clientStore.setUnreachable(rental.clientId, next);
     if (next && rental.clientId) {
-      const comment = window.prompt(
-        "Комментарий по связи (необязательно): например «звонили, не берёт трубку»",
-      );
-      const t = comment?.trim();
+      const t = await promptDialog({
+        title: "Не выходит на связь",
+        message: "Комментарий (необязательно) — прикрепится стикером к клиенту.",
+        placeholder: "напр. звонили 29.05, не берёт трубку",
+        multiline: true,
+        confirmText: "Прикрепить",
+        cancelText: "Без комментария",
+      });
       if (t)
         createStickerMut.mutate({
           entity: "client",

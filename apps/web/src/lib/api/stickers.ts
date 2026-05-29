@@ -36,6 +36,7 @@ export function useStickers(
   entity: StickerEntity,
   entityId: number | null | undefined,
   includeDismissed = false,
+  enabled = true,
 ) {
   return useQuery({
     queryKey: [...stickerKeys.list(entity, entityId ?? 0), includeDismissed],
@@ -43,7 +44,7 @@ export function useStickers(
       api.get<NoteSticker[]>(
         `/api/stickers?entity=${entity}&entityId=${entityId}${includeDismissed ? "&includeDismissed=1" : ""}`,
       ),
-    enabled: entityId != null && entityId > 0,
+    enabled: enabled && entityId != null && entityId > 0,
     staleTime: 30_000,
   });
 }

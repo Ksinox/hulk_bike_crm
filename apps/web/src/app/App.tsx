@@ -21,7 +21,12 @@ import { useAppSettings } from "@/lib/api/app-settings";
 import { setRole } from "@/lib/role";
 import { Login } from "./Login";
 import { ForceChangePassword } from "./ForceChangePassword";
-import { ToastContainer, ConfirmContainer, PickContainer } from "@/lib/toast";
+import {
+  ToastContainer,
+  ConfirmContainer,
+  PickContainer,
+  PromptContainer,
+} from "@/lib/toast";
 import {
   DashboardDrawerProvider,
   DashboardDrawerStack,
@@ -96,6 +101,7 @@ export function App() {
       <ToastContainer />
       <ConfirmContainer />
       <PickContainer />
+      <PromptContainer />
     </DashboardDrawerProvider>
   );
 }

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { flushSync } from "react-dom";
 import {
   Search,
   PanelRightOpen,
@@ -266,8 +267,19 @@ export function Rentals() {
     if (me?.id != null) setViewMode(loadRentalsViewMode(me.id));
   }, [me?.id]);
   const changeViewMode = (m: RentalsViewMode) => {
-    setViewMode(m);
+    if (m === viewMode) return;
     saveRentalsViewMode(me?.id, m);
+    // v0.8.20 (E6): морфинг список↔плитки через View Transitions API —
+    // браузер сам «перетекает» каждую строку в карточку (по
+    // view-transition-name='rental-<id>'). Fallback — мгновенно.
+    const doc = document as Document & {
+      startViewTransition?: (cb: () => void) => void;
+    };
+    if (doc.startViewTransition) {
+      doc.startViewTransition(() => flushSync(() => setViewMode(m)));
+    } else {
+      setViewMode(m);
+    }
   };
   /**
    * После создания аренды — автоматически открываем превью документа
