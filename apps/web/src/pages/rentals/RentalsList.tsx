@@ -295,9 +295,12 @@ export function RentalsList({
   }
 
   if (viewMode === "tiles") {
+    // v0.8.6: плитки фиксированной ширины, перенос, центрирование,
+    // вертикальный скролл. Заполняют ширину сверху→вниз, при нехватке
+    // высоты — вертикальный скролл (карточки не растягиваются на 1fr).
     return (
       <div className="scrollbar-thin h-full overflow-y-auto overflow-x-hidden p-3">
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(210px,1fr))] gap-3">
+        <div className="flex flex-wrap content-start justify-center gap-3">
           {rows.map((row) => (
             <RentalTile
               key={row.rental.id}
@@ -559,7 +562,7 @@ function RentalTile({
       type="button"
       onClick={() => onSelect(row.rental.id)}
       className={cn(
-        "group flex flex-col overflow-hidden rounded-2xl border text-left transition-colors",
+        "group flex w-[230px] flex-col overflow-hidden rounded-2xl border text-left transition-colors",
         row.danger
           ? active
             ? "border-red-300 bg-red-soft/40"
