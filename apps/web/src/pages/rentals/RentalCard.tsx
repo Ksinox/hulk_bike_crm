@@ -2241,7 +2241,7 @@ export function RentalCard({
         {/* v0.8.12: стикеры-заметки приклеены к верхне-правому краю карточки,
             поверх контента, не скроллятся вместе с телом. pointer-events
             только на самих стикерах — остальная карточка кликается насквозь. */}
-        <div className="pointer-events-none absolute right-2 top-[60px] z-30 flex justify-end">
+        <div className="pointer-events-none absolute -right-11 top-[60px] z-30 flex justify-end">
           <div className="pointer-events-auto">
             <StickerStack
               stickers={stickers}

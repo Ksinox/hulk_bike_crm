@@ -13,12 +13,25 @@
  * списка и прокидываются в строки — это нужно и для сортировки таблицы.
  */
 import { useMemo, useState } from "react";
-import { SearchX, ChevronUp, ChevronDown, Bike, SquareParking, Plus } from "lucide-react";
+import {
+  SearchX,
+  ChevronUp,
+  ChevronDown,
+  Bike,
+  SquareParking,
+  Plus,
+  Phone,
+  PhoneOff,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { type Rental } from "@/lib/mock/rentals";
 import { effectiveRentalStatus } from "@/lib/rentalStatus";
 import { initialsOf } from "@/lib/mock/clients";
-import { useClientPhoto } from "@/pages/clients/clientStore";
+import {
+  useClientPhoto,
+  useUnreachableSet,
+  clientStore,
+} from "@/pages/clients/clientStore";
 import { useApiClients } from "@/lib/api/clients";
 import { useApiScooters } from "@/lib/api/scooters";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
@@ -143,7 +156,45 @@ type Row = {
   danger: boolean;
   onParking: boolean;
   parkingDays: number;
+  unreachable: boolean;
 };
+
+/**
+ * v0.8.13: компактный тумблер связи в списке/плитках. Зелёная трубка —
+ * «на связи» (по умолчанию), оранжевая перечёркнутая — «не выходит».
+ * Клик переключает (stopPropagation — не открывает карточку).
+ */
+function ContactToggle({
+  clientId,
+  unreachable,
+  className,
+}: {
+  clientId: number;
+  unreachable: boolean;
+  className?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        clientStore.setUnreachable(clientId, !unreachable);
+      }}
+      title={
+        unreachable ? "Не выходит на связь (клик — на связи)" : "На связи (клик — отметить «не выходит»)"
+      }
+      className={cn(
+        "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full transition-colors",
+        unreachable
+          ? "bg-orange-soft text-orange-ink hover:bg-orange-200"
+          : "text-muted-2 hover:bg-green-50 hover:text-green-700",
+        className,
+      )}
+    >
+      {unreachable ? <PhoneOff size={13} /> : <Phone size={13} />}
+    </button>
+  );
+}
 
 type SortCol =
   | "id"
@@ -175,6 +226,7 @@ export function RentalsList({
   const { data: models = [] } = useApiScooterModels();
   const { data: debtAgg } = useDebtAggregate();
   const { data: parkingAll = [] } = useParkingSessions();
+  const unreachableSet = useUnreachableSet();
 
   // Локальная сортировка только для табличного режима.
   const [sort, setSort] = useState<{ col: SortCol; dir: "asc" | "desc" } | null>(
@@ -246,9 +298,10 @@ export function RentalsList({
         parkingDays: parkingAll
           .filter((p) => p.rentalId === r.id)
           .reduce((s, p) => s + p.days, 0),
+        unreachable: unreachableSet.has(r.clientId),
       };
     });
-  }, [items, apiClients, apiScooters, models, debtAgg, parkingAll]);
+  }, [items, apiClients, apiScooters, models, debtAgg, parkingAll, unreachableSet]);
 
   const sortedRows = useMemo<Row[]>(() => {
     if (!sort) return rows;
@@ -502,6 +555,7 @@ function RentalTableRow({
           >
             {row.clientName}
           </span>
+          <ContactToggle clientId={row.clientId} unreachable={row.unreachable} />
         </div>
       </td>
       <td className="px-4 py-5 text-[13px] whitespace-nowrap">
@@ -582,11 +636,15 @@ function RentalTile({
   onSelect: (id: number) => void;
 }) {
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={() => onSelect(row.rental.id)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") onSelect(row.rental.id);
+      }}
       className={cn(
-        "group flex w-[230px] flex-col overflow-hidden rounded-2xl border text-left transition-colors",
+        "group flex w-[230px] cursor-pointer flex-col overflow-hidden rounded-2xl border text-left transition-colors",
         row.danger
           ? active
             ? "border-red-300 bg-red-soft/40"
@@ -647,11 +705,14 @@ function RentalTile({
 
       {/* Инфо. */}
       <div className="flex flex-col gap-1.5 p-2.5">
-        <div
-          className="truncate text-[13px] font-bold leading-tight text-ink"
-          title={row.clientName}
-        >
-          {row.clientName}
+        <div className="flex items-center gap-1.5 min-w-0">
+          <div
+            className="min-w-0 flex-1 truncate text-[13px] font-bold leading-tight text-ink"
+            title={row.clientName}
+          >
+            {row.clientName}
+          </div>
+          <ContactToggle clientId={row.clientId} unreachable={row.unreachable} />
         </div>
         <div className="text-[11px] tabular-nums text-muted-2 whitespace-nowrap">
           {row.rental.start} → {row.rental.endPlanned}
@@ -680,6 +741,6 @@ function RentalTile({
           )}
         </div>
       </div>
-    </button>
+    </div>
   );
 }
