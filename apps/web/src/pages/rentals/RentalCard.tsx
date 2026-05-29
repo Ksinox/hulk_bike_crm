@@ -10,6 +10,7 @@ import {
   FileText,
   Flag,
   PhoneOff,
+  Phone,
   PanelRightClose,
   ThumbsUp,
   Plus,
@@ -29,7 +30,13 @@ import {
   type RentalStatus,
 } from "@/lib/mock/rentals";
 import { effectiveRentalStatus } from "@/lib/rentalStatus";
-import { useClientUnreachable } from "@/pages/clients/clientStore";
+import { useClientUnreachable, clientStore } from "@/pages/clients/clientStore";
+import { StickerStack } from "@/components/StickerStack";
+import {
+  useRentalCardStickers,
+  useCreateSticker,
+  useDismissSticker,
+} from "@/lib/api/stickers";
 import { useApiClients } from "@/lib/api/clients";
 import { useApiScooters } from "@/lib/api/scooters";
 import { navigate } from "@/app/navigationStore";
@@ -435,6 +442,40 @@ export function RentalCard({
   // когда debtSummary подгрузится (см. ниже useEffect не нужен,
   // useMemo сам пересчитает на render).
   const isUnreachable = useClientUnreachable(rental.clientId);
+
+  // v0.8.12: стикеры-заметки карточки (заметки аренды + комментарии по связи
+  // клиента). Добавление/снятие пишется в журнал действий.
+  const { stickers } = useRentalCardStickers(rental.id, rental.clientId);
+  const createStickerMut = useCreateSticker();
+  const dismissStickerMut = useDismissSticker();
+  const addRentalNote = (text: string) =>
+    createStickerMut.mutate({
+      entity: "rental",
+      entityId: rental.id,
+      kind: "note",
+      text,
+    });
+  const dismissSticker = (id: number) => dismissStickerMut.mutate({ id });
+  // Переключение статуса связи клиента прямо из карточки. При включении —
+  // сразу предлагаем прикрепить комментарий-стикер (kind=contact на клиента).
+  const toggleUnreachable = () => {
+    const next = !isUnreachable;
+    clientStore.setUnreachable(rental.clientId, next);
+    if (next && rental.clientId) {
+      const comment = window.prompt(
+        "Комментарий по связи (необязательно): например «звонили, не берёт трубку»",
+      );
+      const t = comment?.trim();
+      if (t)
+        createStickerMut.mutate({
+          entity: "client",
+          entityId: rental.clientId,
+          kind: "contact",
+          text: t,
+        });
+    }
+  };
+
   // Текущий статус скутера — нужен для проверки конфликта (active rental
   // + scooter в repair). См. блок «Скутер в ремонте» ниже.
   const { data: apiScooters = [] } = useApiScooters();
@@ -1340,11 +1381,34 @@ export function RentalCard({
                 <SquareParking size={11} /> паркинг
               </span>
             )}
-            {isUnreachable && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-orange-soft px-2.5 py-1 text-[11px] font-bold text-orange-ink">
-                <PhoneOff size={11} /> Не выходит на связь
-              </span>
-            )}
+            {/* v0.8.12: статус связи — кликабельный тумблер. По умолчанию
+                «На связи» (нейтральный); клик → «Не выходит на связь» +
+                предложение прикрепить комментарий-стикер. */}
+            <button
+              type="button"
+              onClick={toggleUnreachable}
+              title={
+                isUnreachable
+                  ? "Клиент снова на связи?"
+                  : "Отметить «не выходит на связь»"
+              }
+              className={cn(
+                "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold transition-colors",
+                isUnreachable
+                  ? "bg-orange-soft text-orange-ink hover:bg-orange-200"
+                  : "bg-surface-soft text-muted hover:bg-green-50 hover:text-green-700",
+              )}
+            >
+              {isUnreachable ? (
+                <>
+                  <PhoneOff size={11} /> Не выходит на связь
+                </>
+              ) : (
+                <>
+                  <Phone size={11} /> На связи
+                </>
+              )}
+            </button>
           </div>
         ) : (
           <h2 className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-0.5 font-display text-[22px] font-extrabold leading-tight text-ink">
@@ -1372,11 +1436,34 @@ export function RentalCard({
             >
               {STATUS_LABEL[effectiveStatus] ?? STATUS_LABEL[rental.status]}
             </span>
-            {isUnreachable && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-orange-soft px-2.5 py-1 text-[11px] font-bold text-orange-ink">
-                <PhoneOff size={11} /> Не выходит на связь
-              </span>
-            )}
+            {/* v0.8.12: статус связи — кликабельный тумблер. По умолчанию
+                «На связи» (нейтральный); клик → «Не выходит на связь» +
+                предложение прикрепить комментарий-стикер. */}
+            <button
+              type="button"
+              onClick={toggleUnreachable}
+              title={
+                isUnreachable
+                  ? "Клиент снова на связи?"
+                  : "Отметить «не выходит на связь»"
+              }
+              className={cn(
+                "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold transition-colors",
+                isUnreachable
+                  ? "bg-orange-soft text-orange-ink hover:bg-orange-200"
+                  : "bg-surface-soft text-muted hover:bg-green-50 hover:text-green-700",
+              )}
+            >
+              {isUnreachable ? (
+                <>
+                  <PhoneOff size={11} /> Не выходит на связь
+                </>
+              ) : (
+                <>
+                  <Phone size={11} /> На связи
+                </>
+              )}
+            </button>
             {/* v0.6.51: рейтинг клиента убран из UI везде. */}
           </h2>
         )}
@@ -1735,11 +1822,9 @@ export function RentalCard({
         </button>
       )}
 
-      {rental.note && (
-        <div className="rounded-[10px] bg-surface-soft px-3 py-1.5 text-[12px] text-ink-2">
-          <b>Заметка:</b> {rental.note}
-        </div>
-      )}
+      {/* v0.8.12: плоская «Заметка:» убрана — заметки теперь стикерами
+          (см. StickerStack overlay в drawer-режиме). Старые rental.note
+          перенесены в стикеры миграцией 0045. */}
 
       {/* =========== ОСНОВНОЕ ТЕЛО ===========
           v0.7.8: в drawer-режиме — accordion-секции (сворачиваемые).
@@ -2152,7 +2237,19 @@ export function RentalCard({
   // sticky ниже), скроллируемое тело и sticky footer с кнопками.
   if (drawerChrome) {
     return (
-      <div className="flex h-full flex-col bg-surface shadow-card-lg">
+      <div className="relative flex h-full flex-col bg-surface shadow-card-lg">
+        {/* v0.8.12: стикеры-заметки приклеены к верхне-правому краю карточки,
+            поверх контента, не скроллятся вместе с телом. pointer-events
+            только на самих стикерах — остальная карточка кликается насквозь. */}
+        <div className="pointer-events-none absolute right-2 top-[60px] z-30 flex justify-end">
+          <div className="pointer-events-auto">
+            <StickerStack
+              stickers={stickers}
+              onAdd={addRentalNote}
+              onDismiss={dismissSticker}
+            />
+          </div>
+        </div>
         {/* Скроллируемое тело: header «прилипает» сверху внутри скролла. */}
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
           <div className="flex flex-col gap-3 p-5">{body}</div>

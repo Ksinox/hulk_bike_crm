@@ -1596,3 +1596,34 @@ export const parkingSessions = pgTable(
     statusIdx: index("parking_sessions_status_idx").on(t.status),
   }),
 );
+
+/**
+ * v0.8.12: «стикеры» — заметки-наклейки на карточках. На одну сущность можно
+ * прикрепить несколько. entity: 'rental' | 'client'. kind: 'note' — обычная
+ * заметка; 'contact' — комментарий к статусу «не выходит на связь».
+ * dismissedAt != null → стикер снят (остаётся в БД для истории/аудита).
+ */
+export const noteStickers = pgTable(
+  "note_stickers",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    entity: text("entity").notNull(),
+    entityId: bigint("entity_id", { mode: "number" }).notNull(),
+    kind: text("kind").notNull().default("note"),
+    text: text("text").notNull(),
+    color: text("color").notNull().default("yellow"),
+    createdByUserId: bigint("created_by_user_id", {
+      mode: "number",
+    }).references(() => users.id, { onDelete: "set null" }),
+    createdByName: text("created_by_name"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    dismissedAt: timestamp("dismissed_at", { withTimezone: true }),
+    dismissedByName: text("dismissed_by_name"),
+  },
+  (t) => ({
+    entityIdx: index("note_stickers_entity_idx").on(t.entity, t.entityId),
+    activeIdx: index("note_stickers_active_idx").on(t.dismissedAt),
+  }),
+);
