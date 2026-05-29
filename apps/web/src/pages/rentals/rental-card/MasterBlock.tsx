@@ -326,14 +326,12 @@ export function MasterBlock({
                     }}
                     disabled={!canSwap}
                     className={cn(
-                      "relative flex h-[60px] w-full items-center justify-center rounded-[12px] border-2 bg-white p-1.5 transition-colors",
-                      isFree
-                        ? "border-green bg-green-soft/50"
-                        : "border-blue-200 bg-blue-50",
-                      isOpen &&
-                        (isFree
-                          ? "ring-2 ring-green ring-offset-1"
-                          : "ring-2 ring-blue-600 ring-offset-1"),
+                      // v0.8.30 (I1): нейтральный стиль как в диалоге оплаты —
+                      // без зелёной/синей рамки и фона; экипировка на прозрачном.
+                      "relative flex h-[60px] w-full items-center justify-center rounded-[12px] border p-1.5 transition-colors",
+                      "border-border bg-surface",
+                      isHover && !isOpen && "border-blue-300 bg-surface-soft/60",
+                      isOpen && "border-blue-400 ring-2 ring-blue-200 ring-offset-1",
                       canSwap ? "cursor-pointer" : "cursor-default",
                     )}
                     title={canSwap ? "Заменить или убрать" : it.name}
@@ -360,8 +358,7 @@ export function MasterBlock({
                   </button>
                   <div
                     className={cn(
-                      "mt-1 text-center text-[10px] font-bold leading-tight whitespace-normal",
-                      isFree ? "text-green-ink" : "text-blue-700",
+                      "mt-1 whitespace-normal text-center text-[10px] font-bold leading-tight text-ink-2",
                     )}
                     style={{ wordBreak: "normal", overflowWrap: "break-word" }}
                   >
@@ -395,8 +392,8 @@ export function MasterBlock({
                     "flex h-[60px] w-full items-center justify-center rounded-[12px] border-2 bg-white p-1.5 transition-colors",
                     swapIdx === -1 && pendingItem
                       ? pendingItem.free
-                        ? "border-green bg-green-soft/50"
-                        : "border-blue-200 bg-blue-50"
+                        ? "border-border bg-surface-soft"
+                        : "border-border bg-surface-soft"
                       : "border-dashed border-border text-muted-2 hover:border-blue-600 hover:bg-blue-50 hover:text-blue-700",
                     swapIdx === -1 &&
                       !pendingItem &&
@@ -703,14 +700,11 @@ export function MasterBlock({
                       }}
                       disabled={!canSwap}
                       className={cn(
-                        "relative flex h-[72px] w-full items-center justify-center rounded-[12px] border-2 bg-white p-2 transition-colors",
-                        isFree
-                          ? "border-green bg-green-soft/50"
-                          : "border-blue-200 bg-blue-50",
-                        isOpen &&
-                          (isFree
-                            ? "ring-2 ring-green ring-offset-1"
-                            : "ring-2 ring-blue-600 ring-offset-1"),
+                        // v0.8.30 (I1): нейтральный стиль (как в диалоге оплаты).
+                        "relative flex h-[72px] w-full items-center justify-center rounded-[12px] border p-2 transition-colors",
+                        "border-border bg-surface",
+                        isHover && !isOpen && "border-blue-300 bg-surface-soft/60",
+                        isOpen && "border-blue-400 ring-2 ring-blue-200 ring-offset-1",
                         canSwap ? "cursor-pointer" : "cursor-default",
                       )}
                       title={canSwap ? "Заменить или убрать" : it.name}
@@ -738,8 +732,7 @@ export function MasterBlock({
                     </button>
                     <div
                       className={cn(
-                        "mt-1 text-center text-[10.5px] font-bold leading-tight whitespace-normal",
-                        isFree ? "text-green-ink" : "text-blue-700",
+                        "mt-1 whitespace-normal text-center text-[10.5px] font-bold leading-tight text-ink-2",
                       )}
                       style={{ wordBreak: "normal", overflowWrap: "break-word" }}
                     >

@@ -2411,7 +2411,8 @@ export function RentalCard({
             <div
               style={{
                 position: "fixed",
-                top: cardRect.top + 56,
+                // v0.8.30 (I2): ниже sticky-хедера карточки, чтобы не сталкивались.
+                top: cardRect.top + 76,
                 left: cardRect.right - 30,
                 zIndex: 20,
               }}

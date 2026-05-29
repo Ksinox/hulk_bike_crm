@@ -96,7 +96,8 @@ function Sticker({
     <div
       style={{
         ["--rot" as string]: rotate,
-        marginTop: overlap ? -26 : 0,
+        // v0.8.30 (I3): мягкий нахлёст — налезают, но текст читается.
+        marginTop: overlap ? -12 : 0,
       }}
       className={cn(
         "group/sticker relative overflow-hidden rounded-[3px] px-3 pb-2 pt-2.5 shadow-[3px_5px_10px_rgba(0,0,0,0.20)]",

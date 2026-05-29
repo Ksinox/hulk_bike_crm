@@ -694,7 +694,9 @@ export function Rentals() {
                   initialTab={pendingTab ?? undefined}
                   drawerChrome
                   besideDrawerOpen={
-                    paymentRentalId != null || historyRentalId != null
+                    paymentRentalId != null ||
+                    historyRentalId != null ||
+                    !panelOpen
                   }
                   onClose={() => setPanelOpen(false)}
                   onRequestPayment={openPayment}
