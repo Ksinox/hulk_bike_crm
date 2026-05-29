@@ -1191,6 +1191,16 @@ export function PaymentAcceptDialog({
                   </span>
                   {" "}— сначала закрытие долга, затем продление.
                 </>
+              ) : totalDebt > 0 || unpaidParking > 0 ? (
+                // v0.8.29 (H3): есть долг (паркинг/ущерб/неоплачено) — сначала
+                // предлагаем погасить, продление — по желанию.
+                <>
+                  Есть долг{" "}
+                  <span className="font-semibold text-red-ink tabular-nums">
+                    {fmt(totalDebt + unpaidParking)} ₽
+                  </span>{" "}
+                  — сначала погасите, при желании продлите.
+                </>
               ) : (
                 <>Принять оплату по аренде и/или продлить.</>
               )}
