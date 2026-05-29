@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { EntityNotes } from "@/components/EntityNotes";
 import {
   ArrowLeft,
   ArrowRight,
@@ -343,6 +344,11 @@ export function ScooterCard({
               {scooter.note && (
                 <SpecCell label="Комментарий" value={scooter.note} />
               )}
+            </div>
+
+            {/* v0.8.21: заметки скутера стикерами. */}
+            <div className="mt-6 border-t border-border pt-5">
+              <EntityNotes entity="scooter" entityId={scooter.id} />
             </div>
 
             {/* Галерея фото скутера — внутри основной карточки, под техничкой.

@@ -33,6 +33,7 @@ import {
 } from "./clientStore";
 import type { UploadedFile } from "./DocUpload";
 import { ClientPhoto } from "./ClientPhoto";
+import { EntityNotes } from "@/components/EntityNotes";
 import { CreateDealMenu } from "./CreateDealMenu";
 import { useActivityTimeline } from "@/lib/api/activity";
 import { useClientStats } from "@/lib/useClientStats";
@@ -426,6 +427,11 @@ export function ClientCard({ client }: { client: Client }) {
           </button>
         </div>
       )}
+
+      {/* v0.8.21: заметки клиента стикерами (включая комментарии по связи). */}
+      <div className="rounded-[14px] border border-border bg-surface-soft/40 p-3">
+        <EntityNotes entity="client" entityId={client.id} />
+      </div>
 
       {/* Tabs */}
       <div className="mt-1 flex gap-1 border-b border-border">

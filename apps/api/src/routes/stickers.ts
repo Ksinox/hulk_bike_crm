@@ -18,8 +18,8 @@ import { logActivity } from "../services/activityLog.js";
  * чтобы аудитор видел кто/когда/что написал.
  * ============================================================ */
 
-const ENTITIES = ["rental", "client"] as const;
-const KINDS = ["note", "contact"] as const;
+const ENTITIES = ["rental", "client", "scooter"] as const;
+const KINDS = ["note", "contact", "parking"] as const;
 
 const CreateBody = z
   .object({

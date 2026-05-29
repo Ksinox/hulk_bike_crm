@@ -10,7 +10,7 @@ import { useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 
-export type StickerEntity = "rental" | "client";
+export type StickerEntity = "rental" | "client" | "scooter";
 export type StickerKind = "note" | "contact" | "parking";
 
 export type NoteSticker = {
