@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import {
   AlertTriangle,
@@ -466,6 +466,33 @@ export function RentalCard({
   const unpinStickerMut = useUnpinSticker();
   const deleteStickerMut = useDeleteSticker();
   const [addNoteOpen, setAddNoteOpen] = useState(false);
+  // v0.8.18: якорь правого края карточки — оверлей стикеров рендерим порталом
+  // поверх (вне клиппящего фрейма), позиционируем по rect карточки. rAF
+  // отслеживает позицию во время анимаций drawer'а.
+  const cardRootRef = useRef<HTMLDivElement>(null);
+  const [cardRect, setCardRect] = useState<{
+    top: number;
+    right: number;
+  } | null>(null);
+  useEffect(() => {
+    if (!drawerChrome) return;
+    let raf = 0;
+    let prev = "";
+    const tick = () => {
+      const el = cardRootRef.current;
+      if (el) {
+        const r = el.getBoundingClientRect();
+        const key = `${Math.round(r.top)}|${Math.round(r.right)}`;
+        if (key !== prev) {
+          prev = key;
+          setCardRect({ top: r.top, right: r.right });
+        }
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [drawerChrome]);
   const addRentalNote = (text: string, color: string) =>
     createStickerMut.mutate({
       entity: "rental",
@@ -1398,7 +1425,7 @@ export function RentalCard({
           // -m + p компенсируют внешний p-5 контейнера, чтобы фон header'а
           // перекрывал контент при скролле на всю ширину.
           drawerChrome &&
-            "sticky top-0 z-10 -mx-5 -mt-5 border-b border-border bg-surface px-5 py-4",
+            "sticky top-0 z-30 -mx-5 -mt-5 border-b border-border bg-surface px-5 py-4",
         )}
       >
         {/* v0.7.2: панель push (не overlay) — кнопка скрывает её, список
@@ -2349,23 +2376,34 @@ export function RentalCard({
   // sticky ниже), скроллируемое тело и sticky footer с кнопками.
   if (drawerChrome) {
     return (
-      <div className="relative flex h-full flex-col bg-surface shadow-card-lg">
-        {/* v0.8.15: стикеры-заметки висят ЗА правым краём карточки — лишь
-            небольшой левый край касается её, не перекрывая контент. Не
-            скроллятся вместе с телом. pointer-events только на стикерах. */}
-        <div className="pointer-events-none absolute right-[-170px] top-[56px] z-30 flex w-[200px] flex-col items-end gap-2">
-          {addNoteOpen && (
-            <div className="pointer-events-auto">
-              <NoteComposer
-                onSubmit={addRentalNote}
-                onCancel={() => setAddNoteOpen(false)}
-              />
-            </div>
+      <div
+        ref={cardRootRef}
+        className="relative flex h-full flex-col overflow-hidden rounded-2xl bg-surface shadow-card-lg"
+      >
+        {/* v0.8.18: стикеры-заметки — порталом ПОВЕРХ карточки (вне клиппящего
+            фрейма), висят за правым краём, лишь край касается. Позиция — по
+            rect карточки (cardRect). */}
+        {cardRect &&
+          createPortal(
+            <div
+              style={{
+                position: "fixed",
+                top: cardRect.top + 56,
+                left: cardRect.right - 30,
+                zIndex: 50,
+              }}
+              className="flex w-[200px] flex-col items-start gap-2"
+            >
+              {addNoteOpen && (
+                <NoteComposer
+                  onSubmit={addRentalNote}
+                  onCancel={() => setAddNoteOpen(false)}
+                />
+              )}
+              <StickerStack stickers={stickers} onUnpin={unpinSticker} />
+            </div>,
+            document.body,
           )}
-          <div className="pointer-events-auto">
-            <StickerStack stickers={stickers} onUnpin={unpinSticker} />
-          </div>
-        </div>
         {/* Скроллируемое тело: header «прилипает» сверху внутри скролла. */}
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
           <div className="flex flex-col gap-3 p-5">{body}</div>

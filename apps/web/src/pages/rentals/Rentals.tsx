@@ -663,17 +663,17 @@ export function Rentals() {
             фикс. ширину 760px чтобы при сжатии контента не корёжило. */}
         <div
           className={cn(
-            // v0.8.13: overflow-visible — чтобы стикеры могли «торчать» за
-            // правый край карточки. При закрытии ширина→0 + opacity→0
-            // одновременно (300ms), контент исчезает плавно.
-            "h-full min-h-0 shrink-0 overflow-visible transition-[width,opacity,margin] duration-300 ease-in-out",
+            // v0.8.18: вернули overflow-hidden — карточка снова со скруглением
+            // и клиппингом. Стикеры теперь рендерятся порталом поверх (см.
+            // RentalCard), поэтому им клиппинг не мешает.
+            "h-full min-h-0 shrink-0 overflow-hidden transition-[width,opacity,margin] duration-300 ease-in-out",
             selected && panelOpen
               ? "ml-4 w-[600px] opacity-100"
               : "ml-0 w-0 opacity-0",
           )}
         >
           {selected && (
-            <div className="relative flex h-full min-h-0 w-[600px] flex-col overflow-visible rounded-2xl border-l border-border bg-surface shadow-card-sm">
+            <div className="flex h-full min-h-0 w-[600px] flex-col overflow-hidden rounded-2xl border-l border-border bg-surface shadow-card-sm">
               <ErrorBoundary key={selected.id}>
                 <RentalCard
                   rental={selected}
