@@ -682,6 +682,27 @@ export function RentalCard({
     equipment_fee: "Экипировка",
     parking: "Паркинг",
   };
+  // v0.8.16 (C2): период каждой финоперации для ховера «За всё время».
+  // Аренда/штраф/замена/экипировка → период аренды (по rentalId платежа);
+  // паркинг → период парковочных сессий этой аренды (min..max).
+  const rentalByIdFin = new Map(chainRentals.map((r) => [r.id, r]));
+  const ruShort = (s?: string | null) => (s ? s.slice(0, 5) : "");
+  const ymdShort = (ymd?: string | null) => {
+    const m = (ymd ?? "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    return m ? `${m[3]}.${m[2]}` : "";
+  };
+  const opPeriod = (p: { type: string; rentalId: number }): string | null => {
+    if (p.type === "parking") {
+      const ss = parkingList.filter((s) => s.rentalId === p.rentalId);
+      if (!ss.length) return null;
+      const start = ss.reduce((m, s) => (s.startDate < m ? s.startDate : m), ss[0]!.startDate);
+      const end = ss.reduce((m, s) => (s.endDate > m ? s.endDate : m), ss[0]!.endDate);
+      return `${ymdShort(start)}–${ymdShort(end)}`;
+    }
+    const r = rentalByIdFin.get(p.rentalId);
+    if (r) return `${ruShort(r.start)}–${ruShort(r.endPlanned)}`;
+    return null;
+  };
   const financeOps = chainPayments
     .filter(
       (p) =>
@@ -698,6 +719,7 @@ export function RentalCard({
       // p.date уже в русском формате «dd.mm.yyyy[ HH:MM]» (isoToRu),
       // new Date() его не парсит → берём «dd.mm» напрямую из строки.
       date: p.date ? p.date.slice(0, 5) : null,
+      period: opPeriod(p),
     }));
   // pending (плашка «Долг») — суммируем неоплаченные платежи ТОЛЬКО
   // по полностью активным связкам цепочки (archivedAt == null).
@@ -2448,7 +2470,12 @@ function FinanceHoverCard({
   children,
 }: {
   total: number;
-  ops: { label: string; amount: number; date: string | null }[];
+  ops: {
+    label: string;
+    amount: number;
+    date: string | null;
+    period?: string | null;
+  }[];
   onDetails: () => void;
   children: React.ReactNode;
 }) {
@@ -2502,9 +2529,14 @@ function FinanceHoverCard({
                   >
                     <span className="min-w-0 truncate text-ink-2">
                       {o.label}
+                      {o.period && (
+                        <span className="ml-1 text-[11px] text-muted tabular-nums">
+                          {o.period}
+                        </span>
+                      )}
                       {o.date && (
                         <span className="ml-1 text-[11px] text-muted-2 tabular-nums">
-                          {o.date}
+                          · {o.date}
                         </span>
                       )}
                     </span>
