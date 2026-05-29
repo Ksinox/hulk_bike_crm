@@ -189,7 +189,7 @@ export async function parkingRoutes(app: FastifyInstance) {
       entityId: rentalId,
       kind: "parking",
       text: `Паркинг ${dm(startDate)}–${dm(endDate)} · ${days} дн${amount > 0 ? ` · ${amount} ₽` : ""}`,
-      color: "yellow",
+      color: "blue",
       createdByUserId: req.user?.userId ?? null,
       createdByName: req.user?.login ?? null,
     });

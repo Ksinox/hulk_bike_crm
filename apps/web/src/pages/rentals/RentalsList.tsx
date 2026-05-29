@@ -441,6 +441,7 @@ export function RentalsList({
           <tr className="text-[11px] font-semibold uppercase tracking-wide text-muted-2">
             <Th label="№" col="id" sort={sort} onSort={toggleSort} />
             <Th label="Клиент" col="client" sort={sort} onSort={toggleSort} />
+            <Th label="Связь" col="contact" sort={sort} onSort={toggleSort} align="center" />
             <Th label="Скутер" col="scooter" sort={sort} onSort={toggleSort} />
             <Th label="Выдан" col="start" sort={sort} onSort={toggleSort} />
             <Th label="Возврат" col="end" sort={sort} onSort={toggleSort} />
@@ -451,7 +452,6 @@ export function RentalsList({
             <Th label="Сумма аренды" col="rentSum" sort={sort} onSort={toggleSort} align="right" />
             <Th label="Долг" col="sum" sort={sort} onSort={toggleSort} align="right" />
             <Th label="Статус" col="status" sort={sort} onSort={toggleSort} />
-            <Th label="Связь" col="contact" sort={sort} onSort={toggleSort} align="center" />
           </tr>
         </thead>
         <tbody>
@@ -605,6 +605,12 @@ function RentalTableRow({
           </span>
         </div>
       </td>
+      {/* v0.8.26 (G2): «Связь» сразу после имени — статус читается рядом с ФИО. */}
+      <td className="px-4 py-5 text-center">
+        <div className="flex justify-center">
+          <ContactToggle clientId={row.clientId} unreachable={row.unreachable} />
+        </div>
+      </td>
       <td className="px-4 py-5 text-[13px] whitespace-nowrap">
         <ScooterTag label={row.scooterLabel} mileage={row.mileage} />
       </td>
@@ -656,12 +662,6 @@ function RentalTableRow({
       <td className="px-4 py-5 whitespace-nowrap">
         <StatusPill status={row.effStatus} />
       </td>
-      {/* v0.8.24 (F3): колонка «Связь» — сортируемая, тумблер доступности. */}
-      <td className="px-4 py-5 text-center">
-        <div className="flex justify-center">
-          <ContactToggle clientId={row.clientId} unreachable={row.unreachable} />
-        </div>
-      </td>
     </tr>
   );
 }
@@ -712,36 +712,36 @@ function RentalTile({
             : "border-border bg-surface hover:bg-surface-soft/60",
       )}
     >
-      {/* v0.8.24: ГЛАВНОЕ — крупное лицо клиента по центру; скутер приглушён
-          на заднем фоне (лицо может перекрывать часть скутера — это норм). */}
-      <div className="relative h-[172px] w-full overflow-hidden bg-gradient-to-b from-surface-soft to-white">
+      {/* v0.8.26 (G1): лицо клиента — крупное, СЛЕВА, поверх; скутер — в
+          ПРАВОЙ части, лицо слегка налезает на него. */}
+      <div className="relative h-[172px] w-full overflow-hidden bg-gradient-to-br from-surface-soft to-white">
         {row.scooterAvatarSrc ? (
           <img
             src={row.scooterAvatarSrc}
             alt={row.scooterLabel}
-            className="absolute inset-0 h-full w-full object-contain p-2 opacity-35"
+            className="absolute right-0 top-1/2 h-[78%] w-[60%] -translate-y-1/2 object-contain pr-2 opacity-95"
           />
         ) : (
-          <div className="absolute inset-0 flex items-center justify-center opacity-35">
+          <div className="absolute right-3 top-1/2 -translate-y-1/2 opacity-60">
             <Bike size={40} strokeWidth={1.5} className="text-muted-2" />
           </div>
         )}
         {/* Бейдж дней — правый верхний угол. */}
         <span
           className={cn(
-            "absolute right-2 top-2 z-10 rounded-full px-2 py-0.5 text-[11px] font-bold tabular-nums shadow-card-sm",
+            "absolute right-2 top-2 z-20 rounded-full px-2 py-0.5 text-[11px] font-bold tabular-nums shadow-card-sm",
             row.badgeTone,
           )}
         >
           {row.badgeText}
         </span>
-        {/* Лицо клиента — крупный портрет по центру, поверх скутера. */}
-        <div className="absolute inset-0 flex items-center justify-center">
+        {/* Лицо клиента — крупный портрет слева, поверх скутера (налезает). */}
+        <div className="absolute bottom-2 left-3 z-10">
           <ClientAvatar
             clientId={row.clientId}
             name={row.clientName}
-            w={104}
-            h={124}
+            w={110}
+            h={132}
             ring
           />
         </div>
