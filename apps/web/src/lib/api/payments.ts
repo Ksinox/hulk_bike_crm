@@ -12,7 +12,8 @@ export type ApiPayment = {
     | "damage"
     | "refund"
     | "swap_fee"
-    | "equipment_fee";
+    | "equipment_fee"
+    | "parking";
   amount: number;
   method: PaymentMethod;
   paid: boolean;

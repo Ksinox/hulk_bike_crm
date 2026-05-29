@@ -143,11 +143,15 @@ export function RentalsList({
     return items.map((r) => {
       const c = apiClients?.find((x) => x.id === r.clientId);
       const myDebt = debtAgg?.find((d) => d.rentalId === r.id);
+      // realDebt — для статуса (просрочка): паркинг сюда НЕ входит, он не
+      // делает аренду просроченной. Но в сумму к показу паркинг включаем.
       const realDebt = myDebt
         ? myDebt.overdueBalance + myDebt.damageBalance + myDebt.manualBalance
         : 0;
+      const parkingBalance = myDebt?.parkingBalance ?? 0;
       const pendingRent = myDebt?.pendingRent ?? 0;
-      const hasDebt = realDebt > 0;
+      const displayDebt = realDebt + parkingBalance;
+      const hasDebt = displayDebt > 0;
       const effStatus = effectiveRentalStatus(r.status, r.endPlanned, realDebt);
       const isOverdue = effStatus === "overdue";
       const delta = daysToEnd(r.endPlanned);
@@ -189,7 +193,7 @@ export function RentalsList({
         badgeTone,
         effStatus,
         hasDebt,
-        rightSum: hasDebt ? realDebt : pendingRent,
+        rightSum: hasDebt ? displayDebt : pendingRent,
         pendingRent,
         danger: isOverdue || hasDebt,
         onParking: parkingAll.some(

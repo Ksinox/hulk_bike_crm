@@ -1881,6 +1881,13 @@ export function RentalCard({
                         value={pending}
                       />
                     )}
+                    {parkingBalance > 0 && (
+                      <DebtRow
+                        label="Паркинг"
+                        formula="хранение скутера: 1-е сутки беспл., далее 250 ₽/сут"
+                        value={parkingBalance}
+                      />
+                    )}
                     <div className="mt-1.5 flex items-center justify-between border-t border-border pt-2 text-[15px] font-extrabold text-red-ink">
                       <span>Итого долг</span>
                       <span className="tabular-nums">{fmt(debtTotal)} ₽</span>

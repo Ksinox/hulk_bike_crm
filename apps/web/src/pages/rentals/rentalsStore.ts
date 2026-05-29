@@ -24,7 +24,8 @@ export type PaymentType =
   | "damage"
   | "refund"
   | "swap_fee"
-  | "equipment_fee";
+  | "equipment_fee"
+  | "parking";
 
 export type Payment = {
   id: number;
