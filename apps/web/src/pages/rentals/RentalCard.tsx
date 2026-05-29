@@ -292,6 +292,7 @@ export function RentalCard({
   initialTab,
   flushLeft = false,
   drawerChrome = false,
+  besideDrawerOpen = false,
 }: {
   rental: Rental;
   /** Callback в Rentals при успешной замене скутера. Rentals переключает
@@ -335,6 +336,9 @@ export function RentalCard({
    *  тело, sticky-footer с кнопками «Закрыть аренду» / «Принять оплату».
    *  Без этого prop'а (DashboardDrawer) карточка остаётся плоским блоком. */
   drawerChrome?: boolean;
+  /** v0.8.28 (H2): рядом открыт push-дровер (история/оплата) — прячем
+   *  оверлей стикеров, чтобы он не перекрывал дровер. */
+  besideDrawerOpen?: boolean;
 }) {
   void onPaymentOpenChange;
   void initialTab; // v0.6.44: tabs убраны, prop оставлен для совместимости.
@@ -2402,13 +2406,14 @@ export function RentalCard({
             фрейма), висят за правым краём, лишь край касается. Позиция — по
             rect карточки (cardRect). */}
         {cardRect &&
+          !besideDrawerOpen &&
           createPortal(
             <div
               style={{
                 position: "fixed",
                 top: cardRect.top + 56,
                 left: cardRect.right - 30,
-                zIndex: 50,
+                zIndex: 20,
               }}
               className="flex w-[200px] flex-col items-start gap-2"
             >

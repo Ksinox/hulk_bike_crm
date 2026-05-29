@@ -1853,13 +1853,13 @@ export function PaymentAcceptDialog({
               не отправляется (бэк не поддерживает прямое списание залога). */}
           {extDays === 0 && (rental.deposit ?? 0) > 0 && (
             <div className="px-5 pb-2">
-              <div className="rounded-[12px] border border-amber-200 bg-amber-50 px-3 py-2 flex items-center gap-2">
-                <Shield size={16} className="text-amber-700 shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <div className="text-[12px] font-semibold text-amber-900">
+              <div className="flex items-center gap-2 rounded-[12px] border border-border bg-surface-soft/40 px-3 py-2">
+                <Shield size={16} className="shrink-0 text-muted-2" />
+                <div className="min-w-0 flex-1">
+                  <div className="text-[12px] font-semibold text-ink">
                     Залог клиента: {fmt(rental.deposit ?? 0)} ₽
                   </div>
-                  <div className="text-[11px] text-amber-700/80 mt-0.5">
+                  <div className="mt-0.5 text-[11px] text-muted">
                     При завершении аренды залог возвращается клиенту или списывается на долг.
                   </div>
                 </div>
@@ -1872,17 +1872,14 @@ export function PaymentAcceptDialog({
                     setUseDepositAmount(
                       Math.max(
                         0,
-                        Math.min(
-                          rental.deposit ?? 0,
-                          Number(e.target.value),
-                        ),
+                        Math.min(rental.deposit ?? 0, Number(e.target.value)),
                       ),
                     )
                   }
-                  className="w-24 rounded-md border border-amber-300 px-2 py-1 text-[12px] text-right tabular-nums"
+                  className="w-24 rounded-md border border-border bg-surface px-2 py-1 text-right text-[12px] tabular-nums text-ink outline-none focus:ring-2 focus:ring-blue-100"
                   placeholder="0"
                 />
-                <span className="text-[11px] text-amber-800">₽</span>
+                <span className="text-[11px] text-muted">₽</span>
               </div>
             </div>
           )}
@@ -1892,14 +1889,14 @@ export function PaymentAcceptDialog({
               паркинга в «К приёму». */}
           {unpaidParking > 0 && (
             <div className="px-5 pb-2">
-              <div className="flex items-center gap-2 rounded-[12px] border border-yellow-300 bg-yellow-50 px-3 py-2">
-                <SquareParking size={16} className="shrink-0 text-yellow-700" />
+              <div className="flex items-center gap-2 rounded-[12px] border border-border bg-surface-soft/40 px-3 py-2">
+                <SquareParking size={16} className="shrink-0 text-blue-600" />
                 <div className="min-w-0 flex-1">
-                  <div className="text-[12px] font-semibold text-yellow-900">
+                  <div className="text-[12px] font-semibold text-ink">
                     Паркинг · {unpaidParkingDays}{" "}
                     {unpaidParkingDays === 1 ? "день" : "дн"}: {fmt(unpaidParking)} ₽
                   </div>
-                  <div className="mt-0.5 text-[11px] text-yellow-700/80">
+                  <div className="mt-0.5 text-[11px] text-muted">
                     1-е сутки бесплатно, далее 250 ₽/сут.
                   </div>
                 </div>
@@ -1908,9 +1905,9 @@ export function PaymentAcceptDialog({
                     type="checkbox"
                     checked={payParking}
                     onChange={(e) => setPayParking(e.target.checked)}
-                    className="h-3.5 w-3.5 accent-yellow-500"
+                    className="h-3.5 w-3.5 accent-blue-600"
                   />
-                  <span className="text-[11px] font-semibold text-yellow-800">
+                  <span className="text-[11px] font-semibold text-ink-2">
                     оплатить
                   </span>
                 </label>
@@ -2606,14 +2603,13 @@ function EquipmentStep({
                   }}
                   disabled={!isLive}
                   className={cn(
-                    "w-[72px] h-[72px] rounded-[12px] border-2 p-2 flex items-center justify-center transition-colors relative",
-                    isFree
-                      ? "border-green bg-green-soft/50 hover:bg-green-soft"
-                      : "border-blue-200 bg-blue-50 hover:bg-blue-100",
-                    isOpen &&
-                      (isFree
-                        ? "ring-2 ring-green ring-offset-1"
-                        : "ring-2 ring-blue-600 ring-offset-1"),
+                    // v0.8.28 (H5): нейтральный тайл — без зелёной рамки/фона.
+                    // Экипировка на прозрачном фоне; подсветка — только при
+                    // наведении/выборе.
+                    "relative flex h-[72px] w-[72px] items-center justify-center rounded-[12px] border p-2 transition-colors",
+                    "border-border bg-surface",
+                    isHover && !isOpen && "border-blue-300 bg-surface-soft/60",
+                    isOpen && "border-blue-400 ring-2 ring-blue-200 ring-offset-1",
                     isLive ? "cursor-pointer" : "cursor-default",
                   )}
                   title={isLive ? "Заменить или убрать" : it.name}
@@ -2644,8 +2640,7 @@ function EquipmentStep({
                 </button>
                 <div
                   className={cn(
-                    "mt-1 text-[9.5px] font-semibold text-center leading-tight px-0.5 break-words w-full",
-                    isFree ? "text-green-ink" : "text-blue-700",
+                    "mt-1 w-full break-words px-0.5 text-center text-[9.5px] font-semibold leading-tight text-ink-2",
                   )}
                   style={{
                     display: "-webkit-box",
