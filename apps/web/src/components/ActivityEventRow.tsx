@@ -365,14 +365,33 @@ export function formatActivitySummary(
     action === "debt_payment"
   ) {
     const pay = readRecord(diff?.payment);
-    const amount = pay?.to ?? readRecord(item.meta)?.amount;
+    const m = readRecord(item.meta);
+    const amount = pay?.to ?? m?.amount;
+    // v0.8.25 (F9): назначение платежа — чтобы было видно «за что».
+    const KIND_LABEL: Record<string, string> = {
+      overdue_days_payment: "за просроченные дни",
+      overdue_fine_payment: "за штраф просрочки",
+      manual_payment: "по ручному долгу",
+      rent: "за аренду",
+      parking: "за паркинг",
+      damage: "по акту ущерба",
+    };
+    const extras: string[] = [];
+    const kind = typeof m?.kind === "string" ? m.kind : null;
+    if (kind && KIND_LABEL[kind]) extras.push(`Назначение: ${KIND_LABEL[kind]}`);
+    if (typeof m?.comment === "string" && m.comment.trim())
+      extras.push(`«${m.comment.trim()}»`);
+    if (typeof m?.endPlannedShift === "number" && m.endPlannedShift > 0)
+      extras.push(`Возврат сдвинут на ${m.endPlannedShift} дн`);
+    if (typeof m?.residualToDeposit === "number" && m.residualToDeposit > 0)
+      extras.push(`Остаток ${money(m.residualToDeposit)} → депозит клиента`);
     return {
       title: "Принят платёж",
       change:
         amount != null
           ? { from: null, to: money(amount), tone: "green" }
           : null,
-      extras: [],
+      extras,
     };
   }
 

@@ -3042,7 +3042,16 @@ export async function rentalsRoutes(app: FastifyInstance) {
         endPlannedShift > 0
           ? `Оплата ${parsed.data.amount} ₽ по аренде #${id} (${parsed.data.kind}) — endPlanned сдвинут на ${endPlannedShift} дн${newStatus ? ", статус → active" : ""}${residualToDeposit > 0 ? `, остаток ${residualToDeposit} ₽ → депозит клиента` : ""}`
           : `Оплата ${parsed.data.amount} ₽ по аренде #${id} (${parsed.data.kind})`,
-      meta: { endPlannedShift, newStatus, residualToDeposit },
+      // v0.8.25 (F9): фиксируем НАЗНАЧЕНИЕ платежа (за что) + комментарий +
+      // сдвиг/депозит — чтобы в ленте было понятно, что оплачивалось.
+      meta: {
+        endPlannedShift,
+        newStatus,
+        residualToDeposit,
+        kind: parsed.data.kind,
+        comment: parsed.data.comment ?? null,
+        amount: parsed.data.amount,
+      },
       diff: {
         payment: {
           label: "Принято",
