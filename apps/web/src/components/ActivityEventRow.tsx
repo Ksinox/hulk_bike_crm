@@ -193,7 +193,9 @@ export function formatActivitySummary(
             ? "Паркинг изменён"
             : action === "parking_deleted"
               ? "Паркинг удалён"
-              : "Паркинг";
+              : action === "parking_paid"
+                ? "Оплата паркинга"
+                : "Паркинг";
     const extras: string[] = [];
     if (p?.startDate && p?.endDate)
       extras.push(`${short(p.startDate)}–${short(p.endDate)}`);
