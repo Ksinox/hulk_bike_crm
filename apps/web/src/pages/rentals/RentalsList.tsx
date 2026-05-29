@@ -31,6 +31,47 @@ function fmt(n: number) {
   return n.toLocaleString("ru-RU");
 }
 
+/** Разбор «Jog #02» → { model: "Jog", num: "02" }. */
+function parseScooter(label: string): { model: string; num: string | null } {
+  const m = label.match(/^(.*?)\s*#\s*(\d+)\s*$/);
+  if (m) return { model: (m[1] ?? "").trim(), num: m[2] ?? null };
+  return { model: label, num: null };
+}
+
+/** Скутер: круглый бейдж с номером + модель (+ пробег). */
+function ScooterTag({
+  label,
+  mileage,
+  size = "sm",
+}: {
+  label: string;
+  mileage?: number | null;
+  size?: "sm" | "md";
+}) {
+  const { model, num } = parseScooter(label);
+  const dot = size === "md" ? "h-6 min-w-6 text-[12px]" : "h-5 min-w-5 text-[11px]";
+  return (
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+      {num != null && (
+        <span
+          className={cn(
+            "inline-flex items-center justify-center rounded-full bg-ink px-1.5 font-bold tabular-nums text-white",
+            dot,
+          )}
+        >
+          {num}
+        </span>
+      )}
+      <span className="text-muted">{model}</span>
+      {mileage != null && (
+        <span className="text-[11px] tabular-nums text-muted-2">
+          · {fmt(mileage)} км
+        </span>
+      )}
+    </span>
+  );
+}
+
 /** Цвет аватарки клиента — детерминирован от id для стабильности. */
 function clientColor(id: number): string {
   const palette = ["#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6", "#EC4899"];
@@ -101,6 +142,7 @@ type Row = {
   pendingRent: number;
   danger: boolean;
   onParking: boolean;
+  parkingDays: number;
 };
 
 type SortCol =
@@ -111,7 +153,8 @@ type SortCol =
   | "end"
   | "days"
   | "sum"
-  | "status";
+  | "status"
+  | "parking";
 
 export function RentalsList({
   items,
@@ -129,10 +172,6 @@ export function RentalsList({
   const { data: models = [] } = useApiScooterModels();
   const { data: debtAgg } = useDebtAggregate();
   const { data: parkingAll = [] } = useParkingSessions();
-  const todayYmd = useMemo(() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  }, []);
 
   // Локальная сортировка только для табличного режима.
   const [sort, setSort] = useState<{ col: SortCol; dir: "asc" | "desc" } | null>(
@@ -196,16 +235,17 @@ export function RentalsList({
         rightSum: hasDebt ? displayDebt : pendingRent,
         pendingRent,
         danger: isOverdue || hasDebt,
-        onParking: parkingAll.some(
-          (p) =>
-            p.rentalId === r.id &&
-            p.status === "active" &&
-            p.startDate <= todayYmd &&
-            p.endDate >= todayYmd,
-        ),
+        // v0.8.5: бейдж 🅿 — если в ТЕКУЩЕЙ аренде (этой связке) есть
+        // паркинг (любой, не только сейчас активный). Прошлые паркинги
+        // предыдущих связок-продлений висят на других rentalId и сюда
+        // не попадают.
+        onParking: parkingAll.some((p) => p.rentalId === r.id),
+        parkingDays: parkingAll
+          .filter((p) => p.rentalId === r.id)
+          .reduce((s, p) => s + p.days, 0),
       };
     });
-  }, [items, apiClients, apiScooters, models, debtAgg, parkingAll, todayYmd]);
+  }, [items, apiClients, apiScooters, models, debtAgg, parkingAll]);
 
   const sortedRows = useMemo<Row[]>(() => {
     if (!sort) return rows;
@@ -233,6 +273,8 @@ export function RentalsList({
               "ru",
             ) * dir
           );
+        case "parking":
+          return (a.parkingDays - b.parkingDays) * dir;
         default:
           return 0;
       }
@@ -279,6 +321,10 @@ export function RentalsList({
         : { col, dir: "asc" },
     );
 
+  // v0.8.5: колонка «Паркинг» показывается только если в выборке есть
+  // аренда с паркингом → блок адаптивно расширяется на эту колонку.
+  const hasAnyParking = rows.some((r) => r.parkingDays > 0);
+
   return (
     <div className="scrollbar-thin h-full overflow-auto px-2">
       {/* w-auto: колонки прижаты к содержимому (не растянуты на всю ширину). */}
@@ -291,6 +337,9 @@ export function RentalsList({
             <Th label="Выдан" col="start" sort={sort} onSort={toggleSort} />
             <Th label="Возврат" col="end" sort={sort} onSort={toggleSort} />
             <Th label="Дней" col="days" sort={sort} onSort={toggleSort} align="center" />
+            {hasAnyParking && (
+              <Th label="Паркинг" col="parking" sort={sort} onSort={toggleSort} align="center" />
+            )}
             <Th label="Сумма" col="sum" sort={sort} onSort={toggleSort} align="right" />
             <Th label="Статус" col="status" sort={sort} onSort={toggleSort} />
           </tr>
@@ -302,6 +351,7 @@ export function RentalsList({
               row={row}
               active={row.rental.id === selectedId}
               onSelect={onSelect}
+              showParking={hasAnyParking}
             />
           ))}
         </tbody>
@@ -410,10 +460,12 @@ function RentalTableRow({
   row,
   active,
   onSelect,
+  showParking,
 }: {
   row: Row;
   active: boolean;
   onSelect: (id: number) => void;
+  showParking?: boolean;
 }) {
   return (
     <tr
@@ -443,13 +495,8 @@ function RentalTableRow({
           </span>
         </div>
       </td>
-      <td className="px-4 py-5 text-muted whitespace-nowrap">
-        {row.scooterLabel}
-        {row.mileage != null && (
-          <span className="ml-1 text-[11px] text-muted-2 tabular-nums">
-            · {fmt(row.mileage)} км
-          </span>
-        )}
+      <td className="px-4 py-5 text-[13px] whitespace-nowrap">
+        <ScooterTag label={row.scooterLabel} mileage={row.mileage} />
       </td>
       <td className="px-4 py-5 tabular-nums text-muted whitespace-nowrap">
         {row.rental.start}
@@ -467,6 +514,21 @@ function RentalTableRow({
           {row.badgeText}
         </span>
       </td>
+      {showParking && (
+        <td className="px-4 py-5 text-center whitespace-nowrap">
+          {row.parkingDays > 0 ? (
+            <span
+              className="inline-flex items-center gap-1 rounded-full bg-yellow-100 px-2 py-0.5 text-[11px] font-semibold text-yellow-800 tabular-nums"
+              title="В этой аренде есть паркинг"
+            >
+              <SquareParking size={12} />
+              {row.parkingDays} дн
+            </span>
+          ) : (
+            <span className="text-muted-2">—</span>
+          )}
+        </td>
+      )}
       <td className="px-4 py-5 text-right tabular-nums whitespace-nowrap">
         {row.hasDebt ? (
           <span className="font-bold text-red-ink">{fmt(row.rightSum)} ₽</span>
@@ -477,17 +539,7 @@ function RentalTableRow({
         )}
       </td>
       <td className="px-4 py-5 whitespace-nowrap">
-        <span className="inline-flex items-center gap-1.5">
-          <StatusPill status={row.effStatus} />
-          {row.onParking && (
-            <span
-              className="inline-flex items-center rounded-full bg-yellow-100 px-1.5 py-0.5 text-yellow-700"
-              title="На паркинге"
-            >
-              <SquareParking size={12} />
-            </span>
-          )}
-        </span>
+        <StatusPill status={row.effStatus} />
       </td>
     </tr>
   );
@@ -550,10 +602,20 @@ function RentalTile({
             ring
           />
         </div>
-        {/* Метка скутера — правый нижний угол. */}
-        <span className="absolute bottom-2 right-2 rounded-md bg-ink/70 px-1.5 py-0.5 text-[10px] font-semibold text-white">
-          {row.scooterLabel}
-        </span>
+        {/* Метка скутера — правый нижний угол: круглый номер + модель. */}
+        {(() => {
+          const { model, num } = parseScooter(row.scooterLabel);
+          return (
+            <span className="absolute bottom-2 right-2 inline-flex items-center gap-1 rounded-full bg-ink/75 py-0.5 pl-0.5 pr-2 text-[10px] font-semibold text-white">
+              {num != null && (
+                <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-white px-1 text-[9px] font-bold text-ink tabular-nums">
+                  {num}
+                </span>
+              )}
+              {model}
+            </span>
+          );
+        })()}
       </div>
 
       {/* Инфо. */}

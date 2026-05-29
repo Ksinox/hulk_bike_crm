@@ -861,6 +861,50 @@ export function MasterBlock({
 }
 
 /**
+ * v0.8.5: заголовок скутера — круглый бейдж с НОМЕРОМ + модель.
+ * Номер парсится из name «Jog #02». Модель — из model.name (или из name).
+ */
+function ScooterNumberTitle({
+  name,
+  model,
+  size = "md",
+}: {
+  name: string;
+  model: string;
+  size?: "sm" | "md";
+}) {
+  const m = name.match(/#\s*(\d+)/);
+  const num = m ? m[1] : null;
+  const modelText =
+    model || name.replace(/\s*#\s*\d+\s*$/, "").trim() || name;
+  const dot =
+    size === "md" ? "h-7 min-w-7 text-[14px]" : "h-6 min-w-6 text-[12px]";
+  const txt = size === "md" ? "text-[17px]" : "text-[15px]";
+  return (
+    <div className="flex items-center gap-2 min-w-0">
+      {num != null && (
+        <span
+          className={cn(
+            "inline-flex shrink-0 items-center justify-center rounded-full bg-ink px-1.5 font-display font-bold tabular-nums text-white",
+            dot,
+          )}
+        >
+          {num}
+        </span>
+      )}
+      <span
+        className={cn(
+          "min-w-0 truncate font-display font-bold leading-tight tracking-tight text-ink",
+          txt,
+        )}
+      >
+        {modelText}
+      </span>
+    </div>
+  );
+}
+
+/**
  * Горизонтальная карточка «Скутер» — компактная строка с фото слева,
  * метаданными справа и кнопкой-карандаш в правом верхнем углу
  * (swap/edit). По эталону v0.6.48.
@@ -914,14 +958,7 @@ function ScooterHorizontalRow({
 
       {/* Метаданные справа */}
       <div className="flex-1 min-w-0">
-        <div className="font-display text-[18px] font-bold leading-tight text-ink tracking-tight truncate">
-          {displayName}
-        </div>
-        {displayModel && (
-          <div className="mt-0.5 text-[12.5px] text-muted truncate">
-            {displayModel}
-          </div>
-        )}
+        <ScooterNumberTitle name={displayName} model={displayModel} size="md" />
         {scooter && (
           <div className="mt-2 text-[12px] text-muted">
             Пробег:{" "}
@@ -976,14 +1013,7 @@ function ScooterCompact({
     >
       {/* Метаданные — СЛЕВА (текст) */}
       <div className="relative z-10 flex-1 min-w-0">
-        <div className="font-display text-[15px] font-bold leading-tight text-ink tracking-tight truncate">
-          {displayName}
-        </div>
-        {displayModel && (
-          <div className="mt-0.5 text-[12px] text-muted truncate">
-            {displayModel}
-          </div>
-        )}
+        <ScooterNumberTitle name={displayName} model={displayModel} size="sm" />
         {scooter && (
           <div className="mt-1.5 text-[11.5px] text-muted">
             Пробег{" "}

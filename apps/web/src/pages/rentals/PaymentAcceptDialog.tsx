@@ -338,6 +338,9 @@ export function PaymentAcceptDialog({
   // оператор включил его оплату (по умолчанию да, когда есть паркинг).
   const { sessions: parkingSessionsList } = useRentalParking(rental.id);
   const unpaidParking = unpaidParkingTotal(parkingSessionsList);
+  const unpaidParkingDays = parkingSessionsList
+    .filter((s) => s.amount > s.paidAmount)
+    .reduce((sum, s) => sum + s.days, 0);
   const [payParking, setPayParking] = useState(true);
   const parkingDue = unpaidParking > 0 && payParking ? unpaidParking : 0;
 
@@ -1820,7 +1823,10 @@ export function PaymentAcceptDialog({
                     />
                   )}
                   {parkingDue > 0 && (
-                    <FooterRow label="Паркинг" value={`${fmt(parkingDue)} ₽`} />
+                    <FooterRow
+                      label={`Паркинг · ${unpaidParkingDays} ${unpaidParkingDays === 1 ? "день" : "дн"}`}
+                      value={`${fmt(parkingDue)} ₽`}
+                    />
                   )}
                 </>
               );
@@ -1890,7 +1896,8 @@ export function PaymentAcceptDialog({
                 <SquareParking size={16} className="shrink-0 text-yellow-700" />
                 <div className="min-w-0 flex-1">
                   <div className="text-[12px] font-semibold text-yellow-900">
-                    Паркинг: {fmt(unpaidParking)} ₽
+                    Паркинг · {unpaidParkingDays}{" "}
+                    {unpaidParkingDays === 1 ? "день" : "дн"}: {fmt(unpaidParking)} ₽
                   </div>
                   <div className="mt-0.5 text-[11px] text-yellow-700/80">
                     1-е сутки бесплатно, далее 250 ₽/сут.

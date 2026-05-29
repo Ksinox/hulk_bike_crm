@@ -646,6 +646,10 @@ export function RentalCard({
   const manualBalance = debtSummary?.manualBalance ?? 0;
   // v0.8.0: неоплаченный паркинг — часть долга (с подписью «паркинг»).
   const parkingBalance = debtSummary?.parkingBalance ?? 0;
+  // Кол-во неоплаченных дней паркинга — для подписи «за N дн».
+  const unpaidParkingDays = parkingList
+    .filter((s) => s.amount > s.paidAmount)
+    .reduce((sum, s) => sum + s.days, 0);
   const debtTotal =
     pending + overdueBalance + damageBalance + manualBalance + parkingBalance;
   const debtParts: string[] = [];
@@ -1806,8 +1810,8 @@ export function RentalCard({
                   </div>
                   <div className="mt-0.5 text-[11px] text-muted">
                     {isExtended
-                      ? `всего получено за ${chainRentals.length} ${pluralRental(chainRentals.length)}: аренда, продления, штрафы, ущерб — кроме залога`
-                      : "всего получено от клиента: аренда, продления, штрафы, ущерб — кроме залога"}
+                      ? `всего получено за ${chainRentals.length} ${pluralRental(chainRentals.length)}: аренда, продления, штрафы, ущерб, паркинг`
+                      : "всего получено от клиента: аренда, продления, штрафы, ущерб, паркинг"}
                   </div>
                 </div>
                 <div className="shrink-0 font-display text-[18px] font-extrabold tabular-nums text-blue-700">
@@ -1883,8 +1887,12 @@ export function RentalCard({
                     )}
                     {parkingBalance > 0 && (
                       <DebtRow
-                        label="Паркинг"
-                        formula="хранение скутера: 1-е сутки беспл., далее 250 ₽/сут"
+                        label={
+                          unpaidParkingDays > 0
+                            ? `Паркинг · ${unpaidParkingDays} ${unpaidParkingDays === 1 ? "день" : "дн"}`
+                            : "Паркинг"
+                        }
+                        formula="1-е сутки беспл., далее 250 ₽/сут"
                         value={parkingBalance}
                       />
                     )}
