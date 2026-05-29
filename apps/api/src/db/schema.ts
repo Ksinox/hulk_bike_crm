@@ -119,6 +119,9 @@ export const paymentTypeEnum = pgEnum("payment_type", [
    *  аренды. Считается delta × оставшиеся дни. Попадает в revenue
    *  как обычная выручка. */
   "equipment_fee",
+  /** v0.8.0: оплата паркинга (1-е сутки бесплатно, далее 250 ₽/сут).
+   *  Попадает в revenue и в «За всё время» клиента. */
+  "parking",
 ]);
 
 export const clientDocKindEnum = pgEnum("client_doc_kind", [

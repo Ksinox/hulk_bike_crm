@@ -377,8 +377,8 @@ export function DragExtendCalendar({
       const colorCls =
         zone === "parking"
           ? isEdge
-            ? "bg-violet-500 text-white"
-            : "bg-violet-200 text-violet-900"
+            ? "bg-yellow-400 text-yellow-950"
+            : "bg-yellow-200 text-yellow-900"
           : isEdge
             ? "bg-ink text-white"
             : zone === "blue"

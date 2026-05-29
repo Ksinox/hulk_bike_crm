@@ -1312,7 +1312,7 @@ export function RentalCard({
               {STATUS_LABEL[effectiveStatus] ?? STATUS_LABEL[rental.status]}
             </span>
             {activeParking && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2.5 py-1 text-[11px] font-bold text-violet-700">
+              <span className="inline-flex items-center gap-1 rounded-full bg-yellow-100 px-2.5 py-1 text-[11px] font-bold text-yellow-800">
                 <SquareParking size={11} /> паркинг
               </span>
             )}
@@ -1403,14 +1403,14 @@ export function RentalCard({
       {/* =========== BANNERS =========== */}
       {/* v0.8.0: паркинг — явно видно что аренда на паузе и сколько дней. */}
       {activeParking && (
-        <div className="flex items-center gap-3 rounded-[12px] bg-violet-50 px-3 py-2.5 text-[12.5px] text-violet-800 ring-1 ring-inset ring-violet-200">
-          <SquareParking size={18} className="shrink-0 text-violet-600" />
+        <div className="flex items-center gap-3 rounded-[12px] bg-yellow-50 px-3 py-2.5 text-[12.5px] text-yellow-900 ring-1 ring-inset ring-yellow-300">
+          <SquareParking size={18} className="shrink-0 text-yellow-600" />
           <div className="min-w-0 flex-1 leading-tight">
             <b>На паркинге</b> · день {parkingDayN} из {activeParking.days} · с{" "}
             {activeParking.startDate.slice(8, 10)}.
             {activeParking.startDate.slice(5, 7)}
             {activeParking.amount > 0 && (
-              <span className="ml-1 text-violet-700/80">
+              <span className="ml-1 text-yellow-800/80">
                 · начислено {activeParking.amount.toLocaleString("ru-RU")} ₽
               </span>
             )}
@@ -1428,15 +1428,15 @@ export function RentalCard({
                 },
               )
             }
-            className="shrink-0 rounded-full bg-violet-600 px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-violet-700 disabled:opacity-50"
+            className="shrink-0 rounded-full bg-yellow-400 px-3 py-1.5 text-[12px] font-semibold text-yellow-950 hover:bg-yellow-500 disabled:opacity-50"
           >
             Снять с паркинга
           </button>
         </div>
       )}
       {!activeParking && scheduledParking && (
-        <div className="flex items-center gap-3 rounded-[12px] bg-violet-50/60 px-3 py-2 text-[12.5px] text-violet-800 ring-1 ring-inset ring-violet-200">
-          <SquareParking size={16} className="shrink-0 text-violet-500" />
+        <div className="flex items-center gap-3 rounded-[12px] bg-yellow-50/70 px-3 py-2 text-[12.5px] text-yellow-900 ring-1 ring-inset ring-yellow-300">
+          <SquareParking size={16} className="shrink-0 text-yellow-600" />
           <div className="min-w-0 flex-1 leading-tight">
             Запланирован паркинг с {scheduledParking.startDate.slice(8, 10)}.
             {scheduledParking.startDate.slice(5, 7)} ({scheduledParking.days} дн)

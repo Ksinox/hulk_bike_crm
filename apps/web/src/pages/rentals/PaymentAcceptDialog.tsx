@@ -40,6 +40,8 @@ import { api } from "@/lib/api";
 import { useApiClients } from "@/lib/api/clients";
 import { useApiPayments } from "@/lib/api/payments";
 import { useRentalDebt } from "@/lib/api/debt";
+import { useRentalParking, unpaidParkingTotal } from "@/lib/api/parking";
+import { SquareParking } from "lucide-react";
 import { extendInplaceAsync } from "./rentalsStore";
 import {
   EquipmentInlinePicker,
@@ -332,6 +334,13 @@ export function PaymentAcceptDialog({
     (s, e) => s + (e.free ? 0 : e.price),
     0,
   );
+  // v0.8.0: паркинг — неоплаченный остаток входит в «К приёму», если
+  // оператор включил его оплату (по умолчанию да, когда есть паркинг).
+  const { sessions: parkingSessionsList } = useRentalParking(rental.id);
+  const unpaidParking = unpaidParkingTotal(parkingSessionsList);
+  const [payParking, setPayParking] = useState(true);
+  const parkingDue = unpaidParking > 0 && payParking ? unpaidParking : 0;
+
   // Долги (без extend — он считается по переплате)
   const totalDebt =
     pendingRent +
@@ -339,7 +348,7 @@ export function PaymentAcceptDialog({
     overdueFineBalance +
     damageBalance +
     manualBalance;
-  const dueAmount = totalDebt;
+  const dueAmount = totalDebt + parkingDue;
 
   // Источники
   // v0.6.7: депозит управляется одним checkbox'ом в footer'е (как в
@@ -760,7 +769,22 @@ export function PaymentAcceptDialog({
       //   3b. extendInplaceAsync — сдвигает дальше за продление,
       //       создаёт rent placeholder paid=false.
       //   3c. Платежи по rent — PATCH placeholder paid=true.
-      const acceptedForDistribute = Math.max(0, accepted - topupAmount);
+      // v0.8.0: оплата паркинга — отдельным POST ДО distribute (как topup),
+      // чтобы эти деньги не ушли в распределение по долгам.
+      const parkingPayNow = Math.min(
+        parkingDue,
+        Math.max(0, accepted - topupAmount),
+      );
+      if (parkingPayNow > 0) {
+        await api.post(`/api/rentals/${rental.id}/parking/pay`, {
+          amount: parkingPayNow,
+          method: method === "transfer" ? "transfer" : "cash",
+        });
+      }
+      const acceptedForDistribute = Math.max(
+        0,
+        accepted - topupAmount - parkingPayNow,
+      );
       const ops = distribute(acceptedForDistribute);
       // Первый проход: всё кроме rent.
       for (const op of ops) {
@@ -932,6 +956,8 @@ export function PaymentAcceptDialog({
       // v0.4.51: агрегат долгов — обновляет KPI «Просрочено» и список
       // клиентов «С долгом» по всей CRM.
       qc.invalidateQueries({ queryKey: ["debt-aggregate"] });
+      // v0.8.0: паркинг (оплата сессий).
+      qc.invalidateQueries({ queryKey: ["parking-sessions"] });
 
       if (overpay > 0) {
         toast.success(
@@ -1793,6 +1819,9 @@ export function PaymentAcceptDialog({
                       value={`+${fmt(topupAmount)} ₽`}
                     />
                   )}
+                  {parkingDue > 0 && (
+                    <FooterRow label="Паркинг" value={`${fmt(parkingDue)} ₽`} />
+                  )}
                 </>
               );
             })()}
@@ -1848,6 +1877,36 @@ export function PaymentAcceptDialog({
                   placeholder="0"
                 />
                 <span className="text-[11px] text-amber-800">₽</span>
+              </div>
+            </div>
+          )}
+
+          {/* v0.8.0: паркинг — показывается ТОЛЬКО когда выставлен и не
+              оплачен. Стиль как у блока залога. Чекбокс включает оплату
+              паркинга в «К приёму». */}
+          {unpaidParking > 0 && (
+            <div className="px-5 pb-2">
+              <div className="flex items-center gap-2 rounded-[12px] border border-yellow-300 bg-yellow-50 px-3 py-2">
+                <SquareParking size={16} className="shrink-0 text-yellow-700" />
+                <div className="min-w-0 flex-1">
+                  <div className="text-[12px] font-semibold text-yellow-900">
+                    Паркинг: {fmt(unpaidParking)} ₽
+                  </div>
+                  <div className="mt-0.5 text-[11px] text-yellow-700/80">
+                    1-е сутки бесплатно, далее 250 ₽/сут.
+                  </div>
+                </div>
+                <label className="inline-flex cursor-pointer items-center gap-1.5">
+                  <input
+                    type="checkbox"
+                    checked={payParking}
+                    onChange={(e) => setPayParking(e.target.checked)}
+                    className="h-3.5 w-3.5 accent-yellow-500"
+                  />
+                  <span className="text-[11px] font-semibold text-yellow-800">
+                    оплатить
+                  </span>
+                </label>
               </div>
             </div>
           )}

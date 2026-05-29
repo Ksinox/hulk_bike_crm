@@ -127,3 +127,34 @@ export function useDeleteParking() {
     onSuccess: invalidate,
   });
 }
+
+/** Принять оплату паркинга (FIFO по сессиям). */
+export function usePayParking() {
+  const invalidate = useInvalidateParking();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: {
+      rentalId: number;
+      amount: number;
+      method?: "cash" | "card" | "transfer" | "deposit";
+    }) =>
+      api.post<{ applied: number }>(`/api/rentals/${args.rentalId}/parking/pay`, {
+        amount: args.amount,
+        method: args.method,
+      }),
+    onSuccess: () => {
+      invalidate();
+      // Платёж по паркингу → обновить выручку/«за всё время».
+      qc.invalidateQueries({ queryKey: ["payments"] });
+      qc.invalidateQueries({ queryKey: ["revenue"] });
+    },
+  });
+}
+
+/** Сумма неоплаченного паркинга по аренде. */
+export function unpaidParkingTotal(sessions: ParkingSession[]): number {
+  return sessions.reduce(
+    (s, p) => s + Math.max(0, p.amount - p.paidAmount),
+    0,
+  );
+}

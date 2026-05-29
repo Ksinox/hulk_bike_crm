@@ -235,9 +235,9 @@ export function CalendarPanel({
                 "inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 text-[12px] font-semibold transition-colors",
                 parkingMode
                   ? draftStart && draftEnd
-                    ? "bg-violet-600 text-white hover:bg-violet-700"
-                    : "bg-violet-100 text-violet-700"
-                  : "bg-violet-50 text-violet-700 hover:bg-violet-100",
+                    ? "bg-yellow-400 text-yellow-950 hover:bg-yellow-500"
+                    : "bg-yellow-100 text-yellow-800"
+                  : "bg-yellow-50 text-yellow-800 hover:bg-yellow-100",
               )}
             >
               <SquareParking size={14} />
@@ -253,7 +253,7 @@ export function CalendarPanel({
 
       {/* v0.8.0: подсказка/сводка режима паркинга над календарём. */}
       {parkingMode && (
-        <div className="mb-2.5 rounded-[10px] border border-violet-200 bg-violet-50 px-3 py-2 text-[12px] text-violet-800">
+        <div className="mb-2.5 rounded-[10px] border border-yellow-300 bg-yellow-50 px-3 py-2 text-[12px] text-yellow-900">
           {!draftStart ? (
             <span>🅿 Выберите <b>начало</b> паркинга на календаре (макс {PARKING_MAX_DAYS} суток)</span>
           ) : !draftEnd ? (
@@ -269,7 +269,7 @@ export function CalendarPanel({
                 <b>{draftAmount} ₽</b>
               </span>
               {calEndIso && (
-                <span className="shrink-0 text-violet-700/80">
+                <span className="shrink-0 text-yellow-800/80">
                   возврат → {isoToShort(calEndIso)}
                 </span>
               )}
@@ -323,7 +323,7 @@ export function CalendarPanel({
             {isOverdue && <LegendDot swatch="bg-red-400" label="просрочка" />}
             <LegendDot swatch="bg-emerald-400" label="продление" />
             {(parkingMode || sessions.length > 0) && (
-              <LegendDot swatch="bg-violet-400" label="паркинг" />
+              <LegendDot swatch="bg-yellow-400" label="паркинг" />
             )}
             {/* образец «день возврата» — круг с обводкой (синий/красный) */}
             <div className="flex items-center gap-1.5">

@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/index.js";
-import { parkingSessions, rentals } from "../db/schema.js";
+import { parkingSessions, payments, rentals } from "../db/schema.js";
 import { logActivity } from "../services/activityLog.js";
 
 /* ============================================================
@@ -343,6 +343,79 @@ export async function parkingRoutes(app: FastifyInstance) {
       });
 
       return { ok: true };
+    },
+  );
+
+  // Принять оплату паркинга. amount распределяется FIFO по сессиям с
+  // непогашенным остатком (paid_amount растёт), создаётся payment-строка
+  // type='parking' (попадает в выручку и в «За всё время» клиента).
+  app.post<{ Params: { id: string } }>(
+    "/:id/parking/pay",
+    async (req, reply) => {
+      if (!blockMechanic(req, reply)) return;
+      const rentalId = Number(req.params.id);
+      if (!Number.isFinite(rentalId))
+        return reply.code(400).send({ error: "bad id" });
+      const Body = z
+        .object({
+          amount: z.number().int().positive(),
+          method: z.enum(["cash", "card", "transfer", "deposit"]).optional(),
+        })
+        .strict();
+      const parsed = Body.safeParse(req.body);
+      if (!parsed.success)
+        return reply
+          .code(400)
+          .send({ error: "validation", issues: parsed.error.issues });
+      let remaining = parsed.data.amount;
+      const method = parsed.data.method ?? "cash";
+
+      const sessions = await db
+        .select()
+        .from(parkingSessions)
+        .where(eq(parkingSessions.rentalId, rentalId))
+        .orderBy(parkingSessions.startDate);
+
+      const applied = await db.transaction(async (tx) => {
+        let used = 0;
+        for (const s of sessions) {
+          if (remaining <= 0) break;
+          const due = Math.max(0, s.amount - s.paidAmount);
+          if (due <= 0) continue;
+          const take = Math.min(due, remaining);
+          await tx
+            .update(parkingSessions)
+            .set({ paidAmount: s.paidAmount + take })
+            .where(eq(parkingSessions.id, s.id));
+          remaining -= take;
+          used += take;
+        }
+        if (used > 0) {
+          await tx.insert(payments).values({
+            rentalId,
+            type: "parking",
+            amount: used,
+            method,
+            paid: true,
+            paidAt: new Date(),
+            receivedByUserId: req.user?.userId ?? null,
+            note: "Оплата паркинга",
+          });
+        }
+        return used;
+      });
+
+      if (applied > 0) {
+        await logActivity(req, {
+          entity: "rental",
+          entityId: rentalId,
+          action: "parking_paid",
+          summary: `Оплата паркинга: ${applied.toLocaleString("ru-RU")} ₽`,
+          meta: { parking: { amount: applied } },
+        });
+      }
+
+      return { applied };
     },
   );
 }

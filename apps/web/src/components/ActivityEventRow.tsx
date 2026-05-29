@@ -64,7 +64,7 @@ export function actionCategory(action: string): ActivityCategory | null {
 
 /* ============================ Иконки / тона ============================ */
 
-type EventTone = "green" | "red" | "blue" | "orange" | "ink" | "amber" | "violet";
+type EventTone = "green" | "red" | "blue" | "orange" | "ink" | "amber" | "yellow";
 
 const EVENT_TONE_CLASS: Record<EventTone, string> = {
   green: "bg-green-soft text-green-ink",
@@ -72,12 +72,12 @@ const EVENT_TONE_CLASS: Record<EventTone, string> = {
   blue: "bg-blue-50 text-blue-700",
   orange: "bg-orange-soft text-orange-ink",
   amber: "bg-amber-100 text-amber-800",
-  violet: "bg-violet-100 text-violet-700",
+  yellow: "bg-yellow-100 text-yellow-700",
   ink: "bg-surface-soft text-ink-2",
 };
 
 function eventVisual(action: string): { icon: LucideIcon; tone: EventTone } {
-  if (action.includes("parking")) return { icon: SquareParking, tone: "violet" };
+  if (action.includes("parking")) return { icon: SquareParking, tone: "yellow" };
   if (action.includes("equipment")) return { icon: HardHat, tone: "orange" };
   if (action.includes("scooter_swap") || action === "scooter_swapped")
     return { icon: Bike, tone: "ink" };

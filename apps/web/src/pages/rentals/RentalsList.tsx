@@ -477,7 +477,7 @@ function RentalTableRow({
           <StatusPill status={row.effStatus} />
           {row.onParking && (
             <span
-              className="inline-flex items-center rounded-full bg-violet-100 px-1.5 py-0.5 text-violet-700"
+              className="inline-flex items-center rounded-full bg-yellow-100 px-1.5 py-0.5 text-yellow-700"
               title="На паркинге"
             >
               <SquareParking size={12} />
@@ -569,7 +569,7 @@ function RentalTile({
             {row.onParking && (
               <SquareParking
                 size={13}
-                className="text-violet-600"
+                className="text-yellow-600"
                 aria-label="на паркинге"
               />
             )}
