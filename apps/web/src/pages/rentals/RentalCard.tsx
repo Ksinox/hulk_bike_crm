@@ -23,7 +23,6 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
-  DEPOSIT_AMOUNT,
   STATUS_LABEL,
   STATUS_TONE,
   type Rental,
@@ -1261,27 +1260,15 @@ export function RentalCard({
         }
       />
       {(() => {
-        // v0.4.97: единый источник правды по залогу.
-        const currentDeposit = rental.deposit ?? DEPOSIT_AMOUNT;
-        const originalDeposit =
-          (rental as { depositOriginal?: number }).depositOriginal ??
-          currentDeposit;
-        const depositSpent = Math.max(0, originalDeposit - currentDeposit);
         // v0.5.1: «Эта аренда» = rental.sum.
+        // v0.8.11: залог/депозит показаны отдельным блоком «Залог | Депозит»
+        // ниже — в подписи KPI его больше НЕ дублируем (по просьбе заказчика).
         const rentPays = chainPayments.filter((p) => p.type === "rent");
         const extendCount = rentPays.filter(
           (p) => !!p.note && /^продлен/i.test(p.note),
         ).length;
-        const hintBase =
-          extendCount > 0
-            ? `продлений · ${extendCount}`
-            : "сумма этой аренды";
-        const isItemDeposit = !!rental.depositItem;
-        const hint = isItemDeposit
-          ? `${hintBase} · залог: ${rental.depositItem}`
-          : depositSpent > 0
-            ? `${hintBase} · залог: ${fmt(originalDeposit)} ₽ (списано ${fmt(depositSpent)} ₽)`
-            : `${hintBase} · + залог: ${fmt(currentDeposit)} ₽`;
+        const hint =
+          extendCount > 0 ? `продлений · ${extendCount}` : "сумма этой аренды";
         return (
           <KpiCard
             label="Эта аренда"

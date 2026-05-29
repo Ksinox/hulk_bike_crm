@@ -13,7 +13,7 @@
  * списка и прокидываются в строки — это нужно и для сортировки таблицы.
  */
 import { useMemo, useState } from "react";
-import { SearchX, ChevronUp, ChevronDown, Bike, SquareParking } from "lucide-react";
+import { SearchX, ChevronUp, ChevronDown, Bike, SquareParking, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { type Rental } from "@/lib/mock/rentals";
 import { effectiveRentalStatus } from "@/lib/rentalStatus";
@@ -161,11 +161,14 @@ export function RentalsList({
   selectedId,
   onSelect,
   viewMode,
+  onNew,
 }: {
   items: Rental[];
   selectedId: number | null;
   onSelect: (id: number) => void;
   viewMode: RentalsViewMode;
+  /** v0.8.11: открыть «Новая аренда» — для плитки-заглушки в режиме плиток. */
+  onNew?: () => void;
 }) {
   const { data: apiClients } = useApiClients();
   const { data: apiScooters = [] } = useApiScooters();
@@ -295,12 +298,14 @@ export function RentalsList({
   }
 
   if (viewMode === "tiles") {
-    // v0.8.6: плитки фиксированной ширины, перенос, центрирование,
-    // вертикальный скролл. Заполняют ширину сверху→вниз, при нехватке
-    // высоты — вертикальный скролл (карточки не растягиваются на 1fr).
+    // v0.8.11: плитки фиксированной ширины, перенос слева-направо
+    // (justify-start), вертикальный скролл при нехватке высоты. Контейнер
+    // повторяет ширину блока (= ширине списка). Последней идёт плитка-
+    // заглушка «+ Новая аренда» — она заполняет «пустое» место в сетке
+    // (как на каршеринг/сервисах) и служит точкой создания аренды.
     return (
       <div className="scrollbar-thin h-full overflow-y-auto overflow-x-hidden p-3">
-        <div className="flex flex-wrap content-start justify-center gap-3">
+        <div className="flex flex-wrap content-start justify-start gap-3">
           {rows.map((row) => (
             <RentalTile
               key={row.rental.id}
@@ -309,6 +314,7 @@ export function RentalsList({
               onSelect={onSelect}
             />
           ))}
+          {onNew && <NewRentalTile onClick={onNew} />}
         </div>
       </div>
     );
@@ -545,6 +551,24 @@ function RentalTableRow({
         <StatusPill status={row.effStatus} />
       </td>
     </tr>
+  );
+}
+
+/** v0.8.11: плитка-заглушка «+ Новая аренда» — заполняет пустое место
+ *  в сетке плиток и создаёт аренду по клику. Тянется по высоте строки. */
+function NewRentalTile({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title="Новая аренда"
+      className="group flex w-[230px] min-h-[200px] flex-col items-center justify-center gap-2 self-stretch rounded-2xl border-2 border-dashed border-border text-muted transition-colors hover:border-blue-300 hover:bg-blue-50/40 hover:text-blue-700"
+    >
+      <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-surface-soft transition-colors group-hover:bg-blue-100">
+        <Plus size={24} />
+      </span>
+      <span className="text-[13px] font-semibold">Новая аренда</span>
+    </button>
   );
 }
 

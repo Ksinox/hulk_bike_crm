@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  Plus,
   Search,
   PanelRightOpen,
   LayoutGrid,
@@ -556,12 +555,12 @@ export function Rentals() {
             В «Плитках» — заполняет всю доступную ширину (flex-1). */}
         <div
           className={cn(
-            "flex min-w-0 flex-col rounded-2xl bg-surface shadow-card-sm overflow-hidden min-h-0 transition-[max-width] duration-300 ease-in-out",
-            // v0.8.5/0.8.8: ОБА режима — адаптивная ширина по содержимому
-            // (w-fit), центрируются (justify-center ряда). «Список» растёт с
-            // колонками; «Плитки» — мало карточек → узкий блок по их ширине,
-            // много → до ширины экрана с переносом и вертикальным скроллом.
-            "w-fit max-w-full",
+            "flex min-w-0 flex-col rounded-2xl bg-surface shadow-card-sm overflow-hidden min-h-0 transition-[width] duration-300 ease-in-out",
+            // v0.8.11: ОБА режима имеют ОДНУ и ту же фиксированную ширину
+            // (список «задаёт» ширину, плитки её повторяют) — при переключении
+            // блок не «прыгает». Группа [блок+карточка] центрируется. Пустые
+            // ячейки сетки плиток заполняются плиткой-заглушкой «+ Новая аренда».
+            "w-[1000px] max-w-full",
           )}
         >
           <div className="flex flex-col gap-3 p-4 pb-3 border-b border-border">
@@ -629,14 +628,8 @@ export function Rentals() {
                   <LayoutGrid size={15} />
                 </button>
               </div>
-              <button
-                type="button"
-                onClick={() => setNewOpen(true)}
-                title="Новая аренда"
-                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white hover:bg-blue-700"
-              >
-                <Plus size={16} />
-              </button>
+              {/* v0.8.11: синяя «+» убрана отсюда. Создание аренды теперь —
+                  плитка-заглушка в режиме «Плитки» и пункт меню/иные точки. */}
             </div>
 
             {/* v0.7.23: фильтры всегда видимы единым рядом (страница
@@ -651,6 +644,7 @@ export function Rentals() {
               selectedId={selectedId}
               onSelect={handleSelect}
               viewMode={viewMode}
+              onNew={() => setNewOpen(true)}
             />
           </div>
         </div>
