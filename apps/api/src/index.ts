@@ -228,6 +228,9 @@ async function bootstrap() {
     await protectedApp.register(documentTemplatesRoutes, {
       prefix: "/api/document-templates",
     });
+    // v0.8: модуль «Должники» (порт из main в v0.6)
+    const { debtorsRoutes } = await import("./routes/debtors.js");
+    await protectedApp.register(debtorsRoutes, { prefix: "/api/debtors" });
   });
 
   // Проверить/создать бакет при старте (не блокируем — если MinIO

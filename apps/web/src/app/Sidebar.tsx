@@ -9,6 +9,7 @@ import {
   Inbox,
   LogOut,
   Receipt,
+  Scale,
   Settings,
   ShoppingBag,
   Sparkles,
@@ -39,6 +40,7 @@ function buildMainItems(canManageStaff: boolean): NavItem[] {
     { id: "clients", label: "Клиенты", icon: Users, ready: true },
     { id: "applications", label: "Заявки", icon: Inbox, ready: true },
     { id: "rentals", label: "Аренды", icon: Bike, ready: true },
+    { id: "debtors", label: "Должники", icon: Scale, ready: true },
     { id: "fleet", label: "Скутеры", icon: ShoppingBag, ready: true },
   ];
   // «Сотрудники» — полностью скрыты для admin/mechanic/accountant.

@@ -25,7 +25,8 @@ export type ActivityEntity =
   | "price_item"
   | "damage_report"
   | "document_template"
-  | "repair_job";
+  | "repair_job"
+  | "debtor";
 
 /**
  * v0.6.6: структурированный diff для ленты событий.

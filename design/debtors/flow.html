@@ -1,0 +1,2090 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Должники · экранный flow v4</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700;9..144,800&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #0B1220;
+    --ink-2: #1F2937;
+    --muted: #4B5563;
+    --muted-2: #98A2B3;
+    --muted-3: #CBD5E1;
+    --surface: #FFFFFF;
+    --surface-soft: #F4F6FA;
+    --surface-tint: #EEF2F8;
+    --border: #E5E9F0;
+    --border-strong: #D5DBE4;
+    --blue-50: #EFF5FF; --blue-100: #DBE7FF; --blue-500: #3B82F6; --blue-600: #2563EB; --blue-700: #1D4ED8;
+    --red-50: #FEF1F2; --red-100: #FBDBDC; --red-600: #DC2626; --red-700: #B91C1C;
+    --amber-50: #FFF8EC; --amber-100: #FCE8C2; --amber-500: #D97706; --amber-700: #B45309;
+    --emerald-50: #ECFDF5; --emerald-100: #C6F6D5; --emerald-500: #10B981; --emerald-600: #059669; --emerald-700: #047857;
+    --violet-50: #F3F1FE; --violet-100: #E0DBFB; --violet-600: #7C3AED;
+    --orange-50: #FFF1E8; --orange-100: #FFD9BD; --orange-600: #EA580C;
+    --slate-50: #F8FAFC; --slate-100: #E2E8F0; --slate-600: #475569;
+    --shadow-xs: 0 1px 2px rgba(11,18,32,0.04);
+    --shadow-sm: 0 1px 2px rgba(11,18,32,0.05), 0 0 0 1px rgba(11,18,32,0.04);
+    --shadow-md: 0 6px 18px -8px rgba(11,18,32,0.16), 0 2px 6px -3px rgba(11,18,32,0.08);
+    --shadow-lg: 0 24px 50px -22px rgba(11,18,32,0.28), 0 8px 22px -10px rgba(11,18,32,0.12);
+    --shadow-hero: 0 32px 64px -24px rgba(220,38,38,0.25), 0 8px 22px -8px rgba(11,18,32,0.12);
+    --shadow-screen: 0 32px 80px -24px rgba(11,18,32,0.32), 0 0 0 1px var(--border);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: 'Geist', system-ui, sans-serif;
+    color: var(--ink);
+    background:
+      radial-gradient(900px 500px at 0% 0%, #EEF3FA 0%, transparent 60%),
+      radial-gradient(700px 400px at 100% 10%, #F2EEFE 0%, transparent 60%),
+      #E9ECF3;
+    background-attachment: fixed;
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: "ss01", "cv11";
+    padding-bottom: 120px;
+  }
+
+  /* === Doc-level header === */
+  .doc-header { max-width: 1320px; margin: 0 auto; padding: 48px 32px 24px; }
+  .doc-header .meta {
+    font-family: 'Geist Mono', monospace;
+    font-size: 11px; letter-spacing: 0.16em;
+    text-transform: uppercase; color: var(--muted-2);
+    margin-bottom: 12px;
+    display: inline-flex; gap: 10px; align-items: center;
+  }
+  .doc-header .meta::before {
+    content: ""; width: 6px; height: 6px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--blue-600), var(--violet-600));
+  }
+  .doc-header h1 {
+    font-family: 'Fraunces', serif; font-weight: 700;
+    font-size: 54px; line-height: 1; letter-spacing: -0.025em;
+    margin: 0 0 14px; max-width: 820px;
+  }
+  .doc-header h1 em { font-style: italic; color: var(--blue-700); font-weight: 600; }
+  .doc-header .lede {
+    font-size: 15px; line-height: 1.6; color: var(--muted); max-width: 720px;
+  }
+
+  /* === Screen frames === */
+  .screen-frame { max-width: 1320px; margin: 0 auto; padding: 56px 32px 0; }
+  .screen-frame .stitle {
+    display: flex; align-items: baseline; gap: 16px; margin-bottom: 18px;
+  }
+  .screen-frame .stitle .num {
+    font-family: 'Geist Mono', monospace; font-size: 12px;
+    letter-spacing: 0.16em; color: var(--muted-2);
+  }
+  .screen-frame .stitle h2 {
+    font-family: 'Fraunces', serif; font-weight: 700;
+    font-size: 30px; margin: 0; letter-spacing: -0.018em;
+  }
+  .screen-frame .stitle .note {
+    margin-left: auto; font-size: 12.5px; color: var(--muted);
+    max-width: 500px; line-height: 1.45;
+  }
+
+  .screen {
+    background: #fff;
+    border-radius: 16px;
+    box-shadow: var(--shadow-screen);
+    overflow: hidden;
+    position: relative;
+  }
+  .screen-chrome {
+    height: 36px;
+    background: linear-gradient(180deg, #F8FAFC 0%, #F1F4F8 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 0 14px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .screen-chrome .dots { display: flex; gap: 6px; }
+  .screen-chrome .dots i {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--slate-100);
+  }
+  .screen-chrome .dots i:nth-child(1) { background: #FF5F57; }
+  .screen-chrome .dots i:nth-child(2) { background: #FEBC2E; }
+  .screen-chrome .dots i:nth-child(3) { background: #28C840; }
+  .screen-chrome .url {
+    flex: 1; max-width: 480px; margin: 0 auto;
+    height: 22px;
+    background: #fff; border: 1px solid var(--border); border-radius: 7px;
+    padding: 0 10px;
+    display: flex; align-items: center; gap: 8px;
+    font-family: 'Geist Mono', monospace; font-size: 11px; color: var(--muted);
+  }
+  .screen-chrome .url svg { color: var(--emerald-600); flex: none; }
+  .screen-chrome .url b { color: var(--ink); font-weight: 600; }
+
+  /* App shell */
+  .app {
+    display: grid; grid-template-columns: 60px 1fr;
+    min-height: 700px;
+  }
+  .sidenav {
+    background: linear-gradient(180deg, #FAFBFD 0%, #F4F6FA 100%);
+    border-right: 1px solid var(--border);
+    padding: 18px 0;
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+  }
+  .sidenav .logo {
+    width: 32px; height: 32px; border-radius: 9px;
+    background: linear-gradient(135deg, var(--blue-600), var(--violet-600));
+    margin-bottom: 14px;
+    display: grid; place-items: center;
+    color: #fff; font-family: 'Fraunces', serif; font-weight: 700; font-size: 15px;
+  }
+  .sidenav .nav-item {
+    width: 36px; height: 36px; border-radius: 9px;
+    color: var(--muted-2);
+    display: grid; place-items: center;
+    cursor: pointer; transition: all .15s; position: relative;
+  }
+  .sidenav .nav-item:hover { color: var(--ink); background: #fff; }
+  .sidenav .nav-item.active { background: var(--ink); color: #fff; }
+  .sidenav .nav-item .dot-pulse {
+    position: absolute; top: 4px; right: 4px;
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--red-600);
+    box-shadow: 0 0 0 2px #fff;
+  }
+  .sidenav .spacer { flex: 1; }
+  .sidenav .me {
+    width: 32px; height: 32px; border-radius: 50%;
+    background: linear-gradient(135deg, #FCD34D, #F59E0B);
+    color: var(--ink);
+    display: grid; place-items: center;
+    font-weight: 600; font-size: 11.5px;
+    border: 2px solid #fff;
+  }
+
+  .content { padding: 0; min-width: 0; }
+
+  .topbar {
+    height: 56px;
+    border-bottom: 1px solid var(--border);
+    padding: 0 26px;
+    display: flex; align-items: center; gap: 14px;
+    background: #fff;
+  }
+  .topbar .breadcrumb {
+    display: flex; gap: 8px; align-items: center;
+    font-size: 13px; color: var(--muted);
+  }
+  .topbar .breadcrumb a { color: var(--muted); text-decoration: none; }
+  .topbar .breadcrumb .sep { color: var(--muted-2); }
+  .topbar .breadcrumb b { color: var(--ink); font-weight: 600; }
+  .topbar .search {
+    margin-left: auto; flex: 0 1 280px;
+    height: 34px;
+    background: var(--surface-soft);
+    border-radius: 9px;
+    padding: 0 12px 0 34px;
+    display: flex; align-items: center; position: relative;
+    font-size: 12.5px; color: var(--muted-2);
+    font-family: 'Geist Mono', monospace;
+  }
+  .topbar .search svg { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--muted-2); }
+  .topbar .search kbd {
+    font-family: 'Geist Mono', monospace; font-size: 10px;
+    background: #fff; border: 1px solid var(--border);
+    padding: 1px 5px; border-radius: 4px; color: var(--muted-2);
+    margin-left: auto;
+  }
+  .topbar .add-btn {
+    height: 32px; padding: 0 14px;
+    background: var(--ink); color: #fff;
+    border: none; border-radius: 9px;
+    font-family: inherit; font-size: 12.5px; font-weight: 600;
+    cursor: pointer;
+    display: inline-flex; gap: 6px; align-items: center;
+  }
+
+  /* ========================================================== */
+  /* ============ SCREEN 01 — УТРО (HERO PATTERN) ============= */
+  /* ========================================================== */
+  .morning {
+    padding: 36px 48px 48px;
+    background: linear-gradient(180deg, #fff 0%, #FAFBFD 100%);
+  }
+  .greeting-line {
+    font-family: 'Geist Mono', monospace;
+    font-size: 12px; letter-spacing: 0.08em;
+    color: var(--muted-2);
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+  .greeting-name {
+    font-family: 'Fraunces', serif; font-weight: 700;
+    font-size: 36px; line-height: 1;
+    margin: 0 0 32px;
+    letter-spacing: -0.02em;
+  }
+  .greeting-name em { font-style: italic; color: var(--blue-700); font-weight: 600; }
+
+  .focus-row {
+    font-family: 'Geist Mono', monospace;
+    font-size: 11px; letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--red-700);
+    margin-bottom: 14px;
+    display: inline-flex; gap: 8px; align-items: center;
+    font-weight: 700;
+  }
+  .focus-row::before {
+    content: ""; width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--red-600);
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); opacity: 1; box-shadow: 0 0 0 0 rgba(220,38,38,0.4); }
+    50% { transform: scale(1.15); opacity: 0.85; box-shadow: 0 0 0 6px rgba(220,38,38,0); }
+  }
+
+  /* HERO CARD — самое срочное, занимает основное внимание */
+  .hero {
+    background: #fff;
+    border: 1px solid var(--red-100);
+    border-radius: 22px;
+    padding: 32px 36px;
+    box-shadow: var(--shadow-hero);
+    position: relative;
+    overflow: hidden;
+    margin-bottom: 28px;
+  }
+  .hero::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0;
+    width: 5px; height: 100%;
+    background: linear-gradient(180deg, var(--red-600), #F87171);
+  }
+  .hero::after {
+    content: "";
+    position: absolute;
+    top: 0; right: 0;
+    width: 50%; height: 100%;
+    background: radial-gradient(ellipse at top right, rgba(220,38,38,0.06), transparent 60%);
+    pointer-events: none;
+  }
+  .hero .above {
+    display: flex; gap: 10px; align-items: center;
+    margin-bottom: 18px;
+    position: relative;
+    z-index: 1;
+  }
+  .hero .above .type {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 24px; padding: 0 10px;
+    border-radius: 999px;
+    background: var(--red-50);
+    color: var(--red-700);
+    font-size: 11.5px; font-weight: 600;
+    border: 1px solid var(--red-100);
+  }
+  .hero .above .type i { width: 5px; height: 5px; border-radius: 50%; background: var(--red-600); }
+  .hero .above .age {
+    font-family: 'Geist Mono', monospace;
+    font-size: 11px; color: var(--red-700); font-weight: 700;
+    letter-spacing: 0.04em;
+  }
+  .hero .above .id {
+    font-family: 'Geist Mono', monospace;
+    font-size: 11px; color: var(--muted-2);
+    letter-spacing: 0.04em;
+    margin-left: auto;
+  }
+
+  .hero h2 {
+    font-family: 'Fraunces', serif; font-weight: 700;
+    font-size: 44px; line-height: 1.05;
+    margin: 0 0 6px;
+    letter-spacing: -0.025em;
+    position: relative;
+    z-index: 1;
+  }
+  .hero .what {
+    font-size: 17px; color: var(--ink-2);
+    line-height: 1.5;
+    max-width: 580px;
+    margin-bottom: 24px;
+    position: relative;
+    z-index: 1;
+  }
+  .hero .what b { color: var(--ink); font-weight: 600; }
+  .hero .what .amt {
+    font-family: 'Fraunces', serif; font-weight: 700;
+    font-size: 22px; color: var(--ink);
+    letter-spacing: -0.01em;
+  }
+
+  .hero .cta-row {
+    display: flex; gap: 12px; align-items: center;
+    position: relative;
+    z-index: 1;
+  }
+  .hero .cta {
+    display: inline-flex; gap: 10px; align-items: center;
+    height: 56px; padding: 0 28px;
+    background: var(--ink);
+    color: #fff;
+    border: none;
+    border-radius: 14px;
+    font-family: inherit;
+    font-size: 16px; font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 12px 24px -8px rgba(11,18,32,0.35);
+    transition: all .15s;
+  }
+  .hero .cta:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 16px 32px -8px rgba(11,18,32,0.45);
+  }
+  .hero .cta .arrow {
+    transition: transform .2s;
+  }
+  .hero .cta:hover .arrow { transform: translateX(3px); }
+  .hero .skip {
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    font-family: inherit;
+    font-size: 13.5px;
+    cursor: pointer;
+    padding: 16px 18px;
+  }
+  .hero .skip:hover { color: var(--ink); }
+
+  .more-tasks-label {
+    font-family: 'Geist Mono', monospace;
+    font-size: 11px; letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted-2);
+    font-weight: 700;
+    margin-bottom: 10px;
+    display: inline-flex; gap: 8px; align-items: center;
+  }
+  .more-tasks-label::before {
+    content: ""; width: 18px; height: 1px; background: var(--muted-2);
+  }
+
+  .secondary-task {
+    display: grid;
+    grid-template-columns: 36px 1fr auto;
+    gap: 14px;
+    align-items: center;
+    padding: 14px 18px;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin-bottom: 6px;
+    cursor: pointer;
+    transition: all .15s;
+  }
+  .secondary-task:hover {
+    transform: translateX(4px);
+    border-color: var(--ink);
+    box-shadow: var(--shadow-md);
+  }
+  .secondary-task .ava {
+    width: 34px; height: 34px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--surface-tint), var(--surface-soft));
+    color: var(--ink);
+    border: 1px solid var(--border);
+    display: grid; place-items: center;
+    font-weight: 600; font-size: 12px;
+  }
+  .secondary-task .body .name {
+    font-size: 14.5px; font-weight: 600; color: var(--ink); line-height: 1.2;
+  }
+  .secondary-task .body .desc {
+    font-size: 12px; color: var(--muted);
+    margin-top: 3px;
+    line-height: 1.4;
+  }
+  .secondary-task .body .desc .pip {
+    display: inline-block;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    margin-right: 5px;
+    vertical-align: middle;
+  }
+  .secondary-task[data-prio="hot"] .body .desc .pip { background: var(--red-600); }
+  .secondary-task[data-prio="warm"] .body .desc .pip { background: var(--amber-500); }
+  .secondary-task[data-prio="cool"] .body .desc .pip { background: var(--blue-600); }
+  .secondary-task .right {
+    display: flex; align-items: center; gap: 14px;
+    color: var(--muted);
+  }
+  .secondary-task .right .amt {
+    font-family: 'Fraunces', serif; font-weight: 600;
+    font-size: 16px; color: var(--ink);
+    font-variant-numeric: tabular-nums;
+  }
+  .secondary-task .right .arrow { color: var(--muted-2); }
+  .secondary-task:hover .right .arrow { color: var(--ink); transform: translateX(3px); }
+
+  .morning-footer {
+    margin-top: 32px;
+    padding: 20px 24px;
+    background: #fff;
+    border: 1px dashed var(--border-strong);
+    border-radius: 14px;
+    display: flex; gap: 12px; align-items: center;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .morning-footer .day-summary {
+    flex: 1;
+  }
+  .morning-footer .day-summary b {
+    color: var(--ink); font-weight: 600;
+    font-family: 'Fraunces', serif;
+    font-size: 16px;
+    letter-spacing: -0.01em;
+  }
+  .morning-footer .link {
+    display: inline-flex; gap: 6px; align-items: center;
+    color: var(--ink);
+    font-weight: 600;
+    text-decoration: none;
+    padding: 8px 14px;
+    border-radius: 8px;
+    background: var(--surface-soft);
+    cursor: pointer;
+    border: 1px solid var(--border);
+    transition: all .15s;
+  }
+  .morning-footer .link:hover { border-color: var(--ink); }
+
+  /* === Transition pill === */
+  .between {
+    max-width: 1320px;
+    margin: 0 auto;
+    padding: 32px 32px 0;
+    display: flex; justify-content: center;
+  }
+  .between .pill {
+    display: inline-flex; align-items: center; gap: 14px;
+    padding: 12px 22px;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    font-family: 'Geist Mono', monospace;
+    font-size: 11.5px; letter-spacing: 0.06em;
+    color: var(--muted);
+    box-shadow: var(--shadow-sm);
+  }
+  .between .pill b { color: var(--ink); font-weight: 700; }
+  .between .pill .arr { display: inline-flex; color: var(--blue-600); }
+
+  /* ========================================================== */
+  /* ============ SCREEN 02 — ДЕЛО (TREE PATTERN) ============= */
+  /* ========================================================== */
+  .case-screen {
+    background: #fff;
+  }
+  .case-head {
+    padding: 30px 48px 24px;
+    border-bottom: 1px solid var(--border);
+  }
+  .case-head .meta-row {
+    display: flex; gap: 10px; align-items: center;
+    margin-bottom: 14px;
+  }
+  .case-head .meta-row .id {
+    font-family: 'Geist Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted-2);
+  }
+  .case-head .meta-row .type {
+    height: 24px; padding: 0 11px;
+    border-radius: 999px;
+    background: var(--red-50); color: var(--red-700);
+    font-size: 12px; font-weight: 600;
+    border: 1px solid var(--red-100);
+    display: inline-flex; gap: 6px; align-items: center;
+  }
+  .case-head .meta-row .type i { width: 5px; height: 5px; border-radius: 50%; background: var(--red-600); }
+  .case-head .meta-row .badge {
+    height: 24px; padding: 0 11px;
+    border-radius: 999px;
+    background: var(--red-50);
+    color: var(--red-700);
+    font-size: 12px; font-weight: 700;
+    font-family: 'Geist Mono', monospace;
+    border: 1px solid var(--red-100);
+    letter-spacing: 0.04em;
+    display: inline-flex; align-items: center;
+  }
+  .case-head h2 {
+    font-family: 'Fraunces', serif; font-weight: 700;
+    font-size: 38px; line-height: 1.05;
+    margin: 0 0 6px;
+    letter-spacing: -0.022em;
+  }
+  .case-head .sub {
+    font-size: 14px; color: var(--muted);
+  }
+  .case-head .sub b { color: var(--ink-2); font-weight: 600; }
+
+  /* TREE — главный canvas */
+  .tree-wrap {
+    padding: 30px 48px;
+    background: linear-gradient(180deg, #FAFBFD 0%, #F4F6FA 100%);
+    border-bottom: 1px solid var(--border);
+  }
+  .tree-title {
+    font-family: 'Geist', sans-serif;
+    font-weight: 600;
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted-2);
+    margin-bottom: 22px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .tree-title::before {
+    content: ""; width: 16px; height: 1px; background: var(--muted-2);
+  }
+  .tree-title .legend {
+    margin-left: auto;
+    display: flex; gap: 14px;
+    font-family: 'Geist Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+    text-transform: none;
+  }
+  .tree-title .legend .l-item { display: inline-flex; gap: 5px; align-items: center; }
+  .tree-title .legend .l-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .tree-title .legend .l-dot.done { background: var(--emerald-500); }
+  .tree-title .legend .l-dot.cur { background: var(--amber-500); box-shadow: 0 0 0 3px rgba(217,119,6,0.18); }
+  .tree-title .legend .l-dot.future { background: var(--muted-3); }
+
+  .tree {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    position: relative;
+  }
+  .tree-node {
+    flex: 0 0 auto;
+    min-width: 150px;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px 16px;
+    text-align: center;
+    position: relative;
+  }
+  .tree-node[data-state="done"] {
+    background: var(--emerald-50);
+    border-color: var(--emerald-100);
+    color: var(--emerald-700);
+  }
+  .tree-node[data-state="done"]::after {
+    content: "✓";
+    position: absolute;
+    top: -8px; right: -8px;
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    background: var(--emerald-600);
+    color: #fff;
+    font-size: 12px; font-weight: 700;
+    display: grid; place-items: center;
+    box-shadow: 0 4px 10px rgba(5,150,105,0.3);
+  }
+  .tree-node[data-state="current"] {
+    background: #fff;
+    border: 2px solid var(--amber-500);
+    box-shadow:
+      0 0 0 4px rgba(217,119,6,0.15),
+      0 12px 24px -8px rgba(217,119,6,0.3);
+    transform: scale(1.06);
+  }
+  .tree-node[data-state="current"]::before {
+    content: "СЕЙЧАС";
+    position: absolute;
+    top: -11px; left: 50%; transform: translateX(-50%);
+    font-family: 'Geist Mono', monospace;
+    font-size: 9px; font-weight: 700;
+    background: var(--amber-500); color: #fff;
+    padding: 2px 8px;
+    border-radius: 5px;
+    letter-spacing: 0.1em;
+    white-space: nowrap;
+  }
+  .tree-node[data-state="branch"] {
+    background: #fff;
+    border: 2px dashed var(--muted-3);
+    cursor: pointer;
+    transition: all .15s;
+  }
+  .tree-node[data-state="branch"]:hover {
+    border-style: solid;
+    border-color: var(--ink);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+  }
+  .tree-node small {
+    display: block;
+    font-family: 'Geist Mono', monospace;
+    font-size: 9px;
+    color: var(--muted-2);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 4px;
+  }
+  .tree-node[data-state="done"] small { color: var(--emerald-600); }
+  .tree-node[data-state="current"] small { color: var(--amber-700); }
+  .tree-node b {
+    font-size: 13px;
+    color: var(--ink);
+    font-weight: 600;
+    display: block;
+  }
+  .tree-node[data-state="done"] b { color: var(--emerald-700); }
+  .tree-node[data-state="current"] b { color: var(--ink); font-size: 14px; }
+  .tree-node[data-state="branch"] b { color: var(--muted); font-weight: 500; }
+  .tree-node[data-state="branch"]:hover b { color: var(--ink); }
+
+  .tree-link {
+    flex: 0 0 30px;
+    height: 2px;
+    background: var(--muted-3);
+    position: relative;
+  }
+  .tree-link.done { background: var(--emerald-500); }
+  .tree-link.dashed { background: repeating-linear-gradient(90deg, var(--muted-3) 0, var(--muted-3) 4px, transparent 4px, transparent 8px); height: 0; border-top: 2px dashed var(--muted-3); }
+
+  .tree-branches {
+    margin-top: 18px;
+    display: flex;
+    justify-content: center;
+    gap: 30px;
+    position: relative;
+  }
+  .tree-branches::before {
+    content: "";
+    position: absolute;
+    top: -18px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 60%;
+    height: 18px;
+    border-top: none;
+  }
+  .branch-pair {
+    flex: 0 0 auto;
+    text-align: center;
+  }
+  .branch-pair .branch-label {
+    font-family: 'Geist Mono', monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted-2);
+    margin-bottom: 6px;
+    font-weight: 600;
+  }
+
+  /* DECISION PANEL — одно главное действие + второстепенные ссылки */
+  .decision-panel {
+    margin: 30px 48px 28px;
+    padding: 28px 32px;
+    background: linear-gradient(135deg, #FFFCF3 0%, #FFFAEC 100%);
+    border: 1px solid var(--amber-100);
+    border-radius: 18px;
+    position: relative;
+    overflow: hidden;
+  }
+  .decision-panel::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0;
+    width: 4px; height: 100%;
+    background: var(--amber-500);
+  }
+  .decision-panel .top-line {
+    display: flex; gap: 10px; align-items: center;
+    margin-bottom: 14px;
+  }
+  .decision-panel .top-line .ic {
+    width: 32px; height: 32px;
+    border-radius: 10px;
+    background: var(--amber-50);
+    color: var(--amber-700);
+    display: grid; place-items: center;
+    border: 1px solid var(--amber-100);
+  }
+  .decision-panel .top-line h3 {
+    font-family: 'Fraunces', serif;
+    font-weight: 700;
+    font-size: 22px;
+    margin: 0;
+    letter-spacing: -0.012em;
+    color: var(--amber-700);
+  }
+  .decision-panel .text {
+    font-size: 14px;
+    color: var(--ink-2);
+    line-height: 1.55;
+    margin-bottom: 20px;
+    max-width: 720px;
+  }
+  .decision-panel .text b { color: var(--ink); }
+
+  .primary-action {
+    display: inline-flex; gap: 12px; align-items: center;
+    height: 56px;
+    padding: 0 28px;
+    background: var(--ink);
+    color: #fff;
+    border: none;
+    border-radius: 14px;
+    font-family: inherit;
+    font-size: 16px; font-weight: 600;
+    cursor: pointer;
+    margin-right: 8px;
+    box-shadow: 0 12px 24px -8px rgba(11,18,32,0.35);
+    transition: all .15s;
+  }
+  .primary-action:hover { transform: translateY(-2px); }
+  .primary-action .amt {
+    margin-left: 6px;
+    padding: 4px 10px;
+    background: rgba(255,255,255,0.15);
+    border-radius: 7px;
+    font-family: 'Geist Mono', monospace;
+    font-size: 13px;
+    font-weight: 700;
+  }
+  .primary-action .kbd {
+    margin-left: 8px;
+    padding: 2px 7px;
+    background: rgba(255,255,255,0.12);
+    border-radius: 5px;
+    font-family: 'Geist Mono', monospace;
+    font-size: 11px;
+    color: rgba(255,255,255,0.7);
+  }
+
+  .secondary-actions {
+    display: flex; flex-wrap: wrap; gap: 22px;
+    margin-top: 18px;
+    padding-top: 18px;
+    border-top: 1px dashed var(--amber-100);
+  }
+  .secondary-action {
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    font-family: inherit;
+    font-size: 13.5px;
+    font-weight: 500;
+    cursor: pointer;
+    display: inline-flex; gap: 7px; align-items: center;
+    padding: 0;
+    transition: color .15s;
+  }
+  .secondary-action:hover { color: var(--ink); }
+  .secondary-action svg { color: var(--muted-2); }
+
+  /* DETAILS — свёрнутые секции */
+  .details {
+    padding: 0 48px 40px;
+  }
+  .details-row {
+    border-top: 1px solid var(--border);
+    padding: 16px 0;
+    display: grid;
+    grid-template-columns: 28px 1fr auto;
+    gap: 14px;
+    align-items: center;
+    cursor: pointer;
+  }
+  .details-row:hover .label { color: var(--ink); }
+  .details-row .ic {
+    width: 28px; height: 28px;
+    border-radius: 8px;
+    background: var(--surface-soft);
+    color: var(--muted);
+    display: grid; place-items: center;
+  }
+  .details-row .label {
+    font-size: 13.5px; color: var(--ink-2); font-weight: 500;
+    transition: color .15s;
+  }
+  .details-row .label b { color: var(--ink); font-weight: 600; }
+  .details-row .count {
+    color: var(--muted-2);
+    font-family: 'Geist Mono', monospace;
+    font-size: 12px;
+  }
+  .details-row .chev {
+    color: var(--muted-2);
+    transition: transform .15s;
+  }
+  .details-row.open .chev { transform: rotate(90deg); }
+
+  .details-content {
+    padding: 8px 0 16px 42px;
+    border-bottom: 1px solid var(--border);
+    display: none;
+  }
+  .details-content.open { display: block; }
+  .details-content .item {
+    display: flex; justify-content: space-between;
+    padding: 8px 0;
+    font-size: 13px;
+    color: var(--ink-2);
+    border-bottom: 1px solid var(--border);
+  }
+  .details-content .item:last-child { border-bottom: 0; }
+  .details-content .item .when {
+    font-family: 'Geist Mono', monospace;
+    color: var(--muted);
+    font-size: 11.5px;
+  }
+  .details-content.payments .item {
+    grid-template-columns: 20px 1fr auto 14px;
+    display: grid;
+    gap: 12px;
+    align-items: center;
+  }
+  .details-content.payments .item .n {
+    font-family: 'Geist Mono', monospace;
+    font-size: 11px;
+    color: var(--muted-2);
+  }
+  .details-content.payments .item .amt {
+    font-family: 'Geist Mono', monospace;
+    font-weight: 600;
+    color: var(--ink);
+  }
+  .details-content.payments .item .check {
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    border: 2px solid var(--border-strong);
+  }
+  .details-content.payments .item.paid .check {
+    background: var(--emerald-600);
+    border-color: var(--emerald-600);
+  }
+  .details-content.payments .item.late .check {
+    background: var(--red-600);
+    border-color: var(--red-600);
+  }
+  .details-content.payments .item.late .descr { color: var(--red-700); font-weight: 600; }
+  .details-content.payments .item.paid .descr { color: var(--emerald-700); }
+  .details-content.payments .item .when { font-family: 'Geist', sans-serif; font-size: 13px; color: var(--ink); }
+  .details-content.payments .item .descr {
+    font-size: 11.5px;
+    color: var(--muted);
+    margin-top: 2px;
+    font-family: 'Geist Mono', monospace;
+  }
+
+  /* ========================================================== */
+  /* ============ SCREEN 03 — ПЛАТЁЖ (ONE STEP) =============== */
+  /* ========================================================== */
+  .pay-screen {
+    background: var(--surface-soft);
+    min-height: 680px;
+    display: grid;
+    place-items: center;
+    padding: 50px 30px;
+    position: relative;
+  }
+  .pay-screen::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: radial-gradient(rgba(11,18,32,0.05) 1px, transparent 1px);
+    background-size: 18px 18px;
+    pointer-events: none;
+    mask-image: radial-gradient(ellipse at center, transparent 0%, rgba(0,0,0,0.5) 70%);
+  }
+  .pay-card {
+    width: 100%;
+    max-width: 520px;
+    background: #fff;
+    border-radius: 20px;
+    box-shadow: var(--shadow-lg);
+    overflow: hidden;
+    position: relative;
+    z-index: 1;
+  }
+  .pay-head {
+    padding: 26px 30px 22px;
+    border-bottom: 1px solid var(--border);
+  }
+  .pay-head .for {
+    font-family: 'Geist Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 6px;
+  }
+  .pay-head .for b { color: var(--ink); font-weight: 700; }
+  .pay-head h3 {
+    font-family: 'Fraunces', serif;
+    font-weight: 700;
+    font-size: 30px;
+    margin: 0 0 4px;
+    letter-spacing: -0.02em;
+  }
+  .pay-head .sub {
+    font-size: 13px; color: var(--muted);
+  }
+  .pay-body { padding: 24px 30px 20px; }
+
+  .pay-amount-block {
+    margin-bottom: 18px;
+  }
+  .pay-amount-block .label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 600;
+    color: var(--muted);
+    margin-bottom: 12px;
+  }
+  .pay-amount-input {
+    display: flex; gap: 10px; align-items: baseline;
+    border: 2px solid var(--ink);
+    border-radius: 14px;
+    padding: 14px 20px 16px;
+    background: linear-gradient(180deg, #fff 0%, #FAFBFD 100%);
+    margin-bottom: 14px;
+    box-shadow: 0 0 0 4px rgba(11,18,32,0.06);
+  }
+  .pay-amount-input input {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    outline: none;
+    font-family: 'Fraunces', serif;
+    font-weight: 700;
+    font-size: 38px;
+    line-height: 1;
+    color: var(--ink);
+    background: transparent;
+    letter-spacing: -0.022em;
+    padding: 0;
+  }
+  .pay-amount-input .currency {
+    flex: none;
+    font-family: 'Fraunces', serif;
+    font-weight: 600;
+    font-size: 32px;
+    line-height: 1;
+    color: var(--muted-2);
+    letter-spacing: -0.01em;
+  }
+  .quick-amounts {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+  }
+  .qa {
+    height: 44px;
+    padding: 0 12px;
+    border-radius: 11px;
+    border: 1px solid var(--border);
+    background: #fff;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    color: var(--ink-2);
+    display: inline-flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: flex-start;
+    gap: 2px;
+    text-align: left;
+    transition: all .15s;
+  }
+  .qa:hover { border-color: var(--ink); }
+  .qa .num {
+    font-family: 'Geist Mono', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--muted);
+  }
+  .qa.active {
+    background: var(--ink); color: #fff; border-color: var(--ink);
+  }
+  .qa.active .num { color: rgba(255,255,255,0.7); }
+
+  .pay-method-block { margin-bottom: 18px; }
+  .pay-method-block .label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 600;
+    color: var(--muted);
+    margin-bottom: 10px;
+  }
+  .method-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .method {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    padding: 14px 16px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: #fff;
+    cursor: pointer;
+    text-align: left;
+    transition: all .15s;
+    font-family: inherit;
+  }
+  .method:hover { border-color: var(--ink); }
+  .method.selected {
+    border-color: var(--ink);
+    background: var(--ink);
+    color: #fff;
+  }
+  .method .ic {
+    width: 36px; height: 36px;
+    border-radius: 9px;
+    background: var(--surface-soft);
+    color: var(--ink);
+    display: grid; place-items: center;
+    flex: none;
+  }
+  .method.selected .ic { background: rgba(255,255,255,0.12); color: #fff; }
+  .method .lbl {
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .method .hint {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 2px;
+    font-family: 'Geist Mono', monospace;
+    letter-spacing: 0.02em;
+  }
+  .method.selected .hint { color: rgba(255,255,255,0.6); }
+
+  .impact-live {
+    padding: 20px 30px 22px;
+    background: linear-gradient(135deg, var(--emerald-50), #F7FEFA);
+    border-top: 1px solid var(--emerald-100);
+  }
+  .impact-live .lbl {
+    font-family: 'Geist Mono', monospace;
+    font-size: 10.5px;
+    color: var(--emerald-700);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 700;
+    margin-bottom: 12px;
+  }
+  .impact-live .live-row {
+    display: flex; justify-content: space-between; align-items: baseline;
+    gap: 16px;
+    padding: 5px 0;
+    font-size: 13.5px;
+    color: var(--ink-2);
+  }
+  .impact-live .live-row > span { color: var(--muted); }
+  .impact-live .live-row b {
+    font-family: 'Geist Mono', monospace;
+    color: var(--ink);
+    font-weight: 600;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .impact-live .live-row.major {
+    margin-top: 8px;
+    padding-top: 12px;
+    border-top: 1px solid var(--emerald-100);
+    font-weight: 600;
+    font-size: 14px;
+  }
+  .impact-live .live-row.major > span { color: var(--ink-2); }
+  .impact-live .live-row.major b {
+    font-family: 'Fraunces', serif;
+    font-weight: 700;
+    font-size: 18px;
+    color: var(--emerald-700);
+    letter-spacing: -0.01em;
+  }
+
+  .pay-foot {
+    padding: 18px 30px 22px;
+    border-top: 1px solid var(--border);
+    background: var(--surface-soft);
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+  .pay-foot .esc {
+    color: var(--muted);
+    background: transparent;
+    border: none;
+    font-family: inherit;
+    font-size: 13px;
+    cursor: pointer;
+    display: inline-flex; gap: 6px; align-items: center;
+  }
+  .pay-foot .esc kbd {
+    font-family: 'Geist Mono', monospace;
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: #fff;
+    border: 1px solid var(--border);
+    color: var(--muted-2);
+  }
+  .pay-foot .save {
+    margin-left: auto;
+    height: 48px;
+    padding: 0 26px;
+    background: var(--ink);
+    color: #fff;
+    border: none;
+    border-radius: 12px;
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    display: inline-flex; gap: 8px; align-items: center;
+    box-shadow: 0 12px 20px -8px rgba(11,18,32,0.35);
+  }
+  .pay-foot .save:hover { background: #16213a; }
+  .pay-foot .save .kbd {
+    font-family: 'Geist Mono', monospace;
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: rgba(255,255,255,0.18);
+    color: rgba(255,255,255,0.85);
+  }
+
+  /* ========================================================== */
+  /* ============ SCREEN 04 — EMPTY STATE ===================== */
+  /* ========================================================== */
+  .empty {
+    padding: 80px 48px;
+    background: linear-gradient(180deg, #fff 0%, #FAFBFD 100%);
+    text-align: center;
+    min-height: 580px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+  }
+  .empty-illustration {
+    width: 120px; height: 120px;
+    border-radius: 30px;
+    background: linear-gradient(135deg, var(--surface-soft), var(--surface-tint));
+    border: 1px solid var(--border);
+    display: grid; place-items: center;
+    color: var(--muted-2);
+    margin-bottom: 28px;
+    box-shadow: var(--shadow-sm);
+    position: relative;
+  }
+  .empty-illustration::after {
+    content: "";
+    position: absolute;
+    top: -8px; right: -8px;
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--emerald-500), var(--emerald-600));
+    box-shadow: 0 8px 18px -4px rgba(5,150,105,0.4);
+  }
+  .empty-illustration::before {
+    content: "✓";
+    position: absolute;
+    top: -8px; right: -8px;
+    width: 36px; height: 36px;
+    color: #fff;
+    font-size: 20px;
+    font-weight: 700;
+    display: grid; place-items: center;
+    z-index: 1;
+  }
+  .empty h2 {
+    font-family: 'Fraunces', serif;
+    font-weight: 700;
+    font-size: 36px;
+    margin: 0 0 10px;
+    letter-spacing: -0.02em;
+  }
+  .empty .sub {
+    font-size: 15px;
+    color: var(--muted);
+    max-width: 460px;
+    margin: 0 auto 32px;
+    line-height: 1.55;
+  }
+  .empty-cta-row {
+    display: flex; gap: 12px; justify-content: center; align-items: center;
+  }
+  .empty-cta {
+    display: inline-flex; gap: 10px; align-items: center;
+    height: 50px;
+    padding: 0 26px;
+    background: var(--ink);
+    color: #fff;
+    border: none;
+    border-radius: 13px;
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 12px 24px -8px rgba(11,18,32,0.35);
+    position: relative;
+  }
+  .empty-cta::before {
+    content: "← начни отсюда";
+    position: absolute;
+    left: -160px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-family: 'Fraunces', serif;
+    font-style: italic;
+    font-weight: 500;
+    font-size: 16px;
+    color: var(--blue-700);
+    white-space: nowrap;
+  }
+  .empty-cta::after {
+    content: "";
+    position: absolute;
+    left: -20px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 14px;
+    height: 14px;
+    border-top: 2px solid var(--blue-700);
+    border-right: 2px solid var(--blue-700);
+    transform: translateY(-50%) rotate(45deg);
+  }
+  .empty-help {
+    display: inline-flex; gap: 8px; align-items: center;
+    background: transparent;
+    color: var(--muted);
+    border: none;
+    font-family: inherit;
+    font-size: 13.5px;
+    cursor: pointer;
+    padding: 14px 16px;
+  }
+  .empty-help:hover { color: var(--ink); }
+
+  .empty-checklist {
+    margin-top: 50px;
+    padding: 22px 26px;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    text-align: left;
+    max-width: 460px;
+    margin-left: auto; margin-right: auto;
+  }
+  .empty-checklist h4 {
+    font-family: 'Geist', sans-serif;
+    font-weight: 600;
+    font-size: 11.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted-2);
+    margin: 0 0 12px;
+  }
+  .empty-checklist .ch {
+    display: flex; gap: 10px; align-items: flex-start;
+    padding: 8px 0;
+    font-size: 13px;
+    color: var(--ink-2);
+    line-height: 1.5;
+  }
+  .empty-checklist .ch .n {
+    flex: none;
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    background: var(--surface-soft);
+    color: var(--muted);
+    font-family: 'Geist Mono', monospace;
+    font-weight: 700;
+    font-size: 11px;
+    display: grid; place-items: center;
+  }
+  .empty-checklist .ch.active .n {
+    background: var(--ink);
+    color: #fff;
+  }
+  .empty-checklist .ch b { color: var(--ink); font-weight: 600; }
+
+  /* === Design notes === */
+  .design-notes {
+    max-width: 1320px;
+    margin: 80px auto 0;
+    padding: 0 32px;
+  }
+  .design-notes h2 {
+    font-family: 'Fraunces', serif;
+    font-weight: 700;
+    font-size: 28px;
+    margin: 0 0 22px;
+    letter-spacing: -0.02em;
+  }
+  .design-notes .grid {
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px;
+  }
+  .design-notes .note {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px 22px;
+    box-shadow: var(--shadow-xs);
+  }
+  .design-notes .note .num {
+    font-family: 'Geist Mono', monospace;
+    font-size: 11px;
+    color: var(--blue-700);
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    margin-bottom: 6px;
+  }
+  .design-notes .note h4 {
+    font-family: 'Fraunces', serif;
+    font-weight: 600;
+    font-size: 18px;
+    margin: 0 0 8px;
+    letter-spacing: -0.01em;
+  }
+  .design-notes .note p {
+    margin: 0;
+    font-size: 13px;
+    color: var(--muted);
+    line-height: 1.55;
+  }
+  .design-notes .note p b { color: var(--ink-2); }
+  .design-notes .note .vs {
+    font-family: 'Geist Mono', monospace;
+    font-size: 10.5px;
+    color: var(--muted-2);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--border);
+  }
+  .design-notes .note .vs b { color: var(--red-700); }
+
+  .icon-stroke { stroke: currentColor; stroke-width: 1.7; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+</style>
+</head>
+<body>
+
+<!-- ============ DOC HEADER ============ -->
+<div class="doc-header">
+  <div class="meta">v4 · интуитивный flow</div>
+  <h1>На каждом экране — <em>один очевидный шаг.</em><br/>Без подсказок.</h1>
+  <p class="lede">
+    Главный сдвиг от v3: <b>иерархия</b>. Раньше у пользователя на каждом экране
+    было 4 равноценных решения и он должен был думать «что выбрать». Теперь —
+    одна крупная кнопка с самым осмысленным следующим шагом, всё остальное
+    тише и мельче. Дерево схемы владельца — самостоятельный навигатор. Список
+    дел сворачивается. Пустое состояние — со стрелкой «начни отсюда».
+  </p>
+</div>
+
+<!-- ============ SCREEN 01 — УТРО ============ -->
+<div class="screen-frame">
+  <div class="stitle">
+    <span class="num">ЭКРАН 01</span>
+    <h2>Утро · герой-карточка</h2>
+    <span class="note">
+      Самое срочное дело раскрыто крупно с большой кнопкой. Не «вот тебе 4
+      одинаковые карточки, выбери» — а «вот это нужно сделать сейчас». Остальные
+      задачи маленькие, ниже.
+    </span>
+  </div>
+  <div class="screen">
+    <div class="screen-chrome">
+      <div class="dots"><i></i><i></i><i></i></div>
+      <div class="url">
+        <svg width="11" height="11" class="icon-stroke" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        crm.hulk-bike.ru/<b>debtors</b>
+      </div>
+    </div>
+    <div class="app">
+      <nav class="sidenav">
+        <div class="logo">H</div>
+        <div class="nav-item"><svg width="18" height="18" class="icon-stroke" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg></div>
+        <div class="nav-item"><svg width="18" height="18" class="icon-stroke" viewBox="0 0 24 24"><path d="M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z"/><path d="M3 21a9 9 0 0 1 18 0"/></svg></div>
+        <div class="nav-item"><svg width="18" height="18" class="icon-stroke" viewBox="0 0 24 24"><circle cx="6" cy="17" r="3"/><circle cx="18" cy="17" r="3"/><path d="M3 12h7l3-5h5l3 5"/></svg></div>
+        <div class="nav-item active">
+          <svg width="18" height="18" class="icon-stroke" viewBox="0 0 24 24"><path d="M12 3 2 21h20L12 3Z"/><path d="M12 10v5M12 18h.01"/></svg>
+          <span class="dot-pulse"></span>
+        </div>
+        <div class="nav-item"><svg width="18" height="18" class="icon-stroke" viewBox="0 0 24 24"><path d="M3 9 12 3l9 6v12H3V9Z"/></svg></div>
+        <div class="spacer"></div>
+        <div class="me">АК</div>
+      </nav>
+
+      <main class="content">
+        <div class="topbar">
+          <div class="breadcrumb">
+            <a>CRM</a>
+            <span class="sep">/</span>
+            <b>Должники</b>
+          </div>
+          <div class="search">
+            <svg width="13" height="13" class="icon-stroke" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+            Найти дело…
+            <kbd>⌘ K</kbd>
+          </div>
+          <button class="add-btn">
+            <svg width="12" height="12" class="icon-stroke" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+            Новое дело
+          </button>
+        </div>
+
+        <div class="morning">
+          <div class="greeting-line">Суббота · 16 мая · 09:14</div>
+          <h1 class="greeting-name">Доброе утро, <em>Анна</em></h1>
+
+          <div class="focus-row">Самое срочное сегодня</div>
+
+          <!-- HERO -->
+          <div class="hero">
+            <div class="above">
+              <span class="type"><i></i>ДТП · просрочка</span>
+              <span class="age">−4 ДНЯ ПРОСРОЧКИ</span>
+              <span class="id">D-005</span>
+            </div>
+            <h2>Алексей Сидоров</h2>
+            <p class="what">
+              <b>3-й платёж по графику</b> должен был прийти 11 мая.
+              Ждём <span class="amt">18 000 ₽</span>, не дозвонились с 13-го.
+              Если сегодня не выйдет на связь — система рекомендует передать юристу.
+            </p>
+            <div class="cta-row">
+              <button class="cta">
+                Открыть и разобраться
+                <svg class="arrow" width="18" height="18" class="icon-stroke" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+              </button>
+              <button class="skip">Отложить →</button>
+            </div>
+          </div>
+
+          <div class="more-tasks-label">Ещё на сегодня · 3 задачи</div>
+
+          <div class="secondary-task" data-prio="hot">
+            <div class="ava">АН</div>
+            <div class="body">
+              <div class="name">Артём Новиков</div>
+              <div class="desc"><span class="pip"></span>3-я просрочка подряд по аренде · рекомендация передать юристу</div>
+            </div>
+            <div class="right">
+              <span class="amt">15 000 ₽</span>
+              <svg class="arrow" width="14" height="14" class="icon-stroke" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            </div>
+          </div>
+
+          <div class="secondary-task" data-prio="warm">
+            <div class="ava">СВ</div>
+            <div class="body">
+              <div class="name">Сергей Волков</div>
+              <div class="desc"><span class="pip"></span>Напоминание — позвонить в страховую (18 мая)</div>
+            </div>
+            <div class="right">
+              <span class="amt">~120 000 ₽</span>
+              <svg class="arrow" width="14" height="14" class="icon-stroke" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            </div>
+          </div>
+
+          <div class="secondary-task" data-prio="cool">
+            <div class="ava">МК</div>
+            <div class="body">
+              <div class="name">Мария Кузнецова</div>
+              <div class="desc"><span class="pip"></span>Финальный платёж сегодня — зафиксировать и закрыть дело</div>
+            </div>
+            <div class="right">
+              <span class="amt">15 000 ₽</span>
+              <svg class="arrow" width="14" height="14" class="icon-stroke" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            </div>
+          </div>
+
+          <div class="morning-footer">
+            <div class="day-summary">
+              Всего активных дел — <b>14</b> · на сумму <b>1 085 200 ₽</b>
+            </div>
+            <a class="link">
+              Посмотреть все
+              <svg width="12" height="12" class="icon-stroke" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            </a>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+</div>
+
+<div class="between">
+  <div class="pill">
+    Большая кнопка <b>«Открыть и разобраться»</b>
+    <span class="arr"><svg width="20" height="14" class="icon-stroke" viewBox="0 0 20 14"><path d="M1 7h16M13 2l5 5-5 5"/></svg></span>
+    открывает дерево дела
+  </div>
+</div>
+
+<!-- ============ SCREEN 02 — ДЕЛО ============ -->
+<div class="screen-frame">
+  <div class="stitle">
+    <span class="num">ЭКРАН 02</span>
+    <h2>Дело · дерево + одна большая кнопка</h2>
+    <span class="note">
+      Схема владельца отрисована как настоящее дерево. Подсвечено где сейчас.
+      Снизу — единственная крупная кнопка «Платёж получен» (то что нужно
+      сделать сейчас), второстепенные ходы — мелкими ссылками. История и
+      график — свёрнуты, разворачиваются по клику.
+    </span>
+  </div>
+  <div class="screen">
+    <div class="screen-chrome">
+      <div class="dots"><i></i><i></i><i></i></div>
+      <div class="url">
+        <svg width="11" height="11" class="icon-stroke" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        crm.hulk-bike.ru/debtors/<b>D-005</b>
+      </div>
+    </div>
+    <div class="app">
+      <nav class="sidenav">
+        <div class="logo">H</div>
+        <div class="nav-item"><svg width="18" height="18" class="icon-stroke" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg></div>
+        <div class="nav-item"><svg width="18" height="18" class="icon-stroke" viewBox="0 0 24 24"><path d="M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z"/><path d="M3 21a9 9 0 0 1 18 0"/></svg></div>
+        <div class="nav-item"><svg width="18" height="18" class="icon-stroke" viewBox="0 0 24 24"><circle cx="6" cy="17" r="3"/><circle cx="18" cy="17" r="3"/><path d="M3 12h7l3-5h5l3 5"/></svg></div>
+        <div class="nav-item active">
+          <svg width="18" height="18" class="icon-stroke" viewBox="0 0 24 24"><path d="M12 3 2 21h20L12 3Z"/><path d="M12 10v5M12 18h.01"/></svg>
+        </div>
+        <div class="nav-item"><svg width="18" height="18" class="icon-stroke" viewBox="0 0 24 24"><path d="M3 9 12 3l9 6v12H3V9Z"/></svg></div>
+        <div class="spacer"></div>
+        <div class="me">АК</div>
+      </nav>
+
+      <main class="content">
+        <div class="topbar">
+          <div class="breadcrumb">
+            <a>Должники</a>
+            <span class="sep">/</span>
+            <b>D-005 · Алексей Сидоров</b>
+          </div>
+          <div class="search">
+            <svg width="13" height="13" class="icon-stroke" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+            Найти…
+            <kbd>⌘ K</kbd>
+          </div>
+        </div>
+
+        <div class="case-screen">
+          <div class="case-head">
+            <div class="meta-row">
+              <span class="id">D-005 · приоритет №5</span>
+              <span class="type"><i></i>ДТП · виновник</span>
+              <span class="badge">просрочка 4 дня</span>
+            </div>
+            <h2>Алексей Сидоров</h2>
+            <div class="sub">+7 985 217-04-66 · <b>закрытый клиент</b> · долг открыт 20 марта</div>
+          </div>
+
+          <div class="tree-wrap">
+            <div class="tree-title">
+              путь дела по схеме владельца
+              <div class="legend">
+                <div class="l-item"><span class="l-dot done"></span>пройдено</div>
+                <div class="l-item"><span class="l-dot cur"></span>сейчас</div>
+                <div class="l-item"><span class="l-dot future"></span>может пойти сюда</div>
+              </div>
+            </div>
+
+            <!-- Main path -->
+            <div class="tree">
+              <div class="tree-node" data-state="done">
+                <small>стадия 1</small>
+                <b>ДТП виновник</b>
+              </div>
+              <div class="tree-link done"></div>
+              <div class="tree-node" data-state="done">
+                <small>стадия 2</small>
+                <b>Досудебка · признал</b>
+              </div>
+              <div class="tree-link done"></div>
+              <div class="tree-node" data-state="current">
+                <small>стадия 3 · 57 дней</small>
+                <b>График платежей</b>
+              </div>
+              <div class="tree-link dashed"></div>
+              <div class="tree-node" data-state="branch">
+                <small>стадия 4 · возможна</small>
+                <b>Закрыто</b>
+              </div>
+            </div>
+
+            <!-- Branches from current -->
+            <div class="tree-branches">
+              <div class="branch-pair">
+                <div class="branch-label">↑ из «График платежей» возможные ветки ↑</div>
+                <div style="display:flex;gap:20px;justify-content:center">
+                  <div class="tree-node" data-state="branch" style="border-color:var(--emerald-100)">
+                    <small style="color:var(--emerald-700)">если платит дальше</small>
+                    <b>→ Закрытие дела</b>
+                  </div>
+                  <div class="tree-node" data-state="branch" style="border-color:var(--red-100)">
+                    <small style="color:var(--red-700)">если перестал платить</small>
+                    <b>→ У юриста</b>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- DECISION PANEL -->
+          <div class="decision-panel">
+            <div class="top-line">
+              <div class="ic">
+                <svg width="16" height="16" class="icon-stroke" viewBox="0 0 24 24"><path d="M12 3 2 21h20L12 3Z"/><path d="M12 10v5"/></svg>
+              </div>
+              <h3>Платёж 3 из 5 не пришёл — 4 дня</h3>
+            </div>
+            <p class="text">
+              Клиент закрыл первые два платежа вовремя (11 мар, 10 апр). Третий
+              должен был прийти <b>11 мая</b>. На звонок 13 мая не ответил.
+              <b>Если сегодня платёж приходит — нажмите большую кнопку.</b>
+              Если нет связи и решаете эскалировать — есть тихие ссылки внизу.
+            </p>
+
+            <button class="primary-action">
+              <svg width="18" height="18" class="icon-stroke" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>
+              Платёж получен
+              <span class="amt">18 000 ₽</span>
+              <span class="kbd">P</span>
+            </button>
+
+            <div class="secondary-actions">
+              <button class="secondary-action">
+                <svg width="14" height="14" class="icon-stroke" viewBox="0 0 24 24"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.79 19.79 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.9.36 1.78.7 2.61a2 2 0 0 1-.45 2.11L8.09 9.91"/></svg>
+                Позвонил, обещал к ХХ числу
+              </button>
+              <button class="secondary-action">
+                <svg width="14" height="14" class="icon-stroke" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m9 15 6-6M9 9h.01M15 15h.01"/></svg>
+                Не дозвонился (зафиксировать попытку)
+              </button>
+              <button class="secondary-action" style="color:var(--red-700)">
+                <svg width="14" height="14" class="icon-stroke" viewBox="0 0 24 24"><path d="M12 3 2 21h20L12 3Z"/><path d="M12 10v5"/></svg>
+                Эскалировать к юристу
+              </button>
+            </div>
+          </div>
+
+          <!-- DETAILS (свёрнутые) -->
+          <div class="details">
+            <div class="details-row open">
+              <div class="ic">
+                <svg width="14" height="14" class="icon-stroke" viewBox="0 0 24 24"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+              </div>
+              <div class="label"><b>График платежей</b> · 2 из 5 закрыто, 36 000 / 90 000 ₽</div>
+              <div class="chev">
+                <svg width="12" height="12" class="icon-stroke" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
+              </div>
+            </div>
+            <div class="details-content payments open">
+              <div class="item paid">
+                <span class="n">1</span>
+                <div>
+                  <div class="when">11 марта</div>
+                  <div class="descr">оплачен 11 мар · наличные</div>
+                </div>
+                <span class="amt">18 000 ₽</span>
+                <span class="check"></span>
+              </div>
+              <div class="item paid">
+                <span class="n">2</span>
+                <div>
+                  <div class="when">11 апреля</div>
+                  <div class="descr">оплачен 10 апр · карта</div>
+                </div>
+                <span class="amt">18 000 ₽</span>
+                <span class="check"></span>
+              </div>
+              <div class="item late">
+                <span class="n">3</span>
+                <div>
+                  <div class="when">11 мая</div>
+                  <div class="descr">просрочка 4 дня · не дозвонились</div>
+                </div>
+                <span class="amt">18 000 ₽</span>
+                <span class="check"></span>
+              </div>
+              <div class="item">
+                <span class="n">4</span>
+                <div>
+                  <div class="when">11 июня</div>
+                  <div class="descr" style="font-family:'Geist Mono',monospace">плановый</div>
+                </div>
+                <span class="amt" style="color:var(--muted)">18 000 ₽</span>
+                <span class="check"></span>
+              </div>
+              <div class="item">
+                <span class="n">5</span>
+                <div>
+                  <div class="when">11 июля</div>
+                  <div class="descr" style="font-family:'Geist Mono',monospace">плановый · финал</div>
+                </div>
+                <span class="amt" style="color:var(--muted)">18 000 ₽</span>
+                <span class="check"></span>
+              </div>
+            </div>
+
+            <div class="details-row">
+              <div class="ic">
+                <svg width="14" height="14" class="icon-stroke" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+              </div>
+              <div class="label"><b>Хронология</b> · 8 событий за 57 дней</div>
+              <div class="count">8 →</div>
+              <div class="chev">
+                <svg width="12" height="12" class="icon-stroke" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
+              </div>
+            </div>
+
+            <div class="details-row">
+              <div class="ic">
+                <svg width="14" height="14" class="icon-stroke" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+              </div>
+              <div class="label"><b>Документы</b> · акт ДТП, схема, расписка</div>
+              <div class="count">3 →</div>
+              <div class="chev">
+                <svg width="12" height="12" class="icon-stroke" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
+              </div>
+            </div>
+
+            <div class="details-row">
+              <div class="ic">
+                <svg width="14" height="14" class="icon-stroke" viewBox="0 0 24 24"><path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8z"/></svg>
+              </div>
+              <div class="label"><b>Заметки</b> · «психо 3, нужны напоминания, не суд»</div>
+              <div class="count">2 →</div>
+              <div class="chev">
+                <svg width="12" height="12" class="icon-stroke" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+</div>
+
+<div class="between">
+  <div class="pill">
+    Большая чёрная кнопка <b>«Платёж получен · 18 000 ₽»</b>
+    <span class="arr"><svg width="20" height="14" class="icon-stroke" viewBox="0 0 20 14"><path d="M1 7h16M13 2l5 5-5 5"/></svg></span>
+    фокус-экран на одно действие
+  </div>
+</div>
+
+<!-- ============ SCREEN 03 — ПЛАТЁЖ (ONE STEP) ============ -->
+<div class="screen-frame">
+  <div class="stitle">
+    <span class="num">ЭКРАН 03</span>
+    <h2>Платёж · один шаг</h2>
+    <span class="note">
+      Один экран — одно действие. Сумма уже заполнена ожидаемым значением,
+      «способ» по умолчанию «карта» (как в предыдущих платежах). Внизу live
+      предпросмотр «что произойдёт». Enter сохраняет.
+    </span>
+  </div>
+  <div class="screen">
+    <div class="screen-chrome">
+      <div class="dots"><i></i><i></i><i></i></div>
+      <div class="url">
+        <svg width="11" height="11" class="icon-stroke" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        crm.hulk-bike.ru/debtors/D-005/<b>payment</b>
+      </div>
+    </div>
+    <div class="pay-screen">
+      <div class="pay-card">
+        <div class="pay-head">
+          <div class="for">Платёж от <b>Алексея Сидорова</b> · дело D-005</div>
+          <h3>Сколько пришло?</h3>
+          <div class="sub">Предзаполнено суммой 3-го платежа по графику.</div>
+        </div>
+        <div class="pay-body">
+          <div class="pay-amount-block">
+            <div class="label">Сумма</div>
+            <div class="pay-amount-input">
+              <input type="text" value="18 000" />
+              <span class="currency">₽</span>
+            </div>
+            <div class="quick-amounts">
+              <button class="qa active">3-й платёж <span class="num">18 000</span></button>
+              <button class="qa">3-й + 4-й <span class="num">36 000</span></button>
+              <button class="qa">Закрыть всё <span class="num">54 000</span></button>
+            </div>
+          </div>
+
+          <div class="pay-method-block">
+            <div class="label">Способ</div>
+            <div class="method-row">
+              <button class="method selected">
+                <div class="ic">
+                  <svg width="18" height="18" class="icon-stroke" viewBox="0 0 24 24"><path d="M3 12h14M3 6h18M3 18h10"/><path d="m17 16 4 4-4 4"/></svg>
+                </div>
+                <div>
+                  <div class="lbl">Перевод</div>
+                  <div class="hint">карта / СБП / р/с</div>
+                </div>
+              </button>
+              <button class="method">
+                <div class="ic">
+                  <svg width="18" height="18" class="icon-stroke" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="12" cy="13" r="3"/></svg>
+                </div>
+                <div>
+                  <div class="lbl">Наличные</div>
+                  <div class="hint">в кассу магазина</div>
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="impact-live">
+          <div class="lbl">↓ что произойдёт</div>
+          <div class="live-row"><span>Погашено</span><b>54 000 / 90 000 ₽</b></div>
+          <div class="live-row"><span>Прогресс</span><b>60% · было 40%</b></div>
+          <div class="live-row"><span>Просрочка</span><b style="color:var(--emerald-700)">снимается</b></div>
+          <div class="live-row major"><span>Статус дела</span><b>снова в графике</b></div>
+        </div>
+
+        <div class="pay-foot">
+          <button class="esc">
+            Отмена
+            <kbd>Esc</kbd>
+          </button>
+          <button class="save">
+            Сохранить
+            <span class="kbd">⏎</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="between">
+  <div class="pill">
+    Особый случай — <b>пустое состояние</b>, когда в системе ещё нет ни одного должника
+    <span class="arr"><svg width="20" height="14" class="icon-stroke" viewBox="0 0 20 14"><path d="M1 7h16M13 2l5 5-5 5"/></svg></span>
+  </div>
+</div>
+
+<!-- ============ SCREEN 04 — EMPTY STATE ============ -->
+<div class="screen-frame">
+  <div class="stitle">
+    <span class="num">ЭКРАН 04</span>
+    <h2>Пустое состояние · первый раз</h2>
+    <span class="note">
+      Когда должников ещё ноль — экран не пустой и не страшный. Иллюстрация,
+      понятный заголовок, одна кнопка со стрелкой-подсказкой «начни отсюда»,
+      и чеклист из 3 шагов чтобы новый администратор сразу понял что делать
+      и в какой последовательности.
+    </span>
+  </div>
+  <div class="screen">
+    <div class="screen-chrome">
+      <div class="dots"><i></i><i></i><i></i></div>
+      <div class="url">
+        <svg width="11" height="11" class="icon-stroke" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        crm.hulk-bike.ru/<b>debtors</b>
+      </div>
+    </div>
+    <div class="app">
+      <nav class="sidenav">
+        <div class="logo">H</div>
+        <div class="nav-item"><svg width="18" height="18" class="icon-stroke" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg></div>
+        <div class="nav-item"><svg width="18" height="18" class="icon-stroke" viewBox="0 0 24 24"><path d="M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z"/><path d="M3 21a9 9 0 0 1 18 0"/></svg></div>
+        <div class="nav-item"><svg width="18" height="18" class="icon-stroke" viewBox="0 0 24 24"><circle cx="6" cy="17" r="3"/><circle cx="18" cy="17" r="3"/><path d="M3 12h7l3-5h5l3 5"/></svg></div>
+        <div class="nav-item active"><svg width="18" height="18" class="icon-stroke" viewBox="0 0 24 24"><path d="M12 3 2 21h20L12 3Z"/><path d="M12 10v5M12 18h.01"/></svg></div>
+        <div class="nav-item"><svg width="18" height="18" class="icon-stroke" viewBox="0 0 24 24"><path d="M3 9 12 3l9 6v12H3V9Z"/></svg></div>
+        <div class="spacer"></div>
+        <div class="me">АК</div>
+      </nav>
+
+      <main class="content">
+        <div class="topbar">
+          <div class="breadcrumb">
+            <a>CRM</a>
+            <span class="sep">/</span>
+            <b>Должники</b>
+          </div>
+        </div>
+
+        <div class="empty">
+          <div class="empty-illustration">
+            <svg width="60" height="60" class="icon-stroke" viewBox="0 0 24 24" stroke-width="1.4"><path d="M3 21h18M5 21V8l7-5 7 5v13M9 13h6M9 17h6"/></svg>
+          </div>
+          <h2>Должников пока нет</h2>
+          <p class="sub">
+            Здесь будут появляться кейсы по людям, которые что-то задолжали:
+            ущерб, аренда, ДТП, угон. Каждый — со своим деревом стадий и
+            графиком платежей.
+          </p>
+          <div class="empty-cta-row">
+            <button class="empty-cta">
+              <svg width="18" height="18" class="icon-stroke" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+              Завести первое дело
+            </button>
+            <button class="empty-help">
+              <svg width="14" height="14" class="icon-stroke" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3M12 17h.01"/></svg>
+              Как это работает?
+            </button>
+          </div>
+
+          <div class="empty-checklist">
+            <h4>что нужно сделать в первый раз</h4>
+            <div class="ch active">
+              <span class="n">1</span>
+              <div><b>Завести первое дело</b> — выбрать клиента из CRM или ввести нового, тип долга (ДТП / Ущерб / Угон / Аренда), сумму и комментарий.</div>
+            </div>
+            <div class="ch">
+              <span class="n">2</span>
+              <div>После создания откроется <b>дерево дела</b> — будешь вести должника по стадиям одной кнопкой.</div>
+            </div>
+            <div class="ch">
+              <span class="n">3</span>
+              <div>Платежи фиксируются в <b>один клик</b>. Просрочки и эскалации к юристу — автоматические подсказки.</div>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+</div>
+
+<!-- ============ DESIGN NOTES ============ -->
+<div class="design-notes">
+  <h2>Что поменялось в v4 (и почему)</h2>
+  <div class="grid">
+    <div class="note">
+      <div class="num">01</div>
+      <h4>Hero-карточка вместо «4 равных задач»</h4>
+      <p>
+        На «Утре» теперь <b>одна большая карточка</b> с самым срочным делом и
+        одной чёрной кнопкой «Открыть и разобраться». Остальные 3 задачи —
+        тихими строками ниже. Глаз не выбирает между равноценными — он сразу
+        видит куда идти.
+      </p>
+      <div class="vs"><b>было v3:</b> 4 одинаковых блока, директор «думает»</div>
+    </div>
+
+    <div class="note">
+      <div class="num">02</div>
+      <h4>Дерево схемы как навигатор</h4>
+      <p>
+        Это не просто «индикатор стадий», это <b>интерактивная схема владельца</b>.
+        Подсвечено где сейчас (жёлтый, scale 1.06, бейдж «СЕЙЧАС»), серым
+        пунктиром — куда дело МОЖЕТ пойти из текущей точки. Кликнул по
+        «У юриста» → подтверждение → дело переехало. Дерево IS контроллер.
+      </p>
+      <div class="vs"><b>было v3:</b> линейная цепочка нодов без развилок</div>
+    </div>
+
+    <div class="note">
+      <div class="num">03</div>
+      <h4>Одна кнопка — три ссылки</h4>
+      <p>
+        На месте 4 «карточек-решений» теперь <b>одна большая чёрная кнопка</b>
+        с самым вероятным действием («Платёж получен · 18 000 ₽ · хоткей P»)
+        и тремя <b>тихими текстовыми ссылками</b> для других случаев. Иерархия
+        говорит «вот это сделай», а не «выбери».
+      </p>
+      <div class="vs"><b>было v3:</b> 4 одинаковых кнопки-карточки</div>
+    </div>
+
+    <div class="note">
+      <div class="num">04</div>
+      <h4>Платёж — один шаг</h4>
+      <p>
+        Раньше было 2 шага «параметры → подтверждение». Сейчас всё на одном
+        экране: сумма (предзаполнена 18 000), способ (предвыбрана «карта»),
+        live-предпросмотр «что произойдёт» и Enter. Подтверждение не нужно —
+        impact-блок уже его заменяет.
+      </p>
+      <div class="vs"><b>было v3:</b> 2 шага с extra-кликом</div>
+    </div>
+
+    <div class="note">
+      <div class="num">05</div>
+      <h4>Тихие свёрнутые секции</h4>
+      <p>
+        График платежей раскрыт по умолчанию (самое нужное в текущей стадии).
+        Хронология / Документы / Заметки — <b>свёрнуты</b>, видны только заголовки.
+        Когда понадобится — кликнул → раскрылось. Не давит на глаза в момент
+        принятия решения.
+      </p>
+      <div class="vs"><b>было v3:</b> правый sidebar со всеми разделами сразу</div>
+    </div>
+
+    <div class="note">
+      <div class="num">06</div>
+      <h4>Empty state со стрелкой «начни отсюда»</h4>
+      <p>
+        Когда должников ноль — экран не пустой. Иконка-щит, заголовок
+        «Должников пока нет», объяснение что тут будет, и <b>одна кнопка
+        со стрелкой</b> и подсказкой курсивом «← начни отсюда». Плюс чеклист
+        из 3 шагов — что произойдёт после клика. Новый администратор не
+        теряется на пустом экране.
+      </p>
+      <div class="vs"><b>было v3:</b> empty state вообще не показан</div>
+    </div>
+
+    <div class="note">
+      <div class="num">07</div>
+      <h4>Pipeline убран из главного потока</h4>
+      <p>
+        Раньше он был четвёртым «главным» экраном. Реально он нужен раз в
+        неделю — посмотреть «где у меня всё». Перенесён в side-меню или
+        опциональный режим. Утро → Дело → Платёж — это <b>ежедневный
+        маршрут</b>. Pipeline — для обзорщика, не для оператора.
+      </p>
+      <div class="vs"><b>было v3:</b> 4 равных экрана, перегрузка</div>
+    </div>
+
+    <div class="note">
+      <div class="num">08</div>
+      <h4>Хоткеи на виду</h4>
+      <p>
+        Главная кнопка показывает свой хоткей справа от лейбла («P», «⏎»,
+        «Esc»). Это <b>обучает программе</b>: первый раз кликаешь мышкой,
+        второй — замечаешь «P», третий — нажимаешь P без мышки. Через неделю
+        работаешь в 3 раза быстрее. Так в Linear / Superhuman.
+      </p>
+      <div class="vs"><b>было v3:</b> хоткеи спрятаны в kebab-меню</div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
