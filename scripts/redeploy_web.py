@@ -4,8 +4,8 @@
 
 Что делает:
   1. Триггерит deploy с cleanCache=True.
-  2. Дожидается пока /version.json вернёт ожидаемую версию (она же
-     лежит в apps/web/public/version.json — читаем оттуда).
+  2. Дожидается пока /version.json СМЕНИТ значение (vite генерирует его на
+     каждой сборке как <git-sha>.<ts> — см. apps/web/vite.config.ts).
 
 Использование:
   python scripts/redeploy_web.py
@@ -32,13 +32,6 @@ DEPLOY_TIMEOUT = int(os.environ.get("DEPLOY_TIMEOUT", "600"))
 
 def log(msg: str) -> None:
     print(msg, flush=True)
-
-
-def expected_version() -> str:
-    here = os.path.dirname(os.path.abspath(__file__))
-    version_path = os.path.join(here, "..", "apps", "web", "public", "version.json")
-    with open(version_path, "r", encoding="utf-8") as f:
-        return json.load(f)["version"]
 
 
 def dokploy(path: str, body: dict) -> None:
@@ -70,24 +63,27 @@ def fetch_version() -> str | None:
 
 
 def main() -> int:
-    target = expected_version()
-    log(f"Цель: web {target} на {WEB_BASE}")
+    # version.json генерируется на каждой сборке (vite-плагин emitVersionJson:
+    # <git-sha>.<ts>) — заранее значение неизвестно. Ловим ИЗМЕНЕНИЕ: версия
+    # до редеплоя → ждём пока live-версия станет другой.
+    before = fetch_version()
+    log(f"Текущая web-версия: {before or '(нет ответа)'} на {WEB_BASE}")
     dokploy("/api/application.update", {"applicationId": APP_ID, "cleanCache": True})
     dokploy("/api/application.deploy", {"applicationId": APP_ID})
 
-    log(f"Жду пока /version.json станет {target} (до {DEPLOY_TIMEOUT}s)")
+    log(f"Жду смену /version.json (до {DEPLOY_TIMEOUT}s)")
     deadline = time.time() + DEPLOY_TIMEOUT
     last = ""
     while time.time() < deadline:
         v = fetch_version() or "(нет ответа)"
-        if v == target:
-            log(f"OK: задеплоено {v}")
+        if v not in (None, "(нет ответа)") and v != before:
+            log(f"OK: задеплоена новая версия {v}")
             return 0
         if v != last:
             log(f"  current={v}")
             last = v
         time.sleep(10)
-    log(f"FAIL: версия не дошла до {target} за {DEPLOY_TIMEOUT}s, осталось {last}")
+    log(f"FAIL: версия не сменилась за {DEPLOY_TIMEOUT}s, осталась {last}")
     return 1
 
 

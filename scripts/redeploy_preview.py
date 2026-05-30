@@ -137,13 +137,6 @@ def http_status(url: str) -> int:
         return 0
 
 
-def expected_web_version() -> str:
-    here = os.path.dirname(os.path.abspath(__file__))
-    version_path = os.path.join(here, "..", "apps", "web", "public", "version.json")
-    with open(version_path, "r", encoding="utf-8") as f:
-        return json.load(f)["version"]
-
-
 def fetch_web_version(base: str) -> str | None:
     try:
         req = urllib.request.Request(f"{base}/version.json", method="GET")
@@ -209,25 +202,28 @@ def deploy_api() -> int:
 
 def deploy_web() -> int:
     log("=== preview WEB ===")
-    target = expected_web_version()
-    log(f"Цель: web {target} на {PREVIEW_WEB_BASE}")
+    # version.json генерируется на каждой сборке (vite-плагин emitVersionJson:
+    # <git-sha>.<ts>), заранее значение неизвестно. Поэтому ловим ИЗМЕНЕНИЕ:
+    # запоминаем версию ДО редеплоя и ждём пока live-версия станет другой.
+    before = fetch_web_version(PREVIEW_WEB_BASE)
+    log(f"Текущая web-версия: {before or '(нет ответа)'} на {PREVIEW_WEB_BASE}")
     dokploy("/api/application.update", {"applicationId": PREVIEW_WEB_APP_ID, "cleanCache": True})
     dokploy("/api/application.deploy", {"applicationId": PREVIEW_WEB_APP_ID})
     if not wait_deployment_finished(PREVIEW_WEB_APP_ID, 600):
         return 1
-    log(f"Жду /version.json={target} (до 180s)")
+    log("Жду смену /version.json (до 180s)")
     deadline = time.time() + 180
     last = ""
     while time.time() < deadline:
         v = fetch_web_version(PREVIEW_WEB_BASE) or "(нет ответа)"
-        if v == target:
-            log(f"OK: задеплоено {v}")
+        if v not in (None, "(нет ответа)") and v != before:
+            log(f"OK: задеплоена новая версия {v}")
             return 0
         if v != last:
             log(f"  current={v}")
             last = v
         time.sleep(10)
-    log(f"FAIL: версия не дошла до {target} после успешного билда")
+    log("FAIL: версия не сменилась после успешного билда")
     return 1
 
 
