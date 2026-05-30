@@ -1022,6 +1022,10 @@ export function PaymentAcceptDialog({
       qc.invalidateQueries({ queryKey: ["debt-aggregate"] });
       // v0.8.0: паркинг (оплата сессий).
       qc.invalidateQueries({ queryKey: ["parking-sessions"] });
+      // G2: акты ущерба — баннер «Долг по ущербу» на карточке читает
+      // report.debt из этого запроса; без инвалидации он висел устаревшим
+      // после оплаты ущерба через единое окно.
+      qc.invalidateQueries({ queryKey: ["damage-reports"] });
 
       if (overpay > 0) {
         toast.success(
