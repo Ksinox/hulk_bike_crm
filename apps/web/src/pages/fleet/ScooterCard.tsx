@@ -32,6 +32,7 @@ import { ScooterEditForm } from "./ScooterEditForm";
 import { ScooterDocumentsTab } from "./ScooterDocumentsTab";
 import { ScooterPhotosGallery } from "./ScooterPhotosGallery";
 import { ScooterStatusModal } from "./ScooterStatusModal";
+import { OilChangeDialog } from "./OilChangeDialog";
 import { RepairsTab, ExpensesTab } from "./MaintenanceTab";
 import { useActivityTimeline } from "@/lib/api/activity";
 import { ActivityTimelineSection } from "@/pages/rentals/ActivityTimelineSection";
@@ -117,6 +118,7 @@ export function ScooterCard({
   const [editOpen, setEditOpen] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
   const [newRentalOpen, setNewRentalOpen] = useState(false);
+  const [oilOpen, setOilOpen] = useState(false);
   const { data: me } = useMe();
   const canArchive = me?.role === "director" || me?.role === "creator";
   const archiveMut = useArchiveScooter();
@@ -533,8 +535,9 @@ export function ScooterCard({
 
             <button
               type="button"
+              onClick={() => setOilOpen(true)}
               className="mt-3 inline-flex w-full items-center justify-center rounded-full border border-border bg-surface px-3 py-1.5 text-[12px] font-semibold text-ink-2 transition-colors hover:bg-surface-soft"
-              title="Скоро — откроется форма фиксации замены"
+              title="Зафиксировать замену масла"
             >
               Зафиксировать замену
             </button>
@@ -886,6 +889,14 @@ export function ScooterCard({
             setNewRentalOpen(false);
             navigate({ route: "rentals", rentalId: r.id });
           }}
+        />
+      )}
+      {oilOpen && (
+        <OilChangeDialog
+          scooterId={scooter.id}
+          scooterName={scooter.name}
+          currentMileage={scooter.mileage}
+          onClose={() => setOilOpen(false)}
         />
       )}
     </main>
