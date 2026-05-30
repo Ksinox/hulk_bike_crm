@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, Check, ShieldCheck } from "lucide-react";
+import { ArrowLeft, ArrowRight, Bike, Check, ShieldCheck } from "lucide-react";
 import {
   ApiError,
   applicationApi,
@@ -35,7 +35,8 @@ import {
 } from "./formatters";
 import { toTitleCaseRu } from "@/lib/textCase";
 import { DatePicker } from "@/components/ui/date-picker";
-import { TARIFF, periodForDays, type ScooterModel } from "@/lib/mock/rentals";
+import { periodForDays } from "@/lib/mock/rentals";
+import type { RentalModel } from "./applicationApi";
 
 /** Сегодня в ISO для maxDate ограничения. */
 function todayIsoLocal(): string {
@@ -124,8 +125,8 @@ type FormState = {
   sameAddress: boolean;
   liveAddress: string;
 
-  // G3: предзаявка на аренду — что хочет арендовать
-  wantModel: "" | "jog" | "gear" | "honda" | "tank";
+  // G3: предзаявка на аренду — имя выбранной модели каталога ("" если не выбрана)
+  wantModel: string;
   wantDays: number;
 
   // Источник: откуда о нас узнал
@@ -185,7 +186,7 @@ function fieldsFromState(s: FormState): ApplicationFields {
     source: s.source ? s.source : null,
     sourceCustom:
       s.source === "other" ? nullableTrim(s.sourceCustom) : null,
-    requestedModel: s.wantModel ? s.wantModel : null,
+    requestedModel: modelNameToEnum(s.wantModel),
     requestedDays: s.wantModel && s.wantDays > 0 ? s.wantDays : null,
     honeypot: s.honeypot || null,
   };
@@ -209,7 +210,7 @@ function stateFromFields(f: ApplicationFields): Partial<FormState> {
     liveAddress: f.liveAddress ?? "",
     source: (f.source ?? "") as ClientSourceChoice | "",
     sourceCustom: f.sourceCustom ?? "",
-    wantModel: (f.requestedModel ?? "") as FormState["wantModel"],
+    wantModel: enumToModelName(f.requestedModel ?? null),
     wantDays: f.requestedDays ?? 7,
   };
 }
@@ -1103,13 +1104,29 @@ function SuccessScreen() {
 
 // ─────────────── G3: предзаявка на аренду (модель + срок) ───────────────
 
-const WISH_MODELS: { id: "jog" | "gear" | "honda" | "tank"; label: string }[] = [
-  { id: "jog", label: "Jog" },
-  { id: "gear", label: "Gear" },
-  { id: "honda", label: "Honda" },
-  { id: "tank", label: "Tank" },
-];
 const WISH_DAY_PRESETS = [1, 3, 7, 14, 30];
+const MODEL_ENUMS = ["jog", "gear", "honda", "tank"] as const;
+
+/** Имя модели каталога → enum scooter_model (для requestedModel). Кастомные
+ *  модели вне enum → null (тогда при конвертации фильтр аренды не ставится). */
+function modelNameToEnum(name: string): string | null {
+  const k = name.trim().toLowerCase();
+  return (MODEL_ENUMS as readonly string[]).includes(k) ? k : null;
+}
+/** enum → отображаемое имя (для восстановления выбора из черновика). */
+function enumToModelName(e: string | null): string {
+  if (!e) return "";
+  return e.charAt(0).toUpperCase() + e.slice(1);
+}
+
+/** Ставка ₽/сут модели по числу дней (тот же принцип, что в аренде). */
+function rateForDays(m: RentalModel, days: number): number {
+  const p = periodForDays(days);
+  if (p === "day") return m.dayRate;
+  if (p === "short") return m.shortRate;
+  if (p === "week") return m.weekRate;
+  return m.monthRate;
+}
 
 function RentalWishStep({
   form,
@@ -1118,13 +1135,34 @@ function RentalWishStep({
   form: FormState;
   setField: <K extends keyof FormState>(k: K, v: FormState[K]) => void;
 }) {
+  const [models, setModels] = useState<RentalModel[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    applicationApi
+      .rentalModels()
+      .then((r) => {
+        if (alive) setModels(r.items);
+      })
+      .catch(() => {
+        /* модели не загрузились — шаг можно пропустить */
+      })
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   const days = form.wantDays > 0 ? form.wantDays : 7;
+  const selected = models.find((m) => m.name === form.wantModel) ?? null;
   const calc = useMemo(() => {
-    if (!form.wantModel) return null;
-    const period = periodForDays(days);
-    const rate = TARIFF[form.wantModel as ScooterModel][period];
+    if (!selected) return null;
+    const rate = rateForDays(selected, days);
     return { rate, total: rate * days };
-  }, [form.wantModel, days]);
+  }, [selected, days]);
 
   return (
     <div className="space-y-4">
@@ -1138,41 +1176,79 @@ function RentalWishStep({
 
       <div>
         <FieldLabel>Модель скутера</FieldLabel>
-        <div className="grid grid-cols-2 gap-2">
-          {WISH_MODELS.map((m) => {
-            const active = form.wantModel === m.id;
-            // «от N ₽/сут» — самый дешёвый посуточный (длинный тариф).
-            const dayRate = Math.min(
-              ...Object.values(
-                TARIFF[m.id as ScooterModel] as Record<string, number>,
-              ),
-            );
-            return (
-              <button
-                key={m.id}
-                type="button"
-                onClick={() =>
-                  setField("wantModel", active ? "" : m.id)
-                }
-                className={`flex flex-col items-start rounded-xl border-2 px-4 py-3 text-left transition-colors ${
-                  active
-                    ? "border-slate-900 bg-slate-900 text-white"
-                    : "border-slate-200 bg-white text-slate-900 hover:border-slate-400"
-                }`}
-              >
-                <span className="text-[16px] font-bold">{m.label}</span>
-                <span
-                  className={`text-[12px] ${active ? "text-white/70" : "text-slate-500"}`}
+        {loading ? (
+          <div className="flex gap-3 overflow-hidden">
+            {[0, 1, 2].map((i) => (
+              <div
+                key={i}
+                className="h-[176px] w-[150px] shrink-0 animate-pulse rounded-2xl bg-slate-100"
+              />
+            ))}
+          </div>
+        ) : models.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center text-[13px] text-slate-500">
+            Модели уточним при звонке.
+          </div>
+        ) : (
+          // Горизонтальная карусель — свайп пальцем вбок. Edge-bleed (−mx-4)
+          // чтобы карточки «выглядывали» за край и было понятно, что скроллится.
+          <div className="-mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {models.map((m) => {
+              const active = form.wantModel === m.name;
+              const fromRate = Math.min(
+                m.dayRate,
+                m.shortRate,
+                m.weekRate,
+                m.monthRate,
+              );
+              return (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() =>
+                    setField("wantModel", active ? "" : m.name)
+                  }
+                  className={`relative w-[150px] shrink-0 snap-start overflow-hidden rounded-2xl border-2 text-left transition-all ${
+                    active
+                      ? "border-slate-900 shadow-lg"
+                      : "border-slate-200 hover:border-slate-400"
+                  }`}
                 >
-                  от {dayRate} ₽/сут
-                </span>
-              </button>
-            );
-          })}
-        </div>
+                  <div className="relative aspect-[4/3] w-full bg-gradient-to-br from-slate-100 to-slate-200">
+                    {m.avatarUrl ? (
+                      <img
+                        src={applicationApi.modelAvatarUrl(m.avatarUrl)}
+                        alt={m.name}
+                        className="h-full w-full object-cover"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-slate-400">
+                        <Bike size={42} strokeWidth={1.5} />
+                      </div>
+                    )}
+                    {active && (
+                      <div className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-slate-900 text-white">
+                        <Check size={14} />
+                      </div>
+                    )}
+                  </div>
+                  <div className="px-3 py-2.5">
+                    <div className="text-[16px] font-bold leading-tight text-slate-900">
+                      {m.name}
+                    </div>
+                    <div className="mt-0.5 text-[12px] text-slate-500">
+                      от {fromRate.toLocaleString("ru-RU")} ₽/сут
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
-      {form.wantModel && (
+      {selected && (
         <>
           <div>
             <FieldLabel>На сколько дней</FieldLabel>

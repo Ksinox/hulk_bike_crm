@@ -51,6 +51,17 @@ export type ApplicationFields = {
 
 export type FileKind = "passport_main" | "passport_reg" | "license" | "selfie";
 
+/** G3: модель для шага «Что хотите арендовать» (из каталога, только активные). */
+export type RentalModel = {
+  id: number;
+  name: string;
+  dayRate: number;
+  shortRate: number;
+  weekRate: number;
+  monthRate: number;
+  avatarUrl: string | null;
+};
+
 export type CreateResponse = {
   applicationId: number;
   uploadToken: string;
@@ -154,6 +165,16 @@ export const applicationApi = {
       {},
       token,
     );
+  },
+
+  /** G3: активные модели каталога для шага «Что хотите арендовать». */
+  rentalModels(): Promise<{ items: RentalModel[] }> {
+    return jsonFetch<{ items: RentalModel[] }>("GET", "/api/public/rental-models");
+  },
+
+  /** Абсолютный URL аватарки модели (на публичном API-домене). */
+  modelAvatarUrl(path: string): string {
+    return url(path);
   },
 };
 

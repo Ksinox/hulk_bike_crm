@@ -113,6 +113,41 @@ export async function publicRoutes(app: FastifyInstance) {
     };
   });
 
+  /* GET /api/public/rental-models
+   * G3: модели для шага «Что хотите арендовать» в публичной анкете.
+   * Возвращает ВСЕ АКТИВНЫЕ модели (в отличие от /scooter-models, аватар
+   * необязателен — карточка покажет фолбэк). Отключение модели (active=false)
+   * в каталоге «Скутеры → Модели» автоматически убирает её из анкеты. */
+  app.get("/rental-models", async () => {
+    const rows = await db
+      .select({
+        id: scooterModels.id,
+        name: scooterModels.name,
+        dayRate: scooterModels.dayRate,
+        shortRate: scooterModels.shortRate,
+        weekRate: scooterModels.weekRate,
+        monthRate: scooterModels.monthRate,
+        avatarKey: scooterModels.avatarKey,
+      })
+      .from(scooterModels)
+      .where(eq(scooterModels.active, true))
+      .orderBy(scooterModels.id);
+    return {
+      items: rows.map((r) => ({
+        id: r.id,
+        name: r.name,
+        dayRate: r.dayRate,
+        shortRate: r.shortRate,
+        weekRate: r.weekRate,
+        monthRate: r.monthRate,
+        avatarUrl:
+          r.avatarKey && r.avatarKey !== ""
+            ? `/api/public/scooter-models/${r.id}/avatar`
+            : null,
+      })),
+    };
+  });
+
   /**
    * Стрим аватарки модели. Без авторизации — лендинг публичный.
    * Берём свежий avatarKey из БД, не доверяем клиенту.
