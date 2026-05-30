@@ -36,6 +36,7 @@ export function ApplicationsBlock() {
     clientId: number;
     modelFilter?: string;
     days?: number;
+    equipmentIds?: number[];
   } | null>(null);
   const deleteApp = useDeleteApplication();
 
@@ -139,6 +140,7 @@ export function ApplicationsBlock() {
             toast.success("Клиент создан из заявки");
             const modelFilter = app?.requestedModel ?? undefined;
             const days = app?.requestedDays ?? undefined;
+            const equipmentIds = app?.requestedEquipmentIds ?? undefined;
             void confirmDialog({
               title: "Клиент создан",
               message: `Оформить аренду для «${client.name}»? Останется выбрать конкретный скутер и распечатать договор.`,
@@ -146,7 +148,12 @@ export function ApplicationsBlock() {
               cancelText: "Позже",
             }).then((ok) => {
               if (ok)
-                setRentalPrefill({ clientId: client.id, modelFilter, days });
+                setRentalPrefill({
+                  clientId: client.id,
+                  modelFilter,
+                  days,
+                  equipmentIds,
+                });
             });
           }}
         />
@@ -156,6 +163,7 @@ export function ApplicationsBlock() {
           initialClientId={rentalPrefill.clientId}
           initialModelFilter={rentalPrefill.modelFilter}
           initialDays={rentalPrefill.days}
+          initialEquipmentIds={rentalPrefill.equipmentIds}
           onClose={() => setRentalPrefill(null)}
           onCreated={() => {
             setRentalPrefill(null);

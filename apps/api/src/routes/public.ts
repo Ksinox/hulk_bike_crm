@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { and, eq, isNotNull, ne, sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { db } from "../db/index.js";
-import { scooterModels, users } from "../db/schema.js";
+import { scooterModels, equipmentItems, users } from "../db/schema.js";
 import { getObjectStream, statObject } from "../storage/index.js";
 import { variantKey } from "../storage/image.js";
 
@@ -215,4 +215,77 @@ export async function publicRoutes(app: FastifyInstance) {
       return reply.send(stream);
     },
   );
+
+  /* GET /api/public/equipment
+   * G3: экипировка для шага «Что хотите арендовать» в публичной анкете.
+   * Все позиции каталога (у экипировки нет флага active). quickPick — выше. */
+  app.get("/equipment", async () => {
+    const rows = await db
+      .select({
+        id: equipmentItems.id,
+        name: equipmentItems.name,
+        price: equipmentItems.price,
+        isFree: equipmentItems.isFree,
+        quickPick: equipmentItems.quickPick,
+        avatarKey: equipmentItems.avatarKey,
+      })
+      .from(equipmentItems)
+      .orderBy(equipmentItems.id);
+    return {
+      items: rows.map((r) => ({
+        id: r.id,
+        name: r.name,
+        price: r.price,
+        isFree: r.isFree,
+        avatarUrl:
+          r.avatarKey && r.avatarKey !== ""
+            ? `/api/public/equipment/${r.id}/avatar`
+            : null,
+      })),
+    };
+  });
+
+  /* Стрим аватарки экипировки (зеркало модели). Без авторизации. */
+  app.get<{
+    Params: { id: string };
+    Querystring: { variant?: "thumb" | "view" };
+  }>("/equipment/:id/avatar", async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
+    const [row] = await db
+      .select({ avatarKey: equipmentItems.avatarKey })
+      .from(equipmentItems)
+      .where(eq(equipmentItems.id, id));
+    if (!row || !row.avatarKey)
+      return reply.code(404).send({ error: "not found" });
+
+    let key = row.avatarKey;
+    let meta;
+    if (req.query.variant === "thumb" || req.query.variant === "view") {
+      const derived = variantKey(row.avatarKey, req.query.variant);
+      try {
+        meta = await statObject(derived);
+        key = derived;
+      } catch {
+        try {
+          meta = await statObject(row.avatarKey);
+        } catch {
+          return reply.code(404).send({ error: "not found" });
+        }
+      }
+    } else {
+      try {
+        meta = await statObject(row.avatarKey);
+      } catch {
+        return reply.code(404).send({ error: "not found" });
+      }
+    }
+    const stream = await getObjectStream(key);
+    reply
+      .header("Content-Type", meta.mimeType)
+      .header("Content-Length", meta.size)
+      .header("Cache-Control", "public, max-age=604800, immutable")
+      .header("Cross-Origin-Resource-Policy", "cross-origin");
+    return reply.send(stream);
+  });
 }

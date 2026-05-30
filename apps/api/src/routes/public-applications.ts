@@ -54,6 +54,11 @@ const ApplicationFieldsBody = z
       .optional()
       .nullable(),
     requestedDays: z.number().int().min(1).max(365).optional().nullable(),
+    requestedEquipmentIds: z
+      .array(z.number().int().positive())
+      .max(20)
+      .optional()
+      .nullable(),
     /** Honeypot — реальные клиенты это поле не видят и не заполняют. */
     honeypot: z.string().max(100).optional().nullable(),
   })

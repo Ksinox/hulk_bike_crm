@@ -84,6 +84,7 @@ export function NewRentalModal({
   initialClientId,
   initialModelFilter,
   initialDays,
+  initialEquipmentIds,
 }: {
   onClose: () => void;
   onCreated?: (rental: Rental) => void;
@@ -95,6 +96,8 @@ export function NewRentalModal({
   initialModelFilter?: string;
   /** G3: предвыбранный срок аренды (дней) из заявки. */
   initialDays?: number;
+  /** G3: предвыбранная экипировка (id из каталога) из заявки. */
+  initialEquipmentIds?: number[];
 }) {
   const rentals = useRentals();
   const allClients = useAllClients();
@@ -123,7 +126,9 @@ export function NewRentalModal({
   // ставим дефолтом, чтобы оператор не правил каждый раз.
   const [days, setDays] = useState(initialDays && initialDays > 0 ? initialDays : 7);
   /** Выбранные позиции экипировки — id из equipment_items каталога */
-  const [equipmentIds, setEquipmentIds] = useState<number[]>([]);
+  const [equipmentIds, setEquipmentIds] = useState<number[]>(
+    initialEquipmentIds ?? [],
+  );
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
   const [note, setNote] = useState("");
 

@@ -46,7 +46,17 @@ export type ApplicationFields = {
   /** G3: предзаявка на аренду — что клиент хочет арендовать. */
   requestedModel?: string | null;
   requestedDays?: number | null;
+  requestedEquipmentIds?: number[] | null;
   honeypot?: string | null;
+};
+
+/** G3: экипировка для шага «Что хотите арендовать». */
+export type RentalEquipment = {
+  id: number;
+  name: string;
+  price: number;
+  isFree: boolean;
+  avatarUrl: string | null;
 };
 
 export type FileKind = "passport_main" | "passport_reg" | "license" | "selfie";
@@ -170,6 +180,11 @@ export const applicationApi = {
   /** G3: активные модели каталога для шага «Что хотите арендовать». */
   rentalModels(): Promise<{ items: RentalModel[] }> {
     return jsonFetch<{ items: RentalModel[] }>("GET", "/api/public/rental-models");
+  },
+
+  /** G3: экипировка каталога для шага «Что хотите арендовать». */
+  equipment(): Promise<{ items: RentalEquipment[] }> {
+    return jsonFetch<{ items: RentalEquipment[] }>("GET", "/api/public/equipment");
   },
 
   /** Абсолютный URL аватарки модели (на публичном API-домене). */

@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, Bike, Check, ShieldCheck } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Bike,
+  Check,
+  Package,
+  ShieldCheck,
+} from "lucide-react";
 import {
   ApiError,
   applicationApi,
@@ -36,7 +43,7 @@ import {
 import { toTitleCaseRu } from "@/lib/textCase";
 import { DatePicker } from "@/components/ui/date-picker";
 import { periodForDays } from "@/lib/mock/rentals";
-import type { RentalModel } from "./applicationApi";
+import type { RentalModel, RentalEquipment } from "./applicationApi";
 
 /** Сегодня в ISO для maxDate ограничения. */
 function todayIsoLocal(): string {
@@ -128,6 +135,7 @@ type FormState = {
   // G3: предзаявка на аренду — имя выбранной модели каталога ("" если не выбрана)
   wantModel: string;
   wantDays: number;
+  wantEquipmentIds: number[];
 
   // Источник: откуда о нас узнал
   source: ClientSourceChoice | "";
@@ -159,6 +167,7 @@ const EMPTY: FormState = {
   liveAddress: "",
   wantModel: "",
   wantDays: 7,
+  wantEquipmentIds: [],
   source: "",
   sourceCustom: "",
   agreedPdn: false,
@@ -188,6 +197,7 @@ function fieldsFromState(s: FormState): ApplicationFields {
       s.source === "other" ? nullableTrim(s.sourceCustom) : null,
     requestedModel: modelNameToEnum(s.wantModel),
     requestedDays: s.wantModel && s.wantDays > 0 ? s.wantDays : null,
+    requestedEquipmentIds: s.wantEquipmentIds.length ? s.wantEquipmentIds : null,
     honeypot: s.honeypot || null,
   };
 }
@@ -212,6 +222,7 @@ function stateFromFields(f: ApplicationFields): Partial<FormState> {
     sourceCustom: f.sourceCustom ?? "",
     wantModel: enumToModelName(f.requestedModel ?? null),
     wantDays: f.requestedDays ?? 7,
+    wantEquipmentIds: f.requestedEquipmentIds ?? [],
   };
 }
 
@@ -1136,17 +1147,21 @@ function RentalWishStep({
   setField: <K extends keyof FormState>(k: K, v: FormState[K]) => void;
 }) {
   const [models, setModels] = useState<RentalModel[]>([]);
+  const [equipment, setEquipment] = useState<RentalEquipment[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let alive = true;
-    applicationApi
-      .rentalModels()
-      .then((r) => {
+    Promise.all([
+      applicationApi.rentalModels().then((r) => {
         if (alive) setModels(r.items);
-      })
+      }),
+      applicationApi.equipment().then((r) => {
+        if (alive) setEquipment(r.items);
+      }),
+    ])
       .catch(() => {
-        /* модели не загрузились — шаг можно пропустить */
+        /* каталог не загрузился — шаг можно пропустить */
       })
       .finally(() => {
         if (alive) setLoading(false);
@@ -1158,11 +1173,26 @@ function RentalWishStep({
 
   const days = form.wantDays > 0 ? form.wantDays : 7;
   const selected = models.find((m) => m.name === form.wantModel) ?? null;
+  // Платная экипировка считается за сутки (как в аренде): + к ставке/сут.
+  const equipDaily = equipment
+    .filter((e) => form.wantEquipmentIds.includes(e.id) && !e.isFree)
+    .reduce((s, e) => s + e.price, 0);
   const calc = useMemo(() => {
     if (!selected) return null;
     const rate = rateForDays(selected, days);
-    return { rate, total: rate * days };
-  }, [selected, days]);
+    const perDay = rate + equipDaily;
+    return { rate, perDay, total: perDay * days };
+  }, [selected, days, equipDaily]);
+
+  const toggleEquip = (id: number) => {
+    const has = form.wantEquipmentIds.includes(id);
+    setField(
+      "wantEquipmentIds",
+      has
+        ? form.wantEquipmentIds.filter((x) => x !== id)
+        : [...form.wantEquipmentIds, id],
+    );
+  };
 
   return (
     <div className="space-y-4">
@@ -1214,16 +1244,18 @@ function RentalWishStep({
                       : "border-slate-200 hover:border-slate-400"
                   }`}
                 >
-                  <div className="relative aspect-[4/3] w-full bg-gradient-to-br from-slate-100 to-slate-200">
+                  <div className="relative aspect-[4/3] w-full bg-white">
                     {m.avatarUrl ? (
                       <img
-                        src={applicationApi.modelAvatarUrl(m.avatarUrl)}
+                        src={applicationApi.modelAvatarUrl(
+                          m.avatarUrl + "?variant=thumb",
+                        )}
                         alt={m.name}
-                        className="h-full w-full object-cover"
+                        className="h-full w-full object-contain"
                         loading="lazy"
                       />
                     ) : (
-                      <div className="flex h-full w-full items-center justify-center text-slate-400">
+                      <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200 text-slate-400">
                         <Bike size={42} strokeWidth={1.5} />
                       </div>
                     )}
@@ -1247,6 +1279,60 @@ function RentalWishStep({
           </div>
         )}
       </div>
+
+      {equipment.length > 0 && (
+        <div>
+          <FieldLabel>Экипировка (по желанию)</FieldLabel>
+          <div className="-mx-4 flex gap-3 overflow-x-auto px-4 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {equipment.map((e) => {
+              const active = form.wantEquipmentIds.includes(e.id);
+              const free = e.isFree || e.price === 0;
+              return (
+                <button
+                  key={e.id}
+                  type="button"
+                  onClick={() => toggleEquip(e.id)}
+                  className={`relative w-[128px] shrink-0 overflow-hidden rounded-2xl border-2 text-left transition-all ${
+                    active
+                      ? "border-slate-900 shadow-md"
+                      : "border-slate-200 hover:border-slate-400"
+                  }`}
+                >
+                  <div className="relative aspect-square w-full bg-white">
+                    {e.avatarUrl ? (
+                      <img
+                        src={applicationApi.modelAvatarUrl(
+                          e.avatarUrl + "?variant=thumb",
+                        )}
+                        alt={e.name}
+                        className="h-full w-full object-contain"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200 text-slate-400">
+                        <Package size={30} strokeWidth={1.5} />
+                      </div>
+                    )}
+                    {active && (
+                      <div className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-slate-900 text-white">
+                        <Check size={14} />
+                      </div>
+                    )}
+                  </div>
+                  <div className="px-2.5 py-2">
+                    <div className="truncate text-[14px] font-semibold leading-tight text-slate-900">
+                      {e.name}
+                    </div>
+                    <div className="mt-0.5 text-[12px] text-slate-500">
+                      {free ? "бесплатно" : `+${e.price.toLocaleString("ru-RU")} ₽/сут`}
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {selected && (
         <>
@@ -1282,8 +1368,12 @@ function RentalWishStep({
                 ≈ {calc.total.toLocaleString("ru-RU")} ₽
               </div>
               <div className="mt-1 text-[13px] text-slate-500">
-                {calc.rate.toLocaleString("ru-RU")} ₽/сут × {days}{" "}
-                {days === 1 ? "день" : days < 5 ? "дня" : "дней"} · залог 2 000 ₽
+                {calc.perDay.toLocaleString("ru-RU")} ₽/сут
+                {equipDaily > 0
+                  ? ` (аренда ${calc.rate.toLocaleString("ru-RU")} + экип. ${equipDaily.toLocaleString("ru-RU")})`
+                  : ""}{" "}
+                × {days} {days === 1 ? "день" : days < 5 ? "дня" : "дней"} ·
+                залог 2 000 ₽
               </div>
               <div className="mt-2 text-[12px] text-slate-400">
                 Точную цену и наличие подтвердит менеджер.

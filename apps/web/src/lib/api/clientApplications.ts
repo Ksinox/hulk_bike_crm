@@ -64,6 +64,8 @@ export type ApiApplication = {
   /** G3: предзаявка на аренду — модель скутера (enum scooter_model) и срок. */
   requestedModel: string | null;
   requestedDays: number | null;
+  /** G3: id выбранной экипировки (equipment_items). */
+  requestedEquipmentIds: number[] | null;
   viewedAt: string | null;
   submittedAt: string | null;
   createdAt: string;

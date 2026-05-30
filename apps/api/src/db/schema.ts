@@ -1364,6 +1364,8 @@ export const clientApplications = pgTable(
      *  подставляются в форму «Новая аренда». NULL — клиент не указал. */
     requestedModel: scooterModelEnum("requested_model"),
     requestedDays: integer("requested_days"),
+    /** G3: id выбранной экипировки (equipment_items) — мультивыбор в анкете. */
+    requestedEquipmentIds: jsonb("requested_equipment_ids").$type<number[]>(),
 
     /** Заполняется при convert: ссылка на созданного клиента. NULL — заявка
      *  ещё не оформлена. ON DELETE SET NULL — если клиента удалили,
