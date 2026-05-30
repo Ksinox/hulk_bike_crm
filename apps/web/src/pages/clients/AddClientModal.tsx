@@ -37,14 +37,15 @@ import { toTitleCaseRu } from "@/lib/textCase";
 const PHOTO_API_BASE =
   import.meta.env.VITE_API_URL?.replace(/\/$/, "") ?? "http://localhost:4000";
 
-async function uploadClientPhoto(
+async function uploadClientDocFile(
   clientId: number,
+  kind: "photo" | "passport" | "license" | "extra",
   file: File,
   title: string,
 ): Promise<void> {
   const fd = new FormData();
   fd.append("clientId", String(clientId));
-  fd.append("kind", "photo");
+  fd.append("kind", kind);
   fd.append("title", title);
   fd.append("file", file);
   const res = await fetch(`${PHOTO_API_BASE}/api/client-documents/upload`, {
@@ -54,6 +55,14 @@ async function uploadClientPhoto(
   });
   if (!res.ok) throw new Error(`upload ${res.status}`);
   queryClient.invalidateQueries({ queryKey: clientDocsKeys.byClient(clientId) });
+}
+
+async function uploadClientPhoto(
+  clientId: number,
+  file: File,
+  title: string,
+): Promise<void> {
+  return uploadClientDocFile(clientId, "photo", file, title);
 }
 
 const SOURCE_OPTIONS: { id: ClientSource; label: string }[] = [
@@ -330,6 +339,14 @@ export function AddClientModal({
         // иначе оставляем дефолт формы (менеджер выберет).
         source: initialData.source ?? base.source,
         sourceCustom: initialData.sourceCustom || base.sourceCustom,
+        // F18: фото из заявки сразу подставляем в слоты сканов — оператор
+        // видит их как уже приложенные (превью + можно заменить/удалить).
+        // Бэкенд /convert сам перенесёт эти файлы в client_documents,
+        // поэтому форма их не перезаливает (см. keepFiles при сохранении).
+        photoFile: initialData.photoFile ?? base.photoFile,
+        passportMainFile: initialData.passportMainFile ?? base.passportMainFile,
+        passportRegFile: initialData.passportRegFile ?? base.passportRegFile,
+        licenseFile: initialData.licenseFile ?? base.licenseFile,
       };
     }
     return base;
@@ -549,6 +566,12 @@ export function AddClientModal({
                   liveAddr: init.liveAddr || prev.liveAddr,
                   source: init.source ?? prev.source,
                   sourceCustom: init.sourceCustom || prev.sourceCustom,
+                  // F18: фото из подтянутой заявки — в слоты сканов.
+                  photoFile: init.photoFile ?? prev.photoFile,
+                  passportMainFile:
+                    init.passportMainFile ?? prev.passportMainFile,
+                  passportRegFile: init.passportRegFile ?? prev.passportRegFile,
+                  licenseFile: init.licenseFile ?? prev.licenseFile,
                 }));
                 setLinkedAppId(matchedApp.id);
               }}
@@ -1088,6 +1111,28 @@ export function AddClientModal({
                   // client_documents и помечает заявку accepted.
                   const effectiveAppId = applicationId ?? linkedAppId;
                   if (effectiveAppId) {
+                    // F18: keepFiles управляет переносом файлов заявки.
+                    // По умолчанию бэкенд копирует все 4 вида. Теперь слоты
+                    // формы предзаполнены превью этих файлов:
+                    //  - слот не тронут (appFileKind остался) → keep=true,
+                    //    бэкенд скопирует файл заявки (как и раньше);
+                    //  - слот очищен (null) → keep=false, файл не переносим;
+                    //  - слот заменён новым File (appFileKind пропал) →
+                    //    keep=false + после convert грузим новый файл.
+                    // Так избегаем дублей: файл заявки переносится РОВНО
+                    // один раз и только если он остался в слоте.
+                    const slotKind = (
+                      uf: UploadedFile | null,
+                    ): UploadedFile["appFileKind"] | undefined =>
+                      uf?.appFileKind;
+                    const keepFiles: Record<string, boolean> = {
+                      passport_main:
+                        slotKind(f.passportMainFile) === "passport_main",
+                      passport_reg:
+                        slotKind(f.passportRegFile) === "passport_reg",
+                      license: slotKind(f.licenseFile) === "license",
+                      selfie: slotKind(f.photoFile) === "selfie",
+                    };
                     try {
                       const created = await api.post<{ id: number; name: string; phone: string }>(
                         `/api/client-applications/${effectiveAppId}/convert`,
@@ -1105,9 +1150,64 @@ export function AddClientModal({
                           blacklistReason: f.blacklisted
                             ? nullableTrim(f.blReason)
                             : null,
+                          keepFiles,
                           ...passportFields,
                         },
                       );
+                      // Заменённые в форме файлы (новый File вместо файла
+                      // заявки) — заливаем после convert. Файл заявки для
+                      // них уже не перенесён (keep=false выше).
+                      const createdId = (created as { id: number }).id;
+                      const uploads: Promise<void>[] = [];
+                      const clientName = f.name.trim();
+                      if (f.photoFile?.file) {
+                        uploads.push(
+                          uploadClientDocFile(
+                            createdId,
+                            "photo",
+                            f.photoFile.file,
+                            `Фото · ${clientName}`,
+                          ),
+                        );
+                      }
+                      if (f.passportMainFile?.file) {
+                        uploads.push(
+                          uploadClientDocFile(
+                            createdId,
+                            "passport",
+                            f.passportMainFile.file,
+                            "Паспорт (главный разворот)",
+                          ),
+                        );
+                      }
+                      if (f.passportRegFile?.file) {
+                        uploads.push(
+                          uploadClientDocFile(
+                            createdId,
+                            "passport",
+                            f.passportRegFile.file,
+                            "Паспорт (прописка)",
+                          ),
+                        );
+                      }
+                      if (f.licenseFile?.file) {
+                        uploads.push(
+                          uploadClientDocFile(
+                            createdId,
+                            "license",
+                            f.licenseFile.file,
+                            "Водительское удостоверение",
+                          ),
+                        );
+                      }
+                      if (uploads.length > 0) {
+                        Promise.all(uploads).catch((e) =>
+                          toast.error(
+                            "Часть файлов не сохранилась на сервере",
+                            (e as Error).message ?? "",
+                          ),
+                        );
+                      }
                       qc.invalidateQueries({ queryKey: clientsKeys.all });
                       qc.invalidateQueries({ queryKey: applicationsKeys.all });
                       onCreated?.({
