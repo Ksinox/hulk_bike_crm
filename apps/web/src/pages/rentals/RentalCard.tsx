@@ -1279,7 +1279,12 @@ export function RentalCard({
   // v0.7.0: «Закрыть аренду» / «Принять оплату» — доступность кнопок.
   const isLive = rental.status === "active";
   const canComplete = isLive && !isArchived;
-  const canAcceptPayment = isLive && !isArchived;
+  // v0.8.34 (F1): «Принять оплату» доступна и на ЗАВЕРШЁННОЙ аренде с
+  // непогашенным долгом по ущербу (effectiveStatus='completed_damage') —
+  // оператор может закрыть остаток долга прямо на самой аренде, а не идти
+  // в карточку клиента. PaymentAcceptDialog умеет принимать damage-платёж.
+  const isCompletedWithDamage = effectiveStatus === "completed_damage";
+  const canAcceptPayment = (isLive || isCompletedWithDamage) && !isArchived;
 
   // v0.7.12: KPI-ряд (Срок/Просрочка · Долг · Эта аренда) вынесен в
   // переменную, чтобы рендерить его в разных местах: в обычном режиме —

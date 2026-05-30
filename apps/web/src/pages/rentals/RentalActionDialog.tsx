@@ -24,6 +24,7 @@ import { useApiPriceList } from "@/lib/api/price-list";
 import { useDebtAggregate } from "@/lib/api/debt";
 import { DocumentPreviewModal } from "./DocumentPreviewModal";
 import { PaymentAcceptDialog } from "./PaymentAcceptDialog";
+import { DamageReportDialog, type DamageSeedItem } from "./DamageReportDialog";
 
 /** v0.4.57: helper для записи компенсаций с залога. Использует
  *  существующий endpoint /debt/manual (kind=manual_charge). */
@@ -148,6 +149,11 @@ export function RentalActionDialog({
   const [returnDocPreview, setReturnDocPreview] = useState<number | null>(null);
   // v0.4.66: открыть PaymentAcceptDialog если есть долг по аренде.
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  // v0.8.34 (F2): при выборе «Создать акт» в FinalActDialog открываем
+  // ПОЛНОЦЕННЫЙ DamageReportDialog (тот же, что «Зафиксировать ущерб» на
+  // активной аренде) — с предзаполненными позициями. Оператор может
+  // отредактировать суммы, изменить зачёт залога, тумблер «в ремонт».
+  const [damageSeed, setDamageSeed] = useState<DamageSeedItem[] | null>(null);
   // Дата фактического возврата.
   const [returnDate, setReturnDate] = useState<string>(() => {
     const d = new Date();
@@ -299,17 +305,12 @@ export function RentalActionDialog({
     setReturnDocPreview(rental.id);
   };
 
-  // Создать акт ущерба: POST damage_report со всеми items, аренда →
-  // completed_damage. Дальнейшая оплата/претензия — через существующий flow.
-  const finalizeWithAct = async () => {
-    const items: Array<{
-      priceItemId: number | null;
-      name: string;
-      originalPrice: number;
-      finalPrice: number;
-      quantity: number;
-      comment: string | null;
-    }> = [];
+  // v0.8.34 (F2): из собранных карточек приёмки строим позиции для
+  // полноценного DamageReportDialog. Раньше эти же позиции уходили
+  // напрямую в POST /damage-reports (finalizeWithAct) с фиксированным
+  // зачётом залога и без возможности редактирования сумм оператором.
+  const buildDamageSeedItems = (): DamageSeedItem[] => {
+    const items: DamageSeedItem[] = [];
     for (const d of scooterDamages) {
       items.push({
         priceItemId: d.itemId ?? null,
@@ -339,26 +340,26 @@ export function RentalActionDialog({
         comment: null,
       });
     }
+    return items;
+  };
+
+  // v0.8.34 (F2): открыть полноценный диалог фиксации ущерба с
+  // предзаполненными позициями. Создание акта и зачёт залога — внутри него.
+  const openFullDamageDialog = () => {
+    const items = buildDamageSeedItems();
     if (items.length === 0) {
       // Защита: не должно происходить (диалог только при damage>0)
       requestClose();
       return;
     }
-    const totalAmount = items.reduce((s, it) => s + it.finalPrice, 0);
-    const depositCovered = Math.min(totalAmount, rental.deposit ?? 0);
-    try {
-      await api.post("/api/damage-reports", {
-        rentalId: rental.id,
-        items,
-        depositCovered,
-        sendScooterToRepair: true,
-        note: null,
-      });
-    } catch (e) {
-      console.error("create damage report", e);
-    }
-    // Завершаем аренду в режиме with damage. Передаём 0 как damageAmount —
-    // фактический долг уже учтён через damage_report.
+    setDamageSeed(items);
+  };
+
+  // v0.8.34 (F2): вызывается после того как DamageReportDialog СОЗДАЛ акт
+  // (он сам начислил долг и зачёл залог). Здесь только завершаем аренду —
+  // долг по ущербу остаётся на аренде (damage_reports.debt>0), и карточка
+  // покажет «Завершена с ущербом» (см. F1 в effectiveRentalStatus).
+  const finalizeAfterAct = async () => {
     try {
       await completeRentalWithDamage(
         rental.id,
@@ -1218,9 +1219,27 @@ export function RentalActionDialog({
             setActDialog(null);
             await finalizeBrotherly();
           }}
-          onCreateAct={async () => {
+          onCreateAct={() => {
+            // v0.8.34 (F2): открываем полноценный диалог фиксации ущерба
+            // вместо тихого POST. Оператор увидит редактируемые суммы,
+            // зачёт залога и тумблер «в ремонт».
             setActDialog(null);
-            await finalizeWithAct();
+            openFullDamageDialog();
+          }}
+        />
+      )}
+      {/* v0.8.34 (F2): полноценный диалог ущерба (тот же что «Зафиксировать
+          ущерб» на активной аренде) — открыт из потока завершения. После
+          создания акта завершаем аренду (finalizeAfterAct). */}
+      {damageSeed && action === "complete" && (
+        <DamageReportDialog
+          rental={rental}
+          seedItems={damageSeed}
+          submitLabel="Создать акт и завершить"
+          onClose={() => setDamageSeed(null)}
+          onCreated={() => {
+            setDamageSeed(null);
+            void finalizeAfterAct();
           }}
         />
       )}

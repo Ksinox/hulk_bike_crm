@@ -38,6 +38,16 @@ export function effectiveRentalStatus(
   totalDebt?: number,
   now: Date = new Date(),
 ): RentalStatus {
+  // v0.8.34 (F1): аренда завершена (status='completed' в БД — отдельного
+  // completed_damage в схеме нет с v0.5.0), но по ней остался непогашенный
+  // долг по ущербу/ручной/просрочке. Показываем UI-псевдостатус
+  // «Завершена с ущербом» (красный) вместо нейтрального «Завершена».
+  // Долг определяется по damage_reports.debt>0 (передаётся вызывающим в
+  // totalDebt). Источник долга — тот же агрегат, что на клиенте/дашборде,
+  // поэтому долг аренды и долг клиента согласованы.
+  if (status === "completed" && totalDebt !== undefined && totalDebt > 0) {
+    return "completed_damage";
+  }
   // v0.4.71: расширили обработку — раньше функция работала только при
   // status='active'. Теперь если в БД status='overdue' (поставлен
   // scheduler'ом) и долг=0 (клиент всё погасил / простили) —

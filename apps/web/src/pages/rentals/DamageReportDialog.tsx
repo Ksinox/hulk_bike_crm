@@ -47,15 +47,39 @@ type Selected = CreateDamageItem & {
  *  - При сохранении: создаётся damage_report, аренда → completed_damage,
  *    скутер (опц.) → repair, открывается превью документа для печати.
  */
+/**
+ * Позиция для предзаполнения корзины при открытии диалога из потока
+ * «Завершить аренду → Есть ущерб». Совпадает по форме с CreateDamageItem.
+ */
+export type DamageSeedItem = {
+  priceItemId?: number | null;
+  name: string;
+  originalPrice: number;
+  finalPrice: number;
+  quantity: number;
+  comment?: string | null;
+};
+
 export function DamageReportDialog({
   rental,
   existing,
+  seedItems,
+  submitLabel,
   onClose,
   onCreated,
 }: {
   rental: Rental;
   /** Существующий акт — если передан, диалог работает в режиме редактирования. */
   existing?: ApiDamageReport | null;
+  /**
+   * v0.8.34 (F2): предзаполнить корзину при создании нового акта. Используется
+   * потоком завершения аренды «с ущербом» — оператор получает тот же
+   * полноценный диалог (редактируемые суммы, зачёт залога, тумблер «в ремонт»),
+   * что и при «Зафиксировать ущерб» на активной аренде.
+   */
+  seedItems?: DamageSeedItem[];
+  /** v0.8.34: переопределить подпись кнопки подтверждения (для flow завершения). */
+  submitLabel?: string;
   onClose: () => void;
   onCreated?: (reportId: number) => void;
 }) {
@@ -150,6 +174,18 @@ export function DamageReportDialog({
         comment: it.comment ?? "",
       }));
     }
+    // v0.8.34 (F2): предзаполнение из потока завершения «с ущербом».
+    if (seedItems?.length) {
+      return seedItems.map((it, i) => ({
+        uid: `seed-${i}-${Date.now()}`,
+        priceItemId: it.priceItemId ?? null,
+        name: it.name,
+        originalPrice: it.originalPrice,
+        finalPrice: it.finalPrice,
+        quantity: it.quantity,
+        comment: it.comment ?? "",
+      }));
+    }
     return [];
   });
 
@@ -193,9 +229,19 @@ export function DamageReportDialog({
   // удерживается у нас до полного покрытия долга (информационный режим).
   const depositIsItem = (rental.deposit ?? 0) <= 0;
   const depositMax = Math.min(rental.deposit ?? 0, total);
-  const [depositCovered, setDepositCovered] = useState<number>(
-    existing?.depositCovered ?? 0,
-  );
+  const [depositCovered, setDepositCovered] = useState<number>(() => {
+    if (existing) return existing.depositCovered ?? 0;
+    // v0.8.34 (F2): при предзаполнении из потока завершения по умолчанию
+    // зачитываем весь применимый залог (как делал прежний finalizeWithAct).
+    if (seedItems?.length) {
+      const seedTotal = seedItems.reduce(
+        (s, it) => s + it.finalPrice * it.quantity,
+        0,
+      );
+      return Math.min(rental.deposit ?? 0, seedTotal);
+    }
+    return 0;
+  });
   useEffect(() => {
     // Если итог уменьшился ниже текущего зачёта — ужмём.
     setDepositCovered((c) => Math.min(c, depositMax));
@@ -669,7 +715,7 @@ export function DamageReportDialog({
                   ? "Сохраняем…"
                   : isEdit
                     ? "Сохранить изменения"
-                    : "Создать акт о повреждениях"}
+                    : (submitLabel ?? "Создать акт о повреждениях")}
               </button>
             </div>
           </div>
