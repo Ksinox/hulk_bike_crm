@@ -43,6 +43,9 @@ export type ApplicationFields = {
   source?: ClientSource | null;
   /** Текст-уточнение, если выбран source='other'. */
   sourceCustom?: string | null;
+  /** G3: предзаявка на аренду — что клиент хочет арендовать. */
+  requestedModel?: string | null;
+  requestedDays?: number | null;
   honeypot?: string | null;
 };
 

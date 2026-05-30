@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import imageCompression from "browser-image-compression";
-import { Camera, Check, FolderOpen, RotateCw } from "lucide-react";
+import { ArrowRight, Camera, Check, FolderOpen, RotateCw } from "lucide-react";
 import { ApiError, applicationApi, type FileKind } from "./applicationApi";
 
 /**
@@ -131,8 +131,9 @@ export function PhotoUpload(props: Props) {
       // 4. Аплоад
       await applicationApi.uploadFile(applicationId, uploadToken, kind, file);
       props.onUploaded();
-      // Auto-advance — клиент идёт по форме «за руку», без лишних нажатий.
-      window.setTimeout(() => props.onAdvance(), 600);
+      // G3: НЕ авто-переходим. Даём клиенту проверить фото (читается ли,
+      // не смазано, без засвета) и осознанно нажать «Далее» или «Переснять».
+      // Раньше прыгали к следующему шагу через 600мс — вслепую.
     } catch (e) {
       if (e instanceof ApiError) {
         if (e.status === 415) setError("Этот формат не поддерживается");
@@ -246,19 +247,35 @@ export function PhotoUpload(props: Props) {
       )}
 
       {uploaded && (
-        <div className="rounded-xl bg-emerald-50 p-3">
-          <div className="flex items-center gap-2 text-[13px] font-semibold text-emerald-700">
-            <Check size={16} />
-            Загружено — переходим к следующему шагу
+        <div className="space-y-3">
+          <div className="rounded-xl bg-emerald-50 p-3">
+            <div className="flex items-center gap-2 text-[13px] font-semibold text-emerald-700">
+              <Check size={16} />
+              Фото загружено
+            </div>
+            <div className="mt-1 text-[12px] text-emerald-700/80">
+              Проверьте: всё читается, без засвета и смаза. Если что — переснимите.
+            </div>
           </div>
-          <button
-            type="button"
-            onClick={replace}
-            disabled={busy}
-            className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-emerald-300 bg-white px-3 py-1.5 text-[12px] font-semibold text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
-          >
-            <RotateCw size={12} /> Переснять
-          </button>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={replace}
+              disabled={busy}
+              className="inline-flex h-12 items-center justify-center gap-1.5 rounded-xl border border-slate-300 bg-white px-4 text-[14px] font-semibold text-slate-700 disabled:opacity-50"
+            >
+              <RotateCw size={15} /> Переснять
+            </button>
+            <button
+              type="button"
+              onClick={() => props.onAdvance()}
+              disabled={busy}
+              className="inline-flex h-12 flex-1 items-center justify-center gap-1.5 rounded-xl bg-slate-900 px-4 text-[14px] font-semibold text-white disabled:opacity-50"
+            >
+              Далее
+              <ArrowRight size={16} />
+            </button>
+          </div>
         </div>
       )}
 

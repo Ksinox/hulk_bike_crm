@@ -1359,6 +1359,12 @@ export const clientApplications = pgTable(
     /** Произвольный текст когда выбран source='other'. */
     sourceCustom: text("source_custom"),
 
+    /** G3: что клиент хочет арендовать (предзаявка). Выбирается им же в
+     *  анкете на шаге «Что хотите арендовать». При convert модель/срок
+     *  подставляются в форму «Новая аренда». NULL — клиент не указал. */
+    requestedModel: scooterModelEnum("requested_model"),
+    requestedDays: integer("requested_days"),
+
     /** Заполняется при convert: ссылка на созданного клиента. NULL — заявка
      *  ещё не оформлена. ON DELETE SET NULL — если клиента удалили,
      *  заявка остаётся в архиве (история). */

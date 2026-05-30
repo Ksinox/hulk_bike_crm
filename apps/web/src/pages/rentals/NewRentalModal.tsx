@@ -81,11 +81,20 @@ export function NewRentalModal({
   onClose,
   onCreated,
   preselectedScooterName,
+  initialClientId,
+  initialModelFilter,
+  initialDays,
 }: {
   onClose: () => void;
   onCreated?: (rental: Rental) => void;
   /** Если задан — откроется с уже выбранным скутером. Используется из карточки скутера. */
   preselectedScooterName?: string;
+  /** G3: предзаполнение из заявки/конвертации — клиент уже выбран. */
+  initialClientId?: number | null;
+  /** G3: предвыбранная модель (фильтр списка скутеров) из заявки. */
+  initialModelFilter?: string;
+  /** G3: предвыбранный срок аренды (дней) из заявки. */
+  initialDays?: number;
 }) {
   const rentals = useRentals();
   const allClients = useAllClients();
@@ -95,12 +104,16 @@ export function NewRentalModal({
   const blocked = activeScooters(rentals);
   const [closing, setClosing] = useState(false);
 
-  const [clientId, setClientId] = useState<number | null>(null);
+  const [clientId, setClientId] = useState<number | null>(
+    initialClientId ?? null,
+  );
   const [clientQuery, setClientQuery] = useState("");
   const [clientOpen, setClientOpen] = useState(false);
   const [newClientOpen, setNewClientOpen] = useState(false);
   // Фильтр по модели в селекторе скутеров — пустая строка = все модели.
-  const [scooterModelFilter, setScooterModelFilter] = useState<string>("");
+  const [scooterModelFilter, setScooterModelFilter] = useState<string>(
+    initialModelFilter ?? "",
+  );
   const [scooterName, setScooterName] = useState<string | null>(
     preselectedScooterName ?? null,
   );
@@ -108,7 +121,7 @@ export function NewRentalModal({
   const [startTime, setStartTime] = useState(() => currentHHMM());
   // 7 дней — самый популярный период проката (тариф «неделя»),
   // ставим дефолтом, чтобы оператор не правил каждый раз.
-  const [days, setDays] = useState(7);
+  const [days, setDays] = useState(initialDays && initialDays > 0 ? initialDays : 7);
   /** Выбранные позиции экипировки — id из equipment_items каталога */
   const [equipmentIds, setEquipmentIds] = useState<number[]>([]);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");

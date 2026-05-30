@@ -35,6 +35,7 @@ import {
 } from "./formatters";
 import { toTitleCaseRu } from "@/lib/textCase";
 import { DatePicker } from "@/components/ui/date-picker";
+import { TARIFF, periodForDays, type ScooterModel } from "@/lib/mock/rentals";
 
 /** Сегодня в ISO для maxDate ограничения. */
 function todayIsoLocal(): string {
@@ -68,6 +69,7 @@ type StepId =
   | "contact"
   | "passport"
   | "address"
+  | "rental_wish"
   | "photo_passport_main"
   | "photo_passport_reg"
   | "photo_license"
@@ -80,6 +82,7 @@ function getSteps(isForeigner: boolean): StepId[] {
     "contact",
     "passport",
     "address",
+    "rental_wish",
     "photo_passport_main",
     "photo_passport_reg",
     "photo_license",
@@ -121,6 +124,10 @@ type FormState = {
   sameAddress: boolean;
   liveAddress: string;
 
+  // G3: предзаявка на аренду — что хочет арендовать
+  wantModel: "" | "jog" | "gear" | "honda" | "tank";
+  wantDays: number;
+
   // Источник: откуда о нас узнал
   source: ClientSourceChoice | "";
   sourceCustom: string;
@@ -149,6 +156,8 @@ const EMPTY: FormState = {
   // по умолчанию отжата» — клиент сам решит, ставить или нет.
   sameAddress: false,
   liveAddress: "",
+  wantModel: "",
+  wantDays: 7,
   source: "",
   sourceCustom: "",
   agreedPdn: false,
@@ -176,6 +185,8 @@ function fieldsFromState(s: FormState): ApplicationFields {
     source: s.source ? s.source : null,
     sourceCustom:
       s.source === "other" ? nullableTrim(s.sourceCustom) : null,
+    requestedModel: s.wantModel ? s.wantModel : null,
+    requestedDays: s.wantModel && s.wantDays > 0 ? s.wantDays : null,
     honeypot: s.honeypot || null,
   };
 }
@@ -198,6 +209,8 @@ function stateFromFields(f: ApplicationFields): Partial<FormState> {
     liveAddress: f.liveAddress ?? "",
     source: (f.source ?? "") as ClientSourceChoice | "",
     sourceCustom: f.sourceCustom ?? "",
+    wantModel: (f.requestedModel ?? "") as FormState["wantModel"],
+    wantDays: f.requestedDays ?? 7,
   };
 }
 
@@ -322,6 +335,8 @@ export function ApplicationForm() {
         return canNextPassport;
       case "address":
         return canNextAddress;
+      case "rental_wish":
+        return true; // необязательный шаг — клиент может пропустить
       case "photo_passport_main":
         return uploaded.has("passport_main");
       case "photo_passport_reg":
@@ -441,6 +456,9 @@ export function ApplicationForm() {
           )}
           {currentStepId === "address" && (
             <Step3 form={form} setField={setField} />
+          )}
+          {currentStepId === "rental_wish" && (
+            <RentalWishStep form={form} setField={setField} />
           )}
           {isPhotoStep && photoKind && (
             <PhotoStep
@@ -1079,6 +1097,120 @@ function SuccessScreen() {
           Эту страницу можно закрыть.
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─────────────── G3: предзаявка на аренду (модель + срок) ───────────────
+
+const WISH_MODELS: { id: "jog" | "gear" | "honda" | "tank"; label: string }[] = [
+  { id: "jog", label: "Jog" },
+  { id: "gear", label: "Gear" },
+  { id: "honda", label: "Honda" },
+  { id: "tank", label: "Tank" },
+];
+const WISH_DAY_PRESETS = [1, 3, 7, 14, 30];
+
+function RentalWishStep({
+  form,
+  setField,
+}: {
+  form: FormState;
+  setField: <K extends keyof FormState>(k: K, v: FormState[K]) => void;
+}) {
+  const days = form.wantDays > 0 ? form.wantDays : 7;
+  const calc = useMemo(() => {
+    if (!form.wantModel) return null;
+    const period = periodForDays(days);
+    const rate = TARIFF[form.wantModel as ScooterModel][period];
+    return { rate, total: rate * days };
+  }, [form.wantModel, days]);
+
+  return (
+    <div className="space-y-4">
+      <h1 className="text-[22px] font-bold text-slate-900">
+        Что хотите арендовать?
+      </h1>
+      <p className="text-[14px] text-slate-600">
+        Необязательно — подскажем стоимость и подберём при звонке. Можно
+        пропустить, если ещё не определились.
+      </p>
+
+      <div>
+        <FieldLabel>Модель скутера</FieldLabel>
+        <div className="grid grid-cols-2 gap-2">
+          {WISH_MODELS.map((m) => {
+            const active = form.wantModel === m.id;
+            const dayRate = TARIFF[m.id as ScooterModel].day;
+            return (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() =>
+                  setField("wantModel", active ? "" : m.id)
+                }
+                className={`flex flex-col items-start rounded-xl border-2 px-4 py-3 text-left transition-colors ${
+                  active
+                    ? "border-slate-900 bg-slate-900 text-white"
+                    : "border-slate-200 bg-white text-slate-900 hover:border-slate-400"
+                }`}
+              >
+                <span className="text-[16px] font-bold">{m.label}</span>
+                <span
+                  className={`text-[12px] ${active ? "text-white/70" : "text-slate-500"}`}
+                >
+                  от {dayRate} ₽/сут
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {form.wantModel && (
+        <>
+          <div>
+            <FieldLabel>На сколько дней</FieldLabel>
+            <div className="flex flex-wrap gap-2">
+              {WISH_DAY_PRESETS.map((n) => {
+                const active = days === n;
+                return (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => setField("wantDays", n)}
+                    className={`h-11 min-w-[56px] rounded-xl border-2 px-3 text-[15px] font-semibold transition-colors ${
+                      active
+                        ? "border-slate-900 bg-slate-900 text-white"
+                        : "border-slate-200 bg-white text-slate-900 hover:border-slate-400"
+                    }`}
+                  >
+                    {n} {n === 1 ? "день" : n < 5 ? "дня" : "дней"}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {calc && (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <div className="text-[13px] text-slate-600">
+                Ориентировочная стоимость
+              </div>
+              <div className="mt-1 text-[28px] font-bold leading-none text-slate-900">
+                ≈ {calc.total.toLocaleString("ru-RU")} ₽
+              </div>
+              <div className="mt-1 text-[13px] text-slate-500">
+                {calc.rate.toLocaleString("ru-RU")} ₽/сут × {days}{" "}
+                {days === 1 ? "день" : days < 5 ? "дня" : "дней"} · залог 2 000 ₽
+              </div>
+              <div className="mt-2 text-[12px] text-slate-400">
+                Точную цену и наличие подтвердит менеджер.
+              </div>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }

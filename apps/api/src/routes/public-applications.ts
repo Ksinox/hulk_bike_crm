@@ -48,6 +48,12 @@ const ApplicationFieldsBody = z
      *  При convert копируется в clients.source. */
     source: ClientSourceEnum.optional().nullable(),
     sourceCustom: z.string().max(200).optional().nullable(),
+    /** G3: предзаявка на аренду — модель и срок, которые выбрал клиент. */
+    requestedModel: z
+      .enum(["jog", "gear", "honda", "tank"])
+      .optional()
+      .nullable(),
+    requestedDays: z.number().int().min(1).max(365).optional().nullable(),
     /** Honeypot — реальные клиенты это поле не видят и не заполняют. */
     honeypot: z.string().max(100).optional().nullable(),
   })
