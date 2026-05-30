@@ -128,6 +128,7 @@ export function DragExtendCalendar({
   hideLegend,
   parkingMode = false,
   parkingRanges,
+  parkingOccupiedRanges,
   onParkingPick,
   parkingSelectableFromIso,
   parkingSelectableToIso,
@@ -162,6 +163,13 @@ export function DragExtendCalendar({
    */
   parkingMode?: boolean;
   parkingRanges?: { startIso: string; endIso: string }[];
+  /**
+   * F3 (v0.8.34) — периоды УЖЕ существующих сессий паркинга. Их дни в режиме
+   * выбора нельзя выбрать повторно (день не может попасть в паркинг дважды) —
+   * они гасятся и становятся некликабельными. В отличие от parkingRanges,
+   * сюда НЕ входит черновик текущего выбора (draftStart).
+   */
+  parkingOccupiedRanges?: { startIso: string; endIso: string }[];
   onParkingPick?: (iso: string) => void;
   parkingSelectableFromIso?: string | null;
   parkingSelectableToIso?: string | null;
@@ -262,6 +270,18 @@ export function DragExtendCalendar({
   }, [parkingRanges]);
   const isParkingDay = (t: number): boolean =>
     parkingIntervals.some((iv) => t >= iv.s && t <= iv.e);
+  // F3: интервалы УЖЕ существующих сессий — их дни нельзя выбрать повторно.
+  const occupiedIntervals = useMemo(() => {
+    return (parkingOccupiedRanges ?? [])
+      .map((r) => {
+        const s = isoToKey(r.startIso);
+        const e = isoToKey(r.endIso);
+        return s && e ? { s: keyToTime(s), e: keyToTime(e) } : null;
+      })
+      .filter((x): x is { s: number; e: number } => x != null);
+  }, [parkingOccupiedRanges]);
+  const isOccupiedParkingDay = (t: number): boolean =>
+    occupiedIntervals.some((iv) => t >= iv.s && t <= iv.e);
   const selFromT = parkingSelectableFromIso
     ? (isoToKey(parkingSelectableFromIso) &&
         keyToTime(isoToKey(parkingSelectableFromIso)!))
@@ -292,7 +312,10 @@ export function DragExtendCalendar({
     if (!k) return;
     // v0.8.0: режим паркинга — клик выбирает дату, продление не трогаем.
     if (parkingMode) {
-      if (isOutsideParkingWindow(keyToTime(k))) return;
+      const t = keyToTime(k);
+      if (isOutsideParkingWindow(t)) return;
+      // F3: день уже входит в существующую сессию паркинга — выбрать нельзя.
+      if (isOccupiedParkingDay(t)) return;
       onParkingPick?.(iso);
       return;
     }
@@ -342,6 +365,9 @@ export function DragExtendCalendar({
     // v0.8.0: в режиме паркинга дни вне окна выбора (≤7 суток / раньше
     // начала) — приглушены и некликабельны.
     const outsideParking = isOutsideParkingWindow(keyToTime(k));
+    // F3: дни уже существующих сессий паркинга в режиме выбора —
+    // некликабельны (день не может попасть в паркинг дважды).
+    const occupiedParking = parkingMode && isOccupiedParkingDay(keyToTime(k));
     // v0.7.12: день планового возврата — тонкая обводка ячейки (доп.
     // маркер). НЕ влияет на зональную логику/цвета/края — просто ring
     // поверх. Помогает оператору сразу увидеть «вот день возврата».
@@ -360,6 +386,9 @@ export function DragExtendCalendar({
       disabled ? "" : "cursor-pointer",
       // Паркинг: дни вне окна выбора приглушены/некликабельны.
       outsideParking ? "pointer-events-none opacity-30" : "",
+      // F3: дни существующих сессий паркинга — некликабельны (но видны как
+      // жёлтая зона). Курсор-запрет вместо обычного.
+      occupiedParking ? "pointer-events-none cursor-not-allowed" : "",
     ];
 
     // Hover — только для ячеек вне зоны.

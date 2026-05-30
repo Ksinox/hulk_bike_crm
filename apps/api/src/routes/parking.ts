@@ -214,6 +214,31 @@ export async function parkingRoutes(app: FastifyInstance) {
       });
     }
 
+    // F3 (v0.8.34): запрет пересечения периодов паркинга одной аренды.
+    // Один день не может попасть в паркинг дважды. Новая (открытая) сессия
+    // занимает интервал [startDate, startDate+MAX-1]; существующая —
+    // [startDate, endDate]. Два включительных интервала пересекаются, если
+    // a1 ≤ b2 && b1 ≤ a2. Сравнение строк YYYY-MM-DD лексикографически
+    // эквивалентно сравнению дат.
+    const newStart = startDate;
+    const newMaxEnd = addDaysYmd(startDate, MAX_DAYS - 1);
+    const existing = await db
+      .select({
+        startDate: parkingSessions.startDate,
+        endDate: parkingSessions.endDate,
+      })
+      .from(parkingSessions)
+      .where(eq(parkingSessions.rentalId, rentalId));
+    const overlaps = existing.some(
+      (s) => newStart <= s.endDate && s.startDate <= newMaxEnd,
+    );
+    if (overlaps) {
+      return reply.code(400).send({
+        error: "parking_overlap",
+        message: "Период паркинга пересекается с уже существующим",
+      });
+    }
+
     // Открытая сессия: считаем дни на сегодня (0 если старт в будущем).
     const today = todayMskYmd();
     const { endYmd, days } = activeParkingState(startDate, today);

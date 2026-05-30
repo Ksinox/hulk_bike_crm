@@ -22,6 +22,7 @@ import {
   PARKING_MAX_DAYS,
 } from "@/lib/api/parking";
 import { toast } from "@/lib/toast";
+import { ApiError } from "@/lib/api";
 
 /** DD.MM.YYYY → YYYY-MM-DD */
 function ruToIso(ru: string | undefined | null): string | null {
@@ -151,6 +152,13 @@ export function CalendarPanel({
     return ranges;
   }, [sessions, draftStart]);
 
+  // F3: периоды УЖЕ существующих сессий (без черновика) — их дни нельзя
+  // выбрать повторно. Один день не может попасть в паркинг дважды.
+  const parkingOccupiedRanges = useMemo(
+    () => sessions.map((s) => ({ startIso: s.startDate, endIso: s.endDate })),
+    [sessions],
+  );
+
   // Окно выбора: начало паркинга не раньше выдачи; конец открыт.
   const selFrom = startIso;
   const selTo: string | null = null;
@@ -184,7 +192,21 @@ export function CalendarPanel({
             );
             exitParking();
           },
-          onError: () => toast.error("Не удалось поставить на паркинг"),
+          // F3: сервер вернул 400 — показываем понятный текст (в т.ч.
+          // пересечение периодов паркинга). ApiError.message уже содержит
+          // человеческое сообщение от сервера.
+          onError: (err) => {
+            const overlap =
+              err instanceof ApiError && err.status === 400
+                ? (err.body as { error?: string } | null)?.error ===
+                  "parking_overlap"
+                : false;
+            toast.error(
+              overlap
+                ? "Период паркинга пересекается с уже существующим"
+                : "Не удалось поставить на паркинг",
+            );
+          },
         },
       );
     } else {
@@ -295,6 +317,7 @@ export function CalendarPanel({
               hideLegend
               parkingMode={parkingMode}
               parkingRanges={parkingRanges}
+              parkingOccupiedRanges={parkingOccupiedRanges}
               onParkingPick={handleParkingPick}
               parkingSelectableFromIso={selFrom}
               parkingSelectableToIso={selTo}
