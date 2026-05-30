@@ -55,6 +55,7 @@ import {
 import { overdueAmount, overdueDays } from "../services/debtorOverdue.js";
 import { calculateInsuranceForecast } from "../services/debtorProfit.js";
 import { recommendNextAction } from "../services/debtorRecommend.js";
+import { syncRentalDebtorCases } from "../services/debtorSync.js";
 
 // ====== zod schemas ======
 
@@ -200,6 +201,10 @@ export async function debtorsRoutes(app: FastifyInstance) {
   app.get<{
     Querystring: { stage?: string; type?: string; closed?: string };
   }>("/", async (req) => {
+    // v0.6: авто-ингест должников из аренд (просрочка/ущерб/паркинг/...).
+    await syncRentalDebtorCases().catch((e) =>
+      app.log.warn({ err: e }, "debtor sync failed"),
+    );
     const rows = await db.select().from(debtors).orderBy(desc(debtors.createdAt));
     // По умолчанию исключаем closed_*
     const includeClosed = req.query.closed === "1";
@@ -221,6 +226,9 @@ export async function debtorsRoutes(app: FastifyInstance) {
 
   // ---------- GET /today ----------
   app.get("/today", async () => {
+    await syncRentalDebtorCases().catch((e) =>
+      app.log.warn({ err: e }, "debtor sync failed"),
+    );
     const rows = await db.select().from(debtors);
     const payments = await db.select().from(debtorPayments);
     const paymentsByDebtor = new Map<number, typeof payments>();
@@ -264,6 +272,9 @@ export async function debtorsRoutes(app: FastifyInstance) {
 
   // ---------- GET /dashboard-stats ----------
   app.get("/dashboard-stats", async () => {
+    await syncRentalDebtorCases().catch((e) =>
+      app.log.warn({ err: e }, "debtor sync failed"),
+    );
     const rows = await db.select().from(debtors);
     const payments = await db.select().from(debtorPayments);
     const paymentsByDebtor = new Map<number, typeof payments>();
