@@ -54,6 +54,9 @@ export type Debtor = {
   closedReason: string | null;
   createdAt: string;
   updatedAt: string;
+  /** v0.6: имя/телефон клиента, подмешиваются в GET /api/debtors (список). */
+  clientName?: string | null;
+  clientPhone?: string | null;
 };
 
 export type DebtorPayment = {

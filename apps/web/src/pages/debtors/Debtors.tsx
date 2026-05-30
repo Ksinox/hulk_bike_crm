@@ -14,6 +14,7 @@
 import { useState } from "react";
 import { Topbar } from "@/pages/dashboard/Topbar";
 import { DebtorsMorning } from "./DebtorsMorning";
+import { DebtorsList } from "./DebtorsList";
 import { DebtorsEmpty } from "./DebtorsEmpty";
 import { DebtorCase } from "./DebtorCase";
 import { DebtorPaymentScreen } from "./DebtorPaymentScreen";
@@ -22,6 +23,7 @@ import { useDebtorsToday } from "@/lib/api/debtors";
 
 type Sub =
   | { kind: "landing" }
+  | { kind: "list" }
   | { kind: "new" }
   | { kind: "case"; id: number }
   | { kind: "payment"; id: number };
@@ -39,6 +41,14 @@ export function Debtors() {
       <DebtorNewWizard
         onClose={() => setSub({ kind: "landing" })}
         onCreated={(id) => setSub({ kind: "case", id })}
+      />
+    );
+  } else if (sub.kind === "list") {
+    body = (
+      <DebtorsList
+        onOpenCase={(id) => setSub({ kind: "case", id })}
+        onBack={() => setSub({ kind: "landing" })}
+        onAddNew={() => setSub({ kind: "new" })}
       />
     );
   } else if (sub.kind === "case") {
@@ -63,6 +73,7 @@ export function Debtors() {
       <DebtorsMorning
         onOpenCase={(id) => setSub({ kind: "case", id })}
         onAddNew={() => setSub({ kind: "new" })}
+        onOpenList={() => setSub({ kind: "list" })}
       />
     );
   }

@@ -45,9 +45,11 @@ const PRIO_DOT: Record<"hot" | "warm" | "cool", string> = {
 export function DebtorsMorning({
   onOpenCase,
   onAddNew,
+  onOpenList,
 }: {
   onOpenCase: (id: number) => void;
   onAddNew: () => void;
+  onOpenList: () => void;
 }) {
   const me = useMe();
   const todayQ = useDebtorsToday();
@@ -91,10 +93,11 @@ export function DebtorsMorning({
         <div className="flex gap-2">
           <button
             type="button"
+            onClick={onOpenList}
             className="inline-flex h-9 items-center gap-2 rounded-[10px] border border-border bg-white px-3.5 text-[13px] font-semibold text-ink hover:border-border-strong"
           >
             <Filter size={14} />
-            Фильтры
+            Все дела
           </button>
           <button
             type="button"
@@ -196,8 +199,12 @@ export function DebtorsMorning({
         </>
       )}
 
-      {/* Сводка */}
-      <div className="mt-8 flex items-center gap-3 rounded-[14px] border border-dashed border-border-strong bg-white px-5 py-4 text-[13px] text-muted">
+      {/* Сводка — клик ведёт в полный список дел */}
+      <button
+        type="button"
+        onClick={onOpenList}
+        className="mt-8 flex w-full items-center gap-3 rounded-[14px] border border-dashed border-border-strong bg-white px-5 py-4 text-left text-[13px] text-muted transition-colors hover:border-ink hover:bg-surface-soft"
+      >
         <Clock size={16} className="text-muted-2" />
         <div className="flex-1">
           Всего активных дел —{" "}
@@ -209,7 +216,8 @@ export function DebtorsMorning({
             {formatRub(totalActiveSum)}
           </b>
         </div>
-      </div>
+        <ArrowRight size={15} className="text-muted-2" />
+      </button>
     </section>
   );
 }

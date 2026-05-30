@@ -221,7 +221,24 @@ export async function debtorsRoutes(app: FastifyInstance) {
       })),
       { includeClosed },
     );
-    return { items: sorted };
+    // v0.6: подмешиваем имя/телефон клиента (для списка дел) — как в /today.
+    const cids = sorted.map((r) => r.clientId).filter(Boolean) as number[];
+    const nameMap = new Map<number, { name: string; phone: string }>();
+    if (cids.length > 0) {
+      const cs = await db
+        .select({ id: clients.id, name: clients.name, phone: clients.phone })
+        .from(clients);
+      for (const c of cs) nameMap.set(c.id, { name: c.name, phone: c.phone });
+    }
+    const items = sorted.map((r) => {
+      const c = r.clientId ? nameMap.get(r.clientId) ?? null : null;
+      return {
+        ...r,
+        clientName: c?.name ?? r.externalName ?? null,
+        clientPhone: c?.phone ?? r.externalPhone ?? null,
+      };
+    });
+    return { items };
   });
 
   // ---------- GET /today ----------
