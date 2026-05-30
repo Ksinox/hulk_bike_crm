@@ -358,6 +358,7 @@ export async function renderClaimHtml(b: ClaimBundle): Promise<string> {
       model: b.model,
       rootRentalId: b.rental.id,
       rootStartAt: b.rental.startAt ?? null,
+      damageTotal: b.report.total,
     });
     return `<!doctype html><html lang="ru"><head><meta charset="utf-8">
 <title>Досудебная претензия № ${String(b.report.id).padStart(4, "0")}</title>${CSS}</head><body>

@@ -4,10 +4,11 @@
  * HTML-строку потом можно отдать либо как preview (Content-Type: text/html),
  * либо сконвертить в .docx через html-to-docx.
  */
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 import { db } from "../db/index.js";
 import {
   clients,
+  damageReports,
   rentals,
   returnInspections,
   scooterModels,
@@ -62,6 +63,11 @@ export type Bundle = {
    *  не дата исходного договора. Используется в подписях актов
    *  «К договору № X от <дата>». */
   rootStartAt: Date | null;
+  /** Суммарный ущерб по всей цепочке аренды (root + продления/замены).
+   *  Сумма damage_reports.total по всем rentalId цепочки. Используется
+   *  только в акте возврата (Приложение №2) для строки «обязуется
+   *  возместить расходы на устранение повреждений в размере…». */
+  damageTotal: number;
 };
 
 export async function loadBundle(rentalId: number): Promise<Bundle | null> {
@@ -170,6 +176,33 @@ export async function loadBundle(rentalId: number): Promise<Bundle | null> {
     parentCursor = p.parentRentalId ?? null;
   }
 
+  // F6: суммарный ущерб по всей цепочке аренды. Собираем id цепочки
+  // (корень + все потомки-продления/замены) тем же приёмом что в
+  // routes/activity.ts: вверх к корню по parentRentalId, потом вниз по
+  // potomkam. Затем суммируем damage_reports.total по этим арендам —
+  // эта сумма подставляется в акт возврата.
+  const chainIds = new Set<number>([rootRentalId, rental.id]);
+  let frontier = Array.from(chainIds);
+  for (let i = 0; i < 8 && frontier.length; i++) {
+    const children = await db
+      .select({ id: rentals.id })
+      .from(rentals)
+      .where(inArray(rentals.parentRentalId, frontier));
+    const next: number[] = [];
+    for (const c of children) {
+      if (!chainIds.has(c.id)) {
+        chainIds.add(c.id);
+        next.push(c.id);
+      }
+    }
+    frontier = next;
+  }
+  const damageRows = await db
+    .select({ total: damageReports.total })
+    .from(damageReports)
+    .where(inArray(damageReports.rentalId, Array.from(chainIds)));
+  const damageTotal = damageRows.reduce((s, d) => s + (d.total ?? 0), 0);
+
   // v0.4.60: данные инспекции возврата (для шаблона act_return).
   // Если оператор ещё не оформил возврат — null, шаблон покажет «—».
   const [inspection] = await db
@@ -188,6 +221,7 @@ export async function loadBundle(rentalId: number): Promise<Bundle | null> {
     swapReason,
     rootRentalId,
     rootStartAt,
+    damageTotal,
     inspection: inspection ?? null,
   };
 }
@@ -638,7 +672,11 @@ ${TOOLBAR}
 
   <div class="para">Идентификационные номера сверены, комплектность проверена.<br>
     Претензий к Арендодателю, в том числе имущественных, Арендатор не имеет${kind === "return" ? " (имеет)" : ""}.<br>
-    Арендатор обязуется возместить Арендодателю расходы на устранение повреждений, полученных при эксплуатации скутера, в размере _______________________ рублей.
+    Арендатор обязуется возместить Арендодателю расходы на устранение повреждений, полученных при эксплуатации скутера, в размере ${
+      kind === "return" && b.damageTotal > 0
+        ? `<b>${fmtMoney(b.damageTotal, false)}</b> (${moneyWords(b.damageTotal)})`
+        : "_______________________"
+    } рублей.
   </div>
 
   <table style="width: 100%; margin-top: 24pt; border: 0; border-collapse: collapse; page-break-inside: avoid">

@@ -602,6 +602,7 @@ export function makeFixtureBundle(): Bundle {
     } as unknown as Bundle["model"],
     rootRentalId: 1234567,
     rootStartAt: dt(3, 3, 9, 0),
+    damageTotal: 0,
   };
 }
 
