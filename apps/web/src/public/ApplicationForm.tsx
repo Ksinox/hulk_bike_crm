@@ -1141,7 +1141,12 @@ function RentalWishStep({
         <div className="grid grid-cols-2 gap-2">
           {WISH_MODELS.map((m) => {
             const active = form.wantModel === m.id;
-            const dayRate = TARIFF[m.id as ScooterModel].day;
+            // «от N ₽/сут» — самый дешёвый посуточный (длинный тариф).
+            const dayRate = Math.min(
+              ...Object.values(
+                TARIFF[m.id as ScooterModel] as Record<string, number>,
+              ),
+            );
             return (
               <button
                 key={m.id}
