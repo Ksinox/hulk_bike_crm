@@ -188,6 +188,17 @@ export function Rentals() {
     }
     return m;
   }, [debtAgg]);
+  // v0.8.34 (F4): полный долг по аренде (totalDebt = overdue+damage+manual+
+  // parking) — тот же источник, что использует дашборд для KPI «Долг по
+  // просрочкам». Раньше KPI стр. Аренды считал просрочку по
+  // status==='overdue' (статус удалён из БД в v0.5) → плитки «Просрочек» и
+  // «Долг по просрочкам» всегда показывали 0. Приводим к логике дашборда:
+  // просрочка = active с прошедшим endPlanned и реальным долгом > 0.
+  const totalDebtByRentalId = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const d of debtAgg ?? []) m.set(d.rentalId, d.totalDebt);
+    return m;
+  }, [debtAgg]);
   // v0.4.10: единый источник правды для выручки — общий хук, тот же
   // что использует и дашборд. Скоуп='rentals' оставлен на будущее
   // когда появятся другие модули с платежами (продажи/ремонты).
@@ -432,15 +443,33 @@ export function Rentals() {
           r.status === "returning") &&
         r.scooter,
     ).length;
-    const overdue = rentals.filter((r) => r.status === "overdue").length;
+    // v0.8.34 (F4): просрочка считается как на дашборде — аренда «active»
+    // (или легаси-статус 'overdue') с прошедшей плановой датой возврата
+    // И реальным долгом > 0. status='overdue' удалён из БД в v0.5, поэтому
+    // прежний фильтр r.status==='overdue' всегда давал 0. Долг берём из
+    // того же агрегата (totalDebt), что и дашборд, а не из rental.sum.
+    const [td, tm, ty] = today.split(".").map(Number);
+    const todayMs = new Date(ty!, tm! - 1, td!).getTime();
+    const isOverdue = (r: Rental): boolean => {
+      const debt = totalDebtByRentalId.get(r.id);
+      if (debt !== undefined && debt <= 0) return false;
+      if (r.status === "overdue") return true;
+      if (r.status !== "active") return false;
+      const [d, m, y] = r.endPlanned.split(".").map(Number);
+      if (!d || !m || !y) return false;
+      return new Date(y, m - 1, d).getTime() < todayMs;
+    };
+    const overdueRentals = rentals.filter(isOverdue);
+    const overdue = overdueRentals.length;
     const returningToday = rentals.filter(
       (r) =>
         r.status === "returning" ||
         (r.status === "active" && r.endPlanned === todayRu()),
     ).length;
-    const overdueDebt = rentals
-      .filter((r) => r.status === "overdue")
-      .reduce((s, r) => s + (r.sum ?? 0), 0);
+    const overdueDebt = overdueRentals.reduce(
+      (s, r) => s + (totalDebtByRentalId.get(r.id) ?? 0),
+      0,
+    );
     const periodRevenue = revenue.total;
 
     return [
@@ -477,7 +506,7 @@ export function Rentals() {
         tone: "purple",
       },
     ];
-  }, [rentals, revenue]);
+  }, [rentals, revenue, today, totalDebtByRentalId]);
 
   // v0.7.2: push-панель — карточка выбранной аренды живёт в потоке справа
   // и сдвигает/сжимает список (не overlay, не затемнение). Панель можно
