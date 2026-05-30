@@ -65,7 +65,7 @@ import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { fileUrl } from "@/lib/files";
 import { navigate } from "@/app/navigationStore";
 import { useDashboardDrawer } from "@/pages/dashboard/DashboardDrawer";
-import { toast } from "@/lib/toast";
+import { toast, confirmDialog } from "@/lib/toast";
 import { DocumentPreviewModal } from "./DocumentPreviewModal";
 import { DragExtendCalendar } from "./rental-card/DragExtendCalendar";
 import {
@@ -1524,13 +1524,13 @@ function SavedDocSnapshotsBlock({ rental }: { rental: Rental }) {
   }
 
   const handleDelete = async (id: number, title: string) => {
-    if (
-      !window.confirm(
-        `Удалить сохранённую версию «${title}»? Это уберёт файлы из хранилища.`,
-      )
-    ) {
-      return;
-    }
+    const ok = await confirmDialog({
+      title: "Удалить версию документа?",
+      message: `Удалить сохранённую версию «${title}»? Это уберёт файлы из хранилища.`,
+      confirmText: "Удалить",
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await deleteSnapshot.mutateAsync({ snapshotId: id, rentalId: rental.id });
       toast.success("Удалено", title);

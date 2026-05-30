@@ -842,12 +842,13 @@ export function RentalCard({
     if (id === "revert-completion") {
       // v0.5.1: возврат завершённой аренды в active. Используется когда
       // оператор случайно нажал «Завершить» или клиент передумал.
-      if (
-        !window.confirm(
+      const okRevert = await confirmDialog({
+        title: "Перевести аренду в активную?",
+        message:
           "Перевести завершённую аренду обратно в активную? Будет снят флаг возврата залога и удалена запись приёмки.",
-        )
-      )
-        return;
+        confirmText: "Перевести",
+      });
+      if (!okRevert) return;
       try {
         await api.post(`/api/rentals/${rental.id}/revert-completion`, {});
         toast.success(
@@ -944,16 +945,20 @@ export function RentalCard({
       // v0.3.8: ручное начисление долга. Минимум сумма + комментарий.
       // Используем простую цепочку prompt() — отдельной модалки не делаем,
       // действие редкое и хочется один клик-ответ.
-      const amountStr = window.prompt("Сумма долга, ₽");
+      const amountStr = await promptDialog({
+        title: "Сумма долга, ₽",
+        placeholder: "Например, 1500",
+      });
       if (!amountStr) return;
       const amount = Number(amountStr.replace(/\D/g, ""));
       if (!Number.isFinite(amount) || amount <= 0) {
         toast.error("Неверная сумма", "Введите положительное число.");
         return;
       }
-      const comment = window.prompt(
-        "Комментарий — за что начисляем долг (видно всем):",
-      );
+      const comment = await promptDialog({
+        title: "Комментарий — за что начисляем долг (видно всем):",
+        multiline: true,
+      });
       if (comment == null || !comment.trim()) {
         toast.error("Нужен комментарий", "Без него начисление недопустимо.");
         return;
@@ -1041,10 +1046,10 @@ export function RentalCard({
       // Если выбрано «частичное» — спрашиваем число дней
       let daysCount: number | undefined;
       if (choice === "days_partial") {
-        const raw = window.prompt(
-          `Сколько дней простить? (доступно ${overdueDaysCount})`,
-          String(overdueDaysCount),
-        );
+        const raw = await promptDialog({
+          title: `Сколько дней простить? (доступно ${overdueDaysCount})`,
+          initial: String(overdueDaysCount),
+        });
         if (raw == null) return;
         const n = Math.max(1, Math.min(overdueDaysCount, Number(raw) || 0));
         if (n <= 0) {
@@ -1060,7 +1065,10 @@ export function RentalCard({
         toast.info("Нет штрафа", "Штраф уже списан или оплачен.");
         return;
       }
-      const comment = window.prompt("Причина списания (необязательно):", "");
+      const comment = await promptDialog({
+        title: "Причина списания (необязательно):",
+        multiline: true,
+      });
       try {
         const r = await forgiveOverdueMut.mutateAsync({
           rentalId: rental.id,

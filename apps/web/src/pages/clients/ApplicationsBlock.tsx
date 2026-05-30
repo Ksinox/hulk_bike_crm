@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Bell, ChevronDown, ChevronUp, Eye, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { toast } from "@/lib/toast";
+import { toast, confirmDialog } from "@/lib/toast";
 import {
   useApplications,
   useDeleteApplication,
@@ -47,8 +47,14 @@ export function ApplicationsBlock() {
     setViewing(null);
   };
 
-  const handleDelete = (id: number) => {
-    if (!window.confirm(`Удалить заявку #${id}? Файлы будут удалены безвозвратно.`)) return;
+  const handleDelete = async (id: number) => {
+    const ok = await confirmDialog({
+      title: "Удалить заявку?",
+      message: `Удалить заявку #${id}? Файлы будут удалены безвозвратно.`,
+      confirmText: "Удалить",
+      danger: true,
+    });
+    if (!ok) return;
     deleteApp.mutate(id, {
       onSuccess: () => {
         toast.success("Заявка удалена");

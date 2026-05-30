@@ -11,6 +11,7 @@ import {
   UploadCloud,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { confirmDialog } from "@/lib/toast";
 import type { FleetScooter } from "@/lib/mock/fleet";
 import { useRole } from "@/lib/role";
 import { MODEL_LABEL } from "@/lib/mock/rentals";
@@ -96,8 +97,14 @@ export function ScooterDocumentsTab({ scooter }: { scooter: FleetScooter }) {
     uploadMut.mutate({ kind, file, osagoValidUntil });
   };
 
-  const onDelete = (doc: ApiScooterDoc) => {
-    if (!window.confirm(`Удалить «${doc.fileName}»?`)) return;
+  const onDelete = async (doc: ApiScooterDoc) => {
+    const ok = await confirmDialog({
+      title: "Удалить документ?",
+      message: `Удалить «${doc.fileName}»?`,
+      confirmText: "Удалить",
+      danger: true,
+    });
+    if (!ok) return;
     deleteMut.mutate(doc.id);
   };
 

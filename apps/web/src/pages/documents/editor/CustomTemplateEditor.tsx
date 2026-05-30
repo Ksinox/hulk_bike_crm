@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { Save, Loader2, PanelRightOpen, PanelRightClose } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { toast } from "@/lib/toast";
+import { toast, confirmDialog } from "@/lib/toast";
 import {
   useApiDocumentTemplates,
   useDeleteDocumentTemplate,
@@ -104,8 +104,13 @@ function CustomEditor({
 
   const onDelete = async () => {
     if (!existing) return;
-    if (!window.confirm(`Удалить шаблон «${existing.name}»? Это необратимо.`))
-      return;
+    const ok = await confirmDialog({
+      title: "Удалить шаблон?",
+      message: `Удалить шаблон «${existing.name}»? Это необратимо.`,
+      confirmText: "Удалить",
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await remove.mutateAsync(existing.id);
       toast.success("Шаблон удалён");

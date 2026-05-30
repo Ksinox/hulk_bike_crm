@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { confirmDialog } from "@/lib/toast";
 import {
   AlertCircle,
   Bell,
@@ -86,9 +87,15 @@ export function NewApplicationModal({
 
   // Legacy «Это спам» через hard-delete (виджет дашборда). На новой
   // странице архива заменено soft-методом через onSpam.
-  const handleLegacyDelete = () => {
+  const handleLegacyDelete = async () => {
     if (!onDelete) return;
-    if (window.confirm("Удалить заявку как спам? Действие необратимо.")) {
+    const ok = await confirmDialog({
+      title: "Удалить заявку как спам?",
+      message: "Удалить заявку как спам? Действие необратимо.",
+      confirmText: "Удалить",
+      danger: true,
+    });
+    if (ok) {
       onDelete();
     }
   };

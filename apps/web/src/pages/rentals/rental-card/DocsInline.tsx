@@ -27,7 +27,7 @@ import {
   rentalDocSnapshotUrl,
 } from "@/lib/api/rentals";
 import { useApiClients } from "@/lib/api/clients";
-import { toast } from "@/lib/toast";
+import { toast, confirmDialog } from "@/lib/toast";
 import type { Rental } from "@/lib/mock/rentals";
 import { DocumentPreviewModal } from "@/pages/rentals/DocumentPreviewModal";
 
@@ -166,7 +166,13 @@ function SnapshotsBlock({ rental }: { rental: Rental }) {
   if (items.length === 0) return null;
 
   const handleDelete = async (id: number, title: string) => {
-    if (!window.confirm(`Удалить сохранённую версию «${title}»?`)) return;
+    const ok = await confirmDialog({
+      title: "Удалить версию документа?",
+      message: `Удалить сохранённую версию «${title}»?`,
+      confirmText: "Удалить",
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await deleteSnapshot.mutateAsync({ snapshotId: id, rentalId: rental.id });
       toast.success("Удалено", title);

@@ -13,7 +13,7 @@
 import { useState } from "react";
 import { Check, Trash2, Eye, MailQuestion } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { toast } from "@/lib/toast";
+import { toast, confirmDialog } from "@/lib/toast";
 import {
   useApplications,
   useDeleteApplication,
@@ -31,10 +31,14 @@ export function ApplicationsTab() {
 
   const newCount = items.filter((a) => a.status === "new").length;
 
-  const markSpam = (a: ApiApplication) => {
-    if (!window.confirm(`Пометить заявку «${a.name || "—"}» как спам и удалить?`)) {
-      return;
-    }
+  const markSpam = async (a: ApiApplication) => {
+    const ok = await confirmDialog({
+      title: "Пометить как спам?",
+      message: `Пометить заявку «${a.name || "—"}» как спам и удалить?`,
+      confirmText: "Удалить",
+      danger: true,
+    });
+    if (!ok) return;
     deleteApp.mutate(a.id, {
       onSuccess: () => toast.success("Заявка удалена", "Помечена как спам"),
       onError: () => toast.error("Не удалось удалить"),

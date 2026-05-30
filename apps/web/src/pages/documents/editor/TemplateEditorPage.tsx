@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, Eye, Save, Trash2, Loader2, PanelRightOpen, PanelRightClose, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { toast } from "@/lib/toast";
+import { toast, confirmDialog } from "@/lib/toast";
 import {
   useApiDocumentTemplateByKey,
   useDeleteDocumentTemplate,
@@ -161,12 +161,14 @@ export function TemplateEditorPage({
       toast.info("Уже системный", "Это шаблон по умолчанию — нечего сбрасывать");
       return;
     }
-    if (
-      !window.confirm(
+    const ok = await confirmDialog({
+      title: "Сбросить к системному шаблону?",
+      message:
         "Удалить пользовательский шаблон и вернуть системный? Все правки будут потеряны.",
-      )
-    )
-      return;
+      confirmText: "Сбросить",
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await remove.mutateAsync(existing.data.id);
       toast.success("Сброшено", "Используется системный шаблон");
@@ -234,13 +236,15 @@ export function TemplateEditorPage({
           {isSystemKey && systemDefault.data && (
             <button
               type="button"
-              onClick={() => {
-                if (
-                  !window.confirm(
+              onClick={async () => {
+                const ok = await confirmDialog({
+                  title: "Залить системную версию?",
+                  message:
                     "Заменить текущее содержимое редактора актуальной системной версией? Все правки в редакторе будут потеряны.",
-                  )
-                )
-                  return;
+                  confirmText: "Заменить",
+                  danger: true,
+                });
+                if (!ok) return;
                 setBodyHtml(systemDefault.data ?? "");
                 toast.success(
                   "Системная версия загружена",
