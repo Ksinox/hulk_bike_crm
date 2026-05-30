@@ -277,6 +277,17 @@ export function Rentals() {
   useEffect(() => {
     if (me?.id != null) setViewMode(loadRentalsViewMode(me.id));
   }, [me?.id]);
+  // F20: ширину блока аренд фиксирует СПИСОК (таблица) — он источник истины.
+  // RentalsList в режиме list измеряет фактическую ширину таблицы через
+  // ResizeObserver и отдаёт её сюда. Контейнер применяет это значение как
+  // фиксированную ширину в ОБОИХ режимах, поэтому при переключении
+  // список↔плитки блок не «дёргается»: плитки занимают ровно ту ширину,
+  // что занимал список. Значение динамическое (зависит от набора колонок),
+  // ничего не хардкодим. До первого измерения — null (fallback на w-fit).
+  const [listWidth, setListWidth] = useState<number | null>(null);
+  const handleMeasureWidth = (w: number) => {
+    setListWidth((prev) => (prev === w ? prev : w));
+  };
   const changeViewMode = (m: RentalsViewMode) => {
     if (m === viewMode) return;
     saveRentalsViewMode(me?.id, m);
@@ -602,8 +613,15 @@ export function Rentals() {
             // хвоста справа. Добавили колонку → блок расширился, убрали →
             // сжался. Минимум 700px — чтобы при пустом списке/узкой таблице
             // шапка (поиск + переключатель + фильтры) не схлопывалась.
-            "w-fit min-w-[700px] max-w-full",
+            // F20: w-fit оставлен ТОЛЬКО как fallback до первого измерения
+            // ширины таблицы. Как только listWidth известна — она задаётся
+            // инлайном (style.width) и фиксирует ширину в ОБОИХ режимах, так
+            // что переключение список↔плитки больше не меняет ширину блока
+            // (источник истины — список). min-w/max-w сохраняем как границы.
+            listWidth == null && "w-fit",
+            "min-w-[700px] max-w-full",
           )}
+          style={listWidth != null ? { width: `${listWidth}px` } : undefined}
         >
           <div className="flex flex-col gap-3 p-4 pb-3 border-b border-border">
             <div className="flex items-center gap-2">
@@ -689,6 +707,7 @@ export function Rentals() {
               onSelect={handleSelect}
               viewMode={viewMode}
               onNew={() => setNewOpen(true)}
+              onMeasureWidth={handleMeasureWidth}
             />
           </div>
         </div>

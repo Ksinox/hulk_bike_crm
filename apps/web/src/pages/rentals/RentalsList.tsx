@@ -12,7 +12,7 @@
  * Данные (клиенты / скутеры / модели / долги) грузятся ОДИН раз на уровне
  * списка и прокидываются в строки — это нужно и для сортировки таблицы.
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   SearchX,
   ChevronUp,
@@ -252,6 +252,7 @@ export function RentalsList({
   onSelect,
   viewMode,
   onNew,
+  onMeasureWidth,
 }: {
   items: Rental[];
   selectedId: number | null;
@@ -259,6 +260,14 @@ export function RentalsList({
   viewMode: RentalsViewMode;
   /** v0.8.11: открыть «Новая аренда» — для плитки-заглушки в режиме плиток. */
   onNew?: () => void;
+  /**
+   * F20: сообщает фактическую ширину таблицы-списка наверх. Источник истины
+   * ширины блока аренд — таблица (режим «Список»). Колбэк вызывается только
+   * в режиме list через ResizeObserver на корне таблицы. Родитель фиксирует
+   * это значение как ширину контейнера в ОБОИХ режимах, чтобы при
+   * переключении список↔плитки блок не «дёргался».
+   */
+  onMeasureWidth?: (width: number) => void;
 }) {
   const { data: apiClients } = useApiClients();
   const { data: apiScooters = [] } = useApiScooters();
@@ -271,6 +280,27 @@ export function RentalsList({
   const [sort, setSort] = useState<{ col: SortCol; dir: "asc" | "desc" } | null>(
     null,
   );
+
+  // F20: измеряем фактическую ширину таблицы-списка и отдаём наверх. Таблица —
+  // источник истины ширины блока аренд: при переключении на «Плитки»
+  // контейнер сохраняет последнюю измеренную ширину списка (см. Rentals.tsx).
+  // ResizeObserver ловит любое изменение ширины таблицы (добавилась/убралась
+  // колонка «Паркинг», сменился набор строк, ресайз окна) и переотправляет.
+  const tableRef = useRef<HTMLTableElement | null>(null);
+  useEffect(() => {
+    if (viewMode !== "list" || !onMeasureWidth) return;
+    const el = tableRef.current;
+    if (!el) return;
+    const report = () => {
+      // offsetWidth — полная ширина таблицы с бордерами (целое число px).
+      const w = el.offsetWidth;
+      if (w > 0) onMeasureWidth(w);
+    };
+    report();
+    const ro = new ResizeObserver(report);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [viewMode, onMeasureWidth]);
 
   const rows = useMemo<Row[]>(() => {
     return items.map((r) => {
@@ -436,7 +466,7 @@ export function RentalsList({
   return (
     <div className="scrollbar-thin h-full overflow-auto px-2">
       {/* w-auto: колонки прижаты к содержимому (не растянуты на всю ширину). */}
-      <table className="w-auto border-collapse text-left">
+      <table ref={tableRef} className="w-auto border-collapse text-left">
         <thead className="sticky top-0 z-10 bg-surface">
           <tr className="text-[11px] font-semibold uppercase tracking-wide text-muted-2">
             <Th label="№" col="id" sort={sort} onSort={toggleSort} />
