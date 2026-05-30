@@ -7,10 +7,7 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import {
-  ratingTier,
-  SOURCE_LABEL,
-} from "@/lib/mock/clients";
+import { SOURCE_LABEL } from "@/lib/mock/clients";
 import { navigate } from "@/app/navigationStore";
 import { useAllClients, useClientExtraPhone } from "./clientStore";
 import { useClientStats } from "@/lib/useClientStats";
@@ -59,8 +56,6 @@ export function ClientQuickView({
   }, []);
 
   if (!client) return null;
-
-  const tier = ratingTier(client.rating);
 
   const openFull = () => {
     navigate({
@@ -156,19 +151,7 @@ export function ClientQuickView({
             </div>
           )}
 
-          <div className="mt-3 grid grid-cols-3 gap-2">
-            <QuickStat
-              label="Рейтинг"
-              value={String(client.rating)}
-              hint={tier.label.toLowerCase()}
-              tone={
-                tier.tone === "good"
-                  ? "green"
-                  : tier.tone === "bad"
-                    ? "red"
-                    : "neutral"
-              }
-            />
+          <div className="mt-3 grid grid-cols-2 gap-2">
             <QuickStat
               label="Принёс"
               value={

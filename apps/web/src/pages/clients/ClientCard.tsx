@@ -13,7 +13,6 @@ import {
 import { cn } from "@/lib/utils";
 import {
   getClientDetails,
-  ratingTier,
   SOURCE_LABEL,
   type Client,
 } from "@/lib/mock/clients";
@@ -22,7 +21,6 @@ import {
   InstalmentsTab,
   IncidentsTab,
   DocsTab,
-  RatingTab,
 } from "./ClientCardTabs";
 import { AddClientModal } from "./AddClientModal";
 import { SequentialNamingModal } from "./SequentialNamingModal";
@@ -53,18 +51,16 @@ export type CardTab =
   | "timeline"
   | "instalments"
   | "incidents"
-  | "docs"
-  | "rhist";
+  | "docs";
 
 const TABS: { id: CardTab; label: string }[] = [
   { id: "rentals", label: "Аренды" },
   // v0.4.5: лента всех событий по клиенту — аренды, продления, акты,
-  // долги, оплаты, изменения рейтинга. Связь клиент ↔ скутеры ↔ ремонты.
+  // долги, оплаты. Связь клиент ↔ скутеры ↔ ремонты.
   { id: "timeline", label: "Лента событий" },
   { id: "instalments", label: "Рассрочки" },
   { id: "incidents", label: "Инциденты" },
   { id: "docs", label: "Документы" },
-  { id: "rhist", label: "Рейтинг" },
 ];
 
 function daysWord(n: number): string {
@@ -85,7 +81,6 @@ export function ClientCard({ client }: { client: Client }) {
   const [dragging, setDragging] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<UploadedFile[] | null>(null);
   const d = useMemo(() => getClientDetails(client), [client]);
-  const tier = ratingTier(client.rating);
   const phone2 = useClientExtraPhone(client.id);
   const unreachable = useClientUnreachable(client.id);
   // Заявки этого клиента (если оформлен через convert — будет одна).
@@ -312,18 +307,6 @@ export function ClientCard({ client }: { client: Client }) {
                 hint="суммарно по истории"
                 tone={totalRentedDays > 0 ? "neutral" : "gray"}
               />
-              <KpiBox
-                label="Рейтинг"
-                value={String(client.rating)}
-                hint={tier.label.toLowerCase()}
-                tone={
-                  tier.tone === "good"
-                    ? "green"
-                    : tier.tone === "bad"
-                      ? "red"
-                      : "neutral"
-                }
-              />
             </div>
             <div className="flex h-full flex-col gap-2">
               <KpiBox
@@ -458,7 +441,6 @@ export function ClientCard({ client }: { client: Client }) {
         {tab === "instalments" && <InstalmentsTab d={d} />}
         {tab === "incidents" && <IncidentsTab d={d} />}
         {tab === "docs" && <DocsTab key={client.id} client={client} d={d} />}
-        {tab === "rhist" && <RatingTab d={d} />}
       </div>
 
       {editOpen && (

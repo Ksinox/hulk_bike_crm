@@ -8,13 +8,6 @@ import {
 import { useClientPhoto } from "./clientStore";
 import type { ViewMode } from "@/lib/viewMode";
 
-function ratingToneClass(r: number, active: boolean) {
-  if (active) return "text-white";
-  if (r >= 80) return "text-green-ink";
-  if (r >= 50) return "text-ink-2";
-  return "text-red-ink";
-}
-
 export function ClientsList({
   items,
   selectedId,
@@ -174,18 +167,6 @@ function ClientTile({
         ) : (
           <span className="text-muted-2">{SOURCE_LABEL[c.source]}</span>
         )}
-        <span
-          className={cn(
-            "ml-1 rounded-full px-1.5 py-0.5 text-[10px] font-bold tabular-nums",
-            c.rating >= 80
-              ? "bg-green-soft text-green-ink"
-              : c.rating >= 50
-                ? "bg-surface-soft text-ink-2"
-                : "bg-red-soft text-red-ink",
-          )}
-        >
-          {c.rating}
-        </span>
       </div>
     </button>
   );
@@ -305,16 +286,8 @@ function ClientRow({
       <div className="shrink-0 text-right">
         <div
           className={cn(
-            "text-[13px] font-bold tabular-nums",
-            ratingToneClass(c.rating, active),
-          )}
-        >
-          {c.rating}
-        </div>
-        <div
-          className={cn(
-            "text-[11px] tabular-nums",
-            active ? "text-white/70" : "text-muted-2",
+            "text-[13px] font-semibold tabular-nums",
+            active ? "text-white" : "text-ink-2",
           )}
         >
           {c.phone}

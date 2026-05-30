@@ -3,8 +3,6 @@ import {
   FileText,
   FileImage,
   CheckCircle2,
-  ArrowUp,
-  ArrowDown,
   Pencil,
   UploadCloud,
   Plus,
@@ -833,75 +831,6 @@ function PassportBlock({ d, client }: { d: ClientDetails; client: Client }) {
           </div>
         ))}
       </div>
-    </div>
-  );
-}
-
-/* =================== Рейтинг =================== */
-
-export function RatingTab({ d }: { d: ClientDetails }) {
-  if (d.ratingHistory.length === 0)
-    return <Empty text="История рейтинга пуста" />;
-  return (
-    <div className="flex flex-col">
-      {d.ratingHistory.map((e, i) => {
-        const isPlus = e.delta > 0;
-        const isMinus = e.delta < 0;
-        const iconCls = isPlus
-          ? "bg-green-soft text-green-ink"
-          : isMinus
-            ? "bg-red-soft text-red-ink"
-            : "bg-surface-soft text-muted";
-        const Icon = isPlus ? ArrowUp : isMinus ? ArrowDown : Pencil;
-        return (
-          <div
-            key={i}
-            className="flex items-start gap-3 border-b border-border/60 py-2 last:border-b-0"
-          >
-            <div
-              className={cn(
-                "flex h-8 w-8 shrink-0 items-center justify-center rounded-full",
-                iconCls,
-              )}
-            >
-              <Icon size={14} />
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <span className="text-[13px] font-semibold text-ink">
-                  {e.event}
-                </span>
-                {e.type === "manual" && (
-                  <span className="rounded-full bg-purple-soft px-1.5 py-0.5 text-[10px] font-semibold text-purple-ink">
-                    ручная корр.
-                  </span>
-                )}
-              </div>
-              {e.note && (
-                <div className="text-[11px] text-muted">{e.note}</div>
-              )}
-            </div>
-            <div className="shrink-0 text-right">
-              <div
-                className={cn(
-                  "text-[13px] font-bold tabular-nums",
-                  isPlus
-                    ? "text-green-ink"
-                    : isMinus
-                      ? "text-red-ink"
-                      : "text-muted",
-                )}
-              >
-                {e.delta > 0 ? "+" : ""}
-                {e.delta}
-              </div>
-              <div className="text-[10px] text-muted-2 tabular-nums">
-                → {e.score} · {e.date}
-              </div>
-            </div>
-          </div>
-        );
-      })}
     </div>
   );
 }
