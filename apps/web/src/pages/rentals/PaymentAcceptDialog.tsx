@@ -1129,6 +1129,11 @@ export function PaymentAcceptDialog({
       return best;
     })();
 
+  // G2: продление доступно только для АКТИВНОЙ аренды. Для завершённой
+  // (в т.ч. completed_damage) / отменённой показываем только погашение долга
+  // (ущерб/ручной/паркинг) — без блока «период продления» и экипировки.
+  const canExtend = rental.status === "active";
+
   const panel = (
       <div
         className={cn(
@@ -1157,11 +1162,7 @@ export function PaymentAcceptDialog({
                 inline ? "text-[16px] leading-tight" : "text-[14px]",
               )}
             >
-              {isOverdueState
-                ? `Закрыть просрочку и продлить · #${String(rental.id).padStart(4, "0")}`
-                : totalDebt > 0 || unpaidParking > 0
-                  ? `Приём оплаты · #${String(rental.id).padStart(4, "0")}`
-                  : `Продление аренды · #${String(rental.id).padStart(4, "0")}`}
+              {`Принять платёж · #${String(rental.id).padStart(4, "0")}`}
             </div>
             <div className="mt-1 text-[11.5px] leading-snug text-muted">
               {isOverdueState ? (
@@ -1329,6 +1330,8 @@ export function PaymentAcceptDialog({
             </div>
           )}
 
+          {/* G2: блок продления + экипировки — только для активной аренды. */}
+          {canExtend && (<>
           {/* ─── STEP 2: период продления ─────────────────────────────── */}
           <div className="border-b border-border px-5 py-3.5">
             <div className="mb-2.5 flex items-center gap-2">
@@ -1652,6 +1655,7 @@ export function PaymentAcceptDialog({
             equipDaily={equipDaily}
             hasDebtStep={isOverdueState || totalDebt > 0 || unpaidParking > 0}
           />
+          </>)}
 
           {/* v0.6.11: «Пополнение залога» — отдельная секция, видна
               когда залог денежный и rental.deposit < depositOriginal. */}

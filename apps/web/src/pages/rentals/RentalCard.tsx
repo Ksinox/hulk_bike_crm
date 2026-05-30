@@ -60,7 +60,6 @@ import { ExtendRentalDialog } from "./ExtendRentalDialog";
 import { PaymentAcceptDialog } from "./PaymentAcceptDialog";
 import { SwapScooterDialog } from "./SwapScooterDialog";
 import { DamageReportDialog } from "./DamageReportDialog";
-import { DamageReportPaymentDialog } from "./DamageReportPaymentDialog";
 import { EquipmentChangeDialog } from "./EquipmentChangeDialog";
 import { DocumentPreviewModal } from "./DocumentPreviewModal";
 import { useChainDamageReports } from "@/lib/api/damage-reports";
@@ -356,7 +355,6 @@ export function RentalCard({
   const [equipmentChangeOpen, setEquipmentChangeOpen] = useState(false);
   const [damageOpen, setDamageOpen] = useState(false);
   const [editingReportId, setEditingReportId] = useState<number | null>(null);
-  const [paymentReportId, setPaymentReportId] = useState<number | null>(null);
   const [previewDamageId, setPreviewDamageId] = useState<number | null>(null);
   const [previewClaimId, setPreviewClaimId] = useState<number | null>(null);
   const [swapOpen, setSwapOpen] = useState(false);
@@ -1124,7 +1122,8 @@ export function RentalCard({
         toast.info("Нет акта", "Сначала зафиксируйте ущерб");
         return;
       }
-      setPaymentReportId(r.id);
+      // G2: платёж по ущербу — через единое окно «Принять платёж».
+      requestPayment(0);
       return;
     }
     if (id === "unarchive") {
@@ -1829,7 +1828,7 @@ export function RentalCard({
               </button>
               <button
                 type="button"
-                onClick={() => setPaymentReportId(reportWithDebt.id)}
+                onClick={() => requestPayment(0)}
                 className="inline-flex items-center gap-1.5 rounded-[10px] bg-red-600 px-3 py-2 text-[12px] font-bold text-white hover:bg-red-700"
               >
                 <Plus size={12} /> Внести платёж
@@ -1889,7 +1888,7 @@ export function RentalCard({
           </div>
           <button
             type="button"
-            onClick={() => setPaymentReportId(reportWithDebt.id)}
+            onClick={() => requestPayment(0)}
             className="inline-flex items-center gap-1.5 rounded-[10px] bg-red-600 px-3 py-1.5 text-[12px] font-bold text-white hover:bg-red-700"
           >
             <Plus size={12} /> Внести платёж по ущербу
@@ -2398,12 +2397,6 @@ export function RentalCard({
         />
       )}
 
-      {paymentReportId != null && (
-        <DamageReportPaymentDialog
-          reportId={paymentReportId}
-          onClose={() => setPaymentReportId(null)}
-        />
-      )}
     </>
   );
 
