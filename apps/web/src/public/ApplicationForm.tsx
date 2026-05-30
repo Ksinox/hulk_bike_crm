@@ -1244,14 +1244,14 @@ function RentalWishStep({
                       : "border-slate-200 hover:border-slate-400"
                   }`}
                 >
-                  <div className="relative aspect-[4/3] w-full bg-white">
+                  <div className="relative aspect-[3/4] w-full bg-slate-100">
                     {m.avatarUrl ? (
                       <img
                         src={applicationApi.modelAvatarUrl(
                           m.avatarUrl + "?variant=thumb",
                         )}
                         alt={m.name}
-                        className="h-full w-full object-contain"
+                        className="h-full w-full object-cover"
                         loading="lazy"
                       />
                     ) : (
