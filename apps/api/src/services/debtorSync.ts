@@ -23,6 +23,7 @@ import {
   damageReports,
   debtEntries,
   debtors,
+  debtorPayments,
   debtorStageEvents,
   parkingSessions,
   payments,
@@ -120,6 +121,33 @@ export async function syncRentalDebtorCases(): Promise<DebtorSyncResult> {
   const byRental = new Map<number, (typeof existing)[number]>();
   for (const d of existing) {
     if (d.relatedRentalId != null) byRental.set(d.relatedRentalId, d);
+  }
+
+  // 3b. Платежи модуля «Должники» по этим делам. Если у дела есть свой
+  //     график/платежи — оно «ведётся в модуле»: источник истины теперь
+  //     модуль (debtorPayments), а не агрегат аренды. Sync такое дело не
+  //     перетирает по сумме, а лишь авто-закрывает при полном погашении.
+  const moduleManaged = new Set<number>();
+  const modulePaidByCase = new Map<number, number>();
+  const existIds = existing.map((e) => e.id);
+  if (existIds.length > 0) {
+    const mPays = await db
+      .select({
+        debtorId: debtorPayments.debtorId,
+        paidAmount: debtorPayments.paidAmount,
+        paidAt: debtorPayments.paidAt,
+      })
+      .from(debtorPayments)
+      .where(inArray(debtorPayments.debtorId, existIds));
+    for (const p of mPays) {
+      moduleManaged.add(p.debtorId);
+      if (p.paidAt) {
+        modulePaidByCase.set(
+          p.debtorId,
+          (modulePaidByCase.get(p.debtorId) ?? 0) + (p.paidAmount ?? 0),
+        );
+      }
+    }
   }
 
   // 4. Стартовый номер дела (D-NNN) — инкрементим локально на каждую вставку.
@@ -229,6 +257,34 @@ export async function syncRentalDebtorCases(): Promise<DebtorSyncResult> {
 
     // дело уже закрыто (оператором/авто) — не трогаем.
     if (isClosed(exist.stage as Stage)) continue;
+
+    // Дело ведётся в модуле «Должники» (есть график/платежи) — источник
+    // истины модуль. Не перетираем totalAmount агрегатом аренды; закрываем
+    // только если в модуле погашено полностью.
+    if (moduleManaged.has(exist.id)) {
+      const modulePaid = modulePaidByCase.get(exist.id) ?? 0;
+      if (modulePaid >= exist.totalAmount) {
+        await db
+          .update(debtors)
+          .set({
+            stage: "closed_paid",
+            clientStatus: "closed",
+            stageEnteredAt: sql`now()`,
+            closedAt: sql`now()`,
+            closedReason: "Долг погашен по графику",
+            updatedAt: sql`now()`,
+          })
+          .where(eq(debtors.id, exist.id));
+        await db.insert(debtorStageEvents).values({
+          debtorId: exist.id,
+          fromStage: exist.stage,
+          toStage: "closed_paid",
+          reason: "авто: график погашен полностью",
+        });
+        result.closed += 1;
+      }
+      continue;
+    }
 
     if (outstanding > 0) {
       // обновляем сумму, если изменилась (тип не меняем — стадии привязаны).

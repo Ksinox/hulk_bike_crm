@@ -116,7 +116,8 @@ async function debtorCasesByClient(
         d.totalAmount > 0
           ? Math.min(100, Math.round((paid / d.totalAmount) * 100))
           : 0,
-      active: !closed,
+      // «Должник» = дело не закрыто И ещё не погашено полностью.
+      active: !closed && paid < d.totalAmount,
       closedAt: d.closedAt ? d.closedAt.toISOString() : null,
       closedReason: d.closedReason ?? null,
       createdAt: d.createdAt.toISOString(),
@@ -163,6 +164,9 @@ export async function clientsRoutes(app: FastifyInstance) {
         ), 0)::int AS "unpaidDamageDebt"
       FROM damage_reports dr
       JOIN rentals r ON r.id = dr.rental_id
+      WHERE NOT EXISTS (
+        SELECT 1 FROM debtors db WHERE db.related_rental_id = r.id
+      )
       GROUP BY r.client_id
     `);
     const debtRows = (debtsRaw as unknown as { rows?: Array<{ clientId: number; unpaidDamageDebt: number }> }).rows
@@ -208,6 +212,9 @@ export async function clientsRoutes(app: FastifyInstance) {
       FROM damage_reports dr
       JOIN rentals r ON r.id = dr.rental_id
       WHERE r.client_id = ${id}
+        AND NOT EXISTS (
+          SELECT 1 FROM debtors db WHERE db.related_rental_id = r.id
+        )
     `);
     const debtRow = ((debtRaw as unknown as { rows?: Array<{ unpaidDamageDebt: number }> }).rows
       ?? (debtRaw as unknown as Array<{ unpaidDamageDebt: number }>))?.[0];

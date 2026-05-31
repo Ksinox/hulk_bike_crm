@@ -20,7 +20,7 @@
  *   POST   /api/debtors/:id/lawyer-update      запись от юриста
  *   POST   /api/debtors/:id/close              закрыть дело
  */
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import { asc, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/index.js";
@@ -204,6 +204,48 @@ async function loadPayments(debtorId: number) {
     .from(debtorPayments)
     .where(eq(debtorPayments.debtorId, debtorId))
     .orderBy(asc(debtorPayments.n));
+}
+
+/**
+ * Авто-закрытие дела при полном погашении (Σ оплаченного ≥ totalAmount).
+ * Клиент перестаёт быть должником — метка и баннер долга снимаются.
+ */
+async function autoCloseIfPaid(
+  req: FastifyRequest,
+  d: { id: number; totalAmount: number; stage: string; caseNumber: string },
+): Promise<void> {
+  if (isClosed(d.stage as Stage)) return;
+  const all = await loadPayments(d.id);
+  const paid = paidSoFar(
+    all.map((p) => ({ paidAt: p.paidAt, paidAmount: p.paidAmount })),
+  );
+  if (paid < d.totalAmount) return;
+  const now = new Date();
+  const userId = req.user?.userId ?? null;
+  await db
+    .update(debtors)
+    .set({
+      stage: "closed_paid",
+      clientStatus: "closed",
+      stageEnteredAt: now,
+      closedAt: now,
+      closedReason: "Долг погашен полностью",
+      updatedAt: now,
+    })
+    .where(eq(debtors.id, d.id));
+  await db.insert(debtorStageEvents).values({
+    debtorId: d.id,
+    fromStage: d.stage as Stage,
+    toStage: "closed_paid",
+    reason: "авто: долг погашен полностью",
+    userId,
+  });
+  await logActivity(req, {
+    entity: "debtor",
+    entityId: d.id,
+    action: "closed",
+    summary: `${d.caseNumber}: закрыто — долг погашен полностью`,
+  });
 }
 
 function clientDisplayName(d: {
@@ -731,6 +773,7 @@ export async function debtorsRoutes(app: FastifyInstance) {
           action: "payment_received",
           summary: `${d.caseNumber}: платёж ${parsed.data.amount.toLocaleString("ru-RU")} ₽ в счёт срока — закрыто платежей: ${closed.length}${left > 0 ? " + аванс" : ""} (${parsed.data.method})`,
         });
+        await autoCloseIfPaid(req, d);
         return { ok: true, closed };
       }
 
@@ -757,6 +800,7 @@ export async function debtorsRoutes(app: FastifyInstance) {
         action: "payment_received",
         summary: `${d.caseNumber}: платёж ${row.n} получен · ${parsed.data.amount.toLocaleString("ru-RU")} ₽ (${parsed.data.method})`,
       });
+      await autoCloseIfPaid(req, d);
       return row;
     }
 
@@ -787,6 +831,7 @@ export async function debtorsRoutes(app: FastifyInstance) {
       action: "payment_received",
       summary: `${d.caseNumber}: внеплановый платёж · ${parsed.data.amount} ₽ (${parsed.data.method})`,
     });
+    await autoCloseIfPaid(req, d);
     return row;
   });
 
