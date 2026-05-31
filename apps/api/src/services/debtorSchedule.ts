@@ -12,7 +12,7 @@
  * ровные суммы и только финальный — «доплата хвоста»).
  */
 
-export type ScheduleFrequency = "weekly" | "biweekly" | "monthly";
+export type ScheduleFrequency = "daily" | "weekly" | "biweekly" | "monthly";
 
 export type ScheduledPayment = {
   /** Порядковый номер 1..N. */
@@ -33,7 +33,9 @@ export type ScheduleParams = {
 /** Прибавить к дате период согласно frequency. */
 export function addPeriod(d: Date, periods: number, freq: ScheduleFrequency): Date {
   const out = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
-  if (freq === "weekly") {
+  if (freq === "daily") {
+    out.setDate(out.getDate() + periods);
+  } else if (freq === "weekly") {
     out.setDate(out.getDate() + periods * 7);
   } else if (freq === "biweekly") {
     out.setDate(out.getDate() + periods * 14);
@@ -61,6 +63,39 @@ export function buildSchedule(params: ScheduleParams): ScheduledPayment[] {
     date: addPeriod(startDate, i, frequency),
     amount: base + (i === count - 1 ? remainder : 0),
   }));
+}
+
+/**
+ * Построить график по «комфортной сумме платежа»: клиент платит ровно
+ * `perPayment` каждый период, последний платёж — остаток (≤ perPayment).
+ * Пример: 1600 ₽ по 500 → [500, 500, 500, 100]. Так клиент платит
+ * привычную сумму, а хвост закрывается меньшим финальным платежом.
+ */
+export function buildScheduleByAmount(params: {
+  totalAmount: number;
+  perPayment: number;
+  startDate: Date;
+  frequency: ScheduleFrequency;
+}): ScheduledPayment[] {
+  const { totalAmount, perPayment, startDate, frequency } = params;
+  if (!Number.isFinite(totalAmount) || totalAmount <= 0) {
+    throw new Error("totalAmount must be a positive number");
+  }
+  if (!Number.isFinite(perPayment) || perPayment <= 0) {
+    throw new Error("perPayment must be a positive number");
+  }
+  const count = Math.ceil(totalAmount / perPayment);
+  if (count > 120) {
+    throw new Error("слишком много платежей — увеличьте сумму платежа");
+  }
+  const out: ScheduledPayment[] = [];
+  let left = totalAmount;
+  for (let i = 0; i < count; i++) {
+    const amount = Math.min(perPayment, left);
+    out.push({ n: i + 1, date: addPeriod(startDate, i, frequency), amount });
+    left -= amount;
+  }
+  return out;
 }
 
 type PaidLike = {
