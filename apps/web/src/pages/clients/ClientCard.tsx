@@ -112,7 +112,7 @@ export function ClientCard({ client }: { client: Client }) {
   const tabs: { id: CardTab; label: string }[] = [
     { id: "rentals", label: "Аренды" },
     ...(debtorCases.length > 0
-      ? [{ id: "debtor" as CardTab, label: "Должник" }]
+      ? [{ id: "debtor" as CardTab, label: "Долговая история" }]
       : []),
     // v0.4.5: лента всех событий по клиенту — аренды, продления, акты,
     // долги, оплаты, события дел-должников. Связь клиент ↔ скутеры ↔ ремонты.

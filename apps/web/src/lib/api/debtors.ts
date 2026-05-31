@@ -133,19 +133,25 @@ export function useCreateSchedule() {
   return useMutation({
     mutationFn: (args: {
       id: number;
+      mode: "by_count" | "by_amount";
+      count?: number;
+      perPayment?: number;
       totalAmount?: number;
-      count: number;
       startDate: string;
-      frequency: "weekly" | "biweekly" | "monthly";
+      frequency: "daily" | "weekly" | "biweekly" | "monthly";
     }) =>
       api.post<{ schedule: unknown[] }>(`/api/debtors/${args.id}/schedule`, {
-        totalAmount: args.totalAmount,
+        mode: args.mode,
         count: args.count,
+        perPayment: args.perPayment,
+        totalAmount: args.totalAmount,
         startDate: args.startDate,
         frequency: args.frequency,
       }),
     onSuccess: (_d, vars) => {
       qc.invalidateQueries({ queryKey: keys.detail(vars.id) });
+      qc.invalidateQueries({ queryKey: keys.all });
+      invalidateLinked(qc);
     },
   });
 }
@@ -160,6 +166,7 @@ export function useRecordPayment() {
       method: PaymentMethod;
       paidAt?: string;
       note?: string;
+      allocate?: "term" | "total";
     }) =>
       api.post<unknown>(`/api/debtors/${args.id}/payments`, {
         paymentN: args.paymentN,
@@ -167,6 +174,7 @@ export function useRecordPayment() {
         method: args.method,
         paidAt: args.paidAt,
         note: args.note,
+        allocate: args.allocate,
       }),
     onSuccess: (_d, vars) => {
       qc.invalidateQueries({ queryKey: keys.detail(vars.id) });

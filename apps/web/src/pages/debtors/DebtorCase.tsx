@@ -18,6 +18,7 @@ import {
   Phone,
   PhoneOff,
   CalendarClock,
+  CalendarRange,
   Ban,
   StickyNote,
 } from "lucide-react";
@@ -37,6 +38,7 @@ import {
   type Stage,
 } from "@/lib/debtors/types";
 import { DonutProgress } from "@/components/DonutProgress";
+import { ScheduleBuilderDialog } from "./ScheduleBuilderDialog";
 
 // recordPay used in onOpenPayment via prop, suppress unused warning
 // (kept import for future inline-record functionality)
@@ -124,13 +126,14 @@ export function DebtorCase({
 }: {
   id: number;
   onBack: () => void;
-  onOpenPayment: () => void;
+  onOpenPayment: (paymentN?: number) => void;
 }) {
   const q = useDebtor(id);
   const transition = useTransitionDebtor();
   const logCall = useLogCall();
   const addNote = useAddNote();
   const [openSection, setOpenSection] = useState<string | null>("payments");
+  const [scheduleOpen, setScheduleOpen] = useState(false);
   // Панель связи: текст разговора, флаг ввода даты обещания, сама дата, заметка.
   const [callNote, setCallNote] = useState("");
   const [showPromised, setShowPromised] = useState(false);
@@ -153,6 +156,16 @@ export function DebtorCase({
     } catch (e) {
       toast.error("Не удалось", (e as Error).message);
     }
+  };
+
+  // «Создать график»/«…график» → открыть конструктор: он сам построит
+  // строки и переведёт дело в стадию «График платежей».
+  const handleStep = (to: Stage, label: string) => {
+    if (to === "payment_schedule") {
+      setScheduleOpen(true);
+      return;
+    }
+    void onTransition(to, label);
   };
 
   const OUTCOME_LABEL: Record<CallOutcome, string> = {
@@ -312,7 +325,7 @@ export function DebtorCase({
           {primary && (
             <button
               type="button"
-              onClick={() => onTransition(primary.to, primary.label)}
+              onClick={() => handleStep(primary.to, primary.label)}
               disabled={transition.isPending}
               className="inline-flex h-14 items-center gap-3 rounded-[14px] bg-ink px-7 text-[16px] font-semibold text-white shadow-[0_12px_24px_-8px_rgba(11,18,32,0.35)] hover:-translate-y-0.5 transition-transform disabled:opacity-50"
             >
@@ -325,7 +338,7 @@ export function DebtorCase({
           {d.stage === "payment_schedule" && (
             <button
               type="button"
-              onClick={onOpenPayment}
+              onClick={() => onOpenPayment()}
               className="ml-2 inline-flex h-14 items-center gap-3 rounded-[14px] border border-ink bg-white px-7 text-[16px] font-semibold text-ink hover:bg-surface-soft"
             >
               Зафиксировать платёж
@@ -338,7 +351,7 @@ export function DebtorCase({
                 <button
                   key={t.to}
                   type="button"
-                  onClick={() => onTransition(t.to, t.label)}
+                  onClick={() => handleStep(t.to, t.label)}
                   className="text-[13.5px] font-medium text-muted hover:text-ink"
                 >
                   {t.label}
@@ -486,9 +499,34 @@ export function DebtorCase({
           count={d.payments.length}
         >
           {d.payments.length === 0 ? (
-            <div className="py-3 text-[13px] text-muted">График ещё не создан. Появится после перехода в стадию «График платежей».</div>
+            <div className="py-3">
+              <div className="mb-3 max-w-[520px] text-[13px] text-muted">
+                График ещё не создан. Разбейте долг на платежи — клиент будет
+                гасить по графику, вы фиксируете каждый платёж кнопкой «Принять».
+              </div>
+              {!isClosed(d.stage) && (
+                <button
+                  type="button"
+                  onClick={() => setScheduleOpen(true)}
+                  className="inline-flex h-11 items-center gap-2 rounded-[12px] bg-ink px-5 text-[14px] font-semibold text-white hover:bg-[#16213a]"
+                >
+                  <CalendarRange size={16} /> Сформировать график платежей
+                </button>
+              )}
+            </div>
           ) : (
             <div className="space-y-1">
+              {!isClosed(d.stage) && (
+                <div className="mb-2 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setScheduleOpen(true)}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-[12px] font-semibold text-muted hover:border-ink hover:text-ink"
+                  >
+                    <CalendarRange size={12} /> Пересоздать график
+                  </button>
+                </div>
+              )}
               {d.payments.map((p) => {
                 const paid = p.paidAt != null;
                 const overdue =
@@ -496,7 +534,7 @@ export function DebtorCase({
                 return (
                   <div
                     key={p.id}
-                    className={`grid grid-cols-[28px_1fr_auto_18px] items-center gap-3 rounded-[8px] px-3 py-2 text-[13px] ${
+                    className={`grid grid-cols-[28px_1fr_auto_auto] items-center gap-3 rounded-[8px] px-3 py-2 text-[13px] ${
                       paid ? "bg-emerald-50" : overdue ? "bg-red-50" : ""
                     }`}
                   >
@@ -521,15 +559,17 @@ export function DebtorCase({
                     <span className="font-mono text-[12.5px] font-semibold text-ink">
                       {(p.paidAmount ?? p.scheduledAmount).toLocaleString("ru-RU")} ₽
                     </span>
-                    <span
-                      className={`h-3.5 w-3.5 rounded-full border-2 ${
-                        paid
-                          ? "border-emerald-600 bg-emerald-600"
-                          : overdue
-                          ? "border-red-600 bg-red-600"
-                          : "border-border-strong"
-                      }`}
-                    />
+                    {paid ? (
+                      <span className="h-3.5 w-3.5 rounded-full border-2 border-emerald-600 bg-emerald-600" />
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => onOpenPayment(p.n)}
+                        className="inline-flex items-center rounded-full bg-ink px-2.5 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-[#16213a]"
+                      >
+                        Принять
+                      </button>
+                    )}
                   </div>
                 );
               })}
@@ -621,6 +661,16 @@ export function DebtorCase({
           </CollapsibleSection>
         )}
       </div>
+
+      {scheduleOpen && (
+        <ScheduleBuilderDialog
+          debtorId={id}
+          caseNumber={d.caseNumber}
+          remaining={Math.max(0, d.totalAmount - d.paid)}
+          onClose={() => setScheduleOpen(false)}
+          onCreated={() => setScheduleOpen(false)}
+        />
+      )}
     </section>
   );
 }

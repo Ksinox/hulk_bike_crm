@@ -27,7 +27,7 @@ type Sub =
   | { kind: "list" }
   | { kind: "new" }
   | { kind: "case"; id: number }
-  | { kind: "payment"; id: number };
+  | { kind: "payment"; id: number; paymentN?: number };
 
 export function Debtors() {
   const [sub, setSub] = useState<Sub>({ kind: "landing" });
@@ -64,13 +64,16 @@ export function Debtors() {
       <DebtorCase
         id={sub.id}
         onBack={() => setSub({ kind: "landing" })}
-        onOpenPayment={() => setSub({ kind: "payment", id: sub.id })}
+        onOpenPayment={(paymentN) =>
+          setSub({ kind: "payment", id: sub.id, paymentN })
+        }
       />
     );
   } else if (sub.kind === "payment") {
     body = (
       <DebtorPaymentScreen
         id={sub.id}
+        paymentN={sub.paymentN}
         onClose={() => setSub({ kind: "case", id: sub.id })}
       />
     );

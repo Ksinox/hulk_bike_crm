@@ -1,4 +1,4 @@
-import { ArrowRight, Phone, Scale } from "lucide-react";
+import { ArrowRight, Flag, Phone, Scale, StickyNote } from "lucide-react";
 import { navigate } from "@/app/navigationStore";
 import { DonutProgress } from "@/components/DonutProgress";
 import { useDebtor } from "@/lib/api/debtors";
@@ -184,37 +184,61 @@ function ClientDebtorCaseCard({ summary }: { summary: DebtorCaseSummary }) {
         </div>
       )}
 
-      {/* Последние звонки */}
-      {d && d.calls.length > 0 && (
-        <div className="mt-3 border-t border-border pt-3">
-          <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-2">
-            Звонки
-          </div>
-          <div className="space-y-1.5">
-            {d.calls.slice(0, 4).map((c) => (
-              <div
-                key={c.id}
-                className="flex items-start gap-2 text-[12.5px] text-ink-2"
-              >
-                <Phone size={12} className="mt-0.5 shrink-0 text-muted-2" />
-                <div className="min-w-0">
-                  <span className="font-mono text-[10.5px] uppercase tracking-[0.04em] text-muted-2">
-                    {c.createdAt.slice(0, 10)}
-                  </span>{" "}
-                  {c.outcome === "answered"
-                    ? "ответил"
-                    : c.outcome === "no_answer"
-                      ? "не ответил"
-                      : c.outcome === "promised"
-                        ? `обещал${c.promisedDate ? ` к ${c.promisedDate}` : ""}`
-                        : "отказался"}
-                  {c.note && <span className="text-muted"> · {c.note}</span>}
-                </div>
+      {/* История взыскания — все разбирательства по делу: смены стадий,
+          звонки, заметки. Платежи показаны выше в графике. */}
+      {d &&
+        (() => {
+          const events: { ts: string; kind: "stage" | "call" | "note"; text: string }[] = [
+            ...d.stageEvents.map((e) => ({
+              ts: e.createdAt,
+              kind: "stage" as const,
+              text: `${e.fromStage ? STAGE_LABEL[e.fromStage] + " → " : ""}${STAGE_LABEL[e.toStage]}${e.reason ? " · " + e.reason : ""}`,
+            })),
+            ...d.calls.map((c) => ({
+              ts: c.createdAt,
+              kind: "call" as const,
+              text: callText(c),
+            })),
+            ...d.notes.map((n) => ({
+              ts: n.createdAt,
+              kind: "note" as const,
+              text: n.text,
+            })),
+          ].sort((a, b) => b.ts.localeCompare(a.ts));
+          if (events.length === 0) return null;
+          return (
+            <div className="mt-3 border-t border-border pt-3">
+              <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-2">
+                История взыскания
               </div>
-            ))}
-          </div>
-        </div>
-      )}
+              <div className="space-y-1.5">
+                {events.map((ev, i) => (
+                  <div
+                    key={i}
+                    className="flex items-start gap-2 text-[12.5px] text-ink-2"
+                  >
+                    {ev.kind === "call" ? (
+                      <Phone size={12} className="mt-0.5 shrink-0 text-blue-500" />
+                    ) : ev.kind === "note" ? (
+                      <StickyNote
+                        size={12}
+                        className="mt-0.5 shrink-0 text-amber-500"
+                      />
+                    ) : (
+                      <Flag size={12} className="mt-0.5 shrink-0 text-muted-2" />
+                    )}
+                    <div className="min-w-0">
+                      <span className="font-mono text-[10.5px] uppercase tracking-[0.04em] text-muted-2">
+                        {ev.ts.slice(0, 10)}
+                      </span>{" "}
+                      {ev.text}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
 
       {/* Причина закрытия */}
       {!summary.active && summary.closedReason && (
@@ -224,6 +248,22 @@ function ClientDebtorCaseCard({ summary }: { summary: DebtorCaseSummary }) {
       )}
     </div>
   );
+}
+
+function callText(c: {
+  outcome: string;
+  promisedDate: string | null;
+  note: string | null;
+}): string {
+  const base =
+    c.outcome === "answered"
+      ? "звонок — ответил"
+      : c.outcome === "no_answer"
+        ? "звонок — не дозвонился"
+        : c.outcome === "promised"
+          ? `звонок — обещал${c.promisedDate ? ` к ${c.promisedDate}` : ""}`
+          : "звонок — отказался";
+  return c.note ? `${base} · ${c.note}` : base;
 }
 
 function Stat({
