@@ -79,6 +79,7 @@ const StageEnum = z.enum([
   "police",
   "criminal_case",
   "closed_paid",
+  "closed_recovered",
   "closed_written_off",
   "closed_settled",
   "closed_court",
@@ -169,6 +170,7 @@ const LawyerUpdateBody = z.object({
 const CloseBody = z.object({
   toStage: z.enum([
     "closed_paid",
+    "closed_recovered",
     "closed_written_off",
     "closed_settled",
     "closed_court",

@@ -1665,6 +1665,7 @@ export const debtorStageEnum = pgEnum("debtor_stage", [
   "police",
   "criminal_case",
   "closed_paid",
+  "closed_recovered",
   "closed_written_off",
   "closed_settled",
   "closed_court",

@@ -20,6 +20,7 @@ import {
   Ban,
   StickyNote,
   Wallet,
+  Bike,
 } from "lucide-react";
 import {
   useDebtor,
@@ -38,62 +39,155 @@ import {
 } from "@/lib/debtors/types";
 import { DonutProgress } from "@/components/DonutProgress";
 import { ScheduleBuilderDialog } from "./ScheduleBuilderDialog";
-import { toast } from "@/lib/toast";
+import { toast, confirmDialog } from "@/lib/toast";
 
 // Локальная копия логики state machine для UI (зеркало бэка).
+// Зеркало TRANSITIONS бэка (для отрисовки кнопок). closed_paid здесь НЕ
+// перечисляем — закрытие «оплачено» происходит авто при полном погашении
+// или кнопкой «Закрыть — долг погашен» (см. primaryAction). Прочие закрытия
+// (recovered/settled/court/written_off) — управленческие, без денег.
 const NEXT_TRANSITIONS: Record<DebtType, Partial<Record<Stage, { to: Stage; label: string; primary?: boolean }[]>>> = {
   dtp_guilty: {
-    created: [{ to: "pretrial", label: "Начать досудебку", primary: true }],
+    created: [
+      { to: "pretrial", label: "Начать досудебку", primary: true },
+      { to: "closed_settled", label: "Договорились — мировая" },
+      { to: "closed_written_off", label: "Списать долг" },
+    ],
     pretrial: [
       { to: "payment_schedule", label: "Признал — график", primary: true },
       { to: "lawyer", label: "Не признал — юристу" },
+      { to: "closed_settled", label: "Мировая" },
+      { to: "closed_written_off", label: "Списать" },
     ],
     lawyer: [
       { to: "payment_schedule", label: "Юрист убедил — график", primary: true },
       { to: "court", label: "В суд" },
+      { to: "closed_settled", label: "Мировая" },
+      { to: "closed_written_off", label: "Списать" },
     ],
     payment_schedule: [
       { to: "lawyer", label: "Перестал платить — юристу" },
+      { to: "closed_written_off", label: "Списать остаток" },
     ],
     court: [
       { to: "closed_court", label: "Решение суда", primary: true },
       { to: "closed_settled", label: "Мировая" },
+      { to: "closed_written_off", label: "Списать" },
     ],
   },
   dtp_victim: {
-    created: [{ to: "insurance_docs", label: "Документы в страховую", primary: true }],
-    insurance_docs: [{ to: "insurance_eval", label: "Оценка назначена", primary: true }],
-    insurance_eval: [{ to: "insurance_wait", label: "Оценка получена", primary: true }],
-    insurance_wait: [{ to: "closed_paid", label: "Выплата получена", primary: true }],
+    created: [
+      { to: "insurance_docs", label: "Документы в страховую", primary: true },
+      { to: "closed_written_off", label: "Не обращаемся — закрыть" },
+    ],
+    insurance_docs: [
+      { to: "insurance_eval", label: "Оценка назначена", primary: true },
+      { to: "closed_written_off", label: "Отказ страховой — списать" },
+    ],
+    insurance_eval: [
+      { to: "insurance_wait", label: "Оценка получена", primary: true },
+      { to: "lawyer", label: "Спор со страховой — юристу" },
+      { to: "closed_written_off", label: "Отказ — списать" },
+    ],
+    insurance_wait: [
+      { to: "closed_paid", label: "Выплата получена", primary: true },
+      { to: "lawyer", label: "Занизили — юристу" },
+      { to: "closed_written_off", label: "Отказ — списать" },
+    ],
+    lawyer: [
+      { to: "court", label: "В суд на страховую", primary: true },
+      { to: "closed_settled", label: "Урегулировали — мировая" },
+      { to: "closed_written_off", label: "Списать" },
+    ],
+    court: [
+      { to: "closed_court", label: "Решение суда", primary: true },
+      { to: "closed_settled", label: "Мировая" },
+      { to: "closed_written_off", label: "Списать" },
+    ],
   },
   damage: {
-    created: [{ to: "payment_schedule", label: "Создать график", primary: true }],
+    created: [
+      { to: "payment_schedule", label: "Создать график", primary: true },
+      { to: "closed_settled", label: "Договорились — мировая" },
+      { to: "closed_written_off", label: "Списать" },
+    ],
     payment_schedule: [
       { to: "lawyer", label: "Нарушения — юристу" },
+      { to: "closed_settled", label: "Мировая" },
+      { to: "closed_written_off", label: "Списать остаток" },
     ],
     lawyer: [
       { to: "payment_schedule", label: "Возобновить график", primary: true },
+      { to: "court", label: "В суд" },
       { to: "closed_settled", label: "Мировая" },
+      { to: "closed_written_off", label: "Списать" },
+    ],
+    court: [
+      { to: "closed_court", label: "Решение суда", primary: true },
+      { to: "closed_settled", label: "Мировая" },
+      { to: "closed_written_off", label: "Списать" },
     ],
   },
   theft: {
-    created: [{ to: "pretrial", label: "Связаться с клиентом", primary: true }],
-    pretrial: [
-      { to: "payment_schedule", label: "Признал — график", primary: true },
-      { to: "police", label: "Не признал — полиция" },
+    created: [
+      { to: "pretrial", label: "Связаться с клиентом", primary: true },
+      { to: "closed_recovered", label: "Скутер вернулся" },
+      { to: "police", label: "Заявление в полицию" },
+      { to: "closed_written_off", label: "Списать (скутер потерян)" },
     ],
-    payment_schedule: [],
-    police: [{ to: "criminal_case", label: "Уголовное дело возбуждено", primary: true }],
-    criminal_case: [{ to: "closed_court", label: "Приговор", primary: true }],
+    pretrial: [
+      { to: "payment_schedule", label: "Согласен выкупить — график", primary: true },
+      { to: "closed_recovered", label: "Скутер вернулся" },
+      { to: "police", label: "Не признал — полиция" },
+      { to: "closed_written_off", label: "Списать" },
+    ],
+    payment_schedule: [
+      { to: "closed_recovered", label: "Скутер вернулся — закрыть" },
+      { to: "lawyer", label: "Перестал платить — юристу" },
+      { to: "closed_written_off", label: "Списать остаток" },
+    ],
+    police: [
+      { to: "criminal_case", label: "Уголовное дело возбуждено", primary: true },
+      { to: "closed_recovered", label: "Скутер вернулся" },
+      { to: "closed_settled", label: "Договорились — мировая" },
+      { to: "closed_written_off", label: "Списать" },
+    ],
+    criminal_case: [
+      { to: "closed_court", label: "Приговор", primary: true },
+      { to: "closed_recovered", label: "Скутер вернулся" },
+      { to: "closed_written_off", label: "Не нашли — списать" },
+    ],
+    lawyer: [
+      { to: "payment_schedule", label: "Возобновить выкуп", primary: true },
+      { to: "court", label: "В суд" },
+      { to: "closed_recovered", label: "Скутер вернулся" },
+      { to: "closed_written_off", label: "Списать" },
+    ],
+    court: [
+      { to: "closed_court", label: "Решение суда", primary: true },
+      { to: "closed_recovered", label: "Скутер вернулся" },
+      { to: "closed_written_off", label: "Списать" },
+    ],
   },
   rental_overdue: {
-    created: [{ to: "payment_schedule", label: "Создать график", primary: true }],
+    created: [
+      { to: "payment_schedule", label: "Создать график", primary: true },
+      { to: "closed_settled", label: "Договорились — мировая" },
+      { to: "closed_written_off", label: "Списать" },
+    ],
     payment_schedule: [
       { to: "lawyer", label: "Нарушения — юристу" },
-      { to: "closed_written_off", label: "Списать" },
+      { to: "closed_settled", label: "Мировая" },
+      { to: "closed_written_off", label: "Списать остаток" },
     ],
     lawyer: [
       { to: "payment_schedule", label: "Возобновить", primary: true },
+      { to: "court", label: "В суд" },
+      { to: "closed_settled", label: "Мировая" },
+      { to: "closed_written_off", label: "Списать" },
+    ],
+    court: [
+      { to: "closed_court", label: "Решение суда", primary: true },
       { to: "closed_settled", label: "Мировая" },
       { to: "closed_written_off", label: "Списать" },
     ],
@@ -137,15 +231,32 @@ export function DebtorCase({
   const transitions = NEXT_TRANSITIONS[d.type]?.[d.stage] ?? [];
   const primary = transitions.find((t) => t.primary);
   const secondary = transitions.filter((t) => !t.primary);
+  // Делим вторичные ходы на «переходы по делу» (ссылки) и «закрытия» дела
+  // (отдельная группа «Закрыть дело»). Закрытия не требуют денег — это
+  // управленческие исходы (скутер вернулся, мировая, суд, списание).
+  const moves = secondary.filter((t) => !t.to.startsWith("closed_"));
+  const closings = secondary.filter((t) => t.to.startsWith("closed_"));
   const remaining = Math.max(0, d.totalAmount - d.paid);
 
-  const onTransition = async (to: Stage, label: string) => {
+  const onTransition = async (to: Stage, label: string, reason?: string) => {
     try {
-      await transition.mutateAsync({ id, toStage: to });
+      await transition.mutateAsync({ id, toStage: to, reason });
       toast.success("Стадия обновлена", `Дело перешло: ${label}`);
     } catch (e) {
       toast.error("Не удалось", (e as Error).message);
     }
+  };
+
+  // Закрытие дела — подтверждаем (необратимое действие) и фиксируем причину.
+  const onClose = async (to: Stage, label: string) => {
+    const ok = await confirmDialog({
+      title: "Закрыть дело?",
+      message: `«${STAGE_LABEL[to]}» — ${label}. Дело уйдёт в архив, клиент перестанет быть должником по нему.`,
+      confirmText: "Закрыть дело",
+      cancelText: "Отмена",
+    });
+    if (!ok) return;
+    await onTransition(to, label, label);
   };
 
   // «Создать график»/«…график» → открыть конструктор: он сам построит
@@ -520,9 +631,10 @@ export function DebtorCase({
                   </div>
                 )}
 
-                {secondary.length > 0 && (
+                {/* Альтернативные ходы по делу — тихие ссылки */}
+                {moves.length > 0 && (
                   <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 border-t border-border pt-3">
-                    {secondary.map((t) => (
+                    {moves.map((t) => (
                       <button
                         key={t.to}
                         type="button"
@@ -532,6 +644,36 @@ export function DebtorCase({
                         {t.label}
                       </button>
                     ))}
+                  </div>
+                )}
+
+                {/* Закрыть дело — управленческие исходы без денег. Отдельная
+                    группа с outline-кнопками, каждая с подтверждением. */}
+                {closings.length > 0 && (
+                  <div className="mt-4 border-t border-border pt-3">
+                    <div className="mb-2 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-muted-2">
+                      Закрыть дело
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {closings.map((t) => {
+                        const recovered = t.to === "closed_recovered";
+                        return (
+                          <button
+                            key={t.to}
+                            type="button"
+                            onClick={() => onClose(t.to, t.label)}
+                            className={`inline-flex h-9 items-center gap-1.5 rounded-[10px] border px-3 text-[12.5px] font-semibold transition-colors ${
+                              recovered
+                                ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:border-emerald-400"
+                                : "border-border bg-white text-ink-2 hover:border-ink"
+                            }`}
+                          >
+                            {recovered && <Bike size={13} />}
+                            {t.label}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
               </div>

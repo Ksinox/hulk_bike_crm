@@ -22,6 +22,7 @@ export type Stage =
   | "police"
   | "criminal_case"
   | "closed_paid"
+  | "closed_recovered"
   | "closed_written_off"
   | "closed_settled"
   | "closed_court";
@@ -209,6 +210,7 @@ export const STAGE_LABEL: Record<Stage, string> = {
   police: "Заявление в полицию",
   criminal_case: "Уголовное дело",
   closed_paid: "Закрыто оплатой",
+  closed_recovered: "Имущество возвращено",
   closed_written_off: "Списано",
   closed_settled: "Мировая",
   closed_court: "Закрыто решением суда",
