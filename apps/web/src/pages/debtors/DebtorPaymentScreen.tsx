@@ -65,7 +65,7 @@ export function DebtorPaymentScreen({
 
   return (
     <section className="grid min-h-[600px] place-items-center bg-surface-soft p-10">
-      <div className="w-full max-w-[520px] overflow-hidden rounded-[20px] bg-white shadow-card-md">
+      <div className="w-full max-w-[520px] overflow-hidden rounded-[20px] bg-white shadow-card-lg">
         <header className="border-b border-border p-7 pb-5">
           <div className="mb-2 font-mono text-[11px] uppercase tracking-[0.08em] text-muted">
             Платёж от <b className="font-bold text-ink">{q.data.displayName}</b> · дело {q.data.caseNumber}

@@ -8,7 +8,7 @@ import { Plus, Scale, CircleHelp } from "lucide-react";
 export function DebtorsEmpty({ onAddFirst }: { onAddFirst: () => void }) {
   return (
     <section className="flex min-h-[560px] flex-col items-center justify-center px-6 py-16 text-center">
-      <div className="relative mb-7 grid h-[120px] w-[120px] place-items-center rounded-[30px] border border-border bg-gradient-to-br from-surface-soft to-surface-tint text-muted-2 shadow-card-sm">
+      <div className="relative mb-7 grid h-[120px] w-[120px] place-items-center rounded-[30px] border border-border bg-gradient-to-br from-surface-soft to-blue-50 text-muted-2 shadow-card-sm">
         <Scale size={48} strokeWidth={1.4} />
         <span className="absolute -right-2 -top-2 grid h-9 w-9 place-items-center rounded-full bg-emerald-500 text-white shadow-[0_8px_18px_-4px_rgba(5,150,105,0.4)]">
           ✓

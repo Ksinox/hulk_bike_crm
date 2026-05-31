@@ -165,7 +165,7 @@ export function DebtorsMorning({
         <>
           <div className="mt-8 mb-3 inline-flex items-center gap-2 font-mono text-[11px] font-bold uppercase tracking-[0.1em] text-muted-2">
             <span className="inline-block h-px w-4 bg-muted-2" />
-            Ещё на сегодня · {queue.length}{" "}
+            {hottest ? "Ещё на сегодня" : "Кому звонить сегодня"} · {queue.length}{" "}
             {queue.length === 1 ? "задача" : queue.length < 5 ? "задачи" : "задач"}
           </div>
           <div className="flex flex-col gap-1.5">
@@ -176,7 +176,7 @@ export function DebtorsMorning({
                 onClick={() => onOpenCase(debtor.id)}
                 className="grid grid-cols-[36px_1fr_auto_auto] items-center gap-3.5 rounded-[12px] border border-border bg-white px-4 py-3.5 text-left transition-all hover:translate-x-1 hover:border-ink hover:shadow-card"
               >
-                <div className="grid h-9 w-9 place-items-center rounded-full border border-border bg-gradient-to-br from-surface-tint to-surface-soft text-[12px] font-semibold text-ink">
+                <div className="grid h-9 w-9 place-items-center rounded-full border border-border bg-gradient-to-br from-blue-50 to-surface-soft text-[12px] font-semibold text-ink">
                   {(debtor.clientName ?? "?").slice(0, 2).toUpperCase()}
                 </div>
                 <div>

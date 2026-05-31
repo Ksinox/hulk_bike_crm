@@ -85,7 +85,7 @@ export function DebtorNewWizard({
 
   return (
     <section className="mx-auto w-full max-w-[680px]">
-      <div className="rounded-[22px] bg-white shadow-card-md">
+      <div className="rounded-[22px] bg-white shadow-card-lg">
         <header className="border-b border-border bg-gradient-to-b from-[#F2F6FD] to-white p-6">
           <div className="mb-2 font-mono text-[11px] uppercase tracking-[0.12em] text-muted-2">
             Новое дело · шаг {step} из 3

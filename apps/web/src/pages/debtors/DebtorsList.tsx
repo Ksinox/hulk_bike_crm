@@ -109,7 +109,7 @@ export function DebtorsList({
                 onClick={() => onOpenCase(d.id)}
                 className={`grid grid-cols-[36px_1fr_auto_auto_auto] items-center gap-3.5 rounded-[12px] border border-border bg-white px-4 py-3 text-left transition-all hover:translate-x-1 hover:border-ink hover:shadow-card ${closed ? "opacity-60" : ""}`}
               >
-                <div className="grid h-9 w-9 place-items-center rounded-full border border-border bg-gradient-to-br from-surface-tint to-surface-soft text-[12px] font-semibold text-ink">
+                <div className="grid h-9 w-9 place-items-center rounded-full border border-border bg-gradient-to-br from-blue-50 to-surface-soft text-[12px] font-semibold text-ink">
                   {(d.clientName ?? "?").slice(0, 2).toUpperCase()}
                 </div>
                 <div className="min-w-0">

@@ -16,17 +16,23 @@ import {
   ChevronDown,
   Check,
   Phone,
+  PhoneOff,
+  CalendarClock,
+  Ban,
+  StickyNote,
 } from "lucide-react";
 import {
   useDebtor,
   useTransitionDebtor,
   useLogCall,
+  useAddNote,
 } from "@/lib/api/debtors";
 import {
   STAGE_LABEL,
   TYPE_LABEL,
   formatRub,
   isClosed,
+  type CallOutcome,
   type DebtType,
   type Stage,
 } from "@/lib/debtors/types";
@@ -122,7 +128,13 @@ export function DebtorCase({
   const q = useDebtor(id);
   const transition = useTransitionDebtor();
   const logCall = useLogCall();
+  const addNote = useAddNote();
   const [openSection, setOpenSection] = useState<string | null>("payments");
+  // Панель связи: текст разговора, флаг ввода даты обещания, сама дата, заметка.
+  const [callNote, setCallNote] = useState("");
+  const [showPromised, setShowPromised] = useState(false);
+  const [promisedDate, setPromisedDate] = useState("");
+  const [noteText, setNoteText] = useState("");
 
   if (q.isLoading) {
     return <div className="flex h-64 items-center justify-center text-muted">Загрузка…</div>;
@@ -142,12 +154,38 @@ export function DebtorCase({
     }
   };
 
-  const onQuickCall = async (outcome: "answered" | "no_answer") => {
+  const OUTCOME_LABEL: Record<CallOutcome, string> = {
+    answered: "Дозвонился, поговорили",
+    no_answer: "Не дозвонился",
+    promised: "Обещал заплатить",
+    refused: "Отказался платить",
+  };
+
+  const onCall = async (outcome: CallOutcome, opts?: { promisedDate?: string }) => {
     try {
-      await logCall.mutateAsync({ id, outcome });
-      toast.success("Записано", outcome === "answered" ? "Звонок (ответил)" : "Звонок (не дозвонились)");
+      await logCall.mutateAsync({
+        id,
+        outcome,
+        promisedDate: opts?.promisedDate,
+        note: callNote.trim() || undefined,
+      });
+      setCallNote("");
+      setShowPromised(false);
+      setPromisedDate("");
+      toast.success("Звонок записан", OUTCOME_LABEL[outcome]);
     } catch (e) {
       toast.error("Не записано", (e as Error).message);
+    }
+  };
+
+  const onSaveNote = async () => {
+    if (!noteText.trim()) return;
+    try {
+      await addNote.mutateAsync({ id, text: noteText.trim() });
+      setNoteText("");
+      toast.success("Заметка добавлена");
+    } catch (e) {
+      toast.error("Не сохранено", (e as Error).message);
     }
   };
 
@@ -185,7 +223,13 @@ export function DebtorCase({
           {d.displayName}
         </h2>
         <div className="mt-1 text-[14px] text-muted">
-          {d.displayPhone} · <b className="font-semibold text-ink-2">{d.clientStatus === "closed" ? "Закрытый" : "Действующий"} клиент</b> · психо-портрет {d.psyRating}/5
+          <a
+            href={`tel:${d.displayPhone}`}
+            className="font-semibold text-ink-2 underline-offset-2 hover:text-blue-700 hover:underline"
+          >
+            {d.displayPhone}
+          </a>{" "}
+          · <b className="font-semibold text-ink-2">{d.clientStatus === "closed" ? "Закрытый" : "Действующий"} клиент</b> · психо-портрет {d.psyRating}/5
         </div>
       </header>
 
@@ -267,24 +311,130 @@ export function DebtorCase({
                   {t.label}
                 </button>
               ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Связь с должником — всегда доступно для активного дела.
+          Звонок (исход + заметка разговора) и быстрая заметка по делу. */}
+      {!isClosed(d.stage) && (
+        <div className="m-7 mb-0 rounded-[18px] border border-border bg-white p-6 shadow-card-sm">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-2">
+                Связь с должником
+              </div>
+              <a
+                href={`tel:${d.displayPhone}`}
+                className="mt-1 inline-flex items-center gap-2 font-display text-[24px] font-bold tracking-[-0.01em] text-ink hover:text-blue-700"
+              >
+                <Phone size={18} className="text-blue-600" />
+                {d.displayPhone}
+              </a>
+            </div>
+            <div className="text-[12px] text-muted">
+              {d.calls.length > 0
+                ? `Последний звонок ${d.calls[0]!.createdAt.slice(0, 10)}`
+                : "Звонков ещё не было"}
+            </div>
+          </div>
+
+          {/* Исход звонка */}
+          <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <button
+              type="button"
+              onClick={() => onCall("answered")}
+              disabled={logCall.isPending}
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-[10px] border border-emerald-100 bg-emerald-50 text-[13px] font-semibold text-emerald-700 transition-colors hover:border-emerald-300 disabled:opacity-50"
+            >
+              <Phone size={14} /> Ответил
+            </button>
+            <button
+              type="button"
+              onClick={() => onCall("no_answer")}
+              disabled={logCall.isPending}
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-[10px] border border-border bg-white text-[13px] font-semibold text-ink-2 transition-colors hover:border-ink disabled:opacity-50"
+            >
+              <PhoneOff size={14} /> Не дозвонился
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowPromised((s) => !s)}
+              className={`inline-flex h-11 items-center justify-center gap-2 rounded-[10px] border text-[13px] font-semibold transition-colors ${
+                showPromised
+                  ? "border-blue-600 bg-blue-600 text-white"
+                  : "border-blue-100 bg-blue-50 text-blue-700 hover:border-blue-300"
+              }`}
+            >
+              <CalendarClock size={14} /> Обещал
+            </button>
+            <button
+              type="button"
+              onClick={() => onCall("refused")}
+              disabled={logCall.isPending}
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-[10px] border border-red-100 bg-red-50 text-[13px] font-semibold text-red-700 transition-colors hover:border-red-300 disabled:opacity-50"
+            >
+              <Ban size={14} /> Отказался
+            </button>
+          </div>
+
+          {/* Дата обещанного платежа */}
+          {showPromised && (
+            <div className="mt-3 flex flex-wrap items-end gap-3 rounded-[12px] bg-blue-50/60 p-3.5">
+              <div>
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.08em] text-blue-700">
+                  Обещал заплатить к дате
+                </label>
+                <input
+                  type="date"
+                  value={promisedDate}
+                  onChange={(e) => setPromisedDate(e.target.value)}
+                  className="h-10 rounded-[10px] border border-blue-200 bg-white px-3 text-[13px] text-ink outline-none focus:border-blue-600"
+                />
+              </div>
               <button
                 type="button"
-                onClick={() => onQuickCall("answered")}
-                className="inline-flex items-center gap-1.5 text-[13.5px] font-medium text-muted hover:text-ink"
+                disabled={!promisedDate || logCall.isPending}
+                onClick={() => onCall("promised", { promisedDate })}
+                className="inline-flex h-10 items-center gap-2 rounded-[10px] bg-blue-600 px-4 text-[13px] font-semibold text-white hover:bg-blue-700 disabled:opacity-40"
               >
-                <Phone size={13} />
-                Позвонил, ответили
-              </button>
-              <button
-                type="button"
-                onClick={() => onQuickCall("no_answer")}
-                className="inline-flex items-center gap-1.5 text-[13.5px] font-medium text-muted hover:text-ink"
-              >
-                <Phone size={13} />
-                Не дозвонился
+                <Check size={14} /> Записать обещание
               </button>
             </div>
           )}
+
+          {/* Заметка разговора (приклеивается к звонку) */}
+          <input
+            value={callNote}
+            onChange={(e) => setCallNote(e.target.value)}
+            placeholder="Что сказал по телефону (необязательно, добавится к записи звонка)"
+            className="mt-3 h-11 w-full rounded-[10px] border border-border bg-white px-3.5 text-[13px] text-ink outline-none focus:border-ink"
+          />
+
+          {/* Свободная заметка по делу */}
+          <div className="mt-4 border-t border-border pt-4">
+            <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
+              Заметка по делу
+            </label>
+            <textarea
+              rows={2}
+              value={noteText}
+              onChange={(e) => setNoteText(e.target.value)}
+              placeholder="Договорённость, контакт родственника, важные детали…"
+              className="w-full resize-none rounded-[10px] border border-border bg-white p-3 text-[13px] text-ink outline-none focus:border-ink"
+            />
+            <div className="mt-2 flex justify-end">
+              <button
+                type="button"
+                disabled={!noteText.trim() || addNote.isPending}
+                onClick={onSaveNote}
+                className="inline-flex h-10 items-center gap-2 rounded-[10px] bg-ink px-4 text-[13px] font-semibold text-white hover:bg-[#16213a] disabled:opacity-40"
+              >
+                <StickyNote size={14} /> Добавить заметку
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

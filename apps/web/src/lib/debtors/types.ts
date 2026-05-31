@@ -132,7 +132,9 @@ export type TodayAction = {
     | "overdue_call"
     | "lawyer_check"
     | "insurance_reminder"
-    | "payment_due_today";
+    | "payment_due_today"
+    | "first_contact"
+    | "in_progress";
   priority: "hot" | "warm" | "cool";
   text: string;
   primaryAction: { label: string; target: string };
