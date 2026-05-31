@@ -20,14 +20,16 @@ import {
   overdueDays,
   type PaymentForOverdue,
 } from "./debtorOverdue.js";
-import { isClosed, type DebtType, type Stage } from "./debtorStages.js";
+import { isClosed, stageLabel, type DebtType, type Stage } from "./debtorStages.js";
 
 export type TodayActionKind =
   | "systematic_violation" // 3 просрочки подряд → юрист
   | "overdue_call"         // просрочка платежа N дней → позвонить
   | "lawyer_check"         // долго у юриста без апдейта
   | "insurance_reminder"   // напоминание про страховую
-  | "payment_due_today";   // плановый платёж сегодня
+  | "payment_due_today"    // плановый платёж сегодня
+  | "first_contact"        // свежее дело — нужен первый контакт
+  | "in_progress";         // активное дело без горящего триггера
 
 export type TodayAction = {
   kind: TodayActionKind;
@@ -173,7 +175,29 @@ export function getTodayAction(
     };
   }
 
-  return null;
+  // FALLBACK: у дела нет «горящего» триггера, но оно активно. Всё равно
+  // отдаём действие — директор должен видеть КАЖДОГО должника на «Утре»
+  // и иметь возможность работать с ним (звонить, ставить статус, заметки).
+
+  // Свежее дело (только заведено / досудебка без графика) — первый контакт:
+  // связаться и договориться о возврате долга.
+  if (d.stage === "created" || d.stage === "pretrial") {
+    return {
+      kind: "first_contact",
+      priority: "warm",
+      text: "Новое дело — связаться и договориться",
+      primaryAction: { label: "Открыть и разобраться", target: "" },
+    };
+  }
+
+  // Прочие активные стадии (у юриста / в суде / страховая / график без
+  // просрочки) — держим на радаре «спокойной» задачей.
+  return {
+    kind: "in_progress",
+    priority: "cool",
+    text: `В работе · ${stageLabel(d.stage)}`,
+    primaryAction: { label: "Открыть дело", target: "" },
+  };
 }
 
 function pluralDays(n: number): string {
