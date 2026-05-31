@@ -58,12 +58,16 @@ export type DebtorCaseSummary = {
   paid: number;
   progressPercent: number;
   active: boolean;
+  problem: boolean;
   closedAt: string | null;
   closedReason: string | null;
   createdAt: string;
 };
 
 const debtorStageIsClosed = (s: string) => s.startsWith("closed_");
+/** Проблемное дело (угон/невозврат/криминал) — зеркало lib/debtors/types. */
+const debtorIsProblem = (type: string, stage: string) =>
+  type === "theft" || stage === "police" || stage === "criminal_case";
 
 /**
  * Дела-должники по клиентам: clientId → массив сводок.
@@ -118,6 +122,7 @@ async function debtorCasesByClient(
           : 0,
       // «Должник» = дело не закрыто И ещё не погашено полностью.
       active: !closed && paid < d.totalAmount,
+      problem: debtorIsProblem(d.type, d.stage),
       closedAt: d.closedAt ? d.closedAt.toISOString() : null,
       closedReason: d.closedReason ?? null,
       createdAt: d.createdAt.toISOString(),

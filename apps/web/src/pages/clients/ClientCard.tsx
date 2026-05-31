@@ -216,10 +216,23 @@ export function ClientCard({ client }: { client: Client }) {
                   <button
                     type="button"
                     onClick={() => setTab("debtor")}
-                    className="inline-flex items-center gap-1 rounded-full bg-red-soft px-2 py-0.5 text-[11px] font-bold text-red-ink transition-colors hover:bg-red/20"
-                    title="Клиент в разделе «Должники» — открыть"
+                    className={cn(
+                      "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold transition-colors",
+                      activeDebtor.problem
+                        ? "bg-red-soft text-red-ink hover:bg-red/20"
+                        : "bg-orange-soft text-orange-ink hover:bg-orange/20",
+                    )}
+                    title="Открыть «Долговую историю» клиента"
                   >
-                    <Scale size={12} /> Должник
+                    {activeDebtor.problem ? (
+                      <>
+                        <AlertTriangle size={12} /> Проблемный
+                      </>
+                    ) : (
+                      <>
+                        <Scale size={12} /> Должник
+                      </>
+                    )}
                   </button>
                 )}
               </div>

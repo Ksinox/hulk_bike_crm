@@ -374,6 +374,10 @@ export function DamageReportDialog({
                   className="h-9 w-full rounded-[10px] border border-border bg-surface pl-9 pr-3 text-[13px] outline-none focus:border-blue-600"
                 />
               </div>
+              <div className="mt-2 text-[11px] leading-snug text-muted-2">
+                Это позиции из прейскуранта (Документы → Прейскурант). Выбери,
+                что повреждено — цену и количество поправишь справа.
+              </div>
               {needsFallback && (
                 <div className="mt-2 rounded-[10px] bg-amber-50 px-3 py-2 text-[12px] text-amber-900">
                   <div className="font-semibold">
@@ -451,14 +455,22 @@ export function DamageReportDialog({
                             <ChevronRight size={14} className="text-muted-2" />
                           )}
                           <div className="min-w-0 flex-1">
-                            <div className="text-[13px] font-semibold text-ink">
-                              {g.name}
+                            <div className="flex items-center gap-2">
+                              <div className="text-[13px] font-semibold text-ink">
+                                {g.name}
+                              </div>
+                              {linkedModel ? (
+                                <span className="rounded-full bg-blue-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-blue-700">
+                                  {linkedModel.name}
+                                </span>
+                              ) : (
+                                <span className="rounded-full bg-surface-soft px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-muted-2">
+                                  общая
+                                </span>
+                              )}
                             </div>
-                            <div className="text-[10px] text-muted-2">
-                              {linkedModel
-                                ? `модель: ${linkedModel.name}`
-                                : "общая"}{" "}
-                              · {g.items.length} поз.
+                            <div className="mt-0.5 text-[10px] text-muted-2">
+                              {g.items.length} поз.
                             </div>
                           </div>
                         </button>

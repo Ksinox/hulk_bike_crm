@@ -1,4 +1,4 @@
-import { ArrowRight, Flag, Phone, Scale, StickyNote } from "lucide-react";
+import { AlertTriangle, ArrowRight, Flag, Phone, Scale, StickyNote } from "lucide-react";
 import { navigate } from "@/app/navigationStore";
 import { DonutProgress } from "@/components/DonutProgress";
 import { useDebtor } from "@/lib/api/debtors";
@@ -101,6 +101,11 @@ function ClientDebtorCaseCard({ summary }: { summary: DebtorCaseSummary }) {
         >
           {STAGE_LABEL[summary.stage]}
         </span>
+        {summary.problem && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-red-soft px-2 py-0.5 text-[11px] font-bold text-red-ink">
+            <AlertTriangle size={11} /> Проблемный
+          </span>
+        )}
         <button
           type="button"
           onClick={() => navigate({ route: "debtors", debtorId: summary.id })}

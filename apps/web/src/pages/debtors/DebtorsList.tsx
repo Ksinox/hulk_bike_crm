@@ -6,14 +6,23 @@
  * видит каждого должника и открывает дело в один клик.
  */
 import { useState } from "react";
-import { ArrowLeft, Plus, Phone } from "lucide-react";
+import { ArrowLeft, Plus, Phone, AlertTriangle } from "lucide-react";
 import { useDebtorsList } from "@/lib/api/debtors";
 import {
   TYPE_LABEL,
   STAGE_LABEL,
   formatRub,
+  isProblemCase,
   type DebtType,
+  type Stage,
 } from "@/lib/debtors/types";
+
+type Kind = "all" | "money" | "problem";
+const KINDS: { id: Kind; label: string }[] = [
+  { id: "all", label: "Все" },
+  { id: "money", label: "Денежные" },
+  { id: "problem", label: "Проблемные" },
+];
 
 const TYPE_BG: Record<DebtType, string> = {
   dtp_guilty: "bg-red-50 text-red-700 border-red-100",
@@ -40,9 +49,17 @@ export function DebtorsList({
   onAddNew: () => void;
 }) {
   const [includeClosed, setIncludeClosed] = useState(false);
+  const [kind, setKind] = useState<Kind>("all");
   const q = useDebtorsList({ closed: includeClosed });
   const items = q.data?.items ?? [];
-  const totalSum = items
+  const problemCount = items.filter((d) =>
+    isProblemCase(d.type, d.stage as Stage),
+  ).length;
+  const filtered = items.filter((d) => {
+    const problem = isProblemCase(d.type, d.stage as Stage);
+    return kind === "all" ? true : kind === "problem" ? problem : !problem;
+  });
+  const totalSum = filtered
     .filter((d) => !d.stage.startsWith("closed_"))
     .reduce((s, d) => s + d.totalAmount, 0);
 
@@ -63,8 +80,8 @@ export function DebtorsList({
               Все дела
             </h1>
             <div className="mt-1 text-[12.5px] text-muted">
-              {items.length}{" "}
-              {items.length === 1 ? "дело" : items.length < 5 ? "дела" : "дел"} ·
+              {filtered.length}{" "}
+              {filtered.length === 1 ? "дело" : filtered.length < 5 ? "дела" : "дел"} ·
               активный долг{" "}
               <b className="text-ink">{formatRub(totalSum)}</b>
             </div>
@@ -90,17 +107,45 @@ export function DebtorsList({
         </div>
       </div>
 
+      {/* Фильтр: денежные должники vs проблемные (угон/невозврат/криминал) */}
+      <div className="mb-4 flex flex-wrap gap-1.5">
+        {KINDS.map((k) => (
+          <button
+            key={k.id}
+            type="button"
+            onClick={() => setKind(k.id)}
+            className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[12px] font-semibold transition-colors ${
+              kind === k.id
+                ? "bg-ink text-white"
+                : "bg-surface-soft text-muted ring-1 ring-border hover:bg-blue-50 hover:text-blue-700"
+            }`}
+          >
+            {k.id === "problem" && <AlertTriangle size={12} />}
+            {k.label}
+            {k.id === "problem" && problemCount > 0 && (
+              <span
+                className={
+                  kind === "problem" ? "text-white/70" : "text-red-600"
+                }
+              >
+                · {problemCount}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
       {q.isLoading ? (
         <div className="flex h-40 items-center justify-center text-muted">
           Загрузка…
         </div>
-      ) : items.length === 0 ? (
+      ) : filtered.length === 0 ? (
         <div className="flex h-40 items-center justify-center text-muted">
-          Дел нет.
+          {kind === "problem" ? "Проблемных дел нет." : "Дел нет."}
         </div>
       ) : (
         <div className="flex flex-col gap-1.5">
-          {items.map((d) => {
+          {filtered.map((d) => {
             const closed = d.stage.startsWith("closed_");
             return (
               <button
@@ -127,12 +172,19 @@ export function DebtorsList({
                     )}
                   </div>
                 </div>
-                <span
-                  className={`inline-flex h-6 items-center gap-1.5 rounded-full border px-2.5 text-[11.5px] font-semibold ${TYPE_BG[d.type]}`}
-                >
-                  <i className={`inline-block h-1.5 w-1.5 rounded-full ${TYPE_DOT[d.type]}`} />
-                  {TYPE_LABEL[d.type]}
-                </span>
+                <div className="flex items-center gap-1.5">
+                  {isProblemCase(d.type, d.stage as Stage) && (
+                    <span className="inline-flex h-6 items-center gap-1 rounded-full bg-red-soft px-2 text-[11px] font-bold text-red-ink">
+                      <AlertTriangle size={11} /> Проблемный
+                    </span>
+                  )}
+                  <span
+                    className={`inline-flex h-6 items-center gap-1.5 rounded-full border px-2.5 text-[11.5px] font-semibold ${TYPE_BG[d.type]}`}
+                  >
+                    <i className={`inline-block h-1.5 w-1.5 rounded-full ${TYPE_DOT[d.type]}`} />
+                    {TYPE_LABEL[d.type]}
+                  </span>
+                </div>
                 <span className="rounded-full bg-surface-soft px-2.5 py-1 text-[11.5px] font-medium text-muted">
                   {STAGE_LABEL[d.stage]}
                 </span>

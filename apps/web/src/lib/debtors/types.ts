@@ -107,6 +107,8 @@ export type DebtorCaseSummary = {
   paid: number;
   progressPercent: number;
   active: boolean;
+  /** Проблемное дело (угон/невозврат/криминал) — метка «Проблемный». */
+  problem: boolean;
   closedAt: string | null;
   closedReason: string | null;
   createdAt: string;
@@ -214,6 +216,16 @@ export const STAGE_LABEL: Record<Stage, string> = {
 
 export function isClosed(stage: Stage): boolean {
   return stage.startsWith("closed_");
+}
+
+/**
+ * «Проблемное» дело — не столько денежный долг, сколько ЧП: угон,
+ * невозврат, криминал. На таких клиентах висит стоимость скутера, ими
+ * занимаются иначе (полиция/суд), и в списке их отделяем от обычных
+ * денежных должников с графиком.
+ */
+export function isProblemCase(type: DebtType, stage: Stage): boolean {
+  return type === "theft" || stage === "police" || stage === "criminal_case";
 }
 
 export function formatRub(n: number): string {
