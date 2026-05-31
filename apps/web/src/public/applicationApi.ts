@@ -47,6 +47,7 @@ export type ApplicationFields = {
   requestedModel?: string | null;
   requestedDays?: number | null;
   requestedEquipmentIds?: number[] | null;
+  requestedStartDate?: string | null;
   honeypot?: string | null;
 };
 

@@ -53,6 +53,7 @@ export function Applications() {
     modelFilter?: string;
     days?: number;
     equipmentIds?: number[];
+    start?: string;
   } | null>(null);
 
   // Debounce поиска — 200ms.
@@ -181,6 +182,7 @@ export function Applications() {
             const modelFilter = app?.requestedModel ?? undefined;
             const days = app?.requestedDays ?? undefined;
             const equipmentIds = app?.requestedEquipmentIds ?? undefined;
+            const start = app?.requestedStartDate ?? undefined;
             void confirmDialog({
               title: "Клиент создан",
               message: `Оформить аренду для «${client.name}»? Останется выбрать конкретный скутер и распечатать договор.`,
@@ -193,6 +195,7 @@ export function Applications() {
                   modelFilter,
                   days,
                   equipmentIds,
+                  start,
                 });
             });
           }}
@@ -205,6 +208,7 @@ export function Applications() {
           initialModelFilter={rentalPrefill.modelFilter}
           initialDays={rentalPrefill.days}
           initialEquipmentIds={rentalPrefill.equipmentIds}
+          initialStart={rentalPrefill.start}
           onClose={() => setRentalPrefill(null)}
           onCreated={() => {
             setRentalPrefill(null);

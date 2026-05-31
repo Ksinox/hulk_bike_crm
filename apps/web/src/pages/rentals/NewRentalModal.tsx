@@ -85,6 +85,7 @@ export function NewRentalModal({
   initialModelFilter,
   initialDays,
   initialEquipmentIds,
+  initialStart,
 }: {
   onClose: () => void;
   onCreated?: (rental: Rental) => void;
@@ -98,6 +99,8 @@ export function NewRentalModal({
   initialDays?: number;
   /** G3: предвыбранная экипировка (id из каталога) из заявки. */
   initialEquipmentIds?: number[];
+  /** G3: желаемая дата начала (ISO YYYY-MM-DD) из заявки — в дату выдачи. */
+  initialStart?: string;
 }) {
   const rentals = useRentals();
   const allClients = useAllClients();
@@ -120,7 +123,14 @@ export function NewRentalModal({
   const [scooterName, setScooterName] = useState<string | null>(
     preselectedScooterName ?? null,
   );
-  const [start, setStart] = useState(() => todayRuDate());
+  const [start, setStart] = useState(() => {
+    // G3: дата из заявки (ISO) → формат DD.MM.YYYY; иначе сегодня.
+    if (initialStart && /^\d{4}-\d{2}-\d{2}/.test(initialStart)) {
+      const [y, m, d] = initialStart.slice(0, 10).split("-");
+      return `${d}.${m}.${y}`;
+    }
+    return todayRuDate();
+  });
   const [startTime, setStartTime] = useState(() => currentHHMM());
   // 7 дней — самый популярный период проката (тариф «неделя»),
   // ставим дефолтом, чтобы оператор не правил каждый раз.

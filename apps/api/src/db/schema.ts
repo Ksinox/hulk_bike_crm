@@ -1366,6 +1366,9 @@ export const clientApplications = pgTable(
     requestedDays: integer("requested_days"),
     /** G3: id выбранной экипировки (equipment_items) — мультивыбор в анкете. */
     requestedEquipmentIds: jsonb("requested_equipment_ids").$type<number[]>(),
+    /** G3: желаемая дата начала аренды («мягкая бронь»). Подставляется в
+     *  дату выдачи при конвертации. Скутеры НЕ блокируем — это ориентир. */
+    requestedStartDate: date("requested_start_date"),
 
     /** Заполняется при convert: ссылка на созданного клиента. NULL — заявка
      *  ещё не оформлена. ON DELETE SET NULL — если клиента удалили,

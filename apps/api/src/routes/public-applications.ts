@@ -59,6 +59,7 @@ const ApplicationFieldsBody = z
       .max(20)
       .optional()
       .nullable(),
+    requestedStartDate: z.string().optional().nullable(),
     /** Honeypot — реальные клиенты это поле не видят и не заполняют. */
     honeypot: z.string().max(100).optional().nullable(),
   })

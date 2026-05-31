@@ -136,6 +136,8 @@ type FormState = {
   wantModel: string;
   wantDays: number;
   wantEquipmentIds: number[];
+  /** G3: желаемая дата начала аренды (ISO YYYY-MM-DD; "" — не выбрана). */
+  wantStartDate: string;
 
   // Источник: откуда о нас узнал
   source: ClientSourceChoice | "";
@@ -168,6 +170,7 @@ const EMPTY: FormState = {
   wantModel: "",
   wantDays: 7,
   wantEquipmentIds: [],
+  wantStartDate: "",
   source: "",
   sourceCustom: "",
   agreedPdn: false,
@@ -198,6 +201,7 @@ function fieldsFromState(s: FormState): ApplicationFields {
     requestedModel: modelNameToEnum(s.wantModel),
     requestedDays: s.wantModel && s.wantDays > 0 ? s.wantDays : null,
     requestedEquipmentIds: s.wantEquipmentIds.length ? s.wantEquipmentIds : null,
+    requestedStartDate: s.wantStartDate || null,
     honeypot: s.honeypot || null,
   };
 }
@@ -223,6 +227,7 @@ function stateFromFields(f: ApplicationFields): Partial<FormState> {
     wantModel: enumToModelName(f.requestedModel ?? null),
     wantDays: f.requestedDays ?? 7,
     wantEquipmentIds: f.requestedEquipmentIds ?? [],
+    wantStartDate: f.requestedStartDate ?? "",
   };
 }
 
@@ -1139,6 +1144,19 @@ function rateForDays(m: RentalModel, days: number): number {
   return m.monthRate;
 }
 
+/** Прибавить дни к ISO-дате (YYYY-MM-DD). */
+function addDaysIso(iso: string, days: number): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const dt = new Date(y!, m! - 1, d!);
+  dt.setDate(dt.getDate() + days);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+}
+/** ISO → ДД.ММ для компактного показа периода. */
+function isoToDDMM(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  return m ? `${m[3]}.${m[2]}` : iso;
+}
+
 function RentalWishStep({
   form,
   setField,
@@ -1337,6 +1355,48 @@ function RentalWishStep({
       {selected && (
         <>
           <div>
+            <FieldLabel>Когда взять</FieldLabel>
+            <div className="flex flex-wrap items-center gap-2">
+              {[
+                { label: "Сегодня", iso: todayIsoLocal() },
+                { label: "Завтра", iso: addDaysIso(todayIsoLocal(), 1) },
+                { label: "Послезавтра", iso: addDaysIso(todayIsoLocal(), 2) },
+              ].map((opt) => {
+                const active = form.wantStartDate === opt.iso;
+                return (
+                  <button
+                    key={opt.label}
+                    type="button"
+                    onClick={() =>
+                      setField("wantStartDate", active ? "" : opt.iso)
+                    }
+                    className={`h-11 rounded-xl border-2 px-3 text-[15px] font-semibold transition-colors ${
+                      active
+                        ? "border-slate-900 bg-slate-900 text-white"
+                        : "border-slate-200 bg-white text-slate-900 hover:border-slate-400"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+              <div className="min-w-[150px] flex-1">
+                <DatePicker
+                  value={form.wantStartDate || null}
+                  onChange={(iso) => setField("wantStartDate", iso ?? "")}
+                  minDate={todayIsoLocal()}
+                  placeholder="Другая дата"
+                  clearable
+                />
+              </div>
+            </div>
+            <div className="mt-1 text-[12px] text-slate-500">
+              Забронируем плюс-минус под эту дату — не обещаем жёстко, но
+              придержим.
+            </div>
+          </div>
+
+          <div>
             <FieldLabel>На сколько дней</FieldLabel>
             <div className="flex flex-wrap gap-2">
               {WISH_DAY_PRESETS.map((n) => {
@@ -1375,6 +1435,12 @@ function RentalWishStep({
                 × {days} {days === 1 ? "день" : days < 5 ? "дня" : "дней"} ·
                 залог 2 000 ₽
               </div>
+              {form.wantStartDate && (
+                <div className="mt-1 text-[13px] font-medium text-slate-700">
+                  Период: с {isoToDDMM(form.wantStartDate)} по{" "}
+                  {isoToDDMM(addDaysIso(form.wantStartDate, days))}
+                </div>
+              )}
               <div className="mt-2 text-[12px] text-slate-400">
                 Точную цену и наличие подтвердит менеджер.
               </div>

@@ -215,6 +215,41 @@ export function NewApplicationModal({
                 multiline
               />
             </Section>
+
+            {(application.requestedModel ||
+              application.requestedStartDate ||
+              application.requestedDays ||
+              (application.requestedEquipmentIds?.length ?? 0) > 0) && (
+              <Section title="Хочет арендовать">
+                {application.requestedModel && (
+                  <Row
+                    label="Модель"
+                    value={
+                      application.requestedModel.charAt(0).toUpperCase() +
+                      application.requestedModel.slice(1)
+                    }
+                  />
+                )}
+                {application.requestedStartDate && (
+                  <Row
+                    label="С даты"
+                    value={formatDate(application.requestedStartDate)}
+                  />
+                )}
+                {application.requestedDays && (
+                  <Row
+                    label="Срок"
+                    value={`${application.requestedDays} дн`}
+                  />
+                )}
+                {(application.requestedEquipmentIds?.length ?? 0) > 0 && (
+                  <Row
+                    label="Экипировка"
+                    value={`${application.requestedEquipmentIds!.length} поз.`}
+                  />
+                )}
+              </Section>
+            )}
           </div>
         </div>
 

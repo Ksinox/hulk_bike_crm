@@ -66,6 +66,8 @@ export type ApiApplication = {
   requestedDays: number | null;
   /** G3: id выбранной экипировки (equipment_items). */
   requestedEquipmentIds: number[] | null;
+  /** G3: желаемая дата начала аренды (ISO YYYY-MM-DD). */
+  requestedStartDate: string | null;
   viewedAt: string | null;
   submittedAt: string | null;
   createdAt: string;

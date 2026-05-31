@@ -69,6 +69,7 @@ export function NewApplicationDetector() {
     modelFilter?: string;
     days?: number;
     equipmentIds?: number[];
+    start?: string;
   } | null>(null);
   const deleteApp = useDeleteApplication();
 
@@ -167,6 +168,7 @@ export function NewApplicationDetector() {
             const modelFilter = app?.requestedModel ?? undefined;
             const days = app?.requestedDays ?? undefined;
             const equipmentIds = app?.requestedEquipmentIds ?? undefined;
+            const start = app?.requestedStartDate ?? undefined;
             void confirmDialog({
               title: "Клиент создан",
               message: `Оформить аренду для «${client.name}»? Останется выбрать конкретный скутер и распечатать договор.`,
@@ -179,6 +181,7 @@ export function NewApplicationDetector() {
                   modelFilter,
                   days,
                   equipmentIds,
+                  start,
                 });
             });
           }}
@@ -190,6 +193,7 @@ export function NewApplicationDetector() {
           initialModelFilter={rentalPrefill.modelFilter}
           initialDays={rentalPrefill.days}
           initialEquipmentIds={rentalPrefill.equipmentIds}
+          initialStart={rentalPrefill.start}
           onClose={() => setRentalPrefill(null)}
           onCreated={() => {
             setRentalPrefill(null);
