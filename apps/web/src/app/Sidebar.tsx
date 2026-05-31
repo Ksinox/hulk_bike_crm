@@ -40,7 +40,6 @@ function buildMainItems(canManageStaff: boolean): NavItem[] {
     { id: "clients", label: "Клиенты", icon: Users, ready: true },
     { id: "applications", label: "Заявки", icon: Inbox, ready: true },
     { id: "rentals", label: "Аренды", icon: Bike, ready: true },
-    { id: "debtors", label: "Должники", icon: Scale, ready: true },
     { id: "fleet", label: "Скутеры", icon: ShoppingBag, ready: true },
   ];
   // «Сотрудники» — полностью скрыты для admin/mechanic/accountant.
@@ -56,6 +55,7 @@ function buildMainItems(canManageStaff: boolean): NavItem[] {
     { id: "tasks", label: "Задачи", icon: ClipboardCheck },
     { id: "analytics", label: "Аналитика", icon: BarChart3 },
     { id: "docs", label: "Документы", icon: FileText, ready: true },
+    { id: "debtors", label: "Должники", icon: Scale, ready: true },
     { id: "whats-new", label: "Что нового", icon: Sparkles, ready: true },
   );
   return items;

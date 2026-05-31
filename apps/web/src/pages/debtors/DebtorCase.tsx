@@ -53,7 +53,6 @@ const NEXT_TRANSITIONS: Record<DebtType, Partial<Record<Stage, { to: Stage; labe
       { to: "court", label: "В суд" },
     ],
     payment_schedule: [
-      { to: "closed_paid", label: "Все платежи закрыты", primary: true },
       { to: "lawyer", label: "Перестал платить — юристу" },
     ],
     court: [
@@ -70,7 +69,6 @@ const NEXT_TRANSITIONS: Record<DebtType, Partial<Record<Stage, { to: Stage; labe
   damage: {
     created: [{ to: "payment_schedule", label: "Создать график", primary: true }],
     payment_schedule: [
-      { to: "closed_paid", label: "Все платежи закрыты", primary: true },
       { to: "lawyer", label: "Нарушения — юристу" },
     ],
     lawyer: [
@@ -84,16 +82,13 @@ const NEXT_TRANSITIONS: Record<DebtType, Partial<Record<Stage, { to: Stage; labe
       { to: "payment_schedule", label: "Признал — график", primary: true },
       { to: "police", label: "Не признал — полиция" },
     ],
-    payment_schedule: [
-      { to: "closed_paid", label: "Все платежи закрыты", primary: true },
-    ],
+    payment_schedule: [],
     police: [{ to: "criminal_case", label: "Уголовное дело возбуждено", primary: true }],
     criminal_case: [{ to: "closed_court", label: "Приговор", primary: true }],
   },
   rental_overdue: {
     created: [{ to: "payment_schedule", label: "Создать график", primary: true }],
     payment_schedule: [
-      { to: "closed_paid", label: "Долг погашен", primary: true },
       { to: "lawyer", label: "Нарушения — юристу" },
       { to: "closed_written_off", label: "Списать" },
     ],
@@ -198,7 +193,29 @@ export function DebtorCase({
     }
   };
 
-  const showNextStep = !closed && (transitions.length > 0 || d.recommendation != null);
+  // Primary-действие панели «Следующий шаг» — основано на реальности, а не
+  // на ручном флипе статуса:
+  //  • на графике платежей основное действие — ПРИНЯТЬ ПЛАТЁЖ (деньги).
+  //    Закрытие «оплачено» происходит автоматически при полном погашении.
+  //    Если долг уже покрыт, но дело почему-то не закрылось — даём кнопку
+  //    «Закрыть — долг погашен» (у неё есть основание: paid ≥ total).
+  //  • на прочих стадиях primary — ход по дереву (досудебка/график/суд…).
+  let primaryAction: { label: string; onClick: () => void; pay?: boolean } | null =
+    null;
+  if (!closed && d.stage === "payment_schedule") {
+    primaryAction =
+      remaining > 0
+        ? { label: "Зафиксировать платёж", onClick: () => onOpenPayment(), pay: true }
+        : { label: "Закрыть — долг погашен", onClick: () => onTransition("closed_paid", "Долг погашен") };
+  } else if (!closed && primary) {
+    primaryAction = {
+      label: primary.label,
+      onClick: () => handleStep(primary.to, primary.label),
+    };
+  }
+
+  const showNextStep =
+    !closed && (primaryAction != null || secondary.length > 0 || d.recommendation != null);
 
   return (
     <div className="flex flex-col gap-4">
@@ -485,28 +502,23 @@ export function DebtorCase({
                   </div>
                 )}
 
-                <div className="mt-3 flex flex-col gap-2">
-                  {primary && (
+                {primaryAction && (
+                  <div className="mt-3 flex flex-col gap-2">
                     <button
                       type="button"
-                      onClick={() => handleStep(primary.to, primary.label)}
+                      onClick={primaryAction.onClick}
                       disabled={transition.isPending}
                       className="inline-flex h-12 items-center justify-center gap-2 rounded-[12px] bg-ink px-5 text-[15px] font-semibold text-white shadow-card-sm transition-transform hover:-translate-y-0.5 disabled:opacity-50"
                     >
-                      <Check size={17} strokeWidth={2} />
-                      {primary.label}
+                      {primaryAction.pay ? (
+                        <Wallet size={16} />
+                      ) : (
+                        <Check size={17} strokeWidth={2} />
+                      )}
+                      {primaryAction.label}
                     </button>
-                  )}
-                  {d.stage === "payment_schedule" && (
-                    <button
-                      type="button"
-                      onClick={() => onOpenPayment()}
-                      className="inline-flex h-12 items-center justify-center gap-2 rounded-[12px] border border-ink bg-white px-5 text-[15px] font-semibold text-ink hover:bg-surface-soft"
-                    >
-                      <Wallet size={16} /> Зафиксировать платёж
-                    </button>
-                  )}
-                </div>
+                  </div>
+                )}
 
                 {secondary.length > 0 && (
                   <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 border-t border-border pt-3">

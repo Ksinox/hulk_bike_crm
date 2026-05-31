@@ -207,6 +207,30 @@ async function loadPayments(debtorId: number) {
 }
 
 /**
+ * Гард закрытия «оплачено»: вернёт объект-ошибку, если дело пытаются
+ * закрыть как closed_paid без достаточного основания (платежи не покрыли
+ * долг). Для dtp_victim (страховая выплата) — не применяется.
+ * Возвращает null, если всё ок.
+ */
+async function closedPaidBasisError(
+  id: number,
+  d: { type: string; totalAmount: number },
+  to: Stage,
+): Promise<{ error: string; message: string } | null> {
+  if (to !== "closed_paid") return null;
+  if (d.type === "dtp_victim") return null; // основание — выплата страховой
+  const all = await loadPayments(id);
+  const paid = paidSoFar(
+    all.map((p) => ({ paidAt: p.paidAt, paidAmount: p.paidAmount })),
+  );
+  if (paid >= d.totalAmount) return null;
+  return {
+    error: "not_fully_paid",
+    message: `Нельзя закрыть как «оплачено»: погашено ${paid.toLocaleString("ru-RU")} из ${d.totalAmount.toLocaleString("ru-RU")} ₽. Сначала примите платежи на полную сумму — дело закроется само.`,
+  };
+}
+
+/**
  * Авто-закрытие дела при полном погашении (Σ оплаченного ≥ totalAmount).
  * Клиент перестаёт быть должником — метка и баннер долга снимаются.
  */
@@ -570,6 +594,12 @@ export async function debtorsRoutes(app: FastifyInstance) {
           message: `Переход ${stageLabel(from)} → ${stageLabel(to)} не разрешён для типа ${typeLabel(d.type as DebtType)}`,
         });
       }
+
+      // Закрытие «оплачено» — ТОЛЬКО на основании платежей: сумма
+      // зачисленного должна покрывать долг. Исключение — dtp_victim
+      // (страховой поток: основание — полученная выплата, не график).
+      const closeErr = await closedPaidBasisError(id, d, to);
+      if (closeErr) return reply.code(400).send(closeErr);
 
       const userId = req.user?.userId ?? null;
       const now = new Date();
@@ -993,6 +1023,8 @@ export async function debtorsRoutes(app: FastifyInstance) {
         message: `Из ${stageLabel(from)} нельзя закрыть как ${stageLabel(to)}`,
       });
     }
+    const closeErr = await closedPaidBasisError(id, d, to);
+    if (closeErr) return reply.code(400).send(closeErr);
     const userId = req.user?.userId ?? null;
     const now = new Date();
     await db
