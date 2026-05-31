@@ -21,6 +21,16 @@ const keys = {
   detail: (id: number) => [...keys.all, "detail", id] as const,
 };
 
+/**
+ * Дело-должник связано с карточкой клиента (метка «Должник», вкладка с
+ * прогрессом, лента событий). Любая мутация по делу должна обновлять и
+ * клиентские данные, чтобы суммы/история подтягивались по всей системе.
+ */
+function invalidateLinked(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: ["clients"] });
+  qc.invalidateQueries({ queryKey: ["activity"] });
+}
+
 export function useDebtorsList(params?: { stage?: string; type?: string; closed?: boolean }) {
   const q: Record<string, string> = {};
   if (params?.stage) q.stage = params.stage;
@@ -83,7 +93,10 @@ export function useCreateDebtor() {
       insuranceCompany?: string | null;
       relatedRentalId?: number | null;
     }) => api.post<Debtor>("/api/debtors", body),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.all }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.all });
+      invalidateLinked(qc);
+    },
   });
 }
 
@@ -110,6 +123,7 @@ export function useTransitionDebtor() {
     onSuccess: (_d, vars) => {
       qc.invalidateQueries({ queryKey: keys.detail(vars.id) });
       qc.invalidateQueries({ queryKey: keys.all });
+      invalidateLinked(qc);
     },
   });
 }
@@ -157,6 +171,7 @@ export function useRecordPayment() {
     onSuccess: (_d, vars) => {
       qc.invalidateQueries({ queryKey: keys.detail(vars.id) });
       qc.invalidateQueries({ queryKey: keys.all });
+      invalidateLinked(qc);
     },
   });
 }
@@ -177,6 +192,7 @@ export function useLogCall() {
       }),
     onSuccess: (_d, vars) => {
       qc.invalidateQueries({ queryKey: keys.detail(vars.id) });
+      invalidateLinked(qc);
     },
   });
 }
@@ -226,6 +242,9 @@ export function useCloseDebtor() {
         toStage: args.toStage,
         reason: args.reason,
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.all }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.all });
+      invalidateLinked(qc);
+    },
   });
 }

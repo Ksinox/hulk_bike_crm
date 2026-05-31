@@ -5,6 +5,8 @@ type NavRequest = {
   clientId?: number;
   rentalId?: number;
   scooterId?: number;
+  /** v0.6: открыть конкретное дело-должника в модуле «Должники». */
+  debtorId?: number;
   /**
    * Открыть превью договора+акта по аренде сразу после перехода.
    * Используется при продлении: оператор продлил → видим новую карточку
@@ -49,14 +51,15 @@ export function consumePending(route: RouteId):
       clientId?: number;
       rentalId?: number;
       scooterId?: number;
+      debtorId?: number;
       from?: BackTarget;
       openTab?: NavRequest["openTab"];
     }
   | null {
   if (!pending || pending.route !== route) return null;
-  const { clientId, rentalId, scooterId, from, openTab } = pending;
+  const { clientId, rentalId, scooterId, debtorId, from, openTab } = pending;
   pending = null;
-  return { clientId, rentalId, scooterId, from, openTab };
+  return { clientId, rentalId, scooterId, debtorId, from, openTab };
 }
 
 /** Подписаться на события навигации (для App) */

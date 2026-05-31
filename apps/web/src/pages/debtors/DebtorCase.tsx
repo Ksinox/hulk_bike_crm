@@ -36,6 +36,7 @@ import {
   type DebtType,
   type Stage,
 } from "@/lib/debtors/types";
+import { DonutProgress } from "@/components/DonutProgress";
 
 // recordPay used in onOpenPayment via prop, suppress unused warning
 // (kept import for future inline-record functionality)
@@ -245,6 +246,38 @@ export function DebtorCase({
           <span className="text-[14px] font-semibold text-ink">{STAGE_LABEL[d.stage]}</span>
         </div>
       </div>
+
+      {/* Прогресс погашения — кольцевая диаграмма + разбивка сумм */}
+      {d.totalAmount > 0 && (
+        <div className="m-7 mb-0 flex flex-wrap items-center gap-6 rounded-[18px] border border-border bg-white p-6 shadow-card-sm">
+          <DonutProgress paid={d.paid} total={d.totalAmount} />
+          <div className="grid min-w-[260px] flex-1 grid-cols-2 gap-x-6 gap-y-3.5 sm:grid-cols-4">
+            <CaseStat label="Всего долг" value={formatRub(d.totalAmount)} />
+            <CaseStat label="Оплачено" value={formatRub(d.paid)} tone="green" />
+            <CaseStat
+              label="Осталось"
+              value={formatRub(Math.max(0, d.totalAmount - d.paid))}
+              tone="ink"
+            />
+            {d.overdueAmount > 0 ? (
+              <CaseStat
+                label="Просрочка"
+                value={formatRub(d.overdueAmount)}
+                tone="red"
+              />
+            ) : (
+              <CaseStat
+                label="Платежей"
+                value={
+                  d.payments.length > 0
+                    ? `${d.payments.filter((p) => p.paidAt).length} / ${d.payments.length}`
+                    : "график не создан"
+                }
+              />
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Recommendation banner */}
       {d.recommendation && (
@@ -479,6 +512,11 @@ export function DebtorCase({
                           ? "просрочка"
                           : "плановый"}
                       </div>
+                      {p.note && (
+                        <div className="mt-0.5 text-[11px] italic leading-snug text-ink-2">
+                          {p.note}
+                        </div>
+                      )}
                     </div>
                     <span className="font-mono text-[12.5px] font-semibold text-ink">
                       {(p.paidAmount ?? p.scheduledAmount).toLocaleString("ru-RU")} ₽
@@ -617,6 +655,35 @@ function CollapsibleSection({
         <span />
       </button>
       {open && <div className="ml-10 mb-3">{children}</div>}
+    </div>
+  );
+}
+
+function CaseStat({
+  label,
+  value,
+  tone = "muted",
+}: {
+  label: string;
+  value: string;
+  tone?: "muted" | "ink" | "green" | "red";
+}) {
+  const valueColor =
+    tone === "green"
+      ? "text-emerald-700"
+      : tone === "red"
+        ? "text-red-700"
+        : "text-ink";
+  return (
+    <div className="min-w-0">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-2">
+        {label}
+      </div>
+      <div
+        className={`mt-1 font-display text-[18px] font-bold leading-none tracking-[-0.01em] tabular-nums ${valueColor}`}
+      >
+        {value}
+      </div>
     </div>
   );
 }

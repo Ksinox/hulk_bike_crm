@@ -38,6 +38,12 @@ export type ApiClient = {
    * плашки на карточке.
    */
   unpaidDamageDebt?: number;
+  /**
+   * v0.6: дела-должники клиента (модуль «Должники»). Активные идут первыми.
+   * Подмешиваются в GET /api/clients/:id и /api/clients. Карточка клиента
+   * показывает метку «Должник», вкладку с прогрессом и графиком платежей.
+   */
+  debtorCases?: import("@/lib/debtors/types").DebtorCaseSummary[];
 
   birthDate: string | null;
   passportSeries: string | null;

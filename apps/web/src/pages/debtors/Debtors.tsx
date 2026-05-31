@@ -11,8 +11,9 @@
  * Каждый sub-screen возвращает callback'и `onOpenCase(id)` / `onClose()` —
  * чтобы перемещаться по флоу.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Topbar } from "@/pages/dashboard/Topbar";
+import { consumePending } from "@/app/navigationStore";
 import { DebtorsMorning } from "./DebtorsMorning";
 import { DebtorsList } from "./DebtorsList";
 import { DebtorsEmpty } from "./DebtorsEmpty";
@@ -31,6 +32,13 @@ type Sub =
 export function Debtors() {
   const [sub, setSub] = useState<Sub>({ kind: "landing" });
   const todayQ = useDebtorsToday();
+
+  // Deep-link из карточки клиента: navigate({route:"debtors", debtorId}) →
+  // сразу открываем нужное дело.
+  useEffect(() => {
+    const p = consumePending("debtors");
+    if (p?.debtorId) setSub({ kind: "case", id: p.debtorId });
+  }, []);
 
   const isEmpty =
     todayQ.data != null && todayQ.data.totalActiveCount === 0;

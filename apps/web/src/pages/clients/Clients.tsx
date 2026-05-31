@@ -244,7 +244,7 @@ export function Clients() {
               </div>
             );
           }
-          return <ClientCard client={selected} />;
+          return <ClientCard key={selected.id} client={selected} />;
         })()}
       </div>
       )}

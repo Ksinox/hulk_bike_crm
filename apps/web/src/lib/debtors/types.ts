@@ -97,6 +97,21 @@ export type DebtorNote = {
   createdAt: string;
 };
 
+/** Сводка по делу-должнику для карточки клиента (зеркало API). */
+export type DebtorCaseSummary = {
+  id: number;
+  caseNumber: string;
+  type: DebtType;
+  stage: Stage;
+  totalAmount: number;
+  paid: number;
+  progressPercent: number;
+  active: boolean;
+  closedAt: string | null;
+  closedReason: string | null;
+  createdAt: string;
+};
+
 export type Recommendation = {
   kind: "transfer_lawyer" | "request_estimate" | "close_paid" | "call_overdue";
   reason: string;

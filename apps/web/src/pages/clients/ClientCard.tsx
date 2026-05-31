@@ -8,6 +8,7 @@ import {
   Pencil,
   Phone,
   PhoneOff,
+  Scale,
   UploadCloud,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -39,6 +40,7 @@ import { ActivityTimelineSection } from "@/pages/rentals/ActivityTimelineSection
 import { useDashboardDrawer } from "@/pages/dashboard/DashboardDrawer";
 import { useApplicationsByClient } from "@/lib/api/clientApplications";
 import { NewApplicationModal } from "./NewApplicationModal";
+import { ClientDebtorsTab } from "./ClientDebtorsTab";
 import { Inbox } from "lucide-react";
 import {
   getActiveRentalByClient,
@@ -48,20 +50,11 @@ import { navigate } from "@/app/navigationStore";
 
 export type CardTab =
   | "rentals"
+  | "debtor"
   | "timeline"
   | "instalments"
   | "incidents"
   | "docs";
-
-const TABS: { id: CardTab; label: string }[] = [
-  { id: "rentals", label: "Аренды" },
-  // v0.4.5: лента всех событий по клиенту — аренды, продления, акты,
-  // долги, оплаты. Связь клиент ↔ скутеры ↔ ремонты.
-  { id: "timeline", label: "Лента событий" },
-  { id: "instalments", label: "Рассрочки" },
-  { id: "incidents", label: "Инциденты" },
-  { id: "docs", label: "Документы" },
-];
 
 function daysWord(n: number): string {
   const n10 = n % 10;
@@ -111,6 +104,23 @@ export function ClientCard({ client }: { client: Client }) {
    * debt в банне.
    */
   const overdueBalance = client.debt ?? 0;
+
+  // v0.6: дела-должники клиента (модуль «Должники»). Активное дело даёт
+  // метку «Должник» и вкладку. Закрытые видны там же в истории дел.
+  const debtorCases = client.debtorCases ?? [];
+  const activeDebtor = debtorCases.find((c) => c.active) ?? null;
+  const tabs: { id: CardTab; label: string }[] = [
+    { id: "rentals", label: "Аренды" },
+    ...(debtorCases.length > 0
+      ? [{ id: "debtor" as CardTab, label: "Должник" }]
+      : []),
+    // v0.4.5: лента всех событий по клиенту — аренды, продления, акты,
+    // долги, оплаты, события дел-должников. Связь клиент ↔ скутеры ↔ ремонты.
+    { id: "timeline", label: "Лента событий" },
+    { id: "instalments", label: "Рассрочки" },
+    { id: "incidents", label: "Инциденты" },
+    { id: "docs", label: "Документы" },
+  ];
 
   const handleDroppedFiles = (list: FileList) => {
     const uploaded: UploadedFile[] = [];
@@ -200,6 +210,16 @@ export function ClientCard({ client }: { client: Client }) {
                     title="Открыть аренду"
                   >
                     аренда {activeRental.scooter}
+                  </button>
+                )}
+                {activeDebtor && (
+                  <button
+                    type="button"
+                    onClick={() => setTab("debtor")}
+                    className="inline-flex items-center gap-1 rounded-full bg-red-soft px-2 py-0.5 text-[11px] font-bold text-red-ink transition-colors hover:bg-red/20"
+                    title="Клиент в разделе «Должники» — открыть"
+                  >
+                    <Scale size={12} /> Должник
                   </button>
                 )}
               </div>
@@ -418,7 +438,7 @@ export function ClientCard({ client }: { client: Client }) {
 
       {/* Tabs */}
       <div className="mt-1 flex gap-1 border-b border-border">
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button
             key={t.id}
             type="button"
@@ -437,6 +457,7 @@ export function ClientCard({ client }: { client: Client }) {
 
       <div className="flex-1 pt-3">
         {tab === "rentals" && <RentalsTab client={client} />}
+        {tab === "debtor" && <ClientDebtorsTab cases={debtorCases} />}
         {tab === "timeline" && <ClientTimelineTab clientId={client.id} />}
         {tab === "instalments" && <InstalmentsTab d={d} />}
         {tab === "incidents" && <IncidentsTab d={d} />}
