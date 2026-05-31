@@ -6,9 +6,19 @@
  *
  * Дальнейшие развилки (досудебка/страховая) — добавим в Фазе 5.
  */
-import { useState } from "react";
-import { ArrowLeft, ArrowRight, Check, Plus } from "lucide-react";
+import { useMemo, useState } from "react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  Plus,
+  Search,
+  User,
+  X,
+  Phone,
+} from "lucide-react";
 import { useCreateDebtor } from "@/lib/api/debtors";
+import { useApiClients } from "@/lib/api/clients";
 import { TYPE_LABEL, type DebtType } from "@/lib/debtors/types";
 import { toast } from "@/lib/toast";
 
@@ -48,6 +58,16 @@ export function DebtorNewWizard({
   onCreated: (id: number) => void;
 }) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
+  // v0.6: должника берём из CRM (clientId) — тогда дело свяжется с карточкой
+  // клиента и попадёт в его «Долговую историю». Ручной ввод оставлен как
+  // запасной для людей не из базы (напр. виновник ДТП — третье лицо).
+  const [selectedClient, setSelectedClient] = useState<{
+    id: number;
+    name: string;
+    phone: string;
+  } | null>(null);
+  const [clientSearch, setClientSearch] = useState("");
+  const [manualMode, setManualMode] = useState(false);
   const [externalName, setExternalName] = useState("");
   const [externalPhone, setExternalPhone] = useState("");
   const [type, setType] = useState<DebtType | null>(null);
@@ -57,7 +77,26 @@ export function DebtorNewWizard({
   const [comment, setComment] = useState("");
   const create = useCreateDebtor();
 
-  const canStep2 = externalName.trim().length > 0 && externalPhone.trim().length > 0;
+  const clientsQ = useApiClients();
+  const searchResults = useMemo(() => {
+    const q = clientSearch.trim().toLowerCase();
+    if (!q) return [];
+    const digits = q.replace(/\D/g, "");
+    return (clientsQ.data ?? [])
+      .filter((c) => {
+        const byName = c.name.toLowerCase().includes(q);
+        const byPhone =
+          digits.length >= 3 && c.phone.replace(/\D/g, "").includes(digits);
+        return byName || byPhone;
+      })
+      .slice(0, 8);
+  }, [clientSearch, clientsQ.data]);
+
+  const canStep2 = selectedClient
+    ? true
+    : manualMode &&
+      externalName.trim().length > 0 &&
+      externalPhone.trim().length > 0;
   const canStep3 = type != null;
   const canCreate = Number(totalAmount) > 0 && type != null && canStep2;
 
@@ -65,8 +104,10 @@ export function DebtorNewWizard({
     if (!canCreate || !type) return;
     try {
       const row = await create.mutateAsync({
-        externalName: externalName.trim(),
-        externalPhone: externalPhone.trim(),
+        // Привязка к клиенту CRM (приоритет) либо внешний человек вручную.
+        clientId: selectedClient ? selectedClient.id : null,
+        externalName: selectedClient ? null : externalName.trim(),
+        externalPhone: selectedClient ? null : externalPhone.trim(),
         type,
         totalAmount: Math.floor(Number(totalAmount)),
         psyRating,
@@ -114,32 +155,135 @@ export function DebtorNewWizard({
         <div className="p-6">
           {step === 1 && (
             <div className="space-y-4">
-              <div>
-                <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
-                  ФИО клиента
-                </label>
-                <input
-                  className="h-11 w-full rounded-[10px] border border-border bg-white px-3.5 text-[14px] text-ink outline-none focus:border-ink"
-                  placeholder="Иван Петров"
-                  value={externalName}
-                  onChange={(e) => setExternalName(e.target.value)}
-                />
-              </div>
-              <div>
-                <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
-                  Телефон
-                </label>
-                <input
-                  className="h-11 w-full rounded-[10px] border border-border bg-white px-3.5 text-[14px] text-ink outline-none focus:border-ink"
-                  placeholder="+7 925 …"
-                  value={externalPhone}
-                  onChange={(e) => setExternalPhone(e.target.value)}
-                />
-              </div>
-              <div className="text-[12px] text-muted-2">
-                В следующей версии будет поиск по существующим клиентам CRM.
-                Пока — ручной ввод.
-              </div>
+              {selectedClient ? (
+                /* Выбранный клиент из CRM */
+                <div className="flex items-center gap-3 rounded-[12px] border border-blue-200 bg-blue-50 p-3.5">
+                  <div className="grid h-10 w-10 flex-none place-items-center rounded-full bg-white text-blue-700">
+                    <User size={18} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[14px] font-semibold text-ink">
+                      {selectedClient.name}
+                    </div>
+                    <div className="mt-0.5 inline-flex items-center gap-1 text-[12px] text-muted">
+                      <Phone size={11} /> {selectedClient.phone}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedClient(null);
+                      setClientSearch("");
+                    }}
+                    className="rounded-full p-1.5 text-muted-2 hover:bg-white hover:text-ink"
+                    title="Выбрать другого"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              ) : !manualMode ? (
+                /* Поиск клиента в CRM */
+                <div>
+                  <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
+                    Клиент из базы
+                  </label>
+                  <div className="relative">
+                    <Search
+                      size={15}
+                      className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-2"
+                    />
+                    <input
+                      autoFocus
+                      className="h-11 w-full rounded-[10px] border border-border bg-white pl-9 pr-3 text-[14px] text-ink outline-none focus:border-ink"
+                      placeholder="Поиск по ФИО или телефону…"
+                      value={clientSearch}
+                      onChange={(e) => setClientSearch(e.target.value)}
+                    />
+                  </div>
+                  {clientSearch.trim() && (
+                    <div className="mt-2 max-h-[240px] overflow-auto rounded-[12px] border border-border">
+                      {searchResults.length === 0 ? (
+                        <div className="px-3 py-4 text-center text-[12.5px] text-muted-2">
+                          {clientsQ.isLoading
+                            ? "Загрузка клиентов…"
+                            : "Не найдено. Можно ввести вручную ниже."}
+                        </div>
+                      ) : (
+                        searchResults.map((c) => (
+                          <button
+                            key={c.id}
+                            type="button"
+                            onClick={() =>
+                              setSelectedClient({
+                                id: c.id,
+                                name: c.name,
+                                phone: c.phone,
+                              })
+                            }
+                            className="flex w-full items-center gap-3 border-b border-border px-3 py-2.5 text-left last:border-b-0 hover:bg-blue-50"
+                          >
+                            <div className="grid h-8 w-8 flex-none place-items-center rounded-full bg-surface-soft text-[11px] font-semibold text-ink">
+                              {c.name.slice(0, 2).toUpperCase()}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="truncate text-[13.5px] font-semibold text-ink">
+                                {c.name}
+                              </div>
+                              <div className="text-[12px] text-muted">
+                                {c.phone}
+                              </div>
+                            </div>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setManualMode(true)}
+                    className="mt-3 text-[12.5px] font-semibold text-blue-700 hover:underline"
+                  >
+                    Нет в базе — ввести вручную (внешний человек)
+                  </button>
+                </div>
+              ) : (
+                /* Ручной ввод — внешний человек (не клиент CRM) */
+                <div className="space-y-4">
+                  <div>
+                    <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
+                      ФИО
+                    </label>
+                    <input
+                      className="h-11 w-full rounded-[10px] border border-border bg-white px-3.5 text-[14px] text-ink outline-none focus:border-ink"
+                      placeholder="Иван Петров"
+                      value={externalName}
+                      onChange={(e) => setExternalName(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
+                      Телефон
+                    </label>
+                    <input
+                      className="h-11 w-full rounded-[10px] border border-border bg-white px-3.5 text-[14px] text-ink outline-none focus:border-ink"
+                      placeholder="+7 925 …"
+                      value={externalPhone}
+                      onChange={(e) => setExternalPhone(e.target.value)}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setManualMode(false);
+                      setExternalName("");
+                      setExternalPhone("");
+                    }}
+                    className="text-[12.5px] font-semibold text-blue-700 hover:underline"
+                  >
+                    ← Выбрать клиента из базы
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
