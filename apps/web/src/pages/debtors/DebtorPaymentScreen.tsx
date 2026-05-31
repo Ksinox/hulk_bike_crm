@@ -32,12 +32,16 @@ export function DebtorPaymentScreen({
   // Как зачесть переплату, если сумма больше планового платежа.
   const [allocate, setAllocate] = useState<"term" | "total">("term");
 
-  // Initialize amount once data loads
+  // Предзаполняем сумму: плановый платёж — его суммой; внеплановый
+  // (графика нет или он весь оплачен) — остатком долга, чтобы оператор
+  // сразу видел, сколько осталось, и мог принять досрочное погашение.
   useMemo(() => {
-    if (q.data && nextPlanned && !amount) {
-      setAmount(String(nextPlanned.scheduledAmount));
+    if (q.data && !amount) {
+      setAmount(
+        String(nextPlanned ? nextPlanned.scheduledAmount : Math.max(0, remaining)),
+      );
     }
-  }, [q.data, nextPlanned, amount]);
+  }, [q.data, nextPlanned, amount, remaining]);
 
   const numAmount = Math.floor(Number(amount.replace(/[^\d]/g, "")) || 0);
   const afterPaid = (q.data?.paid ?? 0) + numAmount;
@@ -89,7 +93,7 @@ export function DebtorPaymentScreen({
           <div className="mt-1 text-[13px] text-muted">
             {nextPlanned
               ? `Предзаполнено суммой планового платежа #${nextPlanned.n}.`
-              : `Внеплановый платёж. Останется погасить ${fmtNum(remaining)} ₽.`}
+              : `Досрочный / внеплановый платёж. Подставили остаток долга — ${fmtNum(remaining)} ₽, можно изменить.`}
           </div>
         </header>
 
