@@ -506,7 +506,7 @@ export function MobileScooterCard({
         </section>
 
         {/* ===== Пилюли-табы ===== */}
-        <div className="-mx-3 overflow-x-auto px-3">
+        <div className="no-scrollbar -mx-3 overflow-x-auto px-3">
           <div className="flex w-max gap-1.5">
             {tabs.map((t) => (
               <button

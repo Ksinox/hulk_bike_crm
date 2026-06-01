@@ -246,34 +246,34 @@ export function MobileClientCard({
             <PhoneRow phone={client.phone} primary />
             {phone2 && <PhoneRow phone={phone2} />}
           </div>
-        </section>
 
-        {/* ===== Компактные KPI (самое важное, маленькие плитки) ===== */}
-        <section className="grid grid-cols-2 gap-2">
-          <Kpi
-            label="Оборот"
-            value={totalTurnover > 0 ? `${fmt(totalTurnover)} ₽` : "—"}
-            tone={totalTurnover > 0 ? "green" : "gray"}
-          />
-          <Kpi
-            label="Оплата / день"
-            value={activeRental ? `${fmt(activeRental.rate)} ₽` : "—"}
-            tone={activeRental ? "blue" : "gray"}
-          />
-          <Kpi
-            label="Дней в аренде"
-            value={
-              totalRentedDays > 0
-                ? `${totalRentedDays} ${daysWord(totalRentedDays)}`
-                : "—"
-            }
-            tone={totalRentedDays > 0 ? "blue" : "gray"}
-          />
-          <Kpi
-            label="Депозит"
-            value={deposit > 0 ? `${fmt(deposit)} ₽` : "0 ₽"}
-            tone={deposit > 0 ? "green" : "gray"}
-          />
+          {/* KPI упакованы в герой (заполняют пустое место под телефоном). */}
+          <div className="mt-3 grid grid-cols-2 gap-2 border-t border-border pt-3">
+            <Kpi
+              label="Оборот"
+              value={totalTurnover > 0 ? `${fmt(totalTurnover)} ₽` : "—"}
+              tone={totalTurnover > 0 ? "green" : "gray"}
+            />
+            <Kpi
+              label="Оплата / день"
+              value={activeRental ? `${fmt(activeRental.rate)} ₽` : "—"}
+              tone={activeRental ? "blue" : "gray"}
+            />
+            <Kpi
+              label="Дней в аренде"
+              value={
+                totalRentedDays > 0
+                  ? `${totalRentedDays} ${daysWord(totalRentedDays)}`
+                  : "—"
+              }
+              tone={totalRentedDays > 0 ? "blue" : "gray"}
+            />
+            <Kpi
+              label="Депозит"
+              value={deposit > 0 ? `${fmt(deposit)} ₽` : "0 ₽"}
+              tone={deposit > 0 ? "green" : "gray"}
+            />
+          </div>
         </section>
 
         {/* ===== Важные действия: Не на связи + Создать сделку ===== */}
@@ -353,7 +353,7 @@ export function MobileClientCard({
         </section>
 
         {/* ===== Табы пилюлями (Apple-style segmented, прокручиваемые) ===== */}
-        <div className="-mx-3 overflow-x-auto px-3">
+        <div className="no-scrollbar -mx-3 overflow-x-auto px-3">
           <div className="flex w-max gap-1.5">
             {tabs.map((t) => (
               <button

@@ -131,6 +131,16 @@
       0 2px 6px rgba(16, 24, 40, 0.04);
   }
 
+  /* Скрыть полосу прокрутки (контент остаётся свайпаемым). Для мобильных
+     горизонтальных лент — на телефоне скроллбары не показывают. */
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
   .scrollbar-thin {
     scrollbar-width: thin;
     scrollbar-color: rgba(148, 163, 184, 0.4) transparent;

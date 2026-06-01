@@ -479,6 +479,14 @@ export function NewRentalModal({
                   setClientQuery("");
                 }}
               />
+            ) : isMobile ? (
+              <MobileClientPicker
+                query={clientQuery}
+                onQuery={setClientQuery}
+                clients={filteredClients}
+                onPick={(id) => setClientId(id)}
+                onNew={() => setNewClientOpen(true)}
+              />
             ) : (
               <div className="flex flex-col gap-2">
                 <div className="flex gap-2">
@@ -602,6 +610,14 @@ export function NewRentalModal({
                 </div>
                 <X size={14} className="text-muted-2" />
               </button>
+            ) : isMobile ? (
+              <MobileScooterPicker
+                scooters={availableScooters}
+                modelChips={modelChips}
+                filter={scooterModelFilter}
+                onFilter={setScooterModelFilter}
+                onPick={(name) => setScooterName(name)}
+              />
             ) : (
               <>
               {modelChips.length > 1 && (
@@ -659,7 +675,7 @@ export function NewRentalModal({
 
           {/* 3 Срок и тариф */}
           <Section num={3} title="Срок и тариф" mobile={isMobile} current={step}>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
               <label className="text-[12px] font-semibold text-ink">
                 Дата выдачи
                 <div className="mt-1">
@@ -999,6 +1015,26 @@ export function NewRentalModal({
                   : depositItemText.trim() || "—"}
               </span>
             </div>
+
+            {/* Сводка заказа на мобиле — обзор перед созданием. */}
+            {isMobile && (
+              <OrderSummary
+                clientName={client?.name ?? "—"}
+                scooterName={scooterName}
+                model={MODEL_LABEL[model]}
+                period={`${start} ${startTime} → ${endPlanned} ${startTime}`}
+                days={days}
+                rate={rate}
+                rateUnit={isWeeklyCustom ? "нед" : "сут"}
+                deposit={
+                  depositMode === "sum"
+                    ? `${depositSum.toLocaleString("ru-RU")} ₽`
+                    : depositItemText.trim() || "предмет не указан"
+                }
+                payment={paymentMethod === "cash" ? "Наличные" : "Перевод"}
+                total={sum}
+              />
+            )}
           </Section>
         </div>
 
@@ -1180,6 +1216,202 @@ function Calc({
         {value}
       </div>
       {hint && <div className="text-[10px] text-muted-2">{hint}</div>}
+    </div>
+  );
+}
+
+// ===== Мобильные шаги мастера (нативные UI, не показываются на десктопе) =====
+
+function MobileClientPicker({
+  query,
+  onQuery,
+  clients,
+  onPick,
+  onNew,
+}: {
+  query: string;
+  onQuery: (v: string) => void;
+  clients: Client[];
+  onPick: (id: number) => void;
+  onNew: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-2.5">
+      <div className="relative">
+        <Search
+          size={16}
+          className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-2"
+        />
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => onQuery(e.target.value)}
+          placeholder="Имя или телефон…"
+          className="h-12 w-full rounded-xl border border-border bg-surface pl-10 pr-3 text-[15px] text-ink outline-none focus:border-blue-600"
+        />
+      </div>
+      <button
+        type="button"
+        onClick={onNew}
+        className="flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-ink text-[14px] font-bold text-white active:bg-ink-2"
+      >
+        <UserPlus size={16} /> Новый клиент
+      </button>
+      <div className="flex flex-col gap-1.5">
+        {clients.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border py-6 text-center text-[13px] text-muted">
+            Не найдено — создайте нового
+          </div>
+        ) : (
+          clients.map((c) => {
+            const debt = c.unpaidDamageDebt ?? 0;
+            return (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => onPick(c.id)}
+                className="flex items-center gap-3 rounded-xl border border-border bg-surface p-3 text-left active:bg-surface-soft"
+              >
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-soft text-[12px] font-bold text-ink-2">
+                  {initialsOf(c.name)}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[14px] font-bold text-ink">{c.name}</div>
+                  <div className="text-[12px] text-muted-2 tabular-nums">{c.phone}</div>
+                </div>
+                {debt > 0 && (
+                  <span className="shrink-0 rounded-full bg-red-soft px-2 py-0.5 text-[10px] font-bold text-red-ink tabular-nums">
+                    долг {debt.toLocaleString("ru-RU")} ₽
+                  </span>
+                )}
+              </button>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MobileScooterPicker({
+  scooters,
+  modelChips,
+  filter,
+  onFilter,
+  onPick,
+}: {
+  scooters: { name: string; model: ScooterModel }[];
+  modelChips: [string, number][];
+  filter: string;
+  onFilter: (m: string) => void;
+  onPick: (name: string) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-2.5">
+      {modelChips.length > 1 && (
+        <div className="no-scrollbar -mx-1 flex gap-1.5 overflow-x-auto px-1">
+          <button
+            type="button"
+            onClick={() => onFilter("")}
+            className={cn(
+              "shrink-0 rounded-full px-3 py-1.5 text-[12px] font-semibold",
+              filter === "" ? "bg-ink text-white" : "bg-surface-soft text-muted",
+            )}
+          >
+            Все ({modelChips.reduce((s, [, c]) => s + c, 0)})
+          </button>
+          {modelChips.map(([m, count]) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => onFilter(m)}
+              className={cn(
+                "shrink-0 rounded-full px-3 py-1.5 text-[12px] font-semibold",
+                filter === m ? "bg-ink text-white" : "bg-surface-soft text-muted",
+              )}
+            >
+              {MODEL_LABEL[m as ScooterModel] ?? m} ({count})
+            </button>
+          ))}
+        </div>
+      )}
+      {scooters.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-border py-6 text-center text-[13px] text-muted">
+          Нет свободных скутеров
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-2">
+          {scooters.map((s) => (
+            <button
+              key={s.name}
+              type="button"
+              onClick={() => onPick(s.name)}
+              className="flex flex-col gap-0.5 rounded-xl border border-border bg-surface p-3 text-left active:bg-blue-50"
+            >
+              <span className="text-[15px] font-bold text-ink">{s.name}</span>
+              <span className="text-[12px] text-muted-2">{MODEL_LABEL[s.model]}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function OrderSummary({
+  clientName,
+  scooterName,
+  model,
+  period,
+  days,
+  rate,
+  rateUnit,
+  deposit,
+  payment,
+  total,
+}: {
+  clientName: string;
+  scooterName: string | null;
+  model: string;
+  period: string;
+  days: number;
+  rate: number;
+  rateUnit: string;
+  deposit: string;
+  payment: string;
+  total: number;
+}) {
+  return (
+    <div className="mt-4 rounded-2xl border border-blue-100 bg-blue-50/50 p-4">
+      <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-blue-700">
+        Сводка заказа
+      </div>
+      <dl className="space-y-1.5 text-[13px]">
+        <SummaryRow label="Клиент" value={clientName} />
+        <SummaryRow
+          label="Скутер"
+          value={scooterName ? `${scooterName} · ${model}` : "—"}
+        />
+        <SummaryRow label="Срок" value={`${period} · ${days} дн`} />
+        <SummaryRow label="Тариф" value={`${rate} ₽/${rateUnit}`} />
+        <SummaryRow label="Залог" value={deposit} />
+        <SummaryRow label="Оплата" value={payment} />
+      </dl>
+      <div className="mt-3 flex items-center justify-between border-t border-blue-200 pt-3">
+        <span className="text-[13px] font-semibold text-ink">Итого</span>
+        <span className="font-display text-[22px] font-extrabold tabular-nums text-blue-700">
+          {total.toLocaleString("ru-RU")} ₽
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function SummaryRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <dt className="shrink-0 text-muted-2">{label}</dt>
+      <dd className="min-w-0 text-right font-semibold text-ink">{value}</dd>
     </div>
   );
 }
