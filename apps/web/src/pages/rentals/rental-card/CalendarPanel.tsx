@@ -294,13 +294,34 @@ export function CalendarPanel({
         </div>
       )}
 
-      {/* v0.7.12: сетка календаря СЛЕВА, вертикальный timeline дат СПРАВА. */}
-      <div className="flex items-start gap-3">
+      {/* v0.7.12: десктоп — сетка календаря СЛЕВА, timeline дат СПРАВА.
+          Мобайл (<sm): вертикальный стек — выдано/возврат СТРОКОЙ сверху,
+          календарь на ВСЮ ширину, легенда СТРОКОЙ снизу. */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+        {/* Мобайл: выдано / возврат — компактной строкой над календарём. */}
+        <div className="flex items-center justify-between gap-3 rounded-xl bg-surface-soft px-3.5 py-2.5 sm:hidden">
+          <div className="text-[12px]">
+            <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-2">
+              Выдано
+            </div>
+            <div className="font-bold text-ink">{rental.start}</div>
+          </div>
+          <div className="h-px flex-1 bg-border" />
+          <div className="text-right text-[12px]">
+            <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-2">
+              Возврат
+            </div>
+            <div className={cn("font-bold", isOverdue ? "text-red-ink" : "text-ink")}>
+              {rental.endPlanned}
+            </div>
+          </div>
+        </div>
+
         {startIso && endIso && calEndIso && (
           <div
             ref={calendarBoxRef}
-            // v0.7.9: ограничиваем ширину сетки месяца (~380px).
-            className="min-w-0 flex-1 max-w-[380px]"
+            // Мобайл — на всю ширину блока; десктоп — ограничиваем ~380px.
+            className="min-w-0 w-full sm:max-w-[380px] sm:flex-1"
             style={{
               visibility: hideCalendar ? "hidden" : undefined,
             }}
@@ -324,7 +345,9 @@ export function CalendarPanel({
             />
           </div>
         )}
-        <div className="w-[150px] shrink-0">
+
+        {/* Десктоп: правый столбик с timeline дат и вертикальной легендой. */}
+        <div className="hidden w-[150px] shrink-0 sm:block">
           <DateTimeline
             startDate={rental.start}
             startTime={rental.startTime ?? "12:00"}
@@ -333,29 +356,51 @@ export function CalendarPanel({
             overdue={isOverdue}
             overdueDays={overdueDays}
           />
-          {/* v0.7.13: легенда компактно под timeline в правом столбике. */}
           <div className="mt-3 flex flex-col gap-1.5 border-t border-border pt-3 text-[11.5px] text-muted-2">
-            <LegendDot swatch="bg-blue-400" label="выдача" />
-            <LegendDot swatch="bg-blue-300" label="оплачено" />
-            {isOverdue && <LegendDot swatch="bg-red-400" label="просрочка" />}
-            <LegendDot swatch="bg-emerald-400" label="продление" />
-            {(parkingMode || sessions.length > 0) && (
-              <LegendDot swatch="bg-yellow-400" label="паркинг" />
-            )}
-            {/* образец «день возврата» — круг с обводкой (синий/красный) */}
-            <div className="flex items-center gap-1.5">
-              <span
-                className={cn(
-                  "inline-block h-2.5 w-2.5 rounded-full border-2 bg-transparent",
-                  isOverdue ? "border-red-500" : "border-blue-500",
-                )}
-              />
-              <span>возврат</span>
-            </div>
+            <CalendarLegend
+              isOverdue={isOverdue}
+              showParking={parkingMode || sessions.length > 0}
+            />
           </div>
+        </div>
+
+        {/* Мобайл: легенда — строкой (с переносом) под календарём. */}
+        <div className="flex flex-wrap gap-x-4 gap-y-1.5 border-t border-border pt-3 text-[11.5px] text-muted-2 sm:hidden">
+          <CalendarLegend
+            isOverdue={isOverdue}
+            showParking={parkingMode || sessions.length > 0}
+          />
         </div>
       </div>
     </div>
+  );
+}
+
+/** Набор точек-легенды календаря (используется и в столбике, и в строке). */
+function CalendarLegend({
+  isOverdue,
+  showParking,
+}: {
+  isOverdue: boolean;
+  showParking: boolean;
+}) {
+  return (
+    <>
+      <LegendDot swatch="bg-blue-400" label="выдача" />
+      <LegendDot swatch="bg-blue-300" label="оплачено" />
+      {isOverdue && <LegendDot swatch="bg-red-400" label="просрочка" />}
+      <LegendDot swatch="bg-emerald-400" label="продление" />
+      {showParking && <LegendDot swatch="bg-yellow-400" label="паркинг" />}
+      <div className="flex items-center gap-1.5">
+        <span
+          className={cn(
+            "inline-block h-2.5 w-2.5 rounded-full border-2 bg-transparent",
+            isOverdue ? "border-red-500" : "border-blue-500",
+          )}
+        />
+        <span>возврат</span>
+      </div>
+    </>
   );
 }
 
