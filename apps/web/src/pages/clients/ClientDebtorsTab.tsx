@@ -109,7 +109,7 @@ function ClientDebtorCaseCard({ summary }: { summary: DebtorCaseSummary }) {
         <button
           type="button"
           onClick={() => navigate({ route: "debtors", debtorId: summary.id })}
-          className="ml-auto inline-flex items-center gap-1 rounded-full border border-border px-3 py-1 text-[12px] font-semibold text-ink transition-colors hover:border-ink"
+          className="ml-auto inline-flex min-h-[40px] items-center gap-1 rounded-full border border-border px-4 py-2 text-[12px] font-semibold text-ink transition-colors hover:border-ink sm:min-h-0 sm:px-3 sm:py-1"
         >
           Открыть дело <ArrowRight size={12} />
         </button>
