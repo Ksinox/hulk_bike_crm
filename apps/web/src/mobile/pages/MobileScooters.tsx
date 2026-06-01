@@ -6,7 +6,7 @@ import { useRentals } from "@/pages/rentals/rentalsStore";
 import { fileUrl } from "@/lib/files";
 import { SCOOTER_STATUS_LABEL, type ScooterDisplayStatus } from "@/lib/mock/fleet";
 import { AddScooterModal } from "@/pages/fleet/AddScooterModal";
-import { ScooterCard } from "@/pages/fleet/ScooterCard";
+import { MobileScooterCard } from "../cards/MobileScooterCard";
 import { useFleetScooters } from "@/pages/fleet/fleetStore";
 import { ErrorBoundary } from "@/app/ErrorBoundary";
 import { usePageFab } from "../fab";
@@ -165,19 +165,15 @@ export function MobileScooters() {
         </div>
       )}
 
-      {/* Тап по скутеру → полноэкранная карточка (десктопная ScooterCard:
-          фото, статус, история, ремонты, документы; смена статуса, ремонт,
-          выдача в аренду — её внутренними модалками). */}
+      {/* Тап по скутеру → полноэкранная мобильная карточка (нативный экран). */}
       {openFleet && openScooter && (
-        <div className="fixed inset-0 z-[55] flex h-[100dvh] min-h-0 flex-col overflow-y-auto overflow-x-hidden bg-bg">
-          <ErrorBoundary key={openFleet.id}>
-            <ScooterCard
-              scooter={openFleet}
-              status={displayStatus(openScooter)}
-              onBack={() => setOpenId(null)}
-            />
-          </ErrorBoundary>
-        </div>
+        <ErrorBoundary key={openFleet.id}>
+          <MobileScooterCard
+            scooter={openFleet}
+            status={displayStatus(openScooter)}
+            onBack={() => setOpenId(null)}
+          />
+        </ErrorBoundary>
       )}
 
       {/* Добавление скутера — десктоп-модалка (полноэкранная на мобиле). */}
