@@ -175,6 +175,12 @@ function validateNumber(v: string): string | null {
   return null;
 }
 
+/** Код подразделения NNN-NNN — обязателен для договора (R3). */
+function validateDivisionCode(v: string): string | null {
+  if (!/^\d{3}-\d{3}$/.test(v)) return "формат 000-000";
+  return null;
+}
+
 function findDuplicateIn(phone: string, pool: { id: number; name: string; phone: string }[]): { id: number; name: string; phone: string } | null {
   const digits = phone.replace(/\D/g, "");
   if (digits.length !== 11) return null;
@@ -428,6 +434,7 @@ export function AddClientModal({
       // Для иностранца паспорт в свободной форме — структурные поля не валидируем.
       passSer: f.isForeigner ? null : validateSeries(f.passSer),
       passNum: f.isForeigner ? null : validateNumber(f.passNum),
+      passCode: f.isForeigner ? null : validateDivisionCode(f.passCode),
       passportRaw:
         f.isForeigner && f.passportRaw.trim().length === 0
           ? "Опишите документ"
@@ -466,6 +473,7 @@ export function AddClientModal({
     errors.birth,
     errors.passSer,
     errors.passNum,
+    errors.passCode,
     errors.passportRaw,
     errors.source,
     errors.sourceCustom,
@@ -820,7 +828,12 @@ export function AddClientModal({
                   nextFieldId="f-pcode"
                 />
               </Field>
-              <Field label="Код подразделения" htmlFor="f-pcode">
+              <Field
+                label="Код подразделения"
+                required
+                error={showErr("passCode")}
+                htmlFor="f-pcode"
+              >
                 <input
                   id="f-pcode"
                   type="text"
@@ -837,7 +850,8 @@ export function AddClientModal({
                       document.getElementById("f-regaddr")?.focus();
                     }
                   }}
-                  className={inputClass(null)}
+                  onBlur={() => markTouched("passCode")}
+                  className={inputClass(showErr("passCode"))}
                 />
               </Field>
             </Row>

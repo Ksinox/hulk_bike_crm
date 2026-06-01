@@ -801,7 +801,7 @@ function Step2({
       </div>
 
       <div>
-        <FieldLabel>Код подразделения</FieldLabel>
+        <FieldLabel required>Код подразделения</FieldLabel>
         <input
           className={inputCls}
           placeholder="000-000"
@@ -810,6 +810,11 @@ function Step2({
           value={form.passCode}
           onChange={(e) => setField("passCode", formatDivisionCode(e.target.value))}
         />
+        {form.passCode.length > 0 && validateDivisionCode(form.passCode) && (
+          <div className="mt-1 text-[12px] text-red-600">
+            {validateDivisionCode(form.passCode)}
+          </div>
+        )}
       </div>
 
       <div>
