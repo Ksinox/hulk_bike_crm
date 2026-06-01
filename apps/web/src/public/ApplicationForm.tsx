@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  AlertCircle,
   ArrowLeft,
   ArrowRight,
   Bike,
@@ -379,6 +380,45 @@ export function ApplicationForm() {
     }
   };
 
+  // Подсказка «почему нельзя дальше» — чтобы серая кнопка «Продолжить» не
+  // молчала. Возвращает короткий текст с тем, что нужно поправить на шаге.
+  const stepHint = (): string | null => {
+    if (canStepForward()) return null;
+    switch (currentStepId) {
+      case "contact": {
+        const miss: string[] = [];
+        if (validateName(form.name)) miss.push("ФИО (имя и фамилия)");
+        if (validatePhone(form.phone)) miss.push("телефон (11 цифр)");
+        if (validateBirth(form.birth)) miss.push("дата рождения");
+        return miss.length ? `Проверьте: ${miss.join(", ")}.` : null;
+      }
+      case "passport": {
+        if (form.isForeigner) {
+          return "Опишите документ: тип, серия/номер, кем и когда выдан.";
+        }
+        const miss: string[] = [];
+        if (validateSeries(form.passSer)) miss.push("серия (4 цифры)");
+        if (validatePassportNumber(form.passNum)) miss.push("номер (6 цифр)");
+        if (form.passIssuer.trim().length === 0) miss.push("кем выдан");
+        if (!isCompleteDate(form.passDate) || validatePastDate(form.passDate))
+          miss.push("дата выдачи (не позже сегодня)");
+        if (validateDivisionCode(form.passCode))
+          miss.push("код подразделения (000-000)");
+        if (form.passRegistration.trim().length === 0)
+          miss.push("адрес регистрации");
+        return miss.length ? `Проверьте: ${miss.join(", ")}.` : null;
+      }
+      case "address":
+        return "Укажите адрес проживания или отметьте, что он совпадает с регистрацией.";
+      case "source":
+        return form.source === ""
+          ? "Выберите, откуда вы о нас узнали."
+          : "Уточните вариант «Другое».";
+      default:
+        return null;
+    }
+  };
+
   const goNext = async () => {
     setError(null);
     setBusy(true);
@@ -569,6 +609,13 @@ export function ApplicationForm() {
               </button>
             )}
           </div>
+          {/* Подсказка, почему кнопка «Продолжить» неактивна (не молчим). */}
+          {!isPhotoStep && currentStepId !== "confirm" && !busy && stepHint() && (
+            <div className="mt-2 flex items-start gap-1.5 text-[12px] text-amber-700">
+              <AlertCircle size={14} className="mt-px shrink-0" />
+              <span>{stepHint()}</span>
+            </div>
+          )}
           {/* Honeypot — невидимое поле для ботов */}
           <input
             type="text"
@@ -829,24 +876,36 @@ function Step2({
         <div>
           <FieldLabel required>Серия</FieldLabel>
           <input
+            id="ap-pser"
             className={inputCls}
             placeholder="0000"
             inputMode="numeric"
             maxLength={4}
             value={form.passSer}
-            onChange={(e) => setField("passSer", e.target.value.replace(/\D/g, ""))}
+            onChange={(e) => {
+              const v = e.target.value.replace(/\D/g, "").slice(0, 4);
+              setField("passSer", v);
+              // Авто-переход на «Номер», когда серия заполнена (4 цифры).
+              if (v.length === 4) document.getElementById("ap-pnum")?.focus();
+            }}
           />
           {serErr && <div className="mt-1 text-[12px] text-red-600">{serErr}</div>}
         </div>
         <div>
           <FieldLabel required>Номер</FieldLabel>
           <input
+            id="ap-pnum"
             className={inputCls}
             placeholder="000000"
             inputMode="numeric"
             maxLength={6}
             value={form.passNum}
-            onChange={(e) => setField("passNum", e.target.value.replace(/\D/g, ""))}
+            onChange={(e) => {
+              const v = e.target.value.replace(/\D/g, "").slice(0, 6);
+              setField("passNum", v);
+              // Авто-переход на «Кем выдан», когда номер заполнен (6 цифр).
+              if (v.length === 6) document.getElementById("ap-pissuer")?.focus();
+            }}
           />
           {numErr && <div className="mt-1 text-[12px] text-red-600">{numErr}</div>}
         </div>
@@ -862,6 +921,8 @@ function Step2({
             setField("passDate", iso ? isoToDateRu(iso) : "")
           }
           maxDate={todayIsoLocal()}
+          // После полного ввода даты — фокус на «Код подразделения».
+          nextFieldId="ap-pcode"
         />
         {isCompleteDate(form.passDate) && validatePastDate(form.passDate) && (
           <div className="mt-1 text-[12px] text-red-600">
@@ -873,6 +934,7 @@ function Step2({
       <div>
         <FieldLabel required>Кем выдан</FieldLabel>
         <textarea
+          id="ap-pissuer"
           className="min-h-[80px] w-full rounded-xl border border-slate-300 bg-white p-3 text-[16px] text-slate-900 placeholder:text-slate-400 focus:border-slate-900 focus:outline-none"
           placeholder="Например: ОУФМС России по г. Москве в районе…"
           value={form.passIssuer}
@@ -883,12 +945,18 @@ function Step2({
       <div>
         <FieldLabel required>Код подразделения</FieldLabel>
         <input
+          id="ap-pcode"
           className={inputCls}
           placeholder="000-000"
           inputMode="numeric"
           maxLength={7}
           value={form.passCode}
-          onChange={(e) => setField("passCode", formatDivisionCode(e.target.value))}
+          onChange={(e) => {
+            const v = formatDivisionCode(e.target.value);
+            setField("passCode", v);
+            // Авто-переход на «Адрес регистрации», когда код заполнен (000-000).
+            if (v.length === 7) document.getElementById("ap-regaddr")?.focus();
+          }}
         />
         {form.passCode.length > 0 && validateDivisionCode(form.passCode) && (
           <div className="mt-1 text-[12px] text-red-600">
@@ -900,6 +968,7 @@ function Step2({
       <div>
         <FieldLabel required>Адрес регистрации (как в паспорте)</FieldLabel>
         <textarea
+          id="ap-regaddr"
           className="min-h-[80px] w-full rounded-xl border border-slate-300 bg-white p-3 text-[16px] text-slate-900 placeholder:text-slate-400 focus:border-slate-900 focus:outline-none"
           placeholder="Город, улица, дом, квартира"
           value={form.passRegistration}
