@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
-import { Bike, Phone, ChevronRight, Wallet } from "lucide-react";
+import { Bike, ChevronRight } from "lucide-react";
 import { useRentals, useArchivedRentals } from "@/pages/rentals/rentalsStore";
-import { PaymentAcceptDialog } from "@/pages/rentals/PaymentAcceptDialog";
+import { RentalCard } from "@/pages/rentals/RentalCard";
 import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
 import { ErrorBoundary } from "@/app/ErrorBoundary";
 import { usePageFab } from "../fab";
@@ -17,11 +17,9 @@ import {
 } from "@/lib/search";
 import { cn } from "@/lib/utils";
 import {
-  DetailRow,
   MobileChips,
   MobileEmpty,
   MobileSearch,
-  MobileSheet,
   type ChipOption,
 } from "../ui";
 
@@ -94,8 +92,6 @@ export function MobileRentals() {
   const [filter, setFilter] = useState<Filter>("active");
   const [search, setSearch] = useState("");
   const [openId, setOpenId] = useState<number | null>(null);
-  /** Аренда, по которой открыт приём оплаты (переиспользуем десктоп-диалог). */
-  const [payId, setPayId] = useState<number | null>(null);
   /** Открыта форма создания аренды (переиспользуем десктоп-модалку). */
   const [newOpen, setNewOpen] = useState(false);
   usePageFab("Аренда", () => setNewOpen(true));
@@ -156,8 +152,6 @@ export function MobileRentals() {
   ];
 
   const openRental = source.find((r) => r.id === openId) ?? null;
-  const openClient = openRental ? clientById.get(openRental.clientId) ?? null : null;
-  const payRental = payId != null ? source.find((r) => r.id === payId) ?? null : null;
 
   return (
     // pb-20: нижний отступ, чтобы плавающая кнопка (FAB) не перекрывала
@@ -190,37 +184,20 @@ export function MobileRentals() {
         </div>
       )}
 
-      <MobileSheet
-        open={openRental != null}
-        onClose={() => setOpenId(null)}
-        title={openClient?.name ?? "Аренда"}
-      >
-        {openRental && (
-          <RentalDetail
-            rental={openRental}
-            client={openClient}
-            todayMs={todayMs}
-            onPay={() => setPayId(openRental.id)}
-          />
-        )}
-      </MobileSheet>
-
-      {/* Приём оплаты — переиспользуем десктоп-диалог (inline) в
-          полноэкранной мобильной обёртке: логика денег та же самая. */}
-      {payRental && (
-        // Диалог оплаты сам рисует свою шапку с крестиком (inline-режим),
-        // поэтому отдельный заголовок-обёртку не добавляем — иначе два
-        // крестика подряд. Только полноэкранный контейнер + safe-area.
-        <div className="fixed inset-0 z-[60] flex flex-col bg-bg p-2 pt-[max(8px,env(safe-area-inset-top))] pb-[max(8px,env(safe-area-inset-bottom))]">
-          <ErrorBoundary key={payRental.id}>
-            <PaymentAcceptDialog
-              rental={payRental}
-              inline
-              onClose={() => setPayId(null)}
-              onPaid={() => {
-                setPayId(null);
-                setOpenId(null);
-              }}
+      {/* Тап по строке → «проваливаемся» в ПОЛНОЭКРАННУЮ карточку аренды.
+          Переиспользуем десктопную RentalCard (drawerChrome): все блоки
+          (клиент с фото, KPI, скутер+экипировка, календарь, финансы,
+          хронология, документы, заметки) и вся логика (оплата, продление,
+          замена, история) — внутри неё. Без onRequestPayment/onOpenHistory
+          карточка ведёт эти диалоги сама. */}
+      {openRental && (
+        <div className="fixed inset-0 z-[55] flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-surface">
+          <ErrorBoundary key={openRental.id}>
+            <RentalCard
+              rental={openRental}
+              drawerChrome
+              onClose={() => setOpenId(null)}
+              onSwapped={(newId) => setOpenId(newId)}
             />
           </ErrorBoundary>
         </div>
@@ -288,86 +265,3 @@ function RentalRow({
   );
 }
 
-function RentalDetail({
-  rental,
-  client,
-  todayMs,
-  onPay,
-}: {
-  rental: Rental;
-  client: ApiClient | null;
-  todayMs: number;
-  onPay: () => void;
-}) {
-  const meta = statusMeta(rental, todayMs);
-  // «Живая» аренда — есть смысл принимать оплату/продлевать.
-  const isLive =
-    rental.status === "active" ||
-    rental.status === "overdue" ||
-    rental.status === "returning";
-  return (
-    <div>
-      <div className="mb-2 flex items-center gap-2">
-        <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-bold", meta.cls)}>
-          {meta.label}
-        </span>
-        <span className="text-[12px] text-muted-2">
-          Аренда #{String(rental.id).padStart(4, "0")}
-        </span>
-      </div>
-
-      {client?.phone && (
-        <a
-          href={`tel:${client.phone}`}
-          className="mb-3 flex items-center justify-center gap-2 rounded-2xl bg-blue-600 py-3 text-[14px] font-bold text-white active:scale-[0.99]"
-        >
-          <Phone size={17} /> Позвонить {client.phone}
-        </a>
-      )}
-
-      <div className="rounded-2xl bg-surface px-3.5 shadow-card-sm">
-        <DetailRow label="Скутер" value={`${rental.scooter}`} />
-        <div className="border-t border-border" />
-        <DetailRow label="Выдан" value={`${rental.start}${rental.startTime ? `, ${rental.startTime}` : ""}`} />
-        <div className="border-t border-border" />
-        <DetailRow label="Возврат план" value={rental.endPlanned} />
-        <div className="border-t border-border" />
-        <DetailRow label="Срок" value={`${rental.days} дн.`} />
-        <div className="border-t border-border" />
-        <DetailRow label="Тариф" value={`${rub(rental.rate)} ₽/${rental.rateUnit === "week" ? "нед" : "сут"}`} />
-        <div className="border-t border-border" />
-        <DetailRow label="Сумма" value={`${rub(rental.sum)} ₽`} valueClass="text-blue-700" />
-        <div className="border-t border-border" />
-        <DetailRow
-          label="Залог"
-          value={rental.depositItem ? rental.depositItem : `${rub(rental.deposit)} ₽`}
-        />
-        {rental.note && (
-          <>
-            <div className="border-t border-border" />
-            <DetailRow label="Заметка" value={rental.note} />
-          </>
-        )}
-      </div>
-
-      {isLive ? (
-        <>
-          <button
-            type="button"
-            onClick={onPay}
-            className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-green py-3.5 text-[15px] font-bold text-white active:scale-[0.99]"
-          >
-            <Wallet size={18} /> Принять оплату
-          </button>
-          <p className="mt-2 text-center text-[12px] text-muted-2">
-            Возврат и замена скутера — на компьютере
-          </p>
-        </>
-      ) : (
-        <p className="mt-3 text-center text-[12px] text-muted-2">
-          Аренда завершена
-        </p>
-      )}
-    </div>
-  );
-}
