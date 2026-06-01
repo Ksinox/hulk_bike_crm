@@ -251,7 +251,7 @@ export function ParkPanel({
               загружено <b className="text-ink font-bold">{metrics.loadPercent}%</b>
             </span>
             <span>
-              свободно <b className="text-ink font-bold">{park.ready}</b>
+              готов к аренде <b className="text-ink font-bold">{park.pool}</b>
             </span>
             {park.inRepair > 0 && (
               <span>
@@ -511,10 +511,10 @@ function ReassignDialog({
   ];
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-ink/55 p-6 backdrop-blur-sm"
+      className="fixed inset-0 z-[100] flex items-stretch justify-center overflow-y-auto bg-ink/55 p-0 backdrop-blur-sm sm:items-start sm:p-6"
     >
       <div
-        className="mt-24 w-full max-w-[420px] overflow-hidden rounded-2xl bg-surface shadow-card-lg"
+        className="min-h-[100dvh] w-full overflow-hidden rounded-none bg-surface shadow-card-lg sm:mt-24 sm:min-h-0 sm:max-w-[420px] sm:rounded-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="border-b border-border bg-surface-soft px-5 py-3">

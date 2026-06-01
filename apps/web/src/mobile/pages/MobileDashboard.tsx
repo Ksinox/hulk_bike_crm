@@ -94,7 +94,7 @@ export function MobileDashboard({
           label="Загрузка парка"
           value={String(m.loadPercent)}
           unit="%"
-          foot={`${m.park.ready} готовы · ${m.park.inRepair} в ремонте`}
+          foot={`${m.park.pool} готов к аренде · ${m.park.inRepair} в ремонте`}
           onClick={() => onSelect("fleet")}
         />
       </div>
