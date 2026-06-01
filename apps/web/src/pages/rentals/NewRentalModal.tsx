@@ -20,6 +20,11 @@ import { useApiScooters } from "@/lib/api/scooters";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { useApiEquipment } from "@/lib/api/equipment";
 import { DatePicker } from "@/components/ui/date-picker";
+import { useIsMobile } from "@/lib/useIsMobile";
+import { ChevronLeft, ArrowRight } from "lucide-react";
+
+// Заголовки шагов мобильного мастера аренды.
+const STEP_TITLES = ["Клиент", "Скутер", "Срок", "Оплата"] as const;
 
 /** Сегодня в формате DD.MM.YYYY (локальное время). */
 function todayRuDate(): string {
@@ -109,6 +114,10 @@ export function NewRentalModal({
   const { data: equipmentCatalog = [] } = useApiEquipment();
   const blocked = activeScooters(rentals);
   const [closing, setClosing] = useState(false);
+  // Мобильный мастер: форма разбивается на 4 шага (Клиент → Скутер →
+  // Срок и тариф → Экипировка/залог/оплата). На десктопе все блоки сразу.
+  const isMobile = useIsMobile();
+  const [step, setStep] = useState(1);
 
   const [clientId, setClientId] = useState<number | null>(
     initialClientId ?? null,
@@ -251,6 +260,13 @@ export function NewRentalModal({
     !blacklistedClient &&
     scooterName != null &&
     days > 0;
+
+  // Можно ли перейти с шага step на следующий (мобильный мастер).
+  const canAdvanceStep = (s: number): boolean => {
+    if (s === 1) return clientId != null && !blacklistedClient;
+    if (s === 2) return scooterName != null;
+    return true; // шаг 3 (срок/тариф) всегда валиден — есть значения по умолчанию
+  };
 
   // Множество клиентов с открытой арендой (active/overdue/returning).
   // Им нельзя выдавать новую — пока не закрыли предыдущую.
@@ -421,9 +437,40 @@ export function NewRentalModal({
           </button>
         </div>
 
-        <div className="max-h-[calc(100vh-220px)] overflow-y-auto px-5 py-4">
+        {/* Мобильный прогресс шагов мастера */}
+        {isMobile && (
+          <div className="flex items-center gap-2 border-b border-border bg-surface px-4 py-2.5">
+            {STEP_TITLES.map((t, i) => {
+              const n = i + 1;
+              const done = n < step;
+              const cur = n === step;
+              return (
+                <div key={t} className="flex min-w-0 flex-1 flex-col items-center gap-1">
+                  <div className="flex w-full items-center">
+                    <div
+                      className={cn(
+                        "h-1.5 flex-1 rounded-full",
+                        done || cur ? "bg-blue-600" : "bg-surface-soft",
+                      )}
+                    />
+                  </div>
+                  <span
+                    className={cn(
+                      "truncate text-[10px] font-semibold",
+                      cur ? "text-blue-600" : done ? "text-ink-2" : "text-muted-2",
+                    )}
+                  >
+                    {n}. {t}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <div className="max-h-[calc(100vh-220px)] overflow-y-auto px-5 py-4 sm:max-h-[calc(100vh-220px)]">
           {/* 1 Клиент */}
-          <Section num={1} title="Клиент">
+          <Section num={1} title="Клиент" mobile={isMobile} current={step}>
             {client ? (
               <ClientChip
                 client={client}
@@ -537,7 +584,7 @@ export function NewRentalModal({
           </Section>
 
           {/* 2 Скутер */}
-          <Section num={2} title="Скутер">
+          <Section num={2} title="Скутер" mobile={isMobile} current={step}>
             {scooterName ? (
               <button
                 type="button"
@@ -611,7 +658,7 @@ export function NewRentalModal({
           </Section>
 
           {/* 3 Срок и тариф */}
-          <Section num={3} title="Срок и тариф">
+          <Section num={3} title="Срок и тариф" mobile={isMobile} current={step}>
             <div className="grid grid-cols-3 gap-3">
               <label className="text-[12px] font-semibold text-ink">
                 Дата выдачи
@@ -803,7 +850,7 @@ export function NewRentalModal({
           </Section>
 
           {/* 4 Экипировка + залог + оплата */}
-          <Section num={4} title="Экипировка, залог и оплата">
+          <Section num={4} title="Экипировка, залог и оплата" mobile={isMobile} current={step}>
             <div>
               <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-2">
                 Выданная экипировка {equipmentExtra > 0 && (
@@ -955,33 +1002,76 @@ export function NewRentalModal({
           </Section>
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border bg-surface-soft px-5 py-3">
-          <span className="min-w-0 flex-1 truncate text-[11px] text-muted-2">
-            После создания нужно подтвердить выдачу (договор, аренда, залог).
-          </span>
-          <div className="flex shrink-0 items-center gap-2 whitespace-nowrap">
+        {isMobile ? (
+          /* Мобильный футер мастера: Назад · Далее (последний шаг — Создать). */
+          <div className="flex items-center gap-2 border-t border-border bg-surface px-4 py-3 pb-[calc(12px+env(safe-area-inset-bottom))]">
             <button
               type="button"
-              onClick={requestClose}
-              className="rounded-full border border-border bg-surface px-4 py-1.5 text-[12px] font-semibold text-muted hover:bg-border"
+              onClick={() => (step === 1 ? requestClose() : setStep((s) => s - 1))}
+              className="flex min-h-[48px] items-center justify-center gap-1 rounded-xl border border-border px-4 text-[14px] font-semibold text-muted active:bg-surface-soft"
             >
-              Отмена
+              <ChevronLeft size={18} />
+              {step === 1 ? "Отмена" : "Назад"}
             </button>
-            <button
-              type="button"
-              disabled={!canSave}
-              onClick={handleSave}
-              className={cn(
-                "rounded-full px-4 py-1.5 text-[12px] font-semibold transition-colors",
-                canSave
-                  ? "bg-blue-600 text-white hover:bg-blue-700"
-                  : "cursor-not-allowed bg-surface-soft text-muted-2",
-              )}
-            >
-              Создать и выдать
-            </button>
+            {step < 4 ? (
+              <button
+                type="button"
+                disabled={!canAdvanceStep(step)}
+                onClick={() => canAdvanceStep(step) && setStep((s) => s + 1)}
+                className={cn(
+                  "flex min-h-[48px] flex-1 items-center justify-center gap-1.5 rounded-xl text-[14px] font-bold transition-colors",
+                  canAdvanceStep(step)
+                    ? "bg-blue-600 text-white active:bg-blue-700"
+                    : "cursor-not-allowed bg-surface-soft text-muted-2",
+                )}
+              >
+                Далее <ArrowRight size={16} />
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={!canSave || saving}
+                onClick={handleSave}
+                className={cn(
+                  "flex min-h-[48px] flex-1 items-center justify-center rounded-xl text-[14px] font-bold transition-colors",
+                  canSave && !saving
+                    ? "bg-blue-600 text-white active:bg-blue-700"
+                    : "cursor-not-allowed bg-surface-soft text-muted-2",
+                )}
+              >
+                Создать и выдать
+              </button>
+            )}
           </div>
-        </div>
+        ) : (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border bg-surface-soft px-5 py-3">
+            <span className="min-w-0 flex-1 truncate text-[11px] text-muted-2">
+              После создания нужно подтвердить выдачу (договор, аренда, залог).
+            </span>
+            <div className="flex shrink-0 items-center gap-2 whitespace-nowrap">
+              <button
+                type="button"
+                onClick={requestClose}
+                className="rounded-full border border-border bg-surface px-4 py-1.5 text-[12px] font-semibold text-muted hover:bg-border"
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                disabled={!canSave}
+                onClick={handleSave}
+                className={cn(
+                  "rounded-full px-4 py-1.5 text-[12px] font-semibold transition-colors",
+                  canSave
+                    ? "bg-blue-600 text-white hover:bg-blue-700"
+                    : "cursor-not-allowed bg-surface-soft text-muted-2",
+                )}
+              >
+                Создать и выдать
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {newClientOpen && (
@@ -1002,14 +1092,21 @@ function Section({
   num,
   title,
   children,
+  mobile,
+  current,
 }: {
   num: number;
   title: string;
   children: React.ReactNode;
+  // На мобиле (mobile=true) показываем только секцию активного шага current.
+  mobile?: boolean;
+  current?: number;
 }) {
+  if (mobile && current != null && current !== num) return null;
   return (
     <section className="mb-5 last:mb-0">
-      <header className="mb-2 flex items-center gap-2">
+      {/* На мобиле номер-шага дублируется в прогресс-баре сверху — здесь скрываем. */}
+      <header className={cn("mb-2 flex items-center gap-2", mobile && "hidden")}>
         <span className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-50 text-[11px] font-bold text-blue-700">
           {num}
         </span>
