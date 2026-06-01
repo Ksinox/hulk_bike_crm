@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { RouteId } from "@/app/route";
 import { useMe, useLogout } from "@/lib/api/auth";
+import { FabProvider, type PageFab } from "./fab";
 import {
   buildMoreItems,
   logoutIcon as LogoutIcon,
@@ -42,6 +44,28 @@ export function MobileApp({
   const canManageStaff = me?.role === "creator" || me?.role === "director";
   const moreItems = buildMoreItems(canManageStaff);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [fab, setFab] = useState<PageFab | null>(null);
+
+  // Пока смонтирован мобильный слой — лочим прокрутку самой страницы, чтобы
+  // высота dvh-корня совпадала с видимой областью и нижний таб-бар не уезжал
+  // под браузерный тулбар iOS. min-height body из index.css перекрываем на 0.
+  useEffect(() => {
+    const html = document.documentElement;
+    const body = document.body;
+    const prev = {
+      htmlOverflow: html.style.overflow,
+      bodyOverflow: body.style.overflow,
+      bodyMinH: body.style.minHeight,
+    };
+    html.style.overflow = "hidden";
+    body.style.overflow = "hidden";
+    body.style.minHeight = "0";
+    return () => {
+      html.style.overflow = prev.htmlOverflow;
+      body.style.overflow = prev.bodyOverflow;
+      body.style.minHeight = prev.bodyMinH;
+    };
+  }, []);
 
   const go = (id: RouteId) => {
     onSelect(id);
@@ -51,35 +75,49 @@ export function MobileApp({
   return (
     // App-shell, устойчивый к iOS Safari и адаптивный к ЛЮБОМУ размеру
     // экрана (телефон/планшет, любая ширина/высота):
-    //  • корень fixed inset-0 — заполняет реальный вьюпорт устройства,
-    //    сама страница НЕ скроллится (нет двойного скролла и «уезжающих»
-    //    fixed-элементов на iOS);
-    //  • шапка и нижний таб-бар — В ПОТОКЕ (shrink-0), не position:fixed;
-    //  • скроллится только <main> (единственный скролл-контейнер).
-    // overflow-x-hidden убирает любой случайный горизонтальный сдвиг.
-    <div className="fixed inset-0 flex flex-col overflow-hidden bg-bg">
-      <MobileTopBar title={routeTitle(route)} />
+    //  • корень h-[100dvh] — динамическая высота вьюпорта (учитывает
+    //    браузерный тулбар iOS, в отличие от 100vh/inset-0), страница
+    //    залочена (см. useEffect выше) → ничего не «уезжает»;
+    //  • шапка и нижний таб-бар — В ПОТОКЕ (shrink-0), не position:fixed
+    //    (fixed у нижней кромки на iOS уходит под тулбар);
+    //  • скроллится только <main>;
+    //  • FAB — absolute внутри relative-корня (не fixed) по той же причине.
+    <FabProvider set={setFab}>
+      <div className="relative flex h-[100dvh] flex-col overflow-hidden bg-bg">
+        <MobileTopBar title={routeTitle(route)} />
 
-      <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 pb-6 pt-3 overscroll-contain">
-        <MobilePage route={route} onSelect={go} />
-      </main>
+        <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 pb-6 pt-3 overscroll-contain">
+          <MobilePage route={route} onSelect={go} />
+        </main>
 
-      <MobileTabBar
-        route={route}
-        onSelect={go}
-        onMore={() => setMoreOpen(true)}
-        moreActive={moreOpen || isMoreRoute(route)}
-      />
-
-      {moreOpen && (
-        <MoreSheet
-          items={moreItems}
-          activeRoute={route}
+        <MobileTabBar
+          route={route}
           onSelect={go}
-          onClose={() => setMoreOpen(false)}
+          onMore={() => setMoreOpen(true)}
+          moreActive={moreOpen || isMoreRoute(route)}
         />
-      )}
-    </div>
+
+        {fab && (
+          <button
+            type="button"
+            onClick={fab.onClick}
+            className="absolute bottom-[calc(72px+env(safe-area-inset-bottom))] right-4 z-30 flex h-14 items-center gap-2 rounded-full bg-blue-600 px-5 text-[15px] font-bold text-white shadow-card-lg active:scale-95"
+          >
+            <Plus size={20} strokeWidth={2.5} />
+            {fab.label}
+          </button>
+        )}
+
+        {moreOpen && (
+          <MoreSheet
+            items={moreItems}
+            activeRoute={route}
+            onSelect={go}
+            onClose={() => setMoreOpen(false)}
+          />
+        )}
+      </div>
+    </FabProvider>
   );
 }
 

@@ -1,9 +1,9 @@
 import { useMemo, useState } from "react";
-import { ShoppingBag, Plus, Repeat } from "lucide-react";
+import { ShoppingBag, Repeat } from "lucide-react";
 import { useApiScooters } from "@/lib/api/scooters";
 import { AddScooterModal } from "@/pages/fleet/AddScooterModal";
 import { ScooterStatusModal } from "@/pages/fleet/ScooterStatusModal";
-import { MobileFab } from "../ui";
+import { usePageFab } from "../fab";
 import type { ApiScooter, ScooterBaseStatus, ScooterModel } from "@/lib/api/types";
 import { matchId, matchScooterName, normalizeQuery } from "@/lib/search";
 import { cn } from "@/lib/utils";
@@ -45,6 +45,7 @@ export function MobileScooters() {
   const [search, setSearch] = useState("");
   const [openId, setOpenId] = useState<number | null>(null);
   const [newOpen, setNewOpen] = useState(false);
+  usePageFab("Скутер", () => setNewOpen(true));
   /** Скутер, для которого открыта смена статуса. */
   const [statusId, setStatusId] = useState<number | null>(null);
 
@@ -138,11 +139,6 @@ export function MobileScooters() {
         />
       )}
 
-      <MobileFab
-        onClick={() => setNewOpen(true)}
-        icon={<Plus size={20} strokeWidth={2.5} />}
-        label="Скутер"
-      />
     </div>
   );
 }

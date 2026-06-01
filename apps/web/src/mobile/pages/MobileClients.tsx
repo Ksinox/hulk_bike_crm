@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
-import { Users, Phone, ChevronRight, Ban, Plus } from "lucide-react";
+import { Users, Phone, ChevronRight, Ban } from "lucide-react";
 import { MobileNewClient } from "../forms/MobileNewClient";
-import { MobileFab } from "../ui";
+import { usePageFab } from "../fab";
 import { useAllClients } from "@/pages/clients/clientStore";
 import { useRentals } from "@/pages/rentals/rentalsStore";
 import type { Client } from "@/lib/mock/clients";
@@ -37,6 +37,7 @@ export function MobileClients() {
   const [search, setSearch] = useState("");
   const [openId, setOpenId] = useState<number | null>(null);
   const [newOpen, setNewOpen] = useState(false);
+  usePageFab("Клиент", () => setNewOpen(true));
 
   const activeSet = useMemo(() => {
     const set = new Set<number>();
@@ -121,12 +122,6 @@ export function MobileClients() {
       >
         {openClient && <ClientDetail client={openClient} active={activeSet.has(openClient.id)} />}
       </MobileSheet>
-
-      <MobileFab
-        onClick={() => setNewOpen(true)}
-        icon={<Plus size={20} strokeWidth={2.5} />}
-        label="Клиент"
-      />
 
       {newOpen && (
         <MobileNewClient

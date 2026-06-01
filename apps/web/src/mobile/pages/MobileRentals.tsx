@@ -1,10 +1,10 @@
 import { useMemo, useState } from "react";
-import { Bike, Phone, ChevronRight, Wallet, Plus } from "lucide-react";
+import { Bike, Phone, ChevronRight, Wallet } from "lucide-react";
 import { useRentals, useArchivedRentals } from "@/pages/rentals/rentalsStore";
 import { PaymentAcceptDialog } from "@/pages/rentals/PaymentAcceptDialog";
 import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
 import { ErrorBoundary } from "@/app/ErrorBoundary";
-import { MobileFab } from "../ui";
+import { usePageFab } from "../fab";
 import type { Rental } from "@/lib/mock/rentals";
 import { useApiClients } from "@/lib/api/clients";
 import type { ApiClient } from "@/lib/api/types";
@@ -98,6 +98,7 @@ export function MobileRentals() {
   const [payId, setPayId] = useState<number | null>(null);
   /** Открыта форма создания аренды (переиспользуем десктоп-модалку). */
   const [newOpen, setNewOpen] = useState(false);
+  usePageFab("Аренда", () => setNewOpen(true));
 
   const today = todayRu();
   const todayMs = ddmmyyyyToMs(today);
@@ -236,11 +237,6 @@ export function MobileRentals() {
         />
       )}
 
-      <MobileFab
-        onClick={() => setNewOpen(true)}
-        icon={<Plus size={20} strokeWidth={2.5} />}
-        label="Аренда"
-      />
     </div>
   );
 }
