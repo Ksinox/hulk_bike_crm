@@ -95,7 +95,7 @@ export function Login() {
             Вход в систему
           </div>
           <h1
-            className="mt-4 bg-gradient-to-b from-white via-white/95 to-white/40 bg-clip-text font-display text-[84px] font-bold uppercase leading-[0.95] tracking-[-0.03em] text-transparent sm:text-[104px]"
+            className="mt-4 bg-gradient-to-b from-white via-white/95 to-white/40 bg-clip-text font-display text-[clamp(40px,13vw,104px)] font-bold uppercase leading-[0.95] tracking-[-0.03em] text-transparent"
             style={{ WebkitBackgroundClip: "text" }}
           >
             ХАЛК&nbsp;БАЙК

@@ -35,8 +35,11 @@ import {
 } from "@/pages/dashboard/DashboardDrawer";
 import { NewApplicationDetector } from "@/pages/clients/NewApplicationDetector";
 import { cn } from "@/lib/utils";
+import { useIsMobile } from "@/lib/useIsMobile";
+import { MobileApp } from "@/mobile/MobileApp";
 
 export function App() {
+  const isMobile = useIsMobile();
   const { data: me, isLoading, isError } = useMe();
   // v0.4.1: подгружаем глобальные настройки на старте — внутри хука
   // billing_period_start_day прокидывается в lib/billingPeriod.
@@ -88,6 +91,21 @@ export function App() {
   // Показываем блокирующий экран — пока не поменяет, в CRM не пускаем.
   if (me.mustChangePassword) {
     return <ForceChangePassword />;
+  }
+
+  // Мобильный слой — отдельная оболочка (нижний таб-бар + свои экраны).
+  // Десктоп-путь ниже не задействуется. Навигация общая (route/onSelect).
+  if (isMobile) {
+    return (
+      <DashboardDrawerProvider>
+        <MobileApp route={route} onSelect={onSelect} />
+        <NewApplicationDetector />
+        <ToastContainer />
+        <ConfirmContainer />
+        <PickContainer />
+        <PromptContainer />
+      </DashboardDrawerProvider>
+    );
   }
 
   return (
