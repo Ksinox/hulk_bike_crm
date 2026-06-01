@@ -42,6 +42,7 @@ import {
   validateSeries,
 } from "./formatters";
 import { toTitleCaseRu } from "@/lib/textCase";
+import { RENTAL_AGREEMENT_TEXT } from "@/lib/rentalAgreement";
 import { DatePicker } from "@/components/ui/date-picker";
 import { periodForDays } from "@/lib/mock/rentals";
 import type { RentalModel, RentalEquipment } from "./applicationApi";
@@ -101,48 +102,6 @@ function getSteps(isForeigner: boolean): StepId[] {
   ];
   return isForeigner ? all.filter((s) => s !== "photo_passport_reg") : all;
 }
-
-/**
- * R2.7: текст пользовательского соглашения (инструктаж при передаче скутера).
- * Источник — «Инструктаж при передаче скутера.docx» (предоставлен владельцем).
- * Клиент обязан пролистать его до конца, иначе кнопка «Принять» неактивна.
- */
-const AGREEMENT_SECTIONS: { title: string; lines: string[] }[] = [
-  {
-    title: "Запрещено",
-    lines: [
-      "Передача скутера третьим лицам — штраф по договору 2 000 ₽.",
-      "Выезд за границу г. Краснодара +25 км; при нарушении подача топлива автоматически отрезается, штраф 2 500 ₽.",
-      "Катание более одного человека — штраф 2 000 ₽.",
-      "Нарушение пломб (внешние/внутренние наклейки и пломбировочная краска). При нарушении целостности — разбор и диагностика техники.",
-      "В случае нарушения предусмотрена материальная ответственность по договору.",
-    ],
-  },
-  {
-    title: "Зона ответственности арендатора",
-    lines: [
-      "Контроль индикации температуры двигателя. При загорании — немедленно заглушить и сообщить нам (эвакуируем, дадим подменный). Езда на перегретом двигателе — мат. ответственность по договору.",
-      "Контроль пробега. Под сиденьем стикер с пробегом; при совпадении со спидометром — приехать в парк на замену масла. Нарушение регламента замены масла — ответственность.",
-      "Пластик. Состояние фиксируется круговой подсъёмкой и отправляется в общий чат WhatsApp. Клиент проверяет видео; если что-то не отражено — сам делает фото и присылает в диалог.",
-      "Рекомендуется взять противоугонную цепь и пристёгивать у подъезда за заднее колесо перед камерой.",
-    ],
-  },
-  {
-    title: "Оплата",
-    lines: [
-      "Производится в день продления договора; чек об оплате — в диалог с менеджером. При нарушении условий оплаты стоимость аренды рассчитывается по суточному тарифу.",
-    ],
-  },
-  {
-    title: "ДТП и дефекты",
-    lines: [
-      "Мелкая потёртость (лак) — 1 000 ₽ (полировка).",
-      "Царапины / потёртости / сколы (ЛКП) — 3 700 ₽ (покраска).",
-      "Трещина пластика больше 5 см — замена детали.",
-      "Трещина пластика менее 5 см — пайка — 1 500 ₽.",
-    ],
-  },
-];
 
 type ClientSourceChoice = "avito" | "repeat" | "ref" | "maps" | "other";
 
@@ -1223,7 +1182,7 @@ function Confirm({
       <div className="rounded-xl border border-slate-300 bg-white">
         <div className="border-b border-slate-200 px-4 py-3">
           <div className="text-[15px] font-bold text-slate-900">
-            Правила аренды и эксплуатации
+            Инструктаж при передаче скутера
           </div>
           <div className="mt-0.5 text-[12px] text-slate-500">
             Пролистайте до конца — тогда станет активна кнопка «Принять».
@@ -1236,21 +1195,9 @@ function Confirm({
               onReachRulesEnd();
             }
           }}
-          className="max-h-56 space-y-3 overflow-y-auto px-4 py-3 text-[13px] leading-relaxed text-slate-700"
+          className="max-h-56 overflow-y-auto whitespace-pre-line px-4 py-3 text-[13px] leading-relaxed text-slate-700"
         >
-          {AGREEMENT_SECTIONS.map((sec) => (
-            <div key={sec.title}>
-              <div className="mb-1 font-bold text-slate-900">{sec.title}</div>
-              <ul className="list-disc space-y-1 pl-5">
-                {sec.lines.map((line, i) => (
-                  <li key={i}>{line}</li>
-                ))}
-              </ul>
-            </div>
-          ))}
-          <div className="pt-1 text-center text-[12px] italic text-slate-400">
-            Просьба относиться к технике бережно, как к своей =)
-          </div>
+          {RENTAL_AGREEMENT_TEXT}
         </div>
         <div className="border-t border-slate-200 p-3">
           {agreedRules ? (
