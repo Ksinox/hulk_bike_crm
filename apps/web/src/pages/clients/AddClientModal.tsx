@@ -468,6 +468,12 @@ export function AddClientModal({
         f.isForeigner && f.passportRaw.trim().length === 0
           ? "Опишите документ"
           : null,
+      // Адрес регистрации обязателен для РФ (нужен для договора). Для
+      // иностранца «прописки по паспорту РФ» нет — не требуем.
+      regAddr:
+        f.isForeigner || f.regAddr.trim().length > 0
+          ? null
+          : "Укажите адрес регистрации",
       source:
         !f.source
           ? "Выберите источник"
@@ -504,6 +510,7 @@ export function AddClientModal({
     errors.passNum,
     errors.passCode,
     errors.passportRaw,
+    errors.regAddr,
     errors.source,
     errors.sourceCustom,
   ];
@@ -909,6 +916,8 @@ export function AddClientModal({
           <Section num={3} title="Адрес" badge="регистрация и проживание">
             <Field
               label="Адрес регистрации (по паспорту)"
+              required={!f.isForeigner}
+              error={showErr("regAddr")}
               htmlFor="f-regaddr"
               hint="Как указано в паспорте на странице «прописка»"
             >
@@ -917,7 +926,8 @@ export function AddClientModal({
                 value={f.regAddr}
                 placeholder="Индекс, регион, город, улица, дом, кв."
                 onChange={(e) => set("regAddr", toTitleCaseRu(e.target.value))}
-                className={cn(inputClass(null), "min-h-[56px] resize-y")}
+                onBlur={() => markTouched("regAddr")}
+                className={cn(inputClass(showErr("regAddr")), "min-h-[56px] resize-y")}
               />
             </Field>
             <label className="flex cursor-pointer items-center gap-2 text-[13px] text-ink">
