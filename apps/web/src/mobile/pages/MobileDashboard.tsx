@@ -8,6 +8,9 @@ import {
 } from "lucide-react";
 import type { RouteId } from "@/app/route";
 import { useMe } from "@/lib/api/auth";
+import { useApiScooters } from "@/lib/api/scooters";
+import type { ApiScooter } from "@/lib/api/types";
+import { ActivityFeed } from "@/pages/dashboard/ActivityFeed";
 import { cn } from "@/lib/utils";
 import {
   formatRub,
@@ -97,7 +100,7 @@ export function MobileDashboard({
       </div>
 
       {/* Статус парка */}
-      <ParkStrip park={m.park} />
+      <MobileParkGrid metrics={m} />
 
       {/* Возвраты сегодня */}
       <Section
@@ -130,6 +133,9 @@ export function MobileDashboard({
             .map((o) => <OverdueRow key={o.rentalId} item={o} />)
         )}
       </Section>
+
+      {/* Последние действия — лента журнала (как в десктоп-CRM). */}
+      <ActivityFeed compact />
     </div>
   );
 }
@@ -205,35 +211,99 @@ function KpiTile({
   );
 }
 
-/* ───────────────────────── статус парка ───────────────────────── */
+/* ───────────────────────── статус парка (цветные квадраты) ─────────────── */
 
-function ParkStrip({ park }: { park: DashboardMetrics["park"] }) {
-  const chips = [
-    { label: "В аренде", value: park.inRental, cls: "bg-blue-50 text-blue-600" },
-    { label: "Готовы", value: park.ready, cls: "bg-green-soft text-green-ink" },
-    { label: "Ремонт", value: park.inRepair, cls: "bg-orange-soft text-orange-ink" },
-    { label: "Продажа", value: park.forSale, cls: "bg-purple-soft text-purple-ink" },
-  ];
+// Производный статус плитки — зеркало логики десктопного ParkPanel
+// (computeTileStatus). Цвета совпадают с десктопом.
+type ParkTile =
+  | "rented"
+  | "overdue"
+  | "late_today"
+  | "pool"
+  | "ready"
+  | "repair"
+  | "for_sale"
+  | "sold"
+  | "disassembly";
+
+const PARK_TILE_CLS: Record<ParkTile, string> = {
+  rented: "bg-blue",
+  overdue: "bg-red",
+  late_today: "bg-blue ring-2 ring-red/50",
+  pool: "bg-green",
+  ready: "bg-surface-soft border border-border-strong",
+  repair: "bg-orange",
+  for_sale: "bg-purple",
+  sold: "bg-border",
+  disassembly: "bg-ink",
+};
+
+const PARK_LEGEND: { id: ParkTile; label: string }[] = [
+  { id: "rented", label: "в аренде" },
+  { id: "overdue", label: "просрочка / ущерб" },
+  { id: "late_today", label: "опаздывает" },
+  { id: "pool", label: "готов" },
+  { id: "ready", label: "не распределён" },
+  { id: "repair", label: "ремонт" },
+  { id: "for_sale", label: "продажа" },
+];
+
+function parkTileOf(s: ApiScooter, m: DashboardMetrics): ParkTile {
+  if (s.baseStatus === "sold") return "sold";
+  if (s.baseStatus === "disassembly") return "disassembly";
+  if (s.baseStatus === "for_sale" || s.baseStatus === "buyout") return "for_sale";
+  if (s.baseStatus === "repair") return "repair";
+  if (m.overdueScooterIds.has(s.id) || m.damageDebtScooterIds.has(s.id))
+    return "overdue";
+  if (m.pastDueTodayScooterIds.has(s.id)) return "late_today";
+  if (m.anyActiveRentalByScooter.has(s.id)) return "rented";
+  if (s.baseStatus === "rental_pool") return "pool";
+  return "ready";
+}
+
+function MobileParkGrid({ metrics }: { metrics: DashboardMetrics }) {
+  const { data: scooters = [] } = useApiScooters();
+  const live = scooters.filter((s) => !s.archivedAt && !s.deletedAt);
+  const tiles = live
+    .map((s) => ({ id: s.id, name: s.name, status: parkTileOf(s, metrics) }))
+    .sort((a, b) => parkNum(a.name) - parkNum(b.name));
+
+  const counts = tiles.reduce<Record<string, number>>((acc, t) => {
+    acc[t.status] = (acc[t.status] ?? 0) + 1;
+    return acc;
+  }, {});
+
   return (
     <div className="rounded-2xl bg-surface p-3.5 shadow-card">
       <div className="mb-2.5 text-[12px] font-semibold text-muted">
-        Парк · {park.total} скутеров
+        Парк · {live.length} скутеров
       </div>
-      <div className="grid grid-cols-4 gap-2">
-        {chips.map((c) => (
-          <div
-            key={c.label}
-            className={cn("flex flex-col items-center rounded-xl py-2", c.cls)}
-          >
-            <span className="font-display text-[18px] font-bold tabular-nums">
-              {c.value}
-            </span>
-            <span className="text-[10px] font-medium opacity-80">{c.label}</span>
-          </div>
+      {/* Сетка цветных квадратов — по одному на скутер, цвет = состояние. */}
+      <div className="flex flex-wrap gap-1.5">
+        {tiles.map((t) => (
+          <span
+            key={t.id}
+            title={t.name}
+            className={cn("h-7 w-7 rounded-[7px]", PARK_TILE_CLS[t.status])}
+          />
+        ))}
+      </div>
+      {/* Легенда со счётчиками — только присутствующие статусы. */}
+      <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1.5 border-t border-border pt-3 text-[11px] text-muted">
+        {PARK_LEGEND.filter((l) => (counts[l.id] ?? 0) > 0).map((l) => (
+          <span key={l.id} className="inline-flex items-center gap-1.5">
+            <span className={cn("h-2.5 w-2.5 rounded-[3px]", PARK_TILE_CLS[l.id])} />
+            {l.label} · {counts[l.id]}
+          </span>
         ))}
       </div>
     </div>
   );
+}
+
+function parkNum(name: string): number {
+  const m = name.match(/#\s*(\d+)/);
+  return m ? parseInt(m[1], 10) : Number.POSITIVE_INFINITY;
 }
 
 /* ───────────────────────── секции-списки ───────────────────────── */
