@@ -32,6 +32,11 @@ export function useMe() {
     queryFn: () => api.get<AuthUser>("/api/auth/me"),
     retry: false,
     staleTime: 60_000,
+    // Сессия не нуждается в фоновом поллинге/refetch-on-focus. На телефоне
+    // открытие клавиатуры (экран входа) дёргает focus окна → дефолтный
+    // refetchOnWindowFocus постоянно перезапрашивал и сбрасывал ввод пароля.
+    refetchInterval: false,
+    refetchOnWindowFocus: false,
   });
 }
 
@@ -45,6 +50,10 @@ export function useLoginTiles(unlock: string) {
         .then((r) => r.items);
     },
     staleTime: 30_000,
+    // Список тайлов входа статичен в рамках сессии — поллинг и refetch при
+    // фокусе не нужны (и ломали ввод пароля на телефоне, см. useMe выше).
+    refetchInterval: false,
+    refetchOnWindowFocus: false,
   });
 }
 

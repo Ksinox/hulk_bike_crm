@@ -49,10 +49,14 @@ export function MobileApp({
   };
 
   return (
-    <div className="flex min-h-[100dvh] flex-col bg-bg">
+    // overflow-x-hidden + w-full: жёстко запрещаем горизонтальную прокрутку
+    // всей страницы на телефоне (любой случайно широкий элемент клиппится).
+    // Внутренний горизонтальный скролл чипов-фильтров при этом сохраняется —
+    // у них свой overflow-x-auto контекст.
+    <div className="flex min-h-[100dvh] w-full flex-col overflow-x-hidden bg-bg">
       <MobileTopBar title={routeTitle(route)} />
 
-      <main className="flex-1 overflow-y-auto px-4 pb-[calc(76px+env(safe-area-inset-bottom))] pt-3">
+      <main className="flex-1 overflow-y-auto overflow-x-hidden px-4 pb-[calc(76px+env(safe-area-inset-bottom))] pt-3">
         <MobilePage route={route} onSelect={go} />
       </main>
 
