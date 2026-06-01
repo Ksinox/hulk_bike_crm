@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import type { RouteId } from "@/app/route";
 import { useMe, useLogout } from "@/lib/api/auth";
 import { FabProvider, type PageFab } from "./fab";
+import { useSheetDrag, SheetHandle } from "./ui";
 import {
   buildMoreItems,
   logoutIcon as LogoutIcon,
@@ -260,6 +261,7 @@ function MoreSheet({
   onClose: () => void;
 }) {
   const logoutMut = useLogout();
+  const { handleProps, sheetStyle } = useSheetDrag(onClose);
   const handleLogout = async () => {
     try {
       await logoutMut.mutateAsync();
@@ -275,9 +277,10 @@ function MoreSheet({
     >
       <div
         onClick={(e) => e.stopPropagation()}
+        style={sheetStyle}
         className="rounded-t-3xl bg-surface px-4 pb-[calc(20px+env(safe-area-inset-bottom))] pt-3 shadow-card-lg animate-sheet-up"
       >
-        <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-border-strong" />
+        <SheetHandle handleProps={handleProps} />
         <div className="grid grid-cols-4 gap-2">
           {items.map((item) => {
             const Icon = item.icon;

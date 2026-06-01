@@ -1,5 +1,53 @@
+import { useRef, useState } from "react";
 import { Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+/**
+ * Свайп нижней шторки вниз для закрытия. Возвращает обработчики на «ручку»
+ * (полоску сверху) и стиль для панели (translateY при перетаскивании +
+ * плавный возврат). Тянуть можно только вниз; отпустил ниже порога — закрыли.
+ */
+export function useSheetDrag(onClose: () => void) {
+  const [dy, setDy] = useState(0);
+  const startY = useRef<number | null>(null);
+  const handleProps = {
+    onTouchStart: (e: React.TouchEvent) => {
+      startY.current = e.touches[0]?.clientY ?? null;
+    },
+    onTouchMove: (e: React.TouchEvent) => {
+      if (startY.current == null) return;
+      const d = (e.touches[0]?.clientY ?? 0) - startY.current;
+      if (d > 0) setDy(d);
+    },
+    onTouchEnd: () => {
+      if (dy > 90) onClose();
+      setDy(0);
+      startY.current = null;
+    },
+  };
+  const sheetStyle: React.CSSProperties = {
+    transform: dy ? `translateY(${dy}px)` : undefined,
+    transition:
+      startY.current == null ? "transform .22s cubic-bezier(.22,1,.36,1)" : "none",
+  };
+  return { handleProps, sheetStyle };
+}
+
+/** «Ручка» шторки — серая полоска с большой тач-зоной для свайпа вниз. */
+export function SheetHandle({
+  handleProps,
+}: {
+  handleProps: ReturnType<typeof useSheetDrag>["handleProps"];
+}) {
+  return (
+    <div
+      {...handleProps}
+      className="-mx-4 -mt-3 mb-2 flex touch-none cursor-grab justify-center pb-1 pt-3"
+    >
+      <div className="h-1.5 w-11 rounded-full bg-border-strong" />
+    </div>
+  );
+}
 
 /** Поисковая строка — общая для всех мобильных списков. */
 export function MobileSearch({
@@ -100,6 +148,7 @@ export function MobileSheet({
   title?: React.ReactNode;
   children: React.ReactNode;
 }) {
+  const { handleProps, sheetStyle } = useSheetDrag(onClose);
   if (!open) return null;
   return (
     <div
@@ -108,9 +157,10 @@ export function MobileSheet({
     >
       <div
         onClick={(e) => e.stopPropagation()}
+        style={sheetStyle}
         className="max-h-[85vh] overflow-y-auto rounded-t-3xl bg-bg px-4 pb-[calc(20px+env(safe-area-inset-bottom))] pt-3 shadow-card-lg animate-sheet-up"
       >
-        <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-border-strong" />
+        <SheetHandle handleProps={handleProps} />
         {title && (
           <div className="mb-3 flex items-center justify-between gap-2">
             <div className="font-display text-[17px] font-bold text-ink">

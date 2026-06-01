@@ -2,11 +2,13 @@ import { useMemo, useState } from "react";
 import { ShoppingBag, Repeat, Bike } from "lucide-react";
 import { useApiScooters } from "@/lib/api/scooters";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
+import { useRentals } from "@/pages/rentals/rentalsStore";
 import { fileUrl } from "@/lib/files";
+import { SCOOTER_STATUS_LABEL, type ScooterDisplayStatus } from "@/lib/mock/fleet";
 import { AddScooterModal } from "@/pages/fleet/AddScooterModal";
 import { ScooterStatusModal } from "@/pages/fleet/ScooterStatusModal";
 import { usePageFab } from "../fab";
-import type { ApiScooter, ScooterBaseStatus, ScooterModel } from "@/lib/api/types";
+import type { ApiScooter, ScooterModel } from "@/lib/api/types";
 import { matchId, matchScooterName, normalizeQuery } from "@/lib/search";
 import { cn } from "@/lib/utils";
 import {
@@ -18,7 +20,7 @@ import {
   type ChipOption,
 } from "../ui";
 
-type Filter = "all" | "ready" | "rental_pool" | "repair" | "sale";
+type Filter = "all" | "rented" | "rental_pool" | "repair" | "sale";
 
 const MODEL_LABEL: Record<ScooterModel, string> = {
   jog: "Yamaha Jog",
@@ -27,15 +29,22 @@ const MODEL_LABEL: Record<ScooterModel, string> = {
   tank: "Tank",
 };
 
-const STATUS_META: Record<ScooterBaseStatus, { label: string; cls: string }> = {
-  ready: { label: "Готов", cls: "bg-green-soft text-green-ink" },
-  rental_pool: { label: "В прокате", cls: "bg-blue-50 text-blue-600" },
-  repair: { label: "Ремонт", cls: "bg-orange-soft text-orange-ink" },
-  buyout: { label: "Выкуп", cls: "bg-purple-soft text-purple-ink" },
-  for_sale: { label: "Продажа", cls: "bg-purple-soft text-purple-ink" },
-  sold: { label: "Продан", cls: "bg-surface-soft text-muted" },
-  disassembly: { label: "Разбор", cls: "bg-red-soft text-red-ink" },
+// Тон под канонический статус. Ярлык берём из SCOOTER_STATUS_LABEL (единый
+// источник с десктопом — никаких выдуманных «В прокате»).
+const STATUS_TONE: Record<ScooterDisplayStatus, string> = {
+  rented: "bg-blue-50 text-blue-600",
+  rental_pool: "bg-green-soft text-green-ink",
+  ready: "bg-surface-soft text-muted",
+  repair: "bg-orange-soft text-orange-ink",
+  buyout: "bg-purple-soft text-purple-ink",
+  for_sale: "bg-purple-soft text-purple-ink",
+  sold: "bg-surface-soft text-muted-2",
+  disassembly: "bg-red-soft text-red-ink",
 };
+
+function statusMeta(s: ScooterDisplayStatus): { label: string; cls: string } {
+  return { label: SCOOTER_STATUS_LABEL[s], cls: STATUS_TONE[s] };
+}
 
 function num(n: number): string {
   return new Intl.NumberFormat("ru-RU").format(Math.round(n));
@@ -60,28 +69,49 @@ export function MobileScooters() {
   /** Скутер, для которого открыта смена статуса. */
   const [statusId, setStatusId] = useState<number | null>(null);
 
+  // Скутеры с активной арендой → derived-статус «В аренде» (как на десктопе:
+  // baseStatus остаётся rental_pool, но показываем «rented»).
+  const rentals = useRentals();
+  const rentedSet = useMemo(() => {
+    const set = new Set<number>();
+    for (const r of rentals) {
+      if (
+        r.scooterId != null &&
+        (r.status === "active" || r.status === "overdue" || r.status === "returning")
+      ) {
+        set.add(r.scooterId);
+      }
+    }
+    return set;
+  }, [rentals]);
+
+  const displayStatus = (s: ApiScooter): ScooterDisplayStatus =>
+    s.baseStatus === "rental_pool" && rentedSet.has(s.id) ? "rented" : s.baseStatus;
+
   const live = useMemo(
     () => scooters.filter((s) => !s.archivedAt && !s.deletedAt),
     [scooters],
   );
 
   const counts = useMemo(() => {
-    const c = { ready: 0, rental_pool: 0, repair: 0, sale: 0 };
+    const c = { rented: 0, rental_pool: 0, repair: 0, sale: 0 };
     for (const s of live) {
-      if (s.baseStatus === "ready") c.ready++;
-      else if (s.baseStatus === "rental_pool") c.rental_pool++;
-      else if (s.baseStatus === "repair") c.repair++;
-      else if (s.baseStatus === "for_sale" || s.baseStatus === "buyout") c.sale++;
+      const st = displayStatus(s);
+      if (st === "rented") c.rented++;
+      else if (st === "rental_pool") c.rental_pool++;
+      else if (st === "repair") c.repair++;
+      else if (st === "for_sale" || st === "buyout") c.sale++;
     }
     return c;
-  }, [live]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [live, rentedSet]);
 
   const filtered = useMemo(() => {
     const matchStatus = (s: ApiScooter): boolean => {
       if (filter === "all") return true;
-      if (filter === "sale")
-        return s.baseStatus === "for_sale" || s.baseStatus === "buyout";
-      return s.baseStatus === filter;
+      const st = displayStatus(s);
+      if (filter === "sale") return st === "for_sale" || st === "buyout";
+      return st === filter;
     };
     const matchSearch = (s: ApiScooter): boolean => {
       if (!search.trim()) return true;
@@ -95,12 +125,13 @@ export function MobileScooters() {
     return live
       .filter((s) => matchStatus(s) && matchSearch(s))
       .sort((a, b) => a.name.localeCompare(b.name, "ru", { numeric: true }));
-  }, [live, filter, search]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [live, filter, search, rentedSet]);
 
   const chips: ChipOption<Filter>[] = [
     { id: "all", label: "Все", count: live.length },
-    { id: "rental_pool", label: "В прокате", count: counts.rental_pool },
-    { id: "ready", label: "Готовы", count: counts.ready },
+    { id: "rented", label: "В аренде", count: counts.rented },
+    { id: "rental_pool", label: "Готов", count: counts.rental_pool },
     { id: "repair", label: "Ремонт", count: counts.repair },
     { id: "sale", label: "Продажа", count: counts.sale },
   ];
@@ -126,6 +157,7 @@ export function MobileScooters() {
             <ScooterCard
               key={s.id}
               scooter={s}
+              status={displayStatus(s)}
               avatar={avatarFor(s)}
               onClick={() => setOpenId(s.id)}
             />
@@ -141,6 +173,7 @@ export function MobileScooters() {
         {openScooter && (
           <ScooterDetail
             scooter={openScooter}
+            status={displayStatus(openScooter)}
             onChangeStatus={() => setStatusId(openScooter.id)}
           />
         )}
@@ -161,14 +194,16 @@ export function MobileScooters() {
 
 function ScooterCard({
   scooter,
+  status,
   avatar,
   onClick,
 }: {
   scooter: ApiScooter;
+  status: ScooterDisplayStatus;
   avatar?: string;
   onClick: () => void;
 }) {
-  const meta = STATUS_META[scooter.baseStatus];
+  const meta = statusMeta(status);
   return (
     <button
       type="button"
@@ -205,12 +240,14 @@ function ScooterCard({
 
 function ScooterDetail({
   scooter,
+  status,
   onChangeStatus,
 }: {
   scooter: ApiScooter;
+  status: ScooterDisplayStatus;
   onChangeStatus: () => void;
 }) {
-  const meta = STATUS_META[scooter.baseStatus];
+  const meta = statusMeta(status);
   return (
     <div>
       <div className="mb-2">

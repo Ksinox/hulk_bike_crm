@@ -391,13 +391,14 @@ export function NewRentalModal({
   return (
     <div
       className={cn(
-        "fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-ink/55 p-6 backdrop-blur-sm",
+        "fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto overflow-x-hidden bg-ink/55 p-0 backdrop-blur-sm sm:p-6",
         closing ? "animate-backdrop-out" : "animate-backdrop-in",
       )}
     >
       <div
         className={cn(
-          "w-full max-w-[780px] overflow-hidden rounded-2xl bg-surface shadow-card-lg",
+          // Мобайл: полноэкранно (min-h-100dvh, без скруглений). Десктоп: карточка 780.
+          "min-h-[100dvh] w-full overflow-hidden bg-surface shadow-card-lg sm:min-h-0 sm:max-w-[780px] sm:rounded-2xl",
           closing ? "animate-modal-out" : "animate-modal-in",
         )}
         onClick={(e) => e.stopPropagation()}
