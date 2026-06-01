@@ -86,6 +86,7 @@ type StepId =
   | "photo_license"
   | "photo_selfie"
   | "source"
+  | "agreement"
   | "confirm";
 
 function getSteps(isForeigner: boolean): StepId[] {
@@ -99,6 +100,7 @@ function getSteps(isForeigner: boolean): StepId[] {
     "photo_license",
     "photo_selfie",
     "source",
+    "agreement",
     "confirm",
   ];
   return isForeigner ? all.filter((s) => s !== "photo_passport_reg") : all;
@@ -375,6 +377,8 @@ export function ApplicationForm() {
         return uploaded.has("selfie");
       case "source":
         return canNextSource;
+      case "agreement":
+        return agreedRules;
       case "confirm":
         return true;
     }
@@ -414,6 +418,10 @@ export function ApplicationForm() {
         return form.source === ""
           ? "Выберите, откуда вы о нас узнали."
           : "Уточните вариант «Другое».";
+      case "agreement":
+        return rulesScrolledEnd
+          ? "Нажмите «Принять правила», чтобы продолжить."
+          : "Пролистайте правила до конца и примите их.";
       default:
         return null;
     }
@@ -553,15 +561,20 @@ export function ApplicationForm() {
           {currentStepId === "source" && (
             <SourceStep form={form} setField={setField} />
           )}
+          {currentStepId === "agreement" && (
+            <AgreementStep
+              agreedRules={agreedRules}
+              rulesScrolledEnd={rulesScrolledEnd}
+              onReachRulesEnd={() => setRulesScrolledEnd(true)}
+              onToggleRules={(v) => setAgreedRules(v)}
+            />
+          )}
           {currentStepId === "confirm" && (
             <Confirm
               form={form}
               setField={setField}
               missingFields={missingFields}
               agreedRules={agreedRules}
-              rulesScrolledEnd={rulesScrolledEnd}
-              onReachRulesEnd={() => setRulesScrolledEnd(true)}
-              onToggleRules={(v) => setAgreedRules(v)}
             />
           )}
 
@@ -1166,24 +1179,104 @@ function SourceStep({
   );
 }
 
-function Confirm({
-  form,
-  setField,
-  missingFields,
+/**
+ * R2.7 (#83): Инструктаж при передаче скутера — отдельный полноэкранный шаг.
+ * Крупный жирный заголовок, разделы выделены, текст дословный. Кнопка
+ * «Принять правила» активна только после прокрутки до конца (или если текст
+ * целиком помещается на экране). Без принятия дальше не пустит (canStepForward).
+ */
+function AgreementStep({
   agreedRules,
   rulesScrolledEnd,
   onReachRulesEnd,
   onToggleRules,
 }: {
-  form: FormState;
-  setField: <K extends keyof FormState>(k: K, v: FormState[K]) => void;
-  missingFields: string[];
-  /** R2.7: принято ли пользовательское соглашение. */
   agreedRules: boolean;
-  /** R2.7: прокручен ли текст соглашения до конца (тогда «Принять» активна). */
   rulesScrolledEnd: boolean;
   onReachRulesEnd: () => void;
   onToggleRules: (v: boolean) => void;
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const lines = RENTAL_AGREEMENT_TEXT.split("\n");
+  const titleLine = lines[0] ?? "Инструктаж при передаче скутера";
+  const bodyLines = lines.slice(1);
+
+  // Если текст помещается без прокрутки (большой экран) — сразу разрешаем.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el && el.scrollHeight <= el.clientHeight + 4) onReachRulesEnd();
+  }, [onReachRulesEnd]);
+
+  return (
+    <div className="space-y-4">
+      <h1 className="text-[24px] font-extrabold leading-tight text-slate-900">
+        {titleLine}
+      </h1>
+      <p className="text-[14px] text-slate-600">
+        Пожалуйста, прочитайте правила до конца — без принятия отправить заявку
+        не получится.
+      </p>
+      <div
+        ref={scrollRef}
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          if (el.scrollTop + el.clientHeight >= el.scrollHeight - 8) {
+            onReachRulesEnd();
+          }
+        }}
+        className="max-h-[56vh] space-y-1 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-5"
+      >
+        {bodyLines.map((line, i) => {
+          const t = line.trim();
+          if (!t) return <div key={i} className="h-2" />;
+          // Заголовки разделов (строка с двоеточием, не пункт-тире) — крупно/жирно.
+          const isHeading = t.endsWith(":") && !t.startsWith("—");
+          if (isHeading) {
+            return (
+              <h2
+                key={i}
+                className="pt-3 text-[18px] font-bold text-slate-900 first:pt-0"
+              >
+                {t}
+              </h2>
+            );
+          }
+          return (
+            <p key={i} className="text-[14.5px] leading-relaxed text-slate-700">
+              {t}
+            </p>
+          );
+        })}
+      </div>
+      {agreedRules ? (
+        <div className="flex items-center justify-center gap-2 rounded-xl bg-emerald-50 py-3.5 text-[15px] font-bold text-emerald-700">
+          <Check size={18} /> Правила приняты
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => onToggleRules(true)}
+          disabled={!rulesScrolledEnd}
+          className="h-12 w-full rounded-xl bg-slate-900 text-[15px] font-semibold text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {rulesScrolledEnd ? "Принять правила" : "Пролистайте правила до конца"}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function Confirm({
+  form,
+  setField,
+  missingFields,
+  agreedRules,
+}: {
+  form: FormState;
+  setField: <K extends keyof FormState>(k: K, v: FormState[K]) => void;
+  missingFields: string[];
+  /** R2.7: принято ли соглашение (на отдельном шаге «Инструктаж»). */
+  agreedRules: boolean;
 }) {
   return (
     <div className="space-y-4">
@@ -1246,46 +1339,27 @@ function Confirm({
         </span>
       </label>
 
-      {/* R2.7: пользовательское соглашение — «Принять» активна только после
-          прокрутки текста до конца. Без принятия отправка заблокирована. */}
-      <div className="rounded-xl border border-slate-300 bg-white">
-        <div className="border-b border-slate-200 px-4 py-3">
-          <div className="text-[15px] font-bold text-slate-900">
-            Инструктаж при передаче скутера
-          </div>
-          <div className="mt-0.5 text-[12px] text-slate-500">
-            Пролистайте до конца — тогда станет активна кнопка «Принять».
-          </div>
-        </div>
-        <div
-          onScroll={(e) => {
-            const el = e.currentTarget;
-            if (el.scrollTop + el.clientHeight >= el.scrollHeight - 8) {
-              onReachRulesEnd();
-            }
-          }}
-          className="max-h-56 overflow-y-auto whitespace-pre-line px-4 py-3 text-[13px] leading-relaxed text-slate-700"
+      {/* R2.7: соглашение принимается на отдельном шаге «Инструктаж» (до
+          подтверждения). Здесь — только статус, read-only. */}
+      <div
+        className={`flex items-start gap-3 rounded-xl border p-3 ${
+          agreedRules
+            ? "border-emerald-200 bg-emerald-50"
+            : "border-amber-200 bg-amber-50"
+        }`}
+      >
+        {agreedRules ? (
+          <Check size={18} className="mt-0.5 shrink-0 text-emerald-600" />
+        ) : (
+          <AlertCircle size={18} className="mt-0.5 shrink-0 text-amber-600" />
+        )}
+        <span
+          className={`text-[13px] ${agreedRules ? "text-emerald-800" : "text-amber-800"}`}
         >
-          {RENTAL_AGREEMENT_TEXT}
-        </div>
-        <div className="border-t border-slate-200 p-3">
-          {agreedRules ? (
-            <div className="inline-flex items-center gap-2 text-[14px] font-semibold text-emerald-700">
-              <Check size={18} /> Правила приняты
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => onToggleRules(true)}
-              disabled={!rulesScrolledEnd}
-              className="inline-flex h-11 w-full items-center justify-center gap-1.5 rounded-xl bg-slate-900 px-4 text-[14px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {rulesScrolledEnd
-                ? "Принять правила"
-                : "Пролистайте правила до конца"}
-            </button>
-          )}
-        </div>
+          {agreedRules
+            ? "Инструктаж при передаче скутера — принят."
+            : "Вернитесь на шаг «Инструктаж» и примите правила — без этого заявку не отправить."}
+        </span>
       </div>
     </div>
   );
@@ -1606,6 +1680,9 @@ function RentalWishStep({
 
           <div>
             <FieldLabel>На сколько дней</FieldLabel>
+            <div className="mb-1.5 text-[12px] text-slate-500">
+              Быстрый выбор — или укажите любой срок ниже
+            </div>
             <div className="flex flex-wrap gap-2">
               {WISH_DAY_PRESETS.map((n) => {
                 const active = days === n;
@@ -1624,6 +1701,45 @@ function RentalWishStep({
                   </button>
                 );
               })}
+            </div>
+            {/* Любой срок — степпер. Заготовки выше лишь помощь; клиент может
+                выбрать ровно столько дней, сколько нужно (напр. 8). */}
+            <div className="mt-3 flex items-center gap-3">
+              <div className="inline-flex items-center overflow-hidden rounded-xl border-2 border-slate-200">
+                <button
+                  type="button"
+                  aria-label="На день меньше"
+                  onClick={() => setField("wantDays", Math.max(1, days - 1))}
+                  className="flex h-12 w-12 items-center justify-center text-[24px] font-semibold leading-none text-slate-500 transition-colors hover:bg-slate-50 active:bg-slate-100"
+                >
+                  −
+                </button>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  max={90}
+                  value={days}
+                  onChange={(e) =>
+                    setField(
+                      "wantDays",
+                      Math.max(1, Math.min(90, Number(e.target.value) || 1)),
+                    )
+                  }
+                  className="h-12 w-16 border-x-2 border-slate-200 text-center text-[17px] font-bold text-slate-900 outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                />
+                <button
+                  type="button"
+                  aria-label="На день больше"
+                  onClick={() => setField("wantDays", Math.min(90, days + 1))}
+                  className="flex h-12 w-12 items-center justify-center text-[24px] font-semibold leading-none text-slate-500 transition-colors hover:bg-slate-50 active:bg-slate-100"
+                >
+                  +
+                </button>
+              </div>
+              <span className="text-[14px] text-slate-600">
+                {days === 1 ? "день" : days < 5 ? "дня" : "дней"} — любой срок
+              </span>
             </div>
           </div>
 
@@ -1650,7 +1766,8 @@ function RentalWishStep({
                 </div>
               )}
               <div className="mt-2 text-[12px] text-slate-400">
-                Точную цену и наличие подтвердит менеджер.
+                Сумма зависит от срока, модели и экипировки. Точную цену и
+                наличие подтвердит менеджер.
               </div>
             </div>
           )}
