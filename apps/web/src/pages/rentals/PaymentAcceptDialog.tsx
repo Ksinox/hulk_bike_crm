@@ -20,7 +20,7 @@
  *  5. Неоплаченная аренда (rent payments)
  *  6. Излишек → депозит клиента
  */
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -46,10 +46,10 @@ import type { Rental } from "@/lib/mock/rentals";
 import type { PaymentMethod } from "@/lib/mock/rentals";
 import {
   periodForDays,
-  TARIFF,
   TARIFF_PERIOD_LABEL,
   type TariffPeriod,
 } from "@/lib/mock/rentals";
+import { useModelRateResolver } from "@/lib/api/scooter-models";
 
 // v0.4.30: терминала для карт у бизнеса нет — только наличные и
 // перевод. «card» остаётся в типе PaymentMethod ради обратной
@@ -291,6 +291,17 @@ export function PaymentAcceptDialog({
   const initialTariff: TariffSel = (rental.tariffPeriod ?? "day") as TariffSel;
   const [selectedTariff, setSelectedTariff] =
     useState<TariffSel>(initialTariff);
+
+  // #81: ставка ₽/сут по тарифному периоду — из каталога «Модели» (БД),
+  // фолбэк на legacy TARIFF. Единый источник цен с формой аренды.
+  const resolveRate = useModelRateResolver();
+  const modelRate = useCallback(
+    (p: TariffPeriod) => resolveRate(rental, p),
+    // Зависим от примитивов (а не от объекта rental), чтобы функция была
+    // стабильной между рендерами — иначе amount-effect зациклится.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [resolveRate, rental.scooterId, rental.model],
+  );
   // v0.6.14: tariffPinned — флаг, что оператор вручную выбрал тариф.
   // Тогда useEffect ниже НЕ перетирает selectedTariff при изменении extDays.
   // Сбрасывается только при выборе custom (через checkbox).
@@ -333,7 +344,7 @@ export function PaymentAcceptDialog({
     selectedTariff === "custom" && extCustomUnit === "week";
   const extRate = (() => {
     if (selectedTariff === "custom") return Math.max(0, extCustomRate);
-    return TARIFF[rental.model][selectedTariff];
+    return modelRate(selectedTariff);
   })();
   const extDailyRate = extIsWeekly ? Math.max(1, Math.round(extRate / 7)) : extRate;
   // v0.6.7: экипировка ВСЕГДА учитывается в формуле дней/суммы продления
@@ -543,7 +554,7 @@ export function PaymentAcceptDialog({
     if (tariffPinned) {
       const unitDaily = Math.max(
         1,
-        TARIFF[rental.model][selectedTariff] + equipDaily,
+        modelRate(selectedTariff) + equipDaily,
       );
       const days = Math.floor(forExtMoney / unitDaily);
       setExtInputOverride(days > 0 ? days : 0);
@@ -554,7 +565,7 @@ export function PaymentAcceptDialog({
     let bestPeriod: TariffPeriod | null = null;
     let bestDays = 0;
     for (const t of EXT_TIERS) {
-      const unitDaily = Math.max(1, TARIFF[rental.model][t.period] + equipDaily);
+      const unitDaily = Math.max(1, modelRate(t.period) + equipDaily);
       const raw = Math.floor(forExtMoney / unitDaily);
       const days = t.max === Infinity ? raw : Math.min(raw, t.max);
       if (days >= t.min && days > bestDays) {
@@ -581,6 +592,7 @@ export function PaymentAcceptDialog({
     equipDaily,
     dailyExtTotalBase,
     rental.model,
+    modelRate,
   ]);
 
   // v0.6.7: при переключении mode='days' — если override был 0
@@ -1114,7 +1126,7 @@ export function PaymentAcceptDialog({
     const tier =
       EXT_TIERS.find((t) => d >= t.min && d <= t.max) ??
       EXT_TIERS[EXT_TIERS.length - 1];
-    return d * (TARIFF[rental.model][tier.period] + equipDaily);
+    return d * (modelRate(tier.period) + equipDaily);
   };
   // Ближайшее число дней > текущего с минимальной доплатой.
   const extUpsell: { days: number; add: number; period: TariffPeriod } | null =
@@ -1517,7 +1529,7 @@ export function PaymentAcceptDialog({
                   <>
                     {" "}
                     (тариф «{TARIFF_PERIOD_LABEL[extUpsell.period]}»{" "}
-                    {TARIFF[rental.model][extUpsell.period]} ₽/сут)
+                    {modelRate(extUpsell.period)} ₽/сут)
                   </>
                 )}
                 .
@@ -1545,7 +1557,7 @@ export function PaymentAcceptDialog({
               <div className="flex flex-wrap gap-1.5">
                 {/* v0.6.43: порядок по возрастанию срока — 1-2 / 3-6 / 7-29 / 30+ */}
                 {(["day", "short", "week", "month"] as const).map((p) => {
-                  const r = TARIFF[rental.model][p];
+                  const r = modelRate(p);
                   const active = selectedTariff === p;
                   return (
                     <button

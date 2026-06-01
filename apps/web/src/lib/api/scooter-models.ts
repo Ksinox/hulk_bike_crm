@@ -1,5 +1,8 @@
+import { useCallback } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { useApiScooters } from "@/lib/api/scooters";
+import { TARIFF, type ScooterModel, type TariffPeriod } from "@/lib/mock/rentals";
 
 export type CoolingType = "air" | "liquid";
 
@@ -68,6 +71,45 @@ export function useApiScooterModels() {
         .get<{ items: ApiScooterModel[] }>("/api/scooter-models")
         .then((r) => r.items),
   });
+}
+
+/**
+ * #81: единый источник тарифов — каталог «Модели» (БД). Возвращает функцию
+ * `(rental, period) => ₽/сут` по модели аренды. Резолв: rental.scooterId →
+ * scooter.modelId → модель каталога. Фолбэк на legacy TARIFF (по enum-модели),
+ * если каталог/скутер ещё не загрузился или у скутера нет modelId.
+ *
+ * Используется и в форме создания аренды, и в продлении, и в приёме оплаты —
+ * чтобы цена везде совпадала с тем, что задано в «Скутеры → Модели».
+ */
+export function useModelRateResolver() {
+  const { data: models = [] } = useApiScooterModels();
+  const { data: scooters = [] } = useApiScooters();
+  return useCallback(
+    (
+      rental: { scooterId?: number | null; model: ScooterModel },
+      period: TariffPeriod,
+    ): number => {
+      const sc =
+        rental.scooterId != null
+          ? scooters.find((s) => s.id === rental.scooterId)
+          : null;
+      const model =
+        sc?.modelId != null ? models.find((m) => m.id === sc.modelId) : null;
+      if (model) {
+        return period === "day"
+          ? model.dayRate
+          : period === "short"
+            ? model.shortRate
+            : period === "week"
+              ? model.weekRate
+              : model.monthRate;
+      }
+      // Фолбэк: legacy-табличка по enum-модели (если каталог недоступен).
+      return TARIFF[rental.model][period];
+    },
+    [models, scooters],
+  );
 }
 
 export function useCreateScooterModel() {

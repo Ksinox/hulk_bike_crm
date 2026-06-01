@@ -5,10 +5,10 @@ import {
   MIN_RENTAL_DAYS,
   MODEL_LABEL,
   periodForDays,
-  TARIFF,
   TARIFF_PERIOD_LABEL,
   type Rental,
 } from "@/lib/mock/rentals";
+import { useModelRateResolver } from "@/lib/api/scooter-models";
 import { extendInplaceAsync, equipmentChangeAsync } from "./rentalsStore";
 import { toast } from "@/lib/toast";
 import { PaymentAcceptDialog } from "./PaymentAcceptDialog";
@@ -36,6 +36,8 @@ export function ExtendRentalDialog({
 }) {
   const [closing, setClosing] = useState(false);
   const [days, setDays] = useState(7);
+  // #81: ставка из каталога «Модели» (БД), фолбэк на legacy TARIFF.
+  const resolveRate = useModelRateResolver();
   // v0.4.25: чекбокс «Произвольный тариф» + переключатель ед.измерения
   // ₽/сут vs ₽/нед. В week-режиме поле «дней» означает недели, под
   // капотом days = weeks × 7.
@@ -83,7 +85,7 @@ export function ExtendRentalDialog({
   //  • customMode — оператор задаёт сам (₽/сут или ₽/нед)
   const rate = customMode
     ? Math.max(0, customRate)
-    : TARIFF[rental.model][period];
+    : resolveRate(rental, period);
   const isWeeklyCustom = customMode && customUnit === "week";
   const weeks = isWeeklyCustom ? Math.max(1, Math.round(days / 7)) : 0;
   // Правка 3: бэк добавляет дневную стоимость платной экипировки к
@@ -269,7 +271,7 @@ export function ExtendRentalDialog({
                       {TARIFF_PERIOD_LABEL[p]}
                     </div>
                     <div className="mt-0.5 tabular-nums">
-                      {TARIFF[rental.model][p]} ₽/сут
+                      {resolveRate(rental, p)} ₽/сут
                     </div>
                   </div>
                 ))}
