@@ -170,8 +170,10 @@ export function ClientCard({ client }: { client: Client }) {
         </div>
       )}
 
-      {/* Top row: photo (tall) + right column */}
-      <div className="flex items-start gap-4">
+      {/* Top row: photo (tall) + right column.
+          Мобайл (<sm): стек — фото сверху, инфо ниже на всю ширину (иначе
+          в узкой колонке ФИО/телефон/кнопки разваливаются). */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-4">
         <ClientPhoto client={client} size="xl" />
 
         <div className="flex min-w-0 flex-1 flex-col gap-3">
@@ -311,8 +313,10 @@ export function ClientCard({ client }: { client: Client }) {
             </div>
           </header>
 
-          {/* KPIs — 2x2 слева + общий долг справа во всю высоту */}
-          <div className="grid grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-3">
+          {/* KPIs — 2x2 слева + общий долг справа во всю высоту.
+              Мобайл (<sm): в одну колонку (внутренняя сетка 2-кол на всю
+              ширину читаема), иначе на 390px цифры наезжают. */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
             <div className="grid grid-cols-2 gap-3">
               <KpiBox
                 label="Оборот"
