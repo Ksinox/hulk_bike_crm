@@ -25,7 +25,7 @@ import { clientStore } from "./clientStore";
 import { clientDocsKeys } from "@/lib/api/documents";
 import { queryClient } from "@/lib/queryClient";
 import { DatePicker } from "@/components/ui/date-picker";
-import { toast } from "@/lib/toast";
+import { toast, confirmDialog } from "@/lib/toast";
 import type { ApplicationFormInit } from "./applicationConvert";
 import { toTitleCaseRu } from "@/lib/textCase";
 
@@ -411,10 +411,32 @@ export function AddClientModal({
     );
   }, [matchedAppsQ.data]);
 
-  const requestClose = () => {
+  // F7: форма «грязная» — пользователь что-то ввёл/изменил. Закрытие
+  // (Esc / крестик / Отмена) тогда требует подтверждения, чтобы случайно
+  // не потерять введённые данные.
+  const dirtyRef = useRef(false);
+
+  const doClose = () => {
     if (closing) return;
     setClosing(true);
     window.setTimeout(onClose, 160);
+  };
+
+  const requestClose = () => {
+    if (closing) return;
+    if (!dirtyRef.current) {
+      doClose();
+      return;
+    }
+    void confirmDialog({
+      title: "Закрыть без сохранения?",
+      message: "В форме есть несохранённые данные — они будут потеряны.",
+      confirmText: "Закрыть",
+      cancelText: "Остаться",
+      danger: true,
+    }).then((ok) => {
+      if (ok) doClose();
+    });
   };
 
   useEffect(() => {
@@ -483,8 +505,10 @@ export function AddClientModal({
   const progress = Math.round((ok / total) * 100);
   const canSave = required.every((e) => e === null) && !errors.blReason;
 
-  const set = <K extends keyof Form>(key: K, value: Form[K]) =>
+  const set = <K extends keyof Form>(key: K, value: Form[K]) => {
+    dirtyRef.current = true; // F7: пользователь редактирует форму
     setF((prev) => ({ ...prev, [key]: value }));
+  };
 
   const showErr = (key: string) =>
     (touched[key] && errors[key as keyof typeof errors]) || null;

@@ -5,7 +5,7 @@ import {
   useConvertApplication,
   type ConvertApplicationInput,
 } from "@/lib/api/clientApplications";
-import { toast } from "@/lib/toast";
+import { toast, confirmDialog } from "@/lib/toast";
 import { MobileFormScreen, Field, TextInput, SegmentToggle, ChipSelect } from "../forms";
 
 /** Предзаполнение формы (например из принимаемой заявки). */
@@ -113,6 +113,34 @@ export function MobileNewClient({
   const canSave = Object.values(errors).every((e) => e === null);
   const err = (k: keyof typeof errors) => (touched ? errors[k] : null);
 
+  // F7 (паритет): закрытие при заполненных полях — с подтверждением, чтобы
+  // случайным тапом по «назад» не потерять введённое. Сравниваем с initial.
+  const dirty =
+    name !== (initial?.name ?? "") ||
+    phone !== (initial?.phone ?? "") ||
+    phone2 !== (initial?.phone2 ?? "") ||
+    birth !== (initial?.birth ?? "") ||
+    passSer !== (initial?.passSer ?? "") ||
+    passNum !== (initial?.passNum ?? "") ||
+    passportRaw !== (initial?.passportRaw ?? "") ||
+    source !== (initial?.source ?? null);
+
+  const handleClose = () => {
+    if (!dirty) {
+      onClose();
+      return;
+    }
+    void confirmDialog({
+      title: "Закрыть без сохранения?",
+      message: "В форме есть несохранённые данные — они будут потеряны.",
+      confirmText: "Закрыть",
+      cancelText: "Остаться",
+      danger: true,
+    }).then((ok) => {
+      if (ok) onClose();
+    });
+  };
+
   const handleSave = async () => {
     setTouched(true);
     if (!canSave || !source) return;
@@ -172,7 +200,7 @@ export function MobileNewClient({
   return (
     <MobileFormScreen
       title={isConvert ? "Оформить клиента" : "Новый клиент"}
-      onClose={onClose}
+      onClose={handleClose}
       onSubmit={handleSave}
       submitLabel={isConvert ? "Оформить из заявки" : "Создать клиента"}
       canSubmit={canSave}
