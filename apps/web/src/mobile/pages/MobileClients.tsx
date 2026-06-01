@@ -1,10 +1,10 @@
 import { useMemo, useState } from "react";
-import { Users, ChevronRight, ChevronLeft, Ban } from "lucide-react";
+import { Users, ChevronRight, Ban } from "lucide-react";
 import { MobileNewClient } from "../forms/MobileNewClient";
+import { MobileClientCard } from "../cards/MobileClientCard";
 import { usePageFab } from "../fab";
 import { useAllClients } from "@/pages/clients/clientStore";
 import { useRentals } from "@/pages/rentals/rentalsStore";
-import { ClientCard } from "@/pages/clients/ClientCard";
 import { ErrorBoundary } from "@/app/ErrorBoundary";
 import type { Client } from "@/lib/mock/clients";
 import { matchId, matchPhone, matchText, normalizeQuery } from "@/lib/search";
@@ -107,29 +107,12 @@ export function MobileClients() {
         </div>
       )}
 
-      {/* Тап по клиенту → полноэкранная карточка (десктопная ClientCard:
-          аренды, долговая история, лента событий, рассрочки, документы). */}
+      {/* Тап по клиенту → полноэкранная мобильная карточка (нативный экран,
+          не переиспользование десктопа). */}
       {openClient && (
-        <div className="fixed inset-0 z-[55] flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-bg">
-          <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border bg-surface px-2 pt-[env(safe-area-inset-top)]">
-            <button
-              type="button"
-              onClick={() => setOpenId(null)}
-              className="flex h-10 w-10 items-center justify-center rounded-full text-muted active:bg-surface-soft"
-              aria-label="Назад"
-            >
-              <ChevronLeft size={24} />
-            </button>
-            <h1 className="truncate font-display text-[17px] font-bold text-ink">
-              {openClient.name}
-            </h1>
-          </header>
-          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-3">
-            <ErrorBoundary key={openClient.id}>
-              <ClientCard client={openClient} />
-            </ErrorBoundary>
-          </div>
-        </div>
+        <ErrorBoundary key={openClient.id}>
+          <MobileClientCard client={openClient} onBack={() => setOpenId(null)} />
+        </ErrorBoundary>
       )}
 
       {newOpen && (

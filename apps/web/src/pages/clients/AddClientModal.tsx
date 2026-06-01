@@ -487,13 +487,13 @@ export function AddClientModal({
   return (
     <div
       className={cn(
-        "fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-ink/50 p-6 backdrop-blur-sm",
+        "fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-ink/50 p-0 backdrop-blur-sm sm:p-6",
         closing ? "animate-backdrop-out" : "animate-backdrop-in",
       )}
     >
       <div
         className={cn(
-          "w-full max-w-[720px] overflow-hidden rounded-2xl bg-surface shadow-card-lg",
+          "min-h-[100dvh] w-full overflow-hidden rounded-none bg-surface shadow-card-lg sm:min-h-0 sm:max-w-[720px] sm:rounded-2xl",
           closing ? "animate-modal-out" : "animate-modal-in",
         )}
         onClick={(e) => e.stopPropagation()}
