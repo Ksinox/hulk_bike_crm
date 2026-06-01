@@ -7,6 +7,7 @@ import {
   Check,
   Package,
   ShieldCheck,
+  X,
 } from "lucide-react";
 import {
   ApiError,
@@ -575,6 +576,9 @@ export function ApplicationForm() {
               setField={setField}
               missingFields={missingFields}
               agreedRules={agreedRules}
+              appId={appId}
+              token={token}
+              uploaded={uploaded}
             />
           )}
 
@@ -1266,18 +1270,35 @@ function AgreementStep({
   );
 }
 
+/** #85: подписи фото-видов для миниатюр на экране подтверждения. */
+const CONFIRM_PHOTO_KINDS: { kind: FileKind; label: string }[] = [
+  { kind: "passport_main", label: "Паспорт" },
+  { kind: "passport_reg", label: "Прописка" },
+  { kind: "license", label: "Права" },
+  { kind: "selfie", label: "Селфи" },
+];
+
 function Confirm({
   form,
   setField,
   missingFields,
   agreedRules,
+  appId,
+  token,
+  uploaded,
 }: {
   form: FormState;
   setField: <K extends keyof FormState>(k: K, v: FormState[K]) => void;
   missingFields: string[];
   /** R2.7: принято ли соглашение (на отдельном шаге «Инструктаж»). */
   agreedRules: boolean;
+  /** #85: для миниатюр загруженных фото (кликабельны → просмотр). */
+  appId: number | null;
+  token: string | null;
+  uploaded: Set<FileKind>;
 }) {
+  // #85: лайтбокс — полноразмерный просмотр фото по клику на миниатюру.
+  const [lightbox, setLightbox] = useState<string | null>(null);
   return (
     <div className="space-y-4">
       <h1 className="text-[22px] font-bold text-slate-900">Подтверждение</h1>
@@ -1318,6 +1339,57 @@ function Confirm({
           }
         />
       </div>
+
+      {/* #85: миниатюры загруженных фото — клик открывает полный размер,
+          чтобы клиент мог проверить качество перед отправкой. */}
+      {appId && token && uploaded.size > 0 && (
+        <div>
+          <div className="mb-1.5 text-[13px] font-semibold text-slate-700">
+            Загруженные фото — нажмите, чтобы проверить
+          </div>
+          <div className="flex flex-wrap gap-3">
+            {CONFIRM_PHOTO_KINDS.filter((p) => uploaded.has(p.kind)).map((p) => (
+              <button
+                key={p.kind}
+                type="button"
+                onClick={() =>
+                  setLightbox(applicationApi.fileUrl(appId, token, p.kind, "view"))
+                }
+                className="group flex flex-col items-center gap-1"
+              >
+                <img
+                  src={applicationApi.fileUrl(appId, token, p.kind, "thumb")}
+                  alt={p.label}
+                  className="h-20 w-20 rounded-xl border-2 border-slate-200 object-cover transition-colors group-hover:border-slate-900"
+                />
+                <span className="text-[11px] text-slate-500">{p.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {lightbox && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/90 p-4"
+          onClick={() => setLightbox(null)}
+        >
+          <img
+            src={lightbox}
+            alt="Просмотр фото"
+            className="max-h-[90vh] max-w-full rounded-xl object-contain"
+            onClick={(e) => e.stopPropagation()}
+          />
+          <button
+            type="button"
+            onClick={() => setLightbox(null)}
+            className="absolute right-4 top-4 flex h-11 w-11 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur"
+            aria-label="Закрыть"
+          >
+            <X size={22} />
+          </button>
+        </div>
+      )}
 
       {missingFields.length > 0 && (
         <div className="rounded-xl bg-red-50 p-3 text-[13px] text-red-700">

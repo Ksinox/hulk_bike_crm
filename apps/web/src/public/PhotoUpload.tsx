@@ -186,11 +186,16 @@ export function PhotoUpload(props: Props) {
         </div>
       )}
 
-      {/* Превью после загрузки */}
-      {uploaded && previewUrl && (
+      {/* Превью после загрузки. previewUrl — локальный blob (сразу после
+          съёмки). При возврате на шаг назад его уже нет — тогда тянем
+          сохранённое фото с сервера по токену (#84). */}
+      {uploaded && (
         <div className="overflow-hidden rounded-2xl bg-slate-100">
           <img
-            src={previewUrl}
+            src={
+              previewUrl ??
+              applicationApi.fileUrl(applicationId, uploadToken, kind, "view")
+            }
             alt={title}
             className="h-auto max-h-[60vh] w-full object-contain"
           />

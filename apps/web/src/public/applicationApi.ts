@@ -169,6 +169,20 @@ export const applicationApi = {
     );
   },
 
+  /** #84/#85: URL ранее загруженного фото (для <img src>). Токен — в query,
+   *  т.к. тег img не умеет слать заголовки. variant=thumb|view — уменьшенные. */
+  fileUrl(
+    id: number,
+    token: string,
+    kind: FileKind,
+    variant?: "thumb" | "view",
+  ): string {
+    const v = variant ? `&variant=${variant}` : "";
+    return url(
+      `/api/public/applications/${id}/files/${kind}?token=${encodeURIComponent(token)}${v}`,
+    );
+  },
+
   submit(id: number, token: string): Promise<{ ok: true }> {
     return jsonFetch<{ ok: true }>(
       "POST",
