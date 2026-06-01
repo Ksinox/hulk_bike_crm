@@ -102,6 +102,48 @@ function getSteps(isForeigner: boolean): StepId[] {
   return isForeigner ? all.filter((s) => s !== "photo_passport_reg") : all;
 }
 
+/**
+ * R2.7: текст пользовательского соглашения (инструктаж при передаче скутера).
+ * Источник — «Инструктаж при передаче скутера.docx» (предоставлен владельцем).
+ * Клиент обязан пролистать его до конца, иначе кнопка «Принять» неактивна.
+ */
+const AGREEMENT_SECTIONS: { title: string; lines: string[] }[] = [
+  {
+    title: "Запрещено",
+    lines: [
+      "Передача скутера третьим лицам — штраф по договору 2 000 ₽.",
+      "Выезд за границу г. Краснодара +25 км; при нарушении подача топлива автоматически отрезается, штраф 2 500 ₽.",
+      "Катание более одного человека — штраф 2 000 ₽.",
+      "Нарушение пломб (внешние/внутренние наклейки и пломбировочная краска). При нарушении целостности — разбор и диагностика техники.",
+      "В случае нарушения предусмотрена материальная ответственность по договору.",
+    ],
+  },
+  {
+    title: "Зона ответственности арендатора",
+    lines: [
+      "Контроль индикации температуры двигателя. При загорании — немедленно заглушить и сообщить нам (эвакуируем, дадим подменный). Езда на перегретом двигателе — мат. ответственность по договору.",
+      "Контроль пробега. Под сиденьем стикер с пробегом; при совпадении со спидометром — приехать в парк на замену масла. Нарушение регламента замены масла — ответственность.",
+      "Пластик. Состояние фиксируется круговой подсъёмкой и отправляется в общий чат WhatsApp. Клиент проверяет видео; если что-то не отражено — сам делает фото и присылает в диалог.",
+      "Рекомендуется взять противоугонную цепь и пристёгивать у подъезда за заднее колесо перед камерой.",
+    ],
+  },
+  {
+    title: "Оплата",
+    lines: [
+      "Производится в день продления договора; чек об оплате — в диалог с менеджером. При нарушении условий оплаты стоимость аренды рассчитывается по суточному тарифу.",
+    ],
+  },
+  {
+    title: "ДТП и дефекты",
+    lines: [
+      "Мелкая потёртость (лак) — 1 000 ₽ (полировка).",
+      "Царапины / потёртости / сколы (ЛКП) — 3 700 ₽ (покраска).",
+      "Трещина пластика больше 5 см — замена детали.",
+      "Трещина пластика менее 5 см — пайка — 1 500 ₽.",
+    ],
+  },
+];
+
 type ClientSourceChoice = "avito" | "repeat" | "ref" | "maps" | "other";
 
 const SOURCE_OPTIONS: { id: ClientSourceChoice; label: string; hint?: string }[] = [
@@ -243,6 +285,12 @@ export function ApplicationForm() {
   const [error, setError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
   const [missingFields, setMissingFields] = useState<string[]>([]);
+  // R2.7: соглашение принимается на шаге подтверждения (локально, не шлём на
+  // бэк) — кнопка «Принять» активна только после прокрутки текста до конца.
+  const [agreedRules, setAgreedRules] = useState(false);
+  const [rulesScrolledEnd, setRulesScrolledEnd] = useState(false);
+  // R2.6: финальное окно-напоминание про оплату старта наличными.
+  const [showCashReminder, setShowCashReminder] = useState(false);
 
   const steps = useMemo(() => getSteps(form.isForeigner), [form.isForeigner]);
   const totalSteps = steps.length;
@@ -337,6 +385,7 @@ export function ApplicationForm() {
 
   const canSubmit =
     form.agreedPdn &&
+    agreedRules &&
     canNextContact &&
     canNextPassport &&
     canNextAddress &&
@@ -510,6 +559,10 @@ export function ApplicationForm() {
               form={form}
               setField={setField}
               missingFields={missingFields}
+              agreedRules={agreedRules}
+              rulesScrolledEnd={rulesScrolledEnd}
+              onReachRulesEnd={() => setRulesScrolledEnd(true)}
+              onToggleRules={(v) => setAgreedRules(v)}
             />
           )}
 
@@ -548,7 +601,7 @@ export function ApplicationForm() {
             {currentStepId === "confirm" && (
               <button
                 type="button"
-                onClick={submit}
+                onClick={() => setShowCashReminder(true)}
                 disabled={busy || !canSubmit}
                 className="inline-flex h-12 flex-1 items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-4 text-[14px] font-semibold text-white disabled:opacity-50"
               >
@@ -574,6 +627,74 @@ export function ApplicationForm() {
             }}
           />
         </footer>
+      </div>
+
+      {/* R2.6: финальное окно-напоминание про наличку перед отправкой. */}
+      {showCashReminder && (
+        <CashReminderModal
+          busy={busy}
+          onConfirm={() => {
+            setShowCashReminder(false);
+            void submit();
+          }}
+          onCancel={() => setShowCashReminder(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * R2.6: модальное окно перед отправкой заявки — напоминаем, что старт аренды
+ * оплачивается наличными. Фирменный модал (не нативный confirm).
+ */
+function CashReminderModal({
+  onConfirm,
+  onCancel,
+  busy,
+}: {
+  onConfirm: () => void;
+  onCancel: () => void;
+  busy: boolean;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/55 p-4 sm:items-center"
+      onClick={onCancel}
+    >
+      <div
+        className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 text-[28px]">
+          💵
+        </div>
+        <h2 className="mt-4 text-[20px] font-bold text-slate-900">
+          Старт аренды — наличными
+        </h2>
+        <p className="mt-2 text-[14px] leading-relaxed text-slate-600">
+          Внимание: старт аренды оплачивается <b>наличными</b>. Возьмите с собой
+          наличные средства для оплаты при встрече с менеджером.
+        </p>
+        <div className="mt-6 flex flex-col gap-2">
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={busy}
+            className="inline-flex h-12 items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-4 text-[15px] font-semibold text-white disabled:opacity-50"
+          >
+            {busy ? "Отправляем…" : "Ок, возьму наличку"}
+            <Check size={17} />
+          </button>
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={busy}
+            className="inline-flex h-11 items-center justify-center rounded-xl px-4 text-[14px] font-semibold text-slate-500 disabled:opacity-50"
+          >
+            Вернуться
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -1021,10 +1142,20 @@ function Confirm({
   form,
   setField,
   missingFields,
+  agreedRules,
+  rulesScrolledEnd,
+  onReachRulesEnd,
+  onToggleRules,
 }: {
   form: FormState;
   setField: <K extends keyof FormState>(k: K, v: FormState[K]) => void;
   missingFields: string[];
+  /** R2.7: принято ли пользовательское соглашение. */
+  agreedRules: boolean;
+  /** R2.7: прокручен ли текст соглашения до конца (тогда «Принять» активна). */
+  rulesScrolledEnd: boolean;
+  onReachRulesEnd: () => void;
+  onToggleRules: (v: boolean) => void;
 }) {
   return (
     <div className="space-y-4">
@@ -1086,6 +1217,60 @@ function Confirm({
           оформления договора аренды транспортного средства.
         </span>
       </label>
+
+      {/* R2.7: пользовательское соглашение — «Принять» активна только после
+          прокрутки текста до конца. Без принятия отправка заблокирована. */}
+      <div className="rounded-xl border border-slate-300 bg-white">
+        <div className="border-b border-slate-200 px-4 py-3">
+          <div className="text-[15px] font-bold text-slate-900">
+            Правила аренды и эксплуатации
+          </div>
+          <div className="mt-0.5 text-[12px] text-slate-500">
+            Пролистайте до конца — тогда станет активна кнопка «Принять».
+          </div>
+        </div>
+        <div
+          onScroll={(e) => {
+            const el = e.currentTarget;
+            if (el.scrollTop + el.clientHeight >= el.scrollHeight - 8) {
+              onReachRulesEnd();
+            }
+          }}
+          className="max-h-56 space-y-3 overflow-y-auto px-4 py-3 text-[13px] leading-relaxed text-slate-700"
+        >
+          {AGREEMENT_SECTIONS.map((sec) => (
+            <div key={sec.title}>
+              <div className="mb-1 font-bold text-slate-900">{sec.title}</div>
+              <ul className="list-disc space-y-1 pl-5">
+                {sec.lines.map((line, i) => (
+                  <li key={i}>{line}</li>
+                ))}
+              </ul>
+            </div>
+          ))}
+          <div className="pt-1 text-center text-[12px] italic text-slate-400">
+            Просьба относиться к технике бережно, как к своей =)
+          </div>
+        </div>
+        <div className="border-t border-slate-200 p-3">
+          {agreedRules ? (
+            <div className="inline-flex items-center gap-2 text-[14px] font-semibold text-emerald-700">
+              <Check size={18} /> Правила приняты
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => onToggleRules(true)}
+              disabled={!rulesScrolledEnd}
+              className="inline-flex h-11 w-full items-center justify-center gap-1.5 rounded-xl bg-slate-900 px-4 text-[14px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {rulesScrolledEnd
+                ? "Принять правила"
+                : "Пролистайте правила до конца"}
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
