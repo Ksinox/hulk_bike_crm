@@ -34,6 +34,7 @@ import {
   isoToDateRu,
   nullableTrim,
   validateBirth,
+  validateDivisionCode,
   validateName,
   validatePassportNumber,
   validatePastDate,
@@ -323,6 +324,7 @@ export function ApplicationForm() {
       !validatePassportNumber(form.passNum) &&
       form.passIssuer.trim().length > 0 &&
       !validatePastDate(form.passDate) &&
+      !validateDivisionCode(form.passCode) &&
       form.passRegistration.trim().length > 0;
 
   const canNextAddress = form.sameAddress || form.liveAddress.trim().length > 0;
@@ -621,7 +623,7 @@ function Step1({
           className={inputCls}
           placeholder="Иван Иванов Иванович"
           value={form.name}
-          onChange={(e) => setField("name", toTitleCaseRu(e.target.value))}
+          onChange={(e) => setField("name", e.target.value)}
         />
         {form.name.length > 0 && nameErr && (
           <div className="mt-1 text-[12px] text-red-600">{nameErr}</div>

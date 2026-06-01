@@ -592,7 +592,7 @@ export function AddClientModal({
                 type="text"
                 value={f.name}
                 placeholder="Например: Иванов Иван Иванович"
-                onChange={(e) => set("name", toTitleCaseRu(e.target.value))}
+                onChange={(e) => set("name", e.target.value)}
                 onBlur={() => markTouched("name")}
                 className={inputClass(showErr("name"))}
               />

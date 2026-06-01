@@ -104,8 +104,8 @@ export function NewApplicationModal({
   const hasSelfie = fileKinds.has("selfie");
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-ink/60 p-4 backdrop-blur-sm sm:p-8">
-      <div className="my-6 w-full max-w-3xl rounded-2xl bg-surface shadow-2xl">
+    <div className="fixed inset-0 z-[100] flex items-stretch justify-center overflow-y-auto bg-ink/60 p-0 backdrop-blur-sm sm:items-start sm:p-8">
+      <div className="min-h-[100dvh] w-full rounded-none bg-surface shadow-2xl sm:my-6 sm:min-h-0 sm:max-w-3xl sm:rounded-2xl">
         <header className="flex items-center gap-3 border-b border-border bg-amber-50 px-6 py-4">
           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-500 text-white">
             <Bell size={20} />

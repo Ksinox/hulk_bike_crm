@@ -113,7 +113,7 @@ function EquipmentCard({
               </span>
             ) : (
               <span className="rounded-full bg-blue-50 px-2 py-0.5 font-bold text-blue-700">
-                +{item.price}₽
+                +{item.price} ₽/сут
               </span>
             )}
           </div>
@@ -244,7 +244,7 @@ function EquipmentFormModal({
           {!isFree && (
             <div>
               <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-2">
-                Цена (₽ за всю аренду)
+                Цена (₽/сут)
               </div>
               <input
                 type="number"

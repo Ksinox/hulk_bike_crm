@@ -323,14 +323,14 @@ export function DamageReportDialog({
   return (
     <div
       className={cn(
-        "fixed inset-0 z-[120] flex items-center justify-center bg-ink/55 p-4 backdrop-blur-sm",
+        "fixed inset-0 z-[120] flex items-stretch justify-center bg-ink/55 p-0 backdrop-blur-sm sm:items-center sm:p-4",
         closing ? "animate-backdrop-out" : "animate-backdrop-in",
       )}
     >
       <div
         className={cn(
-          "flex w-full max-w-[1200px] flex-col overflow-hidden rounded-2xl bg-surface shadow-card-lg",
-          "max-h-[92vh]",
+          "flex h-[100dvh] w-full max-w-[1200px] flex-col overflow-hidden rounded-none bg-surface shadow-card-lg sm:h-auto sm:rounded-2xl",
+          "max-h-[100dvh] sm:max-h-[92vh]",
           closing ? "animate-modal-out" : "animate-modal-in",
         )}
         onClick={(e) => e.stopPropagation()}

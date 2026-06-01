@@ -166,13 +166,13 @@ export function EquipmentChangeDialog({
   return (
     <div
       className={cn(
-        "fixed inset-0 z-[120] flex items-start justify-center overflow-y-auto bg-ink/55 p-6 backdrop-blur-sm",
+        "fixed inset-0 z-[120] flex items-stretch justify-center overflow-y-auto bg-ink/55 p-0 backdrop-blur-sm sm:items-start sm:p-6",
         closing ? "animate-backdrop-out" : "animate-backdrop-in",
       )}
     >
       <div
         className={cn(
-          "mt-12 w-full max-w-[480px] overflow-hidden rounded-2xl bg-surface shadow-card-lg",
+          "min-h-[100dvh] w-full overflow-hidden rounded-none bg-surface shadow-card-lg sm:mt-12 sm:min-h-0 sm:max-w-[480px] sm:rounded-2xl",
           closing ? "animate-modal-out" : "animate-modal-in",
         )}
         onClick={(e) => e.stopPropagation()}
