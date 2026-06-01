@@ -117,7 +117,6 @@ export function MobileClientCard({
   );
   const { totalPaid: totalTurnover, totalDays: totalRentedDays } =
     useClientStats(client.id);
-  const overdueBalance = client.debt ?? 0;
   const deposit = client.depositBalance ?? 0;
 
   const debtorCases = client.debtorCases ?? [];
