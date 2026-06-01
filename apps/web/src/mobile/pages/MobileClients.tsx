@@ -1,18 +1,18 @@
 import { useMemo, useState } from "react";
-import { Users, Phone, ChevronRight, Ban } from "lucide-react";
+import { Users, ChevronRight, ChevronLeft, Ban } from "lucide-react";
 import { MobileNewClient } from "../forms/MobileNewClient";
 import { usePageFab } from "../fab";
 import { useAllClients } from "@/pages/clients/clientStore";
 import { useRentals } from "@/pages/rentals/rentalsStore";
+import { ClientCard } from "@/pages/clients/ClientCard";
+import { ErrorBoundary } from "@/app/ErrorBoundary";
 import type { Client } from "@/lib/mock/clients";
 import { matchId, matchPhone, matchText, normalizeQuery } from "@/lib/search";
 import { cn } from "@/lib/utils";
 import {
-  DetailRow,
   MobileChips,
   MobileEmpty,
   MobileSearch,
-  MobileSheet,
   type ChipOption,
 } from "../ui";
 
@@ -21,14 +21,6 @@ type Filter = "all" | "active" | "debt" | "black";
 function rub(n: number): string {
   return new Intl.NumberFormat("ru-RU").format(Math.round(n));
 }
-
-const SOURCE_LABEL: Record<string, string> = {
-  avito: "Авито",
-  repeat: "Повторный",
-  ref: "Рекомендация",
-  maps: "Карты",
-  other: "Другой",
-};
 
 export function MobileClients() {
   const clients = useAllClients();
@@ -115,13 +107,30 @@ export function MobileClients() {
         </div>
       )}
 
-      <MobileSheet
-        open={openClient != null}
-        onClose={() => setOpenId(null)}
-        title={openClient?.name ?? "Клиент"}
-      >
-        {openClient && <ClientDetail client={openClient} active={activeSet.has(openClient.id)} />}
-      </MobileSheet>
+      {/* Тап по клиенту → полноэкранная карточка (десктопная ClientCard:
+          аренды, долговая история, лента событий, рассрочки, документы). */}
+      {openClient && (
+        <div className="fixed inset-0 z-[55] flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-bg">
+          <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border bg-surface px-2 pt-[env(safe-area-inset-top)]">
+            <button
+              type="button"
+              onClick={() => setOpenId(null)}
+              className="flex h-10 w-10 items-center justify-center rounded-full text-muted active:bg-surface-soft"
+              aria-label="Назад"
+            >
+              <ChevronLeft size={24} />
+            </button>
+            <h1 className="truncate font-display text-[17px] font-bold text-ink">
+              {openClient.name}
+            </h1>
+          </header>
+          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-3">
+            <ErrorBoundary key={openClient.id}>
+              <ClientCard client={openClient} />
+            </ErrorBoundary>
+          </div>
+        </div>
+      )}
 
       {newOpen && (
         <MobileNewClient
@@ -185,56 +194,3 @@ function ClientRow({
   );
 }
 
-function ClientDetail({ client, active }: { client: Client; active: boolean }) {
-  const hasActiveDebtorCase = (client.debtorCases ?? []).some((d) => d.active);
-  return (
-    <div>
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        {active && (
-          <span className="rounded-full bg-green-soft px-2.5 py-1 text-[11px] font-bold text-green-ink">
-            Катает сейчас
-          </span>
-        )}
-        {client.blacklisted && (
-          <span className="rounded-full bg-red-soft px-2.5 py-1 text-[11px] font-bold text-red-ink">
-            Чёрный список
-          </span>
-        )}
-        {hasActiveDebtorCase && (
-          <span className="rounded-full bg-purple-soft px-2.5 py-1 text-[11px] font-bold text-purple-ink">
-            Должник
-          </span>
-        )}
-      </div>
-
-      {client.phone && (
-        <a
-          href={`tel:${client.phone}`}
-          className="mb-3 flex items-center justify-center gap-2 rounded-2xl bg-blue-600 py-3 text-[14px] font-bold text-white active:scale-[0.99]"
-        >
-          <Phone size={17} /> Позвонить {client.phone}
-        </a>
-      )}
-
-      <div className="rounded-2xl bg-surface px-3.5 shadow-card-sm">
-        {client.debt > 0 && (
-          <>
-            <DetailRow label="Долг" value={`${rub(client.debt)} ₽`} valueClass="text-red" />
-            <div className="border-t border-border" />
-          </>
-        )}
-        <DetailRow label="Источник" value={SOURCE_LABEL[client.source] ?? client.source} />
-        {client.comment && (
-          <>
-            <div className="border-t border-border" />
-            <DetailRow label="Заметка" value={client.comment} />
-          </>
-        )}
-      </div>
-
-      <p className="mt-3 text-center text-[12px] text-muted-2">
-        Полная карточка, документы и история — на компьютере
-      </p>
-    </div>
-  );
-}

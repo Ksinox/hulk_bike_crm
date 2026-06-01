@@ -1,22 +1,22 @@
 import { useMemo, useState } from "react";
-import { ShoppingBag, Repeat, Bike } from "lucide-react";
+import { ShoppingBag, Bike } from "lucide-react";
 import { useApiScooters } from "@/lib/api/scooters";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { useRentals } from "@/pages/rentals/rentalsStore";
 import { fileUrl } from "@/lib/files";
 import { SCOOTER_STATUS_LABEL, type ScooterDisplayStatus } from "@/lib/mock/fleet";
 import { AddScooterModal } from "@/pages/fleet/AddScooterModal";
-import { ScooterStatusModal } from "@/pages/fleet/ScooterStatusModal";
+import { ScooterCard } from "@/pages/fleet/ScooterCard";
+import { useFleetScooters } from "@/pages/fleet/fleetStore";
+import { ErrorBoundary } from "@/app/ErrorBoundary";
 import { usePageFab } from "../fab";
 import type { ApiScooter, ScooterModel } from "@/lib/api/types";
 import { matchId, matchScooterName, normalizeQuery } from "@/lib/search";
 import { cn } from "@/lib/utils";
 import {
-  DetailRow,
   MobileChips,
   MobileEmpty,
   MobileSearch,
-  MobileSheet,
   type ChipOption,
 } from "../ui";
 
@@ -66,8 +66,8 @@ export function MobileScooters() {
   const [openId, setOpenId] = useState<number | null>(null);
   const [newOpen, setNewOpen] = useState(false);
   usePageFab("Скутер", () => setNewOpen(true));
-  /** Скутер, для которого открыта смена статуса. */
-  const [statusId, setStatusId] = useState<number | null>(null);
+  // FleetScooter[] для полноэкранной карточки (та же, что на десктопе).
+  const fleet = useFleetScooters();
 
   // Скутеры с активной арендой → derived-статус «В аренде» (как на десктопе:
   // baseStatus остаётся rental_pool, но показываем «rented»).
@@ -137,7 +137,7 @@ export function MobileScooters() {
   ];
 
   const openScooter = live.find((s) => s.id === openId) ?? null;
-  const statusScooter = statusId != null ? live.find((s) => s.id === statusId) ?? null : null;
+  const openFleet = openId != null ? fleet.find((f) => f.id === openId) ?? null : null;
 
   return (
     // pb-20: чтобы FAB «+ Скутер» не перекрывал последнюю карточку.
@@ -154,7 +154,7 @@ export function MobileScooters() {
       ) : (
         <div className="grid grid-cols-2 gap-2">
           {filtered.map((s) => (
-            <ScooterCard
+            <ScooterTile
               key={s.id}
               scooter={s}
               status={displayStatus(s)}
@@ -165,34 +165,28 @@ export function MobileScooters() {
         </div>
       )}
 
-      <MobileSheet
-        open={openScooter != null}
-        onClose={() => setOpenId(null)}
-        title={openScooter?.name ?? "Скутер"}
-      >
-        {openScooter && (
-          <ScooterDetail
-            scooter={openScooter}
-            status={displayStatus(openScooter)}
-            onChangeStatus={() => setStatusId(openScooter.id)}
-          />
-        )}
-      </MobileSheet>
-
-      {/* Добавление скутера и смена статуса — десктоп-модалки (адаптивны). */}
-      {newOpen && <AddScooterModal onClose={() => setNewOpen(false)} />}
-      {statusScooter && (
-        <ScooterStatusModal
-          scooter={statusScooter}
-          onClose={() => setStatusId(null)}
-        />
+      {/* Тап по скутеру → полноэкранная карточка (десктопная ScooterCard:
+          фото, статус, история, ремонты, документы; смена статуса, ремонт,
+          выдача в аренду — её внутренними модалками). */}
+      {openFleet && openScooter && (
+        <div className="fixed inset-0 z-[55] flex h-[100dvh] min-h-0 flex-col overflow-y-auto overflow-x-hidden bg-bg">
+          <ErrorBoundary key={openFleet.id}>
+            <ScooterCard
+              scooter={openFleet}
+              status={displayStatus(openScooter)}
+              onBack={() => setOpenId(null)}
+            />
+          </ErrorBoundary>
+        </div>
       )}
 
+      {/* Добавление скутера — десктоп-модалка (полноэкранная на мобиле). */}
+      {newOpen && <AddScooterModal onClose={() => setNewOpen(false)} />}
     </div>
   );
 }
 
-function ScooterCard({
+function ScooterTile({
   scooter,
   status,
   avatar,
@@ -238,62 +232,3 @@ function ScooterCard({
   );
 }
 
-function ScooterDetail({
-  scooter,
-  status,
-  onChangeStatus,
-}: {
-  scooter: ApiScooter;
-  status: ScooterDisplayStatus;
-  onChangeStatus: () => void;
-}) {
-  const meta = statusMeta(status);
-  return (
-    <div>
-      <div className="mb-2">
-        <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-bold", meta.cls)}>
-          {meta.label}
-        </span>
-      </div>
-      <div className="rounded-2xl bg-surface px-3.5 shadow-card-sm">
-        <DetailRow label="Модель" value={MODEL_LABEL[scooter.model]} />
-        <div className="border-t border-border" />
-        <DetailRow label="Пробег" value={`${num(scooter.mileage)} км`} />
-        {scooter.year && (
-          <>
-            <div className="border-t border-border" />
-            <DetailRow label="Год" value={String(scooter.year)} />
-          </>
-        )}
-        {scooter.color && (
-          <>
-            <div className="border-t border-border" />
-            <DetailRow label="Цвет" value={scooter.color} />
-          </>
-        )}
-        {scooter.vin && (
-          <>
-            <div className="border-t border-border" />
-            <DetailRow label="VIN" value={<span className="font-mono text-[12px]">{scooter.vin}</span>} />
-          </>
-        )}
-        {scooter.note && (
-          <>
-            <div className="border-t border-border" />
-            <DetailRow label="Заметка" value={scooter.note} />
-          </>
-        )}
-      </div>
-      <button
-        type="button"
-        onClick={onChangeStatus}
-        className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-surface py-3 text-[14px] font-bold text-ink shadow-card-sm active:scale-[0.99]"
-      >
-        <Repeat size={16} /> Сменить статус
-      </button>
-      <p className="mt-2 text-center text-[12px] text-muted-2">
-        Обслуживание и документы — на компьютере
-      </p>
-    </div>
-  );
-}
