@@ -219,6 +219,13 @@ function todayIso(): string {
   return `${d.getFullYear()}-${mm}-${dd}`;
 }
 
+/** F8: разумный месяц для открытия календаря даты рождения — ~25 лет назад
+ *  (типичный возраст арендатора), чтобы не листать от текущего года. */
+function birthDefaultMonthIso(): string {
+  const d = new Date();
+  return `${d.getFullYear() - 25}-01-01`;
+}
+
 /** Trim + null если пусто — чтобы не отправлять "" в API. */
 function nullableTrim(s: string): string | null {
   const t = s.trim();
@@ -681,6 +688,7 @@ export function AddClientModal({
                     set("birth", iso ? isoToRuDate(iso) : "");
                     markTouched("birth");
                   }}
+                  defaultMonth={birthDefaultMonthIso()}
                   maxDate={todayIso()}
                   clearable={false}
                 />

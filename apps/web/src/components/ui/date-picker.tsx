@@ -215,6 +215,7 @@ export function DatePicker({
   value,
   onChange,
   placeholder = "ДД.ММ.ГГГГ",
+  defaultMonth,
   disabled,
   className,
   clearable = true,
@@ -259,8 +260,14 @@ export function DatePicker({
     }
   };
 
+  // На какой месяц открыть календарь, если дата ещё не выбрана:
+  // F8 — для даты рождения это НЕ «сегодня» (иначе листать к ~1990 десятки
+  // раз), а defaultMonth (передаётся ~25 лет назад). Если value есть —
+  // открываем на нём.
   const calValue =
-    isoToCalendarDate(value) ?? today(getLocalTimeZone());
+    isoToCalendarDate(value) ??
+    isoToCalendarDate(defaultMonth ?? null) ??
+    today(getLocalTimeZone());
 
   return (
     <div ref={wrapperRef} className={cn("relative", className)}>
