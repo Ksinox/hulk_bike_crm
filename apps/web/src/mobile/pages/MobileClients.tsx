@@ -86,7 +86,8 @@ export function MobileClients() {
   const openClient = clients.find((c) => c.id === openId) ?? null;
 
   return (
-    <div className="flex flex-col gap-3">
+    // pb-20: чтобы FAB «+ Клиент» не перекрывал последнюю строку списка.
+    <div className="flex flex-col gap-3 pb-20">
       <MobileSearch
         value={search}
         onChange={setSearch}

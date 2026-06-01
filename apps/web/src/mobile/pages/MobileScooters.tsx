@@ -97,7 +97,8 @@ export function MobileScooters() {
   const statusScooter = statusId != null ? live.find((s) => s.id === statusId) ?? null : null;
 
   return (
-    <div className="flex flex-col gap-3">
+    // pb-20: чтобы FAB «+ Скутер» не перекрывал последнюю карточку.
+    <div className="flex flex-col gap-3 pb-20">
       <MobileSearch value={search} onChange={setSearch} placeholder="Номер, имя, VIN…" />
       <MobileChips options={chips} value={filter} onChange={setFilter} />
 

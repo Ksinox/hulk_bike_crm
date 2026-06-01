@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Bike, Phone, ChevronRight, Wallet, X, Plus } from "lucide-react";
+import { Bike, Phone, ChevronRight, Wallet, Plus } from "lucide-react";
 import { useRentals, useArchivedRentals } from "@/pages/rentals/rentalsStore";
 import { PaymentAcceptDialog } from "@/pages/rentals/PaymentAcceptDialog";
 import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
@@ -159,7 +159,9 @@ export function MobileRentals() {
   const payRental = payId != null ? source.find((r) => r.id === payId) ?? null : null;
 
   return (
-    <div className="flex flex-col gap-3">
+    // pb-20: нижний отступ, чтобы плавающая кнопка (FAB) не перекрывала
+    // последнюю строку списка.
+    <div className="flex flex-col gap-3 pb-20">
       <MobileSearch
         value={search}
         onChange={setSearch}
@@ -205,31 +207,21 @@ export function MobileRentals() {
       {/* Приём оплаты — переиспользуем десктоп-диалог (inline) в
           полноэкранной мобильной обёртке: логика денег та же самая. */}
       {payRental && (
-        <div className="fixed inset-0 z-[60] flex flex-col bg-bg pt-[env(safe-area-inset-top)]">
-          <header className="flex h-12 shrink-0 items-center gap-3 border-b border-border bg-surface px-3">
-            <button
-              type="button"
-              onClick={() => setPayId(null)}
-              className="flex h-9 w-9 items-center justify-center rounded-full text-muted active:bg-surface-soft"
-              aria-label="Закрыть"
-            >
-              <X size={20} />
-            </button>
-            <h1 className="font-display text-[16px] font-bold text-ink">Приём оплаты</h1>
-          </header>
-          <div className="min-h-0 flex-1 p-2 pb-[env(safe-area-inset-bottom)]">
-            <ErrorBoundary key={payRental.id}>
-              <PaymentAcceptDialog
-                rental={payRental}
-                inline
-                onClose={() => setPayId(null)}
-                onPaid={() => {
-                  setPayId(null);
-                  setOpenId(null);
-                }}
-              />
-            </ErrorBoundary>
-          </div>
+        // Диалог оплаты сам рисует свою шапку с крестиком (inline-режим),
+        // поэтому отдельный заголовок-обёртку не добавляем — иначе два
+        // крестика подряд. Только полноэкранный контейнер + safe-area.
+        <div className="fixed inset-0 z-[60] flex flex-col bg-bg p-2 pt-[max(8px,env(safe-area-inset-top))] pb-[max(8px,env(safe-area-inset-bottom))]">
+          <ErrorBoundary key={payRental.id}>
+            <PaymentAcceptDialog
+              rental={payRental}
+              inline
+              onClose={() => setPayId(null)}
+              onPaid={() => {
+                setPayId(null);
+                setOpenId(null);
+              }}
+            />
+          </ErrorBoundary>
         </div>
       )}
 
