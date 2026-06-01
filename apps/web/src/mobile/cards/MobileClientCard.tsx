@@ -248,54 +248,16 @@ export function MobileClientCard({
           </div>
         </section>
 
-        {/* ===== Быстрые действия ===== */}
-        <section className="grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            onClick={() => clientStore.setUnreachable(client.id, !unreachable)}
-            className={cn(
-              "flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl px-3 text-[13px] font-semibold active:scale-[0.99]",
-              unreachable
-                ? "bg-orange-soft text-orange-ink"
-                : "bg-surface text-ink shadow-card-sm",
-            )}
-          >
-            <PhoneOff size={15} />
-            {unreachable ? "На связи" : "Не на связи"}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              const base =
-                import.meta.env.VITE_API_URL?.replace(/\/$/, "") ??
-                "http://localhost:4000";
-              window.open(
-                `${base}/api/clients/${client.id}/statement?format=html`,
-                "_blank",
-                "noopener",
-              );
-            }}
-            className="flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl bg-surface px-3 text-[13px] font-semibold text-ink shadow-card-sm active:scale-[0.99]"
-          >
-            <FileText size={15} /> Выписка
-          </button>
-          <div className="col-span-2">
-            <CreateDealMenu client={client} />
-          </div>
-        </section>
-
-        {/* ===== KPI ===== */}
+        {/* ===== Компактные KPI (самое важное, маленькие плитки) ===== */}
         <section className="grid grid-cols-2 gap-2">
           <Kpi
             label="Оборот"
             value={totalTurnover > 0 ? `${fmt(totalTurnover)} ₽` : "—"}
-            hint="за всё время"
             tone={totalTurnover > 0 ? "green" : "gray"}
           />
           <Kpi
-            label="Оплата в день"
+            label="Оплата / день"
             value={activeRental ? `${fmt(activeRental.rate)} ₽` : "—"}
-            hint={activeRental ? "действует сейчас" : "нет активной аренды"}
             tone={activeRental ? "blue" : "gray"}
           />
           <Kpi
@@ -305,15 +267,31 @@ export function MobileClientCard({
                 ? `${totalRentedDays} ${daysWord(totalRentedDays)}`
                 : "—"
             }
-            hint="суммарно по истории"
             tone={totalRentedDays > 0 ? "blue" : "gray"}
           />
           <Kpi
             label="Депозит"
             value={deposit > 0 ? `${fmt(deposit)} ₽` : "0 ₽"}
-            hint={deposit > 0 ? "в счёт след. оплаты" : "переплат нет"}
             tone={deposit > 0 ? "green" : "gray"}
           />
+        </section>
+
+        {/* ===== Важные действия: Не на связи + Создать сделку ===== */}
+        <section className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => clientStore.setUnreachable(client.id, !unreachable)}
+            className={cn(
+              "flex min-h-[46px] items-center justify-center gap-1.5 rounded-xl px-3 text-[13px] font-semibold active:scale-[0.99]",
+              unreachable
+                ? "bg-orange-soft text-orange-ink"
+                : "bg-surface text-ink shadow-card-sm",
+            )}
+          >
+            <PhoneOff size={15} />
+            {unreachable ? "На связи" : "Не на связи"}
+          </button>
+          <CreateDealMenu client={client} />
         </section>
 
         {/* ===== Плашки ===== */}
@@ -374,19 +352,19 @@ export function MobileClientCard({
           <EntityNotes entity="client" entityId={client.id} />
         </section>
 
-        {/* ===== Табы ===== */}
+        {/* ===== Табы пилюлями (Apple-style segmented, прокручиваемые) ===== */}
         <div className="-mx-3 overflow-x-auto px-3">
-          <div className="flex gap-1.5 border-b border-border pb-px">
+          <div className="flex w-max gap-1.5">
             {tabs.map((t) => (
               <button
                 key={t.id}
                 type="button"
                 onClick={() => setTab(t.id)}
                 className={cn(
-                  "shrink-0 whitespace-nowrap rounded-t-lg px-3 py-2 text-[13px] font-semibold transition-colors",
+                  "shrink-0 whitespace-nowrap rounded-full px-3.5 py-1.5 text-[13px] font-semibold transition-colors",
                   tab === t.id
-                    ? "border-b-2 border-blue-600 text-blue-600"
-                    : "border-b-2 border-transparent text-muted",
+                    ? "bg-ink text-white"
+                    : "bg-surface-soft text-muted",
                 )}
               >
                 {t.label}
@@ -394,7 +372,7 @@ export function MobileClientCard({
             ))}
           </div>
         </div>
-        <section className="pt-1">
+        <section>
           {tab === "rentals" && <RentalsTab client={client} />}
           {tab === "debtor" && <ClientDebtorsTab cases={debtorCases} />}
           {tab === "timeline" && <ClientTimelineTab clientId={client.id} />}
@@ -402,6 +380,24 @@ export function MobileClientCard({
           {tab === "incidents" && <IncidentsTab d={d} />}
           {tab === "docs" && <DocsTab key={client.id} client={client} d={d} />}
         </section>
+
+        {/* ===== Выписка — второстепенное действие, в самом низу ===== */}
+        <button
+          type="button"
+          onClick={() => {
+            const base =
+              import.meta.env.VITE_API_URL?.replace(/\/$/, "") ??
+              "http://localhost:4000";
+            window.open(
+              `${base}/api/clients/${client.id}/statement?format=html`,
+              "_blank",
+              "noopener",
+            );
+          }}
+          className="mt-2 flex min-h-[44px] w-full items-center justify-center gap-1.5 rounded-xl border border-border text-[13px] font-semibold text-muted active:bg-surface-soft"
+        >
+          <FileText size={15} /> Финансовая выписка
+        </button>
       </main>
 
       {editOpen && (
@@ -459,21 +455,20 @@ function PhoneRow({ phone, primary }: { phone: string; primary?: boolean }) {
   );
 }
 
+// Компактная KPI-плитка — маленькая (по ТЗ: «не такие здоровые»).
 function Kpi({
   label,
   value,
-  hint,
   tone,
 }: {
   label: string;
   value: string;
-  hint: string;
   tone: "blue" | "green" | "gray" | "red";
 }) {
   return (
     <div
       className={cn(
-        "flex flex-col rounded-2xl px-3 py-2.5",
+        "flex flex-col rounded-xl px-2.5 py-2",
         tone === "green"
           ? "bg-green-soft/60"
           : tone === "red"
@@ -483,11 +478,12 @@ function Kpi({
               : "bg-surface-soft",
       )}
     >
-      <div className="text-[11px] font-semibold text-muted-2">{label}</div>
-      <div className="mt-0.5 font-display text-[19px] font-extrabold leading-none text-ink">
+      <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-2">
+        {label}
+      </div>
+      <div className="mt-0.5 font-display text-[15px] font-extrabold leading-none text-ink">
         {value}
       </div>
-      <div className="mt-1 text-[11px] text-muted-2">{hint}</div>
     </div>
   );
 }
