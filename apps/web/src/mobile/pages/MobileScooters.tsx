@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
-import { ShoppingBag, Repeat } from "lucide-react";
+import { ShoppingBag, Repeat, Bike } from "lucide-react";
 import { useApiScooters } from "@/lib/api/scooters";
+import { useApiScooterModels } from "@/lib/api/scooter-models";
+import { fileUrl } from "@/lib/files";
 import { AddScooterModal } from "@/pages/fleet/AddScooterModal";
 import { ScooterStatusModal } from "@/pages/fleet/ScooterStatusModal";
 import { usePageFab } from "../fab";
@@ -41,6 +43,15 @@ function num(n: number): string {
 
 export function MobileScooters() {
   const { data: scooters = [] } = useApiScooters();
+  const { data: models = [] } = useApiScooterModels();
+  // Картинка модели для аватарки скутера: по modelId, иначе по совпадению
+  // названия модели. thumb-вариант (лёгкий) для списка.
+  const avatarFor = (s: ApiScooter): string | undefined => {
+    const m = s.modelId
+      ? models.find((x) => x.id === s.modelId)
+      : models.find((x) => x.name.toLowerCase().includes(s.model.toLowerCase()));
+    return fileUrl(m?.avatarKey, { variant: "thumb" }) ?? undefined;
+  };
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
   const [openId, setOpenId] = useState<number | null>(null);
@@ -112,7 +123,12 @@ export function MobileScooters() {
       ) : (
         <div className="grid grid-cols-2 gap-2">
           {filtered.map((s) => (
-            <ScooterCard key={s.id} scooter={s} onClick={() => setOpenId(s.id)} />
+            <ScooterCard
+              key={s.id}
+              scooter={s}
+              avatar={avatarFor(s)}
+              onClick={() => setOpenId(s.id)}
+            />
           ))}
         </div>
       )}
@@ -145,9 +161,11 @@ export function MobileScooters() {
 
 function ScooterCard({
   scooter,
+  avatar,
   onClick,
 }: {
   scooter: ApiScooter;
+  avatar?: string;
   onClick: () => void;
 }) {
   const meta = STATUS_META[scooter.baseStatus];
@@ -157,16 +175,30 @@ function ScooterCard({
       onClick={onClick}
       className="flex flex-col gap-2 rounded-2xl bg-surface p-3 text-left shadow-card-sm active:scale-[0.99]"
     >
-      <div className="flex items-start justify-between">
-        <span className="font-display text-[16px] font-bold text-ink">
-          {scooter.name}
+      <div className="flex items-center gap-2.5">
+        {/* Аватарка скутера: картинка модели из каталога, иначе иконка. */}
+        <span className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-surface-soft">
+          {avatar ? (
+            <img src={avatar} alt={scooter.name} className="h-full w-full object-contain" />
+          ) : (
+            <Bike size={22} className="text-muted-2" />
+          )}
         </span>
+        <div className="min-w-0 flex-1">
+          <div className="truncate font-display text-[15px] font-bold text-ink">
+            {scooter.name}
+          </div>
+          <div className="truncate text-[12px] text-muted">
+            {MODEL_LABEL[scooter.model]}
+          </div>
+        </div>
+      </div>
+      <div className="flex items-center justify-between">
         <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold", meta.cls)}>
           {meta.label}
         </span>
+        <span className="text-[11px] text-muted-2">{num(scooter.mileage)} км</span>
       </div>
-      <div className="text-[12px] text-muted">{MODEL_LABEL[scooter.model]}</div>
-      <div className="text-[11px] text-muted-2">{num(scooter.mileage)} км</div>
     </button>
   );
 }
