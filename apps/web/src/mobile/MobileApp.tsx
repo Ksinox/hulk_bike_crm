@@ -49,14 +49,18 @@ export function MobileApp({
   };
 
   return (
-    // overflow-x-hidden + w-full: жёстко запрещаем горизонтальную прокрутку
-    // всей страницы на телефоне (любой случайно широкий элемент клиппится).
-    // Внутренний горизонтальный скролл чипов-фильтров при этом сохраняется —
-    // у них свой overflow-x-auto контекст.
-    <div className="flex min-h-[100dvh] w-full flex-col overflow-x-hidden bg-bg">
+    // App-shell, устойчивый к iOS Safari и адаптивный к ЛЮБОМУ размеру
+    // экрана (телефон/планшет, любая ширина/высота):
+    //  • корень fixed inset-0 — заполняет реальный вьюпорт устройства,
+    //    сама страница НЕ скроллится (нет двойного скролла и «уезжающих»
+    //    fixed-элементов на iOS);
+    //  • шапка и нижний таб-бар — В ПОТОКЕ (shrink-0), не position:fixed;
+    //  • скроллится только <main> (единственный скролл-контейнер).
+    // overflow-x-hidden убирает любой случайный горизонтальный сдвиг.
+    <div className="fixed inset-0 flex flex-col overflow-hidden bg-bg">
       <MobileTopBar title={routeTitle(route)} />
 
-      <main className="flex-1 overflow-y-auto overflow-x-hidden px-4 pb-[calc(76px+env(safe-area-inset-bottom))] pt-3">
+      <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 pb-6 pt-3 overscroll-contain">
         <MobilePage route={route} onSelect={go} />
       </main>
 
@@ -120,7 +124,7 @@ function MobilePage({
 
 function MobileTopBar({ title }: { title: string }) {
   return (
-    <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-border bg-surface/85 px-4 backdrop-blur-md pt-[env(safe-area-inset-top)]">
+    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-surface px-4 pt-[env(safe-area-inset-top)]">
       <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-[10px] bg-ink text-white">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
           <circle cx="12" cy="12" r="10" stroke="#fff" strokeWidth="2" />
@@ -153,7 +157,7 @@ function MobileTabBar({
   moreActive: boolean;
 }) {
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-surface/95 backdrop-blur-md pb-[env(safe-area-inset-bottom)]">
+    <nav className="shrink-0 border-t border-border bg-surface pb-[env(safe-area-inset-bottom)]">
       <div className="mx-auto flex h-[60px] max-w-md items-stretch justify-around px-1">
         {tabItems.map((item) => (
           <TabButton
