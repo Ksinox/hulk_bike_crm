@@ -6,6 +6,7 @@ import {
   Bike,
   Check,
   ShieldCheck,
+  Sparkles,
   X,
 } from "lucide-react";
 import {
@@ -1600,6 +1601,109 @@ function rateForDays(m: RentalModel, days: number): number {
   return m.monthRate;
 }
 
+/** Тарифные ступени (та же логика, что rateForDays / EXT_TIERS в CRM). */
+const WISH_TIERS: { min: number; max: number; key: keyof RentalModel }[] = [
+  { min: 1, max: 2, key: "dayRate" },
+  { min: 3, max: 6, key: "shortRate" },
+  { min: 7, max: 29, key: "weekRate" },
+  { min: 30, max: Infinity, key: "monthRate" },
+];
+
+/**
+ * Рекомендация-апселл: «возьмите подольше — выгоднее». Считаем переход на
+ * следующую (более дешёвую по ₽/сут) тарифную ступень — её минимальный день.
+ * Тариф там дешевле за сутки, а у границ ступени итог часто ДАЖЕ МЕНЬШЕ
+ * (2 дня×1300=2600 vs 3 дня×700=2100). Возвращаем null, если клиент уже на
+ * самом дешёвом тарифе (30+). Сумма аренды — без экипировки (она ровная/сут).
+ */
+function computeWishUpsell(m: RentalModel, days: number) {
+  const ci = WISH_TIERS.findIndex((t) => days >= t.min && days <= t.max);
+  if (ci < 0 || ci >= WISH_TIERS.length - 1) return null;
+  const cur = WISH_TIERS[ci]!;
+  const next = WISH_TIERS[ci + 1]!;
+  const curRate = m[cur.key] as number;
+  const nextRate = m[next.key] as number;
+  if (nextRate >= curRate) return null; // следующая ступень не дешевле — пропускаем
+  const targetDays = next.min;
+  if (targetDays <= days) return null;
+  const curTotal = curRate * days;
+  const newTotal = nextRate * targetDays;
+  return {
+    targetDays,
+    addDays: targetDays - days,
+    curRate,
+    nextRate,
+    curTotal,
+    newTotal,
+    save: curTotal - newTotal, // > 0 — итог даже меньше
+    cheaperTotal: newTotal <= curTotal,
+  };
+}
+
+/**
+ * Карточка-рекомендация «возьмите подольше — выгоднее» на шаге периода.
+ * Помогает продать больший срок: показывает переход на более дешёвый тариф,
+ * по тапу применяет рекомендованное число дней. Зелёный, дружелюбный, не
+ * навязчивый (одна строка-совет + кнопка). Скрыта, если выгоды нет.
+ */
+function WishUpsell({
+  model,
+  days,
+  onApply,
+}: {
+  model: RentalModel;
+  days: number;
+  onApply: (d: number) => void;
+}) {
+  const up = computeWishUpsell(model, days);
+  if (!up) return null;
+  const rub = (n: number) => n.toLocaleString("ru-RU");
+  return (
+    <div className="rounded-2xl border-2 border-emerald-200 bg-emerald-50 p-3.5">
+      <div className="flex items-start gap-2.5">
+        <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white">
+          <Sparkles size={15} />
+        </div>
+        <div className="min-w-0">
+          <div className="text-[14px] font-bold text-emerald-900">
+            {up.cheaperTotal ? "Выгоднее взять подольше 🔥" : "Так дешевле за сутки"}
+          </div>
+          <div className="mt-0.5 text-[13px] leading-snug text-emerald-900/80">
+            {up.cheaperTotal ? (
+              <>
+                Возьмите{" "}
+                <b>
+                  {up.targetDays} {daysWord(up.targetDays)}
+                </b>{" "}
+                — аренда <b>{rub(up.newTotal)} ₽</b> вместо {rub(up.curTotal)} ₽
+                {up.save > 0 ? ` (на ${rub(up.save)} ₽ дешевле!)` : ""}, а
+                катаетесь на {up.addDays} {daysWord(up.addDays)} дольше.
+              </>
+            ) : (
+              <>
+                Возьмите{" "}
+                <b>
+                  {up.targetDays} {daysWord(up.targetDays)}
+                </b>{" "}
+                — ставка <b>{rub(up.nextRate)} ₽/сут</b> вместо{" "}
+                {rub(up.curRate)} ₽/сут (тариф выгоднее).
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={() => onApply(up.targetDays)}
+        className="mt-2.5 inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-xl bg-emerald-600 text-[14px] font-semibold text-white transition-colors hover:bg-emerald-700"
+      >
+        Взять {up.targetDays} {daysWord(up.targetDays)}
+        <ArrowRight size={15} />
+      </button>
+    </div>
+  );
+}
+
 /** Прибавить дни к ISO-дате (YYYY-MM-DD). */
 function addDaysIso(iso: string, days: number): string {
   const [y, m, d] = iso.split("-").map(Number);
@@ -1856,6 +1960,13 @@ function WishPeriodStep({
               </span>
             </div>
           </div>
+
+          {/* Рекомендация-апселл: «возьмите подольше — выгоднее». */}
+          <WishUpsell
+            model={selected}
+            days={days}
+            onApply={(d) => setField("wantDays", d)}
+          />
 
           <div className="text-center text-[12px] text-slate-400">
             Стоимость с разбивкой — в блоке «Ваш выбор» внизу экрана. Точную
