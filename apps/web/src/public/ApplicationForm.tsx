@@ -45,6 +45,7 @@ import {
 } from "./formatters";
 import { toTitleCaseRu } from "@/lib/textCase";
 import { RENTAL_AGREEMENT_TEXT } from "@/lib/rentalAgreement";
+import { ScooterCoverflow } from "./ScooterCoverflow";
 import { DatePicker, InlineRangeCalendar } from "@/components/ui/date-picker";
 import { periodForDays } from "@/lib/mock/rentals";
 import type { RentalModel, RentalEquipment } from "./applicationApi";
@@ -1626,50 +1627,7 @@ function WishNoModelNote({ what }: { what: string }) {
   );
 }
 
-/** Сравнение тарифов по моделям — сверху на шаге выбора модели, чтобы клиент
- *  сам прикинул, что выгоднее. Цены ₽/сут по ступеням (из каталога БД). */
-function TariffCompare({ models }: { models: RentalModel[] }) {
-  return (
-    <div>
-      <div className="mb-1.5 text-[12px] text-slate-500">
-        Тарифы ₽/сут — чем дольше аренда, тем дешевле сутки
-      </div>
-      <div className="overflow-hidden rounded-2xl border border-slate-200">
-        <div className="grid grid-cols-[1.2fr_repeat(4,1fr)] bg-slate-50 text-[10.5px] font-semibold uppercase tracking-wide text-slate-500">
-          <div className="px-2.5 py-1.5">Модель</div>
-          <div className="px-1 py-1.5 text-center">1–2 дн</div>
-          <div className="px-1 py-1.5 text-center">3–6 дн</div>
-          <div className="px-1 py-1.5 text-center">7–29 дн</div>
-          <div className="px-1 py-1.5 text-center">30+ дн</div>
-        </div>
-        {models.map((m) => (
-          <div
-            key={m.id}
-            className="grid grid-cols-[1.2fr_repeat(4,1fr)] border-t border-slate-100 text-[12.5px]"
-          >
-            <div className="truncate px-2.5 py-1.5 font-semibold text-slate-900">
-              {m.name}
-            </div>
-            <div className="px-1 py-1.5 text-center tabular-nums text-slate-700">
-              {m.dayRate}
-            </div>
-            <div className="px-1 py-1.5 text-center tabular-nums text-slate-700">
-              {m.shortRate}
-            </div>
-            <div className="px-1 py-1.5 text-center tabular-nums text-slate-700">
-              {m.weekRate}
-            </div>
-            <div className="px-1 py-1.5 text-center tabular-nums text-slate-700">
-              {m.monthRate}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/** Шаг выбора аренды №1 — модель. Сверху сравнение тарифов, ниже свайп карточек. */
+/** Шаг выбора аренды №1 — модель: coverflow-карусель + тарифы центральной. */
 function WishModelStep({
   form,
   setField,
@@ -1688,83 +1646,26 @@ function WishModelStep({
         Необязательно — можно пропустить, менеджер подберёт при звонке.
       </p>
 
-      {models.length > 0 && <TariffCompare models={models} />}
-
-      <div>
-        <FieldLabel>Выберите модель — листайте вбок</FieldLabel>
-        {loading ? (
-          <div className="flex gap-3 overflow-hidden">
-            {[0, 1, 2].map((i) => (
-              <div
-                key={i}
-                className="h-[176px] w-[150px] shrink-0 animate-pulse rounded-2xl bg-slate-100"
-              />
-            ))}
-          </div>
-        ) : models.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center text-[13px] text-slate-500">
-            Модели уточним при звонке.
-          </div>
-        ) : (
-          // Горизонтальная карусель — свайп пальцем вбок. Edge-bleed (−mx-4)
-          // чтобы карточки «выглядывали» за край и было понятно, что скроллится.
-          <div className="-mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {models.map((m) => {
-              const active = form.wantModel === m.name;
-              const fromRate = Math.min(
-                m.dayRate,
-                m.shortRate,
-                m.weekRate,
-                m.monthRate,
-              );
-              return (
-                <button
-                  key={m.id}
-                  type="button"
-                  onClick={() =>
-                    setField("wantModel", active ? "" : m.name)
-                  }
-                  className={`relative w-[150px] shrink-0 snap-start overflow-hidden rounded-2xl border-2 text-left transition-all ${
-                    active
-                      ? "border-slate-900 shadow-lg"
-                      : "border-slate-200 hover:border-slate-400"
-                  }`}
-                >
-                  <div className="relative aspect-[3/4] w-full bg-slate-100">
-                    {m.avatarUrl ? (
-                      <img
-                        src={applicationApi.modelAvatarUrl(
-                          m.avatarUrl + "?variant=thumb",
-                        )}
-                        alt={m.name}
-                        className="h-full w-full object-cover"
-                        loading="lazy"
-                      />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200 text-slate-400">
-                        <Bike size={42} strokeWidth={1.5} />
-                      </div>
-                    )}
-                    {active && (
-                      <div className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-slate-900 text-white">
-                        <Check size={14} />
-                      </div>
-                    )}
-                  </div>
-                  <div className="px-3 py-2.5">
-                    <div className="text-[16px] font-bold leading-tight text-slate-900">
-                      {m.name}
-                    </div>
-                    <div className="mt-0.5 text-[12px] text-slate-500">
-                      от {fromRate.toLocaleString("ru-RU")} ₽/сут
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </div>
+      {loading ? (
+        <div className="flex justify-center gap-3 overflow-hidden">
+          {[0, 1, 2].map((i) => (
+            <div
+              key={i}
+              className="h-[300px] w-[210px] shrink-0 animate-pulse rounded-[26px] bg-slate-100"
+            />
+          ))}
+        </div>
+      ) : models.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center text-[13px] text-slate-500">
+          Модели уточним при звонке.
+        </div>
+      ) : (
+        <ScooterCoverflow
+          models={models}
+          value={form.wantModel}
+          onSelect={(name) => setField("wantModel", name)}
+        />
+      )}
     </div>
   );
 }
