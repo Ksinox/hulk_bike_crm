@@ -105,9 +105,19 @@ export function WishSummaryBar({
         />
       </button>
 
-      {/* Развёрнутая панель. */}
-      {open && (
-        <div className="space-y-3 px-4 pb-3 pt-1">
+      {/* Развёрнутая панель — плавно «выезжает» (grid-rows 0fr↔1fr,
+          без знания высоты). */}
+      <div
+        className={`grid transition-[grid-template-rows] duration-300 ease-out ${
+          open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+        }`}
+      >
+        <div className="overflow-hidden">
+          <div
+            className={`space-y-3 px-4 pb-3 pt-1 transition-opacity duration-200 ${
+              open ? "opacity-100" : "opacity-0"
+            }`}
+          >
           {/* Скутер чипом с названием. */}
           <div className="flex items-center gap-2.5">
             <Thumb avatarUrl={model.avatarUrl} fallback="scooter" size={44} tilt />
@@ -152,8 +162,9 @@ export function WishSummaryBar({
               </div>
             </div>
           )}
+          </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }

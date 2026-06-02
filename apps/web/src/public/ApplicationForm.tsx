@@ -1665,47 +1665,58 @@ function WishUpsell({
   if (!up) return null;
   const rub = (n: number) => n.toLocaleString("ru-RU");
   return (
-    <div className="rounded-2xl border-2 border-emerald-200 bg-emerald-50 p-3.5">
-      <div className="flex items-start gap-2.5">
-        <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white">
-          <Sparkles size={15} />
-        </div>
-        <div className="min-w-0">
-          <div className="text-[14px] font-bold text-emerald-900">
-            {up.cheaperTotal ? "Выгоднее взять подольше 🔥" : "Так дешевле за сутки"}
+    // key={targetDays} — при смене рекомендации карточка переанимируется.
+    <div
+      key={up.targetDays}
+      style={{ animation: "apUpsellIn .38s cubic-bezier(.22,1,.36,1)" }}
+      className="overflow-hidden rounded-2xl bg-gradient-to-br from-emerald-400 to-teal-500 p-[1.5px] shadow-lg shadow-emerald-500/20"
+    >
+      <style>{`@keyframes apUpsellIn{from{opacity:0;transform:translateY(12px) scale(.97)}to{opacity:1;transform:none}}`}</style>
+      <div className="rounded-[15px] bg-white p-3.5">
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 text-white shadow-sm shadow-emerald-500/30">
+            <Sparkles size={16} />
           </div>
-          <div className="mt-0.5 text-[13px] leading-snug text-emerald-900/80">
-            {up.cheaperTotal ? (
-              <>
-                Возьмите{" "}
-                <b>
-                  {up.targetDays} {daysWord(up.targetDays)}
-                </b>{" "}
-                — аренда <b>{rub(up.newTotal)} ₽</b> вместо {rub(up.curTotal)} ₽
-                {up.save > 0 ? ` (на ${rub(up.save)} ₽ дешевле!)` : ""}, а
-                катаетесь на {up.addDays} {daysWord(up.addDays)} дольше.
-              </>
-            ) : (
-              <>
-                Возьмите{" "}
-                <b>
-                  {up.targetDays} {daysWord(up.targetDays)}
-                </b>{" "}
-                — ставка <b>{rub(up.nextRate)} ₽/сут</b> вместо{" "}
-                {rub(up.curRate)} ₽/сут (тариф выгоднее).
-              </>
-            )}
+          <div className="text-[14.5px] font-bold text-slate-900">
+            {up.cheaperTotal ? "Так выгоднее" : "Дешевле за сутки"}
           </div>
+          {up.cheaperTotal && up.save > 0 && (
+            <span className="ml-auto rounded-full bg-emerald-100 px-2.5 py-1 text-[12.5px] font-extrabold tabular-nums text-emerald-700">
+              −{rub(up.save)} ₽
+            </span>
+          )}
         </div>
+        <div className="mt-2 text-[13.5px] leading-snug text-slate-600">
+          {up.cheaperTotal ? (
+            <>
+              Возьмите{" "}
+              <b className="text-slate-900">
+                {up.targetDays} {daysWord(up.targetDays)}
+              </b>{" "}
+              — аренда всего <b className="text-slate-900">{rub(up.newTotal)} ₽</b>{" "}
+              вместо {rub(up.curTotal)} ₽, а катаетесь на {up.addDays}{" "}
+              {daysWord(up.addDays)} дольше.
+            </>
+          ) : (
+            <>
+              Возьмите{" "}
+              <b className="text-slate-900">
+                {up.targetDays} {daysWord(up.targetDays)}
+              </b>{" "}
+              — ставка <b className="text-slate-900">{rub(up.nextRate)} ₽/сут</b>{" "}
+              вместо {rub(up.curRate)} ₽/сут.
+            </>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={() => onApply(up.targetDays)}
+          className="mt-3 inline-flex h-11 w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-[14.5px] font-semibold text-white shadow-sm shadow-emerald-500/25 transition-all hover:from-emerald-600 hover:to-teal-700 active:scale-[.98]"
+        >
+          Взять {up.targetDays} {daysWord(up.targetDays)}
+          <ArrowRight size={16} />
+        </button>
       </div>
-      <button
-        type="button"
-        onClick={() => onApply(up.targetDays)}
-        className="mt-2.5 inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-xl bg-emerald-600 text-[14px] font-semibold text-white transition-colors hover:bg-emerald-700"
-      >
-        Взять {up.targetDays} {daysWord(up.targetDays)}
-        <ArrowRight size={15} />
-      </button>
     </div>
   );
 }
