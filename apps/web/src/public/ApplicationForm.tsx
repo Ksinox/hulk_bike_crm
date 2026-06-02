@@ -49,7 +49,6 @@ import { ScooterCoverflow } from "./ScooterCoverflow";
 import { EquipmentCoverflow } from "./EquipmentCoverflow";
 import { WishSummaryBar } from "./WishSummaryBar";
 import { DatePicker, InlineRangeCalendar } from "@/components/ui/date-picker";
-import { periodForDays } from "@/lib/mock/rentals";
 import type { RentalModel, RentalEquipment } from "./applicationApi";
 
 /** Сегодня в ISO для maxDate ограничения. */
@@ -1604,28 +1603,29 @@ function enumToModelName(e: string | null): string {
 
 /** Ставка ₽/сут модели по числу дней (тот же принцип, что в аренде). */
 function rateForDays(m: RentalModel, days: number): number {
-  const p = periodForDays(days);
-  if (p === "day") return m.dayRate;
-  if (p === "short") return m.shortRate;
-  if (p === "week") return m.weekRate;
+  // Ставка ₽/сут берётся из каталога «Модели» как прописано:
+  //   1–2 дня → dayRate (короткий прокат дороже),
+  //   3–6 → shortRate, 7–29 → weekRate, 30+ → monthRate.
+  // periodForDays здесь НЕ используем — она для backend-поля tariffPeriod
+  // (enum БД не знает 'day' и для 1-2 отдаёт short). Цена же — по dayRate.
+  if (days <= 2) return m.dayRate;
+  if (days <= 6) return m.shortRate;
+  if (days <= 29) return m.weekRate;
   return m.monthRate;
 }
 
 /**
- * Рекомендация-апселл: «возьмите подольше — выгоднее». Считаем переход на
- * следующую (более дешёвую по ₽/сут) тарифную ступень.
- *
- * ВАЖНО: ступени берём ровно как в `periodForDays` (источник истины цены):
- *   1–6 дней → shortRate, 7–29 → weekRate, 30+ → monthRate.
- * (dayRate в каталоге сейчас НЕ применяется — periodForDays для 1-2 дней
- * тоже отдаёт short.) Цену считаем через rateForDays — тогда апселл и сниппет
- * всегда совпадают. У границ ступени итог часто ДАЖЕ МЕНЬШЕ (6 дн×850=5100 vs
- * 7 дн×600=4200). Сумма — аренда без экипировки (она ровная/сут).
+ * Рекомендация-апселл: «возьмите подольше — выгоднее». Каскад по тарифным
+ * ступеням каталога (как в rateForDays): 1-2 → 3 → 7 → 30. Цену считаем через
+ * rateForDays, поэтому апселл и сниппет всегда совпадают. У границ ступени итог
+ * часто ДАЖЕ МЕНЬШЕ (2 дн×dayRate vs 3 дн×shortRate). Сумма — аренда без
+ * экипировки (она ровная/сут). null — клиент уже на самом дешёвом тарифе (30+).
  */
 function computeWishUpsell(m: RentalModel, days: number) {
   // Целевой день — минимум следующей (более дешёвой) ступени.
   let targetDays: number;
-  if (days <= 6) targetDays = 7;
+  if (days <= 2) targetDays = 3;
+  else if (days <= 6) targetDays = 7;
   else if (days <= 29) targetDays = 30;
   else return null; // уже самый дешёвый тариф (30+)
   if (targetDays <= days) return null;
