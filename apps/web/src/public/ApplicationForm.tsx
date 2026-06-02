@@ -81,7 +81,9 @@ type StepId =
   | "contact"
   | "passport"
   | "address"
-  | "rental_wish"
+  | "wish_model"
+  | "wish_equipment"
+  | "wish_period"
   | "photo_passport_main"
   | "photo_passport_reg"
   | "photo_license"
@@ -95,7 +97,9 @@ function getSteps(isForeigner: boolean): StepId[] {
     "contact",
     "passport",
     "address",
-    "rental_wish",
+    "wish_model",
+    "wish_equipment",
+    "wish_period",
     "photo_passport_main",
     "photo_passport_reg",
     "photo_license",
@@ -254,6 +258,12 @@ export function ApplicationForm() {
   const [rulesScrolledEnd, setRulesScrolledEnd] = useState(false);
   // R2.6: финальное окно-напоминание про оплату старта наличными.
   const [showCashReminder, setShowCashReminder] = useState(false);
+  // Каталог для шагов «выбор аренды» (модель/экипировка/период). Грузим один
+  // раз при входе в любой из wish-шагов и шарим между ними (не дёргаем API 3×).
+  const [wishModels, setWishModels] = useState<RentalModel[]>([]);
+  const [wishEquipment, setWishEquipment] = useState<RentalEquipment[]>([]);
+  const [wishLoading, setWishLoading] = useState(false);
+  const wishFetchedRef = useRef(false);
 
   const steps = useMemo(() => getSteps(form.isForeigner), [form.isForeigner]);
   const totalSteps = steps.length;
@@ -298,6 +308,21 @@ export function ApplicationForm() {
       if (saveTimerRef.current) window.clearTimeout(saveTimerRef.current);
     };
   }, [form, appId, token, tokenExpiresAt, uploaded, step]);
+
+  // Каталог моделей/экипировки — лениво при входе в любой из wish-шагов.
+  useEffect(() => {
+    if (!currentStepId.startsWith("wish_") || wishFetchedRef.current) return;
+    wishFetchedRef.current = true;
+    setWishLoading(true);
+    Promise.all([
+      applicationApi.rentalModels().then((r) => setWishModels(r.items)),
+      applicationApi.equipment().then((r) => setWishEquipment(r.items)),
+    ])
+      .catch(() => {
+        /* каталог не загрузился — шаги можно пропустить */
+      })
+      .finally(() => setWishLoading(false));
+  }, [currentStepId]);
 
   const ensureDraft = async (): Promise<{ id: number; tok: string }> => {
     const fields = fieldsFromState(form);
@@ -366,8 +391,10 @@ export function ApplicationForm() {
         return canNextPassport;
       case "address":
         return canNextAddress;
-      case "rental_wish":
-        return true; // необязательный шаг — клиент может пропустить
+      case "wish_model":
+      case "wish_equipment":
+      case "wish_period":
+        return true; // необязательные шаги — клиент может пропустить
       case "photo_passport_main":
         return uploaded.has("passport_main");
       case "photo_passport_reg":
@@ -533,8 +560,29 @@ export function ApplicationForm() {
           {currentStepId === "address" && (
             <Step3 form={form} setField={setField} />
           )}
-          {currentStepId === "rental_wish" && (
-            <RentalWishStep form={form} setField={setField} />
+          {currentStepId === "wish_model" && (
+            <WishModelStep
+              form={form}
+              setField={setField}
+              models={wishModels}
+              loading={wishLoading}
+            />
+          )}
+          {currentStepId === "wish_equipment" && (
+            <WishEquipmentStep
+              form={form}
+              setField={setField}
+              models={wishModels}
+              equipment={wishEquipment}
+            />
+          )}
+          {currentStepId === "wish_period" && (
+            <WishPeriodStep
+              form={form}
+              setField={setField}
+              models={wishModels}
+              equipment={wishEquipment}
+            />
           )}
           {isPhotoStep && photoKind && (
             <PhotoStep
@@ -1511,73 +1559,127 @@ function isoToDDMM(iso: string): string {
   return m ? `${m[3]}.${m[2]}` : iso;
 }
 
-function RentalWishStep({
+/** Мини-карточка выбранного скутера — закреплена сверху на шагах экипировки
+ *  и периода, чтобы клиент видел, что уже выбрал. */
+function PinnedScooter({
+  model,
+  subtitle,
+}: {
+  model: RentalModel;
+  subtitle?: string;
+}) {
+  return (
+    <div className="flex items-center gap-3 rounded-2xl border-2 border-slate-900 bg-white p-3 shadow-sm">
+      <div className="h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-slate-100">
+        {model.avatarUrl ? (
+          <img
+            src={applicationApi.modelAvatarUrl(model.avatarUrl + "?variant=thumb")}
+            alt={model.name}
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center text-slate-400">
+            <Bike size={26} strokeWidth={1.5} />
+          </div>
+        )}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+          Выбранный скутер
+        </div>
+        <div className="text-[16px] font-bold leading-tight text-slate-900">
+          {model.name}
+        </div>
+        {subtitle && (
+          <div className="mt-0.5 text-[12px] text-slate-500">{subtitle}</div>
+        )}
+      </div>
+      <Check size={18} className="ml-auto shrink-0 text-slate-900" />
+    </div>
+  );
+}
+
+/** Подсказка, когда модель не выбрана (шаги экипировки/периода опциональны). */
+function WishNoModelNote({ what }: { what: string }) {
+  return (
+    <div className="space-y-4">
+      <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-10 text-center">
+        <Bike size={32} strokeWidth={1.5} className="mx-auto text-slate-300" />
+        <p className="mt-3 text-[14px] text-slate-500">
+          Вы не выбрали модель. Вернитесь назад, чтобы указать {what}, — или
+          пропустите: менеджер подберёт при звонке.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/** Сравнение тарифов по моделям — сверху на шаге выбора модели, чтобы клиент
+ *  сам прикинул, что выгоднее. Цены ₽/сут по ступеням (из каталога БД). */
+function TariffCompare({ models }: { models: RentalModel[] }) {
+  return (
+    <div>
+      <div className="mb-1.5 text-[12px] text-slate-500">
+        Тарифы ₽/сут — чем дольше аренда, тем дешевле сутки
+      </div>
+      <div className="overflow-hidden rounded-2xl border border-slate-200">
+        <div className="grid grid-cols-[1.2fr_repeat(4,1fr)] bg-slate-50 text-[10.5px] font-semibold uppercase tracking-wide text-slate-500">
+          <div className="px-2.5 py-1.5">Модель</div>
+          <div className="px-1 py-1.5 text-center">1–2 дн</div>
+          <div className="px-1 py-1.5 text-center">3–6 дн</div>
+          <div className="px-1 py-1.5 text-center">7–29 дн</div>
+          <div className="px-1 py-1.5 text-center">30+ дн</div>
+        </div>
+        {models.map((m) => (
+          <div
+            key={m.id}
+            className="grid grid-cols-[1.2fr_repeat(4,1fr)] border-t border-slate-100 text-[12.5px]"
+          >
+            <div className="truncate px-2.5 py-1.5 font-semibold text-slate-900">
+              {m.name}
+            </div>
+            <div className="px-1 py-1.5 text-center tabular-nums text-slate-700">
+              {m.dayRate}
+            </div>
+            <div className="px-1 py-1.5 text-center tabular-nums text-slate-700">
+              {m.shortRate}
+            </div>
+            <div className="px-1 py-1.5 text-center tabular-nums text-slate-700">
+              {m.weekRate}
+            </div>
+            <div className="px-1 py-1.5 text-center tabular-nums text-slate-700">
+              {m.monthRate}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Шаг выбора аренды №1 — модель. Сверху сравнение тарифов, ниже свайп карточек. */
+function WishModelStep({
   form,
   setField,
+  models,
+  loading,
 }: {
   form: FormState;
   setField: <K extends keyof FormState>(k: K, v: FormState[K]) => void;
+  models: RentalModel[];
+  loading: boolean;
 }) {
-  const [models, setModels] = useState<RentalModel[]>([]);
-  const [equipment, setEquipment] = useState<RentalEquipment[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let alive = true;
-    Promise.all([
-      applicationApi.rentalModels().then((r) => {
-        if (alive) setModels(r.items);
-      }),
-      applicationApi.equipment().then((r) => {
-        if (alive) setEquipment(r.items);
-      }),
-    ])
-      .catch(() => {
-        /* каталог не загрузился — шаг можно пропустить */
-      })
-      .finally(() => {
-        if (alive) setLoading(false);
-      });
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  const days = form.wantDays > 0 ? form.wantDays : 7;
-  const selected = models.find((m) => m.name === form.wantModel) ?? null;
-  // Платная экипировка считается за сутки (как в аренде): + к ставке/сут.
-  const equipDaily = equipment
-    .filter((e) => form.wantEquipmentIds.includes(e.id) && !e.isFree)
-    .reduce((s, e) => s + e.price, 0);
-  const calc = useMemo(() => {
-    if (!selected) return null;
-    const rate = rateForDays(selected, days);
-    const perDay = rate + equipDaily;
-    return { rate, perDay, total: perDay * days };
-  }, [selected, days, equipDaily]);
-
-  const toggleEquip = (id: number) => {
-    const has = form.wantEquipmentIds.includes(id);
-    setField(
-      "wantEquipmentIds",
-      has
-        ? form.wantEquipmentIds.filter((x) => x !== id)
-        : [...form.wantEquipmentIds, id],
-    );
-  };
-
   return (
     <div className="space-y-4">
-      <h1 className="text-[22px] font-bold text-slate-900">
-        Что хотите арендовать?
-      </h1>
+      <h1 className="text-[22px] font-bold text-slate-900">Какой скутер?</h1>
       <p className="text-[14px] text-slate-600">
-        Необязательно — подскажем стоимость и подберём при звонке. Можно
-        пропустить, если ещё не определились.
+        Необязательно — можно пропустить, менеджер подберёт при звонке.
       </p>
 
+      {models.length > 0 && <TariffCompare models={models} />}
+
       <div>
-        <FieldLabel>Модель скутера</FieldLabel>
+        <FieldLabel>Выберите модель — листайте вбок</FieldLabel>
         {loading ? (
           <div className="flex gap-3 overflow-hidden">
             {[0, 1, 2].map((i) => (
@@ -1651,10 +1753,52 @@ function RentalWishStep({
           </div>
         )}
       </div>
+    </div>
+  );
+}
 
+/** Шаг выбора аренды №2 — экипировка. Сверху закреплён выбранный скутер. */
+function WishEquipmentStep({
+  form,
+  setField,
+  models,
+  equipment,
+}: {
+  form: FormState;
+  setField: <K extends keyof FormState>(k: K, v: FormState[K]) => void;
+  models: RentalModel[];
+  equipment: RentalEquipment[];
+}) {
+  const selected = models.find((m) => m.name === form.wantModel) ?? null;
+  const toggleEquip = (id: number) => {
+    const has = form.wantEquipmentIds.includes(id);
+    setField(
+      "wantEquipmentIds",
+      has
+        ? form.wantEquipmentIds.filter((x) => x !== id)
+        : [...form.wantEquipmentIds, id],
+    );
+  };
+  if (!selected) return <WishNoModelNote what="экипировку" />;
+
+  return (
+    <div className="space-y-4">
+      <PinnedScooter model={selected} />
+      <h1 className="text-[22px] font-bold text-slate-900">
+        Выберите экипировку
+      </h1>
+      <p className="text-[14px] text-slate-600">
+        По желанию — шлем, цепь и прочее. Можно пропустить.
+      </p>
+
+      {equipment.length === 0 && (
+        <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center text-[13px] text-slate-500">
+          Экипировку подберём при выдаче.
+        </div>
+      )}
       {equipment.length > 0 && (
         <div>
-          <FieldLabel>Экипировка (по желанию)</FieldLabel>
+          <FieldLabel>Доступная экипировка</FieldLabel>
           <div className="-mx-4 flex gap-3 overflow-x-auto px-4 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {equipment.map((e) => {
               const active = form.wantEquipmentIds.includes(e.id);
@@ -1705,9 +1849,49 @@ function RentalWishStep({
           </div>
         </div>
       )}
+    </div>
+  );
+}
 
-      {selected && (
-        <>
+/** Шаг выбора аренды №3 — когда и на сколько + итоговая цена. */
+function WishPeriodStep({
+  form,
+  setField,
+  models,
+  equipment,
+}: {
+  form: FormState;
+  setField: <K extends keyof FormState>(k: K, v: FormState[K]) => void;
+  models: RentalModel[];
+  equipment: RentalEquipment[];
+}) {
+  const days = form.wantDays > 0 ? form.wantDays : 7;
+  const selected = models.find((m) => m.name === form.wantModel) ?? null;
+  const equipDaily = equipment
+    .filter((e) => form.wantEquipmentIds.includes(e.id) && !e.isFree)
+    .reduce((s, e) => s + e.price, 0);
+  const calc = useMemo(() => {
+    if (!selected) return null;
+    const rate = rateForDays(selected, days);
+    const perDay = rate + equipDaily;
+    return { rate, perDay, total: perDay * days };
+  }, [selected, days, equipDaily]);
+  if (!selected) return <WishNoModelNote what="период" />;
+
+  return (
+    <div className="space-y-4">
+      <PinnedScooter
+        model={selected}
+        subtitle={
+          equipDaily > 0
+            ? `+ экипировка ${equipDaily.toLocaleString("ru-RU")} ₽/сут`
+            : "без платной экипировки"
+        }
+      />
+      <h1 className="text-[22px] font-bold text-slate-900">
+        Когда и на сколько?
+      </h1>
+
           <div>
             <FieldLabel>Когда взять</FieldLabel>
             <div className="flex flex-wrap items-center gap-2">
@@ -1843,8 +2027,6 @@ function RentalWishStep({
               </div>
             </div>
           )}
-        </>
-      )}
     </div>
   );
 }
