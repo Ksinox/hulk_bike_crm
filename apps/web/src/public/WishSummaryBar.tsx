@@ -85,6 +85,11 @@ export function WishSummaryBar({
               ? ` · экип. ${selectedEquipment.length}`
               : ""}
           </div>
+          {periodLabel && (
+            <div className="truncate text-[11px] text-slate-500">
+              {periodLabel}
+            </div>
+          )}
         </div>
         {price && (
           <div className="text-right">

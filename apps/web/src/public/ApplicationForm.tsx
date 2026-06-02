@@ -684,6 +684,17 @@ export function ApplicationForm() {
         </main>
 
         <footer className="sticky bottom-0 -mx-4 mt-6 border-t border-slate-200 bg-slate-50 px-4 pb-4 pt-3">
+          {/* Совет «возьмите подольше» — над сниппетом, чтобы был виден сразу
+              (вниз за ним никто не листает). Только на шаге периода. */}
+          {currentStepId === "wish_period" && wishModel && (
+            <div className="mb-2">
+              <WishUpsell
+                model={wishModel}
+                days={wishDays}
+                onApply={(d) => setField("wantDays", d)}
+              />
+            </div>
+          )}
           {/* Выдвижной сниппет «Ваш выбор» — над кнопками, на шагах аренды. */}
           {isWishStep && wishModel && (
             <WishSummaryBar
@@ -1577,7 +1588,6 @@ function SuccessScreen() {
 
 // ─────────────── G3: предзаявка на аренду (модель + срок) ───────────────
 
-const WISH_DAY_PRESETS = [1, 3, 7, 14, 30];
 const MODEL_ENUMS = ["jog", "gear", "honda", "tank"] as const;
 
 /** Имя модели каталога → enum scooter_model (для requestedModel). Кастомные
@@ -1857,121 +1867,23 @@ function WishPeriodStep({
   const endIso = addDaysIso(startIso, days);
   if (!selected) return <WishNoModelNote what="период" />;
 
+  // Срок задаётся ТАПОМ по календарю (начало → конец). Без пресетов/степпера:
+  // даты, цена и совет «выгоднее» — в нижнем сниппете «Ваш выбор».
   return (
-    <div className="space-y-4">
-      <h1 className="text-[22px] font-bold text-slate-900">Выберите период</h1>
-      <p className="text-[14px] text-slate-600">
-        На какие даты взять{" "}
-        <span className="font-semibold text-slate-700">{selected.name}</span>?
-        Стоимость покажем внизу.
-      </p>
-
-          <div>
-            <FieldLabel>Период на календаре</FieldLabel>
-            {/* Сводка периода сверху — «с … по …». */}
-            <div className="mb-2 rounded-xl bg-slate-900 px-4 py-2.5 text-[15px] font-semibold text-white">
-              {startIso ? (
-                <>
-                  с {isoToDDMM(startIso)} по {isoToDDMM(endIso)} ·{" "}
-                  <span className="text-white/80">
-                    {days} {daysWord(days)}
-                  </span>
-                </>
-              ) : (
-                "Тапните дату начала, затем дату конца"
-              )}
-            </div>
-            <InlineRangeCalendar
-              from={startIso}
-              to={endIso}
-              minDate={todayIsoLocal()}
-              onChange={({ from, to }) => {
-                setField("wantStartDate", from);
-                setField("wantDays", Math.max(1, daysBetweenIso(from, to)));
-              }}
-            />
-            <div className="mt-1 text-[12px] text-slate-500">
-              Тапните дату начала, затем дату конца — или поправьте срок
-              кнопками ниже. Бронь плюс-минус, придержим.
-            </div>
-          </div>
-
-          <div>
-            <FieldLabel>На сколько дней</FieldLabel>
-            <div className="mb-1.5 text-[12px] text-slate-500">
-              Быстрый выбор — или укажите любой срок ниже
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {WISH_DAY_PRESETS.map((n) => {
-                const active = days === n;
-                return (
-                  <button
-                    key={n}
-                    type="button"
-                    onClick={() => setField("wantDays", n)}
-                    className={`h-11 min-w-[56px] rounded-xl border-2 px-3 text-[15px] font-semibold transition-colors ${
-                      active
-                        ? "border-slate-900 bg-slate-900 text-white"
-                        : "border-slate-200 bg-white text-slate-900 hover:border-slate-400"
-                    }`}
-                  >
-                    {n} {n === 1 ? "день" : n < 5 ? "дня" : "дней"}
-                  </button>
-                );
-              })}
-            </div>
-            {/* Любой срок — степпер. Заготовки выше лишь помощь; клиент может
-                выбрать ровно столько дней, сколько нужно (напр. 8). */}
-            <div className="mt-3 flex items-center gap-3">
-              <div className="inline-flex items-center overflow-hidden rounded-xl border-2 border-slate-200">
-                <button
-                  type="button"
-                  aria-label="На день меньше"
-                  onClick={() => setField("wantDays", Math.max(1, days - 1))}
-                  className="flex h-12 w-12 items-center justify-center text-[24px] font-semibold leading-none text-slate-500 transition-colors hover:bg-slate-50 active:bg-slate-100"
-                >
-                  −
-                </button>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  min={1}
-                  max={90}
-                  value={days}
-                  onChange={(e) =>
-                    setField(
-                      "wantDays",
-                      Math.max(1, Math.min(90, Number(e.target.value) || 1)),
-                    )
-                  }
-                  className="h-12 w-16 border-x-2 border-slate-200 text-center text-[17px] font-bold text-slate-900 outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                />
-                <button
-                  type="button"
-                  aria-label="На день больше"
-                  onClick={() => setField("wantDays", Math.min(90, days + 1))}
-                  className="flex h-12 w-12 items-center justify-center text-[24px] font-semibold leading-none text-slate-500 transition-colors hover:bg-slate-50 active:bg-slate-100"
-                >
-                  +
-                </button>
-              </div>
-              <span className="text-[14px] text-slate-600">
-                {days === 1 ? "день" : days < 5 ? "дня" : "дней"} — любой срок
-              </span>
-            </div>
-          </div>
-
-          {/* Рекомендация-апселл: «возьмите подольше — выгоднее». */}
-          <WishUpsell
-            model={selected}
-            days={days}
-            onApply={(d) => setField("wantDays", d)}
-          />
-
-          <div className="text-center text-[12px] text-slate-400">
-            Стоимость с разбивкой — в блоке «Ваш выбор» внизу экрана. Точную
-            цену и наличие подтвердит менеджер.
-          </div>
+    <div className="space-y-3">
+      <InlineRangeCalendar
+        from={startIso}
+        to={endIso}
+        minDate={todayIsoLocal()}
+        onChange={({ from, to }) => {
+          setField("wantStartDate", from);
+          setField("wantDays", Math.max(1, daysBetweenIso(from, to)));
+        }}
+      />
+      <div className="text-center text-[13px] leading-snug text-slate-500">
+        Тапните дату начала, затем дату конца. Стоимость и подсказки — в блоке
+        «Ваш выбор» внизу.
+      </div>
     </div>
   );
 }
