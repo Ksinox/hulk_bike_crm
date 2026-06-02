@@ -127,17 +127,18 @@ export function ScooterCoverflow({
                     : "border-slate-200/70"
                 }`}
               >
-                {/* Аватарка скутера — крупно, на мягком градиенте. */}
-                <div className="relative aspect-[4/5] w-full bg-gradient-to-b from-slate-50 to-slate-200">
+                {/* Аватарка скутера — крупно, на мягком градиенте. thumb —
+                    операторский кроп с хорошей рамкой (object-contain, чтобы
+                    скутер был виден целиком и «в хорошем свете»). */}
+                <div className="relative aspect-[4/5] w-full bg-gradient-to-b from-slate-100 to-slate-300">
                   {m.avatarUrl ? (
                     <img
                       src={applicationApi.modelAvatarUrl(
-                        m.avatarUrl + "?variant=view",
+                        m.avatarUrl + "?variant=thumb",
                       )}
                       alt={m.name}
                       className="absolute inset-0 h-full w-full object-cover"
                       draggable={false}
-                      loading="lazy"
                     />
                   ) : (
                     <div className="flex h-full w-full items-center justify-center text-slate-300">
