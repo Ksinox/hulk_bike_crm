@@ -5,7 +5,6 @@ import {
   ArrowRight,
   Bike,
   Check,
-  Package,
   ShieldCheck,
   X,
 } from "lucide-react";
@@ -46,6 +45,7 @@ import {
 import { toTitleCaseRu } from "@/lib/textCase";
 import { RENTAL_AGREEMENT_TEXT } from "@/lib/rentalAgreement";
 import { ScooterCoverflow } from "./ScooterCoverflow";
+import { EquipmentCoverflow } from "./EquipmentCoverflow";
 import { DatePicker, InlineRangeCalendar } from "@/components/ui/date-picker";
 import { periodForDays } from "@/lib/mock/rentals";
 import type { RentalModel, RentalEquipment } from "./applicationApi";
@@ -265,6 +265,9 @@ export function ApplicationForm() {
   const [wishEquipment, setWishEquipment] = useState<RentalEquipment[]>([]);
   const [wishLoading, setWishLoading] = useState(false);
   const wishFetchedRef = useRef(false);
+  // Направление перехода между шагами — для плавной анимации появления
+  // (вперёд → въезд справа, назад → слева).
+  const [navDir, setNavDir] = useState<"fwd" | "back">("fwd");
 
   const steps = useMemo(() => getSteps(form.isForeigner), [form.isForeigner]);
   const totalSteps = steps.length;
@@ -457,6 +460,7 @@ export function ApplicationForm() {
   };
 
   const goNext = async () => {
+    setNavDir("fwd");
     setError(null);
     setBusy(true);
     try {
@@ -477,12 +481,14 @@ export function ApplicationForm() {
   };
 
   const goBack = () => {
+    setNavDir("back");
     setError(null);
     setStep((s) => Math.max(s - 1, 1));
   };
 
   // Auto-advance после успешной загрузки фото на фото-шаге
   const advanceFromPhoto = () => {
+    setNavDir("fwd");
     setStep((s) => Math.min(s + 1, totalSteps));
   };
 
@@ -552,6 +558,15 @@ export function ApplicationForm() {
         </header>
 
         <main className="flex-1">
+          {/* Плавный переход между шагами: key={step} ремонтит контейнер,
+              анимация проигрывается при каждой смене шага (вперёд/назад). */}
+          <style>{`@keyframes apStepFwd{from{opacity:0;transform:translateX(26px)}to{opacity:1;transform:none}}@keyframes apStepBack{from{opacity:0;transform:translateX(-26px)}to{opacity:1;transform:none}}`}</style>
+          <div
+            key={step}
+            style={{
+              animation: `${navDir === "fwd" ? "apStepFwd" : "apStepBack"} .3s cubic-bezier(.22,1,.36,1)`,
+            }}
+          >
           {currentStepId === "contact" && (
             <Step1 form={form} setField={setField} />
           )}
@@ -630,6 +645,7 @@ export function ApplicationForm() {
               uploaded={uploaded}
             />
           )}
+          </div>
 
           {error && (
             <div className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-[13px] text-red-700">
@@ -1710,57 +1726,11 @@ function WishEquipmentStep({
         </div>
       )}
       {equipment.length > 0 && (
-        <div>
-          <FieldLabel>Доступная экипировка</FieldLabel>
-          <div className="-mx-4 flex gap-3 overflow-x-auto px-4 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {equipment.map((e) => {
-              const active = form.wantEquipmentIds.includes(e.id);
-              const free = e.isFree || e.price === 0;
-              return (
-                <button
-                  key={e.id}
-                  type="button"
-                  onClick={() => toggleEquip(e.id)}
-                  className={`relative w-[128px] shrink-0 overflow-hidden rounded-2xl border-2 text-left transition-all ${
-                    active
-                      ? "border-slate-900 shadow-md"
-                      : "border-slate-200 hover:border-slate-400"
-                  }`}
-                >
-                  <div className="relative aspect-square w-full bg-white">
-                    {e.avatarUrl ? (
-                      <img
-                        src={applicationApi.modelAvatarUrl(
-                          e.avatarUrl + "?variant=thumb",
-                        )}
-                        alt={e.name}
-                        className="h-full w-full object-contain"
-                        loading="lazy"
-                      />
-                    ) : (
-                      <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200 text-slate-400">
-                        <Package size={30} strokeWidth={1.5} />
-                      </div>
-                    )}
-                    {active && (
-                      <div className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-slate-900 text-white">
-                        <Check size={14} />
-                      </div>
-                    )}
-                  </div>
-                  <div className="px-2.5 py-2">
-                    <div className="truncate text-[14px] font-semibold leading-tight text-slate-900">
-                      {e.name}
-                    </div>
-                    <div className="mt-0.5 text-[12px] text-slate-500">
-                      {free ? "бесплатно" : `+${e.price.toLocaleString("ru-RU")} ₽/сут`}
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
+        <EquipmentCoverflow
+          items={equipment}
+          selectedIds={form.wantEquipmentIds}
+          onToggle={toggleEquip}
+        />
       )}
     </div>
   );
