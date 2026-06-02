@@ -1503,6 +1503,44 @@ export const appSettings = pgTable("app_settings", {
 });
 
 /* ============================================================
+ * billing_period_anchors — история переключений расчётного периода (v0.7).
+ *
+ * Один глобальный billing_period_start_day в app_settings ломал прошлое:
+ * при смене 15→1 ВСЯ история пересчитывалась задним числом по новой
+ * формуле, цифры на дашборде/в KPI прыгали. Здесь храним «якоря» — кто
+ * и с какой даты ввёл правило. Резолвер для каждой даты берёт активный
+ * на тот момент якорь.
+ *
+ * kind:
+ *   'regular'    — обычный месячный период с rule_start_day.
+ *   'transition' — переходный период от effective_from до
+ *                  transition_end_date (включительно). После окончания
+ *                  transition этот же якорь действует как regular с
+ *                  rule_start_day (новой схемой).
+ * ============================================================ */
+export const billingPeriodAnchors = pgTable(
+  "billing_period_anchors",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    effectiveFrom: date("effective_from").notNull(),
+    ruleStartDay: integer("rule_start_day").notNull(),
+    kind: text("kind").notNull(), // 'regular' | 'transition'
+    transitionEndDate: date("transition_end_date"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    createdByUserId: bigint("created_by_user_id", {
+      mode: "number",
+    }).references(() => users.id, { onDelete: "set null" }),
+  },
+  (t) => ({
+    effectiveIdx: index("billing_period_anchors_effective_idx").on(
+      t.effectiveFrom,
+    ),
+  }),
+);
+
+/* ============================================================
  * debt_entries — лента событий по долгу аренды (v0.3.8).
  *
  * Источники долга в системе три:

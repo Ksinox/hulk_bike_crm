@@ -19,6 +19,7 @@ import { loadRoute, saveRoute, type RouteId } from "./route";
 import { onNavigate } from "./navigationStore";
 import { useMe } from "@/lib/api/auth";
 import { useAppSettings } from "@/lib/api/app-settings";
+import { useBillingPeriodAnchors } from "@/lib/api/billing-period";
 import { setRole } from "@/lib/role";
 import { Login } from "./Login";
 import { ForceChangePassword } from "./ForceChangePassword";
@@ -42,8 +43,13 @@ export function App() {
   const isMobile = useIsMobile();
   const { data: me, isLoading, isError } = useMe();
   // v0.4.1: подгружаем глобальные настройки на старте — внутри хука
-  // billing_period_start_day прокидывается в lib/billingPeriod.
+  // billing_period_start_day прокидывается в lib/billingPeriod (легаси
+  // быстрый путь).
   useAppSettings();
+  // v0.7: источник правды расчётного периода — якоря (anchors). Хук грузит
+  // их с сервера и прокидывает в lib/billingPeriod, перетирая плоское
+  // значение app_settings. Так смена дня старта не переписывает прошлое.
+  useBillingPeriodAnchors();
   const [webUpdate, setWebUpdate] = useState<string | null>(null);
   const [route, setRoute] = useState<RouteId>(() => loadRoute());
 

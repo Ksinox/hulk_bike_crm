@@ -169,6 +169,10 @@ async function bootstrap() {
   // Публичные заявки клиентов (анкета по постоянной ссылке /apply).
   // Все эндпоинты с rate-limit per-IP, защищены X-Upload-Token.
   await app.register(publicApplicationsRoutes, { prefix: "/api/public" });
+  // Off-site бэкап для GitHub Action — без session-cookie, своя token-авторизация
+  // (?token=BACKUP_TOKEN). Должен жить ВНЕ protectedApp, иначе 401 без cookie.
+  const { backupPublicRoutes } = await import("./routes/backup-public.js");
+  await app.register(backupPublicRoutes, { prefix: "/api/_diag" });
 
   // ==== PROTECTED API ROUTES ====
   // Все нижеследующие роуты требуют авторизацию через cookie hulk_session.
@@ -208,6 +212,11 @@ async function bootstrap() {
     const { appSettingsRoutes } = await import("./routes/app-settings.js");
     await protectedApp.register(appSettingsRoutes, {
       prefix: "/api/app-settings",
+    });
+    // v0.7: расчётный период с историей якорей (anchors) — перенесён из main.
+    const { billingPeriodRoutes } = await import("./routes/billing-period.js");
+    await protectedApp.register(billingPeriodRoutes, {
+      prefix: "/api/billing-period",
     });
     // Диагностика — только creator
     const { diagRoutes } = await import("./routes/diag.js");
