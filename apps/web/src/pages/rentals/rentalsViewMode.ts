@@ -10,7 +10,9 @@
  */
 export type RentalsViewMode = "list" | "tiles";
 
-const DEFAULT_MODE: RentalsViewMode = "tiles";
+// По умолчанию — «Список» (плотная таблица): так удобнее по запросу заказчика.
+// Кто переключится на «Плитки» — выбор сохранится пер-пользователь в localStorage.
+const DEFAULT_MODE: RentalsViewMode = "list";
 
 function keyFor(userId: number | string | undefined): string {
   return `rentals_view_mode_${userId ?? "anon"}`;
