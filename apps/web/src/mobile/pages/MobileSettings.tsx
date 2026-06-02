@@ -1,6 +1,10 @@
 import { useState } from "react";
 import { LogOut, Save, Pencil } from "lucide-react";
 import { useAppSettings, useSetAppSetting } from "@/lib/api/app-settings";
+import {
+  useSwitchBillingPeriod,
+  useCurrentBillingPeriodInfo,
+} from "@/lib/api/billing-period";
 import { useMe, useLogout, type AuthRole } from "@/lib/api/auth";
 import { ProfileModal } from "@/pages/dashboard/ProfileModal";
 import { toast } from "@/lib/toast";
@@ -26,12 +30,20 @@ export function MobileSettings() {
   const { data: me } = useMe();
   const settingsQ = useAppSettings();
   const setMut = useSetAppSetting();
+  // v0.7: расчётный период — через якоря (как на десктопе), а не плоский
+  // billing_period_start_day (он теперь легаси и якорями перетирается).
+  const switchMut = useSwitchBillingPeriod();
+  const currentInfoQ = useCurrentBillingPeriodInfo();
   const logoutMut = useLogout();
 
   const isAdmin =
     me?.role === "director" || me?.role === "creator" || me?.role === "admin";
 
   const map = new Map((settingsQ.data ?? []).map((s) => [s.key, s.value]));
+  const transitionActive = currentInfoQ.data?.transitionActive ?? false;
+  const currentRule =
+    currentInfoQ.data?.ruleStartDay ??
+    Number(map.get("billing_period_start_day") ?? "15");
   const [periodDay, setPeriodDay] = useState(
     () => map.get("billing_period_start_day") ?? "15",
   );
@@ -45,9 +57,24 @@ export function MobileSettings() {
       toast.error("Неверное значение", "Допустимо число от 1 до 28.");
       return;
     }
+    if (transitionActive) {
+      toast.error(
+        "Идёт переходный период",
+        "Дождитесь его окончания, затем переключите ещё раз.",
+      );
+      return;
+    }
+    if (Math.floor(n) === currentRule) {
+      toast.success("Уже применено", "Этот день старта уже активен.");
+      return;
+    }
     try {
-      await setMut.mutateAsync({ key: "billing_period_start_day", value: String(Math.floor(n)) });
-      toast.success("Сохранено", "Расчётный период обновлён.");
+      // Создаём якорь с переходным периодом — прошлые периоды не пересчитываются.
+      await switchMut.mutateAsync({ newStartDay: Math.floor(n) });
+      toast.success(
+        "Сохранено",
+        "Новый расчётный период применён. Прошлые месяцы в KPI не меняются.",
+      );
     } catch (e) {
       toast.error("Не удалось сохранить", (e as Error).message ?? "");
     }
@@ -117,7 +144,7 @@ export function MobileSettings() {
         <>
           <SettingCard
             title="Расчётный период"
-            hint="День месяца, с которого начинается финансовый период"
+            hint="День месяца, с которого начинается финансовый период. При смене прошлые месяцы в KPI не пересчитываются."
           >
             <div className="flex items-center gap-2">
               <input
@@ -125,12 +152,19 @@ export function MobileSettings() {
                 min={1}
                 max={28}
                 value={periodDay}
+                disabled={transitionActive}
                 onChange={(e) => setPeriodDay(e.target.value)}
-                className="h-11 w-20 rounded-xl bg-surface-soft px-3 text-center text-[15px] font-bold text-ink outline-none focus:ring-2 focus:ring-blue-100"
+                className="h-11 w-20 rounded-xl bg-surface-soft px-3 text-center text-[15px] font-bold text-ink outline-none focus:ring-2 focus:ring-blue-100 disabled:opacity-50"
               />
               <span className="text-[13px] text-muted">число месяца</span>
-              <SaveBtn onClick={savePeriod} pending={setMut.isPending} />
+              <SaveBtn onClick={savePeriod} pending={switchMut.isPending} />
             </div>
+            {transitionActive && (
+              <div className="mt-2 text-[12px] text-amber-700">
+                Идёт переходный период — смена дня старта будет доступна после
+                его окончания.
+              </div>
+            )}
           </SettingCard>
 
           <SettingCard title="Часы работы" hint="Границы для часового графика выручки">

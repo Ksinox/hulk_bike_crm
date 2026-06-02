@@ -213,6 +213,11 @@ async function bootstrap() {
     await protectedApp.register(appSettingsRoutes, {
       prefix: "/api/app-settings",
     });
+    // v0.7: расчётный период с историей якорей (anchors) — перенесён из main.
+    const { billingPeriodRoutes } = await import("./routes/billing-period.js");
+    await protectedApp.register(billingPeriodRoutes, {
+      prefix: "/api/billing-period",
+    });
     // Диагностика — только creator
     const { diagRoutes } = await import("./routes/diag.js");
     await protectedApp.register(diagRoutes, { prefix: "/api/_diag" });
