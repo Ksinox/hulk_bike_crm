@@ -38,6 +38,7 @@ import { cn } from "@/lib/utils";
 import {
   MODEL_LABEL,
   PAYMENT_LABEL,
+  ratePeriodForDays,
   TARIFF_PERIOD_LABEL,
   type Rental,
 } from "@/lib/mock/rentals";
@@ -462,7 +463,11 @@ export function TermsTab({
             value={
               rental.rateUnit === "week"
                 ? `Произвольный · ${fmt(rental.rate)} ₽/нед`
-                : `от ${TARIFF_PERIOD_LABEL[rental.tariffPeriod].replace(/^от\s+/i, "")} · ${fmt(rental.rate)} ₽/сут`
+                : // Ступень тарифа берём по факт. числу дней (как считается
+                  // ставка), а не по полю tariffPeriod в БД: enum не знает "day",
+                  // поэтому 1-2 дня там лежат как "short". ratePeriodForDays
+                  // вернёт "day" → метка совпадёт со ставкой (dayRate).
+                  `от ${TARIFF_PERIOD_LABEL[ratePeriodForDays(rental.days)]} · ${fmt(rental.rate)} ₽/сут`
             }
           />
           <InfoCell

@@ -6,6 +6,7 @@ import {
   MIN_RENTAL_DAYS,
   MODEL_LABEL,
   periodForDays,
+  ratePeriodForDays,
   TARIFF,
   TARIFF_PERIOD_LABEL,
   type PaymentMethod,
@@ -192,7 +193,10 @@ export function NewRentalModal({
    * 1. Если у скутера modelId → берём ставки из каталога моделей.
    * 2. Иначе fallback на legacy TARIFF по enum-модели.
    */
+  // period — для ПОЛЯ tariffPeriod в БД (short/week/month).
+  // ratePeriod — для расчёта ставки ₽/сут (знает "day" для 1-2 дней).
   const period = periodForDays(days);
+  const ratePeriod = ratePeriodForDays(days);
   const modelFromCatalog = useMemo(
     () =>
       selectedScooter?.modelId
@@ -202,13 +206,13 @@ export function NewRentalModal({
   );
   const computedRate = useMemo(() => {
     if (modelFromCatalog) {
-      if (period === "day") return modelFromCatalog.dayRate;
-      if (period === "short") return modelFromCatalog.shortRate;
-      if (period === "week") return modelFromCatalog.weekRate;
+      if (ratePeriod === "day") return modelFromCatalog.dayRate;
+      if (ratePeriod === "short") return modelFromCatalog.shortRate;
+      if (ratePeriod === "week") return modelFromCatalog.weekRate;
       return modelFromCatalog.monthRate;
     }
-    return TARIFF[model][period];
-  }, [modelFromCatalog, period, model]);
+    return TARIFF[model][ratePeriod];
+  }, [modelFromCatalog, ratePeriod, model]);
 
   /**
    * v0.4.25: чекбокс «Произвольный тариф» + единица измерения внутри.
@@ -605,7 +609,7 @@ export function NewRentalModal({
                   </div>
                   <div className="text-[11px] text-muted-2">
                     {MODEL_LABEL[model]} · тариф{" "}
-                    {TARIFF_PERIOD_LABEL[period]} · {rate} ₽/сут
+                    {TARIFF_PERIOD_LABEL[ratePeriod]} · {rate} ₽/сут
                   </div>
                 </div>
                 <X size={14} className="text-muted-2" />
@@ -753,7 +757,7 @@ export function NewRentalModal({
                       key={p}
                       className={cn(
                         "rounded-[10px] px-3 py-2 text-[11px]",
-                        !customMode && p === period
+                        !customMode && p === ratePeriod
                           ? "bg-blue-50 text-blue-700"
                           : "bg-surface-soft text-muted",
                       )}

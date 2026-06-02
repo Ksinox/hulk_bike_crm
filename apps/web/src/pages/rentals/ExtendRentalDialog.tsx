@@ -5,6 +5,7 @@ import {
   MIN_RENTAL_DAYS,
   MODEL_LABEL,
   periodForDays,
+  ratePeriodForDays,
   TARIFF_PERIOD_LABEL,
   type Rental,
 } from "@/lib/mock/rentals";
@@ -77,15 +78,21 @@ export function ExtendRentalDialog({
   }, []);
 
   const autoPeriod = periodForDays(days);
+  // ratePeriod — тарифная ступень для СТАВКИ (знает "day" для 1-2 дней).
+  // Отделена от period: period идёт в БД (enum short/week/month), а ставка
+  // 1-2 дней берётся по dayRate каталога (едино с публичной анкетой).
+  const rateAutoPeriod = ratePeriodForDays(days);
   // В custom-week режиме форсируем period='week' для tariffPeriod в payload.
   const period =
     customMode && customUnit === "week" ? ("week" as const) : autoPeriod;
+  const ratePeriod =
+    customMode && customUnit === "week" ? ("week" as const) : rateAutoPeriod;
   // v0.4.25: rate зависит от режима.
-  //  • !customMode — берём из тарифной сетки модели по period
+  //  • !customMode — берём из тарифной сетки модели по ratePeriod
   //  • customMode — оператор задаёт сам (₽/сут или ₽/нед)
   const rate = customMode
     ? Math.max(0, customRate)
-    : resolveRate(rental, period);
+    : resolveRate(rental, ratePeriod);
   const isWeeklyCustom = customMode && customUnit === "week";
   const weeks = isWeeklyCustom ? Math.max(1, Math.round(days / 7)) : 0;
   // Правка 3: бэк добавляет дневную стоимость платной экипировки к
@@ -256,13 +263,13 @@ export function ExtendRentalDialog({
               режиме поле «срок» означает недели, sum = rate × weeks. */}
           <div>
             {!customMode && (
-              <div className="grid grid-cols-3 gap-2">
-                {(["short", "week", "month"] as const).map((p) => (
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {(["day", "short", "week", "month"] as const).map((p) => (
                   <div
                     key={p}
                     className={cn(
                       "rounded-[10px] px-3 py-2 text-[11px]",
-                      p === period
+                      p === ratePeriod
                         ? "bg-blue-50 text-blue-700"
                         : "bg-surface-soft text-muted",
                     )}
