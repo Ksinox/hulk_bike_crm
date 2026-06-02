@@ -46,6 +46,7 @@ import { toTitleCaseRu } from "@/lib/textCase";
 import { RENTAL_AGREEMENT_TEXT } from "@/lib/rentalAgreement";
 import { ScooterCoverflow } from "./ScooterCoverflow";
 import { EquipmentCoverflow } from "./EquipmentCoverflow";
+import { WishSummaryBar } from "./WishSummaryBar";
 import { DatePicker, InlineRangeCalendar } from "@/components/ui/date-picker";
 import { periodForDays } from "@/lib/mock/rentals";
 import type { RentalModel, RentalEquipment } from "./applicationApi";
@@ -538,6 +539,34 @@ export function ApplicationForm() {
     ? (currentStepId.replace("photo_", "") as FileKind)
     : null;
 
+  // Данные для выдвижного сниппета «Ваш выбор» (докнут над «Продолжить» на
+  // шагах экипировки/периода). Цену считаем только на шаге периода.
+  const isWishStep =
+    currentStepId === "wish_equipment" || currentStepId === "wish_period";
+  const wishModel = wishModels.find((m) => m.name === form.wantModel) ?? null;
+  const wishSelEquip = wishEquipment.filter((e) =>
+    form.wantEquipmentIds.includes(e.id),
+  );
+  const wishDays = form.wantDays > 0 ? form.wantDays : 7;
+  const wishStart = form.wantStartDate || todayIsoLocal();
+  const wishPrice =
+    currentStepId === "wish_period" && wishModel
+      ? (() => {
+          const rate = rateForDays(wishModel, wishDays);
+          const equipDaily = wishSelEquip
+            .filter((e) => !e.isFree)
+            .reduce((s, e) => s + e.price, 0);
+          const rentSum = rate * wishDays;
+          const equipSum = equipDaily * wishDays;
+          const deposit = 2000;
+          return { rentSum, equipSum, deposit, bring: rentSum + equipSum + deposit };
+        })()
+      : null;
+  const wishPeriodLabel =
+    currentStepId === "wish_period"
+      ? `с ${isoToDDMM(wishStart)} по ${isoToDDMM(addDaysIso(wishStart, wishDays))} · ${wishDays} ${daysWord(wishDays)}`
+      : null;
+
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="mx-auto flex min-h-screen max-w-md flex-col px-4 py-6">
@@ -597,7 +626,6 @@ export function ApplicationForm() {
               form={form}
               setField={setField}
               models={wishModels}
-              equipment={wishEquipment}
             />
           )}
           {isPhotoStep && photoKind && (
@@ -655,6 +683,15 @@ export function ApplicationForm() {
         </main>
 
         <footer className="sticky bottom-0 -mx-4 mt-6 border-t border-slate-200 bg-slate-50 px-4 pb-4 pt-3">
+          {/* Выдвижной сниппет «Ваш выбор» — над кнопками, на шагах аренды. */}
+          {isWishStep && wishModel && (
+            <WishSummaryBar
+              model={wishModel}
+              selectedEquipment={wishSelEquip}
+              price={wishPrice}
+              periodLabel={wishPeriodLabel}
+            />
+          )}
           <div className="flex gap-2">
             {step > 1 && (
               <button
@@ -1590,44 +1627,6 @@ function daysWord(n: number): string {
 
 /** Мини-карточка выбранного скутера — закреплена сверху на шагах экипировки
  *  и периода, чтобы клиент видел, что уже выбрал. */
-function PinnedScooter({
-  model,
-  subtitle,
-}: {
-  model: RentalModel;
-  subtitle?: string;
-}) {
-  return (
-    <div className="flex items-center gap-3 rounded-2xl border-2 border-slate-900 bg-white p-3 shadow-sm">
-      <div className="h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-slate-100">
-        {model.avatarUrl ? (
-          <img
-            src={applicationApi.modelAvatarUrl(model.avatarUrl + "?variant=thumb")}
-            alt={model.name}
-            className="h-full w-full object-cover"
-          />
-        ) : (
-          <div className="flex h-full w-full items-center justify-center text-slate-400">
-            <Bike size={26} strokeWidth={1.5} />
-          </div>
-        )}
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-          Выбранный скутер
-        </div>
-        <div className="text-[16px] font-bold leading-tight text-slate-900">
-          {model.name}
-        </div>
-        {subtitle && (
-          <div className="mt-0.5 text-[12px] text-slate-500">{subtitle}</div>
-        )}
-      </div>
-      <Check size={18} className="ml-auto shrink-0 text-slate-900" />
-    </div>
-  );
-}
-
 /** Подсказка, когда модель не выбрана (шаги экипировки/периода опциональны). */
 function WishNoModelNote({ what }: { what: string }) {
   return (
@@ -1712,12 +1711,12 @@ function WishEquipmentStep({
 
   return (
     <div className="space-y-4">
-      <PinnedScooter model={selected} />
       <h1 className="text-[22px] font-bold text-slate-900">
         Выберите экипировку
       </h1>
       <p className="text-[14px] text-slate-600">
-        По желанию — шлем, цепь и прочее. Можно пропустить.
+        Для <span className="font-semibold text-slate-700">{selected.name}</span>{" "}
+        — по желанию: шлем, цепь и прочее. Можно пропустить.
       </p>
 
       {equipment.length === 0 && (
@@ -1741,29 +1740,13 @@ function WishPeriodStep({
   form,
   setField,
   models,
-  equipment,
 }: {
   form: FormState;
   setField: <K extends keyof FormState>(k: K, v: FormState[K]) => void;
   models: RentalModel[];
-  equipment: RentalEquipment[];
 }) {
   const days = form.wantDays > 0 ? form.wantDays : 7;
   const selected = models.find((m) => m.name === form.wantModel) ?? null;
-  const equipDaily = equipment
-    .filter((e) => form.wantEquipmentIds.includes(e.id) && !e.isFree)
-    .reduce((s, e) => s + e.price, 0);
-  const calc = useMemo(() => {
-    if (!selected) return null;
-    const rate = rateForDays(selected, days);
-    return {
-      rate, // ставка аренды ₽/сут (без экипировки)
-      rentSum: rate * days, // аренда за весь срок
-      equipSum: equipDaily * days, // экипировка за весь срок
-      deposit: 2000, // залог (вернётся)
-      bring: rate * days + equipDaily * days + 2000, // взять с собой
-    };
-  }, [selected, days, equipDaily]);
   // Старт по умолчанию — сегодня (чтобы календарь и сводка всегда были
   // наполнены); реальный wantStartDate проставится при выборе на календаре.
   const startIso = form.wantStartDate || todayIsoLocal();
@@ -1772,20 +1755,15 @@ function WishPeriodStep({
 
   return (
     <div className="space-y-4">
-      <PinnedScooter
-        model={selected}
-        subtitle={
-          equipDaily > 0
-            ? `+ экипировка ${equipDaily.toLocaleString("ru-RU")} ₽/сут`
-            : "без платной экипировки"
-        }
-      />
-      <h1 className="text-[22px] font-bold text-slate-900">
-        Когда и на сколько?
-      </h1>
+      <h1 className="text-[22px] font-bold text-slate-900">Выберите период</h1>
+      <p className="text-[14px] text-slate-600">
+        На какие даты взять{" "}
+        <span className="font-semibold text-slate-700">{selected.name}</span>?
+        Стоимость покажем внизу.
+      </p>
 
           <div>
-            <FieldLabel>Выберите период на календаре</FieldLabel>
+            <FieldLabel>Период на календаре</FieldLabel>
             {/* Сводка периода сверху — «с … по …». */}
             <div className="mb-2 rounded-xl bg-slate-900 px-4 py-2.5 text-[15px] font-semibold text-white">
               {startIso ? (
@@ -1879,48 +1857,10 @@ function WishPeriodStep({
             </div>
           </div>
 
-          {calc && (
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              {/* Разбивка: аренда + экипировка + залог = взять с собой. */}
-              <div className="space-y-1.5 text-[14px]">
-                <div className="flex items-baseline justify-between gap-3">
-                  <span className="text-slate-600">
-                    Аренда {selected.name} · {days} {daysWord(days)}
-                  </span>
-                  <span className="font-semibold tabular-nums text-slate-900">
-                    {calc.rentSum.toLocaleString("ru-RU")} ₽
-                  </span>
-                </div>
-                <div className="flex items-baseline justify-between gap-3">
-                  <span className="text-slate-600">Экипировка</span>
-                  <span className="font-semibold tabular-nums text-slate-900">
-                    + {calc.equipSum.toLocaleString("ru-RU")} ₽
-                  </span>
-                </div>
-                <div className="flex items-baseline justify-between gap-3">
-                  <span className="text-slate-600">
-                    Залог{" "}
-                    <span className="text-slate-400">(вернётся при сдаче)</span>
-                  </span>
-                  <span className="font-semibold tabular-nums text-slate-900">
-                    {calc.deposit.toLocaleString("ru-RU")} ₽
-                  </span>
-                </div>
-              </div>
-              <div className="mt-3 flex items-baseline justify-between gap-3 border-t border-slate-200 pt-3">
-                <span className="text-[15px] font-bold text-slate-900">
-                  Итого взять с собой
-                </span>
-                <span className="text-[22px] font-extrabold tabular-nums text-slate-900">
-                  {calc.bring.toLocaleString("ru-RU")} ₽
-                </span>
-              </div>
-              <div className="mt-2 text-[12px] text-slate-400">
-                Период с {isoToDDMM(startIso)} по {isoToDDMM(endIso)}. Точную
-                цену и наличие подтвердит менеджер.
-              </div>
-            </div>
-          )}
+          <div className="text-center text-[12px] text-slate-400">
+            Стоимость с разбивкой — в блоке «Ваш выбор» внизу экрана. Точную
+            цену и наличие подтвердит менеджер.
+          </div>
     </div>
   );
 }

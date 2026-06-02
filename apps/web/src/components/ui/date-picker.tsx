@@ -484,7 +484,10 @@ export function InlineRangeCalendar({
   return (
     <div
       className={cn(
-        "rounded-2xl border border-slate-200 bg-white p-2",
+        // w-fit + mx-auto — календарь своей натуральной ширины и по центру,
+        // не растягивается на весь экран. [&_table]:w-auto — таблица-сетка
+        // не тянется (иначе ячейки разъезжаются шире 7×36px).
+        "mx-auto w-fit rounded-2xl border border-slate-200 bg-white p-2 [&_table]:w-auto",
         className,
       )}
     >
