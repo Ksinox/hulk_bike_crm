@@ -22,28 +22,29 @@ export function DebtorsEmpty({ onAddFirst }: { onAddFirst: () => void }) {
         У каждого — своё дерево стадий и график платежей.
       </p>
 
-      <div className="mt-8 flex items-center justify-center gap-3">
-        <div className="relative">
-          <button
-            type="button"
-            onClick={onAddFirst}
-            className="inline-flex h-[50px] items-center gap-2.5 rounded-[13px] bg-ink px-[26px] text-[15px] font-semibold text-white shadow-[0_12px_24px_-8px_rgba(11,18,32,0.35)] hover:bg-[#16213a]"
-          >
-            <Plus size={18} strokeWidth={1.8} />
-            Завести первое дело
-          </button>
-          <span className="absolute right-[calc(100%+24px)] top-1/2 -translate-y-1/2 whitespace-nowrap font-display text-[16px] italic text-blue-700">
-            ← начни отсюда
-          </span>
-        </div>
+      {/* Большая CTA — строго по центру под заголовком. Подсказка-стрелка
+          позиционируется абсолютом слева и указывает ВПРАВО на кнопку
+          (на узких экранах прячем, чтобы не вылезала за край). */}
+      <div className="relative mt-8 flex justify-center">
         <button
           type="button"
-          className="inline-flex items-center gap-2 px-4 py-3 text-[13.5px] text-muted hover:text-ink"
+          onClick={onAddFirst}
+          className="inline-flex h-[50px] items-center gap-2.5 rounded-[13px] bg-ink px-[26px] text-[15px] font-semibold text-white shadow-[0_12px_24px_-8px_rgba(11,18,32,0.35)] hover:bg-[#16213a]"
         >
-          <CircleHelp size={14} />
-          Как это работает?
+          <Plus size={18} strokeWidth={1.8} />
+          Завести первое дело
         </button>
+        <span className="pointer-events-none absolute right-[calc(100%+20px)] top-1/2 hidden -translate-y-1/2 whitespace-nowrap font-display text-[16px] italic text-blue-700 lg:block">
+          начни отсюда →
+        </span>
       </div>
+      <button
+        type="button"
+        className="mt-3.5 inline-flex items-center gap-2 text-[13.5px] text-muted hover:text-ink"
+      >
+        <CircleHelp size={14} />
+        Как это работает?
+      </button>
 
       <div className="mt-12 w-full max-w-[460px] rounded-[14px] border border-border bg-white p-5 text-left">
         <div className="mb-3 text-[11.5px] font-semibold uppercase tracking-[0.08em] text-muted-2">
