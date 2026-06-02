@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Заявка</title>
+<link rel="stylesheet" href="../css/app.css">
+</head>
+<body>
+<div class="screen">
+  <header class="s-head">
+    <div class="s-head-row">
+      <button class="s-back" data-back aria-label="Назад"></button>
+      <div style="flex:1"><div class="s-title sm" id="title"></div><div class="s-sub" id="sub"></div></div>
+    </div>
+  </header>
+  <div class="s-body with-fab">
+    <div class="stack">
+      <section class="card pad fly" id="hero"></section>
+      <section class="card pad fly" id="request"></section>
+      <section class="card pad fly">
+        <div class="sec-label" style="margin:0 0 10px">Заметка менеджера</div>
+        <textarea class="inp" rows="3" placeholder="Договорённости, что уточнить при звонке…"></textarea>
+      </section>
+    </div>
+  </div>
+  <div class="fab-bar">
+    <button class="btn ghost" data-ic="x" data-ic-cls="s16" onclick="rej()">&nbsp;Отклонить</button>
+    <button class="btn primary" style="flex:1.4" data-ic="check" data-ic-cls="s16" onclick="conv()">&nbsp;Оформить аренду</button>
+  </div>
+</div>
+
+<script src="../js/data.js"></script>
+<script src="../js/hb.js"></script>
+<script>
+  var params = new URLSearchParams(location.search);
+  var app = HB_DATA.applications().find(function (x) { return x.id === Number(params.get('id')); }) || HB_DATA.applications()[0];
+  document.getElementById('title').textContent = 'Заявка №А-' + app.id;
+  document.getElementById('sub').textContent = app.source + ' · ' + app.when;
+  document.getElementById('hero').innerHTML = '<span class="pill ' + (app.status === 'new' ? 'blue' : 'orange') + '"><span class="pd"></span>' + (app.status === 'new' ? 'Новая' : 'В работе') + '</span><div style="display:flex;align-items:center;gap:13px;margin-top:12px"><div class="av" style="width:48px;height:48px">' + HB_DATA.initials(app.name) + '</div><div style="flex:1"><div style="font-size:17px;font-weight:700">' + app.name + '</div><a class="r-phone" href="tel:' + app.phone.replace(/\D/g, '') + '" style="color:hsl(var(--blue-700));font-size:16px">' + app.phone + '</a></div><button class="btn-ic primary" data-ic="phone" data-ic-cls="s18" onclick="location.href=\'tel:' + app.phone.replace(/\D/g, '') + '\'"></button></div>';
+  document.getElementById('request').innerHTML = '<div class="sec-label" style="margin:0 0 6px">Запрос клиента</div><div class="kv"><span class="k">Техника</span><span class="v">' + app.model + '</span></div><div class="kv"><span class="k">Срок</span><span class="v">' + app.days + ' дней</span></div><div class="kv"><span class="k">Источник</span><span class="v">' + app.source + '</span></div><div class="kv"><span class="k">Комментарий</span><span class="v">' + (app.note || 'заявка без доп. текста') + '</span></div>';
+  function conv() {
+    sheet('<h3>Оформить из заявки</h3><div class="sh-sub">' + app.name + ' · ' + app.model + '</div><div class="act-list"><button onclick="closeSheet();go(\'new-rental.html\')"><span class="ai">' + ic('user', 's16') + '</span>Создать клиента и аренду</button><button onclick="closeSheet();go(\'new-rental.html\')"><span class="ai">' + ic('bike', 's16') + '</span>Только аренда</button></div>');
+  }
+  function rej() {
+    sheet('<h3>Отклонить заявку</h3><div class="act-list"><button onclick="back()"><span class="ai">' + ic('x', 's16') + '</span>Нет нужной техники</button><button onclick="back()"><span class="ai">' + ic('x', 's16') + '</span>Не отвечает / отказ</button></div>');
+  }
+</script>
+</body>
+</html>

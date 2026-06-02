@@ -84,6 +84,36 @@
   .tabular-nums {
     font-feature-settings: "tnum";
   }
+
+  /* v0.7.4: глобальные плавные переходы для интерактивных элементов.
+     Не вешаем transition:all на всё (это убивает перформанс и анимирует
+     лейаут), а только на часто-меняющиеся при hover/active/focus свойства
+     у кнопок/ссылок/инпутов. Так наведение и нажатия становятся «сочными»
+     без рывков. Компонентные классы (Tailwind transition-*) переопределяют
+     это при необходимости. */
+  button,
+  a,
+  summary,
+  [role="button"],
+  input,
+  select,
+  textarea {
+    transition-property: color, background-color, border-color, fill, stroke,
+      opacity, box-shadow, transform, filter;
+    transition-duration: 200ms;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  /* Уважаем системную настройку «уменьшить движение». */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
 }
 
 @layer utilities {
@@ -99,6 +129,16 @@
     box-shadow:
       0 12px 32px rgba(16, 24, 40, 0.08),
       0 2px 6px rgba(16, 24, 40, 0.04);
+  }
+
+  /* Скрыть полосу прокрутки (контент остаётся свайпаемым). Для мобильных
+     горизонтальных лент — на телефоне скроллбары не показывают. */
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
   }
 
   .scrollbar-thin {
@@ -146,6 +186,66 @@
   }
 }
 
+/* мобильная шторка «Ещё» — выезд снизу */
+@keyframes sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+.animate-sheet-up {
+  animation: sheet-up 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* v0.6.1: side-drawer slide-in/out animations */
+@keyframes slide-in-right {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+@keyframes slide-out-right {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.animate-slide-in-right {
+  animation: slide-in-right 340ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.animate-slide-out-right {
+  animation: slide-out-right 300ms cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+.animate-fade-in {
+  animation: fade-in 300ms ease-in-out both;
+}
+.animate-fade-out {
+  animation: fade-out 240ms ease-in-out both;
+}
+
 @keyframes task-flyaway {
   0% {
     transform: translate(0, 0) scale(1) rotate(0deg);
@@ -175,4 +275,17 @@
     opacity: 0;
     border-bottom-width: 0;
   }
+}
+
+/* v0.8.24: плавный cross-fade областей «Список ↔ Плитки» (Apple-style).
+   Только named-контейнеры (rentals-area / fleet-area) — старый вид плавно
+   исчезает, новый появляется; без морфинга отдельных строк. */
+::view-transition-old(rentals-area),
+::view-transition-new(rentals-area),
+::view-transition-old(fleet-area),
+::view-transition-new(fleet-area) {
+  animation-duration: 300ms;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  /* перекрываем, чтобы был мягкий dissolve без «пустоты» между кадрами */
+  mix-blend-mode: normal;
 }

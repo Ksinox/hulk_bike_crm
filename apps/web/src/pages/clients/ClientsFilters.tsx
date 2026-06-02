@@ -18,6 +18,12 @@ export type FiltersState = {
   dateFrom: string | null;
   /** ISO `YYYY-MM-DD` — верхняя граница включительно. null = нет границы. */
   dateTo: string | null;
+  /** v0.6.15: B1 — нижняя граница даты завершения аренды (endPlanned)
+   *  у клиента. Если задано — показываем только тех клиентов, у кого
+   *  есть аренда с endPlanned в этом диапазоне. */
+  endDateFrom?: string | null;
+  /** v0.6.15: B1 — верхняя граница даты завершения аренды. */
+  endDateTo?: string | null;
 };
 
 const STATUS_TABS: { id: StatusFilter; label: string; hint?: string }[] = [
@@ -86,6 +92,20 @@ export function ClientsFilters({
         onChange={(r) =>
           onChange({ ...value, dateFrom: r.from, dateTo: r.to })
         }
+      />
+
+      {/* v0.6.15: B1 — фильтр клиентов по дате завершения их аренды
+          (endPlanned). Показываем только клиентов, у которых есть
+          аренда с endPlanned в выбранном диапазоне. */}
+      <DateRangeFilter
+        from={value.endDateFrom ?? null}
+        to={value.endDateTo ?? null}
+        onChange={(r) =>
+          onChange({ ...value, endDateFrom: r.from, endDateTo: r.to })
+        }
+        placeholder="Завершаются"
+        titleApplied="Изменить диапазон дат завершения аренд клиентов"
+        titleNotApplied="Клиенты с арендой, завершающейся в этом периоде"
       />
     </div>
   );

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { consumePending, navigate, type BackTarget } from "@/app/navigationStore";
 import {
   ArrowDownNarrowWide,
@@ -7,13 +8,21 @@ import {
   HelpCircle,
   Key,
   Layers,
+  LayoutGrid,
   ListFilter,
   Plus,
+  Rows3,
   Search,
   ShoppingBag,
   Tag,
   Wrench,
 } from "lucide-react";
+import { useMe } from "@/lib/api/auth";
+import {
+  makeViewMode,
+  runViewModeTransition,
+  type ViewMode,
+} from "@/lib/viewMode";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { Topbar } from "@/pages/dashboard/Topbar";
 import { cn } from "@/lib/utils";
@@ -97,6 +106,19 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [backTo, setBackTo] = useState<BackTarget | null>(null);
+
+  // v0.8.22: режим «Список/Плитки» (пер-пользователь, морфинг как в Арендах).
+  const { data: me } = useMe();
+  const fleetView = useMemo(() => makeViewMode("fleet", "list"), []);
+  const [viewMode, setViewMode] = useState<ViewMode>(() => fleetView.load(undefined));
+  useEffect(() => {
+    if (me?.id != null) setViewMode(fleetView.load(me.id));
+  }, [me?.id, fleetView]);
+  const changeViewMode = (m: ViewMode) => {
+    if (m === viewMode) return;
+    fleetView.save(me?.id, m);
+    runViewModeTransition(() => flushSync(() => setViewMode(m)));
+  };
 
   // Если пришли с navigate({ route: "fleet", scooterId, from: ... })
   //   → открываем карточку + запоминаем куда вернуться
@@ -361,6 +383,36 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
           </div>
         </div>
 
+        {/* v0.8.22: переключатель Список/Плитки (как в Арендах). */}
+        <div className="flex shrink-0 items-center rounded-full bg-surface-soft p-0.5">
+          <button
+            type="button"
+            onClick={() => changeViewMode("list")}
+            title="Список"
+            className={cn(
+              "inline-flex h-8 w-8 items-center justify-center rounded-full transition-colors",
+              viewMode === "list"
+                ? "bg-white text-blue-700 shadow-card-sm"
+                : "text-muted hover:text-ink",
+            )}
+          >
+            <Rows3 size={15} />
+          </button>
+          <button
+            type="button"
+            onClick={() => changeViewMode("tiles")}
+            title="Плитки"
+            className={cn(
+              "inline-flex h-8 w-8 items-center justify-center rounded-full transition-colors",
+              viewMode === "tiles"
+                ? "bg-white text-blue-700 shadow-card-sm"
+                : "text-muted hover:text-ink",
+            )}
+          >
+            <LayoutGrid size={15} />
+          </button>
+        </div>
+
         <button
           type="button"
           onClick={() => setAddOpen(true)}
@@ -370,7 +422,29 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
         </button>
       </div>
 
-      {/* =========== TABLE =========== */}
+      {/* v0.8.24: контейнер с view-transition-name — cross-fade при смене режима. */}
+      <div style={{ viewTransitionName: "fleet-area" }}>
+      {/* =========== ПЛИТКИ =========== */}
+      {viewMode === "tiles" ? (
+        <div className="rounded-2xl bg-surface p-3 shadow-card-sm">
+          {filtered.length === 0 ? (
+            <div className="px-5 py-16 text-center text-[13px] text-muted">
+              Ничего не нашлось под выбранные фильтры
+            </div>
+          ) : (
+            <div className="flex flex-wrap content-start justify-start gap-3">
+              {filtered.map((row) => (
+                <FleetTile
+                  key={row.scooter.id}
+                  row={row}
+                  onOpen={() => setSelectedId(row.scooter.id)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+      /* =========== TABLE =========== */
       <div className="overflow-hidden rounded-2xl bg-surface shadow-card-sm">
         <div className="grid grid-cols-[2fr_1fr_1.5fr_1.3fr_1fr_auto] gap-4 border-b border-border px-5 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-2">
           <span>Имя и модель</span>
@@ -422,6 +496,8 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
             <span>Всего {filtered.length} скутеров</span>
           </div>
         )}
+      </div>
+      )}
       </div>
 
       {addOpen && <AddScooterModal onClose={() => setAddOpen(false)} />}
@@ -523,6 +599,68 @@ function FleetRow({
           Открыть
         </button>
       </div>
+    </div>
+  );
+}
+
+/** v0.8.22: плитка скутера (режим «Плитки»). */
+function FleetTile({
+  row,
+  onOpen,
+}: {
+  row: {
+    scooter: FleetScooter;
+    status: ScooterDisplayStatus;
+    rental?: RentalInfo;
+  };
+  onOpen: () => void;
+}) {
+  const { scooter, status, rental } = row;
+  return (
+    <div
+      onClick={onOpen}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") onOpen();
+      }}
+      className="flex w-[200px] cursor-pointer flex-col gap-2 rounded-2xl border border-border bg-surface p-3 transition-colors hover:bg-surface-soft/60"
+    >
+      <div className="flex items-center gap-2">
+        <ScooterAvatar model={scooter.model} />
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[14px] font-bold text-ink">
+            {scooter.name}
+          </div>
+          <div className="truncate text-[10px] uppercase tracking-wider text-muted-2">
+            {MODEL_LABEL[scooter.model]}
+          </div>
+        </div>
+      </div>
+      <StatusPill status={status} />
+      <div className="flex items-center justify-between gap-2 text-[11px]">
+        <span className="min-w-0 truncate text-muted-2">
+          {rental
+            ? rental.clientName
+            : status === "ready"
+              ? "Свободен"
+              : "—"}
+        </span>
+        <span className="shrink-0 tabular-nums font-semibold text-ink-2">
+          {fmt(scooter.mileage)} км
+        </span>
+      </div>
+      {rental && (
+        <div
+          className={cn(
+            "text-[11px] font-semibold tabular-nums",
+            rental.isLate ? "text-red-ink" : "text-muted",
+          )}
+        >
+          возврат {rental.endPlanned.slice(0, 5)}
+          {rental.isLate && " · просрочка"}
+        </div>
+      )}
     </div>
   );
 }

@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Сотрудники</title>
+<link rel="stylesheet" href="../css/app.css">
+</head>
+<body>
+<div class="screen">
+  <header class="s-head">
+    <div class="s-head-row">
+      <button class="s-back" data-back></button>
+      <div style="flex:1">
+        <div class="s-title sm">Сотрудники</div>
+        <div class="s-sub">Доступно creator/director</div>
+      </div>
+    </div>
+  </header>
+  <div class="s-body with-fab">
+    <div class="stack">
+      <section class="card pad fly">
+        <div class="sec-label" style="margin:0 0 10px">Роли из CRM</div>
+        <div class="kpis c2">
+          <div class="kpi"><div class="k-l">director</div><div class="k-v">полный</div></div>
+          <div class="kpi"><div class="k-l">admin</div><div class="k-v">оператор</div></div>
+          <div class="kpi"><div class="k-l">mechanic</div><div class="k-v">ремонт</div></div>
+          <div class="kpi"><div class="k-l">accountant</div><div class="k-v">деньги</div></div>
+        </div>
+      </section>
+      <section class="card pad fly">
+        <div class="sec-label" style="margin:0 0 10px">Операции</div>
+        <div class="list">
+          <div class="row"><div class="av">+</div><div class="r-main"><div class="r-name">Создать сотрудника</div><div class="r-sub">имя, логин, роль, цвет, пароль вручную или генерация</div></div></div>
+          <div class="row"><div class="av">E</div><div class="r-main"><div class="r-name">Редактировать</div><div class="r-sub">роль, активность, имя, цвет аватара</div></div></div>
+          <div class="row acc-orange"><div class="av">P</div><div class="r-main"><div class="r-name">Сбросить пароль</div><div class="r-sub">показать пароль и скопировать</div></div></div>
+        </div>
+      </section>
+    </div>
+  </div>
+  <div class="fab-bar"><button class="btn primary" data-ic="plus" data-ic-cls="s18">&nbsp;Новый сотрудник</button></div>
+</div>
+<script src="../js/hb.js"></script>
+</body>
+</html>

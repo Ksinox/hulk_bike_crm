@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/index.js";
 import { payments, rentals } from "../db/schema.js";
+import { mirrorRentalPaymentToDebtor } from "../services/debtorMirror.js";
 
 const CreatePaymentBody = z
   .object({
@@ -104,7 +105,16 @@ export async function paymentsRoutes(app: FastifyInstance) {
         note: d.note ?? null,
       })
       .returning();
-    if (d.paid) await maybeAutoClose(d.rentalId);
+    if (d.paid) {
+      await maybeAutoClose(d.rentalId);
+      // v0.6: платёж по долгу аренды → отражаем в деле-должнике (кто принял).
+      await mirrorRentalPaymentToDebtor(req, {
+        rentalId: d.rentalId,
+        type: d.type,
+        amount: d.amount,
+        method: d.method,
+      }).catch((e) => req.log.warn({ err: e }, "debtor mirror failed"));
+    }
     return reply.code(201).send(row);
   });
 
@@ -130,7 +140,15 @@ export async function paymentsRoutes(app: FastifyInstance) {
       .where(eq(payments.id, id))
       .returning();
     if (!row) return reply.code(404).send({ error: "not found" });
-    if (parsed.data.paid === true) await maybeAutoClose(row.rentalId);
+    if (parsed.data.paid === true) {
+      await maybeAutoClose(row.rentalId);
+      await mirrorRentalPaymentToDebtor(req, {
+        rentalId: row.rentalId,
+        type: row.type,
+        amount: row.amount,
+        method: row.method,
+      }).catch((e) => req.log.warn({ err: e }, "debtor mirror failed"));
+    }
     return row;
   });
 }

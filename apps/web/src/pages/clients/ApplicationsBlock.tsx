@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Bell, ChevronDown, ChevronUp, Eye, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { toast } from "@/lib/toast";
+import { toast, confirmDialog } from "@/lib/toast";
 import {
   useApplications,
   useDeleteApplication,
@@ -10,6 +10,7 @@ import {
 import { AddClientModal } from "./AddClientModal";
 import { NewApplicationModal } from "./NewApplicationModal";
 import { applicationToFormInit } from "./applicationConvert";
+import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
 
 /**
  * Сворачиваемый блок «Новые заявки» в /clients.
@@ -31,6 +32,13 @@ export function ApplicationsBlock() {
   const [open, setOpen] = useState(true);
   const [viewing, setViewing] = useState<ApiApplication | null>(null);
   const [converting, setConverting] = useState<ApiApplication | null>(null);
+  const [rentalPrefill, setRentalPrefill] = useState<{
+    clientId: number;
+    modelFilter?: string;
+    days?: number;
+    equipmentIds?: number[];
+    start?: string;
+  } | null>(null);
   const deleteApp = useDeleteApplication();
 
   if (total === 0) return null;
@@ -47,8 +55,14 @@ export function ApplicationsBlock() {
     setViewing(null);
   };
 
-  const handleDelete = (id: number) => {
-    if (!window.confirm(`Удалить заявку #${id}? Файлы будут удалены безвозвратно.`)) return;
+  const handleDelete = async (id: number) => {
+    const ok = await confirmDialog({
+      title: "Удалить заявку?",
+      message: `Удалить заявку #${id}? Файлы будут удалены безвозвратно.`,
+      confirmText: "Удалить",
+      danger: true,
+    });
+    if (!ok) return;
     deleteApp.mutate(id, {
       onSuccess: () => {
         toast.success("Заявка удалена");
@@ -121,9 +135,43 @@ export function ApplicationsBlock() {
           onClose={() => setConverting(null)}
           applicationId={converting.id}
           initialData={applicationToFormInit(converting)}
-          onCreated={() => {
+          onCreated={(client) => {
+            const app = converting;
             setConverting(null);
             toast.success("Клиент создан из заявки");
+            const modelFilter = app?.requestedModel ?? undefined;
+            const days = app?.requestedDays ?? undefined;
+            const equipmentIds = app?.requestedEquipmentIds ?? undefined;
+            const start = app?.requestedStartDate ?? undefined;
+            void confirmDialog({
+              title: "Клиент создан",
+              message: `Оформить аренду для «${client.name}»? Останется выбрать конкретный скутер и распечатать договор.`,
+              confirmText: "Оформить аренду",
+              cancelText: "Позже",
+            }).then((ok) => {
+              if (ok)
+                setRentalPrefill({
+                  clientId: client.id,
+                  modelFilter,
+                  days,
+                  equipmentIds,
+                  start,
+                });
+            });
+          }}
+        />
+      )}
+      {rentalPrefill && (
+        <NewRentalModal
+          initialClientId={rentalPrefill.clientId}
+          initialModelFilter={rentalPrefill.modelFilter}
+          initialDays={rentalPrefill.days}
+          initialEquipmentIds={rentalPrefill.equipmentIds}
+          initialStart={rentalPrefill.start}
+          onClose={() => setRentalPrefill(null)}
+          onCreated={() => {
+            setRentalPrefill(null);
+            toast.success("Аренда создана");
           }}
         />
       )}

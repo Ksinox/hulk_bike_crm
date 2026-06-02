@@ -197,13 +197,13 @@ export function SwapScooterDialog({
   return (
     <div
       className={cn(
-        "fixed inset-0 z-[120] flex items-center justify-center bg-ink/55 p-4 backdrop-blur-sm",
+        "fixed inset-0 z-[120] flex items-stretch justify-center bg-ink/55 p-0 backdrop-blur-sm sm:items-center sm:p-4",
         closing ? "animate-backdrop-out" : "animate-backdrop-in",
       )}
     >
       <div
         className={cn(
-          "flex w-full max-w-[1080px] max-h-[94vh] flex-col overflow-hidden rounded-2xl bg-surface shadow-card-lg",
+          "flex h-[100dvh] max-h-[100dvh] w-full max-w-[1080px] flex-col overflow-hidden rounded-none bg-surface shadow-card-lg sm:h-auto sm:max-h-[94vh] sm:rounded-2xl",
           closing ? "animate-modal-out" : "animate-modal-in",
         )}
         onClick={(e) => e.stopPropagation()}

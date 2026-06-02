@@ -69,7 +69,7 @@ export function AvatarUpload({
           className={cn(
             "relative shrink-0 overflow-hidden rounded-2xl border border-dashed transition-colors",
             url
-              ? "border-border bg-surface-soft"
+              ? "border-border bg-white"
               : "border-border bg-surface-soft hover:border-blue-600 hover:bg-blue-50",
           )}
           style={{ width: size, height: size }}
@@ -79,7 +79,7 @@ export function AvatarUpload({
             <img
               src={url}
               alt=""
-              className="h-full w-full object-cover"
+              className="h-full w-full object-contain"
               onError={(e) => {
                 (e.currentTarget as HTMLImageElement).style.display = "none";
               }}
@@ -149,6 +149,7 @@ export function AvatarUpload({
         file={pendingFile}
         aspect={cropAspect}
         title={cropTitle}
+        format="webp"
         onClose={() => setPendingFile(null)}
         onSave={async (result) => {
           await onUpload(result);

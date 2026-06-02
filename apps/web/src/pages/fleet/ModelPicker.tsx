@@ -69,12 +69,12 @@ export function ModelPicker({
                     : "border-border text-ink-2 hover:border-blue-600/50",
                 )}
               >
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-surface-soft">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white">
                   {avatar ? (
                     <img
                       src={avatar}
                       alt=""
-                      className="h-full w-full object-cover"
+                      className="h-full w-full object-contain"
                     />
                   ) : (
                     <Tag size={14} className="text-muted-2" />

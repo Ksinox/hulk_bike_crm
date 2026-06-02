@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Настройки</title>
+<link rel="stylesheet" href="../css/app.css">
+</head>
+<body>
+<div class="screen">
+  <header class="s-head">
+    <div class="s-head-row">
+      <button class="s-back" data-back></button>
+      <div style="flex:1">
+        <div class="s-title sm">Настройки</div>
+        <div class="s-sub">Глобальные параметры приложения</div>
+      </div>
+    </div>
+  </header>
+  <div class="s-body">
+    <div class="stack">
+      <section class="card pad fly">
+        <div class="field">
+          <label>Рабочие часы</label>
+          <div class="opt-grid">
+            <button class="opt on"><div class="o-t">09:00</div><div class="o-s">начало</div></button>
+            <button class="opt on"><div class="o-t">21:00</div><div class="o-s">конец</div></button>
+          </div>
+        </div>
+        <div class="field" style="margin-bottom:0">
+          <label>Старт расчетного периода</label>
+          <input class="inp" value="1 число месяца">
+          <div class="hint">Используется в revenue и биллинговых расчетах.</div>
+        </div>
+      </section>
+      <section class="card pad fly">
+        <div class="sec-label" style="margin:0 0 10px">Связанные системные настройки</div>
+        <div class="list">
+          <div class="row"><div class="av">A</div><div class="r-main"><div class="r-name">Авторизация</div><div class="r-sub">сессия, смена пароля, профиль</div></div></div>
+          <div class="row"><div class="av">U</div><div class="r-main"><div class="r-name">Обновления</div><div class="r-sub">проверка версии web/desktop и баннер обновления</div></div></div>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+<script src="../js/hb.js"></script>
+</body>
+</html>

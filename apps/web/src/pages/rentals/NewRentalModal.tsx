@@ -6,6 +6,7 @@ import {
   MIN_RENTAL_DAYS,
   MODEL_LABEL,
   periodForDays,
+  ratePeriodForDays,
   TARIFF,
   TARIFF_PERIOD_LABEL,
   type PaymentMethod,
@@ -20,6 +21,11 @@ import { useApiScooters } from "@/lib/api/scooters";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { useApiEquipment } from "@/lib/api/equipment";
 import { DatePicker } from "@/components/ui/date-picker";
+import { useIsMobile } from "@/lib/useIsMobile";
+import { ChevronLeft, ArrowRight } from "lucide-react";
+
+// Заголовки шагов мобильного мастера аренды.
+const STEP_TITLES = ["Клиент", "Скутер", "Срок", "Оплата"] as const;
 
 /** Сегодня в формате DD.MM.YYYY (локальное время). */
 function todayRuDate(): string {
@@ -81,11 +87,26 @@ export function NewRentalModal({
   onClose,
   onCreated,
   preselectedScooterName,
+  initialClientId,
+  initialModelFilter,
+  initialDays,
+  initialEquipmentIds,
+  initialStart,
 }: {
   onClose: () => void;
   onCreated?: (rental: Rental) => void;
   /** Если задан — откроется с уже выбранным скутером. Используется из карточки скутера. */
   preselectedScooterName?: string;
+  /** G3: предзаполнение из заявки/конвертации — клиент уже выбран. */
+  initialClientId?: number | null;
+  /** G3: предвыбранная модель (фильтр списка скутеров) из заявки. */
+  initialModelFilter?: string;
+  /** G3: предвыбранный срок аренды (дней) из заявки. */
+  initialDays?: number;
+  /** G3: предвыбранная экипировка (id из каталога) из заявки. */
+  initialEquipmentIds?: number[];
+  /** G3: желаемая дата начала (ISO YYYY-MM-DD) из заявки — в дату выдачи. */
+  initialStart?: string;
 }) {
   const rentals = useRentals();
   const allClients = useAllClients();
@@ -94,23 +115,40 @@ export function NewRentalModal({
   const { data: equipmentCatalog = [] } = useApiEquipment();
   const blocked = activeScooters(rentals);
   const [closing, setClosing] = useState(false);
+  // Мобильный мастер: форма разбивается на 4 шага (Клиент → Скутер →
+  // Срок и тариф → Экипировка/залог/оплата). На десктопе все блоки сразу.
+  const isMobile = useIsMobile();
+  const [step, setStep] = useState(1);
 
-  const [clientId, setClientId] = useState<number | null>(null);
+  const [clientId, setClientId] = useState<number | null>(
+    initialClientId ?? null,
+  );
   const [clientQuery, setClientQuery] = useState("");
   const [clientOpen, setClientOpen] = useState(false);
   const [newClientOpen, setNewClientOpen] = useState(false);
   // Фильтр по модели в селекторе скутеров — пустая строка = все модели.
-  const [scooterModelFilter, setScooterModelFilter] = useState<string>("");
+  const [scooterModelFilter, setScooterModelFilter] = useState<string>(
+    initialModelFilter ?? "",
+  );
   const [scooterName, setScooterName] = useState<string | null>(
     preselectedScooterName ?? null,
   );
-  const [start, setStart] = useState(() => todayRuDate());
+  const [start, setStart] = useState(() => {
+    // G3: дата из заявки (ISO) → формат DD.MM.YYYY; иначе сегодня.
+    if (initialStart && /^\d{4}-\d{2}-\d{2}/.test(initialStart)) {
+      const [y, m, d] = initialStart.slice(0, 10).split("-");
+      return `${d}.${m}.${y}`;
+    }
+    return todayRuDate();
+  });
   const [startTime, setStartTime] = useState(() => currentHHMM());
   // 7 дней — самый популярный период проката (тариф «неделя»),
   // ставим дефолтом, чтобы оператор не правил каждый раз.
-  const [days, setDays] = useState(7);
+  const [days, setDays] = useState(initialDays && initialDays > 0 ? initialDays : 7);
   /** Выбранные позиции экипировки — id из equipment_items каталога */
-  const [equipmentIds, setEquipmentIds] = useState<number[]>([]);
+  const [equipmentIds, setEquipmentIds] = useState<number[]>(
+    initialEquipmentIds ?? [],
+  );
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
   const [note, setNote] = useState("");
 
@@ -155,7 +193,10 @@ export function NewRentalModal({
    * 1. Если у скутера modelId → берём ставки из каталога моделей.
    * 2. Иначе fallback на legacy TARIFF по enum-модели.
    */
+  // period — для ПОЛЯ tariffPeriod в БД (short/week/month).
+  // ratePeriod — для расчёта ставки ₽/сут (знает "day" для 1-2 дней).
   const period = periodForDays(days);
+  const ratePeriod = ratePeriodForDays(days);
   const modelFromCatalog = useMemo(
     () =>
       selectedScooter?.modelId
@@ -165,13 +206,13 @@ export function NewRentalModal({
   );
   const computedRate = useMemo(() => {
     if (modelFromCatalog) {
-      if (period === "day") return modelFromCatalog.dayRate;
-      if (period === "short") return modelFromCatalog.shortRate;
-      if (period === "week") return modelFromCatalog.weekRate;
+      if (ratePeriod === "day") return modelFromCatalog.dayRate;
+      if (ratePeriod === "short") return modelFromCatalog.shortRate;
+      if (ratePeriod === "week") return modelFromCatalog.weekRate;
       return modelFromCatalog.monthRate;
     }
-    return TARIFF[model][period];
-  }, [modelFromCatalog, period, model]);
+    return TARIFF[model][ratePeriod];
+  }, [modelFromCatalog, ratePeriod, model]);
 
   /**
    * v0.4.25: чекбокс «Произвольный тариф» + единица измерения внутри.
@@ -223,6 +264,13 @@ export function NewRentalModal({
     !blacklistedClient &&
     scooterName != null &&
     days > 0;
+
+  // Можно ли перейти с шага step на следующий (мобильный мастер).
+  const canAdvanceStep = (s: number): boolean => {
+    if (s === 1) return clientId != null && !blacklistedClient;
+    if (s === 2) return scooterName != null;
+    return true; // шаг 3 (срок/тариф) всегда валиден — есть значения по умолчанию
+  };
 
   // Множество клиентов с открытой арендой (active/overdue/returning).
   // Им нельзя выдавать новую — пока не закрыли предыдущую.
@@ -363,13 +411,14 @@ export function NewRentalModal({
   return (
     <div
       className={cn(
-        "fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-ink/55 p-6 backdrop-blur-sm",
+        "fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto overflow-x-hidden bg-ink/55 p-0 backdrop-blur-sm sm:p-6",
         closing ? "animate-backdrop-out" : "animate-backdrop-in",
       )}
     >
       <div
         className={cn(
-          "w-full max-w-[780px] overflow-hidden rounded-2xl bg-surface shadow-card-lg",
+          // Мобайл: полноэкранно (min-h-100dvh, без скруглений). Десктоп: карточка 780.
+          "min-h-[100dvh] w-full overflow-hidden bg-surface shadow-card-lg sm:min-h-0 sm:max-w-[780px] sm:rounded-2xl",
           closing ? "animate-modal-out" : "animate-modal-in",
         )}
         onClick={(e) => e.stopPropagation()}
@@ -392,9 +441,40 @@ export function NewRentalModal({
           </button>
         </div>
 
-        <div className="max-h-[calc(100vh-220px)] overflow-y-auto px-5 py-4">
+        {/* Мобильный прогресс шагов мастера */}
+        {isMobile && (
+          <div className="flex items-center gap-2 border-b border-border bg-surface px-4 py-2.5">
+            {STEP_TITLES.map((t, i) => {
+              const n = i + 1;
+              const done = n < step;
+              const cur = n === step;
+              return (
+                <div key={t} className="flex min-w-0 flex-1 flex-col items-center gap-1">
+                  <div className="flex w-full items-center">
+                    <div
+                      className={cn(
+                        "h-1.5 flex-1 rounded-full",
+                        done || cur ? "bg-blue-600" : "bg-surface-soft",
+                      )}
+                    />
+                  </div>
+                  <span
+                    className={cn(
+                      "truncate text-[10px] font-semibold",
+                      cur ? "text-blue-600" : done ? "text-ink-2" : "text-muted-2",
+                    )}
+                  >
+                    {n}. {t}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <div className="max-h-[calc(100vh-220px)] overflow-y-auto px-5 py-4 sm:max-h-[calc(100vh-220px)]">
           {/* 1 Клиент */}
-          <Section num={1} title="Клиент">
+          <Section num={1} title="Клиент" mobile={isMobile} current={step}>
             {client ? (
               <ClientChip
                 client={client}
@@ -402,6 +482,14 @@ export function NewRentalModal({
                   setClientId(null);
                   setClientQuery("");
                 }}
+              />
+            ) : isMobile ? (
+              <MobileClientPicker
+                query={clientQuery}
+                onQuery={setClientQuery}
+                clients={filteredClients}
+                onPick={(id) => setClientId(id)}
+                onNew={() => setNewClientOpen(true)}
               />
             ) : (
               <div className="flex flex-col gap-2">
@@ -508,7 +596,7 @@ export function NewRentalModal({
           </Section>
 
           {/* 2 Скутер */}
-          <Section num={2} title="Скутер">
+          <Section num={2} title="Скутер" mobile={isMobile} current={step}>
             {scooterName ? (
               <button
                 type="button"
@@ -521,11 +609,19 @@ export function NewRentalModal({
                   </div>
                   <div className="text-[11px] text-muted-2">
                     {MODEL_LABEL[model]} · тариф{" "}
-                    {TARIFF_PERIOD_LABEL[period]} · {rate} ₽/сут
+                    {TARIFF_PERIOD_LABEL[ratePeriod]} · {rate} ₽/сут
                   </div>
                 </div>
                 <X size={14} className="text-muted-2" />
               </button>
+            ) : isMobile ? (
+              <MobileScooterPicker
+                scooters={availableScooters}
+                modelChips={modelChips}
+                filter={scooterModelFilter}
+                onFilter={setScooterModelFilter}
+                onPick={(name) => setScooterName(name)}
+              />
             ) : (
               <>
               {modelChips.length > 1 && (
@@ -582,8 +678,8 @@ export function NewRentalModal({
           </Section>
 
           {/* 3 Срок и тариф */}
-          <Section num={3} title="Срок и тариф">
-            <div className="grid grid-cols-3 gap-3">
+          <Section num={3} title="Срок и тариф" mobile={isMobile} current={step}>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
               <label className="text-[12px] font-semibold text-ink">
                 Дата выдачи
                 <div className="mt-1">
@@ -661,7 +757,7 @@ export function NewRentalModal({
                       key={p}
                       className={cn(
                         "rounded-[10px] px-3 py-2 text-[11px]",
-                        !customMode && p === period
+                        !customMode && p === ratePeriod
                           ? "bg-blue-50 text-blue-700"
                           : "bg-surface-soft text-muted",
                       )}
@@ -774,7 +870,7 @@ export function NewRentalModal({
           </Section>
 
           {/* 4 Экипировка + залог + оплата */}
-          <Section num={4} title="Экипировка, залог и оплата">
+          <Section num={4} title="Экипировка, залог и оплата" mobile={isMobile} current={step}>
             <div>
               <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-2">
                 Выданная экипировка {equipmentExtra > 0 && (
@@ -923,36 +1019,99 @@ export function NewRentalModal({
                   : depositItemText.trim() || "—"}
               </span>
             </div>
+
+            {/* Сводка заказа на мобиле — обзор перед созданием. */}
+            {isMobile && (
+              <OrderSummary
+                clientName={client?.name ?? "—"}
+                scooterName={scooterName}
+                model={MODEL_LABEL[model]}
+                period={`${start} ${startTime} → ${endPlanned} ${startTime}`}
+                days={days}
+                rate={rate}
+                rateUnit={isWeeklyCustom ? "нед" : "сут"}
+                deposit={
+                  depositMode === "sum"
+                    ? `${depositSum.toLocaleString("ru-RU")} ₽`
+                    : depositItemText.trim() || "предмет не указан"
+                }
+                payment={paymentMethod === "cash" ? "Наличные" : "Перевод"}
+                total={sum}
+              />
+            )}
           </Section>
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border bg-surface-soft px-5 py-3">
-          <span className="min-w-0 flex-1 truncate text-[11px] text-muted-2">
-            После создания нужно подтвердить выдачу (договор, аренда, залог).
-          </span>
-          <div className="flex shrink-0 items-center gap-2 whitespace-nowrap">
+        {isMobile ? (
+          /* Мобильный футер мастера: Назад · Далее (последний шаг — Создать). */
+          <div className="flex items-center gap-2 border-t border-border bg-surface px-4 py-3 pb-[calc(12px+env(safe-area-inset-bottom))]">
             <button
               type="button"
-              onClick={requestClose}
-              className="rounded-full border border-border bg-surface px-4 py-1.5 text-[12px] font-semibold text-muted hover:bg-border"
+              onClick={() => (step === 1 ? requestClose() : setStep((s) => s - 1))}
+              className="flex min-h-[48px] items-center justify-center gap-1 rounded-xl border border-border px-4 text-[14px] font-semibold text-muted active:bg-surface-soft"
             >
-              Отмена
+              <ChevronLeft size={18} />
+              {step === 1 ? "Отмена" : "Назад"}
             </button>
-            <button
-              type="button"
-              disabled={!canSave}
-              onClick={handleSave}
-              className={cn(
-                "rounded-full px-4 py-1.5 text-[12px] font-semibold transition-colors",
-                canSave
-                  ? "bg-blue-600 text-white hover:bg-blue-700"
-                  : "cursor-not-allowed bg-surface-soft text-muted-2",
-              )}
-            >
-              Создать и выдать
-            </button>
+            {step < 4 ? (
+              <button
+                type="button"
+                disabled={!canAdvanceStep(step)}
+                onClick={() => canAdvanceStep(step) && setStep((s) => s + 1)}
+                className={cn(
+                  "flex min-h-[48px] flex-1 items-center justify-center gap-1.5 rounded-xl text-[14px] font-bold transition-colors",
+                  canAdvanceStep(step)
+                    ? "bg-blue-600 text-white active:bg-blue-700"
+                    : "cursor-not-allowed bg-surface-soft text-muted-2",
+                )}
+              >
+                Далее <ArrowRight size={16} />
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={!canSave || saving}
+                onClick={handleSave}
+                className={cn(
+                  "flex min-h-[48px] flex-1 items-center justify-center rounded-xl text-[14px] font-bold transition-colors",
+                  canSave && !saving
+                    ? "bg-blue-600 text-white active:bg-blue-700"
+                    : "cursor-not-allowed bg-surface-soft text-muted-2",
+                )}
+              >
+                Создать и выдать
+              </button>
+            )}
           </div>
-        </div>
+        ) : (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border bg-surface-soft px-5 py-3">
+            <span className="min-w-0 flex-1 truncate text-[11px] text-muted-2">
+              После создания нужно подтвердить выдачу (договор, аренда, залог).
+            </span>
+            <div className="flex shrink-0 items-center gap-2 whitespace-nowrap">
+              <button
+                type="button"
+                onClick={requestClose}
+                className="rounded-full border border-border bg-surface px-4 py-1.5 text-[12px] font-semibold text-muted hover:bg-border"
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                disabled={!canSave}
+                onClick={handleSave}
+                className={cn(
+                  "rounded-full px-4 py-1.5 text-[12px] font-semibold transition-colors",
+                  canSave
+                    ? "bg-blue-600 text-white hover:bg-blue-700"
+                    : "cursor-not-allowed bg-surface-soft text-muted-2",
+                )}
+              >
+                Создать и выдать
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {newClientOpen && (
@@ -973,14 +1132,21 @@ function Section({
   num,
   title,
   children,
+  mobile,
+  current,
 }: {
   num: number;
   title: string;
   children: React.ReactNode;
+  // На мобиле (mobile=true) показываем только секцию активного шага current.
+  mobile?: boolean;
+  current?: number;
 }) {
+  if (mobile && current != null && current !== num) return null;
   return (
     <section className="mb-5 last:mb-0">
-      <header className="mb-2 flex items-center gap-2">
+      {/* На мобиле номер-шага дублируется в прогресс-баре сверху — здесь скрываем. */}
+      <header className={cn("mb-2 flex items-center gap-2", mobile && "hidden")}>
         <span className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-50 text-[11px] font-bold text-blue-700">
           {num}
         </span>
@@ -1054,6 +1220,202 @@ function Calc({
         {value}
       </div>
       {hint && <div className="text-[10px] text-muted-2">{hint}</div>}
+    </div>
+  );
+}
+
+// ===== Мобильные шаги мастера (нативные UI, не показываются на десктопе) =====
+
+function MobileClientPicker({
+  query,
+  onQuery,
+  clients,
+  onPick,
+  onNew,
+}: {
+  query: string;
+  onQuery: (v: string) => void;
+  clients: Client[];
+  onPick: (id: number) => void;
+  onNew: () => void;
+}) {
+  return (
+    <div className="flex flex-col gap-2.5">
+      <div className="relative">
+        <Search
+          size={16}
+          className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-2"
+        />
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => onQuery(e.target.value)}
+          placeholder="Имя или телефон…"
+          className="h-12 w-full rounded-xl border border-border bg-surface pl-10 pr-3 text-[15px] text-ink outline-none focus:border-blue-600"
+        />
+      </div>
+      <button
+        type="button"
+        onClick={onNew}
+        className="flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-ink text-[14px] font-bold text-white active:bg-ink-2"
+      >
+        <UserPlus size={16} /> Новый клиент
+      </button>
+      <div className="flex flex-col gap-1.5">
+        {clients.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border py-6 text-center text-[13px] text-muted">
+            Не найдено — создайте нового
+          </div>
+        ) : (
+          clients.map((c) => {
+            const debt = c.unpaidDamageDebt ?? 0;
+            return (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => onPick(c.id)}
+                className="flex items-center gap-3 rounded-xl border border-border bg-surface p-3 text-left active:bg-surface-soft"
+              >
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-soft text-[12px] font-bold text-ink-2">
+                  {initialsOf(c.name)}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[14px] font-bold text-ink">{c.name}</div>
+                  <div className="text-[12px] text-muted-2 tabular-nums">{c.phone}</div>
+                </div>
+                {debt > 0 && (
+                  <span className="shrink-0 rounded-full bg-red-soft px-2 py-0.5 text-[10px] font-bold text-red-ink tabular-nums">
+                    долг {debt.toLocaleString("ru-RU")} ₽
+                  </span>
+                )}
+              </button>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MobileScooterPicker({
+  scooters,
+  modelChips,
+  filter,
+  onFilter,
+  onPick,
+}: {
+  scooters: { name: string; model: ScooterModel }[];
+  modelChips: [string, number][];
+  filter: string;
+  onFilter: (m: string) => void;
+  onPick: (name: string) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-2.5">
+      {modelChips.length > 1 && (
+        <div className="no-scrollbar -mx-1 flex gap-1.5 overflow-x-auto px-1">
+          <button
+            type="button"
+            onClick={() => onFilter("")}
+            className={cn(
+              "shrink-0 rounded-full px-3 py-1.5 text-[12px] font-semibold",
+              filter === "" ? "bg-ink text-white" : "bg-surface-soft text-muted",
+            )}
+          >
+            Все ({modelChips.reduce((s, [, c]) => s + c, 0)})
+          </button>
+          {modelChips.map(([m, count]) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => onFilter(m)}
+              className={cn(
+                "shrink-0 rounded-full px-3 py-1.5 text-[12px] font-semibold",
+                filter === m ? "bg-ink text-white" : "bg-surface-soft text-muted",
+              )}
+            >
+              {MODEL_LABEL[m as ScooterModel] ?? m} ({count})
+            </button>
+          ))}
+        </div>
+      )}
+      {scooters.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-border py-6 text-center text-[13px] text-muted">
+          Нет свободных скутеров
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-2">
+          {scooters.map((s) => (
+            <button
+              key={s.name}
+              type="button"
+              onClick={() => onPick(s.name)}
+              className="flex flex-col gap-0.5 rounded-xl border border-border bg-surface p-3 text-left active:bg-blue-50"
+            >
+              <span className="text-[15px] font-bold text-ink">{s.name}</span>
+              <span className="text-[12px] text-muted-2">{MODEL_LABEL[s.model]}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function OrderSummary({
+  clientName,
+  scooterName,
+  model,
+  period,
+  days,
+  rate,
+  rateUnit,
+  deposit,
+  payment,
+  total,
+}: {
+  clientName: string;
+  scooterName: string | null;
+  model: string;
+  period: string;
+  days: number;
+  rate: number;
+  rateUnit: string;
+  deposit: string;
+  payment: string;
+  total: number;
+}) {
+  return (
+    <div className="mt-4 rounded-2xl border border-blue-100 bg-blue-50/50 p-4">
+      <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-blue-700">
+        Сводка заказа
+      </div>
+      <dl className="space-y-1.5 text-[13px]">
+        <SummaryRow label="Клиент" value={clientName} />
+        <SummaryRow
+          label="Скутер"
+          value={scooterName ? `${scooterName} · ${model}` : "—"}
+        />
+        <SummaryRow label="Срок" value={`${period} · ${days} дн`} />
+        <SummaryRow label="Тариф" value={`${rate} ₽/${rateUnit}`} />
+        <SummaryRow label="Залог" value={deposit} />
+        <SummaryRow label="Оплата" value={payment} />
+      </dl>
+      <div className="mt-3 flex items-center justify-between border-t border-blue-200 pt-3">
+        <span className="text-[13px] font-semibold text-ink">Итого</span>
+        <span className="font-display text-[22px] font-extrabold tabular-nums text-blue-700">
+          {total.toLocaleString("ru-RU")} ₽
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function SummaryRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <dt className="shrink-0 text-muted-2">{label}</dt>
+      <dd className="min-w-0 text-right font-semibold text-ink">{value}</dd>
     </div>
   );
 }

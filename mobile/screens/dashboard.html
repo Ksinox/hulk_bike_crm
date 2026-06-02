@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Сводка</title>
+<link rel="stylesheet" href="../css/app.css">
+</head>
+<body>
+<div class="screen">
+  <header class="s-head">
+    <div class="s-head-row">
+      <div style="flex:1">
+        <div class="s-title">Сводка</div>
+        <div class="s-sub" id="today"></div>
+      </div>
+      <button class="s-head-act" data-ic="bell" data-ic-cls="s18" onclick="notif()">
+        <span class="dot"></span>
+      </button>
+    </div>
+  </header>
+
+  <div class="s-body">
+    <div class="stack">
+      <section class="card pad fly">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div class="sec-label" style="margin:0">Выручка</div>
+          <div class="pill green"><span class="pd"></span><span id="revDelta"></span></div>
+        </div>
+        <div class="seg" id="revSeg" style="margin:12px 0 14px">
+          <button data-p="day">День</button>
+          <button data-p="week">Неделя</button>
+          <button class="on" data-p="month">Месяц</button>
+        </div>
+        <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:14px">
+          <div>
+            <div class="font-display tnum" id="revVal" style="font-size:38px;line-height:1"></div>
+            <div style="font-size:12px;color:hsl(var(--muted));margin-top:6px" id="revSub"></div>
+          </div>
+        </div>
+        <svg viewBox="0 0 300 64" preserveAspectRatio="none" style="width:100%;height:60px;margin-top:14px;overflow:visible">
+          <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="hsl(221 83% 53% / .22)"/><stop offset="1" stop-color="hsl(221 83% 53% / 0)"/></linearGradient></defs>
+          <path d="M0 46 L30 40 L60 44 L90 30 L120 34 L150 22 L180 26 L210 16 L240 22 L270 10 L300 14 V64 H0 Z" fill="url(#g)"/>
+          <path d="M0 46 L30 40 L60 44 L90 30 L120 34 L150 22 L180 26 L210 16 L240 22 L270 10 L300 14" fill="none" stroke="hsl(var(--blue-600))" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="300" cy="14" r="3.6" fill="hsl(var(--blue-600))"/>
+        </svg>
+        <div class="kpis c3" style="margin-top:14px">
+          <div class="kpi"><div class="k-l">Активных аренд</div><div class="k-v tnum" id="activeCount"></div><div class="k-h">в работе сейчас</div></div>
+          <div class="kpi green"><div class="k-l">Новых заявок</div><div class="k-v tnum" id="newApps"></div><div class="k-h">нужен ответ</div></div>
+          <div class="kpi gray"><div class="k-l">Должники</div><div class="k-v tnum" id="overdueCount"></div><div class="k-h">по арендам</div></div>
+        </div>
+      </section>
+
+      <section class="card pad fly">
+        <div class="sec-label" style="margin:0 0 4px">Парк · в реальном времени
+          <a class="more" onclick="go('fleet.html')">Открыть</a>
+        </div>
+        <div style="display:flex;align-items:baseline;gap:10px;margin:6px 0 12px">
+          <span class="font-display tnum" style="font-size:30px">54</span>
+          <span style="font-size:12.5px;color:hsl(var(--muted))">скутера · срез из CRM</span>
+        </div>
+        <div class="kpis c3">
+          <div class="kpi"><div class="k-l">В аренде</div><div class="k-v tnum" style="color:hsl(var(--blue-700))" id="fleetRented"></div></div>
+          <div class="kpi red"><div class="k-l">Просрочка</div><div class="k-v tnum" id="fleetOverdue"></div></div>
+          <div class="kpi green"><div class="k-l">Свободно</div><div class="k-v tnum" id="fleetFree"></div></div>
+        </div>
+        <div class="kpis c3" style="margin-top:8px">
+          <div class="kpi orange"><div class="k-l">Ремонт</div><div class="k-v tnum" id="fleetRepair"></div></div>
+          <div class="kpi gray"><div class="k-l">Продажа</div><div class="k-v tnum" id="fleetSale"></div></div>
+          <div class="kpi gray"><div class="k-l">Выкуп / продано</div><div class="k-v tnum" id="fleetOther"></div></div>
+        </div>
+      </section>
+
+      <section class="fly">
+        <div class="sec-label">Возвраты рядом <span class="count" id="returnsCount"></span>
+          <a class="more" onclick="go('rentals.html')">Все аренды</a></div>
+        <div class="list" id="returns"></div>
+      </section>
+
+      <section class="fly">
+        <div class="sec-label">Просрочка / долги <span class="count" id="overCount"></span></div>
+        <div class="list" id="overdue"></div>
+      </section>
+
+      <section class="fly">
+        <div class="sec-label">Заявки и встречи <span class="count" id="appsCount"></span>
+          <a class="more" onclick="go('applications.html')">Открыть</a></div>
+        <div class="list" id="applications"></div>
+      </section>
+
+      <section class="card fly">
+        <div class="card-hd"><span data-ic="clock" data-ic-cls="s16" style="color:hsl(var(--muted))"></span><h3>Последние события</h3></div>
+        <div class="card-bd" id="feed" style="display:flex;flex-direction:column;gap:0;padding:4px 16px 12px"></div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<script src="../js/data.js"></script>
+<script src="../js/hb.js"></script>
+<script>
+  var d = HB_DATA.parseRuDate(HB_DATA.snapshotLabel);
+  var MON = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+  var DOW = ['воскресенье','понедельник','вторник','среда','четверг','пятница','суббота'];
+  document.getElementById('today').textContent = DOW[d.getDay()] + ', ' + d.getDate() + ' ' + MON[d.getMonth()] + ' · срез CRM';
+
+  function setRevenue(period) {
+    var r = HB_DATA.revenue[period];
+    document.getElementById('revVal').innerHTML = r.value.toLocaleString('ru-RU') + '&nbsp;₽';
+    document.getElementById('revSub').textContent = r.label + ' · ' + r.mix;
+    document.getElementById('revDelta').textContent = (r.delta > 0 ? '+' : '') + r.delta + '%';
+  }
+  document.querySelectorAll('#revSeg button').forEach(function (b) {
+    b.onclick = function () {
+      document.querySelectorAll('#revSeg button').forEach(function (x) { x.classList.remove('on'); });
+      b.classList.add('on');
+      setRevenue(b.dataset.p);
+    };
+  });
+  setRevenue('month');
+
+  var active = HB_DATA.activeRentals();
+  var overdue = HB_DATA.overdueRentals();
+  var returns = HB_DATA.returnsToday();
+  var apps = HB_DATA.applications();
+  var stats = HB_DATA.fleetStats();
+
+  document.getElementById('activeCount').textContent = active.length;
+  document.getElementById('newApps').textContent = apps.length;
+  document.getElementById('overdueCount').textContent = overdue.length;
+  document.getElementById('fleetRented').textContent = stats.rented;
+  document.getElementById('fleetOverdue').textContent = stats.overdue;
+  document.getElementById('fleetFree').textContent = stats.free;
+  document.getElementById('fleetRepair').textContent = stats.repair;
+  document.getElementById('fleetSale').textContent = stats.sale;
+  document.getElementById('fleetOther').textContent = stats.buyout + stats.sold;
+  document.getElementById('returnsCount').textContent = '· ' + returns.length;
+  document.getElementById('overCount').textContent = '· ' + overdue.length;
+  document.getElementById('appsCount').textContent = '· ' + apps.length;
+
+  document.getElementById('returns').innerHTML = returns.map(function (r) {
+    var c = HB_DATA.clientById(r.clientId);
+    return '<div class="row ' + (r.status === 'returning' ? 'acc-orange' : '') + '" onclick="go(\'rental-card.html?id=' + r.id + '\')">' +
+      '<div class="av">' + HB_DATA.initials(c.name) + '</div><div class="r-main">' +
+      '<div class="r-top"><span class="pill ' + (r.status === 'returning' ? 'orange' : 'blue') + '"><span class="pd"></span>' + (r.status === 'returning' ? 'возврат' : 'рядом') + '</span>' +
+      '<span class="r-name">' + r.scooter + '</span></div>' +
+      '<div class="r-sub"><span class="r-phone">' + c.phone + '</span><span class="sep"></span>' + c.name + '</div></div>' +
+      '<div class="r-meta"><div class="m-v">' + r.endPlanned + '</div></div>' + ic('chevR','s16 chev') + '</div>';
+  }).join('');
+
+  document.getElementById('overdue').innerHTML = overdue.map(function (r) {
+    var c = HB_DATA.clientById(r.clientId);
+    return '<div class="row acc-red" onclick="go(\'rental-card.html?id=' + r.id + '\')">' +
+      '<div class="av" style="background:hsl(var(--red-soft));color:hsl(var(--red-ink))">' + HB_DATA.initials(c.name) + '</div>' +
+      '<div class="r-main"><div class="r-top"><span class="pill red"><span class="pd"></span>долг</span><span class="r-name">' + c.name + '</span></div>' +
+      '<div class="r-sub"><span class="r-phone">' + c.phone + '</span><span class="sep"></span>' + r.scooter + '</div></div>' +
+      '<div class="r-meta"><div class="m-v" style="color:hsl(var(--red-ink))">' + HB_DATA.fmtMoney(HB_DATA.rentalDebt(r)) + '</div><div class="m-l">' + r.endPlanned + '</div></div></div>';
+  }).join('');
+
+  document.getElementById('applications').innerHTML = apps.map(function (a) {
+    return '<div class="row ' + (a.status === 'new' ? 'acc-blue' : 'acc-orange') + '" onclick="go(\'application-card.html?id=' + a.id + '\')">' +
+      '<div class="av">' + HB_DATA.initials(a.name) + '</div><div class="r-main">' +
+      '<div class="r-top"><span class="pill ' + (a.status === 'new' ? 'blue' : 'orange') + '"><span class="pd"></span>' + (a.status === 'new' ? 'новая' : 'в работе') + '</span>' +
+      '<span class="r-name">' + a.name + '</span></div>' +
+      '<div class="r-sub"><span class="r-phone">' + a.phone + '</span><span class="sep"></span>' + a.model + ' · ' + a.days + ' дн</div></div>' +
+      '<div class="r-meta"><div class="m-l">' + a.when + '</div></div></div>';
+  }).join('');
+
+  document.getElementById('feed').innerHTML = HB_DATA.activity.map(function (f, i) {
+    return '<div style="display:flex;gap:12px;padding:10px 0;' + (i < HB_DATA.activity.length - 1 ? 'border-bottom:1px solid hsl(var(--border))' : '') + '">' +
+      '<span style="width:8px;height:8px;border-radius:50%;margin-top:5px;flex-shrink:0;background:hsl(var(--' + f.tone + '))"></span>' +
+      '<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:600">' + f.title + '</div>' +
+      '<div style="font-size:12px;color:hsl(var(--muted));margin-top:2px">' + f.body + '</div></div>' +
+      '<div style="font-size:11px;color:hsl(var(--muted-2));white-space:nowrap">' + f.when + '</div></div>';
+  }).join('');
+
+  function notif() {
+    sheet('<h3>Уведомления</h3><div class="sh-sub">Текущий срез</div><div class="act-list">' +
+      '<button><span class="ai" style="background:hsl(var(--red-soft));color:hsl(var(--red-ink))">' + ic('alert','s16') + '</span><span><b>' + overdue.length + ' просрочек возврата</b><br><span style="font-size:12px;color:hsl(var(--muted))">по активным арендам</span></span></button>' +
+      '<button><span class="ai" style="background:hsl(var(--blue-50));color:hsl(var(--blue-700))">' + ic('inbox','s16') + '</span><span><b>' + apps.length + ' заявок и встреч</b><br><span style="font-size:12px;color:hsl(var(--muted))">нужны действия менеджера</span></span></button>' +
+      '<button><span class="ai" style="background:hsl(var(--orange-soft));color:hsl(var(--orange-ink))">' + ic('wrench','s16') + '</span><span><b>' + stats.repair + ' скутера в ремонте</b><br><span style="font-size:12px;color:hsl(var(--muted))">проверьте готовность парка</span></span></button>' +
+      '</div>');
+  }
+</script>
+</body>
+</html>

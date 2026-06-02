@@ -1,12 +1,17 @@
 import { useMemo, useRef, useState } from "react";
-import { UserRound, Upload, Trash2 } from "lucide-react";
+import { UserRound, Upload, Trash2, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { guessGender, type Client } from "@/lib/mock/clients";
 import { FilePreviewModal } from "./FilePreviewModal";
 import { clientStore, useClientPhoto } from "./clientStore";
 import type { UploadedFile } from "./DocUpload";
-import { useApiClientDocs } from "@/lib/api/documents";
+import {
+  useApiClientDocs,
+  useUploadClientDoc,
+  useDeleteClientDoc,
+} from "@/lib/api/documents";
 import { fileUrl } from "@/lib/files";
+import { toast } from "@/lib/toast";
 
 type Size = "sm" | "md" | "lg" | "xl";
 
@@ -86,6 +91,13 @@ export function ClientPhoto({
   const [previewing, setPreviewing] = useState(false);
   const replaceRef = useRef<HTMLInputElement>(null);
 
+  // v0.7.4: фото клиента теперь персистится в БД (client_documents
+  // kind='photo'), как паспорт/права. Раньше оно жило только в
+  // локальном clientStore.photos → пропадало после F5.
+  const uploadDoc = useUploadClientDoc(client.id);
+  const deleteDoc = useDeleteClientDoc(client.id);
+  const busy = uploadDoc.isPending || deleteDoc.isPending;
+
   const gender = guessGender(client.name);
   const stamp = client.blacklisted
     ? { text: "ЧЁРНЫЙ СПИСОК", tone: "red" as const }
@@ -95,22 +107,66 @@ export function ClientPhoto({
 
   const dims = SIZES[size];
 
-  const applyFile = (f: File) => {
+  const applyFile = async (f: File) => {
     if (!f.type.startsWith("image/")) return;
-    const uf: UploadedFile = {
+    // Контролируемый режим (форма редактирования) — отдаём File наверх,
+    // персист делает вызывающая сторона.
+    if (onChange) {
+      onChange({
+        name: f.name,
+        size: f.size,
+        thumbUrl: URL.createObjectURL(f),
+        title: `Фото · ${client.name}`,
+        file: f,
+      });
+      return;
+    }
+    // Оптимистичное превью пока идёт upload.
+    clientStore.setPhoto(client.id, {
       name: f.name,
       size: f.size,
       thumbUrl: URL.createObjectURL(f),
       title: `Фото · ${client.name}`,
-    };
-    if (onChange) onChange(uf);
-    else clientStore.setPhoto(client.id, uf);
+    });
+    try {
+      // Удаляем прежние фото (kind='photo'), чтобы не плодить дубли —
+      // read-path берёт первое по id, новое должно заменить старое.
+      const oldPhotos = (docsQ.data ?? []).filter((d) => d.kind === "photo");
+      await uploadDoc.mutateAsync({
+        kind: "photo",
+        file: f,
+        title: `Фото · ${client.name}`,
+      });
+      for (const old of oldPhotos) {
+        await deleteDoc.mutateAsync(old.id).catch(() => {});
+      }
+      // Дожидаемся свежих docs прежде чем снять оптимистичную подмену —
+      // иначе на миг показались бы инициалы между «убрали локальное» и
+      // «приехало серверное».
+      await docsQ.refetch();
+      clientStore.setPhoto(client.id, null);
+      toast.success("Фото сохранено", "");
+    } catch (e) {
+      clientStore.setPhoto(client.id, null);
+      toast.error("Не удалось сохранить фото", (e as Error).message ?? "");
+    }
   };
 
-  const handleDelete = () => {
-    if (onChange) onChange(null);
-    else clientStore.setPhoto(client.id, null);
+  const handleDelete = async () => {
     setPreviewing(false);
+    if (onChange) {
+      onChange(null);
+      return;
+    }
+    const oldPhotos = (docsQ.data ?? []).filter((d) => d.kind === "photo");
+    clientStore.setPhoto(client.id, null);
+    try {
+      for (const old of oldPhotos) {
+        await deleteDoc.mutateAsync(old.id);
+      }
+    } catch (e) {
+      toast.error("Не удалось удалить фото", (e as Error).message ?? "");
+    }
   };
 
   return (
@@ -172,6 +228,12 @@ export function ClientPhoto({
 
         {stamp && (
           <Stamp text={stamp.text} tone={stamp.tone} fontPx={dims.stampSize} />
+        )}
+
+        {busy && (
+          <div className="absolute inset-0 flex items-center justify-center bg-ink/40 text-white">
+            <Loader2 size={dims.iconSize} className="animate-spin" />
+          </div>
         )}
       </button>
 

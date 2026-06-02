@@ -1,8 +1,8 @@
 import type { FastifyInstance } from "fastify";
-import { eq, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/index.js";
-import { clients } from "../db/schema.js";
+import { clients, debtorPayments, debtors } from "../db/schema.js";
 import { logActivity } from "../services/activityLog.js";
 import {
   loadStatementBundle,
@@ -48,6 +48,99 @@ const PatchClientBody = CreateClientBody.partial().extend({
   unreachable: z.boolean().optional(),
 });
 
+/** Краткая сводка по делу-должнику для карточки клиента. */
+export type DebtorCaseSummary = {
+  id: number;
+  caseNumber: string;
+  type: string;
+  stage: string;
+  totalAmount: number;
+  paid: number;
+  progressPercent: number;
+  active: boolean;
+  problem: boolean;
+  closedAt: string | null;
+  closedReason: string | null;
+  createdAt: string;
+};
+
+const debtorStageIsClosed = (s: string) => s.startsWith("closed_");
+/** Проблемное дело (угон/невозврат/криминал) — зеркало lib/debtors/types. */
+const debtorIsProblem = (type: string, stage: string) =>
+  type === "theft" || stage === "police" || stage === "criminal_case";
+
+/**
+ * Дела-должники по клиентам: clientId → массив сводок.
+ * `clientIds === null` → все дела с привязкой к клиенту (для списка).
+ * Активные дела идут первыми, внутри — по дате создания (новые сверху).
+ */
+async function debtorCasesByClient(
+  clientIds: number[] | null,
+): Promise<Map<number, DebtorCaseSummary[]>> {
+  const map = new Map<number, DebtorCaseSummary[]>();
+  if (clientIds && clientIds.length === 0) return map;
+
+  const dRows = await db
+    .select()
+    .from(debtors)
+    .where(
+      clientIds
+        ? inArray(debtors.clientId, clientIds)
+        : sql`${debtors.clientId} IS NOT NULL`,
+    );
+  if (dRows.length === 0) return map;
+
+  const ids = dRows.map((d) => d.id);
+  const pays = await db
+    .select()
+    .from(debtorPayments)
+    .where(inArray(debtorPayments.debtorId, ids));
+  const paidByDebtor = new Map<number, number>();
+  for (const p of pays) {
+    if (p.paidAt) {
+      paidByDebtor.set(
+        p.debtorId,
+        (paidByDebtor.get(p.debtorId) ?? 0) + (p.paidAmount ?? 0),
+      );
+    }
+  }
+
+  for (const d of dRows) {
+    if (d.clientId == null) continue;
+    const paid = paidByDebtor.get(d.id) ?? 0;
+    const closed = debtorStageIsClosed(d.stage);
+    const summary: DebtorCaseSummary = {
+      id: d.id,
+      caseNumber: d.caseNumber,
+      type: d.type,
+      stage: d.stage,
+      totalAmount: d.totalAmount,
+      paid,
+      progressPercent:
+        d.totalAmount > 0
+          ? Math.min(100, Math.round((paid / d.totalAmount) * 100))
+          : 0,
+      // «Должник» = дело не закрыто И ещё не погашено полностью.
+      active: !closed && paid < d.totalAmount,
+      problem: debtorIsProblem(d.type, d.stage),
+      closedAt: d.closedAt ? d.closedAt.toISOString() : null,
+      closedReason: d.closedReason ?? null,
+      createdAt: d.createdAt.toISOString(),
+    };
+    const arr = map.get(d.clientId) ?? [];
+    arr.push(summary);
+    map.set(d.clientId, arr);
+  }
+
+  for (const arr of map.values()) {
+    arr.sort((a, b) => {
+      if (a.active !== b.active) return a.active ? -1 : 1;
+      return b.createdAt.localeCompare(a.createdAt);
+    });
+  }
+  return map;
+}
+
 export async function clientsRoutes(app: FastifyInstance) {
   // GET /api/clients
   // v0.5.6: дополнительно агрегируем долг по ущербу клиента из ВСЕХ его
@@ -76,6 +169,9 @@ export async function clientsRoutes(app: FastifyInstance) {
         ), 0)::int AS "unpaidDamageDebt"
       FROM damage_reports dr
       JOIN rentals r ON r.id = dr.rental_id
+      WHERE NOT EXISTS (
+        SELECT 1 FROM debtors db WHERE db.related_rental_id = r.id
+      )
       GROUP BY r.client_id
     `);
     const debtRows = (debtsRaw as unknown as { rows?: Array<{ clientId: number; unpaidDamageDebt: number }> }).rows
@@ -86,10 +182,12 @@ export async function clientsRoutes(app: FastifyInstance) {
         Number(d.unpaidDamageDebt),
       ]),
     );
+    const debtorMap = await debtorCasesByClient(rows.map((r) => r.id));
     return {
       items: rows.map((r) => ({
         ...r,
         unpaidDamageDebt: debtMap.get(r.id) ?? 0,
+        debtorCases: debtorMap.get(r.id) ?? [],
       })),
     };
   });
@@ -119,12 +217,17 @@ export async function clientsRoutes(app: FastifyInstance) {
       FROM damage_reports dr
       JOIN rentals r ON r.id = dr.rental_id
       WHERE r.client_id = ${id}
+        AND NOT EXISTS (
+          SELECT 1 FROM debtors db WHERE db.related_rental_id = r.id
+        )
     `);
     const debtRow = ((debtRaw as unknown as { rows?: Array<{ unpaidDamageDebt: number }> }).rows
       ?? (debtRaw as unknown as Array<{ unpaidDamageDebt: number }>))?.[0];
+    const debtorMap = await debtorCasesByClient([id]);
     return {
       ...row,
       unpaidDamageDebt: Number(debtRow?.unpaidDamageDebt ?? 0),
+      debtorCases: debtorMap.get(id) ?? [],
     };
   });
 

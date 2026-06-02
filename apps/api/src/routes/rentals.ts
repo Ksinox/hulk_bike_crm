@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/index.js";
 import {
@@ -8,6 +8,7 @@ import {
   damageReports,
   damageReportItems,
   debtEntries,
+  parkingSessions,
   payments,
   rentals,
   returnInspections,
@@ -18,19 +19,34 @@ import {
 } from "../db/schema.js";
 
 /**
- * Возвращает ставку модели за период аренды. Используется при свапе
+ * Тарифная ступень по числу дней — для ставки ₽/сут (включает "day" на 1-2
+ * дня: короткий прокат дороже). Едино с фронтом (ratePeriodForDays). Поле
+ * tariffPeriod в БД "day" не хранит (enum short/week/month), поэтому ступень
+ * для расчёта ставки выводим из числа дней, а не из tariffPeriod.
+ */
+function rateTierForDays(days: number): "day" | "short" | "week" | "month" {
+  if (days <= 2) return "day";
+  if (days <= 6) return "short";
+  if (days < 30) return "week";
+  return "month";
+}
+
+/**
+ * Возвращает ставку модели за тарифную ступень. Используется при свапе
  * на другую модель чтобы посчитать доплату.
  */
 function pickRateByPeriod(
   model: typeof scooterModels.$inferSelect,
-  period: "short" | "week" | "month",
+  period: "day" | "short" | "week" | "month",
 ): number | null {
+  if (period === "day") return model.dayRate ?? model.shortRate ?? null;
   if (period === "short") return model.shortRate ?? model.dayRate ?? null;
   if (period === "week") return model.weekRate ?? null;
   if (period === "month") return model.monthRate ?? null;
   return null;
 }
 import { logActivity } from "../services/activityLog.js";
+import type { DiffPayload } from "../services/activityLog.js";
 import { rentalStatusLabel } from "../services/activityMessages.js";
 
 const RentalStatusEnum = z.enum(["active", "completed"]);
@@ -96,6 +112,18 @@ const PatchRentalBody = z
   })
   .strict();
 
+// v0.6.1: scooterNextStatus — выбор оператора что делать со скутером после
+// завершения. Если не задан — старое поведение (rental_pool). Допустимые
+// варианты соответствуют scooterBaseStatusEnum (не все — `ready` и `sold`
+// для /complete нерелевантны).
+const SCOOTER_NEXT_STATUSES = [
+  "rental_pool",
+  "repair",
+  "for_sale",
+  "disassembly",
+  "buyout",
+] as const;
+
 const CompleteBody = z
   .object({
     dateActual: z.string(), // YYYY-MM-DD
@@ -105,6 +133,7 @@ const CompleteBody = z
     damageAmount: z.number().int().min(0).optional(),
     damageNotes: z.string().optional().nullable(),
     mileageAtReturn: z.number().int().min(0).optional(),
+    scooterNextStatus: z.enum(SCOOTER_NEXT_STATUSES).optional(),
   })
   .strict();
 
@@ -438,11 +467,84 @@ export async function rentalsRoutes(app: FastifyInstance) {
         summary: `Аренда ${summary}: «${rentalStatusLabel(before.status)}» → «${rentalStatusLabel(row.status)}»`,
       });
     } else {
+      // v0.7.16: собираем структурированный diff изменённых полей, чтобы
+      // в ленте показывать «Тариф: 500 → 600 ₽», «Дата возврата: …» и т.п.
+      const editDiff: DiffPayload = {};
+      const dateOnly = (v: unknown): string | null =>
+        v ? new Date(v as string).toISOString().slice(0, 10) : null;
+      if (parsed.data.rate !== undefined && parsed.data.rate !== before.rate) {
+        editDiff.rate = {
+          label: "Тариф",
+          from: before.rate,
+          to: parsed.data.rate,
+          kind: "money",
+        };
+      }
+      if (parsed.data.sum !== undefined && parsed.data.sum !== before.sum) {
+        editDiff.sum = {
+          label: "Сумма аренды",
+          from: before.sum,
+          to: parsed.data.sum,
+          kind: "money",
+        };
+      }
+      if (parsed.data.days !== undefined && parsed.data.days !== before.days) {
+        editDiff.days = {
+          label: "Срок",
+          from: before.days,
+          to: parsed.data.days,
+          kind: "number",
+          suffix: "дн",
+        };
+      }
+      if (parsed.data.deposit !== undefined && parsed.data.deposit !== before.deposit) {
+        editDiff.deposit = {
+          label: "Залог",
+          from: before.deposit,
+          to: parsed.data.deposit,
+          kind: "money",
+        };
+      }
+      if (
+        parsed.data.endPlannedAt !== undefined &&
+        dateOnly(parsed.data.endPlannedAt) !==
+          dateOnly(before.endPlannedAt as unknown)
+      ) {
+        editDiff.endPlanned = {
+          label: "Дата возврата",
+          from: dateOnly(before.endPlannedAt as unknown),
+          to: dateOnly(parsed.data.endPlannedAt),
+          kind: "date",
+        };
+      }
+      if (
+        parsed.data.startAt !== undefined &&
+        dateOnly(parsed.data.startAt) !== dateOnly(before.startAt as unknown)
+      ) {
+        editDiff.start = {
+          label: "Дата начала",
+          from: dateOnly(before.startAt as unknown),
+          to: dateOnly(parsed.data.startAt),
+          kind: "date",
+        };
+      }
+      if (
+        parsed.data.depositItem !== undefined &&
+        (parsed.data.depositItem ?? "") !== (before.depositItem ?? "")
+      ) {
+        editDiff.depositItem = {
+          label: "Залог-предмет",
+          from: before.depositItem ?? "—",
+          to: parsed.data.depositItem ?? "—",
+          kind: "text",
+        };
+      }
       await logActivity(req, {
         entity: "rental",
         entityId: id,
         action: "updated",
         summary: `Отредактирована аренда ${summary}`,
+        ...(Object.keys(editDiff).length > 0 ? { diff: editDiff } : {}),
       });
     }
     return row;
@@ -1150,8 +1252,12 @@ export async function rentalsRoutes(app: FastifyInstance) {
         let mileageBefore: number | null = null;
         let mileageAfter: number | null = null;
         if (r.scooterId) {
+          // v0.6.1: оператор может выбрать что делать со скутером (ремонт/
+          // продажа/разборка/выкуп/назад в парк). Если не указано — старое
+          // поведение «обратно в парк».
+          const nextStatus = d.scooterNextStatus ?? "rental_pool";
           const setVals: Record<string, unknown> = {
-            baseStatus: "rental_pool",
+            baseStatus: nextStatus,
             updatedAt: sql`now()`,
           };
           if (
@@ -1288,6 +1394,35 @@ export async function rentalsRoutes(app: FastifyInstance) {
         summary: withDamage
           ? `Завершена аренда ${summary} · зафиксирован ущерб ${(d.damageAmount ?? 0).toLocaleString("ru-RU")} ₽`
           : `Завершена аренда ${summary} · без ущерба, залог ${d.depositReturned ? "возвращён клиенту" : "удержан"}`,
+        diff: {
+          status: {
+            label: "Статус",
+            from: "active",
+            to: "completed",
+            kind: "text",
+          },
+          ...(result.mileageBefore != null && result.mileageAfter != null
+            ? {
+                mileage: {
+                  label: "Пробег",
+                  from: result.mileageBefore,
+                  to: result.mileageAfter,
+                  kind: "number",
+                  suffix: "км",
+                },
+              }
+            : {}),
+          ...(withDamage && d.damageAmount && d.damageAmount > 0
+            ? {
+                damage: {
+                  label: "Ущерб",
+                  from: 0,
+                  to: d.damageAmount,
+                  kind: "money",
+                },
+              }
+            : {}),
+        },
       });
       // v0.4.60: лог изменения пробега скутера (на сущность scooter,
       // чтобы запись была видна в карточке скутера и в его таймлайне).
@@ -1401,6 +1536,14 @@ export async function rentalsRoutes(app: FastifyInstance) {
         entityId: id,
         action: "revert_completion",
         summary: `Аренда #${id} возвращена из «завершённых» в активные`,
+        diff: {
+          status: {
+            label: "Статус",
+            from: "completed",
+            to: "active",
+            kind: "text",
+          },
+        },
       });
       const [updated] = await db
         .select()
@@ -1458,10 +1601,19 @@ export async function rentalsRoutes(app: FastifyInstance) {
           throw new Error(`extend_blocked_status:${old.status}`);
         }
 
+        // Правка 3: продление учитывает дневную стоимость платной экипировки.
+        const equipmentDaily = (
+          (old.equipmentJson ?? []) as Array<{
+            price?: number;
+            free?: boolean;
+          }>
+        ).reduce((s, it) => s + (it.free ? 0 : it.price ?? 0), 0);
+
+        const baseDaily = d.newRate + equipmentDaily;
         const extraSum =
           d.newRateUnit === "week"
-            ? d.newRate * Math.max(1, Math.round(d.extraDays / 7))
-            : d.newRate * d.extraDays;
+            ? baseDaily * Math.max(1, Math.round(d.extraDays / 7))
+            : baseDaily * d.extraDays;
 
         const newEndPlanned = new Date(
           old.endPlannedAt.getTime() + d.extraDays * 86_400_000,
@@ -1484,6 +1636,10 @@ export async function rentalsRoutes(app: FastifyInstance) {
         if (!updated) throw new Error("update failed");
 
         if (extraSum > 0) {
+          const equipNote =
+            equipmentDaily > 0
+              ? ` · вкл. экипировку ${equipmentDaily} ₽/сут`
+              : "";
           await tx.insert(payments).values({
             rentalId: id,
             type: "rent",
@@ -1492,8 +1648,8 @@ export async function rentalsRoutes(app: FastifyInstance) {
             paid: d.autoMarkPaid,
             paidAt: d.autoMarkPaid ? new Date() : null,
             note: d.autoMarkPaid
-              ? `продление на ${d.extraDays} дн (оплачено)`
-              : `продление на ${d.extraDays} дн (ожидает оплаты)`,
+              ? `продление на ${d.extraDays} дн (оплачено)${equipNote}`
+              : `продление на ${d.extraDays} дн (ожидает оплаты)${equipNote}`,
           });
         }
         return updated;
@@ -1565,10 +1721,19 @@ export async function rentalsRoutes(app: FastifyInstance) {
           throw new Error(`extend_blocked_status:${old.status}`);
         }
 
+        // Правка 3: продление учитывает дневную стоимость платной экипировки.
+        const equipmentDaily = (
+          (old.equipmentJson ?? []) as Array<{
+            price?: number;
+            free?: boolean;
+          }>
+        ).reduce((s, it) => s + (it.free ? 0 : it.price ?? 0), 0);
+
+        const baseDaily = d.newRate + equipmentDaily;
         const extraSum =
           d.newRateUnit === "week"
-            ? d.newRate * Math.max(1, Math.round(d.extraDays / 7))
-            : d.newRate * d.extraDays;
+            ? baseDaily * Math.max(1, Math.round(d.extraDays / 7))
+            : baseDaily * d.extraDays;
 
         const newEndPlanned = new Date(
           old.endPlannedAt.getTime() + d.extraDays * 86_400_000,
@@ -1595,6 +1760,10 @@ export async function rentalsRoutes(app: FastifyInstance) {
         if (!updated) throw new Error("update failed");
 
         if (extraSum > 0) {
+          const equipNote =
+            equipmentDaily > 0
+              ? ` · вкл. экипировку ${equipmentDaily} ₽/сут`
+              : "";
           await tx.insert(payments).values({
             rentalId: id,
             type: "rent",
@@ -1603,11 +1772,11 @@ export async function rentalsRoutes(app: FastifyInstance) {
             paid: d.autoMarkPaid,
             paidAt: d.autoMarkPaid ? new Date() : null,
             note: d.autoMarkPaid
-              ? `продление на ${d.extraDays} дн (оплачено)`
-              : `продление на ${d.extraDays} дн (ожидает оплаты)`,
+              ? `продление на ${d.extraDays} дн (оплачено)${equipNote}`
+              : `продление на ${d.extraDays} дн (ожидает оплаты)${equipNote}`,
           });
         }
-        return updated;
+        return { updated, old, extraSum };
       });
 
       const summary = await summaryForRental(id);
@@ -1615,15 +1784,36 @@ export async function rentalsRoutes(app: FastifyInstance) {
         entity: "rental",
         entityId: id,
         action: "rental_extended",
-        summary: `Продление аренды ${summary} на ${d.extraDays} дн (${result.rate} ₽/${result.rateUnit === "week" ? "нед" : "сут"})`,
+        summary: `Продление аренды ${summary} на ${d.extraDays} дн (${result.updated.rate} ₽/${result.updated.rateUnit === "week" ? "нед" : "сут"})`,
         meta: {
           extraDays: d.extraDays,
           newRate: d.newRate,
           newRateUnit: d.newRateUnit ?? "day",
-          newEndPlannedAt: result.endPlannedAt,
+          newEndPlannedAt: result.updated.endPlannedAt,
+        },
+        diff: {
+          endPlannedAt: {
+            label: "Возврат",
+            from: result.old.endPlannedAt.toISOString(),
+            to: result.updated.endPlannedAt.toISOString(),
+            kind: "date",
+          },
+          days: {
+            label: "Дней",
+            from: result.old.days,
+            to: result.updated.days,
+            kind: "number",
+            suffix: "дн",
+          },
+          sum: {
+            label: "Сумма аренды",
+            from: result.old.sum,
+            to: result.updated.sum,
+            kind: "money",
+          },
         },
       });
-      return result;
+      return result.updated;
     },
   );
 
@@ -1706,6 +1896,14 @@ export async function rentalsRoutes(app: FastifyInstance) {
           newDeposit: result?.deposit,
           newOriginal: result?.depositOriginal,
         },
+        diff: {
+          deposit: {
+            label: "Залог",
+            from: rental.deposit ?? 0,
+            to: result?.deposit ?? 0,
+            kind: "money",
+          },
+        },
       });
       return result;
     },
@@ -1743,6 +1941,9 @@ export async function rentalsRoutes(app: FastifyInstance) {
           payNow: z.boolean().default(false),
           method: z.enum(["cash", "transfer"]).optional(),
           comment: z.string().max(300).optional(),
+          // Правка 1: куда возвращать разницу при удешевлении экипировки.
+          refundTo: z.enum(["cash", "deposit"]).default("deposit"),
+          refundMethod: z.enum(["cash", "transfer"]).optional(),
         })
         .strict();
       const parsed = schema.safeParse(req.body);
@@ -1756,10 +1957,12 @@ export async function rentalsRoutes(app: FastifyInstance) {
         .from(rentals)
         .where(eq(rentals.id, id));
       if (!rental) return reply.code(404).send({ error: "not found" });
-      if (rental.status !== "active") {
+      // Правка 2: смена экипировки разрешена на любой живой аренде.
+      const allowed = ["active", "overdue", "returning"];
+      if (!allowed.includes(rental.status) || rental.archivedAt) {
         return reply.code(409).send({
           error: "not_editable",
-          message: `Экипировка меняется только на активной аренде. Текущий статус: ${rental.status}.`,
+          message: `Экипировка меняется только на живой аренде. Статус: ${rental.status}.`,
         });
       }
 
@@ -1840,27 +2043,43 @@ export async function rentalsRoutes(app: FastifyInstance) {
             });
           }
         } else if (totalDelta < 0) {
-          // Возврат на депозит клиента — используем существующий update
-          // на clients.deposit_balance напрямую (минуя HTTP slag).
-          await tx.execute(sql`
-            UPDATE clients SET deposit_balance = deposit_balance + ${-totalDelta}
-             WHERE id = ${rental.clientId}
-          `);
-          // payment(type='refund') чтобы был учётный след
-          await tx.insert(payments).values({
-            rentalId: id,
-            type: "refund",
-            amount: -totalDelta,
-            method: "cash",
-            paid: true,
-            paidAt: new Date(),
-            note: `Возврат за уменьшение экипировки (${remainingDays} дн × ${-dailyDelta} ₽) → депозит клиента`,
-          });
+          if (parsed.data.refundTo === "cash") {
+            // Возврат налом из кассы — НЕ трогаем deposit_balance.
+            await tx.insert(payments).values({
+              rentalId: id,
+              type: "refund",
+              amount: -totalDelta,
+              method: parsed.data.refundMethod ?? "cash",
+              paid: true,
+              paidAt: new Date(),
+              note: `Возврат за уменьшение экипировки (${remainingDays} дн × ${-dailyDelta} ₽) — выдан клиенту`,
+            });
+          } else {
+            // refundTo === 'deposit' (default): возврат на депозит клиента.
+            await tx.execute(sql`
+              UPDATE clients SET deposit_balance = deposit_balance + ${-totalDelta}
+               WHERE id = ${rental.clientId}
+            `);
+            // payment(type='refund') чтобы был учётный след
+            await tx.insert(payments).values({
+              rentalId: id,
+              type: "refund",
+              amount: -totalDelta,
+              method: "cash",
+              paid: true,
+              paidAt: new Date(),
+              note: `Возврат за уменьшение экипировки (${remainingDays} дн × ${-dailyDelta} ₽) → депозит клиента`,
+            });
+          }
         }
         return updated;
       });
 
       const summary = await summaryForRental(id);
+      // v0.6.6: для diff собираем список названий экипировки (was/now).
+      const oldNames = ((rental.equipmentJson ?? []) as Array<{ name: string }>)
+        .map((i) => i.name);
+      const newNames = newItems.map((i) => i.name);
       await logActivity(req, {
         entity: "rental",
         entityId: id,
@@ -1870,7 +2089,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
             ? `Изменена экипировка по аренде ${summary} (без доплаты)`
             : totalDelta > 0
               ? `Изменена экипировка по аренде ${summary} · доплата ${totalDelta} ₽${parsed.data.payNow ? " (оплачено)" : " (в долг)"}`
-              : `Изменена экипировка по аренде ${summary} · возврат ${-totalDelta} ₽ → депозит клиента`,
+              : `Изменена экипировка по аренде ${summary} · возврат ${-totalDelta} ₽ ${parsed.data.refundTo === "cash" ? "налом клиенту" : "→ депозит клиента"}`,
         meta: {
           oldItems,
           newItems,
@@ -1878,6 +2097,24 @@ export async function rentalsRoutes(app: FastifyInstance) {
           remainingDays,
           totalDelta,
           payNow: parsed.data.payNow,
+        },
+        diff: {
+          items: {
+            label: "Экипировка",
+            from: oldNames,
+            to: newNames,
+            kind: "list",
+          },
+          ...(totalDelta !== 0
+            ? {
+                fee: {
+                  label: totalDelta > 0 ? "Доплата" : "Возврат",
+                  from: 0,
+                  to: Math.abs(totalDelta),
+                  kind: "money",
+                },
+              }
+            : {}),
         },
       });
       return result;
@@ -2024,9 +2261,11 @@ export async function rentalsRoutes(app: FastifyInstance) {
         }
 
         // Доплата за смену модели — если у нового скутера ставка выше.
-        // Считаем по тарифу аренды и оставшимся дням до endPlannedAt.
-        // Если ставки равны или новая ниже — нулевая разница, payment
-        // не создаём.
+        // Ставку нового скутера берём по тарифной ступени аренды (по числу
+        // дней аренды old.days — ту же ступень, на которой считалась исходная
+        // ставка; для 1-2 дней это dayRate, а не shortRate). Доплату начисляем
+        // на ОСТАТОК дней до endPlannedAt. Если ставки равны или новая ниже —
+        // нулевая разница, payment не создаём.
         let feeAmount = 0;
         if (newScooter.modelId != null) {
           const [newModel] = await tx
@@ -2034,7 +2273,8 @@ export async function rentalsRoutes(app: FastifyInstance) {
             .from(scooterModels)
             .where(eq(scooterModels.id, newScooter.modelId));
           if (newModel) {
-            const newRate = pickRateByPeriod(newModel, old.tariffPeriod);
+            const tier = rateTierForDays(old.days);
+            const newRate = pickRateByPeriod(newModel, tier);
             if (newRate != null && newRate > old.rate) {
               const msLeft = old.endPlannedAt.getTime() - now.getTime();
               const daysLeft = Math.max(1, Math.ceil(msLeft / 86_400_000));
@@ -2080,15 +2320,60 @@ export async function rentalsRoutes(app: FastifyInstance) {
           })
           .where(eq(rentals.id, id));
 
-        return { rentalId: id, feeAmount };
+        return { rentalId: id, feeAmount, prevScooterId };
       });
+
+      // v0.6.6: для diff достанем человекочитаемые имена скутеров.
+      const swapScooterIds: number[] = [];
+      if (result.prevScooterId) swapScooterIds.push(result.prevScooterId);
+      swapScooterIds.push(d.newScooterId);
+      const swapScootersRows = swapScooterIds.length
+        ? await db
+            .select({ id: scooters.id, name: scooters.name })
+            .from(scooters)
+            .where(inArray(scooters.id, swapScooterIds))
+        : [];
+      const prevScooterName =
+        swapScootersRows.find((s) => s.id === result.prevScooterId)?.name ??
+        (result.prevScooterId ? `#${result.prevScooterId}` : "—");
+      const newScooterName =
+        swapScootersRows.find((s) => s.id === d.newScooterId)?.name ??
+        `#${d.newScooterId}`;
 
       await logActivity(req, {
         entity: "rental",
         entityId: id,
         action: "scooter_swapped",
         summary: `Замена скутера в аренде #${String(id).padStart(4, "0")}${result.feeAmount > 0 ? ` (доплата ${result.feeAmount} ₽)` : ""}`,
-        meta: { newScooterId: d.newScooterId, feeAmount: result.feeAmount },
+        // v0.8.14: «ревизорские» поля — кто на кого заменён, причина и куда
+        // ушёл старый скутер (в ремонт / обратно в парк) на момент замены.
+        meta: {
+          newScooterId: d.newScooterId,
+          prevScooterId: result.prevScooterId,
+          prevScooterName,
+          newScooterName,
+          feeAmount: result.feeAmount,
+          reason: d.reason ?? null,
+          oldScooterDestination: d.oldScooterStatus,
+        },
+        diff: {
+          scooter: {
+            label: "Скутер",
+            from: prevScooterName,
+            to: newScooterName,
+            kind: "text",
+          },
+          ...(result.feeAmount > 0
+            ? {
+                fee: {
+                  label: "Доплата",
+                  from: 0,
+                  to: result.feeAmount,
+                  kind: "money",
+                },
+              }
+            : {}),
+        },
       });
 
       // Возвращаем актуальную аренду — фронту удобно показать обновлённый
@@ -2257,6 +2542,16 @@ export async function rentalsRoutes(app: FastifyInstance) {
         sql`${payments.rentalId} IN (${idsList}) AND ${payments.type} = 'rent' AND ${payments.paid} = false`,
       );
 
+    // Паркинг: неоплаченный остаток (amount − paid_amount) → в долг.
+    const parkingRows = await db
+      .select({
+        rentalId: parkingSessions.rentalId,
+        amount: parkingSessions.amount,
+        paidAmount: parkingSessions.paidAmount,
+      })
+      .from(parkingSessions)
+      .where(sql`${parkingSessions.rentalId} IN (${idsList})`);
+
     // v0.4.67: считаем «сегодня» по МСК, не по UTC сервера. Иначе
     // вечером по МСК (когда UTC всё ещё прошлый день) overdueDays=0.
     const toMsk = (d: Date) =>
@@ -2369,9 +2664,21 @@ export async function rentalsRoutes(app: FastifyInstance) {
         .filter((p) => p.rentalId === r.id)
         .reduce((s, p) => s + (p.amount ?? 0), 0);
 
+      // Паркинг: неоплаченный остаток.
+      const parkingBalance = parkingRows
+        .filter((p) => p.rentalId === r.id)
+        .reduce(
+          (s, p) => s + Math.max(0, (p.amount ?? 0) - (p.paidAmount ?? 0)),
+          0,
+        );
+
       const overdueBalance = daysBalance + fineBalance;
       const totalDebt =
-        overdueBalance + damageBalance + manualBalance + pendingRent;
+        overdueBalance +
+        damageBalance +
+        manualBalance +
+        pendingRent +
+        parkingBalance;
 
       return {
         rentalId: r.id,
@@ -2386,6 +2693,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
         damageBalance,
         manualBalance,
         pendingRent,
+        parkingBalance,
         totalDebt,
       };
     });
@@ -2527,6 +2835,19 @@ export async function rentalsRoutes(app: FastifyInstance) {
     // v0.5: автонормализация статуса убрана — модель статусов плоская
     // (active/completed), просрочка и проблемность — computed на фронте.
 
+    // === Паркинг — неоплаченный остаток (amount − paid_amount) ===
+    const parkingRows = await db
+      .select({
+        amount: parkingSessions.amount,
+        paidAmount: parkingSessions.paidAmount,
+      })
+      .from(parkingSessions)
+      .where(eq(parkingSessions.rentalId, id));
+    const parkingBalance = parkingRows.reduce(
+      (s, p) => s + Math.max(0, (p.amount ?? 0) - (p.paidAmount ?? 0)),
+      0,
+    );
+
     return {
       overdueDays,
       overdueRate: rental.rate,
@@ -2542,7 +2863,8 @@ export async function rentalsRoutes(app: FastifyInstance) {
       overdueBalance,
       manualBalance,
       damageBalance,
-      total: overdueBalance + manualBalance + damageBalance,
+      parkingBalance,
+      total: overdueBalance + manualBalance + damageBalance + parkingBalance,
       events,
       damageReports: damageRows,
       payments: allPayments,
@@ -2737,7 +3059,24 @@ export async function rentalsRoutes(app: FastifyInstance) {
         endPlannedShift > 0
           ? `Оплата ${parsed.data.amount} ₽ по аренде #${id} (${parsed.data.kind}) — endPlanned сдвинут на ${endPlannedShift} дн${newStatus ? ", статус → active" : ""}${residualToDeposit > 0 ? `, остаток ${residualToDeposit} ₽ → депозит клиента` : ""}`
           : `Оплата ${parsed.data.amount} ₽ по аренде #${id} (${parsed.data.kind})`,
-      meta: { endPlannedShift, newStatus, residualToDeposit },
+      // v0.8.25 (F9): фиксируем НАЗНАЧЕНИЕ платежа (за что) + комментарий +
+      // сдвиг/депозит — чтобы в ленте было понятно, что оплачивалось.
+      meta: {
+        endPlannedShift,
+        newStatus,
+        residualToDeposit,
+        kind: parsed.data.kind,
+        comment: parsed.data.comment ?? null,
+        amount: parsed.data.amount,
+      },
+      diff: {
+        payment: {
+          label: "Принято",
+          from: 0,
+          to: parsed.data.amount,
+          kind: "money",
+        },
+      },
     });
     return row;
   });
@@ -2789,6 +3128,14 @@ export async function rentalsRoutes(app: FastifyInstance) {
       entityId: id,
       action: "debt_manual",
       summary: `Начислен долг ${parsed.data.amount} ₽ по аренде #${id}: ${parsed.data.comment}`,
+      diff: {
+        debt: {
+          label: "Долг",
+          from: 0,
+          to: parsed.data.amount,
+          kind: "money",
+        },
+      },
     });
     return row;
   });
@@ -2941,12 +3288,24 @@ export async function rentalsRoutes(app: FastifyInstance) {
           message: "Штраф просрочки уже списан/оплачен.",
         });
       }
+      // v0.6.13: частичное прощение штрафа — daysCount × fineDailyRate.
+      // Если daysCount задан → прощаем только эту часть. Иначе — весь
+      // остаток (старое поведение). endPlanned НЕ сдвигаем (дни остаются
+      // в долге, мы прощаем только их штраф).
+      const fineDailyRateLocal = Math.round(dailyRate * 0.5);
+      const fineAmount =
+        parsed.data.daysCount && parsed.data.daysCount > 0
+          ? Math.min(
+              fineRemaining,
+              parsed.data.daysCount * Math.max(1, fineDailyRateLocal),
+            )
+          : fineRemaining;
       const [row] = await db
         .insert(debtEntries)
         .values({
           rentalId: id,
           kind: "overdue_fine_forgive",
-          amount: fineRemaining,
+          amount: fineAmount,
           comment: parsed.data.comment ?? null,
           createdByUserId: userId,
           createdByName: userName,
@@ -2954,18 +3313,31 @@ export async function rentalsRoutes(app: FastifyInstance) {
         .returning();
       // v0.4.68: после прощения штрафа — нормализуем status, если
       // суммарная просрочка обнулилась.
-      const norm = await normalizeIfFullyResolved(daysRemaining, 0);
+      const fineLeftAfter = Math.max(0, fineRemaining - fineAmount);
+      const norm = await normalizeIfFullyResolved(daysRemaining, fineLeftAfter);
       await logActivity(req, {
         entity: "rental",
         entityId: id,
         action: "debt_overdue_fine_forgiven",
-        summary: `Списан штраф просрочки ${fineRemaining} ₽ по аренде #${id}${parsed.data.comment ? `: ${parsed.data.comment}` : ""}${norm.newStatus ? " · статус → active" : ""}`,
-        meta: { daysShift: norm.shift, newStatus: norm.newStatus },
+        summary: `Списан штраф просрочки ${fineAmount} ₽${parsed.data.daysCount ? ` (за ${parsed.data.daysCount} дн)` : ""} по аренде #${id}${parsed.data.comment ? `: ${parsed.data.comment}` : ""}${norm.newStatus ? " · статус → active" : ""}`,
+        meta: {
+          daysShift: norm.shift,
+          newStatus: norm.newStatus,
+          daysCount: parsed.data.daysCount ?? null,
+        },
+        diff: {
+          fine: {
+            label: "Штраф",
+            from: fineAmount,
+            to: 0,
+            kind: "money",
+          },
+        },
       });
       return {
         row,
         mode: "fine",
-        amount: fineRemaining,
+        amount: fineAmount,
         daysShift: norm.shift,
         newStatus: norm.newStatus,
       };
@@ -3044,6 +3416,21 @@ export async function rentalsRoutes(app: FastifyInstance) {
           daysToShift,
           newStatus: finalStatus,
         },
+        diff: {
+          debt: {
+            label: "Долг по дням",
+            from: requestedAmount,
+            to: 0,
+            kind: "money",
+          },
+          overdueDays: {
+            label: "Дней просрочки",
+            from: daysToShift,
+            to: 0,
+            kind: "number",
+            suffix: "дн",
+          },
+        },
       });
       return {
         row,
@@ -3113,6 +3500,14 @@ export async function rentalsRoutes(app: FastifyInstance) {
       meta: {
         daysShift: finalShiftAll,
         newStatus: finalStatusAll,
+      },
+      diff: {
+        debt: {
+          label: "Просрочка",
+          from: total,
+          to: 0,
+          kind: "money",
+        },
       },
     });
     return {

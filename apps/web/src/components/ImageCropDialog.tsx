@@ -1,21 +1,21 @@
 import { useCallback, useState } from "react";
 import Cropper, { type Area } from "react-easy-crop";
-import { Check, Loader2, RotateCw, X } from "lucide-react";
+import { Check, Crosshair, Loader2, RotateCw, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import {
-  compressOriginal,
-  cropImageToJpeg,
-  type CropArea,
-} from "@/lib/imageCrop";
+import { cropImageToBlob, type CropArea } from "@/lib/imageCrop";
 
 /**
  * Диалог кропа аватарки. Принимает выбранный пользователем файл,
  * показывает интерфейс drag/zoom (как в Telegram/Slack при загрузке
  * фото профиля). По клику «Сохранить» возвращает два blob'а:
- *  - full: оригинальный файл (после ресайза до 2048px и сжатия до ≤1.5 МБ)
- *  - thumb: вырезанная часть, ужатая до thumbSize × thumbSize, JPEG
+ *  - full: ЗАКРОПАННАЯ область, ужатая до fullSize (длинная сторона), JPEG
+ *  - thumb: та же закропанная область, ужатая до thumbSize, JPEG
  *
- * Оригинал нужен для full-screen просмотра. Thumb — для плиток/списков.
+ * v0.7.6: раньше `full` был оригиналом целиком (compressOriginal) — кроп
+ * терялся, т.к. крупные превью (ModelCard, ScooterPosterAvatar) рендерят
+ * именно avatarKey (full). Теперь ОБА blob'а вырезаны по одной области
+ * croppedAreaPixels — то что оператор видит в рамке = то что сохраняется
+ * и подтягивается везде.
  */
 
 export type CropResult = {
@@ -26,27 +26,44 @@ export type CropResult = {
 type Props = {
   /** Исходный файл от пользователя (или null = диалог закрыт). */
   file: File | null;
-  /** Соотношение сторон кропа. 1 = квадрат (для аватарок). */
+  /** Соотношение сторон кропа. 1 = квадрат, 4/3 для постеров скутера/модели. */
   aspect?: number;
+  /** Размер закропанного оригинала (длинная сторона), по умолчанию 800. */
+  fullSize?: number;
   /** Размер итоговой миниатюры (длинная сторона), по умолчанию 512. */
   thumbSize?: number;
   onClose: () => void;
   onSave: (result: CropResult) => unknown | Promise<unknown>;
   /** Заголовок над кроппером. */
   title?: string;
+  /** v0.7.7: формат экспорта. 'webp' — сохраняет прозрачность (предметы:
+   *  скутеры/экипировка/модели). 'jpeg' (default) — фото людей/документы. */
+  format?: "jpeg" | "webp";
 };
 
 export function ImageCropDialog({
   file,
   aspect = 1,
+  fullSize = 800,
   thumbSize = 512,
   onClose,
   onSave,
   title = "Обрежьте фото",
+  format = "jpeg",
 }: Props) {
+  // v0.7.4: разрешаем zoom-out (scale < 1). Раньше min был 1 и можно
+  // было только увеличивать — кадр с краями не помещался.
+  const MIN_ZOOM = 0.5;
+  const MAX_ZOOM = 3;
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
+
+  // «Отцентровать» — сброс позиции и зума в дефолт.
+  const recenter = useCallback(() => {
+    setCrop({ x: 0, y: 0 });
+    setZoom(1);
+  }, []);
   const [croppedArea, setCroppedArea] = useState<CropArea | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -67,9 +84,12 @@ export function ImageCropDialog({
     setError(null);
     setBusy(true);
     try {
+      // v0.7.6: оба blob'а вырезаны по croppedArea. full — крупнее (для
+      // постера/карточки), thumb — мельче (для плиток/списков). Качество
+      // выше для full, чтобы крупное превью не было замыленным.
       const [full, thumb] = await Promise.all([
-        compressOriginal(file),
-        cropImageToJpeg(file, croppedArea, thumbSize, 0.85),
+        cropImageToBlob(file, croppedArea, fullSize, 0.9, format),
+        cropImageToBlob(file, croppedArea, thumbSize, 0.85, format),
       ]);
       await onSave({ full, thumb });
       onClose();
@@ -114,13 +134,16 @@ export function ImageCropDialog({
             image={fileUrl}
             crop={crop}
             zoom={zoom}
+            minZoom={MIN_ZOOM}
+            maxZoom={MAX_ZOOM}
             rotation={rotation}
             aspect={aspect}
+            restrictPosition={false}
             onCropChange={setCrop}
             onZoomChange={setZoom}
             onRotationChange={setRotation}
             onCropComplete={onCropComplete}
-            cropShape={aspect === 1 ? "round" : "rect"}
+            cropShape="rect"
             showGrid={false}
             objectFit="contain"
           />
@@ -134,8 +157,8 @@ export function ImageCropDialog({
             </span>
             <input
               type="range"
-              min={1}
-              max={3}
+              min={MIN_ZOOM}
+              max={MAX_ZOOM}
               step={0.05}
               value={zoom}
               onChange={(e) => setZoom(Number(e.target.value))}
@@ -144,10 +167,19 @@ export function ImageCropDialog({
             />
             <button
               type="button"
+              onClick={recenter}
+              disabled={busy}
+              title="Отцентровать (сбросить зум и позицию)"
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-ink transition-colors hover:bg-border disabled:opacity-50"
+            >
+              <Crosshair size={14} />
+            </button>
+            <button
+              type="button"
               onClick={() => setRotation((r) => (r + 90) % 360)}
               disabled={busy}
               title="Повернуть на 90°"
-              className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-ink hover:bg-border disabled:opacity-50"
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-ink transition-colors hover:bg-border disabled:opacity-50"
             >
               <RotateCw size={14} />
             </button>

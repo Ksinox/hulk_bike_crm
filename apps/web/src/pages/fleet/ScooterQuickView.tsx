@@ -22,7 +22,7 @@ import { useFleetScooters } from "./fleetStore";
 import { useApiClients } from "@/lib/api/clients";
 import { useRentals, useArchivedRentals } from "@/pages/rentals/rentalsStore";
 import { useActivityTimeline } from "@/lib/api/activity";
-import { ActivityTimelineSection } from "@/pages/rentals/RentalCardTabs";
+import { ActivityTimelineSection } from "@/pages/rentals/ActivityTimelineSection";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { fileUrl } from "@/lib/files";
 
@@ -115,7 +115,7 @@ export function ScooterQuickView({
     <div className="flex flex-col gap-4 p-5">
       {/* Шапка с аватаркой */}
       <div className="flex items-start gap-4 rounded-2xl bg-surface p-4 shadow-card-sm">
-        <div className="flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-surface-soft">
+        <div className="flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white">
           {modelAvatar ? (
             <img src={modelAvatar} alt="" className="h-full w-full object-contain" />
           ) : (

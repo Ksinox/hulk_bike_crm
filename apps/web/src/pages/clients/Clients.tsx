@@ -32,6 +32,9 @@ function matchClient(
   activeSet: Set<number>,
   overdueSet: Set<number>,
   unreachable: Set<number>,
+  /** v0.6.15: B1 — клиенты с арендой завершающейся в [endDateFrom, endDateTo].
+   *  Если фильтр endDateFrom/endDateTo не выставлен — undefined. */
+  endRangeClientSet?: Set<number> | null,
 ): boolean {
   if (f.search.trim()) {
     const query = normalizeQuery(f.search);
@@ -50,6 +53,10 @@ function matchClient(
     if (!c.addedOn) return false;
     if (f.dateFrom && c.addedOn < f.dateFrom) return false;
     if (f.dateTo && c.addedOn > f.dateTo) return false;
+  }
+  // v0.6.15: B1 — фильтр по дате завершения аренды клиента.
+  if (endRangeClientSet) {
+    if (!endRangeClientSet.has(c.id)) return false;
   }
   const hasActive = activeSet.has(c.id);
   if (f.status === "active") {
@@ -74,11 +81,16 @@ function matchClient(
 }
 
 export function Clients() {
+  // v0.6.15: B1 — фильтр по дате завершения аренды клиента подключён
+  // через endDateFrom/endDateTo. Множество clientId вычисляем ниже в
+  // useMemo (endRangeClientSet) на основании списка аренд клиента.
   const [filters, setFilters] = useState<FiltersState>({
     search: "",
     status: "all",
     dateFrom: null,
     dateTo: null,
+    endDateFrom: null,
+    endDateTo: null,
   });
   const clients = useAllClients();
   const rentals = useRentals();
@@ -121,14 +133,48 @@ export function Clients() {
     if (p?.from) setBackTo(p.from);
   }, []);
 
+  // v0.6.15: B1 — множество clientId с арендой, чей endPlanned попадает
+  // в выбранный диапазон. Если диапазон не задан — undefined (фильтр не
+  // применяется). Парсим rental.endPlanned формата DD.MM.YYYY.
+  const endRangeClientSet = useMemo<Set<number> | null>(() => {
+    const ef = filters.endDateFrom ?? null;
+    const et = filters.endDateTo ?? null;
+    if (!ef && !et) return null;
+    const set = new Set<number>();
+    for (const r of rentals) {
+      if (!r.endPlanned) continue;
+      const [d, m, y] = r.endPlanned.split(".").map(Number);
+      if (!d || !m || !y) continue;
+      const endIso = `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+      if (ef && endIso < ef) continue;
+      if (et && endIso > et) continue;
+      set.add(r.clientId);
+    }
+    return set;
+  }, [rentals, filters.endDateFrom, filters.endDateTo]);
+
   const filtered = useMemo(
     () =>
       clients
         .filter((c) =>
-          matchClient(c, filters, activeSet, overdueSet, unreachable),
+          matchClient(
+            c,
+            filters,
+            activeSet,
+            overdueSet,
+            unreachable,
+            endRangeClientSet,
+          ),
         )
         .sort((a, b) => a.name.localeCompare(b.name, "ru")),
-    [clients, filters, activeSet, overdueSet, unreachable],
+    [
+      clients,
+      filters,
+      activeSet,
+      overdueSet,
+      unreachable,
+      endRangeClientSet,
+    ],
   );
 
   return (
@@ -198,7 +244,7 @@ export function Clients() {
               </div>
             );
           }
-          return <ClientCard client={selected} />;
+          return <ClientCard key={selected.id} client={selected} />;
         })()}
       </div>
       )}

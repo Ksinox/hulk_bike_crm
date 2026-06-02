@@ -592,6 +592,10 @@ function AvatarEditor({ model }: { model: ApiScooterModel }) {
           uploadMut.mutateAsync({ id: model.id, file: full, thumb })
         }
         onRemove={() => deleteMut.mutateAsync(model.id)}
+        // Карточка модели и постер скутера показывают аватарку в рамке 4:3
+        // (ModelCard aspect-[4/3], ScooterPosterAvatar object-contain) —
+        // кропаем тем же соотношением, чтобы рамка кропа = контейнер показа.
+        cropAspect={4 / 3}
         cropTitle={`Кропнуть аватарку «${model.name}»`}
       />
       <div className="mt-1 text-[11px] text-muted-2">

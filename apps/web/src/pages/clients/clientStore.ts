@@ -9,6 +9,8 @@ import {
 } from "@/lib/api/clients";
 import { useApiRentals } from "@/lib/api/rentals";
 import { useDebtAggregate, type AggregateDebtItem } from "@/lib/api/debt";
+import { useApiClientDocs } from "@/lib/api/documents";
+import { fileUrl } from "@/lib/files";
 import type { ApiRental } from "@/lib/api/types";
 import { api } from "@/lib/api";
 import { queryClient } from "@/lib/queryClient";
@@ -379,12 +381,37 @@ function computeStats(
   return { rentsByClient, debtByClient };
 }
 
+/**
+ * v0.6.51: фото клиента приходит из БД (client_documents kind='photo') —
+ * это источник истины, переживает reload. Локальный state.photos
+ * используется только как оптимистичная подмена пока идёт upload или
+ * как fallback если по какой-то причине docs ещё не загружены.
+ *
+ * Раньше функция читала только state.photos → после reload локальный
+ * Map пустой → аватарка терялась, даже когда сервер её хранил.
+ */
 export function useClientPhoto(id: number): UploadedFile | null {
-  return useSyncExternalStore(
+  const local = useSyncExternalStore(
     subscribe,
     () => state.photos.get(id) ?? null,
     () => null,
   );
+  const docsQ = useApiClientDocs(id);
+  return useMemo(() => {
+    const photoDoc = (docsQ.data ?? []).find((d) => d.kind === "photo");
+    if (photoDoc) {
+      const thumbUrl = fileUrl(photoDoc.fileKey, { variant: "thumb" });
+      if (thumbUrl) {
+        return {
+          name: photoDoc.fileName,
+          size: photoDoc.size,
+          thumbUrl,
+          title: photoDoc.title || `Фото · клиент ${id}`,
+        };
+      }
+    }
+    return local;
+  }, [docsQ.data, local, id]);
 }
 
 export function useClientExtraDocs(id: number): UploadedFile[] {

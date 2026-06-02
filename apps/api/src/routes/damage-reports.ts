@@ -248,6 +248,20 @@ export async function damageReportsRoutes(app: FastifyInstance) {
       action: "created",
       summary: `Аренда #${String(rentalId).padStart(4, "0")}: акт о повреждениях на ${total} ₽ (${items.length} поз.)`,
       meta: { total, depositCovered: cappedDeposit, items: items.length },
+      diff: {
+        damage: {
+          label: "Ущерб",
+          from: 0,
+          to: total,
+          kind: "money",
+        },
+        items: {
+          label: "Позиции",
+          from: [],
+          to: items.map((i) => i.name),
+          kind: "list",
+        },
+      },
     });
     return await loadReportFull(report!.id);
   });

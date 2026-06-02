@@ -3,11 +3,11 @@ import {
   FileText,
   FileImage,
   CheckCircle2,
-  ArrowUp,
-  ArrowDown,
   Pencil,
   UploadCloud,
   Plus,
+  ChevronDown,
+  ArrowRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Client, ClientDetails } from "@/lib/mock/clients";
@@ -118,7 +118,16 @@ export function RentalsTab({ client }: { client: Client }) {
   });
 
   return (
-    <div className="overflow-hidden rounded-[14px] border border-border">
+    <>
+      {/* Мобайл (<sm): раскрывающиеся карточки-строки вместо тесной таблицы. */}
+      <div className="flex flex-col gap-2 sm:hidden">
+        {sorted.map((r) => (
+          <MobileRentalRow key={r.id} r={r} />
+        ))}
+      </div>
+
+      {/* Десктоп (sm+): прежняя таблица — без изменений. */}
+      <div className="hidden overflow-hidden rounded-[14px] border border-border sm:block">
       <table className="w-full text-[13px]">
         <thead className="bg-surface-soft text-left text-[11px] font-semibold uppercase tracking-wider text-muted-2">
           <tr>
@@ -186,6 +195,78 @@ export function RentalsTab({ client }: { client: Client }) {
           })}
         </tbody>
       </table>
+      </div>
+    </>
+  );
+}
+
+// Мобильная раскрывающаяся карточка одной аренды (клиентский таб «Аренды»).
+// Свёрнуто: скутер + статус + период + сумма. Раскрыто: залог, оплата,
+// заметка и переход в аренду. Вся инфа из таблицы сохранена.
+function MobileRentalRow({ r }: { r: Rental }) {
+  const [open, setOpen] = useState(false);
+  const p = periodText(r);
+  const eff = effectiveRentalStatus(r.status, r.endPlanned);
+  return (
+    <div className="overflow-hidden rounded-2xl border border-border bg-surface">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-start gap-2 p-3 text-left active:bg-surface-soft/60"
+      >
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-bold text-ink">{r.scooter}</span>
+            <span
+              className={cn(
+                "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold",
+                RENTAL_STATUS_TONE[eff] ?? "bg-surface-soft text-muted",
+              )}
+            >
+              {RENTAL_STATUS_LABEL[eff] ?? RENTAL_STATUS_LABEL[r.status]}
+            </span>
+          </div>
+          <div className="mt-1 text-[12px] text-muted">
+            {p.main}
+            {p.hint && <span className="text-muted-2"> · {p.hint}</span>}
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <span className="font-bold tabular-nums text-ink">
+            {r.sum > 0 ? `${fmt(r.sum)} ₽` : "—"}
+          </span>
+          <ChevronDown
+            size={16}
+            className={cn(
+              "text-muted-2 transition-transform",
+              open && "rotate-180",
+            )}
+          />
+        </div>
+      </button>
+      {open && (
+        <div className="space-y-2 border-t border-border px-3 py-2.5">
+          <DetailLine label="Залог" value={r.deposit > 0 ? `${fmt(r.deposit)} ₽` : "—"} />
+          <DetailLine label="Оплата" value={PAYMENT_LABEL[r.paymentMethod]} />
+          {r.note && <DetailLine label="Заметка" value={r.note} />}
+          <button
+            type="button"
+            onClick={() => navigate({ route: "rentals", rentalId: r.id })}
+            className="mt-1 inline-flex items-center gap-1 text-[13px] font-semibold text-blue-600 active:opacity-70"
+          >
+            Открыть аренду <ArrowRight size={14} />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DetailLine({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-3 text-[13px]">
+      <span className="shrink-0 text-muted-2">{label}</span>
+      <span className="min-w-0 text-right font-semibold text-ink">{value}</span>
     </div>
   );
 }
@@ -833,75 +914,6 @@ function PassportBlock({ d, client }: { d: ClientDetails; client: Client }) {
           </div>
         ))}
       </div>
-    </div>
-  );
-}
-
-/* =================== Рейтинг =================== */
-
-export function RatingTab({ d }: { d: ClientDetails }) {
-  if (d.ratingHistory.length === 0)
-    return <Empty text="История рейтинга пуста" />;
-  return (
-    <div className="flex flex-col">
-      {d.ratingHistory.map((e, i) => {
-        const isPlus = e.delta > 0;
-        const isMinus = e.delta < 0;
-        const iconCls = isPlus
-          ? "bg-green-soft text-green-ink"
-          : isMinus
-            ? "bg-red-soft text-red-ink"
-            : "bg-surface-soft text-muted";
-        const Icon = isPlus ? ArrowUp : isMinus ? ArrowDown : Pencil;
-        return (
-          <div
-            key={i}
-            className="flex items-start gap-3 border-b border-border/60 py-2 last:border-b-0"
-          >
-            <div
-              className={cn(
-                "flex h-8 w-8 shrink-0 items-center justify-center rounded-full",
-                iconCls,
-              )}
-            >
-              <Icon size={14} />
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <span className="text-[13px] font-semibold text-ink">
-                  {e.event}
-                </span>
-                {e.type === "manual" && (
-                  <span className="rounded-full bg-purple-soft px-1.5 py-0.5 text-[10px] font-semibold text-purple-ink">
-                    ручная корр.
-                  </span>
-                )}
-              </div>
-              {e.note && (
-                <div className="text-[11px] text-muted">{e.note}</div>
-              )}
-            </div>
-            <div className="shrink-0 text-right">
-              <div
-                className={cn(
-                  "text-[13px] font-bold tabular-nums",
-                  isPlus
-                    ? "text-green-ink"
-                    : isMinus
-                      ? "text-red-ink"
-                      : "text-muted",
-                )}
-              >
-                {e.delta > 0 ? "+" : ""}
-                {e.delta}
-              </div>
-              <div className="text-[10px] text-muted-2 tabular-nums">
-                → {e.score} · {e.date}
-              </div>
-            </div>
-          </div>
-        );
-      })}
     </div>
   );
 }

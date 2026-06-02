@@ -215,6 +215,7 @@ export function DatePicker({
   value,
   onChange,
   placeholder = "ДД.ММ.ГГГГ",
+  defaultMonth,
   disabled,
   className,
   clearable = true,
@@ -259,8 +260,14 @@ export function DatePicker({
     }
   };
 
+  // На какой месяц открыть календарь, если дата ещё не выбрана:
+  // F8 — для даты рождения это НЕ «сегодня» (иначе листать к ~1990 десятки
+  // раз), а defaultMonth (передаётся ~25 лет назад). Если value есть —
+  // открываем на нём.
   const calValue =
-    isoToCalendarDate(value) ?? today(getLocalTimeZone());
+    isoToCalendarDate(value) ??
+    isoToCalendarDate(defaultMonth ?? null) ??
+    today(getLocalTimeZone());
 
   return (
     <div ref={wrapperRef} className={cn("relative", className)}>
@@ -445,6 +452,60 @@ export function DateRangePicker({
           </I18nProvider>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ================== InlineRangeCalendar (всегда раскрыт) ================== */
+
+/**
+ * Календарь выбора периода, который ВСЕГДА открыт (без поповера). Клиент
+ * тапает дату начала, затем дату конца — onChange отдаёт ISO from/to.
+ * Используется в публичной анкете на шаге «период аренды», чтобы календарь
+ * не был спрятан за полем.
+ */
+export function InlineRangeCalendar({
+  from,
+  to,
+  onChange,
+  minDate,
+  className,
+}: {
+  from: string | null;
+  to: string | null;
+  onChange: (next: { from: string; to: string }) => void;
+  minDate?: string;
+  className?: string;
+}) {
+  const value: DateRange | null =
+    from && to
+      ? { start: isoToCalendarDate(from)!, end: isoToCalendarDate(to)! }
+      : null;
+  return (
+    <div
+      className={cn(
+        // w-fit + mx-auto — календарь своей натуральной ширины и по центру,
+        // не растягивается на весь экран. [&_table]:w-auto — таблица-сетка
+        // не тянется (иначе ячейки разъезжаются шире 7×36px).
+        "mx-auto w-fit rounded-2xl border border-slate-200 bg-white p-2 [&_table]:w-auto",
+        className,
+      )}
+    >
+      <I18nProvider locale="ru-RU">
+        <RangeCalendar
+          aria-label="Выбор периода аренды"
+          value={value}
+          minValue={isoToCalendarDate(minDate ?? null) ?? undefined}
+          onChange={(r) => {
+            if (r) {
+              onChange({
+                from: calendarDateToIso(r.start as CalendarDate),
+                to: calendarDateToIso(r.end as CalendarDate),
+              });
+            }
+          }}
+        />
+      </I18nProvider>
     </div>
   );
 }

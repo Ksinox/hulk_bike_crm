@@ -1,47 +1,65 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import {
   AlertTriangle,
   ArrowRight,
+  Bike,
   Calendar,
   CheckCircle2,
+  Clock,
+  FileText,
+  Flag,
   PhoneOff,
+  Phone,
+  PanelRightClose,
   ThumbsUp,
   Plus,
   Repeat,
-  Shield,
   ShieldAlert,
-  Star,
+  SquareParking,
+  StickyNote,
+  Pin,
+  User,
   Wallet,
   Wrench,
   XCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
-  DEPOSIT_AMOUNT,
   STATUS_LABEL,
   STATUS_TONE,
   type Rental,
   type RentalStatus,
 } from "@/lib/mock/rentals";
 import { effectiveRentalStatus } from "@/lib/rentalStatus";
-import { ratingTier } from "@/lib/mock/clients";
-import { useClientUnreachable } from "@/pages/clients/clientStore";
+import { useClientUnreachable, clientStore } from "@/pages/clients/clientStore";
+import { StickerStack, NoteComposer } from "@/components/StickerStack";
+import {
+  useRentalCardStickers,
+  useCreateSticker,
+  useUnpinSticker,
+  useDeleteSticker,
+  useRepinSticker,
+} from "@/lib/api/stickers";
 import { useApiClients } from "@/lib/api/clients";
 import { useApiScooters } from "@/lib/api/scooters";
 import { navigate } from "@/app/navigationStore";
-import {
-  DebtHistoryTab,
-  DocumentsTab,
-  HistoryTab,
-  TasksTab,
-  TermsTab,
-} from "./RentalCardTabs";
+// v0.6.44: tabs убраны из карточки — новый 2-col layout (MasterBlock +
+// CalendarPanel/DocsInline). Сами компоненты табов остаются доступны
+// для других мест (например, drawer-режим использует HistoryTab).
+import { MasterBlock } from "./rental-card/MasterBlock";
+import { AccordionSection } from "./rental-card/AccordionSection";
+import { CalendarPanel } from "./rental-card/CalendarPanel";
+import { DocsInline } from "./rental-card/DocsInline";
+import { InlineHistory } from "./rental-card/InlineHistory";
+import { SideDrawer } from "./rental-card/SideDrawer";
+import { useActivityTimeline } from "@/lib/api/activity";
+import { HistoryTab, type HistoryFilter } from "./RentalCardTabs";
 import { RentalActionDialog, type ActionKind } from "./RentalActionDialog";
 import { ExtendRentalDialog } from "./ExtendRentalDialog";
 import { PaymentAcceptDialog } from "./PaymentAcceptDialog";
 import { SwapScooterDialog } from "./SwapScooterDialog";
 import { DamageReportDialog } from "./DamageReportDialog";
-import { DamageReportPaymentDialog } from "./DamageReportPaymentDialog";
 import { EquipmentChangeDialog } from "./EquipmentChangeDialog";
 import { DocumentPreviewModal } from "./DocumentPreviewModal";
 import { useChainDamageReports } from "@/lib/api/damage-reports";
@@ -50,6 +68,7 @@ import {
   useChargeManualDebt,
   useForgiveOverdue,
 } from "@/lib/api/debt";
+import { useRentalParking, useEndParking } from "@/lib/api/parking";
 import { RentalActionsMenu, type MenuAction } from "./RentalActionsMenu";
 import {
   getRentalChainIds,
@@ -68,19 +87,14 @@ import {
 } from "@/lib/api/rentals";
 import { useDashboardDrawer } from "@/pages/dashboard/DashboardDrawer";
 import { useMe } from "@/lib/api/auth";
-import { confirmDialog, pickAction } from "@/lib/toast";
+import { confirmDialog, pickAction, promptDialog } from "@/lib/toast";
 import { toast } from "@/lib/toast";
 import { ApiError, api } from "@/lib/api";
 
+// v0.6.44: tabs убраны, оставлен type-alias для совместимости с props
+// (initialTab — может прийти при navigate с дашборда через openTab).
+// Сам выбор таба никуда не идёт.
 type TabId = "terms" | "history" | "debt" | "tasks" | "docs";
-
-const TABS: { id: TabId; label: string }[] = [
-  { id: "terms", label: "Условия" },
-  { id: "history", label: "История" },
-  { id: "debt", label: "История долгов" },
-  { id: "tasks", label: "Задачи" },
-  { id: "docs", label: "Документы" },
-];
 
 function fmt(n: number | null | undefined): string {
   if (n == null || Number.isNaN(n)) return "0";
@@ -110,6 +124,14 @@ function statusActions(
   opts: { hasDamage: boolean; isUnreachable: boolean },
 ): MenuAction[] {
   const extras: MenuAction[] = [
+    // v0.8.15: добавление заметки-стикера — вынесено в меню (раньше парящая
+    // кнопка «+ Заметка» рядом со стопкой).
+    {
+      id: "add-note",
+      label: "Добавить заметку",
+      icon: StickyNote,
+      tone: "ghost",
+    },
     {
       id: "set-damage",
       label: opts.hasDamage ? "Изменить ущерб" : "Зафиксировать ущерб",
@@ -122,6 +144,13 @@ function statusActions(
       label: "Начислить долг",
       icon: Plus,
       tone: "warn",
+    },
+    // v0.8.0: паркинг — дубль точки входа (основная кнопка 🅿 в календаре).
+    {
+      id: "set-parking",
+      label: "Поставить на паркинг",
+      icon: SquareParking,
+      tone: "primary",
     },
     // v0.3.8: списание просрочки — только если есть начисленная просрочка.
     // Само действие проверит наличие на сервере и вернёт ошибку если нет.
@@ -159,7 +188,6 @@ function statusActions(
       // вёл на старый RentalActionDialog (legacy форма с типами
       // rent/fine/damage/deposit без депозита/залога/просрочки).
       return withExtras([
-        { id: "extend", label: "Продлить", icon: Repeat, tone: "primary" },
         { id: "complete", label: "Завершить аренду", icon: ArrowRight, tone: "ghost" },
       ]);
     case "overdue":
@@ -254,7 +282,16 @@ function statusChipClass(tone: string): string {
 export function RentalCard({
   rental,
   onSwapped,
+  onClose,
+  onRequestPayment,
+  paymentExtDays,
+  paymentResetSignal,
+  onPaymentOpenChange,
+  onOpenHistory,
   initialTab,
+  flushLeft = false,
+  drawerChrome = false,
+  besideDrawerOpen = false,
 }: {
   rental: Rental;
   /** Callback в Rentals при успешной замене скутера. Rentals переключает
@@ -262,26 +299,70 @@ export function RentalCard({
    *  карточки — иначе при ремаунте RentalCard локальный state превью
    *  терялся, и превью никогда не показывалось. */
   onSwapped?: (newRentalId: number) => void;
+  onClose?: () => void;
+  /** v0.7.3: запрос на открытие Payment-панели у родителя (Rentals).
+   *  Payment теперь рендерится как третья колонка на уровне страницы
+   *  (push, не overlay внутри карточки). extDays — предзаполнение числа
+   *  дней продления (приходит из drag-to-extend на календаре карточки;
+   *  для кнопки footer'а «Принять оплату» = 0). Если prop не передан
+   *  (DashboardDrawer) — карточка открывает Payment внутри себя как
+   *  раньше (inline-fallback через paymentRentalId). */
+  onRequestPayment?: (rentalId: number, extDays: number) => void;
+  /** v0.7.3: при parent-managed Payment — текущее число дней продления
+   *  (живёт в Rentals, синхронизируется с Payment-колонкой). Календарь
+   *  карточки отражает это значение, чтобы drag/Payment были согласованы. */
+  paymentExtDays?: number;
+  /** v0.7.3: сигнал сброса календаря карточки — родитель бампает его при
+   *  закрытии Payment-колонки, чтобы drag-extend на календаре обнулился. */
+  paymentResetSignal?: number;
+  onPaymentOpenChange?: (open: boolean) => void;
+  /** v0.7.9: запрос на открытие полной истории аренды у родителя (Rentals).
+   *  История теперь рендерится как push-колонка на уровне страницы (как
+   *  Payment), а не overlay-SideDrawer поверх карточки. Если prop не передан
+   *  (DashboardDrawer) — карточка открывает историю в себе через
+   *  overlay-SideDrawer (historyOpen fallback). */
+  onOpenHistory?: (rentalId: number, filter?: HistoryFilter) => void;
   /** v0.3.8: какой таб открыть по умолчанию (используется при навигации
    *  с дашборда: клик по должнику → openTab='debt' → таб «История долгов»). */
   initialTab?: TabId;
+  /** v0.6.50: на странице Аренд карточка «упирается» в блок списка слева —
+   *  убираем левое скругление и добавляем `border-l` для разделителя.
+   *  Drawer-режим (DashboardDrawer) этот prop не передаёт — там карточка
+   *  остаётся полностью скруглённой. */
+  flushLeft?: boolean;
+  /** v0.7.0: карточка рендерится как правый drawer на странице Аренд.
+   *  Включает «хром» drawer'а: sticky-header (закрыть/меню), скроллируемое
+   *  тело, sticky-footer с кнопками «Закрыть аренду» / «Принять оплату».
+   *  Без этого prop'а (DashboardDrawer) карточка остаётся плоским блоком. */
+  drawerChrome?: boolean;
+  /** v0.8.28 (H2): рядом открыт push-дровер (история/оплата) — прячем
+   *  оверлей стикеров, чтобы он не перекрывал дровер. */
+  besideDrawerOpen?: boolean;
 }) {
-  const [tab, setTab] = useState<TabId>(initialTab ?? "terms");
+  void onPaymentOpenChange;
+  void initialTab; // v0.6.44: tabs убраны, prop оставлен для совместимости.
   const [action, setAction] = useState<ActionKind | null>(null);
   const [editRentalOpen, setEditRentalOpen] = useState(false);
   const [extendOpen, setExtendOpen] = useState(false);
+  // v0.8.0: бамп для входа в режим паркинга из ⋯-меню (CalendarPanel слушает).
+  const [armParkingSignal, setArmParkingSignal] = useState(0);
   // v0.3.9: после продления / оплаты — открываем диалог приёма оплаты
   // на новой связке. Хранится rentalId, чтобы пережить перерендер.
   const [paymentRentalId, setPaymentRentalId] = useState<number | null>(null);
+  const [paymentPrefillExtDays, setPaymentPrefillExtDays] = useState(0);
+  const [calendarResetSignal, setCalendarResetSignal] = useState(0);
   // v0.4.49: модалки пополнения залога и изменения экипировки
   const [equipmentChangeOpen, setEquipmentChangeOpen] = useState(false);
   const [damageOpen, setDamageOpen] = useState(false);
   const [editingReportId, setEditingReportId] = useState<number | null>(null);
-  const [paymentReportId, setPaymentReportId] = useState<number | null>(null);
   const [previewDamageId, setPreviewDamageId] = useState<number | null>(null);
   const [previewClaimId, setPreviewClaimId] = useState<number | null>(null);
   const [swapOpen, setSwapOpen] = useState(false);
   const [clientQuickView, setClientQuickView] = useState(false);
+  // v0.6.50: drawer полной истории по аренде — открывается из InlineHistory
+  // («Все события →»). Внутри drawer'а рендерим тот же HistoryTab что и
+  // в legacy-табе «История».
+  const [historyOpen, setHistoryOpen] = useState(false);
   // v0.3.1 (idea 2: stacking drawers): когда RentalCard рендерится
   // ВНУТРИ drawer'а на дашборде — клик на клиента не должен открывать
   // отдельный ClientQuickView, а должен класть «client» поверх стека
@@ -335,7 +416,10 @@ export function RentalCard({
     [chainIdsFull, allRentals],
   );
   const chainPayments = useChainPayments(chainIds);
-  const tier = client ? ratingTier(client.rating) : null;
+  // v0.6.50: лента событий по аренде для inline-блока «Последние события»
+  // под календарём. Полный список — в drawer'е (HistoryTab).
+  const activityQ = useActivityTimeline("rental", rental.id, 50);
+  const activityItems = activityQ.data?.items ?? [];
 
   // Корневая (первая) аренда цепочки — её start показываем в шапке
   // карточки как «оригинальную» дату выдачи, даже если сейчас открыто
@@ -372,6 +456,98 @@ export function RentalCard({
   // когда debtSummary подгрузится (см. ниже useEffect не нужен,
   // useMemo сам пересчитает на render).
   const isUnreachable = useClientUnreachable(rental.clientId);
+
+  // v0.8.12+: стикеры-заметки карточки (заметки аренды + комментарии по связи
+  // клиента). Добавление/открепление/удаление пишется в журнал действий.
+  const { stickers } = useRentalCardStickers(rental.id, rental.clientId);
+  // Все заметки (включая откреплённые) — для раздела «Заметки».
+  const { stickers: allStickers } = useRentalCardStickers(
+    rental.id,
+    rental.clientId,
+    true,
+  );
+  const createStickerMut = useCreateSticker();
+  const unpinStickerMut = useUnpinSticker();
+  const deleteStickerMut = useDeleteSticker();
+  const repinStickerMut = useRepinSticker();
+  const [addNoteOpen, setAddNoteOpen] = useState(false);
+  // v0.8.18: якорь правого края карточки — оверлей стикеров рендерим порталом
+  // поверх (вне клиппящего фрейма), позиционируем по rect карточки. rAF
+  // отслеживает позицию во время анимаций drawer'а.
+  const cardRootRef = useRef<HTMLDivElement>(null);
+  const [cardRect, setCardRect] = useState<{
+    top: number;
+    right: number;
+  } | null>(null);
+  useEffect(() => {
+    if (!drawerChrome) return;
+    let raf = 0;
+    let prev = "";
+    const tick = () => {
+      const el = cardRootRef.current;
+      if (el) {
+        const r = el.getBoundingClientRect();
+        const key = `${Math.round(r.top)}|${Math.round(r.right)}`;
+        if (key !== prev) {
+          prev = key;
+          setCardRect({ top: r.top, right: r.right });
+        }
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [drawerChrome]);
+  const addRentalNote = (text: string, color: string) =>
+    createStickerMut.mutate({
+      entity: "rental",
+      entityId: rental.id,
+      kind: "note",
+      text,
+      color,
+    });
+  const unpinSticker = (id: number) =>
+    unpinStickerMut.mutate(
+      { id },
+      {
+        onSuccess: () =>
+          toast.success(
+            "Заметка откреплена",
+            "Хранится в разделе «Заметки» этой карточки",
+          ),
+      },
+    );
+  const deleteSticker = (id: number) => deleteStickerMut.mutate({ id });
+  const repinSticker = (id: number) =>
+    repinStickerMut.mutate(
+      { id },
+      { onSuccess: () => toast.success("Заметка снова на карточке") },
+    );
+  // Переключение статуса связи клиента прямо из карточки. При включении —
+  // сразу предлагаем прикрепить комментарий-стикер (kind=contact на клиента).
+  const toggleUnreachable = async () => {
+    const next = !isUnreachable;
+    clientStore.setUnreachable(rental.clientId, next);
+    if (next && rental.clientId) {
+      const t = await promptDialog({
+        title: "Не выходит на связь",
+        message: "Комментарий (необязательно) — прикрепится стикером к клиенту.",
+        placeholder: "напр. звонили 29.05, не берёт трубку",
+        multiline: true,
+        confirmText: "Прикрепить",
+        cancelText: "Без комментария",
+      });
+      if (t)
+        createStickerMut.mutate({
+          entity: "client",
+          entityId: rental.clientId,
+          kind: "contact",
+          text: t,
+          color: "orange",
+        });
+    }
+  };
+
   // Текущий статус скутера — нужен для проверки конфликта (active rental
   // + scooter в repair). См. блок «Скутер в ремонте» ниже.
   const { data: apiScooters = [] } = useApiScooters();
@@ -411,6 +587,32 @@ export function RentalCard({
     overdueRelatedDebt,
   );
   const tone = STATUS_TONE[effectiveStatus] ?? STATUS_TONE[rental.status];
+
+  // v0.8.0: состояние паркинга для баннера/пилюли.
+  const { sessions: parkingList } = useRentalParking(rental.id);
+  const endParkingMut = useEndParking();
+  const todayYmd = useMemo(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }, []);
+  const activeParking =
+    parkingList.find(
+      (s) =>
+        s.status === "active" &&
+        s.startDate <= todayYmd &&
+        s.endDate >= todayYmd,
+    ) ?? null;
+  const parkingDayN = activeParking
+    ? Math.min(
+        activeParking.days,
+        Math.floor(
+          (Date.parse(`${todayYmd}T00:00:00Z`) -
+            Date.parse(`${activeParking.startDate}T00:00:00Z`)) /
+            86_400_000,
+        ) + 1,
+      )
+    : 0;
+
   const chargeManualMut = useChargeManualDebt();
   const forgiveOverdueMut = useForgiveOverdue();
   const reportWithDebt = reports.find((r) => r.debt > 0) ?? null;
@@ -508,6 +710,55 @@ export function RentalCard({
         p.method !== "deposit",
     )
     .reduce((s, p) => s + p.amount, 0);
+  // v0.8.8: список финопераций для ховера «За всё время» (оплаченные,
+  // кроме залога/возврата). Сверху — свежие.
+  const FIN_TYPE_LABEL: Record<string, string> = {
+    rent: "Аренда",
+    fine: "Штраф",
+    damage: "Оплата ущерба",
+    swap_fee: "Замена скутера",
+    equipment_fee: "Экипировка",
+    parking: "Паркинг",
+  };
+  // v0.8.16 (C2): период каждой финоперации для ховера «За всё время».
+  // Аренда/штраф/замена/экипировка → период аренды (по rentalId платежа);
+  // паркинг → период парковочных сессий этой аренды (min..max).
+  const rentalByIdFin = new Map(chainRentals.map((r) => [r.id, r]));
+  const ruShort = (s?: string | null) => (s ? s.slice(0, 5) : "");
+  const ymdShort = (ymd?: string | null) => {
+    const m = (ymd ?? "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    return m ? `${m[3]}.${m[2]}` : "";
+  };
+  const opPeriod = (p: { type: string; rentalId: number }): string | null => {
+    if (p.type === "parking") {
+      const ss = parkingList.filter((s) => s.rentalId === p.rentalId);
+      if (!ss.length) return null;
+      const start = ss.reduce((m, s) => (s.startDate < m ? s.startDate : m), ss[0]!.startDate);
+      const end = ss.reduce((m, s) => (s.endDate > m ? s.endDate : m), ss[0]!.endDate);
+      return `${ymdShort(start)}–${ymdShort(end)}`;
+    }
+    const r = rentalByIdFin.get(p.rentalId);
+    if (r) return `${ruShort(r.start)}–${ruShort(r.endPlanned)}`;
+    return null;
+  };
+  const financeOps = chainPayments
+    .filter(
+      (p) =>
+        p.paid &&
+        p.type !== "refund" &&
+        p.type !== "deposit" &&
+        p.method !== "deposit",
+    )
+    .slice()
+    .sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""))
+    .map((p) => ({
+      label: FIN_TYPE_LABEL[p.type] ?? p.type,
+      amount: p.amount,
+      // p.date уже в русском формате «dd.mm.yyyy[ HH:MM]» (isoToRu),
+      // new Date() его не парсит → берём «dd.mm» напрямую из строки.
+      date: p.date ? p.date.slice(0, 5) : null,
+      period: opPeriod(p),
+    }));
   // pending (плашка «Долг») — суммируем неоплаченные платежи ТОЛЬКО
   // по полностью активным связкам цепочки (archivedAt == null).
   // Auto-archived родители (после extend) могли оставить orphan-платежи
@@ -537,18 +788,65 @@ export function RentalCard({
   // void чтобы линтер не ругался.
   void chainExpected;
 
+  // v0.7.8: состав долга/просрочки — единый источник для KPI-плашек,
+  // их hover-поповеров и accordion-секции «Финансовая информация».
+  // Логика НЕ меняется: те же поля debtSummary что и в KPI-плашке ниже.
+  const overdueLocalCalc =
+    rental.status === "overdue"
+      ? Math.max(1, daysLeft !== null ? Math.abs(daysLeft) : 1) *
+        Math.round(
+          (rental.rateUnit === "week" ? rental.rate / 7 : rental.rate) * 1.5,
+        )
+      : 0;
+  const overdueBalance = debtSummary?.overdueBalance ?? overdueLocalCalc;
+  const overdueDaysBalance = debtSummary?.overdueDaysBalance ?? 0;
+  const overdueFineBalance = debtSummary?.overdueFineBalance ?? 0;
+  const damageBalance = debtSummary?.damageBalance ?? totalDebt;
+  const manualBalance = debtSummary?.manualBalance ?? 0;
+  // v0.8.0: неоплаченный паркинг — часть долга (с подписью «паркинг»).
+  const parkingBalance = debtSummary?.parkingBalance ?? 0;
+  // Кол-во неоплаченных дней паркинга — для подписи «за N дн».
+  const unpaidParkingDays = parkingList
+    .filter((s) => s.amount > s.paidAmount)
+    .reduce((sum, s) => sum + s.days, 0);
+  const debtTotal =
+    pending + overdueBalance + damageBalance + manualBalance + parkingBalance;
+  const debtParts: string[] = [];
+  if (pending > 0) debtParts.push(`не оплачено ${fmt(pending)} ₽`);
+  if (overdueDaysBalance > 0) debtParts.push(`дни ${fmt(overdueDaysBalance)} ₽`);
+  if (overdueFineBalance > 0) debtParts.push(`штраф ${fmt(overdueFineBalance)} ₽`);
+  if (overdueBalance > 0 && overdueDaysBalance + overdueFineBalance === 0)
+    debtParts.push(`просрочка ${fmt(overdueBalance)} ₽`);
+  if (damageBalance > 0) debtParts.push(`ущерб ${fmt(damageBalance)} ₽`);
+  if (manualBalance > 0) debtParts.push(`ручной ${fmt(manualBalance)} ₽`);
+  if (parkingBalance > 0) debtParts.push(`паркинг ${fmt(parkingBalance)} ₽`);
+  const debtHint = debtTotal === 0 ? "нет долгов" : debtParts.join(" + ");
+  // Просрочка — дни + дата + ставка/сут (для hover плашки «Просрочка»).
+  const overdueDaysCount =
+    daysLeft !== null && daysLeft < 0 ? Math.abs(daysLeft) : 0;
+  const dailyRateForHint =
+    rental.rateUnit === "week" ? Math.round(rental.rate / 7) : rental.rate;
+  const overdueHint =
+    overdueDaysCount > 0
+      ? `${overdueDaysCount} дн с ${rental.endPlanned.slice(0, 5)}, ставка ${fmt(dailyRateForHint)} ₽/сут`
+      : "нет просрочки";
+
   const handleAction = async (id: string) => {
     if (id === "extend") return setExtendOpen(true);
     if (id === "edit") return setEditRentalOpen(true);
+    if (id === "add-note") return setAddNoteOpen(true);
+    // v0.8.0: вход в режим паркинга (основная кнопка 🅿 — в календаре).
+    if (id === "set-parking") return setArmParkingSignal((n) => n + 1);
     if (id === "revert-completion") {
       // v0.5.1: возврат завершённой аренды в active. Используется когда
       // оператор случайно нажал «Завершить» или клиент передумал.
-      if (
-        !window.confirm(
+      const okRevert = await confirmDialog({
+        title: "Перевести аренду в активную?",
+        message:
           "Перевести завершённую аренду обратно в активную? Будет снят флаг возврата залога и удалена запись приёмки.",
-        )
-      )
-        return;
+        confirmText: "Перевести",
+      });
+      if (!okRevert) return;
       try {
         await api.post(`/api/rentals/${rental.id}/revert-completion`, {});
         toast.success(
@@ -645,16 +943,20 @@ export function RentalCard({
       // v0.3.8: ручное начисление долга. Минимум сумма + комментарий.
       // Используем простую цепочку prompt() — отдельной модалки не делаем,
       // действие редкое и хочется один клик-ответ.
-      const amountStr = window.prompt("Сумма долга, ₽");
+      const amountStr = await promptDialog({
+        title: "Сумма долга, ₽",
+        placeholder: "Например, 1500",
+      });
       if (!amountStr) return;
       const amount = Number(amountStr.replace(/\D/g, ""));
       if (!Number.isFinite(amount) || amount <= 0) {
         toast.error("Неверная сумма", "Введите положительное число.");
         return;
       }
-      const comment = window.prompt(
-        "Комментарий — за что начисляем долг (видно всем):",
-      );
+      const comment = await promptDialog({
+        title: "Комментарий — за что начисляем долг (видно всем):",
+        multiline: true,
+      });
       if (comment == null || !comment.trim()) {
         toast.error("Нужен комментарий", "Без него начисление недопустимо.");
         return;
@@ -742,10 +1044,10 @@ export function RentalCard({
       // Если выбрано «частичное» — спрашиваем число дней
       let daysCount: number | undefined;
       if (choice === "days_partial") {
-        const raw = window.prompt(
-          `Сколько дней простить? (доступно ${overdueDaysCount})`,
-          String(overdueDaysCount),
-        );
+        const raw = await promptDialog({
+          title: `Сколько дней простить? (доступно ${overdueDaysCount})`,
+          initial: String(overdueDaysCount),
+        });
         if (raw == null) return;
         const n = Math.max(1, Math.min(overdueDaysCount, Number(raw) || 0));
         if (n <= 0) {
@@ -761,7 +1063,10 @@ export function RentalCard({
         toast.info("Нет штрафа", "Штраф уже списан или оплачен.");
         return;
       }
-      const comment = window.prompt("Причина списания (необязательно):", "");
+      const comment = await promptDialog({
+        title: "Причина списания (необязательно):",
+        multiline: true,
+      });
       try {
         const r = await forgiveOverdueMut.mutateAsync({
           rentalId: rental.id,
@@ -817,7 +1122,8 @@ export function RentalCard({
         toast.info("Нет акта", "Сначала зафиксируйте ущерб");
         return;
       }
-      setPaymentReportId(r.id);
+      // G2: платёж по ущербу — через единое окно «Принять платёж».
+      requestPayment(0);
       return;
     }
     if (id === "unarchive") {
@@ -917,66 +1223,436 @@ export function RentalCard({
     setAction(id as ActionKind);
   };
 
-  return (
-    <div className="flex min-h-0 flex-col gap-3 rounded-2xl bg-surface p-5 shadow-card-sm">
+  const handleCommitExtend = (days: number) => {
+    if (rental.archivedAt || rental.status === "completed") return;
+    const nextDays = Math.max(0, days);
+    setPaymentPrefillExtDays(nextDays);
+    if (nextDays > 0) {
+      // v0.7.3: если родитель управляет Payment-колонкой (Rentals) —
+      // делегируем открытие туда (push-колонка). Иначе (DashboardDrawer) —
+      // открываем Payment внутри карточки как раньше.
+      if (onRequestPayment) {
+        onRequestPayment(rental.id, nextDays);
+      } else if (paymentRentalId == null) {
+        setPaymentRentalId(rental.id);
+      }
+    }
+  };
+
+  // v0.7.3: единая точка открытия Payment. Делегирует родителю (push-
+  // колонка на странице Аренд) либо открывает inline-диалог внутри
+  // карточки (drawer на дашборде, где родитель prop не передал).
+  const requestPayment = (extDays = 0) => {
+    if (onRequestPayment) onRequestPayment(rental.id, extDays);
+    else setPaymentRentalId(rental.id);
+  };
+
+  // v0.7.9: единая точка открытия полной истории. Делегирует родителю
+  // (push-колонка на странице Аренд) либо открывает overlay-SideDrawer
+  // внутри карточки (DashboardDrawer, где родитель prop не передал).
+  const requestHistory = () => {
+    if (onOpenHistory) onOpenHistory(rental.id);
+    else setHistoryOpen(true);
+  };
+  // v0.8.8: открыть историю сразу с фильтром «Долги и платежи».
+  const requestFinanceHistory = () => {
+    if (onOpenHistory) onOpenHistory(rental.id, "money");
+    else setHistoryOpen(true);
+  };
+
+  // v0.7.8: общие обработчики MasterBlock — используются и в обычном
+  // layout'е, и в accordion-секциях drawer-режима (не дублируем).
+  const handleSwapScooter = () => {
+    if (!rental.scooterId) {
+      toast.info("Нет скутера", "К аренде не привязан скутер");
+      return;
+    }
+    if (rental.status !== "active" && rental.status !== "overdue") {
+      toast.info(
+        "Нельзя заменить",
+        "Замена скутера доступна только для активных аренд",
+      );
+      return;
+    }
+    setSwapOpen(true);
+  };
+  const changeEquipmentHandler =
+    rental.status === "active" ||
+    rental.status === "overdue" ||
+    rental.status === "returning"
+      ? () => setEquipmentChangeOpen(true)
+      : undefined;
+
+  // v0.7.0: «Закрыть аренду» / «Принять оплату» — доступность кнопок.
+  const isLive = rental.status === "active";
+  const canComplete = isLive && !isArchived;
+  // v0.8.34 (F1): «Принять оплату» доступна и на ЗАВЕРШЁННОЙ аренде с
+  // непогашенным долгом по ущербу (effectiveStatus='completed_damage') —
+  // оператор может закрыть остаток долга прямо на самой аренде, а не идти
+  // в карточку клиента. PaymentAcceptDialog умеет принимать damage-платёж.
+  const isCompletedWithDamage = effectiveStatus === "completed_damage";
+  const canAcceptPayment = (isLive || isCompletedWithDamage) && !isArchived;
+
+  // v0.7.12: KPI-ряд (Срок/Просрочка · Долг · Эта аренда) вынесен в
+  // переменную, чтобы рендерить его в разных местах: в обычном режиме —
+  // в потоке body, в drawer-режиме — между секциями «Клиент» и «Скутер».
+  const kpiStrip = (
+    <div
+      className={cn(
+        "grid grid-cols-3 gap-3",
+        isExtended && "lg:grid-cols-4",
+      )}
+    >
+      {(() => {
+        let label = "Срок";
+        const totalDays = isExtended
+          ? chainRentals.reduce((s, r) => s + (r.days || 0), 0)
+          : rental.days;
+        let value = `${totalDays} дн`;
+        const hint = `${rootRental.start.slice(0, 5)} — ${rental.endPlanned.slice(0, 5)}`;
+        let accent: KpiAccent = "default";
+        // v0.4.66: всегда показываем «Просрочен N дн» когда endPlanned
+        // прошёл, даже если долг 0 — оператор должен видеть срочность
+        // возврата скутера. Цвет (red/default) зависит от долга.
+        const debtZero = overdueRelatedDebt === 0;
+        // v0.4.80: бронь заранее — start_at в будущем.
+        const daysUntilStart = startDate
+          ? daysBetween(now(), startDate)
+          : null;
+        if (
+          rental.status === "active" &&
+          daysUntilStart !== null &&
+          daysUntilStart > 0
+        ) {
+          label = "До выдачи";
+          value = `${daysUntilStart} дн`;
+          accent = "default";
+        } else if (rental.status === "active" && daysLeft !== null) {
+          if (daysLeft > 0) {
+            value = `осталось ${daysLeft} дн`;
+            accent = daysLeft <= 2 ? "red" : "default";
+          } else if (daysLeft === 0) {
+            value = `возврат сегодня`;
+            accent = "red";
+          } else {
+            label = "Просрочен";
+            value = `${Math.abs(daysLeft)} дн`;
+            accent = debtZero ? "default" : "red";
+          }
+        } else if (rental.status === "overdue") {
+          label = "Просрочен";
+          value =
+            daysLeft !== null && daysLeft < 0
+              ? `${Math.abs(daysLeft)} дн`
+              : "сегодня";
+          accent = debtZero ? "default" : "red";
+        }
+        // v0.7.8: для просрочки — hover-поповер с днями/датой/ставкой.
+        const isOverdueKpi =
+          label === "Просрочен" && overdueDaysCount > 0;
+        return (
+          <KpiCard
+            label={label}
+            value={value}
+            hint={hint}
+            accent={accent}
+            popover={
+              isOverdueKpi ? (
+                <div className="space-y-0.5">
+                  <div className="font-bold text-ink">Просрочка</div>
+                  <div>{overdueHint}</div>
+                </div>
+              ) : undefined
+            }
+          />
+        );
+      })()}
+      {/* v0.7.8: «Долг» — состав вынесен наверх компонента (debtParts),
+          здесь только рендер + hover-поповер с детальным составом. */}
+      <KpiCard
+        label="Долг"
+        value={debtTotal > 0 ? `${fmt(debtTotal)} ₽` : "0 ₽"}
+        hint={debtHint}
+        accent={debtTotal > 0 ? "red" : "muted"}
+        popover={
+          debtTotal > 0 ? (
+            <div className="space-y-1">
+              <div className="font-bold text-ink">
+                Состав долга — {fmt(debtTotal)} ₽
+              </div>
+              {pending > 0 && (
+                <div>не оплачено: <b>{fmt(pending)} ₽</b></div>
+              )}
+              {overdueDaysBalance > 0 && (
+                <div>дни просрочки: <b>{fmt(overdueDaysBalance)} ₽</b></div>
+              )}
+              {overdueFineBalance > 0 && (
+                <div>штраф: <b>{fmt(overdueFineBalance)} ₽</b></div>
+              )}
+              {overdueBalance > 0 &&
+                overdueDaysBalance + overdueFineBalance === 0 && (
+                  <div>просрочка: <b>{fmt(overdueBalance)} ₽</b></div>
+                )}
+              {damageBalance > 0 && (
+                <div>ущерб: <b>{fmt(damageBalance)} ₽</b></div>
+              )}
+              {manualBalance > 0 && (
+                <div>ручной: <b>{fmt(manualBalance)} ₽</b></div>
+              )}
+              {parkingBalance > 0 && (
+                <div>паркинг: <b>{fmt(parkingBalance)} ₽</b></div>
+              )}
+            </div>
+          ) : undefined
+        }
+      />
+      {(() => {
+        // v0.5.1: «Эта аренда» = rental.sum.
+        // v0.8.11: залог/депозит показаны отдельным блоком «Залог | Депозит»
+        // ниже — в подписи KPI его больше НЕ дублируем (по просьбе заказчика).
+        const rentPays = chainPayments.filter((p) => p.type === "rent");
+        const extendCount = rentPays.filter(
+          (p) => !!p.note && /^продлен/i.test(p.note),
+        ).length;
+        const hint =
+          extendCount > 0 ? `продлений · ${extendCount}` : "сумма этой аренды";
+        return (
+          <KpiCard
+            label="Эта аренда"
+            value={`${fmt(rental.sum)} ₽`}
+            hint={hint}
+          />
+        );
+      })()}
+      {/* v0.7.11: «За всё время аренды» (paidIn) перенесена в секцию
+          «Финансовая информация» — здесь больше не рендерится. */}
+      {isExtended && (
+        <KpiCard
+          label="Всего по сделке"
+          value={`${fmt(chainDaysTotal)} дн`}
+          hint={`${chainRentals.length} ${chainRentals.length === 1 ? "аренда" : chainRentals.length < 5 ? "аренды" : "аренд"} в серии`}
+          accent="blue"
+        />
+      )}
+    </div>
+  );
+
+  // Внутреннее тело карточки (header + баннеры + KPI + основной блок +
+  // все модалки). В drawer-режиме оборачивается в скроллируемую область,
+  // в обычном — просто рендерится как раньше.
+  const body = (
+    <>
       {/* =========== HEADER =========== */}
-      <header className="flex flex-wrap items-center gap-3">
-        {/* v0.4.5: «Аренда #0001» — фикс. ширина, имя клиента —
-            отдельным элементом с переносом на новую строку. Раньше всё
-            это лежало в одном <span class=truncate>, и в drawer-режиме
-            «Аренда #0062 — Абдулазизов…» обрезалось до «Аренда #0062 — …». */}
-        <h2 className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-0.5 font-display text-[22px] font-extrabold leading-tight text-ink">
-          <span className="shrink-0">
-            Аренда #{String(rental.id).padStart(4, "0")}
-          </span>
-          {client && (
-            <span className="flex min-w-0 max-w-full items-baseline gap-1">
-              <span className="text-muted-2">—</span>
-              <button
-                type="button"
-                onClick={() => openClient(client.id)}
-                title={client.name}
-                className="block min-w-0 max-w-full break-words text-left rounded decoration-2 underline-offset-4 hover:underline"
-              >
-                {client.name}
-              </button>
-            </span>
-          )}
-          <span
-            className={cn(
-              "inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold",
-              statusChipClass(tone),
-            )}
+      <header
+        className={cn(
+          "flex flex-wrap items-center gap-3",
+          // v0.7.0: в drawer'е header «прилипает» к верху скролл-области.
+          // -m + p компенсируют внешний p-5 контейнера, чтобы фон header'а
+          // перекрывал контент при скролле на всю ширину.
+          drawerChrome &&
+            "sticky top-0 z-30 -mx-5 -mt-5 border-b border-border bg-surface px-5 py-4",
+        )}
+      >
+        {/* v0.7.2: панель push (не overlay) — кнопка скрывает её, список
+            растягивается на всю ширину. Раньше «К арендам» (закрывала drawer). */}
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            title="Скрыть панель"
+            className="inline-flex items-center gap-1.5 rounded-full bg-surface-soft px-3 py-1.5 text-[12px] font-semibold text-ink-2 hover:bg-border hover:text-ink"
           >
-            {STATUS_LABEL[effectiveStatus] ?? STATUS_LABEL[rental.status]}
-          </span>
-          {isUnreachable && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-orange-soft px-2.5 py-1 text-[11px] font-bold text-orange-ink">
-              <PhoneOff size={11} /> Не выходит на связь
+            <PanelRightClose size={14} /> Скрыть
+          </button>
+        )}
+        {/* v0.7.12: в drawer-режиме громоздкий заголовок «Аренда #N — Имя»
+            убран (имя клиента уже в первой секции «Информация о клиенте»).
+            Header минимальный: мелкий «#N» + бейдж статуса. В обычном
+            (non-drawer) режиме — прежний полный заголовок с именем. */}
+        {drawerChrome ? (
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+            <span className="shrink-0 font-display text-[13px] font-bold text-muted-2 tabular-nums">
+              #{String(rental.id).padStart(4, "0")}
             </span>
-          )}
-          {client && tier && (
             <span
               className={cn(
-                "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold",
-                tier.tone === "good"
-                  ? "bg-green-soft text-green-ink"
-                  : tier.tone === "bad"
-                    ? "bg-red-soft text-red-ink"
-                    : "bg-surface-soft text-ink",
+                "inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold",
+                statusChipClass(tone),
               )}
-              title={tier.label}
             >
-              <Star size={11} /> {client.rating}
+              {STATUS_LABEL[effectiveStatus] ?? STATUS_LABEL[rental.status]}
             </span>
-          )}
-        </h2>
+            {activeParking && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-yellow-100 px-2.5 py-1 text-[11px] font-bold text-yellow-800">
+                <SquareParking size={11} /> паркинг
+              </span>
+            )}
+            {/* v0.8.12: статус связи — кликабельный тумблер. По умолчанию
+                «На связи» (нейтральный); клик → «Не выходит на связь» +
+                предложение прикрепить комментарий-стикер. */}
+            <button
+              type="button"
+              onClick={toggleUnreachable}
+              title={
+                isUnreachable
+                  ? "Клиент снова на связи?"
+                  : "Отметить «не выходит на связь»"
+              }
+              className={cn(
+                "inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-bold shadow-sm transition-colors active:scale-[0.98]",
+                isUnreachable
+                  ? "border-orange-300 bg-orange-soft text-orange-ink hover:bg-orange-200"
+                  : "border-border bg-surface text-muted hover:border-green-300 hover:bg-green-50 hover:text-green-700",
+              )}
+            >
+              {isUnreachable ? (
+                <>
+                  <PhoneOff size={11} /> Не выходит на связь
+                </>
+              ) : (
+                <>
+                  <Phone size={11} /> На связи
+                </>
+              )}
+            </button>
+          </div>
+        ) : (
+          <h2 className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-0.5 font-display text-[22px] font-extrabold leading-tight text-ink">
+            <span className="shrink-0">
+              Аренда #{String(rental.id).padStart(4, "0")}
+            </span>
+            {client && (
+              <span className="flex min-w-0 max-w-full items-baseline gap-1">
+                <span className="text-muted-2">—</span>
+                <button
+                  type="button"
+                  onClick={() => openClient(client.id)}
+                  title={client.name}
+                  className="block min-w-0 max-w-full truncate whitespace-nowrap text-left rounded decoration-2 underline-offset-4 hover:underline"
+                >
+                  {client.name}
+                </button>
+              </span>
+            )}
+            <span
+              className={cn(
+                "inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold",
+                statusChipClass(tone),
+              )}
+            >
+              {STATUS_LABEL[effectiveStatus] ?? STATUS_LABEL[rental.status]}
+            </span>
+            {/* v0.8.12: статус связи — кликабельный тумблер. По умолчанию
+                «На связи» (нейтральный); клик → «Не выходит на связь» +
+                предложение прикрепить комментарий-стикер. */}
+            <button
+              type="button"
+              onClick={toggleUnreachable}
+              title={
+                isUnreachable
+                  ? "Клиент снова на связи?"
+                  : "Отметить «не выходит на связь»"
+              }
+              className={cn(
+                "inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-bold shadow-sm transition-colors active:scale-[0.98]",
+                isUnreachable
+                  ? "border-orange-300 bg-orange-soft text-orange-ink hover:bg-orange-200"
+                  : "border-border bg-surface text-muted hover:border-green-300 hover:bg-green-50 hover:text-green-700",
+              )}
+            >
+              {isUnreachable ? (
+                <>
+                  <PhoneOff size={11} /> Не выходит на связь
+                </>
+              ) : (
+                <>
+                  <Phone size={11} /> На связи
+                </>
+              )}
+            </button>
+            {/* v0.6.51: рейтинг клиента убран из UI везде. */}
+          </h2>
+        )}
 
-        {/* ACTIONS — одна primary + dropdown */}
-        <RentalActionsMenu actions={actions} onAction={handleAction} />
+        {/* v0.6.42: порядок в шапке — [⋯ dots] [Завершить] [Принять оплату].
+            Меню действий сжато до иконки-кружочка (triggerStyle="dots"),
+            «Завершить аренду» (ArrowRight) перенесено внутрь dropdown'а
+            через actions[], а в шапке остался компактный Flag-вариант.
+            Primary CTA — зелёный «Принять оплату» справа. */}
+        <div className="flex shrink-0 items-center gap-2">
+          {/* v0.7.0: в drawer-режиме кнопки «Завершить»/«Принять оплату»
+              живут в sticky-footer, в шапке их не дублируем. */}
+          {!drawerChrome && (
+            <>
+              {canComplete && (
+                <button
+                  type="button"
+                  onClick={() => setAction("complete")}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1.5 text-[12px] font-semibold text-ink-2 hover:bg-surface-soft hover:text-ink"
+                  title="Завершить аренду"
+                >
+                  <Flag size={13} /> Завершить
+                </button>
+              )}
+              {canAcceptPayment && (
+                <button
+                  type="button"
+                  onClick={() => requestPayment(0)}
+                  className="inline-flex items-center gap-1.5 rounded-full bg-green-600 px-3 py-1.5 text-[12px] font-bold text-white shadow-card-sm hover:bg-green-700"
+                  title="Принять оплату"
+                >
+                  <Wallet size={13} /> Принять оплату
+                </button>
+              )}
+            </>
+          )}
+          {/* v0.6.53: три точки перенесены в самый конец справа. */}
+          <RentalActionsMenu
+            actions={actions}
+            onAction={handleAction}
+            triggerStyle="dots"
+          />
+          {/* v0.7.2: кнопка скрытия панели — слева в header'е («Скрыть»),
+              здесь дубль X убран. */}
+        </div>
       </header>
 
       {/* =========== BANNERS =========== */}
+      {/* v0.8.0: паркинг — явно видно что аренда на паузе и сколько дней. */}
+      {activeParking && (
+        <div className="flex items-center gap-3 rounded-[12px] bg-yellow-50 px-3 py-2.5 text-[12.5px] text-yellow-900 ring-1 ring-inset ring-yellow-300">
+          <SquareParking size={18} className="shrink-0 text-yellow-600" />
+          <div className="min-w-0 flex-1 leading-tight">
+            <b>На паркинге</b> · день {parkingDayN} из {activeParking.days} · с{" "}
+            {activeParking.startDate.slice(8, 10)}.
+            {activeParking.startDate.slice(5, 7)}
+            {activeParking.amount > 0 && (
+              <span className="ml-1 text-yellow-800/80">
+                · начислено {activeParking.amount.toLocaleString("ru-RU")} ₽
+              </span>
+            )}
+          </div>
+          <button
+            type="button"
+            disabled={endParkingMut.isPending}
+            onClick={() =>
+              endParkingMut.mutate(
+                { rentalId: rental.id, sessionId: activeParking.id },
+                {
+                  onSuccess: () =>
+                    toast.success("Снят с паркинга", "Возврат пересчитан"),
+                  onError: () => toast.error("Не удалось снять с паркинга"),
+                },
+              )
+            }
+            className="shrink-0 rounded-full bg-yellow-400 px-3 py-1.5 text-[12px] font-semibold text-yellow-950 hover:bg-yellow-500 disabled:opacity-50"
+          >
+            Снять с паркинга
+          </button>
+        </div>
+      )}
+      {/* v0.8.24: баннер «Запланирован паркинг» убран — эта информация теперь
+          отображается стикером-заметкой (kind=parking, создаётся при постановке). */}
       {isArchived && (
         <div className="flex items-center gap-2 rounded-[12px] bg-surface-soft px-3 py-2 text-[12px] text-muted ring-1 ring-inset ring-border">
           <Trash2 size={14} className="shrink-0" />
@@ -1152,7 +1828,7 @@ export function RentalCard({
               </button>
               <button
                 type="button"
-                onClick={() => setPaymentReportId(reportWithDebt.id)}
+                onClick={() => requestPayment(0)}
                 className="inline-flex items-center gap-1.5 rounded-[10px] bg-red-600 px-3 py-2 text-[12px] font-bold text-white hover:bg-red-700"
               >
                 <Plus size={12} /> Внести платёж
@@ -1183,174 +1859,13 @@ export function RentalCard({
       )}
 
       {/* =========== KPI STRIP =========== */}
-      <div
-        className={cn(
-          "grid grid-cols-2 gap-3 sm:grid-cols-4",
-          isExtended && "lg:grid-cols-5",
-        )}
-      >
-        {(() => {
-          let label = "Срок";
-          const totalDays = isExtended
-            ? chainRentals.reduce((s, r) => s + (r.days || 0), 0)
-            : rental.days;
-          let value = `${totalDays} дн`;
-          const hint = `${rootRental.start.slice(0, 5)} — ${rental.endPlanned.slice(0, 5)}`;
-          let accent: KpiAccent = "default";
-          // v0.4.66: всегда показываем «Просрочен N дн» когда endPlanned
-          // прошёл, даже если долг 0 — оператор должен видеть срочность
-          // возврата скутера. Цвет (red/default) теперь зависит от долга:
-          // долг 0 → серый/амбер (без паники), долг > 0 → красный.
-          // Раньше при долге 0 показывало «Возврат был DD.MM» — это
-          // не передавало срочности и сбивало оператора.
-          const debtZero = overdueRelatedDebt === 0;
-          // v0.4.80: бронь заранее — start_at в будущем. Аренда висит
-          // как 'active', но фактически не началась. Показываем «До
-          // выдачи N дн» вместо «осталось N дн до конца».
-          const daysUntilStart = startDate
-            ? daysBetween(now(), startDate)
-            : null;
-          if (
-            rental.status === "active" &&
-            daysUntilStart !== null &&
-            daysUntilStart > 0
-          ) {
-            label = "До выдачи";
-            value = `${daysUntilStart} дн`;
-            accent = "default";
-          } else if (rental.status === "active" && daysLeft !== null) {
-            if (daysLeft > 0) {
-              value = `осталось ${daysLeft} дн`;
-              accent = daysLeft <= 2 ? "red" : "default";
-            } else if (daysLeft === 0) {
-              value = `возврат сегодня`;
-              accent = "red";
-            } else {
-              label = "Просрочен";
-              value = `${Math.abs(daysLeft)} дн`;
-              accent = debtZero ? "default" : "red";
-            }
-          } else if (rental.status === "overdue") {
-            label = "Просрочен";
-            value =
-              daysLeft !== null && daysLeft < 0
-                ? `${Math.abs(daysLeft)} дн`
-                : "сегодня";
-            accent = debtZero ? "default" : "red";
-          }
-          return (
-            <KpiCard label={label} value={value} hint={hint} accent={accent} />
-          );
-        })()}
-        {(() => {
-          // v0.4.97: единый источник правды по залогу — поля
-          //   rental.deposit (текущий остаток на счёте залога)
-          //   rental.depositOriginal (исторический максимум, «исходно»)
-          // Любая операция, уменьшающая залог (акт ущерба с depositCovered,
-          // PaymentAcceptDialog со списанием на долг), уменьшает именно
-          // rental.deposit. Раньше «списано» считалось через payments.method='deposit',
-          // что давало расхождение с плашкой залога — теперь оба места
-          // читают одни и те же поля.
-          const currentDeposit = rental.deposit ?? DEPOSIT_AMOUNT;
-          const originalDeposit =
-            (rental as { depositOriginal?: number }).depositOriginal ??
-            currentDeposit;
-          const depositSpent = Math.max(0, originalDeposit - currentDeposit);
-          // v0.5.1: «Эта аренда» = rental.sum, который API правильно
-          // поддерживает:
-          //   • при создании: rate × days
-          //   • при extend-inplace: += addedDays × rate
-          //   • при overdue_days_payment: += daysAdded × rate (v0.4.81)
-          // Раньше показывали сумму последнего ПРОДЛЕНИЯ через фильтр
-          // payments по note='Продление…'. Это ломалось когда клиент
-          // оплачивал просроченные дни — они тоже rent-платежи, но с
-          // другим note, и KPI не рос. Заказчик хочет видеть РЕАЛЬНУЮ
-          // суммарную стоимость текущей аренды (с учётом купленных
-          // просроченных дней) — это и есть rental.sum.
-          const rentPays = chainPayments.filter((p) => p.type === "rent");
-          const extendCount = rentPays.filter(
-            (p) => !!p.note && /^продлен/i.test(p.note),
-          ).length;
-          const hintBase =
-            extendCount > 0
-              ? `продлений · ${extendCount}`
-              : "сумма этой аренды";
-          // v0.5.9: если залог — предмет (паспорт и т.п.), показываем
-          // его название в хинте вместо «0 ₽».
-          const isItemDeposit = !!rental.depositItem;
-          const hint = isItemDeposit
-            ? `${hintBase} · залог: ${rental.depositItem}`
-            : depositSpent > 0
-              ? `${hintBase} · залог: ${fmt(originalDeposit)} ₽ (списано ${fmt(depositSpent)} ₽)`
-              : `${hintBase} · + залог: ${fmt(currentDeposit)} ₽`;
-          return (
-            <KpiCard
-              label="Эта аренда"
-              value={`${fmt(rental.sum)} ₽`}
-              hint={hint}
-            />
-          );
-        })()}
-        <KpiCard
-          label="За всё время аренды"
-          value={`${fmt(paidIn)} ₽`}
-          accent={paidIn > 0 ? "blue" : "default"}
-          hint={
-            isExtended
-              ? `за ${chainRentals.length} ${pluralRental(chainRentals.length)} (без залога)`
-              : "сумма аренды без залога"
-          }
-          badgeIcon={paidIn > 0 ? CheckCircle2 : undefined}
-        />
-        {(() => {
-          // v0.3.8: разложение долга на компоненты:
-          //   • неоплачено = pending (rent-платежи без paid)
-          //   • просрочка  = debtSummary.overdueBalance (1.5×rate×days, − списания)
-          //   • ущерб      = debtSummary.damageBalance (Σ damage_reports.debt)
-          //   • ручной     = debtSummary.manualBalance (Σ manual_charge − manual_forgive)
-          //
-          // Источник правды — debtSummary с сервера. Если сводка ещё не
-          // загрузилась — graceful fallback на старый расчёт (просрочка
-          // по локальной формуле + totalDebt).
-          const overdueLocal =
-            rental.status === "overdue"
-              ? Math.max(1, daysLeft !== null ? Math.abs(daysLeft) : 1) *
-                Math.round(
-                  (rental.rateUnit === "week"
-                    ? rental.rate / 7
-                    : rental.rate) * 1.5,
-                )
-              : 0;
-          const overdueBalance =
-            debtSummary?.overdueBalance ?? overdueLocal;
-          const damageBalance = debtSummary?.damageBalance ?? totalDebt;
-          const manualBalance = debtSummary?.manualBalance ?? 0;
-          const debt = pending + overdueBalance + damageBalance + manualBalance;
-          const parts: string[] = [];
-          if (pending > 0) parts.push(`не оплачено ${fmt(pending)} ₽`);
-          if (overdueBalance > 0)
-            parts.push(`просрочка ${fmt(overdueBalance)} ₽`);
-          if (damageBalance > 0) parts.push(`ущерб ${fmt(damageBalance)} ₽`);
-          if (manualBalance > 0) parts.push(`ручной ${fmt(manualBalance)} ₽`);
-          const debtHint = debt === 0 ? "нет долгов" : parts.join(" + ");
-          return (
-            <KpiCard
-              label="Долг"
-              value={debt > 0 ? `${fmt(debt)} ₽` : "0 ₽"}
-              hint={debtHint}
-              accent={debt > 0 ? "red" : "muted"}
-            />
-          );
-        })()}
-        {isExtended && (
-          <KpiCard
-            label="Всего по сделке"
-            value={`${fmt(chainDaysTotal)} дн`}
-            hint={`${chainRentals.length} ${chainRentals.length === 1 ? "аренда" : chainRentals.length < 5 ? "аренды" : "аренд"} в серии`}
-            accent="blue"
-          />
-        )}
-      </div>
+      {/* v0.7.11: «За всё время аренды» убрана из ряда → 3 плашки
+          (Срок/Просрочка · Долг · Эта аренда). Значение перенесено в
+          секцию «Финансовая информация». Узкая панель 600px → grid-cols-3.
+          v0.7.12: KPI-ряд вынесен в kpiStrip (определён выше body). В обычном
+          режиме рендерится здесь; в drawer-режиме — после секции «Информация
+          о клиенте» (см. блок accordion-секций ниже). */}
+      {!drawerChrome && kpiStrip}
 
       {/*
         v0.2.91: компактная панель платежа по ущербу для случая когда
@@ -1373,7 +1888,7 @@ export function RentalCard({
           </div>
           <button
             type="button"
-            onClick={() => setPaymentReportId(reportWithDebt.id)}
+            onClick={() => requestPayment(0)}
             className="inline-flex items-center gap-1.5 rounded-[10px] bg-red-600 px-3 py-1.5 text-[12px] font-bold text-white hover:bg-red-700"
           >
             <Plus size={12} /> Внести платёж по ущербу
@@ -1381,56 +1896,8 @@ export function RentalCard({
         </div>
       )}
 
-      {/* v0.5.9: плашка залога — только для активных аренд. У завершённых
-          аренд (status='completed') не показываем — там либо залог
-          возвращён клиенту, либо удержан, либо ушёл в погашение долга,
-          и состояние «нужно пополнить» уже не имеет смысла. Кнопка
-          «Пополнить» теперь открывает PaymentAcceptDialog. */}
-      {(() => {
-        if (rental.status === "completed") return null;
-        const isItem =
-          (rental as { depositItem?: string | null }).depositItem != null;
-        if (isItem) return null;
-        const current = rental.deposit ?? 0;
-        const original =
-          (rental as { depositOriginal?: number }).depositOriginal ?? current;
-        if (current >= original) return null;
-        const isEmpty = current === 0;
-        return (
-          <div
-            className={cn(
-              "flex items-center justify-between gap-3 rounded-[10px] border px-3 py-2 text-[12px]",
-              isEmpty
-                ? "border-red-300 bg-red-soft/40 text-red-ink animate-pulse"
-                : "border-amber-300 bg-amber-50 text-amber-900",
-            )}
-          >
-            <div className="flex items-center gap-2 min-w-0">
-              <Shield
-                size={14}
-                className={isEmpty ? "text-red-600" : "text-amber-600"}
-              />
-              <span className="font-semibold">
-                {isEmpty
-                  ? "Залог исчерпан"
-                  : `Залог ${fmt(current)} ₽ из ${fmt(original)} ₽ — списано ${fmt(original - current)} ₽`}
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={() => setPaymentRentalId(rental.id)}
-              className={cn(
-                "shrink-0 rounded-full px-3 py-1 text-[11px] font-bold text-white transition-colors",
-                isEmpty
-                  ? "bg-red-600 hover:bg-red-700"
-                  : "bg-amber-600 hover:bg-amber-700",
-              )}
-            >
-              Пополнить
-            </button>
-          </div>
-        );
-      })()}
+      {/* v0.6.41: плашка «Пополнить залог» удалена — действие доступно
+          через кнопку «Принять оплату» в шапке (одна точка входа). */}
 
       {/* v0.4.49: плашка «Депозит клиента» — отдельный счёт сверх залога.
           Показывается только если depositBalance > 0. Кликом открывает
@@ -1454,154 +1921,358 @@ export function RentalCard({
         </button>
       )}
 
-      {rental.note && (
-        <div className="rounded-[10px] bg-surface-soft px-3 py-1.5 text-[12px] text-ink-2">
-          <b>Заметка:</b> {rental.note}
+      {/* v0.8.12: плоская «Заметка:» убрана — заметки теперь стикерами
+          (см. StickerStack overlay в drawer-режиме). Старые rental.note
+          перенесены в стикеры миграцией 0045. */}
+
+      {/* =========== ОСНОВНОЕ ТЕЛО ===========
+          v0.7.8: в drawer-режиме — accordion-секции (сворачиваемые).
+          В обычном режиме — прежний 2-col layout (MasterBlock слева,
+          CalendarPanel/InlineHistory/DocsInline справа). */}
+      {drawerChrome ? (
+        <div className="flex flex-col gap-3">
+          <AccordionSection
+            title="Информация о клиенте"
+            icon={<User size={15} className="text-muted-2" />}
+            defaultOpen
+          >
+            <MasterBlock
+              section="client"
+              rental={rental}
+              client={client ?? null}
+              scooter={currentScooter}
+              onOpenClientProfile={() => client && openClient(client.id)}
+              onSwapScooter={handleSwapScooter}
+              onChangeEquipment={changeEquipmentHandler}
+            />
+          </AccordionSection>
+
+          {/* v0.7.12: KPI-ряд — сразу после секции «Информация о клиенте»,
+              перед «Скутер и экипировка» (заказчик: Клиент → KPI → Скутер). */}
+          {kpiStrip}
+
+          <AccordionSection
+            title="Скутер и экипировка"
+            icon={<Bike size={15} className="text-muted-2" />}
+            defaultOpen
+          >
+            <MasterBlock
+              section="scooter"
+              rental={rental}
+              client={client ?? null}
+              scooter={currentScooter}
+              onOpenClientProfile={() => client && openClient(client.id)}
+              onSwapScooter={handleSwapScooter}
+              onChangeEquipment={changeEquipmentHandler}
+            />
+          </AccordionSection>
+
+          {/* v0.7.9: Календарь — ВСЕГДА виден, БЕЗ accordion. Заказчик:
+              календарь первостепенный, не должен прятаться/сворачиваться.
+              Рендерится сразу после «Скутер и экипировка». CalendarPanel
+              сам рисует блок «Дата возврата» (Выдано / Возврат) + сетку. */}
+          <CalendarPanel
+            rental={rental}
+            effectiveStatus={effectiveStatus}
+            onCommitExtend={handleCommitExtend}
+            resetSignal={onRequestPayment ? paymentResetSignal : calendarResetSignal}
+            initialExtDays={
+              (onRequestPayment ? paymentExtDays : paymentPrefillExtDays) ||
+              undefined
+            }
+            armParkingSignal={armParkingSignal}
+          />
+
+          <AccordionSection
+            title="Финансовая информация"
+            icon={<Wallet size={15} className="text-muted-2" />}
+            defaultOpen={false}
+            badge={
+              debtTotal > 0 ? (
+                <span className="rounded-full bg-red-soft px-2 py-0.5 text-[11px] font-bold text-red-ink tabular-nums">
+                  {fmt(debtTotal)} ₽
+                </span>
+              ) : undefined
+            }
+          >
+            <div className="flex flex-col gap-3">
+              <MasterBlock
+                section="deposit"
+                rental={rental}
+                client={client ?? null}
+                scooter={currentScooter}
+                onOpenClientProfile={() => client && openClient(client.id)}
+                onSwapScooter={handleSwapScooter}
+                onChangeEquipment={changeEquipmentHandler}
+              />
+              {/* v0.7.11: «За всё время аренд клиента» (paidIn). v0.8.8: при
+                  наведении — ховер со сводкой финопераций + «Подробнее» →
+                  история по фильтру «Долги и платежи». */}
+              <FinanceHoverCard
+                total={paidIn}
+                ops={financeOps}
+                onDetails={requestFinanceHistory}
+              >
+                <div className="flex cursor-default items-center justify-between rounded-[12px] border border-border bg-surface-soft/40 px-4 py-3 transition-colors hover:border-blue-200 hover:bg-blue-50/40">
+                  <div className="min-w-0">
+                    <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-2">
+                      За всё время аренд клиента
+                    </div>
+                    <div className="mt-0.5 text-[11px] text-muted">
+                      {isExtended
+                        ? `всего получено за ${chainRentals.length} ${pluralRental(chainRentals.length)}: аренда, продления, штрафы, ущерб, паркинг`
+                        : "всего получено от клиента: аренда, продления, штрафы, ущерб, паркинг"}
+                    </div>
+                  </div>
+                  <div className="shrink-0 font-display text-[18px] font-extrabold tabular-nums text-blue-700">
+                    {fmt(paidIn)} ₽
+                  </div>
+                </div>
+              </FinanceHoverCard>
+              {/* v0.7.13: детальный «бухгалтерский» состав долга — каждая
+                  строка с формулой расчёта (слева мелким серым), чтобы
+                  объяснить клиенту из чего сложился долг. Цифры берём из
+                  тех же debtSummary-полей (НЕ пересчитываем) — формула в
+                  подписи лишь иллюстрирует фактический баланс. Штраф-ставка
+                  = round(dailyRate × 0.5) (как overdueComponents на бэке). */}
+              <div className="rounded-[12px] border border-border bg-surface-soft/40 px-4 py-3">
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-2">
+                  Состав долга
+                </div>
+                {debtTotal > 0 ? (
+                  <div className="mt-2 space-y-2 text-[13px] text-ink-2">
+                    {overdueDaysBalance > 0 && (
+                      <DebtRow
+                        label="Дни просрочки"
+                        formula={
+                          overdueDaysCount > 0
+                            ? `${overdueDaysCount} ${overdueDaysCount === 1 ? "день" : "дн"} × ${fmt(dailyRateForHint)} ₽/день`
+                            : undefined
+                        }
+                        value={overdueDaysBalance}
+                      />
+                    )}
+                    {overdueFineBalance > 0 && (
+                      <DebtRow
+                        label="Штраф за просрочку"
+                        formula={
+                          overdueDaysCount > 0
+                            ? `${overdueDaysCount} ${overdueDaysCount === 1 ? "день" : "дн"} × ${fmt(Math.round(dailyRateForHint * 0.5))} ₽ (50% ставки)`
+                            : "штраф 50% от ставки"
+                        }
+                        value={overdueFineBalance}
+                      />
+                    )}
+                    {overdueBalance > 0 &&
+                      overdueDaysBalance + overdueFineBalance === 0 && (
+                        <DebtRow
+                          label="Просрочка"
+                          formula={
+                            overdueDaysCount > 0
+                              ? `${overdueDaysCount} ${overdueDaysCount === 1 ? "день" : "дн"} просрочки`
+                              : undefined
+                          }
+                          value={overdueBalance}
+                        />
+                      )}
+                    {damageBalance > 0 && (
+                      <DebtRow
+                        label="Ущерб по акту"
+                        formula="зафиксирован в акте о повреждениях"
+                        value={damageBalance}
+                      />
+                    )}
+                    {manualBalance > 0 && (
+                      <DebtRow
+                        label="Ручное начисление"
+                        formula="начислено оператором вручную"
+                        value={manualBalance}
+                      />
+                    )}
+                    {pending > 0 && (
+                      <DebtRow
+                        label="Не оплачено по аренде"
+                        formula="плановая оплата аренды"
+                        value={pending}
+                      />
+                    )}
+                    {parkingBalance > 0 && (
+                      <DebtRow
+                        label={
+                          unpaidParkingDays > 0
+                            ? `Паркинг · ${unpaidParkingDays} ${unpaidParkingDays === 1 ? "день" : "дн"}`
+                            : "Паркинг"
+                        }
+                        formula="1-е сутки беспл., далее 250 ₽/сут"
+                        value={parkingBalance}
+                      />
+                    )}
+                    <div className="mt-1.5 flex items-center justify-between border-t border-border pt-2 text-[15px] font-extrabold text-red-ink">
+                      <span>Итого долг</span>
+                      <span className="tabular-nums">{fmt(debtTotal)} ₽</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-1 text-[13px] text-muted">Долгов нет</div>
+                )}
+              </div>
+            </div>
+          </AccordionSection>
+
+          <AccordionSection
+            title="Хронология событий"
+            icon={<Clock size={15} className="text-muted-2" />}
+            defaultOpen={false}
+          >
+            <InlineHistory
+              items={activityItems}
+              loading={activityQ.isLoading}
+              onExpand={requestHistory}
+              limit={5}
+            />
+          </AccordionSection>
+
+          <AccordionSection
+            title="Документы"
+            icon={<FileText size={15} className="text-muted-2" />}
+            defaultOpen={false}
+          >
+            <DocsInline rental={rental} />
+          </AccordionSection>
+
+          {/* v0.8.15: архив заметок — все заметки карточки (прикреплённые и
+              откреплённые) с датами/автором. Здесь заметку можно УДАЛИТЬ
+              полностью (на карточке стикер можно только открепить). */}
+          <AccordionSection
+            title={`Заметки${allStickers.length ? ` · ${allStickers.length}` : ""}`}
+            icon={<StickyNote size={15} className="text-muted-2" />}
+            defaultOpen={false}
+          >
+            {allStickers.length === 0 ? (
+              <div className="text-[12px] text-muted">Заметок пока нет</div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {allStickers.map((s) => (
+                  <div
+                    key={s.id}
+                    className="flex items-start gap-2 rounded-[10px] border border-border bg-surface-soft/40 px-3 py-2"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-2">
+                        {s.kind === "contact"
+                          ? "Связь"
+                          : s.kind === "parking"
+                            ? "Паркинг"
+                            : "Заметка"}
+                        {s.dismissedAt ? (
+                          <span className="rounded-full bg-surface px-1.5 py-0.5 text-[9px] font-medium text-muted">
+                            откреплена
+                          </span>
+                        ) : (
+                          <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-medium text-amber-700">
+                            на карточке
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-0.5 whitespace-pre-wrap break-words text-[13px] text-ink-2">
+                        {s.text}
+                      </div>
+                      <div className="mt-0.5 text-[10px] text-muted-2">
+                        {s.createdByName ?? "—"} ·{" "}
+                        {new Date(s.createdAt).toLocaleString("ru-RU", {
+                          day: "2-digit",
+                          month: "2-digit",
+                          year: "2-digit",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1">
+                      {s.dismissedAt && (
+                        <button
+                          type="button"
+                          onClick={() => repinSticker(s.id)}
+                          title="Подкрепить обратно на карточку"
+                          className="rounded-md p-1 text-muted-2 transition-colors hover:bg-amber-100 hover:text-amber-700"
+                        >
+                          <Pin size={14} />
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => deleteSticker(s.id)}
+                        title="Удалить заметку полностью"
+                        className="rounded-md p-1 text-muted-2 transition-colors hover:bg-red-soft hover:text-red-ink"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </AccordionSection>
+        </div>
+      ) : (
+        <div className="grid flex-1 gap-4 xl:grid-cols-2 min-h-0">
+          {/* Левая колонка */}
+          <div className="flex flex-col gap-4 min-w-0">
+            <MasterBlock
+              rental={rental}
+              client={client ?? null}
+              scooter={currentScooter}
+              onOpenClientProfile={() => client && openClient(client.id)}
+              onSwapScooter={handleSwapScooter}
+              onChangeEquipment={changeEquipmentHandler}
+            />
+          </div>
+
+          {/* Правая колонка */}
+          <div className="flex flex-col gap-4 min-w-0">
+            <CalendarPanel
+              rental={rental}
+              effectiveStatus={effectiveStatus}
+              onCommitExtend={handleCommitExtend}
+              // v0.7.3: при parent-managed Payment календарь синхронизируется
+              // с состоянием в Rentals (число дней + сигнал сброса); иначе —
+              // с локальным fallback-состоянием карточки.
+              resetSignal={onRequestPayment ? paymentResetSignal : calendarResetSignal}
+              initialExtDays={
+                (onRequestPayment ? paymentExtDays : paymentPrefillExtDays) ||
+                undefined
+              }
+              armParkingSignal={armParkingSignal}
+            />
+            {/* v0.6.50: «Последние события» — InlineHistory под календарём. */}
+            <InlineHistory
+              items={activityItems}
+              loading={activityQ.isLoading}
+              onExpand={requestHistory}
+              limit={5}
+            />
+            <DocsInline rental={rental} />
+          </div>
         </div>
       )}
 
-      {/* =========== TABS =========== */}
-      <div className="mt-1 flex gap-1 border-b border-border overflow-x-auto scrollbar-thin">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => setTab(t.id)}
-            className={cn(
-              "relative -mb-px shrink-0 px-3 py-2 text-[13px] font-semibold transition-colors",
-              tab === t.id
-                ? "border-b-2 border-blue-600 text-blue-600"
-                : "border-b-2 border-transparent text-muted hover:text-ink",
-            )}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
-      {/* v0.4.49: CTA «Принять платёж» виден на ЛЮБОЙ live-аренде.
-          Долг есть → красная плашка с суммой. Долгов нет → синяя
-          нейтральная (для предоплаты-за-продление через переключатель
-          в модалке). На completed/cancelled — скрыта. */}
-      {(() => {
-        // v0.5: status в БД только active/completed; legacy-литералы
-        // (overdue/returning/problem/completed_damage) оставлены в этом
-        // месте на случай если фронт получил аренду со старой реплики —
-        // безопасно для рантайма.
-        const isLive = rental.status === "active";
-        if (!isLive) return null;
-        const overdueB = debtSummary?.overdueBalance ?? 0;
-        const damageB = debtSummary?.damageBalance ?? totalDebt;
-        const manualB = debtSummary?.manualBalance ?? 0;
-        const totalDebtSum = pending + overdueB + damageB + manualB;
-        const hasDebt = totalDebtSum > 0;
-        const parts: string[] = [];
-        if (pending > 0) parts.push(`не оплачено ${fmt(pending)} ₽`);
-        if (overdueB > 0) parts.push(`просрочка ${fmt(overdueB)} ₽`);
-        if (damageB > 0) parts.push(`ущерб ${fmt(damageB)} ₽`);
-        if (manualB > 0) parts.push(`ручной ${fmt(manualB)} ₽`);
-
-        if (hasDebt) {
-          return (
-            <button
-              type="button"
-              onClick={() => {
-                if (damageB > 0 && reportWithDebt) {
-                  setPaymentReportId(reportWithDebt.id);
-                } else {
-                  setPaymentRentalId(rental.id);
-                }
-              }}
-              className="flex items-center justify-between gap-3 rounded-[14px] bg-red-soft/60 px-4 py-3 text-left ring-1 ring-inset ring-red-300 transition-colors hover:bg-red-soft"
-            >
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-600 text-white shadow-card-sm">
-                  <Plus size={18} />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-[15px] font-bold text-red-ink">
-                    Принять платёж — {fmt(totalDebtSum)} ₽
-                  </div>
-                  <div className="mt-0.5 text-[11px] text-red-ink/80">
-                    {parts.join(" · ")}
-                  </div>
-                </div>
-              </div>
-              <span className="rounded-full bg-white px-3 py-1.5 text-[12px] font-bold text-red-ink shadow-card-sm">
-                Принять →
-              </span>
-            </button>
-          );
-        }
-        // Долгов нет — нейтральный CTA для предоплаты/продления
-        return (
-          <button
-            type="button"
-            onClick={() => setPaymentRentalId(rental.id)}
-            className="flex items-center justify-between gap-3 rounded-[14px] bg-blue-50 px-4 py-3 text-left ring-1 ring-inset ring-blue-200 transition-colors hover:bg-blue-100"
-          >
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white shadow-card-sm">
-                <Plus size={18} />
-              </div>
-              <div className="min-w-0">
-                <div className="text-[15px] font-bold text-blue-900">
-                  Принять платёж
-                </div>
-                <div className="mt-0.5 text-[11px] text-blue-900/70">
-                  Долгов нет — оплата с продлением или в депозит клиента.
-                </div>
-              </div>
-            </div>
-            <span className="rounded-full bg-white px-3 py-1.5 text-[12px] font-bold text-blue-700 shadow-card-sm">
-              Принять →
-            </span>
-          </button>
-        );
-      })()}
-
-      <div className="flex-1 pt-3">
-        {tab === "terms" && (
-          <TermsTab
-            rental={rental}
-            onClientClick={() => client && openClient(client.id)}
-            onSwapScooter={() => {
-              if (!rental.scooterId) {
-                toast.info("Нет скутера", "К аренде не привязан скутер");
-                return;
-              }
-              if (
-                rental.status !== "active" &&
-                rental.status !== "overdue"
-              ) {
-                toast.info(
-                  "Нельзя заменить",
-                  "Замена скутера доступна только для активных аренд",
-                );
-                return;
-              }
-              setSwapOpen(true);
-            }}
-            onChangeEquipment={
-              rental.status === "active" ||
-              rental.status === "overdue" ||
-              rental.status === "returning"
-                ? () => setEquipmentChangeOpen(true)
-                : undefined
-            }
-          />
-        )}
-        {tab === "history" && (
-          <HistoryTab
-            rental={rental}
-            chainRentals={chainRentals}
-            damageReports={reports}
-          />
-        )}
-        {tab === "debt" && <DebtHistoryTab rental={rental} />}
-        {tab === "tasks" && <TasksTab rental={rental} />}
-        {tab === "docs" && <DocumentsTab rental={rental} />}
-      </div>
+      {historyOpen && (
+        <SideDrawer
+          open={historyOpen}
+          onClose={() => setHistoryOpen(false)}
+          title="История аренды"
+          subtitle={`#${String(rental.id).padStart(4, "0")} · все события`}
+          width={620}
+        >
+          <div className="p-4">
+            <HistoryTab
+              rental={rental}
+              chainRentals={chainRentals}
+              damageReports={reports}
+            />
+          </div>
+        </SideDrawer>
+      )}
 
       {action && (
         <RentalActionDialog
@@ -1632,14 +2303,27 @@ export function RentalCard({
             // и сразу открываем диалог приёма оплаты — оператор вводит
             // принятую сумму, переплата уходит в депозит.
             navigate({ route: "rentals", rentalId: r.id });
-            setPaymentRentalId(r.id);
+            // v0.7.3: делегируем открытие Payment родителю (push-колонка),
+            // иначе открываем inline внутри карточки.
+            if (onRequestPayment) onRequestPayment(r.id, 0);
+            else setPaymentRentalId(r.id);
           }}
         />
       )}
-      {paymentRentalId != null && (
+      {/* v0.7.3: inline-Payment (overlay внутри карточки) рендерим ТОЛЬКО
+          в fallback-режиме — когда родитель не управляет Payment-колонкой
+          (DashboardDrawer). На странице Аренд Payment рендерится как push-
+          колонка в Rentals.tsx (см. onRequestPayment). */}
+      {!onRequestPayment && paymentRentalId != null && (
         <PaymentAcceptDialogContainer
           rentalId={paymentRentalId}
-          onClose={() => setPaymentRentalId(null)}
+          initialExtDays={paymentPrefillExtDays || undefined}
+          onExtDaysChange={setPaymentPrefillExtDays}
+          onClose={() => {
+            setPaymentRentalId(null);
+            setPaymentPrefillExtDays(0);
+            setCalendarResetSignal((n) => n + 1);
+          }}
         />
       )}
       {equipmentChangeOpen && (
@@ -1713,12 +2397,84 @@ export function RentalCard({
         />
       )}
 
-      {paymentReportId != null && (
-        <DamageReportPaymentDialog
-          reportId={paymentReportId}
-          onClose={() => setPaymentReportId(null)}
-        />
+    </>
+  );
+
+  // v0.7.0: drawer-режим — sticky header уже внутри body (header сделан
+  // sticky ниже), скроллируемое тело и sticky footer с кнопками.
+  if (drawerChrome) {
+    return (
+      <div
+        ref={cardRootRef}
+        className="relative flex h-full flex-col overflow-hidden rounded-2xl bg-surface shadow-card-lg"
+      >
+        {/* v0.8.18: стикеры-заметки — порталом ПОВЕРХ карточки (вне клиппящего
+            фрейма), висят за правым краём, лишь край касается. Позиция — по
+            rect карточки (cardRect). */}
+        {cardRect &&
+          !besideDrawerOpen &&
+          createPortal(
+            <div
+              style={{
+                position: "fixed",
+                // v0.8.30 (I2): ниже sticky-хедера карточки, чтобы не сталкивались.
+                top: cardRect.top + 76,
+                left: cardRect.right - 30,
+                zIndex: 20,
+              }}
+              className="flex w-[200px] flex-col items-start gap-2"
+            >
+              {addNoteOpen && (
+                <NoteComposer
+                  onSubmit={addRentalNote}
+                  onCancel={() => setAddNoteOpen(false)}
+                />
+              )}
+              <StickerStack stickers={stickers} onUnpin={unpinSticker} />
+            </div>,
+            document.body,
+          )}
+        {/* Скроллируемое тело: header «прилипает» сверху внутри скролла. */}
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+          <div className="flex flex-col gap-3 p-5">{body}</div>
+        </div>
+        {/* Sticky footer: «Закрыть аренду» (нейтр.) / «Принять оплату» (зелёная) */}
+        {(canComplete || canAcceptPayment) && (
+          <div className="sticky bottom-0 flex gap-3 border-t border-border bg-surface p-4">
+            {canComplete && (
+              <button
+                type="button"
+                onClick={() => setAction("complete")}
+                className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-full border border-border bg-surface px-4 py-2.5 text-[13px] font-semibold text-ink-2 hover:bg-surface-soft hover:text-ink"
+                title="Завершить аренду"
+              >
+                <Flag size={14} /> Закрыть аренду
+              </button>
+            )}
+            {canAcceptPayment && (
+              <button
+                type="button"
+                onClick={() => requestPayment(0)}
+                className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-full bg-green-600 px-4 py-2.5 text-[13px] font-bold text-white shadow-card-sm hover:bg-green-700"
+                title="Принять оплату"
+              >
+                <Wallet size={14} /> Принять оплату
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={cn(
+        "flex min-h-0 flex-col gap-3 rounded-2xl bg-surface p-5 shadow-card-sm",
+        flushLeft && "rounded-l-none",
       )}
+    >
+      {body}
     </div>
   );
 }
@@ -1738,9 +2494,13 @@ export function RentalCard({
 function PaymentAcceptDialogContainer({
   rentalId,
   onClose,
+  initialExtDays,
+  onExtDaysChange,
 }: {
   rentalId: number;
   onClose: () => void;
+  initialExtDays?: number;
+  onExtDaysChange?: (days: number) => void;
 }) {
   const all = useRentals();
   const r = all.find((x) => x.id === rentalId);
@@ -1749,10 +2509,192 @@ function PaymentAcceptDialogContainer({
     <PaymentAcceptDialog
       rental={r}
       onClose={onClose}
+      initialExtDays={initialExtDays}
+      onExtDaysChange={onExtDaysChange}
       onPaid={() => {
         /* invalidations происходят в dialog'е */
       }}
     />
+  );
+}
+
+/**
+ * v0.7.9: история аренды как push-колонка (рендерится в Rentals.tsx справа,
+ * как Payment-колонка). Self-contained: сама резолвит цепочку продлений и
+ * акты о повреждениях по rentalId (как RentalCard), чтобы родителю не нужно
+ * было прокидывать вычисленные данные. Внутри — заголовок «История аренды
+ * #N» + кнопка X + скроллируемый HistoryTab.
+ */
+/**
+ * v0.8.8: ховер на «За всё время» — портальный поповер со сводкой
+ * финансовых операций (платежи: аренда/продление/штраф/ущерб/паркинг) +
+ * кнопка «Подробнее» → полная история, отфильтрованная по финансам.
+ * Портал — чтобы не обрезался overflow-hidden аккордеона.
+ */
+function FinanceHoverCard({
+  total,
+  ops,
+  onDetails,
+  children,
+}: {
+  total: number;
+  ops: {
+    label: string;
+    amount: number;
+    date: string | null;
+    period?: string | null;
+  }[];
+  onDetails: () => void;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{
+    top: number;
+    left: number;
+    width: number;
+  } | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+  const show = () => {
+    const r = ref.current?.getBoundingClientRect();
+    if (r) setPos({ top: r.bottom, left: r.left, width: r.width });
+    setOpen(true);
+  };
+  return (
+    <div ref={ref} onMouseEnter={show} onMouseLeave={() => setOpen(false)}>
+      {children}
+      {open &&
+        pos &&
+        createPortal(
+          <div
+            onMouseEnter={() => setOpen(true)}
+            onMouseLeave={() => setOpen(false)}
+            style={{
+              position: "fixed",
+              top: pos.top + 4,
+              left: pos.left,
+              minWidth: Math.max(pos.width, 300),
+              maxWidth: 380,
+              zIndex: 1000,
+            }}
+            className="rounded-xl border border-border bg-surface p-3 shadow-card-lg"
+          >
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-2">
+                Финансовые операции
+              </span>
+              <span className="text-[13px] font-extrabold tabular-nums text-blue-700">
+                {fmt(total)} ₽
+              </span>
+            </div>
+            {ops.length === 0 ? (
+              <div className="text-[12px] text-muted">Платежей пока нет</div>
+            ) : (
+              <div className="flex max-h-[260px] flex-col gap-1 overflow-y-auto">
+                {ops.map((o, i) => (
+                  <div
+                    key={i}
+                    className="flex items-center justify-between gap-3 text-[12.5px]"
+                  >
+                    <span className="min-w-0 truncate text-ink-2">
+                      {o.label}
+                      {o.period && (
+                        <span className="ml-1 text-[11px] text-muted tabular-nums">
+                          {o.period}
+                        </span>
+                      )}
+                      {o.date && (
+                        <span className="ml-1 text-[11px] text-muted-2 tabular-nums">
+                          · {o.date}
+                        </span>
+                      )}
+                    </span>
+                    <span className="shrink-0 font-semibold tabular-nums text-ink">
+                      {fmt(o.amount)} ₽
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={onDetails}
+              className="mt-2.5 w-full rounded-lg bg-blue-50 px-3 py-1.5 text-[12px] font-semibold text-blue-700 hover:bg-blue-100"
+            >
+              Подробнее — вся история →
+            </button>
+          </div>,
+          document.body,
+        )}
+    </div>
+  );
+}
+
+export function RentalHistoryColumn({
+  rentalId,
+  onClose,
+  initialFilter,
+}: {
+  rentalId: number;
+  onClose: () => void;
+  initialFilter?: HistoryFilter;
+}) {
+  const activeRentals = useRentals();
+  const archivedRentals = useArchivedRentals();
+  const allRentals = useMemo(
+    () => [...activeRentals, ...archivedRentals],
+    [activeRentals, archivedRentals],
+  );
+  const rental = allRentals.find((r) => r.id === rentalId) ?? null;
+  const chainIdsFull = useMemo(
+    () => (rental ? getRentalChainIds(rental.id, allRentals) : []),
+    [rental, allRentals],
+  );
+  const chainIds = useMemo(
+    () =>
+      chainIdsFull.filter((id) => {
+        const r = allRentals.find((x) => x.id === id);
+        return !r || !r.archivedBy;
+      }),
+    [chainIdsFull, allRentals],
+  );
+  const chainRentals = useMemo(
+    () => allRentals.filter((r) => chainIds.includes(r.id)),
+    [allRentals, chainIds],
+  );
+  const damageReports = useChainDamageReports(chainIdsFull);
+
+  return (
+    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden rounded-2xl border-l border-border bg-surface shadow-card-sm">
+      <header className="flex items-center justify-between gap-3 border-b border-border px-5 py-3.5">
+        <div className="min-w-0">
+          <div className="font-display text-[16px] font-extrabold leading-tight text-ink truncate">
+            История аренды #{String(rentalId).padStart(4, "0")}
+          </div>
+          <div className="mt-0.5 text-[11.5px] text-muted">все события</div>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          title="Закрыть"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-soft text-muted hover:bg-border hover:text-ink"
+        >
+          <XCircle size={16} />
+        </button>
+      </header>
+      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+        {rental ? (
+          <HistoryTab
+            rental={rental}
+            chainRentals={chainRentals}
+            damageReports={damageReports.data}
+            withFilters
+            initialFilter={initialFilter}
+          />
+        ) : (
+          <div className="text-[13px] text-muted">Аренда не найдена.</div>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -1837,6 +2779,7 @@ function KpiCard({
   hintIcon: HintIcon,
   badgeIcon: BadgeIcon,
   accent = "default",
+  popover,
 }: {
   label: string;
   value: string;
@@ -1844,11 +2787,15 @@ function KpiCard({
   hintIcon?: React.ComponentType<{ size?: number | string; className?: string }>;
   badgeIcon?: React.ComponentType<{ size?: number | string; className?: string }>;
   accent?: KpiAccent;
+  /** v0.7.8: детальный состав при наведении (hover). Показывается поповером
+   *  снизу плашки. Если не передан — плашка ведёт себя как раньше. */
+  popover?: React.ReactNode;
 }) {
   return (
     <div
       className={cn(
         "relative rounded-[14px] border px-4 py-3 shadow-card-sm",
+        popover && "group",
         accent === "muted"
           ? "border-border bg-surface-soft/60"
           : accent === "red"
@@ -1856,6 +2803,11 @@ function KpiCard({
             : "border-border bg-surface",
       )}
     >
+      {popover && (
+        <div className="pointer-events-none absolute left-0 top-full z-50 mt-2 w-max max-w-[260px] rounded-xl bg-surface p-3 text-[12px] leading-relaxed text-ink-2 opacity-0 shadow-card-lg ring-1 ring-border transition-opacity duration-150 group-hover:opacity-100">
+          {popover}
+        </div>
+      )}
       {BadgeIcon && (
         <BadgeIcon
           size={18}
@@ -1897,6 +2849,38 @@ function KpiCard({
           {hint}
         </div>
       )}
+    </div>
+  );
+}
+
+/** v0.7.8: строка «лейбл — значение» для состава долга в accordion'е. */
+/**
+ * v0.7.13: строка детального состава долга. Слева — название компонента
+ * + мелкая серая формула расчёта (как считается), справа — сумма
+ * (tabular-nums). Используется в секции «Финансовая информация».
+ */
+function DebtRow({
+  label,
+  formula,
+  value,
+}: {
+  label: string;
+  formula?: string;
+  value: number;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0">
+        <div className="text-ink-2">{label}</div>
+        {formula && (
+          <div className="text-[11px] leading-tight text-muted-2">
+            {formula}
+          </div>
+        )}
+      </div>
+      <span className="shrink-0 font-semibold tabular-nums text-ink">
+        {fmt(value)} ₽
+      </span>
     </div>
   );
 }

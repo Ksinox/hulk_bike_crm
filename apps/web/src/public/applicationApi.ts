@@ -43,10 +43,35 @@ export type ApplicationFields = {
   source?: ClientSource | null;
   /** Текст-уточнение, если выбран source='other'. */
   sourceCustom?: string | null;
+  /** G3: предзаявка на аренду — что клиент хочет арендовать. */
+  requestedModel?: string | null;
+  requestedDays?: number | null;
+  requestedEquipmentIds?: number[] | null;
+  requestedStartDate?: string | null;
   honeypot?: string | null;
 };
 
+/** G3: экипировка для шага «Что хотите арендовать». */
+export type RentalEquipment = {
+  id: number;
+  name: string;
+  price: number;
+  isFree: boolean;
+  avatarUrl: string | null;
+};
+
 export type FileKind = "passport_main" | "passport_reg" | "license" | "selfie";
+
+/** G3: модель для шага «Что хотите арендовать» (из каталога, только активные). */
+export type RentalModel = {
+  id: number;
+  name: string;
+  dayRate: number;
+  shortRate: number;
+  weekRate: number;
+  monthRate: number;
+  avatarUrl: string | null;
+};
 
 export type CreateResponse = {
   applicationId: number;
@@ -144,6 +169,20 @@ export const applicationApi = {
     );
   },
 
+  /** #84/#85: URL ранее загруженного фото (для <img src>). Токен — в query,
+   *  т.к. тег img не умеет слать заголовки. variant=thumb|view — уменьшенные. */
+  fileUrl(
+    id: number,
+    token: string,
+    kind: FileKind,
+    variant?: "thumb" | "view",
+  ): string {
+    const v = variant ? `&variant=${variant}` : "";
+    return url(
+      `/api/public/applications/${id}/files/${kind}?token=${encodeURIComponent(token)}${v}`,
+    );
+  },
+
   submit(id: number, token: string): Promise<{ ok: true }> {
     return jsonFetch<{ ok: true }>(
       "POST",
@@ -151,6 +190,21 @@ export const applicationApi = {
       {},
       token,
     );
+  },
+
+  /** G3: активные модели каталога для шага «Что хотите арендовать». */
+  rentalModels(): Promise<{ items: RentalModel[] }> {
+    return jsonFetch<{ items: RentalModel[] }>("GET", "/api/public/rental-models");
+  },
+
+  /** G3: экипировка каталога для шага «Что хотите арендовать». */
+  equipment(): Promise<{ items: RentalEquipment[] }> {
+    return jsonFetch<{ items: RentalEquipment[] }>("GET", "/api/public/equipment");
+  },
+
+  /** Абсолютный URL аватарки модели (на публичном API-домене). */
+  modelAvatarUrl(path: string): string {
+    return url(path);
   },
 };
 

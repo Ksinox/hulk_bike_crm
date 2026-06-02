@@ -119,6 +119,9 @@ export const paymentTypeEnum = pgEnum("payment_type", [
    *  аренды. Считается delta × оставшиеся дни. Попадает в revenue
    *  как обычная выручка. */
   "equipment_fee",
+  /** v0.8.0: оплата паркинга (1-е сутки бесплатно, далее 250 ₽/сут).
+   *  Попадает в revenue и в «За всё время» клиента. */
+  "parking",
 ]);
 
 export const clientDocKindEnum = pgEnum("client_doc_kind", [
@@ -1356,6 +1359,17 @@ export const clientApplications = pgTable(
     /** Произвольный текст когда выбран source='other'. */
     sourceCustom: text("source_custom"),
 
+    /** G3: что клиент хочет арендовать (предзаявка). Выбирается им же в
+     *  анкете на шаге «Что хотите арендовать». При convert модель/срок
+     *  подставляются в форму «Новая аренда». NULL — клиент не указал. */
+    requestedModel: scooterModelEnum("requested_model"),
+    requestedDays: integer("requested_days"),
+    /** G3: id выбранной экипировки (equipment_items) — мультивыбор в анкете. */
+    requestedEquipmentIds: jsonb("requested_equipment_ids").$type<number[]>(),
+    /** G3: желаемая дата начала аренды («мягкая бронь»). Подставляется в
+     *  дату выдачи при конвертации. Скутеры НЕ блокируем — это ориентир. */
+    requestedStartDate: date("requested_start_date"),
+
     /** Заполняется при convert: ссылка на созданного клиента. NULL — заявка
      *  ещё не оформлена. ON DELETE SET NULL — если клиента удалили,
      *  заявка остаётся в архиве (история). */
@@ -1489,44 +1503,6 @@ export const appSettings = pgTable("app_settings", {
 });
 
 /* ============================================================
- * billing_period_anchors — история переключений расчётного периода (v0.7).
- *
- * Один глобальный billing_period_start_day в app_settings ломал прошлое:
- * при смене 15→1 ВСЯ история пересчитывалась задним числом по новой
- * формуле, цифры на дашборде/в KPI прыгали. Здесь храним «якоря» — кто
- * и с какой даты ввёл правило. Резолвер для каждой даты берёт активный
- * на тот момент якорь.
- *
- * kind:
- *   'regular'    — обычный месячный период с rule_start_day.
- *   'transition' — переходный период от effective_from до
- *                  transition_end_date (включительно). После окончания
- *                  transition этот же якорь действует как regular с
- *                  rule_start_day (новой схемой).
- * ============================================================ */
-export const billingPeriodAnchors = pgTable(
-  "billing_period_anchors",
-  {
-    id: bigserial("id", { mode: "number" }).primaryKey(),
-    effectiveFrom: date("effective_from").notNull(),
-    ruleStartDay: integer("rule_start_day").notNull(),
-    kind: text("kind").notNull(), // 'regular' | 'transition'
-    transitionEndDate: date("transition_end_date"),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    createdByUserId: bigint("created_by_user_id", {
-      mode: "number",
-    }).references(() => users.id, { onDelete: "set null" }),
-  },
-  (t) => ({
-    effectiveIdx: index("billing_period_anchors_effective_idx").on(
-      t.effectiveFrom,
-    ),
-  }),
-);
-
-/* ============================================================
  * debt_entries — лента событий по долгу аренды (v0.3.8).
  *
  * Источники долга в системе три:
@@ -1580,10 +1556,93 @@ export const debtEntries = pgTable(
 );
 
 /* ============================================================
- * Должники (v0.8) — standalone-модуль для контроля долгов.
+ * parking_sessions — паркинг (пауза аренды)
  *
- * Жизненный цикл стадий — конечный автомат в services/debtorStages.ts.
- * БД хранит текущую stage; переходы валидируются на бэке.
+ * Клиент держит скутер у себя, но не катается. Дни паркинга НЕ
+ * «съедают» оплаченные дни аренды — плановый возврат (rentals.end_planned_at)
+ * сдвигается вперёд на число дней паркинга. За паркинг берётся льготная
+ * плата: 1-е сутки бесплатно, далее 250 ₽/сут. Максимум 7 суток за сессию.
+ *
+ * Инвариант: rentals.end_planned_at = базовый возврат + Σ days всех сессий.
+ * Поэтому просрочка (она считается от end_planned_at) автоматически
+ * пересчитывается — в т.ч. при паркинге задним числом по просроченным дням.
+ *
+ * Неоплаченная стоимость паркинга (amount − paid_amount) попадает в долг
+ * по аренде с подписью «паркинг», но не блокирует операции.
+ * ============================================================ */
+export const parkingSessions = pgTable(
+  "parking_sessions",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    rentalId: bigint("rental_id", { mode: "number" })
+      .notNull()
+      .references(() => rentals.id, { onDelete: "cascade" }),
+    /** Дата начала паркинга (включительно), YYYY-MM-DD. */
+    startDate: date("start_date").notNull(),
+    /** Дата конца паркинга (включительно), YYYY-MM-DD. */
+    endDate: date("end_date").notNull(),
+    /** Кол-во суток = endDate − startDate + 1 (1..7). */
+    days: integer("days").notNull(),
+    /** Ставка за платные сутки (по умолчанию 250 ₽). */
+    ratePerDay: integer("rate_per_day").notNull().default(250),
+    /** 1-е сутки бесплатные. */
+    freeFirstDay: boolean("free_first_day").notNull().default(true),
+    /** Стоимость = ratePerDay × (days − 1) при freeFirstDay. */
+    amount: integer("amount").notNull(),
+    /** Сколько уже оплачено по этой сессии. */
+    paidAmount: integer("paid_amount").notNull().default(0),
+    /** active — действует/запланирован; ended — снят вручную/закрыт. */
+    status: text("status").notNull().default("active"),
+    createdByUserId: bigint("created_by_user_id", {
+      mode: "number",
+    }).references(() => users.id, { onDelete: "set null" }),
+    createdByName: text("created_by_name"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+  },
+  (t) => ({
+    rentalIdx: index("parking_sessions_rental_idx").on(t.rentalId),
+    statusIdx: index("parking_sessions_status_idx").on(t.status),
+  }),
+);
+
+/**
+ * v0.8.12: «стикеры» — заметки-наклейки на карточках. На одну сущность можно
+ * прикрепить несколько. entity: 'rental' | 'client'. kind: 'note' — обычная
+ * заметка; 'contact' — комментарий к статусу «не выходит на связь».
+ * dismissedAt != null → стикер снят (остаётся в БД для истории/аудита).
+ */
+export const noteStickers = pgTable(
+  "note_stickers",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    entity: text("entity").notNull(),
+    entityId: bigint("entity_id", { mode: "number" }).notNull(),
+    kind: text("kind").notNull().default("note"),
+    text: text("text").notNull(),
+    color: text("color").notNull().default("yellow"),
+    createdByUserId: bigint("created_by_user_id", {
+      mode: "number",
+    }).references(() => users.id, { onDelete: "set null" }),
+    createdByName: text("created_by_name"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    dismissedAt: timestamp("dismissed_at", { withTimezone: true }),
+    dismissedByName: text("dismissed_by_name"),
+  },
+  (t) => ({
+    entityIdx: index("note_stickers_entity_idx").on(t.entity, t.entityId),
+    activeIdx: index("note_stickers_active_idx").on(t.dismissedAt),
+  }),
+);
+
+/* ============================================================
+ * Должники (v0.8) — standalone-модуль для контроля долгов.
+ * Перенесено из ветки main (порт в v0.6). Жизненный цикл стадий —
+ * конечный автомат в services/debtorStages.ts; БД хранит текущую stage.
  * ============================================================ */
 
 export const debtorTypeEnum = pgEnum("debtor_type", [
@@ -1606,6 +1665,7 @@ export const debtorStageEnum = pgEnum("debtor_stage", [
   "police",
   "criminal_case",
   "closed_paid",
+  "closed_recovered",
   "closed_written_off",
   "closed_settled",
   "closed_court",

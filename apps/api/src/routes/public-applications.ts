@@ -7,8 +7,13 @@ import {
   clientApplicationFiles,
   clientApplications,
 } from "../db/schema.js";
-import { makeFileKey, removeObject } from "../storage/index.js";
-import { putObjectWithImageVariants } from "../storage/image.js";
+import {
+  makeFileKey,
+  removeObject,
+  getObjectStream,
+  statObject,
+} from "../storage/index.js";
+import { putObjectWithImageVariants, variantKey } from "../storage/image.js";
 import { logActivity } from "../services/activityLog.js";
 
 /**
@@ -48,6 +53,18 @@ const ApplicationFieldsBody = z
      *  При convert копируется в clients.source. */
     source: ClientSourceEnum.optional().nullable(),
     sourceCustom: z.string().max(200).optional().nullable(),
+    /** G3: предзаявка на аренду — модель и срок, которые выбрал клиент. */
+    requestedModel: z
+      .enum(["jog", "gear", "honda", "tank"])
+      .optional()
+      .nullable(),
+    requestedDays: z.number().int().min(1).max(365).optional().nullable(),
+    requestedEquipmentIds: z
+      .array(z.number().int().positive())
+      .max(20)
+      .optional()
+      .nullable(),
+    requestedStartDate: z.string().optional().nullable(),
     /** Honeypot — реальные клиенты это поле не видят и не заполняют. */
     honeypot: z.string().max(100).optional().nullable(),
   })
@@ -337,6 +354,75 @@ export async function publicApplicationsRoutes(app: FastifyInstance) {
         .where(eq(clientApplicationFiles.id, existing.id));
 
       return reply.code(200).send({ ok: true });
+    },
+  );
+
+  /* GET /api/public/applications/:id/files/:kind?token=...&variant=thumb|view
+   * #84/#85: отдать ранее загруженное фото — для предпросмотра при возврате
+   * на фото-шаг и миниатюр на экране подтверждения. Авторизация — upload-токен
+   * в query (тег <img> не умеет слать заголовки). После submit токен обнуляется,
+   * поэтому доступ закрывается автоматически. */
+  app.get<{
+    Params: { id: string; kind: string };
+    Querystring: { token?: string; variant?: "thumb" | "view" };
+  }>(
+    "/applications/:id/files/:kind",
+    { config: { rateLimit: { max: 600, timeWindow: "1 hour" } } },
+    async (req, reply) => {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id) || id <= 0) {
+        return reply.code(400).send({ error: "bad id" });
+      }
+      const application = await authorizeByToken(id, req.query.token);
+      if (!application) return reply.code(401).send({ error: "invalid_token" });
+
+      const parsedKind = FileKindEnum.safeParse(req.params.kind);
+      if (!parsedKind.success) {
+        return reply.code(400).send({ error: "bad_kind" });
+      }
+
+      const [existing] = await db
+        .select()
+        .from(clientApplicationFiles)
+        .where(
+          and(
+            eq(clientApplicationFiles.applicationId, id),
+            eq(clientApplicationFiles.kind, parsedKind.data),
+          ),
+        );
+      if (!existing) return reply.code(404).send({ error: "not_found" });
+
+      // Вариант (thumb/view) с фолбэком на оригинал — как у аватарок моделей.
+      let key = existing.fileKey;
+      let meta;
+      if (req.query.variant === "thumb" || req.query.variant === "view") {
+        const derived = variantKey(existing.fileKey, req.query.variant);
+        try {
+          meta = await statObject(derived);
+          key = derived;
+        } catch {
+          try {
+            meta = await statObject(existing.fileKey);
+          } catch {
+            return reply.code(404).send({ error: "not_found" });
+          }
+        }
+      } else {
+        try {
+          meta = await statObject(existing.fileKey);
+        } catch {
+          return reply.code(404).send({ error: "not_found" });
+        }
+      }
+
+      const stream = await getObjectStream(key);
+      reply
+        .header("Content-Type", meta.mimeType)
+        .header("Content-Length", meta.size)
+        // Приватные документы клиента — не кешировать в общих прокси.
+        .header("Cache-Control", "private, max-age=30")
+        .header("Cross-Origin-Resource-Policy", "cross-origin");
+      return reply.send(stream);
     },
   );
 

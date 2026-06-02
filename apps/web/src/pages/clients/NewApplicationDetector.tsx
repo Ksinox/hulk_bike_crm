@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { toast } from "@/lib/toast";
+import { toast, confirmDialog } from "@/lib/toast";
 import {
   useApplications,
   useDeleteApplication,
@@ -8,6 +8,7 @@ import {
 import { NewApplicationModal } from "./NewApplicationModal";
 import { AddClientModal } from "./AddClientModal";
 import { applicationToFormInit } from "./applicationConvert";
+import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
 
 /**
  * Глобальный детектор новых заявок.
@@ -62,6 +63,14 @@ export function NewApplicationDetector() {
   const [seen, setSeen] = useState<Set<number>>(() => loadSeen());
   const [activeApp, setActiveApp] = useState<ApiApplication | null>(null);
   const [convertingApp, setConvertingApp] = useState<ApiApplication | null>(null);
+  // G3: после конвертации — предложение сразу создать аренду (prefill из заявки).
+  const [rentalPrefill, setRentalPrefill] = useState<{
+    clientId: number;
+    modelFilter?: string;
+    days?: number;
+    equipmentIds?: number[];
+    start?: string;
+  } | null>(null);
   const deleteApp = useDeleteApplication();
 
   // Звук уведомления. Браузерная autoplay policy блокирует Audio до
@@ -152,9 +161,43 @@ export function NewApplicationDetector() {
           onClose={() => setConvertingApp(null)}
           applicationId={convertingApp.id}
           initialData={applicationToFormInit(convertingApp)}
-          onCreated={() => {
+          onCreated={(client) => {
+            const app = convertingApp;
             setConvertingApp(null);
             toast.success("Клиент создан из заявки");
+            const modelFilter = app?.requestedModel ?? undefined;
+            const days = app?.requestedDays ?? undefined;
+            const equipmentIds = app?.requestedEquipmentIds ?? undefined;
+            const start = app?.requestedStartDate ?? undefined;
+            void confirmDialog({
+              title: "Клиент создан",
+              message: `Оформить аренду для «${client.name}»? Останется выбрать конкретный скутер и распечатать договор.`,
+              confirmText: "Оформить аренду",
+              cancelText: "Позже",
+            }).then((ok) => {
+              if (ok)
+                setRentalPrefill({
+                  clientId: client.id,
+                  modelFilter,
+                  days,
+                  equipmentIds,
+                  start,
+                });
+            });
+          }}
+        />
+      )}
+      {rentalPrefill && (
+        <NewRentalModal
+          initialClientId={rentalPrefill.clientId}
+          initialModelFilter={rentalPrefill.modelFilter}
+          initialDays={rentalPrefill.days}
+          initialEquipmentIds={rentalPrefill.equipmentIds}
+          initialStart={rentalPrefill.start}
+          onClose={() => setRentalPrefill(null)}
+          onCreated={() => {
+            setRentalPrefill(null);
+            toast.success("Аренда создана");
           }}
         />
       )}

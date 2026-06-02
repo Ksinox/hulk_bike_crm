@@ -9,26 +9,39 @@ import { toast } from "@/lib/toast";
 
 export function DebtorPaymentScreen({
   id,
+  paymentN,
   onClose,
 }: {
   id: number;
+  paymentN?: number;
   onClose: () => void;
 }) {
   const q = useDebtor(id);
   const recordPay = useRecordPayment();
 
-  const nextPlanned = q.data?.payments.find((p) => p.paidAt == null);
+  // Целевой платёж: либо указанная строка графика, либо ближайший плановый.
+  const target =
+    paymentN != null
+      ? q.data?.payments.find((p) => p.n === paymentN && p.paidAt == null)
+      : undefined;
+  const nextPlanned = target ?? q.data?.payments.find((p) => p.paidAt == null);
   const remaining = q.data ? q.data.totalAmount - q.data.paid : 0;
 
   const [amount, setAmount] = useState<string>("");
   const [method, setMethod] = useState<PaymentMethod>("transfer");
+  // Как зачесть переплату, если сумма больше планового платежа.
+  const [allocate, setAllocate] = useState<"term" | "total">("term");
 
-  // Initialize amount once data loads
+  // Предзаполняем сумму: плановый платёж — его суммой; внеплановый
+  // (графика нет или он весь оплачен) — остатком долга, чтобы оператор
+  // сразу видел, сколько осталось, и мог принять досрочное погашение.
   useMemo(() => {
-    if (q.data && nextPlanned && !amount) {
-      setAmount(String(nextPlanned.scheduledAmount));
+    if (q.data && !amount) {
+      setAmount(
+        String(nextPlanned ? nextPlanned.scheduledAmount : Math.max(0, remaining)),
+      );
     }
-  }, [q.data, nextPlanned, amount]);
+  }, [q.data, nextPlanned, amount, remaining]);
 
   const numAmount = Math.floor(Number(amount.replace(/[^\d]/g, "")) || 0);
   const afterPaid = (q.data?.paid ?? 0) + numAmount;
@@ -36,6 +49,9 @@ export function DebtorPaymentScreen({
     ? Math.min(100, Math.round((afterPaid / q.data.totalAmount) * 100))
     : 0;
   const willClose = q.data ? afterPaid >= q.data.totalAmount : false;
+
+  const overpay =
+    nextPlanned != null && numAmount > nextPlanned.scheduledAmount;
 
   const submit = async () => {
     if (!q.data || numAmount <= 0) return;
@@ -45,6 +61,7 @@ export function DebtorPaymentScreen({
         amount: numAmount,
         method,
         paymentN: nextPlanned?.n,
+        allocate: overpay ? allocate : undefined,
       });
       toast.success(
         "Платёж зафиксирован",
@@ -65,7 +82,7 @@ export function DebtorPaymentScreen({
 
   return (
     <section className="grid min-h-[600px] place-items-center bg-surface-soft p-10">
-      <div className="w-full max-w-[520px] overflow-hidden rounded-[20px] bg-white shadow-card-md">
+      <div className="w-full max-w-[520px] overflow-hidden rounded-[20px] bg-white shadow-card-lg">
         <header className="border-b border-border p-7 pb-5">
           <div className="mb-2 font-mono text-[11px] uppercase tracking-[0.08em] text-muted">
             Платёж от <b className="font-bold text-ink">{q.data.displayName}</b> · дело {q.data.caseNumber}
@@ -76,7 +93,7 @@ export function DebtorPaymentScreen({
           <div className="mt-1 text-[13px] text-muted">
             {nextPlanned
               ? `Предзаполнено суммой планового платежа #${nextPlanned.n}.`
-              : `Внеплановый платёж. Останется погасить ${fmtNum(remaining)} ₽.`}
+              : `Досрочный / внеплановый платёж. Подставили остаток долга — ${fmtNum(remaining)} ₽, можно изменить.`}
           </div>
         </header>
 
@@ -187,6 +204,51 @@ export function DebtorPaymentScreen({
               </div>
             </button>
           </div>
+
+          {/* Аллокация переплаты — как в банке: сократить срок или уменьшить остаток */}
+          {overpay && (
+            <div className="mt-5">
+              <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
+                Сумма больше планового платежа — как зачесть?
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setAllocate("term")}
+                  className={`flex flex-col items-start rounded-[12px] border p-3 text-left ${
+                    allocate === "term"
+                      ? "border-ink bg-ink text-white"
+                      : "border-border hover:border-ink"
+                  }`}
+                >
+                  <span className="text-[13.5px] font-semibold">В счёт срока</span>
+                  <span
+                    className={`text-[11px] ${allocate === "term" ? "text-white/60" : "text-muted"}`}
+                  >
+                    закрыть ближайшие платежи
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAllocate("total")}
+                  className={`flex flex-col items-start rounded-[12px] border p-3 text-left ${
+                    allocate === "total"
+                      ? "border-ink bg-ink text-white"
+                      : "border-border hover:border-ink"
+                  }`}
+                >
+                  <span className="text-[13.5px] font-semibold">
+                    В счёт всей суммы
+                  </span>
+                  <span
+                    className={`text-[11px] ${allocate === "total" ? "text-white/60" : "text-muted"}`}
+                  >
+                    уменьшить общий остаток
+                  </span>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Impact */}

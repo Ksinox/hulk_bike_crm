@@ -8,6 +8,8 @@ import { closeDb, db } from "./db/index.js";
 import { clientsRoutes } from "./routes/clients.js";
 import { scootersRoutes } from "./routes/scooters.js";
 import { rentalsRoutes } from "./routes/rentals.js";
+import { parkingRoutes } from "./routes/parking.js";
+import { stickersRoutes } from "./routes/stickers.js";
 import { paymentsRoutes } from "./routes/payments.js";
 import { incidentsRoutes } from "./routes/incidents.js";
 import { tasksRoutes } from "./routes/tasks.js";
@@ -176,6 +178,8 @@ async function bootstrap() {
     await protectedApp.register(clientsRoutes, { prefix: "/api/clients" });
     await protectedApp.register(scootersRoutes, { prefix: "/api/scooters" });
     await protectedApp.register(rentalsRoutes, { prefix: "/api/rentals" });
+    await protectedApp.register(parkingRoutes, { prefix: "/api/rentals" });
+    await protectedApp.register(stickersRoutes, { prefix: "/api/stickers" });
     await protectedApp.register(paymentsRoutes, { prefix: "/api/payments" });
     await protectedApp.register(incidentsRoutes, { prefix: "/api/incidents" });
     await protectedApp.register(tasksRoutes, { prefix: "/api/tasks" });
@@ -205,14 +209,6 @@ async function bootstrap() {
     await protectedApp.register(appSettingsRoutes, {
       prefix: "/api/app-settings",
     });
-    // v0.7: история переключений расчётного периода
-    const { billingPeriodRoutes } = await import("./routes/billing-period.js");
-    await protectedApp.register(billingPeriodRoutes, {
-      prefix: "/api/billing-period",
-    });
-    // v0.8: модуль «Должники»
-    const { debtorsRoutes } = await import("./routes/debtors.js");
-    await protectedApp.register(debtorsRoutes, { prefix: "/api/debtors" });
     // Диагностика — только creator
     const { diagRoutes } = await import("./routes/diag.js");
     await protectedApp.register(diagRoutes, { prefix: "/api/_diag" });
@@ -232,6 +228,9 @@ async function bootstrap() {
     await protectedApp.register(documentTemplatesRoutes, {
       prefix: "/api/document-templates",
     });
+    // v0.8: модуль «Должники» (порт из main в v0.6)
+    const { debtorsRoutes } = await import("./routes/debtors.js");
+    await protectedApp.register(debtorsRoutes, { prefix: "/api/debtors" });
   });
 
   // Проверить/создать бакет при старте (не блокируем — если MinIO

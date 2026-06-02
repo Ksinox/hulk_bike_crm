@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { setBillingPeriodStartDay } from "@/lib/billingPeriod";
 import { setWorkingHours } from "@/lib/workingHours";
 
 export type AppSetting = {
@@ -15,11 +16,9 @@ const keys = {
 };
 
 /**
- * v0.4.1: список всех настроек. На onSuccess подхватываем график работы
- * (work_hours_*). billing_period_start_day больше отсюда НЕ читается —
- * с v0.7 источник правды это billing_period_anchors (см. useBillingPeriodAnchors).
- * Поле billing_period_start_day остаётся в БД для обратной совместимости
- * и зеркалит «текущее правило» после переключения.
+ * v0.4.1: список всех настроек. На onSuccess подхватываем
+ * billing_period_start_day и прокидываем в @/lib/billingPeriod —
+ * чтобы все KPI/отчёты пересчитались на новый день старта периода.
  */
 export function useAppSettings() {
   return useQuery({
@@ -27,6 +26,11 @@ export function useAppSettings() {
     queryFn: async () => {
       const r = await api.get<{ items: AppSetting[] }>("/api/app-settings");
       const map = new Map(r.items.map((s) => [s.key, s.value]));
+      const startDayStr = map.get("billing_period_start_day");
+      const startDay = startDayStr ? Number(startDayStr) : 15;
+      if (Number.isFinite(startDay) && startDay >= 1 && startDay <= 28) {
+        setBillingPeriodStartDay(startDay);
+      }
       // v0.4.21: график работы (часы открытия/закрытия)
       const whStart = Number(map.get("work_hours_start") ?? "9");
       const whEnd = Number(map.get("work_hours_end") ?? "22");

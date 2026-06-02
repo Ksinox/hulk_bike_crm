@@ -24,7 +24,8 @@ export type PaymentType =
   | "damage"
   | "refund"
   | "swap_fee"
-  | "equipment_fee";
+  | "equipment_fee"
+  | "parking";
 
 export type Payment = {
   id: number;
@@ -184,26 +185,6 @@ export function confirmRentalPayment(
     .catch(logErr("confirmRentalPayment"));
 }
 
-export function addRentalIncident(
-  rentalId: number,
-  data: { type: string; date: string; damage: number; note?: string },
-): void {
-  const [d, m, y] = data.date.split(".");
-  api
-    .post(`/api/incidents`, {
-      rentalId,
-      type: data.type,
-      occurredOn: `${y}-${m}-${d}`,
-      damage: data.damage,
-      note: data.note ?? null,
-    })
-    .then(() => {
-      queryClient.invalidateQueries({ queryKey: ["incidents"] });
-      invAll();
-    })
-    .catch(logErr("addRentalIncident"));
-}
-
 export function revertOverdue(id: number) {
   api
     .post(`/api/rentals/${id}/revert-overdue`, {})
@@ -211,9 +192,21 @@ export function revertOverdue(id: number) {
     .catch(logErr("revertOverdue"));
 }
 
+/**
+ * v0.6.1: scooterNextStatus — что делать со скутером после завершения.
+ * Если не передан — бэк ставит rental_pool (старое поведение).
+ */
+export type ScooterNextStatus =
+  | "rental_pool"
+  | "repair"
+  | "for_sale"
+  | "disassembly"
+  | "buyout";
+
 export function completeRentalNoDamage(
   id: number,
   inspection: ReturnInspection,
+  scooterNextStatus?: ScooterNextStatus,
 ): Promise<void> {
   // Локально кешируем inspection (сервер хранит в returnInspections — приходит отдельным запросом, но для UI нужен synchronous hook)
   state.inspections = new Map(state.inspections).set(id, inspection);
@@ -225,6 +218,7 @@ export function completeRentalNoDamage(
       equipmentOk: inspection.equipmentOk,
       depositReturned: inspection.depositReturned,
       mileageAtReturn: inspection.mileage,
+      ...(scooterNextStatus ? { scooterNextStatus } : {}),
     })
     .then(invAll)
     .catch((e) => {
@@ -238,6 +232,7 @@ export function completeRentalWithDamage(
   inspection: ReturnInspection,
   damageAmount: number,
   note?: string,
+  scooterNextStatus?: ScooterNextStatus,
 ): Promise<void> {
   state.inspections = new Map(state.inspections).set(id, inspection);
   emit();
@@ -250,6 +245,7 @@ export function completeRentalWithDamage(
       damageAmount,
       damageNotes: note ?? inspection.damageNotes ?? null,
       mileageAtReturn: inspection.mileage,
+      ...(scooterNextStatus ? { scooterNextStatus } : {}),
     })
     .then(() => {
       queryClient.invalidateQueries({ queryKey: ["incidents"] });
@@ -286,6 +282,25 @@ export function markPaymentPaid(id: number, paid = true) {
     })
     .then(invAll)
     .catch(logErr("markPaymentPaid"));
+}
+
+export function addRentalIncident(
+  rentalId: number,
+  inc: Omit<RentalIncident, "id" | "rentalId" | "paid"> & { paid?: number },
+) {
+  api
+    .post(`/api/incidents`, {
+      rentalId,
+      type: inc.type,
+      occurredOn: ruToIso(inc.date).slice(0, 10),
+      damage: inc.damage,
+      note: inc.note ?? null,
+    })
+    .then(() => {
+      queryClient.invalidateQueries({ queryKey: ["incidents", rentalId] });
+      invAll();
+    })
+    .catch(logErr("addRentalIncident"));
 }
 
 /**
@@ -444,12 +459,16 @@ export async function equipmentChangeAsync(args: {
   payNow: boolean;
   method?: "cash" | "transfer";
   comment?: string;
+  refundTo?: "cash" | "deposit";
+  refundMethod?: "cash" | "transfer";
 }): Promise<void> {
   await api.post(`/api/rentals/${args.rentalId}/equipment-change`, {
     newEquipmentJson: args.newEquipmentJson,
     payNow: args.payNow,
     method: args.method,
     comment: args.comment,
+    refundTo: args.refundTo,
+    refundMethod: args.refundMethod,
   });
   invAll();
 }

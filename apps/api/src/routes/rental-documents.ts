@@ -56,13 +56,17 @@ export async function rentalDocumentsRoutes(app: FastifyInstance) {
 
     const format = req.query.format === "docx" ? "docx" : "html";
 
-    await logActivity(req, {
-      entity: "rental",
-      entityId: id,
-      action: "document_generated",
-      summary: `Сформирован документ «${DOCUMENT_LABEL[type]}» по аренде #${id}${format === "docx" ? " (Word)" : " (предпросмотр)"}`,
-      meta: { type, format },
-    });
+    // v0.6.16: HTML-предпросмотр НЕ логируем — это не действие, лишь просмотр.
+    // Логируем только скачивание Word-копии (фактическое действие оператора).
+    if (format === "docx") {
+      await logActivity(req, {
+        entity: "rental",
+        entityId: id,
+        action: "document_downloaded",
+        summary: `Скачан документ «${DOCUMENT_LABEL[type]}» (Word) по аренде #${id}`,
+        meta: { type, format },
+      });
+    }
 
     if (format === "html") {
       const html = await renderDocumentHtml(type, bundle);

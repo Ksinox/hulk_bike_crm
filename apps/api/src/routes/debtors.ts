@@ -20,7 +20,7 @@
  *   POST   /api/debtors/:id/lawyer-update      запись от юриста
  *   POST   /api/debtors/:id/close              закрыть дело
  */
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import { asc, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/index.js";
@@ -35,7 +35,7 @@ import {
 import { logActivity } from "../services/activityLog.js";
 import {
   buildSchedule,
-  isFullyPaid,
+  buildScheduleByAmount,
   paidSoFar,
   progressPercent,
 } from "../services/debtorSchedule.js";
@@ -55,6 +55,7 @@ import {
 import { overdueAmount, overdueDays } from "../services/debtorOverdue.js";
 import { calculateInsuranceForecast } from "../services/debtorProfit.js";
 import { recommendNextAction } from "../services/debtorRecommend.js";
+import { syncRentalDebtorCases } from "../services/debtorSync.js";
 
 // ====== zod schemas ======
 
@@ -78,6 +79,7 @@ const StageEnum = z.enum([
   "police",
   "criminal_case",
   "closed_paid",
+  "closed_recovered",
   "closed_written_off",
   "closed_settled",
   "closed_court",
@@ -112,12 +114,22 @@ const TransitionBody = z.object({
   reason: z.string().max(500).optional(),
 });
 
-const ScheduleBody = z.object({
-  totalAmount: z.number().int().positive().optional(),
-  count: z.number().int().min(1).max(60),
-  startDate: z.string(), // YYYY-MM-DD
-  frequency: z.enum(["weekly", "biweekly", "monthly"]),
-});
+const ScheduleBody = z
+  .object({
+    /** Режим разбивки: по количеству платежей или по комфортной сумме платежа. */
+    mode: z.enum(["by_count", "by_amount"]).default("by_count"),
+    count: z.number().int().min(1).max(120).optional(),
+    perPayment: z.number().int().positive().optional(),
+    /** Сумма к разбивке. По умолчанию — остаток долга (total − оплачено). */
+    totalAmount: z.number().int().positive().optional(),
+    startDate: z.string(), // YYYY-MM-DD
+    frequency: z.enum(["daily", "weekly", "biweekly", "monthly"]),
+  })
+  .refine(
+    (b) =>
+      b.mode === "by_amount" ? b.perPayment != null : b.count != null,
+    { message: "укажите count (by_count) или perPayment (by_amount)" },
+  );
 
 const PaymentBody = z.object({
   paymentN: z.number().int().min(1).optional(), // если фиксируем конкретный платёж графика
@@ -125,6 +137,15 @@ const PaymentBody = z.object({
   method: z.enum(["transfer", "cash"]),
   paidAt: z.string().optional(), // ISO; default = now
   note: z.string().max(500).optional(),
+  /**
+   * Как зачесть переплату (amount > планового платежа строки):
+   *  - "term"  — в счёт срока: гасим ближайшие плановые платежи по очереди
+   *              (срок сокращается), хвост — авансом.
+   *  - "total" — в счёт всей суммы: вся сумма ложится одной строкой
+   *              (просто уменьшаем общий остаток).
+   * По умолчанию — "total".
+   */
+  allocate: z.enum(["term", "total"]).optional(),
 });
 
 const CallBody = z.object({
@@ -149,6 +170,7 @@ const LawyerUpdateBody = z.object({
 const CloseBody = z.object({
   toStage: z.enum([
     "closed_paid",
+    "closed_recovered",
     "closed_written_off",
     "closed_settled",
     "closed_court",
@@ -157,6 +179,11 @@ const CloseBody = z.object({
 });
 
 // ====== helpers ======
+
+/** Date → "YYYY-MM-DD" в локальной TZ (для scheduledDate). */
+function ymd(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 
 async function getDebtor(id: number) {
   const [d] = await db.select().from(debtors).where(eq(debtors.id, id));
@@ -181,6 +208,72 @@ async function loadPayments(debtorId: number) {
     .orderBy(asc(debtorPayments.n));
 }
 
+/**
+ * Гард закрытия «оплачено»: вернёт объект-ошибку, если дело пытаются
+ * закрыть как closed_paid без достаточного основания (платежи не покрыли
+ * долг). Для dtp_victim (страховая выплата) — не применяется.
+ * Возвращает null, если всё ок.
+ */
+async function closedPaidBasisError(
+  id: number,
+  d: { type: string; totalAmount: number },
+  to: Stage,
+): Promise<{ error: string; message: string } | null> {
+  if (to !== "closed_paid") return null;
+  if (d.type === "dtp_victim") return null; // основание — выплата страховой
+  const all = await loadPayments(id);
+  const paid = paidSoFar(
+    all.map((p) => ({ paidAt: p.paidAt, paidAmount: p.paidAmount })),
+  );
+  if (paid >= d.totalAmount) return null;
+  return {
+    error: "not_fully_paid",
+    message: `Нельзя закрыть как «оплачено»: погашено ${paid.toLocaleString("ru-RU")} из ${d.totalAmount.toLocaleString("ru-RU")} ₽. Сначала примите платежи на полную сумму — дело закроется само.`,
+  };
+}
+
+/**
+ * Авто-закрытие дела при полном погашении (Σ оплаченного ≥ totalAmount).
+ * Клиент перестаёт быть должником — метка и баннер долга снимаются.
+ */
+async function autoCloseIfPaid(
+  req: FastifyRequest,
+  d: { id: number; totalAmount: number; stage: string; caseNumber: string },
+): Promise<void> {
+  if (isClosed(d.stage as Stage)) return;
+  const all = await loadPayments(d.id);
+  const paid = paidSoFar(
+    all.map((p) => ({ paidAt: p.paidAt, paidAmount: p.paidAmount })),
+  );
+  if (paid < d.totalAmount) return;
+  const now = new Date();
+  const userId = req.user?.userId ?? null;
+  await db
+    .update(debtors)
+    .set({
+      stage: "closed_paid",
+      clientStatus: "closed",
+      stageEnteredAt: now,
+      closedAt: now,
+      closedReason: "Долг погашен полностью",
+      updatedAt: now,
+    })
+    .where(eq(debtors.id, d.id));
+  await db.insert(debtorStageEvents).values({
+    debtorId: d.id,
+    fromStage: d.stage as Stage,
+    toStage: "closed_paid",
+    reason: "авто: долг погашен полностью",
+    userId,
+  });
+  await logActivity(req, {
+    entity: "debtor",
+    entityId: d.id,
+    action: "closed",
+    summary: `${d.caseNumber}: закрыто — долг погашен полностью`,
+  });
+}
+
 function clientDisplayName(d: {
   externalName: string | null;
   externalPhone: string | null;
@@ -200,6 +293,10 @@ export async function debtorsRoutes(app: FastifyInstance) {
   app.get<{
     Querystring: { stage?: string; type?: string; closed?: string };
   }>("/", async (req) => {
+    // v0.6: авто-ингест должников из аренд (просрочка/ущерб/паркинг/...).
+    await syncRentalDebtorCases().catch((e) =>
+      app.log.warn({ err: e }, "debtor sync failed"),
+    );
     const rows = await db.select().from(debtors).orderBy(desc(debtors.createdAt));
     // По умолчанию исключаем closed_*
     const includeClosed = req.query.closed === "1";
@@ -216,11 +313,31 @@ export async function debtorsRoutes(app: FastifyInstance) {
       })),
       { includeClosed },
     );
-    return { items: sorted };
+    // v0.6: подмешиваем имя/телефон клиента (для списка дел) — как в /today.
+    const cids = sorted.map((r) => r.clientId).filter(Boolean) as number[];
+    const nameMap = new Map<number, { name: string; phone: string }>();
+    if (cids.length > 0) {
+      const cs = await db
+        .select({ id: clients.id, name: clients.name, phone: clients.phone })
+        .from(clients);
+      for (const c of cs) nameMap.set(c.id, { name: c.name, phone: c.phone });
+    }
+    const items = sorted.map((r) => {
+      const c = r.clientId ? nameMap.get(r.clientId) ?? null : null;
+      return {
+        ...r,
+        clientName: c?.name ?? r.externalName ?? null,
+        clientPhone: c?.phone ?? r.externalPhone ?? null,
+      };
+    });
+    return { items };
   });
 
   // ---------- GET /today ----------
   app.get("/today", async () => {
+    await syncRentalDebtorCases().catch((e) =>
+      app.log.warn({ err: e }, "debtor sync failed"),
+    );
     const rows = await db.select().from(debtors);
     const payments = await db.select().from(debtorPayments);
     const paymentsByDebtor = new Map<number, typeof payments>();
@@ -264,6 +381,9 @@ export async function debtorsRoutes(app: FastifyInstance) {
 
   // ---------- GET /dashboard-stats ----------
   app.get("/dashboard-stats", async () => {
+    await syncRentalDebtorCases().catch((e) =>
+      app.log.warn({ err: e }, "debtor sync failed"),
+    );
     const rows = await db.select().from(debtors);
     const payments = await db.select().from(debtorPayments);
     const paymentsByDebtor = new Map<number, typeof payments>();
@@ -477,6 +597,12 @@ export async function debtorsRoutes(app: FastifyInstance) {
         });
       }
 
+      // Закрытие «оплачено» — ТОЛЬКО на основании платежей: сумма
+      // зачисленного должна покрывать долг. Исключение — dtp_victim
+      // (страховой поток: основание — полученная выплата, не график).
+      const closeErr = await closedPaidBasisError(id, d, to);
+      if (closeErr) return reply.code(400).send(closeErr);
+
       const userId = req.user?.userId ?? null;
       const now = new Date();
       const updateData: Partial<typeof debtors.$inferInsert> = {
@@ -524,45 +650,94 @@ export async function debtorsRoutes(app: FastifyInstance) {
     const d = await getDebtor(id);
     if (!d) return reply.code(404).send({ error: "not found" });
 
-    const total = parsed.data.totalAmount ?? d.totalAmount;
+    // График строим на ОСТАТОК долга (всё, что ещё не оплачено), чтобы
+    // уже зачисленные платежи не задваивались.
+    const existing = await loadPayments(id);
+    const paid = paidSoFar(
+      existing.map((p) => ({ paidAt: p.paidAt, paidAmount: p.paidAmount })),
+    );
+    const remaining = Math.max(0, d.totalAmount - paid);
+    const total = parsed.data.totalAmount ?? remaining;
+    if (total <= 0) {
+      return reply
+        .code(400)
+        .send({ error: "nothing_to_schedule", message: "Долг уже погашен" });
+    }
+
     const [yS, mS, dS] = parsed.data.startDate.split("-").map(Number);
     const startDate = new Date(yS!, mS! - 1, dS!, 0, 0, 0, 0);
     let schedule;
     try {
-      schedule = buildSchedule({
-        totalAmount: total,
-        count: parsed.data.count,
-        startDate,
-        frequency: parsed.data.frequency,
-      });
+      schedule =
+        parsed.data.mode === "by_amount"
+          ? buildScheduleByAmount({
+              totalAmount: total,
+              perPayment: parsed.data.perPayment!,
+              startDate,
+              frequency: parsed.data.frequency,
+            })
+          : buildSchedule({
+              totalAmount: total,
+              count: parsed.data.count!,
+              startDate,
+              frequency: parsed.data.frequency,
+            });
     } catch (e) {
       return reply.code(400).send({ error: "schedule_failed", message: (e as Error).message });
     }
 
-    // Удаляем существующие неоплаченные плановые платежи и вставляем новые
+    // Удаляем существующие НЕоплаченные плановые платежи; оплаченные строки
+    // (история) сохраняем, а новые нумеруем после них.
     await db
       .delete(debtorPayments)
       .where(
         sql`${debtorPayments.debtorId} = ${id} AND ${debtorPayments.paidAt} IS NULL`,
       );
+    const paidRows = existing.filter((p) => p.paidAt != null);
+    const nOffset = paidRows.reduce((m, p) => Math.max(m, p.n), 0);
 
     const inserted = await db
       .insert(debtorPayments)
       .values(
         schedule.map((s) => ({
           debtorId: id,
-          n: s.n,
+          n: nOffset + s.n,
           scheduledDate: `${s.date.getFullYear()}-${String(s.date.getMonth() + 1).padStart(2, "0")}-${String(s.date.getDate()).padStart(2, "0")}`,
           scheduledAmount: s.amount,
         })),
       )
       .returning();
 
+    // Создание графика = вход в стадию «График платежей». Переводим явно
+    // (минуя строгий state-machine), т.к. это действие по смыслу и есть
+    // переход — иначе график без стадии выглядит несвязно.
+    const userId = req.user?.userId ?? null;
+    if (d.stage !== "payment_schedule" && !isClosed(d.stage as Stage)) {
+      const now = new Date();
+      await db
+        .update(debtors)
+        .set({ stage: "payment_schedule", stageEnteredAt: now, updatedAt: now })
+        .where(eq(debtors.id, id));
+      await db.insert(debtorStageEvents).values({
+        debtorId: id,
+        fromStage: d.stage as Stage,
+        toStage: "payment_schedule",
+        reason: "создан график платежей",
+        userId,
+      });
+    }
+
+    const freqLabel: Record<string, string> = {
+      daily: "ежедневно",
+      weekly: "еженедельно",
+      biweekly: "раз в 2 недели",
+      monthly: "ежемесячно",
+    };
     await logActivity(req, {
       entity: "debtor",
       entityId: id,
       action: "schedule_created",
-      summary: `${d.caseNumber}: создан график на ${parsed.data.count} платежей × ${parsed.data.frequency}`,
+      summary: `${d.caseNumber}: график на ${inserted.length} платежей · ${freqLabel[parsed.data.frequency] ?? parsed.data.frequency} · ${total.toLocaleString("ru-RU")} ₽`,
     });
 
     return { schedule: inserted };
@@ -581,7 +756,61 @@ export async function debtorsRoutes(app: FastifyInstance) {
     const paidAt = parsed.data.paidAt ? new Date(parsed.data.paidAt) : new Date();
 
     if (parsed.data.paymentN != null) {
-      // Фиксируем конкретный платёж из графика
+      const all = await loadPayments(id);
+      const target = all.find((p) => p.n === parsed.data.paymentN);
+      if (!target) return reply.code(404).send({ error: "payment not found" });
+      const surplus = parsed.data.amount - target.scheduledAmount;
+
+      // Переплата «в счёт срока»: каскадом гасим этот и следующие плановые
+      // платежи по очереди, пока хватает денег. Срок сокращается. Хвост
+      // (меньше следующего платежа) — отдельной строкой-авансом.
+      if (parsed.data.allocate === "term" && surplus > 0) {
+        let left = parsed.data.amount;
+        const chain = all
+          .filter((p) => p.n >= target.n && p.paidAt == null)
+          .sort((a, b) => a.n - b.n);
+        const closed: number[] = [];
+        for (const row of chain) {
+          if (left < row.scheduledAmount) break;
+          await db
+            .update(debtorPayments)
+            .set({
+              paidAt,
+              paidAmount: row.scheduledAmount,
+              paidMethod: parsed.data.method,
+              paidByUserId: userId,
+              note: parsed.data.note ?? null,
+            })
+            .where(eq(debtorPayments.id, row.id));
+          left -= row.scheduledAmount;
+          closed.push(row.n);
+        }
+        if (left > 0) {
+          const maxN = all.reduce((m, p) => Math.max(m, p.n), 0);
+          await db.insert(debtorPayments).values({
+            debtorId: id,
+            n: maxN + 1,
+            scheduledDate: ymd(paidAt),
+            scheduledAmount: left,
+            paidAt,
+            paidAmount: left,
+            paidMethod: parsed.data.method,
+            paidByUserId: userId,
+            note: parsed.data.note ?? "аванс (переплата)",
+          });
+        }
+        await logActivity(req, {
+          entity: "debtor",
+          entityId: id,
+          action: "payment_received",
+          summary: `${d.caseNumber}: платёж ${parsed.data.amount.toLocaleString("ru-RU")} ₽ в счёт срока — закрыто платежей: ${closed.length}${left > 0 ? " + аванс" : ""} (${parsed.data.method})`,
+        });
+        await autoCloseIfPaid(req, d);
+        return { ok: true, closed };
+      }
+
+      // Обычный платёж по строке (точно/частично) либо переплата «в счёт
+      // всей суммы» — вся сумма ложится одной строкой, уменьшая остаток.
       const [row] = await db
         .update(debtorPayments)
         .set({
@@ -601,18 +830,9 @@ export async function debtorsRoutes(app: FastifyInstance) {
         entity: "debtor",
         entityId: id,
         action: "payment_received",
-        summary: `${d.caseNumber}: платёж ${row.n} получен · ${parsed.data.amount} ₽ (${parsed.data.method})`,
+        summary: `${d.caseNumber}: платёж ${row.n} получен · ${parsed.data.amount.toLocaleString("ru-RU")} ₽ (${parsed.data.method})`,
       });
-
-      // Авто-закрытие если всё оплачено
-      const all = await loadPayments(id);
-      if (
-        d.stage === "payment_schedule" &&
-        isFullyPaid(d.totalAmount, all.map((p) => ({ paidAt: p.paidAt, paidAmount: p.paidAmount })))
-      ) {
-        // Не закрываем автоматически — оставляем оператору. Но
-        // recommendation вернёт close_paid.
-      }
+      await autoCloseIfPaid(req, d);
       return row;
     }
 
@@ -643,6 +863,7 @@ export async function debtorsRoutes(app: FastifyInstance) {
       action: "payment_received",
       summary: `${d.caseNumber}: внеплановый платёж · ${parsed.data.amount} ₽ (${parsed.data.method})`,
     });
+    await autoCloseIfPaid(req, d);
     return row;
   });
 
@@ -804,6 +1025,8 @@ export async function debtorsRoutes(app: FastifyInstance) {
         message: `Из ${stageLabel(from)} нельзя закрыть как ${stageLabel(to)}`,
       });
     }
+    const closeErr = await closedPaidBasisError(id, d, to);
+    if (closeErr) return reply.code(400).send(closeErr);
     const userId = req.user?.userId ?? null;
     const now = new Date();
     await db

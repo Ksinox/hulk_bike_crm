@@ -7,12 +7,10 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import {
-  ratingTier,
-  SOURCE_LABEL,
-} from "@/lib/mock/clients";
+import { SOURCE_LABEL } from "@/lib/mock/clients";
 import { navigate } from "@/app/navigationStore";
 import { useAllClients, useClientExtraPhone } from "./clientStore";
+import { useClientStats } from "@/lib/useClientStats";
 import { ClientPhoto } from "./ClientPhoto";
 import {
   getActiveRentalByClient,
@@ -39,6 +37,8 @@ export function ClientQuickView({
   const phone2 = useClientExtraPhone(clientId);
   const rentals = useRentalsByClient(clientId);
   const active = getActiveRentalByClient(clientId, rentals);
+  // Единый источник статистики клиента (тот же, что в карточке аренды).
+  const { totalPaid, totalDays } = useClientStats(clientId);
 
   const requestClose = () => {
     if (closing) return;
@@ -56,10 +56,6 @@ export function ClientQuickView({
   }, []);
 
   if (!client) return null;
-
-  const tier = ratingTier(client.rating);
-  const totalTurnover = rentals.reduce((s, r) => s + (r.sum || 0), 0);
-  const totalDays = rentals.reduce((s, r) => s + (r.days || 0), 0);
 
   const openFull = () => {
     navigate({
@@ -155,24 +151,12 @@ export function ClientQuickView({
             </div>
           )}
 
-          <div className="mt-3 grid grid-cols-3 gap-2">
+          <div className="mt-3 grid grid-cols-2 gap-2">
             <QuickStat
-              label="Рейтинг"
-              value={String(client.rating)}
-              hint={tier.label.toLowerCase()}
-              tone={
-                tier.tone === "good"
-                  ? "green"
-                  : tier.tone === "bad"
-                    ? "red"
-                    : "neutral"
-              }
-            />
-            <QuickStat
-              label="Оборот"
+              label="Принёс"
               value={
-                totalTurnover > 0
-                  ? `${Math.round(totalTurnover / 1000)} тыс ₽`
+                totalPaid > 0
+                  ? `${totalPaid.toLocaleString("ru-RU")} ₽`
                   : "—"
               }
               hint="за всё время"

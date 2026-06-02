@@ -23,6 +23,11 @@ export type UploadedFile = {
   mimeType?: string;
   /** Запись в БД client_documents (для удаления и т.п.). */
   docId?: number;
+  /** Если файл подставлен из публичной заявки (F18) — вид файла заявки.
+   *  При сохранении клиента не загружаем его повторно: бэкенд /convert
+   *  сам копирует файлы заявки в client_documents (флаг keepFiles).
+   *  Превью строится по applicationFileUrl(appId, kind). */
+  appFileKind?: "passport_main" | "passport_reg" | "license" | "selfie";
 };
 
 function formatSize(bytes?: number): string {

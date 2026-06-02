@@ -62,7 +62,7 @@ export function ScooterPosterAvatar({
   return (
     <div
       className={cn(
-        "relative flex shrink-0 items-end justify-center overflow-visible rounded-2xl bg-surface-soft",
+        "relative flex shrink-0 items-end justify-center overflow-visible rounded-2xl bg-white",
         highlighted && "ring-2 ring-blue-500",
         dims.box,
         className,

@@ -10,7 +10,6 @@ import { useApiClientDocs } from "@/lib/api/documents";
 import { fileUrl } from "@/lib/files";
 import {
   addPayment,
-  addRentalIncident,
   completeRentalNoDamage,
   completeRentalWithDamage,
   revertOverdue,
@@ -25,6 +24,7 @@ import { useApiPriceList } from "@/lib/api/price-list";
 import { useDebtAggregate } from "@/lib/api/debt";
 import { DocumentPreviewModal } from "./DocumentPreviewModal";
 import { PaymentAcceptDialog } from "./PaymentAcceptDialog";
+import { DamageReportDialog, type DamageSeedItem } from "./DamageReportDialog";
 
 /** v0.4.57: helper для записи компенсаций с залога. Использует
  *  существующий endpoint /debt/manual (kind=manual_charge). */
@@ -55,7 +55,6 @@ export type ActionKind =
   | "police"
   // v0.4.36: вернуть аренду из police/court обратно в работу
   | "revert-police"
-  | "incident"
   | "record-damage"
   | "claim"
   | "lawyer"
@@ -150,6 +149,11 @@ export function RentalActionDialog({
   const [returnDocPreview, setReturnDocPreview] = useState<number | null>(null);
   // v0.4.66: открыть PaymentAcceptDialog если есть долг по аренде.
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  // v0.8.34 (F2): при выборе «Создать акт» в FinalActDialog открываем
+  // ПОЛНОЦЕННЫЙ DamageReportDialog (тот же, что «Зафиксировать ущерб» на
+  // активной аренде) — с предзаполненными позициями. Оператор может
+  // отредактировать суммы, изменить зачёт залога, тумблер «в ремонт».
+  const [damageSeed, setDamageSeed] = useState<DamageSeedItem[] | null>(null);
   // Дата фактического возврата.
   const [returnDate, setReturnDate] = useState<string>(() => {
     const d = new Date();
@@ -163,13 +167,24 @@ export function RentalActionDialog({
   // бизнесы ведут учёт пробега (для ТО / страховки). Пустое значение
   // не передаётся в API.
   const [mileageAtReturn, setMileageAtReturn] = useState<string>("");
+  // v0.6.1: статус скутера после завершения аренды. По умолчанию
+  // «обратно в парк». При наличии ущерба меняется на «в ремонт» автоматически
+  // в effect-е ниже (до явного выбора оператора).
+  type ScooterNextStatus =
+    | "rental_pool"
+    | "repair"
+    | "for_sale"
+    | "disassembly"
+    | "buyout";
+  const [scooterNextStatus, setScooterNextStatus] =
+    useState<ScooterNextStatus>("rental_pool");
+  // v0.6.1: оператор ещё ни разу не трогал dropdown → подсказываем «в ремонт»
+  // при появлении любого ущерба. Если уже трогал — не перезатираем выбор.
+  const [scooterStatusTouched, setScooterStatusTouched] = useState(false);
   // Legacy-флаг для action="complete-damage" — в новом flow «Завершить»
   // ущерб открывается через onOpenDamage callback, без чекбокса.
   const [hasDamage] = useState(false);
   void hasDamage;
-
-  // Для инцидента посреди аренды
-  const [incidentType, setIncidentType] = useState("ДТП");
 
   // Для принятия платежа
   const [payType, setPayType] = useState<"rent" | "fine" | "damage" | "deposit">("rent");
@@ -271,13 +286,17 @@ export function RentalActionDialog({
     }
     await Promise.all(charges).catch(() => {});
     try {
-      await completeRentalNoDamage(rental.id, {
-        dateActual: dateActualForApi(),
-        conditionOk: true,
-        equipmentOk: true,
-        depositReturned: true,
-        mileage: mileageForApi(),
-      });
+      await completeRentalNoDamage(
+        rental.id,
+        {
+          dateActual: dateActualForApi(),
+          conditionOk: true,
+          equipmentOk: true,
+          depositReturned: true,
+          mileage: mileageForApi(),
+        },
+        scooterNextStatus,
+      );
     } catch (e) {
       console.error("completeRentalNoDamage failed", e);
     }
@@ -286,17 +305,12 @@ export function RentalActionDialog({
     setReturnDocPreview(rental.id);
   };
 
-  // Создать акт ущерба: POST damage_report со всеми items, аренда →
-  // completed_damage. Дальнейшая оплата/претензия — через существующий flow.
-  const finalizeWithAct = async () => {
-    const items: Array<{
-      priceItemId: number | null;
-      name: string;
-      originalPrice: number;
-      finalPrice: number;
-      quantity: number;
-      comment: string | null;
-    }> = [];
+  // v0.8.34 (F2): из собранных карточек приёмки строим позиции для
+  // полноценного DamageReportDialog. Раньше эти же позиции уходили
+  // напрямую в POST /damage-reports (finalizeWithAct) с фиксированным
+  // зачётом залога и без возможности редактирования сумм оператором.
+  const buildDamageSeedItems = (): DamageSeedItem[] => {
+    const items: DamageSeedItem[] = [];
     for (const d of scooterDamages) {
       items.push({
         priceItemId: d.itemId ?? null,
@@ -326,26 +340,26 @@ export function RentalActionDialog({
         comment: null,
       });
     }
+    return items;
+  };
+
+  // v0.8.34 (F2): открыть полноценный диалог фиксации ущерба с
+  // предзаполненными позициями. Создание акта и зачёт залога — внутри него.
+  const openFullDamageDialog = () => {
+    const items = buildDamageSeedItems();
     if (items.length === 0) {
       // Защита: не должно происходить (диалог только при damage>0)
       requestClose();
       return;
     }
-    const totalAmount = items.reduce((s, it) => s + it.finalPrice, 0);
-    const depositCovered = Math.min(totalAmount, rental.deposit ?? 0);
-    try {
-      await api.post("/api/damage-reports", {
-        rentalId: rental.id,
-        items,
-        depositCovered,
-        sendScooterToRepair: true,
-        note: null,
-      });
-    } catch (e) {
-      console.error("create damage report", e);
-    }
-    // Завершаем аренду в режиме with damage. Передаём 0 как damageAmount —
-    // фактический долг уже учтён через damage_report.
+    setDamageSeed(items);
+  };
+
+  // v0.8.34 (F2): вызывается после того как DamageReportDialog СОЗДАЛ акт
+  // (он сам начислил долг и зачёл залог). Здесь только завершаем аренду —
+  // долг по ущербу остаётся на аренде (damage_reports.debt>0), и карточка
+  // покажет «Завершена с ущербом» (см. F1 в effectiveRentalStatus).
+  const finalizeAfterAct = async () => {
     try {
       await completeRentalWithDamage(
         rental.id,
@@ -359,6 +373,7 @@ export function RentalActionDialog({
         },
         0,
         "",
+        scooterNextStatus,
       );
     } catch (e) {
       console.error("completeRentalWithDamage failed", e);
@@ -376,6 +391,17 @@ export function RentalActionDialog({
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // v0.6.1: если у скутера есть повреждения и оператор ещё не трогал
+  // dropdown — предлагаем «В ремонт» по умолчанию.
+  useEffect(() => {
+    if (scooterStatusTouched) return;
+    if (scooterDamages.length > 0) {
+      setScooterNextStatus("repair");
+    } else {
+      setScooterNextStatus("rental_pool");
+    }
+  }, [scooterDamages.length, scooterStatusTouched]);
 
   const spec: Spec = (() => {
     if (action === "complete") {
@@ -585,6 +611,34 @@ export function RentalActionDialog({
               </div>
             )}
 
+            {/* v0.6.1: выбор статуса скутера после завершения */}
+            {rental.scooterId != null && (
+              <div>
+                <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-2">
+                  Что делать со скутером?
+                </label>
+                <select
+                  value={scooterNextStatus}
+                  onChange={(e) => {
+                    setScooterStatusTouched(true);
+                    setScooterNextStatus(
+                      e.target.value as typeof scooterNextStatus,
+                    );
+                  }}
+                  className="mt-1 h-9 w-full rounded-[10px] border border-border bg-surface px-3 text-[13px] text-ink outline-none focus:border-blue-600"
+                >
+                  <option value="rental_pool">Готов к аренде (в парк)</option>
+                  <option value="repair">В ремонт</option>
+                  <option value="for_sale">Выставить на продажу</option>
+                  <option value="disassembly">На разборку</option>
+                  <option value="buyout">Передать клиенту в выкуп</option>
+                </select>
+                <div className="mt-1 text-[10.5px] text-muted-2">
+                  По умолчанию — назад в парк. При ущербе обычно выбирают «В ремонт».
+                </div>
+              </div>
+            )}
+
             {/* Финансовая сводка по залогу */}
             <div className="rounded-xl border border-border bg-surface-soft/60 p-3.5">
               <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-2 mb-2.5">
@@ -751,13 +805,17 @@ export function RentalActionDialog({
         );
         if (!anyScooterDamage && !anyEquipDamage) {
           // Чисто закрытие без ущерба
-          completeRentalNoDamage(rental.id, {
-            dateActual: returnDate ? isoDateToRu(returnDate) : todayStr(),
-            conditionOk: true,
-            equipmentOk: true,
-            depositReturned: true,
-            mileage: mileageAtReturn ? Number(mileageAtReturn) : undefined,
-          });
+          completeRentalNoDamage(
+            rental.id,
+            {
+              dateActual: returnDate ? isoDateToRu(returnDate) : todayStr(),
+              conditionOk: true,
+              equipmentOk: true,
+              depositReturned: true,
+              mileage: mileageAtReturn ? Number(mileageAtReturn) : undefined,
+            },
+            scooterNextStatus,
+          );
           break;
         }
         // Есть хоть одно повреждение → показываем финальный диалог.
@@ -778,6 +836,7 @@ export function RentalActionDialog({
           },
           Number(damageAmount) || 0,
           damageNote,
+          scooterNextStatus,
         );
         break;
       case "police":
@@ -800,14 +859,6 @@ export function RentalActionDialog({
       }
       case "lawyer":
         setRentalStatus(rental.id, "court");
-        break;
-      case "incident":
-        addRentalIncident(rental.id, {
-          type: incidentType,
-          date: todayStr(),
-          damage: Number(damageAmount) || 0,
-          note: damageNote,
-        });
         break;
       case "record-damage": {
         const amt = Number(damageAmount) || 0;
@@ -861,9 +912,20 @@ export function RentalActionDialog({
   // отображаем DocumentPreviewModal с актом возврата — оператор
   // печатает/скачивает и закрывает превью.
   if (returnDocPreview != null) {
-    const base = window.location.origin.includes("localhost")
-      ? "http://localhost:4000"
-      : window.location.origin.replace("crm.", "api.");
+    // v0.6.12: base API URL берём из VITE_API_URL — он выставляется
+    // в Dokploy для каждой среды (prod/preview/dev). Старый хак с
+    // replace("crm.", "api.") ломался на preview-доменах вида
+    // crm-preview.104-128-128-96.sslip.io (нет точки после "crm")
+    // и iframe загружал CRM-страницу вместо документа.
+    const base = (() => {
+      const envBase = import.meta.env.VITE_API_URL as string | undefined;
+      if (envBase) return envBase.replace(/\/$/, "");
+      return window.location.origin.includes("localhost")
+        ? "http://localhost:4000"
+        : window.location.origin
+            .replace("crm-preview.", "api-preview.")
+            .replace("crm.", "api.");
+    })();
     const htmlUrl = `${base}/api/rentals/${returnDocPreview}/document/act_return?format=html`;
     const docxUrl = `${base}/api/rentals/${returnDocPreview}/document/act_return?format=docx`;
     return (
@@ -946,48 +1008,6 @@ export function RentalActionDialog({
            * лейблами, привязанный к тому же state — оператор видел
            * «всё уже отмечено» и жал «Завершить» не глядя.
            */}
-
-          {action === "incident" && (
-            <div className="mt-3 flex flex-col gap-2">
-              <label className="text-[12px] font-semibold text-ink">
-                Тип инцидента
-                <select
-                  value={incidentType}
-                  onChange={(e) => setIncidentType(e.target.value)}
-                  className="mt-1 h-9 w-full rounded-[10px] border border-border bg-surface px-3 text-[13px] text-ink outline-none focus:border-blue-600"
-                >
-                  <option value="ДТП">ДТП</option>
-                  <option value="Повреждение скутера">Повреждение скутера</option>
-                  <option value="Эвакуация на штрафстоянку">Эвакуация на штрафстоянку</option>
-                  <option value="Кража / пропажа">Кража / пропажа</option>
-                  <option value="Жалоба">Жалоба</option>
-                  <option value="Другое">Другое</option>
-                </select>
-              </label>
-              <label className="text-[12px] font-semibold text-ink">
-                Оценка ущерба, ₽
-                <input
-                  type="number"
-                  value={damageAmount}
-                  onChange={(e) => setDamageAmount(e.target.value)}
-                  className="mt-1 h-9 w-full rounded-[10px] border border-border bg-surface px-3 text-[13px] text-ink outline-none focus:border-blue-600"
-                />
-                <div className="mt-0.5 text-[10px] text-muted-2">
-                  можно 0 — если ущерб ещё не посчитан
-                </div>
-              </label>
-              <label className="text-[12px] font-semibold text-ink">
-                Описание
-                <textarea
-                  value={damageNote}
-                  onChange={(e) => setDamageNote(e.target.value)}
-                  placeholder="Например: клиент попал в ДТП на перекрёстке, повреждено переднее крыло и фонарь"
-                  rows={3}
-                  className="mt-1 w-full resize-y rounded-[10px] border border-border bg-surface px-3 py-2 text-[13px] text-ink outline-none focus:border-blue-600"
-                />
-              </label>
-            </div>
-          )}
 
           {action === "addPayment" && (
             <div className="mt-3 flex flex-col gap-2">
@@ -1199,9 +1219,27 @@ export function RentalActionDialog({
             setActDialog(null);
             await finalizeBrotherly();
           }}
-          onCreateAct={async () => {
+          onCreateAct={() => {
+            // v0.8.34 (F2): открываем полноценный диалог фиксации ущерба
+            // вместо тихого POST. Оператор увидит редактируемые суммы,
+            // зачёт залога и тумблер «в ремонт».
             setActDialog(null);
-            await finalizeWithAct();
+            openFullDamageDialog();
+          }}
+        />
+      )}
+      {/* v0.8.34 (F2): полноценный диалог ущерба (тот же что «Зафиксировать
+          ущерб» на активной аренде) — открыт из потока завершения. После
+          создания акта завершаем аренду (finalizeAfterAct). */}
+      {damageSeed && action === "complete" && (
+        <DamageReportDialog
+          rental={rental}
+          seedItems={damageSeed}
+          submitLabel="Создать акт и завершить"
+          onClose={() => setDamageSeed(null)}
+          onCreated={() => {
+            setDamageSeed(null);
+            void finalizeAfterAct();
           }}
         />
       )}
@@ -1361,19 +1399,6 @@ function specFor(action: ActionKind, rental: Rental): Spec {
         ),
         cta: "Передать юристу",
         ctaTone: "danger",
-      };
-    case "incident":
-      return {
-        title: "Зафиксировать инцидент",
-        body: (
-          <div className="text-[12px]">
-            Инцидент посреди аренды: ДТП, эвакуация на штрафстоянку, сломанный
-            скутер и т.п. Запись появится в истории этой аренды, в профиле
-            клиента и в общем разделе инцидентов.
-          </div>
-        ),
-        cta: "Создать инцидент",
-        ctaTone: "warn",
       };
     case "record-damage":
       return {
@@ -1580,7 +1605,7 @@ function ReturnItemCard({
           )}
         >
           {imageUrl ? (
-            <img src={imageUrl} alt="" className="h-full w-full object-contain" />
+            <img src={imageUrl} alt="" className="h-full w-full bg-white object-contain" />
           ) : fallbackIcon === "scooter" ? (
             <Bike
               size={isCompact ? 22 : 26}
@@ -2153,9 +2178,16 @@ function RentalExtensionsHint({ rentalId }: { rentalId: number }) {
  */
 function ReturnDocPreviewLink({ rentalId }: { rentalId: number }) {
   const [open, setOpen] = useState(false);
-  const base = window.location.origin.includes("localhost")
-    ? "http://localhost:4000"
-    : window.location.origin.replace("crm.", "api.");
+  // v0.6.12: см. комментарий выше — VITE_API_URL вместо replace("crm.", "api.").
+  const base = (() => {
+    const envBase = import.meta.env.VITE_API_URL as string | undefined;
+    if (envBase) return envBase.replace(/\/$/, "");
+    return window.location.origin.includes("localhost")
+      ? "http://localhost:4000"
+      : window.location.origin
+          .replace("crm-preview.", "api-preview.")
+          .replace("crm.", "api.");
+  })();
   const htmlUrl = `${base}/api/rentals/${rentalId}/document/act_return?format=html`;
   const docxUrl = `${base}/api/rentals/${rentalId}/document/act_return?format=docx`;
   return (

@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Приёмка возврата</title>
+<link rel="stylesheet" href="../css/app.css">
+</head>
+<body>
+<div class="screen">
+  <header class="s-head">
+    <div class="s-head-row">
+      <button class="s-back" data-back aria-label="Назад"></button>
+      <div style="flex:1"><div class="s-title sm">Приёмка возврата</div><div class="s-sub" id="sub"></div></div>
+    </div>
+  </header>
+  <div class="s-body with-fab">
+    <div class="stack">
+      <section class="card pad fly" id="hero"></section>
+      <section class="card pad fly">
+        <div class="sec-label" style="margin:0 0 10px">Пробег при возврате</div>
+        <div class="opt-grid">
+          <div class="field" style="margin:0"><label>Был</label><input class="inp tnum" id="oldKm" disabled></div>
+          <div class="field" style="margin:0"><label>Сейчас</label><input class="inp tnum" id="newKm" value="0" oninput="recalc()"></div>
+        </div>
+      </section>
+      <section class="fly">
+        <div class="sec-label">Осмотр</div>
+        <div class="list" id="list"></div>
+      </section>
+      <section class="card pad fly" style="background:hsl(var(--surface-soft));border:none">
+        <div class="kv" style="border:none"><span class="k">Сумма ущерба</span><span class="v big" id="total">0 ₽</span></div>
+        <div class="kv" id="dueLine" style="display:none;border:none"><span class="k">К удержанию / доплате</span><span class="v big" style="color:hsl(var(--red-ink))" id="due">0 ₽</span></div>
+      </section>
+    </div>
+  </div>
+  <div class="fab-bar"><button class="btn ghost" id="okBtn" style="flex:1" onclick="submit()">Без ущерба · завершить</button></div>
+</div>
+
+<script src="../js/data.js"></script>
+<script src="../js/hb.js"></script>
+<script>
+  var params = new URLSearchParams(location.search);
+  var rental = HB_DATA.rentalById(Number(params.get('id'))) || HB_DATA.activeRentals()[0];
+  var client = HB_DATA.clientById(rental.clientId);
+  var scooter = rental.scooterId ? HB_DATA.fleetById(rental.scooterId) : HB_DATA.fleetByName(rental.scooter);
+  var items = [
+    { title: 'Царапины пластика', price: 3800, tone: 'orange' },
+    { title: 'Повреждение фары', price: 2400, tone: 'orange' },
+    { title: 'Зеркало', price: 1200, tone: 'orange' },
+    { title: 'Последствия ДТП', price: 14000, tone: 'red' }
+  ];
+  var selected = {};
+
+  document.getElementById('sub').textContent = 'Аренда №' + rental.id + ' · ' + rental.scooter;
+  document.getElementById('hero').innerHTML = '<div style="display:flex;align-items:center;gap:13px"><div class="av" style="width:46px;height:46px">' + HB_DATA.initials(client.name) + '</div><div style="flex:1"><div style="font-size:15.5px;font-weight:700">' + client.name + '</div><a class="r-phone" href="tel:' + client.phone.replace(/\D/g, '') + '" style="color:hsl(var(--blue-700));font-size:14px">' + client.phone + '</a></div><span class="pill orange"><span class="pd"></span>Возврат</span></div>';
+  document.getElementById('oldKm').value = scooter ? scooter.mileage.toLocaleString('ru-RU') : '0';
+  document.getElementById('newKm').value = scooter ? scooter.mileage.toLocaleString('ru-RU') : '0';
+  document.getElementById('list').innerHTML = items.map(function (x, i) {
+    return '<div class="row" onclick="toggleDamage(' + i + ')" id="d' + i + '"><div class="av" id="a' + i + '">' + ic('check', 's16') + '</div><div class="r-main"><div class="r-name">' + x.title + '</div><div class="r-sub">оценка ремонта</div></div><div class="r-meta"><div class="m-v tnum">' + x.price.toLocaleString('ru-RU') + ' ₽</div></div></div>';
+  }).join('');
+
+  window.toggleDamage = function (i) {
+    selected[i] = !selected[i];
+    var row = document.getElementById('d' + i);
+    var av = document.getElementById('a' + i);
+    if (selected[i]) {
+      row.classList.add('acc-' + items[i].tone);
+      av.style.background = 'hsl(var(--' + items[i].tone + '-soft))';
+      av.style.color = 'hsl(var(--' + items[i].tone + '-ink))';
+    } else {
+      row.classList.remove('acc-' + items[i].tone);
+      av.style.background = '';
+      av.style.color = '';
+    }
+    recalc();
+  };
+
+  function recalc() {
+    var total = items.reduce(function (sum, item, i) { return sum + (selected[i] ? item.price : 0); }, 0);
+    document.getElementById('total').textContent = total.toLocaleString('ru-RU') + ' ₽';
+    var due = Math.max(0, total - rental.deposit);
+    document.getElementById('dueLine').style.display = total > 0 ? 'flex' : 'none';
+    document.getElementById('due').textContent = due.toLocaleString('ru-RU') + ' ₽';
+    var btn = document.getElementById('okBtn');
+    if (total > 0) {
+      btn.className = 'btn danger';
+      btn.innerHTML = ic('file', 's18') + '&nbsp;Сформировать акт ущерба · ' + total.toLocaleString('ru-RU') + ' ₽';
+    } else {
+      btn.className = 'btn ghost';
+      btn.textContent = 'Без ущерба · завершить';
+    }
+  }
+
+  function submit() {
+    document.querySelector('.s-body').innerHTML = '<div class="empty fly" style="padding:80px 22px"><div class="ei" style="background:hsl(var(--orange-soft));color:hsl(var(--orange-ink));width:64px;height:64px">' + ic('file', 's22') + '</div><div class="et" style="font-size:18px">Приёмка сохранена</div><div class="es">' + rental.scooter + ' возвращён, данные готовы для акта и ремонта.</div></div>';
+    document.querySelector('.fab-bar').innerHTML = '<button class="btn ghost" style="flex:1" onclick="back()">Готово</button>';
+  }
+</script>
+</body>
+</html>

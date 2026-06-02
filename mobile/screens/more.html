@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Еще</title>
+<link rel="stylesheet" href="../css/app.css">
+</head>
+<body>
+<div class="screen">
+  <header class="s-head">
+    <div class="s-head-row">
+      <div style="flex:1">
+        <div class="s-title">Еще</div>
+        <div class="s-sub">Готовые разделы CRM из кода приложения</div>
+      </div>
+    </div>
+  </header>
+  <div class="s-body">
+    <div class="stack">
+      <section class="card pad fly">
+        <div class="sec-label" style="margin:0 0 10px">Операционные разделы</div>
+        <div class="list">
+          <div class="row acc-orange" onclick="go('service.html')">
+            <div class="av" style="background:hsl(var(--orange-soft));color:hsl(var(--orange-ink))">Р</div>
+            <div class="r-main"><div class="r-name">Ремонты</div><div class="r-sub">активные работы, чек-лист, фото, завершение ремонта</div></div>
+            <div class="r-meta"><div class="m-l">готово</div></div>
+          </div>
+          <div class="row acc-blue" onclick="go('documents.html')">
+            <div class="av" style="background:hsl(var(--blue-50));color:hsl(var(--blue-700))">Д</div>
+            <div class="r-main"><div class="r-name">Документы</div><div class="r-sub">шаблоны, переменные, редактор</div></div>
+            <div class="r-meta"><div class="m-l">готово</div></div>
+          </div>
+          <div class="row" onclick="go('staff.html')">
+            <div class="av">С</div>
+            <div class="r-main"><div class="r-name">Сотрудники</div><div class="r-sub">создание, роли, активность, сброс пароля</div></div>
+            <div class="r-meta"><div class="m-l">director</div></div>
+          </div>
+          <div class="row" onclick="go('settings.html')">
+            <div class="av">Н</div>
+            <div class="r-main"><div class="r-name">Настройки</div><div class="r-sub">рабочие часы, расчетный период и параметры CRM</div></div>
+            <div class="r-meta"><div class="m-l">готово</div></div>
+          </div>
+          <div class="row" onclick="go('whats-new.html')">
+            <div class="av">V</div>
+            <div class="r-main"><div class="r-name">Что нового</div><div class="r-sub">история версий и непрочитанные обновления</div></div>
+            <div class="r-meta"><div class="m-l">готово</div></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card pad fly">
+        <div class="sec-label" style="margin:0 0 10px">Разделы desktop-CRM со статусом "скоро"</div>
+        <div class="kpis c2">
+          <div class="kpi gray"><div class="k-l">Рассрочки</div><div class="k-v">скоро</div></div>
+          <div class="kpi gray"><div class="k-l">Продажи</div><div class="k-v">скоро</div></div>
+          <div class="kpi gray"><div class="k-l">Инциденты</div><div class="k-v">скоро</div></div>
+          <div class="kpi gray"><div class="k-l">Аналитика</div><div class="k-v">скоро</div></div>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+<script src="../js/hb.js"></script>
+</body>
+</html>

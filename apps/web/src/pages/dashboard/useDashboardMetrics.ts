@@ -48,6 +48,8 @@ export type DashboardMetrics = {
     total: number;
     inRental: number;
     ready: number;
+    /** Готовы к сдаче: rental_pool без активной аренды (F10). */
+    pool: number;
     inRepair: number;
     forSale: number;
     sold: number;
@@ -319,6 +321,16 @@ export function useDashboardMetrics(): DashboardMetrics {
       total: fleetTotal,
       inRental: activeRentalsCount,
       ready: scooters.filter((s) => s.baseStatus === "ready").length,
+      // «Готов к аренде» = в пуле аренды и без активной аренды (свободен к сдаче).
+      // F10: сводка раньше под «свободно» показывала ready (не распределён),
+      // что путало («свободно 0 при готов 2»). Считаем реально доступных к сдаче.
+      pool: scooters.filter(
+        (s) =>
+          s.baseStatus === "rental_pool" &&
+          !rentals.some(
+            (r) => r.scooterId === s.id && r.status === "active",
+          ),
+      ).length,
       inRepair: scooters.filter((s) => s.baseStatus === "repair").length,
       forSale: scooters.filter(
         (s) => s.baseStatus === "for_sale" || s.baseStatus === "buyout",

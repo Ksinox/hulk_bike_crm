@@ -409,6 +409,121 @@ export function PickContainer() {
   );
 }
 
+/* ========== Стилизованный prompt — ввод текста (v0.8.20) ========== */
+
+type PromptArgs = {
+  title: string;
+  message?: string;
+  placeholder?: string;
+  initial?: string;
+  multiline?: boolean;
+  confirmText?: string;
+  cancelText?: string;
+};
+type PromptState = PromptArgs & { resolve: (v: string | null) => void };
+const promptListeners = new Set<(s: PromptState | null) => void>();
+let promptState: PromptState | null = null;
+function emitPrompt() {
+  promptListeners.forEach((l) => l(promptState));
+}
+
+/**
+ * Стилизованная замена window.prompt. Возвращает введённый текст (trimmed)
+ * или null при отмене/пустом вводе. Единый стиль с confirmDialog/pickAction.
+ */
+export function promptDialog(args: PromptArgs): Promise<string | null> {
+  return new Promise((resolve) => {
+    promptState = { ...args, resolve };
+    emitPrompt();
+  });
+}
+
+export function PromptContainer() {
+  const [s, setS] = useState<PromptState | null>(promptState);
+  const [val, setVal] = useState("");
+  useEffect(() => {
+    const l = (next: PromptState | null) => {
+      setS(next);
+      setVal(next?.initial ?? "");
+    };
+    promptListeners.add(l);
+    return () => {
+      promptListeners.delete(l);
+    };
+  }, []);
+  if (!s) return null;
+  const close = (v: string | null) => {
+    s.resolve(v);
+    promptState = null;
+    emitPrompt();
+  };
+  const submit = () => close(val.trim() ? val.trim() : null);
+  return (
+    <div
+      className="fixed inset-0 z-[1100] flex items-center justify-center bg-ink/60 p-6 backdrop-blur-sm"
+      onClick={() => close(null)}
+    >
+      <div
+        className="w-full max-w-[420px] overflow-hidden rounded-2xl bg-surface shadow-card-lg"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="border-b border-border px-5 py-4">
+          <div className="text-[15px] font-bold text-ink">{s.title}</div>
+          {s.message && (
+            <div className="mt-1 text-[13px] leading-relaxed text-ink-2">
+              {s.message}
+            </div>
+          )}
+        </div>
+        <div className="px-5 py-4">
+          {s.multiline ? (
+            <textarea
+              autoFocus
+              value={val}
+              onChange={(e) => setVal(e.target.value)}
+              rows={3}
+              placeholder={s.placeholder}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submit();
+                if (e.key === "Escape") close(null);
+              }}
+              className="w-full resize-none rounded-[10px] border border-border bg-surface-soft px-3 py-2 text-[13px] text-ink outline-none focus:ring-2 focus:ring-blue-100"
+            />
+          ) : (
+            <input
+              autoFocus
+              value={val}
+              onChange={(e) => setVal(e.target.value)}
+              placeholder={s.placeholder}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") submit();
+                if (e.key === "Escape") close(null);
+              }}
+              className="w-full rounded-[10px] border border-border bg-surface-soft px-3 py-2 text-[13px] text-ink outline-none focus:ring-2 focus:ring-blue-100"
+            />
+          )}
+        </div>
+        <div className="flex items-center justify-end gap-2 bg-surface-soft px-5 py-3">
+          <button
+            type="button"
+            onClick={() => close(null)}
+            className="rounded-full bg-surface px-4 py-2 text-[13px] font-semibold text-ink-2 hover:bg-border"
+          >
+            {s.cancelText ?? "Отмена"}
+          </button>
+          <button
+            type="button"
+            onClick={submit}
+            className="rounded-full bg-ink px-4 py-2 text-[13px] font-bold text-white hover:bg-blue-600"
+          >
+            {s.confirmText ?? "Сохранить"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** Обёртка на случай если где-то пригодится {children} */
 export function ToastProvider({ children }: { children: ReactNode }) {
   return (
@@ -417,6 +532,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       <ToastContainer />
       <ConfirmContainer />
       <PickContainer />
+      <PromptContainer />
     </>
   );
 }

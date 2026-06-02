@@ -11,10 +11,11 @@ import {
 import { ApplicationsList } from "./ApplicationsList";
 import { NewApplicationModal } from "@/pages/clients/NewApplicationModal";
 import { AddClientModal } from "@/pages/clients/AddClientModal";
+import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
 import { applicationToFormInit } from "@/pages/clients/applicationConvert";
 import { RejectApplicationModal } from "./RejectApplicationModal";
 import { useRejectApplication, useSpamApplication } from "@/lib/api/clientApplications";
-import { toast } from "@/lib/toast";
+import { toast, confirmDialog } from "@/lib/toast";
 
 /**
  * Страница «Заявки» — архив всех публичных анкет с фильтрами и поиском.
@@ -45,6 +46,15 @@ export function Applications() {
   const [convertingApp, setConvertingApp] = useState<ApiApplication | null>(null);
   const [rejectingApp, setRejectingApp] = useState<ApiApplication | null>(null);
   const [rejectMode, setRejectMode] = useState<"reject" | "spam">("reject");
+  // G3: после конвертации заявки в клиента — сразу предлагаем создать аренду
+  // (поток заявка → клиент → аренда → выбор скутера, без поиска клиента заново).
+  const [rentalPrefill, setRentalPrefill] = useState<{
+    clientId: number;
+    modelFilter?: string;
+    days?: number;
+    equipmentIds?: number[];
+    start?: string;
+  } | null>(null);
 
   // Debounce поиска — 200ms.
   const timer = useRef<number | null>(null);
@@ -163,9 +173,46 @@ export function Applications() {
           applicationId={convertingApp.id}
           initialData={applicationToFormInit(convertingApp)}
           onClose={() => setConvertingApp(null)}
-          onCreated={() => {
+          onCreated={(client) => {
+            // G3: клиент из заявки заведён → предлагаем сразу создать аренду
+            // с предзаполненными моделью/сроком из заявки (если клиент их указал).
+            const app = convertingApp;
             setConvertingApp(null);
             toast.success("Клиент оформлен");
+            const modelFilter = app?.requestedModel ?? undefined;
+            const days = app?.requestedDays ?? undefined;
+            const equipmentIds = app?.requestedEquipmentIds ?? undefined;
+            const start = app?.requestedStartDate ?? undefined;
+            void confirmDialog({
+              title: "Клиент создан",
+              message: `Оформить аренду для «${client.name}»? Останется выбрать конкретный скутер и распечатать договор.`,
+              confirmText: "Оформить аренду",
+              cancelText: "Позже",
+            }).then((ok) => {
+              if (ok)
+                setRentalPrefill({
+                  clientId: client.id,
+                  modelFilter,
+                  days,
+                  equipmentIds,
+                  start,
+                });
+            });
+          }}
+        />
+      )}
+
+      {rentalPrefill && (
+        <NewRentalModal
+          initialClientId={rentalPrefill.clientId}
+          initialModelFilter={rentalPrefill.modelFilter}
+          initialDays={rentalPrefill.days}
+          initialEquipmentIds={rentalPrefill.equipmentIds}
+          initialStart={rentalPrefill.start}
+          onClose={() => setRentalPrefill(null)}
+          onCreated={() => {
+            setRentalPrefill(null);
+            toast.success("Аренда создана");
           }}
         />
       )}

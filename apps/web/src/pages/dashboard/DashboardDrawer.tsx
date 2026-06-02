@@ -1,16 +1,18 @@
 import {
   createContext,
+  Fragment,
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type ReactNode,
 } from "react";
 import { Check, ExternalLink, Eye, MailQuestion, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { navigate } from "@/app/navigationStore";
-import { RentalCard } from "@/pages/rentals/RentalCard";
+import { RentalCard, RentalHistoryColumn } from "@/pages/rentals/RentalCard";
+import { PaymentAcceptDialog } from "@/pages/rentals/PaymentAcceptDialog";
+import { ErrorBoundary } from "@/app/ErrorBoundary";
 import {
   useRentals,
   useArchivedRentals,
@@ -61,6 +63,18 @@ type Target =
   // «Новые заявки» открывает этот drawer, а не уводит на /clients.
   | { kind: "applicationsList" };
 
+/**
+ * v0.7.20: Payment/История аренды — отдельная push-колонка, которая
+ * выезжает СПРАВА от стека (как в «Аренды»). Взаимоисключение: открыта
+ * либо оплата, либо история (одна на момент). Это тот же принцип, что и
+ * на странице аренд — единый механизм push-колонок везде, где вызывается
+ * приём оплаты / просмотр истории по аренде.
+ */
+type SideColumn =
+  | { kind: "payment"; rentalId: number; extDays: number }
+  | { kind: "history"; rentalId: number }
+  | null;
+
 type Ctx = {
   stack: Target[];
   openRental: (id: number) => void;
@@ -72,6 +86,16 @@ type Ctx = {
   close: () => void;
   closeAt: (index: number) => void;
   inDrawer: boolean;
+  // v0.7.20: side-колонка (оплата / история) — единый push-механизм.
+  side: SideColumn;
+  /** Счётчик сброса — бампается при закрытии оплаты, чтобы карточка
+   *  обнулила drag-extend на календаре (как paymentResetSignal в Аренды). */
+  sideResetSignal: number;
+  openPayment: (rentalId: number, extDays: number) => void;
+  setPaymentExtDays: (extDays: number) => void;
+  closePayment: () => void;
+  openHistory: (rentalId: number) => void;
+  closeHistory: () => void;
 };
 
 const DashboardDrawerCtx = createContext<Ctx | null>(null);
@@ -90,6 +114,13 @@ export function useDashboardDrawer(): Ctx {
       close: () => {},
       closeAt: () => {},
       inDrawer: false,
+      side: null,
+      sideResetSignal: 0,
+      openPayment: () => {},
+      setPaymentExtDays: () => {},
+      closePayment: () => {},
+      openHistory: () => {},
+      closeHistory: () => {},
     }
   );
 }
@@ -114,6 +145,8 @@ function pushUnique(stack: Target[], next: Target): Target[] {
 
 export function DashboardDrawerProvider({ children }: { children: ReactNode }) {
   const [stack, setStack] = useState<Target[]>([]);
+  const [side, setSide] = useState<SideColumn>(null);
+  const [sideResetSignal, setSideResetSignal] = useState(0);
   const ctx: Ctx = useMemo(
     () => ({
       stack,
@@ -124,29 +157,89 @@ export function DashboardDrawerProvider({ children }: { children: ReactNode }) {
         setStack((s) => pushUnique(s, { kind: "rentalsList", filter })),
       openApplicationsList: () =>
         setStack((s) => pushUnique(s, { kind: "applicationsList" })),
-      back: () => setStack((s) => s.slice(0, -1)),
-      close: () => setStack([]),
-      closeAt: (index) =>
-        setStack((s) => s.filter((_, i) => i !== index)),
+      back: () => {
+        // Esc/back сначала закрывает side-колонку (оплата/история), затем
+        // верхнюю панель стека.
+        if (side) {
+          if (side.kind === "payment") setSideResetSignal((n) => n + 1);
+          setSide(null);
+          return;
+        }
+        setStack((s) => s.slice(0, -1));
+      },
+      close: () => {
+        setSide(null);
+        setStack([]);
+      },
+      closeAt: (index) => {
+        // Если закрываем аренду, по которой открыта оплата/история —
+        // закрываем и side-колонку (она осталась бы «висеть» без карточки).
+        const removed = stack[index];
+        if (side && removed && "id" in removed && side.rentalId === removed.id) {
+          setSide(null);
+        }
+        setStack((s) => s.filter((_, i) => i !== index));
+      },
       inDrawer: stack.length > 0,
+      side,
+      sideResetSignal,
+      // Открыть оплату → закрывает историю (взаимоисключение).
+      openPayment: (rentalId, extDays) =>
+        setSide({ kind: "payment", rentalId, extDays }),
+      setPaymentExtDays: (extDays) =>
+        setSide((s) =>
+          s && s.kind === "payment" ? { ...s, extDays } : s,
+        ),
+      closePayment: () => {
+        setSide((s) => (s && s.kind === "payment" ? null : s));
+        setSideResetSignal((n) => n + 1);
+      },
+      openHistory: (rentalId) => setSide({ kind: "history", rentalId }),
+      closeHistory: () =>
+        setSide((s) => (s && s.kind === "history" ? null : s)),
     }),
-    [stack],
+    [stack, side, sideResetSignal],
   );
   return (
     <DashboardDrawerCtx.Provider value={ctx}>
       {children}
-      <DrawerHost ctx={ctx} />
     </DashboardDrawerCtx.Provider>
   );
 }
 
-function DrawerHost({ ctx }: { ctx: Ctx }) {
-  const { stack } = ctx;
-  const scrollRef = useRef<HTMLDivElement>(null);
+/**
+ * v0.7.18: drawer-стек больше НЕ overlay (fixed inset-0 + backdrop).
+ * Теперь это набор inline push-колонок, которые рендерятся ВНУТРИ общего
+ * горизонтально-скроллящегося контейнера в App-shell, справа от контента
+ * страницы. Открытие drawer'а сдвигает контент влево (а не перекрывает),
+ * несколько drawer'ов выстраиваются цепочкой, при переполнении —
+ * горизонтальный скролл. Поведение идентично push-колонкам в «Аренды».
+ *
+ * Авто-скролл вправо и wheel→horizontal живут в App-shell (он владеет
+ * scroll-контейнером). Здесь — только Esc (закрыть верхнюю панель) и
+ * рендер колонок в прямом порядке (старые слева, свежая справа).
+ */
+export function DashboardDrawerStack() {
+  const ctx = useContext(DashboardDrawerCtx);
+  const stack = ctx?.stack ?? [];
+  const side = ctx?.side ?? null;
 
-  // Esc — закрывает верхнюю панель (pop стека, не all).
+  // v0.7.20: держим side-колонку (оплата/история) смонтированной во время
+  // exit-анимации (width N→0), как lastPaymentRental в Аренды.
+  const [renderedSide, setRenderedSide] = useState<SideColumn>(side);
   useEffect(() => {
-    if (stack.length === 0) return;
+    if (side) {
+      setRenderedSide(side);
+      return;
+    }
+    const t = window.setTimeout(() => setRenderedSide(null), 300);
+    return () => window.clearTimeout(t);
+  }, [side]);
+
+  // Esc — закрывает сначала side-колонку, затем верхнюю панель стека
+  // (логика приоритета — в ctx.back()).
+  useEffect(() => {
+    if (!ctx || (stack.length === 0 && !side)) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.stopPropagation();
@@ -155,103 +248,156 @@ function DrawerHost({ ctx }: { ctx: Ctx }) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [stack.length, ctx]);
+  }, [stack.length, side, ctx]);
 
-  // Когда добавляется новая панель — скроллим контейнер вправо до конца,
-  // чтобы новая была в фокусе.
-  useEffect(() => {
-    if (stack.length === 0) return;
-    const el = scrollRef.current;
-    if (!el) return;
-    // Небольшая задержка, чтобы успел применился layout новой панели.
-    const t = window.setTimeout(() => {
-      el.scrollTo({ left: el.scrollWidth, behavior: "smooth" });
-    }, 60);
-    return () => window.clearTimeout(t);
-  }, [stack.length]);
+  if (!ctx || (stack.length === 0 && !renderedSide)) return null;
 
-  // v0.4.28: колесо мыши вешаем НЕ через React `onWheel` (он passive
-  // по умолчанию в актуальных Chromium → preventDefault даёт warning
-  // в консоли и не работает), а через нативный addEventListener с
-  // {passive:false}. Логика та же: над контейнером крутим в
-  // горизонталь, над scroll-able элементом — даём ему работать.
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const onWheel = (e: WheelEvent) => {
-      const target = e.target as HTMLElement | null;
-      let cur: HTMLElement | null = target;
-      while (cur && cur !== el) {
-        const cs = window.getComputedStyle(cur);
-        if (
-          (cs.overflowY === "auto" || cs.overflowY === "scroll") &&
-          cur.scrollHeight > cur.clientHeight
-        ) {
-          return; // вертикальный скролл внутри карточки
-        }
-        cur = cur.parentElement;
-      }
-      if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
-        el.scrollLeft += e.deltaY;
-        e.preventDefault();
-      }
-    };
-    el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
-  }, []);
-
-  if (stack.length === 0) return null;
-
-  // v0.4.11: плавная анимация без «дыр» через flex-row-reverse +
-  // width-анимацию. Каждая панель имеет внешний контейнер, который
-  // растёт от 0 до DRAWER_W через transition:width. Внутри —
-  // фиксированной ширины контент. Соседи равномерно сдвигаются по
-  // мере роста новой панели, без скачков и пустого места.
-  // row-reverse: первый в DOM-массиве (idx=0, корневой) на ЭКРАНЕ
-  // оказывается слева, последний (свежий) — справа. Идеально под
-  // «новая выезжает справа».
-  const DRAWER_W = 820;
+  // Ширина колонки = как у карточки в «Аренды» (600px) для единообразия.
+  const DRAWER_W = 600;
   return (
-    <div
-      className="fixed inset-0 z-[100] bg-ink/40 animate-backdrop-in"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) ctx.close();
-      }}
+    <>
+      {stack.map((target, idx) => {
+        // v0.7.20: side-колонка (оплата/история) выезжает СРАЗУ справа от
+        // своей аренды (а не в глобальный конец цепочки) — так оплата
+        // примыкает к карточке, как в «Аренды». Fragment с устойчивым key
+        // по target: переключение оплаты НЕ ремаунтит карточку.
+        const sideForThis =
+          renderedSide &&
+          target.kind === "rental" &&
+          renderedSide.rentalId === target.id
+            ? renderedSide
+            : null;
+        return (
+          <Fragment key={drawerKey(target)}>
+            <DrawerColumn
+              target={target}
+              width={DRAWER_W}
+              onCloseSelf={() => ctx.closeAt(idx)}
+              onOpenRental={ctx.openRental}
+              onOpenClient={ctx.openClient}
+              onOpenScooter={ctx.openScooter}
+            />
+            {sideForThis && (
+              <SideDrawerColumn
+                key={`side-${sideForThis.kind}`}
+                data={sideForThis}
+                closing={
+                  !side ||
+                  side.rentalId !== sideForThis.rentalId ||
+                  side.kind !== sideForThis.kind
+                }
+                onClosePayment={ctx.closePayment}
+                onCloseHistory={ctx.closeHistory}
+                onExtDaysChange={ctx.setPaymentExtDays}
+              />
+            )}
+          </Fragment>
+        );
+      })}
+    </>
+  );
+}
+
+/**
+ * v0.7.20: push-колонка оплаты/истории. Та же анимация (width 0↔N), что и
+ * у DrawerColumn. Контент: PaymentAcceptDialog (inline) или
+ * RentalHistoryColumn — идентично странице «Аренды».
+ */
+function SideDrawerColumn({
+  data,
+  closing,
+  onClosePayment,
+  onCloseHistory,
+  onExtDaysChange,
+}: {
+  data: NonNullable<SideColumn>;
+  closing: boolean;
+  onClosePayment: () => void;
+  onCloseHistory: () => void;
+  onExtDaysChange: (days: number) => void;
+}) {
+  const [entered, setEntered] = useState(false);
+  useEffect(() => {
+    const cleanup = { r1: 0, r2: 0 };
+    cleanup.r1 = requestAnimationFrame(() => {
+      cleanup.r2 = requestAnimationFrame(() => setEntered(true));
+    });
+    return () => {
+      cancelAnimationFrame(cleanup.r1);
+      if (cleanup.r2) cancelAnimationFrame(cleanup.r2);
+    };
+  }, []);
+  const isOpen = entered && !closing;
+  const width = data.kind === "payment" ? 480 : 420;
+  return (
+    <aside
+      className={cn(
+        "h-full min-h-0 shrink-0 overflow-hidden transition-[width,opacity,margin] duration-300 ease-in-out",
+        isOpen ? "ml-3 opacity-100" : "ml-0 opacity-0",
+      )}
+      style={{ width: isOpen ? `min(${width}px, 92vw)` : "0px" }}
     >
       <div
-        ref={scrollRef}
-        className="ml-auto h-full w-full overflow-x-auto overflow-y-hidden"
-        onClick={(e) => {
-          if (e.target === e.currentTarget) ctx.close();
-        }}
+        className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-card-sm"
+        style={{ width: `min(${width}px, 92vw)` }}
       >
-        {/* v0.4.32: пустая зона слева от панелей (когда стек короче
-            ширины экрана) — это de-facto «вне drawer'а», клик там
-            должен закрывать. Раньше клик попадал в этот flex-контейнер
-            и не доходил до scrollRef → закрытие не срабатывало. */}
-        <div
-          className="flex h-full min-w-full flex-row-reverse justify-start"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) ctx.close();
-          }}
-        >
-          {[...stack].reverse().map((target, revIdx) => {
-            const idx = stack.length - 1 - revIdx;
-            return (
-              <DrawerCard
-                key={drawerKey(target)}
-                target={target}
-                width={DRAWER_W}
-                onCloseSelf={() => ctx.closeAt(idx)}
-                onOpenRental={ctx.openRental}
-                onOpenClient={ctx.openClient}
-                onOpenScooter={ctx.openScooter}
-              />
-            );
-          })}
-        </div>
+        {data.kind === "payment" ? (
+          <SidePaymentContent
+            rentalId={data.rentalId}
+            extDays={data.extDays}
+            onClose={onClosePayment}
+            onExtDaysChange={onExtDaysChange}
+          />
+        ) : (
+          <ErrorBoundary key={`hist-${data.rentalId}`}>
+            <RentalHistoryColumn
+              rentalId={data.rentalId}
+              onClose={onCloseHistory}
+            />
+          </ErrorBoundary>
+        )}
       </div>
-    </div>
+    </aside>
+  );
+}
+
+function SidePaymentContent({
+  rentalId,
+  extDays,
+  onClose,
+  onExtDaysChange,
+}: {
+  rentalId: number;
+  extDays: number;
+  onClose: () => void;
+  onExtDaysChange: (days: number) => void;
+}) {
+  const active = useRentals();
+  const archived = useArchivedRentals();
+  const rental = useMemo(
+    () => [...active, ...archived].find((r) => r.id === rentalId) ?? null,
+    [active, archived, rentalId],
+  );
+  if (!rental) {
+    return (
+      <div className="flex h-full items-center justify-center text-muted">
+        Аренда не найдена.
+      </div>
+    );
+  }
+  return (
+    <ErrorBoundary key={`pay-${rentalId}`}>
+      <PaymentAcceptDialog
+        rental={rental}
+        inline
+        initialExtDays={extDays || undefined}
+        onExtDaysChange={onExtDaysChange}
+        onClose={onClose}
+        onPaid={() => {
+          /* invalidations — внутри диалога */
+        }}
+      />
+    </ErrorBoundary>
   );
 }
 
@@ -271,7 +417,7 @@ function drawerKey(t: Target): string {
   return `${t.kind}-${t.id}`;
 }
 
-function DrawerCard({
+function DrawerColumn({
   target,
   width,
   onCloseSelf,
@@ -309,37 +455,38 @@ function DrawerCard({
   const requestClose = () => {
     if (closing) return;
     setClosing(true);
-    // ждём окончания transition (320ms) — потом убираем из стека
-    window.setTimeout(onCloseSelf, 320);
+    // ждём окончания transition (300ms) — потом убираем из стека
+    window.setTimeout(onCloseSelf, 300);
   };
 
   // open=true для рендера content; на exit фазе тоже true чтобы
   // содержимое не пропадало мгновенно при сжатии ширины.
   const isOpen = entered && !closing;
 
+  // v0.7.18: inline push-колонка (не overlay). h-full = высота
+  // scroll-контейнера в App-shell (вьюпорт минус titlebar). Левая
+  // граница ml-3 отделяет от контента/предыдущей колонки.
   return (
     <aside
       className={cn(
-        "h-full overflow-hidden bg-surface shadow-card-lg",
-        "transition-[width,opacity] duration-[320ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
-        isOpen ? "opacity-100" : "opacity-80",
+        "h-full min-h-0 shrink-0 overflow-hidden transition-[width,opacity,margin] duration-300 ease-in-out",
+        isOpen ? "ml-3 opacity-100" : "ml-0 opacity-0",
       )}
       style={{
         width: isOpen ? `min(${width}px, 92vw)` : "0px",
-        flexShrink: 0,
       }}
-      onClick={(e) => e.stopPropagation()}
     >
       {/* Внутренний контейнер с ФИКСИРОВАННОЙ шириной — чтобы content
           не сжимался по мере роста outer width. Outer обрезает overflow. */}
       <div
-        className="flex h-full flex-col border-l border-border"
+        className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-card-sm"
         style={{ width: `min(${width}px, 92vw)` }}
       >
         {target.kind === "rental" && (
           <RentalDrawerContent
             rentalId={target.id}
             onClose={requestClose}
+            onOpenRental={onOpenRental}
             onOpenClient={onOpenClient}
             onOpenScooter={onOpenScooter}
           />
@@ -428,9 +575,11 @@ function DrawerHeader({
 function RentalDrawerContent({
   rentalId,
   onClose,
+  onOpenRental,
 }: {
   rentalId: number;
   onClose: () => void;
+  onOpenRental: (id: number) => void;
   onOpenClient: (id: number) => void;
   onOpenScooter: (id: number) => void;
 }) {
@@ -440,27 +589,67 @@ function RentalDrawerContent({
     () => [...active, ...archived].find((r) => r.id === rentalId) ?? null,
     [active, archived, rentalId],
   );
+  // v0.7.18: рендерим ТУ ЖЕ карточку, что в «Аренды» (drawerChrome) — со
+  // своей шапкой (#ID + статус + Скрыть + ⋯), KPI-плашками, аккордеоном и
+  // sticky-футером. Payment/История карточка ведёт сама (внутренними
+  // overlay'ями), т.к. onRequestPayment/onOpenHistory не передаём. Так
+  // quick-view выглядит идентично странице аренд, а не «странно».
+  if (!rental) {
+    return (
+      <>
+        <DrawerHeader
+          kind="Быстрый просмотр аренды"
+          title={`Аренда #${String(rentalId).padStart(4, "0")}`}
+          onClose={onClose}
+          onOpenFull={() => {
+            navigate({ route: "rentals", rentalId });
+            onClose();
+          }}
+        />
+        <div className="flex h-full items-center justify-center text-muted">
+          Аренда не найдена.
+        </div>
+      </>
+    );
+  }
   return (
-    <>
-      <DrawerHeader
-        kind="Быстрый просмотр аренды"
-        title={`Аренда #${String(rentalId).padStart(4, "0")}`}
-        onClose={onClose}
-        onOpenFull={() => {
-          navigate({ route: "rentals", rentalId });
-          onClose();
-        }}
-      />
-      <div className="flex-1 min-h-0 overflow-y-auto p-5">
-        {rental ? (
-          <RentalCard rental={rental} />
-        ) : (
-          <div className="flex h-full items-center justify-center text-muted">
-            Аренда не найдена.
-          </div>
-        )}
-      </div>
-    </>
+    <ErrorBoundary key={rental.id}>
+      <RentalCardWithSide rental={rental} onClose={onClose} onOpenRental={onOpenRental} />
+    </ErrorBoundary>
+  );
+}
+
+/**
+ * v0.7.20: карточка аренды в drawer, у которой Payment/История делегированы
+ * наверх — в side-колонку DashboardDrawer (push, как в «Аренды»). Так
+ * приём оплаты и просмотр истории выезжают отдельной push-колонкой справа,
+ * а не overlay'ем поверх карточки.
+ */
+function RentalCardWithSide({
+  rental,
+  onClose,
+  onOpenRental,
+}: {
+  rental: Parameters<typeof RentalCard>[0]["rental"];
+  onClose: () => void;
+  onOpenRental: (id: number) => void;
+}) {
+  const drawer = useDashboardDrawer();
+  const paymentExtDays =
+    drawer.side?.kind === "payment" && drawer.side.rentalId === rental.id
+      ? drawer.side.extDays
+      : 0;
+  return (
+    <RentalCard
+      rental={rental}
+      drawerChrome
+      onClose={onClose}
+      onSwapped={(newId) => onOpenRental(newId)}
+      onRequestPayment={(rid, ext) => drawer.openPayment(rid, ext)}
+      onOpenHistory={(rid) => drawer.openHistory(rid)}
+      paymentExtDays={paymentExtDays}
+      paymentResetSignal={drawer.sideResetSignal}
+    />
   );
 }
 

@@ -137,13 +137,31 @@ export const TARIFF_PERIOD_LABEL: Record<TariffPeriod, string> = {
   month: "30+ дней",
 };
 
-/** Определяет тарифный период по количеству дней */
+/**
+ * Период для ПОЛЯ tariffPeriod в БД (enum принимает только short/week/month).
+ * 1-2 дня тоже мапятся в "short" — это всё ещё короткий прокат. Для расчёта
+ * ставки ₽/сут используйте ratePeriodForDays (она знает про dayRate).
+ */
 export function periodForDays(days: number): TariffPeriod {
   // v0.4.76: убрали кейс "day" — БД enum tariffPeriodEnum принимает
   // только ['short', 'week', 'month']. Возврат "day" для 1-2 дней
   // ронял valid в /extend-inplace и других endpoints. 1-2 дня
   // считаем как short (та же ставка). Type TariffPeriod оставляет
   // "day" для legacy-данных в БД (если где-то такие найдутся).
+  if (days <= 6) return "short";
+  if (days < 30) return "week";
+  return "month";
+}
+
+/**
+ * Тарифная ступень для расчёта СТАВКИ ₽/сут (включает "day" для 1-2 дней —
+ * короткий прокат дороже). Отделена от periodForDays, т.к. поле tariffPeriod
+ * в БД не знает "day". Решение бизнеса (2026-06): 1-2 дня считаются по dayRate
+ * каталога «Модели» — едино с публичной анкетой.
+ *   1-2 → day, 3-6 → short, 7-29 → week, 30+ → month.
+ */
+export function ratePeriodForDays(days: number): TariffPeriod {
+  if (days <= 2) return "day";
   if (days <= 6) return "short";
   if (days < 30) return "week";
   return "month";

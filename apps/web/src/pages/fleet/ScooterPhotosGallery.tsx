@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { Camera, Loader2, Plus, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { confirmDialog } from "@/lib/toast";
 import {
   fileUrl,
   useApiScooterDocs,
@@ -42,8 +43,14 @@ export function ScooterPhotosGallery({ scooterId }: { scooterId: number }) {
     }
   };
 
-  const onDelete = (doc: ApiScooterDoc) => {
-    if (!window.confirm(`Удалить фото «${doc.fileName}»?`)) return;
+  const onDelete = async (doc: ApiScooterDoc) => {
+    const ok = await confirmDialog({
+      title: "Удалить фото?",
+      message: `Удалить фото «${doc.fileName}»?`,
+      confirmText: "Удалить",
+      danger: true,
+    });
+    if (!ok) return;
     deleteMut.mutate(doc.id);
   };
 

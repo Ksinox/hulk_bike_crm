@@ -92,7 +92,7 @@ function EquipmentCard({
       <div className="flex items-start gap-3">
         <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-purple-soft text-purple-ink">
           {item.avatarKey ? (
-            <img src={fileUrl(item.avatarKey, { variant: "thumb" }) ?? ""} alt="" className="h-full w-full object-cover" />
+            <img src={fileUrl(item.avatarKey, { variant: "thumb" }) ?? ""} alt="" className="h-full w-full bg-white object-contain" />
           ) : (
             <Package size={22} />
           )}
@@ -113,7 +113,7 @@ function EquipmentCard({
               </span>
             ) : (
               <span className="rounded-full bg-blue-50 px-2 py-0.5 font-bold text-blue-700">
-                +{item.price}₽
+                +{item.price} ₽/сут
               </span>
             )}
           </div>
@@ -244,7 +244,7 @@ function EquipmentFormModal({
           {!isFree && (
             <div>
               <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-2">
-                Цена (₽ за всю аренду)
+                Цена (₽/сут)
               </div>
               <input
                 type="number"

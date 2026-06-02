@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Новый клиент</title>
+<link rel="stylesheet" href="../css/app.css">
+</head>
+<body>
+<div class="screen">
+  <header class="s-head">
+    <div class="s-head-row">
+      <button class="s-back" data-back aria-label="Назад"></button>
+      <div style="flex:1"><div class="s-title sm">Новый клиент</div>
+        <div class="s-sub">обязательны телефон и паспорт</div></div>
+    </div>
+  </header>
+
+  <div class="s-body with-fab">
+    <div class="sec-label">Контакт</div>
+    <div class="field"><label>Имя и фамилия *</label>
+      <input class="inp" placeholder="Алексей Морев"></div>
+    <div class="opt-grid">
+      <div class="field"><label>Телефон *</label>
+        <input class="inp tnum" placeholder="+7 988 412-09-55" inputmode="tel"></div>
+      <div class="field"><label>Доп. телефон</label>
+        <input class="inp tnum" placeholder="—" inputmode="tel"></div>
+    </div>
+    <div class="field"><label>Источник</label>
+      <div class="chips">
+        <button class="chip on">Avito</button><button class="chip">Сайт</button>
+        <button class="chip">Рекомендация</button><button class="chip">Карты</button>
+        <button class="chip">Проходящий</button>
+      </div>
+    </div>
+
+    <div class="sec-label" style="margin-top:18px">Паспорт</div>
+    <div class="opt-grid">
+      <div class="field"><label>Серия</label>
+        <input class="inp tnum" placeholder="03 18" inputmode="numeric"></div>
+      <div class="field"><label>Номер</label>
+        <input class="inp tnum" placeholder="554120" inputmode="numeric"></div>
+    </div>
+    <div class="field"><label>Дата рождения</label>
+      <input class="inp tnum" placeholder="14.07.1994"></div>
+    <div class="field"><label>Кем и когда выдан</label>
+      <input class="inp" placeholder="ОУФМС по г. Сочи, 22.08.2014"></div>
+    <div class="field"><label>Регистрация</label>
+      <textarea class="inp" rows="2" placeholder="г. Сочи, ул. …"></textarea></div>
+
+    <div class="sec-label" style="margin-top:18px">Фото документов</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <button style="aspect-ratio:9/11;border-radius:14px;background:hsl(var(--surface-soft));
+        border:1px dashed hsl(var(--border-strong));display:flex;flex-direction:column;
+        align-items:center;justify-content:center;gap:6px;color:hsl(var(--muted-2))">
+        <span data-ic="camera" data-ic-cls="s22"></span>
+        <span style="font-size:11px;font-weight:600">Паспорт</span></button>
+      <button style="aspect-ratio:9/11;border-radius:14px;background:hsl(var(--surface-soft));
+        border:1px dashed hsl(var(--border-strong));display:flex;flex-direction:column;
+        align-items:center;justify-content:center;gap:6px;color:hsl(var(--muted-2))">
+        <span data-ic="camera" data-ic-cls="s22"></span>
+        <span style="font-size:11px;font-weight:600">Селфi с паспортом</span></button>
+    </div>
+  </div>
+
+  <div class="fab-bar">
+    <button class="btn primary" style="flex:1" data-ic="check" data-ic-cls="s18"
+      onclick="done()">&nbsp;Сохранить клиента</button>
+  </div>
+</div>
+
+<script src="../js/hb.js"></script>
+<script>
+  function done(){
+    document.querySelector('.s-body').innerHTML=
+      '<div class="empty fly" style="padding:80px 22px"><div class="ei" '+
+      'style="background:hsl(var(--green-soft));color:hsl(var(--green-ink));'+
+      'width:64px;height:64px">'+ic('checkc','s22')+'</div>'+
+      '<div class="et" style="font-size:18px">Клиент сохранён</div>'+
+      '<div class="es">Базовый рейтинг 4.5 · карточка создана</div></div>';
+    document.querySelector('.fab-bar').innerHTML=
+      '<button class="btn ghost" style="flex:1" onclick="back()">Готово</button>'+
+      '<button class="btn primary" style="flex:1" onclick="go(\'new-rental.html\')">'+
+      'Создать аренду</button>';
+  }
+</script>
+</body>
+</html>

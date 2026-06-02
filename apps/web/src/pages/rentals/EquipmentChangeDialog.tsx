@@ -77,6 +77,11 @@ export function EquipmentChangeDialog({
   const [pickerOpen, setPickerOpen] = useState(false);
   const [payNow, setPayNow] = useState<boolean>(true);
   const [method, setMethod] = useState<"cash" | "transfer">("cash");
+  // Правка 1: куда вернуть разницу при удешевлении.
+  const [refundTo, setRefundTo] = useState<"cash" | "deposit">("deposit");
+  const [refundMethod, setRefundMethod] = useState<"cash" | "transfer">(
+    "cash",
+  );
   const [saving, setSaving] = useState(false);
 
   // Сумма не-free / день
@@ -137,13 +142,18 @@ export function EquipmentChangeDialog({
         newEquipmentJson: items,
         payNow,
         method: payNow ? method : undefined,
+        refundTo: totalDelta < 0 ? refundTo : undefined,
+        refundMethod:
+          totalDelta < 0 && refundTo === "cash" ? refundMethod : undefined,
       });
       const msg =
         totalDelta === 0
           ? "Состав экипировки обновлён"
           : totalDelta > 0
             ? `Доплата ${fmt(totalDelta)} ₽${payNow ? " зафиксирована" : " — в долг"}`
-            : `Возврат ${fmt(-totalDelta)} ₽ → депозит клиента`;
+            : refundTo === "cash"
+              ? `Возврат ${fmt(-totalDelta)} ₽ выдан клиенту`
+              : `Возврат ${fmt(-totalDelta)} ₽ → депозит клиента`;
       toast.success("Экипировка изменена", msg);
       requestClose();
     } catch (e) {
@@ -156,13 +166,13 @@ export function EquipmentChangeDialog({
   return (
     <div
       className={cn(
-        "fixed inset-0 z-[120] flex items-start justify-center overflow-y-auto bg-ink/55 p-6 backdrop-blur-sm",
+        "fixed inset-0 z-[120] flex items-stretch justify-center overflow-y-auto bg-ink/55 p-0 backdrop-blur-sm sm:items-start sm:p-6",
         closing ? "animate-backdrop-out" : "animate-backdrop-in",
       )}
     >
       <div
         className={cn(
-          "mt-12 w-full max-w-[480px] overflow-hidden rounded-2xl bg-surface shadow-card-lg",
+          "min-h-[100dvh] w-full overflow-hidden rounded-none bg-surface shadow-card-lg sm:mt-12 sm:min-h-0 sm:max-w-[480px] sm:rounded-2xl",
           closing ? "animate-modal-out" : "animate-modal-in",
         )}
         onClick={(e) => e.stopPropagation()}
@@ -353,9 +363,61 @@ export function EquipmentChangeDialog({
             </div>
           )}
           {totalDelta < 0 && (
-            <div className="rounded-[10px] border border-green-200 bg-green-50/40 px-3 py-2 text-[11px] text-green-ink">
-              Возврат {fmt(-totalDelta)} ₽ зачислится на депозит клиента —
-              использует при следующей аренде или продлении.
+            <div className="flex flex-col gap-2 rounded-[10px] border border-green-200 bg-green-50/40 px-3 py-2.5">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-green-ink">
+                Возврат {fmt(-totalDelta)} ₽ — куда?
+              </div>
+              <div className="flex gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setRefundTo("deposit")}
+                  className={cn(
+                    "flex-1 rounded-[8px] border px-2 py-1.5 text-[11px] font-semibold transition-colors",
+                    refundTo === "deposit"
+                      ? "border-blue-500 bg-blue-50 text-blue-700"
+                      : "border-border bg-white text-muted hover:border-blue-300",
+                  )}
+                >
+                  В депозит клиента
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRefundTo("cash")}
+                  className={cn(
+                    "flex-1 rounded-[8px] border px-2 py-1.5 text-[11px] font-semibold transition-colors",
+                    refundTo === "cash"
+                      ? "border-green-500 bg-green-50 text-green-ink"
+                      : "border-border bg-white text-muted hover:border-green-300",
+                  )}
+                >
+                  Вернуть налом
+                </button>
+              </div>
+              {refundTo === "cash" && (
+                <div className="flex gap-1.5">
+                  {(["cash", "transfer"] as const).map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setRefundMethod(m)}
+                      className={cn(
+                        "flex-1 rounded-[6px] border px-2 py-1 text-[10px] font-semibold transition-colors",
+                        refundMethod === m
+                          ? "border-green-500 bg-white text-green-ink"
+                          : "border-border bg-white text-muted",
+                      )}
+                    >
+                      {m === "cash" ? "Наличные" : "Перевод"}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {refundTo === "deposit" && (
+                <div className="text-[11px] text-green-ink">
+                  Зачислится на депозит клиента — использует при следующей
+                  аренде или продлении.
+                </div>
+              )}
             </div>
           )}
         </div>

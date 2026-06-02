@@ -7,6 +7,7 @@ import {
   rentals,
   damageReports,
   payments,
+  debtors,
 } from "../db/schema.js";
 
 /**
@@ -78,6 +79,7 @@ export async function activityRoutes(app: FastifyInstance) {
       //  - paymentIds — все платежи (для активити-логов о подтверждениях).
       const rentalIds = new Set<number>();
       const damageReportIds = new Set<number>();
+      const debtorIds = new Set<number>();
       const directEntityFilter: Array<{ entity: string; id: number }> = [];
 
       if (entity === "rental") {
@@ -128,6 +130,14 @@ export async function activityRoutes(app: FastifyInstance) {
           .from(rentals)
           .where(eq(rentals.clientId, id));
         for (const r of rs) rentalIds.add(r.id);
+        // v0.6: дела-должники клиента — их события (заведение, платежи,
+        // смена стадии, закрытие) показываем в истории клиента. Так директор
+        // видит в карточке, что клиент был в «Должниках» и как с ним работали.
+        const ds = await db
+          .select({ id: debtors.id })
+          .from(debtors)
+          .where(eq(debtors.clientId, id));
+        for (const d of ds) debtorIds.add(d.id);
         directEntityFilter.push({ entity: "client", id });
       }
 
@@ -165,6 +175,14 @@ export async function activityRoutes(app: FastifyInstance) {
               activityLog.entityId,
               Array.from(damageReportIds),
             ),
+          ),
+        );
+      }
+      if (debtorIds.size > 0) {
+        orParts.push(
+          and(
+            eq(activityLog.entity, "debtor"),
+            inArray(activityLog.entityId, Array.from(debtorIds)),
           ),
         );
       }

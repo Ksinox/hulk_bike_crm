@@ -61,6 +61,13 @@ export type ApiApplication = {
   source: "avito" | "repeat" | "ref" | "maps" | "other" | null;
   /** Текст-уточнение, если выбран source='other'. */
   sourceCustom: string | null;
+  /** G3: предзаявка на аренду — модель скутера (enum scooter_model) и срок. */
+  requestedModel: string | null;
+  requestedDays: number | null;
+  /** G3: id выбранной экипировки (equipment_items). */
+  requestedEquipmentIds: number[] | null;
+  /** G3: желаемая дата начала аренды (ISO YYYY-MM-DD). */
+  requestedStartDate: string | null;
   viewedAt: string | null;
   submittedAt: string | null;
   createdAt: string;

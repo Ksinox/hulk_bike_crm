@@ -147,13 +147,16 @@ export function AddScooterModal({ onClose }: { onClose: () => void }) {
   return (
     <div
       className={cn(
-        "fixed inset-0 z-[130] flex items-center justify-center bg-ink/55 p-6 backdrop-blur-sm",
+        // Мобайл: полноэкранно (без отступов). Десктоп (sm+): центрированная карточка.
+        "fixed inset-0 z-[130] flex items-stretch justify-center bg-ink/55 sm:items-center sm:p-6 sm:backdrop-blur-sm",
         closing ? "animate-backdrop-out" : "animate-backdrop-in",
       )}
     >
       <div
         className={cn(
-          "flex max-h-[92vh] w-full max-w-[560px] flex-col overflow-hidden rounded-2xl bg-surface shadow-card-lg",
+          // Мобайл: на весь экран (h-[100dvh] — учитывает тулбар iOS), без скруглений.
+          // Десктоп: карточка max-w-560 с max-h-92vh и скруглением.
+          "flex h-[100dvh] w-full flex-col overflow-hidden bg-surface shadow-card-lg sm:h-auto sm:max-h-[92vh] sm:max-w-[560px] sm:rounded-2xl",
           closing ? "animate-modal-out" : "animate-modal-in",
         )}
         onClick={(e) => e.stopPropagation()}
@@ -176,7 +179,7 @@ export function AddScooterModal({ onClose }: { onClose: () => void }) {
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-5 py-4">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden px-5 py-4">
           <div className="flex flex-col gap-4">
             <Field label="Модель">
               <ModelPicker

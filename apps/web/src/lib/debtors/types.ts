@@ -22,6 +22,7 @@ export type Stage =
   | "police"
   | "criminal_case"
   | "closed_paid"
+  | "closed_recovered"
   | "closed_written_off"
   | "closed_settled"
   | "closed_court";
@@ -54,6 +55,9 @@ export type Debtor = {
   closedReason: string | null;
   createdAt: string;
   updatedAt: string;
+  /** v0.6: имя/телефон клиента, подмешиваются в GET /api/debtors (список). */
+  clientName?: string | null;
+  clientPhone?: string | null;
 };
 
 export type DebtorPayment = {
@@ -94,6 +98,23 @@ export type DebtorNote = {
   createdAt: string;
 };
 
+/** Сводка по делу-должнику для карточки клиента (зеркало API). */
+export type DebtorCaseSummary = {
+  id: number;
+  caseNumber: string;
+  type: DebtType;
+  stage: Stage;
+  totalAmount: number;
+  paid: number;
+  progressPercent: number;
+  active: boolean;
+  /** Проблемное дело (угон/невозврат/криминал) — метка «Проблемный». */
+  problem: boolean;
+  closedAt: string | null;
+  closedReason: string | null;
+  createdAt: string;
+};
+
 export type Recommendation = {
   kind: "transfer_lawyer" | "request_estimate" | "close_paid" | "call_overdue";
   reason: string;
@@ -129,7 +150,9 @@ export type TodayAction = {
     | "overdue_call"
     | "lawyer_check"
     | "insurance_reminder"
-    | "payment_due_today";
+    | "payment_due_today"
+    | "first_contact"
+    | "in_progress";
   priority: "hot" | "warm" | "cool";
   text: string;
   primaryAction: { label: string; target: string };
@@ -187,6 +210,7 @@ export const STAGE_LABEL: Record<Stage, string> = {
   police: "Заявление в полицию",
   criminal_case: "Уголовное дело",
   closed_paid: "Закрыто оплатой",
+  closed_recovered: "Имущество возвращено",
   closed_written_off: "Списано",
   closed_settled: "Мировая",
   closed_court: "Закрыто решением суда",
@@ -194,6 +218,16 @@ export const STAGE_LABEL: Record<Stage, string> = {
 
 export function isClosed(stage: Stage): boolean {
   return stage.startsWith("closed_");
+}
+
+/**
+ * «Проблемное» дело — не столько денежный долг, сколько ЧП: угон,
+ * невозврат, криминал. На таких клиентах висит стоимость скутера, ими
+ * занимаются иначе (полиция/суд), и в списке их отделяем от обычных
+ * денежных должников с графиком.
+ */
+export function isProblemCase(type: DebtType, stage: Stage): boolean {
+  return type === "theft" || stage === "police" || stage === "criminal_case";
 }
 
 export function formatRub(n: number): string {

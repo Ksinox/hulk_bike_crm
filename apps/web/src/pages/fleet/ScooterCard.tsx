@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { EntityNotes } from "@/components/EntityNotes";
 import {
   ArrowLeft,
   ArrowRight,
@@ -31,9 +32,10 @@ import { ScooterEditForm } from "./ScooterEditForm";
 import { ScooterDocumentsTab } from "./ScooterDocumentsTab";
 import { ScooterPhotosGallery } from "./ScooterPhotosGallery";
 import { ScooterStatusModal } from "./ScooterStatusModal";
+import { OilChangeDialog } from "./OilChangeDialog";
 import { RepairsTab, ExpensesTab } from "./MaintenanceTab";
 import { useActivityTimeline } from "@/lib/api/activity";
-import { ActivityTimelineSection } from "@/pages/rentals/RentalCardTabs";
+import { ActivityTimelineSection } from "@/pages/rentals/ActivityTimelineSection";
 import { useArchiveScooter } from "@/lib/api/scooters";
 import { useMe } from "@/lib/api/auth";
 import { Archive, Loader2 } from "lucide-react";
@@ -116,6 +118,7 @@ export function ScooterCard({
   const [editOpen, setEditOpen] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
   const [newRentalOpen, setNewRentalOpen] = useState(false);
+  const [oilOpen, setOilOpen] = useState(false);
   const { data: me } = useMe();
   const canArchive = me?.role === "director" || me?.role === "creator";
   const archiveMut = useArchiveScooter();
@@ -345,6 +348,11 @@ export function ScooterCard({
               )}
             </div>
 
+            {/* v0.8.21: заметки скутера стикерами. */}
+            <div className="mt-6 border-t border-border pt-5">
+              <EntityNotes entity="scooter" entityId={scooter.id} />
+            </div>
+
             {/* Галерея фото скутера — внутри основной карточки, под техничкой.
                 До 10 штук, клик по фото — предпросмотр модалкой. */}
             <div className="mt-6 border-t border-border pt-5">
@@ -527,8 +535,9 @@ export function ScooterCard({
 
             <button
               type="button"
+              onClick={() => setOilOpen(true)}
               className="mt-3 inline-flex w-full items-center justify-center rounded-full border border-border bg-surface px-3 py-1.5 text-[12px] font-semibold text-ink-2 transition-colors hover:bg-surface-soft"
-              title="Скоро — откроется форма фиксации замены"
+              title="Зафиксировать замену масла"
             >
               Зафиксировать замену
             </button>
@@ -882,6 +891,14 @@ export function ScooterCard({
           }}
         />
       )}
+      {oilOpen && (
+        <OilChangeDialog
+          scooterId={scooter.id}
+          scooterName={scooter.name}
+          currentMileage={scooter.mileage}
+          onClose={() => setOilOpen(false)}
+        />
+      )}
     </main>
   );
 }
@@ -1143,7 +1160,7 @@ function ScooterPhotoArea({ scooter }: { scooter: FleetScooter }) {
   const modelAvatar = fileUrl(model?.avatarKey, { variant: "view" });
 
   return (
-    <div className="relative flex min-h-[480px] flex-col items-center justify-end gap-2 overflow-visible bg-surface-soft p-5 pb-4 text-muted-2 md:border-r md:border-border">
+    <div className="relative flex min-h-[480px] flex-col items-center justify-end gap-2 overflow-visible bg-white p-5 pb-4 text-muted-2 md:border-r md:border-border">
       {modelAvatar ? (
         <>
           {/*

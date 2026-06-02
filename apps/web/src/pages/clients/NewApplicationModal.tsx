@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { confirmDialog } from "@/lib/toast";
 import {
   AlertCircle,
   Bell,
@@ -86,9 +87,15 @@ export function NewApplicationModal({
 
   // Legacy «Это спам» через hard-delete (виджет дашборда). На новой
   // странице архива заменено soft-методом через onSpam.
-  const handleLegacyDelete = () => {
+  const handleLegacyDelete = async () => {
     if (!onDelete) return;
-    if (window.confirm("Удалить заявку как спам? Действие необратимо.")) {
+    const ok = await confirmDialog({
+      title: "Удалить заявку как спам?",
+      message: "Удалить заявку как спам? Действие необратимо.",
+      confirmText: "Удалить",
+      danger: true,
+    });
+    if (ok) {
       onDelete();
     }
   };
@@ -97,8 +104,8 @@ export function NewApplicationModal({
   const hasSelfie = fileKinds.has("selfie");
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-ink/60 p-4 backdrop-blur-sm sm:p-8">
-      <div className="my-6 w-full max-w-3xl rounded-2xl bg-surface shadow-2xl">
+    <div className="fixed inset-0 z-[100] flex items-stretch justify-center overflow-y-auto bg-ink/60 p-0 backdrop-blur-sm sm:items-start sm:p-8">
+      <div className="min-h-[100dvh] w-full rounded-none bg-surface shadow-2xl sm:my-6 sm:min-h-0 sm:max-w-3xl sm:rounded-2xl">
         <header className="flex items-center gap-3 border-b border-border bg-amber-50 px-6 py-4">
           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-500 text-white">
             <Bell size={20} />
@@ -208,6 +215,41 @@ export function NewApplicationModal({
                 multiline
               />
             </Section>
+
+            {(application.requestedModel ||
+              application.requestedStartDate ||
+              application.requestedDays ||
+              (application.requestedEquipmentIds?.length ?? 0) > 0) && (
+              <Section title="Хочет арендовать">
+                {application.requestedModel && (
+                  <Row
+                    label="Модель"
+                    value={
+                      application.requestedModel.charAt(0).toUpperCase() +
+                      application.requestedModel.slice(1)
+                    }
+                  />
+                )}
+                {application.requestedStartDate && (
+                  <Row
+                    label="С даты"
+                    value={formatDate(application.requestedStartDate)}
+                  />
+                )}
+                {application.requestedDays && (
+                  <Row
+                    label="Срок"
+                    value={`${application.requestedDays} дн`}
+                  />
+                )}
+                {(application.requestedEquipmentIds?.length ?? 0) > 0 && (
+                  <Row
+                    label="Экипировка"
+                    value={`${application.requestedEquipmentIds!.length} поз.`}
+                  />
+                )}
+              </Section>
+            )}
           </div>
         </div>
 

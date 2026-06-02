@@ -1,0 +1,32 @@
+{
+   "background": {
+      "scripts": [ "background.js" ]
+   },
+   "content_scripts": [ {
+      "js": [ "content.js" ],
+      "matches": [ "https://*.gosuslugi.ru/*", "http://*.gosuslugi.ru/*", "https://*.minsvyaz.ru/*", "http://*.minsvyaz.ru/*", "https://*.rt.ru/*", "http://*.rt.ru/*", "https://*.voskhod.ru/*", "http://*.voskhod.ru/*", "https://*.donland.ru/*", "http://*.donland.ru/*", "https://*.egov.local/*", "http://*.egov.local/*", "https://*.дом.рф/*", "http://*.дом.рф/*", "https://*.ahml.ru/*", "http://*.ahml.ru/*", "https://*.ahml1.ru/*", "http://*.ahml1.ru/*", "https://*.is-mis.ru/*", "https://*.r-mis.ru/*", "https://*.minzdrav12.ru/*", "https://*.orb.ru/*", "https://*.tambov.gov.ru/*", "https://*.tatar.ru/*", "https://*.rkomi.ru/*", "https://*.mzkbr.ru/*", "https://*.registratura96.ru/*", "https://*.poliklinika45.ru​/*" ],
+      "run_at": "document_end"
+   } ],
+   "description": "Расширение для плагина Госуслуг.",
+   "icons": {
+      "128": "128_128.png",
+      "16": "16_16.png",
+      "26": "26_26.png",
+      "48": "48_48.png"
+   },
+   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAhdO5FKJz9A06op5v+CjIpG7uzut/8llvMbEnrZ94FCJ8IPWLSPdPCwTsb/52qkuaHeZ0X6LgBCjcUjVv0pqtU43IYXchGEnyH6ZOt5CRSpD0cI2eVTqLjWL/CYnUSjG2lpUlllWsO36ulvA1GPELlA97RSqy/67Cw/Dqp8odisbC+SHMz7QL6dzUAEKxuk5RHMnuQsgetk5FOO5HBPbalgptDULzjav3nk9B7SF/xBvgt1z3VzgDfXN3OCmAPjTMNv1EPZF6A11qXAcp4KPqY+G2yCrJbTQWIXZ4nQTHHoegSbUwb4cP5NsMMKlP7XOmjvg226fnRTCc62bA9l72awIDAQAB",
+   "manifest_version": 2,
+   "name": "Расширение для плагина Госуслуг",
+   "page_action": {
+      "default_icon": {
+         "128": "128_128.png",
+         "16": "16_16.png",
+         "26": "26_26.png",
+         "48": "48_48.png"
+      },
+      "default_title": "Расширение для плагина Госуслуг"
+   },
+   "permissions": [ "nativeMessaging" ],
+   "update_url": "https://clients2.google.com/service/update2/crx",
+   "version": "1.2.8"
+}

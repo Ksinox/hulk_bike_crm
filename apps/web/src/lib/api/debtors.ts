@@ -21,6 +21,16 @@ const keys = {
   detail: (id: number) => [...keys.all, "detail", id] as const,
 };
 
+/**
+ * Дело-должник связано с карточкой клиента (метка «Должник», вкладка с
+ * прогрессом, лента событий). Любая мутация по делу должна обновлять и
+ * клиентские данные, чтобы суммы/история подтягивались по всей системе.
+ */
+function invalidateLinked(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: ["clients"] });
+  qc.invalidateQueries({ queryKey: ["activity"] });
+}
+
 export function useDebtorsList(params?: { stage?: string; type?: string; closed?: boolean }) {
   const q: Record<string, string> = {};
   if (params?.stage) q.stage = params.stage;
@@ -83,7 +93,10 @@ export function useCreateDebtor() {
       insuranceCompany?: string | null;
       relatedRentalId?: number | null;
     }) => api.post<Debtor>("/api/debtors", body),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.all }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.all });
+      invalidateLinked(qc);
+    },
   });
 }
 
@@ -110,6 +123,7 @@ export function useTransitionDebtor() {
     onSuccess: (_d, vars) => {
       qc.invalidateQueries({ queryKey: keys.detail(vars.id) });
       qc.invalidateQueries({ queryKey: keys.all });
+      invalidateLinked(qc);
     },
   });
 }
@@ -119,19 +133,25 @@ export function useCreateSchedule() {
   return useMutation({
     mutationFn: (args: {
       id: number;
+      mode: "by_count" | "by_amount";
+      count?: number;
+      perPayment?: number;
       totalAmount?: number;
-      count: number;
       startDate: string;
-      frequency: "weekly" | "biweekly" | "monthly";
+      frequency: "daily" | "weekly" | "biweekly" | "monthly";
     }) =>
       api.post<{ schedule: unknown[] }>(`/api/debtors/${args.id}/schedule`, {
-        totalAmount: args.totalAmount,
+        mode: args.mode,
         count: args.count,
+        perPayment: args.perPayment,
+        totalAmount: args.totalAmount,
         startDate: args.startDate,
         frequency: args.frequency,
       }),
     onSuccess: (_d, vars) => {
       qc.invalidateQueries({ queryKey: keys.detail(vars.id) });
+      qc.invalidateQueries({ queryKey: keys.all });
+      invalidateLinked(qc);
     },
   });
 }
@@ -146,6 +166,7 @@ export function useRecordPayment() {
       method: PaymentMethod;
       paidAt?: string;
       note?: string;
+      allocate?: "term" | "total";
     }) =>
       api.post<unknown>(`/api/debtors/${args.id}/payments`, {
         paymentN: args.paymentN,
@@ -153,10 +174,12 @@ export function useRecordPayment() {
         method: args.method,
         paidAt: args.paidAt,
         note: args.note,
+        allocate: args.allocate,
       }),
     onSuccess: (_d, vars) => {
       qc.invalidateQueries({ queryKey: keys.detail(vars.id) });
       qc.invalidateQueries({ queryKey: keys.all });
+      invalidateLinked(qc);
     },
   });
 }
@@ -177,6 +200,7 @@ export function useLogCall() {
       }),
     onSuccess: (_d, vars) => {
       qc.invalidateQueries({ queryKey: keys.detail(vars.id) });
+      invalidateLinked(qc);
     },
   });
 }
@@ -226,6 +250,9 @@ export function useCloseDebtor() {
         toStage: args.toStage,
         reason: args.reason,
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: keys.all }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.all });
+      invalidateLinked(qc);
+    },
   });
 }

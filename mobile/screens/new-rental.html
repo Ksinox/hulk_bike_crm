@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Новая аренда</title>
+<link rel="stylesheet" href="../css/app.css">
+</head>
+<body>
+<div class="screen">
+  <header class="s-head">
+    <div class="s-head-row">
+      <button class="s-back" data-back aria-label="Назад"></button>
+      <div style="flex:1"><div class="s-title sm">Новая аренда</div><div class="s-sub" id="stepName"></div></div>
+    </div>
+    <div class="steps" id="steps"></div>
+  </header>
+  <div class="s-body with-fab" id="body"></div>
+  <div class="fab-bar">
+    <button class="btn ghost btn-ic" id="prev" data-ic="chevL" data-ic-cls="s18" onclick="step(-1)"></button>
+    <button class="btn primary" id="next" style="flex:1" onclick="step(1)">Далее</button>
+  </div>
+</div>
+
+<script src="../js/data.js"></script>
+<script src="../js/hb.js"></script>
+<script>
+  var freeFleet = HB_DATA.fleet.filter(function (x) { return HB_DATA.displayFleetStatus(x) === 'free'; }).slice(0, 8);
+  var clients = HB_DATA.clients.slice(0, 10);
+  var state = { clientId: null, scooterId: null, days: 7, deposit: 2000, payment: 'cash' };
+  var stepId = 0;
+  var titles = ['Клиент', 'Скутер', 'Срок', 'Оплата'];
+
+  function priceFor(model, days) {
+    var rate = model === 'tank' ? 700 : model === 'gear' ? 600 : 500;
+    return rate * days;
+  }
+
+  function draw() {
+    document.getElementById('steps').innerHTML = titles.map(function (_, i) {
+      return '<i class="' + (i < stepId ? 'dn' : i === stepId ? 'on' : '') + '"></i>';
+    }).join('');
+    document.getElementById('stepName').textContent = 'Шаг ' + (stepId + 1) + ' из 4 · ' + titles[stepId];
+    document.getElementById('prev').style.visibility = stepId === 0 ? 'hidden' : 'visible';
+    document.getElementById('next').textContent = stepId === 3 ? 'Создать аренду' : 'Далее';
+    document.getElementById('body').innerHTML = views[stepId]();
+  }
+
+  var views = [
+    function () {
+      return '<div class="list">' + clients.map(function (c) {
+        var selected = state.clientId === c.id;
+        return '<div class="row' + (selected ? ' active' : '') + '" onclick="pickClient(' + c.id + ')"><div class="av">' + HB_DATA.initials(c.name) + '</div><div class="r-main"><div class="r-top"><span class="r-name">' + c.name + '</span><span class="tag">' + (c.rating / 20).toFixed(1) + '</span></div><div class="r-sub"><span class="r-phone">' + c.phone + '</span><span class="sep"></span>' + (HB_DATA.sourceLabel[c.source] || c.source) + '</div></div>' + (selected ? ic('check','s18') : '') + '</div>';
+      }).join('') + '</div>';
+    },
+    function () {
+      return '<div class="list">' + freeFleet.map(function (s) {
+        var selected = state.scooterId === s.id;
+        return '<div class="row' + (selected ? ' active' : '') + '" onclick="pickScooter(' + s.id + ')"><div class="av">' + ic('scooter','s18') + '</div><div class="r-main"><div class="r-top"><span class="pill green"><span class="pd"></span>Свободен</span><span class="r-name">' + s.name + '</span></div><div class="r-sub">' + HB_DATA.modelLabel[s.model] + '<span class="sep"></span>' + s.mileage.toLocaleString('ru-RU') + ' км</div></div>' + (selected ? ic('check','s18') : '') + '</div>';
+      }).join('') + '</div>';
+    },
+    function () {
+      return '<div class="field"><label>Срок аренды</label><div class="seg"><button onclick="setDays(3)"' + (state.days === 3 ? ' class="on"' : '') + '>3</button><button onclick="setDays(7)"' + (state.days === 7 ? ' class="on"' : '') + '>7</button><button onclick="setDays(14)"' + (state.days === 14 ? ' class="on"' : '') + '>14</button><button onclick="setDays(30)"' + (state.days === 30 ? ' class="on"' : '') + '>30</button></div></div>' + summary();
+    },
+    function () {
+      return '<div class="opt-grid"><button class="opt' + (state.payment === 'cash' ? ' on' : '') + '" onclick="state.payment=\'cash\';draw()"><div class="o-t">Наличные</div></button><button class="opt' + (state.payment === 'card' ? ' on' : '') + '" onclick="state.payment=\'card\';draw()"><div class="o-t">Карта</div></button><button class="opt' + (state.payment === 'transfer' ? ' on' : '') + '" onclick="state.payment=\'transfer\';draw()"><div class="o-t">Перевод</div></button></div>' + summary();
+    }
+  ];
+
+  function summary() {
+    var client = HB_DATA.clientById(state.clientId);
+    var scooter = HB_DATA.fleetById(state.scooterId);
+    var rent = scooter ? priceFor(scooter.model, state.days) : 0;
+    return '<div class="card pad" style="margin-top:16px"><div class="kv"><span class="k">Клиент</span><span class="v">' + (client ? client.name : '—') + '</span></div><div class="kv"><span class="k">Скутер</span><span class="v">' + (scooter ? scooter.name : '—') + '</span></div><div class="kv"><span class="k">Срок</span><span class="v">' + state.days + ' дн</span></div><div class="kv"><span class="k">Аренда</span><span class="v">' + HB_DATA.fmtMoney(rent) + '</span></div><div class="kv"><span class="k">Залог</span><span class="v">' + HB_DATA.fmtMoney(state.deposit) + '</span></div><div class="kv"><span class="k">К получению</span><span class="v big">' + HB_DATA.fmtMoney(rent + state.deposit) + '</span></div></div>';
+  }
+
+  function step(dir) {
+    if (dir > 0 && stepId === 0 && !state.clientId) return pulse('Выберите клиента');
+    if (dir > 0 && stepId === 1 && !state.scooterId) return pulse('Выберите скутер');
+    if (dir > 0 && stepId === 3) return done();
+    stepId = Math.max(0, Math.min(3, stepId + dir));
+    draw();
+  }
+
+  function pulse(text) {
+    var btn = document.getElementById('next');
+    btn.textContent = text;
+    btn.style.background = 'hsl(var(--orange))';
+    setTimeout(function () { btn.style.background = ''; draw(); }, 900);
+  }
+
+  function done() {
+    var scooter = HB_DATA.fleetById(state.scooterId);
+    document.getElementById('body').innerHTML = '<div class="empty fly" style="padding:70px 20px"><div class="ei" style="background:hsl(var(--green-soft));color:hsl(var(--green-ink));width:64px;height:64px">' + ic('checkc','s22') + '</div><div class="et" style="font-size:18px">Черновик аренды создан</div><div class="es">' + HB_DATA.clientById(state.clientId).name + ' · ' + scooter.name + ' · ' + state.days + ' суток</div></div>';
+    document.querySelector('.fab-bar').innerHTML = '<button class="btn ghost" style="flex:1" onclick="back()">К арендам</button><button class="btn primary" style="flex:1" onclick="go(\'rental-card.html\')">Открыть карточку</button>';
+  }
+
+  window.pickClient = function (id) { state.clientId = id; draw(); };
+  window.pickScooter = function (id) { state.scooterId = id; draw(); };
+  window.setDays = function (days) { state.days = days; draw(); };
+
+  draw();
+</script>
+</body>
+</html>

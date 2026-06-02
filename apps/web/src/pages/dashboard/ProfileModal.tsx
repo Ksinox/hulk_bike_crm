@@ -83,10 +83,10 @@ export function ProfileModal({ onClose }: { onClose: () => void }) {
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-ink/55 p-6 backdrop-blur-sm"
+      className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto overflow-x-hidden bg-ink/55 p-0 backdrop-blur-sm sm:p-6"
     >
       <div
-        className="mt-16 w-full max-w-[460px] overflow-hidden rounded-2xl bg-surface shadow-card-lg"
+        className="flex min-h-[100dvh] w-full flex-col overflow-hidden bg-surface shadow-card-lg sm:block sm:min-h-0 sm:mt-16 sm:max-w-[460px] sm:rounded-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-border bg-surface-soft px-5 py-3">

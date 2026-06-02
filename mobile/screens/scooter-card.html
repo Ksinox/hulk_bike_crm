@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Скутер</title>
+<link rel="stylesheet" href="../css/app.css">
+</head>
+<body>
+<div class="screen">
+  <header class="s-head">
+    <div class="s-head-row">
+      <button class="s-back" data-back aria-label="Назад"></button>
+      <div style="flex:1"><div class="s-title sm" id="title"></div><div class="s-sub" id="sub"></div></div>
+      <button class="s-head-act" data-ic="more" data-ic-cls="s18" onclick="act()"></button>
+    </div>
+  </header>
+  <div class="s-body with-fab">
+    <div class="stack">
+      <section class="card pad fly" id="hero"></section>
+      <div class="kpis c2 fly" id="kpis"></div>
+      <section class="card pad fly" id="current"></section>
+      <section class="card fly"><div class="card-hd"><span data-ic="wrench" data-ic-cls="s16" style="color:hsl(var(--muted))"></span><h3>Состояние</h3></div><div class="card-bd" id="state"></div></section>
+    </div>
+  </div>
+  <div class="fab-bar" id="fab"></div>
+</div>
+
+<script src="../js/data.js"></script>
+<script src="../js/hb.js"></script>
+<script>
+  var params = new URLSearchParams(location.search);
+  var scooter = HB_DATA.fleetById(Number(params.get('id'))) || HB_DATA.fleet[0];
+  var rental = HB_DATA.currentRentalForScooter(scooter.id);
+  var status = HB_DATA.displayFleetStatus(scooter);
+  var tone = status === 'overdue' ? 'red' : status === 'rented' ? 'blue' : status === 'repair' ? 'orange' : 'green';
+  var interval = HB_DATA.modelOilInterval(scooter.model);
+  var remain = Math.max(0, interval - (scooter.mileage % interval));
+  document.getElementById('title').textContent = scooter.name;
+  document.getElementById('sub').textContent = HB_DATA.modelLabel[scooter.model] + ' · срез CRM';
+  document.getElementById('hero').innerHTML = '<div style="display:flex;align-items:center;gap:13px"><div class="av" style="width:52px;height:52px;border-radius:14px"><span data-ic="scooter" data-ic-cls="s22"></span></div><div style="flex:1"><div class="font-display" style="font-size:22px">' + scooter.name + '</div><div style="font-size:12.5px;color:hsl(var(--muted))">' + (scooter.note || 'парк аренды') + '</div></div><span class="pill ' + tone + '"><span class="pd"></span>' + status + '</span></div>';
+  document.getElementById('kpis').innerHTML =
+    '<div class="kpi"><div class="k-l">Пробег</div><div class="k-v tnum">' + scooter.mileage.toLocaleString('ru-RU') + ' км</div></div>' +
+    '<div class="kpi green"><div class="k-l">До ТО</div><div class="k-v tnum">' + remain.toLocaleString('ru-RU') + ' км</div><div class="k-h">интервал ' + interval.toLocaleString('ru-RU') + '</div></div>' +
+    '<div class="kpi orange"><div class="k-l">Статус</div><div class="k-v tnum">' + status + '</div></div>' +
+    '<div class="kpi gray"><div class="k-l">База</div><div class="k-v tnum">' + scooter.baseStatus + '</div></div>';
+  if (rental) {
+    var c = HB_DATA.clientById(rental.clientId);
+    document.getElementById('current').innerHTML = '<div class="sec-label" style="margin:0 0 8px">Сейчас у клиента</div><div class="row" style="box-shadow:none;border:none;padding:0" onclick="go(\'rental-card.html?id=' + rental.id + '\')"><div class="av">' + HB_DATA.initials(c.name) + '</div><div class="r-main"><div class="r-top"><span class="pill ' + (rental.status === 'overdue' ? 'red' : rental.status === 'returning' ? 'orange' : 'blue') + '"><span class="pd"></span>' + rental.status + '</span><span class="r-name">' + c.name + '</span></div><div class="r-sub"><span class="r-phone">' + c.phone + '</span><span class="sep"></span>аренда №' + rental.id + '</div></div>' + ic('chevR', 's16 chev') + '</div>';
+  } else {
+    document.getElementById('current').innerHTML = '<div class="sec-label" style="margin:0 0 8px">Текущий статус</div><div style="font-size:13px;color:hsl(var(--muted))">' + (scooter.note || 'Свободен для следующей аренды') + '</div>';
+  }
+  document.getElementById('state').innerHTML = '<div class="kv"><span class="k">Базовый статус</span><span class="v">' + scooter.baseStatus + '</span></div><div class="kv"><span class="k">Примечание</span><span class="v">' + (scooter.note || '—') + '</span></div>';
+  document.getElementById('fab').innerHTML = rental
+    ? '<button class="btn primary" style="flex:1" data-ic="bike" data-ic-cls="s16" onclick="go(\'rental-card.html?id=' + rental.id + '\')">&nbsp;Открыть аренду</button>'
+    : '<button class="btn primary" style="flex:1" data-ic="plus" data-ic-cls="s16" onclick="go(\'new-rental.html\')">&nbsp;Выдать в аренду</button>';
+  function act() {
+    sheet('<h3>Действия со скутером</h3><div class="act-list"><button><span class="ai">' + ic('refresh', 's16') + '</span>Изменить статус</button><button><span class="ai">' + ic('wrench', 's16') + '</span>Отправить в ремонт</button></div>');
+  }
+</script>
+</body>
+</html>

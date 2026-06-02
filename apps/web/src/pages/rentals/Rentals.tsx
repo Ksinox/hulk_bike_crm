@@ -1,11 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
-import { Plus } from "lucide-react";
+import { flushSync } from "react-dom";
+import {
+  Search,
+  PanelRightOpen,
+  LayoutGrid,
+  Rows3,
+} from "lucide-react";
 import { Topbar } from "@/pages/dashboard/Topbar";
 import { type Rental, type RentalStatus } from "@/lib/mock/rentals";
-import { RentalsFilters, type FiltersState } from "./RentalsFilters";
+import {
+  RentalsFilters,
+  type FiltersState,
+} from "./RentalsFilters";
 import { RentalsList } from "./RentalsList";
 import { RentalsKpi, type Kpi } from "./RentalsKpi";
-import { RentalCard, ActTransferPreview } from "./RentalCard";
+import { RentalCard, ActTransferPreview, RentalHistoryColumn } from "./RentalCard";
+import { cn } from "@/lib/utils";
 import { DocumentPreviewModal } from "./DocumentPreviewModal";
 import { consumePending, onNavigate } from "@/app/navigationStore";
 import {
@@ -20,6 +30,8 @@ import { useDebtAggregate } from "@/lib/api/debt";
 import { useApiScooters } from "@/lib/api/scooters";
 import { useBillingPeriodRevenue } from "@/lib/useRevenue";
 import { ErrorBoundary } from "@/app/ErrorBoundary";
+import { isElectron } from "@/platform";
+import { PaymentAcceptDialog } from "./PaymentAcceptDialog";
 import type { ApiClient } from "@/lib/api/types";
 import {
   matchId,
@@ -28,6 +40,12 @@ import {
   matchText,
   normalizeQuery,
 } from "@/lib/search";
+import { useMe } from "@/lib/api/auth";
+import {
+  loadRentalsViewMode,
+  saveRentalsViewMode,
+  type RentalsViewMode,
+} from "./rentalsViewMode";
 
 /** Сегодня в формате DD.MM.YYYY (локальное время) */
 function todayRu(): string {
@@ -170,6 +188,17 @@ export function Rentals() {
     }
     return m;
   }, [debtAgg]);
+  // v0.8.34 (F4): полный долг по аренде (totalDebt = overdue+damage+manual+
+  // parking) — тот же источник, что использует дашборд для KPI «Долг по
+  // просрочкам». Раньше KPI стр. Аренды считал просрочку по
+  // status==='overdue' (статус удалён из БД в v0.5) → плитки «Просрочек» и
+  // «Долг по просрочкам» всегда показывали 0. Приводим к логике дашборда:
+  // просрочка = active с прошедшим endPlanned и реальным долгом > 0.
+  const totalDebtByRentalId = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const d of debtAgg ?? []) m.set(d.rentalId, d.totalDebt);
+    return m;
+  }, [debtAgg]);
   // v0.4.10: единый источник правды для выручки — общий хук, тот же
   // что использует и дашборд. Скоуп='rentals' оставлен на будущее
   // когда появятся другие модули с платежами (продажи/ремонты).
@@ -179,14 +208,101 @@ export function Rentals() {
     (s) => s.baseStatus === "rental_pool" && !s.archivedAt,
   ).length;
   const today = todayRu();
+  // v0.6.15: B1 — фильтр «по дате завершения» (endPlannedAt) добавлен
+  // через endDateFrom/endDateTo в FiltersState. dateFrom/dateTo
+  // фильтруют по rental.start (дата выдачи), endDateFrom/endDateTo —
+  // по rental.endPlanned (дата планового возврата).
   const [filters, setFilters] = useState<FiltersState>({
     search: "",
     status: "active",
     dateFrom: null,
     dateTo: null,
+    endDateFrom: null,
+    endDateTo: null,
   });
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  // v0.7.2: карточка теперь push-панель (сдвигает список), а не overlay.
+  // panelOpen управляет видимостью панели независимо от selectedId:
+  // оператор может скрыть панель (список растянется на всю ширину),
+  // при этом выбранная строка остаётся подсвеченной. По умолчанию открыта.
+  const [panelOpen, setPanelOpen] = useState(true);
+  // v0.7.3: Payment-панель поднята на уровень страницы — рендерится как
+  // третья колонка справа от карточки (push, не overlay). paymentRentalId
+  // хранит id связки, по которой принимаем оплату (может отличаться от
+  // selectedId — например, после продления фокус на новой связке).
+  const [paymentRentalId, setPaymentRentalId] = useState<number | null>(null);
+  // v0.7.3: число дней продления (синхрон календарь карточки ↔ Payment-
+  // колонка) + сигнал сброса календаря при закрытии Payment.
+  const [paymentExtDays, setPaymentExtDays] = useState(0);
+  const [calendarResetSignal, setCalendarResetSignal] = useState(0);
+  // v0.7.9: история аренды — четвёртая push-колонка (как Payment). Хранит
+  // id связки, по которой открыта полная история. Взаимоисключение с
+  // Payment: открытие истории закрывает Payment и наоборот.
+  const [historyRentalId, setHistoryRentalId] = useState<number | null>(null);
+  // v0.8.8: стартовый фильтр истории (напр. «money» из «За всё время»).
+  const [historyFilter, setHistoryFilter] = useState<
+    "all" | "extend" | "swap" | "equipment" | "money" | undefined
+  >(undefined);
+  const openPayment = (rentalId: number, extDays: number) => {
+    setHistoryRentalId(null); // взаимоисключение с историей
+    setPaymentExtDays(extDays);
+    setPaymentRentalId(rentalId);
+  };
+  const closePayment = () => {
+    setPaymentRentalId(null);
+    setPaymentExtDays(0);
+    // Бампаем сигнал — календарь карточки обнулит drag-extend.
+    setCalendarResetSignal((n) => n + 1);
+  };
+  const openHistory = (
+    rentalId: number,
+    filter?: "all" | "extend" | "swap" | "equipment" | "money",
+  ) => {
+    closePayment(); // взаимоисключение с Payment
+    setHistoryFilter(filter);
+    setHistoryRentalId(rentalId);
+  };
+  const closeHistory = () => setHistoryRentalId(null);
   const [newOpen, setNewOpen] = useState(false);
+  // v0.6.44: блок RentalsFilters (поповеры дат, набор табов) скрыт по
+  // умолчанию — header'а нового дизайна достаточно. Открывается кнопкой
+  // SlidersHorizontal справа от поиска.
+  // v0.7.22: режим списка (таблица/плитки) — пер-пользовательское
+  // предпочтение. До загрузки me берём дефолт, затем подтягиваем выбор
+  // конкретного пользователя (у директора и админа он независим).
+  const { data: me } = useMe();
+  const [viewMode, setViewMode] = useState<RentalsViewMode>(() =>
+    loadRentalsViewMode(undefined),
+  );
+  useEffect(() => {
+    if (me?.id != null) setViewMode(loadRentalsViewMode(me.id));
+  }, [me?.id]);
+  // F20: ширину блока аренд фиксирует СПИСОК (таблица) — он источник истины.
+  // RentalsList в режиме list измеряет фактическую ширину таблицы через
+  // ResizeObserver и отдаёт её сюда. Контейнер применяет это значение как
+  // фиксированную ширину в ОБОИХ режимах, поэтому при переключении
+  // список↔плитки блок не «дёргается»: плитки занимают ровно ту ширину,
+  // что занимал список. Значение динамическое (зависит от набора колонок),
+  // ничего не хардкодим. До первого измерения — null (fallback на w-fit).
+  const [listWidth, setListWidth] = useState<number | null>(null);
+  const handleMeasureWidth = (w: number) => {
+    setListWidth((prev) => (prev === w ? prev : w));
+  };
+  const changeViewMode = (m: RentalsViewMode) => {
+    if (m === viewMode) return;
+    saveRentalsViewMode(me?.id, m);
+    // v0.8.20 (E6): морфинг список↔плитки через View Transitions API —
+    // браузер сам «перетекает» каждую строку в карточку (по
+    // view-transition-name='rental-<id>'). Fallback — мгновенно.
+    const doc = document as Document & {
+      startViewTransition?: (cb: () => void) => void;
+    };
+    if (doc.startViewTransition) {
+      doc.startViewTransition(() => flushSync(() => setViewMode(m)));
+    } else {
+      setViewMode(m);
+    }
+  };
   /**
    * После создания аренды — автоматически открываем превью документа
    * «Договор + акт». Сценарий: оператор создал → сразу нажал «Печать» →
@@ -234,6 +350,7 @@ export function Rentals() {
     return onNavigate((req) => {
       if (req.route === "rentals" && req.rentalId != null) {
         setSelectedId(req.rentalId);
+        setPanelOpen(true);
         // openContract=true приходит при продлении — сразу открываем
         // превью документа с новыми датами для печати.
         if (req.openContract) {
@@ -286,6 +403,18 @@ export function Rentals() {
       if (filters.dateTo && startIso > filters.dateTo) return false;
       return true;
     };
+    // v0.6.15: B1 — фильтр по дате завершения (endPlanned).
+    const inEndPeriod = (r: Rental): boolean => {
+      const ef = filters.endDateFrom ?? null;
+      const et = filters.endDateTo ?? null;
+      if (!ef && !et) return true;
+      const [d, m, y] = r.endPlanned.split(".").map(Number);
+      if (!d || !m || !y) return false;
+      const endIso = `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+      if (ef && endIso < ef) return false;
+      if (et && endIso > et) return false;
+      return true;
+    };
     return rentals
       .filter(
         (r) =>
@@ -297,7 +426,8 @@ export function Rentals() {
             debtByRentalId.get(r.id),
           ) &&
           matchSearch(r, filters.search, apiClients ?? []) &&
-          inPeriod(r),
+          inPeriod(r) &&
+          inEndPeriod(r),
       )
       .sort((a, b) => {
         const sr = statusRank(a.status) - statusRank(b.status);
@@ -324,15 +454,33 @@ export function Rentals() {
           r.status === "returning") &&
         r.scooter,
     ).length;
-    const overdue = rentals.filter((r) => r.status === "overdue").length;
+    // v0.8.34 (F4): просрочка считается как на дашборде — аренда «active»
+    // (или легаси-статус 'overdue') с прошедшей плановой датой возврата
+    // И реальным долгом > 0. status='overdue' удалён из БД в v0.5, поэтому
+    // прежний фильтр r.status==='overdue' всегда давал 0. Долг берём из
+    // того же агрегата (totalDebt), что и дашборд, а не из rental.sum.
+    const [td, tm, ty] = today.split(".").map(Number);
+    const todayMs = new Date(ty!, tm! - 1, td!).getTime();
+    const isOverdue = (r: Rental): boolean => {
+      const debt = totalDebtByRentalId.get(r.id);
+      if (debt !== undefined && debt <= 0) return false;
+      if (r.status === "overdue") return true;
+      if (r.status !== "active") return false;
+      const [d, m, y] = r.endPlanned.split(".").map(Number);
+      if (!d || !m || !y) return false;
+      return new Date(y, m - 1, d).getTime() < todayMs;
+    };
+    const overdueRentals = rentals.filter(isOverdue);
+    const overdue = overdueRentals.length;
     const returningToday = rentals.filter(
       (r) =>
         r.status === "returning" ||
         (r.status === "active" && r.endPlanned === todayRu()),
     ).length;
-    const overdueDebt = rentals
-      .filter((r) => r.status === "overdue")
-      .reduce((s, r) => s + (r.sum ?? 0), 0);
+    const overdueDebt = overdueRentals.reduce(
+      (s, r) => s + (totalDebtByRentalId.get(r.id) ?? 0),
+      0,
+    );
     const periodRevenue = revenue.total;
 
     return [
@@ -369,82 +517,307 @@ export function Rentals() {
         tone: "purple",
       },
     ];
-  }, [rentals, revenue]);
+  }, [rentals, revenue, today, totalDebtByRentalId]);
 
+  // v0.7.2: push-панель — карточка выбранной аренды живёт в потоке справа
+  // и сдвигает/сжимает список (не overlay, не затемнение). Панель можно
+  // скрыть вручную (panelOpen=false) — список растянется на всю ширину,
+  // выбранная строка останется подсвеченной. Клик по строке снова
+  // открывает панель. Раньше (v0.7.0) была fixed overlay-drawer.
+  const selected = rentals.find((r) => r.id === selectedId) ?? null;
+  // v0.7.3: высота прилипающих колонок (карточка/payment) = высота вьюпорта
+  // минус electron-titlebar (36px). В web — чистые 100vh. Так footer карточки
+  // и payment всегда виден: скроллится только внутреннее тело колонки.
+  const panelHeight = isElectron ? "calc(100vh - 36px)" : "100vh";
+  // v0.7.3: payment-связка должна существовать в текущем списке. Если её нет
+  // (например, ушла в архив) — колонка не рендерится.
+  const paymentRental =
+    paymentRentalId != null
+      ? rentals.find((r) => r.id === paymentRentalId) ?? null
+      : null;
+  // v0.7.5: «последняя» оплачиваемая связка — держим контент Payment-колонки
+  // смонтированным во время exit-анимации (width 480→0). При закрытии
+  // paymentRental становится null мгновенно, но lastPaymentRental ещё
+  // хранит связку ~320ms, пока ширина едет в 0 — уезд получается плавным.
+  const [lastPaymentRental, setLastPaymentRental] = useState<Rental | null>(
+    null,
+  );
+  useEffect(() => {
+    if (paymentRental) {
+      setLastPaymentRental(paymentRental);
+      return;
+    }
+    // Закрытие — снимаем контент после завершения transition (320ms).
+    const t = window.setTimeout(() => setLastPaymentRental(null), 320);
+    return () => window.clearTimeout(t);
+  }, [paymentRental]);
+  // v0.7.9: история-связка должна существовать в текущем списке.
+  const historyRental =
+    historyRentalId != null
+      ? rentals.find((r) => r.id === historyRentalId) ?? null
+      : null;
+  // Держим id истории смонтированным во время exit-анимации (width 420→0),
+  // чтобы уезд был плавным (аналогично lastPaymentRental).
+  const [lastHistoryId, setLastHistoryId] = useState<number | null>(null);
+  useEffect(() => {
+    if (historyRental) {
+      setLastHistoryId(historyRental.id);
+      return;
+    }
+    const t = window.setTimeout(() => setLastHistoryId(null), 320);
+    return () => window.clearTimeout(t);
+  }, [historyRental]);
+  // Выбор строки: подсветить + всегда открыть панель (даже если была скрыта).
+  // v0.7.3: при переходе на другую аренду закрываем Payment-колонку, чтобы
+  // не висела открытая оплата от прежней связки.
+  const handleSelect = (id: number) => {
+    if (id !== selectedId) {
+      closePayment();
+      closeHistory();
+    }
+    setSelectedId(id);
+    setPanelOpen(true);
+  };
   return (
-    <main className="flex min-w-0 flex-1 flex-col gap-4">
+    <main
+      className="flex min-w-0 flex-1 flex-col gap-4 overflow-hidden p-4 lg:p-6"
+      // v0.7.3: страница фиксирована по высоте вьюпорта (минус electron-
+      // titlebar). overflow-hidden запрещает скролл всей страницы — вместо
+      // этого скроллятся внутренние области колонок (список / тело карточки /
+      // тело payment), а их header'ы и footer'ы остаются на месте.
+      style={{ height: panelHeight }}
+    >
       <Topbar />
 
-      <header className="flex items-center justify-between gap-3">
-        <div className="flex items-baseline gap-3">
-          <h1 className="font-display text-[34px] font-extrabold leading-none text-ink">
-            Аренды
-          </h1>
-          <span className="rounded-full bg-surface-soft px-3 py-1 text-[13px] font-semibold text-muted">
-            {
-              rentals.filter(
-                (r) =>
-                  (r.status === "active" ||
-                    r.status === "overdue" ||
-                    r.status === "returning") &&
-                  r.scooter,
-              ).length
-            }{" "}
-            активных
-          </span>
-        </div>
-        <button
-          type="button"
-          onClick={() => setNewOpen(true)}
-          className="inline-flex items-center gap-1.5 rounded-full bg-ink px-4 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-ink-2"
-        >
-          <Plus size={16} />
-          Новая аренда
-        </button>
-      </header>
-
+      {/* v0.6.50: KPI-плашки (5 шт) — Активные / Просрочки / Возврат
+          сегодня / Долг по просрочкам / Выручка. Над основным блоком. */}
       <RentalsKpi items={kpi} />
 
-      <RentalsFilters value={filters} onChange={setFilters} />
+      {/* ======== Split: список + push-панель карточки ========
+          v0.7.27: justify-center — группа [список(+карточка)] центрируется
+          по экрану. В режиме «Список» блок ограничен max-w → грузится по
+          центру (без карточки) либо группой с карточкой; в «Плитках» блок
+          заполняет ширину (max-w большой). При смене режима max-width
+          анимируется → плавное расширение/сжатие. */}
+      <div className="flex h-full min-h-0 flex-1 justify-center gap-0">
+        {/* Левая часть — единый белый блок: header+поиск+чипы+список.
+            v0.7.25: в режиме «Список» (таблица) блок сжимается до ~880px
+            (ширина под фильтры в одну строку + таблицу), карточка
+            придвигается вплотную, лишнее место уходит вправо за карточку.
+            В «Плитках» — заполняет всю доступную ширину (flex-1). */}
+        <div
+          className={cn(
+            "flex min-w-0 flex-col rounded-2xl bg-surface shadow-card-sm overflow-hidden min-h-0 transition-[width] duration-300 ease-in-out",
+            // v0.8.33 (K2): адаптивная ширина по содержимому. Блок-карточка
+            // ровно по ширине таблицы (списка) / сетки плиток — без пустого
+            // хвоста справа. Добавили колонку → блок расширился, убрали →
+            // сжался. Минимум 700px — чтобы при пустом списке/узкой таблице
+            // шапка (поиск + переключатель + фильтры) не схлопывалась.
+            // F20: w-fit оставлен ТОЛЬКО как fallback до первого измерения
+            // ширины таблицы. Как только listWidth известна — она задаётся
+            // инлайном (style.width) и фиксирует ширину в ОБОИХ режимах, так
+            // что переключение список↔плитки больше не меняет ширину блока
+            // (источник истины — список). min-w/max-w сохраняем как границы.
+            listWidth == null && "w-fit",
+            "min-w-[700px] max-w-full",
+          )}
+          style={listWidth != null ? { width: `${listWidth}px` } : undefined}
+        >
+          <div className="flex flex-col gap-3 p-4 pb-3 border-b border-border">
+            <div className="flex items-center gap-2">
+              <h1 className="font-display text-[26px] font-extrabold leading-none text-ink">
+                Аренды
+              </h1>
+              {/* v0.7.2: когда панель скрыта, но аренда выбрана — вкладка
+                  «Показать карточку» возвращает панель. */}
+              {selected && !panelOpen && (
+                <button
+                  type="button"
+                  onClick={() => setPanelOpen(true)}
+                  className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1.5 text-[12px] font-semibold text-blue-700 hover:bg-blue-100"
+                  title="Показать карточку аренды"
+                >
+                  <PanelRightOpen size={14} /> Показать карточку
+                </button>
+              )}
+            </div>
 
-      <div className="grid flex-1 gap-4 lg:grid-cols-[420px_1fr]">
-        <RentalsList
-          items={filtered}
-          selectedId={selectedId}
-          onSelect={setSelectedId}
-        />
-
-        {(() => {
-          const selected = rentals.find((r) => r.id === selectedId);
-          if (!selected) {
-            return (
-              <div className="flex min-h-[400px] items-center justify-center rounded-2xl bg-surface p-10 text-center shadow-card-sm">
-                <div className="text-[13px] text-muted">
-                  Выберите аренду из списка
-                </div>
+            <div className="flex items-center gap-2">
+              <div className="relative min-w-[160px] flex-1">
+                <Search
+                  size={16}
+                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-2"
+                />
+                <input
+                  type="text"
+                  value={filters.search}
+                  onChange={(e) =>
+                    setFilters({ ...filters, search: e.target.value })
+                  }
+                  placeholder="Поиск аренды, клиента, скутера…"
+                  className="h-9 w-full rounded-full bg-surface-soft pl-9 pr-3 text-[13px] text-ink outline-none placeholder:text-muted-2 focus:ring-2 focus:ring-blue-100"
+                />
               </div>
-            );
-          }
-          return (
-            <ErrorBoundary
-              key={selected.id}
-            >
-              <RentalCard
-                rental={selected}
-                initialTab={pendingTab ?? undefined}
-                onSwapped={(newId) => {
-                  // Свап успешен: одновременно (1) переключаем фокус
-                  // на новую связку — старая ушла в архив и пропадёт
-                  // из списка, (2) поднимаем превью акта замены поверх
-                  // карточки. RentalCard ремаунтится с key=newId, но
-                  // превью живёт в state Rentals и переживает ремаунт.
-                  setSelectedId(newId);
-                  setSwapActPreviewId(newId);
-                }}
-              />
-            </ErrorBoundary>
-          );
-        })()}
+              {/* v0.7.22: переключатель вида списка — две иконки (список /
+                  плитки). Выбор запоминается пер-пользователь. */}
+              <div className="flex shrink-0 items-center rounded-full bg-surface-soft p-0.5">
+                <button
+                  type="button"
+                  onClick={() => changeViewMode("list")}
+                  title="Список (таблица)"
+                  className={cn(
+                    "inline-flex h-8 w-8 items-center justify-center rounded-full transition-colors",
+                    viewMode === "list"
+                      ? "bg-white text-blue-700 shadow-card-sm"
+                      : "text-muted hover:text-ink",
+                  )}
+                >
+                  <Rows3 size={15} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => changeViewMode("tiles")}
+                  title="Плитки"
+                  className={cn(
+                    "inline-flex h-8 w-8 items-center justify-center rounded-full transition-colors",
+                    viewMode === "tiles"
+                      ? "bg-white text-blue-700 shadow-card-sm"
+                      : "text-muted hover:text-ink",
+                  )}
+                >
+                  <LayoutGrid size={15} />
+                </button>
+              </div>
+              {/* v0.8.11: синяя «+» убрана отсюда. Создание аренды теперь —
+                  плитка-заглушка в режиме «Плитки» и пункт меню/иные точки. */}
+            </div>
+
+            {/* v0.7.23: фильтры всегда видимы единым рядом (страница
+                full-width — прятать незачем). */}
+            <RentalsFilters value={filters} onChange={setFilters} />
+          </div>
+
+          {/* Список аренд — строки внутри того же блока, без рамок.
+              v0.8.24: view-transition-name на контейнере → при смене режима
+              область плавно «перетекает» cross-fade'ом (а не морфингом строк). */}
+          <div className="flex-1 min-h-0" style={{ viewTransitionName: "rentals-area" }}>
+            <RentalsList
+              items={filtered}
+              selectedId={selectedId}
+              onSelect={handleSelect}
+              viewMode={viewMode}
+              onNew={() => setNewOpen(true)}
+              onMeasureWidth={handleMeasureWidth}
+            />
+          </div>
+        </div>
+
+        {/* ======== КАРТОЧКА АРЕНДЫ = PUSH-ПАНЕЛЬ (v0.7.2) ========
+            В потоке справа, сжимает список. «Скрыть» (onClose) убирает
+            панель, selectedId не сбрасывается (строка остаётся выбранной).
+            v0.7.3: фикс. высота вьюпорта + overflow-hidden + min-h-0 —
+            footer карточки всегда виден, скроллится только её тело. */}
+        {/* v0.7.5: width-transition вместо mount/unmount — панель плавно
+            «подъезжает» (0→760px) и «уезжает» (760→0). Контейнер всегда в
+            DOM, анимируется width+opacity. Контент держим смонтированным
+            пока выбрана аренда (selected != null), даже когда панель скрыта
+            (panelOpen=false) — тогда ширина едет в 0, контент уезжает за
+            overflow-hidden, exit-анимация плавная. Внутренний враппер имеет
+            фикс. ширину 760px чтобы при сжатии контента не корёжило. */}
+        <div
+          className={cn(
+            // v0.8.18: вернули overflow-hidden — карточка снова со скруглением
+            // и клиппингом. Стикеры теперь рендерятся порталом поверх (см.
+            // RentalCard), поэтому им клиппинг не мешает.
+            "h-full min-h-0 shrink-0 overflow-hidden transition-[width,opacity,margin] duration-300 ease-in-out",
+            selected && panelOpen
+              ? "ml-4 w-[600px] opacity-100"
+              : "ml-0 w-0 opacity-0",
+          )}
+        >
+          {selected && (
+            <div className="flex h-full min-h-0 w-[600px] flex-col overflow-hidden rounded-2xl border-l border-border bg-surface shadow-card-sm">
+              <ErrorBoundary key={selected.id}>
+                <RentalCard
+                  rental={selected}
+                  initialTab={pendingTab ?? undefined}
+                  drawerChrome
+                  besideDrawerOpen={
+                    paymentRentalId != null ||
+                    historyRentalId != null ||
+                    !panelOpen
+                  }
+                  onClose={() => setPanelOpen(false)}
+                  onRequestPayment={openPayment}
+                  onOpenHistory={openHistory}
+                  paymentExtDays={paymentExtDays}
+                  paymentResetSignal={calendarResetSignal}
+                  onSwapped={(newId) => {
+                    setSelectedId(newId);
+                    setPanelOpen(true);
+                    setSwapActPreviewId(newId);
+                  }}
+                />
+              </ErrorBoundary>
+            </div>
+          )}
+        </div>
+
+        {/* ======== PAYMENT = ТРЕТЬЯ PUSH-КОЛОНКА (v0.7.3) ========
+            Открывается по «Принять оплату» / drag-to-extend на календаре
+            карточки. В потоке справа (не overlay) — сдвигает карточку влево
+            и сжимает список. Своя фикс. высота вьюпорта + внутренний скролл
+            (footer «Отмена»/«Принять» — часть тела диалога, inline-режим). */}
+        {/* v0.7.5: width-transition. Контейнер всегда в DOM; ширина едет
+            0↔480px при открытии/закрытии. Контент = lastPaymentRental, он
+            переживает exit-анимацию (см. useEffect выше). */}
+        <div
+          className={cn(
+            "h-full min-h-0 shrink-0 overflow-hidden transition-[width,opacity,margin] duration-300 ease-in-out",
+            paymentRental ? "ml-4 w-[480px] opacity-100" : "ml-0 w-0 opacity-0",
+          )}
+        >
+          {lastPaymentRental && (
+            <div className="flex h-full min-h-0 w-[480px] flex-col overflow-hidden">
+              <ErrorBoundary key={`pay-${lastPaymentRental.id}`}>
+                <PaymentAcceptDialog
+                  rental={lastPaymentRental}
+                  inline
+                  initialExtDays={paymentExtDays || undefined}
+                  onExtDaysChange={setPaymentExtDays}
+                  onClose={closePayment}
+                  onPaid={() => {
+                    /* invalidations происходят внутри диалога */
+                  }}
+                />
+              </ErrorBoundary>
+            </div>
+          )}
+        </div>
+
+        {/* ======== ИСТОРИЯ = PUSH-КОЛОНКА (v0.7.9) ========
+            Открывается по «Все события →» в карточке. В потоке справа
+            (не overlay) — сдвигает карточку влево. Взаимоисключение с
+            Payment (открытие одной закрывает другую). Width-transition
+            0↔420px, контент держим смонтированным во время exit-анимации. */}
+        <div
+          className={cn(
+            "h-full min-h-0 shrink-0 overflow-hidden transition-[width,opacity,margin] duration-300 ease-in-out",
+            historyRental ? "ml-4 w-[420px] opacity-100" : "ml-0 w-0 opacity-0",
+          )}
+        >
+          {lastHistoryId != null && (
+            <div className="flex h-full min-h-0 w-[420px] flex-col overflow-hidden">
+              <ErrorBoundary key={`hist-${lastHistoryId}`}>
+                <RentalHistoryColumn
+                  rentalId={lastHistoryId}
+                  onClose={closeHistory}
+                  initialFilter={historyFilter}
+                />
+              </ErrorBoundary>
+            </div>
+          )}
+        </div>
       </div>
 
       {swapActPreviewId != null && (

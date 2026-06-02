@@ -5,10 +5,11 @@ import {
   MIN_RENTAL_DAYS,
   MODEL_LABEL,
   periodForDays,
-  TARIFF,
+  ratePeriodForDays,
   TARIFF_PERIOD_LABEL,
   type Rental,
 } from "@/lib/mock/rentals";
+import { useModelRateResolver } from "@/lib/api/scooter-models";
 import { extendInplaceAsync, equipmentChangeAsync } from "./rentalsStore";
 import { toast } from "@/lib/toast";
 import { PaymentAcceptDialog } from "./PaymentAcceptDialog";
@@ -36,6 +37,8 @@ export function ExtendRentalDialog({
 }) {
   const [closing, setClosing] = useState(false);
   const [days, setDays] = useState(7);
+  // #81: ставка из каталога «Модели» (БД), фолбэк на legacy TARIFF.
+  const resolveRate = useModelRateResolver();
   // v0.4.25: чекбокс «Произвольный тариф» + переключатель ед.измерения
   // ₽/сут vs ₽/нед. В week-режиме поле «дней» означает недели, под
   // капотом days = weeks × 7.
@@ -75,18 +78,32 @@ export function ExtendRentalDialog({
   }, []);
 
   const autoPeriod = periodForDays(days);
+  // ratePeriod — тарифная ступень для СТАВКИ (знает "day" для 1-2 дней).
+  // Отделена от period: period идёт в БД (enum short/week/month), а ставка
+  // 1-2 дней берётся по dayRate каталога (едино с публичной анкетой).
+  const rateAutoPeriod = ratePeriodForDays(days);
   // В custom-week режиме форсируем period='week' для tariffPeriod в payload.
   const period =
     customMode && customUnit === "week" ? ("week" as const) : autoPeriod;
+  const ratePeriod =
+    customMode && customUnit === "week" ? ("week" as const) : rateAutoPeriod;
   // v0.4.25: rate зависит от режима.
-  //  • !customMode — берём из тарифной сетки модели по period
+  //  • !customMode — берём из тарифной сетки модели по ratePeriod
   //  • customMode — оператор задаёт сам (₽/сут или ₽/нед)
   const rate = customMode
     ? Math.max(0, customRate)
-    : TARIFF[rental.model][period];
+    : resolveRate(rental, ratePeriod);
   const isWeeklyCustom = customMode && customUnit === "week";
   const weeks = isWeeklyCustom ? Math.max(1, Math.round(days / 7)) : 0;
-  const sum = isWeeklyCustom ? rate * weeks : rate * days;
+  // Правка 3: бэк добавляет дневную стоимость платной экипировки к
+  // сумме продления. Для отображения считаем то же самое, но в API
+  // отправляем чистый rate (бэк сам прибавит equipmentDaily).
+  const equipmentDaily = equipment.reduce(
+    (s, it) => s + (it.free ? 0 : it.price ?? 0),
+    0,
+  );
+  const dailyTotal = rate + equipmentDaily;
+  const sum = isWeeklyCustom ? dailyTotal * weeks : dailyTotal * days;
 
   const newEndPlanned = useMemo(() => {
     const [d, m, y] = rental.endPlanned.split(".").map(Number);
@@ -144,7 +161,7 @@ export function ExtendRentalDialog({
         ...rental,
         days: rental.days + days,
         rate,
-        sum: rental.sum + rate * days,
+        sum: rental.sum + sum,
         endPlanned: newEndPlanned,
         equipmentJson: equipment as Rental["equipmentJson"],
         equipment: equipment.map((e) => e.name),
@@ -187,13 +204,13 @@ export function ExtendRentalDialog({
   return (
     <div
       className={cn(
-        "fixed inset-0 z-[120] flex items-center justify-center bg-ink/55 p-6 backdrop-blur-sm",
+        "fixed inset-0 z-[120] flex items-stretch justify-center overflow-y-auto bg-ink/55 p-0 backdrop-blur-sm sm:items-center sm:p-6",
         closing ? "animate-backdrop-out" : "animate-backdrop-in",
       )}
     >
       <div
         className={cn(
-          "w-full max-w-[480px] overflow-hidden rounded-2xl bg-surface shadow-card-lg",
+          "min-h-[100dvh] w-full overflow-hidden rounded-none bg-surface shadow-card-lg sm:min-h-0 sm:max-w-[480px] sm:rounded-2xl",
           closing ? "animate-modal-out" : "animate-modal-in",
         )}
         onClick={(e) => e.stopPropagation()}
@@ -246,13 +263,13 @@ export function ExtendRentalDialog({
               режиме поле «срок» означает недели, sum = rate × weeks. */}
           <div>
             {!customMode && (
-              <div className="grid grid-cols-3 gap-2">
-                {(["short", "week", "month"] as const).map((p) => (
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {(["day", "short", "week", "month"] as const).map((p) => (
                   <div
                     key={p}
                     className={cn(
                       "rounded-[10px] px-3 py-2 text-[11px]",
-                      p === period
+                      p === ratePeriod
                         ? "bg-blue-50 text-blue-700"
                         : "bg-surface-soft text-muted",
                     )}
@@ -261,7 +278,7 @@ export function ExtendRentalDialog({
                       {TARIFF_PERIOD_LABEL[p]}
                     </div>
                     <div className="mt-0.5 tabular-nums">
-                      {TARIFF[rental.model][p]} ₽/сут
+                      {resolveRate(rental, p)} ₽/сут
                     </div>
                   </div>
                 ))}
@@ -351,6 +368,33 @@ export function ExtendRentalDialog({
               emphasize
             />
           </div>
+
+          {/* v0.6.41: явный breakdown, чтобы оператор видел из чего
+              складывается итог (бэк добавляет дневную стоимость
+              платной экипировки). */}
+          {equipmentDaily > 0 && (
+            <div className="rounded-[10px] bg-surface-soft px-3 py-2 text-[11px] text-ink-2">
+              Аренда{" "}
+              <b className="tabular-nums">
+                {rate} ₽/{isWeeklyCustom ? "нед" : "сут"}
+              </b>{" "}
+              ×{" "}
+              <b className="tabular-nums">
+                {isWeeklyCustom ? `${weeks} нед` : `${days} дн`}
+              </b>{" "}
+              ={" "}
+              <b className="tabular-nums">
+                {fmt(isWeeklyCustom ? rate * weeks : rate * days)} ₽
+              </b>
+              {" + "}
+              Экипировка{" "}
+              <b className="tabular-nums">{equipmentDaily} ₽/сут</b> ×{" "}
+              <b className="tabular-nums">{days} дн</b> ={" "}
+              <b className="tabular-nums">{fmt(equipmentDaily * days)} ₽</b>
+              {" → Итого "}
+              <b className="tabular-nums text-blue-700">{fmt(sum)} ₽</b>
+            </div>
+          )}
 
           <div className="rounded-[10px] bg-blue-50 px-3 py-2 text-[11px] text-blue-700">
             По бизнес-логике при продлении подписывается{" "}

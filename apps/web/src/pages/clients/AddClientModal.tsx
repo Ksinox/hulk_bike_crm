@@ -22,10 +22,48 @@ import {
   type UploadedFile,
 } from "./DocUpload";
 import { clientStore } from "./clientStore";
+import { clientDocsKeys } from "@/lib/api/documents";
+import { queryClient } from "@/lib/queryClient";
 import { DatePicker } from "@/components/ui/date-picker";
-import { toast } from "@/lib/toast";
+import { toast, confirmDialog } from "@/lib/toast";
 import type { ApplicationFormInit } from "./applicationConvert";
 import { toTitleCaseRu } from "@/lib/textCase";
+
+/**
+ * v0.7.4: заливает выбранное фото клиента в client_documents
+ * (kind='photo'), чтобы оно переживало reload. До этого фото жило
+ * только в локальном clientStore.photos и пропадало после F5.
+ */
+const PHOTO_API_BASE =
+  import.meta.env.VITE_API_URL?.replace(/\/$/, "") ?? "http://localhost:4000";
+
+async function uploadClientDocFile(
+  clientId: number,
+  kind: "photo" | "passport" | "license" | "extra",
+  file: File,
+  title: string,
+): Promise<void> {
+  const fd = new FormData();
+  fd.append("clientId", String(clientId));
+  fd.append("kind", kind);
+  fd.append("title", title);
+  fd.append("file", file);
+  const res = await fetch(`${PHOTO_API_BASE}/api/client-documents/upload`, {
+    method: "POST",
+    credentials: "include",
+    body: fd,
+  });
+  if (!res.ok) throw new Error(`upload ${res.status}`);
+  queryClient.invalidateQueries({ queryKey: clientDocsKeys.byClient(clientId) });
+}
+
+async function uploadClientPhoto(
+  clientId: number,
+  file: File,
+  title: string,
+): Promise<void> {
+  return uploadClientDocFile(clientId, "photo", file, title);
+}
 
 const SOURCE_OPTIONS: { id: ClientSource; label: string }[] = [
   { id: "avito", label: SOURCE_LABEL.avito },
@@ -137,6 +175,12 @@ function validateNumber(v: string): string | null {
   return null;
 }
 
+/** Код подразделения NNN-NNN — обязателен для договора (R3). */
+function validateDivisionCode(v: string): string | null {
+  if (!/^\d{3}-\d{3}$/.test(v)) return "формат 000-000";
+  return null;
+}
+
 function findDuplicateIn(phone: string, pool: { id: number; name: string; phone: string }[]): { id: number; name: string; phone: string } | null {
   const digits = phone.replace(/\D/g, "");
   if (digits.length !== 11) return null;
@@ -173,6 +217,13 @@ function todayIso(): string {
   const dd = String(d.getDate()).padStart(2, "0");
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   return `${d.getFullYear()}-${mm}-${dd}`;
+}
+
+/** F8: разумный месяц для открытия календаря даты рождения — ~25 лет назад
+ *  (типичный возраст арендатора), чтобы не листать от текущего года. */
+function birthDefaultMonthIso(): string {
+  const d = new Date();
+  return `${d.getFullYear() - 25}-01-01`;
 }
 
 /** Trim + null если пусто — чтобы не отправлять "" в API. */
@@ -301,6 +352,14 @@ export function AddClientModal({
         // иначе оставляем дефолт формы (менеджер выберет).
         source: initialData.source ?? base.source,
         sourceCustom: initialData.sourceCustom || base.sourceCustom,
+        // F18: фото из заявки сразу подставляем в слоты сканов — оператор
+        // видит их как уже приложенные (превью + можно заменить/удалить).
+        // Бэкенд /convert сам перенесёт эти файлы в client_documents,
+        // поэтому форма их не перезаливает (см. keepFiles при сохранении).
+        photoFile: initialData.photoFile ?? base.photoFile,
+        passportMainFile: initialData.passportMainFile ?? base.passportMainFile,
+        passportRegFile: initialData.passportRegFile ?? base.passportRegFile,
+        licenseFile: initialData.licenseFile ?? base.licenseFile,
       };
     }
     return base;
@@ -359,10 +418,32 @@ export function AddClientModal({
     );
   }, [matchedAppsQ.data]);
 
-  const requestClose = () => {
+  // F7: форма «грязная» — пользователь что-то ввёл/изменил. Закрытие
+  // (Esc / крестик / Отмена) тогда требует подтверждения, чтобы случайно
+  // не потерять введённые данные.
+  const dirtyRef = useRef(false);
+
+  const doClose = () => {
     if (closing) return;
     setClosing(true);
     window.setTimeout(onClose, 160);
+  };
+
+  const requestClose = () => {
+    if (closing) return;
+    if (!dirtyRef.current) {
+      doClose();
+      return;
+    }
+    void confirmDialog({
+      title: "Закрыть без сохранения?",
+      message: "В форме есть несохранённые данные — они будут потеряны.",
+      confirmText: "Закрыть",
+      cancelText: "Остаться",
+      danger: true,
+    }).then((ok) => {
+      if (ok) doClose();
+    });
   };
 
   useEffect(() => {
@@ -382,10 +463,17 @@ export function AddClientModal({
       // Для иностранца паспорт в свободной форме — структурные поля не валидируем.
       passSer: f.isForeigner ? null : validateSeries(f.passSer),
       passNum: f.isForeigner ? null : validateNumber(f.passNum),
+      passCode: f.isForeigner ? null : validateDivisionCode(f.passCode),
       passportRaw:
         f.isForeigner && f.passportRaw.trim().length === 0
           ? "Опишите документ"
           : null,
+      // Адрес регистрации обязателен для РФ (нужен для договора). Для
+      // иностранца «прописки по паспорту РФ» нет — не требуем.
+      regAddr:
+        f.isForeigner || f.regAddr.trim().length > 0
+          ? null
+          : "Укажите адрес регистрации",
       source:
         !f.source
           ? "Выберите источник"
@@ -420,7 +508,9 @@ export function AddClientModal({
     errors.birth,
     errors.passSer,
     errors.passNum,
+    errors.passCode,
     errors.passportRaw,
+    errors.regAddr,
     errors.source,
     errors.sourceCustom,
   ];
@@ -429,8 +519,10 @@ export function AddClientModal({
   const progress = Math.round((ok / total) * 100);
   const canSave = required.every((e) => e === null) && !errors.blReason;
 
-  const set = <K extends keyof Form>(key: K, value: Form[K]) =>
+  const set = <K extends keyof Form>(key: K, value: Form[K]) => {
+    dirtyRef.current = true; // F7: пользователь редактирует форму
     setF((prev) => ({ ...prev, [key]: value }));
+  };
 
   const showErr = (key: string) =>
     (touched[key] && errors[key as keyof typeof errors]) || null;
@@ -441,13 +533,13 @@ export function AddClientModal({
   return (
     <div
       className={cn(
-        "fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-ink/50 p-6 backdrop-blur-sm",
+        "fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-ink/50 p-0 backdrop-blur-sm sm:p-6",
         closing ? "animate-backdrop-out" : "animate-backdrop-in",
       )}
     >
       <div
         className={cn(
-          "w-full max-w-[720px] overflow-hidden rounded-2xl bg-surface shadow-card-lg",
+          "min-h-[100dvh] w-full overflow-hidden rounded-none bg-surface shadow-card-lg sm:min-h-0 sm:max-w-[720px] sm:rounded-2xl",
           closing ? "animate-modal-out" : "animate-modal-in",
         )}
         onClick={(e) => e.stopPropagation()}
@@ -520,6 +612,12 @@ export function AddClientModal({
                   liveAddr: init.liveAddr || prev.liveAddr,
                   source: init.source ?? prev.source,
                   sourceCustom: init.sourceCustom || prev.sourceCustom,
+                  // F18: фото из подтянутой заявки — в слоты сканов.
+                  photoFile: init.photoFile ?? prev.photoFile,
+                  passportMainFile:
+                    init.passportMainFile ?? prev.passportMainFile,
+                  passportRegFile: init.passportRegFile ?? prev.passportRegFile,
+                  licenseFile: init.licenseFile ?? prev.licenseFile,
                 }));
                 setLinkedAppId(matchedApp.id);
               }}
@@ -540,7 +638,7 @@ export function AddClientModal({
                 type="text"
                 value={f.name}
                 placeholder="Например: Иванов Иван Иванович"
-                onChange={(e) => set("name", toTitleCaseRu(e.target.value))}
+                onChange={(e) => set("name", e.target.value)}
                 onBlur={() => markTouched("name")}
                 className={inputClass(showErr("name"))}
               />
@@ -597,6 +695,7 @@ export function AddClientModal({
                     set("birth", iso ? isoToRuDate(iso) : "");
                     markTouched("birth");
                   }}
+                  defaultMonth={birthDefaultMonthIso()}
                   maxDate={todayIso()}
                   clearable={false}
                 />
@@ -768,7 +867,12 @@ export function AddClientModal({
                   nextFieldId="f-pcode"
                 />
               </Field>
-              <Field label="Код подразделения" htmlFor="f-pcode">
+              <Field
+                label="Код подразделения"
+                required
+                error={showErr("passCode")}
+                htmlFor="f-pcode"
+              >
                 <input
                   id="f-pcode"
                   type="text"
@@ -785,7 +889,8 @@ export function AddClientModal({
                       document.getElementById("f-regaddr")?.focus();
                     }
                   }}
-                  className={inputClass(null)}
+                  onBlur={() => markTouched("passCode")}
+                  className={inputClass(showErr("passCode"))}
                 />
               </Field>
             </Row>
@@ -811,6 +916,8 @@ export function AddClientModal({
           <Section num={3} title="Адрес" badge="регистрация и проживание">
             <Field
               label="Адрес регистрации (по паспорту)"
+              required={!f.isForeigner}
+              error={showErr("regAddr")}
               htmlFor="f-regaddr"
               hint="Как указано в паспорте на странице «прописка»"
             >
@@ -819,7 +926,8 @@ export function AddClientModal({
                 value={f.regAddr}
                 placeholder="Индекс, регион, город, улица, дом, кв."
                 onChange={(e) => set("regAddr", toTitleCaseRu(e.target.value))}
-                className={cn(inputClass(null), "min-h-[56px] resize-y")}
+                onBlur={() => markTouched("regAddr")}
+                className={cn(inputClass(showErr("regAddr")), "min-h-[56px] resize-y")}
               />
             </Field>
             <label className="flex cursor-pointer items-center gap-2 text-[13px] text-ink">
@@ -1001,7 +1109,23 @@ export function AddClientModal({
                           : null,
                         ...passportFields,
                       });
+                      // Фото: оптимистично показываем локально + грузим
+                      // в client_documents если выбран новый файл.
                       clientStore.setPhoto(editing.id, f.photoFile);
+                      if (f.photoFile?.file) {
+                        uploadClientPhoto(
+                          editing.id,
+                          f.photoFile.file,
+                          `Фото · ${f.name.trim()}`,
+                        )
+                          .then(() => clientStore.setPhoto(editing.id, null))
+                          .catch((e) =>
+                            toast.error(
+                              "Фото не сохранилось на сервере",
+                              (e as Error).message ?? "",
+                            ),
+                          );
+                      }
                       clientStore.setExtraPhone(
                         editing.id,
                         f.phone2 || null,
@@ -1043,6 +1167,28 @@ export function AddClientModal({
                   // client_documents и помечает заявку accepted.
                   const effectiveAppId = applicationId ?? linkedAppId;
                   if (effectiveAppId) {
+                    // F18: keepFiles управляет переносом файлов заявки.
+                    // По умолчанию бэкенд копирует все 4 вида. Теперь слоты
+                    // формы предзаполнены превью этих файлов:
+                    //  - слот не тронут (appFileKind остался) → keep=true,
+                    //    бэкенд скопирует файл заявки (как и раньше);
+                    //  - слот очищен (null) → keep=false, файл не переносим;
+                    //  - слот заменён новым File (appFileKind пропал) →
+                    //    keep=false + после convert грузим новый файл.
+                    // Так избегаем дублей: файл заявки переносится РОВНО
+                    // один раз и только если он остался в слоте.
+                    const slotKind = (
+                      uf: UploadedFile | null,
+                    ): UploadedFile["appFileKind"] | undefined =>
+                      uf?.appFileKind;
+                    const keepFiles: Record<string, boolean> = {
+                      passport_main:
+                        slotKind(f.passportMainFile) === "passport_main",
+                      passport_reg:
+                        slotKind(f.passportRegFile) === "passport_reg",
+                      license: slotKind(f.licenseFile) === "license",
+                      selfie: slotKind(f.photoFile) === "selfie",
+                    };
                     try {
                       const created = await api.post<{ id: number; name: string; phone: string }>(
                         `/api/client-applications/${effectiveAppId}/convert`,
@@ -1060,9 +1206,64 @@ export function AddClientModal({
                           blacklistReason: f.blacklisted
                             ? nullableTrim(f.blReason)
                             : null,
+                          keepFiles,
                           ...passportFields,
                         },
                       );
+                      // Заменённые в форме файлы (новый File вместо файла
+                      // заявки) — заливаем после convert. Файл заявки для
+                      // них уже не перенесён (keep=false выше).
+                      const createdId = (created as { id: number }).id;
+                      const uploads: Promise<void>[] = [];
+                      const clientName = f.name.trim();
+                      if (f.photoFile?.file) {
+                        uploads.push(
+                          uploadClientDocFile(
+                            createdId,
+                            "photo",
+                            f.photoFile.file,
+                            `Фото · ${clientName}`,
+                          ),
+                        );
+                      }
+                      if (f.passportMainFile?.file) {
+                        uploads.push(
+                          uploadClientDocFile(
+                            createdId,
+                            "passport",
+                            f.passportMainFile.file,
+                            "Паспорт (главный разворот)",
+                          ),
+                        );
+                      }
+                      if (f.passportRegFile?.file) {
+                        uploads.push(
+                          uploadClientDocFile(
+                            createdId,
+                            "passport",
+                            f.passportRegFile.file,
+                            "Паспорт (прописка)",
+                          ),
+                        );
+                      }
+                      if (f.licenseFile?.file) {
+                        uploads.push(
+                          uploadClientDocFile(
+                            createdId,
+                            "license",
+                            f.licenseFile.file,
+                            "Водительское удостоверение",
+                          ),
+                        );
+                      }
+                      if (uploads.length > 0) {
+                        Promise.all(uploads).catch((e) =>
+                          toast.error(
+                            "Часть файлов не сохранилась на сервере",
+                            (e as Error).message ?? "",
+                          ),
+                        );
+                      }
                       qc.invalidateQueries({ queryKey: clientsKeys.all });
                       qc.invalidateQueries({ queryKey: applicationsKeys.all });
                       onCreated?.({
@@ -1103,7 +1304,23 @@ export function AddClientModal({
                       comment: f.blReason || undefined,
                       ...passportFields,
                     });
-                    if (f.photoFile) clientStore.setPhoto(created.id, f.photoFile);
+                    if (f.photoFile) {
+                      clientStore.setPhoto(created.id, f.photoFile);
+                      if (f.photoFile.file) {
+                        uploadClientPhoto(
+                          created.id,
+                          f.photoFile.file,
+                          `Фото · ${f.name.trim()}`,
+                        )
+                          .then(() => clientStore.setPhoto(created.id, null))
+                          .catch((e) =>
+                            toast.error(
+                              "Фото не сохранилось на сервере",
+                              (e as Error).message ?? "",
+                            ),
+                          );
+                      }
+                    }
                     if (f.phone2) clientStore.setExtraPhone(created.id, f.phone2);
                     onCreated?.(created);
                     requestClose();
@@ -1230,6 +1447,9 @@ function PhotoSlot({
       name: f.name,
       size: f.size,
       thumbUrl: URL.createObjectURL(f),
+      // v0.7.4: сырой File — нужен чтобы при сохранении формы залить
+      // фото в client_documents (kind='photo'), иначе оно теряется при F5.
+      file: f,
     };
     onChange(uf);
   };

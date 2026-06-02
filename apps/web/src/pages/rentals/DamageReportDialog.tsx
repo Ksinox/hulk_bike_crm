@@ -47,15 +47,39 @@ type Selected = CreateDamageItem & {
  *  - При сохранении: создаётся damage_report, аренда → completed_damage,
  *    скутер (опц.) → repair, открывается превью документа для печати.
  */
+/**
+ * Позиция для предзаполнения корзины при открытии диалога из потока
+ * «Завершить аренду → Есть ущерб». Совпадает по форме с CreateDamageItem.
+ */
+export type DamageSeedItem = {
+  priceItemId?: number | null;
+  name: string;
+  originalPrice: number;
+  finalPrice: number;
+  quantity: number;
+  comment?: string | null;
+};
+
 export function DamageReportDialog({
   rental,
   existing,
+  seedItems,
+  submitLabel,
   onClose,
   onCreated,
 }: {
   rental: Rental;
   /** Существующий акт — если передан, диалог работает в режиме редактирования. */
   existing?: ApiDamageReport | null;
+  /**
+   * v0.8.34 (F2): предзаполнить корзину при создании нового акта. Используется
+   * потоком завершения аренды «с ущербом» — оператор получает тот же
+   * полноценный диалог (редактируемые суммы, зачёт залога, тумблер «в ремонт»),
+   * что и при «Зафиксировать ущерб» на активной аренде.
+   */
+  seedItems?: DamageSeedItem[];
+  /** v0.8.34: переопределить подпись кнопки подтверждения (для flow завершения). */
+  submitLabel?: string;
   onClose: () => void;
   onCreated?: (reportId: number) => void;
 }) {
@@ -150,6 +174,18 @@ export function DamageReportDialog({
         comment: it.comment ?? "",
       }));
     }
+    // v0.8.34 (F2): предзаполнение из потока завершения «с ущербом».
+    if (seedItems?.length) {
+      return seedItems.map((it, i) => ({
+        uid: `seed-${i}-${Date.now()}`,
+        priceItemId: it.priceItemId ?? null,
+        name: it.name,
+        originalPrice: it.originalPrice,
+        finalPrice: it.finalPrice,
+        quantity: it.quantity,
+        comment: it.comment ?? "",
+      }));
+    }
     return [];
   });
 
@@ -193,9 +229,19 @@ export function DamageReportDialog({
   // удерживается у нас до полного покрытия долга (информационный режим).
   const depositIsItem = (rental.deposit ?? 0) <= 0;
   const depositMax = Math.min(rental.deposit ?? 0, total);
-  const [depositCovered, setDepositCovered] = useState<number>(
-    existing?.depositCovered ?? 0,
-  );
+  const [depositCovered, setDepositCovered] = useState<number>(() => {
+    if (existing) return existing.depositCovered ?? 0;
+    // v0.8.34 (F2): при предзаполнении из потока завершения по умолчанию
+    // зачитываем весь применимый залог (как делал прежний finalizeWithAct).
+    if (seedItems?.length) {
+      const seedTotal = seedItems.reduce(
+        (s, it) => s + it.finalPrice * it.quantity,
+        0,
+      );
+      return Math.min(rental.deposit ?? 0, seedTotal);
+    }
+    return 0;
+  });
   useEffect(() => {
     // Если итог уменьшился ниже текущего зачёта — ужмём.
     setDepositCovered((c) => Math.min(c, depositMax));
@@ -277,14 +323,14 @@ export function DamageReportDialog({
   return (
     <div
       className={cn(
-        "fixed inset-0 z-[120] flex items-center justify-center bg-ink/55 p-4 backdrop-blur-sm",
+        "fixed inset-0 z-[120] flex items-stretch justify-center bg-ink/55 p-0 backdrop-blur-sm sm:items-center sm:p-4",
         closing ? "animate-backdrop-out" : "animate-backdrop-in",
       )}
     >
       <div
         className={cn(
-          "flex w-full max-w-[1200px] flex-col overflow-hidden rounded-2xl bg-surface shadow-card-lg",
-          "max-h-[92vh]",
+          "flex h-[100dvh] w-full max-w-[1200px] flex-col overflow-hidden rounded-none bg-surface shadow-card-lg sm:h-auto sm:rounded-2xl",
+          "max-h-[100dvh] sm:max-h-[92vh]",
           closing ? "animate-modal-out" : "animate-modal-in",
         )}
         onClick={(e) => e.stopPropagation()}
@@ -327,6 +373,10 @@ export function DamageReportDialog({
                   placeholder="Поиск по позициям..."
                   className="h-9 w-full rounded-[10px] border border-border bg-surface pl-9 pr-3 text-[13px] outline-none focus:border-blue-600"
                 />
+              </div>
+              <div className="mt-2 text-[11px] leading-snug text-muted-2">
+                Это позиции из прейскуранта (Документы → Прейскурант). Выбери,
+                что повреждено — цену и количество поправишь справа.
               </div>
               {needsFallback && (
                 <div className="mt-2 rounded-[10px] bg-amber-50 px-3 py-2 text-[12px] text-amber-900">
@@ -405,14 +455,22 @@ export function DamageReportDialog({
                             <ChevronRight size={14} className="text-muted-2" />
                           )}
                           <div className="min-w-0 flex-1">
-                            <div className="text-[13px] font-semibold text-ink">
-                              {g.name}
+                            <div className="flex items-center gap-2">
+                              <div className="text-[13px] font-semibold text-ink">
+                                {g.name}
+                              </div>
+                              {linkedModel ? (
+                                <span className="rounded-full bg-blue-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-blue-700">
+                                  {linkedModel.name}
+                                </span>
+                              ) : (
+                                <span className="rounded-full bg-surface-soft px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-muted-2">
+                                  общая
+                                </span>
+                              )}
                             </div>
-                            <div className="text-[10px] text-muted-2">
-                              {linkedModel
-                                ? `модель: ${linkedModel.name}`
-                                : "общая"}{" "}
-                              · {g.items.length} поз.
+                            <div className="mt-0.5 text-[10px] text-muted-2">
+                              {g.items.length} поз.
                             </div>
                           </div>
                         </button>
@@ -669,7 +727,7 @@ export function DamageReportDialog({
                   ? "Сохраняем…"
                   : isEdit
                     ? "Сохранить изменения"
-                    : "Создать акт о повреждениях"}
+                    : (submitLabel ?? "Создать акт о повреждениях")}
               </button>
             </div>
           </div>

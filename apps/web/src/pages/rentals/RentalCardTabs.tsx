@@ -10,6 +10,10 @@ import {
   type ApiActivityItem,
 } from "@/lib/api/activity";
 import {
+  ActivityEventRow,
+  actionCategory,
+} from "@/components/ActivityEventRow";
+import {
   AlertTriangle,
   ArrowLeftRight,
   ArrowRight,
@@ -34,6 +38,7 @@ import { cn } from "@/lib/utils";
 import {
   MODEL_LABEL,
   PAYMENT_LABEL,
+  ratePeriodForDays,
   TARIFF_PERIOD_LABEL,
   type Rental,
 } from "@/lib/mock/rentals";
@@ -61,9 +66,9 @@ import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { fileUrl } from "@/lib/files";
 import { navigate } from "@/app/navigationStore";
 import { useDashboardDrawer } from "@/pages/dashboard/DashboardDrawer";
-import { toast } from "@/lib/toast";
+import { toast, confirmDialog } from "@/lib/toast";
 import { DocumentPreviewModal } from "./DocumentPreviewModal";
-import { RentalPeriodCalendar } from "@/components/ui/date-picker";
+import { DragExtendCalendar } from "./rental-card/DragExtendCalendar";
 import {
   useDamageReports,
   type ApiDamageReport,
@@ -125,12 +130,6 @@ function ruDateToIso(ru: string): string | null {
   return `${m[3]}-${m[2]}-${m[1]}`;
 }
 
-/** Сегодня в ISO YYYY-MM-DD (локальное время). */
-function todayIsoLocal(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
 /**
  * Визуализация периода аренды на read-only календаре с двумя зонами:
  * — синяя лента от даты выдачи до планового возврата (фирменный цвет
@@ -146,10 +145,18 @@ function RentalPeriodVisualizer({
   start,
   endPlanned,
   isOverdue,
+  dailyRate,
+  onCommitExtend,
+  initialExtDays,
+  resetSignal,
 }: {
   start: string;
   endPlanned: string;
   isOverdue: boolean;
+  dailyRate?: number;
+  onCommitExtend?: (days: number) => void;
+  initialExtDays?: number;
+  resetSignal?: number;
 }) {
   const startIso = ruDateToIso(start);
   const endIso = ruDateToIso(endPlanned);
@@ -164,11 +171,16 @@ function RentalPeriodVisualizer({
           </span>
         )}
       </div>
-      <RentalPeriodCalendar
+      <DragExtendCalendar
         startIso={startIso}
         plannedEndIso={endIso}
-        overdueUntilIso={isOverdue ? todayIsoLocal() : null}
-        className="bg-surface"
+        isOverdue={isOverdue}
+        dailyRate={dailyRate}
+        onCommitExtend={onCommitExtend}
+        initialDays={initialExtDays}
+        resetSignal={resetSignal}
+        disabled={!onCommitExtend}
+        hideLegend
       />
     </div>
   );
@@ -179,6 +191,9 @@ export function TermsTab({
   onClientClick,
   onSwapScooter,
   onChangeEquipment,
+  onCommitExtend,
+  initialExtDays,
+  resetSignal,
 }: {
   rental: Rental;
   onClientClick?: () => void;
@@ -187,6 +202,9 @@ export function TermsTab({
   /** v0.4.49: открыть диалог изменения экипировки. Если undefined —
    *  кнопка не показана (например, на completed аренде). */
   onChangeEquipment?: () => void;
+  onCommitExtend?: (days: number) => void;
+  initialExtDays?: number;
+  resetSignal?: number;
 }) {
   const { data: apiClients } = useApiClients();
   const client = apiClients?.find((c) => c.id === rental.clientId);
@@ -445,7 +463,11 @@ export function TermsTab({
             value={
               rental.rateUnit === "week"
                 ? `Произвольный · ${fmt(rental.rate)} ₽/нед`
-                : `от ${TARIFF_PERIOD_LABEL[rental.tariffPeriod].replace(/^от\s+/i, "")} · ${fmt(rental.rate)} ₽/сут`
+                : // Ступень тарифа берём по факт. числу дней (как считается
+                  // ставка), а не по полю tariffPeriod в БД: enum не знает "day",
+                  // поэтому 1-2 дня там лежат как "short". ratePeriodForDays
+                  // вернёт "day" → метка совпадёт со ставкой (dayRate).
+                  `от ${TARIFF_PERIOD_LABEL[ratePeriodForDays(rental.days)]} · ${fmt(rental.rate)} ₽/сут`
             }
           />
           <InfoCell
@@ -695,6 +717,12 @@ export function TermsTab({
           start={rootRental.start}
           endPlanned={rental.endPlanned}
           isOverdue={rental.status === "overdue"}
+          dailyRate={
+            rental.rateUnit === "week" ? Math.round(rental.rate / 7) : rental.rate
+          }
+          onCommitExtend={onCommitExtend}
+          initialExtDays={initialExtDays}
+          resetSignal={resetSignal}
         />
 
         {client && (
@@ -779,6 +807,9 @@ const PAYMENT_TYPE_LABEL: Record<string, string> = {
   fine: "Штраф",
   damage: "Ущерб",
   refund: "Возврат залога",
+  swap_fee: "Замена скутера",
+  equipment_fee: "Экипировка",
+  parking: "Паркинг",
 };
 
 const PAYMENT_TYPE_TONE: Record<string, string> = {
@@ -787,6 +818,9 @@ const PAYMENT_TYPE_TONE: Record<string, string> = {
   fine: "bg-orange-soft text-orange-ink",
   damage: "bg-red-soft text-red-ink",
   refund: "bg-green-soft text-green-ink",
+  swap_fee: "bg-blue-50 text-blue-700",
+  equipment_fee: "bg-orange-soft text-orange-ink",
+  parking: "bg-yellow-100 text-yellow-700",
 };
 
 export function PaymentsTab({
@@ -1495,13 +1529,13 @@ function SavedDocSnapshotsBlock({ rental }: { rental: Rental }) {
   }
 
   const handleDelete = async (id: number, title: string) => {
-    if (
-      !window.confirm(
-        `Удалить сохранённую версию «${title}»? Это уберёт файлы из хранилища.`,
-      )
-    ) {
-      return;
-    }
+    const ok = await confirmDialog({
+      title: "Удалить версию документа?",
+      message: `Удалить сохранённую версию «${title}»? Это уберёт файлы из хранилища.`,
+      confirmText: "Удалить",
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await deleteSnapshot.mutateAsync({ snapshotId: id, rentalId: rental.id });
       toast.success("Удалено", title);
@@ -1812,11 +1846,11 @@ function SwapHistoryAvatar({ scooterId }: { scooterId: number }) {
   const avatarSrc = fileUrl(model?.avatarKey, { variant: "thumb" });
   if (avatarSrc) {
     return (
-      <div className="h-7 w-7 shrink-0 overflow-hidden rounded-full bg-surface-soft">
+      <div className="h-7 w-7 shrink-0 overflow-hidden rounded-full bg-white">
         <img
           src={avatarSrc}
           alt={model?.name ?? sc.name}
-          className="h-full w-full object-cover"
+          className="h-full w-full object-contain"
         />
       </div>
     );
@@ -1847,11 +1881,11 @@ function ScooterThumb({ rental }: { rental: Rental }) {
 
   if (avatarSrc) {
     return (
-      <div className="h-20 w-20 shrink-0 overflow-hidden rounded-full bg-surface-soft">
+      <div className="h-20 w-20 shrink-0 overflow-hidden rounded-full bg-white">
         <img
           src={avatarSrc}
           alt={model?.name ?? ""}
-          className="h-full w-full object-cover"
+          className="h-full w-full object-contain"
         />
       </div>
     );
@@ -1896,12 +1930,18 @@ export function HistoryTab({
   rental,
   chainRentals,
   damageReports = [],
+  withFilters = false,
+  initialFilter,
 }: {
   rental: Rental;
   chainRentals: Rental[];
   /** Опционально — акты о повреждениях по всей цепочке (передаются из
    *  RentalCard). Если не передан — секция damage просто не рендерится. */
   damageReports?: ApiDamageReport[];
+  /** v0.7.14: показывать чипы-фильтры в ленте событий (полная колонка). */
+  withFilters?: boolean;
+  /** v0.8.8: стартовый фильтр ленты. */
+  initialFilter?: HistoryFilter;
 }) {
   // v0.4.5: лента событий из activity_log по всей цепочке аренды.
   // Включает создание, продления, замены скутера, начисления долга,
@@ -1975,6 +2015,8 @@ export function HistoryTab({
       <ActivityTimelineSection
         items={timeline}
         loading={timelineQ.isLoading}
+        withFilters={withFilters}
+        initialFilter={initialFilter}
       />
 
       {/* v0.5.4: «Цепочка из N аренд» имеет смысл только при N > 1.
@@ -2218,14 +2260,33 @@ export function HistoryTab({
  * сущность в drawer-стеке (если рендеримся внутри drawer-провайдера).
  * Иначе — навигация на полную страницу.
  */
+/** v0.7.14: категории-фильтры для полной истории-колонки. */
+export type HistoryFilter = "all" | "extend" | "swap" | "equipment" | "money";
+
+const HISTORY_FILTERS: { id: HistoryFilter; label: string }[] = [
+  { id: "all", label: "Все" },
+  { id: "extend", label: "Продления" },
+  { id: "swap", label: "Замены скутера" },
+  { id: "equipment", label: "Экипировка" },
+  { id: "money", label: "Долги и платежи" },
+];
+
 export function ActivityTimelineSection({
   items,
   loading,
+  withFilters = false,
+  initialFilter,
 }: {
   items: ApiActivityItem[];
   loading?: boolean;
+  /** v0.7.14: показывать чипы-фильтры по типам событий (только в полной
+   *  истории-колонке; в inline-ленте фильтры не нужны). */
+  withFilters?: boolean;
+  /** v0.8.8: стартовый фильтр (напр. «money» при открытии из «За всё время»). */
+  initialFilter?: HistoryFilter;
 }) {
   const drawer = useDashboardDrawer();
+  const [filter, setFilter] = useState<HistoryFilter>(initialFilter ?? "all");
   // v0.4.8: drawer-провайдер теперь поднят в App.tsx, поэтому стек
   // работает на любых страницах. Кликнул событие в Ленте → новая
   // панель выезжает справа, цепочка наслаивается. Fallback на navigate
@@ -2239,18 +2300,18 @@ export function ActivityTimelineSection({
   // navigate keep imported для других мест файла; void чтобы линтер
   // не ругался если в этой функции его нет.
   void navigate;
+
+  // v0.7.14: фильтрация по категории (только в полной колонке).
+  const visible = withFilters
+    ? items.filter(
+        (it) => filter === "all" || actionCategory(it.action) === filter,
+      )
+    : items;
+
   if (loading) {
     return (
       <div className="rounded-2xl bg-surface p-4 text-[12px] text-muted shadow-card-sm">
         Загружаем ленту событий…
-      </div>
-    );
-  }
-  if (items.length === 0) {
-    return (
-      <div className="rounded-2xl bg-surface p-4 text-[12px] text-muted shadow-card-sm">
-        События появятся здесь автоматически (создание, продления,
-        смена статусов, начисления долга и т.д.).
       </div>
     );
   }
@@ -2259,163 +2320,62 @@ export function ActivityTimelineSection({
       <div className="mb-2 flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-muted-2">
         <History size={12} /> Лента событий
         <span className="rounded-full bg-surface-soft px-1.5 py-0.5 text-[10px] text-muted">
-          {items.length}
+          {visible.length}
         </span>
       </div>
-      <ol className="flex flex-col gap-1.5">
-        {items.map((it) => {
-          const clickable =
-            it.entityId != null &&
-            (it.entity === "rental" ||
-              it.entity === "scooter" ||
-              it.entity === "client");
-          // v0.4.92: продление аренды визуально выделено — рамка
-          // и фон, чтобы оператор сразу видел что с этого момента
-          // начался новый период (по аналогии с «Цепочка аренд»).
-          const isExtension =
-            it.action === "extended" || it.action === "rental_extended";
-          // v0.5.4: «Создание аренды» — только для action='created' на
-          // сущности rental. Раньше любое created (damage_report, payment
-          // и т.п.) красило строку в зелёную «Создание аренды» — было
-          // неверно: в ленте акт о повреждениях помечался как создание
-          // аренды.
-          const isCreated =
-            it.action === "created" && it.entity === "rental";
-          return (
-            <li key={it.id}>
+
+      {/* v0.7.14: чипы-фильтры по типам событий — только в полной колонке. */}
+      {withFilters && (
+        <div className="mb-2.5 flex flex-wrap gap-1.5">
+          {HISTORY_FILTERS.map((f) => {
+            const active = filter === f.id;
+            return (
               <button
+                key={f.id}
                 type="button"
-                onClick={() => clickable && handleClick(it)}
-                disabled={!clickable}
+                onClick={() => setFilter(f.id)}
                 className={cn(
-                  "flex w-full items-start gap-2 rounded-[10px] px-3 py-2 text-left transition-colors",
-                  isExtension
-                    ? "border-2 border-blue-400 bg-blue-50 hover:bg-blue-100"
-                    : isCreated
-                      ? "border border-emerald-300 bg-emerald-50 hover:bg-emerald-100"
-                      : "bg-surface-soft hover:bg-blue-50",
-                  clickable ? "cursor-pointer" : "cursor-default",
+                  "rounded-full px-2.5 py-1 text-[11px] font-bold transition-colors",
+                  active
+                    ? "bg-ink text-white"
+                    : "bg-surface-soft text-ink-2 hover:bg-border",
                 )}
-                title={
-                  clickable
-                    ? `Открыть ${entityLabel(it.entity)}`
-                    : undefined
-                }
               >
-                <div
-                  className={cn(
-                    "mt-0.5 h-2 w-2 shrink-0 rounded-full",
-                    actionDotColor(it.action),
-                  )}
-                />
-                <div className="min-w-0 flex-1">
-                  {isExtension && (
-                    <div className="mb-0.5 inline-flex items-center gap-1 rounded-full bg-blue-600 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white">
-                      ↻ Продление · новый период
-                    </div>
-                  )}
-                  {isCreated && (
-                    <div className="mb-0.5 inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white">
-                      ✓ Создание аренды
-                    </div>
-                  )}
-                  <div
-                    className={cn(
-                      "text-[13px] leading-snug",
-                      isExtension
-                        ? "font-semibold text-blue-900"
-                        : isCreated
-                          ? "font-semibold text-emerald-900"
-                          : "text-ink",
-                    )}
-                  >
-                    {it.summary}
-                  </div>
-                  <div className="mt-0.5 flex flex-wrap items-center gap-1 text-[10px] text-muted-2">
-                    <Clock size={10} />
-                    {new Date(it.createdAt).toLocaleString("ru-RU", {
-                      day: "2-digit",
-                      month: "2-digit",
-                      year: "numeric",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                    {it.userName && it.userName !== "система" && (
-                      <>
-                        <span className="opacity-40">·</span>
-                        <span>{it.userName}</span>
-                      </>
-                    )}
-                    {it.entity && (
-                      <>
-                        <span className="opacity-40">·</span>
-                        <span className="lowercase">
-                          {entityLabel(it.entity)}
-                        </span>
-                      </>
-                    )}
-                  </div>
-                </div>
-                {clickable && (
-                  <span
-                    className="self-center text-[10px] font-bold uppercase tracking-wider text-blue-600 opacity-0 transition-opacity group-hover:opacity-100"
-                    aria-hidden
-                  >
-                    →
-                  </span>
-                )}
+                {f.label}
               </button>
-            </li>
-          );
-        })}
-      </ol>
+            );
+          })}
+        </div>
+      )}
+
+      {visible.length === 0 ? (
+        <div className="rounded-[10px] bg-surface-soft px-3 py-4 text-[12px] text-muted">
+          {withFilters && filter !== "all"
+            ? "Нет событий этой категории."
+            : "События появятся здесь автоматически (создание, продления, смена статусов, начисления долга и т.д.)."}
+        </div>
+      ) : (
+        <ol className="flex flex-col gap-1.5">
+          {visible.map((it) => {
+            const clickable =
+              it.entityId != null &&
+              (it.entity === "rental" ||
+                it.entity === "scooter" ||
+                it.entity === "client");
+            return (
+              <li key={it.id}>
+                <ActivityEventRow
+                  item={it}
+                  clickable={clickable}
+                  onOpen={() => clickable && handleClick(it)}
+                />
+              </li>
+            );
+          })}
+        </ol>
+      )}
     </div>
   );
-}
-
-function actionDotColor(action: string): string {
-  if (
-    action.includes("created") ||
-    action.includes("activate") ||
-    action === "extended"
-  ) {
-    return "bg-blue-500";
-  }
-  if (action.includes("forgiv") || action.includes("paid")) {
-    return "bg-green-500";
-  }
-  if (
-    action.includes("debt") ||
-    action.includes("damage") ||
-    action.includes("overdue")
-  ) {
-    return "bg-red-500";
-  }
-  if (action.includes("archived") || action.includes("deleted")) {
-    return "bg-muted-2";
-  }
-  return "bg-amber-500";
-}
-
-function entityLabel(entity: string): string {
-  switch (entity) {
-    case "rental":
-      return "аренда";
-    case "scooter":
-      return "скутер";
-    case "client":
-      return "клиент";
-    case "damage_report":
-      return "акт ущерба";
-    case "payment":
-      return "платёж";
-    case "repair_job":
-      return "ремонт";
-    case "user":
-      return "пользователь";
-    default:
-      return entity;
-  }
 }
 
 /* =================== История долгов (v0.3.8) =================== */
@@ -2652,6 +2612,8 @@ function PaymentEventRow({
     damage: "Оплата по ущербу",
     fine: "Оплата штрафа",
     swap_fee: "Доплата за замену скутера",
+    equipment_fee: "Оплата экипировки",
+    parking: "Оплата паркинга",
   };
   const methodLabel: Record<string, string> = {
     cash: "наличные",

@@ -11,9 +11,11 @@
  * Каждый sub-screen возвращает callback'и `onOpenCase(id)` / `onClose()` —
  * чтобы перемещаться по флоу.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Topbar } from "@/pages/dashboard/Topbar";
+import { consumePending } from "@/app/navigationStore";
 import { DebtorsMorning } from "./DebtorsMorning";
+import { DebtorsList } from "./DebtorsList";
 import { DebtorsEmpty } from "./DebtorsEmpty";
 import { DebtorCase } from "./DebtorCase";
 import { DebtorPaymentScreen } from "./DebtorPaymentScreen";
@@ -22,13 +24,21 @@ import { useDebtorsToday } from "@/lib/api/debtors";
 
 type Sub =
   | { kind: "landing" }
+  | { kind: "list" }
   | { kind: "new" }
   | { kind: "case"; id: number }
-  | { kind: "payment"; id: number };
+  | { kind: "payment"; id: number; paymentN?: number };
 
 export function Debtors() {
   const [sub, setSub] = useState<Sub>({ kind: "landing" });
   const todayQ = useDebtorsToday();
+
+  // Deep-link из карточки клиента: navigate({route:"debtors", debtorId}) →
+  // сразу открываем нужное дело.
+  useEffect(() => {
+    const p = consumePending("debtors");
+    if (p?.debtorId) setSub({ kind: "case", id: p.debtorId });
+  }, []);
 
   const isEmpty =
     todayQ.data != null && todayQ.data.totalActiveCount === 0;
@@ -41,18 +51,29 @@ export function Debtors() {
         onCreated={(id) => setSub({ kind: "case", id })}
       />
     );
+  } else if (sub.kind === "list") {
+    body = (
+      <DebtorsList
+        onOpenCase={(id) => setSub({ kind: "case", id })}
+        onBack={() => setSub({ kind: "landing" })}
+        onAddNew={() => setSub({ kind: "new" })}
+      />
+    );
   } else if (sub.kind === "case") {
     body = (
       <DebtorCase
         id={sub.id}
         onBack={() => setSub({ kind: "landing" })}
-        onOpenPayment={() => setSub({ kind: "payment", id: sub.id })}
+        onOpenPayment={(paymentN) =>
+          setSub({ kind: "payment", id: sub.id, paymentN })
+        }
       />
     );
   } else if (sub.kind === "payment") {
     body = (
       <DebtorPaymentScreen
         id={sub.id}
+        paymentN={sub.paymentN}
         onClose={() => setSub({ kind: "case", id: sub.id })}
       />
     );
@@ -63,6 +84,7 @@ export function Debtors() {
       <DebtorsMorning
         onOpenCase={(id) => setSub({ kind: "case", id })}
         onAddNew={() => setSub({ kind: "new" })}
+        onOpenList={() => setSub({ kind: "list" })}
       />
     );
   }

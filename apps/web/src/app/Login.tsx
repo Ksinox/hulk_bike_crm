@@ -50,6 +50,26 @@ export function Login() {
     return () => window.removeEventListener("keydown", onKey);
   }, [typed]);
 
+  // Мобильный аналог секретной последовательности: на телефоне нет
+  // клавиатуры, поэтому creator-плитка разблокируется ДОЛГИМ нажатием
+  // (≥4 сек) на подпись «© … Халк Байк» внизу экрана. Работает и тачем,
+  // и мышью. Намеренно без визуальной подсказки — секрет остаётся секретом.
+  const holdRef = useRef<number | null>(null);
+  const cancelHold = () => {
+    if (holdRef.current != null) {
+      window.clearTimeout(holdRef.current);
+      holdRef.current = null;
+    }
+  };
+  const startHold = () => {
+    if (unlock) return; // уже разблокировано
+    cancelHold();
+    holdRef.current = window.setTimeout(() => {
+      setUnlock(UNLOCK_SECRET);
+    }, 4000);
+  };
+  useEffect(() => cancelHold, []);
+
   useEffect(() => {
     if (selectedId != null) {
       setPassword("");
@@ -95,7 +115,7 @@ export function Login() {
             Вход в систему
           </div>
           <h1
-            className="mt-4 bg-gradient-to-b from-white via-white/95 to-white/40 bg-clip-text font-display text-[84px] font-bold uppercase leading-[0.95] tracking-[-0.03em] text-transparent sm:text-[104px]"
+            className="mt-4 bg-gradient-to-b from-white via-white/95 to-white/40 bg-clip-text font-display text-[clamp(40px,13vw,104px)] font-bold uppercase leading-[0.95] tracking-[-0.03em] text-transparent"
             style={{ WebkitBackgroundClip: "text" }}
           >
             ХАЛК&nbsp;БАЙК
@@ -205,9 +225,27 @@ export function Login() {
         </div>
       )}
 
-      {/* ==== Футер (абсолютно внизу) ==== */}
-      <div className="absolute inset-x-0 bottom-4 z-10 text-center text-[11px] text-white/25">
-        © {new Date().getFullYear()} Халк Байк
+      {/* ==== Футер (абсолютно внизу) ====
+          Долгое нажатие (≥4с) на подпись разблокирует creator-плитку —
+          мобильный аналог набора секрета на клавиатуре. */}
+      <div className="absolute inset-x-0 bottom-4 z-10 flex justify-center">
+        <span
+          onTouchStart={startHold}
+          onTouchEnd={cancelHold}
+          onTouchCancel={cancelHold}
+          onMouseDown={startHold}
+          onMouseUp={cancelHold}
+          onMouseLeave={cancelHold}
+          onContextMenu={(e) => e.preventDefault()}
+          className="cursor-default select-none text-[11px] text-white/25"
+          style={{
+            WebkitUserSelect: "none",
+            WebkitTouchCallout: "none",
+            touchAction: "manipulation",
+          }}
+        >
+          © {new Date().getFullYear()} Халк Байк
+        </span>
       </div>
 
       {/* Inline keyframes для дыхания свечения */}

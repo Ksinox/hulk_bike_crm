@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Аренды</title>
+<link rel="stylesheet" href="../css/app.css">
+</head>
+<body>
+<div class="screen">
+  <header class="s-head">
+    <div class="s-head-row">
+      <div style="flex:1">
+        <div class="s-title">Аренды</div>
+        <div class="s-sub" id="sub"></div>
+      </div>
+      <button class="s-head-act" data-ic="filter" data-ic-cls="s18" onclick="flt()"></button>
+    </div>
+    <div style="margin-top:12px" class="search">
+      <span data-ic="search" data-ic-cls="s18"></span>
+      <input id="q" placeholder="Клиент, скутер, телефон…" oninput="render()">
+    </div>
+  </header>
+
+  <div class="s-body with-fab">
+    <div class="chips" id="chips" style="margin-bottom:12px"></div>
+    <div class="list" id="list"></div>
+  </div>
+
+  <div class="fab-bar">
+    <button class="btn primary" data-ic="plus" data-ic-cls="s18" onclick="go('new-rental.html')">&nbsp;Создать аренду</button>
+  </div>
+</div>
+
+<script src="../js/data.js"></script>
+<script src="../js/hb.js"></script>
+<script>
+  var snap = HB_DATA.parseRuDate(HB_DATA.snapshotLabel);
+  var ST = {
+    active: { label: 'Активна', pill: 'green', acc: '' },
+    returning: { label: 'Возврат', pill: 'orange', acc: 'acc-orange' },
+    overdue: { label: 'Просрочка', pill: 'red', acc: 'acc-red' },
+    problem: { label: 'Проблема', pill: 'red', acc: 'acc-red' },
+    meeting: { label: 'Встреча', pill: 'blue', acc: 'acc-blue' }
+  };
+
+  var rows = HB_DATA.rentals.filter(function (r) {
+    return ['active', 'overdue', 'returning', 'meeting', 'completed_damage', 'police'].indexOf(r.status) > -1;
+  }).map(function (r) {
+    var c = HB_DATA.clientById(r.clientId);
+    var mapped = (r.status === 'completed_damage' || r.status === 'police') ? 'problem' : r.status;
+    var meta = mapped === 'overdue' ? '+' + Math.max(1, Math.round((snap - HB_DATA.parseRuDate(r.endPlanned)) / 86400000)) + ' дн' : (mapped === 'meeting' ? 'встреча' : r.days + ' дн');
+    var sum = mapped === 'overdue' ? 'долг ' + HB_DATA.fmtMoney(HB_DATA.rentalDebt(r)) : (r.damageAmount ? 'ущерб ' + HB_DATA.fmtMoney(r.damageAmount) : HB_DATA.fmtMoney(r.sum));
+    return { id: r.id, status: mapped, client: c, scooter: r.scooter, period: r.start + ' → ' + r.endPlanned, sum: sum, meta: meta };
+  });
+
+  var counts = {
+    all: rows.length,
+    returning: rows.filter(function (x) { return x.status === 'returning'; }).length,
+    overdue: rows.filter(function (x) { return x.status === 'overdue'; }).length,
+    problem: rows.filter(function (x) { return x.status === 'problem'; }).length,
+    active: rows.filter(function (x) { return x.status === 'active'; }).length
+  };
+  document.getElementById('sub').textContent = counts.active + ' активных · ' + counts.overdue + ' просрочек · ' + counts.returning + ' возврата рядом';
+
+  var filters = [
+    ['all', 'Все', counts.all],
+    ['returning', 'Возврат', counts.returning],
+    ['overdue', 'Просрочка', counts.overdue],
+    ['problem', 'Проблема', counts.problem],
+    ['active', 'Активные', counts.active]
+  ];
+  var cur = 'all';
+
+  document.getElementById('chips').innerHTML = filters.map(function (f) {
+    return '<button class="chip' + (f[0] === cur ? ' on' : '') + '" data-f="' + f[0] + '">' + f[1] + ' <span class="cn">' + f[2] + '</span></button>';
+  }).join('');
+  document.querySelectorAll('#chips .chip').forEach(function (b) {
+    b.onclick = function () {
+      cur = b.dataset.f;
+      document.querySelectorAll('#chips .chip').forEach(function (x) { x.classList.toggle('on', x.dataset.f === cur); });
+      render();
+    };
+  });
+
+  function render() {
+    var q = (document.getElementById('q').value || '').toLowerCase();
+    var data = rows.filter(function (r) {
+      if (cur !== 'all' && r.status !== cur) return false;
+      if (!q) return true;
+      return (r.client.name + r.client.phone + r.scooter).toLowerCase().indexOf(q) > -1;
+    });
+    document.getElementById('list').innerHTML = data.map(function (r) {
+      var s = ST[r.status];
+      return '<div class="row ' + s.acc + '" onclick="go(\'rental-card.html?id=' + r.id + '\')">' +
+        '<div class="av">' + HB_DATA.initials(r.client.name) + '</div><div class="r-main">' +
+        '<div class="r-top"><span class="pill ' + s.pill + '"><span class="pd"></span>' + s.label + '</span><span class="r-name">' + r.scooter + '</span></div>' +
+        '<div class="r-sub"><span class="r-phone">' + r.client.phone + '</span><span class="sep"></span>' + r.client.name + '</div>' +
+        '<div class="r-sub" style="margin-top:4px;font-size:11.5px">№' + r.id + ' · ' + r.period + '</div></div>' +
+        '<div class="r-meta"><div class="m-v" style="font-size:13px">' + r.sum + '</div><div class="m-l">' + r.meta + '</div></div></div>';
+    }).join('') || '<div class="empty"><div class="ei">' + ic('bike', 's22') + '</div><div class="et">Аренд не найдено</div></div>';
+  }
+
+  function flt() {
+    sheet('<h3>Сортировка</h3><div class="act-list">' +
+      '<button><span class="ai">' + ic('clock', 's16') + '</span>Сначала срочные возвраты</button>' +
+      '<button><span class="ai">' + ic('alert', 's16') + '</span>Сначала просрочки</button>' +
+      '<button><span class="ai">' + ic('cal', 's16') + '</span>По дате выдачи</button>' +
+      '<button><span class="ai">' + ic('wallet', 's16') + '</span>По сумме</button>' +
+      '</div><div class="divide"></div><button class="btn ghost lg" onclick="closeSheet()">Закрыть</button>');
+  }
+
+  render();
+</script>
+</body>
+</html>

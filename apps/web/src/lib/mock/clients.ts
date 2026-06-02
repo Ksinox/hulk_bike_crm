@@ -44,6 +44,11 @@ export type Client = {
    * для плашки на карточке.
    */
   unpaidDamageDebt?: number;
+  /**
+   * v0.6: дела-должники клиента (модуль «Должники»). Заполняется adaptClient
+   * из ApiClient.debtorCases. Активные дела идут первыми.
+   */
+  debtorCases?: import("@/lib/debtors/types").DebtorCaseSummary[];
 };
 
 export type RentalStatus = "active" | "done" | "overdue";

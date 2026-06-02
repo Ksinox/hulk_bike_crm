@@ -213,3 +213,9 @@ export function validatePassportNumber(v: string): string | null {
   if (!/^\d{6}$/.test(v)) return "6 цифр";
   return null;
 }
+
+/** Код подразделения — формат NNN-NNN (6 цифр). Обязателен для договора (R3). */
+export function validateDivisionCode(v: string): string | null {
+  if (!/^\d{3}-\d{3}$/.test(v)) return "формат 000-000";
+  return null;
+}

@@ -8,12 +8,12 @@ import {
   Pencil,
   Phone,
   PhoneOff,
+  Scale,
   UploadCloud,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   getClientDetails,
-  ratingTier,
   SOURCE_LABEL,
   type Client,
 } from "@/lib/mock/clients";
@@ -22,7 +22,6 @@ import {
   InstalmentsTab,
   IncidentsTab,
   DocsTab,
-  RatingTab,
 } from "./ClientCardTabs";
 import { AddClientModal } from "./AddClientModal";
 import { SequentialNamingModal } from "./SequentialNamingModal";
@@ -33,12 +32,15 @@ import {
 } from "./clientStore";
 import type { UploadedFile } from "./DocUpload";
 import { ClientPhoto } from "./ClientPhoto";
+import { EntityNotes } from "@/components/EntityNotes";
 import { CreateDealMenu } from "./CreateDealMenu";
 import { useActivityTimeline } from "@/lib/api/activity";
-import { ActivityTimelineSection } from "@/pages/rentals/RentalCardTabs";
+import { useClientStats } from "@/lib/useClientStats";
+import { ActivityTimelineSection } from "@/pages/rentals/ActivityTimelineSection";
 import { useDashboardDrawer } from "@/pages/dashboard/DashboardDrawer";
 import { useApplicationsByClient } from "@/lib/api/clientApplications";
 import { NewApplicationModal } from "./NewApplicationModal";
+import { ClientDebtorsTab } from "./ClientDebtorsTab";
 import { Inbox } from "lucide-react";
 import {
   getActiveRentalByClient,
@@ -48,22 +50,11 @@ import { navigate } from "@/app/navigationStore";
 
 export type CardTab =
   | "rentals"
+  | "debtor"
   | "timeline"
   | "instalments"
   | "incidents"
-  | "docs"
-  | "rhist";
-
-const TABS: { id: CardTab; label: string }[] = [
-  { id: "rentals", label: "Аренды" },
-  // v0.4.5: лента всех событий по клиенту — аренды, продления, акты,
-  // долги, оплаты, изменения рейтинга. Связь клиент ↔ скутеры ↔ ремонты.
-  { id: "timeline", label: "Лента событий" },
-  { id: "instalments", label: "Рассрочки" },
-  { id: "incidents", label: "Инциденты" },
-  { id: "docs", label: "Документы" },
-  { id: "rhist", label: "Рейтинг" },
-];
+  | "docs";
 
 function daysWord(n: number): string {
   const n10 = n % 10;
@@ -83,7 +74,6 @@ export function ClientCard({ client }: { client: Client }) {
   const [dragging, setDragging] = useState(false);
   const [pendingFiles, setPendingFiles] = useState<UploadedFile[] | null>(null);
   const d = useMemo(() => getClientDetails(client), [client]);
-  const tier = ratingTier(client.rating);
   const phone2 = useClientExtraPhone(client.id);
   const unreachable = useClientUnreachable(client.id);
   // Заявки этого клиента (если оформлен через convert — будет одна).
@@ -97,15 +87,11 @@ export function ClientCard({ client }: { client: Client }) {
     () => getActiveRentalByClient(client.id, rentalsForClient),
     [client.id, rentalsForClient],
   );
-  // сумма всех арендных дней по истории
-  const totalRentedDays = useMemo(
-    () => rentalsForClient.reduce((s, r) => s + (r.days || 0), 0),
-    [rentalsForClient],
-  );
-  const totalTurnover = useMemo(
-    () => rentalsForClient.reduce((s, r) => s + (r.sum || 0), 0),
-    [rentalsForClient],
-  );
+  // Единый источник статистики клиента (тот же, что в карточке аренды
+  // и быстром просмотре): фактические дни в аренде (с учётом просрочки)
+  // и реально оплаченное за всё время.
+  const { totalPaid: totalTurnover, totalDays: totalRentedDays } =
+    useClientStats(client.id);
 
   /**
    * Остаток по клиенту — сумма накопленных штрафов за просрочки.
@@ -118,6 +104,23 @@ export function ClientCard({ client }: { client: Client }) {
    * debt в банне.
    */
   const overdueBalance = client.debt ?? 0;
+
+  // v0.6: дела-должники клиента (модуль «Должники»). Активное дело даёт
+  // метку «Должник» и вкладку. Закрытые видны там же в истории дел.
+  const debtorCases = client.debtorCases ?? [];
+  const activeDebtor = debtorCases.find((c) => c.active) ?? null;
+  const tabs: { id: CardTab; label: string }[] = [
+    { id: "rentals", label: "Аренды" },
+    ...(debtorCases.length > 0
+      ? [{ id: "debtor" as CardTab, label: "Долговая история" }]
+      : []),
+    // v0.4.5: лента всех событий по клиенту — аренды, продления, акты,
+    // долги, оплаты, события дел-должников. Связь клиент ↔ скутеры ↔ ремонты.
+    { id: "timeline", label: "Лента событий" },
+    { id: "instalments", label: "Рассрочки" },
+    { id: "incidents", label: "Инциденты" },
+    { id: "docs", label: "Документы" },
+  ];
 
   const handleDroppedFiles = (list: FileList) => {
     const uploaded: UploadedFile[] = [];
@@ -167,8 +170,10 @@ export function ClientCard({ client }: { client: Client }) {
         </div>
       )}
 
-      {/* Top row: photo (tall) + right column */}
-      <div className="flex items-start gap-4">
+      {/* Top row: photo (tall) + right column.
+          Мобайл (<sm): стек — фото сверху, инфо ниже на всю ширину (иначе
+          в узкой колонке ФИО/телефон/кнопки разваливаются). */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-4">
         <ClientPhoto client={client} size="xl" />
 
         <div className="flex min-w-0 flex-1 flex-col gap-3">
@@ -207,6 +212,29 @@ export function ClientCard({ client }: { client: Client }) {
                     title="Открыть аренду"
                   >
                     аренда {activeRental.scooter}
+                  </button>
+                )}
+                {activeDebtor && (
+                  <button
+                    type="button"
+                    onClick={() => setTab("debtor")}
+                    className={cn(
+                      "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold transition-colors",
+                      activeDebtor.problem
+                        ? "bg-red-soft text-red-ink hover:bg-red/20"
+                        : "bg-orange-soft text-orange-ink hover:bg-orange/20",
+                    )}
+                    title="Открыть «Долговую историю» клиента"
+                  >
+                    {activeDebtor.problem ? (
+                      <>
+                        <AlertTriangle size={12} /> Проблемный
+                      </>
+                    ) : (
+                      <>
+                        <Scale size={12} /> Должник
+                      </>
+                    )}
                   </button>
                 )}
               </div>
@@ -285,8 +313,10 @@ export function ClientCard({ client }: { client: Client }) {
             </div>
           </header>
 
-          {/* KPIs — 2x2 слева + общий долг справа во всю высоту */}
-          <div className="grid grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-3">
+          {/* KPIs — 2x2 слева + общий долг справа во всю высоту.
+              Мобайл (<sm): в одну колонку (внутренняя сетка 2-кол на всю
+              ширину читаема), иначе на 390px цифры наезжают. */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
             <div className="grid grid-cols-2 gap-3">
               <KpiBox
                 label="Оборот"
@@ -313,18 +343,6 @@ export function ClientCard({ client }: { client: Client }) {
                 }
                 hint="суммарно по истории"
                 tone={totalRentedDays > 0 ? "neutral" : "gray"}
-              />
-              <KpiBox
-                label="Рейтинг"
-                value={String(client.rating)}
-                hint={tier.label.toLowerCase()}
-                tone={
-                  tier.tone === "good"
-                    ? "green"
-                    : tier.tone === "bad"
-                      ? "red"
-                      : "neutral"
-                }
               />
             </div>
             <div className="flex h-full flex-col gap-2">
@@ -430,9 +448,14 @@ export function ClientCard({ client }: { client: Client }) {
         </div>
       )}
 
+      {/* v0.8.21: заметки клиента стикерами (включая комментарии по связи). */}
+      <div className="rounded-[14px] border border-border bg-surface-soft/40 p-3">
+        <EntityNotes entity="client" entityId={client.id} />
+      </div>
+
       {/* Tabs */}
       <div className="mt-1 flex gap-1 border-b border-border">
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button
             key={t.id}
             type="button"
@@ -451,11 +474,11 @@ export function ClientCard({ client }: { client: Client }) {
 
       <div className="flex-1 pt-3">
         {tab === "rentals" && <RentalsTab client={client} />}
+        {tab === "debtor" && <ClientDebtorsTab cases={debtorCases} />}
         {tab === "timeline" && <ClientTimelineTab clientId={client.id} />}
         {tab === "instalments" && <InstalmentsTab d={d} />}
         {tab === "incidents" && <IncidentsTab d={d} />}
         {tab === "docs" && <DocsTab key={client.id} client={client} d={d} />}
-        {tab === "rhist" && <RatingTab d={d} />}
       </div>
 
       {editOpen && (

@@ -1,51 +1,424 @@
-import { cn } from "@/lib/utils";
+/**
+ * RentalsList — список аренд в двух режимах (v0.7.23):
+ *   • "tiles"  — сетка карточек-плиток. ОСНОВНОЕ изображение плитки —
+ *     фото скутера (модельный avatar) сверху; поверх него в левом нижнем
+ *     углу — прямоугольная (со скруглением) аватарка клиента. Ниже —
+ *     ФИО, скутер, даты, статус, долг.
+ *   • "list"   — плотная таблица по столбцам (№ / Клиент / Скутер /
+ *     Выдан / Возврат / Дней / Сумма / Статус) с сортировкой по клику на
+ *     заголовок. Колонки прижаты к содержимому (не растянуты), строки
+ *     крупные и читаемые. Аватарки — квадрат со скруглением (не круг).
+ *
+ * Данные (клиенты / скутеры / модели / долги) грузятся ОДИН раз на уровне
+ * списка и прокидываются в строки — это нужно и для сортировки таблицы.
+ */
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  PAYMENT_LABEL,
-  STATUS_LABEL,
-  STATUS_TONE,
-  type Rental,
-} from "@/lib/mock/rentals";
+  SearchX,
+  ChevronUp,
+  ChevronDown,
+  Bike,
+  SquareParking,
+  Plus,
+  Phone,
+  PhoneOff,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import { type Rental } from "@/lib/mock/rentals";
 import { effectiveRentalStatus } from "@/lib/rentalStatus";
 import { initialsOf } from "@/lib/mock/clients";
-import { useClientPhoto } from "@/pages/clients/clientStore";
+import {
+  useClientPhoto,
+  useUnreachableSet,
+  clientStore,
+} from "@/pages/clients/clientStore";
 import { useApiClients } from "@/lib/api/clients";
+import { useApiScooters } from "@/lib/api/scooters";
+import { useApiScooterModels } from "@/lib/api/scooter-models";
+import { useDebtAggregate } from "@/lib/api/debt";
+import { useParkingSessions } from "@/lib/api/parking";
+import { useStickers, useCreateSticker } from "@/lib/api/stickers";
+import { promptDialog } from "@/lib/toast";
+import { fileUrl } from "@/lib/files";
+import type { RentalsViewMode } from "./rentalsViewMode";
 
 function fmt(n: number) {
   return n.toLocaleString("ru-RU");
 }
 
-const TONE_PILL: Record<string, string> = {
-  green: "bg-green-soft text-green-ink",
-  red: "bg-red-soft text-red-ink",
-  orange: "bg-orange-soft text-orange-ink",
-  blue: "bg-blue-50 text-blue-700",
-  purple: "bg-purple-soft text-purple-ink",
-  gray: "bg-surface-soft text-muted",
+/** Разбор «Jog #02» → { model: "Jog", num: "02" }. */
+function parseScooter(label: string): { model: string; num: string | null } {
+  const m = label.match(/^(.*?)\s*#\s*(\d+)\s*$/);
+  if (m) return { model: (m[1] ?? "").trim(), num: m[2] ?? null };
+  return { model: label, num: null };
+}
+
+/** Скутер: круглый бейдж с номером + модель (+ пробег). */
+function ScooterTag({
+  label,
+  mileage,
+  size = "sm",
+}: {
+  label: string;
+  mileage?: number | null;
+  size?: "sm" | "md";
+}) {
+  const { model, num } = parseScooter(label);
+  const dot = size === "md" ? "h-6 min-w-6 text-[12px]" : "h-5 min-w-5 text-[11px]";
+  return (
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+      {num != null && (
+        <span
+          className={cn(
+            "inline-flex items-center justify-center rounded-full bg-ink px-1.5 font-bold tabular-nums text-white",
+            dot,
+          )}
+        >
+          {num}
+        </span>
+      )}
+      <span className="text-muted">{model}</span>
+      {mileage != null && (
+        <span className="text-[11px] tabular-nums text-muted-2">
+          · {fmt(mileage)} км
+        </span>
+      )}
+    </span>
+  );
+}
+
+/** Цвет аватарки клиента — детерминирован от id для стабильности. */
+function clientColor(id: number): string {
+  const palette = ["#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6", "#EC4899"];
+  return palette[((id - 1) % palette.length + palette.length) % palette.length]!;
+}
+
+/** Дней просрочки или дней до планового возврата (со знаком). */
+function daysToEnd(endPlannedRu: string): number {
+  const [d, m, y] = endPlannedRu.split(".").map(Number);
+  if (!d || !m || !y) return 0;
+  const end = new Date(y, m - 1, d).getTime();
+  const t = new Date();
+  const today = new Date(t.getFullYear(), t.getMonth(), t.getDate()).getTime();
+  return Math.round((end - today) / 86400000);
+}
+
+/** DD.MM.YYYY → число для сравнения (y*10000+m*100+d). */
+function dateKey(ru: string): number {
+  const [d, m, y] = ru.split(".").map(Number);
+  if (!d || !m || !y) return 0;
+  return y * 10000 + m * 100 + d;
+}
+
+const STATUS_LABEL: Record<string, string> = {
+  active: "активна",
+  overdue: "просрочка",
+  returning: "возврат",
+  completed: "завершена",
+  completed_damage: "с ущербом",
+  problem: "проблемная",
+  cancelled: "отменена",
+  police: "в полиции",
+  court: "суд",
+  meeting: "встреча",
+  new_request: "заявка",
 };
 
-// v0.4.34: effectiveStatus вынесен в @/lib/rentalStatus — общий хелпер
-// для всех мест где рендерится статус-пилюля.
+const STATUS_TONE: Record<string, string> = {
+  active: "bg-green-soft text-green-ink",
+  overdue: "bg-red-soft text-red-ink",
+  returning: "bg-orange-soft text-orange-ink",
+  completed: "bg-surface-soft text-muted",
+  completed_damage: "bg-red-soft text-red-ink",
+  problem: "bg-red-soft text-red-ink",
+  cancelled: "bg-surface-soft text-muted",
+  police: "bg-red-soft text-red-ink",
+  court: "bg-red-soft text-red-ink",
+  meeting: "bg-blue-50 text-blue-700",
+  new_request: "bg-blue-50 text-blue-700",
+};
 
-// v0.4.53: маппинг rentalId → суммарный долг по аренде (overdue+damage+manual,
-// без pendingRent). Если 0, бейдж/полоска НЕ окрашиваются красным.
-import { useDebtAggregate } from "@/lib/api/debt";
+/** Производная строка с готовыми к отображению/сортировке полями. */
+type Row = {
+  rental: Rental;
+  clientId: number;
+  clientName: string;
+  scooterLabel: string;
+  scooterAvatarSrc: string | null;
+  mileage: number | null;
+  startKey: number;
+  endKey: number;
+  delta: number;
+  badgeText: string;
+  badgeTone: string;
+  effStatus: string;
+  hasDebt: boolean;
+  rightSum: number;
+  pendingRent: number;
+  danger: boolean;
+  onParking: boolean;
+  parkingDays: number;
+  unreachable: boolean;
+};
+
+/**
+ * v0.8.13: компактный тумблер связи в списке/плитках. Зелёная трубка —
+ * «на связи» (по умолчанию), оранжевая перечёркнутая — «не выходит».
+ * Клик переключает (stopPropagation — не открывает карточку).
+ */
+function ContactToggle({
+  clientId,
+  unreachable,
+  className,
+}: {
+  clientId: number;
+  unreachable: boolean;
+  className?: string;
+}) {
+  // v0.8.20 (E7): для недоступных клиентов подтягиваем последний contact-
+  // комментарий → показываем в тултипе при наведении. Запрос только если
+  // клиент «не на связи» (enabled=unreachable).
+  const { data: cstickers } = useStickers("client", clientId, true, unreachable);
+  const createSticker = useCreateSticker();
+  const lastComment = unreachable
+    ? cstickers
+        ?.filter((s) => s.kind === "contact")
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]?.text
+    : undefined;
+  return (
+    <button
+      type="button"
+      onClick={async (e) => {
+        e.stopPropagation();
+        const next = !unreachable;
+        clientStore.setUnreachable(clientId, next);
+        // v0.8.24 (F2): при переключении в «не на связи» — предложить
+        // комментарий (стикер kind=contact на клиента), как в карточке.
+        if (next) {
+          const t = await promptDialog({
+            title: "Не выходит на связь",
+            message: "Комментарий (необязательно) — прикрепится стикером к клиенту.",
+            placeholder: "напр. звонили 29.05, не берёт трубку",
+            multiline: true,
+            confirmText: "Прикрепить",
+            cancelText: "Без комментария",
+          });
+          if (t)
+            createSticker.mutate({
+              entity: "client",
+              entityId: clientId,
+              kind: "contact",
+              text: t,
+              color: "orange",
+            });
+        }
+      }}
+      title={
+        unreachable
+          ? lastComment
+            ? `Не выходит на связь: ${lastComment}`
+            : "Не выходит на связь (клик — на связи)"
+          : "На связи (клик — отметить «не выходит»)"
+      }
+      className={cn(
+        "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full transition-colors",
+        unreachable
+          ? "bg-orange-soft text-orange-ink hover:bg-orange-200"
+          : "text-muted-2 hover:bg-green-50 hover:text-green-700",
+        className,
+      )}
+    >
+      {unreachable ? <PhoneOff size={13} /> : <Phone size={13} />}
+    </button>
+  );
+}
+
+type SortCol =
+  | "id"
+  | "client"
+  | "scooter"
+  | "start"
+  | "end"
+  | "days"
+  | "sum"
+  | "rentSum"
+  | "status"
+  | "parking"
+  | "contact";
 
 export function RentalsList({
   items,
   selectedId,
   onSelect,
+  viewMode,
+  onNew,
+  onMeasureWidth,
 }: {
   items: Rental[];
   selectedId: number | null;
   onSelect: (id: number) => void;
+  viewMode: RentalsViewMode;
+  /** v0.8.11: открыть «Новая аренда» — для плитки-заглушки в режиме плиток. */
+  onNew?: () => void;
+  /**
+   * F20: сообщает фактическую ширину таблицы-списка наверх. Источник истины
+   * ширины блока аренд — таблица (режим «Список»). Колбэк вызывается только
+   * в режиме list через ResizeObserver на корне таблицы. Родитель фиксирует
+   * это значение как ширину контейнера в ОБОИХ режимах, чтобы при
+   * переключении список↔плитки блок не «дёргался».
+   */
+  onMeasureWidth?: (width: number) => void;
 }) {
+  const { data: apiClients } = useApiClients();
+  const { data: apiScooters = [] } = useApiScooters();
+  const { data: models = [] } = useApiScooterModels();
+  const { data: debtAgg } = useDebtAggregate();
+  const { data: parkingAll = [] } = useParkingSessions();
+  const unreachableSet = useUnreachableSet();
+
+  // Локальная сортировка только для табличного режима.
+  const [sort, setSort] = useState<{ col: SortCol; dir: "asc" | "desc" } | null>(
+    null,
+  );
+
+  // F20: измеряем фактическую ширину таблицы-списка и отдаём наверх. Таблица —
+  // источник истины ширины блока аренд: при переключении на «Плитки»
+  // контейнер сохраняет последнюю измеренную ширину списка (см. Rentals.tsx).
+  // ResizeObserver ловит любое изменение ширины таблицы (добавилась/убралась
+  // колонка «Паркинг», сменился набор строк, ресайз окна) и переотправляет.
+  const tableRef = useRef<HTMLTableElement | null>(null);
+  useEffect(() => {
+    if (viewMode !== "list" || !onMeasureWidth) return;
+    const el = tableRef.current;
+    if (!el) return;
+    const report = () => {
+      // offsetWidth — полная ширина таблицы с бордерами (целое число px).
+      const w = el.offsetWidth;
+      if (w > 0) onMeasureWidth(w);
+    };
+    report();
+    const ro = new ResizeObserver(report);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [viewMode, onMeasureWidth]);
+
+  const rows = useMemo<Row[]>(() => {
+    return items.map((r) => {
+      const c = apiClients?.find((x) => x.id === r.clientId);
+      const myDebt = debtAgg?.find((d) => d.rentalId === r.id);
+      // realDebt — для статуса (просрочка): паркинг сюда НЕ входит, он не
+      // делает аренду просроченной. Но в сумму к показу паркинг включаем.
+      const realDebt = myDebt
+        ? myDebt.overdueBalance + myDebt.damageBalance + myDebt.manualBalance
+        : 0;
+      const parkingBalance = myDebt?.parkingBalance ?? 0;
+      const pendingRent = myDebt?.pendingRent ?? 0;
+      const displayDebt = realDebt + parkingBalance;
+      const hasDebt = displayDebt > 0;
+      const effStatus = effectiveRentalStatus(r.status, r.endPlanned, realDebt);
+      const isOverdue = effStatus === "overdue";
+      const delta = daysToEnd(r.endPlanned);
+      const overdueDays = delta < 0 ? Math.abs(delta) : 0;
+      const daysLeft = delta > 0 ? delta : 0;
+      const badgeText =
+        isOverdue && overdueDays > 0
+          ? `${overdueDays}д`
+          : delta === 0
+            ? "0д"
+            : `${daysLeft}д`;
+      const badgeTone =
+        isOverdue || hasDebt
+          ? "bg-red-600 text-white"
+          : delta === 0
+            ? "bg-orange-500 text-white"
+            : "bg-emerald-500 text-white";
+      const scooter = r.scooterId
+        ? apiScooters.find((s) => s.id === r.scooterId)
+        : null;
+      const model = scooter
+        ? scooter.modelId
+          ? models.find((m) => m.id === scooter.modelId)
+          : models.find((m) =>
+              m.name.toLowerCase().includes((scooter.model ?? "").toLowerCase()),
+            )
+        : null;
+      return {
+        rental: r,
+        clientId: r.clientId,
+        clientName: c?.name ?? `Клиент #${r.clientId}`,
+        scooterLabel: r.scooter,
+        scooterAvatarSrc: fileUrl(model?.avatarKey, { variant: "view" }),
+        mileage: scooter?.mileage ?? null,
+        startKey: dateKey(r.start),
+        endKey: dateKey(r.endPlanned),
+        delta,
+        badgeText,
+        badgeTone,
+        effStatus,
+        hasDebt,
+        rightSum: hasDebt ? displayDebt : pendingRent,
+        pendingRent,
+        danger: isOverdue || hasDebt,
+        // v0.8.5: бейдж 🅿 — если в ТЕКУЩЕЙ аренде (этой связке) есть
+        // паркинг (любой, не только сейчас активный). Прошлые паркинги
+        // предыдущих связок-продлений висят на других rentalId и сюда
+        // не попадают.
+        onParking: parkingAll.some((p) => p.rentalId === r.id),
+        parkingDays: parkingAll
+          .filter((p) => p.rentalId === r.id)
+          .reduce((s, p) => s + p.days, 0),
+        unreachable: unreachableSet.has(r.clientId),
+      };
+    });
+  }, [items, apiClients, apiScooters, models, debtAgg, parkingAll, unreachableSet]);
+
+  const sortedRows = useMemo<Row[]>(() => {
+    if (!sort) return rows;
+    const dir = sort.dir === "asc" ? 1 : -1;
+    const cmp = (a: Row, b: Row): number => {
+      switch (sort.col) {
+        case "id":
+          return (a.rental.id - b.rental.id) * dir;
+        case "client":
+          return a.clientName.localeCompare(b.clientName, "ru") * dir;
+        case "scooter":
+          return a.scooterLabel.localeCompare(b.scooterLabel, "ru") * dir;
+        case "start":
+          return (a.startKey - b.startKey) * dir;
+        case "end":
+          return (a.endKey - b.endKey) * dir;
+        case "days":
+          return (a.delta - b.delta) * dir;
+        case "sum":
+          return (a.rightSum - b.rightSum) * dir;
+        case "rentSum":
+          return ((a.rental.sum ?? 0) - (b.rental.sum ?? 0)) * dir;
+        case "status":
+          return (
+            (STATUS_LABEL[a.effStatus] ?? a.effStatus).localeCompare(
+              STATUS_LABEL[b.effStatus] ?? b.effStatus,
+              "ru",
+            ) * dir
+          );
+        case "parking":
+          return (a.parkingDays - b.parkingDays) * dir;
+        case "contact":
+          // недоступные наверх при asc (по клику на заголовок).
+          return (
+            (a.unreachable === b.unreachable ? 0 : a.unreachable ? -1 : 1) * dir
+          );
+        default:
+          return 0;
+      }
+    };
+    return [...rows].sort(cmp);
+  }, [rows, sort]);
+
   if (items.length === 0) {
     return (
-      <div className="flex h-full min-h-[240px] flex-col items-center justify-center gap-2 rounded-2xl bg-surface p-8 text-center shadow-card-sm">
-        <div className="text-2xl">🔍</div>
-        <div className="text-[14px] font-semibold text-ink">
-          Аренд не найдено
-        </div>
+      <div className="flex h-full min-h-[180px] flex-col items-center justify-center gap-2 p-8 text-center">
+        <SearchX size={36} className="text-muted-2" />
+        <div className="text-[14px] font-semibold text-ink">Аренд не найдено</div>
         <div className="text-[12px] text-muted">
           Попробуйте другой фильтр или запрос
         </div>
@@ -53,204 +426,409 @@ export function RentalsList({
     );
   }
 
-  return (
-    <div className="relative overflow-hidden rounded-2xl bg-surface shadow-card-sm">
-      <div className="scrollbar-thin max-h-[calc(100vh-340px)] overflow-y-auto overflow-x-hidden px-1.5 py-14">
-        {items.map((r) => (
-          <RentalRow
-            key={r.id}
-            rental={r}
-            active={r.id === selectedId}
-            onSelect={onSelect}
-          />
-        ))}
+  if (viewMode === "tiles") {
+    // v0.8.11: плитки фиксированной ширины, перенос слева-направо
+    // (justify-start), вертикальный скролл при нехватке высоты. Контейнер
+    // повторяет ширину блока (= ширине списка). Последней идёт плитка-
+    // заглушка «+ Новая аренда» — она заполняет «пустое» место в сетке
+    // (как на каршеринг/сервисах) и служит точкой создания аренды.
+    return (
+      <div className="scrollbar-thin h-full overflow-y-auto overflow-x-hidden p-3">
+        <div className="flex flex-wrap content-start justify-start gap-3">
+          {rows.map((row) => (
+            <RentalTile
+              key={row.rental.id}
+              row={row}
+              active={row.rental.id === selectedId}
+              onSelect={onSelect}
+            />
+          ))}
+          {onNew && <NewRentalTile onClick={onNew} />}
+        </div>
       </div>
+    );
+  }
 
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-0 z-10 h-14 backdrop-blur-[3px]"
-        style={{
-          background:
-            "linear-gradient(to bottom, hsl(var(--surface)) 0%, hsl(var(--surface) / 0.85) 40%, transparent 100%)",
-          WebkitMaskImage:
-            "linear-gradient(to bottom, black 0%, black 50%, transparent 100%)",
-          maskImage:
-            "linear-gradient(to bottom, black 0%, black 50%, transparent 100%)",
-        }}
-      />
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-14 backdrop-blur-[3px]"
-        style={{
-          background:
-            "linear-gradient(to top, hsl(var(--surface)) 0%, hsl(var(--surface) / 0.85) 40%, transparent 100%)",
-          WebkitMaskImage:
-            "linear-gradient(to top, black 0%, black 50%, transparent 100%)",
-          maskImage:
-            "linear-gradient(to top, black 0%, black 50%, transparent 100%)",
-        }}
-      />
+  // ===== Табличный режим =====
+  const toggleSort = (col: SortCol) =>
+    setSort((s) =>
+      s && s.col === col
+        ? s.dir === "asc"
+          ? { col, dir: "desc" }
+          : null
+        : { col, dir: "asc" },
+    );
+
+  // v0.8.5: колонка «Паркинг» показывается только если в выборке есть
+  // аренда с паркингом → блок адаптивно расширяется на эту колонку.
+  const hasAnyParking = rows.some((r) => r.parkingDays > 0);
+
+  return (
+    <div className="scrollbar-thin h-full overflow-auto px-2">
+      {/* w-auto: колонки прижаты к содержимому (не растянуты на всю ширину). */}
+      <table ref={tableRef} className="w-auto border-collapse text-left">
+        <thead className="sticky top-0 z-10 bg-surface">
+          <tr className="text-[11px] font-semibold uppercase tracking-wide text-muted-2">
+            <Th label="№" col="id" sort={sort} onSort={toggleSort} />
+            <Th label="Клиент" col="client" sort={sort} onSort={toggleSort} />
+            <Th label="Связь" col="contact" sort={sort} onSort={toggleSort} align="center" />
+            <Th label="Скутер" col="scooter" sort={sort} onSort={toggleSort} />
+            <Th label="Выдан" col="start" sort={sort} onSort={toggleSort} />
+            <Th label="Возврат" col="end" sort={sort} onSort={toggleSort} />
+            <Th label="Дней" col="days" sort={sort} onSort={toggleSort} align="center" />
+            {hasAnyParking && (
+              <Th label="Паркинг" col="parking" sort={sort} onSort={toggleSort} align="center" />
+            )}
+            <Th label="Сумма аренды" col="rentSum" sort={sort} onSort={toggleSort} align="right" />
+            <Th label="Долг" col="sum" sort={sort} onSort={toggleSort} align="right" />
+            <Th label="Статус" col="status" sort={sort} onSort={toggleSort} />
+          </tr>
+        </thead>
+        <tbody>
+          {sortedRows.map((row) => (
+            <RentalTableRow
+              key={row.rental.id}
+              row={row}
+              active={row.rental.id === selectedId}
+              onSelect={onSelect}
+              showParking={hasAnyParking}
+            />
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
 
-function RentalRow({
-  rental: r,
+function Th({
+  label,
+  col,
+  sort,
+  onSort,
+  align = "left",
+}: {
+  label: string;
+  col: SortCol;
+  sort: { col: SortCol; dir: "asc" | "desc" } | null;
+  onSort: (col: SortCol) => void;
+  align?: "left" | "center" | "right";
+}) {
+  const activeSort = sort?.col === col;
+  return (
+    <th
+      className={cn(
+        "whitespace-nowrap border-b border-border px-4 py-2.5 font-semibold select-none",
+        align === "right" && "text-right",
+        align === "center" && "text-center",
+      )}
+    >
+      <button
+        type="button"
+        onClick={() => onSort(col)}
+        className={cn(
+          "inline-flex items-center gap-1 hover:text-ink",
+          align === "right" && "flex-row-reverse",
+          activeSort ? "text-ink" : "",
+        )}
+      >
+        {label}
+        {activeSort &&
+          (sort!.dir === "asc" ? (
+            <ChevronUp size={12} />
+          ) : (
+            <ChevronDown size={12} />
+          ))}
+      </button>
+    </th>
+  );
+}
+
+/**
+ * Аватарка клиента — квадрат/прямоугольник со скруглением (не круг).
+ * w/h задаются явно; для таблицы — квадрат, для плитки — портрет.
+ */
+function ClientAvatar({
+  clientId,
+  name,
+  w,
+  h,
+  ring = false,
+}: {
+  clientId: number;
+  name: string;
+  w: number;
+  h: number;
+  ring?: boolean;
+}) {
+  const photo = useClientPhoto(clientId);
+  return (
+    <span
+      className={cn(
+        "flex shrink-0 items-center justify-center overflow-hidden rounded-lg",
+        ring && "ring-2 ring-white shadow-card-sm",
+      )}
+      style={{ width: w, height: h, background: clientColor(clientId) }}
+    >
+      {photo?.thumbUrl ? (
+        <img src={photo.thumbUrl} alt="" className="h-full w-full object-cover" />
+      ) : (
+        <span
+          className="font-display font-bold leading-none text-white"
+          style={{ fontSize: Math.min(w, h) * 0.42 }}
+        >
+          {initialsOf(name)}
+        </span>
+      )}
+    </span>
+  );
+}
+
+function StatusPill({ status }: { status: string }) {
+  return (
+    <span
+      className={cn(
+        "inline-block rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wide",
+        STATUS_TONE[status] ?? "bg-surface-soft text-muted-2",
+      )}
+    >
+      {STATUS_LABEL[status] ?? status}
+    </span>
+  );
+}
+
+function RentalTableRow({
+  row,
   active,
   onSelect,
+  showParking,
 }: {
-  rental: Rental;
+  row: Row;
   active: boolean;
   onSelect: (id: number) => void;
+  showParking?: boolean;
 }) {
-  const { data: apiClients } = useApiClients();
-  const { data: debtAgg } = useDebtAggregate();
-  const c = apiClients?.find((x) => x.id === r.clientId);
-  const photo = useClientPhoto(r.clientId);
-  // v0.4.33: всё (badge, цвет полоски слева, isIssue) считаем по
-  // эффективному статусу, чтобы просроченные `active` подсвечивались
-  // красным, а не зелёным.
-  // v0.4.53: учитываем фактический долг — если 0, не показываем
-  // красную просрочку, рендерим как «returning» (ожидаем возврата).
-  const myDebt = debtAgg?.find((d) => d.rentalId === r.id);
-  const overdueRelatedDebt = myDebt
-    ? myDebt.overdueBalance + myDebt.damageBalance + myDebt.manualBalance
-    : undefined;
-  const effStatus = effectiveRentalStatus(
-    r.status,
-    r.endPlanned,
-    overdueRelatedDebt,
+  return (
+    <tr
+      onClick={() => onSelect(row.rental.id)}
+      className={cn(
+        "cursor-pointer border-b border-border text-[13px] transition-colors",
+        row.danger
+          ? active
+            ? "bg-red-soft/55"
+            : "bg-red-soft/25 hover:bg-red-soft/40"
+          : active
+            ? "bg-blue-50"
+            : "hover:bg-surface-soft/70",
+      )}
+    >
+      <td className="px-4 py-5 tabular-nums font-mono text-[12px] text-muted-2 whitespace-nowrap">
+        #{String(row.rental.id).padStart(4, "0")}
+      </td>
+      <td className="px-4 py-5">
+        <div className="flex items-center gap-3 min-w-0">
+          <ClientAvatar clientId={row.clientId} name={row.clientName} w={42} h={42} />
+          <span
+            className="truncate text-[14px] font-semibold text-ink"
+            title={row.clientName}
+          >
+            {row.clientName}
+          </span>
+        </div>
+      </td>
+      {/* v0.8.26 (G2): «Связь» сразу после имени — статус читается рядом с ФИО. */}
+      <td className="px-4 py-5 text-center">
+        <div className="flex justify-center">
+          <ContactToggle clientId={row.clientId} unreachable={row.unreachable} />
+        </div>
+      </td>
+      <td className="px-4 py-5 text-[13px] whitespace-nowrap">
+        <ScooterTag label={row.scooterLabel} mileage={row.mileage} />
+      </td>
+      <td className="px-4 py-5 tabular-nums text-muted whitespace-nowrap">
+        {row.rental.start}
+      </td>
+      <td className="px-4 py-5 tabular-nums text-muted whitespace-nowrap">
+        {row.rental.endPlanned}
+      </td>
+      <td className="px-4 py-5 text-center">
+        <span
+          className={cn(
+            "inline-block rounded-full px-2 py-0.5 text-[11px] font-bold tabular-nums",
+            row.badgeTone,
+          )}
+        >
+          {row.badgeText}
+        </span>
+      </td>
+      {showParking && (
+        <td className="px-4 py-5 text-center whitespace-nowrap">
+          {row.parkingDays > 0 ? (
+            <span
+              className="inline-flex items-center gap-1 rounded-full bg-yellow-100 px-2 py-0.5 text-[11px] font-semibold text-yellow-800 tabular-nums"
+              title="В этой аренде есть паркинг"
+            >
+              <SquareParking size={12} />
+              {row.parkingDays} дн
+            </span>
+          ) : (
+            <span className="text-muted-2">—</span>
+          )}
+        </td>
+      )}
+      {/* v0.8.15: «Сумма аренды» — сколько стоит/оплачена аренда (rental.sum). */}
+      <td className="px-4 py-5 text-right tabular-nums whitespace-nowrap font-semibold text-ink-2">
+        {fmt(row.rental.sum)} ₽
+      </td>
+      {/* «Долг» — задолженность (просрочка/ущерб/паркинг/неоплачено). */}
+      <td className="px-4 py-5 text-right tabular-nums whitespace-nowrap">
+        {row.hasDebt ? (
+          <span className="font-bold text-red-ink">{fmt(row.rightSum)} ₽</span>
+        ) : row.pendingRent > 0 ? (
+          <span className="font-semibold text-orange-ink">{fmt(row.pendingRent)} ₽</span>
+        ) : (
+          <span className="text-muted-2">—</span>
+        )}
+      </td>
+      <td className="px-4 py-5 whitespace-nowrap">
+        <StatusPill status={row.effStatus} />
+      </td>
+    </tr>
   );
-  const tone = STATUS_TONE[effStatus] ?? STATUS_TONE[r.status];
-  const isIssue =
-    effStatus === "overdue" ||
-    effStatus === "police" ||
-    effStatus === "court" ||
-    effStatus === "completed_damage";
+}
 
-  const accent = !active
-    ? isIssue
-      ? "before:bg-red"
-      : effStatus === "returning"
-        ? "before:bg-orange"
-        : effStatus === "active"
-          ? "before:bg-green"
-          : effStatus === "new_request" || effStatus === "meeting"
-            ? "before:bg-blue"
-            : "before:bg-transparent"
-    : "before:bg-transparent";
-
+/** v0.8.11: плитка-заглушка «+ Новая аренда» — заполняет пустое место
+ *  в сетке плиток и создаёт аренду по клику. Тянется по высоте строки. */
+function NewRentalTile({ onClick }: { onClick: () => void }) {
   return (
     <button
       type="button"
-      onClick={() => onSelect(r.id)}
+      onClick={onClick}
+      title="Новая аренда"
+      className="group flex w-[230px] min-h-[200px] flex-col items-center justify-center gap-2 self-stretch rounded-2xl border-2 border-dashed border-border text-muted transition-colors hover:border-blue-300 hover:bg-blue-50/40 hover:text-blue-700"
+    >
+      <span className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-surface-soft transition-colors group-hover:bg-blue-100">
+        <Plus size={24} />
+      </span>
+      <span className="text-[13px] font-semibold">Новая аренда</span>
+    </button>
+  );
+}
+
+function RentalTile({
+  row,
+  active,
+  onSelect,
+}: {
+  row: Row;
+  active: boolean;
+  onSelect: (id: number) => void;
+}) {
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => onSelect(row.rental.id)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") onSelect(row.rental.id);
+      }}
       className={cn(
-        "relative flex w-full origin-center transform-gpu items-center gap-3 border-b border-border/60 px-3 py-2.5 pl-4 text-left transition-all last:border-b-0",
-        "before:absolute before:left-0 before:top-0 before:h-full before:w-[3px]",
-        accent,
-        !active && "hover:z-[5] hover:bg-surface-soft",
-        active &&
-          "z-20 rounded-[12px] border-b-0 bg-blue-600 py-3 text-white shadow-card-lg",
+        "group flex w-[230px] cursor-pointer flex-col overflow-hidden rounded-2xl border text-left transition-colors",
+        row.danger
+          ? active
+            ? "border-red-300 bg-red-soft/40"
+            : "border-red-200 bg-surface hover:bg-red-soft/20"
+          : active
+            ? "border-blue-300 bg-blue-50"
+            : "border-border bg-surface hover:bg-surface-soft/60",
       )}
     >
-      <span
-        className={cn(
-          "flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full text-[12px] font-bold",
-          active
-            ? "bg-white/20 text-white"
-            : "bg-surface-soft text-ink-2",
-        )}
-      >
-        {photo?.thumbUrl ? (
+      {/* v0.8.26 (G1): лицо клиента — крупное, СЛЕВА, поверх; скутер — в
+          ПРАВОЙ части, лицо слегка налезает на него. */}
+      <div className="relative h-[172px] w-full overflow-hidden bg-gradient-to-br from-surface-soft to-white">
+        {row.scooterAvatarSrc ? (
           <img
-            src={photo.thumbUrl}
-            alt=""
-            className="h-full w-full object-cover"
+            src={row.scooterAvatarSrc}
+            alt={row.scooterLabel}
+            className="absolute right-0 top-1/2 h-[78%] w-[60%] -translate-y-1/2 object-contain pr-2 opacity-95"
           />
-        ) : c ? (
-          initialsOf(c.name)
         ) : (
-          "?"
+          <div className="absolute right-3 top-1/2 -translate-y-1/2 opacity-60">
+            <Bike size={40} strokeWidth={1.5} className="text-muted-2" />
+          </div>
         )}
-      </span>
-
-      {/* v0.4.4: ФИО занимает всю строку и может переноситься на 2 строки.
-          Раньше id (#0082) стоял рядом с именем и забирал место → длинные
-          ФИО («Захарченко Максимилиан Валерьевич») обрезались многоточием.
-          Теперь id и статус-пилюля живут в правой колонке, а имя — на всю
-          доступную ширину с line-clamp-2. */}
-      <div className="min-w-0 flex-1">
-        <div
+        {/* Бейдж дней — правый верхний угол. */}
+        <span
           className={cn(
-            "text-[13px] font-semibold leading-tight break-words",
-            // line-clamp-2 — переносим на 2 строки, после многоточие
-            "line-clamp-2",
-            active ? "text-white" : "text-ink",
+            "absolute right-2 top-2 z-20 rounded-full px-2 py-0.5 text-[11px] font-bold tabular-nums shadow-card-sm",
+            row.badgeTone,
           )}
-          title={c?.name ?? undefined}
         >
-          {c?.name ?? "Клиент #" + r.clientId}
+          {row.badgeText}
+        </span>
+        {/* Лицо клиента — крупный портрет слева, поверх скутера (налезает). */}
+        <div className="absolute bottom-2 left-3 z-10">
+          <ClientAvatar
+            clientId={row.clientId}
+            name={row.clientName}
+            w={110}
+            h={132}
+            ring
+          />
         </div>
-        <div
-          className={cn(
-            "mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] leading-tight",
-            active ? "text-white/80" : "text-muted-2",
-          )}
-        >
-          <span className="font-semibold">{r.scooter}</span>
-          <span className="opacity-40">·</span>
-          <span className="tabular-nums">
-            {r.start.slice(0, 5)} — {r.endPlanned.slice(0, 5)}
+        {/* Метка скутера — правый нижний угол: круглый номер + модель. */}
+        {(() => {
+          const { model, num } = parseScooter(row.scooterLabel);
+          return (
+            <span className="absolute bottom-2 right-2 inline-flex items-center gap-1 rounded-full bg-ink/75 py-0.5 pl-0.5 pr-2 text-[10px] font-semibold text-white">
+              {num != null && (
+                <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-white px-1 text-[9px] font-bold text-ink tabular-nums">
+                  {num}
+                </span>
+              )}
+              {model}
+            </span>
+          );
+        })()}
+      </div>
+
+      {/* Инфо. */}
+      <div className="flex flex-col gap-1.5 p-2.5">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <div
+            className="min-w-0 flex-1 truncate text-[13px] font-bold leading-tight text-ink"
+            title={row.clientName}
+          >
+            {row.clientName}
+          </div>
+          <ContactToggle clientId={row.clientId} unreachable={row.unreachable} />
+        </div>
+        <div className="text-[11px] tabular-nums text-muted-2 whitespace-nowrap">
+          {row.rental.start} → {row.rental.endPlanned}
+        </div>
+        <div className="mt-0.5 flex items-center justify-between gap-2">
+          <span className="inline-flex items-center gap-1">
+            <StatusPill status={row.effStatus} />
+            {row.onParking && (
+              <SquareParking
+                size={13}
+                className="text-yellow-600"
+                aria-label="на паркинге"
+              />
+            )}
           </span>
-          {r.rate > 0 && (
-            <>
-              <span className="opacity-40">·</span>
-              <span className="tabular-nums">
-                {fmt(r.rate)} ₽/{r.rateUnit === "week" ? "нед" : "сут"}
-              </span>
-            </>
+          {row.hasDebt ? (
+            <span className="text-[14px] font-bold tabular-nums text-red-ink">
+              {fmt(row.rightSum)} ₽
+            </span>
+          ) : row.pendingRent > 0 ? (
+            <span className="text-[13px] font-semibold tabular-nums text-ink-2">
+              {fmt(row.pendingRent)} ₽
+            </span>
+          ) : (
+            <span className="text-[11px] text-muted-2">оплачено</span>
           )}
         </div>
       </div>
-
-      <div className="shrink-0 self-stretch flex flex-col items-end justify-between gap-1">
-        <div className="flex items-center gap-1.5">
-          <span
-            className={cn(
-              "text-[10px] tabular-nums",
-              active ? "text-white/70" : "text-muted-2",
-            )}
-          >
-            #{String(r.id).padStart(4, "0")}
-          </span>
-          <span
-            className={cn(
-              "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold",
-              active ? "bg-white/20 text-white" : TONE_PILL[tone],
-            )}
-          >
-            {STATUS_LABEL[effStatus] ?? STATUS_LABEL[r.status] ?? r.status}
-          </span>
-        </div>
-        <div className="text-right">
-          <div
-            className={cn(
-              "text-[12px] font-bold tabular-nums",
-              active ? "text-white" : "text-ink",
-            )}
-          >
-            {r.sum > 0 ? `${fmt(r.sum)} ₽` : "—"}
-          </div>
-          <div
-            className={cn(
-              "text-[10px]",
-              active ? "text-white/70" : "text-muted-2",
-            )}
-          >
-            {PAYMENT_LABEL[r.paymentMethod]}
-          </div>
-        </div>
-      </div>
-    </button>
+    </div>
   );
 }
