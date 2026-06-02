@@ -1611,31 +1611,27 @@ function rateForDays(m: RentalModel, days: number): number {
   return m.monthRate;
 }
 
-/** Тарифные ступени (та же логика, что rateForDays / EXT_TIERS в CRM). */
-const WISH_TIERS: { min: number; max: number; key: keyof RentalModel }[] = [
-  { min: 1, max: 2, key: "dayRate" },
-  { min: 3, max: 6, key: "shortRate" },
-  { min: 7, max: 29, key: "weekRate" },
-  { min: 30, max: Infinity, key: "monthRate" },
-];
-
 /**
  * Рекомендация-апселл: «возьмите подольше — выгоднее». Считаем переход на
- * следующую (более дешёвую по ₽/сут) тарифную ступень — её минимальный день.
- * Тариф там дешевле за сутки, а у границ ступени итог часто ДАЖЕ МЕНЬШЕ
- * (2 дня×1300=2600 vs 3 дня×700=2100). Возвращаем null, если клиент уже на
- * самом дешёвом тарифе (30+). Сумма аренды — без экипировки (она ровная/сут).
+ * следующую (более дешёвую по ₽/сут) тарифную ступень.
+ *
+ * ВАЖНО: ступени берём ровно как в `periodForDays` (источник истины цены):
+ *   1–6 дней → shortRate, 7–29 → weekRate, 30+ → monthRate.
+ * (dayRate в каталоге сейчас НЕ применяется — periodForDays для 1-2 дней
+ * тоже отдаёт short.) Цену считаем через rateForDays — тогда апселл и сниппет
+ * всегда совпадают. У границ ступени итог часто ДАЖЕ МЕНЬШЕ (6 дн×850=5100 vs
+ * 7 дн×600=4200). Сумма — аренда без экипировки (она ровная/сут).
  */
 function computeWishUpsell(m: RentalModel, days: number) {
-  const ci = WISH_TIERS.findIndex((t) => days >= t.min && days <= t.max);
-  if (ci < 0 || ci >= WISH_TIERS.length - 1) return null;
-  const cur = WISH_TIERS[ci]!;
-  const next = WISH_TIERS[ci + 1]!;
-  const curRate = m[cur.key] as number;
-  const nextRate = m[next.key] as number;
-  if (nextRate >= curRate) return null; // следующая ступень не дешевле — пропускаем
-  const targetDays = next.min;
+  // Целевой день — минимум следующей (более дешёвой) ступени.
+  let targetDays: number;
+  if (days <= 6) targetDays = 7;
+  else if (days <= 29) targetDays = 30;
+  else return null; // уже самый дешёвый тариф (30+)
   if (targetDays <= days) return null;
+  const curRate = rateForDays(m, days);
+  const nextRate = rateForDays(m, targetDays);
+  if (nextRate >= curRate) return null; // следующая ступень не дешевле — пропускаем
   const curTotal = curRate * days;
   const newTotal = nextRate * targetDays;
   return {
