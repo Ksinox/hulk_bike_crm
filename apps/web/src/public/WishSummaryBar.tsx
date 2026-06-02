@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Bike, ChevronUp, Package } from "lucide-react";
+import { Bike, ChevronUp, Package, Sparkles } from "lucide-react";
 import { applicationApi, type RentalEquipment, type RentalModel } from "./applicationApi";
 
 /**
@@ -52,13 +52,23 @@ export function WishSummaryBar({
   selectedEquipment,
   price,
   periodLabel,
+  upsell,
+  hasUpsell,
 }: {
   model: RentalModel | null;
   selectedEquipment: RentalEquipment[];
   /** null — период ещё не выбран (на шаге экипировки), сумму не показываем. */
   price: { rentSum: number; equipSum: number; deposit: number; bring: number } | null;
   periodLabel?: string | null;
+  /** Совет «возьмите подольше — выгоднее»: рендерится первым в развёрнутой
+   *  панели (клиент уже выбрал дату → открывает сниппет → видит выгоду). */
+  upsell?: React.ReactNode;
+  /** true — есть выгода: показываем приманку в свёрнутой полоске, чтобы
+   *  захотелось открыть. */
+  hasUpsell?: boolean;
 }) {
+  // Если есть выгодное предложение — сразу открываем сниппет, чтобы клиент
+  // его увидел (не листая и не догадываясь, что внутри что-то есть).
   const [open, setOpen] = useState(false);
   if (!model) return null;
   const rub = (n: number) => `${n.toLocaleString("ru-RU")} ₽`;
@@ -85,10 +95,18 @@ export function WishSummaryBar({
               ? ` · экип. ${selectedEquipment.length}`
               : ""}
           </div>
-          {periodLabel && (
-            <div className="truncate text-[11px] text-slate-500">
-              {periodLabel}
+          {/* Приманка вместо периода, если есть выгода и сниппет свёрнут. */}
+          {hasUpsell && !open ? (
+            <div className="flex items-center gap-1 truncate text-[11px] font-semibold text-emerald-600">
+              <Sparkles size={11} className="shrink-0" />
+              Можно выгоднее — нажмите
             </div>
+          ) : (
+            periodLabel && (
+              <div className="truncate text-[11px] text-slate-500">
+                {periodLabel}
+              </div>
+            )
           )}
         </div>
         {price && (
@@ -118,6 +136,9 @@ export function WishSummaryBar({
               open ? "opacity-100" : "opacity-0"
             }`}
           >
+          {/* Совет «возьмите подольше» — первым, чтобы сразу бросался в глаза. */}
+          {upsell}
+
           {/* Скутер чипом с названием. */}
           <div className="flex items-center gap-2.5">
             <Thumb avatarUrl={model.avatarUrl} fallback="scooter" size={44} tilt />

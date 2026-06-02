@@ -566,6 +566,11 @@ export function ApplicationForm() {
     currentStepId === "wish_period"
       ? `с ${isoToDDMM(wishStart)} по ${isoToDDMM(addDaysIso(wishStart, wishDays))} · ${wishDays} ${daysWord(wishDays)}`
       : null;
+  // Есть ли выгодное предложение «возьмите подольше» — для приманки в сниппете.
+  const wishHasUpsell =
+    currentStepId === "wish_period" &&
+    wishModel != null &&
+    computeWishUpsell(wishModel, wishDays) != null;
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -683,24 +688,26 @@ export function ApplicationForm() {
         </main>
 
         <footer className="sticky bottom-0 -mx-4 mt-6 border-t border-slate-200 bg-slate-50 px-4 pb-4 pt-3">
-          {/* Совет «возьмите подольше» — над сниппетом, чтобы был виден сразу
-              (вниз за ним никто не листает). Только на шаге периода. */}
-          {currentStepId === "wish_period" && wishModel && (
-            <div className="mb-2">
-              <WishUpsell
-                model={wishModel}
-                days={wishDays}
-                onApply={(d) => setField("wantDays", d)}
-              />
-            </div>
-          )}
-          {/* Выдвижной сниппет «Ваш выбор» — над кнопками, на шагах аренды. */}
+          {/* Выдвижной сниппет «Ваш выбор» — над кнопками, на шагах аренды.
+              Совет «возьмите подольше» прокинут ВНУТРЬ сниппета: клиент тапнул
+              дату → открывает «Ваш выбор» → видит выгоду (в свёрнутом виде —
+              приманка «можно выгоднее»). */}
           {isWishStep && wishModel && (
             <WishSummaryBar
               model={wishModel}
               selectedEquipment={wishSelEquip}
               price={wishPrice}
               periodLabel={wishPeriodLabel}
+              hasUpsell={wishHasUpsell}
+              upsell={
+                currentStepId === "wish_period" ? (
+                  <WishUpsell
+                    model={wishModel}
+                    days={wishDays}
+                    onApply={(d) => setField("wantDays", d)}
+                  />
+                ) : null
+              }
             />
           )}
           <div className="flex gap-2">
@@ -1664,6 +1671,11 @@ function WishUpsell({
   const up = computeWishUpsell(model, days);
   if (!up) return null;
   const rub = (n: number) => n.toLocaleString("ru-RU");
+  // Продающие цифры: экономия по итогу (A) либо «доп. дни почти даром» (B).
+  const cheaper = up.cheaperTotal && up.save > 0;
+  const extraCost = Math.max(0, up.newTotal - up.curTotal); // доплата (случай B)
+  const perDaySave = up.curRate - up.nextRate; // экономия за сутки
+  const perExtraDay = up.addDays > 0 ? Math.round(extraCost / up.addDays) : 0;
   return (
     // key={targetDays} — при смене рекомендации карточка переанимируется.
     <div
@@ -1678,33 +1690,33 @@ function WishUpsell({
             <Sparkles size={16} />
           </div>
           <div className="text-[14.5px] font-bold text-slate-900">
-            {up.cheaperTotal ? "Так выгоднее" : "Дешевле за сутки"}
+            {cheaper
+              ? `Сэкономьте ${rub(up.save)} ₽`
+              : `Лишние дни — почти даром`}
           </div>
-          {up.cheaperTotal && up.save > 0 && (
-            <span className="ml-auto rounded-full bg-emerald-100 px-2.5 py-1 text-[12.5px] font-extrabold tabular-nums text-emerald-700">
-              −{rub(up.save)} ₽
-            </span>
-          )}
+          <span className="ml-auto rounded-full bg-emerald-100 px-2.5 py-1 text-[12.5px] font-extrabold tabular-nums text-emerald-700">
+            {cheaper ? `−${rub(up.save)} ₽` : `−${rub(perDaySave)} ₽/сут`}
+          </span>
         </div>
         <div className="mt-2 text-[13.5px] leading-snug text-slate-600">
-          {up.cheaperTotal ? (
+          {cheaper ? (
             <>
-              Возьмите{" "}
               <b className="text-slate-900">
                 {up.targetDays} {daysWord(up.targetDays)}
               </b>{" "}
-              — аренда всего <b className="text-slate-900">{rub(up.newTotal)} ₽</b>{" "}
-              вместо {rub(up.curTotal)} ₽, а катаетесь на {up.addDays}{" "}
-              {daysWord(up.addDays)} дольше.
+              выходят <b className="text-slate-900">дешевле</b>, чем {days}{" "}
+              {daysWord(days)}: {rub(up.newTotal)} ₽ вместо {rub(up.curTotal)} ₽.
+              Катаетесь дольше — и платите меньше.
             </>
           ) : (
             <>
-              Возьмите{" "}
+              Ещё {up.addDays} {daysWord(up.addDays)} обойдутся всего в{" "}
+              <b className="text-slate-900">{rub(extraCost)} ₽</b> — это{" "}
+              {rub(perExtraDay)} ₽/день вместо {rub(up.curRate)} ₽. Берите{" "}
               <b className="text-slate-900">
                 {up.targetDays} {daysWord(up.targetDays)}
-              </b>{" "}
-              — ставка <b className="text-slate-900">{rub(up.nextRate)} ₽/сут</b>{" "}
-              вместо {rub(up.curRate)} ₽/сут.
+              </b>
+              .
             </>
           )}
         </div>
@@ -1878,6 +1890,7 @@ function WishPeriodStep({
   // даты, цена и совет «выгоднее» — в нижнем сниппете «Ваш выбор».
   return (
     <div className="space-y-3">
+      <h1 className="text-[22px] font-bold text-slate-900">Выберите период</h1>
       <InlineRangeCalendar
         from={startIso}
         to={endIso}
