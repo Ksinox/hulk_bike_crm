@@ -45,7 +45,7 @@ import {
 } from "./formatters";
 import { toTitleCaseRu } from "@/lib/textCase";
 import { RENTAL_AGREEMENT_TEXT } from "@/lib/rentalAgreement";
-import { DatePicker } from "@/components/ui/date-picker";
+import { DatePicker, InlineRangeCalendar } from "@/components/ui/date-picker";
 import { periodForDays } from "@/lib/mock/rentals";
 import type { RentalModel, RentalEquipment } from "./applicationApi";
 
@@ -1558,6 +1558,18 @@ function isoToDDMM(iso: string): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
   return m ? `${m[3]}.${m[2]}` : iso;
 }
+/** Кол-во дней между двумя ISO-датами (to − from). */
+function daysBetweenIso(from: string, to: string): number {
+  const [fy, fm, fd] = from.split("-").map(Number);
+  const [ty, tm, td] = to.split("-").map(Number);
+  const a = new Date(fy!, fm! - 1, fd!).getTime();
+  const b = new Date(ty!, tm! - 1, td!).getTime();
+  return Math.round((b - a) / 86_400_000);
+}
+/** Множественное «день/дня/дней». */
+function daysWord(n: number): string {
+  return n === 1 ? "день" : n < 5 ? "дня" : "дней";
+}
 
 /** Мини-карточка выбранного скутера — закреплена сверху на шагах экипировки
  *  и периода, чтобы клиент видел, что уже выбрал. */
@@ -1873,9 +1885,18 @@ function WishPeriodStep({
   const calc = useMemo(() => {
     if (!selected) return null;
     const rate = rateForDays(selected, days);
-    const perDay = rate + equipDaily;
-    return { rate, perDay, total: perDay * days };
+    return {
+      rate, // ставка аренды ₽/сут (без экипировки)
+      rentSum: rate * days, // аренда за весь срок
+      equipSum: equipDaily * days, // экипировка за весь срок
+      deposit: 2000, // залог (вернётся)
+      bring: rate * days + equipDaily * days + 2000, // взять с собой
+    };
   }, [selected, days, equipDaily]);
+  // Старт по умолчанию — сегодня (чтобы календарь и сводка всегда были
+  // наполнены); реальный wantStartDate проставится при выборе на календаре.
+  const startIso = form.wantStartDate || todayIsoLocal();
+  const endIso = addDaysIso(startIso, days);
   if (!selected) return <WishNoModelNote what="период" />;
 
   return (
@@ -1893,44 +1914,32 @@ function WishPeriodStep({
       </h1>
 
           <div>
-            <FieldLabel>Когда взять</FieldLabel>
-            <div className="flex flex-wrap items-center gap-2">
-              {[
-                { label: "Сегодня", iso: todayIsoLocal() },
-                { label: "Завтра", iso: addDaysIso(todayIsoLocal(), 1) },
-                { label: "Послезавтра", iso: addDaysIso(todayIsoLocal(), 2) },
-              ].map((opt) => {
-                const active = form.wantStartDate === opt.iso;
-                return (
-                  <button
-                    key={opt.label}
-                    type="button"
-                    onClick={() =>
-                      setField("wantStartDate", active ? "" : opt.iso)
-                    }
-                    className={`h-11 rounded-xl border-2 px-3 text-[15px] font-semibold transition-colors ${
-                      active
-                        ? "border-slate-900 bg-slate-900 text-white"
-                        : "border-slate-200 bg-white text-slate-900 hover:border-slate-400"
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                );
-              })}
-              <div className="min-w-[150px] flex-1">
-                <DatePicker
-                  value={form.wantStartDate || null}
-                  onChange={(iso) => setField("wantStartDate", iso ?? "")}
-                  minDate={todayIsoLocal()}
-                  placeholder="Другая дата"
-                  clearable
-                />
-              </div>
+            <FieldLabel>Выберите период на календаре</FieldLabel>
+            {/* Сводка периода сверху — «с … по …». */}
+            <div className="mb-2 rounded-xl bg-slate-900 px-4 py-2.5 text-[15px] font-semibold text-white">
+              {startIso ? (
+                <>
+                  с {isoToDDMM(startIso)} по {isoToDDMM(endIso)} ·{" "}
+                  <span className="text-white/80">
+                    {days} {daysWord(days)}
+                  </span>
+                </>
+              ) : (
+                "Тапните дату начала, затем дату конца"
+              )}
             </div>
+            <InlineRangeCalendar
+              from={startIso}
+              to={endIso}
+              minDate={todayIsoLocal()}
+              onChange={({ from, to }) => {
+                setField("wantStartDate", from);
+                setField("wantDays", Math.max(1, daysBetweenIso(from, to)));
+              }}
+            />
             <div className="mt-1 text-[12px] text-slate-500">
-              Забронируем плюс-минус под эту дату — не обещаем жёстко, но
-              придержим.
+              Тапните дату начала, затем дату конца — или поправьте срок
+              кнопками ниже. Бронь плюс-минус, придержим.
             </div>
           </div>
 
@@ -2000,30 +2009,44 @@ function WishPeriodStep({
           </div>
 
           {calc && (
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-              <div className="text-[13px] text-slate-600">
-                Ориентировочная стоимость
-              </div>
-              <div className="mt-1 text-[28px] font-bold leading-none text-slate-900">
-                ≈ {calc.total.toLocaleString("ru-RU")} ₽
-              </div>
-              <div className="mt-1 text-[13px] text-slate-500">
-                {calc.perDay.toLocaleString("ru-RU")} ₽/сут
-                {equipDaily > 0
-                  ? ` (аренда ${calc.rate.toLocaleString("ru-RU")} + экип. ${equipDaily.toLocaleString("ru-RU")})`
-                  : ""}{" "}
-                × {days} {days === 1 ? "день" : days < 5 ? "дня" : "дней"} ·
-                залог 2 000 ₽
-              </div>
-              {form.wantStartDate && (
-                <div className="mt-1 text-[13px] font-medium text-slate-700">
-                  Период: с {isoToDDMM(form.wantStartDate)} по{" "}
-                  {isoToDDMM(addDaysIso(form.wantStartDate, days))}
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              {/* Разбивка: аренда + экипировка + залог = взять с собой. */}
+              <div className="space-y-1.5 text-[14px]">
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="text-slate-600">
+                    Аренда {selected.name} · {days} {daysWord(days)}
+                  </span>
+                  <span className="font-semibold tabular-nums text-slate-900">
+                    {calc.rentSum.toLocaleString("ru-RU")} ₽
+                  </span>
                 </div>
-              )}
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="text-slate-600">Экипировка</span>
+                  <span className="font-semibold tabular-nums text-slate-900">
+                    + {calc.equipSum.toLocaleString("ru-RU")} ₽
+                  </span>
+                </div>
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="text-slate-600">
+                    Залог{" "}
+                    <span className="text-slate-400">(вернётся при сдаче)</span>
+                  </span>
+                  <span className="font-semibold tabular-nums text-slate-900">
+                    {calc.deposit.toLocaleString("ru-RU")} ₽
+                  </span>
+                </div>
+              </div>
+              <div className="mt-3 flex items-baseline justify-between gap-3 border-t border-slate-200 pt-3">
+                <span className="text-[15px] font-bold text-slate-900">
+                  Итого взять с собой
+                </span>
+                <span className="text-[22px] font-extrabold tabular-nums text-slate-900">
+                  {calc.bring.toLocaleString("ru-RU")} ₽
+                </span>
+              </div>
               <div className="mt-2 text-[12px] text-slate-400">
-                Сумма зависит от срока, модели и экипировки. Точную цену и
-                наличие подтвердит менеджер.
+                Период с {isoToDDMM(startIso)} по {isoToDDMM(endIso)}. Точную
+                цену и наличие подтвердит менеджер.
               </div>
             </div>
           )}

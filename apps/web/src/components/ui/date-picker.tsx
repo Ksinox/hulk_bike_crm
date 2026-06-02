@@ -456,6 +456,57 @@ export function DateRangePicker({
   );
 }
 
+/* ================== InlineRangeCalendar (всегда раскрыт) ================== */
+
+/**
+ * Календарь выбора периода, который ВСЕГДА открыт (без поповера). Клиент
+ * тапает дату начала, затем дату конца — onChange отдаёт ISO from/to.
+ * Используется в публичной анкете на шаге «период аренды», чтобы календарь
+ * не был спрятан за полем.
+ */
+export function InlineRangeCalendar({
+  from,
+  to,
+  onChange,
+  minDate,
+  className,
+}: {
+  from: string | null;
+  to: string | null;
+  onChange: (next: { from: string; to: string }) => void;
+  minDate?: string;
+  className?: string;
+}) {
+  const value: DateRange | null =
+    from && to
+      ? { start: isoToCalendarDate(from)!, end: isoToCalendarDate(to)! }
+      : null;
+  return (
+    <div
+      className={cn(
+        "rounded-2xl border border-slate-200 bg-white p-2",
+        className,
+      )}
+    >
+      <I18nProvider locale="ru-RU">
+        <RangeCalendar
+          aria-label="Выбор периода аренды"
+          value={value}
+          minValue={isoToCalendarDate(minDate ?? null) ?? undefined}
+          onChange={(r) => {
+            if (r) {
+              onChange({
+                from: calendarDateToIso(r.start as CalendarDate),
+                to: calendarDateToIso(r.end as CalendarDate),
+              });
+            }
+          }}
+        />
+      </I18nProvider>
+    </div>
+  );
+}
+
 /* ================== read-only визуализация периода ================== */
 
 /**
