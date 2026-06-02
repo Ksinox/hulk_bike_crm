@@ -260,6 +260,10 @@ export function ApplicationForm() {
   const [rulesScrolledEnd, setRulesScrolledEnd] = useState(false);
   // R2.6: финальное окно-напоминание про оплату старта наличными.
   const [showCashReminder, setShowCashReminder] = useState(false);
+  // Совет «возьмите подольше»: клиент может отклонить («Спасибо, не надо»).
+  // Сбрасывается при смене срока (useEffect ниже) — на новый срок совет
+  // показываем заново.
+  const [upsellDismissed, setUpsellDismissed] = useState(false);
   // Каталог для шагов «выбор аренды» (модель/экипировка/период). Грузим один
   // раз при входе в любой из wish-шагов и шарим между ними (не дёргаем API 3×).
   const [wishModels, setWishModels] = useState<RentalModel[]>([]);
@@ -269,6 +273,13 @@ export function ApplicationForm() {
   // Направление перехода между шагами — для плавной анимации появления
   // (вперёд → въезд справа, назад → слева).
   const [navDir, setNavDir] = useState<"fwd" | "back">("fwd");
+
+  // Новый срок → совет «возьмите подольше» показываем заново (сбрасываем
+  // отказ). Если клиент сам выбрал рекомендованный срок — пересчитанный совет
+  // (следующая ступень) тоже снова появится.
+  useEffect(() => {
+    setUpsellDismissed(false);
+  }, [form.wantDays]);
 
   const steps = useMemo(() => getSteps(form.isForeigner), [form.isForeigner]);
   const totalSteps = steps.length;
@@ -567,9 +578,12 @@ export function ApplicationForm() {
       ? `с ${isoToDDMM(wishStart)} по ${isoToDDMM(addDaysIso(wishStart, wishDays))} · ${wishDays} ${daysWord(wishDays)}`
       : null;
   // Есть ли выгодное предложение «возьмите подольше» — для приманки в сниппете.
+  // Учитываем отказ клиента (upsellDismissed): после «Спасибо, не надо» ни
+  // приманку в свёрнутой шапке, ни карточку внутри не показываем.
   const wishHasUpsell =
     currentStepId === "wish_period" &&
     wishModel != null &&
+    !upsellDismissed &&
     computeWishUpsell(wishModel, wishDays) != null;
 
   return (
@@ -700,11 +714,12 @@ export function ApplicationForm() {
               periodLabel={wishPeriodLabel}
               hasUpsell={wishHasUpsell}
               upsell={
-                currentStepId === "wish_period" ? (
+                currentStepId === "wish_period" && !upsellDismissed ? (
                   <WishUpsell
                     model={wishModel}
                     days={wishDays}
                     onApply={(d) => setField("wantDays", d)}
+                    onDismiss={() => setUpsellDismissed(true)}
                   />
                 ) : null
               }
@@ -1622,11 +1637,16 @@ function rateForDays(m: RentalModel, days: number): number {
 }
 
 /**
- * Рекомендация-апселл: «возьмите подольше — выгоднее». Каскад по тарифным
+ * Рекомендация-апселл: «возьмите подольше — дешевле тариф». Каскад по тарифным
  * ступеням каталога (как в rateForDays): 1-2 → 3 → 7 → 30. Цену считаем через
- * rateForDays, поэтому апселл и сниппет всегда совпадают. У границ ступени итог
- * часто ДАЖЕ МЕНЬШЕ (2 дн×dayRate vs 3 дн×shortRate). Сумма — аренда без
- * экипировки (она ровная/сут). null — клиент уже на самом дешёвом тарифе (30+).
+ * rateForDays, поэтому апселл и сниппет всегда совпадают.
+ *
+ * Экономия (решение заказчика, 2026-06): берём ЦЕЛЕВОЙ срок и сравниваем его
+ * стоимость по новому тарифу против того же срока по старому тарифу:
+ *   savings = targetDays × (curRate − nextRate).
+ * Смысл: «возьмёте {targetDays} дней — все они посчитаются по {nextRate} ₽/сут
+ * вместо {curRate}, сэкономите столько-то». null — клиент уже на самом дешёвом
+ * тарифе (30+) либо следующая ступень не дешевле.
  */
 function computeWishUpsell(m: RentalModel, days: number) {
   // Целевой день — минимум следующей (более дешёвой) ступени.
@@ -1639,43 +1659,39 @@ function computeWishUpsell(m: RentalModel, days: number) {
   const curRate = rateForDays(m, days);
   const nextRate = rateForDays(m, targetDays);
   if (nextRate >= curRate) return null; // следующая ступень не дешевле — пропускаем
-  const curTotal = curRate * days;
-  const newTotal = nextRate * targetDays;
+  const perDaySave = curRate - nextRate; // экономия за сутки
   return {
     targetDays,
     addDays: targetDays - days,
     curRate,
     nextRate,
-    curTotal,
-    newTotal,
-    save: curTotal - newTotal, // > 0 — итог даже меньше
-    cheaperTotal: newTotal <= curTotal,
+    perDaySave,
+    // Экономия за весь целевой срок по новому тарифу vs тот же срок по старому.
+    savings: targetDays * perDaySave,
   };
 }
 
 /**
- * Карточка-рекомендация «возьмите подольше — выгоднее» на шаге периода.
- * Помогает продать больший срок: показывает переход на более дешёвый тариф,
- * по тапу применяет рекомендованное число дней. Зелёный, дружелюбный, не
- * навязчивый (одна строка-совет + кнопка). Скрыта, если выгоды нет.
+ * Карточка-рекомендация «возьмите подольше — дешевле» на шаге периода.
+ * Живёт ПОД расчётом цены в сниппете (вместо кнопки «Продолжить»). Помогает
+ * продать больший срок: показывает экономию и переход на более дешёвый тариф,
+ * по тапу применяет рекомендованное число дней. Есть мягкий отказ «Спасибо,
+ * не надо» (onDismiss) — чтобы не быть навязчивым.
  */
 function WishUpsell({
   model,
   days,
   onApply,
+  onDismiss,
 }: {
   model: RentalModel;
   days: number;
   onApply: (d: number) => void;
+  onDismiss?: () => void;
 }) {
   const up = computeWishUpsell(model, days);
   if (!up) return null;
   const rub = (n: number) => n.toLocaleString("ru-RU");
-  // Продающие цифры: экономия по итогу (A) либо «доп. дни почти даром» (B).
-  const cheaper = up.cheaperTotal && up.save > 0;
-  const extraCost = Math.max(0, up.newTotal - up.curTotal); // доплата (случай B)
-  const perDaySave = up.curRate - up.nextRate; // экономия за сутки
-  const perExtraDay = up.addDays > 0 ? Math.round(extraCost / up.addDays) : 0;
   return (
     // key={targetDays} — при смене рекомендации карточка переанимируется.
     <div
@@ -1690,35 +1706,19 @@ function WishUpsell({
             <Sparkles size={16} />
           </div>
           <div className="text-[14.5px] font-bold text-slate-900">
-            {cheaper
-              ? `Сэкономьте ${rub(up.save)} ₽`
-              : `Лишние дни — почти даром`}
+            Можно сэкономить
           </div>
           <span className="ml-auto rounded-full bg-emerald-100 px-2.5 py-1 text-[12.5px] font-extrabold tabular-nums text-emerald-700">
-            {cheaper ? `−${rub(up.save)} ₽` : `−${rub(perDaySave)} ₽/сут`}
+            −{rub(up.savings)} ₽
           </span>
         </div>
         <div className="mt-2 text-[13.5px] leading-snug text-slate-600">
-          {cheaper ? (
-            <>
-              <b className="text-slate-900">
-                {up.targetDays} {daysWord(up.targetDays)}
-              </b>{" "}
-              выходят <b className="text-slate-900">дешевле</b>, чем {days}{" "}
-              {daysWord(days)}: {rub(up.newTotal)} ₽ вместо {rub(up.curTotal)} ₽.
-              Катаетесь дольше — и платите меньше.
-            </>
-          ) : (
-            <>
-              Ещё {up.addDays} {daysWord(up.addDays)} обойдутся всего в{" "}
-              <b className="text-slate-900">{rub(extraCost)} ₽</b> — это{" "}
-              {rub(perExtraDay)} ₽/день вместо {rub(up.curRate)} ₽. Берите{" "}
-              <b className="text-slate-900">
-                {up.targetDays} {daysWord(up.targetDays)}
-              </b>
-              .
-            </>
-          )}
+          Возьмите ещё{" "}
+          <b className="text-slate-900">
+            {up.addDays} {daysWord(up.addDays)}
+          </b>{" "}
+          — и платите <b className="text-slate-900">{rub(up.nextRate)} ₽/сут</b>{" "}
+          вместо {rub(up.curRate)} ₽.
         </div>
         <button
           type="button"
@@ -1728,6 +1728,15 @@ function WishUpsell({
           Взять {up.targetDays} {daysWord(up.targetDays)}
           <ArrowRight size={16} />
         </button>
+        {onDismiss && (
+          <button
+            type="button"
+            onClick={onDismiss}
+            className="mt-1.5 w-full text-center text-[12.5px] font-medium text-slate-400 transition-colors hover:text-slate-600"
+          >
+            Спасибо, не надо
+          </button>
+        )}
       </div>
     </div>
   );

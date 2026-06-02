@@ -136,38 +136,42 @@ export function WishSummaryBar({
               open ? "opacity-100" : "opacity-0"
             }`}
           >
-          {/* Совет «возьмите подольше» — первым, чтобы сразу бросался в глаза. */}
-          {upsell}
-
-          {/* Скутер чипом с названием. */}
-          <div className="flex items-center gap-2.5">
-            <Thumb avatarUrl={model.avatarUrl} fallback="scooter" size={44} tilt />
-            <div className="min-w-0">
-              <div className="text-[14px] font-bold text-slate-900">{model.name}</div>
-              {periodLabel && (
-                <div className="text-[12px] text-slate-500">{periodLabel}</div>
-              )}
-            </div>
-          </div>
-
-          {/* Экипировка чипами. */}
-          {selectedEquipment.length > 0 && (
-            <div className="flex flex-wrap gap-2">
-              {selectedEquipment.map((e) => (
-                <div
-                  key={e.id}
-                  className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 py-1 pl-1 pr-2.5"
-                >
-                  <Thumb avatarUrl={e.avatarUrl} fallback="equip" size={26} />
-                  <span className="text-[12px] font-medium text-slate-700">
-                    {e.name}
-                  </span>
+          {/* Шаг экипировки (цены ещё нет): показываем выбор детальнее, чем
+              в свёрнутой шапке — какой скутер и какая именно экипировка.
+              На шаге периода эти данные уже есть в шапке (модель · экип. N ·
+              даты), поэтому здесь НЕ дублируем (см. price && ниже). */}
+          {!price && (
+            <>
+              <div className="flex items-center gap-2.5">
+                <Thumb avatarUrl={model.avatarUrl} fallback="scooter" size={44} tilt />
+                <div className="min-w-0">
+                  <div className="text-[14px] font-bold text-slate-900">
+                    {model.name}
+                  </div>
+                  {periodLabel && (
+                    <div className="text-[12px] text-slate-500">{periodLabel}</div>
+                  )}
                 </div>
-              ))}
-            </div>
+              </div>
+              {selectedEquipment.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {selectedEquipment.map((e) => (
+                    <div
+                      key={e.id}
+                      className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 py-1 pl-1 pr-2.5"
+                    >
+                      <Thumb avatarUrl={e.avatarUrl} fallback="equip" size={26} />
+                      <span className="text-[12px] font-medium text-slate-700">
+                        {e.name}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
           )}
 
-          {/* Разбивка цены — только когда период выбран. */}
+          {/* Разбивка цены (шаг периода) — в середине. */}
           {price && (
             <div className="rounded-xl bg-slate-50 p-3 text-[13px]">
               <Row label="Аренда" value={rub(price.rentSum)} />
@@ -183,6 +187,9 @@ export function WishSummaryBar({
               </div>
             </div>
           )}
+
+          {/* Совет «возьмите подольше» — ПОД расчётом (на месте «Продолжить»). */}
+          {upsell}
           </div>
         </div>
       </div>
