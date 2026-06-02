@@ -19,13 +19,27 @@ import {
 } from "../db/schema.js";
 
 /**
- * Возвращает ставку модели за период аренды. Используется при свапе
+ * Тарифная ступень по числу дней — для ставки ₽/сут (включает "day" на 1-2
+ * дня: короткий прокат дороже). Едино с фронтом (ratePeriodForDays). Поле
+ * tariffPeriod в БД "day" не хранит (enum short/week/month), поэтому ступень
+ * для расчёта ставки выводим из числа дней, а не из tariffPeriod.
+ */
+function rateTierForDays(days: number): "day" | "short" | "week" | "month" {
+  if (days <= 2) return "day";
+  if (days <= 6) return "short";
+  if (days < 30) return "week";
+  return "month";
+}
+
+/**
+ * Возвращает ставку модели за тарифную ступень. Используется при свапе
  * на другую модель чтобы посчитать доплату.
  */
 function pickRateByPeriod(
   model: typeof scooterModels.$inferSelect,
-  period: "short" | "week" | "month",
+  period: "day" | "short" | "week" | "month",
 ): number | null {
+  if (period === "day") return model.dayRate ?? model.shortRate ?? null;
   if (period === "short") return model.shortRate ?? model.dayRate ?? null;
   if (period === "week") return model.weekRate ?? null;
   if (period === "month") return model.monthRate ?? null;
@@ -2247,9 +2261,11 @@ export async function rentalsRoutes(app: FastifyInstance) {
         }
 
         // Доплата за смену модели — если у нового скутера ставка выше.
-        // Считаем по тарифу аренды и оставшимся дням до endPlannedAt.
-        // Если ставки равны или новая ниже — нулевая разница, payment
-        // не создаём.
+        // Ставку нового скутера берём по тарифной ступени аренды (по числу
+        // дней аренды old.days — ту же ступень, на которой считалась исходная
+        // ставка; для 1-2 дней это dayRate, а не shortRate). Доплату начисляем
+        // на ОСТАТОК дней до endPlannedAt. Если ставки равны или новая ниже —
+        // нулевая разница, payment не создаём.
         let feeAmount = 0;
         if (newScooter.modelId != null) {
           const [newModel] = await tx
@@ -2257,7 +2273,8 @@ export async function rentalsRoutes(app: FastifyInstance) {
             .from(scooterModels)
             .where(eq(scooterModels.id, newScooter.modelId));
           if (newModel) {
-            const newRate = pickRateByPeriod(newModel, old.tariffPeriod);
+            const tier = rateTierForDays(old.days);
+            const newRate = pickRateByPeriod(newModel, tier);
             if (newRate != null && newRate > old.rate) {
               const msLeft = old.endPlannedAt.getTime() - now.getTime();
               const daysLeft = Math.max(1, Math.ceil(msLeft / 86_400_000));
