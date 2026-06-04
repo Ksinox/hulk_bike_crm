@@ -1804,8 +1804,12 @@ export function PaymentAcceptDialog({
                   )}
                   {extDays > 0 && (
                     <FooterRow
-                      label={`Аренда: ${extDays} дн × ${extDailyRate} ₽`}
-                      value={`${fmt(extDailyRate * extDays)} ₽`}
+                      label={
+                        extIsWeekly
+                          ? `Аренда: ${extWeeks} нед × ${extRate} ₽`
+                          : `Аренда: ${extDays} дн × ${extDailyRate} ₽`
+                      }
+                      value={`${fmt(extSum)} ₽`}
                     />
                   )}
                   {extDays > 0 && equipDaily > 0 && (
