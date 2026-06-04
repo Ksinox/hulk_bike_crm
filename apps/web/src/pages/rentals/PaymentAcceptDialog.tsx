@@ -326,15 +326,22 @@ export function PaymentAcceptDialog({
   // v0.6.16: card calendar = primary controller. Когда оператор тащит
   // ручку в карточке (слева, viewable), initialExtDays меняется. Мы это
   // ловим и пересинхронизируем extInputOverride/footer в side panel'е.
+  //
+  // initialExtDays — это число ДНЕЙ. extInputOverride хранится в единице
+  // ВВОДА продления: в custom-недельном тарифе это НЕДЕЛИ, иначе дни.
+  // Делим по единице ПРОДЛЕНИЯ (selectedTariff/extCustomUnit), а НЕ по
+  // rental.rateUnit (единица исходной аренды). Старый код делил по rateUnit:
+  // при custom-недельном тарифе extInputBase множился ×7 на каждом рендере
+  // (extDays → onExtDaysChange → initialExtDays → extInputOverride), уходя
+  // в экспоненту → дата NaN.NaN.NaN и «космическая» сумма.
   useEffect(() => {
     if (initialExtDays == null || initialExtDays <= 0) return;
-    const next =
-      rental.rateUnit === "week"
-        ? Math.max(1, Math.ceil(initialExtDays / 7))
-        : initialExtDays;
+    const weekly = selectedTariff === "custom" && extCustomUnit === "week";
+    const next = weekly
+      ? Math.max(1, Math.round(initialExtDays / 7))
+      : initialExtDays;
     setExtInputOverride(next);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialExtDays]);
+  }, [initialExtDays, selectedTariff, extCustomUnit]);
   // v0.6.13: тариф продления вычисляется из selectedTariff.
   //   - preset (short/day/week/month) → ставка из TARIFF, unit = 'day'
   //     (период недельного тарифа всё равно считается в днях по ставке/сут;
