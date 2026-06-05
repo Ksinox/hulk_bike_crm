@@ -140,6 +140,12 @@ export function patchRental(id: number, patch: Partial<Rental>) {
   if (patch.rateUnit !== undefined) body.rateUnit = patch.rateUnit;
   if (patch.days !== undefined) body.days = patch.days;
   if (patch.sum !== undefined) body.sum = patch.sum;
+  // v0.6.50: коррекция периода («Изменить период») присылает пересчитанную
+  // тарифную ступень. БД enum принимает short/week/month — "day" сюда не
+  // приходит (periodForDays его не возвращает).
+  if (patch.tariffPeriod !== undefined && patch.tariffPeriod !== "day") {
+    body.tariffPeriod = patch.tariffPeriod;
+  }
   if (patch.depositReturned !== undefined) {
     body.depositReturned = patch.depositReturned;
   }

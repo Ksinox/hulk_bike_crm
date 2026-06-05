@@ -104,6 +104,8 @@ const PatchRentalBody = z
     note: z.string().optional().nullable(),
     rate: z.number().int().positive().optional(),
     rateUnit: z.enum(["day", "week"]).optional(),
+    // v0.6.50: «Изменить период» меняет тарифную ступень при пересчёте дней.
+    tariffPeriod: z.enum(["short", "week", "month"]).optional(),
     days: z.number().int().positive().optional(),
     sum: z.number().int().min(0).optional(),
     deposit: z.number().int().min(0).optional(),
