@@ -45,6 +45,7 @@ const STATUS_TONE: Record<ScooterDisplayStatus, string> = {
   for_sale: "bg-purple-soft text-purple-ink",
   sold: "bg-surface-soft text-muted-2",
   disassembly: "bg-red-soft text-red-ink",
+  dtp: "bg-red text-white",
 };
 
 function statusMeta(s: ScooterDisplayStatus): { label: string; cls: string } {

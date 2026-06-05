@@ -752,11 +752,13 @@ function StatusPill({ status }: { status: ScooterDisplayStatus }) {
           ? "bg-ink/10 text-ink"
           : status === "repair"
             ? "bg-red-soft text-red-ink"
-            : status === "buyout" || status === "for_sale"
-              ? "bg-purple-soft text-purple-ink"
-              : status === "disassembly"
-                ? "bg-ink text-white"
-                : "bg-surface-soft text-muted";
+            : status === "dtp"
+              ? "bg-red text-white"
+              : status === "buyout" || status === "for_sale"
+                ? "bg-purple-soft text-purple-ink"
+                : status === "disassembly"
+                  ? "bg-ink text-white"
+                  : "bg-surface-soft text-muted";
   return (
     <span
       className={cn(

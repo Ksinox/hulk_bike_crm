@@ -70,7 +70,8 @@ export type ScooterBaseStatus =
   | "buyout"
   | "for_sale"
   | "sold"
-  | "disassembly";
+  | "disassembly"
+  | "dtp";
 
 export type ApiScooter = {
   id: number;

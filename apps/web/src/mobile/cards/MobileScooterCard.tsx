@@ -103,6 +103,7 @@ const STATUS_PILL: Record<ScooterDisplayStatus, string> = {
   for_sale: "bg-orange-soft text-orange-ink",
   sold: "bg-surface-soft text-muted-2",
   disassembly: "bg-red-soft text-red-ink",
+  dtp: "bg-red text-white",
 };
 
 /**

@@ -13,6 +13,7 @@ export const SCOOTER_BASE_STATUS_OPTIONS: {
   { value: "ready", label: "Не распределён", hint: "Свежий, ещё не решено что с ним" },
   { value: "rental_pool", label: "Готов к аренде", hint: "Свободен, можно выдавать клиенту" },
   { value: "repair", label: "На ремонте", hint: "Находится на обслуживании" },
+  { value: "dtp", label: "ДТП", hint: "Попал в аварию, выведен из аренды" },
   { value: "buyout", label: "Передан в выкуп", hint: "В рассрочку у клиента" },
   { value: "for_sale", label: "На продажу", hint: "Выставлен к продаже" },
   { value: "sold", label: "Продан", hint: "Из оборота выбыл" },

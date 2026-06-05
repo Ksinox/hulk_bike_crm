@@ -17,6 +17,7 @@ const ScooterBaseStatusEnum = z.enum([
   "for_sale",
   "sold",
   "disassembly",
+  "dtp",
 ]);
 
 const CreateScooterBody = z

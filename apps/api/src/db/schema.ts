@@ -66,6 +66,7 @@ export const scooterBaseStatusEnum = pgEnum("scooter_base_status", [
   "for_sale", // выставлен на продажу
   "sold", // продан, в обороте не участвует
   "disassembly", // «В разборке» — на запчасти, из оборота выведен, но учитывается
+  "dtp", // «ДТП» — попал в аварию, выведен из аренды до разбирательства/ремонта
 ]);
 
 export const rentalStatusEnum = pgEnum("rental_status", [
