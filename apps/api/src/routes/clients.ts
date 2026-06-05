@@ -433,4 +433,51 @@ export async function clientsRoutes(app: FastifyInstance) {
     });
     return row;
   });
+
+  /**
+   * Выдать депозит клиенту (вернуть наличными). v0.6.51: депозит — это
+   * «лишние» деньги клиента (переплаты, излишки коррекций). Оператор может
+   * выдать их клиенту целиком или частично. Дебетует depositBalance, выдача
+   * капается остатком (нельзя выдать больше, чем лежит).
+   */
+  app.post<{
+    Params: { id: string };
+    Body: { amount: number; comment?: string };
+  }>("/:id/deposit/payout", async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
+    const Body = z.object({
+      amount: z.number().int().positive(),
+      comment: z.string().max(500).optional(),
+    });
+    const parsed = Body.safeParse(req.body);
+    if (!parsed.success) {
+      return reply
+        .code(400)
+        .send({ error: "validation", issues: parsed.error.issues });
+    }
+    const [before] = await db
+      .select({ balance: clients.depositBalance, name: clients.name })
+      .from(clients)
+      .where(eq(clients.id, id));
+    if (!before) return reply.code(404).send({ error: "not found" });
+    const payout = Math.min(parsed.data.amount, before.balance);
+    if (payout <= 0) {
+      return reply.code(400).send({ error: "no_balance" });
+    }
+    const [row] = await db
+      .update(clients)
+      .set({
+        depositBalance: sql`${clients.depositBalance} - ${payout}`,
+      })
+      .where(eq(clients.id, id))
+      .returning({ id: clients.id, balance: clients.depositBalance, name: clients.name });
+    await logActivity(req, {
+      entity: "client",
+      entityId: id,
+      action: "deposit_paid_out",
+      summary: `Депозит выдан клиенту −${payout} ₽: ${before.name}${parsed.data.comment ? ` (${parsed.data.comment})` : ""}`,
+    });
+    return row;
+  });
 }

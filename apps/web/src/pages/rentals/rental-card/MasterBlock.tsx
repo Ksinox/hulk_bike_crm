@@ -71,6 +71,7 @@ export function MasterBlock({
   onOpenClientProfile,
   onSwapScooter,
   onChangeEquipment,
+  onPayoutDeposit,
   section,
 }: {
   rental: Rental;
@@ -85,6 +86,8 @@ export function MasterBlock({
   onOpenClientProfile: () => void;
   onSwapScooter: () => void;
   onChangeEquipment?: () => void;
+  /** v0.6.51: клик по сумме депозита → диалог «Выдать депозит клиенту». */
+  onPayoutDeposit?: () => void;
   onRecordDamage?: () => void;
   layout?: "horizontal" | "vertical";
   /** v0.7.8: в drawer-режиме карточка разбита на accordion-секции —
@@ -217,6 +220,22 @@ export function MasterBlock({
             </span>
             <span>за всё время</span>
           </span>
+          {/* v0.6.51: депозит — «лишние» деньги клиента. Кликабельная плашка
+              (пунктирная рамка-намёк) → диалог «Выдать депозит клиенту». */}
+          {(client?.depositBalance ?? 0) > 0 && onPayoutDeposit && (
+            <button
+              type="button"
+              onClick={onPayoutDeposit}
+              title="Выдать депозит клиенту"
+              className="inline-flex items-center gap-1 rounded-full border border-dashed border-blue-300 bg-blue-50/40 px-2 py-0.5 text-[12px] text-blue-700 transition-colors hover:border-blue-500 hover:bg-blue-50"
+            >
+              <Wallet size={12} />
+              <span className="font-bold tabular-nums">
+                {fmt(client?.depositBalance ?? 0)} ₽
+              </span>
+              <span>депозит · выдать</span>
+            </button>
+          )}
         </div>
       </div>
     </div>
