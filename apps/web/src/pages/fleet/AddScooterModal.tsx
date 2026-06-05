@@ -91,6 +91,14 @@ export function AddScooterModal({ onClose }: { onClose: () => void }) {
   const name = `${scooterPrefix} #${String(number || "1").padStart(2, "0")}`;
   const nameTaken = scooters.some((s) => s.name === name);
 
+  // VIN (= номер рамы/шасси) обязан быть уникальным. Проверяем мгновенно
+  // на клиенте по текущему парку — чтобы не плодить дубли (бэкенд тоже
+  // отбивает 409, но так юзер видит ошибку сразу, до сохранения).
+  const vinTrim = frameNumber.trim().toUpperCase();
+  const vinTaken =
+    vinTrim !== "" &&
+    scooters.some((s) => (s.vin ?? "").toUpperCase() === vinTrim);
+
   // v0.5.6: год обязателен валидный (1980..currentYear+1) если введён.
   // Пустая строка ОК — значит «не указано» (необязательное поле).
   const currentYear = new Date().getFullYear();
@@ -100,7 +108,7 @@ export function AddScooterModal({ onClose }: { onClose: () => void }) {
     yearTrim === "" ||
     (Number.isInteger(yearNum) && yearNum >= 1980 && yearNum <= currentYear + 1);
   const canSave =
-    !!number && !nameTaken && modelId != null && yearValid;
+    !!number && !nameTaken && !vinTaken && modelId != null && yearValid;
 
   const requestClose = () => {
     if (closing) return;
@@ -226,9 +234,15 @@ export function AddScooterModal({ onClose }: { onClose: () => void }) {
               <Field
                 label="Номер рамы / шасси (VIN)"
                 hint={
-                  <span className="text-[10px] text-muted-2">
-                    подставляется в акты и договоры
-                  </span>
+                  vinTaken ? (
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-red-ink">
+                      такой VIN уже есть
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-muted-2">
+                      подставляется в акты и договоры
+                    </span>
+                  )
                 }
               >
                 <input
@@ -237,7 +251,10 @@ export function AddScooterModal({ onClose }: { onClose: () => void }) {
                   onChange={(e) => setFrameNumber(e.target.value.toUpperCase())}
                   placeholder="SA36J-605232"
                   maxLength={20}
-                  className="h-10 w-full rounded-[10px] border border-border bg-surface px-3 font-mono text-[13px] text-ink outline-none focus:border-blue-600"
+                  className={cn(
+                    "h-10 w-full rounded-[10px] border bg-surface px-3 font-mono text-[13px] text-ink outline-none focus:border-blue-600",
+                    vinTaken ? "border-red-soft" : "border-border",
+                  )}
                 />
               </Field>
               <Field label="Номер двигателя">
@@ -365,7 +382,9 @@ export function AddScooterModal({ onClose }: { onClose: () => void }) {
           <div className="text-[11px] text-muted-2">
             {nameTaken
               ? "Исправьте номер — такой скутер уже есть в парке."
-              : `Появится в парке как «${name}» со статусом «${statusLabel(status)}».`}
+              : vinTaken
+                ? "Исправьте VIN — такой номер рамы уже есть в парке."
+                : `Появится в парке как «${name}» со статусом «${statusLabel(status)}».`}
           </div>
           <div className="flex gap-2">
             <button

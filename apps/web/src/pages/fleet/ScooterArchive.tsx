@@ -95,6 +95,11 @@ function ArchiveRow({
         <div className="flex items-center gap-2 text-[14px] font-semibold">
           {s.name}
         </div>
+        {s.archivedReason && (
+          <div className="mt-0.5 truncate text-[12px] font-medium text-ink-2">
+            Причина: {s.archivedReason}
+          </div>
+        )}
         <div className="mt-0.5 text-[11px] text-muted">
           {s.archivedBy ?? "система"} ·{" "}
           {s.archivedAt ? formatDate(s.archivedAt) : "—"}

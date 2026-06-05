@@ -338,6 +338,8 @@ export const scooters = pgTable(
      */
     archivedAt: timestamp("archived_at", { withTimezone: true }),
     archivedBy: text("archived_by"),
+    /** Причина переноса в архив (продан / списан / разбит / дубль / своё). */
+    archivedReason: text("archived_reason"),
     /**
      * Помечен к окончательному удалению — через 7 дней будет физически удалён
      * фоновой задачей (и вместе с ним документы). До истечения срока можно

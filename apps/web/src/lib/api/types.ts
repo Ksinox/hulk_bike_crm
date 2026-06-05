@@ -90,6 +90,7 @@ export type ApiScooter = {
   note: string | null;
   archivedAt: string | null;
   archivedBy: string | null;
+  archivedReason: string | null;
   deletedAt: string | null;
   deletedBy: string | null;
   createdAt: string;

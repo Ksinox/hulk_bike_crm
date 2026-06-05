@@ -43,7 +43,8 @@ import { ApiError } from "@/lib/api";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { fileUrl } from "@/lib/files";
 import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
-import { toast, confirmDialog } from "@/lib/toast";
+import { toast } from "@/lib/toast";
+import { askArchiveReason } from "./archiveReason";
 
 type TabId =
   | "history"
@@ -86,6 +87,13 @@ function fmt(n: number): string {
   return n.toLocaleString("ru-RU");
 }
 
+/** «2026-03-15» → «15.03.2026». Дата замены масла из записи обслуживания. */
+function fmtOilDate(ymd: string): string {
+  const m = ymd.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return ymd;
+  return `${m[3]}.${m[2]}.${m[1]}`;
+}
+
 function parseDate(s: string): Date | null {
   const m = s.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
   if (!m) return null;
@@ -124,17 +132,13 @@ export function ScooterCard({
   const archiveMut = useArchiveScooter();
 
   const doArchive = async () => {
-    const ok = await confirmDialog({
-      title: `Перенести «${scooter.name}» в архив?`,
-      message:
-        "Скутер пропадёт из основного списка. История аренд сохранится, восстановить можно в любой момент.",
-      confirmText: "В архив",
-      danger: true,
-    });
-    if (!ok) return;
+    // Причина переноса в архив (быстрые варианты + «своё»). Сохраняется
+    // в карточке архива, чтобы потом было понятно, почему скутер убрали.
+    const reason = await askArchiveReason(scooter.name);
+    if (!reason) return;
     try {
-      await archiveMut.mutateAsync(scooter.id);
-      toast.success(`«${scooter.name}» перенесён в архив`);
+      await archiveMut.mutateAsync({ id: scooter.id, reason });
+      toast.success(`«${scooter.name}» перенесён в архив`, `Причина: ${reason}`);
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) {
         toast.error(
@@ -183,11 +187,22 @@ export function ScooterCard({
   const expensesCount = maintenanceList.length;
   const incidentsCount = 0;
 
-  // Информация по замене масла — интервал зависит от модели (Jog — 5000 км, остальные — 3000 км).
+  // Информация по замене масла — единый интервал 3000 км для всех моделей.
   // Рассчитывается от пробега на момент прошлой замены и текущего пробега.
   const oil = oilServiceInfo(scooter);
   const oilOverdue = oil.remainKm < 0;
   const oilWarn = !oilOverdue && oil.remainKm <= 300;
+
+  // История замен масла — берём записи обслуживания kind:"oil", свежие сверху.
+  // Нужна, чтобы было видно КОГДА меняли (дата), а не только на каком пробеге.
+  const oilChanges = useMemo(
+    () =>
+      [...maintenanceList]
+        .filter((m) => m.kind === "oil")
+        .sort((a, b) => (a.performedOn < b.performedOn ? 1 : -1)),
+    [maintenanceList],
+  );
+  const lastOilChange = oilChanges[0] ?? null;
 
   // Экономика — считается по реальным данным: сумма аренд + записи обслуживания из API.
   const lifetimeRevenue = scooterRentals.reduce((s, r) => s + (r.sum || 0), 0);
@@ -522,6 +537,12 @@ export function ScooterCard({
                 <div className="mt-0.5 font-bold tabular-nums text-ink">
                   {fmt(oil.lastMileage)} км
                 </div>
+                {/* Дата прошлой замены — главное «когда менялось». */}
+                <div className="text-[11px] text-muted">
+                  {lastOilChange
+                    ? fmtOilDate(lastOilChange.performedOn)
+                    : "дата не зафиксирована"}
+                </div>
               </div>
               <div>
                 <div className="text-[10px] uppercase tracking-wider text-muted-2">
@@ -530,8 +551,58 @@ export function ScooterCard({
                 <div className="mt-0.5 font-bold tabular-nums text-ink">
                   {fmt(oil.nextMileage)} км
                 </div>
+                <div className="text-[11px] text-muted">
+                  {oilOverdue ? "пора менять" : `осталось ${fmt(oil.remainKm)} км`}
+                </div>
               </div>
             </div>
+
+            {/* История замен масла — чтобы было видно, когда меняли каждый раз. */}
+            {oilChanges.length > 0 && (
+              <div className="mt-4 border-t border-border pt-3">
+                <div className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-2">
+                  История замен · {oilChanges.length}
+                </div>
+                <div className="flex flex-col gap-1">
+                  {oilChanges.slice(0, 4).map((m, i) => {
+                    // «+N км пробега с прошлой замены» — насколько откатали
+                    // между этой и предыдущей (более старой) заменой.
+                    const prev = oilChanges[i + 1];
+                    const delta =
+                      prev && m.mileage != null && prev.mileage != null
+                        ? m.mileage - prev.mileage
+                        : null;
+                    return (
+                      <div
+                        key={m.id}
+                        className="flex items-center justify-between gap-2 text-[12px]"
+                      >
+                        <span className="font-semibold text-ink">
+                          {fmtOilDate(m.performedOn)}
+                        </span>
+                        <span className="tabular-nums text-muted">
+                          {m.mileage != null ? `${fmt(m.mileage)} км` : "— км"}
+                          {delta != null && delta > 0 && (
+                            <span className="ml-1 text-muted-2">
+                              (+{fmt(delta)})
+                            </span>
+                          )}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+                {oilChanges.length > 4 && (
+                  <button
+                    type="button"
+                    onClick={() => setTab("expenses")}
+                    className="mt-1.5 text-[11px] font-semibold text-blue-600 hover:underline"
+                  >
+                    Показать все в «Расходах» →
+                  </button>
+                )}
+              </div>
+            )}
 
             <button
               type="button"

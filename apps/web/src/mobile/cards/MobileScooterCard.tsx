@@ -44,7 +44,8 @@ import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { fileUrl } from "@/lib/files";
 import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
 import { EntityNotes } from "@/components/EntityNotes";
-import { toast, confirmDialog } from "@/lib/toast";
+import { toast } from "@/lib/toast";
+import { askArchiveReason } from "@/pages/fleet/archiveReason";
 import type { Rental } from "@/lib/mock/rentals";
 import type { ApiClient } from "@/lib/api/types";
 
@@ -57,6 +58,12 @@ const MONTH_RU = [
 
 function fmt(n: number): string {
   return n.toLocaleString("ru-RU");
+}
+/** «2026-03-15» → «15.03.2026». Дата замены масла из записи обслуживания. */
+function fmtOilDate(ymd: string): string {
+  const m = ymd.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return ymd;
+  return `${m[3]}.${m[2]}.${m[1]}`;
 }
 function parseDate(s: string): Date | null {
   const m = s.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
@@ -128,17 +135,11 @@ export function MobileScooterCard({
   const archiveMut = useArchiveScooter();
 
   const doArchive = async () => {
-    const ok = await confirmDialog({
-      title: `Перенести «${scooter.name}» в архив?`,
-      message:
-        "Скутер пропадёт из основного списка. История аренд сохранится, восстановить можно в любой момент.",
-      confirmText: "В архив",
-      danger: true,
-    });
-    if (!ok) return;
+    const reason = await askArchiveReason(scooter.name);
+    if (!reason) return;
     try {
-      await archiveMut.mutateAsync(scooter.id);
-      toast.success(`«${scooter.name}» перенесён в архив`);
+      await archiveMut.mutateAsync({ id: scooter.id, reason });
+      toast.success(`«${scooter.name}» перенесён в архив`, `Причина: ${reason}`);
       onBack();
     } catch (e) {
       if (e instanceof ApiError && e.status === 409)
@@ -171,6 +172,16 @@ export function MobileScooterCard({
   const oilOverdue = oil.remainKm < 0;
   const oilWarn = !oilOverdue && oil.remainKm <= 300;
   const showOil = scooter.baseStatus === "rental_pool" || status === "rented";
+
+  // История замен масла (kind:"oil"), свежие сверху — чтобы было видно дату.
+  const oilChanges = useMemo(
+    () =>
+      [...maintenanceList]
+        .filter((m) => m.kind === "oil")
+        .sort((a, b) => (a.performedOn < b.performedOn ? 1 : -1)),
+    [maintenanceList],
+  );
+  const lastOilChange = oilChanges[0] ?? null;
 
   // Экономика (как на десктопе)
   const lifetimeRevenue = scooterRentals.reduce((s, r) => s + (r.sum || 0), 0);
@@ -375,9 +386,49 @@ export function MobileScooterCard({
               />
             </div>
             <div className="mt-2 flex items-center justify-between text-[12px] text-muted-2">
-              <span>Последняя: {fmt(oil.lastMileage)} км</span>
+              <span>
+                Последняя: {fmt(oil.lastMileage)} км
+                {lastOilChange && (
+                  <span className="text-muted"> · {fmtOilDate(lastOilChange.performedOn)}</span>
+                )}
+              </span>
               <span>Следующая: {fmt(oil.nextMileage)} км</span>
             </div>
+
+            {/* История замен — когда меняли каждый раз */}
+            {oilChanges.length > 0 && (
+              <div className="mt-3 border-t border-border pt-2.5">
+                <div className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-2">
+                  История замен · {oilChanges.length}
+                </div>
+                <div className="flex flex-col gap-1">
+                  {oilChanges.slice(0, 3).map((m, i) => {
+                    const prev = oilChanges[i + 1];
+                    const delta =
+                      prev && m.mileage != null && prev.mileage != null
+                        ? m.mileage - prev.mileage
+                        : null;
+                    return (
+                      <div
+                        key={m.id}
+                        className="flex items-center justify-between gap-2 text-[12px]"
+                      >
+                        <span className="font-semibold text-ink">
+                          {fmtOilDate(m.performedOn)}
+                        </span>
+                        <span className="tabular-nums text-muted">
+                          {m.mileage != null ? `${fmt(m.mileage)} км` : "— км"}
+                          {delta != null && delta > 0 && (
+                            <span className="ml-1 text-muted-2">(+{fmt(delta)})</span>
+                          )}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             <button
               type="button"
               onClick={() => setOilOpen(true)}

@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/index.js";
 import { rentals, scooters, users } from "../db/schema.js";
@@ -89,6 +89,27 @@ export async function scootersRoutes(app: FastifyInstance) {
     if (!parsed.success) {
       return reply.code(400).send({ error: "validation", issues: parsed.error.issues });
     }
+    // Запрет дубля VIN: если VIN указан, нельзя создать ещё один НЕархивный
+    // скутер с тем же VIN. Пустой VIN (его может не быть) не проверяем.
+    const newVin = parsed.data.vin?.trim();
+    if (newVin) {
+      const [dup] = await db
+        .select({ id: scooters.id, name: scooters.name })
+        .from(scooters)
+        .where(
+          and(
+            eq(scooters.vin, newVin),
+            isNull(scooters.archivedAt),
+            isNull(scooters.deletedAt),
+          ),
+        );
+      if (dup) {
+        return reply.code(409).send({
+          error: "duplicate_vin",
+          message: `Скутер с таким VIN уже есть: «${dup.name}». VIN должен быть уникальным.`,
+        });
+      }
+    }
     try {
       const [row] = await db
         .insert(scooters)
@@ -124,6 +145,31 @@ export async function scootersRoutes(app: FastifyInstance) {
     }
     const [before] = await db.select().from(scooters).where(eq(scooters.id, id));
     if (!before) return reply.code(404).send({ error: "not found" });
+
+    // Запрет дубля VIN при редактировании: если меняем VIN на уже занятый
+    // другим НЕархивным скутером — отклоняем (пустой VIN не проверяем).
+    if (parsed.data.vin !== undefined) {
+      const editVin = parsed.data.vin?.trim();
+      if (editVin) {
+        const [dup] = await db
+          .select({ id: scooters.id, name: scooters.name })
+          .from(scooters)
+          .where(
+            and(
+              eq(scooters.vin, editVin),
+              ne(scooters.id, id),
+              isNull(scooters.archivedAt),
+              isNull(scooters.deletedAt),
+            ),
+          );
+        if (dup) {
+          return reply.code(409).send({
+            error: "duplicate_vin",
+            message: `Скутер с таким VIN уже есть: «${dup.name}». VIN должен быть уникальным.`,
+          });
+        }
+      }
+    }
 
     // Нельзя менять baseStatus у скутера, находящегося в активной аренде.
     // Сначала нужно закрыть аренду (завершить / отменить).
@@ -200,20 +246,27 @@ export async function scootersRoutes(app: FastifyInstance) {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
 
+    // Причина переноса в архив (опционально). Тело может быть пустым —
+    // тогда reason = null. Обрезаем до 300 символов, чтобы не раздувать.
+    const delBody = (req.body ?? {}) as { reason?: unknown };
+    const archiveReason =
+      typeof delBody.reason === "string" && delBody.reason.trim()
+        ? delBody.reason.trim().slice(0, 300)
+        : null;
+
     const [sc] = await db.select().from(scooters).where(eq(scooters.id, id));
     if (!sc) return reply.code(404).send({ error: "not found" });
     if (sc.archivedAt) return reply.code(400).send({ error: "already archived" });
 
-    // Проверяем активные аренды
+    // Проверяем активные аренды. ВАЖНО: enum rental_status = только
+    // ('active','completed'). Просрочка/возврат («overdue»/«returning») —
+    // computed на фронте, в БД их НЕТ. Раньше тут было
+    // IN ('active','overdue','returning') → Postgres падал с 22P02
+    // (invalid enum value) и архивация НЕ РАБОТАЛА ни для одного скутера.
     const activeRentals = await db
       .select({ id: rentals.id })
       .from(rentals)
-      .where(
-        and(
-          eq(rentals.scooterId, id),
-          sql`${rentals.status} IN ('active', 'overdue', 'returning')`,
-        ),
-      );
+      .where(and(eq(rentals.scooterId, id), eq(rentals.status, "active")));
     if (activeRentals.length > 0) {
       return reply
         .code(409)
@@ -223,7 +276,7 @@ export async function scootersRoutes(app: FastifyInstance) {
     const by = (await currentUserName(req.user?.userId)) ?? "система";
     const [row] = await db
       .update(scooters)
-      .set({ archivedAt: sql`now()`, archivedBy: by })
+      .set({ archivedAt: sql`now()`, archivedBy: by, archivedReason: archiveReason })
       .where(eq(scooters.id, id))
       .returning();
 
@@ -231,7 +284,9 @@ export async function scootersRoutes(app: FastifyInstance) {
       entity: "scooter",
       entityId: id,
       action: "archived",
-      summary: `Скутер «${sc.name}» отправлен в архив`,
+      summary: archiveReason
+        ? `Скутер «${sc.name}» отправлен в архив · причина: ${archiveReason}`
+        : `Скутер «${sc.name}» отправлен в архив`,
     });
 
     return row;
@@ -251,7 +306,13 @@ export async function scootersRoutes(app: FastifyInstance) {
 
       const [row] = await db
         .update(scooters)
-        .set({ archivedAt: null, archivedBy: null, deletedAt: null, deletedBy: null })
+        .set({
+          archivedAt: null,
+          archivedBy: null,
+          archivedReason: null,
+          deletedAt: null,
+          deletedBy: null,
+        })
         .where(eq(scooters.id, id))
         .returning();
       await logActivity(req, {
