@@ -39,8 +39,9 @@ function isCreatorOrDirector(role: string): boolean {
   return role === "creator" || role === "director";
 }
 
-/** Ручной долг — rent-платёж, который НЕ входит в rentals.sum. */
-const MANUAL_DEBT_NOTE_RE = /ручн\w*\s+долг/i;
+/** Ручной долг — rent-платёж, который НЕ входит в rentals.sum.
+ *  ВАЖНО: \w в JS НЕ матчит кириллицу — используем явный кирилл-класс. */
+const MANUAL_DEBT_NOTE_RE = /ручн[а-яё]*\s+долг/i;
 /** Выкуп просрочки — входит в sum, но НЕ базовый период (не фантомится). */
 const OVERDUE_NOTE_RE = /просрочк/i;
 /** Продление — базовый период, источник фантомов «Изменить аренду». */
