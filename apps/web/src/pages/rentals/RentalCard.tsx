@@ -1312,7 +1312,11 @@ export function RentalCard({
         endPlanned: endPlannedRu,
         startTime: rental.startTime,
         days: next.days,
+        // Коррекция периода считается по ДНЯМ → ставка дневная, фиксируем
+        // rateUnit="day", иначе у недельной аренды дневное значение легло бы
+        // в поле с единицей «нед» и ставка/сумма разъехались бы.
         rate: next.rate,
+        rateUnit: "day",
         sum: next.sum,
         tariffPeriod: next.tariffPeriod,
       });

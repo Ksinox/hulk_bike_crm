@@ -204,11 +204,17 @@ export function CalendarPanel({
     if (!editMode || !endIso || !editEndIso || !previewRate) return null;
     const deltaDays = signedDiffDays(endIso, editEndIso);
     const days = Math.max(MIN_RENTAL_DAYS, rental.days + deltaDays);
-    const rate = previewRate(days);
+    const newTier = ratePeriodForDays(days);
+    const oldTier = ratePeriodForDays(rental.days);
+    // Ставка: если тарифная ступень НЕ изменилась — сохраняем текущую
+    // дневную ставку аренды (не нормализуем к каталожной — иначе открытие
+    // без правок показывало бы ложную разницу и стирало возможную скидку).
+    // При смене ступени — берём ставку новой ступени из каталога.
+    const rate = newTier === oldTier ? dailyRate : previewRate(days);
     const sum = (rate + equipmentDaily) * days;
     const tariffPeriod = periodForDays(days) as Exclude<TariffPeriod, "day">;
-    return { days, rate, sum, tariffPeriod, ratePeriod: ratePeriodForDays(days) };
-  }, [editMode, endIso, editEndIso, previewRate, equipmentDaily, rental.days]);
+    return { days, rate, sum, tariffPeriod, ratePeriod: newTier };
+  }, [editMode, endIso, editEndIso, previewRate, equipmentDaily, rental.days, dailyRate]);
 
   const commitEdit = () => {
     if (!editPreview || !editEndIso || !endIso) return;
