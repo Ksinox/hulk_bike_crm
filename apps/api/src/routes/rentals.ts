@@ -569,6 +569,15 @@ export async function rentalsRoutes(app: FastifyInstance) {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
 
+    // v0.6.51: опциональная причина удаления в архив (напр. «Создано
+    // случайно»). Передаётся из карточки аренды; сохраняется в archivedReason
+    // и попадает в ленту, чтобы в архиве было видно почему связку убрали.
+    const delBody = (req.body ?? {}) as { reason?: unknown };
+    const archiveReason =
+      typeof delBody.reason === "string" && delBody.reason.trim()
+        ? delBody.reason.trim().slice(0, 500)
+        : null;
+
     const [row] = await db.select().from(rentals).where(eq(rentals.id, id));
     if (!row) return reply.code(404).send({ error: "not found" });
     // Различаем «уже удалена вручную» (archivedBy != null) и «авто-архив»
@@ -686,6 +695,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
       .set({
         archivedAt: sql`now()`,
         archivedBy: by,
+        archivedReason: archiveReason,
         status: nextStatus,
         updatedAt: sql`now()`,
       })
@@ -813,7 +823,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
       entity: "rental",
       entityId: id,
       action: "archived",
-      summary: `Аренда #${String(id).padStart(4, "0")} перемещена в архив`,
+      summary: `Аренда #${String(id).padStart(4, "0")} перемещена в архив${archiveReason ? ` · ${archiveReason}` : ""}`,
     });
     return reply.code(204).send();
   });

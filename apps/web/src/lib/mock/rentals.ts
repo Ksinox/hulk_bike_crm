@@ -99,6 +99,8 @@ export type Rental = {
   /** ISO-дата архивации (soft-delete). null/undefined если активна. */
   archivedAt?: string | null;
   archivedBy?: string | null;
+  /** Причина удаления в архив («Создано случайно» и т.п.). v0.6.51. */
+  archivedReason?: string | null;
   /**
    * Сумма ущерба по аренде, ₽ — выставляется вручную администратором
    * (например после ДТП или повреждения скутера). 0/undefined — ущерба нет.

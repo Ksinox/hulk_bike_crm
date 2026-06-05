@@ -495,6 +495,9 @@ export const rentals = pgTable(
      */
     archivedAt: timestamp("archived_at", { withTimezone: true }),
     archivedBy: text("archived_by"),
+    // v0.6.51: причина удаления аренды в архив («Создано случайно» / тест /
+    // дубль / своё). Показывается в списке архива.
+    archivedReason: text("archived_reason"),
 
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()

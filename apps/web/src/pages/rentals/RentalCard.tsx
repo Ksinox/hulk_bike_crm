@@ -61,6 +61,7 @@ import { HistoryTab, type HistoryFilter } from "./RentalCardTabs";
 import { RentalActionDialog, type ActionKind } from "./RentalActionDialog";
 import { ExtendRentalDialog } from "./ExtendRentalDialog";
 import { PaymentAcceptDialog } from "./PaymentAcceptDialog";
+import { askRentalDeleteReason } from "./deleteRentalReason";
 import { SwapScooterDialog } from "./SwapScooterDialog";
 import { DamageReportDialog } from "./DamageReportDialog";
 import { EquipmentChangeDialog } from "./EquipmentChangeDialog";
@@ -1210,17 +1211,14 @@ export function RentalCard({
       return;
     }
     if (id === "delete") {
-      const ok = await confirmDialog({
-        title: "Удалить аренду?",
-        message: `Аренда #${String(rental.id).padStart(4, "0")} будет перемещена в архив. Историю клиента и платежи система сохранит. Восстановить аренду можно из архива на этой же странице.`,
-        confirmText: "Удалить",
-        cancelText: "Отмена",
-        danger: true,
-      });
-      if (!ok) return;
+      const rentalNo = `#${String(rental.id).padStart(4, "0")}`;
+      // v0.6.51: причина удаления («Создано случайно» и т.п.) — сам выбор
+      // причины и есть подтверждение; уходит в archivedReason + ленту.
+      const reason = await askRentalDeleteReason(rentalNo);
+      if (!reason) return;
       try {
-        await deleteRental.mutateAsync(rental.id);
-        toast.success("Аренда удалена", `#${String(rental.id).padStart(4, "0")}`);
+        await deleteRental.mutateAsync({ id: rental.id, reason });
+        toast.success("Аренда удалена", `${rentalNo} · ${reason}`);
       } catch (e) {
         if (e instanceof ApiError) {
           const body = e.body as { message?: string } | null;

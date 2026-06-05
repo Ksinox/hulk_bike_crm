@@ -156,6 +156,8 @@ export type ApiRental = {
   /** Архив (soft-delete). null если активна. */
   archivedAt: string | null;
   archivedBy: string | null;
+  /** Причина удаления в архив («Создано случайно» и т.п.). v0.6.51. */
+  archivedReason: string | null;
   createdAt: string;
   updatedAt: string;
 };
