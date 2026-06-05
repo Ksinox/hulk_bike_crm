@@ -78,10 +78,22 @@ export const OIL_INTERVAL_KM: Record<ScooterModel, number> = {
 };
 
 /**
+ * Минимальный набор полей для расчёта масла. Подходит и FleetScooter,
+ * и ApiScooter (поля id/model/mileage/lastOilChangeMileage есть у обоих) —
+ * чтобы считать бейдж масла прямо в списке парка без адаптации типа.
+ */
+export type OilServiceInput = {
+  id: number;
+  model: ScooterModel;
+  mileage: number;
+  lastOilChangeMileage?: number | null;
+};
+
+/**
  * Вычисляет «следующее ТО по маслу» и остаток до него.
  * Возвращает отрицательный remainKm, если обслуживание просрочено.
  */
-export function oilServiceInfo(s: FleetScooter): {
+export function oilServiceInfo(s: OilServiceInput): {
   intervalKm: number;
   lastMileage: number;
   nextMileage: number;
@@ -102,6 +114,19 @@ export function oilServiceInfo(s: FleetScooter): {
   const used = Math.max(0, s.mileage - lastMileage);
   const usedRatio = Math.min(1, used / intervalKm);
   return { intervalKm, lastMileage, nextMileage, remainKm, usedRatio };
+}
+
+/**
+ * Бейдж по маслу для списка парка: "overdue" (просрочено) | "warn" (скоро) |
+ * null. Пороги те же, что в карточке скутера (≤300 км до замены = скоро).
+ * Показывать имеет смысл только для катающих скутеров (rental_pool/rented) —
+ * это решает вызывающий код по displayStatus.
+ */
+export function oilFlag(s: OilServiceInput): "overdue" | "warn" | null {
+  const { remainKm } = oilServiceInfo(s);
+  if (remainKm < 0) return "overdue";
+  if (remainKm <= 300) return "warn";
+  return null;
 }
 
 /** Детерминированные накопленные траты на обслуживание (пока моки). */

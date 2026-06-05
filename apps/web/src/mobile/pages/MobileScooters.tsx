@@ -4,7 +4,12 @@ import { useApiScooters } from "@/lib/api/scooters";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { useRentals } from "@/pages/rentals/rentalsStore";
 import { fileUrl } from "@/lib/files";
-import { SCOOTER_STATUS_LABEL, type ScooterDisplayStatus } from "@/lib/mock/fleet";
+import {
+  oilFlag,
+  SCOOTER_STATUS_LABEL,
+  type ScooterDisplayStatus,
+} from "@/lib/mock/fleet";
+import { Droplet } from "lucide-react";
 import { AddScooterModal } from "@/pages/fleet/AddScooterModal";
 import { MobileScooterCard } from "../cards/MobileScooterCard";
 import { useFleetScooters } from "@/pages/fleet/fleetStore";
@@ -194,6 +199,8 @@ function ScooterTile({
   onClick: () => void;
 }) {
   const meta = statusMeta(status);
+  const oilState =
+    status === "rental_pool" || status === "rented" ? oilFlag(scooter) : null;
   return (
     <button
       type="button"
@@ -218,11 +225,25 @@ function ScooterTile({
           </div>
         </div>
       </div>
-      <div className="flex items-center justify-between">
-        <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold", meta.cls)}>
-          {meta.label}
+      <div className="flex items-center justify-between gap-1">
+        <span className="flex min-w-0 items-center gap-1">
+          <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold", meta.cls)}>
+            {meta.label}
+          </span>
+          {oilState && (
+            <span
+              className={cn(
+                "inline-flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold uppercase",
+                oilState === "overdue"
+                  ? "bg-red-soft text-red-ink"
+                  : "bg-orange-100 text-orange-700",
+              )}
+            >
+              <Droplet size={9} /> масло
+            </span>
+          )}
         </span>
-        <span className="text-[11px] text-muted-2">{num(scooter.mileage)} км</span>
+        <span className="shrink-0 text-[11px] text-muted-2">{num(scooter.mileage)} км</span>
       </div>
     </button>
   );

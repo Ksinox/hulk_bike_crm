@@ -5,6 +5,7 @@ import {
   ArrowDownNarrowWide,
   ArrowUpNarrowWide,
   Check,
+  Droplet,
   HelpCircle,
   Key,
   Layers,
@@ -27,6 +28,7 @@ import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { Topbar } from "@/pages/dashboard/Topbar";
 import { cn } from "@/lib/utils";
 import {
+  oilFlag,
   SCOOTER_STATUS_LABEL,
   type FleetScooter,
   type ScooterDisplayStatus,
@@ -505,6 +507,27 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
   );
 }
 
+/** Компактный бейдж «масло скоро/просрочено» для списка и плиток парка. */
+function OilBadge({ state }: { state: "overdue" | "warn" }) {
+  return (
+    <span
+      title={
+        state === "overdue"
+          ? "Замена масла просрочена"
+          : "Замена масла скоро"
+      }
+      className={cn(
+        "inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider",
+        state === "overdue"
+          ? "bg-red-soft text-red-ink"
+          : "bg-orange-100 text-orange-700",
+      )}
+    >
+      <Droplet size={9} /> масло
+    </span>
+  );
+}
+
 function FleetRow({
   row,
   onOpen,
@@ -517,6 +540,9 @@ function FleetRow({
   onOpen: () => void;
 }) {
   const { scooter, status, rental } = row;
+  // Бейдж масла показываем только для катающих скутеров (парк/в аренде).
+  const oilState =
+    status === "rental_pool" || status === "rented" ? oilFlag(scooter) : null;
   return (
     <div
       onClick={onOpen}
@@ -584,9 +610,16 @@ function FleetRow({
         )}
       </div>
 
-      {/* mileage */}
-      <div className="text-right text-[13px] font-semibold tabular-nums text-ink">
-        {fmt(scooter.mileage)} км
+      {/* mileage + флаг масла */}
+      <div className="text-right">
+        <div className="text-[13px] font-semibold tabular-nums text-ink">
+          {fmt(scooter.mileage)} км
+        </div>
+        {oilState && (
+          <div className="mt-0.5 flex justify-end">
+            <OilBadge state={oilState} />
+          </div>
+        )}
       </div>
 
       {/* action */}
@@ -616,6 +649,8 @@ function FleetTile({
   onOpen: () => void;
 }) {
   const { scooter, status, rental } = row;
+  const oilState =
+    status === "rental_pool" || status === "rented" ? oilFlag(scooter) : null;
   return (
     <div
       onClick={onOpen}
@@ -637,7 +672,10 @@ function FleetTile({
           </div>
         </div>
       </div>
-      <StatusPill status={status} />
+      <div className="flex flex-wrap items-center gap-1.5">
+        <StatusPill status={status} />
+        {oilState && <OilBadge state={oilState} />}
+      </div>
       <div className="flex items-center justify-between gap-2 text-[11px]">
         <span className="min-w-0 truncate text-muted-2">
           {rental
