@@ -1493,10 +1493,21 @@ export function RentalCard({
           } else if (daysLeft === 0) {
             value = `возврат сегодня`;
             accent = "red";
-          } else {
+          } else if (!debtZero) {
+            // Долг по просрочке ещё есть — endPlanned в прошлом, красная
+            // срочность «Просрочен N дн».
             label = "Просрочен";
             value = `${Math.abs(daysLeft)} дн`;
-            accent = debtZero ? "default" : "red";
+            accent = "red";
+          } else {
+            // v0.6.51: долг по просрочке ПОГАШЕН (клиент оплатил дни, что
+            // реально откатал, без продления) → эти дни «выкуплены», период
+            // доходит до сегодня → показываем «возврат сегодня», а не
+            // «Просрочен». Согласуется с шапкой (effectiveStatus='returning'
+            // при долге 0) и устойчиво к ещё не подтянутой свежей endPlanned
+            // после оплаты (бэк двигает её на today при оплате просрочки).
+            value = `возврат сегодня`;
+            accent = "red";
           }
         } else if (rental.status === "overdue") {
           label = "Просрочен";
@@ -2058,27 +2069,9 @@ export function RentalCard({
       {/* v0.6.41: плашка «Пополнить залог» удалена — действие доступно
           через кнопку «Принять оплату» в шапке (одна точка входа). */}
 
-      {/* v0.4.49: плашка «Депозит клиента» — отдельный счёт сверх залога.
-          Показывается только если depositBalance > 0. Кликом открывает
-          карточку клиента. */}
-      {client && (client.depositBalance ?? 0) > 0 && (
-        <button
-          type="button"
-          onClick={() => openClient(client.id)}
-          className="flex items-center justify-between gap-3 rounded-[10px] border border-green-200 bg-green-soft/40 px-3 py-2 text-[12px] text-green-ink transition-colors hover:bg-green-soft/60"
-        >
-          <div className="flex items-center gap-2 min-w-0">
-            <Wallet size={14} className="text-green-600" />
-            <span className="font-semibold">
-              Депозит клиента: {fmt(client.depositBalance ?? 0)} ₽
-            </span>
-            <span className="text-[11px] opacity-75">
-              · сверхлимитный счёт, можно зачесть в продление/долг
-            </span>
-          </div>
-          <span className="shrink-0 text-[11px] opacity-75">→ карточка</span>
-        </button>
-      )}
+      {/* v0.6.51: старая зелёная плашка «Депозит клиента … → карточка» убрана —
+          дублировала кликабельную плашку депозита в KPI-ряду клиента
+          (MasterBlock «N ₽ депозит · выдать»), которая открывает выдачу. */}
 
       {/* v0.8.12: плоская «Заметка:» убрана — заметки теперь стикерами
           (см. StickerStack overlay в drawer-режиме). Старые rental.note
