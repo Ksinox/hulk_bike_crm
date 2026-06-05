@@ -84,8 +84,7 @@ import {
 } from "./rentalsStore";
 import { useModelRateResolver } from "@/lib/api/scooter-models";
 import { ClientQuickView } from "@/pages/clients/ClientQuickView";
-import { RentalEditModal } from "./RentalEditModal";
-import { Eraser, Pencil, Trash2, RotateCcw } from "lucide-react";
+import { Eraser, Trash2, RotateCcw } from "lucide-react";
 import {
   useDeleteRental,
   usePurgeRental,
@@ -367,7 +366,6 @@ export function RentalCard({
   void onPaymentOpenChange;
   void initialTab; // v0.6.44: tabs убраны, prop оставлен для совместимости.
   const [action, setAction] = useState<ActionKind | null>(null);
-  const [editRentalOpen, setEditRentalOpen] = useState(false);
   const [extendOpen, setExtendOpen] = useState(false);
   // v0.8.0: бамп для входа в режим паркинга из ⋯-меню (CalendarPanel слушает).
   const [armParkingSignal, setArmParkingSignal] = useState(0);
@@ -657,12 +655,11 @@ export function RentalCard({
   // во вторичные действия в дропдауне.
   const completeAction = baseActions.find((a) => a.id === "complete");
   const actionsWithoutComplete = baseActions.filter((a) => a.id !== "complete");
-  const editAction: MenuAction = {
-    id: "edit",
-    label: "Изменить аренду",
-    icon: Pencil,
-    tone: "ghost",
-  };
+  // v0.8.x: «Изменить аренду» (сырая правка денег/периода) убрана из меню.
+  // Все правки — безопасными кнопками в карточке: «Изменить период» (даты/
+  // сумма с реконсиляцией платежей), «Заменить скутер», экипировка, залог.
+  // Чистка лишних продлений/замен осталась у директора через «Очистить все
+  // действия по этой аренде» + Ревизор расхождений.
   // «Удалить» — только директор/создатель, но БЕЗ условий (soft-delete = архив).
   const canDelete = me?.role === "director" || me?.role === "creator";
   const deleteAction: MenuAction = {
@@ -709,13 +706,11 @@ export function RentalCard({
     : completeAction
       ? [
           completeAction,
-          editAction,
           ...actionsWithoutComplete,
           ...(canDelete ? [deleteAction] : []),
           ...(isCreator ? [resetChainAction, purgeAction] : []),
         ]
       : [
-          editAction,
           ...actionsWithoutComplete,
           ...(canDelete ? [deleteAction] : []),
           ...(isCreator ? [resetChainAction, purgeAction] : []),
@@ -863,7 +858,6 @@ export function RentalCard({
 
   const handleAction = async (id: string) => {
     if (id === "extend") return setExtendOpen(true);
-    if (id === "edit") return setEditRentalOpen(true);
     if (id === "add-note") return setAddNoteOpen(true);
     // v0.8.0: вход в режим паркинга (основная кнопка 🅿 — в календаре).
     if (id === "set-parking") return setArmParkingSignal((n) => n + 1);
@@ -2521,12 +2515,8 @@ export function RentalCard({
           }}
         />
       )}
-      {editRentalOpen && (
-        <RentalEditModal
-          rental={rental}
-          onClose={() => setEditRentalOpen(false)}
-        />
-      )}
+      {/* «Изменить аренду» (RentalEditModal) удалён — сырая правка денег/
+          периода заменена безопасными кнопками в карточке. */}
       {/* ConfirmPaymentDialog больше не используется — функционал убран. */}
       {extendOpen && (
         <ExtendRentalDialog
