@@ -6,6 +6,22 @@ import {
 } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 
+const API_BASE =
+  import.meta.env.VITE_API_URL?.replace(/\/$/, "") ?? "http://localhost:4000";
+
+export type ApiDamageMedia = {
+  id: number;
+  reportId: number;
+  kind: "photo" | "video";
+  fileKey: string;
+  fileName: string;
+  mimeType: string;
+  size: number;
+  durationSec: number | null;
+  uploadedByUserId: number | null;
+  uploadedAt: string;
+};
+
 export type ApiDamageReportItem = {
   id: number;
   reportId: number;
@@ -48,6 +64,7 @@ export type ApiDamageReport = {
   createdAt: string;
   updatedAt: string;
   items: ApiDamageReportItem[];
+  media: ApiDamageMedia[];
   payments: ApiDamagePayment[];
   paidSum: number;
   debt: number;
@@ -226,6 +243,61 @@ export function useDamagePayment() {
       qc.invalidateQueries({ queryKey: ["rental-debt"] });
       qc.invalidateQueries({ queryKey: ["debt-aggregate"] });
       qc.invalidateQueries({ queryKey: ["activity"] });
+    },
+  });
+}
+
+/**
+ * Загрузить фото/видео повреждения к акту. multipart — через raw fetch
+ * (api.post обернул бы в JSON). durationSec — длительность видео в секундах
+ * (опционально, считаем на клиенте до загрузки).
+ */
+export function useUploadDamageMedia() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (args: {
+      reportId: number;
+      file: File;
+      durationSec?: number | null;
+    }) => {
+      const fd = new FormData();
+      fd.append("file", args.file);
+      if (args.durationSec != null && args.durationSec > 0) {
+        fd.append("durationSec", String(Math.round(args.durationSec)));
+      }
+      const res = await fetch(
+        `${API_BASE}/api/damage-reports/${args.reportId}/media`,
+        { method: "POST", credentials: "include", body: fd },
+      );
+      if (!res.ok) {
+        let body: unknown = null;
+        try {
+          body = await res.json();
+        } catch {
+          /* ignore */
+        }
+        const msg =
+          (body as { message?: string; error?: string })?.message ??
+          (body as { message?: string; error?: string })?.error ??
+          `upload ${res.status}`;
+        throw new Error(msg);
+      }
+      return (await res.json()) as ApiDamageMedia;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: damageReportsKeys.all });
+    },
+  });
+}
+
+/** Удалить медиа повреждения. */
+export function useDeleteDamageMedia() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (mediaId: number) =>
+      api.delete<void>(`/api/damage-reports/media/${mediaId}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: damageReportsKeys.all });
     },
   });
 }

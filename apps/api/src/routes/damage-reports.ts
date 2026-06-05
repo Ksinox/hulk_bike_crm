@@ -5,11 +5,14 @@ import { db } from "../db/index.js";
 import {
   damageReports,
   damageReportItems,
+  damageReportMedia,
   payments,
   rentals,
   scooters,
   users,
 } from "../db/schema.js";
+import { makeFileKey, removeObject } from "../storage/index.js";
+import { putObjectWithImageVariants } from "../storage/image.js";
 import { logActivity } from "../services/activityLog.js";
 import {
   loadDamageBundle,
@@ -80,6 +83,11 @@ async function loadReportFull(reportId: number) {
     .from(damageReportItems)
     .where(eq(damageReportItems.reportId, reportId))
     .orderBy(asc(damageReportItems.sortOrder), asc(damageReportItems.id));
+  const media = await db
+    .select()
+    .from(damageReportMedia)
+    .where(eq(damageReportMedia.reportId, reportId))
+    .orderBy(asc(damageReportMedia.id));
   const pays = await db
     .select()
     .from(payments)
@@ -110,10 +118,21 @@ async function loadReportFull(reportId: number) {
   return {
     ...report,
     items,
+    media,
     payments: paysWithUser,
     paidSum,
     debt,
   };
+}
+
+/** Лимит на загружаемый файл: фото/видео повреждений. Видео большие. */
+const MAX_DAMAGE_MEDIA_SIZE = 120 * 1024 * 1024; // 120 MB
+
+/** Допустимые типы медиа повреждений: изображения и видео. */
+function mediaKindFromMime(mime: string): "photo" | "video" | null {
+  if (mime.startsWith("image/")) return "photo";
+  if (mime.startsWith("video/")) return "video";
+  return null;
 }
 
 export async function damageReportsRoutes(app: FastifyInstance) {
@@ -497,4 +516,89 @@ export async function damageReportsRoutes(app: FastifyInstance) {
     });
     return reply.code(204).send();
   });
+
+  /**
+   * Загрузить фото/видео повреждения к акту. multipart/form-data, поле 'file'.
+   * Принимает image/* и video/*. Фото получают thumb/view-варианты, видео —
+   * хранится как есть. Оператор делает это прямо при приёмке с телефона.
+   */
+  app.post<{ Params: { id: string } }>("/:id/media", async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
+    const [report] = await db
+      .select()
+      .from(damageReports)
+      .where(eq(damageReports.id, id));
+    if (!report) return reply.code(404).send({ error: "not found" });
+    const parts = req.parts({
+      limits: { fileSize: MAX_DAMAGE_MEDIA_SIZE, files: 1 },
+    });
+    let fileBuf: Buffer | null = null;
+    let fileName = "media";
+    let mimeType = "application/octet-stream";
+    let durationSec: number | null = null;
+    for await (const part of parts) {
+      if (part.type === "file") {
+        fileBuf = await part.toBuffer();
+        fileName = part.filename;
+        mimeType = part.mimetype;
+      } else if (part.type === "field" && part.fieldname === "durationSec") {
+        const n = Number(part.value);
+        if (Number.isFinite(n) && n > 0) durationSec = Math.round(n);
+      }
+    }
+    if (!fileBuf) return reply.code(400).send({ error: "file required" });
+    const kind = mediaKindFromMime(mimeType);
+    if (!kind) {
+      return reply.code(400).send({
+        error: "unsupported_media",
+        message: "К акту прикладываются только фото и видео.",
+      });
+    }
+    const key = makeFileKey(`damages/${id}`, fileName);
+    // putObjectWithImageVariants: фото → +thumb/view, видео → сохраняется как есть.
+    await putObjectWithImageVariants(key, fileBuf, mimeType);
+    const userId = getUserId(req);
+    const [row] = await db
+      .insert(damageReportMedia)
+      .values({
+        reportId: id,
+        kind,
+        fileKey: key,
+        fileName,
+        mimeType,
+        size: fileBuf.length,
+        durationSec,
+        uploadedByUserId: userId,
+      })
+      .returning();
+    await logActivity(req, {
+      entity: "damage_report",
+      entityId: id,
+      action: "media_added",
+      summary: `К акту #${id} добавлено ${kind === "video" ? "видео" : "фото"} повреждения`,
+      meta: { mediaId: row!.id, kind },
+    });
+    return reply.code(201).send(row);
+  });
+
+  /** Удалить медиа повреждения (из S3 + БД). */
+  app.delete<{ Params: { mediaId: string } }>(
+    "/media/:mediaId",
+    async (req, reply) => {
+      const mediaId = Number(req.params.mediaId);
+      if (!Number.isFinite(mediaId))
+        return reply.code(400).send({ error: "bad id" });
+      const [row] = await db
+        .select()
+        .from(damageReportMedia)
+        .where(eq(damageReportMedia.id, mediaId));
+      if (!row) return reply.code(404).send({ error: "not found" });
+      await removeObject(row.fileKey).catch(() => {});
+      await db
+        .delete(damageReportMedia)
+        .where(eq(damageReportMedia.id, mediaId));
+      return reply.code(204).send();
+    },
+  );
 }
