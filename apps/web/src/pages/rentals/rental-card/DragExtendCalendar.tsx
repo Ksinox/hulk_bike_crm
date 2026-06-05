@@ -237,6 +237,13 @@ export function DragExtendCalendar({
   const [previewEnd, setPreviewEnd] = useState<DateKey | null>(
     computeInitialPreview,
   );
+  // v0.6.51: hover-превью в режиме «Изменить период» — день под курсором.
+  // Пока новую дату не кликнули, заливаем диапазон start..hover (живой превью,
+  // как при продлении). Сбрасывается при уходе курсора и смене режима.
+  const [editHoverK, setEditHoverK] = useState<DateKey | null>(null);
+  useEffect(() => {
+    setEditHoverK(null);
+  }, [editPeriodMode]);
 
   // Синхронизация с initialDays извне (input в PaymentAcceptDialog / drawer).
   // Это решает баг v0.6.23 — изменение в input не реактивно обновляло
@@ -360,6 +367,28 @@ export function DragExtendCalendar({
     onCommitExtend?.(delta);
   };
 
+  // v0.6.51: hover в режиме «Изменить период» — подсветка диапазона до дня
+  // под курсором (живой превью, как при продлении). Уважает editMinReturnIso
+  // (раньше минимума не подсвечиваем). Делегирование как у onClickGrid.
+  const onHoverGrid = (e: React.MouseEvent) => {
+    if (disabled || !editPeriodMode) return;
+    const tgt = (e.target as HTMLElement).closest(
+      "[data-date]",
+    ) as HTMLElement | null;
+    const iso = tgt?.getAttribute("data-date") ?? null;
+    const k = iso ? isoToKey(iso) : null;
+    if (!k) {
+      setEditHoverK(null);
+      return;
+    }
+    const minK = editMinReturnIso ? isoToKey(editMinReturnIso) : null;
+    if (minK && keyToTime(k) < keyToTime(minK)) {
+      setEditHoverK(null);
+      return;
+    }
+    setEditHoverK(k);
+  };
+
   /* ---- размеры ----
    * v0.7.9: календарь компактнее — ячейка h-9 (36px), шрифт 13px.
    * Раньше было h-11 (44px)/14px — на широкой панели (760px) сетка
@@ -385,7 +414,10 @@ export function DragExtendCalendar({
     //     (editNew); «отрезанный хвост» newEnd..plannedEnd (при сокращении)
     //     остаётся приглушённым (editDim).
     if (editPeriodMode) {
-      const newEndK = editEndIso ? isoToKey(editEndIso) : null;
+      // v0.6.51: приоритет — день под курсором (hover-превью), иначе
+      // зафиксированная дата (после клика), иначе ничего (приглушённый период).
+      const pickedK = editEndIso ? isoToKey(editEndIso) : null;
+      const newEndK = editHoverK ?? pickedK;
       if (newEndK == null) {
         if (t >= startT && t <= plannedT) return "editDim";
         return null;
@@ -548,6 +580,8 @@ export function DragExtendCalendar({
   return (
     <div
       onClick={onClickGrid}
+      onMouseOver={onHoverGrid}
+      onMouseLeave={() => setEditHoverK(null)}
       // v0.7.13: тонкая рамка вокруг сетки месяца — чтобы календарь
       // визуально выделялся в блоке (раньше цифры «парили в воздухе»).
       className="w-full rounded-xl border border-border bg-surface p-2.5"
