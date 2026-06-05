@@ -25,6 +25,7 @@ import { MobileWhatsNew } from "./pages/MobileWhatsNew";
 import { MobileSettings } from "./pages/MobileSettings";
 import { MobileDocuments } from "./pages/MobileDocuments";
 import { MobilePlaceholder } from "./pages/MobilePlaceholder";
+import { StoragePage } from "@/pages/storage/StoragePage";
 
 /**
  * Корень мобильного слоя. Полностью отдельная оболочка: верхняя панель,
@@ -154,6 +155,14 @@ function MobilePage({
       return <MobileSettings />;
     case "docs":
       return <MobileDocuments />;
+    case "storage":
+      // Страница «Хранилище» адаптивна — переиспользуем десктопную в мобильной
+      // обёртке (она и так grid-cols-1 на узком экране).
+      return (
+        <div className="px-1 pb-4">
+          <StoragePage />
+        </div>
+      );
     default:
       return <MobilePlaceholder route={route} />;
   }

@@ -13,6 +13,7 @@ export type RouteId =
   | "analytics"
   | "docs"
   | "staff"
+  | "storage"
   | "whats-new"
   | "settings";
 
@@ -27,6 +28,7 @@ const READY: RouteId[] = [
   "fleet",
   "service",
   "docs",
+  "storage",
   "whats-new",
 ];
 
