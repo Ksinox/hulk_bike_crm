@@ -45,6 +45,13 @@ function diffDaysIso(fromIso: string, toIso: string): number {
   return Math.max(0, Math.round((b - a) / 86400000));
 }
 
+/** Знаковая разница дней (toIso − fromIso): может быть отрицательной. */
+function signedDiffDays(fromIso: string, toIso: string): number {
+  const a = new Date(fromIso).getTime();
+  const b = new Date(toIso).getTime();
+  return Math.round((b - a) / 86400000);
+}
+
 function todayIso(): string {
   const d = new Date();
   const y = d.getFullYear();
@@ -171,8 +178,14 @@ export function CalendarPanel({
     setEditEndIso(endIso);
   };
 
-  // Минимально допустимая дата возврата = старт + MIN_RENTAL_DAYS.
-  const editMinEndIso = startIso ? addDaysIso(startIso, MIN_RENTAL_DAYS) : null;
+  // Минимально допустимая дата возврата: сдвиг от ТЕКУЩЕГО возврата назад
+  // так, чтобы осталось не меньше MIN_RENTAL_DAYS дней аренды. Считаем от
+  // endIso (а не от startIso), потому что у аренды с паркингом/правками
+  // дата возврата ≠ старт + дни (паркинг сдвигает возврат, не добавляя
+  // оплачиваемых дней).
+  const editMinEndIso = endIso
+    ? addDaysIso(endIso, -Math.max(0, rental.days - MIN_RENTAL_DAYS))
+    : null;
   // Дневная стоимость платной экипировки (как в ExtendRentalDialog) —
   // прибавляется к ставке при расчёте суммы.
   const equipmentDaily = useMemo(
@@ -183,23 +196,26 @@ export function CalendarPanel({
       ),
     [rental.equipmentJson],
   );
-  // Пересчёт по выбранной дате: days → tier → rate → sum.
+  // Пересчёт: новое число дней = текущие дни аренды + сдвиг даты возврата
+  // относительно ТЕКУЩЕГО возврата (а не абсолютный span старт→возврат).
+  // Так паркинг/правки не превращаются в оплачиваемые дни: подвинули
+  // возврат на −3 дня → на 3 дня меньше аренды. days → tier → rate → sum.
   const editPreview = useMemo(() => {
-    if (!editMode || !startIso || !editEndIso || !previewRate) return null;
-    const rawDays = diffDaysIso(startIso, editEndIso);
-    const days = Math.max(MIN_RENTAL_DAYS, rawDays);
+    if (!editMode || !endIso || !editEndIso || !previewRate) return null;
+    const deltaDays = signedDiffDays(endIso, editEndIso);
+    const days = Math.max(MIN_RENTAL_DAYS, rental.days + deltaDays);
     const rate = previewRate(days);
     const sum = (rate + equipmentDaily) * days;
     const tariffPeriod = periodForDays(days) as Exclude<TariffPeriod, "day">;
     return { days, rate, sum, tariffPeriod, ratePeriod: ratePeriodForDays(days) };
-  }, [editMode, startIso, editEndIso, previewRate, equipmentDaily]);
+  }, [editMode, endIso, editEndIso, previewRate, equipmentDaily, rental.days]);
 
   const commitEdit = () => {
-    if (!editPreview || !editEndIso || !startIso) return;
-    // Дата возврата = старт + итоговые дни. editPreview.days уже зажат снизу
-    // до MIN_RENTAL_DAYS, поэтому ручной ввод даты < минимума не уедет в
-    // рассинхрон «дата ↔ кол-во дней».
-    const endIsoClamped = addDaysIso(startIso, editPreview.days);
+    if (!editPreview || !editEndIso || !endIso) return;
+    // Новая дата возврата = текущий возврат, сдвинутый на разницу дней
+    // (editPreview.days зажат снизу до MIN, поэтому если оператор ввёл
+    // слишком раннюю дату — возврат подтянется к минимально допустимому).
+    const endIsoClamped = addDaysIso(endIso, editPreview.days - rental.days);
     onChangePeriod?.({
       endPlannedAtIso: endIsoClamped,
       days: editPreview.days,
