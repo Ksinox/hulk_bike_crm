@@ -470,6 +470,27 @@ export function formatActivitySummary(
     };
   }
 
+  // ── Изменён период продления (безопасный инструмент «Изменить период») ──
+  // Бэк кладёт diff.branchPeriod = { from:"12.06–19.06", to:"12.06–16.06" } —
+  // период ПОСЛЕДНЕЙ ВЕТКИ продления «от-и-до». Показываем его пилюлей
+  // «было → стало» + новую сумму аренды. Чёткий период — главное требование.
+  const branchPeriod = readRecord(diff?.branchPeriod);
+  if (branchPeriod && (branchPeriod.from != null || branchPeriod.to != null)) {
+    const extras: string[] = [];
+    const sum = readRecord(diff?.sum);
+    if (sum && (sum.from != null || sum.to != null))
+      extras.push(`Сумма аренды: ${money(sum.from)} → ${money(sum.to)}`);
+    return {
+      title: "Изменён период продления",
+      change: {
+        from: branchPeriod.from != null ? String(branchPeriod.from) : null,
+        to: branchPeriod.to != null ? String(branchPeriod.to) : null,
+        tone: "blue",
+      },
+      extras,
+    };
+  }
+
   // ── Создание ──
   if (action === "created" && item.entity === "rental") {
     return { title: "Аренда создана", change: null, extras: [] };
