@@ -138,6 +138,7 @@ export function DragExtendCalendar({
   editEndIso,
   onEditPeriodPick,
   editMinReturnIso,
+  editDimFromIso,
 }: {
   startIso: string;
   plannedEndIso: string;
@@ -193,6 +194,13 @@ export function DragExtendCalendar({
   onEditPeriodPick?: (iso: string) => void;
   /** Самая ранняя допустимая дата возврата (дней ≥ MIN). Клик раньше — игнор. */
   editMinReturnIso?: string | null;
+  /**
+   * v0.8.x: левая граница приглушённой «текущей» зоны в режиме редактирования.
+   * Для ПРОДЛЁННОЙ аренды = end1 (начало последней ветки) — приглушаем и
+   * подсвечиваем только последнюю ветку, прошлый период вообще не трогаем.
+   * Если не задан — берём startIso (одно-периодная: весь период).
+   */
+  editDimFromIso?: string | null;
 }) {
   const startKey = isoToKey(startIso);
   const plannedEndKey = isoToKey(plannedEndIso);
@@ -279,6 +287,10 @@ export function DragExtendCalendar({
   const startT = keyToTime(startKey);
   const plannedT = keyToTime(plannedEndKey);
   const baseT = keyToTime(baseEndKey);
+  // v0.8.x: левая граница «текущей» зоны в режиме редактирования. Продлённая
+  // аренда → end1 (последняя ветка), иначе → старт периода.
+  const editFromKey = editDimFromIso ? isoToKey(editDimFromIso) : null;
+  const editFromT = editFromKey ? keyToTime(editFromKey) : startT;
   const todayT = keyToTime(todayKey);
   const previewT = previewEnd ? keyToTime(previewEnd) : null;
   const previewDays = previewEnd ? diffDays(baseEndKey, previewEnd) : 0;
@@ -407,23 +419,29 @@ export function DragExtendCalendar({
   type Zone = "blue" | "red" | "ext" | "parking" | "editDim" | "editNew" | null;
   const zoneOf = (k: DateKey): Zone => {
     const t = keyToTime(k);
-    // v0.6.50: режим «Изменить период» переопределяет обычные зоны.
-    //   • Ничего не выбрано → текущий период start..plannedEnd показан
-    //     приглушённо (editDim) — оператор видит «что было».
-    //   • Выбрана новая дата → новый период start..newEnd подсвечен
-    //     (editNew); «отрезанный хвост» newEnd..plannedEnd (при сокращении)
-    //     остаётся приглушённым (editDim).
+    // v0.6.50 / v0.8.x: режим «Изменить период» переопределяет обычные зоны.
+    // Редактируемая часть начинается с editFromT:
+    //   • одно-период  → editFromT = старт (правим весь период);
+    //   • продлённая   → editFromT = end1 (правим ТОЛЬКО последнюю ветку);
+    //     часть start..end1 (первоначалка + прошлые ветки) показана обычной
+    //     синей зоной (blue) — она зафиксирована, её не двигаем.
+    //   • Ничего не выбрано → редактируемый период editFrom..plannedEnd
+    //     приглушён (editDim) — оператор видит «что правим».
+    //   • Выбрана новая дата → новый период editFrom..newEnd подсвечен
+    //     (editNew); «отрезанный хвост» newEnd..plannedEnd остаётся editDim.
     if (editPeriodMode) {
+      // Зафиксированная (уже оплаченная) часть до начала редактируемой ветки.
+      if (editFromT > startT && t >= startT && t < editFromT) return "blue";
       // v0.6.51: приоритет — день под курсором (hover-превью), иначе
       // зафиксированная дата (после клика), иначе ничего (приглушённый период).
       const pickedK = editEndIso ? isoToKey(editEndIso) : null;
       const newEndK = editHoverK ?? pickedK;
       if (newEndK == null) {
-        if (t >= startT && t <= plannedT) return "editDim";
+        if (t >= editFromT && t <= plannedT) return "editDim";
         return null;
       }
       const newEndT = keyToTime(newEndK);
-      if (t >= startT && t <= newEndT) return "editNew";
+      if (t >= editFromT && t <= newEndT) return "editNew";
       if (t > newEndT && t <= plannedT) return "editDim";
       return null;
     }

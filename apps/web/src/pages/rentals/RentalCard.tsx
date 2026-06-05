@@ -114,6 +114,24 @@ function parseDate(s: string): Date | null {
   return new Date(+m[3], +m[2] - 1, +m[1]);
 }
 
+/** DD.MM.YYYY → YYYY-MM-DD (для расчёта границ веток продления). */
+function ruToIsoLocal(ru: string | undefined | null): string | null {
+  if (!ru) return null;
+  const m = ru.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  if (!m) return null;
+  return `${m[3]}-${m[2]}-${m[1]}`;
+}
+
+/** Прибавляет days к ISO-дате (YYYY-MM-DD), возвращает ISO. days может быть <0. */
+function addDaysIsoLocal(iso: string, days: number): string {
+  const d = new Date(`${iso}T00:00:00`);
+  d.setDate(d.getDate() + days);
+  const y = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, "0");
+  const da = String(d.getDate()).padStart(2, "0");
+  return `${y}-${mo}-${da}`;
+}
+
 function daysBetween(a: Date, b: Date): number {
   // разница в календарных днях: нормализуем оба к началу дня
   const aD = new Date(a.getFullYear(), a.getMonth(), a.getDate()).getTime();
@@ -1254,35 +1272,75 @@ export function RentalCard({
   const previewRate = (days: number): number =>
     resolveRate(rental, ratePeriodForDays(Math.max(MIN_RENTAL_DAYS, days)));
 
-  // v0.6.51: «Изменить период» доступно только для одно-периодной аренды.
-  // Продление добавляет отдельный rent-платёж (накопление по тарифам разных
-  // периодов), поэтому >1 rent-платежа = аренду продлевали. Одно-периодный
-  // пересчёт коррекции не сошёлся бы с этой суммой → выручка поехала бы.
-  // Такие аренды правятся через продление; кнопку блокируем.
-  const hasExtensions =
-    rentalPayments.filter((p) => p.type === "rent").length > 1;
+  // v0.8.x: «Изменить период» для ПРОДЛЁННЫХ аренд — правка ТОЛЬКО последней
+  // ветки продления (анти-фрод: прошлые, уже оплаченные ветки не двигаем).
+  //
+  // Модель веток: первоначальный период (start → end1) + каждое продление
+  // добавляет отдельный rent-платёж с заметкой «продление на N дн …» и
+  // сдвигает endPlannedAt на N. Последняя ветка = самое позднее продление.
+  //
+  // Восстановление последней ветки из существующих данных:
+  //   • Платёж последней ветки = rent-платёж с заметкой /продление на (\d+) дн/
+  //     и НАИБОЛЬШИМ id (payments.id — bigserial, монотонен → больший id =
+  //     более позднее продление). Заметки «оплата аренды», «Оплата N дн
+  //     просрочки», «Оплата ручного долга» сюда НЕ попадают — это не ветки
+  //     периода, а первоначалка / просрочка / ручной долг.
+  //   • N (дни последней ветки) — из заметки этого платежа.
+  //   • end1 = endPlanned (end2) − N дней — граница последней ветки.
+  //   • Текущая оплаченная сумма последней ветки = amount этого платежа.
+  const EXT_NOTE_RE = /продлени[ея]\s+на\s+(\d+)\s*дн/i;
+  const lastBranch = useMemo(() => {
+    const endIso = ruToIsoLocal(rental.endPlanned);
+    if (!endIso) return null;
+    const extPayments = rentalPayments
+      .filter((p) => p.type === "rent" && EXT_NOTE_RE.test(p.note ?? ""))
+      .map((p) => {
+        const m = (p.note ?? "").match(EXT_NOTE_RE);
+        return { p, branchDays: m ? Number(m[1]) : 0 };
+      })
+      .filter((x) => x.branchDays > 0);
+    if (extPayments.length === 0) return null;
+    // Самое позднее продление — максимальный id платежа.
+    const last = extPayments.reduce((a, b) => (b.p.id > a.p.id ? b : a));
+    const end1Iso = addDaysIsoLocal(endIso, -last.branchDays);
+    return {
+      paymentId: last.p.id,
+      branchDays: last.branchDays,
+      end1Iso, // граница последней ветки (ISO YYYY-MM-DD)
+      end2Iso: endIso, // текущий возврат (ISO)
+      paidBranchSum: last.p.paid ? last.p.amount : 0,
+      currentBranchAmount: last.p.amount,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rentalPayments, rental.endPlanned]);
 
-  // v0.6.50: «Изменить период» — приходит из CalendarPanel с уже пересчитанными
-  // {endPlannedAtIso, days, rate, sum, tariffPeriod}. Здесь: (1) при сокращении
-  // оплаченной аренды спрашиваем куда деть излишек, (2) вызываем patchRental
-  // (бэк синхронит rent-платёж + логирует было→стало), (3) тост.
+  // Аренду можно править «Изменить период» всегда (одно-периодную — как
+  // раньше; продлённую — правя последнюю ветку). Кнопку больше не блокируем.
+  const canEditPeriod = true;
+
+  // v0.6.50 / v0.8.x: «Изменить период» — приходит из CalendarPanel с уже
+  // пересчитанными ИТОГОВЫМИ {endPlannedAtIso, days, rate, sum, tariffPeriod}.
+  // Для ПРОДЛЁННОЙ аренды CalendarPanel дополнительно присылает данные ветки:
+  //   • rentPaymentId — какой rent-платёж синхронизировать (последняя ветка);
+  //   • branchSum     — новая сумма ТОЛЬКО последней ветки (к ней подгоняем платёж);
+  //   • paidBranchSum — сколько уже оплачено по этой ветке (для расчёта излишка).
+  // Излишек/недоплата считаются ПО ВЕТКЕ (а не по всей аренде), потому что
+  // прошлые ветки мы не трогаем — их платежи остаются как есть.
   const handleChangePeriod = async (next: {
     endPlannedAtIso: string;
     days: number;
     rate: number;
     sum: number;
     tariffPeriod: "short" | "week" | "month";
+    /** v0.8.x: id rent-платежа последней ветки (только для продлённой аренды). */
+    rentPaymentId?: number;
+    /** v0.8.x: новая сумма последней ветки. */
+    branchSum?: number;
+    /** v0.8.x: уже оплачено по последней ветке. */
+    paidBranchSum?: number;
   }) => {
     if (rental.archivedAt || rental.status === "completed") return;
-    // v0.6.51: страховка — на продлённой аренде коррекция периода запрещена
-    // (кнопка уже заблокирована, но защищаемся и здесь).
-    if (hasExtensions) {
-      toast.error(
-        "Период правится в продлении",
-        "Аренду продлевали — скорректируйте срок через продление.",
-      );
-      return;
-    }
+    const isBranchEdit = next.rentPaymentId != null;
     const prevDays = rental.days;
     // ISO YYYY-MM-DD → DD.MM.YYYY (формат, который ждёт patchRental).
     const m = next.endPlannedAtIso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -1292,18 +1350,26 @@ export function RentalCard({
     }
     const endPlannedRu = `${m[3]}.${m[2]}.${m[1]}`;
 
-    // Уже оплаченная по аренде сумма (rent, paid). Если новая сумма меньше —
-    // образуется излишек: спрашиваем «в депозит» vs «выдать клиенту».
-    const paidRent = rentalPayments
-      .filter((p) => p.type === "rent" && p.paid)
-      .reduce((s, p) => s + p.amount, 0);
-    const overpay = paidRent > 0 ? paidRent - next.sum : 0;
+    // База для расчёта излишка:
+    //   • продлённая аренда → оплачено по ВЕТКЕ vs новая сумма ВЕТКИ;
+    //   • одно-периодная   → оплачено по аренде vs новая сумма аренды.
+    // Если новая сумма меньше оплаченной — образуется излишек: спрашиваем
+    // «в депозит» vs «выдать клиенту».
+    const paidBase = isBranchEdit
+      ? next.paidBranchSum ?? 0
+      : rentalPayments
+          .filter((p) => p.type === "rent" && p.paid)
+          .reduce((s, p) => s + p.amount, 0);
+    const newBase = isBranchEdit ? next.branchSum ?? 0 : next.sum;
+    const overpay = paidBase > 0 ? paidBase - newBase : 0;
 
     let creditToDeposit = false;
     if (overpay > 0) {
       const choice = await pickAction<"deposit" | "cash">({
         title: "Аренда стала дешевле",
-        message: `Уже оплачено ${fmt(paidRent)} ₽, новая сумма ${fmt(next.sum)} ₽. Излишек ${fmt(overpay)} ₽.`,
+        message: `Уже оплачено ${fmt(paidBase)} ₽, новая сумма ${
+          isBranchEdit ? "ветки " : ""
+        }${fmt(newBase)} ₽. Излишек ${fmt(overpay)} ₽.`,
         options: [
           {
             id: "deposit",
@@ -1323,18 +1389,23 @@ export function RentalCard({
     }
 
     try {
-      patchRental(rental.id, {
-        endPlanned: endPlannedRu,
-        startTime: rental.startTime,
-        days: next.days,
-        // Коррекция периода считается по ДНЯМ → ставка дневная, фиксируем
-        // rateUnit="day", иначе у недельной аренды дневное значение легло бы
-        // в поле с единицей «нед» и ставка/сумма разъехались бы.
-        rate: next.rate,
-        rateUnit: "day",
-        sum: next.sum,
-        tariffPeriod: next.tariffPeriod,
-      });
+      patchRental(
+        rental.id,
+        {
+          endPlanned: endPlannedRu,
+          startTime: rental.startTime,
+          days: next.days,
+          // Коррекция периода считается по ДНЯМ → ставка дневная, фиксируем
+          // rateUnit="day", иначе у недельной аренды дневное значение легло бы
+          // в поле с единицей «нед» и ставка/сумма разъехались бы.
+          rate: next.rate,
+          rateUnit: "day",
+          sum: next.sum,
+          tariffPeriod: next.tariffPeriod,
+        },
+        // Продлённая аренда: бэк синхронит платёж ИМЕННО последней ветки.
+        isBranchEdit ? { rentPaymentId: next.rentPaymentId } : undefined,
+      );
       if (creditToDeposit && overpay > 0) {
         await api.post(`/api/clients/${rental.clientId}/deposit/charge`, {
           amount: overpay,
@@ -2130,7 +2201,8 @@ export function RentalCard({
             effectiveStatus={effectiveStatus}
             onCommitExtend={handleCommitExtend}
             onChangePeriod={handleChangePeriod}
-            canEditPeriod={!hasExtensions}
+            canEditPeriod={canEditPeriod}
+            lastBranch={lastBranch}
             previewRate={previewRate}
             resetSignal={onRequestPayment ? paymentResetSignal : calendarResetSignal}
             initialExtDays={
@@ -2393,7 +2465,8 @@ export function RentalCard({
               effectiveStatus={effectiveStatus}
               onCommitExtend={handleCommitExtend}
               onChangePeriod={handleChangePeriod}
-              canEditPeriod={!hasExtensions}
+              canEditPeriod={canEditPeriod}
+              lastBranch={lastBranch}
               previewRate={previewRate}
               // v0.7.3: при parent-managed Payment календарь синхронизируется
               // с состоянием в Rentals (число дней + сигнал сброса); иначе —

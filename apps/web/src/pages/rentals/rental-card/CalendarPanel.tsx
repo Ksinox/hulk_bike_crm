@@ -87,6 +87,7 @@ export function CalendarPanel({
   onCommitExtend,
   onChangePeriod,
   canEditPeriod = true,
+  lastBranch,
   previewRate,
   calendarBoxRef,
   hideCalendar,
@@ -110,14 +111,40 @@ export function CalendarPanel({
     rate: number;
     sum: number;
     tariffPeriod: Exclude<TariffPeriod, "day">;
+    /** v0.8.x: id rent-платежа последней ветки (только для продлённой аренды). */
+    rentPaymentId?: number;
+    /** v0.8.x: новая сумма последней ветки (к ней синхронизируется платёж). */
+    branchSum?: number;
+    /** v0.8.x: уже оплачено по последней ветке (для расчёта излишка). */
+    paidBranchSum?: number;
   }) => void;
   /**
-   * v0.6.51: false → аренду продлевали (несколько rent-платежей, накопленных
-   * по тарифам разных периодов). «Изменить период» блокируется: одно-периодный
-   * пересчёт не сходится с суммой продлений (даёт неверную выручку). Такие
-   * правки делаются через продление, не через коррекцию периода.
+   * v0.6.51 / v0.8.x: раньше false блокировало кнопку на продлённой аренде.
+   * Теперь продлённые правятся через «последнюю ветку» (см. lastBranch), и
+   * флаг остаётся true. Проп сохранён для совместимости/будущих блокировок.
    */
   canEditPeriod?: boolean;
+  /**
+   * v0.8.x: для ПРОДЛЁННОЙ аренды — данные последней ветки продления.
+   * null = аренда одно-периодная (правим как раньше — весь период).
+   *   • end1Iso  — граница последней ветки (начало последнего продления);
+   *   • end2Iso  — текущий возврат (= rental.endPlanned);
+   *   • branchDays — дни последней ветки (N из заметки «продление на N дн»);
+   *   • paymentId  — rent-платёж этой ветки (его amount синхронизируем);
+   *   • currentBranchAmount — текущая сумма платежа ветки;
+   *   • paidBranchSum — оплачено по ветке (paid ? amount : 0).
+   * «Изменить период» на такой аренде двигает ТОЛЬКО дату возврата в
+   * пределах [end1 … позже]; раньше end1 нельзя (это сократило бы прошлый,
+   * уже оплаченный период — анти-фрод).
+   */
+  lastBranch?: {
+    paymentId: number;
+    branchDays: number;
+    end1Iso: string;
+    end2Iso: string;
+    paidBranchSum: number;
+    currentBranchAmount: number;
+  } | null;
   /**
    * v0.6.50: ставка ₽/сут для N дней по тарифной сетке модели аренды.
    * Резолвится в RentalCard (useModelRateResolver). Используется в превью
@@ -189,14 +216,25 @@ export function CalendarPanel({
     setEditEndIso(null);
   };
 
-  // Минимально допустимая дата возврата: сдвиг от ТЕКУЩЕГО возврата назад
-  // так, чтобы осталось не меньше MIN_RENTAL_DAYS дней аренды. Считаем от
-  // endIso (а не от startIso), потому что у аренды с паркингом/правками
-  // дата возврата ≠ старт + дни (паркинг сдвигает возврат, не добавляя
-  // оплачиваемых дней).
-  const editMinEndIso = endIso
-    ? addDaysIso(endIso, -Math.max(0, rental.days - MIN_RENTAL_DAYS))
-    : null;
+  // v0.8.x: продлённая аренда — правим ТОЛЬКО последнюю ветку. Зона «было» на
+  // календаре начинается с end1 (граница ветки), а не со старта; минимально
+  // допустимая дата возврата = end1 (раньше нельзя — это сократило бы прошлый,
+  // уже оплаченный период; анти-фрод).
+  const isBranchEdit = !!lastBranch;
+  // Левая граница приглушённой «текущей» зоны в режиме редактирования:
+  // продлённая — end1 (последняя ветка), одно-периодная — старт.
+  const editDimFromIso = isBranchEdit ? lastBranch!.end1Iso : startIso;
+
+  // Минимально допустимая дата возврата:
+  //   • продлённая  → end1 (нельзя залезть в прошлую ветку);
+  //   • одно-период → сдвиг от ТЕКУЩЕГО возврата назад так, чтобы осталось не
+  //     меньше MIN_RENTAL_DAYS дней аренды (считаем от endIso, т.к. паркинг/
+  //     правки делают возврат ≠ старт + дни).
+  const editMinEndIso = isBranchEdit
+    ? lastBranch!.end1Iso
+    : endIso
+      ? addDaysIso(endIso, -Math.max(0, rental.days - MIN_RENTAL_DAYS))
+      : null;
   // Дневная стоимость платной экипировки (как в ExtendRentalDialog) —
   // прибавляется к ставке при расчёте суммы.
   const equipmentDaily = useMemo(
@@ -207,12 +245,42 @@ export function CalendarPanel({
       ),
     [rental.equipmentJson],
   );
-  // Пересчёт: новое число дней = текущие дни аренды + сдвиг даты возврата
-  // относительно ТЕКУЩЕГО возврата (а не абсолютный span старт→возврат).
-  // Так паркинг/правки не превращаются в оплачиваемые дни: подвинули
-  // возврат на −3 дня → на 3 дня меньше аренды. days → tier → rate → sum.
+  // Пересчёт. Две ветви:
+  //   • ОДНО-ПЕРИОДНАЯ: новое число дней = текущие дни + сдвиг возврата;
+  //     days → tier → rate → sum (как раньше). Возвращаются ИТОГОВЫЕ значения.
+  //   • ПРОДЛЁННАЯ: пересчитываем ТОЛЬКО последнюю ветку. Дни ветки =
+  //     (новый возврат − end1). Ставка ветки = текущая дневная ставка аренды
+  //     (rental.rate, по которой было оформлено последнее продление) — БЕЗ
+  //     ре-тарификации (двигаем дату, не меняем цену продления). Сумма ветки =
+  //     (ставка + экипировка) × дни ветки. ИТОГ по аренде:
+  //       days = (rental.days − старые дни ветки) + новые дни ветки
+  //       sum  = (rental.sum  − текущая сумма платежа ветки) + сумма ветки
+  //     Так первоначальный период и прошлые ветки остаются нетронутыми, а
+  //     сумма аренды = первоначалка + новая последняя ветка (рубль-в-рубль).
   const editPreview = useMemo(() => {
     if (!editMode || !endIso || !editEndIso || !previewRate) return null;
+    if (isBranchEdit) {
+      const lb = lastBranch!;
+      // Дни последней ветки: новый возврат − end1 (зажато снизу нулём — на
+      // end1 ветка схлопывается в 0 дней = продление отменено).
+      const branchDays = Math.max(0, signedDiffDays(lb.end1Iso, editEndIso));
+      const branchRate = dailyRate; // ставка продления, без ре-тарификации
+      const branchSum = (branchRate + equipmentDaily) * branchDays;
+      const days = rental.days - lb.branchDays + branchDays;
+      const sum = rental.sum - lb.currentBranchAmount + branchSum;
+      // tariffPeriod для всей аренды считаем по ИТОГОВЫМ дням (поле rental).
+      const tariffPeriod = periodForDays(
+        Math.max(MIN_RENTAL_DAYS, days),
+      ) as Exclude<TariffPeriod, "day">;
+      return {
+        days,
+        rate: branchRate,
+        sum,
+        tariffPeriod,
+        ratePeriod: ratePeriodForDays(Math.max(MIN_RENTAL_DAYS, days)),
+        branch: { days: branchDays, sum: branchSum, rate: branchRate },
+      };
+    }
     const deltaDays = signedDiffDays(endIso, editEndIso);
     const days = Math.max(MIN_RENTAL_DAYS, rental.days + deltaDays);
     const newTier = ratePeriodForDays(days);
@@ -224,11 +292,39 @@ export function CalendarPanel({
     const rate = newTier === oldTier ? dailyRate : previewRate(days);
     const sum = (rate + equipmentDaily) * days;
     const tariffPeriod = periodForDays(days) as Exclude<TariffPeriod, "day">;
-    return { days, rate, sum, tariffPeriod, ratePeriod: newTier };
-  }, [editMode, endIso, editEndIso, previewRate, equipmentDaily, rental.days, dailyRate]);
+    return { days, rate, sum, tariffPeriod, ratePeriod: newTier, branch: null };
+  }, [
+    editMode,
+    endIso,
+    editEndIso,
+    previewRate,
+    equipmentDaily,
+    rental.days,
+    rental.sum,
+    dailyRate,
+    isBranchEdit,
+    lastBranch,
+  ]);
 
   const commitEdit = () => {
     if (!editPreview || !editEndIso || !endIso) return;
+    if (isBranchEdit && editPreview.branch) {
+      const lb = lastBranch!;
+      // Новый возврат = end1 + дни ветки (зажато до end1 при 0 днях).
+      const endIsoClamped = addDaysIso(lb.end1Iso, editPreview.branch.days);
+      onChangePeriod?.({
+        endPlannedAtIso: endIsoClamped,
+        days: editPreview.days,
+        rate: editPreview.rate,
+        sum: editPreview.sum,
+        tariffPeriod: editPreview.tariffPeriod,
+        rentPaymentId: lb.paymentId,
+        branchSum: editPreview.branch.sum,
+        paidBranchSum: lb.paidBranchSum,
+      });
+      exitEdit();
+      return;
+    }
     // Новая дата возврата = текущий возврат, сдвинутый на разницу дней
     // (editPreview.days зажат снизу до MIN, поэтому если оператор ввёл
     // слишком раннюю дату — возврат подтянется к минимально допустимому).
@@ -486,7 +582,71 @@ export function CalendarPanel({
           сводка было→стало. Стиль как у блока-сводки паркинга. */}
       {editMode && (
         <div className="mb-2.5 rounded-[10px] border border-blue-200 bg-blue-50/70 px-3 py-2">
-          {!editPreview ? (
+          {/* v0.8.x: для ПРОДЛЁННОЙ аренды правится только последняя ветка —
+              «Было/Стало» считаем по ВЕТКЕ (а не по всей аренде), и явно об
+              этом говорим. Цифры «Было» ветки: дни/сумма последнего продления;
+              «Стало»: пересчитанная ветка. Разница = новая ветка − старая ветка. */}
+          {isBranchEdit && lastBranch ? (
+            !editPreview || !editPreview.branch ? (
+              <span className="text-[12px] text-ink-2">
+                📅 Правим <b>последнее продление</b> ({isoToShort(lastBranch.end1Iso)}–
+                {isoToShort(lastBranch.end2Iso)}). Кликните новую дату возврата —
+                не раньше <b>{isoToShort(lastBranch.end1Iso)}</b> (прошлый период
+                не двигаем).
+              </span>
+            ) : (
+              <div className="flex flex-col gap-1 text-[12px] text-ink-2">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-blue-700/80">
+                  Последнее продление
+                </div>
+                <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                  <span className="text-muted-2">Было:</span>
+                  <b className="tabular-nums">{lastBranch.branchDays} дн</b>
+                  <span className="text-muted-2">· тариф</span>
+                  <b className="tabular-nums">{dailyRate} ₽/сут</b>
+                  <span className="text-muted-2">· ветка</span>
+                  <b className="tabular-nums">
+                    {fmtNum(lastBranch.currentBranchAmount)} ₽
+                  </b>
+                </div>
+                <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                  <span className="font-semibold text-blue-700">Стало:</span>
+                  <b className="tabular-nums text-blue-700">
+                    {editPreview.branch.days} дн
+                  </b>
+                  <span className="text-muted-2">· тариф</span>
+                  <b className="tabular-nums text-blue-700">
+                    {editPreview.branch.rate} ₽/сут
+                  </b>
+                  <span className="text-muted-2">· ветка</span>
+                  <b className="tabular-nums text-blue-700">
+                    {fmtNum(editPreview.branch.sum)} ₽
+                  </b>
+                </div>
+                {editPreview.branch.sum !== lastBranch.currentBranchAmount && (
+                  <div
+                    className={cn(
+                      "mt-0.5 text-[11.5px] font-semibold",
+                      editPreview.branch.sum > lastBranch.currentBranchAmount
+                        ? "text-emerald-700"
+                        : "text-red-ink",
+                    )}
+                  >
+                    Разница по ветке:{" "}
+                    {editPreview.branch.sum > lastBranch.currentBranchAmount
+                      ? "+"
+                      : "−"}
+                    {fmtNum(
+                      Math.abs(
+                        editPreview.branch.sum - lastBranch.currentBranchAmount,
+                      ),
+                    )}{" "}
+                    ₽ · сумма аренды {fmtNum(editPreview.sum)} ₽
+                  </div>
+                )}
+              </div>
+            )
+          ) : !editPreview ? (
             <span className="text-[12px] text-ink-2">
               📅 Кликните на календаре новую дату возврата. Старт{" "}
               <b>{rental.start}</b> зафиксирован.
@@ -588,6 +748,7 @@ export function CalendarPanel({
               editEndIso={editEndIso}
               onEditPeriodPick={(iso) => setEditEndIso(iso)}
               editMinReturnIso={editMinEndIso}
+              editDimFromIso={editDimFromIso}
             />
           </div>
         )}
