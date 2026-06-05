@@ -13,7 +13,7 @@ import { useModelRateResolver } from "@/lib/api/scooter-models";
 import { extendInplaceAsync, equipmentChangeAsync } from "./rentalsStore";
 import { toast } from "@/lib/toast";
 import { PaymentAcceptDialog } from "./PaymentAcceptDialog";
-import { EquipmentEditor } from "./RentalEditModal";
+import { EquipmentEditor } from "./EquipmentEditor";
 
 type EquipmentSnapshot = {
   itemId?: number | null;
