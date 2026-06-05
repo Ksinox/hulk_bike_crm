@@ -175,7 +175,10 @@ export function CalendarPanel({
     setParkingMode(false);
     setDraftStart(null);
     setEditMode(true);
-    setEditEndIso(endIso);
+    // v0.6.50: НИЧЕГО не выбираем при входе — текущий период на календаре
+    // показывается приглушённым (editDim), а «Зафиксировать» стартует
+    // неактивной. Новую дату возврата оператор кликает прямо на календаре.
+    setEditEndIso(null);
   };
 
   // Минимально допустимая дата возврата: сдвиг от ТЕКУЩЕГО возврата назад
@@ -372,7 +375,7 @@ export function CalendarPanel({
                 <button
                   type="button"
                   onClick={commitEdit}
-                  disabled={!editPreview}
+                  disabled={!editPreview || !editEndIso || editEndIso === endIso}
                   title="Зафиксировать новый период"
                   className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-blue-600 bg-blue-600 px-3 text-[12px] font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 active:scale-[0.98] disabled:opacity-60"
                 >
@@ -463,29 +466,20 @@ export function CalendarPanel({
         </div>
       )}
 
-      {/* v0.6.50: панель «Изменить период» — перевыбор даты возврата + сводка
-          было→стало. Старт зафиксирован; дата возврата ≥ старт + MIN дней.
-          Стилизована под блок-сводку паркинга (компактная, с переносом). */}
+      {/* v0.6.50: «Изменить период» правится ПРЯМО на календаре — новую дату
+          возврата оператор кликает на той же сетке (текущий период там
+          приглушён). Здесь — только компактная сводка НАД календарём:
+          пока ничего не выбрано — подсказка «кликните дату»; после клика —
+          сводка было→стало. Стиль как у блока-сводки паркинга. */}
       {editMode && (
-        <div className="mb-2.5 rounded-[10px] border border-blue-200 bg-blue-50/70 px-3 py-2.5">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-            <label className="flex items-center gap-2 text-[12px] font-semibold text-ink">
-              <span className="whitespace-nowrap">Новая дата возврата</span>
-              <input
-                type="date"
-                value={editEndIso ?? ""}
-                min={editMinEndIso ?? undefined}
-                onChange={(e) => setEditEndIso(e.target.value || null)}
-                className="h-8 rounded-[8px] border border-border bg-surface px-2 text-[13px] tabular-nums text-ink outline-none focus:border-blue-600"
-              />
-            </label>
-            <span className="text-[11px] text-muted-2">
-              старт {rental.start} зафиксирован · мин {MIN_RENTAL_DAYS}{" "}
-              {MIN_RENTAL_DAYS === 1 ? "сутки" : "суток"}
+        <div className="mb-2.5 rounded-[10px] border border-blue-200 bg-blue-50/70 px-3 py-2">
+          {!editPreview ? (
+            <span className="text-[12px] text-ink-2">
+              📅 Кликните на календаре новую дату возврата. Старт{" "}
+              <b>{rental.start}</b> зафиксирован.
             </span>
-          </div>
-          {editPreview && (
-            <div className="mt-2 flex flex-col gap-1 text-[12px] text-ink-2">
+          ) : (
+            <div className="flex flex-col gap-1 text-[12px] text-ink-2">
               <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
                 <span className="text-muted-2">Было:</span>
                 <b className="tabular-nums">{rental.days} дн</b>
@@ -553,12 +547,10 @@ export function CalendarPanel({
           <div
             ref={calendarBoxRef}
             // Мобайл — на всю ширину блока; десктоп — ограничиваем ~380px.
-            // v0.6.50: в режиме «Изменить период» текущий период приглушаем
-            // (opacity-50) и блокируем drag — выбор идёт через date-input выше.
-            className={cn(
-              "min-w-0 w-full sm:max-w-[380px] sm:flex-1 transition-opacity",
-              editMode && "pointer-events-none opacity-50",
-            )}
+            // v0.6.50: в режиме «Изменить период» календарь ОСТАЁТСЯ
+            // интерактивным — новую дату возврата кликают прямо на нём
+            // (текущий период приглушается внутри календаря, editDim-зоной).
+            className="min-w-0 w-full sm:max-w-[380px] sm:flex-1 transition-opacity"
             style={{
               visibility: hideCalendar ? "hidden" : undefined,
             }}
@@ -579,6 +571,10 @@ export function CalendarPanel({
               onParkingPick={handleParkingPick}
               parkingSelectableFromIso={selFrom}
               parkingSelectableToIso={selTo}
+              editPeriodMode={editMode}
+              editEndIso={editEndIso}
+              onEditPeriodPick={(iso) => setEditEndIso(iso)}
+              editMinReturnIso={editMinEndIso}
             />
           </div>
         )}
