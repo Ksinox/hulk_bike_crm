@@ -502,9 +502,19 @@ export async function rentalsRoutes(app: FastifyInstance) {
             oldBranchSum: targetById.amount,
             newBranchSum: targetAmount,
           };
+          // ВАЖНО: синхронизируем и заметку «продление на N дн» с новой
+          // длиной ветки. Иначе при ПОВТОРНОЙ правке этой же ветки
+          // восстановление end1 (= end2 − N из заметки) возьмёт старое N и
+          // посчитает границу неверно → сумма «поедет». Заметка — источник
+          // истины для границы ветки, держим её актуальной. Суффикс
+          // «(оплачено)/(ожидает оплаты)» сохраняем как был.
+          const syncedNote = (targetById.note ?? "").replace(
+            /продлени[ея]\s+на\s+\d+\s*дн/i,
+            `продление на ${newBranchDays} дн`,
+          );
           await db
             .update(payments)
-            .set({ amount: targetAmount })
+            .set({ amount: targetAmount, note: syncedNote })
             .where(eq(payments.id, targetById.id));
         } else if (existingRent.length === 1) {
           // Одно-периодная аренда (или fallback) — единственный rent-платёж
