@@ -111,6 +111,10 @@ const PatchRentalBody = z
     deposit: z.number().int().min(0).optional(),
     depositItem: z.string().max(200).nullable().optional(),
     equipmentJson: z.array(EquipmentJsonItem).optional(),
+    // v0.8.x: «Изменить период» для ПРОДЛЁННОЙ аренды синхронизирует rent-
+    // платёж КОНКРЕТНОЙ (последней) ветки продления — фронт присылает его id.
+    // Без этого reconcile подгонял бы ПЕРВЫЙ платёж, ломая сумму первоначалки.
+    rentPaymentId: z.number().int().positive().optional(),
   })
   .strict();
 
@@ -424,6 +428,19 @@ export async function rentalsRoutes(app: FastifyInstance) {
       .returning();
     if (!row) return reply.code(404).send({ error: "not found" });
 
+    // v0.8.x: для «Изменить период» продлённой аренды — сводка по последней
+    // ветке для записи в ленту (заполняется в блоке reconcile ниже, до того
+    // как amount платежа перезаписан). Используется в логе истории.
+    let branchLog: {
+      end1Iso: string;
+      oldEnd2Iso: string;
+      newEnd2Iso: string;
+      oldBranchDays: number;
+      newBranchDays: number;
+      oldBranchSum: number;
+      newBranchSum: number;
+    } | null = null;
+
     // Синхронизация платежа аренды: если в PATCH пришла новая sum
     // и она отличается от старой — обновляем связанный платёж rent
     // (или создаём новый если был оплачен ранее, а сейчас нет).
@@ -433,25 +450,92 @@ export async function rentalsRoutes(app: FastifyInstance) {
       parsed.data.sum !== undefined &&
       parsed.data.sum !== before.sum
     ) {
+      const newRentalSum = parsed.data.sum;
       const existingRent = await db
         .select()
         .from(payments)
         .where(and(eq(payments.rentalId, id), eq(payments.type, "rent")));
       if (existingRent.length > 0) {
-        // Обновляем самый ранний rent-платёж (обычно он один на аренду).
-        const target = existingRent[0]!;
-        await db
-          .update(payments)
-          .set({ amount: parsed.data.sum })
-          .where(eq(payments.id, target.id));
-      } else if (parsed.data.sum > 0) {
+        // v0.8.x: «Изменить период» для ПРОДЛЁННОЙ аренды присылает
+        // rentPaymentId — id rent-платежа ПОСЛЕДНЕЙ ВЕТКИ продления. Его и
+        // синхронизируем (НЕ первый платёж — иначе сумма первоначалки/прошлых
+        // веток поехала бы). Целевой amount считаем ВЫЧИТАНИЕМ:
+        //   target = newRentalSum − Σ(остальные rent-платежи),
+        // что гарантирует ИНВАРИАНТ sum(rent) == rental.sum рубль-в-рубль
+        // независимо от прошлого состояния (самовосстановление при дрейфе).
+        // Платежи прошлых веток остаются как есть.
+        const targetById =
+          parsed.data.rentPaymentId != null
+            ? existingRent.find((p) => p.id === parsed.data.rentPaymentId)
+            : undefined;
+        if (targetById) {
+          const othersSum = existingRent
+            .filter((p) => p.id !== targetById.id)
+            .reduce((s, p) => s + p.amount, 0);
+          const targetAmount = Math.max(0, newRentalSum - othersSum);
+          // Сводка ветки для истории: end1 восстанавливаем из заметки
+          // «продление на N дн» целевого платежа; old/new end2 — из before/
+          // parsed; дни — из дат; суммы — старый/новый amount платежа.
+          const noteMatch = (targetById.note ?? "").match(
+            /продлени[ея]\s+на\s+(\d+)\s*дн/i,
+          );
+          const oldBranchDays = noteMatch ? Number(noteMatch[1]) : 0;
+          const oldEnd2 = new Date(before.endPlannedAt as unknown as string);
+          const end1 = new Date(
+            oldEnd2.getTime() - oldBranchDays * 86_400_000,
+          );
+          const newEnd2 =
+            parsed.data.endPlannedAt != null
+              ? new Date(parsed.data.endPlannedAt)
+              : oldEnd2;
+          const newBranchDays = Math.max(
+            0,
+            Math.round((newEnd2.getTime() - end1.getTime()) / 86_400_000),
+          );
+          const isoDay = (d: Date) => d.toISOString().slice(0, 10);
+          branchLog = {
+            end1Iso: isoDay(end1),
+            oldEnd2Iso: isoDay(oldEnd2),
+            newEnd2Iso: isoDay(newEnd2),
+            oldBranchDays,
+            newBranchDays,
+            oldBranchSum: targetById.amount,
+            newBranchSum: targetAmount,
+          };
+          await db
+            .update(payments)
+            .set({ amount: targetAmount })
+            .where(eq(payments.id, targetById.id));
+        } else if (existingRent.length === 1) {
+          // Одно-периодная аренда (или fallback) — единственный rent-платёж
+          // подгоняем под полную сумму аренды (старое поведение).
+          await db
+            .update(payments)
+            .set({ amount: newRentalSum })
+            .where(eq(payments.id, existingRent[0]!.id));
+        } else {
+          // Несколько rent-платежей, но целевой не указан/не найден — НЕ
+          // трогаем первый вслепую (это ломало бы продлённые аренды). Чтобы
+          // удержать инвариант, корректируем САМЫЙ ПОЗДНИЙ rent-платёж
+          // (наибольший id ≈ последняя ветка) вычитанием остальных.
+          const target = existingRent.reduce((a, b) => (b.id > a.id ? b : a));
+          const othersSum = existingRent
+            .filter((p) => p.id !== target.id)
+            .reduce((s, p) => s + p.amount, 0);
+          const targetAmount = Math.max(0, newRentalSum - othersSum);
+          await db
+            .update(payments)
+            .set({ amount: targetAmount })
+            .where(eq(payments.id, target.id));
+        }
+      } else if (newRentalSum > 0) {
         // Платежа не было — создадим, если статус активен/завершён.
         const activeStatuses = ["active", "completed"];
         if (activeStatuses.includes(row.status)) {
           await db.insert(payments).values({
             rentalId: id,
             type: "rent",
-            amount: parsed.data.sum,
+            amount: newRentalSum,
             method: row.paymentMethod ?? "cash",
             paid: true,
             paidAt: new Date(),
@@ -541,11 +625,25 @@ export async function rentalsRoutes(app: FastifyInstance) {
           kind: "text",
         };
       }
+      // v0.8.x: «Изменить период» продлённой аренды — ясный текст про ВЕТКУ:
+      // «Период продления изменён: 05.06–12.06 → 05.06–09.06, N дн, X ₽».
+      // dd.MM формат дат, N = новые дни ветки, X = новая сумма ветки.
+      const dmShort = (iso: string): string => {
+        const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        return m ? `${m[3]}.${m[2]}` : iso;
+      };
+      const editSummary = branchLog
+        ? `Период продления изменён: ${dmShort(branchLog.end1Iso)}–${dmShort(
+            branchLog.oldEnd2Iso,
+          )} → ${dmShort(branchLog.end1Iso)}–${dmShort(branchLog.newEnd2Iso)}, ${
+            branchLog.newBranchDays
+          } дн, ${branchLog.newBranchSum.toLocaleString("ru-RU")} ₽`
+        : `Отредактирована аренда ${summary}`;
       await logActivity(req, {
         entity: "rental",
         entityId: id,
         action: "updated",
-        summary: `Отредактирована аренда ${summary}`,
+        summary: editSummary,
         ...(Object.keys(editDiff).length > 0 ? { diff: editDiff } : {}),
       });
     }

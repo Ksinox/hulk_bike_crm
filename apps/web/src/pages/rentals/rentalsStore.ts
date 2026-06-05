@@ -135,9 +135,21 @@ export function setRentalDamage(id: number, amount: number) {
     .catch(logErr("setRentalDamage"));
 }
 
-export function patchRental(id: number, patch: Partial<Rental>) {
+export function patchRental(
+  id: number,
+  patch: Partial<Rental>,
+  opts?: {
+    /**
+     * v0.8.x: «Изменить период» для продлённой аренды синхронизирует rent-
+     * платёж КОНКРЕТНОЙ (последней) ветки, а не первый платёж. Бэк по этому id
+     * подгоняет amount платежа под новую сумму ветки.
+     */
+    rentPaymentId?: number;
+  },
+) {
   // Пропускаем большинство полей как есть; даты переводим в ISO
   const body: Record<string, unknown> = {};
+  if (opts?.rentPaymentId != null) body.rentPaymentId = opts.rentPaymentId;
   if (patch.status !== undefined) body.status = patch.status;
   if (patch.note !== undefined) body.note = patch.note ?? null;
   if (patch.rate !== undefined) body.rate = patch.rate;
