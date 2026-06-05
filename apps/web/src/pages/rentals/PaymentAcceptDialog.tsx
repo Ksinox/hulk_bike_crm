@@ -384,12 +384,10 @@ export function PaymentAcceptDialog({
 
   // Источники
   // v0.6.7: депозит управляется одним checkbox'ом в footer'е (как в
-  // extension-drawer.jsx). При включении списываем ВЕСЬ доступный
-  // депозит (или нужное количество — что меньше). Старый input
-  // частичной суммы убран — управляется автоматически.
+  // extension-drawer.jsx). v0.6.51: при включении списываем РОВНО сколько
+  // нужно для оплаты — min(остаток депозита, итог к оплате), НЕ весь баланс.
+  // depositToUse/remainingAfterDeposit считаются ниже, после grossTotal.
   const [useDeposit, setUseDeposit] = useState<boolean>(false);
-  const depositToUse = useDeposit ? depositBalance : 0;
-  const remainingAfterDeposit = Math.max(0, dueAmount - depositToUse);
 
   // v0.8.33 (K1): блок «Закрыть из залога» удалён — функциональность
   // переехала в RentalActionDialog («Закрыть аренду»). При продлении
@@ -423,7 +421,6 @@ export function PaymentAcceptDialog({
   // всегда. Если когда-то понадобится — добавить через отдельный flow,
   // не в основном диалоге приёма оплаты.
   const securityToUse = 0;
-  const remainingAfterSecurity = remainingAfterDeposit;
 
   // v0.6.7: extInputBase — кол-во ЕДИНИЦ продления (дней или недель).
   //   mode='days'   → управляется через спиннер/quick-presets (extInputOverride).
@@ -499,6 +496,13 @@ export function PaymentAcceptDialog({
   // Общая сумма «всё что нужно собрать» (до учёта депозита).
   // v0.6.11: + пополнение залога (если оператор включил).
   const grossTotal = debtPortion + periodTotal + topupAmount;
+  // v0.6.51: депозит покрывает РОВНО столько, сколько нужно — min(остаток
+  // депозита, grossTotal). Излишек остаётся на депозите клиента (раньше
+  // checkbox списывал ВЕСЬ баланс, даже если к оплате было меньше — клиент
+  // терял лишнее, а «к оплате» не сходилось с тем, что просит модуль).
+  const depositToUse = useDeposit ? Math.min(depositBalance, grossTotal) : 0;
+  const remainingAfterDeposit = Math.max(0, grossTotal - depositToUse);
+  const remainingAfterSecurity = remainingAfterDeposit;
   // v0.4.83: «Принято от клиента» — пустое поле когда сумма 0, чтоб
   // оператор не стирал нолик при наборе.
   const [acceptedStr, setAcceptedStr] = useState<string>(() => {
@@ -1417,15 +1421,23 @@ export function PaymentAcceptDialog({
                     −
                   </button>
                   <div className="bg-white px-5 py-2 text-center">
+                    {/* v0.6.51: в недельном режиме показываем НЕДЕЛИ (1,2,3…),
+                        не дни — цифра 1 = 1 неделя (бэкенд знает ×7). */}
                     <div className="font-display text-[26px] font-extrabold leading-none tabular-nums text-ink">
-                      {extIsWeekly ? extDays : extInputBase}
+                      {extInputBase}
                     </div>
                     <div className="text-[10px] text-muted">
-                      {(extIsWeekly ? extDays : extInputBase) === 1
-                        ? "день"
-                        : (extIsWeekly ? extDays : extInputBase) < 5
-                          ? "дня"
-                          : "дней"}
+                      {extIsWeekly
+                        ? extInputBase === 1
+                          ? "неделя"
+                          : extInputBase < 5
+                            ? "недели"
+                            : "недель"
+                        : extInputBase === 1
+                          ? "день"
+                          : extInputBase < 5
+                            ? "дня"
+                            : "дней"}
                     </div>
                   </div>
                   <button
@@ -1440,21 +1452,26 @@ export function PaymentAcceptDialog({
                   </button>
                 </div>
                 <div className="flex flex-wrap gap-1.5">
-                  {[0, 3, 7, 14, 30].map((n) => {
-                    const active = extDays === n;
-                    const label = n === 0 ? "Без продления" : `${n}д`;
+                  {/* v0.6.51: в недельном режиме пресеты — НЕДЕЛИ (1,2,4,8),
+                      в дневном — дни (3,7,14,30). n уже в единицах режима. */}
+                  {(extIsWeekly ? [0, 1, 2, 4, 8] : [0, 3, 7, 14, 30]).map((n) => {
+                    const active = extIsWeekly ? extWeeks === n : extDays === n;
+                    const label =
+                      n === 0
+                        ? "Без продления"
+                        : extIsWeekly
+                          ? `${n} нед`
+                          : `${n}д`;
                     return (
                       <button
                         key={n}
                         type="button"
                         onClick={() => {
                           setOverpayDest("extend");
-                          setExtInputOverride(
-                            extIsWeekly ? Math.max(1, Math.round(n / 7)) : n,
-                          );
-                          // v0.6.15: при клике на пресет N дней — снимаем
-                          // pin тарифа (если не custom), чтобы авто-подбор
-                          // selectedTariff заработал по числу дней.
+                          // n уже в единицах режима (дни/недели) = extInputBase.
+                          setExtInputOverride(n);
+                          // v0.6.15: при клике на пресет — снимаем pin тарифа
+                          // (если не custom), чтобы авто-подбор заработал.
                           if (selectedTariff !== "custom") {
                             setTariffPinned(false);
                           }

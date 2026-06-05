@@ -1398,6 +1398,50 @@ export function RentalCard({
       ? () => setEquipmentChangeOpen(true)
       : undefined;
 
+  // v0.6.51: «Выдать депозит клиенту» — депозит это «лишние» деньги клиента
+  // (переплаты, излишки коррекций). По клику на плашку депозита спрашиваем
+  // сумму (по умолчанию весь остаток, можно меньше) и выдаём наличными:
+  // дебетуем depositBalance через /deposit/payout.
+  const handlePayoutDeposit = async () => {
+    const balance = client?.depositBalance ?? 0;
+    if (balance <= 0) {
+      toast.info("Депозит пуст", "Выдавать нечего.");
+      return;
+    }
+    const raw = await promptDialog({
+      title: "Выдать депозит клиенту",
+      message: `На депозите ${fmt(balance)} ₽. Сколько выдать клиенту наличными? Остаток сохранится на депозите.`,
+      initial: String(balance),
+      placeholder: "Сумма, ₽",
+      confirmText: "Выдать",
+      cancelText: "Отмена",
+    });
+    if (raw == null) return;
+    const amount = parseInt(raw.replace(/\D/g, "") || "0", 10);
+    if (amount <= 0) {
+      toast.error("Некорректная сумма");
+      return;
+    }
+    if (amount > balance) {
+      toast.error("Больше, чем на депозите", `Доступно ${fmt(balance)} ₽.`);
+      return;
+    }
+    try {
+      await api.post(`/api/clients/${rental.clientId}/deposit/payout`, {
+        amount,
+        comment: `Выдан клиенту по аренде #${rental.id}`,
+      });
+      queryClient.invalidateQueries({ queryKey: clientsKeys.all });
+      queryClient.invalidateQueries({ queryKey: ["activity"] });
+      toast.success(
+        "Депозит выдан",
+        `${fmt(amount)} ₽ клиенту${amount < balance ? ` · остаток ${fmt(balance - amount)} ₽` : ""}`,
+      );
+    } catch (e) {
+      toast.error("Не удалось выдать депозит", (e as Error).message ?? "");
+    }
+  };
+
   // v0.7.0: «Закрыть аренду» / «Принять оплату» — доступность кнопок.
   const isLive = rental.status === "active";
   const canComplete = isLive && !isArchived;
@@ -2059,6 +2103,7 @@ export function RentalCard({
               onOpenClientProfile={() => client && openClient(client.id)}
               onSwapScooter={handleSwapScooter}
               onChangeEquipment={changeEquipmentHandler}
+              onPayoutDeposit={handlePayoutDeposit}
             />
           </AccordionSection>
 
@@ -2079,6 +2124,7 @@ export function RentalCard({
               onOpenClientProfile={() => client && openClient(client.id)}
               onSwapScooter={handleSwapScooter}
               onChangeEquipment={changeEquipmentHandler}
+              onPayoutDeposit={handlePayoutDeposit}
             />
           </AccordionSection>
 
@@ -2343,6 +2389,7 @@ export function RentalCard({
               onOpenClientProfile={() => client && openClient(client.id)}
               onSwapScooter={handleSwapScooter}
               onChangeEquipment={changeEquipmentHandler}
+              onPayoutDeposit={handlePayoutDeposit}
             />
           </div>
 
