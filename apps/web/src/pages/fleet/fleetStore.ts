@@ -96,8 +96,20 @@ export function addScooter(data: Omit<FleetScooter, "id">): FleetScooter {
     .then(() => {
       queryClient.invalidateQueries({ queryKey: scootersKeys.all });
     })
-    .catch((err) => {
+    .catch(async (err) => {
       console.error("POST /api/scooters failed:", err);
+      // Показываем тост с реальным текстом ошибки (напр. дубль VIN /
+      // дубль имени). Раньше ошибка молча уходила в консоль, и юзер думал
+      // что скутер создан — а его не было.
+      try {
+        const { toast } = await import("@/lib/toast");
+        const msg =
+          (err as { message?: string })?.message ||
+          "Не удалось добавить скутер";
+        toast.error("Скутер не добавлен", msg);
+      } catch {
+        /* toast не загрузился — игнорируем */
+      }
     });
 
   // временный stub для совместимости со старым синхронным API

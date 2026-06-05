@@ -81,7 +81,11 @@ export function useApiScootersArchived() {
 export function useArchiveScooter() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: number) => api.delete<ApiScooter>(`/api/scooters/${id}`),
+    mutationFn: (args: { id: number; reason?: string }) =>
+      api.delete<ApiScooter>(
+        `/api/scooters/${args.id}`,
+        args.reason ? { reason: args.reason } : undefined,
+      ),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: scootersKeys.all });
     },

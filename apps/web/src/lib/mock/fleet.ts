@@ -64,17 +64,17 @@ export type FleetScooter = {
 };
 
 /**
- * Интервал замены масла (км) по модели.
- * Данные основаны на рекомендациях производителей:
- * — Yamaha Jog (2T): трансмиссионное масло каждые 5 000 км
- * — Yamaha Gear, Honda DIO (4T): моторное масло каждые 3 000 км
- * — Tank (4T, крупная кубатура): моторное масло каждые 3 000 км
+ * Интервал замены масла — ЕДИНЫЙ для всех моделей: каждые 3 000 км.
+ * По решению заказчика (2026-06) интервал не зависит от модели (раньше у Jog
+ * было 5 000). Держим как Record по моделям на случай, если когда-то снова
+ * захотят разные интервалы, но сейчас значение одно — OIL_INTERVAL_DEFAULT_KM.
  */
+export const OIL_INTERVAL_DEFAULT_KM = 3_000;
 export const OIL_INTERVAL_KM: Record<ScooterModel, number> = {
-  jog: 5_000,
-  gear: 3_000,
-  honda: 3_000,
-  tank: 3_000,
+  jog: OIL_INTERVAL_DEFAULT_KM,
+  gear: OIL_INTERVAL_DEFAULT_KM,
+  honda: OIL_INTERVAL_DEFAULT_KM,
+  tank: OIL_INTERVAL_DEFAULT_KM,
 };
 
 /**
