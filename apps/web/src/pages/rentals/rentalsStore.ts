@@ -108,6 +108,10 @@ function subscribe(fn: () => void) {
 function invAll() {
   queryClient.invalidateQueries({ queryKey: rentalsKeys.all });
   queryClient.invalidateQueries({ queryKey: paymentsKeys.all });
+  // v0.6.51: чтобы хронология/лента событий обновилась сразу после правок
+  // (например, «Изменить период» логирует было→стало) — раньше новое
+  // событие появлялось только после перезагрузки страницы.
+  queryClient.invalidateQueries({ queryKey: ["activity"] });
 }
 function logErr(op: string) {
   return (e: unknown) => console.error(`[${op}]`, e);
