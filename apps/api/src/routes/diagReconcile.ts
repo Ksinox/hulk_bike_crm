@@ -10,25 +10,28 @@ import { logActivity } from "../services/activityLog.js";
  *
  * Защитный диагностико-восстановительный модуль — только creator/director.
  *
- * ── Инвариант ──
- * Для НЕ-архивной аренды (archivedAt IS NULL):
- *   Σ(payments where type='rent' AND paid=true).amount === rentals.sum
+ * ── Что входит в rentals.sum ──
+ * Сумму аренды двигают ТОЛЬКО эти rent-платежи:
+ *   • первоначалка    («оплата аренды … при создании») — sum := amount;
+ *   • продление       («продление на N дн …»)           — sum += amount;
+ *   • выкуп просрочки  («Оплата N дн просрочки …»)       — sum += amount.
+ * А вот ручной долг («Оплата ручного долга …») пишется как payment(type=rent)
+ * для выручки, но rentals.sum НЕ двигает (это доход вне базовой аренды).
  *
- * Когда инвариант держится — «За всё время» клиента
- * (web useClientStats.totalPaid = Σ оплаченных rent-платежей,
- *  БЕЗ депозита/возврата) и выручка на дашборде корректны.
+ * Поэтому ВЕРНЫЙ инвариант для НЕ-архивной аренды:
+ *   Σ(paid rent, КРОМЕ «ручного долга»).amount === rentals.sum
  *
- * ── Откуда берётся рассинхрон ──
- * Старая логика правки аренды («Изменить аренду») и одиночная синхронизация
- * платежа иногда оставляли «фантомный» rent-платёж (например продление,
- * период которого откатили, а денег не собрали). Пример: аренда #134 —
- * sum=3000, но два оплаченных rent-платежа по 3000 (=6000); второй надо
- * срезать до 0 (продление-фантом) → итог снова 3000.
+ * (Старая наивная версия сравнивала Σ ВСЕХ rent с sum и давала ложные
+ *  срабатывания на каждой аренде с ручным долгом — могла «починкой»
+ *  срезать живой доход. Теперь ручной долг исключён из инварианта, а
+ *  чинить разрешено ТОЛЬКО базовые платежи (первоначалка/продление) —
+ *  именно их фантомит старая «Изменить аренду». Выкуп просрочки и ручной
+ *  долг — реальный доход, ревизор их НЕ трогает.)
  *
  * GET  /api/_diag/payment-reconcile        — DRY-RUN, только чтение, аудит-лист.
  * POST /api/_diag/payment-reconcile/apply  — точечный фикс ПЕРЕ-записанной аренды
- *                                            (paidRent > sum), в транзакции,
- *                                            только type='rent', залог не трогаем.
+ *                                            (effectivePaidRent > sum), в транзакции,
+ *                                            трогаем ТОЛЬКО базовые rent-платежи.
  */
 
 /** Только creator/director. Зеркалит гейт из rentals.ts (DELETE /:id). */
@@ -36,32 +39,61 @@ function isCreatorOrDirector(role: string): boolean {
   return role === "creator" || role === "director";
 }
 
-/**
- * Признак «продление»: текст rent-платежа вида «продление на N дн …».
- * Совпадает с note, который пишет extend-inplace в rentals.ts
- * («продление на ${extraDays} дн (оплачено)» и т.п.).
- */
+/** Ручной долг — rent-платёж, который НЕ входит в rentals.sum. */
+const MANUAL_DEBT_NOTE_RE = /ручн\w*\s+долг/i;
+/** Выкуп просрочки — входит в sum, но НЕ базовый период (не фантомится). */
+const OVERDUE_NOTE_RE = /просрочк/i;
+/** Продление — базовый период, источник фантомов «Изменить аренду». */
 const EXTEND_NOTE_RE = /продлени[ея]\s+на\s+\d+\s*дн/i;
+
+type RentKind = "base" | "extend" | "overdue" | "manual";
+
+/**
+ * Классификация rent-платежа по заметке:
+ *   • manual  — ручной долг (вне sum, НЕ трогаем);
+ *   • overdue — выкуп просрочки (в sum, реальный доход, НЕ трогаем);
+ *   • extend  — продление (в sum, базовый период — фантомится);
+ *   • base    — первоначалка / reconcile без заметки (в sum, базовый период).
+ */
+function classifyRent(note: string | null): RentKind {
+  const n = note ?? "";
+  if (MANUAL_DEBT_NOTE_RE.test(n)) return "manual";
+  if (OVERDUE_NOTE_RE.test(n)) return "overdue";
+  if (EXTEND_NOTE_RE.test(n)) return "extend";
+  return "base";
+}
+
+/** Входит ли платёж в инвариант (двигает ли он rentals.sum). Всё, кроме ручного долга. */
+function contributesToSum(kind: RentKind): boolean {
+  return kind !== "manual";
+}
+
+/** Базовый период (первоначалка/продление) — ТОЛЬКО эти ревизор вправе чинить. */
+function isFixable(kind: RentKind): boolean {
+  return kind === "base" || kind === "extend";
+}
 
 type RentPaymentRow = {
   id: number;
   amount: number;
   paid: boolean;
   note: string | null;
+  kind: RentKind;
 };
 
 /** Тип tx-объекта внутри db.transaction (как в parking.ts). */
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 /**
- * Собирает все rent-платежи (любой paid) одной аренды, упорядоченные по id.
- * paidRent считаем здесь же как Σ amount по paid=true.
+ * Собирает все rent-платежи (любой paid) одной аренды, упорядоченные по id,
+ * с классификацией. effectivePaidRent = Σ(paid И входящих в sum) — то, что
+ * по инварианту должно равняться rentals.sum.
  */
 async function loadRentPayments(
   exec: Tx,
   rentalId: number,
-): Promise<{ rows: RentPaymentRow[]; paidRent: number }> {
-  const rows = await exec
+): Promise<{ rows: RentPaymentRow[]; effectivePaidRent: number }> {
+  const raw = await exec
     .select({
       id: payments.id,
       amount: payments.amount,
@@ -71,11 +103,18 @@ async function loadRentPayments(
     .from(payments)
     .where(and(eq(payments.rentalId, rentalId), eq(payments.type, "rent")))
     .orderBy(payments.id);
-  const paidRent = rows.reduce(
-    (s, p) => s + (p.paid ? (p.amount ?? 0) : 0),
+  const rows: RentPaymentRow[] = raw.map((p) => ({
+    id: p.id,
+    amount: p.amount,
+    paid: p.paid,
+    note: p.note,
+    kind: classifyRent(p.note),
+  }));
+  const effectivePaidRent = rows.reduce(
+    (s, p) => s + (p.paid && contributesToSum(p.kind) ? (p.amount ?? 0) : 0),
     0,
   );
-  return { rows, paidRent };
+  return { rows, effectivePaidRent };
 }
 
 const ApplyBody = z
@@ -95,8 +134,8 @@ type ApplyResult =
   | { kind: "error"; code: number; body: Record<string, unknown> }
   | {
       kind: "ok";
-      before: { paidRent: number; rentalSum: number };
-      after: { paidRent: number; rentalSum: number };
+      before: { effectivePaidRent: number; rentalSum: number };
+      after: { effectivePaidRent: number; rentalSum: number };
       capped: boolean;
     };
 
@@ -104,9 +143,11 @@ export async function diagReconcileRoutes(app: FastifyInstance) {
   /**
    * GET /api/_diag/payment-reconcile — DRY-RUN, read-only.
    *
-   * Для каждой НЕ-архивной аренды сравнивает paidRent (Σ оплаченных
-   * rent-платежей) с rentals.sum. Возвращает список расхождений,
-   * отсортированный по |diff| убыв. Ничего не пишет в БД.
+   * Для каждой НЕ-архивной аренды сравнивает effectivePaidRent
+   * (Σ оплаченных rent-платежей КРОМЕ ручного долга) с rentals.sum.
+   * Возвращает список расхождений, отсортированный по |diff| убыв.
+   * Ничего не пишет в БД. По каждому платежу — kind (base/extend/overdue/
+   * manual) и fixable, чтобы было видно ЧТО можно срезать.
    */
   app.get("/payment-reconcile", async (req, reply) => {
     if (!isCreatorOrDirector(req.user.role)) {
@@ -141,7 +182,13 @@ export async function diagReconcileRoutes(app: FastifyInstance) {
     const byRental = new Map<number, RentPaymentRow[]>();
     for (const p of rentRows) {
       const list = byRental.get(p.rentalId) ?? [];
-      list.push({ id: p.id, amount: p.amount, paid: p.paid, note: p.note });
+      list.push({
+        id: p.id,
+        amount: p.amount,
+        paid: p.paid,
+        note: p.note,
+        kind: classifyRent(p.note),
+      });
       byRental.set(p.rentalId, list);
     }
 
@@ -149,8 +196,10 @@ export async function diagReconcileRoutes(app: FastifyInstance) {
       rentalId: number;
       clientName: string | null;
       rentalSum: number;
-      paidRent: number;
+      effectivePaidRent: number;
       diff: number;
+      /** Σ по видам — чтобы понять природу расхождения. */
+      breakdown: { base: number; extend: number; overdue: number; manual: number };
       rentPaymentCount: number;
       extended: boolean;
       rentPayments: RentPaymentRow[];
@@ -158,22 +207,26 @@ export async function diagReconcileRoutes(app: FastifyInstance) {
 
     for (const r of rentalRows) {
       const list = byRental.get(r.rentalId) ?? [];
-      const paidRent = list.reduce(
-        (s, p) => s + (p.paid ? (p.amount ?? 0) : 0),
+      const effectivePaidRent = list.reduce(
+        (s, p) =>
+          s + (p.paid && contributesToSum(p.kind) ? (p.amount ?? 0) : 0),
         0,
       );
-      const diff = paidRent - r.rentalSum;
+      const diff = effectivePaidRent - r.rentalSum;
       if (diff === 0) continue;
+      const breakdown = { base: 0, extend: 0, overdue: 0, manual: 0 };
+      for (const p of list) {
+        if (p.paid) breakdown[p.kind] += p.amount ?? 0;
+      }
       mismatches.push({
         rentalId: r.rentalId,
         clientName: r.clientName,
         rentalSum: r.rentalSum,
-        paidRent,
+        effectivePaidRent,
         diff,
+        breakdown,
         rentPaymentCount: list.length,
-        extended: list.some(
-          (p) => p.note != null && EXTEND_NOTE_RE.test(p.note),
-        ),
+        extended: list.some((p) => p.kind === "extend"),
         rentPayments: list,
       });
     }
@@ -188,17 +241,18 @@ export async function diagReconcileRoutes(app: FastifyInstance) {
    *
    * Тело: { rentalId, action: 'trim_latest' | 'delete_payment', paymentId? }
    *
-   *  • trim_latest    — для ПЕРЕ-записанной аренды (paidRent > sum) уменьшает
-   *                     ПОСЛЕДНИЙ (max id) rent-платёж так, чтобы
-   *                     Σ(rent-платежей)=sum. Если ушло бы в минус — режет до 0
-   *                     и сообщает (capped).
-   *  • delete_payment — жёстко удаляет указанный rent-платёж (явный фантом).
-   *                     Проверяем, что он принадлежит аренде и type='rent'.
+   *  • trim_latest    — для ПЕРЕ-записанной аренды (effectivePaidRent > sum)
+   *                     уменьшает ПОСЛЕДНИЙ БАЗОВЫЙ rent-платёж (первоначалка/
+   *                     продление, max id) так, чтобы Σ=sum. Если ушло бы в
+   *                     минус — режет до 0 и сообщает (capped).
+   *  • delete_payment — жёстко удаляет указанный БАЗОВЫЙ rent-платёж (фантом).
+   *                     Проверяем, что он принадлежит аренде, type='rent' И
+   *                     это базовый период (не выкуп просрочки / не ручной долг).
    *
-   * Защита: только creator/director, всё в db.transaction, трогаем ТОЛЬКО
-   * type='rent' (залог/депозит/возврат не касаемся). НЕДО-записанные аренды
-   * (paidRent < sum — это долг/недосбор) НЕ чиним автоматически — ошибка
-   * «under-recorded, ручная проверка».
+   * Защита: только creator/director, всё в db.transaction. Трогаем ТОЛЬКО
+   * базовые rent-платежи (kind base/extend) — выкуп просрочки и ручной долг
+   * это реальный доход, ревизор их не касается. НЕДО-записанные аренды
+   * (effectivePaidRent < sum — долг/недосбор) НЕ чиним: ошибка под-запись.
    */
   app.post("/payment-reconcile/apply", async (req, reply) => {
     if (!isCreatorOrDirector(req.user.role)) {
@@ -239,15 +293,15 @@ export async function diagReconcileRoutes(app: FastifyInstance) {
           const rentalSum = rental.sum;
 
           // НЕДО-записанные не чиним — это другой случай (реальный долг).
-          if (before.paidRent < rentalSum) {
+          if (before.effectivePaidRent < rentalSum) {
             return {
               kind: "error",
               code: 409,
               body: {
                 error: "under_recorded",
                 message:
-                  "under-recorded, ручная проверка: оплачено rent меньше суммы аренды — это недосбор/долг, не фантом.",
-                paidRent: before.paidRent,
+                  "under-recorded, ручная проверка: оплачено rent (без ручного долга) меньше суммы аренды — это недосбор/долг, не фантом.",
+                effectivePaidRent: before.effectivePaidRent,
                 rentalSum,
               },
             };
@@ -256,10 +310,7 @@ export async function diagReconcileRoutes(app: FastifyInstance) {
           let capped = false;
 
           if (action === "delete_payment") {
-            // paymentId гарантирован выше для этого экшена.
             const targetId = paymentId as number;
-            // before.rows уже отфильтрованы type='rent' AND rentalId — find
-            // по ним валидирует принадлежность аренде И тип одновременно.
             const target = before.rows.find((p) => p.id === targetId);
             if (!target) {
               return {
@@ -272,27 +323,37 @@ export async function diagReconcileRoutes(app: FastifyInstance) {
                 },
               };
             }
+            // Защита дохода: ревизор не удаляет выкуп просрочки / ручной долг.
+            if (!isFixable(target.kind)) {
+              return {
+                kind: "error",
+                code: 409,
+                body: {
+                  error: "payment_protected",
+                  message: `Этот платёж — «${target.kind === "manual" ? "ручной долг" : "выкуп просрочки"}», реальный доход. Ревизор удаляет только фантомы базового периода (первоначалка/продление).`,
+                },
+              };
+            }
             await tx.delete(payments).where(eq(payments.id, targetId));
           } else {
-            // trim_latest: режем последний (max id) rent-платёж.
-            // rows отсортированы по id возр. → последний = max id.
-            const latest = before.rows[before.rows.length - 1];
+            // trim_latest: режем последний БАЗОВЫЙ (first/extend) rent-платёж.
+            const fixable = before.rows.filter((p) => isFixable(p.kind));
+            const latest = fixable[fixable.length - 1];
             if (!latest) {
               return {
                 kind: "error",
                 code: 409,
                 body: {
-                  error: "no_rent_payments",
-                  message: "У аренды нет rent-платежей — нечего срезать.",
+                  error: "no_fixable_payment",
+                  message:
+                    "Нет базовых rent-платежей (первоначалка/продление) для среза — расхождение не из фантома базового периода, нужна ручная проверка.",
                 },
               };
             }
-            // overBy >= 0 — выше мы отсекли paidRent < rentalSum. Если == ,
-            // diff=0 (нечего резать, но не ошибка: amount не изменится).
-            const overBy = before.paidRent - rentalSum;
+            // overBy >= 0 — выше отсекли effectivePaidRent < rentalSum.
+            const overBy = before.effectivePaidRent - rentalSum;
             let newAmount = latest.amount - overBy;
             if (newAmount < 0) {
-              // Уйти в минус нельзя — режем до 0 и сообщаем (capped).
               newAmount = 0;
               capped = true;
             }
@@ -305,8 +366,14 @@ export async function diagReconcileRoutes(app: FastifyInstance) {
           const after = await loadRentPayments(tx, rentalId);
           return {
             kind: "ok",
-            before: { paidRent: before.paidRent, rentalSum },
-            after: { paidRent: after.paidRent, rentalSum },
+            before: {
+              effectivePaidRent: before.effectivePaidRent,
+              rentalSum,
+            },
+            after: {
+              effectivePaidRent: after.effectivePaidRent,
+              rentalSum,
+            },
             capped,
           };
         },
@@ -319,15 +386,15 @@ export async function diagReconcileRoutes(app: FastifyInstance) {
       // Лог в журнал действий (вне транзакции — logActivity best-effort/silent).
       const verb =
         action === "delete_payment"
-          ? `удалён rent-платёж #${paymentId}`
-          : "срезан последний rent-платёж";
+          ? `удалён фантом-платёж #${paymentId}`
+          : "срезан последний базовый rent-платёж";
       await logActivity(req, {
         entity: "rental",
         entityId: rentalId,
         action: "payment_reconciled",
         summary:
           `Ревизор: ${verb} по аренде #${rentalId}. ` +
-          `Оплачено rent ${result.before.paidRent} → ${result.after.paidRent} ₽ ` +
+          `Оплачено rent (без ручного долга) ${result.before.effectivePaidRent} → ${result.after.effectivePaidRent} ₽ ` +
           `(сумма аренды ${result.after.rentalSum} ₽)` +
           (result.capped ? " — упёрлись в 0, проверьте вручную" : ""),
         meta: {
