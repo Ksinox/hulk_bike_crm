@@ -78,3 +78,11 @@ Thumbs.db
 *.rpm
 scripts/.dokploy_token
 scripts/.projects.json
+
+# Локальные артефакты разбора Excel-таблиц заказчика (содержат ПДн).
+# Задача мэтчинга старых таблиц отменена — файлы держим только локально.
+*.xlsx
+scripts/_xlsx_*.py
+scripts/_xlsx_*.txt
+scripts/_scooter_diff.*
+scripts/_crm_scooters.txt
