@@ -221,6 +221,9 @@ async function bootstrap() {
     // Диагностика — только creator
     const { diagRoutes } = await import("./routes/diag.js");
     await protectedApp.register(diagRoutes, { prefix: "/api/_diag" });
+    // Ревизор рассинхрона sum vs rent-платежи — только creator/director
+    const { diagReconcileRoutes } = await import("./routes/diagReconcile.js");
+    await protectedApp.register(diagReconcileRoutes, { prefix: "/api/_diag" });
     // Генерация документов по аренде (договор, акты)
     await protectedApp.register(rentalDocumentsRoutes, { prefix: "/api" });
     // Прейскурант (справочник цен)
