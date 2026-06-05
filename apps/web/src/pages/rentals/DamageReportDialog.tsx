@@ -10,6 +10,7 @@ import {
   X,
   Wrench,
   Loader2,
+  Camera,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { type Rental } from "@/lib/mock/rentals";
@@ -22,12 +23,20 @@ import {
 import {
   useCreateDamageReport,
   usePatchDamageReport,
+  useUploadDamageMedia,
+  useDeleteDamageMedia,
   type ApiDamageReport,
+  type ApiDamageMedia,
   type CreateDamageItem,
 } from "@/lib/api/damage-reports";
 import { useApiScooters } from "@/lib/api/scooters";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { useApiClients } from "@/lib/api/clients";
+import {
+  DamageMediaCapture,
+  analyzeFile,
+  type StagedMedia,
+} from "./DamageMediaCapture";
 
 function fmt(n: number) {
   return n.toLocaleString("ru-RU");
@@ -255,6 +264,70 @@ export function DamageReportDialog({
   const patch = usePatchDamageReport();
   const isPending = create.isPending || patch.isPending;
 
+  // === Фото/видео повреждений ===
+  // В режиме редактирования (акт уже есть) грузим сразу к existing.id.
+  // При создании — стейджим локально и грузим после создания акта.
+  const uploadMedia = useUploadDamageMedia();
+  const deleteMedia = useDeleteDamageMedia();
+  const [staged, setStaged] = useState<StagedMedia[]>([]);
+  const [uploadedMedia, setUploadedMedia] = useState<ApiDamageMedia[]>(
+    existing?.media ?? [],
+  );
+  const [mediaBusy, setMediaBusy] = useState(false);
+
+  // Чистим objectURL'ы при размонтировании, чтобы не текла память.
+  useEffect(() => {
+    return () => {
+      for (const s of staged) URL.revokeObjectURL(s.previewUrl);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const onPickMedia = async (files: File[]) => {
+    const items = await Promise.all(files.map((f) => analyzeFile(f)));
+    if (isEdit && existing) {
+      // Акт уже есть — грузим сразу.
+      setMediaBusy(true);
+      setStaged((s) => [...s, ...items]);
+      for (const it of items) {
+        try {
+          const m = await uploadMedia.mutateAsync({
+            reportId: existing.id,
+            file: it.file,
+            durationSec: it.durationSec,
+          });
+          setUploadedMedia((u) => [...u, m]);
+        } catch (e) {
+          toast.error("Не удалось загрузить медиа", (e as Error).message ?? "");
+        } finally {
+          setStaged((s) => s.filter((x) => x.id !== it.id));
+          URL.revokeObjectURL(it.previewUrl);
+        }
+      }
+      setMediaBusy(false);
+    } else {
+      // Создание — копим локально, загрузим после создания акта.
+      setStaged((s) => [...s, ...items]);
+    }
+  };
+
+  const removeStaged = (id: string) => {
+    setStaged((s) => {
+      const it = s.find((x) => x.id === id);
+      if (it) URL.revokeObjectURL(it.previewUrl);
+      return s.filter((x) => x.id !== id);
+    });
+  };
+
+  const removeUploaded = async (mediaId: number) => {
+    setUploadedMedia((u) => u.filter((m) => m.id !== mediaId));
+    try {
+      await deleteMedia.mutateAsync(mediaId);
+    } catch (e) {
+      toast.error("Не удалось удалить медиа", (e as Error).message ?? "");
+    }
+  };
+
   // Минимальная валидация: должна быть выбрана хотя бы одна позиция.
   // Комментарии «где конкретно» опциональны — необязательно их заполнять,
   // чтобы создать акт.
@@ -262,7 +335,10 @@ export function DamageReportDialog({
 
   const onSubmit = async () => {
     if (!valid) {
-      toast.error("Не выбрано ни одной позиции", "Кликните на позицию слева");
+      toast.error(
+        "Не выбрано ни одной позиции",
+        "Выберите позицию из прейскуранта",
+      );
       return;
     }
     try {
@@ -309,6 +385,25 @@ export function DamageReportDialog({
       // onCreated после небольшой задержки чтобы избежать race condition
       // с одновременным unmount этого компонента.
       const reportId = created.id;
+      // Догружаем приложенные при создании фото/видео к новому акту.
+      // Best-effort: акт уже создан, при сбое медиа можно добавить позже.
+      if (!isEdit && staged.length > 0) {
+        setMediaBusy(true);
+        for (const it of staged) {
+          try {
+            await uploadMedia.mutateAsync({
+              reportId,
+              file: it.file,
+              durationSec: it.durationSec,
+            });
+          } catch {
+            /* ignore — отчёт уже сохранён */
+          }
+          URL.revokeObjectURL(it.previewUrl);
+        }
+        setStaged([]);
+        setMediaBusy(false);
+      }
       requestClose();
       window.setTimeout(() => onCreated?.(reportId), 200);
     } catch (e) {
@@ -376,7 +471,7 @@ export function DamageReportDialog({
               </div>
               <div className="mt-2 text-[11px] leading-snug text-muted-2">
                 Это позиции из прейскуранта (Документы → Прейскурант). Выбери,
-                что повреждено — цену и количество поправишь справа.
+                что повреждено — цену и количество можно поправить.
               </div>
               {needsFallback && (
                 <div className="mt-2 rounded-[10px] bg-amber-50 px-3 py-2 text-[12px] text-amber-900">
@@ -521,7 +616,7 @@ export function DamageReportDialog({
             <div className="flex-1 overflow-y-auto px-4 py-2">
               {selected.length === 0 ? (
                 <div className="rounded-[10px] border border-dashed border-border p-6 text-center text-[12px] text-muted-2">
-                  Нажмите на позиции слева, чтобы добавить их в акт.
+                  Выберите позиции из прейскуранта, чтобы добавить их в акт.
                 </div>
               ) : (
                 <div className="flex flex-col gap-2">
@@ -696,6 +791,26 @@ export function DamageReportDialog({
                 rows={2}
                 className="rounded-[8px] border border-border bg-white px-2 py-1 text-[12px] outline-none focus:border-blue-600"
               />
+              {/* Фото/видео повреждений — приложить прямо при приёмке (с камеры). */}
+              <div className="flex flex-col gap-2 rounded-[10px] border border-orange-200 bg-orange-soft/40 p-2.5">
+                <div className="flex items-center gap-1.5 text-[12px] font-bold text-orange-ink">
+                  <Camera size={13} /> Фото и видео повреждений
+                  {uploadedMedia.length + staged.length > 0 && (
+                    <span className="ml-auto rounded-full bg-white px-1.5 text-[11px] font-bold text-orange-ink">
+                      {uploadedMedia.length + staged.length}
+                    </span>
+                  )}
+                </div>
+                <DamageMediaCapture
+                  staged={staged}
+                  uploaded={uploadedMedia}
+                  onPick={onPickMedia}
+                  onRemoveStaged={removeStaged}
+                  onRemoveUploaded={removeUploaded}
+                  busy={mediaBusy}
+                  disabled={isPending}
+                />
+              </div>
               {!isEdit && (
                 <label className="inline-flex items-center gap-2 text-[12px] text-ink-2">
                   <input
@@ -719,11 +834,11 @@ export function DamageReportDialog({
               </button>
               <button
                 type="button"
-                disabled={!valid || isPending}
+                disabled={!valid || isPending || mediaBusy}
                 onClick={onSubmit}
                 className="rounded-[10px] bg-red-600 px-4 py-2 text-[13px] font-bold text-white hover:bg-red-700 disabled:opacity-50"
               >
-                {isPending
+                {isPending || mediaBusy
                   ? "Сохраняем…"
                   : isEdit
                     ? "Сохранить изменения"

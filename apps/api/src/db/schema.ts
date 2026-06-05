@@ -1147,8 +1147,41 @@ export const damageReportItems = pgTable(
   }),
 );
 
+/**
+ * Фото/видео повреждений к акту (v0.8.x). Оператор прикладывает прямо при
+ * приёмке — с камеры телефона. Заменяет ручную фиксацию в Telegram.
+ * Фото получают thumb/view-варианты (как везде), видео хранится как есть.
+ */
+export const damageReportMedia = pgTable(
+  "damage_report_media",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    reportId: bigint("report_id", { mode: "number" })
+      .notNull()
+      .references(() => damageReports.id, { onDelete: "cascade" }),
+    /** 'photo' | 'video' — определяется по mime на загрузке. */
+    kind: text("kind").notNull().default("photo"),
+    fileKey: text("file_key").notNull(),
+    fileName: text("file_name").notNull(),
+    mimeType: text("mime_type").notNull(),
+    size: integer("size").notNull().default(0),
+    /** Длительность видео в секундах (0/NULL для фото). */
+    durationSec: integer("duration_sec"),
+    uploadedByUserId: bigint("uploaded_by_user_id", {
+      mode: "number",
+    }).references(() => users.id, { onDelete: "set null" }),
+    uploadedAt: timestamp("uploaded_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    reportIdx: index("damage_report_media_report_idx").on(t.reportId),
+  }),
+);
+
 export const damageReportsRelations = relations(damageReports, ({ many, one }) => ({
   items: many(damageReportItems),
+  media: many(damageReportMedia),
   rental: one(rentals, {
     fields: [damageReports.rentalId],
     references: [rentals.id],
