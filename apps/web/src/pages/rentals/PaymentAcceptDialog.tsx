@@ -1650,7 +1650,22 @@ export function PaymentAcceptDialog({
                         <button
                           key={u}
                           type="button"
-                          onClick={() => setExtCustomUnit(u)}
+                          onClick={() => {
+                            if (u === extCustomUnit) return;
+                            // v0.8.x: при смене единицы СОХРАНЯЕМ число ДНЕЙ
+                            // продления, а не число во вводе. Иначе «7 дней»
+                            // при переключении на ₽/нед превращалось в «7
+                            // недель» (49 дн) — у заказчика «бегали значения».
+                            // day→week: дни → недели; week→day: недели → дни.
+                            if (u === "week") {
+                              setExtInputOverride(
+                                Math.max(1, Math.round(extDays / 7)),
+                              );
+                            } else {
+                              setExtInputOverride(Math.max(0, extDays));
+                            }
+                            setExtCustomUnit(u);
+                          }}
                           className={cn(
                             "rounded-[6px] px-2 py-0.5 text-[10.5px] font-semibold transition-colors",
                             extCustomUnit === u

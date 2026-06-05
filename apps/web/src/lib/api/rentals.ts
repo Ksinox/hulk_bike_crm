@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import type { ApiRental, ListResponse } from "./types";
+import type { ApiRental, ListResponse, ScooterBaseStatus } from "./types";
 
 export const rentalsKeys = {
   all: ["rentals"] as const,
@@ -150,14 +150,7 @@ export function useSwapScooter() {
     mutationFn: (args: {
       rentalId: number;
       newScooterId: number;
-      oldScooterStatus?:
-        | "ready"
-        | "rental_pool"
-        | "repair"
-        | "buyout"
-        | "for_sale"
-        | "sold"
-        | "disassembly";
+      oldScooterStatus?: ScooterBaseStatus;
       reason?: string;
     }) =>
       api.post<ApiRental>(`/api/rentals/${args.rentalId}/swap-scooter`, {

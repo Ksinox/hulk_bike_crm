@@ -118,7 +118,9 @@ export function DragExtendCalendar({
   startIso,
   plannedEndIso,
   isOverdue,
-  dailyRate,
+  // dailyRate больше не используется внутри (сумму продления тут не
+  // показываем — см. комментарий у плашки). Проп оставлен в типе для
+  // обратной совместимости с CalendarPanel.
   onCommitExtend,
   onPreviewExtend,
   initialDays,
@@ -136,6 +138,7 @@ export function DragExtendCalendar({
   startIso: string;
   plannedEndIso: string;
   isOverdue: boolean;
+  /** @deprecated не используется — сумму продления показывает «Принять платёж». */
   dailyRate?: number;
   /** v0.6.38: если true — встроенная легенда внизу скрывается; родитель
    *  показывает её сам (например, над календарём). */
@@ -255,8 +258,6 @@ export function DragExtendCalendar({
   const todayT = keyToTime(todayKey);
   const previewT = previewEnd ? keyToTime(previewEnd) : null;
   const previewDays = previewEnd ? diffDays(baseEndKey, previewEnd) : 0;
-  const previewSum =
-    dailyRate && previewDays > 0 ? dailyRate * previewDays : null;
 
   /* ---- паркинг: интервалы зон + окно выбора ---- */
   const parkingIntervals = useMemo(() => {
@@ -533,24 +534,24 @@ export function DragExtendCalendar({
         </CalendarGridRac>
       </CalendarRac>
 
-      {/* Подсказка-плашка во время / после выбора дня продления */}
+      {/* Подсказка-плашка после выбора дня продления.
+          v0.8.x: СУММУ тут больше не показываем — она вводила в
+          заблуждение (считалась по текущей ставке аренды, а не по
+          тарифной ступени за новое число дней) и расходилась с окном
+          «Принять платёж», где сумма считается правильно. Источник
+          правды по деньгам — блок «Принять платёж». Здесь оставляем
+          только подтверждение нового срока. */}
       {previewDays > 0 && !parkingMode && (
-        <div className="mt-2 mx-1 rounded-[10px] bg-emerald-50 border border-emerald-200 px-3 py-2 text-[11.5px] text-emerald-700 flex items-center justify-between gap-3">
-          <div>
-            <b>
-              Продление +{previewDays} {previewDays === 1 ? "день" : "дн"}
-            </b>
-            {previewEnd && (
-              <span className="ml-1 text-emerald-700/80">
-                до {String(previewEnd.d).padStart(2, "0")}.
-                {String(previewEnd.m + 1).padStart(2, "0")}.{previewEnd.y}
-              </span>
-            )}
-          </div>
-          {previewSum != null && (
-            <div className="font-bold tabular-nums">
-              ≈ {previewSum.toLocaleString("ru-RU")} ₽
-            </div>
+        <div className="mt-2 mx-1 rounded-[10px] bg-emerald-50 border border-emerald-200 px-3 py-2 text-[11.5px] text-emerald-700">
+          <b>
+            Продление +{previewDays} {previewDays === 1 ? "день" : "дн"}
+          </b>
+          {previewEnd && (
+            <span className="ml-1 text-emerald-700/80">
+              до {String(previewEnd.d).padStart(2, "0")}.
+              {String(previewEnd.m + 1).padStart(2, "0")}.{previewEnd.y}
+              {" — сумма в «Принять платёж»"}
+            </span>
           )}
         </div>
       )}

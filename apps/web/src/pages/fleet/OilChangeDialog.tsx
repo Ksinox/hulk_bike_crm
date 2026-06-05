@@ -46,8 +46,13 @@ export function OilChangeDialog({
 
   const mileageNum = Number(mileage);
   const mileageValid = mileage.trim() !== "" && Number.isFinite(mileageNum) && mileageNum >= 0;
+  // Пробег замены не может быть больше текущего одометра скутера —
+  // защита от опечатки (260000 вместо 26000) и нестыковок в истории.
+  // Если масло реально меняли на большем пробеге — сначала обновите
+  // пробег скутера в карточке.
+  const mileageTooHigh = mileageValid && mileageNum > currentMileage;
   const dateValid = performedOn.trim() !== "";
-  const canSave = mileageValid && dateValid && !saving;
+  const canSave = mileageValid && !mileageTooHigh && dateValid && !saving;
 
   const submit = async () => {
     if (!canSave) return;
@@ -120,14 +125,19 @@ export function OilChangeDialog({
               onChange={(e) => setMileage(e.target.value)}
               className={cn(
                 "mt-1.5 w-full rounded-[10px] border bg-surface-soft px-3 py-2 text-[14px] font-semibold tabular-nums text-ink outline-none focus:ring-2 focus:ring-blue-100",
-                mileageValid ? "border-border" : "border-red/50",
+                mileageValid && !mileageTooHigh ? "border-border" : "border-red/50",
               )}
             />
-            {!mileageValid && (
+            {!mileageValid ? (
               <div className="mt-1 text-[11px] text-red-ink">
                 Укажите пробег (целое число ≥ 0).
               </div>
-            )}
+            ) : mileageTooHigh ? (
+              <div className="mt-1 text-[11px] text-red-ink">
+                Больше текущего пробега скутера ({currentMileage.toLocaleString("ru-RU")} км).
+                Сначала обновите пробег в карточке.
+              </div>
+            ) : null}
           </div>
 
           <div className="grid grid-cols-2 gap-3">

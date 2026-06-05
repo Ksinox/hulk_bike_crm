@@ -12,6 +12,7 @@ export const SCOOTER_STATUS_RU: Record<string, string> = {
   for_sale: "На продаже",
   sold: "Продан",
   disassembly: "В разборке",
+  dtp: "ДТП",
 };
 
 export const RENTAL_STATUS_RU: Record<string, string> = {
