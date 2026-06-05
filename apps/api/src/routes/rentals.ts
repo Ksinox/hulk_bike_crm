@@ -2279,6 +2279,10 @@ export async function rentalsRoutes(app: FastifyInstance) {
         // на ОСТАТОК дней до endPlannedAt. Если ставки равны или новая ниже —
         // нулевая разница, payment не создаём.
         let feeAmount = 0;
+        // v0.6.51: замена на более ДЕШЁВУЮ модель → возврат разницы клиенту
+        // в депозит (симметрично доплате при апгрейде). Депозит потом можно
+        // выдать клиенту (deposit/payout). Разница = (старая−новая)×остаток дн.
+        let refundAmount = 0;
         if (newScooter.modelId != null) {
           const [newModel] = await tx
             .select()
@@ -2287,10 +2291,14 @@ export async function rentalsRoutes(app: FastifyInstance) {
           if (newModel) {
             const tier = rateTierForDays(old.days);
             const newRate = pickRateByPeriod(newModel, tier);
-            if (newRate != null && newRate > old.rate) {
+            if (newRate != null) {
               const msLeft = old.endPlannedAt.getTime() - now.getTime();
               const daysLeft = Math.max(1, Math.ceil(msLeft / 86_400_000));
-              feeAmount = (newRate - old.rate) * daysLeft;
+              if (newRate > old.rate) {
+                feeAmount = (newRate - old.rate) * daysLeft;
+              } else if (newRate < old.rate) {
+                refundAmount = (old.rate - newRate) * daysLeft;
+              }
             }
           }
         }
@@ -2321,6 +2329,17 @@ export async function rentalsRoutes(app: FastifyInstance) {
           });
         }
 
+        // v0.6.51: замена на дешевле — возвращаем разницу в депозит клиента
+        // (потом можно выдать через deposit/payout).
+        if (refundAmount > 0 && old.clientId) {
+          await tx
+            .update(clients)
+            .set({
+              depositBalance: sql`${clients.depositBalance} + ${refundAmount}`,
+            })
+            .where(eq(clients.id, old.clientId));
+        }
+
         // Note аренды — для отображения в карточке.
         await tx
           .update(rentals)
@@ -2332,7 +2351,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
           })
           .where(eq(rentals.id, id));
 
-        return { rentalId: id, feeAmount, prevScooterId };
+        return { rentalId: id, feeAmount, refundAmount, prevScooterId };
       });
 
       // v0.6.6: для diff достанем человекочитаемые имена скутеров.
@@ -2356,7 +2375,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
         entity: "rental",
         entityId: id,
         action: "scooter_swapped",
-        summary: `Замена скутера в аренде #${String(id).padStart(4, "0")}${result.feeAmount > 0 ? ` (доплата ${result.feeAmount} ₽)` : ""}`,
+        summary: `Замена скутера в аренде #${String(id).padStart(4, "0")}${result.feeAmount > 0 ? ` (доплата ${result.feeAmount} ₽)` : ""}${result.refundAmount > 0 ? ` (возврат ${result.refundAmount} ₽ в депозит)` : ""}`,
         // v0.8.14: «ревизорские» поля — кто на кого заменён, причина и куда
         // ушёл старый скутер (в ремонт / обратно в парк) на момент замены.
         meta: {
@@ -2365,6 +2384,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
           prevScooterName,
           newScooterName,
           feeAmount: result.feeAmount,
+          refundAmount: result.refundAmount,
           reason: d.reason ?? null,
           oldScooterDestination: d.oldScooterStatus,
         },
@@ -2381,6 +2401,16 @@ export async function rentalsRoutes(app: FastifyInstance) {
                   label: "Доплата",
                   from: 0,
                   to: result.feeAmount,
+                  kind: "money",
+                },
+              }
+            : {}),
+          ...(result.refundAmount > 0
+            ? {
+                refund: {
+                  label: "Возврат в депозит",
+                  from: 0,
+                  to: result.refundAmount,
                   kind: "money",
                 },
               }
