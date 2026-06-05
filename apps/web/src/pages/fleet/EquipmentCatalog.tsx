@@ -191,10 +191,10 @@ function EquipmentFormModal({
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-ink/55 p-6 backdrop-blur-sm"
+      className="fixed inset-0 z-[100] flex items-stretch justify-center overflow-y-auto bg-ink/55 p-0 backdrop-blur-sm sm:items-start sm:p-6"
     >
       <div
-        className="mt-16 w-full max-w-[440px] overflow-hidden rounded-2xl bg-surface shadow-card-lg"
+        className="min-h-[100dvh] w-full overflow-hidden rounded-none bg-surface shadow-card-lg sm:mt-16 sm:min-h-0 sm:max-w-[440px] sm:rounded-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-border bg-surface-soft px-5 py-3">

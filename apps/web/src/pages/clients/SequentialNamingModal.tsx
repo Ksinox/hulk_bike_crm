@@ -81,14 +81,14 @@ export function SequentialNamingModal({
   return (
     <div
       className={cn(
-        "fixed inset-0 z-[200] flex items-center justify-center bg-ink/60 p-6 backdrop-blur-sm",
+        "fixed inset-0 z-[200] flex items-stretch justify-center overflow-y-auto bg-ink/60 p-0 backdrop-blur-sm sm:items-center sm:p-6",
         closing ? "animate-backdrop-out" : "animate-backdrop-in",
       )}
       onClick={() => requestClose(onCancel)}
     >
       <div
         className={cn(
-          "flex w-full max-w-[560px] flex-col overflow-hidden rounded-2xl bg-surface shadow-card-lg",
+          "flex min-h-[100dvh] w-full flex-col overflow-hidden rounded-none bg-surface shadow-card-lg sm:min-h-0 sm:max-w-[560px] sm:rounded-2xl",
           closing ? "animate-modal-out" : "animate-modal-in",
         )}
         onClick={(e) => e.stopPropagation()}

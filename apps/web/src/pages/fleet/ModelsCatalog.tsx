@@ -287,9 +287,9 @@ function ModelFormModal({
     // основной кнопкой как primary blue, не серый ink. Лейблы в lower-
     // case с цветным акцентом, без UPPERCASE-крика. Чекбоксы переделаны
     // в карточки-toggle, где хинт читается без потери приоритета.
-    <div className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-ink/55 p-4 backdrop-blur-sm sm:p-6">
+    <div className="fixed inset-0 z-[100] flex items-stretch justify-center overflow-y-auto bg-ink/55 p-0 backdrop-blur-sm sm:items-start sm:p-6">
       <div
-        className="mt-8 flex w-full max-w-[560px] flex-col overflow-hidden rounded-2xl bg-surface shadow-card-lg sm:mt-16"
+        className="flex min-h-[100dvh] w-full flex-col overflow-hidden rounded-none bg-surface shadow-card-lg sm:mt-16 sm:min-h-0 sm:max-w-[560px] sm:rounded-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Шапка */}

@@ -944,7 +944,7 @@ export function RentalActionDialog({
   return (
     <div
       className={cn(
-        "fixed inset-0 z-[120] flex items-center justify-center bg-ink/55 p-6 backdrop-blur-sm",
+        "fixed inset-0 z-[120] flex items-stretch justify-center overflow-y-auto bg-ink/55 p-0 backdrop-blur-sm sm:items-center sm:p-6",
         closing ? "animate-backdrop-out" : "animate-backdrop-in",
       )}
     >
@@ -958,7 +958,7 @@ export function RentalActionDialog({
           // overflow-hidden убран чтоб popup-календарь мог
           // вылазить за границы dialog'а; вместо этого скролл — на
           // внутренней области.
-          "w-full max-w-[640px] rounded-2xl bg-surface shadow-card-lg",
+          "min-h-[100dvh] w-full rounded-none bg-surface shadow-card-lg sm:min-h-0 sm:max-w-[640px] sm:rounded-2xl",
           closing ? "animate-modal-out" : "animate-modal-in",
         )}
         onClick={(e) => e.stopPropagation()}
