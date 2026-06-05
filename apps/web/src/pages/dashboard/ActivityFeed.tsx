@@ -124,10 +124,10 @@ function FullJournalModal({ onClose }: { onClose: () => void }) {
 
   return (
     <div
-      className="fixed inset-0 z-[140] flex items-start justify-center overflow-y-auto bg-ink/55 p-6 backdrop-blur-sm"
+      className="fixed inset-0 z-[140] flex items-stretch justify-center overflow-y-auto bg-ink/55 p-0 backdrop-blur-sm sm:items-start sm:p-6"
     >
       <div
-        className="mt-10 flex w-full max-w-[760px] flex-col overflow-hidden rounded-2xl bg-surface shadow-card-lg"
+        className="flex min-h-[100dvh] w-full flex-col overflow-hidden rounded-none bg-surface shadow-card-lg sm:mt-10 sm:min-h-0 sm:max-w-[760px] sm:rounded-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-border bg-surface-soft px-5 py-3">

@@ -130,8 +130,8 @@ export function ScheduleBuilderDialog({
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-ink/40 p-4 backdrop-blur-sm">
-      <div className="flex max-h-[90vh] w-full max-w-[560px] flex-col overflow-hidden rounded-[20px] bg-white shadow-card-lg">
+    <div className="fixed inset-0 z-[100] flex items-stretch justify-center overflow-y-auto bg-ink/40 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+      <div className="flex h-[100dvh] max-h-[100dvh] w-full max-w-[560px] flex-col overflow-hidden rounded-none bg-white shadow-card-lg sm:h-auto sm:max-h-[90vh] sm:rounded-[20px]">
         <header className="flex items-start justify-between border-b border-border p-6 pb-4">
           <div>
             <div className="mb-1 inline-flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.08em] text-muted">

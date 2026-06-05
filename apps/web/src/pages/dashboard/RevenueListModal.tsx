@@ -40,14 +40,14 @@ export function RevenueListModal({
   return (
     <div
       className={cn(
-        "fixed inset-0 z-[120] flex items-center justify-center bg-ink/55 p-4 backdrop-blur-sm",
+        "fixed inset-0 z-[120] flex items-stretch justify-center overflow-y-auto bg-ink/55 p-0 backdrop-blur-sm sm:items-center sm:p-4",
         closing ? "animate-backdrop-out" : "animate-backdrop-in",
       )}
     >
       <div
         className={cn(
-          "flex w-full max-w-[1200px] flex-col overflow-hidden rounded-2xl bg-surface shadow-card-lg",
-          "max-h-[90vh]",
+          "flex w-full max-w-[1200px] flex-col overflow-hidden rounded-none bg-surface shadow-card-lg sm:rounded-2xl",
+          "h-[100dvh] max-h-[100dvh] sm:h-auto sm:max-h-[90vh]",
           closing ? "animate-modal-out" : "animate-modal-in",
         )}
         onClick={(e) => e.stopPropagation()}

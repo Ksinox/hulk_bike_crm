@@ -119,13 +119,13 @@ export function PriceItemsPicker({
   return (
     <div
       className={cn(
-        "fixed inset-0 z-[120] flex items-center justify-center bg-ink/55 p-6 backdrop-blur-sm",
+        "fixed inset-0 z-[120] flex items-stretch justify-center overflow-y-auto bg-ink/55 p-0 backdrop-blur-sm sm:items-center sm:p-6",
         closing ? "animate-backdrop-out" : "animate-backdrop-in",
       )}
     >
       <div
         className={cn(
-          "flex max-h-[85vh] w-full max-w-[640px] flex-col overflow-hidden rounded-2xl bg-surface shadow-card-lg",
+          "flex h-[100dvh] max-h-[100dvh] w-full max-w-[640px] flex-col overflow-hidden rounded-none bg-surface shadow-card-lg sm:h-auto sm:max-h-[85vh] sm:rounded-2xl",
           closing ? "animate-modal-out" : "animate-modal-in",
         )}
         onClick={(e) => e.stopPropagation()}

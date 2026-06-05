@@ -67,8 +67,8 @@ export function RejectApplicationModal({
       : "bg-red-ink hover:bg-red-ink/90";
 
   return (
-    <div className="fixed inset-0 z-[110] flex items-start justify-center overflow-y-auto bg-ink/60 p-4 backdrop-blur-sm sm:p-8">
-      <div className="my-6 w-full max-w-lg rounded-2xl bg-surface shadow-2xl">
+    <div className="fixed inset-0 z-[110] flex items-stretch justify-center overflow-y-auto bg-ink/60 p-0 backdrop-blur-sm sm:items-start sm:p-8">
+      <div className="min-h-[100dvh] w-full max-w-lg rounded-none bg-surface shadow-2xl sm:my-6 sm:min-h-0 sm:rounded-2xl">
         <header className="flex items-center gap-3 border-b border-border px-5 py-4">
           <div
             className={cn(
