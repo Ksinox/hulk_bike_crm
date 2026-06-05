@@ -108,6 +108,10 @@ function subscribe(fn: () => void) {
 function invAll() {
   queryClient.invalidateQueries({ queryKey: rentalsKeys.all });
   queryClient.invalidateQueries({ queryKey: paymentsKeys.all });
+  // v0.6.51: чтобы хронология/лента событий обновилась сразу после правок
+  // (например, «Изменить период» логирует было→стало) — раньше новое
+  // событие появлялось только после перезагрузки страницы.
+  queryClient.invalidateQueries({ queryKey: ["activity"] });
 }
 function logErr(op: string) {
   return (e: unknown) => console.error(`[${op}]`, e);
@@ -140,6 +144,12 @@ export function patchRental(id: number, patch: Partial<Rental>) {
   if (patch.rateUnit !== undefined) body.rateUnit = patch.rateUnit;
   if (patch.days !== undefined) body.days = patch.days;
   if (patch.sum !== undefined) body.sum = patch.sum;
+  // v0.6.50: коррекция периода («Изменить период») присылает пересчитанную
+  // тарифную ступень. БД enum принимает short/week/month — "day" сюда не
+  // приходит (periodForDays его не возвращает).
+  if (patch.tariffPeriod !== undefined && patch.tariffPeriod !== "day") {
+    body.tariffPeriod = patch.tariffPeriod;
+  }
   if (patch.depositReturned !== undefined) {
     body.depositReturned = patch.depositReturned;
   }

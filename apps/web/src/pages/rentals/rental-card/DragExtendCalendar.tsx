@@ -134,6 +134,10 @@ export function DragExtendCalendar({
   onParkingPick,
   parkingSelectableFromIso,
   parkingSelectableToIso,
+  editPeriodMode = false,
+  editEndIso,
+  onEditPeriodPick,
+  editMinReturnIso,
 }: {
   startIso: string;
   plannedEndIso: string;
@@ -176,6 +180,19 @@ export function DragExtendCalendar({
   onParkingPick?: (iso: string) => void;
   parkingSelectableFromIso?: string | null;
   parkingSelectableToIso?: string | null;
+  /**
+   * v0.6.50 — режим «Изменить период». Коррекция даты возврата кликом ПО
+   * ТОМУ ЖЕ календарю (не отдельным input). Включён → текущий период
+   * приглушается (editDim); клик по дню ≥ editMinReturnIso выбирает новую
+   * дату возврата (раньше baseEnd = сократить, позже = продлить).
+   * editPeriodMode и parkingMode взаимоисключающие (гарантирует родитель).
+   */
+  editPeriodMode?: boolean;
+  /** Выбранная НОВАЯ дата возврата (ISO). null пока оператор не кликнул. */
+  editEndIso?: string | null;
+  onEditPeriodPick?: (iso: string) => void;
+  /** Самая ранняя допустимая дата возврата (дней ≥ MIN). Клик раньше — игнор. */
+  editMinReturnIso?: string | null;
 }) {
   const startKey = isoToKey(startIso);
   const plannedEndKey = isoToKey(plannedEndIso);
@@ -311,6 +328,17 @@ export function DragExtendCalendar({
     if (!iso) return;
     const k = isoToKey(iso);
     if (!k) return;
+    // v0.6.50: режим «Изменить период» — клик выбирает НОВУЮ дату возврата
+    // (раньше baseEnd = сократить, позже = продлить), но не раньше
+    // editMinReturnIso (иначе осталось бы < MIN дней). Продление/паркинг не
+    // трогаем — это коррекция самой даты возврата.
+    if (editPeriodMode) {
+      const t = keyToTime(k);
+      const minK = editMinReturnIso ? isoToKey(editMinReturnIso) : null;
+      if (minK && t < keyToTime(minK)) return;
+      onEditPeriodPick?.(iso);
+      return;
+    }
     // v0.8.0: режим паркинга — клик выбирает дату, продление не трогаем.
     if (parkingMode) {
       const t = keyToTime(k);
@@ -347,9 +375,26 @@ export function DragExtendCalendar({
    * / rounded-r-lg (как data-selection-start/end в оригинальном
    * RangeCalendar). Середина — bg-blue-200/red-200/emerald-200 с
    * rounded-none. Hover НЕ применяется на зональных ячейках. */
-  type Zone = "blue" | "red" | "ext" | "parking" | null;
+  type Zone = "blue" | "red" | "ext" | "parking" | "editDim" | "editNew" | null;
   const zoneOf = (k: DateKey): Zone => {
     const t = keyToTime(k);
+    // v0.6.50: режим «Изменить период» переопределяет обычные зоны.
+    //   • Ничего не выбрано → текущий период start..plannedEnd показан
+    //     приглушённо (editDim) — оператор видит «что было».
+    //   • Выбрана новая дата → новый период start..newEnd подсвечен
+    //     (editNew); «отрезанный хвост» newEnd..plannedEnd (при сокращении)
+    //     остаётся приглушённым (editDim).
+    if (editPeriodMode) {
+      const newEndK = editEndIso ? isoToKey(editEndIso) : null;
+      if (newEndK == null) {
+        if (t >= startT && t <= plannedT) return "editDim";
+        return null;
+      }
+      const newEndT = keyToTime(newEndK);
+      if (t >= startT && t <= newEndT) return "editNew";
+      if (t > newEndT && t <= plannedT) return "editDim";
+      return null;
+    }
     // Паркинг имеет наивысший приоритет — перекрывает rent/overdue/ext.
     if (isParkingDay(t)) return "parking";
     // ext имеет приоритет (перекрывает день после plannedEnd)
@@ -397,7 +442,44 @@ export function DragExtendCalendar({
       parts.push("data-[hovered]:bg-blue-50/60");
     }
 
-    if (zone) {
+    if (zone === "editDim") {
+      // v0.6.50: текущие/«отрезанные» дни — плоская блеклая заливка БЕЗ
+      // чёрных краёв-«ручек». Скругление по краям своей группы (editDim
+      // может соседствовать с editNew слева). Грань = сосед той же зоны нет.
+      const prevK = fromJsDate(new Date(k.y, k.m, k.d - 1));
+      const nextK = fromJsDate(new Date(k.y, k.m, k.d + 1));
+      const isLeftEdge = zoneOf(prevK) !== "editDim";
+      const isRightEdge = zoneOf(nextK) !== "editDim";
+      const roundCls =
+        isLeftEdge && isRightEdge
+          ? "rounded-lg"
+          : isLeftEdge
+            ? "rounded-l-lg"
+            : isRightEdge
+              ? "rounded-r-lg"
+              : "rounded-none";
+      parts.push("bg-blue-100 text-blue-400", roundCls);
+    } else if (zone === "editNew") {
+      // v0.6.50: новый выбранный период — края чёрные «ручки» (как обычный
+      // диапазон), середина — плотный bg-blue-300 (ярче обычного blue-200).
+      // Грань считаем по «сосед не editNew» (editDim после хвоста = грань),
+      // чтобы выбранный день возврата всегда получил правую ручку.
+      const prevK = fromJsDate(new Date(k.y, k.m, k.d - 1));
+      const nextK = fromJsDate(new Date(k.y, k.m, k.d + 1));
+      const isLeftEdge = zoneOf(prevK) !== "editNew";
+      const isRightEdge = zoneOf(nextK) !== "editNew";
+      const isEdge = isLeftEdge || isRightEdge;
+      const colorCls = isEdge ? "bg-ink text-white" : "bg-blue-300 text-blue-900";
+      const roundCls =
+        isLeftEdge && isRightEdge
+          ? "rounded-lg"
+          : isLeftEdge
+            ? "rounded-l-lg"
+            : isRightEdge
+              ? "rounded-r-lg"
+              : "rounded-none";
+      parts.push(colorCls, roundCls);
+    } else if (zone) {
       const prevK = fromJsDate(new Date(k.y, k.m, k.d - 1));
       const nextK = fromJsDate(new Date(k.y, k.m, k.d + 1));
       const isLeftEdge = zoneOf(prevK) == null;

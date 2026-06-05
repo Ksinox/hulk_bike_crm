@@ -10,10 +10,17 @@
  * открывает PaymentAcceptDialog с предзаполненным числом дней.
  */
 import { useMemo, useState, type Ref } from "react";
-import { SquareParking, X } from "lucide-react";
+import { CalendarCog, SquareParking, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DragExtendCalendar } from "./DragExtendCalendar";
-import type { Rental, RentalStatus } from "@/lib/mock/rentals";
+import {
+  MIN_RENTAL_DAYS,
+  periodForDays,
+  ratePeriodForDays,
+  type Rental,
+  type RentalStatus,
+  type TariffPeriod,
+} from "@/lib/mock/rentals";
 import {
   useRentalParking,
   useCreateParking,
@@ -38,6 +45,13 @@ function diffDaysIso(fromIso: string, toIso: string): number {
   return Math.max(0, Math.round((b - a) / 86400000));
 }
 
+/** Знаковая разница дней (toIso − fromIso): может быть отрицательной. */
+function signedDiffDays(fromIso: string, toIso: string): number {
+  const a = new Date(fromIso).getTime();
+  const b = new Date(toIso).getTime();
+  return Math.round((b - a) / 86400000);
+}
+
 function todayIso(): string {
   const d = new Date();
   const y = d.getFullYear();
@@ -52,10 +66,28 @@ function isoToShort(iso: string): string {
   return m ? `${m[3]}.${m[2]}` : iso;
 }
 
+/** Прибавляет `days` к ISO-дате (YYYY-MM-DD), возвращает ISO. */
+function addDaysIso(iso: string, days: number): string {
+  const d = new Date(`${iso}T00:00:00`);
+  d.setDate(d.getDate() + days);
+  const y = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, "0");
+  const da = String(d.getDate()).padStart(2, "0");
+  return `${y}-${mo}-${da}`;
+}
+
+/** 12000 → «12 000» */
+function fmtNum(n: number): string {
+  return n.toLocaleString("ru-RU");
+}
+
 export function CalendarPanel({
   rental,
   effectiveStatus,
   onCommitExtend,
+  onChangePeriod,
+  canEditPeriod = true,
+  previewRate,
   calendarBoxRef,
   hideCalendar,
   resetSignal,
@@ -66,6 +98,32 @@ export function CalendarPanel({
   effectiveStatus: RentalStatus;
   /** v0.6.24: вызывается на click по дню > baseEnd с числом дней. */
   onCommitExtend?: (days: number) => void;
+  /**
+   * v0.6.50: «Изменить период» — перевыбор ТОЛЬКО даты возврата (старт
+   * фиксирован). Пересчитывает days/tier/rate/sum и отправляет в RentalCard,
+   * который вызывает patchRental + логирует было→стало. Если не передан —
+   * кнопка не показывается.
+   */
+  onChangePeriod?: (next: {
+    endPlannedAtIso: string;
+    days: number;
+    rate: number;
+    sum: number;
+    tariffPeriod: Exclude<TariffPeriod, "day">;
+  }) => void;
+  /**
+   * v0.6.51: false → аренду продлевали (несколько rent-платежей, накопленных
+   * по тарифам разных периодов). «Изменить период» блокируется: одно-периодный
+   * пересчёт не сходится с суммой продлений (даёт неверную выручку). Такие
+   * правки делаются через продление, не через коррекцию периода.
+   */
+  canEditPeriod?: boolean;
+  /**
+   * v0.6.50: ставка ₽/сут для N дней по тарифной сетке модели аренды.
+   * Резолвится в RentalCard (useModelRateResolver). Используется в превью
+   * «Изменить период» и при фиксации нового sum.
+   */
+  previewRate?: (days: number) => number;
   /** v0.6.13: ref на обёртку DragExtendCalendar — нужен для FLIP-измерения
    *  начальной позиции при подъёме календаря в floating-режим. */
   calendarBoxRef?: Ref<HTMLDivElement>;
@@ -106,6 +164,85 @@ export function CalendarPanel({
   // определяется ручным/авто снятием. Тумблер «первый день бесплатно».
   const [freeFirstDay, setFreeFirstDay] = useState(true);
 
+  /* ---- v0.6.50 «ИЗМЕНИТЬ ПЕРИОД» ---- */
+  // Коррекция аренды: перевыбор ТОЛЬКО даты возврата (старт фиксирован).
+  // editMode и parkingMode взаимоисключающие. Кнопка доступна только если
+  // RentalCard передал onChangePeriod (есть резолвер ставки и patch-флоу) и
+  // у аренды есть реальные даты (не «—» у заявок/отменённых).
+  const canChangePeriod =
+    !dragDisabled && !!onChangePeriod && !!previewRate && !!startIso && !!endIso;
+  const [editMode, setEditMode] = useState(false);
+  // Выбранная новая дата возврата (ISO YYYY-MM-DD). null до входа в режим.
+  const [editEndIso, setEditEndIso] = useState<string | null>(null);
+  const exitEdit = () => {
+    setEditMode(false);
+    setEditEndIso(null);
+  };
+  const enterEdit = () => {
+    // Взаимоисключение: вход в «Изменить период» гасит паркинг.
+    setParkingMode(false);
+    setDraftStart(null);
+    setEditMode(true);
+    // v0.6.50: НИЧЕГО не выбираем при входе — текущий период на календаре
+    // показывается приглушённым (editDim), а «Зафиксировать» стартует
+    // неактивной. Новую дату возврата оператор кликает прямо на календаре.
+    setEditEndIso(null);
+  };
+
+  // Минимально допустимая дата возврата: сдвиг от ТЕКУЩЕГО возврата назад
+  // так, чтобы осталось не меньше MIN_RENTAL_DAYS дней аренды. Считаем от
+  // endIso (а не от startIso), потому что у аренды с паркингом/правками
+  // дата возврата ≠ старт + дни (паркинг сдвигает возврат, не добавляя
+  // оплачиваемых дней).
+  const editMinEndIso = endIso
+    ? addDaysIso(endIso, -Math.max(0, rental.days - MIN_RENTAL_DAYS))
+    : null;
+  // Дневная стоимость платной экипировки (как в ExtendRentalDialog) —
+  // прибавляется к ставке при расчёте суммы.
+  const equipmentDaily = useMemo(
+    () =>
+      (rental.equipmentJson ?? []).reduce(
+        (s, it) => s + (it.free ? 0 : it.price ?? 0),
+        0,
+      ),
+    [rental.equipmentJson],
+  );
+  // Пересчёт: новое число дней = текущие дни аренды + сдвиг даты возврата
+  // относительно ТЕКУЩЕГО возврата (а не абсолютный span старт→возврат).
+  // Так паркинг/правки не превращаются в оплачиваемые дни: подвинули
+  // возврат на −3 дня → на 3 дня меньше аренды. days → tier → rate → sum.
+  const editPreview = useMemo(() => {
+    if (!editMode || !endIso || !editEndIso || !previewRate) return null;
+    const deltaDays = signedDiffDays(endIso, editEndIso);
+    const days = Math.max(MIN_RENTAL_DAYS, rental.days + deltaDays);
+    const newTier = ratePeriodForDays(days);
+    const oldTier = ratePeriodForDays(rental.days);
+    // Ставка: если тарифная ступень НЕ изменилась — сохраняем текущую
+    // дневную ставку аренды (не нормализуем к каталожной — иначе открытие
+    // без правок показывало бы ложную разницу и стирало возможную скидку).
+    // При смене ступени — берём ставку новой ступени из каталога.
+    const rate = newTier === oldTier ? dailyRate : previewRate(days);
+    const sum = (rate + equipmentDaily) * days;
+    const tariffPeriod = periodForDays(days) as Exclude<TariffPeriod, "day">;
+    return { days, rate, sum, tariffPeriod, ratePeriod: newTier };
+  }, [editMode, endIso, editEndIso, previewRate, equipmentDaily, rental.days, dailyRate]);
+
+  const commitEdit = () => {
+    if (!editPreview || !editEndIso || !endIso) return;
+    // Новая дата возврата = текущий возврат, сдвинутый на разницу дней
+    // (editPreview.days зажат снизу до MIN, поэтому если оператор ввёл
+    // слишком раннюю дату — возврат подтянется к минимально допустимому).
+    const endIsoClamped = addDaysIso(endIso, editPreview.days - rental.days);
+    onChangePeriod?.({
+      endPlannedAtIso: endIsoClamped,
+      days: editPreview.days,
+      rate: editPreview.rate,
+      sum: editPreview.sum,
+      tariffPeriod: editPreview.tariffPeriod,
+    });
+    exitEdit();
+  };
+
   // v0.8.18 (E1): текущая активная/запланированная сессия — чтобы кнопка
   // переключалась на «Снять с паркинга».
   const activeSession = useMemo(
@@ -133,6 +270,9 @@ export function CalendarPanel({
   if (armParkingSignal !== seenArm) {
     setSeenArm(armParkingSignal);
     if (armParkingSignal !== undefined && !dragDisabled) {
+      // Взаимоисключение с «Изменить период».
+      setEditMode(false);
+      setEditEndIso(null);
       setParkingMode(true);
       setDraftStart(null);
       setFreeFirstDay(true);
@@ -175,6 +315,9 @@ export function CalendarPanel({
 
   const toggleParkingButton = () => {
     if (!parkingMode) {
+      // Взаимоисключение с «Изменить период».
+      setEditMode(false);
+      setEditEndIso(null);
       setParkingMode(true);
       setDraftStart(null);
       setFreeFirstDay(true);
@@ -223,21 +366,61 @@ export function CalendarPanel({
           Дата возврата
         </div>
         {!dragDisabled && (
-          <div className="flex items-center gap-1">
-            {parkingMode && (
-              <button
-                type="button"
-                onClick={exitParking}
-                title="Отмена"
-                className="inline-flex h-7 items-center gap-1 rounded-full px-2 text-[12px] font-semibold text-muted hover:bg-surface-soft hover:text-ink"
-              >
-                <X size={13} /> Отмена
-              </button>
-            )}
-            {/* v0.8.15/0.8.18: явная КНОПКА. Без паркинга — «Поставить на
-                паркинг»; если паркинг уже есть — «Снять с паркинга» (красная);
-                в режиме выбора — «Выберите период»/«Зафиксировать». */}
-            {!parkingMode && activeSession ? (
+          <div className="flex flex-wrap items-center justify-end gap-1">
+            {/* v0.6.50: «Изменить период» — коррекция даты возврата. В режиме
+                редактирования кнопка превращается в «Отмена»+«Зафиксировать»;
+                паркинг-кнопки в это время скрыты (режимы взаимоисключающие). */}
+            {editMode ? (
+              <>
+                <button
+                  type="button"
+                  onClick={exitEdit}
+                  title="Отмена"
+                  className="inline-flex h-7 items-center gap-1 rounded-full px-2 text-[12px] font-semibold text-muted hover:bg-surface-soft hover:text-ink"
+                >
+                  <X size={13} /> Отмена
+                </button>
+                <button
+                  type="button"
+                  onClick={commitEdit}
+                  disabled={!editPreview || !editEndIso || editEndIso === endIso}
+                  title="Зафиксировать новый период"
+                  className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-blue-600 bg-blue-600 px-3 text-[12px] font-semibold text-white shadow-sm transition-colors hover:bg-blue-700 active:scale-[0.98] disabled:opacity-60"
+                >
+                  <CalendarCog size={14} /> Зафиксировать
+                </button>
+              </>
+            ) : (
+              <>
+                {canChangePeriod && !parkingMode && (
+                  <button
+                    type="button"
+                    onClick={canEditPeriod ? enterEdit : undefined}
+                    disabled={!canEditPeriod}
+                    title={
+                      canEditPeriod
+                        ? "Изменить период (перевыбрать дату возврата)"
+                        : "Аренду продлевали — период правится в продлении, не здесь"
+                    }
+                    className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-[12px] font-semibold text-ink shadow-sm transition-colors hover:border-blue-300 hover:bg-blue-50 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-border disabled:hover:bg-surface"
+                  >
+                    <CalendarCog size={14} /> Изменить период
+                  </button>
+                )}
+                {parkingMode && (
+                  <button
+                    type="button"
+                    onClick={exitParking}
+                    title="Отмена"
+                    className="inline-flex h-7 items-center gap-1 rounded-full px-2 text-[12px] font-semibold text-muted hover:bg-surface-soft hover:text-ink"
+                  >
+                    <X size={13} /> Отмена
+                  </button>
+                )}
+                {/* v0.8.15/0.8.18: явная КНОПКА. Без паркинга — «Поставить на
+                    паркинг»; если паркинг уже есть — «Снять с паркинга» (красная);
+                    в режиме выбора — «Выберите период»/«Зафиксировать». */}
+                {!parkingMode && activeSession ? (
               <button
                 type="button"
                 onClick={removeParking}
@@ -271,6 +454,8 @@ export function CalendarPanel({
                     : "Выберите дату"
                   : "Поставить на паркинг"}
               </button>
+                )}
+              </>
             )}
           </div>
         )}
@@ -290,6 +475,60 @@ export function CalendarPanel({
               Старт <b>{isoToShort(draftStart)}</b> · идёт до снятия ·{" "}
               1-й день бесплатно, далее 250 ₽/сут
             </span>
+          )}
+        </div>
+      )}
+
+      {/* v0.6.50: «Изменить период» правится ПРЯМО на календаре — новую дату
+          возврата оператор кликает на той же сетке (текущий период там
+          приглушён). Здесь — только компактная сводка НАД календарём:
+          пока ничего не выбрано — подсказка «кликните дату»; после клика —
+          сводка было→стало. Стиль как у блока-сводки паркинга. */}
+      {editMode && (
+        <div className="mb-2.5 rounded-[10px] border border-blue-200 bg-blue-50/70 px-3 py-2">
+          {!editPreview ? (
+            <span className="text-[12px] text-ink-2">
+              📅 Кликните на календаре новую дату возврата. Старт{" "}
+              <b>{rental.start}</b> зафиксирован.
+            </span>
+          ) : (
+            <div className="flex flex-col gap-1 text-[12px] text-ink-2">
+              <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                <span className="text-muted-2">Было:</span>
+                <b className="tabular-nums">{rental.days} дн</b>
+                <span className="text-muted-2">· тариф</span>
+                <b className="tabular-nums">{dailyRate} ₽/сут</b>
+                <span className="text-muted-2">· ИТОГО</span>
+                <b className="tabular-nums">{fmtNum(rental.sum)} ₽</b>
+              </div>
+              <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                <span className="font-semibold text-blue-700">Стало:</span>
+                <b className="tabular-nums text-blue-700">
+                  {editPreview.days} дн
+                </b>
+                <span className="text-muted-2">· тариф</span>
+                <b className="tabular-nums text-blue-700">
+                  {editPreview.rate} ₽/сут
+                </b>
+                <span className="text-muted-2">· ИТОГО</span>
+                <b className="tabular-nums text-blue-700">
+                  {fmtNum(editPreview.sum)} ₽
+                </b>
+              </div>
+              {editPreview.sum !== rental.sum && (
+                <div
+                  className={cn(
+                    "mt-0.5 text-[11.5px] font-semibold",
+                    editPreview.sum > rental.sum
+                      ? "text-emerald-700"
+                      : "text-red-ink",
+                  )}
+                >
+                  Разница: {editPreview.sum > rental.sum ? "+" : "−"}
+                  {fmtNum(Math.abs(editPreview.sum - rental.sum))} ₽
+                </div>
+              )}
+            </div>
           )}
         </div>
       )}
@@ -321,7 +560,10 @@ export function CalendarPanel({
           <div
             ref={calendarBoxRef}
             // Мобайл — на всю ширину блока; десктоп — ограничиваем ~380px.
-            className="min-w-0 w-full sm:max-w-[380px] sm:flex-1"
+            // v0.6.50: в режиме «Изменить период» календарь ОСТАЁТСЯ
+            // интерактивным — новую дату возврата кликают прямо на нём
+            // (текущий период приглушается внутри календаря, editDim-зоной).
+            className="min-w-0 w-full sm:max-w-[380px] sm:flex-1 transition-opacity"
             style={{
               visibility: hideCalendar ? "hidden" : undefined,
             }}
@@ -342,6 +584,10 @@ export function CalendarPanel({
               onParkingPick={handleParkingPick}
               parkingSelectableFromIso={selFrom}
               parkingSelectableToIso={selTo}
+              editPeriodMode={editMode}
+              editEndIso={editEndIso}
+              onEditPeriodPick={(iso) => setEditEndIso(iso)}
+              editMinReturnIso={editMinEndIso}
             />
           </div>
         )}

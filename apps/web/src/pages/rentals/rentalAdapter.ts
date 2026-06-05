@@ -66,5 +66,6 @@ export function adaptRental(
     parentRentalId: r.parentRentalId ?? undefined,
     archivedAt: r.archivedAt ?? null,
     archivedBy: r.archivedBy ?? null,
+    archivedReason: r.archivedReason ?? null,
   };
 }

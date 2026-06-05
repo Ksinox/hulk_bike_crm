@@ -94,6 +94,23 @@ function fmtOilDate(ymd: string): string {
   return `${m[3]}.${m[2]}.${m[1]}`;
 }
 
+/**
+ * Заголовок «Текущий статус» в карточке. Exhaustive Record — TS заставит
+ * добавить новые статусы (раньше if/else падал в дефолт «Продан», поэтому
+ * ДТП/В разборке ошибочно показывались как «Продан»).
+ */
+const STATUS_TITLE: Record<ScooterDisplayStatus, string> = {
+  rental_pool: "Готов к аренде",
+  ready: "Не распределён",
+  rented: "В аренде",
+  repair: "На ремонте",
+  for_sale: "Выставлен на продажу",
+  buyout: "Передан в выкуп",
+  sold: "Продан",
+  disassembly: "В разборке",
+  dtp: "ДТП — авария",
+};
+
 function parseDate(s: string): Date | null {
   const m = s.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
   if (!m) return null;
@@ -429,12 +446,14 @@ export function ScooterCard({
                         ? "bg-surface-soft text-muted"
                         : status === "repair"
                           ? "bg-red-soft text-red-ink"
-                          : status === "for_sale"
-                            ? "bg-orange-soft text-orange-ink"
-                            : "bg-surface-soft text-muted",
+                          : status === "dtp"
+                            ? "bg-red text-white"
+                            : status === "for_sale"
+                              ? "bg-orange-soft text-orange-ink"
+                              : "bg-surface-soft text-muted",
                   )}
                 >
-                  {status === "repair" ? (
+                  {status === "repair" || status === "dtp" ? (
                     <Wrench size={18} />
                   ) : (
                     <BadgeCheck size={18} />
@@ -453,24 +472,16 @@ export function ScooterCard({
                 Текущий статус
               </div>
               <div className="mt-1 font-display text-[20px] font-extrabold leading-tight text-ink">
-                {status === "rental_pool"
-                  ? "Готов к аренде"
-                  : status === "ready"
-                    ? "Не распределён"
-                    : status === "repair"
-                      ? "На ремонте"
-                      : status === "for_sale"
-                        ? "Выставлен на продажу"
-                        : status === "buyout"
-                          ? "Передан в выкуп"
-                          : "Продан"}
+                {STATUS_TITLE[status]}
               </div>
               <div className="mt-2 text-[12px] leading-relaxed text-muted">
                 {status === "rental_pool"
                   ? "Скутер в пуле аренды. Создайте аренду из списка клиентов или с этой карточки."
                   : status === "ready"
                     ? "Скутер заведён в парк, но ещё не назначен под аренду, ремонт или продажу."
-                    : scooter.note || "—"}
+                    : status === "dtp"
+                      ? scooter.note || "Попал в ДТП. Выведен из аренды до ремонта/разбирательства."
+                      : scooter.note || "—"}
               </div>
               {status === "rental_pool" && (
                 <button

@@ -170,11 +170,22 @@ export function useSwapScooter() {
 export function useDeleteRental() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: number) => api.delete<void>(`/api/rentals/${id}`),
+    // v0.6.51: принимаем либо id (как раньше), либо {id, reason} — причина
+    // удаления («Создано случайно» и т.п.) уходит в body DELETE и сохраняется
+    // в archivedReason аренды.
+    mutationFn: (arg: number | { id: number; reason?: string }) => {
+      const id = typeof arg === "number" ? arg : arg.id;
+      const reason = typeof arg === "number" ? undefined : arg.reason;
+      return api.delete<void>(
+        `/api/rentals/${id}`,
+        reason ? { reason } : undefined,
+      );
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: rentalsKeys.all });
       qc.invalidateQueries({ queryKey: ["scooters"] });
       qc.invalidateQueries({ queryKey: ["activity"] });
+      qc.invalidateQueries({ queryKey: ["clients"] });
     },
   });
 }

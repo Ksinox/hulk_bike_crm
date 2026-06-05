@@ -26,6 +26,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
+  MIN_RENTAL_DAYS,
+  ratePeriodForDays,
   STATUS_LABEL,
   STATUS_TONE,
   type Rental,
@@ -41,7 +43,8 @@ import {
   useDeleteSticker,
   useRepinSticker,
 } from "@/lib/api/stickers";
-import { useApiClients } from "@/lib/api/clients";
+import { clientsKeys, useApiClients } from "@/lib/api/clients";
+import { queryClient } from "@/lib/queryClient";
 import { useApiScooters } from "@/lib/api/scooters";
 import { navigate } from "@/app/navigationStore";
 // v0.6.44: tabs убраны из карточки — новый 2-col layout (MasterBlock +
@@ -58,6 +61,7 @@ import { HistoryTab, type HistoryFilter } from "./RentalCardTabs";
 import { RentalActionDialog, type ActionKind } from "./RentalActionDialog";
 import { ExtendRentalDialog } from "./ExtendRentalDialog";
 import { PaymentAcceptDialog } from "./PaymentAcceptDialog";
+import { askRentalDeleteReason } from "./deleteRentalReason";
 import { SwapScooterDialog } from "./SwapScooterDialog";
 import { DamageReportDialog } from "./DamageReportDialog";
 import { EquipmentChangeDialog } from "./EquipmentChangeDialog";
@@ -72,10 +76,13 @@ import { useRentalParking, useEndParking } from "@/lib/api/parking";
 import { RentalActionsMenu, type MenuAction } from "./RentalActionsMenu";
 import {
   getRentalChainIds,
+  patchRental,
   useChainPayments,
+  useRentalPayments,
   useRentals,
   useArchivedRentals,
 } from "./rentalsStore";
+import { useModelRateResolver } from "@/lib/api/scooter-models";
 import { ClientQuickView } from "@/pages/clients/ClientQuickView";
 import { RentalEditModal } from "./RentalEditModal";
 import { Eraser, Pencil, Trash2, RotateCcw } from "lucide-react";
@@ -416,6 +423,11 @@ export function RentalCard({
     [chainIdsFull, allRentals],
   );
   const chainPayments = useChainPayments(chainIds);
+  // v0.6.50: «Изменить период» — резолвер ставки по тарифной сетке модели
+  // (тот же источник, что в создании/продлении) + платежи именно этой
+  // аренды (для определения уже оплаченной аренды при сокращении).
+  const resolveRate = useModelRateResolver();
+  const rentalPayments = useRentalPayments(rental.id);
   // v0.6.50: лента событий по аренде для inline-блока «Последние события»
   // под календарём. Полный список — в drawer'е (HistoryTab).
   const activityQ = useActivityTimeline("rental", rental.id, 50);
@@ -1199,17 +1211,14 @@ export function RentalCard({
       return;
     }
     if (id === "delete") {
-      const ok = await confirmDialog({
-        title: "Удалить аренду?",
-        message: `Аренда #${String(rental.id).padStart(4, "0")} будет перемещена в архив. Историю клиента и платежи система сохранит. Восстановить аренду можно из архива на этой же странице.`,
-        confirmText: "Удалить",
-        cancelText: "Отмена",
-        danger: true,
-      });
-      if (!ok) return;
+      const rentalNo = `#${String(rental.id).padStart(4, "0")}`;
+      // v0.6.51: причина удаления («Создано случайно» и т.п.) — сам выбор
+      // причины и есть подтверждение; уходит в archivedReason + ленту.
+      const reason = await askRentalDeleteReason(rentalNo);
+      if (!reason) return;
       try {
-        await deleteRental.mutateAsync(rental.id);
-        toast.success("Аренда удалена", `#${String(rental.id).padStart(4, "0")}`);
+        await deleteRental.mutateAsync({ id: rental.id, reason });
+        toast.success("Аренда удалена", `${rentalNo} · ${reason}`);
       } catch (e) {
         if (e instanceof ApiError) {
           const body = e.body as { message?: string } | null;
@@ -1236,6 +1245,112 @@ export function RentalCard({
       } else if (paymentRentalId == null) {
         setPaymentRentalId(rental.id);
       }
+    }
+  };
+
+  // v0.6.50: ставка ₽/сут для N дней — тарифная ступень по сетке модели.
+  // Передаём в CalendarPanel как previewRate, чтобы превью и фиксация нового
+  // периода считали ставку из того же источника, что создание/продление.
+  const previewRate = (days: number): number =>
+    resolveRate(rental, ratePeriodForDays(Math.max(MIN_RENTAL_DAYS, days)));
+
+  // v0.6.51: «Изменить период» доступно только для одно-периодной аренды.
+  // Продление добавляет отдельный rent-платёж (накопление по тарифам разных
+  // периодов), поэтому >1 rent-платежа = аренду продлевали. Одно-периодный
+  // пересчёт коррекции не сошёлся бы с этой суммой → выручка поехала бы.
+  // Такие аренды правятся через продление; кнопку блокируем.
+  const hasExtensions =
+    rentalPayments.filter((p) => p.type === "rent").length > 1;
+
+  // v0.6.50: «Изменить период» — приходит из CalendarPanel с уже пересчитанными
+  // {endPlannedAtIso, days, rate, sum, tariffPeriod}. Здесь: (1) при сокращении
+  // оплаченной аренды спрашиваем куда деть излишек, (2) вызываем patchRental
+  // (бэк синхронит rent-платёж + логирует было→стало), (3) тост.
+  const handleChangePeriod = async (next: {
+    endPlannedAtIso: string;
+    days: number;
+    rate: number;
+    sum: number;
+    tariffPeriod: "short" | "week" | "month";
+  }) => {
+    if (rental.archivedAt || rental.status === "completed") return;
+    // v0.6.51: страховка — на продлённой аренде коррекция периода запрещена
+    // (кнопка уже заблокирована, но защищаемся и здесь).
+    if (hasExtensions) {
+      toast.error(
+        "Период правится в продлении",
+        "Аренду продлевали — скорректируйте срок через продление.",
+      );
+      return;
+    }
+    const prevDays = rental.days;
+    // ISO YYYY-MM-DD → DD.MM.YYYY (формат, который ждёт patchRental).
+    const m = next.endPlannedAtIso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) {
+      toast.error("Некорректная дата возврата");
+      return;
+    }
+    const endPlannedRu = `${m[3]}.${m[2]}.${m[1]}`;
+
+    // Уже оплаченная по аренде сумма (rent, paid). Если новая сумма меньше —
+    // образуется излишек: спрашиваем «в депозит» vs «выдать клиенту».
+    const paidRent = rentalPayments
+      .filter((p) => p.type === "rent" && p.paid)
+      .reduce((s, p) => s + p.amount, 0);
+    const overpay = paidRent > 0 ? paidRent - next.sum : 0;
+
+    let creditToDeposit = false;
+    if (overpay > 0) {
+      const choice = await pickAction<"deposit" | "cash">({
+        title: "Аренда стала дешевле",
+        message: `Уже оплачено ${fmt(paidRent)} ₽, новая сумма ${fmt(next.sum)} ₽. Излишек ${fmt(overpay)} ₽.`,
+        options: [
+          {
+            id: "deposit",
+            label: "В депозит клиента",
+            hint: `Зачислим ${fmt(overpay)} ₽ на депозит — пойдёт в счёт будущих оплат.`,
+          },
+          {
+            id: "cash",
+            label: "Выдать клиенту",
+            hint: "Просто уменьшим сумму аренды (деньги вернёте наличными вручную).",
+            tone: "danger",
+          },
+        ],
+      });
+      if (choice == null) return; // отмена — период не меняем
+      creditToDeposit = choice === "deposit";
+    }
+
+    try {
+      patchRental(rental.id, {
+        endPlanned: endPlannedRu,
+        startTime: rental.startTime,
+        days: next.days,
+        // Коррекция периода считается по ДНЯМ → ставка дневная, фиксируем
+        // rateUnit="day", иначе у недельной аренды дневное значение легло бы
+        // в поле с единицей «нед» и ставка/сумма разъехались бы.
+        rate: next.rate,
+        rateUnit: "day",
+        sum: next.sum,
+        tariffPeriod: next.tariffPeriod,
+      });
+      if (creditToDeposit && overpay > 0) {
+        await api.post(`/api/clients/${rental.clientId}/deposit/charge`, {
+          amount: overpay,
+          comment: `Излишек по коррекции периода аренды #${rental.id}`,
+          rentalId: rental.id,
+        });
+        queryClient.invalidateQueries({ queryKey: clientsKeys.all });
+      }
+      toast.success(
+        "Период изменён",
+        `было ${prevDays} дн → стало ${next.days} дн${
+          creditToDeposit && overpay > 0 ? ` · +${fmt(overpay)} ₽ в депозит` : ""
+        }`,
+      );
+    } catch (e) {
+      toast.error("Не удалось изменить период", (e as Error).message ?? "");
     }
   };
 
@@ -1975,6 +2090,9 @@ export function RentalCard({
             rental={rental}
             effectiveStatus={effectiveStatus}
             onCommitExtend={handleCommitExtend}
+            onChangePeriod={handleChangePeriod}
+            canEditPeriod={!hasExtensions}
+            previewRate={previewRate}
             resetSignal={onRequestPayment ? paymentResetSignal : calendarResetSignal}
             initialExtDays={
               (onRequestPayment ? paymentExtDays : paymentPrefillExtDays) ||
@@ -2234,6 +2352,9 @@ export function RentalCard({
               rental={rental}
               effectiveStatus={effectiveStatus}
               onCommitExtend={handleCommitExtend}
+              onChangePeriod={handleChangePeriod}
+              canEditPeriod={!hasExtensions}
+              previewRate={previewRate}
               // v0.7.3: при parent-managed Payment календарь синхронизируется
               // с состоянием в Rentals (число дней + сигнал сброса); иначе —
               // с локальным fallback-состоянием карточки.
