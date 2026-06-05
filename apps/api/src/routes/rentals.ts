@@ -639,6 +639,21 @@ export async function rentalsRoutes(app: FastifyInstance) {
             branchLog.newBranchDays
           } дн, ${branchLog.newBranchSum.toLocaleString("ru-RU")} ₽`
         : `Отредактирована аренда ${summary}`;
+      // v0.8.x: «Изменить период» продлённой аренды — кладём в diff наглядную
+      // пару «период ВЕТКИ было → стало» (от конца прошлой ветки до возврата).
+      // Это главное, что заказчик хочет видеть в истории — чёткий период
+      // от-и-до. Избыточные Срок/Дата возврата убираем: их полностью
+      // перекрывают «Период продления» + «Сумма аренды».
+      if (branchLog) {
+        editDiff.branchPeriod = {
+          label: "Период продления",
+          from: `${dmShort(branchLog.end1Iso)}–${dmShort(branchLog.oldEnd2Iso)}`,
+          to: `${dmShort(branchLog.end1Iso)}–${dmShort(branchLog.newEnd2Iso)}`,
+          kind: "text",
+        };
+        delete editDiff.endPlanned;
+        delete editDiff.days;
+      }
       await logActivity(req, {
         entity: "rental",
         entityId: id,
