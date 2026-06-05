@@ -86,6 +86,7 @@ export function CalendarPanel({
   effectiveStatus,
   onCommitExtend,
   onChangePeriod,
+  canEditPeriod = true,
   previewRate,
   calendarBoxRef,
   hideCalendar,
@@ -110,6 +111,13 @@ export function CalendarPanel({
     sum: number;
     tariffPeriod: Exclude<TariffPeriod, "day">;
   }) => void;
+  /**
+   * v0.6.51: false → аренду продлевали (несколько rent-платежей, накопленных
+   * по тарифам разных периодов). «Изменить период» блокируется: одно-периодный
+   * пересчёт не сходится с суммой продлений (даёт неверную выручку). Такие
+   * правки делаются через продление, не через коррекцию периода.
+   */
+  canEditPeriod?: boolean;
   /**
    * v0.6.50: ставка ₽/сут для N дней по тарифной сетке модели аренды.
    * Резолвится в RentalCard (useModelRateResolver). Используется в превью
@@ -387,9 +395,14 @@ export function CalendarPanel({
                 {canChangePeriod && !parkingMode && (
                   <button
                     type="button"
-                    onClick={enterEdit}
-                    title="Изменить период (перевыбрать дату возврата)"
-                    className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-[12px] font-semibold text-ink shadow-sm transition-colors hover:border-blue-300 hover:bg-blue-50 active:scale-[0.98]"
+                    onClick={canEditPeriod ? enterEdit : undefined}
+                    disabled={!canEditPeriod}
+                    title={
+                      canEditPeriod
+                        ? "Изменить период (перевыбрать дату возврата)"
+                        : "Аренду продлевали — период правится в продлении, не здесь"
+                    }
+                    className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-[12px] font-semibold text-ink shadow-sm transition-colors hover:border-blue-300 hover:bg-blue-50 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-border disabled:hover:bg-surface"
                   >
                     <CalendarCog size={14} /> Изменить период
                   </button>

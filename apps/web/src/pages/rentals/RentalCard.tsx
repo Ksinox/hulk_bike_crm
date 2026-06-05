@@ -1256,6 +1256,14 @@ export function RentalCard({
   const previewRate = (days: number): number =>
     resolveRate(rental, ratePeriodForDays(Math.max(MIN_RENTAL_DAYS, days)));
 
+  // v0.6.51: «Изменить период» доступно только для одно-периодной аренды.
+  // Продление добавляет отдельный rent-платёж (накопление по тарифам разных
+  // периодов), поэтому >1 rent-платежа = аренду продлевали. Одно-периодный
+  // пересчёт коррекции не сошёлся бы с этой суммой → выручка поехала бы.
+  // Такие аренды правятся через продление; кнопку блокируем.
+  const hasExtensions =
+    rentalPayments.filter((p) => p.type === "rent").length > 1;
+
   // v0.6.50: «Изменить период» — приходит из CalendarPanel с уже пересчитанными
   // {endPlannedAtIso, days, rate, sum, tariffPeriod}. Здесь: (1) при сокращении
   // оплаченной аренды спрашиваем куда деть излишек, (2) вызываем patchRental
@@ -1268,6 +1276,15 @@ export function RentalCard({
     tariffPeriod: "short" | "week" | "month";
   }) => {
     if (rental.archivedAt || rental.status === "completed") return;
+    // v0.6.51: страховка — на продлённой аренде коррекция периода запрещена
+    // (кнопка уже заблокирована, но защищаемся и здесь).
+    if (hasExtensions) {
+      toast.error(
+        "Период правится в продлении",
+        "Аренду продлевали — скорректируйте срок через продление.",
+      );
+      return;
+    }
     const prevDays = rental.days;
     // ISO YYYY-MM-DD → DD.MM.YYYY (формат, который ждёт patchRental).
     const m = next.endPlannedAtIso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -2076,6 +2093,7 @@ export function RentalCard({
             effectiveStatus={effectiveStatus}
             onCommitExtend={handleCommitExtend}
             onChangePeriod={handleChangePeriod}
+            canEditPeriod={!hasExtensions}
             previewRate={previewRate}
             resetSignal={onRequestPayment ? paymentResetSignal : calendarResetSignal}
             initialExtDays={
@@ -2337,6 +2355,7 @@ export function RentalCard({
               effectiveStatus={effectiveStatus}
               onCommitExtend={handleCommitExtend}
               onChangePeriod={handleChangePeriod}
+              canEditPeriod={!hasExtensions}
               previewRate={previewRate}
               // v0.7.3: при parent-managed Payment календарь синхронизируется
               // с состоянием в Rentals (число дней + сигнал сброса); иначе —
