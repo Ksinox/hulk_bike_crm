@@ -249,7 +249,10 @@ export function MasterBlock({
   // тайлы flex-wrap (переносятся при многих позициях). overflow-visible
   // на ряду, чтобы фото скутера могло выходить за границы блока.
   const scooterBlock = (
-    <div className="grid grid-cols-2 items-stretch gap-3 overflow-visible">
+    // v0.6.51: на узких экранах (мобилка) — вертикально: скутер сверху,
+    // экипировка снизу на ВСЮ ширину (иначе при многих позициях тайлы
+    // ломали вёрстку в правой половине 50/50). На sm+ — прежний 2-кол.
+    <div className="grid grid-cols-1 gap-3 overflow-visible sm:grid-cols-2 sm:items-stretch">
       {/* ЛЕВО — СКУТЕР, текст слева + крупная аватарка справа */}
       <ScooterCompact
         scooter={scooter ?? null}
