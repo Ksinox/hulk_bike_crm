@@ -224,6 +224,9 @@ async function bootstrap() {
     // Ревизор рассинхрона sum vs rent-платежи — только creator/director
     const { diagReconcileRoutes } = await import("./routes/diagReconcile.js");
     await protectedApp.register(diagReconcileRoutes, { prefix: "/api/_diag" });
+    // Хранилище — обзор места (БД/файлы/диск) + файловый браузер; creator/director
+    const { storageAdminRoutes } = await import("./routes/storageAdmin.js");
+    await protectedApp.register(storageAdminRoutes, { prefix: "/api/storage" });
     // Генерация документов по аренде (договор, акты)
     await protectedApp.register(rentalDocumentsRoutes, { prefix: "/api" });
     // Прейскурант (справочник цен)

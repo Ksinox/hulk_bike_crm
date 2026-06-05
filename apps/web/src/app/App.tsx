@@ -9,6 +9,7 @@ import { Garage } from "@/pages/fleet/Garage";
 import { Service } from "@/pages/service/Service";
 import { Settings } from "@/pages/settings/Settings";
 import { Staff } from "@/pages/staff/Staff";
+import { StoragePage } from "@/pages/storage/StoragePage";
 import { WhatsNew } from "@/pages/whats-new/WhatsNew";
 import { Applications } from "@/pages/applications/Applications";
 import { UpdateToast } from "./UpdateToast";
@@ -218,6 +219,8 @@ function AppShell({
       <WhatsNew />
     ) : route === "settings" ? (
       <Settings />
+    ) : route === "storage" ? (
+      <StoragePage />
     ) : (
       <Dashboard />
     );

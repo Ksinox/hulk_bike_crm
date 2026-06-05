@@ -5,6 +5,7 @@ import {
   CircleAlert,
   ClipboardCheck,
   FileText,
+  HardDrive,
   Home,
   Inbox,
   LogOut,
@@ -58,6 +59,15 @@ function buildMainItems(canManageStaff: boolean): NavItem[] {
     { id: "debtors", label: "Должники", icon: Scale, ready: true },
     { id: "whats-new", label: "Что нового", icon: Sparkles, ready: true },
   );
+  // «Хранилище» — обзор места (БД/файлы/диск) + браузер; только director/creator.
+  if (canManageStaff) {
+    items.push({
+      id: "storage",
+      label: "Хранилище",
+      icon: HardDrive,
+      ready: true,
+    });
+  }
   return items;
 }
 

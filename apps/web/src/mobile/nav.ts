@@ -1,6 +1,7 @@
 import {
   Bike,
   FileText,
+  HardDrive,
   Home,
   Inbox,
   LayoutGrid,
@@ -47,6 +48,12 @@ export function buildMoreItems(canManageStaff: boolean): MobileNavItem[] {
   ];
   if (canManageStaff) {
     items.push({ id: "staff", label: "Сотрудники", icon: UserCog, ready: true });
+    items.push({
+      id: "storage",
+      label: "Хранилище",
+      icon: HardDrive,
+      ready: true,
+    });
   }
   items.push(
     { id: "whats-new", label: "Что нового", icon: Sparkles, ready: true },
@@ -71,6 +78,7 @@ export function routeTitle(route: RouteId): string {
     service: "Ремонты",
     docs: "Документы",
     staff: "Сотрудники",
+    storage: "Хранилище",
     "whats-new": "Что нового",
     settings: "Настройки",
   };
