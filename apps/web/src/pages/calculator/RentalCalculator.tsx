@@ -4,7 +4,6 @@ import {
   ChevronRight,
   Clock,
   GripHorizontal,
-  Minus,
   Pin,
   Plus,
   Trash2,
@@ -40,6 +39,7 @@ import {
   type WinPos,
 } from "@/lib/calc/calcHistory";
 import { CalcEquipmentCarousel, CalcModelCarousel } from "./CalcCarousels";
+import { InlineRangeCalendar } from "@/components/ui/date-picker";
 
 /**
  * Плавающий калькулятор аренды — быстрый расчёт для оператора «на телефоне».
@@ -373,10 +373,6 @@ function CalculatorWindow({
         endIso={endIso}
         days={days}
         onStart={setStartIso}
-        onEndDate={(iso) => {
-          const d = daysBetweenIso(startIso, iso);
-          if (d >= 1) setDaysClamped(d);
-        }}
         onDays={setDaysClamped}
         deposit={deposit}
         onDeposit={setDeposit}
@@ -442,7 +438,7 @@ function CalculatorWindow({
         >
           {header}
           {tabs}
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3.5 py-3">
+          <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-3.5 py-3">
             {body}
           </div>
           {footer}
@@ -460,7 +456,9 @@ function CalculatorWindow({
       <div className="flex max-h-[82vh] flex-col overflow-hidden rounded-[20px] border border-border bg-surface shadow-card-lg ring-1 ring-black/5">
         {header}
         {tabs}
-        <div className="min-h-0 flex-1 overflow-y-auto px-3.5 py-3">{body}</div>
+        <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3.5 py-3">
+          {body}
+        </div>
         {footer}
       </div>
     </div>
@@ -480,7 +478,6 @@ function CalcView({
   endIso,
   days,
   onStart,
-  onEndDate,
   onDays,
   deposit,
   onDeposit,
@@ -501,7 +498,6 @@ function CalcView({
   endIso: string;
   days: number;
   onStart: (iso: string) => void;
-  onEndDate: (iso: string) => void;
   onDays: (n: number) => void;
   deposit: number;
   onDeposit: (n: number) => void;
@@ -551,79 +547,35 @@ function CalcView({
         />
       </Section>
 
-      {/* Период */}
+      {/* Период — открытый календарь (как в анкете): тап начало → тап конец.
+          Сверху быстрые пресеты дней; снизу — итоговая строка с тарифом. */}
       <Section label="Период">
-        <div className="flex items-center gap-2">
-          <label className="flex flex-1 flex-col gap-1">
-            <span className="text-[10.5px] font-semibold uppercase tracking-wide text-muted-2">
-              Начало
-            </span>
-            <input
-              type="date"
-              value={startIso}
-              onChange={(e) => e.target.value && onStart(e.target.value)}
-              className="h-9 w-full rounded-[10px] border border-border bg-surface px-2.5 text-[12.5px] text-ink outline-none focus:border-blue-600"
-            />
-          </label>
-          <label className="flex flex-1 flex-col gap-1">
-            <span className="text-[10.5px] font-semibold uppercase tracking-wide text-muted-2">
-              Конец
-            </span>
-            <input
-              type="date"
-              value={endIso}
-              min={addDaysIso(startIso, 1)}
-              onChange={(e) => e.target.value && onEndDate(e.target.value)}
-              className="h-9 w-full rounded-[10px] border border-border bg-surface px-2.5 text-[12.5px] text-ink outline-none focus:border-blue-600"
-            />
-          </label>
-        </div>
-
-        {/* Срок: степпер + пресеты */}
-        <div className="mt-2 flex items-center gap-2">
-          <div className="flex h-9 items-center rounded-[10px] border border-border bg-surface">
+        <div className="mb-2 flex flex-wrap gap-1">
+          {DAY_PRESETS.map((p) => (
             <button
+              key={p}
               type="button"
-              onClick={() => onDays(days - 1)}
-              className="flex h-full w-9 items-center justify-center rounded-l-[10px] text-muted transition-colors hover:bg-surface-soft hover:text-ink"
-              aria-label="Меньше дней"
+              onClick={() => onDays(p)}
+              className={cn(
+                "h-7 rounded-full px-3 text-[12px] font-semibold transition-colors",
+                days === p
+                  ? "bg-ink text-white"
+                  : "bg-surface-soft text-muted hover:bg-blue-50 hover:text-blue-700",
+              )}
             >
-              <Minus size={15} />
+              {p} дн
             </button>
-            <div className="flex min-w-[68px] flex-col items-center justify-center px-1 leading-none">
-              <span className="text-[14px] font-bold tabular-nums text-ink">
-                {days}
-              </span>
-              <span className="text-[9px] text-muted-2">{daysWord(days)}</span>
-            </div>
-            <button
-              type="button"
-              onClick={() => onDays(days + 1)}
-              className="flex h-full w-9 items-center justify-center rounded-r-[10px] text-muted transition-colors hover:bg-surface-soft hover:text-ink"
-              aria-label="Больше дней"
-            >
-              <Plus size={15} />
-            </button>
-          </div>
-          <div className="flex flex-1 flex-wrap gap-1">
-            {DAY_PRESETS.map((p) => (
-              <button
-                key={p}
-                type="button"
-                onClick={() => onDays(p)}
-                className={cn(
-                  "h-7 rounded-full px-2.5 text-[12px] font-semibold transition-colors",
-                  days === p
-                    ? "bg-ink text-white"
-                    : "bg-surface-soft text-muted hover:bg-blue-50 hover:text-blue-700",
-                )}
-              >
-                {p}
-              </button>
-            ))}
-          </div>
+          ))}
         </div>
-        <div className="mt-1.5 text-center text-[11px] text-muted">
+        <InlineRangeCalendar
+          from={startIso}
+          to={endIso}
+          onChange={({ from, to }) => {
+            onStart(from);
+            onDays(Math.max(1, daysBetweenIso(from, to)));
+          }}
+        />
+        <div className="mt-2 text-center text-[12px] text-muted">
           с {isoToDDMM(startIso)} по {isoToDDMM(endIso)} ·{" "}
           <span className="font-semibold text-ink/70">
             {days} {daysWord(days)}
