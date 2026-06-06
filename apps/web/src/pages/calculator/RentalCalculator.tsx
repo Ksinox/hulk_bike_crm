@@ -399,14 +399,27 @@ function CalculatorWindow({
 
   const footer = view === "calc" && (
     <div className="border-t border-border bg-surface px-3.5 py-2.5">
+      {/* Итог «К выдаче» — всегда виден (не уходит под фолд при скролле тела). */}
+      <div className="mb-2 flex items-end justify-between gap-2">
+        <div>
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">
+            К выдаче
+          </div>
+          <div className="text-[10px] text-muted-2">
+            {rub(quote.perDay)} ₽/сут · залог {rub(quote.deposit)} ₽
+          </div>
+        </div>
+        <div className="font-display text-[25px] font-extrabold leading-none tabular-nums text-ink">
+          {rub(quote.total)} ₽
+        </div>
+      </div>
       <button
         type="button"
         onClick={fixVariant}
         disabled={!model}
         className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 text-[14px] font-bold text-white shadow-card-sm transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-45"
       >
-        <Pin size={16} /> Зафиксировать вариант
-        {variantCount > 0 ? ` (${variantCount})` : ""}
+        <Pin size={16} /> Зафиксировать{variantCount > 0 ? ` (${variantCount})` : ""}
       </button>
       {!model && (
         <div className="mt-1.5 text-center text-[11px] text-muted-2">
@@ -653,21 +666,6 @@ function CalcView({
           </div>
         </div>
 
-        <div className="my-1 border-t border-dashed border-border" />
-
-        <div className="flex items-end justify-between gap-2 pt-1">
-          <div>
-            <div className="text-[12px] font-semibold uppercase tracking-wide text-muted">
-              К выдаче
-            </div>
-            <div className="text-[10.5px] text-muted-2">
-              {rub(quote.perDay)} ₽/сут всего
-            </div>
-          </div>
-          <div className="font-display text-[24px] font-extrabold leading-none tabular-nums text-ink">
-            {rub(quote.total)} ₽
-          </div>
-        </div>
       </div>
 
       {/* Зафиксированные варианты */}
