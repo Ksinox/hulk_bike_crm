@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { Plus } from "lucide-react";
+import { Calculator, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { RouteId } from "@/app/route";
 import { useMe, useLogout } from "@/lib/api/auth";
+import { openCalculator } from "@/lib/calc/calcStore";
 import { FabProvider, type PageFab } from "./fab";
 import { useSheetDrag, SheetHandle } from "./ui";
 import {
@@ -311,6 +312,20 @@ function MoreSheet({
               </button>
             );
           })}
+          {/* Калькулятор аренды — плавающее окно (не раздел). */}
+          <button
+            type="button"
+            onClick={() => {
+              openCalculator();
+              onClose();
+            }}
+            className="flex flex-col items-center gap-1.5 rounded-2xl px-1 py-3 text-center text-ink transition-colors hover:bg-surface-soft"
+          >
+            <Calculator size={24} strokeWidth={2} />
+            <span className="text-[11px] font-semibold leading-tight">
+              Калькулятор
+            </span>
+          </button>
         </div>
 
         <button
