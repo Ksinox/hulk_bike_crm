@@ -70,6 +70,30 @@ export function App() {
     return startWebVersionCheck((next) => setWebUpdate(next));
   }, []);
 
+  // Единый тонкий скроллбар: при активной прокрутке вешаем .is-scrolling на
+  // прокручиваемый элемент (CSS делает линию чуть толще), снимаем через 600мс
+  // покоя — линия снова сужается. Один глобальный listener в capture-фазе.
+  useEffect(() => {
+    const timers = new WeakMap<Element, number>();
+    const onScroll = (e: Event) => {
+      const t = e.target;
+      const el =
+        t === document || t === window
+          ? document.documentElement
+          : (t as Element | null);
+      if (!el || !(el instanceof Element)) return;
+      el.classList.add("is-scrolling");
+      const prev = timers.get(el);
+      if (prev) window.clearTimeout(prev);
+      timers.set(
+        el,
+        window.setTimeout(() => el.classList.remove("is-scrolling"), 600),
+      );
+    };
+    window.addEventListener("scroll", onScroll, true);
+    return () => window.removeEventListener("scroll", onScroll, true);
+  }, []);
+
   useEffect(() => {
     return onNavigate((req) => {
       setRoute(req.route);

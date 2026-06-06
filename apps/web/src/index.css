@@ -168,6 +168,46 @@
     background: transparent;
   }
 
+  /* ─────────────────────────────────────────────────────────────────
+     Единый тонкий скроллбар для ВСЕГО приложения. Светлая ненавязчивая
+     линия в покое; при активной прокрутке (класс .is-scrolling вешает
+     глобальный listener в App.tsx) — чуть толще и контрастнее, потом
+     снова сужается. Заменяет дефолтные «толстые» системные полосы.
+     .no-scrollbar (display:none) и .scrollbar-thin специфичнее — не ломаются.
+     ───────────────────────────────────────────────────────────────── */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(148, 163, 184, 0.35) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    /* видимая часть тонкая (~4px): прозрачная рамка 3px + clip */
+    background: rgba(148, 163, 184, 0.3);
+    border-radius: 999px;
+    border: 3px solid transparent;
+    background-clip: padding-box;
+    transition: background 0.2s ease;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background: rgba(100, 116, 139, 0.5);
+    background-clip: padding-box;
+  }
+  *::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+  /* Активная прокрутка — линия толще (рамка 2px → ~6px) и заметнее. */
+  .is-scrolling::-webkit-scrollbar-thumb {
+    background: rgba(100, 116, 139, 0.55);
+    border-width: 2px;
+    background-clip: padding-box;
+  }
+
   .scroll-fade-y {
     -webkit-mask-image: linear-gradient(
       to bottom,
