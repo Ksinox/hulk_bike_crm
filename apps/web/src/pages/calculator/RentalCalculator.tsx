@@ -268,7 +268,7 @@ function CalculatorWindow({
     const clamp = () =>
       setPos((p) => ({
         x: Math.min(Math.max(8, p.x), Math.max(8, window.innerWidth - WIN_W - 8)),
-        y: Math.min(Math.max(8, p.y), Math.max(8, window.innerHeight - 120)),
+        y: Math.min(Math.max(8, p.y), Math.max(8, window.innerHeight - 320)),
       }));
     clamp();
     window.addEventListener("resize", clamp);
@@ -290,7 +290,7 @@ function CalculatorWindow({
     );
     const ny = Math.min(
       Math.max(8, d.by + (e.clientY - d.sy)),
-      Math.max(8, window.innerHeight - 120),
+      Math.max(8, window.innerHeight - 320),
     );
     setPos({ x: nx, y: ny });
   };
@@ -453,7 +453,13 @@ function CalculatorWindow({
       style={{ left: pos.x, top: pos.y, width: WIN_W }}
       onKeyDown={onRootKeyDown}
     >
-      <div className="flex max-h-[82vh] flex-col overflow-hidden rounded-[20px] border border-border bg-surface shadow-card-lg ring-1 ring-black/5">
+      {/* Высота привязана к позиции окна: окно никогда не вылезает за низ
+          экрана, поэтому липкий футер с итогом всегда виден, куда бы его
+          ни перетащили. */}
+      <div
+        className="flex flex-col overflow-hidden rounded-[20px] border border-border bg-surface shadow-card-lg ring-1 ring-black/5"
+        style={{ maxHeight: `calc(100dvh - ${Math.round(pos.y) + 16}px)` }}
+      >
         {header}
         {tabs}
         <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3.5 py-3">
