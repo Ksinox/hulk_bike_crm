@@ -55,6 +55,17 @@ export function CalcModelCarousel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [valueId, models.length]);
 
+  // Авто-выбор отцентрованной модели: живой пересчёт при пролистывании и
+  // сразу при открытии. Если выбор сброшен (valueId=null) — берём текущую
+  // центральную карточку (в калькуляторе модель выбрана всегда).
+  useEffect(() => {
+    if (valueId == null && models.length > 0) {
+      const idx = Math.min(Math.max(0, activeIdx), models.length - 1);
+      onSelect(models[idx]!.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [valueId, models.length, activeIdx]);
+
   if (models.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-border bg-surface-soft px-4 py-5 text-center text-[12px] text-muted">
@@ -79,7 +90,11 @@ export function CalcModelCarousel({
         onSwiper={(s) => {
           swiperRef.current = s;
         }}
-        onSlideChange={(s) => setActiveIdx(s.activeIndex)}
+        onSlideChange={(s) => {
+          setActiveIdx(s.activeIndex);
+          const m = models[s.activeIndex];
+          if (m) onSelect(m.id);
+        }}
         className="!overflow-visible !pb-1"
       >
         {models.map((m, i) => {
@@ -93,11 +108,9 @@ export function CalcModelCarousel({
               <button
                 type="button"
                 onClick={() => {
-                  if (i !== activeIdx) {
-                    swiperRef.current?.slideTo(i);
-                    setActiveIdx(i);
-                  }
-                  onSelect(selected ? null : m.id);
+                  swiperRef.current?.slideTo(i);
+                  setActiveIdx(i);
+                  onSelect(m.id);
                 }}
                 className={`group relative w-full overflow-hidden rounded-[18px] border-2 bg-surface text-left shadow-card-sm transition-all ${
                   selected ? "border-ink ring-2 ring-ink/10" : "border-border"
