@@ -39,6 +39,7 @@ import { NewApplicationDetector } from "@/pages/clients/NewApplicationDetector";
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { MobileApp } from "@/mobile/MobileApp";
+import { RentalCalculator } from "@/pages/calculator/RentalCalculator";
 
 export function App() {
   const isMobile = useIsMobile();
@@ -107,6 +108,7 @@ export function App() {
       <DashboardDrawerProvider>
         <MobileApp route={route} onSelect={onSelect} />
         <NewApplicationDetector />
+        <RentalCalculator />
         <ToastContainer />
         <ConfirmContainer />
         <PickContainer />
@@ -124,6 +126,7 @@ export function App() {
         onCloseUpdate={() => setWebUpdate(null)}
       />
       <NewApplicationDetector />
+      <RentalCalculator />
       <ToastContainer />
       <ConfirmContainer />
       <PickContainer />
