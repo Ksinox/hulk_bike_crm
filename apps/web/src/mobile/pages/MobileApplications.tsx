@@ -11,9 +11,9 @@ import {
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 import { MobileNewClient } from "../forms/MobileNewClient";
+import { ApplicationView } from "@/pages/applications/ApplicationView";
 import type { ClientSource } from "@/lib/mock/clients";
 import {
-  DetailRow,
   MobileChips,
   MobileEmpty,
   MobileSheet,
@@ -37,14 +37,6 @@ const STATUS_META: Record<ApplicationStatus, { label: string; cls: string }> = {
   rejected: { label: "Отклонена", cls: "bg-red-soft text-red-ink" },
   spam: { label: "Спам", cls: "bg-orange-soft text-orange-ink" },
   cancelled: { label: "Отменена", cls: "bg-surface-soft text-muted-2" },
-};
-
-const SOURCE_LABEL: Record<string, string> = {
-  avito: "Авито",
-  repeat: "Уже катался",
-  ref: "Рекомендация",
-  maps: "Карты",
-  other: "Другое",
 };
 
 function formatDate(iso: string | null): string {
@@ -119,7 +111,7 @@ export function MobileApplications() {
       <MobileSheet
         open={openApp != null}
         onClose={() => setOpenId(null)}
-        title={openApp?.name ?? "Заявка"}
+        title="Заявка"
       >
         {openApp && (
           <AppDetail
@@ -214,84 +206,43 @@ function AppDetail({
   onAccept: () => void;
   onReject: () => void;
 }) {
-  const meta = STATUS_META[app.status];
   const actionable = app.status === "new" || app.status === "viewed";
   return (
-    <div>
-      <div className="mb-2">
-        <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-bold", meta.cls)}>
-          {meta.label}
-        </span>
-      </div>
+    <div className="pb-1">
+      <ApplicationView app={app} />
 
-      {app.phone && (
-        <a
-          href={`tel:${app.phone}`}
-          className="mb-3 flex items-center justify-center gap-2 rounded-2xl bg-blue-600 py-3 text-[14px] font-bold text-white active:scale-[0.99]"
-        >
-          <Phone size={17} /> Позвонить {app.phone}
-        </a>
-      )}
-
-      <div className="rounded-2xl bg-surface px-3.5 shadow-card-sm">
-        <DetailRow label="Подана" value={formatDate(app.createdAt)} />
-        {app.source && (
-          <>
-            <div className="border-t border-border" />
-            <DetailRow label="Источник" value={SOURCE_LABEL[app.source] ?? app.source} />
-          </>
+      <div className="mt-5 flex flex-col gap-2">
+        {app.phone && (
+          <a
+            href={`tel:${app.phone}`}
+            className="flex items-center justify-center gap-2 rounded-2xl bg-blue-50 py-3 text-[14px] font-bold text-blue-700 ring-1 ring-inset ring-blue-100 active:scale-[0.99]"
+          >
+            <Phone size={17} /> Позвонить
+          </a>
         )}
-        {app.requestedModel && (
-          <>
-            <div className="border-t border-border" />
-            <DetailRow
-              label="Хочет"
-              value={`${app.requestedModel}${app.requestedDays ? ` · ${app.requestedDays} дн.` : ""}`}
-            />
-          </>
-        )}
-        {app.requestedStartDate && (
-          <>
-            <div className="border-t border-border" />
-            <DetailRow label="Старт" value={app.requestedStartDate} />
-          </>
-        )}
-        {app.isForeigner && (
-          <>
-            <div className="border-t border-border" />
-            <DetailRow label="Гражданство" value="Иностранец" />
-          </>
-        )}
-        {app.rejectionReason && (
-          <>
-            <div className="border-t border-border" />
-            <DetailRow label="Причина отказа" value={app.rejectionReason} valueClass="text-red" />
-          </>
+        {actionable ? (
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={onReject}
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-2xl bg-red-soft py-3.5 text-[14px] font-bold text-red-ink active:scale-[0.99]"
+            >
+              <X size={17} /> Отклонить
+            </button>
+            <button
+              type="button"
+              onClick={onAccept}
+              className="flex flex-[1.5] items-center justify-center gap-1.5 rounded-2xl bg-green py-3.5 text-[14px] font-bold text-white shadow-card-sm active:scale-[0.99]"
+            >
+              <Check size={17} /> Принять и оформить
+            </button>
+          </div>
+        ) : (
+          <p className="text-center text-[12px] text-muted-2">
+            Заявка уже обработана
+          </p>
         )}
       </div>
-
-      {actionable ? (
-        <div className="mt-4 flex gap-2">
-          <button
-            type="button"
-            onClick={onReject}
-            className="flex flex-1 items-center justify-center gap-1.5 rounded-2xl bg-red-soft py-3 text-[14px] font-bold text-red-ink active:scale-[0.99]"
-          >
-            <X size={17} /> Отклонить
-          </button>
-          <button
-            type="button"
-            onClick={onAccept}
-            className="flex flex-[1.4] items-center justify-center gap-1.5 rounded-2xl bg-green py-3 text-[14px] font-bold text-white active:scale-[0.99]"
-          >
-            <Check size={17} /> Принять и оформить
-          </button>
-        </div>
-      ) : (
-        <p className="mt-3 text-center text-[12px] text-muted-2">
-          Заявка уже обработана
-        </p>
-      )}
     </div>
   );
 }
