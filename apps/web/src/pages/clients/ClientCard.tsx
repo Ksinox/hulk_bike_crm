@@ -431,7 +431,7 @@ export function ClientCard({ client }: { client: Client }) {
                   .find((r) => (r.sum ?? 0) > 0);
               if (!target) return;
               if (drawer.inDrawer) {
-                drawer.openRental(target.id);
+                drawer.openRentalChain(target.id);
               } else {
                 navigate({
                   route: "rentals",

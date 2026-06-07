@@ -330,7 +330,7 @@ export function MobileClientCard({
                       .sort((a, b) => b.id - a.id)
                       .find((r) => (r.sum ?? 0) > 0);
                   if (!target) return;
-                  if (drawer.inDrawer) drawer.openRental(target.id);
+                  if (drawer.inDrawer) drawer.openRentalChain(target.id);
                   else
                     navigate({
                       route: "rentals",

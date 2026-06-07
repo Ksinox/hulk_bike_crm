@@ -214,7 +214,7 @@ export function TermsTab({
   // provider всегда есть → клик откроет drawer вместо ухода на /fleet.
   const drawer = useDashboardDrawer();
   const goToScooter = (scooterId: number) => {
-    drawer.openScooter(scooterId);
+    drawer.openScooterChain(scooterId);
   };
   const time = rental.startTime ?? "12:00";
   const location = "Склад \"Северный\"";
@@ -2302,9 +2302,9 @@ export function ActivityTimelineSection({
       // Мы уже на карточке этой аренды — повторно открывать её поверх
       // не нужно (иначе дубль/мелькание поверх той же карточки).
       if (currentRentalId != null && it.entityId === currentRentalId) return;
-      drawer.openRental(it.entityId);
-    } else if (it.entity === "scooter") drawer.openScooter(it.entityId);
-    else if (it.entity === "client") drawer.openClient(it.entityId);
+      drawer.openRentalChain(it.entityId);
+    } else if (it.entity === "scooter") drawer.openScooterChain(it.entityId);
+    else if (it.entity === "client") drawer.openClientChain(it.entityId);
   };
   // navigate keep imported для других мест файла; void чтобы линтер
   // не ругался если в этой функции его нет.
