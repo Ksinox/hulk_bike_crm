@@ -38,6 +38,7 @@ export function RevenueListModal({
   initialMethodFilter = "all",
   scope = "all",
   title,
+  onRowClick,
   onClose,
 }: {
   initialPeriod: RevenuePeriod;
@@ -47,6 +48,14 @@ export function RevenueListModal({
   scope?: RevenueScope;
   /** Заголовок окна (по умолчанию зависит от scope). */
   title?: string;
+  /**
+   * Клик по платежу. Если задан — вызывается вместо drawer.openRental
+   * (модалка при этом закрывается анимацией). Нужен на стр. Аренды, где
+   * карточка живёт в СОБСТВЕННОЙ панели страницы — открытие через
+   * глобальный drawer дало бы вторую копию карточки поверх панели.
+   * Если не задан (дашборд) — открываем аренду в общем drawer.
+   */
+  onRowClick?: (rentalId: number) => void;
   onClose: () => void;
 }) {
   const [closing, setClosing] = useState(false);
@@ -197,7 +206,11 @@ export function RevenueListModal({
             scope={scope}
             onRowClick={(id) => {
               requestClose();
-              drawer.openRental(id);
+              // На стр. Аренды — открываем в панели страницы (onRowClick),
+              // иначе (дашборд) — в общем drawer. Не делаем оба, чтобы не
+              // плодить дубль карточки.
+              if (onRowClick) onRowClick(id);
+              else drawer.openRental(id);
             }}
             compact={false}
           />

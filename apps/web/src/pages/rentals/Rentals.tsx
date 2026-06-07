@@ -850,11 +850,15 @@ export function Rentals() {
         />
       )}
 
-      {/* v0.9.3: клик по KPI «Выручка» → полноэкранная сводка по арендам. */}
+      {/* v0.9.3: клик по KPI «Выручка» → полноэкранная сводка по арендам.
+          v0.9.4: клик по платежу открывает аренду в ПАНЕЛИ страницы
+          (handleSelect), а не в глобальном drawer — иначе карточка
+          дублировалась поверх уже открытой панели. */}
       {revenueOpen && (
         <RevenueListModal
           initialPeriod="month"
           scope="rentals"
+          onRowClick={(id) => handleSelect(id)}
           onClose={() => setRevenueOpen(false)}
         />
       )}
