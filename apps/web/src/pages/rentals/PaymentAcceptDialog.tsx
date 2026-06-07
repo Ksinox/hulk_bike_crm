@@ -165,21 +165,60 @@ export function PaymentAcceptDialog({
       .reduce((s, p) => s + p.amount, 0);
   }, [payments, rental.id]);
 
-  // Компоненты долга — берём из API debt summary
-  const overdueDaysBalanceRaw = debt?.overdueDaysBalance ?? 0;
-  const overdueFineBalanceRaw = debt?.overdueFineBalance ?? 0;
+  // v0.9.1: дата фактического поступления оплаты — «ЯКОРЬ ОТСЧЁТА».
+  // По умолчанию сегодня. Оператор может указать прошедшую дату: клиент
+  // заплатил вовремя, но зафиксировали позже. Тогда «как будто сегодня =
+  // эта дата»: просрочка считается НА неё, а продление/закрытие — ОТ неё.
+  // Это НЕ прощение просрочки — просто точка отсчёта дальнейших операций.
+  const todayIso = useMemo(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }, []);
+  const [paymentDateIso, setPaymentDateIso] = useState<string>(todayIso);
+  const [dateConfirmed, setDateConfirmed] = useState(false);
+  // back-date активен, когда подтверждена ПРОШЕДШАЯ дата оплаты.
+  const isBackdated = dateConfirmed && paymentDateIso !== todayIso;
+  // Timestamp для paidAt платежей: выбранная дата (полдень) или «сейчас».
+  const paymentTimestamp = useMemo(
+    () =>
+      paymentDateIso && paymentDateIso !== todayIso
+        ? new Date(paymentDateIso + "T12:00:00").toISOString()
+        : null,
+    [paymentDateIso, todayIso],
+  );
+
+  // v0.9: дневная ставка = аренда/сут (week → /7) + платная экипировка/сут;
+  // штраф 50% от суммы за сутки (синхронно с бэкендом).
+  const equipDailyForOverdue = (rental.equipmentJson ?? []).reduce(
+    (s, e) => s + (e.free ? 0 : e.price),
+    0,
+  );
+  const dailyRateBase =
+    (rental.rateUnit === "week"
+      ? Math.max(1, Math.round(rental.rate / 7))
+      : Math.max(1, rental.rate)) + equipDailyForOverdue;
+  const fineDailyRate = Math.round(dailyRateBase * 0.5);
+
+  // Компоненты долга. На СЕГОДНЯ берём из API (учитывают частичные
+  // оплаты/прощения). При back-date — пересчитываем просрочку НА дату
+  // оплаты: дни = max(0, дата − плановыйВозврат), долг = дни × ставка.
+  const realOverdueDaysAsOf = effectiveOverdueDaysAsOf(
+    rental.endPlanned,
+    paymentDateIso,
+  );
+  const overdueDaysCount = isBackdated
+    ? realOverdueDaysAsOf
+    : debt?.overdueDays ?? 0;
+  const overdueDaysBalanceRaw = isBackdated
+    ? overdueDaysCount * dailyRateBase
+    : debt?.overdueDaysBalance ?? 0;
+  const overdueFineBalanceRaw = isBackdated
+    ? overdueDaysCount * fineDailyRate
+    : debt?.overdueFineBalance ?? 0;
   const damageBalance = debt?.damageBalance ?? 0;
   const manualBalance = debt?.manualBalance ?? 0;
 
   // v0.6.11: одно состояние выбора действия по просрочке (Step 1).
-  //   'clear'    — погасить долг (без forgive)
-  //   'days-all' — простить ВСЕ неоплаченные дни (target='days' с daysCount=overdueDays;
-  //                бэкенд авто-снимет fine за эти дни + сдвинет endPlanned на overdueDays)
-  //   'days-n'   — простить только N дней (target='days', daysCount=N)
-  //   'fine'     — простить только штраф (target='fine')
-  //   'fine-n'   — простить штраф только за N дней (v0.6.13)
-  //   'all'      — простить ВСЁ (target='all')
-  // Дни/штраф учёт для расчёта «к приёму» производный (см. ниже).
   type ForgiveChoice =
     | "clear"
     | "days-all"
@@ -191,54 +230,15 @@ export function PaymentAcceptDialog({
   const hasOverdueDays = overdueDaysBalanceRaw > 0;
   const hasOverdue = hasOverdueFine || hasOverdueDays;
   const overdueBalanceRaw = overdueDaysBalanceRaw + overdueFineBalanceRaw;
-  const overdueDaysCount = debt?.overdueDays ?? 0;
-  // v0.9: дневная ставка для частичного прощения = аренда/сут + платная
-  // экипировка/сут — синхронно с бэкендом, где день просрочки и штраф 50%
-  // считаются от полной суммы за сутки (раньше экипировку не учитывали).
-  const equipDailyForOverdue = (rental.equipmentJson ?? []).reduce(
-    (s, e) => s + (e.free ? 0 : e.price),
-    0,
-  );
-  const dailyRateBase =
-    (rental.rateUnit === "week"
-      ? Math.max(1, Math.round(rental.rate / 7))
-      : Math.max(1, rental.rate)) + equipDailyForOverdue;
-  const fineDailyRate = Math.round(dailyRateBase * 0.5);
-  // v0.9: разнос долга просрочки на 3 наглядные части — аренда/сут×дни,
-  // платная экипировка/сут×дни и штраф 50%. Аренда+экипировка ==
-  // overdueDaysBalanceRaw (бэкенд объединяет их в «дни», что путало).
+  // v0.9: разнос «дней» на аренду и платную экипировку (3 строки в UI).
   const overdueEquipCharge = equipDailyForOverdue * overdueDaysCount;
   const overdueRentDaysCharge = Math.max(
     0,
     overdueDaysBalanceRaw - overdueEquipCharge,
   );
   const [forgiveChoice, setForgiveChoice] = useState<ForgiveChoice>("clear");
-  // Количество дней для частичного прощения (forgiveChoice='days-n').
-  // Ограничено [1, overdueDaysCount] — больше прощать нельзя.
   const [forgiveDaysN, setForgiveDaysN] = useState<number>(1);
-  // v0.6.13: для 'fine-n' — N дней штрафа, тоже [1, overdueDaysCount].
   const [forgiveFineN, setForgiveFineN] = useState<number>(1);
-  // v0.9.1: дата фактического поступления оплаты. По умолчанию — сегодня.
-  // Оператор может указать прошедшую дату (клиент заплатил вовремя, но
-  // оператор фиксирует позже) — тогда просрочка за «дни задержки фиксации»
-  // снимается, а платёж датируется реальным днём.
-  const todayIso = useMemo(() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  }, []);
-  const [paymentDateIso, setPaymentDateIso] = useState<string>(todayIso);
-  // Подтверждён ли шаг «дата оплаты». Шаг показывается перед основным
-  // окном только когда есть просрочка (есть что пересчитывать).
-  const [dateConfirmed, setDateConfirmed] = useState(false);
-  const [applyingDate, setApplyingDate] = useState(false);
-  // Timestamp для paidAt платежей: выбранная дата (полдень) или «сейчас».
-  const paymentTimestamp = useMemo(
-    () =>
-      paymentDateIso && paymentDateIso !== todayIso
-        ? new Date(paymentDateIso + "T12:00:00").toISOString()
-        : null,
-    [paymentDateIso, todayIso],
-  );
   useEffect(() => {
     // При смене аренды сбрасываем выбор + ограничиваем N.
     if (forgiveDaysN > Math.max(1, overdueDaysCount)) {
@@ -1165,9 +1165,20 @@ export function PaymentAcceptDialog({
     );
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const extBase = anchor.getTime() < today.getTime() ? today : anchor;
-    return { startDate, anchor, extBase, today };
-  }, [rental.start, rental.endPlanned]);
+    // v0.9.1: продление считается ОТ даты оплаты (якорь), а не от сегодня.
+    // По умолчанию paymentDateIso === сегодня → поведение не меняется.
+    // При back-date (Панченко: возврат 6-го, сегодня 7-е, оплата 6-го) база
+    // продления = 6-е → дни 7,8,9, а не от 7-го. Совпадает с бэкендом:
+    // overdue-оплата сдвигает endPlanned на дату оплаты, extend-inplace
+    // прибавляет дни уже от неё.
+    const pm = /^(\d{4})-(\d{2})-(\d{2})/.exec(paymentDateIso);
+    const payDate = pm
+      ? new Date(Number(pm[1]), Number(pm[2]) - 1, Number(pm[3]))
+      : today;
+    payDate.setHours(0, 0, 0, 0);
+    const extBase = anchor.getTime() < payDate.getTime() ? payDate : anchor;
+    return { startDate, anchor, extBase, today, payDate };
+  }, [rental.start, rental.endPlanned, paymentDateIso]);
 
   const newEnd = useMemo(() => {
     if (!parsedDates) return null;
@@ -2076,15 +2087,19 @@ export function PaymentAcceptDialog({
   );
 
   // v0.9.1: шаг «дата поступления оплаты» — показываем перед основным
-  // окном, только когда есть просрочка (есть что пересчитывать). Оператор
-  // указывает реальную дату оплаты; «дни задержки фиксации» прощаются.
+  // окном, только когда есть просрочка. Дата = ЯКОРЬ отсчёта («как будто
+  // сегодня — эта дата»): просрочка и продление считаются от неё. Это НЕ
+  // прощение — ничего не пишем в БД на этом шаге; пересчёт только в окне.
   const needDateStep = hasOverdue && !dateConfirmed;
+  // Просрочка НА выбранную дату (сколько дней просрочки на дату оплаты).
   const dateEffDays = effectiveOverdueDaysAsOf(
     rental.endPlanned,
     paymentDateIso,
   );
+  // Сколько дней «уходит» из сегодняшней просрочки за счёт back-date
+  // (для пояснения оператору; на БД не влияет, если не продлить/закрыть).
   const dateDelayDays = operatorDelayDays(
-    overdueDaysCount,
+    debt?.overdueDays ?? 0,
     rental.endPlanned,
     paymentDateIso,
   );
@@ -2099,28 +2114,13 @@ export function PaymentAcceptDialog({
       return undefined;
     }
   };
-  const confirmDate = async () => {
-    if (applyingDate) return;
-    setApplyingDate(true);
-    try {
-      if (dateDelayDays > 0) {
-        await api.post(`/api/rentals/${rental.id}/debt/forgive-overdue`, {
-          target: "days",
-          daysCount: dateDelayDays,
-          comment: `Оплата поступила ${paymentRu} — просрочка пересчитана (задержка фиксации ${dateDelayDays} дн)`,
-        });
-        qc.invalidateQueries({ queryKey: ["rental-debt", rental.id] });
-        qc.invalidateQueries({ queryKey: ["debt-aggregate"] });
-        qc.invalidateQueries({ queryKey: ["rentals"] });
-        qc.invalidateQueries({ queryKey: ["activity"] });
-        qc.invalidateQueries({ queryKey: ["clients"] });
-      }
-      setDateConfirmed(true);
-    } catch (e) {
-      toast.error("Не удалось пересчитать просрочку", String(e));
-    } finally {
-      setApplyingDate(false);
-    }
+  // Дата — якорь отсчёта, а НЕ прощение: ничего не пишем в БД. Просто
+  // фиксируем выбор. Просрочка (overdue*) и база продления (extBase) уже
+  // зависят от paymentDateIso и пересчитаются в окне. Если оператор
+  // выбрал дату, но не продлил/не закрыл — на БД ничего не меняется,
+  // и завтра просрочка снова будет считаться от сегодня (как и должно).
+  const confirmDate = () => {
+    setDateConfirmed(true);
   };
 
   const dateStepPanel = (
@@ -2158,8 +2158,9 @@ export function PaymentAcceptDialog({
             </>
           )}
           <div className="mt-1 text-[11px] text-muted">
-            Если клиент заплатил вовремя, а вы фиксируете позже — укажите
-            реальную дату, лишняя просрочка снимется.
+            Если клиент заплатил вовремя, а вы фиксируете позже — укажите дату
+            оплаты. Отсчёт продления/закрытия пойдёт от неё (как будто сегодня —
+            эта дата). Это не прощение долга.
           </div>
         </div>
 
@@ -2184,20 +2185,22 @@ export function PaymentAcceptDialog({
 
         {dateEffDays === 0 ? (
           <div className="rounded-[12px] border border-green-ink/30 bg-green-soft/50 px-3 py-2.5 text-[12.5px] text-green-ink">
-            Оплата <b>{paymentRu}</b> — в срок. Просрочка{" "}
-            <b>{overdueDaysCount} дн</b> ({fmt(dateRemovedAmount)} ₽) будет
-            снята, к оплате только текущие начисления.
+            Оплата <b>{paymentRu}</b> — в срок, просрочки на эту дату нет
+            {dateRemovedAmount > 0 && (
+              <> ({fmt(dateRemovedAmount)} ₽ за {dateDelayDays} дн не начисляются)</>
+            )}
+            . Продление и закрытие пойдут от <b>{paymentRu}</b>.
           </div>
         ) : dateDelayDays > 0 ? (
           <div className="rounded-[12px] border border-amber-300 bg-amber-50 px-3 py-2.5 text-[12.5px] text-amber-900">
-            Реальная просрочка на <b>{paymentRu}</b> — <b>{dateEffDays} дн</b>.{" "}
-            {dateDelayDays} дн задержки фиксации ({fmt(dateRemovedAmount)} ₽)
-            будут сняты.
+            На <b>{paymentRu}</b> просрочка <b>{dateEffDays} дн</b> (вместо{" "}
+            {overdueDaysCount} сегодня). Отсчёт продления/закрытия — от этой
+            даты.
           </div>
         ) : (
           <div className="rounded-[12px] border border-border bg-surface-soft/50 px-3 py-2.5 text-[12.5px] text-ink-2">
             Просрочка <b>{overdueDaysCount} дн</b> начисляется полностью —
-            оплата зафиксирована сегодня.
+            оплата фиксируется сегодня.
           </div>
         )}
       </div>
@@ -2213,14 +2216,10 @@ export function PaymentAcceptDialog({
         <button
           type="button"
           onClick={confirmDate}
-          disabled={applyingDate}
-          className={cn(
-            "inline-flex h-12 flex-[2] items-center justify-center gap-1.5 rounded-full px-4 text-[14px] font-bold text-white",
-            applyingDate ? "bg-blue-300" : "bg-blue-600 hover:bg-blue-700",
-          )}
+          className="inline-flex h-12 flex-[2] items-center justify-center gap-1.5 rounded-full bg-blue-600 px-4 text-[14px] font-bold text-white hover:bg-blue-700"
         >
-          {applyingDate ? "Пересчёт…" : "Продолжить"}
-          {!applyingDate && <ChevronRight size={16} />}
+          Продолжить
+          <ChevronRight size={16} />
         </button>
       </div>
     </div>
