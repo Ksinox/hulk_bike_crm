@@ -1,7 +1,9 @@
 import { useMemo, useState } from "react";
-import { Bike, ChevronRight } from "lucide-react";
+import { Bike, ChevronRight, Maximize2 } from "lucide-react";
 import { useRentals, useArchivedRentals } from "@/pages/rentals/rentalsStore";
 import { RentalCard } from "@/pages/rentals/RentalCard";
+import { useBillingPeriodRevenue } from "@/lib/useRevenue";
+import { MobileRevenueScreen } from "./MobileRevenueScreen";
 import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
 import { ErrorBoundary } from "@/app/ErrorBoundary";
 import { usePageFab } from "../fab";
@@ -92,6 +94,8 @@ export function MobileRentals() {
   const [filter, setFilter] = useState<Filter>("active");
   const [search, setSearch] = useState("");
   const [openId, setOpenId] = useState<number | null>(null);
+  const [revenueOpen, setRevenueOpen] = useState(false);
+  const rev = useBillingPeriodRevenue("rentals");
   /** Открыта форма создания аренды (переиспользуем десктоп-модалку). */
   const [newOpen, setNewOpen] = useState(false);
   usePageFab("Аренда", () => setNewOpen(true));
@@ -157,6 +161,26 @@ export function MobileRentals() {
     // pb-20: нижний отступ, чтобы плавающая кнопка (FAB) не перекрывала
     // последнюю строку списка.
     <div className="flex flex-col gap-3 pb-20">
+      {/* Выручка по арендам — тап открывает банковскую сводку. */}
+      <button
+        type="button"
+        onClick={() => setRevenueOpen(true)}
+        className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-blue-600 to-blue-700 p-4 text-left text-white shadow-card active:scale-[0.99]"
+      >
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-white/70">
+            Выручка · аренды · {rev.period.label}
+          </span>
+          <Maximize2 size={15} className="text-white/70" />
+        </div>
+        <div className="mt-1 font-display text-[30px] font-extrabold leading-none tabular-nums">
+          {rev.total.toLocaleString("ru-RU")} ₽
+        </div>
+        <div className="mt-1 text-[12px] text-white/70">
+          нажмите для разбивки
+        </div>
+      </button>
+
       <MobileSearch
         value={search}
         onChange={setSearch}
@@ -214,6 +238,12 @@ export function MobileRentals() {
         />
       )}
 
+      {revenueOpen && (
+        <MobileRevenueScreen
+          scope="rentals"
+          onClose={() => setRevenueOpen(false)}
+        />
+      )}
     </div>
   );
 }
