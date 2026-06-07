@@ -856,6 +856,25 @@ export function RentalCard({
     daysLeft !== null && daysLeft < 0 ? Math.abs(daysLeft) : 0;
   const dailyRateForHint =
     rental.rateUnit === "week" ? Math.round(rental.rate / 7) : rental.rate;
+  // v0.9: платная экипировка/сут — для раскладки просрочки на «аренду» и
+  // «экипировку» (как overdueDailyRate на бэке: ставка/сут + экип/сут).
+  // День просрочки = аренда + экипировка; штраф 50% берётся от их суммы.
+  const equipDailyForOverdue = (rental.equipmentJson ?? []).reduce(
+    (s, e) => s + (e.free ? 0 : e.price),
+    0,
+  );
+  const fullDailyForOverdue = dailyRateForHint + equipDailyForOverdue;
+  // Раскладка ТЕКУЩЕГО остатка «дни просрочки» (из API) на экипировку и
+  // аренду. Экипировка не превышает остаток; аренда — остаток за вычетом
+  // экипировки. Так аренда + экипировка всегда равны overdueDaysBalance.
+  const overdueEquipBalance = Math.min(
+    overdueDaysBalance,
+    equipDailyForOverdue * overdueDaysCount,
+  );
+  const overdueRentBalance = Math.max(
+    0,
+    overdueDaysBalance - overdueEquipBalance,
+  );
   const overdueHint =
     overdueDaysCount > 0
       ? `${overdueDaysCount} дн с ${rental.endPlanned.slice(0, 5)}, ставка ${fmt(dailyRateForHint)} ₽/сут`
@@ -1629,8 +1648,11 @@ export function RentalCard({
               {pending > 0 && (
                 <div>не оплачено: <b>{fmt(pending)} ₽</b></div>
               )}
-              {overdueDaysBalance > 0 && (
-                <div>дни просрочки: <b>{fmt(overdueDaysBalance)} ₽</b></div>
+              {overdueRentBalance > 0 && (
+                <div>аренда за дни: <b>{fmt(overdueRentBalance)} ₽</b></div>
+              )}
+              {overdueEquipBalance > 0 && (
+                <div>экипировка за дни: <b>{fmt(overdueEquipBalance)} ₽</b></div>
               )}
               {overdueFineBalance > 0 && (
                 <div>штраф: <b>{fmt(overdueFineBalance)} ₽</b></div>
@@ -1943,10 +1965,10 @@ export function RentalCard({
         const d = Math.max(1, daysLeft !== null ? Math.abs(daysLeft) : 1);
         // v0.4.25: dailyRate учитывает rateUnit. При week-тарифе
         // dailyRate = round(rate/7), штраф = round(dailyRate × 0.5).
-        const dailyRate =
-          rental.rateUnit === "week"
-            ? Math.round(rental.rate / 7)
-            : rental.rate;
+        // v0.9: dailyRate включает платную экипировку/сут (как overdueDailyRate
+        // на бэке) — иначе формула «дни» не сходится с балансом, в который
+        // экипировка уже включена. Единый источник: fullDailyForOverdue.
+        const dailyRate = fullDailyForOverdue;
         const fineDaily = Math.round(dailyRate * 0.5);
         const fallbackDays = dailyRate * d;
         const fallbackFine = fineDaily * d;
@@ -2282,15 +2304,29 @@ export function RentalCard({
                 </div>
                 {debtTotal > 0 ? (
                   <div className="mt-2 space-y-2 text-[13px] text-ink-2">
-                    {overdueDaysBalance > 0 && (
+                    {/* v0.9: «дни просрочки» раскладываем на аренду и
+                        платную экипировку — три отдельные суммы (аренда /
+                        экипировка / штраф), а не сливаем экип в «дни». */}
+                    {overdueRentBalance > 0 && (
                       <DebtRow
-                        label="Дни просрочки"
+                        label="Аренда за дни просрочки"
                         formula={
                           overdueDaysCount > 0
                             ? `${overdueDaysCount} ${overdueDaysCount === 1 ? "день" : "дн"} × ${fmt(dailyRateForHint)} ₽/день`
                             : undefined
                         }
-                        value={overdueDaysBalance}
+                        value={overdueRentBalance}
+                      />
+                    )}
+                    {overdueEquipBalance > 0 && (
+                      <DebtRow
+                        label="Экипировка за дни просрочки"
+                        formula={
+                          overdueDaysCount > 0
+                            ? `${overdueDaysCount} ${overdueDaysCount === 1 ? "день" : "дн"} × ${fmt(equipDailyForOverdue)} ₽/день`
+                            : undefined
+                        }
+                        value={overdueEquipBalance}
                       />
                     )}
                     {overdueFineBalance > 0 && (
@@ -2298,7 +2334,7 @@ export function RentalCard({
                         label="Штраф за просрочку"
                         formula={
                           overdueDaysCount > 0
-                            ? `${overdueDaysCount} ${overdueDaysCount === 1 ? "день" : "дн"} × ${fmt(Math.round(dailyRateForHint * 0.5))} ₽ (50% ставки)`
+                            ? `${overdueDaysCount} ${overdueDaysCount === 1 ? "день" : "дн"} × ${fmt(Math.round(fullDailyForOverdue * 0.5))} ₽ (50% от аренды+экип.)`
                             : "штраф 50% от ставки"
                         }
                         value={overdueFineBalance}

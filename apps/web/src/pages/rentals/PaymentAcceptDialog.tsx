@@ -196,6 +196,14 @@ export function PaymentAcceptDialog({
       ? Math.max(1, Math.round(rental.rate / 7))
       : Math.max(1, rental.rate)) + equipDailyForOverdue;
   const fineDailyRate = Math.round(dailyRateBase * 0.5);
+  // v0.9: разнос долга просрочки на 3 наглядные части — аренда/сут×дни,
+  // платная экипировка/сут×дни и штраф 50%. Аренда+экипировка ==
+  // overdueDaysBalanceRaw (бэкенд объединяет их в «дни», что путало).
+  const overdueEquipCharge = equipDailyForOverdue * overdueDaysCount;
+  const overdueRentDaysCharge = Math.max(
+    0,
+    overdueDaysBalanceRaw - overdueEquipCharge,
+  );
   const [forgiveChoice, setForgiveChoice] = useState<ForgiveChoice>("clear");
   // Количество дней для частичного прощения (forgiveChoice='days-n').
   // Ограничено [1, overdueDaysCount] — больше прощать нельзя.
@@ -1281,6 +1289,24 @@ export function PaymentAcceptDialog({
               {/* v0.6.11: 2 карточки grid-cols-2 — «Погасить долг» / «Простить».
                   На «Простить» при hover/click показывается side popover со
                   списком 4 вариантов (все дни / N дней / только штраф / всё). */}
+              {/* v0.9: состав долга просрочки — 3 части (аренда / экипировка /
+                  штраф), чтобы дни и экипировку не путали в одной сумме. */}
+              <div className="mb-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-red-ink">
+                <span>
+                  Аренда{overdueDaysHeader > 0 ? ` · ${overdueDaysHeader} дн` : ""}:{" "}
+                  <b className="tabular-nums">{fmt(overdueRentDaysCharge)} ₽</b>
+                </span>
+                {overdueEquipCharge > 0 && (
+                  <span>
+                    Экипировка:{" "}
+                    <b className="tabular-nums">{fmt(overdueEquipCharge)} ₽</b>
+                  </span>
+                )}
+                <span>
+                  Штраф 50%:{" "}
+                  <b className="tabular-nums">{fmt(overdueFineBalanceRaw)} ₽</b>
+                </span>
+              </div>
               <ForgiveStepCards
                 forgiveChoice={forgiveChoice}
                 setForgiveChoice={setForgiveChoice}
