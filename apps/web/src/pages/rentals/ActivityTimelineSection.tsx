@@ -25,9 +25,9 @@ export function ActivityTimelineSection({
   const drawer = useDashboardDrawer();
   const handleClick = (it: ApiActivityItem) => {
     if (it.entityId == null) return;
-    if (it.entity === "rental") drawer.openRental(it.entityId);
-    else if (it.entity === "scooter") drawer.openScooter(it.entityId);
-    else if (it.entity === "client") drawer.openClient(it.entityId);
+    if (it.entity === "rental") drawer.openRentalChain(it.entityId);
+    else if (it.entity === "scooter") drawer.openScooterChain(it.entityId);
+    else if (it.entity === "client") drawer.openClientChain(it.entityId);
   };
   if (loading) {
     return (

@@ -401,7 +401,7 @@ export function RentalCard({
   // ClientQuickView через setClientQuickView).
   const drawer = useDashboardDrawer();
   const openClient = (clientId: number) => {
-    if (drawer.inDrawer) drawer.openClient(clientId);
+    if (drawer.inDrawer) drawer.openClientChain(clientId);
     else setClientQuickView(true);
   };
   const { data: me } = useMe();

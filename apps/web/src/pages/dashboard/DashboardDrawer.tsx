@@ -77,11 +77,16 @@ type SideColumn =
 
 type Ctx = {
   stack: Target[];
+  // Открытие с ВЕРХНЕГО УРОВНЯ (дашборд/списки/поиск) — заменяет стек.
   openRental: (id: number) => void;
   openClient: (id: number) => void;
   openScooter: (id: number) => void;
   openRentalsList: (filter: "active" | "overdue" | "returnsToday") => void;
   openApplicationsList: () => void;
+  // Drill-in ВНУТРИ карточки — добавляет в цепочку (клиент→аренда→скутер).
+  openRentalChain: (id: number) => void;
+  openClientChain: (id: number) => void;
+  openScooterChain: (id: number) => void;
   back: () => void;
   close: () => void;
   closeAt: (index: number) => void;
@@ -110,6 +115,9 @@ export function useDashboardDrawer(): Ctx {
       openScooter: () => {},
       openRentalsList: () => {},
       openApplicationsList: () => {},
+      openRentalChain: () => {},
+      openClientChain: () => {},
+      openScooterChain: () => {},
       back: () => {},
       close: () => {},
       closeAt: () => {},
@@ -150,21 +158,56 @@ export function DashboardDrawerProvider({ children }: { children: ReactNode }) {
   const ctx: Ctx = useMemo(
     () => ({
       stack,
+      // v0.9.2: открытие С ВЕРХНЕГО УРОВНЯ (дашборд-плитки, списки, поиск,
+      // Topbar) ЗАМЕНЯЕТ стек целиком — карточки больше не копятся и не
+      // налезают друг на друга. Если эта же сущность уже единственная в
+      // стеке — не дёргаем (без ремаунта). Drill-in внутри карточки идёт
+      // цепочкой через *Chain-варианты ниже.
       openRental: (id) =>
+        setStack((s) =>
+          s.length === 1 && s[0].kind === "rental" && s[0].id === id
+            ? s
+            : [{ kind: "rental", id }],
+        ),
+      openClient: (id) =>
+        setStack((s) =>
+          s.length === 1 && s[0].kind === "client" && s[0].id === id
+            ? s
+            : [{ kind: "client", id }],
+        ),
+      openScooter: (id) =>
+        setStack((s) =>
+          s.length === 1 && s[0].kind === "scooter" && s[0].id === id
+            ? s
+            : [{ kind: "scooter", id }],
+        ),
+      openRentalsList: (filter) =>
+        setStack((s) =>
+          s.length === 1 &&
+          s[0].kind === "rentalsList" &&
+          s[0].filter === filter
+            ? s
+            : [{ kind: "rentalsList", filter }],
+        ),
+      openApplicationsList: () =>
+        setStack((s) =>
+          s.length === 1 && s[0].kind === "applicationsList"
+            ? s
+            : [{ kind: "applicationsList" }],
+        ),
+      // Drill-in: добавляет карточку в цепочку (старые остаются слева).
+      openRentalChain: (id) =>
         setStack((s) => {
-          // Уже смотрим эту аренду в верхней панели стека — повторный клик
-          // (напр. по её же событию в ленте) не должен открывать ту же
-          // карточку поверх. «Мы и так уже на ней».
+          // Уже смотрим эту аренду наверху цепочки — повторный клик (напр.
+          // по её же событию в ленте) не открывает ту же карточку поверх.
           const top = s[s.length - 1];
           if (top && top.kind === "rental" && top.id === id) return s;
           return pushUnique(s, { kind: "rental", id });
         }),
-      openClient: (id) => setStack((s) => pushUnique(s, { kind: "client", id })),
-      openScooter: (id) => setStack((s) => pushUnique(s, { kind: "scooter", id })),
-      openRentalsList: (filter) =>
-        setStack((s) => pushUnique(s, { kind: "rentalsList", filter })),
-      openApplicationsList: () =>
-        setStack((s) => pushUnique(s, { kind: "applicationsList" })),
+      openClientChain: (id) =>
+        setStack((s) => pushUnique(s, { kind: "client", id })),
+      openScooterChain: (id) =>
+        setStack((s) => pushUnique(s, { kind: "scooter", id })),
       back: () => {
         // Esc/back сначала закрывает side-колонку (оплата/история), затем
         // верхнюю панель стека.
@@ -281,9 +324,9 @@ export function DashboardDrawerStack() {
               target={target}
               width={DRAWER_W}
               onCloseSelf={() => ctx.closeAt(idx)}
-              onOpenRental={ctx.openRental}
-              onOpenClient={ctx.openClient}
-              onOpenScooter={ctx.openScooter}
+              onOpenRental={ctx.openRentalChain}
+              onOpenClient={ctx.openClientChain}
+              onOpenScooter={ctx.openScooterChain}
             />
             {sideForThis && (
               <SideDrawerColumn
