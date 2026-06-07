@@ -155,6 +155,19 @@ export function Applications() {
             setOpenId(null);
             setConvertingApp(openApp);
           }}
+          onCreateRental={() => {
+            // Заявка принята, клиент есть, но аренду прервали — продолжаем
+            // оформление с префиллом из заявки (без повторного ввода).
+            if (openApp.clientId == null) return;
+            setOpenId(null);
+            setRentalPrefill({
+              clientId: openApp.clientId,
+              modelFilter: openApp.requestedModel ?? undefined,
+              days: openApp.requestedDays ?? undefined,
+              equipmentIds: openApp.requestedEquipmentIds ?? undefined,
+              start: openApp.requestedStartDate ?? undefined,
+            });
+          }}
           onReject={() => {
             setRejectingApp(openApp);
             setRejectMode("reject");
