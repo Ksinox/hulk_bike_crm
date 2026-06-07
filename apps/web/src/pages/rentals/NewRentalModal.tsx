@@ -14,6 +14,7 @@ import {
   type ScooterModel,
 } from "@/lib/mock/rentals";
 import { addRental, addRentalAsync, useRentals } from "./rentalsStore";
+import { RentalContractPreview } from "./RentalContractPreview";
 import { toast } from "@/lib/toast";
 import { useAllClients } from "@/pages/clients/clientStore";
 import { AddClientModal } from "@/pages/clients/AddClientModal";
@@ -357,6 +358,11 @@ export function NewRentalModal({
   }, [apiScooters, blocked]);
 
   const [saving, setSaving] = useState(false);
+  // v0.9.4: после создания аренды СРАЗУ показываем «Договор + Акт» поверх
+  // модалки (единый flow печати для ВСЕХ точек входа: Topbar, заявка,
+  // карточка скутера, мобилка — раньше договор всплывал только при создании
+  // со страницы Аренды). onCreated/закрытие вызываем уже после превью.
+  const [createdRental, setCreatedRental] = useState<Rental | null>(null);
 
   const handleSave = async () => {
     if (!canSave || !scooterName || saving) return;
@@ -401,8 +407,9 @@ export function NewRentalModal({
         contractUploaded: false,
         paymentConfirmed: null,
       } as Parameters<typeof addRental>[0]);
-      onCreated?.(created);
-      requestClose();
+      // НЕ закрываем сразу: показываем превью договора поверх (z-120).
+      // onCreated(created) + requestClose() вызовем при закрытии превью.
+      setCreatedRental(created);
     } catch (e) {
       toast.error(
         "Не удалось создать аренду",
@@ -1139,6 +1146,19 @@ export function NewRentalModal({
             setClientId(c.id);
             setClientQuery("");
             setNewClientOpen(false);
+          }}
+        />
+      )}
+
+      {/* v0.9.4: единый flow — сразу после создания аренды показываем
+          «Договор + Акт» для печати (поверх модалки, z-120). При закрытии
+          превью отдаём созданную аренду наверх и закрываем модалку. */}
+      {createdRental && (
+        <RentalContractPreview
+          rentalId={createdRental.id}
+          onClose={() => {
+            onCreated?.(createdRental);
+            requestClose();
           }}
         />
       )}

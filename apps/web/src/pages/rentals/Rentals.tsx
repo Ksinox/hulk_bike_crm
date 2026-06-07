@@ -837,8 +837,11 @@ export function Rentals() {
         <NewRentalModal
           onClose={() => setNewOpen(false)}
           onCreated={(r) => {
+            // v0.9.4: договор теперь открывает сама NewRentalModal (единый
+            // flow для всех точек входа). Здесь только фокусируемся на новой
+            // аренде — иначе превью договора открылось бы дважды.
             setSelectedId(r.id);
-            setAutoDocRentalId(r.id);
+            setNewOpen(false);
           }}
         />
       )}
