@@ -831,34 +831,15 @@ export function RentalCard({
   const overdueBalance = debtSummary?.overdueBalance ?? overdueLocalCalc;
   const overdueDaysBalance = debtSummary?.overdueDaysBalance ?? 0;
   const overdueFineBalance = debtSummary?.overdueFineBalance ?? 0;
-  const damageBalance = debtSummary?.damageBalance ?? totalDebt;
-  const manualBalance = debtSummary?.manualBalance ?? 0;
-  // v0.8.0: неоплаченный паркинг — часть долга (с подписью «паркинг»).
-  const parkingBalance = debtSummary?.parkingBalance ?? 0;
-  // Кол-во неоплаченных дней паркинга — для подписи «за N дн».
-  const unpaidParkingDays = parkingList
-    .filter((s) => s.amount > s.paidAmount)
-    .reduce((sum, s) => sum + s.days, 0);
-  const debtTotal =
-    pending + overdueBalance + damageBalance + manualBalance + parkingBalance;
-  const debtParts: string[] = [];
-  if (pending > 0) debtParts.push(`не оплачено ${fmt(pending)} ₽`);
-  if (overdueDaysBalance > 0) debtParts.push(`дни ${fmt(overdueDaysBalance)} ₽`);
-  if (overdueFineBalance > 0) debtParts.push(`штраф ${fmt(overdueFineBalance)} ₽`);
-  if (overdueBalance > 0 && overdueDaysBalance + overdueFineBalance === 0)
-    debtParts.push(`просрочка ${fmt(overdueBalance)} ₽`);
-  if (damageBalance > 0) debtParts.push(`ущерб ${fmt(damageBalance)} ₽`);
-  if (manualBalance > 0) debtParts.push(`ручной ${fmt(manualBalance)} ₽`);
-  if (parkingBalance > 0) debtParts.push(`паркинг ${fmt(parkingBalance)} ₽`);
-  const debtHint = debtTotal === 0 ? "нет долгов" : debtParts.join(" + ");
-  // Просрочка — дни + дата + ставка/сут (для hover плашки «Просрочка»).
+  // v0.9: кол-во дней просрочки + дневные ставки. Считаем здесь (выше
+  // debtParts), чтобы разложить «дни» на аренду и экипировку и в составе
+  // долга, и в коротком хинте под KPI «Долг».
   const overdueDaysCount =
     daysLeft !== null && daysLeft < 0 ? Math.abs(daysLeft) : 0;
   const dailyRateForHint =
     rental.rateUnit === "week" ? Math.round(rental.rate / 7) : rental.rate;
-  // v0.9: платная экипировка/сут — для раскладки просрочки на «аренду» и
-  // «экипировку» (как overdueDailyRate на бэке: ставка/сут + экип/сут).
-  // День просрочки = аренда + экипировка; штраф 50% берётся от их суммы.
+  // Платная экипировка/сут (как overdueDailyRate на бэке: ставка/сут +
+  // экип/сут). День просрочки = аренда + экипировка; штраф 50% от их суммы.
   const equipDailyForOverdue = (rental.equipmentJson ?? []).reduce(
     (s, e) => s + (e.free ? 0 : e.price),
     0,
@@ -875,6 +856,30 @@ export function RentalCard({
     0,
     overdueDaysBalance - overdueEquipBalance,
   );
+  const damageBalance = debtSummary?.damageBalance ?? totalDebt;
+  const manualBalance = debtSummary?.manualBalance ?? 0;
+  // v0.8.0: неоплаченный паркинг — часть долга (с подписью «паркинг»).
+  const parkingBalance = debtSummary?.parkingBalance ?? 0;
+  // Кол-во неоплаченных дней паркинга — для подписи «за N дн».
+  const unpaidParkingDays = parkingList
+    .filter((s) => s.amount > s.paidAmount)
+    .reduce((sum, s) => sum + s.days, 0);
+  const debtTotal =
+    pending + overdueBalance + damageBalance + manualBalance + parkingBalance;
+  const debtParts: string[] = [];
+  if (pending > 0) debtParts.push(`не оплачено ${fmt(pending)} ₽`);
+  if (overdueRentBalance > 0)
+    debtParts.push(`аренда ${fmt(overdueRentBalance)} ₽`);
+  if (overdueEquipBalance > 0)
+    debtParts.push(`экип. ${fmt(overdueEquipBalance)} ₽`);
+  if (overdueFineBalance > 0) debtParts.push(`штраф ${fmt(overdueFineBalance)} ₽`);
+  if (overdueBalance > 0 && overdueDaysBalance + overdueFineBalance === 0)
+    debtParts.push(`просрочка ${fmt(overdueBalance)} ₽`);
+  if (damageBalance > 0) debtParts.push(`ущерб ${fmt(damageBalance)} ₽`);
+  if (manualBalance > 0) debtParts.push(`ручной ${fmt(manualBalance)} ₽`);
+  if (parkingBalance > 0) debtParts.push(`паркинг ${fmt(parkingBalance)} ₽`);
+  const debtHint = debtTotal === 0 ? "нет долгов" : debtParts.join(" + ");
+  // Просрочка — дни + дата + ставка/сут (для hover плашки «Просрочка»).
   const overdueHint =
     overdueDaysCount > 0
       ? `${overdueDaysCount} дн с ${rental.endPlanned.slice(0, 5)}, ставка ${fmt(dailyRateForHint)} ₽/сут`
