@@ -4,6 +4,7 @@ import { useApiRentals, useApiRentalsArchived } from "@/lib/api/rentals";
 import { useApiPayments, type ApiPayment } from "@/lib/api/payments";
 import { useApiClients } from "@/lib/api/clients";
 import { useApiScooters } from "@/lib/api/scooters";
+import { useBillingPeriodAnchors } from "@/lib/api/billing-period";
 import { currentBillingPeriod } from "@/lib/billingPeriod";
 import { useDashboardDrawer } from "./DashboardDrawer";
 
@@ -139,11 +140,16 @@ export function RevenueRentalsList({
   const { data: clients = [] } = useApiClients();
   const drawer = useDashboardDrawer();
   const { data: scooters = [] } = useApiScooters();
+  // Якоря расчётного периода грузятся с сервера асинхронно и пишутся в
+  // глобал billingPeriod. Подписываемся, чтобы окно ниже пересчиталось,
+  // когда они догрузятся (иначе список фильтровал бы по стале-периоду).
+  const anchorsQ = useBillingPeriodAnchors();
 
   // Окно: произвольный диапазон → конкретный день → период (общий резолвер).
   const { start, end } = useMemo(
     () => resolveRevenueWindow({ period, range, dayFilter }),
-    [period, dayFilter, range],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [period, dayFilter, range, anchorsQ.data],
   );
 
   const rows = useMemo(() => {
