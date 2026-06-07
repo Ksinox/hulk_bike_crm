@@ -64,7 +64,7 @@ export function NewApplicationModal({
 
   return (
     <div className="fixed inset-0 z-[100] flex items-stretch justify-center overflow-y-auto bg-ink/60 p-0 backdrop-blur-sm sm:items-start sm:p-8">
-      <div className="min-h-[100dvh] w-full rounded-none bg-surface shadow-card-lg sm:my-6 sm:min-h-0 sm:max-w-[600px] sm:rounded-3xl">
+      <div className="min-h-[100dvh] w-full rounded-none bg-surface shadow-card-lg sm:my-6 sm:min-h-0 sm:max-w-[640px] sm:rounded-3xl lg:max-w-[1080px]">
         <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-border bg-surface/95 px-5 py-3.5 backdrop-blur-sm sm:px-6">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-orange-soft text-orange-ink">
             <Bell size={19} />
