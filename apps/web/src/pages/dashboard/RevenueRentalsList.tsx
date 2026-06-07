@@ -79,6 +79,18 @@ const STATUS_TONE: Record<string, string> = {
   new_request: "bg-blue-50 text-blue-700",
 };
 
+// v0.9: тег способа оплаты по аренде за период (нал / безнал / смешанная).
+const PAY_TAG_LABEL: Record<string, string> = {
+  cash: "нал",
+  cashless: "безнал",
+  mixed: "смеш.",
+};
+const PAY_TAG_TONE: Record<string, string> = {
+  cash: "bg-green-soft text-green-ink",
+  cashless: "bg-blue-50 text-blue-700",
+  mixed: "bg-purple-soft text-purple-ink",
+};
+
 /**
  * Список аренд за выбранный период.
  *  - В период попадают аренды, у которых startAt в окне периода.
@@ -150,6 +162,23 @@ export function RevenueRentalsList({
       }
     }
 
+    // v0.9: суммы по способу — для тега нал/безнал/смешанная на каждой аренде.
+    // method='deposit' (из депозита) сюда не идёт — это не нал и не безнал.
+    const cashByRentalId = new Map<number, number>();
+    const cashlessByRentalId = new Map<number, number>();
+    for (const p of paymentsInWindow) {
+      if (p.method === "cash")
+        cashByRentalId.set(
+          p.rentalId,
+          (cashByRentalId.get(p.rentalId) ?? 0) + p.amount,
+        );
+      else if (p.method === "transfer" || p.method === "card")
+        cashlessByRentalId.set(
+          p.rentalId,
+          (cashlessByRentalId.get(p.rentalId) ?? 0) + p.amount,
+        );
+    }
+
     return Array.from(sumByRentalId.entries())
       .map(([rentalId, paidInWindow]) => {
         const r = rentals.find((rr) => rr.id === rentalId);
@@ -163,6 +192,16 @@ export function RevenueRentalsList({
           rawStatus,
           r?.endPlannedAt ?? null,
         );
+        const cashAmt = cashByRentalId.get(rentalId) ?? 0;
+        const cashlessAmt = cashlessByRentalId.get(rentalId) ?? 0;
+        const payTag: "cash" | "cashless" | "mixed" | null =
+          cashAmt > 0 && cashlessAmt > 0
+            ? "mixed"
+            : cashAmt > 0
+              ? "cash"
+              : cashlessAmt > 0
+                ? "cashless"
+                : null;
         return {
           id: rentalId,
           startAt: r?.startAt ?? lastPaidAtByRentalId.get(rentalId) ?? "",
@@ -172,6 +211,7 @@ export function RevenueRentalsList({
           plannedSum: r?.sum ?? 0,
           paidSum: paidInWindow,
           status: effStatus,
+          payTag,
         };
       })
       // v0.4.13: сортируем по дате ВЫДАЧИ аренды (startAt) DESC —
@@ -255,6 +295,16 @@ export function RevenueRentalsList({
             >
               {STATUS_LABEL[r.status] ?? r.status}
             </span>
+            {r.payTag && (
+              <span
+                className={cn(
+                  "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider",
+                  PAY_TAG_TONE[r.payTag],
+                )}
+              >
+                {PAY_TAG_LABEL[r.payTag]}
+              </span>
+            )}
             <div className="text-right">
               <div className="text-[13px] font-bold tabular-nums text-ink">
                 {fmt(r.paidSum)} ₽

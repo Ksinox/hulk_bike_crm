@@ -147,6 +147,29 @@ export function RevenueCard({
     };
   }, [period, payments]);
 
+  // v0.9: разбивка выручки нал/безнал за период (учитывает выбранный день).
+  // Считается по тем же платежам, что и верхняя сумма. method='deposit'
+  // (оплата из депозита клиента) — не нал и не безнал, в разбивку не входит.
+  const breakdown = useMemo(() => {
+    const win = periodWindow(period);
+    let cash = 0;
+    let cashless = 0;
+    for (const p of payments) {
+      if (!p.paid || !p.paidAt) continue;
+      if (p.type === "deposit" || p.type === "refund") continue;
+      const t = new Date(p.paidAt).getTime();
+      if (t < win.start.getTime() || t >= win.end.getTime()) continue;
+      if (selectedDay && p.paidAt.slice(0, 10) !== selectedDay) continue;
+      if (p.method === "cash") cash += p.amount;
+      else if (p.method === "transfer" || p.method === "card")
+        cashless += p.amount;
+    }
+    return { cash, cashless };
+  }, [payments, period, selectedDay]);
+  const breakdownTotal = breakdown.cash + breakdown.cashless;
+  const cashPct =
+    breakdownTotal > 0 ? (breakdown.cash / breakdownTotal) * 100 : 0;
+
   // Если выбран день — сумма для верхнего числа считается по этому дню,
   // иначе по всему периоду.
   const selectedBar = selectedDay
@@ -245,6 +268,35 @@ export function RevenueCard({
           <ExpandRevenueButton onClick={() => setFullscreen(true)} />
         </div>
       </div>
+
+      {/* v0.9: деление выручки нал/безнал — слим-бар + суммы. Нужно для
+          понимания структуры поступлений (и будущей статистики). */}
+      {breakdownTotal > 0 && (
+        <div className="mt-3.5">
+          <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-white/20">
+            <div
+              className="bg-white transition-all"
+              style={{ width: `${cashPct}%` }}
+            />
+            <div
+              className="bg-white/40 transition-all"
+              style={{ width: `${100 - cashPct}%` }}
+            />
+          </div>
+          <div className="mt-1.5 flex items-center justify-between text-[11px]">
+            <span className="inline-flex items-center gap-1.5 text-white/90">
+              <span className="h-2 w-2 rounded-full bg-white" />
+              Наличные{" "}
+              <b className="tabular-nums">{formatRub(breakdown.cash)} ₽</b>
+            </span>
+            <span className="inline-flex items-center gap-1.5 text-white/80">
+              <span className="h-2 w-2 rounded-full bg-white/45" />
+              Безнал{" "}
+              <b className="tabular-nums">{formatRub(breakdown.cashless)} ₽</b>
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* График — каждый столбик кликабельный. При наведении — tooltip
           с датой / суммой / кол-вом платежей. По клику — фильтрует список

@@ -149,7 +149,11 @@ export function NewRentalModal({
   const [equipmentIds, setEquipmentIds] = useState<number[]>(
     initialEquipmentIds ?? [],
   );
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
+  // v0.9: способ стартового платежа НЕ выбран по умолчанию — оператор
+  // обязан осознанно указать нал/безнал (для корректной статистики).
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(
+    null,
+  );
   const [note, setNote] = useState("");
 
   /** Залог: режим — сумма или предмет */
@@ -263,7 +267,8 @@ export function NewRentalModal({
     clientId != null &&
     !blacklistedClient &&
     scooterName != null &&
-    days > 0;
+    days > 0 &&
+    paymentMethod != null;
 
   // Можно ли перейти с шага step на следующий (мобильный мастер).
   const canAdvanceStep = (s: number): boolean => {
@@ -391,7 +396,7 @@ export function NewRentalModal({
           depositMode === "item" ? depositItemText.trim() || null : null,
         equipment: equipmentLegacyNames,
         equipmentJson,
-        paymentMethod,
+        paymentMethod: paymentMethod ?? "cash",
         note: note.trim() || undefined,
         contractUploaded: false,
         paymentConfirmed: null,
@@ -976,8 +981,13 @@ export function NewRentalModal({
               )}
             </div>
             <div className="mt-3">
-              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-2">
+              <div className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-2">
                 Способ оплаты
+                {paymentMethod === null && (
+                  <span className="rounded-full bg-orange-soft px-1.5 py-0.5 text-[9px] font-bold normal-case text-orange-ink">
+                    выберите
+                  </span>
+                )}
               </div>
               <div className="flex gap-2">
                 {(["cash", "transfer"] as PaymentMethod[]).map((m) => (
@@ -989,10 +999,12 @@ export function NewRentalModal({
                       "flex-1 rounded-[10px] px-3 py-2 text-[12px] font-semibold transition-colors",
                       paymentMethod === m
                         ? "bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-600"
-                        : "bg-surface-soft text-muted hover:bg-border",
+                        : paymentMethod === null
+                          ? "bg-orange-soft/40 text-ink ring-1 ring-inset ring-orange-ink/30 hover:bg-orange-soft/60"
+                          : "bg-surface-soft text-muted hover:bg-border",
                     )}
                   >
-                    {m === "cash" ? "Наличные" : "Перевод"}
+                    {m === "cash" ? "Наличные" : "Безнал"}
                   </button>
                 ))}
               </div>
@@ -1035,7 +1047,13 @@ export function NewRentalModal({
                     ? `${depositSum.toLocaleString("ru-RU")} ₽`
                     : depositItemText.trim() || "предмет не указан"
                 }
-                payment={paymentMethod === "cash" ? "Наличные" : "Перевод"}
+                payment={
+                  paymentMethod === "cash"
+                    ? "Наличные"
+                    : paymentMethod === "transfer"
+                      ? "Безнал"
+                      : "—"
+                }
                 total={sum}
               />
             )}

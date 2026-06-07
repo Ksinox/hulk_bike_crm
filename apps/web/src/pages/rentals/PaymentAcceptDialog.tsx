@@ -31,6 +31,8 @@ import {
   Calendar as CalendarIcon,
   ChevronRight,
   Wallet,
+  Banknote,
+  CreditCard,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
@@ -55,9 +57,9 @@ import { useModelRateResolver } from "@/lib/api/scooter-models";
 // перевод. «card» остаётся в типе PaymentMethod ради обратной
 // совместимости с историческими записями в БД, но в UI-селекторах
 // больше не показывается.
-const METHODS: { id: PaymentMethod; label: string }[] = [
-  { id: "cash", label: "Наличные" },
-  { id: "transfer", label: "Перевод" },
+const METHODS: { id: PaymentMethod; label: string; Icon: typeof Banknote }[] = [
+  { id: "cash", label: "Наличные", Icon: Banknote },
+  { id: "transfer", label: "Безнал", Icon: CreditCard },
 ];
 
 // v0.8.32: тарифные «ступени» по числу дней продления. Источник истины
@@ -613,7 +615,12 @@ export function PaymentAcceptDialog({
   // Для drag-to-extend (initialExtDays > 0) override уже > 0.
   // НЕ автоматизируем, оставляем 0 для свежего открытия без overdue.
 
-  const [method, setMethod] = useState<PaymentMethod>("cash");
+  // v0.9: способ НЕ выбран по умолчанию — оператор обязан осознанно выбрать
+  // «Наличные» или «Безнал» (для корректной статистики нал/безнал). payMethod
+  // — безопасный резолв для денежной логики (применяется только при accepted>0,
+  // где способ гарантированно выбран; fallback при accepted=0 ни на что не влияет).
+  const [method, setMethod] = useState<PaymentMethod | null>(null);
+  const payMethod: PaymentMethod = method ?? "cash";
   const [saving, setSaving] = useState(false);
   const qc = useQueryClient();
 
@@ -717,11 +724,11 @@ export function PaymentAcceptDialog({
     // 2B — основной funding: clientDeposit → accepted
     const funding: { amount: number; method: PaymentMethod }[] = [
       { amount: depositToUse, method: "deposit" },
-      { amount: acceptedAvail, method },
+      { amount: acceptedAvail, method: payMethod },
     ];
     let fundIdx = 0;
     let fundLeft = funding[0]?.amount ?? 0;
-    let fundMethod: PaymentMethod = funding[0]?.method ?? method;
+    let fundMethod: PaymentMethod = funding[0]?.method ?? payMethod;
     const advanceFund = () => {
       while (fundLeft <= 0 && fundIdx < funding.length - 1) {
         fundIdx++;
@@ -767,6 +774,13 @@ export function PaymentAcceptDialog({
 
   const submit = async () => {
     if (saving) return;
+    // v0.9: способ оплаты обязателен, когда реально принимаем деньги от
+    // клиента (accepted>0). Без осознанного выбора нал/безнал не проводим —
+    // иначе статистика по способам будет неверной.
+    if (accepted > 0 && method === null) {
+      toast.error("Выберите способ оплаты", "Наличные или безнал");
+      return;
+    }
     setSaving(true);
     try {
       // v0.6.11: новая модель Step 1 — единый forgiveChoice.
@@ -845,7 +859,7 @@ export function PaymentAcceptDialog({
       if (topupAmount > 0) {
         await api.post(`/api/rentals/${rental.id}/security-topup`, {
           amount: topupAmount,
-          method: method === "cash" ? "cash" : "transfer",
+          method: payMethod === "cash" ? "cash" : "transfer",
         });
       }
       // v0.4.77: ПОРЯДОК ВАЖЕН. Раньше extend шёл ДО payment-операций,
@@ -865,7 +879,7 @@ export function PaymentAcceptDialog({
       if (parkingPayNow > 0) {
         await api.post(`/api/rentals/${rental.id}/parking/pay`, {
           amount: parkingPayNow,
-          method: method === "transfer" ? "transfer" : "cash",
+          method: payMethod === "transfer" ? "transfer" : "cash",
         });
       }
       const acceptedForDistribute = Math.max(
@@ -1911,27 +1925,46 @@ export function PaymentAcceptDialog({
           </div>
 
           {/* (3) Способ оплаты + действия */}
-          <div className="flex flex-col gap-2 border-t border-border px-5 py-3">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[10.5px] font-bold uppercase tracking-wider text-muted-2">
-                Способ
-              </span>
-              <div className="flex rounded-full border border-border bg-white p-0.5">
-                {METHODS.map((m) => (
-                  <button
-                    key={m.id}
-                    type="button"
-                    onClick={() => setMethod(m.id)}
-                    className={cn(
-                      "rounded-full px-3 py-1 text-[11.5px] font-semibold transition-colors",
-                      method === m.id
-                        ? "bg-blue-600 text-white"
-                        : "text-muted hover:text-ink-2",
-                    )}
-                  >
-                    {m.label}
-                  </button>
-                ))}
+          <div className="flex flex-col gap-2.5 border-t border-border px-5 py-3">
+            {/* v0.9: способ оплаты — крупный обязательный выбор. Пока принимаем
+                деньги от клиента и способ не выбран, кнопка приёма заблокирована,
+                а карточки подсвечены оранжевым «выберите». Это нужно для точной
+                статистики нал/безнал. */}
+            <div>
+              <div className="mb-1.5 flex items-center gap-1.5">
+                <span className="text-[10.5px] font-bold uppercase tracking-wider text-muted-2">
+                  Способ оплаты
+                </span>
+                {accepted > 0 && method === null && (
+                  <span className="rounded-full bg-orange-soft px-1.5 py-0.5 text-[10px] font-bold text-orange-ink">
+                    выберите
+                  </span>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {METHODS.map((m) => {
+                  const active = method === m.id;
+                  const needsChoice = accepted > 0 && method === null;
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => setMethod(m.id)}
+                      className={cn(
+                        "flex h-11 items-center justify-center gap-2 rounded-xl border-2 text-[13.5px] font-bold transition-all",
+                        active
+                          ? "border-blue-600 bg-blue-600 text-white shadow-card-sm"
+                          : needsChoice
+                            ? "border-orange-ink/45 bg-orange-soft/40 text-ink"
+                            : "border-border bg-surface text-muted hover:border-blue-300 hover:text-ink",
+                      )}
+                    >
+                      <m.Icon size={17} />
+                      {m.label}
+                      {active && <Check size={14} strokeWidth={3} />}
+                    </button>
+                  );
+                })}
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -1947,11 +1980,14 @@ export function PaymentAcceptDialog({
                 onClick={submit}
                 disabled={
                   saving ||
-                  (totalReceived <= 0 && !forgiveDebt)
+                  (totalReceived <= 0 && !forgiveDebt) ||
+                  (accepted > 0 && method === null)
                 }
                 className={cn(
                   "inline-flex h-12 flex-[2] items-center justify-center gap-1.5 rounded-full px-4 text-[14px] font-bold text-white",
-                  saving || (totalReceived <= 0 && !forgiveDebt)
+                  saving ||
+                    (totalReceived <= 0 && !forgiveDebt) ||
+                    (accepted > 0 && method === null)
                     ? "cursor-not-allowed bg-surface text-muted-2"
                     : "bg-blue-600 hover:bg-blue-700",
                 )}

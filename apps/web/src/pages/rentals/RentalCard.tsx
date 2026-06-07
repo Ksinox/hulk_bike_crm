@@ -316,6 +316,7 @@ export function RentalCard({
   flushLeft = false,
   drawerChrome = false,
   besideDrawerOpen = false,
+  paymentOpen = false,
 }: {
   rental: Rental;
   /** Callback в Rentals при успешной замене скутера. Rentals переключает
@@ -332,6 +333,10 @@ export function RentalCard({
    *  (DashboardDrawer) — карточка открывает Payment внутри себя как
    *  раньше (inline-fallback через paymentRentalId). */
   onRequestPayment?: (rentalId: number, extDays: number) => void;
+  /** v0.9: открыта ли сейчас панель/окно оплаты ИМЕННО для этой аренды
+   *  (parent-managed на стр. Аренды). Когда true — кнопки «Принять оплату»
+   *  на карточке дизейблятся (модуль уже открыт по ним). */
+  paymentOpen?: boolean;
   /** v0.7.3: при parent-managed Payment — текущее число дней продления
    *  (живёт в Rentals, синхронизируется с Payment-колонкой). Календарь
    *  карточки отражает это значение, чтобы drag/Payment были согласованы. */
@@ -1419,10 +1424,16 @@ export function RentalCard({
     }
   };
 
+  // v0.9: открыт ли модуль оплаты по этой аренде — parent-managed (стр.
+  // Аренды, через paymentOpen) или inline (через paymentRentalId). Когда
+  // открыт, кнопки «Принять оплату» дизейблятся и повторно не открывают.
+  const payModuleOpen = paymentOpen || paymentRentalId === rental.id;
+
   // v0.7.3: единая точка открытия Payment. Делегирует родителю (push-
   // колонка на странице Аренд) либо открывает inline-диалог внутри
   // карточки (drawer на дашборде, где родитель prop не передал).
   const requestPayment = (extDays = 0) => {
+    if (payModuleOpen) return; // модуль уже открыт — повторно не открываем
     if (onRequestPayment) onRequestPayment(rental.id, extDays);
     else setPaymentRentalId(rental.id);
   };
@@ -1833,10 +1844,17 @@ export function RentalCard({
                 <button
                   type="button"
                   onClick={() => requestPayment(0)}
-                  className="inline-flex items-center gap-1.5 rounded-full bg-green-600 px-3 py-1.5 text-[12px] font-bold text-white shadow-card-sm hover:bg-green-700"
-                  title="Принять оплату"
+                  disabled={payModuleOpen}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-bold shadow-card-sm",
+                    payModuleOpen
+                      ? "cursor-not-allowed bg-surface-soft text-muted-2"
+                      : "bg-green-600 text-white hover:bg-green-700",
+                  )}
+                  title={payModuleOpen ? "Окно оплаты уже открыто" : "Принять оплату"}
                 >
-                  <Wallet size={13} /> Принять оплату
+                  <Wallet size={13} />{" "}
+                  {payModuleOpen ? "Оплата открыта" : "Принять оплату"}
                 </button>
               )}
             </>
@@ -2679,10 +2697,17 @@ export function RentalCard({
               <button
                 type="button"
                 onClick={() => requestPayment(0)}
-                className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-full bg-green-600 px-4 py-2.5 text-[13px] font-bold text-white shadow-card-sm hover:bg-green-700"
-                title="Принять оплату"
+                disabled={payModuleOpen}
+                className={cn(
+                  "inline-flex flex-1 items-center justify-center gap-1.5 rounded-full px-4 py-2.5 text-[13px] font-bold shadow-card-sm",
+                  payModuleOpen
+                    ? "cursor-not-allowed bg-surface-soft text-muted-2"
+                    : "bg-green-600 text-white hover:bg-green-700",
+                )}
+                title={payModuleOpen ? "Окно оплаты уже открыто" : "Принять оплату"}
               >
-                <Wallet size={14} /> Принять оплату
+                <Wallet size={14} />{" "}
+                {payModuleOpen ? "Оплата открыта" : "Принять оплату"}
               </button>
             )}
           </div>

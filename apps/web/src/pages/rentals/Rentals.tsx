@@ -749,6 +749,7 @@ export function Rentals() {
                   }
                   onClose={() => setPanelOpen(false)}
                   onRequestPayment={openPayment}
+                  paymentOpen={paymentRentalId === selected.id}
                   onOpenHistory={openHistory}
                   paymentExtDays={paymentExtDays}
                   paymentResetSignal={calendarResetSignal}
