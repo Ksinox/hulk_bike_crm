@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { toast, confirmDialog } from "@/lib/toast";
+import { toast } from "@/lib/toast";
 import {
   useApplications,
   useDeleteApplication,
@@ -162,27 +162,20 @@ export function NewApplicationDetector() {
           applicationId={convertingApp.id}
           initialData={applicationToFormInit(convertingApp)}
           onCreated={(client) => {
+            // Клиент создан из заявки → СРАЗУ открываем оформление аренды с
+            // префиллом (модель/срок/экипировка из заявки). Раньше здесь был
+            // confirmDialog «Оформить аренду?», но он мог не всплыть / гаснуть
+            // при закрытии формы клиента — оператор видел «просто закрылось».
+            // Форму аренды можно отменить, если аренда сейчас не нужна.
             const app = convertingApp;
             setConvertingApp(null);
             toast.success("Клиент создан из заявки");
-            const modelFilter = app?.requestedModel ?? undefined;
-            const days = app?.requestedDays ?? undefined;
-            const equipmentIds = app?.requestedEquipmentIds ?? undefined;
-            const start = app?.requestedStartDate ?? undefined;
-            void confirmDialog({
-              title: "Клиент создан",
-              message: `Оформить аренду для «${client.name}»? Останется выбрать конкретный скутер и распечатать договор.`,
-              confirmText: "Оформить аренду",
-              cancelText: "Позже",
-            }).then((ok) => {
-              if (ok)
-                setRentalPrefill({
-                  clientId: client.id,
-                  modelFilter,
-                  days,
-                  equipmentIds,
-                  start,
-                });
+            setRentalPrefill({
+              clientId: client.id,
+              modelFilter: app?.requestedModel ?? undefined,
+              days: app?.requestedDays ?? undefined,
+              equipmentIds: app?.requestedEquipmentIds ?? undefined,
+              start: app?.requestedStartDate ?? undefined,
             });
           }}
         />

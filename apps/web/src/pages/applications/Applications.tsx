@@ -15,7 +15,7 @@ import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
 import { applicationToFormInit } from "@/pages/clients/applicationConvert";
 import { RejectApplicationModal } from "./RejectApplicationModal";
 import { useRejectApplication, useSpamApplication } from "@/lib/api/clientApplications";
-import { toast, confirmDialog } from "@/lib/toast";
+import { toast } from "@/lib/toast";
 
 /**
  * Страница «Заявки» — архив всех публичных анкет с фильтрами и поиском.
@@ -187,29 +187,19 @@ export function Applications() {
           initialData={applicationToFormInit(convertingApp)}
           onClose={() => setConvertingApp(null)}
           onCreated={(client) => {
-            // G3: клиент из заявки заведён → предлагаем сразу создать аренду
-            // с предзаполненными моделью/сроком из заявки (если клиент их указал).
+            // G3: клиент из заявки заведён → СРАЗУ открываем оформление аренды
+            // с префиллом (модель/срок/экипировка из заявки). Раньше был
+            // confirmDialog «Оформить аренду?», но он мог не всплыть → оператор
+            // видел «просто закрылось». Форму аренды можно отменить.
             const app = convertingApp;
             setConvertingApp(null);
             toast.success("Клиент оформлен");
-            const modelFilter = app?.requestedModel ?? undefined;
-            const days = app?.requestedDays ?? undefined;
-            const equipmentIds = app?.requestedEquipmentIds ?? undefined;
-            const start = app?.requestedStartDate ?? undefined;
-            void confirmDialog({
-              title: "Клиент создан",
-              message: `Оформить аренду для «${client.name}»? Останется выбрать конкретный скутер и распечатать договор.`,
-              confirmText: "Оформить аренду",
-              cancelText: "Позже",
-            }).then((ok) => {
-              if (ok)
-                setRentalPrefill({
-                  clientId: client.id,
-                  modelFilter,
-                  days,
-                  equipmentIds,
-                  start,
-                });
+            setRentalPrefill({
+              clientId: client.id,
+              modelFilter: app?.requestedModel ?? undefined,
+              days: app?.requestedDays ?? undefined,
+              equipmentIds: app?.requestedEquipmentIds ?? undefined,
+              start: app?.requestedStartDate ?? undefined,
             });
           }}
         />
