@@ -16,6 +16,10 @@ import {
   Bike,
   Gauge,
   AlertTriangle,
+  Clock,
+  Repeat,
+  CalendarClock,
+  Tag,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { RevenueAnalytics } from "@/lib/useRevenueAnalytics";
@@ -51,7 +55,15 @@ export function RevenueDashboard({
   );
   const maxType = Math.max(1, ...a.byType.map((t) => t.sum));
   const maxClient = Math.max(1, ...a.topClients.map((c) => c.sum));
+  const maxModel = Math.max(1, ...a.byModel.map((m) => m.sum));
+  const maxTariff = Math.max(1, ...a.topTariffs.map((t) => t.count));
   const up = (a.deltaPct ?? 0) >= 0;
+  // Прогноз vs прошлый период — обгоняем/недоберём.
+  const fcVsPrev =
+    a.prevTotal > 0 && a.forecast !== null
+      ? Math.round(((a.forecast - a.prevTotal) / a.prevTotal) * 100)
+      : null;
+  const showForecast = a.forecast !== null && !a.periodOver;
 
   return (
     <div className="flex flex-col gap-3">
@@ -143,13 +155,81 @@ export function RevenueDashboard({
         </div>
       </div>
 
+      {/* ─── ПРОГНОЗ ДО КОНЦА ПЕРИОДА ─── */}
+      {showForecast && (
+        <div className="rounded-2xl border border-blue-200 bg-gradient-to-r from-blue-50 to-surface p-4">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600 text-white">
+                <CalendarClock size={18} />
+              </span>
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-2">
+                  Прогноз до конца периода
+                </div>
+                <div className="font-display text-[28px] font-extrabold leading-none text-blue-700">
+                  ~ {fmt(a.forecast ?? 0)} ₽
+                </div>
+              </div>
+            </div>
+            <div className="text-right">
+              {fcVsPrev !== null && (
+                <div
+                  className={cn(
+                    "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[12px] font-bold",
+                    fcVsPrev >= 0
+                      ? "bg-green-soft text-green-ink"
+                      : "bg-red-soft text-red-ink",
+                  )}
+                >
+                  {fcVsPrev >= 0 ? <TrendingUp size={13} /> : <TrendingDown size={13} />}
+                  {fcVsPrev >= 0 ? "+" : ""}
+                  {fcVsPrev}% к прошлому
+                </div>
+              )}
+              <div className="mt-0.5 text-[11px] text-muted-2">
+                прошло {a.progressPct}% периода
+              </div>
+            </div>
+          </div>
+          {/* прогресс-бар: факт сейчас vs прогнозируемый темп */}
+          <div className="relative mt-3 h-2.5 w-full overflow-hidden rounded-full bg-blue-100">
+            <div
+              className="h-full rounded-full bg-blue-600 transition-all"
+              style={{ width: `${Math.min(100, a.progressPct)}%` }}
+            />
+          </div>
+          <div className="mt-1 flex justify-between text-[10.5px] text-muted-2">
+            <span>
+              факт сейчас: <b className="text-ink">{fmt(a.total)} ₽</b>
+            </span>
+            <span>
+              цель темпа: ~{fmt(a.forecast ?? 0)} ₽
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* ─── МЕТРИКИ (плитки) ─── */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
         <Metric
           icon={<Wallet size={15} />}
           label="Средний чек"
           value={`${fmt(a.avgCheck)} ₽`}
           tone="blue"
+        />
+        <Metric
+          icon={<Clock size={15} />}
+          label="Средний период"
+          value={`${a.avgPeriodDays} дн`}
+          tone="blue"
+        />
+        <Metric
+          icon={<Repeat size={15} />}
+          label="Доля продлений"
+          value={`${a.extendShare}%`}
+          sub="в выручке аренды"
+          tone="green"
         />
         <Metric
           icon={<Bike size={15} />}
@@ -287,6 +367,80 @@ export function RevenueDashboard({
                   </div>
                   <div className="w-[78px] shrink-0 text-right text-[12px] font-bold tabular-nums text-ink">
                     {fmt(c.sum)} ₽
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="py-6 text-center text-[12px] text-muted-2">
+              Нет данных
+            </div>
+          )}
+        </div>
+
+        {/* Выручка по моделям скутеров */}
+        <div className="rounded-2xl border border-border bg-surface p-4">
+          <div className="mb-2 text-[12px] font-semibold uppercase tracking-wider text-muted-2">
+            Выручка по моделям
+          </div>
+          {a.byModel.length > 0 ? (
+            <div className="flex flex-col gap-2">
+              {a.byModel.map((m) => (
+                <div key={m.model} className="flex items-center gap-2">
+                  <div className="w-[92px] shrink-0 truncate text-[12px] text-ink-2">
+                    {m.model}
+                  </div>
+                  <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-surface-soft">
+                    <div
+                      className="h-full rounded-full"
+                      style={{
+                        width: `${Math.max(4, (m.sum / maxModel) * 100)}%`,
+                        background: m.color,
+                      }}
+                    />
+                  </div>
+                  <div className="w-[78px] shrink-0 text-right text-[12px] font-bold tabular-nums text-ink">
+                    {fmt(m.sum)} ₽
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="py-6 text-center text-[12px] text-muted-2">
+              Нет данных
+            </div>
+          )}
+        </div>
+
+        {/* Топ тарифов (что выбирают клиенты) */}
+        <div className="rounded-2xl border border-border bg-surface p-4">
+          <div className="mb-2 text-[12px] font-semibold uppercase tracking-wider text-muted-2">
+            Топ тарифов
+          </div>
+          {a.topTariffs.length > 0 ? (
+            <div className="flex flex-col gap-2">
+              {a.topTariffs.map((t) => (
+                <div key={t.label} className="flex items-center gap-2">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-purple-soft/60 text-purple-700">
+                    <Tag size={13} />
+                  </span>
+                  <div className="min-w-0 flex-1 text-[12px] text-ink-2">
+                    {t.label}{" "}
+                    <span className="text-muted-2">
+                      · {t.count}{" "}
+                      {plural(t.count, ["аренда", "аренды", "аренд"])}
+                    </span>
+                  </div>
+                  <div className="h-2.5 w-[30%] overflow-hidden rounded-full bg-surface-soft">
+                    <div
+                      className="h-full rounded-full bg-purple-500"
+                      style={{
+                        width: `${Math.max(6, (t.count / maxTariff) * 100)}%`,
+                      }}
+                    />
+                  </div>
+                  <div className="w-[78px] shrink-0 text-right text-[12px] font-bold tabular-nums text-ink">
+                    {fmt(t.sum)} ₽
                   </div>
                 </div>
               ))}
