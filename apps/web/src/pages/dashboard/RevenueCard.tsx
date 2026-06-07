@@ -1,14 +1,17 @@
 import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Card, DeltaPill } from "./KpiCard";
+import { formatRub, type DashboardMetrics } from "./useDashboardMetrics";
 import {
-  formatRub,
-  type DashboardMetrics,
-} from "./useDashboardMetrics";
-import { RevenueRentalsList, type RevenuePeriod, periodWindow } from "./RevenueRentalsList";
+  RevenueRentalsList,
+  type RevenuePeriod,
+  type MethodFilter,
+  periodWindow,
+} from "./RevenueRentalsList";
 import { ExpandRevenueButton, RevenueListModal } from "./RevenueListModal";
 import { useApiPayments } from "@/lib/api/payments";
 import { workingHoursList } from "@/lib/workingHours";
+import { DateRangePicker } from "@/components/ui/date-picker";
 
 type Period = RevenuePeriod;
 
@@ -29,25 +32,49 @@ export function RevenueCard({
   const [fullscreen, setFullscreen] = useState(false);
   /** Выбранный день фильтра (YYYY-MM-DD) или null = весь период. */
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  /** Произвольный диапазон (фирменный календарь) — приоритетнее табов. */
+  const [customRange, setCustomRange] = useState<{
+    from: string;
+    to: string;
+  } | null>(null);
+  /** Фильтр по способу: всё / только наличные / только безнал. */
+  const [methodFilter, setMethodFilter] = useState<MethodFilter>("all");
 
   const { data: payments = [] } = useApiPayments();
 
+  // Эффективное окно: произвольный диапазон приоритетнее периода.
+  const win = useMemo(() => {
+    if (customRange) {
+      return {
+        start: new Date(customRange.from + "T00:00:00"),
+        end: new Date(
+          new Date(customRange.to + "T00:00:00").getTime() + 86_400_000,
+        ),
+      };
+    }
+    return periodWindow(period);
+  }, [period, customRange]);
+
   const { total, chart, paymentsCount } = useMemo(() => {
     const today = new Date();
-    const win = periodWindow(period);
 
-    // Все платежи в окне периода (paid, не залог/возврат). Та же
-    // формула что в списке аренд внизу — суммы совпадут.
+    // Платежи-выручка в окне: paid, не залог/возврат, не из депозита
+    // (method=deposit — внутренний, нал+безнал = total).
     const inWindow = payments.filter((p) => {
-      if (!p.paid) return false;
+      if (!p.paid || !p.paidAt) return false;
       if (p.type === "deposit" || p.type === "refund") return false;
-      if (!p.paidAt) return false;
+      if (p.method === "deposit") return false;
       const t = new Date(p.paidAt).getTime();
       return t >= win.start.getTime() && t < win.end.getTime();
     });
     const totalSum = inWindow.reduce((s, p) => s + p.amount, 0);
 
-    // Группировка по дням (YYYY-MM-DD) для столбцов графика.
+    // На произвольном диапазоне график не строим (может быть длинным) —
+    // показываем сумму + разбивку + список за период.
+    if (customRange) {
+      return { total: totalSum, chart: [], paymentsCount: inWindow.length };
+    }
+
     const byDay = new Map<string, { sum: number; count: number }>();
     for (const p of inWindow) {
       const d = (p.paidAt ?? "").slice(0, 10);
@@ -58,27 +85,20 @@ export function RevenueCard({
       byDay.set(d, cur);
     }
 
-    // Строим столбцы по выбранному периоду.
     type Bar = { date: string; label: string; sum: number; count: number };
     const bars: Bar[] = [];
 
     if (period === "day") {
-      // v0.4.21: почасовая шкала от open до close (settings.work_hours_*).
-      // Платежи группируются по часу совершения. Раньше был один большой
-      // столбик за сегодня — мало info.
-      const hours = workingHoursList(); // [9, 10, ..., 21]
+      const hours = workingHoursList();
       const byHour = new Map<number, { sum: number; count: number }>();
       for (const p of inWindow) {
         if (!p.paidAt) continue;
-        const t = new Date(p.paidAt);
-        const h = t.getHours();
+        const h = new Date(p.paidAt).getHours();
         const cur = byHour.get(h) ?? { sum: 0, count: 0 };
         cur.sum += p.amount;
         cur.count += 1;
         byHour.set(h, cur);
       }
-      // Платежи вне окна работы — собираем в крайние часы (open / close).
-      // Это редкий кейс (24/7 аккаунт, оплата ночью), но не теряем сумму.
       for (const [h, v] of byHour.entries()) {
         if (h < hours[0]!) {
           const cur = byHour.get(hours[0]!) ?? { sum: 0, count: 0 };
@@ -106,7 +126,6 @@ export function RevenueCard({
         });
       }
     } else if (period === "week") {
-      // 7 дней начиная с понедельника текущей недели.
       for (let i = 0; i < 7; i++) {
         const d = new Date(win.start.getTime() + i * 86_400_000);
         const ds = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -119,15 +138,8 @@ export function RevenueCard({
         });
       }
     } else {
-      // v0.4.13: month-график строим по РАСЧЁТНОМУ периоду 15→14
-      // (а не календарному 1-31). Так шкала графика и список аренд
-      // ниже соответствуют тому же окну, что в KPI «Выручка» в Аренды.
       const dayMs = 86_400_000;
-      for (
-        let t = win.start.getTime();
-        t < win.end.getTime();
-        t += dayMs
-      ) {
+      for (let t = win.start.getTime(); t < win.end.getTime(); t += dayMs) {
         const d = new Date(t);
         const ds = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
         const v = byDay.get(ds) ?? { sum: 0, count: 0 };
@@ -140,46 +152,53 @@ export function RevenueCard({
       }
     }
 
-    return {
-      total: totalSum,
-      chart: bars,
-      paymentsCount: inWindow.length,
-    };
-  }, [period, payments]);
+    return { total: totalSum, chart: bars, paymentsCount: inWindow.length };
+  }, [period, payments, win, customRange]);
 
-  // v0.9: разбивка выручки нал/безнал за период (учитывает выбранный день).
-  // Считается по тем же платежам, что и верхняя сумма. method='deposit'
-  // (оплата из депозита клиента) — не нал и не безнал, в разбивку не входит.
+  // Разбивка нал/безнал за окно (учитывает выбранный день). Всегда показывает
+  // оба значения — независимо от фильтра (фильтр сужает только список).
   const breakdown = useMemo(() => {
-    const win = periodWindow(period);
     let cash = 0;
     let cashless = 0;
     for (const p of payments) {
       if (!p.paid || !p.paidAt) continue;
       if (p.type === "deposit" || p.type === "refund") continue;
+      if (p.method === "deposit") continue;
       const t = new Date(p.paidAt).getTime();
       if (t < win.start.getTime() || t >= win.end.getTime()) continue;
-      if (selectedDay && p.paidAt.slice(0, 10) !== selectedDay) continue;
+      if (!customRange && selectedDay && p.paidAt.slice(0, 10) !== selectedDay)
+        continue;
       if (p.method === "cash") cash += p.amount;
-      else if (p.method === "transfer" || p.method === "card")
-        cashless += p.amount;
+      else cashless += p.amount;
     }
     return { cash, cashless };
-  }, [payments, period, selectedDay]);
+  }, [payments, win, selectedDay, customRange]);
   const breakdownTotal = breakdown.cash + breakdown.cashless;
   const cashPct =
     breakdownTotal > 0 ? (breakdown.cash / breakdownTotal) * 100 : 0;
 
-  // Если выбран день — сумма для верхнего числа считается по этому дню,
-  // иначе по всему периоду.
-  const selectedBar = selectedDay
-    ? chart.find((b) => b.date === selectedDay) ?? null
-    : null;
+  const selectedBar =
+    !customRange && selectedDay
+      ? chart.find((b) => b.date === selectedDay) ?? null
+      : null;
   const displayTotal = selectedBar ? selectedBar.sum : total;
   const displayCount = selectedBar ? selectedBar.count : paymentsCount;
 
   const max = Math.max(...chart.map((b) => b.sum), 1);
   const isEmpty = displayTotal === 0;
+
+  // Подпись текущего среза для шапки списка.
+  const rangeLabel = customRange
+    ? customRange.from === customRange.to
+      ? formatBarDate(customRange.from)
+      : `${formatBarDate(customRange.from)} — ${formatBarDate(customRange.to)}`
+    : selectedBar
+      ? formatBarDate(selectedBar.date)
+      : period === "day"
+        ? "сегодня"
+        : period === "week"
+          ? "неделю"
+          : "месяц";
 
   return (
     <Card blue className={className}>
@@ -187,12 +206,16 @@ export function RevenueCard({
         <div>
           <div className="text-[13px] font-medium text-white/80">
             Выручка
-            {selectedBar && (
+            {(selectedBar || customRange) && (
               <span className="ml-2 rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider">
-                за {formatBarDate(selectedBar.date)} ·{" "}
+                {customRange ? "период" : `за ${formatBarDate(selectedBar!.date)}`}
+                {" · "}
                 <button
                   type="button"
-                  onClick={() => setSelectedDay(null)}
+                  onClick={() => {
+                    setSelectedDay(null);
+                    setCustomRange(null);
+                  }}
                   className="underline underline-offset-2 hover:text-white"
                 >
                   сбросить
@@ -215,17 +238,12 @@ export function RevenueCard({
               )}
               {isEmpty && (
                 <span className="text-white/70">
-                  {selectedBar
-                    ? "в этот день платежей не было"
-                    : period === "day"
-                      ? "сегодня платежей не было"
-                      : period === "week"
-                        ? "за неделю нет поступлений"
-                        : "в этом месяце платежей не было"}
+                  за выбранный период платежей не было
                 </span>
               )}
             </div>
             {!selectedBar &&
+              !customRange &&
               period === "month" &&
               metrics.revenueExpected > 0 && (
                 <div className="flex items-center gap-1.5 text-[11px] text-white/80">
@@ -253,10 +271,11 @@ export function RevenueCard({
                 onClick={() => {
                   setPeriod(t.id);
                   setSelectedDay(null);
+                  setCustomRange(null);
                 }}
                 className={cn(
                   "rounded-full px-3 py-1 text-xs font-semibold transition-colors",
-                  period === t.id
+                  !customRange && period === t.id
                     ? "bg-white text-blue-700"
                     : "bg-transparent text-white/75 hover:text-white",
                 )}
@@ -269,8 +288,8 @@ export function RevenueCard({
         </div>
       </div>
 
-      {/* v0.9: деление выручки нал/безнал — слим-бар + суммы. Нужно для
-          понимания структуры поступлений (и будущей статистики). */}
+      {/* Деление нал/безнал — кликабельно: фильтрует список ниже (для сверки
+          бухгалтерии «сколько наличкой / сколько переводами»). */}
       {breakdownTotal > 0 && (
         <div className="mt-3.5">
           <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-white/20">
@@ -283,109 +302,136 @@ export function RevenueCard({
               style={{ width: `${100 - cashPct}%` }}
             />
           </div>
-          <div className="mt-1.5 flex items-center justify-between text-[11px]">
-            <span className="inline-flex items-center gap-1.5 text-white/90">
+          <div className="mt-1.5 flex items-center justify-between gap-2 text-[11px]">
+            <button
+              type="button"
+              onClick={() =>
+                setMethodFilter(methodFilter === "cash" ? "all" : "cash")
+              }
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 transition-all",
+                methodFilter === "cash"
+                  ? "bg-white/25 text-white"
+                  : methodFilter === "cashless"
+                    ? "text-white/40"
+                    : "text-white/90 hover:bg-white/10",
+              )}
+            >
               <span className="h-2 w-2 rounded-full bg-white" />
               Наличные{" "}
               <b className="tabular-nums">{formatRub(breakdown.cash)} ₽</b>
-            </span>
-            <span className="inline-flex items-center gap-1.5 text-white/80">
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                setMethodFilter(methodFilter === "cashless" ? "all" : "cashless")
+              }
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 transition-all",
+                methodFilter === "cashless"
+                  ? "bg-white/25 text-white"
+                  : methodFilter === "cash"
+                    ? "text-white/40"
+                    : "text-white/80 hover:bg-white/10",
+              )}
+            >
               <span className="h-2 w-2 rounded-full bg-white/45" />
               Безнал{" "}
               <b className="tabular-nums">{formatRub(breakdown.cashless)} ₽</b>
-            </span>
+            </button>
           </div>
         </div>
       )}
 
-      {/* График — каждый столбик кликабельный. При наведении — tooltip
-          с датой / суммой / кол-вом платежей. По клику — фильтрует список
-          аренд снизу по выбранному дню (повторный клик снимает фильтр). */}
-      <div className="mt-4 flex h-20 items-end gap-1">
-        {chart.map((b) => {
-          const isSelected = b.date === selectedDay;
-          const heightPx = Math.max((b.sum / max) * 80, b.sum > 0 ? 2 : 1);
-          const showLabel =
-            chart.length <= 7 ||
-            chart.indexOf(b) % Math.ceil(chart.length / 10) === 0;
-          return (
-            <button
-              key={b.date}
-              type="button"
-              onClick={() =>
-                setSelectedDay(isSelected ? null : b.date)
-              }
-              title={tooltipText(b)}
-              className="group relative flex flex-1 cursor-pointer flex-col-reverse items-stretch focus:outline-none"
-            >
-              <div
-                className={cn(
-                  "w-full rounded-t transition-colors",
-                  isSelected
-                    ? "bg-white"
-                    : b.sum > 0
-                      ? "bg-white/55 group-hover:bg-white"
-                      : "bg-white/20",
+      {/* График — только для периодов (день/неделя/месяц), не для произвольного
+          диапазона. Каждый столбик кликабельный → фильтр по дню. */}
+      {!customRange && chart.length > 0 && (
+        <div className="mt-4 flex h-20 items-end gap-1">
+          {chart.map((b) => {
+            const isSelected = b.date === selectedDay;
+            const heightPx = Math.max((b.sum / max) * 80, b.sum > 0 ? 2 : 1);
+            const showLabel =
+              chart.length <= 7 ||
+              chart.indexOf(b) % Math.ceil(chart.length / 10) === 0;
+            return (
+              <button
+                key={b.date}
+                type="button"
+                onClick={() => setSelectedDay(isSelected ? null : b.date)}
+                title={tooltipText(b)}
+                className="group relative flex flex-1 cursor-pointer flex-col-reverse items-stretch focus:outline-none"
+              >
+                <div
+                  className={cn(
+                    "w-full rounded-t transition-colors",
+                    isSelected
+                      ? "bg-white"
+                      : b.sum > 0
+                        ? "bg-white/55 group-hover:bg-white"
+                        : "bg-white/20",
+                  )}
+                  style={{ height: `${heightPx}px` }}
+                />
+                {showLabel && (
+                  <span className="absolute left-1/2 top-full -translate-x-1/2 pt-1 text-[9px] font-medium text-white/60">
+                    {b.label}
+                  </span>
                 )}
-                style={{ height: `${heightPx}px` }}
-              />
-              {/* Лейбл под столбиком */}
-              {showLabel && (
-                <span className="absolute left-1/2 top-full -translate-x-1/2 pt-1 text-[9px] font-medium text-white/60">
-                  {b.label}
-                </span>
-              )}
-              {/* Tooltip — простой div поверх. Появляется только при hover. */}
-              {b.sum > 0 && (
-                <div className="pointer-events-none absolute -top-2 left-1/2 z-10 hidden -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-[8px] bg-ink px-2.5 py-1.5 text-[11px] font-semibold text-white shadow-lg group-hover:block">
-                  <div className="text-white/70">
-                    {formatBarDate(b.date)}
+                {b.sum > 0 && (
+                  <div className="pointer-events-none absolute -top-2 left-1/2 z-10 hidden -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-[8px] bg-ink px-2.5 py-1.5 text-[11px] font-semibold text-white shadow-lg group-hover:block">
+                    <div className="text-white/70">{formatBarDate(b.date)}</div>
+                    <div className="font-bold tabular-nums">
+                      {formatRub(b.sum)} ₽
+                    </div>
+                    <div className="text-[10px] text-white/70">
+                      {b.count}{" "}
+                      {plural(b.count, ["платёж", "платежа", "платежей"])}
+                    </div>
                   </div>
-                  <div className="font-bold tabular-nums">
-                    {formatRub(b.sum)} ₽
-                  </div>
-                  <div className="text-[10px] text-white/70">
-                    {b.count} {plural(b.count, ["платёж", "платежа", "платежей"])}
-                  </div>
-                </div>
-              )}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Список аренд за выбранный период — внутри той же Card, но на белой
-          плашке. Если выбран день в графике — список фильтруется по нему. */}
-      <div className="mt-4 -mx-4 -mb-4 rounded-b-[16px] bg-white px-4 pb-4 pt-3">
-        <div className="mb-2 flex items-center justify-between text-[12px] font-semibold uppercase tracking-wider text-muted-2">
-          <span>
-            Аренды за{" "}
-            {selectedBar
-              ? formatBarDate(selectedBar.date)
-              : period === "day"
-                ? "сегодня"
-                : period === "week"
-                  ? "неделю"
-                  : "месяц"}
-          </span>
-          {selectedBar && (
-            <button
-              type="button"
-              onClick={() => setSelectedDay(null)}
-              className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-blue-700 hover:bg-blue-100"
-            >
-              сбросить фильтр
-            </button>
-          )}
+                )}
+              </button>
+            );
+          })}
         </div>
-        <div className="max-h-[280px] overflow-y-auto">
-          <RevenueRentalsList period={period} dayFilter={selectedDay} />
+      )}
+
+      {/* Список платежей за выбранный срез — на белой плашке. */}
+      <div className="mt-4 -mx-4 -mb-4 rounded-b-[16px] bg-white px-4 pb-4 pt-3">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <span className="text-[12px] font-semibold uppercase tracking-wider text-muted-2">
+            Платежи за {rangeLabel}
+          </span>
+          {/* Произвольный период — фирменный календарь (день или диапазон). */}
+          <DateRangePicker
+            from={customRange?.from ?? null}
+            to={customRange?.to ?? null}
+            placeholder="Период"
+            className="w-[180px]"
+            onChange={({ from, to }) => {
+              if (from && to) {
+                setCustomRange({ from, to });
+                setSelectedDay(null);
+              } else {
+                setCustomRange(null);
+              }
+            }}
+          />
+        </div>
+        <div className="max-h-[300px] overflow-y-auto scrollbar-thin">
+          <RevenueRentalsList
+            period={period}
+            dayFilter={customRange ? null : selectedDay}
+            range={customRange}
+            methodFilter={methodFilter}
+          />
         </div>
       </div>
 
       {fullscreen && (
         <RevenueListModal
           initialPeriod={period}
+          initialRange={customRange}
+          initialMethodFilter={methodFilter}
           onClose={() => setFullscreen(false)}
         />
       )}

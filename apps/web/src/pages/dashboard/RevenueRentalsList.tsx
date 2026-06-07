@@ -1,22 +1,22 @@
 import { useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { useApiRentals, useApiRentalsArchived } from "@/lib/api/rentals";
-import { useApiPayments } from "@/lib/api/payments";
+import { useApiPayments, type ApiPayment } from "@/lib/api/payments";
 import { useApiClients } from "@/lib/api/clients";
 import { useApiScooters } from "@/lib/api/scooters";
 import { currentBillingPeriod } from "@/lib/billingPeriod";
-import { effectiveRentalStatus } from "@/lib/rentalStatus";
 import { useDashboardDrawer } from "./DashboardDrawer";
+
 export type RevenuePeriod = "day" | "week" | "month";
+
+/** Фильтр по способу оплаты для сверки бухгалтерии. */
+export type MethodFilter = "all" | "cash" | "cashless";
 
 /**
  * Вычисляет окно [start; end] для выбранного периода.
  *  - day:   сегодня 00:00 — завтра 00:00
  *  - week:  понедельник этой недели — следующий понедельник
- *  - month: РАСЧЁТНЫЙ ПЕРИОД БИЗНЕСА (15→14, или другой день из настроек),
- *           НЕ календарный месяц 1-31. v0.4.13: раньше тут был
- *           календарный 1-1, из-за чего цифры на дашборде расходились
- *           с KPI «Выручка» в /rentals (там 15→14).
+ *  - month: РАСЧЁТНЫЙ ПЕРИОД БИЗНЕСА (15→14, или другой день из настроек).
  */
 export function periodWindow(period: RevenuePeriod): {
   start: Date;
@@ -29,14 +29,12 @@ export function periodWindow(period: RevenuePeriod): {
     return { start, end };
   }
   if (period === "week") {
-    // Понедельник этой недели (ISO: понедельник = 1, воскресенье = 0/7)
     const dow = now.getDay() === 0 ? 7 : now.getDay();
     const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     start.setDate(start.getDate() - (dow - 1));
     const end = new Date(start.getTime() + 7 * 86_400_000);
     return { start, end };
   }
-  // month → расчётный период (15→14 по умолчанию)
   const bp = currentBillingPeriod(now);
   return { start: bp.start, end: bp.end };
 }
@@ -50,183 +48,121 @@ function fmt(n: number): string {
   return n.toLocaleString("ru-RU");
 }
 
-// v0.4.19: добавлен 'problem' статус (раньше fallback показывал
-// английское «PROBLEM» серым). Все статусы аренды должны быть здесь —
-// это локальный справочник для красивых пилюль в списке выручки.
-const STATUS_LABEL: Record<string, string> = {
-  active: "активна",
-  overdue: "просрочка",
-  returning: "возврат",
-  completed: "завершена",
-  completed_damage: "с ущербом",
-  problem: "проблемная",
-  cancelled: "отменена",
-  meeting: "встреча",
-  new_request: "заявка",
-  police: "в полиции",
-  court: "суд",
-};
+/** true — платёж это «наличные»; false — безнал (перевод/карта). */
+function isCashPayment(p: { method: string }): boolean {
+  return p.method === "cash";
+}
 
-const STATUS_TONE: Record<string, string> = {
-  active: "bg-green-soft text-green-ink",
-  overdue: "bg-red-soft text-red-ink",
-  returning: "bg-orange-soft text-orange-ink",
-  completed: "bg-surface-soft text-muted",
-  completed_damage: "bg-red-soft text-red-ink",
-  problem: "bg-red-soft text-red-ink",
-  cancelled: "bg-surface-soft text-muted",
-  meeting: "bg-blue-50 text-blue-700",
-  new_request: "bg-blue-50 text-blue-700",
-};
+/** Считать ли платёж выручкой нал/безнал (не залог/возврат, не из депозита). */
+function isRevenuePayment(p: ApiPayment): boolean {
+  if (!p.paid || !p.paidAt) return false;
+  if (p.type === "deposit" || p.type === "refund") return false;
+  // method='deposit' — оплата из депозита клиента: не нал и не безнал
+  // (реальные деньги уже были выручкой раньше). В сверку не идёт.
+  if (p.method === "deposit") return false;
+  return true;
+}
 
-// v0.9: тег способа оплаты по аренде за период (нал / безнал / смешанная).
-const PAY_TAG_LABEL: Record<string, string> = {
-  cash: "нал",
-  cashless: "безнал",
-  mixed: "смеш.",
-};
-const PAY_TAG_TONE: Record<string, string> = {
-  cash: "bg-green-soft text-green-ink",
-  cashless: "bg-blue-50 text-blue-700",
-  mixed: "bg-purple-soft text-purple-ink",
+// Человекочитаемый тип платежа.
+const TYPE_LABEL: Record<string, string> = {
+  rent: "Аренда",
+  fine: "Штраф",
+  damage: "Ущерб",
+  swap_fee: "Замена скутера",
+  equipment_fee: "Экипировка",
+  parking: "Паркинг",
 };
 
 /**
- * Список аренд за выбранный период.
- *  - В период попадают аренды, у которых startAt в окне периода.
- *  - В колонке «Сумма» показываем фактически полученные платежи по этой
- *    аренде (revenueFromPayments). Если ничего не оплачено — показываем
- *    плановую rental.sum светлым.
- *  - Клик по строке — переход в карточку аренды.
+ * v0.9: список ПЛАТЕЖЕЙ за период (раньше группировался по арендам). Каждый
+ * платёж помечен нал/безнал — для сверки бухгалтерии. Клик по платежу
+ * открывает карточку аренды (drawer). Понятие «смешанный» убрано: платёж
+ * всегда либо наличный, либо безналичный.
+ *
+ * Окно: range (произвольный диапазон) → dayFilter (конкретный день из
+ * графика) → periodWindow(period). methodFilter сужает до нал/безнал.
  */
 export function RevenueRentalsList({
   period,
   onRowClick,
   compact = true,
   dayFilter,
+  range,
+  methodFilter = "all",
 }: {
   period: RevenuePeriod;
   onRowClick?: (rentalId: number) => void;
   compact?: boolean;
-  /** Если задано (YYYY-MM-DD) — фильтруем платежи по этому дню,
-   *  иначе берём всё окно периода. */
+  /** Конкретный день (YYYY-MM-DD) — фильтр по клику на столбик графика. */
   dayFilter?: string | null;
+  /** Произвольный диапазон (YYYY-MM-DD) — приоритетнее period/dayFilter. */
+  range?: { from: string; to: string } | null;
+  /** Способ оплаты: всё / только наличные / только безнал. */
+  methodFilter?: MethodFilter;
 }) {
   const { data: activeRentals = [] } = useApiRentals();
   const { data: archivedRentals = [] } = useApiRentalsArchived();
-  // Включаем archived parents — иначе для проплаченных продлений
-  // имя клиента/скутер ничьи, а сумма попадает в выручку.
   const rentals = useMemo(
     () => [...activeRentals, ...archivedRentals],
     [activeRentals, archivedRentals],
   );
   const { data: payments = [] } = useApiPayments();
   const { data: clients = [] } = useApiClients();
-  // v0.4.17: клик по аренде из списка теперь открывает drawer-стек,
-  // а не унесёт на страницу /rentals (было через navigate).
   const drawer = useDashboardDrawer();
   const { data: scooters = [] } = useApiScooters();
 
-  // Если задан dayFilter (YYYY-MM-DD) — окно сужается до этого дня.
-  // Иначе — стандартное окно периода (день/неделя/месяц).
+  // Окно: произвольный диапазон → конкретный день → период.
   const { start, end } = useMemo(() => {
+    if (range) {
+      const s = new Date(range.from + "T00:00:00");
+      const e = new Date(
+        new Date(range.to + "T00:00:00").getTime() + 86_400_000,
+      );
+      return { start: s, end: e };
+    }
     if (dayFilter) {
       const d = new Date(dayFilter + "T00:00:00");
-      const dayEnd = new Date(d.getTime() + 86_400_000);
-      return { start: d, end: dayEnd };
+      return { start: d, end: new Date(d.getTime() + 86_400_000) };
     }
     return periodWindow(period);
-  }, [period, dayFilter]);
+  }, [period, dayFilter, range]);
 
   const rows = useMemo(() => {
-    // 1. Берём все платежи В ОКНЕ периода (paid, не залог, не возврат).
-    //    Это ровно то, что суммируется в верхней цифре «Выручка».
-    const paymentsInWindow = payments.filter((p) => {
-      if (!p.paid) return false;
-      if (p.type === "deposit" || p.type === "refund") return false;
-      if (!p.paidAt) return false;
-      const t = new Date(p.paidAt).getTime();
-      return t >= start.getTime() && t < end.getTime();
-    });
-
-    // 2. Группируем по rentalId — для каждой аренды считаем сколько
-    //    она принесла в этом окне. Так список синхронизируется с
-    //    верхней цифрой: сумма строк = выручка за период.
-    const sumByRentalId = new Map<number, number>();
-    const lastPaidAtByRentalId = new Map<number, string>();
-    for (const p of paymentsInWindow) {
-      sumByRentalId.set(p.rentalId, (sumByRentalId.get(p.rentalId) ?? 0) + p.amount);
-      const prev = lastPaidAtByRentalId.get(p.rentalId);
-      if (!prev || (p.paidAt && p.paidAt > prev)) {
-        lastPaidAtByRentalId.set(p.rentalId, p.paidAt!);
-      }
-    }
-
-    // v0.9: суммы по способу — для тега нал/безнал/смешанная на каждой аренде.
-    // method='deposit' (из депозита) сюда не идёт — это не нал и не безнал.
-    const cashByRentalId = new Map<number, number>();
-    const cashlessByRentalId = new Map<number, number>();
-    for (const p of paymentsInWindow) {
-      if (p.method === "cash")
-        cashByRentalId.set(
-          p.rentalId,
-          (cashByRentalId.get(p.rentalId) ?? 0) + p.amount,
-        );
-      else if (p.method === "transfer" || p.method === "card")
-        cashlessByRentalId.set(
-          p.rentalId,
-          (cashlessByRentalId.get(p.rentalId) ?? 0) + p.amount,
-        );
-    }
-
-    return Array.from(sumByRentalId.entries())
-      .map(([rentalId, paidInWindow]) => {
-        const r = rentals.find((rr) => rr.id === rentalId);
-        const client = r ? clients.find((c) => c.id === r.clientId) : undefined;
-        const scooter = r ? scooters.find((s) => s.id === r.scooterId) : undefined;
-        // v0.4.34: эффективный статус — просроченный 'active' рендерится
-        // как «Просрочка». Раньше тут показывалось зелёное «Активна»
-        // даже для аренд с прошедшим endPlanned.
-        const rawStatus = r?.status ?? "completed";
-        const effStatus = effectiveRentalStatus(
-          rawStatus,
-          r?.endPlannedAt ?? null,
-        );
-        const cashAmt = cashByRentalId.get(rentalId) ?? 0;
-        const cashlessAmt = cashlessByRentalId.get(rentalId) ?? 0;
-        const payTag: "cash" | "cashless" | "mixed" | null =
-          cashAmt > 0 && cashlessAmt > 0
-            ? "mixed"
-            : cashAmt > 0
-              ? "cash"
-              : cashlessAmt > 0
-                ? "cashless"
-                : null;
+    const rentalById = new Map(rentals.map((r) => [r.id, r]));
+    const clientById = new Map(clients.map((c) => [c.id, c]));
+    const scooterById = new Map(scooters.map((s) => [s.id, s]));
+    return payments
+      .filter((p) => {
+        if (!isRevenuePayment(p)) return false;
+        const t = new Date(p.paidAt!).getTime();
+        if (t < start.getTime() || t >= end.getTime()) return false;
+        if (methodFilter === "cash" && !isCashPayment(p)) return false;
+        if (methodFilter === "cashless" && isCashPayment(p)) return false;
+        return true;
+      })
+      .map((p) => {
+        const r = rentalById.get(p.rentalId);
+        const client = r ? clientById.get(r.clientId) : undefined;
+        const scooter = r ? scooterById.get(r.scooterId ?? -1) : undefined;
         return {
-          id: rentalId,
-          startAt: r?.startAt ?? lastPaidAtByRentalId.get(rentalId) ?? "",
-          paidAt: lastPaidAtByRentalId.get(rentalId) ?? "",
+          paymentId: p.id,
+          rentalId: p.rentalId,
+          paidAt: p.paidAt!,
+          amount: p.amount,
+          cash: isCashPayment(p),
+          typeLabel: TYPE_LABEL[p.type] ?? p.type,
           clientName: client?.name ?? "—",
           scooterName: scooter?.name ?? "—",
-          plannedSum: r?.sum ?? 0,
-          paidSum: paidInWindow,
-          status: effStatus,
-          payTag,
         };
       })
-      // v0.4.13: сортируем по дате ВЫДАЧИ аренды (startAt) DESC —
-      // от самых свежих к старым. Раньше сортировка шла по последнему
-      // paidAt, что давало визуально странный порядок: «01.05, 01.04,
-      // 04.05, 04.05» (один платёж по старой аренде попадал в начало).
-      // Теперь чёткий порядок по выдаче.
-      .sort(
-        (a, b) =>
-          new Date(b.startAt || b.paidAt).getTime() -
-          new Date(a.startAt || a.paidAt).getTime(),
-      );
-  }, [rentals, payments, clients, scooters, start, end]);
+      .sort((a, b) => b.paidAt.localeCompare(a.paidAt));
+  }, [rentals, payments, clients, scooters, start, end, methodFilter]);
 
-  const totalPaid = rows.reduce((s, r) => s + r.paidSum, 0);
+  const total = rows.reduce((s, r) => s + r.amount, 0);
+  const cashTotal = rows
+    .filter((r) => r.cash)
+    .reduce((s, r) => s + r.amount, 0);
+  const cashlessTotal = total - cashTotal;
 
   if (rows.length === 0) {
     return (
@@ -237,16 +173,14 @@ export function RevenueRentalsList({
         )}
       >
         <div className="text-[13px] font-semibold text-ink">
-          За{" "}
-          {period === "day"
-            ? "сегодня"
-            : period === "week"
-              ? "неделю"
-              : "месяц"}{" "}
-          аренд не было
+          {methodFilter === "cash"
+            ? "Наличных платежей нет"
+            : methodFilter === "cashless"
+              ? "Безналичных платежей нет"
+              : "За период платежей не было"}
         </div>
         <div className="text-[11px] text-muted-2">
-          Здесь появятся сделки за выбранный период.
+          Здесь появятся платежи за выбранный период.
         </div>
       </div>
     );
@@ -256,64 +190,64 @@ export function RevenueRentalsList({
     <div className="flex flex-col gap-1.5">
       <div className="flex items-center justify-between text-[11px] text-muted-2">
         <span>
-          {rows.length} {plural(rows.length, ["аренда", "аренды", "аренд"])}
+          {rows.length}{" "}
+          {plural(rows.length, ["платёж", "платежа", "платежей"])}
         </span>
         <span>
-          получено: <b className="text-ink tabular-nums">{fmt(totalPaid)} ₽</b>
+          {methodFilter === "cash" ? (
+            <>
+              наличные:{" "}
+              <b className="text-green-ink tabular-nums">{fmt(cashTotal)} ₽</b>
+            </>
+          ) : methodFilter === "cashless" ? (
+            <>
+              безнал:{" "}
+              <b className="text-blue-700 tabular-nums">
+                {fmt(cashlessTotal)} ₽
+              </b>
+            </>
+          ) : (
+            <>
+              получено:{" "}
+              <b className="text-ink tabular-nums">{fmt(total)} ₽</b>
+            </>
+          )}
         </span>
       </div>
       <div className="flex flex-col divide-y divide-border rounded-[10px] border border-border bg-white">
         {rows.map((r) => (
           <button
-            key={r.id}
+            key={r.paymentId}
             type="button"
             onClick={() => {
-              if (onRowClick) onRowClick(r.id);
-              else drawer.openRental(r.id);
+              if (onRowClick) onRowClick(r.rentalId);
+              else drawer.openRental(r.rentalId);
             }}
             className="flex items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-surface-soft"
           >
-            <div className="text-[11px] font-semibold tabular-nums text-muted-2">
-              #{String(r.id).padStart(4, "0")}
+            <div className="w-[68px] shrink-0 text-[11px] font-medium tabular-nums leading-tight text-muted-2">
+              {fmtDateTime(r.paidAt)}
             </div>
             <div className="min-w-0 flex-1">
               <div className="truncate text-[13px] font-semibold text-ink">
                 {r.scooterName} · {r.clientName}
               </div>
-              <div className="text-[11px] text-muted-2">
-                {new Date(r.startAt).toLocaleDateString("ru-RU", {
-                  day: "2-digit",
-                  month: "2-digit",
-                })}
-              </div>
+              <div className="text-[11px] text-muted-2">{r.typeLabel}</div>
             </div>
-            <span
-              className={cn(
-                "rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider",
-                STATUS_TONE[r.status] ?? "bg-surface-soft text-muted",
-              )}
-            >
-              {STATUS_LABEL[r.status] ?? r.status}
-            </span>
-            {r.payTag && (
+            <div className="flex shrink-0 items-center gap-2">
               <span
                 className={cn(
-                  "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider",
-                  PAY_TAG_TONE[r.payTag],
+                  "rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider",
+                  r.cash
+                    ? "bg-green-soft text-green-ink"
+                    : "bg-blue-50 text-blue-700",
                 )}
               >
-                {PAY_TAG_LABEL[r.payTag]}
+                {r.cash ? "нал" : "безнал"}
               </span>
-            )}
-            <div className="text-right">
-              <div className="text-[13px] font-bold tabular-nums text-ink">
-                {fmt(r.paidSum)} ₽
+              <div className="w-[72px] text-right text-[13px] font-bold tabular-nums text-ink">
+                {fmt(r.amount)} ₽
               </div>
-              {r.paidSum < r.plannedSum && (
-                <div className="text-[10px] text-muted-2 tabular-nums">
-                  план {fmt(r.plannedSum)} ₽
-                </div>
-              )}
             </div>
           </button>
         ))}
@@ -328,4 +262,15 @@ function plural(n: number, forms: [string, string, string]): string {
   if (m10 === 1 && m100 !== 11) return forms[0];
   if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return forms[1];
   return forms[2];
+}
+
+/** «2026-06-06T14:30:00…» → «06.06 14:30». */
+function fmtDateTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso.slice(0, 10);
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mi = String(d.getMinutes()).padStart(2, "0");
+  return `${dd}.${mm} ${hh}:${mi}`;
 }

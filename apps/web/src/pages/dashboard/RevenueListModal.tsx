@@ -1,8 +1,13 @@
 import { useEffect, useState } from "react";
 import { Maximize2, Minimize2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { RevenueRentalsList, type RevenuePeriod } from "./RevenueRentalsList";
+import {
+  RevenueRentalsList,
+  type RevenuePeriod,
+  type MethodFilter,
+} from "./RevenueRentalsList";
 import { useDashboardDrawer } from "./DashboardDrawer";
+import { DateRangePicker } from "@/components/ui/date-picker";
 
 const TABS: { id: RevenuePeriod; label: string }[] = [
   { id: "day", label: "День" },
@@ -10,16 +15,36 @@ const TABS: { id: RevenuePeriod; label: string }[] = [
   { id: "month", label: "Месяц" },
 ];
 
-/** Полноэкранный список аренд за выбранный период (тумблер день/неделя/месяц). */
+const METHOD_TABS: { id: MethodFilter; label: string }[] = [
+  { id: "all", label: "Все" },
+  { id: "cash", label: "Наличные" },
+  { id: "cashless", label: "Безнал" },
+];
+
+/**
+ * Полноэкранный список ПЛАТЕЖЕЙ за период — для сверки бухгалтерии.
+ * Период: день/неделя/месяц ИЛИ произвольный диапазон (фирменный календарь).
+ * Фильтр способа: всё / наличные / безнал. Клик по платежу → карточка аренды.
+ */
 export function RevenueListModal({
   initialPeriod,
+  initialRange = null,
+  initialMethodFilter = "all",
   onClose,
 }: {
   initialPeriod: RevenuePeriod;
+  initialRange?: { from: string; to: string } | null;
+  initialMethodFilter?: MethodFilter;
   onClose: () => void;
 }) {
   const [closing, setClosing] = useState(false);
   const [period, setPeriod] = useState<RevenuePeriod>(initialPeriod);
+  const [customRange, setCustomRange] = useState<{
+    from: string;
+    to: string;
+  } | null>(initialRange);
+  const [methodFilter, setMethodFilter] =
+    useState<MethodFilter>(initialMethodFilter);
   const drawer = useDashboardDrawer();
 
   const requestClose = () => {
@@ -52,27 +77,11 @@ export function RevenueListModal({
         )}
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Шапка: заголовок + закрыть */}
         <div className="flex items-center gap-3 border-b border-border bg-surface-soft px-5 py-3">
           <Minimize2 size={18} className="text-blue-600" />
           <div className="min-w-0 flex-1 text-[15px] font-semibold text-ink">
-            Аренды за выбранный период
-          </div>
-          <div className="inline-flex rounded-full bg-surface p-0.5">
-            {TABS.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => setPeriod(t.id)}
-                className={cn(
-                  "rounded-full px-3 py-1 text-[12px] font-semibold transition-colors",
-                  period === t.id
-                    ? "bg-ink text-white"
-                    : "bg-transparent text-muted-2 hover:text-ink",
-                )}
-              >
-                {t.label}
-              </button>
-            ))}
+            Платежи за период
           </div>
           <button
             type="button"
@@ -83,12 +92,67 @@ export function RevenueListModal({
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4">
+        {/* Контролы: период (табы) + произвольный диапазон + фильтр способа */}
+        <div className="flex flex-wrap items-center gap-3 border-b border-border px-5 py-2.5">
+          <div className="inline-flex rounded-full bg-surface-soft p-0.5">
+            {TABS.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => {
+                  setPeriod(t.id);
+                  setCustomRange(null);
+                }}
+                className={cn(
+                  "rounded-full px-3 py-1 text-[12px] font-semibold transition-colors",
+                  !customRange && period === t.id
+                    ? "bg-ink text-white"
+                    : "bg-transparent text-muted-2 hover:text-ink",
+                )}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          <DateRangePicker
+            from={customRange?.from ?? null}
+            to={customRange?.to ?? null}
+            placeholder="Произвольный период"
+            className="w-[220px]"
+            onChange={({ from, to }) =>
+              setCustomRange(from && to ? { from, to } : null)
+            }
+          />
+
+          <div className="ml-auto inline-flex rounded-full border border-border bg-surface p-0.5">
+            {METHOD_TABS.map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                onClick={() => setMethodFilter(f.id)}
+                className={cn(
+                  "rounded-full px-3 py-1 text-[12px] font-semibold transition-colors",
+                  methodFilter === f.id
+                    ? f.id === "cash"
+                      ? "bg-green-ink text-white"
+                      : f.id === "cashless"
+                        ? "bg-blue-600 text-white"
+                        : "bg-ink text-white"
+                    : "text-muted-2 hover:text-ink",
+                )}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto scrollbar-thin p-4">
           <RevenueRentalsList
             period={period}
-            // v0.4.20: клик по аренде закрывает модалку И открывает
-            // drawer-стек с этой арендой. Раньше только закрывал
-            // модалку и ничего не открывал — выглядело как «не работает».
+            range={customRange}
+            methodFilter={methodFilter}
             onRowClick={(id) => {
               requestClose();
               drawer.openRental(id);
