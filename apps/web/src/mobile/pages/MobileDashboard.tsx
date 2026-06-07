@@ -1,9 +1,11 @@
+import { useState } from "react";
 import {
   AlertTriangle,
   ArrowRight,
   Bike,
   Clock,
   Gauge,
+  Maximize2,
   Wallet,
 } from "lucide-react";
 import type { RouteId } from "@/app/route";
@@ -11,6 +13,8 @@ import { useMe } from "@/lib/api/auth";
 import { useApiScooters } from "@/lib/api/scooters";
 import type { ApiScooter } from "@/lib/api/types";
 import { ActivityFeed } from "@/pages/dashboard/ActivityFeed";
+import { useBillingPeriodRevenue } from "@/lib/useRevenue";
+import { MobileRevenueScreen } from "./MobileRevenueScreen";
 import { cn } from "@/lib/utils";
 import {
   formatRub,
@@ -34,6 +38,8 @@ export function MobileDashboard({
 }) {
   const { data: me } = useMe();
   const m = useDashboardMetrics();
+  const rev = useBillingPeriodRevenue("all");
+  const [revenueOpen, setRevenueOpen] = useState(false);
 
   if (m.isLoading) {
     return <DashboardSkeleton />;
@@ -51,6 +57,27 @@ export function MobileDashboard({
           Сводка на сегодня
         </div>
       </div>
+
+      {/* Выручка — тап открывает банковскую сводку (графики/показатели). */}
+      <button
+        type="button"
+        onClick={() => setRevenueOpen(true)}
+        className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-blue-600 to-blue-700 p-4 text-left text-white shadow-card active:scale-[0.99]"
+      >
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-white/70">
+            Выручка · {rev.period.label}
+          </span>
+          <Maximize2 size={15} className="text-white/70" />
+        </div>
+        <div className="mt-1 font-display text-[32px] font-extrabold leading-none tabular-nums">
+          {rev.total.toLocaleString("ru-RU")} ₽
+        </div>
+        <div className="mt-1 text-[12px] text-white/70">
+          {rev.count} {plural(rev.count, ["платёж", "платежа", "платежей"])} ·
+          нажмите для разбивки
+        </div>
+      </button>
 
       {/* KPI 2×2 */}
       <div className="grid grid-cols-2 gap-3">
@@ -136,6 +163,10 @@ export function MobileDashboard({
 
       {/* Последние действия — лента журнала (как в десктоп-CRM). */}
       <ActivityFeed compact />
+
+      {revenueOpen && (
+        <MobileRevenueScreen scope="all" onClose={() => setRevenueOpen(false)} />
+      )}
     </div>
   );
 }
