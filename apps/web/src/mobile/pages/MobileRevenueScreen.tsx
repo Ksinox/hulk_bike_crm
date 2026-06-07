@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ArrowLeft } from "lucide-react";
+import { ChevronLeft } from "lucide-react";
 import {
   RevenueRentalsList,
   resolveRevenueWindow,
@@ -68,10 +68,10 @@ export function MobileRevenueScreen({
         <button
           type="button"
           onClick={onClose}
-          className="flex h-9 w-9 items-center justify-center rounded-full text-ink active:bg-surface-soft"
+          className="flex h-10 w-10 items-center justify-center rounded-full text-muted active:bg-surface-soft"
           aria-label="Назад"
         >
-          <ArrowLeft size={20} />
+          <ChevronLeft size={24} />
         </button>
         <div className="min-w-0 flex-1 text-[16px] font-bold text-ink">
           {heading}
