@@ -283,6 +283,32 @@ export async function clientApplicationsRoutes(app: FastifyInstance) {
     return { ok: true };
   });
 
+  /* POST /api/client-applications/:id/clear-rental-draft
+   * Очищает «предзаявку на аренду» (requestedModel/Days/EquipmentIds/
+   * StartDate). Зовётся когда: (а) аренда из этого префилла уже создана —
+   * чтобы черновик не висел в карточке клиента; (б) оператор нажал
+   * «Удалить» на предзаполненной версии (неактуально). Сама заявка
+   * (клиент, паспорт, статус, история) остаётся — чистим только «хотелки». */
+  app.post<{ Params: { id: string } }>(
+    "/:id/clear-rental-draft",
+    async (req, reply) => {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id))
+        return reply.code(400).send({ error: "bad id" });
+      await db
+        .update(clientApplications)
+        .set({
+          requestedModel: null,
+          requestedDays: null,
+          requestedEquipmentIds: null,
+          requestedStartDate: null,
+          updatedAt: sql`now()`,
+        })
+        .where(eq(clientApplications.id, id));
+      return { ok: true };
+    },
+  );
+
   /* POST /api/client-applications/:id/reject
    * Менеджер отклонил заявку (нечитаемое фото / не подошёл и т.п.).
    * Заявка остаётся в архиве со статусом 'rejected' + причина. */
