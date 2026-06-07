@@ -112,6 +112,13 @@ function invAll() {
   // (например, «Изменить период» логирует было→стало) — раньше новое
   // событие появлялось только после перезагрузки страницы.
   queryClient.invalidateQueries({ queryKey: ["activity"] });
+  // v0.9.1: долг/просрочка считаются на сервере из endPlanned. После любой
+  // правки аренды («Изменить период», смена ставки/срока и т.п.) KPI
+  // «Просрочка»/«Долг» и состав долга должны пересчитаться СРАЗУ, а не
+  // только после перезагрузки страницы. Инвалидируем per-rental долг и
+  // агрегат по всем арендам (дашборд, список, должники).
+  queryClient.invalidateQueries({ queryKey: ["rental-debt"] });
+  queryClient.invalidateQueries({ queryKey: ["debt-aggregate"] });
 }
 function logErr(op: string) {
   return (e: unknown) => console.error(`[${op}]`, e);
