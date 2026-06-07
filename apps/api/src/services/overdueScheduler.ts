@@ -6,10 +6,12 @@
  * фильтрует по периодам/клиентам/скутерам.
  *
  * Расчётный период — 15-е число прошлого месяца → 14-е текущего.
- * Граница периода настраивается в app_settings.billing_period_start_day
- * (по умолчанию 15). Раз в час scheduler проверяет: если у completed
- * аренды end_actual_at в ПРОШЛОМ периоде (т.е. ДО начала текущего
- * периода), архивируем.
+ * Граница периода берётся из АКТИВНОГО якоря billing_period_anchors
+ * (по умолчанию 15) — единый источник правды с фронтом и /current.
+ * Раньше читался легаси app_settings.billing_period_start_day, который
+ * мог разойтись с якорями (orphaned-значение) и сдвигал границу архива.
+ * Раз в час scheduler проверяет: если у completed аренды end_actual_at
+ * в ПРОШЛОМ периоде (т.е. ДО начала текущего периода), архивируем.
  *
  * Идемпотентно.
  *
@@ -24,14 +26,20 @@ const TICK_INTERVAL_MS = 60 * 60 * 1000; // раз в час
 
 async function tickArchive(): Promise<void> {
   try {
-    // Берём настройку дня начала периода. По умолчанию 15.
+    // День начала периода — из АКТИВНОГО якоря (billing_period_anchors):
+    // самый поздний по effective_from, который уже наступил. Единый
+    // источник правды с фронтом и /current. По умолчанию 15.
     const settings = await db.execute(sql`
-      SELECT value FROM app_settings WHERE key='billing_period_start_day' LIMIT 1
+      SELECT rule_start_day AS value
+        FROM billing_period_anchors
+       WHERE effective_from <= (now() AT TIME ZONE 'Europe/Moscow')::date
+       ORDER BY effective_from DESC
+       LIMIT 1
     `);
-    const sRows = (settings as unknown as { rows?: Array<{ value: string }> }).rows
-      ?? (settings as unknown as Array<{ value: string }>);
+    const sRows = (settings as unknown as { rows?: Array<{ value: number }> }).rows
+      ?? (settings as unknown as Array<{ value: number }>);
     const startDay = Number(
-      Array.isArray(sRows) && sRows[0]?.value ? sRows[0].value : "15",
+      Array.isArray(sRows) && sRows[0]?.value ? sRows[0].value : 15,
     );
     const startDayClamped = Math.min(28, Math.max(1, startDay));
 
