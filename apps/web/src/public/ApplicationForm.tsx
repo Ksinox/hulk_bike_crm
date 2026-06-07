@@ -5,6 +5,7 @@ import {
   ArrowRight,
   Bike,
   Check,
+  ChevronDown,
   ShieldCheck,
   Sparkles,
   X,
@@ -258,6 +259,9 @@ export function ApplicationForm() {
   // бэк) — кнопка «Принять» активна только после прокрутки текста до конца.
   const [agreedRules, setAgreedRules] = useState(false);
   const [rulesScrolledEnd, setRulesScrolledEnd] = useState(false);
+  // Ref на скролл-бокс правил (инструктаж) — чтобы единая нижняя кнопка
+  // «Пролистайте правила до конца» могла доскроллить до конца по тапу.
+  const agreementScrollRef = useRef<HTMLDivElement>(null);
   // R2.6: финальное окно-напоминание про оплату старта наличными.
   const [showCashReminder, setShowCashReminder] = useState(false);
   // Совет «возьмите подольше»: клиент может отклонить («Спасибо, не надо»).
@@ -675,10 +679,9 @@ export function ApplicationForm() {
           )}
           {currentStepId === "agreement" && (
             <AgreementStep
-              agreedRules={agreedRules}
+              scrollRef={agreementScrollRef}
               rulesScrolledEnd={rulesScrolledEnd}
               onReachRulesEnd={() => setRulesScrolledEnd(true)}
-              onToggleRules={(v) => setAgreedRules(v)}
             />
           )}
           {currentStepId === "confirm" && (
@@ -738,17 +741,52 @@ export function ApplicationForm() {
               </button>
             )}
             {/* На фото-шаге Продолжить НЕ показываем — auto-advance после загрузки */}
-            {!isPhotoStep && currentStepId !== "confirm" && (
-              <button
-                type="button"
-                onClick={goNext}
-                disabled={busy || !canStepForward()}
-                className="inline-flex h-12 flex-1 items-center justify-center gap-1.5 rounded-xl bg-slate-900 px-4 text-[14px] font-semibold text-white disabled:opacity-50"
-              >
-                {busy ? "Сохраняем…" : "Продолжить"}
-                <ArrowRight size={16} />
-              </button>
-            )}
+            {!isPhotoStep &&
+              currentStepId !== "confirm" &&
+              currentStepId !== "agreement" && (
+                <button
+                  type="button"
+                  onClick={goNext}
+                  disabled={busy || !canStepForward()}
+                  className="inline-flex h-12 flex-1 items-center justify-center gap-1.5 rounded-xl bg-slate-900 px-4 text-[14px] font-semibold text-white disabled:opacity-50"
+                >
+                  {busy ? "Сохраняем…" : "Продолжить"}
+                  <ArrowRight size={16} />
+                </button>
+              )}
+            {/* Инструктаж: ЕДИНАЯ нижняя кнопка вместо двух (внутренней
+                «Принять» + футерной «Продолжить»). Пока не долистали —
+                кнопка доскроллит правила; долистали — превращается в
+                «Принять и продолжить» (принимает + переходит дальше). */}
+            {currentStepId === "agreement" &&
+              (rulesScrolledEnd ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAgreedRules(true);
+                    void goNext();
+                  }}
+                  disabled={busy}
+                  className="inline-flex h-12 flex-1 items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-4 text-[14px] font-semibold text-white disabled:opacity-50"
+                >
+                  {busy ? "Сохраняем…" : "Принять правила и продолжить"}
+                  <Check size={16} />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() =>
+                    agreementScrollRef.current?.scrollTo({
+                      top: agreementScrollRef.current.scrollHeight,
+                      behavior: "smooth",
+                    })
+                  }
+                  className="inline-flex h-12 flex-1 items-center justify-center gap-1.5 rounded-xl bg-slate-900 px-4 text-[14px] font-semibold text-white"
+                >
+                  Пролистайте правила до конца
+                  <ChevronDown size={16} className="animate-bounce" />
+                </button>
+              ))}
             {currentStepId === "confirm" && (
               <button
                 type="button"
@@ -761,8 +799,13 @@ export function ApplicationForm() {
               </button>
             )}
           </div>
-          {/* Подсказка, почему кнопка «Продолжить» неактивна (не молчим). */}
-          {!isPhotoStep && currentStepId !== "confirm" && !busy && stepHint() && (
+          {/* Подсказка, почему кнопка «Продолжить» неактивна (не молчим).
+              На шаге «agreement» не показываем — там единая кнопка сама ведёт. */}
+          {!isPhotoStep &&
+            currentStepId !== "confirm" &&
+            currentStepId !== "agreement" &&
+            !busy &&
+            stepHint() && (
             <div className="mt-2 flex items-start gap-1.5 text-[12px] text-amber-700">
               <AlertCircle size={14} className="mt-px shrink-0" />
               <span>{stepHint()}</span>
@@ -1325,17 +1368,14 @@ function SourceStep({
  * целиком помещается на экране). Без принятия дальше не пустит (canStepForward).
  */
 function AgreementStep({
-  agreedRules,
+  scrollRef,
   rulesScrolledEnd,
   onReachRulesEnd,
-  onToggleRules,
 }: {
-  agreedRules: boolean;
+  scrollRef: React.RefObject<HTMLDivElement>;
   rulesScrolledEnd: boolean;
   onReachRulesEnd: () => void;
-  onToggleRules: (v: boolean) => void;
 }) {
-  const scrollRef = useRef<HTMLDivElement>(null);
   const lines = RENTAL_AGREEMENT_TEXT.split("\n");
   const titleLine = lines[0] ?? "Инструктаж при передаче скутера";
   const bodyLines = lines.slice(1);
@@ -1344,7 +1384,7 @@ function AgreementStep({
   useEffect(() => {
     const el = scrollRef.current;
     if (el && el.scrollHeight <= el.clientHeight + 4) onReachRulesEnd();
-  }, [onReachRulesEnd]);
+  }, [scrollRef, onReachRulesEnd]);
 
   return (
     <div className="space-y-4">
@@ -1352,55 +1392,53 @@ function AgreementStep({
         {titleLine}
       </h1>
       <p className="text-[14px] text-slate-600">
-        Пожалуйста, прочитайте правила до конца — без принятия отправить заявку
-        не получится.
+        Пролистайте правила до конца — кнопка «Принять» внизу разблокируется
+        автоматически.
       </p>
-      <div
-        ref={scrollRef}
-        onScroll={(e) => {
-          const el = e.currentTarget;
-          if (el.scrollTop + el.clientHeight >= el.scrollHeight - 8) {
-            onReachRulesEnd();
-          }
-        }}
-        className="max-h-[56vh] space-y-1 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-5"
-      >
-        {bodyLines.map((line, i) => {
-          const t = line.trim();
-          if (!t) return <div key={i} className="h-2" />;
-          // Заголовки разделов (строка с двоеточием, не пункт-тире) — крупно/жирно.
-          const isHeading = t.endsWith(":") && !t.startsWith("—");
-          if (isHeading) {
-            return (
-              <h2
-                key={i}
-                className="pt-3 text-[18px] font-bold text-slate-900 first:pt-0"
-              >
-                {t}
-              </h2>
-            );
-          }
-          return (
-            <p key={i} className="text-[14.5px] leading-relaxed text-slate-700">
-              {t}
-            </p>
-          );
-        })}
-      </div>
-      {agreedRules ? (
-        <div className="flex items-center justify-center gap-2 rounded-xl bg-emerald-50 py-3.5 text-[15px] font-bold text-emerald-700">
-          <Check size={18} /> Правила приняты
-        </div>
-      ) : (
-        <button
-          type="button"
-          onClick={() => onToggleRules(true)}
-          disabled={!rulesScrolledEnd}
-          className="h-12 w-full rounded-xl bg-slate-900 text-[15px] font-semibold text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
+      {/* Скролл-бокс правил с нижним fade-градиентом: визуально видно, что
+          текст продолжается ниже (клиенты не замечали, что надо листать). */}
+      <div className="relative">
+        <div
+          ref={scrollRef}
+          onScroll={(e) => {
+            const el = e.currentTarget;
+            if (el.scrollTop + el.clientHeight >= el.scrollHeight - 8) {
+              onReachRulesEnd();
+            }
+          }}
+          className="max-h-[52vh] space-y-1 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-5"
         >
-          {rulesScrolledEnd ? "Принять правила" : "Пролистайте правила до конца"}
-        </button>
-      )}
+          {bodyLines.map((line, i) => {
+            const t = line.trim();
+            if (!t) return <div key={i} className="h-2" />;
+            // Заголовки разделов (строка с двоеточием, не пункт-тире).
+            const isHeading = t.endsWith(":") && !t.startsWith("—");
+            if (isHeading) {
+              return (
+                <h2
+                  key={i}
+                  className="pt-3 text-[18px] font-bold text-slate-900 first:pt-0"
+                >
+                  {t}
+                </h2>
+              );
+            }
+            return (
+              <p key={i} className="text-[14.5px] leading-relaxed text-slate-700">
+                {t}
+              </p>
+            );
+          })}
+        </div>
+        {/* Fade + бейдж «листайте» — пока не долистали до конца. */}
+        {!rulesScrolledEnd && (
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center rounded-b-2xl bg-gradient-to-t from-white via-white/90 to-transparent pt-10 pb-3">
+            <span className="flex items-center gap-1.5 rounded-full bg-slate-900/90 px-3 py-1 text-[12px] font-semibold text-white animate-bounce">
+              <ChevronDown size={14} /> листайте до конца
+            </span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
