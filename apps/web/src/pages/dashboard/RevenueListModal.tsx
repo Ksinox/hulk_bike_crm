@@ -12,6 +12,7 @@ import {
 import { useDashboardDrawer } from "./DashboardDrawer";
 import { DateRangePicker } from "@/components/ui/date-picker";
 import { useRevenueAnalytics } from "@/lib/useRevenueAnalytics";
+import { useBillingPeriodAnchors } from "@/lib/api/billing-period";
 import { RevenueDashboard } from "./RevenueDashboard";
 
 const TABS: { id: RevenuePeriod; label: string }[] = [
@@ -58,10 +59,15 @@ export function RevenueListModal({
     useState<MethodFilter>(initialMethodFilter);
   const drawer = useDashboardDrawer();
 
+  // Подписка на якоря: окно/подпись расчётного периода читаются из
+  // глобала billingPeriod, который грузится с сервера асинхронно. Без
+  // подписки модалка могла бы открыться со стале-периодом (день 15).
+  const anchorsQ = useBillingPeriodAnchors();
   // Окно для аналитики совпадает со списком (период / произвольный диапазон).
   const { start, end } = useMemo(
     () => resolveRevenueWindow({ period, range: customRange }),
-    [period, customRange],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [period, customRange, anchorsQ.data],
   );
   const analytics = useRevenueAnalytics({ scope, start, end });
   const periodLabel = customRange

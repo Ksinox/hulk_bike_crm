@@ -21,6 +21,7 @@
  */
 import { useMemo } from "react";
 import { useApiPayments, type ApiPayment } from "@/lib/api/payments";
+import { useBillingPeriodAnchors } from "@/lib/api/billing-period";
 import {
   currentBillingPeriod,
   type BillingPeriod,
@@ -67,7 +68,20 @@ export function useBillingPeriodRevenue(
   now: Date = new Date(),
 ): RevenueResult {
   const { data: payments } = useApiPayments();
-  const period = useMemo(() => currentBillingPeriod(now), [now]);
+  // Подписываемся на якоря расчётного периода. currentBillingPeriod()
+  // читает модульный глобал, который заполняется асинхронно с сервера
+  // (setBillingPeriodAnchors на onSuccess). Без этой подписки плашка
+  // выручки на первом кадре рендерилась бы со стале-фолбэком (день 15)
+  // и не перерисовывалась бы после загрузки настоящего якоря — отсюда
+  // расхождение подписи/окна периода. Подписка форсит ре-рендер.
+  const anchorsQ = useBillingPeriodAnchors();
+  const period = useMemo(
+    () => currentBillingPeriod(now),
+    // anchorsQ.data в зависимостях: пересчитать период, когда якоря
+    // догрузятся (currentBillingPeriod к этому моменту уже видит их).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [now, anchorsQ.data],
+  );
 
   return useMemo(() => {
     const list = payments ?? [];

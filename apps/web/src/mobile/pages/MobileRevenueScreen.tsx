@@ -10,6 +10,7 @@ import {
 } from "@/pages/dashboard/RevenueRentalsList";
 import { RevenueDashboard } from "@/pages/dashboard/RevenueDashboard";
 import { useRevenueAnalytics } from "@/lib/useRevenueAnalytics";
+import { useBillingPeriodAnchors } from "@/lib/api/billing-period";
 import { useRentals, useArchivedRentals } from "@/pages/rentals/rentalsStore";
 import { RentalCard } from "@/pages/rentals/RentalCard";
 import { ErrorBoundary } from "@/app/ErrorBoundary";
@@ -33,9 +34,14 @@ export function MobileRevenueScreen({
   const [method, setMethod] = useState<MethodFilter>("all");
   const [openId, setOpenId] = useState<number | null>(null);
 
+  // Подписка на якоря: окно/подпись расчётного периода считаются через
+  // глобал billingPeriod, который заполняется с сервера асинхронно.
+  // Без подписки экран мог бы открыться со стале-периодом (день 15).
+  const anchorsQ = useBillingPeriodAnchors();
   const { start, end } = useMemo(
     () => resolveRevenueWindow({ period }),
-    [period],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [period, anchorsQ.data],
   );
   const a = useRevenueAnalytics({ scope, start, end });
 
