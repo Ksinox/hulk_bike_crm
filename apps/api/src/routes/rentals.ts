@@ -3149,12 +3149,22 @@ export async function rentalsRoutes(app: FastifyInstance) {
           days: rentals.days,
           sum: rentals.sum,
           clientId: rentals.clientId,
+          equipmentJson: rentals.equipmentJson,
         })
         .from(rentals)
         .where(eq(rentals.id, id));
       if (r) {
+        // v0.9.2: ставка выкупа просроченных дней ВКЛЮЧАЕТ платную
+        // экипировку/сут. Иначе floor(amount / ставка_без_экип) при
+        // оплате задним числом давал лишние дни (сумма-с-экип делилась на
+        // ставку-без-экип), а sum/остаток-в-депозит считались мимо
+        // экипировки. Фронт шлёт сумму дней по полной ставке (rate+экип).
+        const equipDaily = (
+          (r.equipmentJson ?? []) as Array<{ price?: number; free?: boolean }>
+        ).reduce((s, it) => s + (it.free ? 0 : it.price ?? 0), 0);
         const dailyRate =
-          r.rateUnit === "week" ? Math.round(r.rate / 7) : r.rate;
+          (r.rateUnit === "week" ? Math.round(r.rate / 7) : r.rate) +
+          equipDaily;
         if (dailyRate > 0) {
           const overdueDays = calcOverdueDays(r.endPlannedAt, r.status);
           const daysAdded = Math.min(
