@@ -299,6 +299,35 @@ async function bootstrap() {
     "./services/overdueScheduler.js"
   );
   scheduleRentalArchive();
+
+  // v0.9.4: разовая сверка легаси app_settings.billing_period_start_day с
+  // актуальным якорём расчётного периода. Поле устарело (источник правды —
+  // billing_period_anchors), но если оно осталось рассинхронизированным
+  // (напр. на старом preview лежало '3' при якоре 15) — путало UI и cron.
+  // Приводим к якорю идемпотентно; на проде, где уже совпадает, — no-op.
+  // Не блокирует старт.
+  void (async () => {
+    try {
+      await db.execute(sql`
+        UPDATE app_settings
+           SET value = a.rule_start_day::text
+          FROM (
+            SELECT rule_start_day
+              FROM billing_period_anchors
+             WHERE effective_from <= (now() AT TIME ZONE 'Europe/Moscow')::date
+             ORDER BY effective_from DESC
+             LIMIT 1
+          ) a
+         WHERE app_settings.key = 'billing_period_start_day'
+           AND app_settings.value IS DISTINCT FROM a.rule_start_day::text
+      `);
+    } catch (e) {
+      console.warn(
+        "[billing-legacy-reconcile] пропущено:",
+        (e as Error).message ?? e,
+      );
+    }
+  })();
 }
 
 bootstrap().catch((err) => {
