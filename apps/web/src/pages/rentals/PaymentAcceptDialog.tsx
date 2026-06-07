@@ -52,6 +52,14 @@ import {
   type TariffPeriod,
 } from "@/lib/mock/rentals";
 import { useModelRateResolver } from "@/lib/api/scooter-models";
+import { I18nProvider } from "react-aria-components";
+import { parseDate, type CalendarDate } from "@internationalized/date";
+import { Calendar as CalendarPicker } from "@/components/ui/calendar-rac";
+import {
+  effectiveOverdueDaysAsOf,
+  operatorDelayDays,
+  ruToIsoDate,
+} from "./overdueAsOf";
 
 // v0.4.30: терминала для карт у бизнеса нет — только наличные и
 // перевод. «card» остаётся в типе PaymentMethod ради обратной
@@ -210,6 +218,27 @@ export function PaymentAcceptDialog({
   const [forgiveDaysN, setForgiveDaysN] = useState<number>(1);
   // v0.6.13: для 'fine-n' — N дней штрафа, тоже [1, overdueDaysCount].
   const [forgiveFineN, setForgiveFineN] = useState<number>(1);
+  // v0.9.1: дата фактического поступления оплаты. По умолчанию — сегодня.
+  // Оператор может указать прошедшую дату (клиент заплатил вовремя, но
+  // оператор фиксирует позже) — тогда просрочка за «дни задержки фиксации»
+  // снимается, а платёж датируется реальным днём.
+  const todayIso = useMemo(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }, []);
+  const [paymentDateIso, setPaymentDateIso] = useState<string>(todayIso);
+  // Подтверждён ли шаг «дата оплаты». Шаг показывается перед основным
+  // окном только когда есть просрочка (есть что пересчитывать).
+  const [dateConfirmed, setDateConfirmed] = useState(false);
+  const [applyingDate, setApplyingDate] = useState(false);
+  // Timestamp для paidAt платежей: выбранная дата (полдень) или «сейчас».
+  const paymentTimestamp = useMemo(
+    () =>
+      paymentDateIso && paymentDateIso !== todayIso
+        ? new Date(paymentDateIso + "T12:00:00").toISOString()
+        : null,
+    [paymentDateIso, todayIso],
+  );
   useEffect(() => {
     // При смене аренды сбрасываем выбор + ограничиваем N.
     if (forgiveDaysN > Math.max(1, overdueDaysCount)) {
@@ -911,12 +940,16 @@ export function PaymentAcceptDialog({
           await api.post(`/api/rentals/${rental.id}/debt/payment`, {
             kind: "overdue_days_payment",
             amount: op.amount,
+            method: op.method,
+            paidAt: paymentTimestamp ?? undefined,
             comment: `Оплата клиента (${methodLabel(op.method)})`,
           });
         } else if (op.target === "overdue_fine") {
           await api.post(`/api/rentals/${rental.id}/debt/payment`, {
             kind: "overdue_fine_payment",
             amount: op.amount,
+            method: op.method,
+            paidAt: paymentTimestamp ?? undefined,
             comment: `Оплата клиента (${methodLabel(op.method)})`,
           });
         } else if (op.target === "damage") {
@@ -926,7 +959,7 @@ export function PaymentAcceptDialog({
             amount: op.amount,
             method: op.method,
             paid: true,
-            paidAt: new Date().toISOString(),
+            paidAt: paymentTimestamp ?? new Date().toISOString(),
             damageReportId: op.damageReportId,
             note: "Оплата по акту",
           });
@@ -1025,7 +1058,7 @@ export function PaymentAcceptDialog({
             if (ph.amount <= amountLeft) {
               await api.patch(`/api/payments/${ph.id}`, {
                 paid: true,
-                paidAt: new Date().toISOString(),
+                paidAt: paymentTimestamp ?? new Date().toISOString(),
                 method: op.method,
               });
               amountLeft -= ph.amount;
@@ -1042,7 +1075,7 @@ export function PaymentAcceptDialog({
                 amount: amountLeft,
                 method: op.method,
                 paid: true,
-                paidAt: new Date().toISOString(),
+                paidAt: paymentTimestamp ?? new Date().toISOString(),
               });
               ph.amount = ph.amount - amountLeft;
               amountLeft = 0;
@@ -1056,7 +1089,7 @@ export function PaymentAcceptDialog({
               amount: amountLeft,
               method: op.method,
               paid: true,
-              paidAt: new Date().toISOString(),
+              paidAt: paymentTimestamp ?? new Date().toISOString(),
             });
           }
         }
@@ -1191,7 +1224,7 @@ export function PaymentAcceptDialog({
   // (ущерб/ручной/паркинг) — без блока «период продления» и экипировки.
   const canExtend = rental.status === "active";
 
-  const panel = (
+  const mainPanel = (
       <div
         className={cn(
           "flex h-full flex-col overflow-hidden bg-surface",
@@ -2041,6 +2074,159 @@ export function PaymentAcceptDialog({
       </div>
 
   );
+
+  // v0.9.1: шаг «дата поступления оплаты» — показываем перед основным
+  // окном, только когда есть просрочка (есть что пересчитывать). Оператор
+  // указывает реальную дату оплаты; «дни задержки фиксации» прощаются.
+  const needDateStep = hasOverdue && !dateConfirmed;
+  const dateEffDays = effectiveOverdueDaysAsOf(
+    rental.endPlanned,
+    paymentDateIso,
+  );
+  const dateDelayDays = operatorDelayDays(
+    overdueDaysCount,
+    rental.endPlanned,
+    paymentDateIso,
+  );
+  const dateRemovedAmount = dateDelayDays * (dailyRateBase + fineDailyRate);
+  const paymentRu = paymentDateIso.split("-").reverse().join(".");
+  const startIso = ruToIsoDate(rental.start);
+  const safeCalDate = (iso: string | null): CalendarDate | undefined => {
+    if (!iso) return undefined;
+    try {
+      return parseDate(iso);
+    } catch {
+      return undefined;
+    }
+  };
+  const confirmDate = async () => {
+    if (applyingDate) return;
+    setApplyingDate(true);
+    try {
+      if (dateDelayDays > 0) {
+        await api.post(`/api/rentals/${rental.id}/debt/forgive-overdue`, {
+          target: "days",
+          daysCount: dateDelayDays,
+          comment: `Оплата поступила ${paymentRu} — просрочка пересчитана (задержка фиксации ${dateDelayDays} дн)`,
+        });
+        qc.invalidateQueries({ queryKey: ["rental-debt", rental.id] });
+        qc.invalidateQueries({ queryKey: ["debt-aggregate"] });
+        qc.invalidateQueries({ queryKey: ["rentals"] });
+        qc.invalidateQueries({ queryKey: ["activity"] });
+        qc.invalidateQueries({ queryKey: ["clients"] });
+      }
+      setDateConfirmed(true);
+    } catch (e) {
+      toast.error("Не удалось пересчитать просрочку", String(e));
+    } finally {
+      setApplyingDate(false);
+    }
+  };
+
+  const dateStepPanel = (
+    <div className="flex h-full flex-col overflow-hidden bg-surface">
+      <div className="flex items-center gap-3 border-b border-border bg-gradient-to-r from-blue-50 to-surface px-5 py-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white">
+          <CalendarIcon size={16} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="text-[14px] font-bold text-ink">
+            Когда поступила оплата?
+          </div>
+          <div className="mt-0.5 text-[11.5px] text-muted">
+            #{String(rental.id).padStart(4, "0")} · просрочка считается на эту
+            дату
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={requestClose}
+          className="flex h-8 w-8 items-center justify-center rounded-full text-muted-2 hover:bg-border hover:text-ink"
+        >
+          <X size={16} />
+        </button>
+      </div>
+
+      <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-5 py-4">
+        <div className="rounded-[12px] border border-border bg-surface-soft/50 px-3 py-2 text-[12px] text-ink-2">
+          Аренда: <b>{rental.start}</b> → <b>{rental.endPlanned}</b>
+          {overdueDaysCount > 0 && (
+            <>
+              {" "}
+              · сегодня просрочка{" "}
+              <b className="text-red-ink">{overdueDaysCount} дн</b>
+            </>
+          )}
+          <div className="mt-1 text-[11px] text-muted">
+            Если клиент заплатил вовремя, а вы фиксируете позже — укажите
+            реальную дату, лишняя просрочка снимется.
+          </div>
+        </div>
+
+        <div className="mx-auto w-fit rounded-2xl border border-border bg-surface p-2 [&_table]:w-auto">
+          <I18nProvider locale="ru-RU">
+            <CalendarPicker
+              aria-label="Дата поступления оплаты"
+              value={safeCalDate(paymentDateIso)}
+              minValue={safeCalDate(startIso)}
+              maxValue={safeCalDate(todayIso)}
+              onChange={(d) => {
+                if (d) {
+                  const cd = d as CalendarDate;
+                  setPaymentDateIso(
+                    `${cd.year}-${String(cd.month).padStart(2, "0")}-${String(cd.day).padStart(2, "0")}`,
+                  );
+                }
+              }}
+            />
+          </I18nProvider>
+        </div>
+
+        {dateEffDays === 0 ? (
+          <div className="rounded-[12px] border border-green-ink/30 bg-green-soft/50 px-3 py-2.5 text-[12.5px] text-green-ink">
+            Оплата <b>{paymentRu}</b> — в срок. Просрочка{" "}
+            <b>{overdueDaysCount} дн</b> ({fmt(dateRemovedAmount)} ₽) будет
+            снята, к оплате только текущие начисления.
+          </div>
+        ) : dateDelayDays > 0 ? (
+          <div className="rounded-[12px] border border-amber-300 bg-amber-50 px-3 py-2.5 text-[12.5px] text-amber-900">
+            Реальная просрочка на <b>{paymentRu}</b> — <b>{dateEffDays} дн</b>.{" "}
+            {dateDelayDays} дн задержки фиксации ({fmt(dateRemovedAmount)} ₽)
+            будут сняты.
+          </div>
+        ) : (
+          <div className="rounded-[12px] border border-border bg-surface-soft/50 px-3 py-2.5 text-[12.5px] text-ink-2">
+            Просрочка <b>{overdueDaysCount} дн</b> начисляется полностью —
+            оплата зафиксирована сегодня.
+          </div>
+        )}
+      </div>
+
+      <div className="flex items-center gap-2 border-t border-border px-5 py-3">
+        <button
+          type="button"
+          onClick={requestClose}
+          className="h-12 flex-1 rounded-full border border-border bg-white px-3 text-[14px] font-semibold text-muted-2 hover:bg-surface-soft hover:text-ink-2"
+        >
+          Отмена
+        </button>
+        <button
+          type="button"
+          onClick={confirmDate}
+          disabled={applyingDate}
+          className={cn(
+            "inline-flex h-12 flex-[2] items-center justify-center gap-1.5 rounded-full px-4 text-[14px] font-bold text-white",
+            applyingDate ? "bg-blue-300" : "bg-blue-600 hover:bg-blue-700",
+          )}
+        >
+          {applyingDate ? "Пересчёт…" : "Продолжить"}
+          {!applyingDate && <ChevronRight size={16} />}
+        </button>
+      </div>
+    </div>
+  );
+
+  const panel = needDateStep ? dateStepPanel : mainPanel;
 
   if (inline) {
     return (
