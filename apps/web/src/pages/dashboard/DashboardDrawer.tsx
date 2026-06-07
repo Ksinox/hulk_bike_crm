@@ -150,7 +150,15 @@ export function DashboardDrawerProvider({ children }: { children: ReactNode }) {
   const ctx: Ctx = useMemo(
     () => ({
       stack,
-      openRental: (id) => setStack((s) => pushUnique(s, { kind: "rental", id })),
+      openRental: (id) =>
+        setStack((s) => {
+          // Уже смотрим эту аренду в верхней панели стека — повторный клик
+          // (напр. по её же событию в ленте) не должен открывать ту же
+          // карточку поверх. «Мы и так уже на ней».
+          const top = s[s.length - 1];
+          if (top && top.kind === "rental" && top.id === id) return s;
+          return pushUnique(s, { kind: "rental", id });
+        }),
       openClient: (id) => setStack((s) => pushUnique(s, { kind: "client", id })),
       openScooter: (id) => setStack((s) => pushUnique(s, { kind: "scooter", id })),
       openRentalsList: (filter) =>

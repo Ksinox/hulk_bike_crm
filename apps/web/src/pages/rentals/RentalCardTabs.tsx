@@ -2017,6 +2017,7 @@ export function HistoryTab({
         loading={timelineQ.isLoading}
         withFilters={withFilters}
         initialFilter={initialFilter}
+        currentRentalId={rental.id}
       />
 
       {/* v0.5.4: «Цепочка из N аренд» имеет смысл только при N > 1.
@@ -2276,6 +2277,7 @@ export function ActivityTimelineSection({
   loading,
   withFilters = false,
   initialFilter,
+  currentRentalId,
 }: {
   items: ApiActivityItem[];
   loading?: boolean;
@@ -2284,6 +2286,9 @@ export function ActivityTimelineSection({
   withFilters?: boolean;
   /** v0.8.8: стартовый фильтр (напр. «money» при открытии из «За всё время»). */
   initialFilter?: HistoryFilter;
+  /** v0.9: id аренды, чью карточку мы сейчас смотрим. Клик по событию этой
+   *  же аренды НЕ открывает её карточку поверх — мы и так уже на ней. */
+  currentRentalId?: number;
 }) {
   const drawer = useDashboardDrawer();
   const [filter, setFilter] = useState<HistoryFilter>(initialFilter ?? "all");
@@ -2293,8 +2298,12 @@ export function ActivityTimelineSection({
   // больше не нужен — стек всегда доступен.
   const handleClick = (it: ApiActivityItem) => {
     if (it.entityId == null) return;
-    if (it.entity === "rental") drawer.openRental(it.entityId);
-    else if (it.entity === "scooter") drawer.openScooter(it.entityId);
+    if (it.entity === "rental") {
+      // Мы уже на карточке этой аренды — повторно открывать её поверх
+      // не нужно (иначе дубль/мелькание поверх той же карточки).
+      if (currentRentalId != null && it.entityId === currentRentalId) return;
+      drawer.openRental(it.entityId);
+    } else if (it.entity === "scooter") drawer.openScooter(it.entityId);
     else if (it.entity === "client") drawer.openClient(it.entityId);
   };
   // navigate keep imported для других мест файла; void чтобы линтер
