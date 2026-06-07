@@ -155,8 +155,24 @@ function AppShell({
   webUpdate: string | null;
   onCloseUpdate: () => void;
 }) {
-  const { stack } = useDashboardDrawer();
+  const { stack, close } = useDashboardDrawer();
   const hasDrawers = stack.length > 0;
+  // v0.9.2: уход на ДРУГУЮ страницу закрывает quick-view drawer — иначе
+  // карточка drawer'а накладывается на собственную панель страницы
+  // (классический случай: дашборд открыл аренду в drawer → переход на
+  // «Аренды» → её панель + завис drawer = две карточки внахлёст).
+  // Drill-in и quick-view route НЕ меняют, поэтому их это не трогает.
+  // closeRef — чтобы effect зависел только от route и не закрывал drawer
+  // сразу при открытии (ссылка close меняется при каждом setStack).
+  const closeRef = useRef(close);
+  closeRef.current = close;
+  const prevRouteRef = useRef(route);
+  useEffect(() => {
+    if (prevRouteRef.current !== route) {
+      prevRouteRef.current = route;
+      closeRef.current();
+    }
+  }, [route]);
   // v0.7.0: «Аренды» — на всю ширину (своя push-раскладка карточки).
   // Остальные страницы — центрированный контейнер max-w-[1440px].
   const fullWidth = route === "rentals";
