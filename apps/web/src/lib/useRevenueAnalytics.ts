@@ -52,6 +52,20 @@ export type RevenueAnalytics = {
   byType: { key: RevenueTypeKey; label: string; sum: number; color: string }[];
   /** Топ-клиенты по выручке за период (до 5). */
   topClients: { name: string; sum: number }[];
+  /** Выручка по моделям скутеров за период. */
+  byModel: { model: string; sum: number; color: string }[];
+  /** Топ тарифов (что выбирают): по числу аренд за период. */
+  topTariffs: { label: string; count: number; sum: number }[];
+  /** Средний срок аренды в днях (по арендам с платежами за период). */
+  avgPeriodDays: number;
+  /** Доля продлений в выручке аренды (0..100 %): продление / (аренда+продление). */
+  extendShare: number;
+  /** Прогноз выручки до конца периода по текущему темпу; null если период не начался. */
+  forecast: number | null;
+  /** Сколько периода прошло, 0..100 %. */
+  progressPct: number;
+  /** Период уже завершён (прогноз = факт). */
+  periodOver: boolean;
   // Операционные (текущее состояние, не зависят от окна):
   activeRentals: number;
   totalScooters: number;
@@ -86,6 +100,27 @@ function ymd(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+const TARIFF_LABEL: Record<string, string> = {
+  day: "Посуточно",
+  short: "Посуточно",
+  week: "Недельный",
+  month: "Месячный",
+};
+
+// Цвета моделей для диаграммы «выручка по моделям» (детерминированно).
+const MODEL_PALETTE = [
+  "#3B82F6",
+  "#22C55E",
+  "#F59E0B",
+  "#8B5CF6",
+  "#06B6D4",
+  "#EC4899",
+  "#64748B",
+];
+function modelColor(idx: number): string {
+  return MODEL_PALETTE[idx % MODEL_PALETTE.length] ?? "#64748B";
+}
+
 export function useRevenueAnalytics(opts: {
   scope: RevenueScope;
   start: Date;
@@ -108,6 +143,7 @@ export function useRevenueAnalytics(opts: {
     const rentals = [...activeRentalsData, ...archivedRentals];
     const rentalById = new Map(rentals.map((r) => [r.id, r]));
     const clientById = new Map(clients.map((c) => [c.id, c]));
+    const scooterById = new Map(scooters.map((s) => [s.id, s]));
 
     const inScope = (p: ApiPayment) =>
       isRevenuePayment(p) && (scope !== "rentals" || p.rentalId != null);
@@ -118,6 +154,9 @@ export function useRevenueAnalytics(opts: {
     const byDayMap = new Map<string, number>();
     const byTypeMap = new Map<RevenueTypeKey, number>();
     const byClientMap = new Map<string, number>();
+    const byModelMap = new Map<string, number>();
+    const tariffSumMap = new Map<string, number>();
+    const windowRentalIds = new Set<number>();
     let count = 0;
 
     for (const p of payments) {
@@ -137,6 +176,15 @@ export function useRevenueAnalytics(opts: {
       const r = rentalById.get(p.rentalId);
       const cname = r ? clientById.get(r.clientId)?.name ?? "—" : "—";
       byClientMap.set(cname, (byClientMap.get(cname) ?? 0) + p.amount);
+      if (r) {
+        windowRentalIds.add(r.id);
+        const scooter =
+          r.scooterId != null ? scooterById.get(r.scooterId) : undefined;
+        const model = scooter?.model ?? "—";
+        byModelMap.set(model, (byModelMap.get(model) ?? 0) + p.amount);
+        const tlabel = TARIFF_LABEL[r.tariffPeriod] ?? r.tariffPeriod;
+        tariffSumMap.set(tlabel, (tariffSumMap.get(tlabel) ?? 0) + p.amount);
+      }
     }
 
     // byDay с заполнением пустых дней (чтобы график был непрерывным).
@@ -168,6 +216,63 @@ export function useRevenueAnalytics(opts: {
       .map(([name, sum]) => ({ name, sum }))
       .sort((a, b) => b.sum - a.sum)
       .slice(0, 5);
+
+    // Выручка по моделям скутеров.
+    const byModel = [...byModelMap.entries()]
+      .map(([model, sum], i) => ({ model, sum, color: modelColor(i) }))
+      .filter((x) => x.sum > 0)
+      .sort((a, b) => b.sum - a.sum);
+
+    // Топ тарифов (что выбирают): число аренд + выручка по типу тарифа;
+    // заодно средний срок аренды по тем же арендам.
+    const tariffCount = new Map<string, number>();
+    let daysSum = 0;
+    let daysN = 0;
+    for (const id of windowRentalIds) {
+      const r = rentalById.get(id);
+      if (!r) continue;
+      const tlabel = TARIFF_LABEL[r.tariffPeriod] ?? r.tariffPeriod;
+      tariffCount.set(tlabel, (tariffCount.get(tlabel) ?? 0) + 1);
+      const days = (r as { days?: number }).days ?? 0;
+      if (days > 0) {
+        daysSum += days;
+        daysN += 1;
+      }
+    }
+    const topTariffs = [...tariffCount.entries()]
+      .map(([label, c]) => ({
+        label,
+        count: c,
+        sum: tariffSumMap.get(label) ?? 0,
+      }))
+      .sort((a, b) => b.count - a.count);
+    const avgPeriodDays = daysN > 0 ? Math.round(daysSum / daysN) : 0;
+
+    // Доля продлений в выручке аренды (recurring-здоровье).
+    const rentBase = byTypeMap.get("rent") ?? 0;
+    const rentExt = byTypeMap.get("extend") ?? 0;
+    const extendShare =
+      rentBase + rentExt > 0
+        ? Math.round((rentExt / (rentBase + rentExt)) * 100)
+        : 0;
+
+    // Прогноз до конца периода: экстраполяция по текущему темпу
+    // (заработано ÷ доля пройденного периода). Если период завершён —
+    // факт = прогноз; если ещё не начался — null.
+    const now = Date.now();
+    const periodLen = endMs - startMs;
+    const elapsed = Math.min(Math.max(0, now - startMs), periodLen);
+    const progressPct =
+      periodLen > 0 ? Math.round((elapsed / periodLen) * 100) : 0;
+    const periodOver = now >= endMs;
+    const periodStarted = now >= startMs;
+    const forecast: number | null = !periodStarted
+      ? null
+      : periodOver
+        ? total
+        : elapsed > 0
+          ? Math.round(total / (elapsed / periodLen))
+          : null;
 
     const deltaPct =
       prevTotal > 0 ? ((total - prevTotal) / prevTotal) * 100 : null;
@@ -206,6 +311,13 @@ export function useRevenueAnalytics(opts: {
       byDay,
       byType,
       topClients,
+      byModel,
+      topTariffs,
+      avgPeriodDays,
+      extendShare,
+      forecast,
+      progressPct,
+      periodOver,
       activeRentals,
       totalScooters,
       parkUtil,
