@@ -1,13 +1,18 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Maximize2, Minimize2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   RevenueRentalsList,
+  resolveRevenueWindow,
+  billingPeriodLabel,
   type RevenuePeriod,
   type MethodFilter,
+  type RevenueScope,
 } from "./RevenueRentalsList";
 import { useDashboardDrawer } from "./DashboardDrawer";
 import { DateRangePicker } from "@/components/ui/date-picker";
+import { useRevenueAnalytics } from "@/lib/useRevenueAnalytics";
+import { RevenueDashboard } from "./RevenueDashboard";
 
 const TABS: { id: RevenuePeriod; label: string }[] = [
   { id: "day", label: "День" },
@@ -30,11 +35,17 @@ export function RevenueListModal({
   initialPeriod,
   initialRange = null,
   initialMethodFilter = "all",
+  scope = "all",
+  title,
   onClose,
 }: {
   initialPeriod: RevenuePeriod;
   initialRange?: { from: string; to: string } | null;
   initialMethodFilter?: MethodFilter;
+  /** Область выручки: только аренды (стр. Аренды) или все операции (дашборд). */
+  scope?: RevenueScope;
+  /** Заголовок окна (по умолчанию зависит от scope). */
+  title?: string;
   onClose: () => void;
 }) {
   const [closing, setClosing] = useState(false);
@@ -46,6 +57,22 @@ export function RevenueListModal({
   const [methodFilter, setMethodFilter] =
     useState<MethodFilter>(initialMethodFilter);
   const drawer = useDashboardDrawer();
+
+  // Окно для аналитики совпадает со списком (период / произвольный диапазон).
+  const { start, end } = useMemo(
+    () => resolveRevenueWindow({ period, range: customRange }),
+    [period, customRange],
+  );
+  const analytics = useRevenueAnalytics({ scope, start, end });
+  const periodLabel = customRange
+    ? `${customRange.from.slice(8, 10)}.${customRange.from.slice(5, 7)} — ${customRange.to.slice(8, 10)}.${customRange.to.slice(5, 7)}`
+    : period === "day"
+      ? "Сегодня"
+      : period === "week"
+        ? "Эта неделя"
+        : billingPeriodLabel();
+  const scopeLabel = scope === "rentals" ? "аренды" : "все операции";
+  const heading = title ?? (scope === "rentals" ? "Выручка — аренды" : "Выручка");
 
   const requestClose = () => {
     if (closing) return;
@@ -81,7 +108,7 @@ export function RevenueListModal({
         <div className="flex items-center gap-3 border-b border-border bg-surface-soft px-5 py-3">
           <Minimize2 size={18} className="text-blue-600" />
           <div className="min-w-0 flex-1 text-[15px] font-semibold text-ink">
-            Платежи за период
+            {heading}
           </div>
           <button
             type="button"
@@ -149,10 +176,19 @@ export function RevenueListModal({
         </div>
 
         <div className="flex-1 overflow-y-auto scrollbar-thin p-4">
+          <RevenueDashboard
+            a={analytics}
+            periodLabel={periodLabel}
+            scopeLabel={scopeLabel}
+          />
+          <div className="mb-2 mt-5 text-[12px] font-semibold uppercase tracking-wider text-muted-2">
+            Платежи за период · детализация
+          </div>
           <RevenueRentalsList
             period={period}
             range={customRange}
             methodFilter={methodFilter}
+            scope={scope}
             onRowClick={(id) => {
               requestClose();
               drawer.openRental(id);
