@@ -32,6 +32,7 @@ import { useBillingPeriodRevenue } from "@/lib/useRevenue";
 import { ErrorBoundary } from "@/app/ErrorBoundary";
 import { isElectron } from "@/platform";
 import { PaymentAcceptDialog } from "./PaymentAcceptDialog";
+import { RevenueListModal } from "@/pages/dashboard/RevenueListModal";
 import type { ApiClient } from "@/lib/api/types";
 import {
   matchId,
@@ -323,6 +324,8 @@ export function Rentals() {
    * state переживает любые ремаунты карточки.
    */
   const [swapActPreviewId, setSwapActPreviewId] = useState<number | null>(null);
+  // v0.9.3: полноэкранная сводка выручки (клик по KPI-плашке «Выручка»).
+  const [revenueOpen, setRevenueOpen] = useState(false);
 
   // Если выбрана вкладка «Архив» — берём архивный список, иначе обычный.
   const rentals =
@@ -515,6 +518,8 @@ export function Rentals() {
         value: `${periodRevenue.toLocaleString("ru-RU")} ₽`,
         hint: rangeLabel,
         tone: "purple",
+        // v0.9.3: клик → полноэкранная сводка выручки по арендам.
+        onClick: () => setRevenueOpen(true),
       },
     ];
   }, [rentals, revenue, today, totalDebtByRentalId]);
@@ -842,6 +847,15 @@ export function Rentals() {
         <AutoContractPreview
           rentalId={autoDocRentalId}
           onClose={() => setAutoDocRentalId(null)}
+        />
+      )}
+
+      {/* v0.9.3: клик по KPI «Выручка» → полноэкранная сводка по арендам. */}
+      {revenueOpen && (
+        <RevenueListModal
+          initialPeriod="month"
+          scope="rentals"
+          onClose={() => setRevenueOpen(false)}
         />
       )}
     </main>

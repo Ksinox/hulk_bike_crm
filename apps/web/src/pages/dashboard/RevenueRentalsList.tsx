@@ -39,22 +39,48 @@ export function periodWindow(period: RevenuePeriod): {
   return { start: bp.start, end: bp.end };
 }
 
+/**
+ * Единый резолвер окна выручки: произвольный диапазон → конкретный день
+ * (клик по графику) → период (день/неделя/месяц). Используется и списком,
+ * и аналитикой дашборда — чтобы цифры совпадали.
+ */
+export function resolveRevenueWindow(opts: {
+  period: RevenuePeriod;
+  range?: { from: string; to: string } | null;
+  dayFilter?: string | null;
+}): { start: Date; end: Date } {
+  const { period, range, dayFilter } = opts;
+  if (range) {
+    const s = new Date(range.from + "T00:00:00");
+    const e = new Date(new Date(range.to + "T00:00:00").getTime() + 86_400_000);
+    return { start: s, end: e };
+  }
+  if (dayFilter) {
+    const d = new Date(dayFilter + "T00:00:00");
+    return { start: d, end: new Date(d.getTime() + 86_400_000) };
+  }
+  return periodWindow(period);
+}
+
 /** Лейбл расчётного периода для UI (используется в фильтре «Месяц»). */
 export function billingPeriodLabel(): string {
   return currentBillingPeriod().label;
 }
+
+/** Область выручки: только аренды или все операции (на будущее — рассрочки/продажи). */
+export type RevenueScope = "rentals" | "all";
 
 function fmt(n: number): string {
   return n.toLocaleString("ru-RU");
 }
 
 /** true — платёж это «наличные»; false — безнал (перевод/карта). */
-function isCashPayment(p: { method: string }): boolean {
+export function isCashPayment(p: { method: string }): boolean {
   return p.method === "cash";
 }
 
 /** Считать ли платёж выручкой нал/безнал (не залог/возврат, не из депозита). */
-function isRevenuePayment(p: ApiPayment): boolean {
+export function isRevenuePayment(p: ApiPayment): boolean {
   if (!p.paid || !p.paidAt) return false;
   if (p.type === "deposit" || p.type === "refund") return false;
   // method='deposit' — оплата из депозита клиента: не нал и не безнал
@@ -89,6 +115,7 @@ export function RevenueRentalsList({
   dayFilter,
   range,
   methodFilter = "all",
+  scope = "all",
 }: {
   period: RevenuePeriod;
   onRowClick?: (rentalId: number) => void;
@@ -99,6 +126,8 @@ export function RevenueRentalsList({
   range?: { from: string; to: string } | null;
   /** Способ оплаты: всё / только наличные / только безнал. */
   methodFilter?: MethodFilter;
+  /** Область: только аренды или все операции (на будущее). */
+  scope?: RevenueScope;
 }) {
   const { data: activeRentals = [] } = useApiRentals();
   const { data: archivedRentals = [] } = useApiRentalsArchived();
@@ -111,21 +140,11 @@ export function RevenueRentalsList({
   const drawer = useDashboardDrawer();
   const { data: scooters = [] } = useApiScooters();
 
-  // Окно: произвольный диапазон → конкретный день → период.
-  const { start, end } = useMemo(() => {
-    if (range) {
-      const s = new Date(range.from + "T00:00:00");
-      const e = new Date(
-        new Date(range.to + "T00:00:00").getTime() + 86_400_000,
-      );
-      return { start: s, end: e };
-    }
-    if (dayFilter) {
-      const d = new Date(dayFilter + "T00:00:00");
-      return { start: d, end: new Date(d.getTime() + 86_400_000) };
-    }
-    return periodWindow(period);
-  }, [period, dayFilter, range]);
+  // Окно: произвольный диапазон → конкретный день → период (общий резолвер).
+  const { start, end } = useMemo(
+    () => resolveRevenueWindow({ period, range, dayFilter }),
+    [period, dayFilter, range],
+  );
 
   const rows = useMemo(() => {
     const rentalById = new Map(rentals.map((r) => [r.id, r]));
@@ -134,6 +153,7 @@ export function RevenueRentalsList({
     return payments
       .filter((p) => {
         if (!isRevenuePayment(p)) return false;
+        if (scope === "rentals" && p.rentalId == null) return false;
         const t = new Date(p.paidAt!).getTime();
         if (t < start.getTime() || t >= end.getTime()) return false;
         if (methodFilter === "cash" && !isCashPayment(p)) return false;
@@ -156,7 +176,7 @@ export function RevenueRentalsList({
         };
       })
       .sort((a, b) => b.paidAt.localeCompare(a.paidAt));
-  }, [rentals, payments, clients, scooters, start, end, methodFilter]);
+  }, [rentals, payments, clients, scooters, start, end, methodFilter, scope]);
 
   const total = rows.reduce((s, r) => s + r.amount, 0);
   const cashTotal = rows
