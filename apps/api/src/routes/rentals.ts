@@ -48,6 +48,7 @@ function pickRateByPeriod(
 import { logActivity } from "../services/activityLog.js";
 import type { DiffPayload } from "../services/activityLog.js";
 import { rentalStatusLabel } from "../services/activityMessages.js";
+import { overdueDailyRate } from "../services/overdueCharge.js";
 
 const RentalStatusEnum = z.enum(["active", "completed"]);
 
@@ -2609,12 +2610,14 @@ export async function rentalsRoutes(app: FastifyInstance) {
     rate: number,
     rateUnit: string,
     overdueDays: number,
+    equipmentJson: unknown,
   ): { daysCharge: number; fineCharge: number; totalCharge: number } {
-    if (overdueDays <= 0 || rate <= 0) {
+    // v0.9: день просрочки и штраф 50% считаются от полной суммы за сутки —
+    // аренда/сут + платная экипировка/сут (раньше экипировку не учитывали).
+    const dailyRate = overdueDailyRate(rate, rateUnit, equipmentJson);
+    if (overdueDays <= 0 || dailyRate <= 0) {
       return { daysCharge: 0, fineCharge: 0, totalCharge: 0 };
     }
-    const dailyRate =
-      rateUnit === "week" ? Math.round(rate / 7) : rate;
     const daysCharge = dailyRate * overdueDays;
     const fineCharge = Math.round(dailyRate * 0.5) * overdueDays;
     return { daysCharge, fineCharge, totalCharge: daysCharge + fineCharge };
@@ -2648,6 +2651,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
         rate: rentals.rate,
         rateUnit: rentals.rateUnit,
         endPlannedAt: rentals.endPlannedAt,
+        equipmentJson: rentals.equipmentJson,
       })
       .from(rentals)
       .where(
@@ -2739,9 +2743,12 @@ export async function rentalsRoutes(app: FastifyInstance) {
         0,
         Math.floor((today.getTime() - endDate.getTime()) / 86_400_000),
       );
-      // ₽/сут — для weekly tariffs делим на 7
-      const dailyRate =
-        r.rateUnit === "week" ? Math.round(r.rate / 7) : r.rate;
+      // v0.9: ₽/сут = аренда/сут (weekly /7) + платная экипировка/сут.
+      const dailyRate = overdueDailyRate(
+        r.rate,
+        r.rateUnit ?? "day",
+        r.equipmentJson,
+      );
       const daysCharge = dailyRate * overdueDays;
       const fineCharge = Math.round(dailyRate * 0.5) * overdueDays;
 
@@ -2881,6 +2888,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
       rental.rate,
       rental.rateUnit ?? "day",
       overdueDays,
+      rental.equipmentJson,
     );
 
     // === События по долгу (manual + forgive + payments) ===
@@ -3349,6 +3357,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
       rental.rate,
       rental.rateUnit ?? "day",
       overdueDays,
+      rental.equipmentJson,
     );
     if (totalCharge <= 0) {
       return reply

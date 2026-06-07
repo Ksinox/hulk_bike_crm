@@ -18,6 +18,7 @@
  * синхронизировать здесь (помечено).
  */
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { overdueDailyRate } from "./overdueCharge.js";
 import { db } from "../db/index.js";
 import {
   damageReports,
@@ -59,6 +60,7 @@ export async function syncRentalDebtorCases(): Promise<DebtorSyncResult> {
       rate: rentals.rate,
       rateUnit: rentals.rateUnit,
       endPlannedAt: rentals.endPlannedAt,
+      equipmentJson: rentals.equipmentJson,
     })
     .from(rentals)
     .where(isNull(rentals.archivedAt));
@@ -182,8 +184,9 @@ export async function syncRentalDebtorCases(): Promise<DebtorSyncResult> {
         0,
         Math.floor((today.getTime() - endDate.getTime()) / 86_400_000),
       );
-      const dailyRate =
-        r.rateUnit === "week" ? Math.round(r.rate / 7) : r.rate;
+      // v0.9: ₽/сут = аренда/сут (weekly /7) + платная экипировка/сут
+      // (синхронно с debt-aggregate в rentals.ts).
+      const dailyRate = overdueDailyRate(r.rate, r.rateUnit, r.equipmentJson);
       const daysCharge = dailyRate * overdueDays;
       const fineCharge = Math.round(dailyRate * 0.5) * overdueDays;
       let fineForgive = 0;

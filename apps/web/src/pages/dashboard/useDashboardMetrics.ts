@@ -263,7 +263,14 @@ export function useDashboardMetrics(): DashboardMetrics {
       const endDateKey = r.endPlannedAt.slice(0, 10);
       const days = Math.max(0, daysBetweenYmd(endDateKey, todayKey));
       if (days <= 0) return 0;
-      const daily = r.rateUnit === "week" ? Math.round(r.rate / 7) : r.rate;
+      // v0.9: день просрочки + штраф считаются от аренда/сут + платная
+      // экипировка/сут (как на бэкенде). Fallback до загрузки агрегата.
+      const equipDaily = (r.equipmentJson ?? []).reduce(
+        (s, e) => s + (e.free ? 0 : e.price),
+        0,
+      );
+      const daily =
+        (r.rateUnit === "week" ? Math.round(r.rate / 7) : r.rate) + equipDaily;
       return Math.round(daily * 1.5) * days;
     };
 

@@ -184,9 +184,17 @@ export function PaymentAcceptDialog({
   const hasOverdue = hasOverdueFine || hasOverdueDays;
   const overdueBalanceRaw = overdueDaysBalanceRaw + overdueFineBalanceRaw;
   const overdueDaysCount = debt?.overdueDays ?? 0;
-  const dailyRateBase = rental.rateUnit === "week"
-    ? Math.max(1, Math.round(rental.rate / 7))
-    : Math.max(1, rental.rate);
+  // v0.9: дневная ставка для частичного прощения = аренда/сут + платная
+  // экипировка/сут — синхронно с бэкендом, где день просрочки и штраф 50%
+  // считаются от полной суммы за сутки (раньше экипировку не учитывали).
+  const equipDailyForOverdue = (rental.equipmentJson ?? []).reduce(
+    (s, e) => s + (e.free ? 0 : e.price),
+    0,
+  );
+  const dailyRateBase =
+    (rental.rateUnit === "week"
+      ? Math.max(1, Math.round(rental.rate / 7))
+      : Math.max(1, rental.rate)) + equipDailyForOverdue;
   const fineDailyRate = Math.round(dailyRateBase * 0.5);
   const [forgiveChoice, setForgiveChoice] = useState<ForgiveChoice>("clear");
   // Количество дней для частичного прощения (forgiveChoice='days-n').
