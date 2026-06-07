@@ -422,6 +422,11 @@ export function AddClientModal({
   // (Esc / крестик / Отмена) тогда требует подтверждения, чтобы случайно
   // не потерять введённые данные.
   const dirtyRef = useRef(false);
+  // v0.9.1: для автосохранения при закрытии — ссылка на кнопку «Сохранить»
+  // (её onClick содержит всю логику сохранения) и актуальное значение
+  // валидности формы (canSave объявлен ниже, держим в ref для requestClose).
+  const saveBtnRef = useRef<HTMLButtonElement>(null);
+  const canSaveRef = useRef(false);
 
   const doClose = () => {
     if (closing) return;
@@ -431,14 +436,25 @@ export function AddClientModal({
 
   const requestClose = () => {
     if (closing) return;
+    // Нет правок — просто закрываем.
     if (!dirtyRef.current) {
       doClose();
       return;
     }
+    // v0.9.1: автосохранение при закрытии. Если форма валидна (все
+    // обязательные поля заполнены) — тихо сохраняем и закрываем, без
+    // диалога «закрыть без сохранения». Закрыл окно = сохранил.
+    if (canSaveRef.current) {
+      saveBtnRef.current?.click(); // onClick сохранит → сбросит dirty → doClose
+      return;
+    }
+    // Невалидно (например не заполнен телефон) — сохранить нельзя, поэтому
+    // спрашиваем подтверждение, чтобы не потерять введённое.
     void confirmDialog({
-      title: "Закрыть без сохранения?",
-      message: "В форме есть несохранённые данные — они будут потеряны.",
-      confirmText: "Закрыть",
+      title: "Не все обязательные поля заполнены",
+      message:
+        "Без них запись нельзя сохранить. Закрыть без сохранения введённого?",
+      confirmText: "Закрыть без сохранения",
       cancelText: "Остаться",
       danger: true,
     }).then((ok) => {
@@ -518,6 +534,7 @@ export function AddClientModal({
   const total = required.length;
   const progress = Math.round((ok / total) * 100);
   const canSave = required.every((e) => e === null) && !errors.blReason;
+  canSaveRef.current = canSave; // v0.9.1: держим актуально для requestClose
 
   const set = <K extends keyof Form>(key: K, value: Form[K]) => {
     dirtyRef.current = true; // F7: пользователь редактирует форму
@@ -1050,6 +1067,7 @@ export function AddClientModal({
                 Отмена
               </button>
               <button
+                ref={saveBtnRef}
                 type="button"
                 disabled={!canSave}
                 onClick={async () => {
@@ -1152,7 +1170,8 @@ export function AddClientModal({
                           ? `Обновлено: ${filled.join(", ")}.`
                           : "Изменения переданы на сервер.",
                       );
-                      requestClose();
+                      dirtyRef.current = false;
+                      doClose();
                     } catch (e) {
                       toast.error(
                         "Не удалось сохранить клиента",
@@ -1269,7 +1288,11 @@ export function AddClientModal({
                       onCreated?.({
                         ...(created as unknown as Client),
                       });
-                      requestClose();
+                      // v0.9.1: данные сохранены — сбрасываем «грязный» флаг и
+                      // закрываем БЕЗ диалога «закрыть без сохранения». Раньше
+                      // requestClose() видел dirty=true и зря всплывал диалог.
+                      dirtyRef.current = false;
+                      doClose();
                     } catch (e) {
                       toast.error(
                         "Не удалось оформить клиента из заявки",
@@ -1323,7 +1346,8 @@ export function AddClientModal({
                     }
                     if (f.phone2) clientStore.setExtraPhone(created.id, f.phone2);
                     onCreated?.(created);
-                    requestClose();
+                    dirtyRef.current = false;
+                    doClose();
                   } catch (e) {
                     toast.error(
                       "Не удалось создать клиента",
