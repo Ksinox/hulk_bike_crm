@@ -192,7 +192,10 @@ export async function syncRentalDebtorCases(): Promise<DebtorSyncResult> {
       let fineForgive = 0;
       let finePay = 0;
       for (const e of my) {
-        if (e.kind === "overdue_fine_forgive") fineForgive += e.amount;
+        // v0.9.1: штраф, прощённый вместе с днями (appliedToEndPlanned=true),
+        // уже учтён через сдвиг endPlanned → не вычитаем повторно (двойной счёт).
+        if (e.kind === "overdue_fine_forgive" && !e.appliedToEndPlanned)
+          fineForgive += e.amount;
         else if (e.kind === "overdue_fine_payment") finePay += e.amount;
       }
       const fineBalance = Math.max(0, fineCharge - fineForgive - finePay);
