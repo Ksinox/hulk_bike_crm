@@ -11,6 +11,7 @@ import {
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 import { MobileNewClient } from "../forms/MobileNewClient";
+import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
 import { ApplicationView } from "@/pages/applications/ApplicationView";
 import type { ClientSource } from "@/lib/mock/clients";
 import {
@@ -57,6 +58,14 @@ export function MobileApplications() {
   const [convertApp, setConvertApp] = useState<ApiApplication | null>(null);
   /** Заявка, для которой открыт выбор причины отклонения. */
   const [rejectApp, setRejectApp] = useState<ApiApplication | null>(null);
+  /** Возобновление аренды из принятой заявки (префилл модель/срок/экип.). */
+  const [rentalPrefill, setRentalPrefill] = useState<{
+    clientId: number;
+    modelFilter?: string;
+    days?: number;
+    equipmentIds?: number[];
+    start?: string;
+  } | null>(null);
   const rejectMut = useRejectApplication();
 
   const { data: items = [], isLoading } = useApplications({ status: filter });
@@ -118,6 +127,17 @@ export function MobileApplications() {
             app={openApp}
             onAccept={() => setConvertApp(openApp)}
             onReject={() => setRejectApp(openApp)}
+            onCreateRental={() => {
+              if (openApp.clientId == null) return;
+              setOpenId(null);
+              setRentalPrefill({
+                clientId: openApp.clientId,
+                modelFilter: openApp.requestedModel ?? undefined,
+                days: openApp.requestedDays ?? undefined,
+                equipmentIds: openApp.requestedEquipmentIds ?? undefined,
+                start: openApp.requestedStartDate ?? undefined,
+              });
+            }}
           />
         )}
       </MobileSheet>
@@ -164,6 +184,24 @@ export function MobileApplications() {
           }}
         />
       )}
+
+      {/* Возобновление аренды из принятой заявки — тот же NewRentalModal
+          (адаптивен под телефон), с префиллом из заявки. Договор откроется
+          сам после создания (единый flow). */}
+      {rentalPrefill && (
+        <NewRentalModal
+          initialClientId={rentalPrefill.clientId}
+          initialModelFilter={rentalPrefill.modelFilter}
+          initialDays={rentalPrefill.days}
+          initialEquipmentIds={rentalPrefill.equipmentIds}
+          initialStart={rentalPrefill.start}
+          onClose={() => setRentalPrefill(null)}
+          onCreated={() => {
+            setRentalPrefill(null);
+            toast.success("Аренда создана");
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -201,12 +239,16 @@ function AppDetail({
   app,
   onAccept,
   onReject,
+  onCreateRental,
 }: {
   app: ApiApplication;
   onAccept: () => void;
   onReject: () => void;
+  onCreateRental: () => void;
 }) {
   const actionable = app.status === "new" || app.status === "viewed";
+  // Принята, клиент создан, но аренду не дооформили — даём возобновить.
+  const canResumeRental = app.status === "accepted" && app.clientId != null;
   return (
     <div className="pb-1">
       <ApplicationView app={app} />
@@ -237,6 +279,14 @@ function AppDetail({
               <Check size={17} /> Принять и оформить
             </button>
           </div>
+        ) : canResumeRental ? (
+          <button
+            type="button"
+            onClick={onCreateRental}
+            className="flex w-full items-center justify-center gap-1.5 rounded-2xl bg-green py-3.5 text-[14px] font-bold text-white shadow-card-sm active:scale-[0.99]"
+          >
+            <Check size={17} /> Оформить аренду
+          </button>
         ) : (
           <p className="text-center text-[12px] text-muted-2">
             Заявка уже обработана

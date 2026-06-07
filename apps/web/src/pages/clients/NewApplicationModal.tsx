@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { confirmDialog } from "@/lib/toast";
-import { AlertCircle, Bell, Check, Clock, Trash2, X } from "lucide-react";
+import { AlertCircle, Bell, Bike, Check, Clock, Trash2, X } from "lucide-react";
 import type { ApiApplication } from "@/lib/api/clientApplications";
 import { ApplicationView } from "@/pages/applications/ApplicationView";
 
@@ -23,6 +23,12 @@ type Props = {
   onSpam?: () => void;
   /** Legacy: пометить как спам через старый DELETE (виджет дашборда). */
   onDelete?: () => void;
+  /**
+   * Заявка уже принята (клиент создан), но аренду не дооформили — даёт
+   * «Оформить аренду» с префиллом (модель/срок/экипировка из заявки).
+   * Спасает от потери флоу, если оформление прервали после создания клиента.
+   */
+  onCreateRental?: () => void;
   /** Read-only: только просмотр без кнопок действий. */
   readOnly?: boolean;
 };
@@ -34,6 +40,7 @@ export function NewApplicationModal({
   onReject,
   onSpam,
   onDelete,
+  onCreateRental,
   readOnly,
 }: Props) {
   useEffect(() => {
@@ -121,17 +128,33 @@ export function NewApplicationModal({
               >
                 <Clock size={16} /> Позже
               </button>
-              <button
-                type="button"
-                onClick={onConvertNow}
-                disabled={application.status === "accepted"}
-                className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-full bg-green px-5 text-[14px] font-bold text-white shadow-card-sm transition-colors hover:bg-green-ink disabled:opacity-50 sm:flex-initial"
-              >
-                <Check size={16} />{" "}
-                {application.status === "accepted"
-                  ? "Уже оформлено"
-                  : "Оформить сейчас"}
-              </button>
+              {application.status === "accepted" &&
+              application.clientId != null &&
+              onCreateRental ? (
+                // Клиент уже создан, но аренду не дооформили — продолжаем с
+                // префиллом из заявки (модель/срок/экипировка). Данные заявки
+                // живут на сервере, поэтому прерванный флоу всегда можно
+                // возобновить отсюда, не вводя всё заново.
+                <button
+                  type="button"
+                  onClick={onCreateRental}
+                  className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-full bg-green px-5 text-[14px] font-bold text-white shadow-card-sm transition-colors hover:bg-green-ink sm:flex-initial"
+                >
+                  <Bike size={16} /> Оформить аренду
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={onConvertNow}
+                  disabled={application.status === "accepted"}
+                  className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-full bg-green px-5 text-[14px] font-bold text-white shadow-card-sm transition-colors hover:bg-green-ink disabled:opacity-50 sm:flex-initial"
+                >
+                  <Check size={16} />{" "}
+                  {application.status === "accepted"
+                    ? "Уже оформлено"
+                    : "Оформить сейчас"}
+                </button>
+              )}
             </div>
           </footer>
         )}
