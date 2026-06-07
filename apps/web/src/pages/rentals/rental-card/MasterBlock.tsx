@@ -73,6 +73,7 @@ export function MasterBlock({
   onChangeEquipment,
   onPayoutDeposit,
   section,
+  paidThisRental,
 }: {
   rental: Rental;
   client: ApiClient | null | undefined;
@@ -94,6 +95,10 @@ export function MasterBlock({
    *  MasterBlock рендерит только запрошенную часть БЕЗ внешней карточки
    *  (рамку даёт AccordionSection). Без prop'а — старый цельный блок. */
   section?: "client" | "scooter" | "deposit";
+  /** v0.9.2: «За всё время» в шапке = сумма по ЭТОЙ аренде (paidIn из
+   *  RentalCard), а не lifetime клиента по всем арендам. Если не передан —
+   *  fallback на clientStats.totalPaid (старое поведение). */
+  paidThisRental?: number;
 }) {
   const equipmentJson = rental.equipmentJson ?? [];
   const clientPhoto = useClientPhoto(rental.clientId);
@@ -216,7 +221,7 @@ export function MasterBlock({
           <span className="inline-flex items-center gap-1">
             <Wallet size={13} />
             <span className="font-bold tabular-nums text-ink-2">
-              {fmt(clientStats.totalPaid)} ₽
+              {fmt(paidThisRental ?? clientStats.totalPaid)} ₽
             </span>
             <span>за всё время</span>
           </span>
@@ -513,7 +518,7 @@ export function MasterBlock({
               <span className="inline-flex items-center gap-1">
                 <Wallet size={13} />
                 <span className="font-bold tabular-nums text-ink-2">
-                  {fmt(clientStats.totalPaid)} ₽
+                  {fmt(paidThisRental ?? clientStats.totalPaid)} ₽
                 </span>
                 <span>за всё время</span>
               </span>

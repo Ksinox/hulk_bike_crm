@@ -1687,12 +1687,24 @@ export function RentalCard({
         const extendCount = rentPays.filter(
           (p) => !!p.note && /^продлен/i.test(p.note),
         ).length;
+        // v0.9.2: «Эта аренда» = оплата за ПОСЛЕДНИЙ период (последнее
+        // продление, либо базовый период, если продлений не было) — а не
+        // вся сумма аренды. Берём сумму последнего rent-платежа цепочки.
+        // Полная сумма аренды осталась в подсказке. (Комаров: 600 за
+        // последний период, вся аренда 1200.)
+        const lastPeriodPaid = rentPays.length
+          ? [...rentPays].sort((a, b) => (a.id ?? 0) - (b.id ?? 0))[
+              rentPays.length - 1
+            ].amount
+          : rental.sum;
         const hint =
-          extendCount > 0 ? `продлений · ${extendCount}` : "сумма этой аренды";
+          extendCount > 0
+            ? `вся аренда ${fmt(rental.sum)} ₽ · продлений ${extendCount}`
+            : `вся аренда ${fmt(rental.sum)} ₽`;
         return (
           <KpiCard
             label="Эта аренда"
-            value={`${fmt(rental.sum)} ₽`}
+            value={`${fmt(lastPeriodPaid)} ₽`}
             hint={hint}
           />
         );
@@ -2207,6 +2219,7 @@ export function RentalCard({
               onSwapScooter={handleSwapScooter}
               onChangeEquipment={changeEquipmentHandler}
               onPayoutDeposit={handlePayoutDeposit}
+              paidThisRental={paidIn}
             />
           </AccordionSection>
 
@@ -2508,6 +2521,7 @@ export function RentalCard({
               onSwapScooter={handleSwapScooter}
               onChangeEquipment={changeEquipmentHandler}
               onPayoutDeposit={handlePayoutDeposit}
+              paidThisRental={paidIn}
             />
           </div>
 
