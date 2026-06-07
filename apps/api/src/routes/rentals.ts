@@ -3058,6 +3058,8 @@ export async function rentalsRoutes(app: FastifyInstance) {
       kind: "overdue_days_payment" | "overdue_fine_payment" | "manual_payment";
       amount: number;
       comment?: string;
+      method?: "cash" | "card" | "transfer" | "deposit";
+      paidAt?: string;
     };
   }>("/:id/debt/payment", async (req, reply) => {
     if (!assertFinancialRole(req, reply)) return;
@@ -3071,6 +3073,11 @@ export async function rentalsRoutes(app: FastifyInstance) {
       ]),
       amount: z.number().int().positive(),
       comment: z.string().max(500).optional(),
+      // v0.9.1: способ оплаты — для корректной статистики нал/безнал
+      // (раньше эти платежи жёстко писались cash). Дата поступления —
+      // чтобы выручка датировалась реальным днём оплаты, а не днём фиксации.
+      method: z.enum(["cash", "card", "transfer", "deposit"]).optional(),
+      paidAt: z.string().datetime().optional(),
     });
     const parsed = Body.safeParse(req.body);
     if (!parsed.success) {
@@ -3087,6 +3094,11 @@ export async function rentalsRoutes(app: FastifyInstance) {
         .where(eq(usersTable.id, userId));
       userName = u?.name ?? "система";
     }
+    // v0.9.1: способ оплаты и дата поступления (по умолчанию — наличные/сейчас).
+    const payMethod = parsed.data.method ?? "cash";
+    const payPaidAt = parsed.data.paidAt
+      ? new Date(parsed.data.paidAt)
+      : new Date();
     const dbKind =
       parsed.data.kind === "manual_payment"
         ? "manual_forgive"
@@ -3178,9 +3190,9 @@ export async function rentalsRoutes(app: FastifyInstance) {
                 rentalId: id,
                 type: "rent",
                 amount: dayCoverAmount,
-                method: "cash",
+                method: payMethod,
                 paid: true,
-                paidAt: new Date(),
+                paidAt: payPaidAt,
                 note: `Оплата ${daysAdded} дн просрочки (продление endPlanned)`,
               });
             }
@@ -3202,9 +3214,9 @@ export async function rentalsRoutes(app: FastifyInstance) {
         rentalId: id,
         type: "fine",
         amount: parsed.data.amount,
-        method: "cash",
+        method: payMethod,
         paid: true,
-        paidAt: new Date(),
+        paidAt: payPaidAt,
         note: "Оплата штрафа просрочки",
       });
     } else if (parsed.data.kind === "manual_payment") {
@@ -3217,9 +3229,9 @@ export async function rentalsRoutes(app: FastifyInstance) {
         rentalId: id,
         type: "rent",
         amount: parsed.data.amount,
-        method: "cash",
+        method: payMethod,
         paid: true,
-        paidAt: new Date(),
+        paidAt: payPaidAt,
         note: `Оплата ручного долга${parsed.data.comment ? ": " + parsed.data.comment : ""}`,
       });
     }
