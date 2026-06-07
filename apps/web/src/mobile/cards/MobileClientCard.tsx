@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import {
   AlertTriangle,
   Ban,
+  Bike,
   Check,
   ChevronLeft,
   Copy,
@@ -10,6 +11,7 @@ import {
   Phone,
   PhoneOff,
   Scale,
+  Trash2,
   Inbox,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -33,8 +35,14 @@ import { useActivityTimeline } from "@/lib/api/activity";
 import { useClientStats } from "@/lib/useClientStats";
 import { ActivityTimelineSection } from "@/pages/rentals/ActivityTimelineSection";
 import { useDashboardDrawer } from "@/pages/dashboard/DashboardDrawer";
-import { useApplicationsByClient } from "@/lib/api/clientApplications";
+import {
+  useApplicationsByClient,
+  useClearRentalDraft,
+} from "@/lib/api/clientApplications";
 import { NewApplicationModal } from "@/pages/clients/NewApplicationModal";
+import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
+import { MODEL_LABEL } from "@/lib/mock/rentals";
+import { toast, confirmDialog } from "@/lib/toast";
 import { ClientDebtorsTab } from "@/pages/clients/ClientDebtorsTab";
 import {
   getActiveRentalByClient,
@@ -109,6 +117,30 @@ export function MobileClientCard({
   const unreachable = useClientUnreachable(client.id);
   const applicationsQ = useApplicationsByClient(client.id);
   const sourceApplication = applicationsQ.data?.[0] ?? null;
+  // Предзаявка на аренду из заявки (клиент создан, аренду не дооформили).
+  const rentalDraftApp =
+    sourceApplication &&
+    (sourceApplication.requestedModel != null ||
+      sourceApplication.requestedDays != null ||
+      (sourceApplication.requestedEquipmentIds?.length ?? 0) > 0 ||
+      sourceApplication.requestedStartDate != null)
+      ? sourceApplication
+      : null;
+  const [rentalDraftOpen, setRentalDraftOpen] = useState(false);
+  const clearDraftMut = useClearRentalDraft();
+  const removeRentalDraft = async () => {
+    if (!rentalDraftApp) return;
+    const ok = await confirmDialog({
+      title: "Удалить предзаполненную аренду?",
+      message:
+        "Сбросим выбранные в заявке модель, срок и экипировку. Клиент и заявка останутся.",
+      confirmText: "Удалить",
+      danger: true,
+    });
+    if (!ok) return;
+    await clearDraftMut.mutateAsync(rentalDraftApp.id);
+    toast.success("Предзаполненная аренда удалена");
+  };
   const rentalsForClient = useRentalsByClient(client.id);
   const drawer = useDashboardDrawer();
   const activeRental = useMemo(
@@ -295,6 +327,53 @@ export function MobileClientCard({
         </section>
 
         {/* ===== Плашки ===== */}
+        {rentalDraftApp && (
+          <div className="rounded-2xl bg-blue-50 p-3 text-[13px] text-blue-900 ring-1 ring-inset ring-blue-100">
+            <div className="flex items-start gap-2">
+              <Inbox size={16} className="mt-0.5 shrink-0 text-blue-600" />
+              <div className="min-w-0 flex-1">
+                <b>Есть предзаполненная аренда из заявки.</b>
+                <div className="mt-0.5 text-[12px] text-blue-900/80">
+                  {[
+                    rentalDraftApp.requestedModel
+                      ? ((MODEL_LABEL as Record<string, string>)[
+                          rentalDraftApp.requestedModel
+                        ] ?? rentalDraftApp.requestedModel)
+                      : null,
+                    rentalDraftApp.requestedDays
+                      ? `${rentalDraftApp.requestedDays} ${daysWord(rentalDraftApp.requestedDays)}`
+                      : null,
+                    (rentalDraftApp.requestedEquipmentIds?.length ?? 0) > 0
+                      ? `экип.: ${rentalDraftApp.requestedEquipmentIds!.length} поз.`
+                      : null,
+                    rentalDraftApp.requestedStartDate
+                      ? `с ${rentalDraftApp.requestedStartDate.slice(8, 10)}.${rentalDraftApp.requestedStartDate.slice(5, 7)}`
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ") || "клиент указал пожелания в анкете"}
+                </div>
+              </div>
+            </div>
+            <div className="mt-2.5 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setRentalDraftOpen(true)}
+                className="flex flex-[2] items-center justify-center gap-1.5 rounded-xl bg-green py-2.5 text-[13px] font-bold text-white active:scale-[0.99]"
+              >
+                <Bike size={15} /> Оформить аренду
+              </button>
+              <button
+                type="button"
+                onClick={removeRentalDraft}
+                disabled={clearDraftMut.isPending}
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-white py-2.5 text-[13px] font-semibold text-red-ink ring-1 ring-inset ring-red-100 active:scale-[0.99] disabled:opacity-50"
+              >
+                <Trash2 size={15} /> Удалить
+              </button>
+            </div>
+          </div>
+        )}
         {client.blacklisted && (
           <Banner tone="red" icon={<Ban size={16} />}>
             <b>Клиент в чёрном списке.</b> Причина: {d.blReason || "—"}
@@ -409,6 +488,24 @@ export function MobileClientCard({
           readOnly
           onLater={() => setAppPreviewOpen(false)}
           onConvertNow={() => setAppPreviewOpen(false)}
+        />
+      )}
+
+      {/* Продолжение оформления аренды из предзаявки (NewRentalModal
+          адаптивна под телефон). После создания гасим черновик. */}
+      {rentalDraftOpen && rentalDraftApp && (
+        <NewRentalModal
+          initialClientId={client.id}
+          initialModelFilter={rentalDraftApp.requestedModel ?? undefined}
+          initialDays={rentalDraftApp.requestedDays ?? undefined}
+          initialEquipmentIds={rentalDraftApp.requestedEquipmentIds ?? undefined}
+          initialStart={rentalDraftApp.requestedStartDate ?? undefined}
+          onClose={() => setRentalDraftOpen(false)}
+          onCreated={() => {
+            setRentalDraftOpen(false);
+            clearDraftMut.mutate(rentalDraftApp.id);
+            toast.success("Аренда создана");
+          }}
         />
       )}
     </div>

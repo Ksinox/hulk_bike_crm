@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import {
   AlertTriangle,
   Ban,
+  Bike,
   Check,
   Copy,
   FileText,
@@ -9,6 +10,7 @@ import {
   Phone,
   PhoneOff,
   Scale,
+  Trash2,
   UploadCloud,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -17,6 +19,9 @@ import {
   SOURCE_LABEL,
   type Client,
 } from "@/lib/mock/clients";
+import { MODEL_LABEL } from "@/lib/mock/rentals";
+import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
+import { toast, confirmDialog } from "@/lib/toast";
 import {
   RentalsTab,
   InstalmentsTab,
@@ -38,7 +43,10 @@ import { useActivityTimeline } from "@/lib/api/activity";
 import { useClientStats } from "@/lib/useClientStats";
 import { ActivityTimelineSection } from "@/pages/rentals/ActivityTimelineSection";
 import { useDashboardDrawer } from "@/pages/dashboard/DashboardDrawer";
-import { useApplicationsByClient } from "@/lib/api/clientApplications";
+import {
+  useApplicationsByClient,
+  useClearRentalDraft,
+} from "@/lib/api/clientApplications";
 import { NewApplicationModal } from "./NewApplicationModal";
 import { ClientDebtorsTab } from "./ClientDebtorsTab";
 import { Inbox } from "lucide-react";
@@ -80,6 +88,32 @@ export function ClientCard({ client }: { client: Client }) {
   const applicationsQ = useApplicationsByClient(client.id);
   const sourceApplication = applicationsQ.data?.[0] ?? null;
   const [appPreviewOpen, setAppPreviewOpen] = useState(false);
+  // Предзаявка на аренду из заявки: клиент уже создан, но аренду не
+  // дооформили. Показываем баннер «продолжить / удалить». Черновик —
+  // requested* поля заявки (живут на сервере, не теряются при закрытии).
+  const rentalDraftApp =
+    sourceApplication &&
+    (sourceApplication.requestedModel != null ||
+      sourceApplication.requestedDays != null ||
+      (sourceApplication.requestedEquipmentIds?.length ?? 0) > 0 ||
+      sourceApplication.requestedStartDate != null)
+      ? sourceApplication
+      : null;
+  const [rentalDraftOpen, setRentalDraftOpen] = useState(false);
+  const clearDraftMut = useClearRentalDraft();
+  const removeRentalDraft = async () => {
+    if (!rentalDraftApp) return;
+    const ok = await confirmDialog({
+      title: "Удалить предзаполненную аренду?",
+      message:
+        "Сбросим выбранные в заявке модель, срок и экипировку. Сам клиент и заявка останутся. Действие нельзя отменить.",
+      confirmText: "Удалить",
+      danger: true,
+    });
+    if (!ok) return;
+    await clearDraftMut.mutateAsync(rentalDraftApp.id);
+    toast.success("Предзаполненная аренда удалена");
+  };
   const rentalsForClient = useRentalsByClient(client.id);
   const rentals = rentalsForClient;
   const drawer = useDashboardDrawer();
@@ -379,6 +413,51 @@ export function ClientCard({ client }: { client: Client }) {
       </div>
 
       {/* Banners */}
+      {rentalDraftApp && (
+        <div className="flex items-start gap-2.5 rounded-[14px] bg-blue-50 p-3 text-[13px] text-blue-900 ring-1 ring-inset ring-blue-100">
+          <Inbox size={16} className="mt-0.5 shrink-0 text-blue-600" />
+          <div className="min-w-0 flex-1">
+            <b>Есть предзаполненная аренда из заявки.</b>
+            <div className="mt-0.5 text-[12px] text-blue-900/80">
+              {[
+                rentalDraftApp.requestedModel
+                  ? ((MODEL_LABEL as Record<string, string>)[
+                      rentalDraftApp.requestedModel
+                    ] ?? rentalDraftApp.requestedModel)
+                  : null,
+                rentalDraftApp.requestedDays
+                  ? `${rentalDraftApp.requestedDays} ${daysWord(rentalDraftApp.requestedDays)}`
+                  : null,
+                (rentalDraftApp.requestedEquipmentIds?.length ?? 0) > 0
+                  ? `экипировка: ${rentalDraftApp.requestedEquipmentIds!.length} поз.`
+                  : null,
+                rentalDraftApp.requestedStartDate
+                  ? `с ${rentalDraftApp.requestedStartDate.slice(8, 10)}.${rentalDraftApp.requestedStartDate.slice(5, 7)}`
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(" · ") || "клиент указал пожелания в анкете"}
+            </div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setRentalDraftOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-full bg-green px-3 py-1.5 text-[12px] font-bold text-white shadow-card-sm transition-colors hover:bg-green-ink"
+              >
+                <Bike size={13} /> Продолжить оформление аренды
+              </button>
+              <button
+                type="button"
+                onClick={removeRentalDraft}
+                disabled={clearDraftMut.isPending}
+                className="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-[12px] font-semibold text-red-ink ring-1 ring-inset ring-red-100 transition-colors hover:bg-red-soft/50 disabled:opacity-50"
+              >
+                <Trash2 size={13} /> Удалить
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {client.blacklisted && (
         <div className="flex items-start gap-2 rounded-[14px] bg-red-soft/70 p-3 text-[13px] text-red-ink">
           <Ban size={16} className="mt-0.5 shrink-0" />
@@ -503,6 +582,26 @@ export function ClientCard({ client }: { client: Client }) {
           readOnly
           onLater={() => setAppPreviewOpen(false)}
           onConvertNow={() => setAppPreviewOpen(false)}
+        />
+      )}
+
+      {/* Продолжение оформления аренды из предзаявки клиента. Префилл —
+          модель/срок/экипировка/дата из заявки. После создания гасим
+          черновик (clear-rental-draft), чтобы баннер не висел. Договор
+          откроется сам (единый flow NewRentalModal). */}
+      {rentalDraftOpen && rentalDraftApp && (
+        <NewRentalModal
+          initialClientId={client.id}
+          initialModelFilter={rentalDraftApp.requestedModel ?? undefined}
+          initialDays={rentalDraftApp.requestedDays ?? undefined}
+          initialEquipmentIds={rentalDraftApp.requestedEquipmentIds ?? undefined}
+          initialStart={rentalDraftApp.requestedStartDate ?? undefined}
+          onClose={() => setRentalDraftOpen(false)}
+          onCreated={() => {
+            setRentalDraftOpen(false);
+            clearDraftMut.mutate(rentalDraftApp.id);
+            toast.success("Аренда создана");
+          }}
         />
       )}
     </div>

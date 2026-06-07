@@ -166,6 +166,25 @@ export function useDeleteApplication() {
   });
 }
 
+/**
+ * Очистить «предзаявку на аренду» (requestedModel/Days/EquipmentIds/
+ * StartDate). Зовём после создания аренды из префилла (чтобы черновик не
+ * висел в карточке клиента) или по кнопке «Удалить» в карточке клиента.
+ */
+export function useClearRentalDraft() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) =>
+      api.post<{ ok: true }>(
+        `/api/client-applications/${id}/clear-rental-draft`,
+        {},
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: applicationsKeys.all });
+    },
+  });
+}
+
 export type RejectionReasonCode =
   | "empty_photos"
   | "unreadable"
