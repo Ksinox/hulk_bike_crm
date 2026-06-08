@@ -99,9 +99,10 @@ export function CalcModelCarousel({
       >
         {models.map((m, i) => {
           const selected = valueId === m.id;
-          const src = fileUrl(m.avatarThumbKey ?? m.avatarKey, {
-            variant: "thumb",
-          });
+          // Единое правило проекта: аватарки — всегда avatarKey (прозрачный
+          // оригинал PNG/WebP), НЕ avatarThumbKey (кропнутый JPEG, у которого
+          // альфа залита чёрным). variant:"thumb" сервер ресайзит сохраняя альфу.
+          const src = fileUrl(m.avatarKey, { variant: "thumb" });
           const rate = rateForDays(m, days);
           return (
             <SwiperSlide key={m.id} className="!w-[150px]">
@@ -198,9 +199,8 @@ export function CalcEquipmentCarousel({
         {items.map((e) => {
           const selected = selectedIds.includes(e.id);
           const free = e.isFree || e.price === 0;
-          const src = fileUrl(e.avatarThumbKey ?? e.avatarKey, {
-            variant: "thumb",
-          });
+          // Единое правило: avatarKey (прозрачный), не avatarThumbKey (JPEG/чёрный фон).
+          const src = fileUrl(e.avatarKey, { variant: "thumb" });
           return (
             <SwiperSlide key={e.id} className="!w-[128px]">
               <button
