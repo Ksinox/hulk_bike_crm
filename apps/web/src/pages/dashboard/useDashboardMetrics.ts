@@ -126,6 +126,8 @@ export type ReturnItem = {
   scooterName: string;
   clientName: string;
   clientPhone: string;
+  /** #172: второй телефон клиента (если есть) — для выбора куда звонить. */
+  clientPhone2: string;
   endPlannedAt: string;
   sum: number;
 };
@@ -135,6 +137,8 @@ export type OverdueItem = {
   scooterName: string;
   clientName: string;
   clientPhone: string;
+  /** #172: второй телефон клиента (если есть) — для выбора куда звонить. */
+  clientPhone2: string;
   endPlannedAt: string;
   daysOverdue: number;
   debt: number;
@@ -289,6 +293,7 @@ export function useDashboardMetrics(): DashboardMetrics {
         scooterName: sc?.name ?? "—",
         clientName: cl?.name ?? "—",
         clientPhone: cl?.phone ?? "",
+        clientPhone2: cl?.extraPhone ?? "",
         endPlannedAt: r.endPlannedAt,
         daysOverdue,
         debt: overdueDebtFor(r),
@@ -360,6 +365,7 @@ export function useDashboardMetrics(): DashboardMetrics {
           scooterName: sc?.name ?? "—",
           clientName: cl?.name ?? "—",
           clientPhone: cl?.phone ?? "",
+          clientPhone2: cl?.extraPhone ?? "",
           endPlannedAt: r.endPlannedAt,
           sum: r.sum,
         };

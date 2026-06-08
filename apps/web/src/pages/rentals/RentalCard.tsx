@@ -2730,6 +2730,10 @@ export function RentalCard({
             rect карточки (cardRect). */}
         {cardRect &&
           !besideDrawerOpen &&
+          // #172: только если слева есть зазор (десктоп-drawer). На мобиле
+          // карточка во весь экран (left≈0) — overlay уехал бы за левый край,
+          // поэтому не рендерим его: заметки видны в разделе «Заметки» тела.
+          cardRect.left >= 220 &&
           createPortal(
             <div
               style={{

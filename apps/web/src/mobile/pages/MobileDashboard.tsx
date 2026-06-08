@@ -6,8 +6,13 @@ import {
   Clock,
   Gauge,
   Maximize2,
+  Phone,
   Wallet,
+  X,
 } from "lucide-react";
+import { useRentals } from "@/pages/rentals/rentalsStore";
+import { RentalCard } from "@/pages/rentals/RentalCard";
+import { ErrorBoundary } from "@/app/ErrorBoundary";
 import type { RouteId } from "@/app/route";
 import { useMe } from "@/lib/api/auth";
 import { useApiScooters } from "@/lib/api/scooters";
@@ -40,10 +45,41 @@ export function MobileDashboard({
   const m = useDashboardMetrics();
   const rev = useBillingPeriodRevenue("all");
   const [revenueOpen, setRevenueOpen] = useState(false);
+  // #172: открытие карточки аренды из строк просрочки/возврата + звонок.
+  const rentals = useRentals();
+  const [openRentalId, setOpenRentalId] = useState<number | null>(null);
+  const [callSheet, setCallSheet] = useState<{
+    name: string;
+    phones: string[];
+  } | null>(null);
 
   if (m.isLoading) {
     return <DashboardSkeleton />;
   }
+
+  const openRental =
+    openRentalId != null
+      ? rentals.find((r) => r.id === openRentalId) ?? null
+      : null;
+  const openItem =
+    openRentalId != null
+      ? [...m.overdue, ...m.returnsToday].find(
+          (x) => x.rentalId === openRentalId,
+        ) ?? null
+      : null;
+  const openPhones = openItem
+    ? [openItem.clientPhone, openItem.clientPhone2].filter(Boolean)
+    : [];
+  // Звонок клиенту: 1 телефон → сразу tel:, 2 → выбор куда звонить.
+  const callClient = (name: string, phones: string[]) => {
+    const list = phones.filter(Boolean);
+    if (list.length === 0) return;
+    if (list.length === 1) {
+      window.location.href = `tel:${list[0]}`;
+      return;
+    }
+    setCallSheet({ name, phones: list });
+  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -140,7 +176,16 @@ export function MobileDashboard({
         ) : (
           m.returnsToday
             .slice(0, 6)
-            .map((r) => <ReturnRow key={r.rentalId} item={r} />)
+            .map((r) => (
+              <ReturnRow
+                key={r.rentalId}
+                item={r}
+                onOpen={() => setOpenRentalId(r.rentalId)}
+                onCall={() =>
+                  callClient(r.clientName, [r.clientPhone, r.clientPhone2])
+                }
+              />
+            ))
         )}
       </Section>
 
@@ -157,7 +202,16 @@ export function MobileDashboard({
         ) : (
           m.overdue
             .slice(0, 6)
-            .map((o) => <OverdueRow key={o.rentalId} item={o} />)
+            .map((o) => (
+              <OverdueRow
+                key={o.rentalId}
+                item={o}
+                onOpen={() => setOpenRentalId(o.rentalId)}
+                onCall={() =>
+                  callClient(o.clientName, [o.clientPhone, o.clientPhone2])
+                }
+              />
+            ))
         )}
       </Section>
 
@@ -166,6 +220,74 @@ export function MobileDashboard({
 
       {revenueOpen && (
         <MobileRevenueScreen scope="all" onClose={() => setRevenueOpen(false)} />
+      )}
+
+      {/* #172: тап по строке просрочки/возврата → полноэкранная карточка
+          аренды (те же блоки и заметки, что на десктопе). Плавающая кнопка
+          «Позвонить» в зоне большого пальца + выбор номера если их два. */}
+      {openRental && (
+        <div className="fixed inset-0 z-[55] flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-surface">
+          <ErrorBoundary key={openRental.id}>
+            <RentalCard
+              rental={openRental}
+              drawerChrome
+              onClose={() => setOpenRentalId(null)}
+              onSwapped={(id) => setOpenRentalId(id)}
+            />
+          </ErrorBoundary>
+          {openPhones.length > 0 && openItem && (
+            <button
+              type="button"
+              onClick={() => callClient(openItem.clientName, openPhones)}
+              className="fixed bottom-24 right-4 z-[60] inline-flex h-14 items-center gap-2 rounded-full bg-green px-5 text-[15px] font-bold text-white shadow-card-lg active:scale-95"
+            >
+              <Phone size={20} /> Позвонить
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Выбор номера для звонка (если у клиента два телефона). */}
+      {callSheet && (
+        <div
+          className="fixed inset-0 z-[70] flex items-end bg-ink/50 backdrop-blur-sm"
+          onClick={() => setCallSheet(null)}
+        >
+          <div
+            className="w-full rounded-t-3xl bg-surface p-4 pb-8"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-1 flex items-center justify-between">
+              <div className="text-[15px] font-bold text-ink">
+                Позвонить · {callSheet.name}
+              </div>
+              <button
+                type="button"
+                onClick={() => setCallSheet(null)}
+                aria-label="Закрыть"
+                className="flex h-8 w-8 items-center justify-center rounded-full text-muted-2"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="mb-3 text-[12px] text-muted-2">Выберите номер</div>
+            {callSheet.phones.map((ph, i) => (
+              <a
+                key={ph}
+                href={`tel:${ph}`}
+                onClick={() => setCallSheet(null)}
+                className="mb-2 flex items-center justify-center gap-2 rounded-2xl bg-green py-4 text-[16px] font-bold text-white active:scale-[0.99]"
+              >
+                <Phone size={18} /> {ph}
+                {i === 1 && (
+                  <span className="text-[12px] font-medium text-white/70">
+                    · доп.
+                  </span>
+                )}
+              </a>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   );
@@ -386,42 +508,95 @@ function Section({
   );
 }
 
-function ReturnRow({ item }: { item: ReturnItem }) {
+/** Кнопка-телефон в строке: мгновенный звонок (или выбор номера). */
+function RowCallButton({ onCall }: { onCall: () => void }) {
   return (
-    <div className="flex items-center gap-3 py-2.5">
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-[13px] font-semibold text-ink">
-          {item.clientName}
+    <button
+      type="button"
+      onClick={onCall}
+      aria-label="Позвонить клиенту"
+      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-green/10 text-green active:scale-90"
+    >
+      <Phone size={17} />
+    </button>
+  );
+}
+
+function ReturnRow({
+  item,
+  onOpen,
+  onCall,
+}: {
+  item: ReturnItem;
+  onOpen: () => void;
+  onCall: () => void;
+}) {
+  const hasPhone = !!(item.clientPhone || item.clientPhone2);
+  return (
+    <div className="flex items-center gap-2 py-1">
+      <button
+        type="button"
+        onClick={onOpen}
+        className="flex min-w-0 flex-1 items-center gap-3 rounded-xl py-1.5 text-left active:bg-surface-soft"
+      >
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[13px] font-semibold text-ink">
+            {item.clientName}
+          </div>
+          <div className="truncate text-[11px] text-muted">
+            {item.scooterName}
+          </div>
         </div>
-        <div className="truncate text-[11px] text-muted">{item.scooterName}</div>
-      </div>
-      <div className="text-right">
-        <div className="text-[13px] font-bold tabular-nums text-ink">
-          {formatRub(item.sum)} ₽
+        <div className="text-right">
+          <div className="text-[13px] font-bold tabular-nums text-ink">
+            {formatRub(item.sum)} ₽
+          </div>
+          <div className="text-[11px] text-muted-2">
+            {timeOf(item.endPlannedAt)}
+          </div>
         </div>
-        <div className="text-[11px] text-muted-2">{timeOf(item.endPlannedAt)}</div>
-      </div>
+      </button>
+      {hasPhone && <RowCallButton onCall={onCall} />}
     </div>
   );
 }
 
-function OverdueRow({ item }: { item: OverdueItem }) {
+function OverdueRow({
+  item,
+  onOpen,
+  onCall,
+}: {
+  item: OverdueItem;
+  onOpen: () => void;
+  onCall: () => void;
+}) {
+  const hasPhone = !!(item.clientPhone || item.clientPhone2);
   return (
-    <div className="flex items-center gap-3 py-2.5">
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-[13px] font-semibold text-ink">
-          {item.clientName}
+    <div className="flex items-center gap-2 py-1">
+      <button
+        type="button"
+        onClick={onOpen}
+        className="flex min-w-0 flex-1 items-center gap-3 rounded-xl py-1.5 text-left active:bg-surface-soft"
+      >
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[13px] font-semibold text-ink">
+            {item.clientName}
+          </div>
+          <div className="truncate text-[11px] text-muted">
+            {item.scooterName}
+          </div>
         </div>
-        <div className="truncate text-[11px] text-muted">{item.scooterName}</div>
-      </div>
-      <div className="text-right">
-        <div className="text-[13px] font-bold tabular-nums text-red">
-          {formatRub(item.debt)} ₽
+        <div className="text-right">
+          <div className="text-[13px] font-bold tabular-nums text-red">
+            {formatRub(item.debt)} ₽
+          </div>
+          <div className="text-[11px] text-muted-2">
+            {item.daysOverdue}{" "}
+            {plural(item.daysOverdue, ["день", "дня", "дней"])}
+          </div>
         </div>
-        <div className="text-[11px] text-muted-2">
-          {item.daysOverdue} {plural(item.daysOverdue, ["день", "дня", "дней"])}
-        </div>
-      </div>
+      </button>
+      {hasPhone && <RowCallButton onCall={onCall} />}
     </div>
   );
 }
