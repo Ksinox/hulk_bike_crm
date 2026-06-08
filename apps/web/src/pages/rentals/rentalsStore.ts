@@ -452,11 +452,25 @@ export async function extendInplaceAsync(
   newTariffPeriod: Rental["tariffPeriod"],
   newRateUnit: "day" | "week" = "day",
   autoMarkPaid = true,
+  /** #177: экипировка НА НОВЫЙ ПЕРИОД — полный набор для продления.
+   *  Бэкенд берёт по нему дневную стоимость платной экипировки (× дни
+   *  продления, НЕ остаток текущего периода) и фиксирует набор как текущую
+   *  экипировку аренды. Не передан — экипировка не трогается. */
+  equipmentJson?: Array<{
+    itemId?: number | null;
+    name: string;
+    price: number;
+    free: boolean;
+  }>,
 ): Promise<{ id: number }> {
-  await api.post(
-    `/api/rentals/${rentalId}/extend-inplace`,
-    { extraDays, newRate, newTariffPeriod, newRateUnit, autoMarkPaid },
-  );
+  await api.post(`/api/rentals/${rentalId}/extend-inplace`, {
+    extraDays,
+    newRate,
+    newTariffPeriod,
+    newRateUnit,
+    autoMarkPaid,
+    ...(equipmentJson ? { equipmentJson } : {}),
+  });
   invAll();
   return { id: rentalId };
 }

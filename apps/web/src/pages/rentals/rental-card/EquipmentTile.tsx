@@ -89,6 +89,8 @@ export function EquipmentTile({
   onToggleOpen,
   onClose,
   onPreviewChange,
+  localEquipment,
+  onLocalChange,
 }: {
   rental: Rental;
   item: EquipItem;
@@ -103,6 +105,11 @@ export function EquipmentTile({
   onToggleOpen: (idx: number | null) => void;
   onClose: () => void;
   onPreviewChange: (item: PreviewItem | null) => void;
+  // #177: local-mode (PaymentAcceptDialog «экипировка на новый период») —
+  // когда заданы, picker редактирует этот набор через колбэк, без мутации
+  // аренды/equipmentChangeAsync. Не заданы — обычный режим (карточка аренды).
+  localEquipment?: EquipItem[];
+  onLocalChange?: (next: EquipItem[]) => void;
 }) {
   const s = SIZE[size];
   return (
@@ -153,6 +160,8 @@ export function EquipmentTile({
           replacingIdx={idx}
           onClose={onClose}
           onPreviewChange={onPreviewChange}
+          localEquipment={localEquipment}
+          onLocalChange={onLocalChange}
         />
       )}
     </div>
@@ -168,6 +177,8 @@ export function EquipmentAddTile({
   onToggleOpen,
   onClose,
   onPreviewChange,
+  localEquipment,
+  onLocalChange,
 }: {
   rental: Rental;
   size?: TileSize;
@@ -177,6 +188,9 @@ export function EquipmentAddTile({
   onToggleOpen: (open: boolean) => void;
   onClose: () => void;
   onPreviewChange: (item: PreviewItem | null) => void;
+  // #177: см. EquipmentTile — local-mode для «экипировки на новый период».
+  localEquipment?: EquipItem[];
+  onLocalChange?: (next: EquipItem[]) => void;
 }) {
   const s = SIZE[size];
   const showPending = isOpen && pendingItem != null;
@@ -225,6 +239,8 @@ export function EquipmentAddTile({
           replacingIdx={-1}
           onClose={onClose}
           onPreviewChange={onPreviewChange}
+          localEquipment={localEquipment}
+          onLocalChange={onLocalChange}
         />
       )}
     </div>

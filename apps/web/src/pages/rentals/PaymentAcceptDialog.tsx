@@ -444,7 +444,26 @@ export function PaymentAcceptDialog({
   // (см. extension-drawer.jsx line 14-15: dailyTotal = rate + equipDaily).
   // Перенесли определение equipment/equipDaily сюда (выше acceptedStr),
   // чтобы синхронизация суммы работала корректно.
-  const equipment = rental.equipmentJson ?? [];
+  //
+  // #177: экипировка НА НОВЫЙ ПЕРИОД — отдельный ЛОКАЛЬНЫЙ набор. НЕ мутирует
+  // rental.equipmentJson и НЕ дёргает equipmentChangeAsync (это списывало бы
+  // остаток текущего периода и требовало способ оплаты). По умолчанию =
+  // текущая экипировка (клиент обычно продолжает с тем же), оператор может
+  // добавить/убрать/заменить именно для продления. Стоимость считается ТОЛЬКО
+  // за дни продления: equipSum = equipDaily × extDays — складывается в
+  // «К приёму» без отдельного способа оплаты. При сабмите набор уходит в
+  // extend-inplace (бэк фиксирует его как текущую экипировку аренды).
+  const [extEquipment, setExtEquipment] = useState<
+    Array<{ itemId?: number | null; name: string; price: number; free: boolean }>
+  >(() =>
+    (rental.equipmentJson ?? []).map((e) => ({
+      itemId: e.itemId ?? null,
+      name: e.name,
+      price: e.price,
+      free: e.free,
+    })),
+  );
+  const equipment = extEquipment;
   const equipDaily = equipment.reduce(
     (s, e) => s + (e.free ? 0 : e.price),
     0,
@@ -1065,6 +1084,10 @@ export function PaymentAcceptDialog({
           extEffectivePeriod,
           extIsWeekly ? "week" : "day",
           false, // autoMarkPaid=false → rent payment paid=false placeholder
+          // #177: экипировка нового периода — бэк посчитает equipDaily × extDays
+          // (НЕ остаток текущего периода) и зафиксирует набор как текущую
+          // экипировку аренды. periodTotal/«К приёму» уже учитывают её.
+          extEquipment,
         );
       }
 
@@ -1887,6 +1910,7 @@ export function PaymentAcceptDialog({
             equipment={equipment}
             equipDaily={equipDaily}
             hasDebtStep={isOverdueState || totalDebt > 0 || unpaidParking > 0}
+            onLocalChange={setExtEquipment}
           />
           </>)}
 
@@ -2862,11 +2886,17 @@ function EquipmentStep({
   equipment,
   equipDaily,
   hasDebtStep,
+  onLocalChange,
 }: {
   rental: Rental;
   equipment: Array<{ itemId?: number | null; name: string; price: number; free: boolean }>;
   equipDaily: number;
   hasDebtStep: boolean;
+  // #177: редактирование набора экипировки нового периода — ЛОКАЛЬНО (через
+  // этот колбэк), без немедленной мутации аренды. Picker получает local-mode.
+  onLocalChange: (
+    next: Array<{ itemId?: number | null; name: string; price: number; free: boolean }>,
+  ) => void;
 }) {
   // -1 = add-mode, >=0 = replacing existing index, null = closed.
   const [swapIdx, setSwapIdx] = useState<number | null>(null);
@@ -2924,6 +2954,8 @@ function EquipmentStep({
                   setPendingItem(null);
                 }}
                 onPreviewChange={setPendingItem}
+                localEquipment={equipment}
+                onLocalChange={onLocalChange}
               />
             );
           })}
@@ -2940,6 +2972,8 @@ function EquipmentStep({
                 setPendingItem(null);
               }}
               onPreviewChange={setPendingItem}
+              localEquipment={equipment}
+              onLocalChange={onLocalChange}
             />
           )}
         </div>

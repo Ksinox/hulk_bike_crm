@@ -76,6 +76,8 @@ export function EquipmentInlinePicker({
   replacingIdx,
   onClose,
   onPreviewChange,
+  localEquipment,
+  onLocalChange,
 }: {
   rental: Rental;
   replacingIdx: number;
@@ -83,8 +85,28 @@ export function EquipmentInlinePicker({
   onPreviewChange?: (
     item: { itemId: number | null; name: string; price: number; free: boolean } | null,
   ) => void;
+  // #177: local-mode — редактируем ПЕРЕДАННЫЙ набор через колбэк, без мутации
+  // аренды и equipmentChangeAsync. Используется в PaymentAcceptDialog
+  // «экипировка на новый период»: стоимость (equip × дни продления) считает
+  // сам диалог, picker лишь меняет состав. Обычный режим (карточка аренды) —
+  // эти пропсы не заданы, работает старый equipmentChangeAsync-путь.
+  localEquipment?: Array<{
+    itemId?: number | null;
+    name: string;
+    price: number;
+    free: boolean;
+  }>;
+  onLocalChange?: (
+    next: Array<{
+      itemId?: number | null;
+      name: string;
+      price: number;
+      free: boolean;
+    }>,
+  ) => void;
 }) {
-  const equipment = rental.equipmentJson ?? [];
+  const localMode = !!onLocalChange;
+  const equipment = localEquipment ?? rental.equipmentJson ?? [];
   const replacing = replacingIdx >= 0 ? equipment[replacingIdx] : null;
   const isAddMode = replacingIdx === -1;
   const { data: catalog = [] } = useApiEquipment();
@@ -302,6 +324,14 @@ export function EquipmentInlinePicker({
                 free: e.free,
               },
         );
+    // #177: local-mode — отдаём новый набор родителю и закрываемся. Никаких
+    // финансовых операций: стоимость (equip × дни продления) посчитает и
+    // соберёт PaymentAcceptDialog. Возврат/доплата здесь не нужны.
+    if (localMode) {
+      onLocalChange?.(newJson);
+      onClose();
+      return;
+    }
     // Удешевление → спрашиваем, куда вернуть разницу.
     if (signedTotalDelta < 0) {
       setRefundStep({
@@ -311,12 +341,21 @@ export function EquipmentInlinePicker({
       });
       return;
     }
+    // #179: добавление/замена ПЛАТНОЙ экипировки на живой аренде. Раньше тут
+    // был payNow=true БЕЗ способа оплаты → бэк падал «method required for
+    // immediate payment». Теперь доплату за остаток текущего периода вешаем
+    // ДОЛГОМ (payNow=false → manual_charge): оператор примет её через
+    // «Принять оплату». Бесплатная/без доплаты — просто меняем набор.
     await performChange(
       newJson,
-      // payNow=true когда есть остаток дней и позиция платная —
-      // оператор сразу принимает деньги. Иначе через manual_charge.
-      { payNow: previewDoplata > 0 },
-      isAddMode ? "Позиция добавлена" : "Экипировка заменена",
+      { payNow: false },
+      isAddMode
+        ? previewDoplata > 0
+          ? `Позиция добавлена · доплата ${fmt(previewDoplata)} ₽ в долг`
+          : "Позиция добавлена"
+        : previewDoplata > 0
+          ? `Экипировка заменена · доплата ${fmt(previewDoplata)} ₽ в долг`
+          : "Экипировка заменена",
       "Не удалось изменить",
     );
   };
@@ -331,6 +370,12 @@ export function EquipmentInlinePicker({
         price: e.price,
         free: e.free,
       }));
+    // #177: local-mode — убираем позицию из набора нового периода локально.
+    if (localMode) {
+      onLocalChange?.(next);
+      onClose();
+      return;
+    }
     // Удаление платной позиции → возврат, спрашиваем куда.
     if (removeTotalDelta < 0) {
       setRefundStep({
@@ -486,8 +531,10 @@ export function EquipmentInlinePicker({
           </button>
         </div>
       )}
-      {/* hover-плашка с расчётом */}
-      {!refundStep && hoverItem && hoverDoplata > 0 && (
+      {/* hover-плашка с расчётом. #177: в local-mode не показываем «за остаток
+          текущего периода» — стоимость продления (× дни продления) считает
+          диалог приёма платежа. */}
+      {!refundStep && !localMode && hoverItem && hoverDoplata > 0 && (
         <div className="border-b border-border bg-blue-50 px-3 py-1.5 text-[11px] text-blue-700">
           Доплатить за оставшиеся {daysRemaining} дн:{" "}
           <span className="font-bold tabular-nums">{fmt(hoverDoplata)} ₽</span>
@@ -591,7 +638,7 @@ export function EquipmentInlinePicker({
           <span />
         )}
         <div className="flex items-center gap-1.5">
-          {previewItem && previewDoplata > 0 && (
+          {!localMode && previewItem && previewDoplata > 0 && (
             <span className="text-[10.5px] font-semibold text-blue-700 tabular-nums">
               +{fmt(previewDoplata)} ₽
             </span>

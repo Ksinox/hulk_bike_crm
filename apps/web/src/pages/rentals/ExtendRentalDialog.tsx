@@ -10,7 +10,7 @@ import {
   type Rental,
 } from "@/lib/mock/rentals";
 import { useModelRateResolver } from "@/lib/api/scooter-models";
-import { extendInplaceAsync, equipmentChangeAsync } from "./rentalsStore";
+import { extendInplaceAsync } from "./rentalsStore";
 import { toast } from "@/lib/toast";
 import { PaymentAcceptDialog } from "./PaymentAcceptDialog";
 import { EquipmentEditor } from "./EquipmentEditor";
@@ -159,26 +159,15 @@ export function ExtendRentalDialog({
         period,
         isWeeklyCustom ? "week" : "day",
         false, // autoMarkPaid=false — оплату фиксируем через PaymentAcceptDialog
+        // #177: экипировка нового периода уходит ВМЕСТЕ с продлением. Бэк
+        // считает её стоимость ТОЛЬКО за дни продления (× days) и фиксирует
+        // набор как текущую экипировку аренды. Отдельный equipment-change
+        // (который списывал остаток ТЕКУЩЕГО периода и мог требовать способ
+        // оплаты) больше не нужен — это и есть фикс «экипировка только за
+        // дни продления». equipment по умолчанию = текущий набор, поэтому
+        // при неизменной экипировке поведение прежнее.
+        equipment,
       );
-      // v0.4.82: если экипировка изменилась — применяем ПОСЛЕ extend.
-      // remainingDays на бэке считается от today до endPlanned. После
-      // extend endPlanned уже сдвинут вперёд, поэтому delta учитывает
-      // и старый остаток, и новый extension период (от today до конца).
-      // payNow=false → доплата висит как manual_charge → попадёт в
-      // долги PaymentAcceptDialog, который оператор увидит дальше.
-      if (equipmentChanged) {
-        try {
-          await equipmentChangeAsync({
-            rentalId: rental.id,
-            newEquipmentJson: equipment,
-            payNow: false,
-            comment: "Изменение экипировки при продлении",
-          });
-        } catch (e) {
-          // Не валим продление — оно уже применено. Логируем.
-          console.error("equipmentChange failed", e);
-        }
-      }
       const updated: Rental = {
         ...rental,
         days: rental.days + days,
@@ -405,9 +394,10 @@ export function ExtendRentalDialog({
             )}
           </div>
 
-          {/* v0.4.82: экипировка на новый период. Если изменилась —
-              сработает /equipment-change после extend, доплата висит
-              как manual_charge до приёма оплаты. */}
+          {/* #177: экипировка на новый период. Уходит ВМЕСТЕ с продлением
+              (extend-inplace) — стоимость считается ТОЛЬКО за дни продления
+              и уже включена в «К оплате». Отдельного /equipment-change за
+              остаток текущего периода больше нет. */}
           <div>
             <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-2">
               Экипировка на новый период
@@ -415,10 +405,9 @@ export function ExtendRentalDialog({
             <EquipmentEditor value={equipment} onChange={setEquipment} />
             {equipmentChanged && (
               <div className="mt-1.5 rounded-[8px] bg-blue-50 px-2.5 py-1.5 text-[11px] text-blue-700">
-                Состав экипировки изменён. После продления автоматически
-                применится: доплата (или возврат на депозит) будет
-                рассчитана за период от сегодня до новой даты возврата
-                и попадёт в окно «Принять оплату».
+                Состав экипировки изменён для нового периода. Стоимость платной
+                экипировки посчитана только за дни продления и уже включена
+                в «К оплате».
               </div>
             )}
           </div>

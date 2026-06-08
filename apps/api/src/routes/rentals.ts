@@ -1864,6 +1864,13 @@ export async function rentalsRoutes(app: FastifyInstance) {
           newTariffPeriod: z.enum(["short", "week", "month"]),
           newRateUnit: z.enum(["day", "week"]).optional(),
           autoMarkPaid: z.boolean().optional().default(true),
+          // #177: экипировка НА НОВЫЙ ПЕРИОД. Если прислана — это полный
+          // набор экипировки для продления (может отличаться от текущего:
+          // клиент мог что-то вернуть/добавить). Дневная стоимость платной
+          // экипировки из этого набора входит в сумму продления, и набор
+          // фиксируется как текущая экипировка аренды. Не прислана —
+          // считаем по текущей экипировке (back-compat старого desktop-фронта).
+          equipmentJson: z.array(EquipmentJsonItem).optional(),
         })
         .strict();
       const parsed = schema.safeParse(req.body);
@@ -1884,9 +1891,13 @@ export async function rentalsRoutes(app: FastifyInstance) {
           throw new Error(`extend_blocked_status:${old.status}`);
         }
 
-        // Правка 3: продление учитывает дневную стоимость платной экипировки.
+        // #177: дневная стоимость платной экипировки продления.
+        // Источник — присланный набор (extEquipment) если он есть, иначе
+        // текущая экипировка аренды. Считается за дни продления (× extraDays
+        // ниже), НЕ за остаток текущего периода.
+        const extEquip = d.equipmentJson ?? null;
         const equipmentDaily = (
-          (old.equipmentJson ?? []) as Array<{
+          (extEquip ?? old.equipmentJson ?? []) as Array<{
             price?: number;
             free?: boolean;
           }>
@@ -1914,6 +1925,17 @@ export async function rentalsRoutes(app: FastifyInstance) {
             tariffPeriod: d.newTariffPeriod,
             rate: d.newRate,
             rateUnit: d.newRateUnit ?? old.rateUnit,
+            // #177: если прислан набор экипировки нового периода — фиксируем
+            // его как текущую экипировку (replace) + синхронизируем legacy
+            // text-массив имён. Инвариант суммы держим: equipmentDaily из
+            // ЭТОГО набора уже учтён в extraSum выше (sum += extraSum) и в
+            // rent-платеже ниже. Набор не прислан — экипировку не трогаем.
+            ...(extEquip
+              ? {
+                  equipmentJson: extEquip as unknown as object,
+                  equipment: extEquip.map((it) => it.name),
+                }
+              : {}),
             // v0.5: статус остаётся 'active'.
             status: "active" as const,
             updatedAt: sql`now()`,
