@@ -23,7 +23,7 @@ const TONES: Record<KpiTone, string> = {
 
 export function RentalsKpi({ items }: { items: Kpi[] }) {
   return (
-    <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+    <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-5 min-[2000px]:gap-3">
       {items.map((it) => {
         const clickable = !!it.onClick;
         const Tag = clickable ? "button" : "div";
@@ -33,10 +33,10 @@ export function RentalsKpi({ items }: { items: Kpi[] }) {
             type={clickable ? "button" : undefined}
             onClick={it.onClick}
             className={cn(
-              "relative rounded-[14px] px-3 py-2.5 text-left",
+              "relative rounded-[14px] px-2.5 py-2 text-left min-[2000px]:px-3 min-[2000px]:py-2.5",
               TONES[it.tone],
               clickable &&
-                "group cursor-pointer transition-shadow hover:shadow-card-md focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400",
+                "group cursor-pointer transition-shadow hover:shadow-card focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400",
             )}
           >
             {clickable && (
@@ -48,10 +48,12 @@ export function RentalsKpi({ items }: { items: Kpi[] }) {
             <div className="text-[11px] font-semibold text-muted-2">
               {it.label}
             </div>
-            <div className="mt-0.5 font-display text-[20px] font-extrabold leading-none text-ink">
+            <div className="mt-0.5 font-display text-[17px] font-extrabold leading-none text-ink min-[2000px]:text-[20px]">
               {it.value}
             </div>
-            <div className="mt-1 text-[11px] text-muted-2">{it.hint}</div>
+            <div className="mt-1 text-[10.5px] text-muted-2 min-[2000px]:text-[11px]">
+              {it.hint}
+            </div>
           </Tag>
         );
       })}
