@@ -40,7 +40,7 @@ import { toast } from "@/lib/toast";
 import { api } from "@/lib/api";
 import { useApiClients } from "@/lib/api/clients";
 import { useApiPayments } from "@/lib/api/payments";
-import { useRentalDebt } from "@/lib/api/debt";
+import { useRentalDebt, equipmentDebtPortion } from "@/lib/api/debt";
 import { useRentalParking, unpaidParkingTotal } from "@/lib/api/parking";
 import { SquareParking } from "lucide-react";
 import { extendInplaceAsync } from "./rentalsStore";
@@ -225,6 +225,10 @@ export function PaymentAcceptDialog({
     : debt?.overdueFineBalance ?? 0;
   const damageBalance = debt?.damageBalance ?? 0;
   const manualBalance = debt?.manualBalance ?? 0;
+  // #179: «за экипировку» (доплата за смену экипировки на аренде) против
+  // обезличенного «ручного начисления» — чтобы у долга была понятная подпись.
+  const equipmentManualBalance = equipmentDebtPortion(debt);
+  const otherManualBalance = Math.max(0, manualBalance - equipmentManualBalance);
 
   // v0.6.11: одно состояние выбора действия по просрочке (Step 1).
   type ForgiveChoice =
@@ -1507,10 +1511,16 @@ export function PaymentAcceptDialog({
                     <span className="font-bold tabular-nums text-ink">{fmt(damageBalance)} ₽</span>
                   </div>
                 )}
-                {manualBalance > 0 && (
+                {equipmentManualBalance > 0 && (
                   <div className="flex items-center justify-between rounded-[10px] border border-border bg-surface px-3 py-2 text-[12px]">
-                    <span className="font-semibold text-ink">Начисленный долг</span>
-                    <span className="font-bold tabular-nums text-ink">{fmt(manualBalance)} ₽</span>
+                    <span className="font-semibold text-ink">За экипировку</span>
+                    <span className="font-bold tabular-nums text-ink">{fmt(equipmentManualBalance)} ₽</span>
+                  </div>
+                )}
+                {otherManualBalance > 0 && (
+                  <div className="flex items-center justify-between rounded-[10px] border border-border bg-surface px-3 py-2 text-[12px]">
+                    <span className="font-semibold text-ink">Ручное начисление</span>
+                    <span className="font-bold tabular-nums text-ink">{fmt(otherManualBalance)} ₽</span>
                   </div>
                 )}
                 {unpaidParking > 0 && (
@@ -2050,7 +2060,7 @@ export function PaymentAcceptDialog({
                   )}
                   {otherDebt > 0 && (
                     <FooterRow
-                      label="Прочий долг (аренда/ущерб/ручной)"
+                      label="Прочий долг (экип./аренда/ущерб/ручной)"
                       value={`${fmt(otherDebt)} ₽`}
                     />
                   )}
