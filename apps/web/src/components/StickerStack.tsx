@@ -116,8 +116,10 @@ function Sticker({
           strokeWidth={1.5}
         />
       )}
-      {/* полупрозрачный «скотч» сверху по центру */}
-      <span className="pointer-events-none absolute -top-2 left-1/2 h-3.5 w-12 -translate-x-1/2 rotate-1 bg-white/35 shadow-sm" />
+      {/* полупрозрачный «скотч» на ПРАВОМ краю по центру — стикер выглядит
+          приклеенным правым краём к карточке аренды (скотч на стыке).
+          Держим внутри (sticker overflow-hidden обрезал бы вынос наружу). */}
+      <span className="pointer-events-none absolute right-0.5 top-1/2 h-12 w-3.5 -translate-y-1/2 -rotate-2 bg-white/35 shadow-sm" />
 
       {onUnpin && (
         <button
