@@ -299,7 +299,7 @@ export function ApplicationView({ app }: { app: ApiApplication }) {
 
               {/* Модель — крупно: аватарка на светлой подложке + большое имя */}
               <div className="mt-3 flex items-center gap-4">
-                <div className="flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-3xl bg-gradient-to-br from-white to-blue-50 p-2 shadow-card-sm">
+                <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-3xl bg-gradient-to-br from-white to-blue-50 p-2 shadow-card-sm sm:h-24 sm:w-24">
                   {modelAvatar ? (
                     <img
                       src={modelAvatar}
@@ -311,7 +311,7 @@ export function ApplicationView({ app }: { app: ApiApplication }) {
                   )}
                 </div>
                 <div className="min-w-0">
-                  <div className="font-display text-[34px] font-extrabold leading-none tracking-tight">
+                  <div className="font-display text-[28px] font-extrabold leading-none tracking-tight sm:text-[34px]">
                     {modelName ?? "Модель не выбрана"}
                   </div>
                   {model && days > 0 && (
