@@ -634,8 +634,19 @@ export function PaymentAcceptDialog({
   const totalReceived = depositToUse + securityToUse + accepted;
   // v0.6.11: вычитаем topup из подсчёта overpay/underpay — пополнение
   // залога это «своя» строка платежа, не относится к закрытию долга.
-  const overpay = Math.max(0, totalReceived - dueAmount - topupAmount);
-  const underpay = Math.max(0, dueAmount + topupAmount - totalReceived);
+  // #177: продление (periodTotal) — ЛЕГИТИМНЫЙ сбор, а не переплата. Раньше
+  // overpay его не вычитал → для чистого продления (без долга) overpay
+  // равнялся periodTotal и тост ложно сообщал «переплата ушла в депозит»
+  // (хотя distribute корректно отправлял деньги в rent продления, leftover=0,
+  // депозит не менялся). Теперь extension учтён в «сколько нужно собрать»:
+  //   • days-режим  → totalReceived = grossTotal → overpay=0 (нет ложного тоста);
+  //   • amount-режим → overpay = реальный остаток сверх целых дней (он и правда
+  //     уходит в депозит — distribute это делает, тост корректен).
+  // extEnabled (= extDays > 0) объявлен ниже — используем extDays напрямую,
+  // чтобы не словить «used before declaration».
+  const extCharged = extDays > 0 ? periodTotal : 0;
+  const overpay = Math.max(0, totalReceived - dueAmount - topupAmount - extCharged);
+  const underpay = Math.max(0, dueAmount + topupAmount + extCharged - totalReceived);
 
   // v0.6.7: extension всегда «включён» когда extDays > 0 — оператор
   // явно выбрал период (через спиннер/preset/amount). Старая логика
@@ -1184,15 +1195,22 @@ export function PaymentAcceptDialog({
       if (overpay > 0) {
         toast.success(
           "Оплата принята",
-          `Долги погашены. Переплата ${fmt(overpay)} ₽ ушла в депозит.`,
+          `Переплата ${fmt(overpay)} ₽ ушла в депозит клиента.`,
         );
       } else if (underpay > 0) {
         toast.info(
           "Принят частичный платёж",
-          `Зачтено в долг ${fmt(totalReceived)} ₽. Остаток ${fmt(underpay)} ₽ висит за клиентом.`,
+          `Зачтено ${fmt(totalReceived)} ₽. Остаток ${fmt(underpay)} ₽ висит за клиентом.`,
         );
       } else {
-        toast.success("Оплата принята", "Зачтено в погашение долгов.");
+        // #177: точная формулировка — для чистого продления «переплаты в
+        // депозит» нет (см. extCharged выше), не вводим оператора в заблуждение.
+        toast.success(
+          "Оплата принята",
+          extCharged > 0
+            ? "Продление оформлено, платёж зачтён."
+            : "Зачтено в погашение долгов.",
+        );
       }
 
       onPaid?.();
