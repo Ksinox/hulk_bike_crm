@@ -44,10 +44,10 @@ import {
  *
  * Раскладка:
  *   • Десктоп (lg+) — широкий 2-колоночный грид. Слева: герой (крупное селфи
- *     9:16 + имя + телефон), карта «Хочет арендовать» (КРУПНО модель с
- *     аватаркой + экипировка с аватарками + период нашим RangeCalendar),
- *     фото документов. Справа (по важности): финсводка (главный акцент),
- *     ключевые даты, информация о клиенте (паспорт + адрес).
+ *     9:16 + имя + телефон), карта «Хочет арендовать» (КРУПНО модель
+ *     аватаркой-героем + период нашим RangeCalendar, фирменный светлый стиль),
+ *     фото документов. Справа сверху-вниз: информация о клиенте (паспорт +
+ *     адрес), ключевые даты, финсводка.
  *   • Мобайл — те же блоки в одну колонку.
  *
  * Аватарки — ВСЕГДА avatarKey (прозрачный оригинал), НЕ avatarThumbKey
@@ -214,7 +214,7 @@ export function ApplicationView({ app }: { app: ApiApplication }) {
     <div className="grid items-start gap-4 lg:grid-cols-[1.3fr_1fr]">
       {/* ═══════════════ ЛЕВАЯ КОЛОНКА ═══════════════ */}
       <div className="flex min-w-0 flex-col gap-4">
-        {/* ── Герой: крупное селфи 9:16 + имя + телефон ── */}
+        {/* ── Герой: крупное селфи 9:16 + имя + телефон + «к оплате» ── */}
         <section className="flex flex-wrap items-stretch gap-4 rounded-3xl bg-surface p-4 shadow-card ring-1 ring-inset ring-border">
           <button
             type="button"
@@ -273,7 +273,7 @@ export function ApplicationView({ app }: { app: ApiApplication }) {
             </div>
           </div>
 
-          {/* Быстрый взгляд «к оплате» — детальная финсводка справа в колонке */}
+          {/* Быстрый взгляд «к оплате» — детальная финсводка ниже в колонке */}
           {quote && (
             <div className="flex shrink-0 flex-col justify-center rounded-2xl bg-blue-50 px-4 py-3 text-center ring-1 ring-inset ring-blue-100">
               <div className="text-[10px] font-bold uppercase tracking-wider text-blue-700/70">
@@ -289,47 +289,43 @@ export function ApplicationView({ app }: { app: ApiApplication }) {
           )}
         </section>
 
-        {/* ── Хочет арендовать: КРУПНО модель + экипировка + период ── */}
+        {/* ── Хочет арендовать: фирменный светлый стиль, аватарка-герой ── */}
         {hasWishes && (
-          <section className="overflow-hidden rounded-3xl bg-gradient-to-br from-ink to-ink-2 text-white shadow-card-lg">
-            <div className="p-5">
-              <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-white/55">
+          <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-blue-50 via-surface to-blue-50/50 p-5 shadow-card ring-1 ring-inset ring-blue-100">
+            <div className="relative z-10">
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-blue-700/60">
                 <Bike size={13} /> Хочет арендовать
               </span>
 
-              {/* Модель — крупно: аватарка на светлой подложке + большое имя */}
-              <div className="mt-3 flex items-center gap-4">
-                <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-3xl bg-gradient-to-br from-white to-blue-50 p-2 shadow-card-sm sm:h-24 sm:w-24">
-                  {modelAvatar ? (
-                    <img
-                      src={modelAvatar}
-                      alt={modelName ?? "модель"}
-                      className="h-full w-full object-contain"
-                    />
-                  ) : (
-                    <Bike size={40} className="text-ink/20" />
-                  )}
-                </div>
-                <div className="min-w-0">
-                  <div className="font-display text-[28px] font-extrabold leading-none tracking-tight sm:text-[34px]">
-                    {modelName ?? "Модель не выбрана"}
-                  </div>
-                  {model && days > 0 && (
-                    <div className="mt-2 text-[15px] font-semibold text-white/75">
-                      {rub(rateForDays(model, days))} ₽/сут
-                      <span className="text-white/45">
-                        {" "}
-                        · {tierLabelForDays(days)}
-                      </span>
-                    </div>
-                  )}
-                </div>
+              {/* Имя модели — крупно, красивым шрифтом */}
+              <h3 className="mt-1 font-display text-[40px] font-extrabold leading-none tracking-tight text-ink sm:text-[46px]">
+                {modelName ?? "Модель не выбрана"}
+              </h3>
+
+              {/* Плашки: тариф + примерный срок */}
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                {model && days > 0 && (
+                  <span className="inline-flex items-center rounded-full bg-blue-600 px-3.5 py-1.5 text-[14px] font-bold text-white shadow-card-sm">
+                    {rub(rateForDays(model, days))} ₽/сут
+                  </span>
+                )}
+                {days > 0 && (
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-surface px-3.5 py-1.5 text-[13px] font-bold text-ink shadow-card-sm ring-1 ring-inset ring-blue-100">
+                    <CalendarClock size={14} className="text-blue-600" />~{days}{" "}
+                    {daysWord(days)}
+                  </span>
+                )}
+                {model && days > 0 && (
+                  <span className="inline-flex items-center rounded-full bg-white/70 px-3 py-1.5 text-[12px] font-semibold text-muted ring-1 ring-inset ring-border">
+                    {tierLabelForDays(days)}
+                  </span>
+                )}
               </div>
 
-              {/* Экипировка — чипы с аватарками (на белом, прозрачный PNG) */}
+              {/* Экипировка — светлые чипы с аватарками */}
               {selEquip.length > 0 && (
                 <div className="mt-4">
-                  <div className="mb-2 flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-wider text-white/45">
+                  <div className="mb-2 flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-wider text-muted-2">
                     <Package size={12} /> Экипировка
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -338,9 +334,9 @@ export function ApplicationView({ app }: { app: ApiApplication }) {
                       return (
                         <span
                           key={e.id}
-                          className="inline-flex items-center gap-2 rounded-2xl bg-white/10 py-1.5 pl-1.5 pr-3 text-[13px] font-semibold backdrop-blur-sm"
+                          className="inline-flex items-center gap-2 rounded-2xl bg-surface py-1.5 pl-1.5 pr-3 text-[13px] font-semibold text-ink shadow-card-sm ring-1 ring-inset ring-blue-50"
                         >
-                          <span className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-xl bg-gradient-to-br from-white to-blue-50 p-1">
+                          <span className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-xl bg-gradient-to-br from-white to-blue-50 p-1 ring-1 ring-inset ring-blue-50">
                             {av ? (
                               <img
                                 src={av}
@@ -352,7 +348,7 @@ export function ApplicationView({ app }: { app: ApiApplication }) {
                             )}
                           </span>
                           {e.name}
-                          <span className="text-white/50">
+                          <span className="text-muted-2">
                             {e.isFree ? "бесплатно" : `+${rub(e.price)} ₽`}
                           </span>
                         </span>
@@ -362,29 +358,46 @@ export function ApplicationView({ app }: { app: ApiApplication }) {
                 </div>
               )}
 
-              {/* Период — наш фирменный RangeCalendar, плашка по ширине календаря */}
-              {startCd && endCd ? (
-                <div className="mt-5 flex justify-center">
-                  <div className="w-fit rounded-2xl bg-surface p-2.5 text-ink shadow-card">
-                    <I18nProvider locale="ru-RU">
-                      <RangeCalendar
-                        aria-label="Период аренды из заявки"
-                        value={{ start: startCd, end: endCd }}
-                        defaultFocusedValue={startCd}
-                        isReadOnly
-                      />
-                    </I18nProvider>
-                  </div>
+              {/* Период + большая аватарка-герой ЗА календарём */}
+              <div className="relative mt-5">
+                {/* мобайл: аватарка-герой по центру над календарём */}
+                {modelAvatar && (
+                  <img
+                    src={modelAvatar}
+                    alt={modelName ?? "модель"}
+                    className="mx-auto mb-3 block h-[120px] w-auto object-contain drop-shadow-lg sm:hidden"
+                  />
+                )}
+                {/* десктоп: большая аватарка справа, ЗА календарём */}
+                {modelAvatar && (
+                  <img
+                    src={modelAvatar}
+                    alt=""
+                    aria-hidden
+                    className="pointer-events-none absolute right-0 top-1/2 z-0 hidden w-[230px] -translate-y-1/2 object-contain opacity-95 drop-shadow-xl sm:block lg:w-[270px]"
+                  />
+                )}
+
+                <div className="relative z-10 flex justify-center sm:justify-start">
+                  {startCd && endCd ? (
+                    <div className="w-fit rounded-2xl bg-surface p-2.5 text-ink shadow-card-lg ring-1 ring-inset ring-border">
+                      <I18nProvider locale="ru-RU">
+                        <RangeCalendar
+                          aria-label="Период аренды из заявки"
+                          value={{ start: startCd, end: endCd }}
+                          defaultFocusedValue={startCd}
+                          isReadOnly
+                        />
+                      </I18nProvider>
+                    </div>
+                  ) : days > 0 ? (
+                    <div className="inline-flex items-center gap-2 rounded-2xl bg-surface px-4 py-2.5 text-[13px] font-semibold text-ink shadow-card-sm ring-1 ring-inset ring-border">
+                      <CalendarClock size={16} className="text-blue-600" />
+                      Дату согласует менеджер
+                    </div>
+                  ) : null}
                 </div>
-              ) : days > 0 ? (
-                <div className="mt-4 inline-flex items-center gap-2 rounded-2xl bg-white/10 px-4 py-2.5 text-[14px] font-bold backdrop-blur-sm">
-                  <CalendarClock size={16} className="text-white/70" />
-                  {days} {daysWord(days)}
-                  <span className="text-[12px] font-medium text-white/50">
-                    · дату согласует менеджер
-                  </span>
-                </div>
-              ) : null}
+              </div>
             </div>
           </section>
         )}
@@ -414,68 +427,8 @@ export function ApplicationView({ app }: { app: ApiApplication }) {
         </div>
       </div>
 
-      {/* ═══════════════ ПРАВАЯ КОЛОНКА ═══════════════ */}
+      {/* ═══════════════ ПРАВАЯ КОЛОНКА (паспорт → даты → расчёт) ═══════════════ */}
       <div className="flex min-w-0 flex-col gap-4">
-        {/* ── Финансовая сводка — ГЛАВНЫЙ акцент ── */}
-        {quote && (
-          <div>
-            <SectionLabel icon={<Wallet size={12} />}>
-              Финансовая сводка
-            </SectionLabel>
-            <div className="rounded-2xl bg-surface p-3.5 shadow-card ring-1 ring-inset ring-border">
-              <FinRow label="Аренда" value={`${rub(quote.rentSum)} ₽`} />
-              {quote.equipSum > 0 && (
-                <FinRow label="Экипировка" value={`${rub(quote.equipSum)} ₽`} />
-              )}
-              <FinRow
-                label="Залог (возвратный)"
-                value={`${rub(quote.deposit)} ₽`}
-                muted
-              />
-              <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl bg-gradient-to-br from-blue-600 to-blue-700 px-4 py-3 text-white shadow-card-sm">
-                <span className="text-[12px] font-bold uppercase tracking-wide text-white/80">
-                  Итого к оплате
-                </span>
-                <span className="font-display text-[28px] font-extrabold leading-none tabular-nums">
-                  {rub(quote.total)} ₽
-                </span>
-              </div>
-              <p className="mt-2 px-0.5 text-[10.5px] leading-snug text-muted-2">
-                Ориентир по тарифам каталога. Точную сумму зафиксируете при
-                оформлении аренды.
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* ── Ключевые даты: воздух + синий бейдж длительности ── */}
-        {hasWishes && (app.requestedStartDate || days > 0) && (
-          <div>
-            <SectionLabel icon={<CalendarClock size={12} />}>
-              Ключевые даты
-            </SectionLabel>
-            <div className="relative rounded-2xl bg-surface px-4 py-4 shadow-card-sm ring-1 ring-inset ring-border">
-              {days > 0 && (
-                <div className="absolute right-4 top-1/2 flex -translate-y-1/2 flex-col items-center rounded-2xl bg-blue-600 px-4 py-2.5 text-white shadow-card-sm">
-                  <span className="font-display text-[22px] font-extrabold leading-none tabular-nums">
-                    {days}
-                  </span>
-                  <span className="mt-0.5 text-[10px] font-bold uppercase tracking-wide text-white/80">
-                    {daysWord(days)}
-                  </span>
-                </div>
-              )}
-              <DateNode
-                filled
-                label="Начало аренды"
-                date={ruDate(app.requestedStartDate)}
-                connector
-              />
-              <DateNode label="Конец периода" date={ruDate(endIso)} />
-            </div>
-          </div>
-        )}
-
         {/* ── Информация о клиенте: паспорт (не выделен) + адрес + анкета ── */}
         {(hasPassport ||
           app.passportRegistration ||
@@ -557,6 +510,66 @@ export function ApplicationView({ app }: { app: ApiApplication }) {
           </div>
         )}
 
+        {/* ── Ключевые даты: воздух + синий бейдж длительности ── */}
+        {hasWishes && (app.requestedStartDate || days > 0) && (
+          <div>
+            <SectionLabel icon={<CalendarClock size={12} />}>
+              Ключевые даты
+            </SectionLabel>
+            <div className="relative rounded-2xl bg-surface px-4 py-4 shadow-card-sm ring-1 ring-inset ring-border">
+              {days > 0 && (
+                <div className="absolute right-4 top-1/2 flex -translate-y-1/2 flex-col items-center rounded-2xl bg-blue-600 px-4 py-2.5 text-white shadow-card-sm">
+                  <span className="font-display text-[22px] font-extrabold leading-none tabular-nums">
+                    {days}
+                  </span>
+                  <span className="mt-0.5 text-[10px] font-bold uppercase tracking-wide text-white/80">
+                    {daysWord(days)}
+                  </span>
+                </div>
+              )}
+              <DateNode
+                filled
+                label="Начало аренды"
+                date={ruDate(app.requestedStartDate)}
+                connector
+              />
+              <DateNode label="Конец периода" date={ruDate(endIso)} />
+            </div>
+          </div>
+        )}
+
+        {/* ── Финансовая сводка — внизу блока ── */}
+        {quote && (
+          <div>
+            <SectionLabel icon={<Wallet size={12} />}>
+              Финансовая сводка
+            </SectionLabel>
+            <div className="rounded-2xl bg-surface p-3.5 shadow-card ring-1 ring-inset ring-border">
+              <FinRow label="Аренда" value={`${rub(quote.rentSum)} ₽`} />
+              {quote.equipSum > 0 && (
+                <FinRow label="Экипировка" value={`${rub(quote.equipSum)} ₽`} />
+              )}
+              <FinRow
+                label="Залог (возвратный)"
+                value={`${rub(quote.deposit)} ₽`}
+                muted
+              />
+              <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl bg-gradient-to-br from-blue-600 to-blue-700 px-4 py-3 text-white shadow-card-sm">
+                <span className="text-[12px] font-bold uppercase tracking-wide text-white/80">
+                  Итого к оплате
+                </span>
+                <span className="font-display text-[28px] font-extrabold leading-none tabular-nums">
+                  {rub(quote.total)} ₽
+                </span>
+              </div>
+              <p className="mt-2 px-0.5 text-[10.5px] leading-snug text-muted-2">
+                Ориентир по тарифам каталога. Точную сумму зафиксируете при
+                оформлении аренды.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* ── Причина отказа ── */}
         {app.rejectionReason && (
           <div className="flex items-start gap-2 rounded-2xl bg-red-soft/50 px-3.5 py-3 text-[12.5px] text-red-ink ring-1 ring-inset ring-red-soft">
@@ -610,7 +623,9 @@ function DateNode({
             filled ? "bg-blue-600" : "border-2 border-ink bg-surface",
           )}
         />
-        {connector && <span className="my-1 min-h-[34px] w-px flex-1 bg-border" />}
+        {connector && (
+          <span className="my-1 min-h-[34px] w-px flex-1 bg-border" />
+        )}
       </div>
       <div className={cn("min-w-0", connector ? "pb-4" : "")}>
         <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-2">
