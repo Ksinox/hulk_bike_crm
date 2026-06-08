@@ -10,9 +10,8 @@ import {
 } from "@/lib/api/clientApplications";
 import { ApplicationsList } from "./ApplicationsList";
 import { NewApplicationModal } from "@/pages/clients/NewApplicationModal";
-import { AddClientModal } from "@/pages/clients/AddClientModal";
 import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
-import { applicationToFormInit } from "@/pages/clients/applicationConvert";
+import { ApplicationConvertFlow } from "@/pages/clients/ApplicationConvertFlow";
 import { RejectApplicationModal } from "./RejectApplicationModal";
 import { useRejectApplication, useSpamApplication } from "@/lib/api/clientApplications";
 import { toast } from "@/lib/toast";
@@ -182,26 +181,10 @@ export function Applications() {
       )}
 
       {convertingApp && (
-        <AddClientModal
-          applicationId={convertingApp.id}
-          initialData={applicationToFormInit(convertingApp)}
+        <ApplicationConvertFlow
+          application={convertingApp}
           onClose={() => setConvertingApp(null)}
-          onCreated={(client) => {
-            // G3: клиент из заявки заведён → СРАЗУ открываем оформление аренды
-            // с префиллом (модель/срок/экипировка из заявки). Раньше был
-            // confirmDialog «Оформить аренду?», но он мог не всплыть → оператор
-            // видел «просто закрылось». Форму аренды можно отменить.
-            const app = convertingApp;
-            setConvertingApp(null);
-            toast.success("Клиент оформлен");
-            setRentalPrefill({
-              clientId: client.id,
-              modelFilter: app?.requestedModel ?? undefined,
-              days: app?.requestedDays ?? undefined,
-              equipmentIds: app?.requestedEquipmentIds ?? undefined,
-              start: app?.requestedStartDate ?? undefined,
-            });
-          }}
+          onClientCreated={() => toast.success("Клиент оформлен")}
         />
       )}
 

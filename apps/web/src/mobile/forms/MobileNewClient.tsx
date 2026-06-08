@@ -165,8 +165,14 @@ export function MobileNewClient({
           birthDate: birthToIso(birth),
           ...passportFields,
         };
-        await convertMut.mutateAsync({ id: applicationId!, input });
+        const created = await convertMut.mutateAsync({
+          id: applicationId!,
+          input,
+        });
         toast.success("Клиент оформлен", name.trim());
+        // Чейним к оформлению аренды (как на десктопе). Раньше в convert-ветке
+        // onCreated не вызывался — мобильный флоу обрывался на «закрыть».
+        onCreated?.({ ...(created as unknown as Client) });
         onClose();
         return;
       }

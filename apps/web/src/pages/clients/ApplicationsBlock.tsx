@@ -7,10 +7,8 @@ import {
   useDeleteApplication,
   type ApiApplication,
 } from "@/lib/api/clientApplications";
-import { AddClientModal } from "./AddClientModal";
 import { NewApplicationModal } from "./NewApplicationModal";
-import { applicationToFormInit } from "./applicationConvert";
-import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
+import { ApplicationConvertFlow } from "./ApplicationConvertFlow";
 
 /**
  * Сворачиваемый блок «Новые заявки» в /clients.
@@ -32,13 +30,6 @@ export function ApplicationsBlock() {
   const [open, setOpen] = useState(true);
   const [viewing, setViewing] = useState<ApiApplication | null>(null);
   const [converting, setConverting] = useState<ApiApplication | null>(null);
-  const [rentalPrefill, setRentalPrefill] = useState<{
-    clientId: number;
-    modelFilter?: string;
-    days?: number;
-    equipmentIds?: number[];
-    start?: string;
-  } | null>(null);
   const deleteApp = useDeleteApplication();
 
   if (total === 0) return null;
@@ -131,48 +122,10 @@ export function ApplicationsBlock() {
       )}
 
       {converting && (
-        <AddClientModal
+        <ApplicationConvertFlow
+          application={converting}
           onClose={() => setConverting(null)}
-          applicationId={converting.id}
-          initialData={applicationToFormInit(converting)}
-          onCreated={(client) => {
-            const app = converting;
-            setConverting(null);
-            toast.success("Клиент создан из заявки");
-            const modelFilter = app?.requestedModel ?? undefined;
-            const days = app?.requestedDays ?? undefined;
-            const equipmentIds = app?.requestedEquipmentIds ?? undefined;
-            const start = app?.requestedStartDate ?? undefined;
-            void confirmDialog({
-              title: "Клиент создан",
-              message: `Оформить аренду для «${client.name}»? Останется выбрать конкретный скутер и распечатать договор.`,
-              confirmText: "Оформить аренду",
-              cancelText: "Позже",
-            }).then((ok) => {
-              if (ok)
-                setRentalPrefill({
-                  clientId: client.id,
-                  modelFilter,
-                  days,
-                  equipmentIds,
-                  start,
-                });
-            });
-          }}
-        />
-      )}
-      {rentalPrefill && (
-        <NewRentalModal
-          initialClientId={rentalPrefill.clientId}
-          initialModelFilter={rentalPrefill.modelFilter}
-          initialDays={rentalPrefill.days}
-          initialEquipmentIds={rentalPrefill.equipmentIds}
-          initialStart={rentalPrefill.start}
-          onClose={() => setRentalPrefill(null)}
-          onCreated={() => {
-            setRentalPrefill(null);
-            toast.success("Аренда создана");
-          }}
+          onClientCreated={() => toast.success("Клиент создан из заявки")}
         />
       )}
     </>

@@ -1152,6 +1152,9 @@ export function AddClientModal({
                           ? `Обновлено: ${filled.join(", ")}.`
                           : "Изменения переданы на сервер.",
                       );
+                      // Сохранено успешно — снимаем «грязный» флаг, чтобы
+                      // закрытие не спросило «закрыть без сохранения?».
+                      dirtyRef.current = false;
                       requestClose();
                     } catch (e) {
                       toast.error(
@@ -1266,6 +1269,11 @@ export function AddClientModal({
                       }
                       qc.invalidateQueries({ queryKey: clientsKeys.all });
                       qc.invalidateQueries({ queryKey: applicationsKeys.all });
+                      // Снимаем «грязный» флаг ДО onCreated/закрытия: convert
+                      // прошёл, данные на сервере — спрашивать «закрыть без
+                      // сохранения?» нельзя (иначе диалог всплыл бы поверх
+                      // следующего шага — оформления аренды).
+                      dirtyRef.current = false;
                       onCreated?.({
                         ...(created as unknown as Client),
                       });
@@ -1322,6 +1330,7 @@ export function AddClientModal({
                       }
                     }
                     if (f.phone2) clientStore.setExtraPhone(created.id, f.phone2);
+                    dirtyRef.current = false;
                     onCreated?.(created);
                     requestClose();
                   } catch (e) {

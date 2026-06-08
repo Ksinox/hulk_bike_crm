@@ -19,9 +19,8 @@ import {
   useDeleteApplication,
   type ApiApplication,
 } from "@/lib/api/clientApplications";
-import { AddClientModal } from "./AddClientModal";
 import { NewApplicationModal } from "./NewApplicationModal";
-import { applicationToFormInit } from "./applicationConvert";
+import { ApplicationConvertFlow } from "./ApplicationConvertFlow";
 
 export function ApplicationsTab() {
   const { data: items = [], isLoading } = useApplications();
@@ -153,14 +152,12 @@ export function ApplicationsTab() {
         />
       )}
       {converting && (
-        <AddClientModal
+        <ApplicationConvertFlow
+          application={converting}
           onClose={() => setConverting(null)}
-          applicationId={converting.id}
-          initialData={applicationToFormInit(converting)}
-          onCreated={() => {
-            setConverting(null);
-            toast.success("Клиент создан", "Заявка переведена в клиента");
-          }}
+          onClientCreated={() =>
+            toast.success("Клиент создан", "Заявка переведена в клиента")
+          }
         />
       )}
     </div>

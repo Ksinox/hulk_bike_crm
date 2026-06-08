@@ -184,6 +184,20 @@ export function MobileApplications() {
             setConvertApp(null);
             setOpenId(null);
           }}
+          onCreated={(client) => {
+            // Клиент создан из заявки → сразу к оформлению аренды с префиллом
+            // (модель/срок/экипировка/дата). Договор откроется после создания.
+            const app = convertApp;
+            setConvertApp(null);
+            setOpenId(null);
+            setRentalPrefill({
+              clientId: client.id,
+              modelFilter: app?.requestedModel ?? undefined,
+              days: app?.requestedDays ?? undefined,
+              equipmentIds: app?.requestedEquipmentIds ?? undefined,
+              start: app?.requestedStartDate ?? undefined,
+            });
+          }}
         />
       )}
 

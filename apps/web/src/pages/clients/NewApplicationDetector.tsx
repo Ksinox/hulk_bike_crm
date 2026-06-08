@@ -6,9 +6,7 @@ import {
   type ApiApplication,
 } from "@/lib/api/clientApplications";
 import { NewApplicationModal } from "./NewApplicationModal";
-import { AddClientModal } from "./AddClientModal";
-import { applicationToFormInit } from "./applicationConvert";
-import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
+import { ApplicationConvertFlow } from "./ApplicationConvertFlow";
 
 /**
  * Глобальный детектор новых заявок.
@@ -63,14 +61,6 @@ export function NewApplicationDetector() {
   const [seen, setSeen] = useState<Set<number>>(() => loadSeen());
   const [activeApp, setActiveApp] = useState<ApiApplication | null>(null);
   const [convertingApp, setConvertingApp] = useState<ApiApplication | null>(null);
-  // G3: после конвертации — предложение сразу создать аренду (prefill из заявки).
-  const [rentalPrefill, setRentalPrefill] = useState<{
-    clientId: number;
-    modelFilter?: string;
-    days?: number;
-    equipmentIds?: number[];
-    start?: string;
-  } | null>(null);
   const deleteApp = useDeleteApplication();
 
   // Звук уведомления. Браузерная autoplay policy блокирует Audio до
@@ -157,41 +147,10 @@ export function NewApplicationDetector() {
         />
       )}
       {convertingApp && (
-        <AddClientModal
+        <ApplicationConvertFlow
+          application={convertingApp}
           onClose={() => setConvertingApp(null)}
-          applicationId={convertingApp.id}
-          initialData={applicationToFormInit(convertingApp)}
-          onCreated={(client) => {
-            // Клиент создан из заявки → СРАЗУ открываем оформление аренды с
-            // префиллом (модель/срок/экипировка из заявки). Раньше здесь был
-            // confirmDialog «Оформить аренду?», но он мог не всплыть / гаснуть
-            // при закрытии формы клиента — оператор видел «просто закрылось».
-            // Форму аренды можно отменить, если аренда сейчас не нужна.
-            const app = convertingApp;
-            setConvertingApp(null);
-            toast.success("Клиент создан из заявки");
-            setRentalPrefill({
-              clientId: client.id,
-              modelFilter: app?.requestedModel ?? undefined,
-              days: app?.requestedDays ?? undefined,
-              equipmentIds: app?.requestedEquipmentIds ?? undefined,
-              start: app?.requestedStartDate ?? undefined,
-            });
-          }}
-        />
-      )}
-      {rentalPrefill && (
-        <NewRentalModal
-          initialClientId={rentalPrefill.clientId}
-          initialModelFilter={rentalPrefill.modelFilter}
-          initialDays={rentalPrefill.days}
-          initialEquipmentIds={rentalPrefill.equipmentIds}
-          initialStart={rentalPrefill.start}
-          onClose={() => setRentalPrefill(null)}
-          onCreated={() => {
-            setRentalPrefill(null);
-            toast.success("Аренда создана");
-          }}
+          onClientCreated={() => toast.success("Клиент создан из заявки")}
         />
       )}
     </>

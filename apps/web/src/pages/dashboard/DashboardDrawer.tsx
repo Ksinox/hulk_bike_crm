@@ -30,8 +30,7 @@ import {
   type ApiApplication,
 } from "@/lib/api/clientApplications";
 import { NewApplicationModal } from "@/pages/clients/NewApplicationModal";
-import { AddClientModal } from "@/pages/clients/AddClientModal";
-import { applicationToFormInit } from "@/pages/clients/applicationConvert";
+import { ApplicationConvertFlow } from "@/pages/clients/ApplicationConvertFlow";
 import { toast, confirmDialog } from "@/lib/toast";
 
 /**
@@ -1086,13 +1085,13 @@ function ApplicationsListDrawerContent({
         />
       )}
       {converting && (
-        <AddClientModal
+        <ApplicationConvertFlow
+          application={converting}
           onClose={() => setConverting(null)}
-          applicationId={converting.id}
-          initialData={applicationToFormInit(converting)}
-          onCreated={(client) => {
-            setConverting(null);
+          onClientCreated={(client) => {
             toast.success("Клиент создан", "Заявка переведена в клиента");
+            // Карточку клиента кладём в стек drawer — после оформления
+            // (или отмены) аренды оператор окажется на ней.
             if (client?.id) onOpenClient(client.id);
           }}
         />
