@@ -363,35 +363,51 @@ export function RevenueRentalsList({
                   <span className="mr-1.5 w-7 shrink-0" />
                 )}
               </div>
-              {expanded && r.comp && (
-                <div className="mx-3 mb-2 rounded-[10px] bg-surface-soft px-3 py-2 text-[12px]">
-                  <CompositionRow
-                    label={`Аренда${
-                      r.comp.days
-                        ? ` · ${r.comp.days} ${plural(r.comp.days, ["день", "дня", "дней"])} × ${fmt(r.comp.rate)} ₽/${r.comp.rateUnit === "week" ? "нед" : "сут"}`
-                        : ""
-                    }`}
-                    value={`${fmt(r.comp.sum)} ₽`}
-                    strong
-                  />
-                  {r.comp.equipment.map((e, i) => (
-                    <CompositionRow
-                      key={i}
-                      label={`Экипировка · ${e.name}`}
-                      value={
-                        e.free || !e.price ? "бесплатно" : `${fmt(e.price)} ₽/сут`
-                      }
-                    />
-                  ))}
-                  {r.comp.deposit > 0 && (
-                    <CompositionRow
-                      label="Залог (возвратный)"
-                      value={`${fmt(r.comp.deposit)} ₽`}
-                      muted
-                    />
-                  )}
-                </div>
-              )}
+              {expanded &&
+                r.comp &&
+                (() => {
+                  const days = r.comp!.days || 0;
+                  // Сумма платной экипировки за весь срок (цена/сут × дни).
+                  const paidEquipTotal = r.comp!.equipment.reduce(
+                    (s, e) => s + (e.free || !e.price ? 0 : e.price * days),
+                    0,
+                  );
+                  // Аренда (база) = сумма аренды − платная экипировка, чтобы не
+                  // задвоить (sum уже включает экипировку).
+                  const base = r.comp!.sum - paidEquipTotal;
+                  return (
+                    <div className="mx-3 mb-2 rounded-[10px] bg-surface-soft px-3 py-2 text-[12px]">
+                      <CompositionRow
+                        label={`Аренда${days ? ` · ${days} ${plural(days, ["день", "дня", "дней"])} · ${fmt(r.comp!.rate)} ₽/${r.comp!.rateUnit === "week" ? "нед" : "сут"}` : ""}`}
+                        value={`${fmt(base)} ₽`}
+                        strong
+                      />
+                      {r.comp!.equipment.map((e, i) => (
+                        <CompositionRow
+                          key={i}
+                          label={`Экипировка · ${e.name}${e.free || !e.price ? "" : ` · ${fmt(e.price)} ₽/сут × ${days}`}`}
+                          value={
+                            e.free || !e.price
+                              ? "бесплатно"
+                              : `${fmt(e.price * days)} ₽`
+                          }
+                        />
+                      ))}
+                      {r.comp!.deposit > 0 && (
+                        <CompositionRow
+                          label="Залог (возвратный)"
+                          value={`${fmt(r.comp!.deposit)} ₽`}
+                          muted
+                        />
+                      )}
+                      <CompositionRow
+                        label="Итого аренды"
+                        value={`${fmt(r.comp!.sum)} ₽`}
+                        strong
+                      />
+                    </div>
+                  );
+                })()}
             </div>
           );
         })}

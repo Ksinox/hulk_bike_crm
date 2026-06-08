@@ -498,30 +498,40 @@ export function formatActivitySummary(
     const comp = readRecord(readRecord(item.meta)?.composition);
     if (!comp) return { title: "Аренда создана", change: null, extras: [] };
     const extras: string[] = [];
-    const days = typeof comp.days === "number" ? comp.days : null;
+    const days = typeof comp.days === "number" ? comp.days : 0;
     const rate = typeof comp.rate === "number" ? comp.rate : null;
     const rateUnit = comp.rateUnit === "week" ? "нед" : "сут";
     const sum = typeof comp.sum === "number" ? comp.sum : null;
     const deposit = typeof comp.deposit === "number" ? comp.deposit : null;
     const equip = Array.isArray(comp.equipment) ? comp.equipment : [];
+    // Платная экипировка за весь срок (цена/сут × дни) — «Аренда» показывает
+    // базу без задвоения (sum уже включает экипировку).
+    let paidEquipTotal = 0;
+    for (const raw of equip) {
+      const e = readRecord(raw);
+      if (e && e.free !== true && typeof e.price === "number" && e.price > 0)
+        paidEquipTotal += e.price * days;
+    }
     if (sum != null) {
-      const base =
+      const base = sum - paidEquipTotal;
+      const tariff =
         days && rate
-          ? ` (${days} ${plural(days, "день", "дня", "дней")} × ${money(rate)}/${rateUnit})`
+          ? ` · ${days} ${plural(days, "день", "дня", "дней")} · ${money(rate)}/${rateUnit}`
           : "";
-      extras.push(`Аренда: ${money(sum)}${base}`);
+      extras.push(`Аренда${tariff}: ${money(base)}`);
     }
     for (const raw of equip) {
       const e = readRecord(raw);
       if (!e || typeof e.name !== "string" || !e.name.trim()) continue;
       const free = e.free === true || !e.price;
       extras.push(
-        `Экипировка · ${e.name}: ${free ? "бесплатно" : `${money(e.price)}/сут`}`,
+        `Экипировка · ${e.name}: ${free ? "бесплатно" : money((e.price as number) * days)}`,
       );
     }
     if (deposit != null && deposit > 0) {
       extras.push(`Залог (возвратный): ${money(deposit)}`);
     }
+    if (sum != null) extras.push(`Итого аренды: ${money(sum)}`);
     return { title: "Аренда создана", change: null, extras };
   }
 

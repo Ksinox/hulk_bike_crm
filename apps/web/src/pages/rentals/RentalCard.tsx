@@ -516,6 +516,7 @@ export function RentalCard({
   const [cardRect, setCardRect] = useState<{
     top: number;
     right: number;
+    left: number;
   } | null>(null);
   useEffect(() => {
     if (!drawerChrome) return;
@@ -525,10 +526,10 @@ export function RentalCard({
       const el = cardRootRef.current;
       if (el) {
         const r = el.getBoundingClientRect();
-        const key = `${Math.round(r.top)}|${Math.round(r.right)}`;
+        const key = `${Math.round(r.top)}|${Math.round(r.right)}|${Math.round(r.left)}`;
         if (key !== prev) {
           prev = key;
-          setCardRect({ top: r.top, right: r.right });
+          setCardRect({ top: r.top, right: r.right, left: r.left });
         }
       }
       raf = requestAnimationFrame(tick);
@@ -2735,10 +2736,18 @@ export function RentalCard({
                 position: "fixed",
                 // v0.8.30 (I2): ниже sticky-хедера карточки, чтобы не сталкивались.
                 top: cardRect.top + 76,
-                left: cardRect.right - 30,
+                // v0.9.7: в дашборд-drawer карточка прижата к правому краю —
+                // стикеры за правым краём уезжали за экран. В режиме drawer
+                // вешаем их СЛЕВА от карточки (видно + не перекрывает контент).
+                left: drawerChrome
+                  ? cardRect.left - 248
+                  : cardRect.right - 30,
                 zIndex: 20,
               }}
-              className="flex w-[200px] flex-col items-start gap-2"
+              className={cn(
+                "flex w-[200px] flex-col gap-2",
+                drawerChrome ? "items-end" : "items-start",
+              )}
             >
               {addNoteOpen && (
                 <NoteComposer
