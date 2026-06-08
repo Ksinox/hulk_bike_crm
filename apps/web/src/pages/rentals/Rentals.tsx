@@ -16,6 +16,7 @@ import { RentalsList } from "./RentalsList";
 import { RentalsKpi, type Kpi } from "./RentalsKpi";
 import { RentalCard, ActTransferPreview, RentalHistoryColumn } from "./RentalCard";
 import { cn } from "@/lib/utils";
+import { useIsMobile } from "@/lib/useIsMobile";
 import { DocumentPreviewModal } from "./DocumentPreviewModal";
 import { consumePending, onNavigate } from "@/app/navigationStore";
 import {
@@ -534,6 +535,13 @@ export function Rentals() {
   // минус electron-titlebar (36px). В web — чистые 100vh. Так footer карточки
   // и payment всегда виден: скроллится только внутреннее тело колонки.
   const panelHeight = isElectron ? "calc(100vh - 36px)" : "100vh";
+  // v0.9.3: на мониторах уже ~2000px три push-колонки (список 700 + карточка
+  // 600 + приёмка 480 + отступы ≈ 1860) не помещаются — приёмка-колонка
+  // (крайняя справа) уезжала за край и обрезалась `overflow-hidden`, оператор
+  // не видел шаг «Когда поступила оплата?» и продлевал «от сегодня». На таких
+  // экранах приёмку рендерим как fixed-оверлей справа (всегда влезает,
+  // 480px / 95vw), на широких — как раньше push-колонкой.
+  const narrowDesktop = useIsMobile(2000);
   // v0.7.3: payment-связка должна существовать в текущем списке. Если её нет
   // (например, ушла в архив) — колонка не рендерится.
   const paymentRental =
@@ -780,10 +788,12 @@ export function Rentals() {
         <div
           className={cn(
             "h-full min-h-0 shrink-0 overflow-hidden transition-[width,opacity,margin] duration-300 ease-in-out",
-            paymentRental ? "ml-4 w-[480px] opacity-100" : "ml-0 w-0 opacity-0",
+            paymentRental && !narrowDesktop
+              ? "ml-4 w-[480px] opacity-100"
+              : "ml-0 w-0 opacity-0",
           )}
         >
-          {lastPaymentRental && (
+          {!narrowDesktop && lastPaymentRental && (
             <div className="flex h-full min-h-0 w-[480px] flex-col overflow-hidden">
               <ErrorBoundary key={`pay-${lastPaymentRental.id}`}>
                 <PaymentAcceptDialog
@@ -800,6 +810,24 @@ export function Rentals() {
             </div>
           )}
         </div>
+
+        {/* v0.9.3: узкий монитор — приёмку рендерим fixed-оверлеем справа
+            (push-колонка не помещается, шаг «Когда поступила оплата?» уезжал
+            за край). PaymentAcceptDialog без `inline` сам рисует slide-in
+            drawer (w-[min(95vw,480px)]) — всегда влезает и доступен. */}
+        {narrowDesktop && paymentRental && (
+          <ErrorBoundary key={`pay-ovl-${paymentRental.id}`}>
+            <PaymentAcceptDialog
+              rental={paymentRental}
+              initialExtDays={paymentExtDays || undefined}
+              onExtDaysChange={setPaymentExtDays}
+              onClose={closePayment}
+              onPaid={() => {
+                /* invalidations происходят внутри диалога */
+              }}
+            />
+          </ErrorBoundary>
+        )}
 
         {/* ======== ИСТОРИЯ = PUSH-КОЛОНКА (v0.7.9) ========
             Открывается по «Все события →» в карточке. В потоке справа
