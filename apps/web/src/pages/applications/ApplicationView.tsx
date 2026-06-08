@@ -402,9 +402,11 @@ export function ApplicationView({ app }: { app: ApiApplication }) {
               </div>
 
               {/* Финсводка — внутри карточки выбора: «скутер + экипировка +
-                  срок + СУММА» читаются одной презентацией. */}
+                  срок + СУММА» читаются одной презентацией. relative z-10 —
+                  чтобы декоративная аватарка модели (absolute z-0) не
+                  перекрывала суммы, когда блок периода низкий (даты не заданы). */}
               {quote && (
-                <div className="mt-5 rounded-2xl bg-surface p-3.5 shadow-card-sm ring-1 ring-inset ring-border">
+                <div className="relative z-10 mt-5 rounded-2xl bg-surface p-3.5 shadow-card-sm ring-1 ring-inset ring-border">
                   <FinRow label="Аренда" value={`${rub(quote.rentSum)} ₽`} />
                   {quote.equipSum > 0 && (
                     <FinRow
