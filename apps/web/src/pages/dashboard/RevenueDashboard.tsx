@@ -20,8 +20,14 @@ import {
   Repeat,
   CalendarClock,
   Tag,
+  Inbox,
+  Send,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  useApplications,
+  useConvertedApplicationsCount,
+} from "@/lib/api/clientApplications";
 import type { RevenueAnalytics } from "@/lib/useRevenueAnalytics";
 
 const fmt = (n: number) => n.toLocaleString("ru-RU");
@@ -58,6 +64,20 @@ export function RevenueDashboard({
   const maxModel = Math.max(1, ...a.byModel.map((m) => m.sum));
   const maxTariff = Math.max(1, ...a.topTariffs.map((t) => t.count));
   const up = (a.deltaPct ?? 0) >= 0;
+
+  // Воронка «заявки → аренда» (накопительно, не зависит от периода): сколько
+  // анкет с публичной формы получили, сколько дошли до оформления аренды и
+  // какая конверсия. Все показатели бизнеса — в одном месте.
+  const { data: allApps = [] } = useApplications({ status: "all", poll: false });
+  const { data: convertedCount = 0 } = useConvertedApplicationsCount();
+  const receivedApps = allApps.filter(
+    (ap) => ap.status !== "draft" && ap.status !== "cancelled",
+  ).length;
+  const conversionPct =
+    receivedApps > 0
+      ? Math.min(100, Math.round((convertedCount / receivedApps) * 100))
+      : 0;
+
   // Прогноз vs прошлый период — обгоняем/недоберём.
   const fcVsPrev =
     a.prevTotal > 0 && a.forecast !== null
@@ -250,6 +270,39 @@ export function RevenueDashboard({
           value={`${fmt(a.debtTotal)} ₽`}
           tone={a.debtTotal > 0 ? "red" : "neutral"}
         />
+      </div>
+
+      {/* ─── ЗАЯВКИ → АРЕНДА (воронка, накопительно) ─── */}
+      <div>
+        <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12px] font-semibold uppercase tracking-wider text-muted-2">
+          <span className="inline-flex items-center gap-1.5">
+            <Inbox size={14} /> Заявки → аренда
+          </span>
+          <span className="font-normal normal-case text-muted-2/70">
+            · за всё время
+          </span>
+        </div>
+        <div className="grid grid-cols-3 gap-3">
+          <Metric
+            icon={<Send size={15} />}
+            label="Получено заявок"
+            value={String(receivedApps)}
+            tone="blue"
+          />
+          <Metric
+            icon={<Bike size={15} />}
+            label="Оформлено в аренду"
+            value={String(convertedCount)}
+            tone="green"
+          />
+          <Metric
+            icon={<TrendingUp size={15} />}
+            label="Конверсия"
+            value={`${conversionPct}%`}
+            sub="из заявки в аренду"
+            tone="purple"
+          />
+        </div>
       </div>
 
       {/* ─── ГРАФИК ВЫРУЧКИ ПО ДНЯМ ─── */}
