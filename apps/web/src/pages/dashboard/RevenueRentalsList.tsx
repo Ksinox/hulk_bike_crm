@@ -1,4 +1,5 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useApiRentals, useApiRentalsArchived } from "@/lib/api/rentals";
 import { useApiPayments, type ApiPayment } from "@/lib/api/payments";
@@ -172,6 +173,8 @@ export function RevenueRentalsList({
   const { data: payments = [] } = useApiPayments();
   const { data: clients = [] } = useApiClients();
   const drawer = useDashboardDrawer();
+  // v0.9.7: раскрытие состава аренды (тело) у платежа по клику на шеврон.
+  const [expandedId, setExpandedId] = useState<number | null>(null);
   const { data: scooters = [] } = useApiScooters();
   // Якоря расчётного периода грузятся с сервера асинхронно и пишутся в
   // глобал billingPeriod. Подписываемся, чтобы окно ниже пересчиталось,
@@ -205,15 +208,30 @@ export function RevenueRentalsList({
         const r = rentalById.get(p.rentalId);
         const client = r ? clientById.get(r.clientId) : undefined;
         const scooter = r ? scooterById.get(r.scooterId ?? -1) : undefined;
+        const tk = paymentTypeKey(p);
+        // v0.9.7: «тело» аренды для раскрытия — только у платежей аренды/
+        // продления (где состав имеет смысл). Берём из самой аренды.
+        const comp =
+          (tk === "rent" || tk === "extend") && r
+            ? {
+                sum: r.sum,
+                deposit: r.deposit,
+                days: r.days,
+                rate: r.rate,
+                rateUnit: r.rateUnit ?? ("day" as const),
+                equipment: r.equipmentJson ?? [],
+              }
+            : null;
         return {
           paymentId: p.id,
           rentalId: p.rentalId,
           paidAt: p.paidAt!,
           amount: p.amount,
           cash: isCashPayment(p),
-          typeLabel: REVENUE_TYPE_LABEL[paymentTypeKey(p)],
+          typeLabel: REVENUE_TYPE_LABEL[tk],
           clientName: client?.name ?? "—",
           scooterName: scooter?.name ?? "—",
+          comp,
         };
       })
       // v0.9.7: свежие сверху — по id платежа (= порядку фиксации), а НЕ по
@@ -289,43 +307,126 @@ export function RevenueRentalsList({
         </span>
       </div>
       <div className="flex flex-col divide-y divide-border rounded-[10px] border border-border bg-white">
-        {rows.map((r) => (
-          <button
-            key={r.paymentId}
-            type="button"
-            onClick={() => {
-              if (onRowClick) onRowClick(r.rentalId);
-              else drawer.openRental(r.rentalId);
-            }}
-            className="flex items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-surface-soft"
-          >
-            <div className="w-[68px] shrink-0 text-[11px] font-medium tabular-nums leading-tight text-muted-2">
-              {fmtDateTime(r.paidAt)}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-[13px] font-semibold text-ink">
-                {r.scooterName} · {r.clientName}
-              </div>
-              <div className="text-[11px] text-muted-2">{r.typeLabel}</div>
-            </div>
-            <div className="flex shrink-0 items-center gap-2">
-              <span
-                className={cn(
-                  "rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider",
-                  r.cash
-                    ? "bg-green-soft text-green-ink"
-                    : "bg-blue-50 text-blue-700",
+        {rows.map((r) => {
+          const expanded = expandedId === r.paymentId;
+          return (
+            <div key={r.paymentId} className="flex flex-col">
+              <div className="flex items-center transition-colors hover:bg-surface-soft">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onRowClick) onRowClick(r.rentalId);
+                    else drawer.openRental(r.rentalId);
+                  }}
+                  className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2 text-left"
+                >
+                  <div className="w-[68px] shrink-0 text-[11px] font-medium tabular-nums leading-tight text-muted-2">
+                    {fmtDateTime(r.paidAt)}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[13px] font-semibold text-ink">
+                      {r.scooterName} · {r.clientName}
+                    </div>
+                    <div className="text-[11px] text-muted-2">{r.typeLabel}</div>
+                  </div>
+                  <span
+                    className={cn(
+                      "rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider",
+                      r.cash
+                        ? "bg-green-soft text-green-ink"
+                        : "bg-blue-50 text-blue-700",
+                    )}
+                  >
+                    {r.cash ? "нал" : "безнал"}
+                  </span>
+                  <div className="w-[72px] text-right text-[13px] font-bold tabular-nums text-ink">
+                    {fmt(r.amount)} ₽
+                  </div>
+                </button>
+                {/* Шеврон «состав аренды» — только у платежей аренды/продления. */}
+                {r.comp ? (
+                  <button
+                    type="button"
+                    onClick={() => setExpandedId(expanded ? null : r.paymentId)}
+                    title="Состав аренды"
+                    className="mr-1.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted-2 transition-colors hover:bg-border hover:text-ink"
+                  >
+                    <ChevronDown
+                      size={15}
+                      className={cn(
+                        "transition-transform",
+                        expanded && "rotate-180",
+                      )}
+                    />
+                  </button>
+                ) : (
+                  <span className="mr-1.5 w-7 shrink-0" />
                 )}
-              >
-                {r.cash ? "нал" : "безнал"}
-              </span>
-              <div className="w-[72px] text-right text-[13px] font-bold tabular-nums text-ink">
-                {fmt(r.amount)} ₽
               </div>
+              {expanded && r.comp && (
+                <div className="mx-3 mb-2 rounded-[10px] bg-surface-soft px-3 py-2 text-[12px]">
+                  <CompositionRow
+                    label={`Аренда${
+                      r.comp.days
+                        ? ` · ${r.comp.days} ${plural(r.comp.days, ["день", "дня", "дней"])} × ${fmt(r.comp.rate)} ₽/${r.comp.rateUnit === "week" ? "нед" : "сут"}`
+                        : ""
+                    }`}
+                    value={`${fmt(r.comp.sum)} ₽`}
+                    strong
+                  />
+                  {r.comp.equipment.map((e, i) => (
+                    <CompositionRow
+                      key={i}
+                      label={`Экипировка · ${e.name}`}
+                      value={
+                        e.free || !e.price ? "бесплатно" : `${fmt(e.price)} ₽/сут`
+                      }
+                    />
+                  ))}
+                  {r.comp.deposit > 0 && (
+                    <CompositionRow
+                      label="Залог (возвратный)"
+                      value={`${fmt(r.comp.deposit)} ₽`}
+                      muted
+                    />
+                  )}
+                </div>
+              )}
             </div>
-          </button>
-        ))}
+          );
+        })}
       </div>
+    </div>
+  );
+}
+
+/** Строка состава аренды в раскрытии платежа: «лейбл … значение». */
+function CompositionRow({
+  label,
+  value,
+  strong,
+  muted,
+}: {
+  label: string;
+  value: string;
+  strong?: boolean;
+  muted?: boolean;
+}) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 py-0.5">
+      <span className={muted ? "text-muted-2" : "text-muted"}>{label}</span>
+      <span
+        className={cn(
+          "shrink-0 tabular-nums",
+          strong
+            ? "font-bold text-ink"
+            : muted
+              ? "font-medium text-muted-2"
+              : "font-semibold text-ink",
+        )}
+      >
+        {value}
+      </span>
     </div>
   );
 }
