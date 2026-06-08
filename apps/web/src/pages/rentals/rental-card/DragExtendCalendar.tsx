@@ -139,6 +139,7 @@ export function DragExtendCalendar({
   onEditPeriodPick,
   editMinReturnIso,
   editDimFromIso,
+  paymentDateIso,
 }: {
   startIso: string;
   plannedEndIso: string;
@@ -201,6 +202,12 @@ export function DragExtendCalendar({
    * Если не задан — берём startIso (одно-периодная: весь период).
    */
   editDimFromIso?: string | null;
+  /**
+   * v0.9.4: дата фактической оплаты (back-date) из PaymentAcceptDialog.
+   * Якорь продления = max(plannedEnd, paymentDate) — синхронно с окном
+   * приёмки (extBase). Если null/undefined — якорь = сегодня (как раньше).
+   */
+  paymentDateIso?: string | null;
 }) {
   const startKey = isoToKey(startIso);
   const plannedEndKey = isoToKey(plannedEndIso);
@@ -218,9 +225,14 @@ export function DragExtendCalendar({
   // PaymentAcceptDialog использует `extBase = max(today, anchor)` — тут
   // делаем то же, чтобы плашка «Хватит до» и зелёная зона/плашка
   // календаря считались от одной точки.
+  // v0.9.4: якорь = max(plannedEnd, дата оплаты). По умолчанию дата оплаты =
+  // сегодня → max(plannedEnd, today) = прежнее поведение. При back-date
+  // (оплатил в срок 06-го, фиксируем 08-го) якорь = 06-е, и зелёное превью
+  // продления совпадает с «новым возвратом» в окне «Принять платёж».
+  const anchorKey = (paymentDateIso ? isoToKey(paymentDateIso) : null) ?? todayKey;
   const baseEndKey =
-    plannedEndKey && diffDays(plannedEndKey, todayKey) > 0
-      ? todayKey
+    plannedEndKey && diffDays(plannedEndKey, anchorKey) > 0
+      ? anchorKey
       : plannedEndKey;
 
   // v0.6.27: всегда 1 месяц. Фокус по умолчанию = месяц baseEnd
@@ -291,7 +303,6 @@ export function DragExtendCalendar({
   // аренда → end1 (последняя ветка), иначе → старт периода.
   const editFromKey = editDimFromIso ? isoToKey(editDimFromIso) : null;
   const editFromT = editFromKey ? keyToTime(editFromKey) : startT;
-  const todayT = keyToTime(todayKey);
   const previewT = previewEnd ? keyToTime(previewEnd) : null;
   const previewDays = previewEnd ? diffDays(baseEndKey, previewEnd) : 0;
 
@@ -449,7 +460,10 @@ export function DragExtendCalendar({
     if (isParkingDay(t)) return "parking";
     // ext имеет приоритет (перекрывает день после plannedEnd)
     if (previewT != null && t > baseT && t <= previewT) return "ext";
-    if (isOverdue && t > plannedT && t <= todayT) return "red";
+    // v0.9.4: красная зона просрочки — до ЯКОРЯ (baseT = max(plannedEnd,
+    // дата оплаты)), а не до сегодня. При back-date «оплатил в срок» якорь =
+    // plannedEnd → красная зона пустая (просрочки на дату оплаты нет).
+    if (isOverdue && t > plannedT && t <= baseT) return "red";
     if (t >= startT && t <= plannedT) return "blue";
     return null;
   };

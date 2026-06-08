@@ -94,6 +94,7 @@ export function CalendarPanel({
   resetSignal,
   initialExtDays,
   armParkingSignal,
+  paymentDateIso,
 }: {
   rental: Rental;
   effectiveStatus: RentalStatus;
@@ -165,6 +166,8 @@ export function CalendarPanel({
   initialExtDays?: number;
   /** v0.8.0: бамп из ⋯-меню «Поставить на паркинг» — включает режим. */
   armParkingSignal?: number;
+  /** v0.9.4: дата оплаты (back-date) — якорь превью продления в календаре. */
+  paymentDateIso?: string | null;
 }) {
   const startIso = ruToIso(rental.start);
   const endIso = ruToIso(rental.endPlanned);
@@ -749,6 +752,7 @@ export function CalendarPanel({
               onEditPeriodPick={(iso) => setEditEndIso(iso)}
               editMinReturnIso={editMinEndIso}
               editDimFromIso={editDimFromIso}
+              paymentDateIso={paymentDateIso}
             />
           </div>
         )}

@@ -92,6 +92,7 @@ export function PaymentAcceptDialog({
   onPaid,
   initialExtDays,
   onExtDaysChange,
+  onPaymentDateChange,
   liftedFromRect,
   inline = false,
 }: {
@@ -112,6 +113,12 @@ export function PaymentAcceptDialog({
    * менялся, календарь не реагировал).
    */
   onExtDaysChange?: (days: number) => void;
+  /**
+   * v0.9.4: callback наверх при изменении даты фактической оплаты (back-date).
+   * Rentals прокидывает её в карточку → календарь якорит превью продления на
+   * max(plannedEnd, дата оплаты), синхронно с «новым возвратом» в окне.
+   */
+  onPaymentDateChange?: (iso: string) => void;
   /**
    * v0.6.13: исходная позиция оригинального CalendarPanel в карточке
    * аренды. Используется для FLIP-анимации: floating-копия календаря
@@ -487,6 +494,12 @@ export function PaymentAcceptDialog({
     onExtDaysChange?.(extDays);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [extDays]);
+  // v0.9.4: сообщаем выбранную дату оплаты наверх — карточный календарь
+  // якорит превью продления на неё (max(plannedEnd, дата оплаты)).
+  useEffect(() => {
+    onPaymentDateChange?.(paymentDateIso);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paymentDateIso]);
   // v0.6.13: tariffPeriod для extend-inplace.
   //   - custom + week → 'week'
   //   - custom + day → periodForDays(extDays) (бэкенд enum принимает short/week/month)

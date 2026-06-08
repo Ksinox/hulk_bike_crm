@@ -309,6 +309,7 @@ export function RentalCard({
   onClose,
   onRequestPayment,
   paymentExtDays,
+  paymentDateIso,
   paymentResetSignal,
   onPaymentOpenChange,
   onOpenHistory,
@@ -341,6 +342,10 @@ export function RentalCard({
    *  (живёт в Rentals, синхронизируется с Payment-колонкой). Календарь
    *  карточки отражает это значение, чтобы drag/Payment были согласованы. */
   paymentExtDays?: number;
+  /** v0.9.4: дата фактической оплаты из окна «Принять платёж» (back-date).
+   *  Календарь карточки якорит превью продления на max(plannedEnd, дата
+   *  оплаты) — синхронно с «новым возвратом» в окне. */
+  paymentDateIso?: string | null;
   /** v0.7.3: сигнал сброса календаря карточки — родитель бампает его при
    *  закрытии Payment-колонки, чтобы drag-extend на календаре обнулился. */
   paymentResetSignal?: number;
@@ -2273,6 +2278,7 @@ export function RentalCard({
               (onRequestPayment ? paymentExtDays : paymentPrefillExtDays) ||
               undefined
             }
+            paymentDateIso={onRequestPayment ? paymentDateIso : undefined}
             armParkingSignal={armParkingSignal}
           />
 
@@ -2555,6 +2561,7 @@ export function RentalCard({
                 (onRequestPayment ? paymentExtDays : paymentPrefillExtDays) ||
                 undefined
               }
+              paymentDateIso={onRequestPayment ? paymentDateIso : undefined}
               armParkingSignal={armParkingSignal}
             />
             {/* v0.6.50: «Последние события» — InlineHistory под календарём. */}

@@ -233,6 +233,11 @@ export function Rentals() {
   // хранит id связки, по которой принимаем оплату (может отличаться от
   // selectedId — например, после продления фокус на новой связке).
   const [paymentRentalId, setPaymentRentalId] = useState<number | null>(null);
+  // v0.9.4: дата оплаты (back-date) из окна «Принять платёж». Прокидываем в
+  // карточку → её календарь якорит превью продления на max(plannedEnd, дата
+  // оплаты), синхронно с «новым возвратом» в окне (раньше календарь рисовал
+  // продление «от сегодня», окно — «от даты оплаты» → визуальный рассинхрон).
+  const [paymentDateIso, setPaymentDateIso] = useState<string | null>(null);
   // v0.7.3: число дней продления (синхрон календарь карточки ↔ Payment-
   // колонка) + сигнал сброса календаря при закрытии Payment.
   const [paymentExtDays, setPaymentExtDays] = useState(0);
@@ -252,6 +257,7 @@ export function Rentals() {
   };
   const closePayment = () => {
     setPaymentRentalId(null);
+    setPaymentDateIso(null);
     setPaymentExtDays(0);
     // Бампаем сигнал — календарь карточки обнулит drag-extend.
     setCalendarResetSignal((n) => n + 1);
@@ -765,6 +771,7 @@ export function Rentals() {
                   paymentOpen={paymentRentalId === selected.id}
                   onOpenHistory={openHistory}
                   paymentExtDays={paymentExtDays}
+                  paymentDateIso={paymentDateIso}
                   paymentResetSignal={calendarResetSignal}
                   onSwapped={(newId) => {
                     setSelectedId(newId);
@@ -801,6 +808,7 @@ export function Rentals() {
                   inline
                   initialExtDays={paymentExtDays || undefined}
                   onExtDaysChange={setPaymentExtDays}
+                  onPaymentDateChange={setPaymentDateIso}
                   onClose={closePayment}
                   onPaid={() => {
                     /* invalidations происходят внутри диалога */
@@ -821,6 +829,7 @@ export function Rentals() {
               rental={paymentRental}
               initialExtDays={paymentExtDays || undefined}
               onExtDaysChange={setPaymentExtDays}
+              onPaymentDateChange={setPaymentDateIso}
               onClose={closePayment}
               onPaid={() => {
                 /* invalidations происходят внутри диалога */
