@@ -25,6 +25,7 @@ import { createPortal } from "react-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Check,
+  Lock,
   X,
   Repeat,
   Coins,
@@ -360,6 +361,8 @@ export function PaymentAcceptDialog({
   // Тогда useEffect ниже НЕ перетирает selectedTariff при изменении extDays.
   // Сбрасывается только при выборе custom (через checkbox).
   const [tariffPinned, setTariffPinned] = useState<boolean>(false);
+  // #170: подсказка «применить прошлые условия» (скрывается по «Нет»).
+  const [priorHintDismissed, setPriorHintDismissed] = useState(false);
   const [extCustomRate, setExtCustomRate] = useState<number>(rental.rate);
   const [extCustomUnit, setExtCustomUnit] = useState<"day" | "week">(
     rental.rateUnit === "week" ? "week" : "day",
@@ -396,6 +399,35 @@ export function PaymentAcceptDialog({
       : initialExtDays;
     setExtInputOverride(next);
   }, [initialExtDays, selectedTariff, extCustomUnit]);
+
+  // #170: прошлый срок (по тарифной ступени последних условий) + применение
+  // прошлых условий в окно продления. Точные дни последнего продления в БД не
+  // хранятся (days — накопительный итог), поэтому срок берём по ступени.
+  const priorDays =
+    rental.rateUnit === "week"
+      ? 7
+      : rental.tariffPeriod === "month"
+        ? 30
+        : rental.tariffPeriod === "week"
+          ? 7
+          : rental.tariffPeriod === "short"
+            ? 4
+            : 2;
+  const applyPriorConditions = () => {
+    setMode("days");
+    if (rental.customTariff) {
+      setSelectedTariff("custom");
+      setTariffPinned(true);
+      setExtCustomRate(rental.rate);
+      setExtCustomUnit(rental.rateUnit === "week" ? "week" : "day");
+    }
+    setExtInputOverride(
+      rental.rateUnit === "week"
+        ? Math.max(1, Math.round(priorDays / 7))
+        : priorDays,
+    );
+    setPriorHintDismissed(true);
+  };
   // v0.6.13: тариф продления вычисляется из selectedTariff.
   //   - preset (short/day/week/month) → ставка из TARIFF, unit = 'day'
   //     (период недельного тарифа всё равно считается в днях по ставке/сут;
@@ -1509,6 +1541,38 @@ export function PaymentAcceptDialog({
               </div>
             </div>
 
+            {/* #170: подсказка «применить прошлые условия» — срок/тариф/ставка
+                (вкл. «свой») из последних условий аренды. «Да» подставляет их в
+                окно продления, «Нет» скрывает. */}
+            {!priorHintDismissed && (
+              <div className="mb-3 rounded-[10px] border border-blue-100 bg-blue-50/70 px-3 py-2.5">
+                <div className="text-[12px] font-bold text-blue-800">
+                  Применить прошлые условия?
+                </div>
+                <div className="mt-0.5 text-[11.5px] text-blue-700/90">
+                  ~{priorDays} дн · {TARIFF_PERIOD_LABEL[rental.tariffPeriod]} ·{" "}
+                  {rental.rate} ₽/{rental.rateUnit === "week" ? "нед" : "сут"}
+                  {rental.customTariff ? " · свой тариф" : ""}
+                </div>
+                <div className="mt-2 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={applyPriorConditions}
+                    className="inline-flex items-center gap-1 rounded-full bg-blue-600 px-3.5 py-1.5 text-[11.5px] font-semibold text-white hover:bg-blue-700"
+                  >
+                    <Check size={12} /> Да, применить
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPriorHintDismissed(true)}
+                    className="inline-flex items-center rounded-full px-3.5 py-1.5 text-[11.5px] font-semibold text-muted hover:bg-surface-soft"
+                  >
+                    Нет
+                  </button>
+                </div>
+              </div>
+            )}
+
             {mode === "days" ? (
               <div className="flex flex-wrap items-center gap-3">
                 <div className="inline-flex items-stretch overflow-hidden rounded-[12px] border border-border">
@@ -1687,45 +1751,36 @@ export function PaymentAcceptDialog({
                 {/* v0.6.43: порядок по возрастанию срока — 1-2 / 3-6 / 7-29 / 30+ */}
                 {(["day", "short", "week", "month"] as const).map((p) => {
                   const r = modelRate(p);
+                  // #169: тариф строго по числу дней — тиры НЕ кликабельны.
+                  // Активен тот, что соответствует сроку (selectedTariff авто-
+                  // подбирается из extDays эффектом ниже); остальные заблокированы
+                  // (замок + приглушение). Раньше клик пиннил тариф и прыгало
+                  // число дней — отсюда «убегали цифры».
                   const active = selectedTariff === p;
                   return (
-                    <button
+                    <div
                       key={p}
-                      type="button"
-                      onClick={() => {
-                        // v0.6.14: ручной выбор тарифа — пинним.
-                        setSelectedTariff(p);
-                        setTariffPinned(true);
-                        // v0.8.32: в режиме «по сумме клиента» число дней
-                        // пересчитает amount-effect по введённой сумме и
-                        // ставке выбранного тарифа — НЕ трогаем здесь
-                        // (иначе сумма/дата прыгали при клике на тариф).
-                        if (mode === "amount") return;
-                        // v0.6.15: в режиме «по дням» при клике на тариф
-                        // устанавливаем МИНИМАЛЬНОЕ число дней этого тарифа:
-                        //   day "1–2"→1, short "3–6"→3, week "7–29"→7, month "30+"→30.
-                        // (а не пересчитываем текущие 35 дней по новой цене).
-                        const minDays =
-                          p === "day"
-                            ? 1
-                            : p === "short"
-                              ? 3
-                              : p === "week"
-                                ? 7
-                                : 30;
-                        setExtInputOverride(minDays);
-                      }}
+                      aria-disabled={!active}
                       className={cn(
-                        "rounded-full border px-2.5 py-1.5 text-[11.5px] font-semibold transition-colors inline-flex items-center gap-1.5 whitespace-nowrap",
+                        "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1.5 text-[11.5px] font-semibold transition-colors",
                         active
                           ? "border-blue-600 bg-blue-50 text-blue-700"
-                          : "border-border text-muted hover:bg-surface-soft hover:text-ink-2",
+                          : "border-transparent bg-surface-soft text-muted-2 opacity-55",
                       )}
-                      title={TARIFF_PERIOD_LABEL[p]}
+                      title={
+                        active
+                          ? `Тариф по сроку: ${TARIFF_PERIOD_LABEL[p]}`
+                          : `${TARIFF_PERIOD_LABEL[p]} — не для текущего срока`
+                      }
                     >
+                      {active ? (
+                        <Check size={11} className="text-blue-600" />
+                      ) : (
+                        <Lock size={9} className="text-muted-2/60" />
+                      )}
                       <span>{TARIFF_PERIOD_LABEL[p]}</span>
                       <span className="tabular-nums">{r} ₽/сут</span>
-                    </button>
+                    </div>
                   );
                 })}
               </div>
