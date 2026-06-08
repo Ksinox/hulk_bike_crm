@@ -299,6 +299,7 @@ export async function clientApplicationsRoutes(app: FastifyInstance) {
         .update(clientApplications)
         .set({
           requestedModel: null,
+          requestedModelName: null,
           requestedDays: null,
           requestedEquipmentIds: null,
           requestedStartDate: null,

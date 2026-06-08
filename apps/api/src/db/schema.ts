@@ -1402,6 +1402,12 @@ export const clientApplications = pgTable(
      *  анкете на шаге «Что хотите арендовать». При convert модель/срок
      *  подставляются в форму «Новая аренда». NULL — клиент не указал. */
     requestedModel: scooterModelEnum("requested_model"),
+    /** G3: точное имя модели из каталога, как выбрал клиент («Yamaha Jog»,
+     *  «Honda Dio», «aima» …). requestedModel — это грубый enum (jog/gear/
+     *  honda/tank) для префилла-фильтра «Новая аренда»; он не покрывает
+     *  кастомные модели каталога. Это поле хранит реальное выбранное имя
+     *  для отображения в заявке. NULL — заявки до появления поля. */
+    requestedModelName: text("requested_model_name"),
     requestedDays: integer("requested_days"),
     /** G3: id выбранной экипировки (equipment_items) — мультивыбор в анкете. */
     requestedEquipmentIds: jsonb("requested_equipment_ids").$type<number[]>(),

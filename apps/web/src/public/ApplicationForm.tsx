@@ -212,6 +212,7 @@ function fieldsFromState(s: FormState): ApplicationFields {
     sourceCustom:
       s.source === "other" ? nullableTrim(s.sourceCustom) : null,
     requestedModel: modelNameToEnum(s.wantModel),
+    requestedModelName: nullableTrim(s.wantModel),
     requestedDays: s.wantModel && s.wantDays > 0 ? s.wantDays : null,
     requestedEquipmentIds: s.wantEquipmentIds.length ? s.wantEquipmentIds : null,
     requestedStartDate: s.wantStartDate || null,
@@ -237,7 +238,7 @@ function stateFromFields(f: ApplicationFields): Partial<FormState> {
     liveAddress: f.liveAddress ?? "",
     source: (f.source ?? "") as ClientSourceChoice | "",
     sourceCustom: f.sourceCustom ?? "",
-    wantModel: enumToModelName(f.requestedModel ?? null),
+    wantModel: f.requestedModelName ?? enumToModelName(f.requestedModel ?? null),
     wantDays: f.requestedDays ?? 7,
     wantEquipmentIds: f.requestedEquipmentIds ?? [],
     wantStartDate: f.requestedStartDate ?? "",
@@ -1685,7 +1686,14 @@ const MODEL_ENUMS = ["jog", "gear", "honda", "tank"] as const;
  *  модели вне enum → null (тогда при конвертации фильтр аренды не ставится). */
 function modelNameToEnum(name: string): string | null {
   const k = name.trim().toLowerCase();
-  return (MODEL_ENUMS as readonly string[]).includes(k) ? k : null;
+  if (!k) return null;
+  // Точное совпадение (если имя уже = enum).
+  if ((MODEL_ENUMS as readonly string[]).includes(k)) return k;
+  // Имена каталога — «Yamaha Jog», «Honda Dio», «Tank T150» и т.п.: ищем
+  // ключевое слово enum как подстроку. Кастомные модели («aima») ни с чем
+  // не совпадут → null (грубый фильтр их не покрывает; точное имя при этом
+  // сохраняется отдельно в requestedModelName и показывается в заявке).
+  return MODEL_ENUMS.find((e) => k.includes(e)) ?? null;
 }
 /** enum → отображаемое имя (для восстановления выбора из черновика). */
 function enumToModelName(e: string | null): string {

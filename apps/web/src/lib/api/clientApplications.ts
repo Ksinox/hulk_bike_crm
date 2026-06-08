@@ -63,6 +63,8 @@ export type ApiApplication = {
   sourceCustom: string | null;
   /** G3: предзаявка на аренду — модель скутера (enum scooter_model) и срок. */
   requestedModel: string | null;
+  /** Точное имя выбранной модели из каталога («Yamaha Jog»…) — для показа. */
+  requestedModelName: string | null;
   requestedDays: number | null;
   /** G3: id выбранной экипировки (equipment_items). */
   requestedEquipmentIds: number[] | null;

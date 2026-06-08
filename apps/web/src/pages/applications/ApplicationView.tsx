@@ -144,12 +144,23 @@ export function ApplicationView({ app }: { app: ApiApplication }) {
     [app.requestedEquipmentIds, equipment],
   );
 
-  // Модель из каталога по имени → аватарка + ставки.
+  // Модель из каталога → аватарка + ставки. Сначала по точному имени
+  // (новые заявки сохраняют requestedModelName, напр. «Yamaha Jog»), затем
+  // по грубому enum (старые заявки: jog/gear/honda/tank → ищем модель, в
+  // чьём имени это слово есть подстрокой).
   const model = useMemo(() => {
-    if (!app.requestedModel) return null;
-    const want = app.requestedModel.trim().toLowerCase();
-    return models.find((m) => m.name.trim().toLowerCase() === want) ?? null;
-  }, [app.requestedModel, models]);
+    const byName = app.requestedModelName?.trim().toLowerCase();
+    if (byName) {
+      const m = models.find((m) => m.name.trim().toLowerCase() === byName);
+      if (m) return m;
+    }
+    const e = app.requestedModel?.trim().toLowerCase();
+    if (e) {
+      const m = models.find((m) => m.name.trim().toLowerCase().includes(e));
+      if (m) return m;
+    }
+    return null;
+  }, [app.requestedModelName, app.requestedModel, models]);
 
   // Аватарка модели — avatarKey (прозрачный), НЕ thumbKey (JPEG/чёрный фон).
   const modelAvatar = fileUrl(model?.avatarKey, { variant: "thumb" });
@@ -186,6 +197,7 @@ export function ApplicationView({ app }: { app: ApiApplication }) {
 
   const hasWishes =
     !!app.requestedModel ||
+    !!app.requestedModelName ||
     !!app.requestedDays ||
     !!app.requestedStartDate ||
     (app.requestedEquipmentIds?.length ?? 0) > 0;
@@ -196,9 +208,14 @@ export function ApplicationView({ app }: { app: ApiApplication }) {
         }`
       : null;
   const meta = STATUS_META[app.status];
-  const modelName = app.requestedModel
-    ? app.requestedModel.charAt(0).toUpperCase() + app.requestedModel.slice(1)
-    : null;
+  // Имя для показа: точное сохранённое имя (новые заявки) → имя найденной
+  // модели каталога → капитализированный enum (старые заявки без имени).
+  const modelName =
+    app.requestedModelName?.trim() ||
+    model?.name ||
+    (app.requestedModel
+      ? app.requestedModel.charAt(0).toUpperCase() + app.requestedModel.slice(1)
+      : null);
 
   const hasPassport = app.isForeigner
     ? !!app.passportRaw
