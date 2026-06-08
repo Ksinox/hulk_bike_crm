@@ -1275,6 +1275,13 @@ export function PaymentAcceptDialog({
       return best;
     })();
 
+  // #178: остаток суммы сверх целых дней продления (не покрывает ещё день) —
+  // показываем оператору, чтобы вернул клиенту (или оставил в депозит).
+  const extLeftover =
+    mode === "amount" && extDays > 0
+      ? Math.max(0, forExt - costForExtDays(extDays))
+      : 0;
+
   // G2: продление доступно только для АКТИВНОЙ аренды. Для завершённой
   // (в т.ч. completed_damage) / отменённой показываем только погашение долга
   // (ущерб/ручной/паркинг) — без блока «период продления» и экипировки.
@@ -1726,6 +1733,17 @@ export function PaymentAcceptDialog({
                   </>
                 )}
                 .
+              </div>
+            )}
+            {/* #178: остаток (сдача) сверх целых дней продления — сумма не
+                покрывает ещё один день, вернуть клиенту (или в депозит). */}
+            {extLeftover > 0 && (
+              <div className="mt-2 rounded-[10px] border border-amber-100 bg-amber-50/60 px-3 py-2 text-[11.5px] font-medium text-amber-800">
+                Остаток{" "}
+                <span className="font-bold tabular-nums">
+                  {fmt(extLeftover)} ₽
+                </span>{" "}
+                не покрывает ещё день — вернуть клиенту (или оставить в депозит).
               </div>
             )}
             {/* v0.6.13: Тариф продления — pills + custom.
