@@ -58,6 +58,9 @@ const ApplicationFieldsBody = z
       .enum(["jog", "gear", "honda", "tank"])
       .optional()
       .nullable(),
+    /** Точное имя выбранной модели из каталога (для отображения в заявке).
+     *  requestedModel — грубый enum, это — реальное имя («Yamaha Jog»…). */
+    requestedModelName: z.string().max(120).optional().nullable(),
     requestedDays: z.number().int().min(1).max(365).optional().nullable(),
     requestedEquipmentIds: z
       .array(z.number().int().positive())

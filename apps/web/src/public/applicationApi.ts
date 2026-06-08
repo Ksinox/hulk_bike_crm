@@ -45,6 +45,9 @@ export type ApplicationFields = {
   sourceCustom?: string | null;
   /** G3: предзаявка на аренду — что клиент хочет арендовать. */
   requestedModel?: string | null;
+  /** Точное имя выбранной модели из каталога («Yamaha Jog»…) — для показа
+   *  в заявке. requestedModel остаётся грубым enum для префилла-фильтра. */
+  requestedModelName?: string | null;
   requestedDays?: number | null;
   requestedEquipmentIds?: number[] | null;
   requestedStartDate?: string | null;

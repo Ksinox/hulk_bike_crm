@@ -420,11 +420,12 @@ export function ClientCard({ client }: { client: Client }) {
             <b>Есть предзаполненная аренда из заявки.</b>
             <div className="mt-0.5 text-[12px] text-blue-900/80">
               {[
-                rentalDraftApp.requestedModel
-                  ? ((MODEL_LABEL as Record<string, string>)[
-                      rentalDraftApp.requestedModel
-                    ] ?? rentalDraftApp.requestedModel)
-                  : null,
+                rentalDraftApp.requestedModelName ??
+                  (rentalDraftApp.requestedModel
+                    ? ((MODEL_LABEL as Record<string, string>)[
+                        rentalDraftApp.requestedModel
+                      ] ?? rentalDraftApp.requestedModel)
+                    : null),
                 rentalDraftApp.requestedDays
                   ? `${rentalDraftApp.requestedDays} ${daysWord(rentalDraftApp.requestedDays)}`
                   : null,
