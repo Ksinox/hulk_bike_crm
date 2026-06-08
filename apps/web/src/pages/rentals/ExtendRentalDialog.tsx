@@ -26,6 +26,25 @@ function fmt(n: number) {
   return n.toLocaleString("ru-RU");
 }
 
+/**
+ * #170: «прошлый срок» для подсказки продления. Точные дни последнего
+ * продления на аренде не хранятся (поле days в БД — накопительный итог),
+ * поэтому предлагаем срок по тарифной ступени последних применённых условий.
+ */
+function priorDurationFor(r: Rental): number {
+  if (r.rateUnit === "week") return 7;
+  switch (r.tariffPeriod) {
+    case "month":
+      return 30;
+    case "week":
+      return 7;
+    case "short":
+      return 4;
+    default:
+      return 2;
+  }
+}
+
 export function ExtendRentalDialog({
   rental,
   onClose,
@@ -36,7 +55,10 @@ export function ExtendRentalDialog({
   onExtended?: (newRental: Rental) => void;
 }) {
   const [closing, setClosing] = useState(false);
-  const [days, setDays] = useState(7);
+  // #170: по умолчанию предлагаем срок прошлых условий (а не фикс. 7).
+  const [days, setDays] = useState(() => priorDurationFor(rental));
+  // Подсказка «применить прошлые условия» — показана, пока не скрыли.
+  const [hintDismissed, setHintDismissed] = useState(false);
   // #81: ставка из каталога «Модели» (БД), фолбэк на legacy TARIFF.
   const resolveRate = useModelRateResolver();
   // v0.4.25: чекбокс «Произвольный тариф» + переключатель ед.измерения
@@ -178,6 +200,19 @@ export function ExtendRentalDialog({
     }
   };
 
+  // #170: применить прошлые условия (тариф/ставка/«свой») + предложить срок.
+  const applyPriorConditions = () => {
+    setDays(priorDurationFor(rental));
+    if (rental.customTariff) {
+      setCustomMode(true);
+      setCustomUnit(rental.rateUnit === "week" ? "week" : "day");
+      setCustomRate(rental.rate);
+    } else {
+      setCustomMode(false);
+    }
+    setHintDismissed(true);
+  };
+
   // Когда открыт PaymentAcceptDialog, скрываем основной диалог продления
   // (физически не удаляем — оставляем dialog в DOM-стеке, чтобы при
   // отмене оплаты оператор мог увидеть параметры продления и решить).
@@ -238,6 +273,39 @@ export function ExtendRentalDialog({
               до {rental.endPlanned} {rental.startTime || "12:00"}
             </span>
           </div>
+
+          {/* #170: подсказка «применить прошлые условия» — срок/тариф/ставка
+              (вкл. «свой») из последних применённых к аренде условий. «Да»
+              подставляет их в окно продления, «Нет» скрывает подсказку. */}
+          {!hintDismissed && (
+            <div className="rounded-[10px] border border-blue-100 bg-blue-50/70 px-3 py-2.5">
+              <div className="text-[12px] font-bold text-blue-800">
+                Применить прошлые условия?
+              </div>
+              <div className="mt-0.5 text-[11.5px] text-blue-700/90">
+                ~{priorDurationFor(rental)} дн ·{" "}
+                {TARIFF_PERIOD_LABEL[rental.tariffPeriod]} · {fmt(rental.rate)} ₽/
+                {rental.rateUnit === "week" ? "нед" : "сут"}
+                {rental.customTariff ? " · свой тариф" : ""}
+              </div>
+              <div className="mt-2 flex gap-2">
+                <button
+                  type="button"
+                  onClick={applyPriorConditions}
+                  className="inline-flex items-center gap-1 rounded-full bg-blue-600 px-3.5 py-1.5 text-[12px] font-semibold text-white hover:bg-blue-700"
+                >
+                  <Check size={13} /> Да, применить
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHintDismissed(true)}
+                  className="inline-flex items-center rounded-full px-3.5 py-1.5 text-[12px] font-semibold text-muted hover:bg-surface-soft"
+                >
+                  Нет
+                </button>
+              </div>
+            </div>
+          )}
 
           <label className="text-[12px] font-semibold text-ink">
             На сколько дней продлить
