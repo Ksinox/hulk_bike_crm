@@ -68,6 +68,8 @@ export type Rental = {
   rate: number;
   /** v0.4.25: 'day' (default) или 'week' — единица измерения тарифа. */
   rateUnit?: "day" | "week";
+  /** #168: создана по произвольному («своему») тарифу — ставка вручную. */
+  customTariff?: boolean;
   days: number;
   sum: number;
   deposit: number;

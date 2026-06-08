@@ -219,6 +219,7 @@ export function RevenueRentalsList({
                 days: r.days,
                 rate: r.rate,
                 rateUnit: r.rateUnit ?? ("day" as const),
+                customTariff: r.customTariff ?? false,
                 equipment: r.equipmentJson ?? [],
               }
             : null;
@@ -377,6 +378,11 @@ export function RevenueRentalsList({
                   const base = r.comp!.sum - paidEquipTotal;
                   return (
                     <div className="mx-3 mb-2 rounded-[10px] bg-surface-soft px-3 py-2 text-[12px]">
+                      {r.comp!.customTariff && (
+                        <span className="mb-1.5 inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">
+                          Свой тариф · не по стандартным ценам
+                        </span>
+                      )}
                       <CompositionRow
                         label={`Аренда${days ? ` · ${days} ${plural(days, ["день", "дня", "дней"])} · ${fmt(r.comp!.rate)} ₽/${r.comp!.rateUnit === "week" ? "нед" : "сут"}` : ""}`}
                         value={`${fmt(base)} ₽`}

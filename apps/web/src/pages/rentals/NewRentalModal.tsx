@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, Search, UserPlus, X } from "lucide-react";
+import { Check, Lock, Search, UserPlus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { initialsOf, type Client } from "@/lib/mock/clients";
 import {
@@ -395,6 +395,8 @@ export function NewRentalModal({
         tariffPeriod: isWeeklyCustom ? "week" : period,
         rate,
         rateUnit: isWeeklyCustom ? "week" : "day",
+        // #168: пометка «свой тариф» — оператор задал ставку вручную.
+        customTariff: customMode,
         days,
         sum,
         deposit: depositMode === "sum" ? depositSum : 0,
@@ -754,34 +756,58 @@ export function NewRentalModal({
               у каждой модели свои цены, общий прайс вводит в заблуждение.
             */}
             {selectedScooter && modelFromCatalog && (
-              <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                {(["day", "short", "week", "month"] as const).map((p) => {
-                  const rateP =
-                    p === "day"
-                      ? modelFromCatalog.dayRate
-                      : p === "short"
-                        ? modelFromCatalog.shortRate
-                        : p === "week"
-                          ? modelFromCatalog.weekRate
-                          : modelFromCatalog.monthRate;
-                  return (
-                    <div
-                      key={p}
-                      className={cn(
-                        "rounded-[10px] px-3 py-2 text-[11px]",
-                        !customMode && p === ratePeriod
-                          ? "bg-blue-50 text-blue-700"
-                          : "bg-surface-soft text-muted",
-                      )}
-                    >
-                      <div className="font-semibold uppercase tracking-wider">
-                        {TARIFF_PERIOD_LABEL[p]}
+              <>
+                <div className="mt-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-2">
+                  Тариф подбирается по числу дней автоматически
+                </div>
+                <div className="mt-1.5 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {(["day", "short", "week", "month"] as const).map((p) => {
+                    const rateP =
+                      p === "day"
+                        ? modelFromCatalog.dayRate
+                        : p === "short"
+                          ? modelFromCatalog.shortRate
+                          : p === "week"
+                            ? modelFromCatalog.weekRate
+                            : modelFromCatalog.monthRate;
+                    // Активен ровно тот тир, что соответствует числу дней
+                    // (и только если тариф не задан вручную). Остальные —
+                    // визуально «заблокированы» (замок + приглушение), чтобы
+                    // оператор видел: к этому сроку они не применяются.
+                    const active = !customMode && p === ratePeriod;
+                    return (
+                      <div
+                        key={p}
+                        aria-disabled={!active}
+                        className={cn(
+                          "relative rounded-[10px] border px-3 py-2 text-[11px] transition-all",
+                          active
+                            ? "border-blue-500 bg-blue-50 text-blue-700 ring-1 ring-blue-500"
+                            : "border-transparent bg-surface-soft text-muted-2 opacity-55",
+                        )}
+                      >
+                        <span className="absolute right-1.5 top-1.5">
+                          {active ? (
+                            <Check size={12} className="text-blue-600" />
+                          ) : (
+                            <Lock size={10} className="text-muted-2/60" />
+                          )}
+                        </span>
+                        <div className="pr-4 font-semibold uppercase tracking-wider">
+                          {TARIFF_PERIOD_LABEL[p]}
+                        </div>
+                        <div className="mt-0.5 tabular-nums">{rateP} ₽/сут</div>
                       </div>
-                      <div className="mt-0.5 tabular-nums">{rateP} ₽/сут</div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+                {customMode && (
+                  <div className="mt-2 rounded-[8px] bg-amber-50 px-2.5 py-1.5 text-[11px] font-medium text-amber-700">
+                    Тариф задан вручную — стандартные ставки модели не
+                    применяются.
+                  </div>
+                )}
+              </>
             )}
             {!selectedScooter && (
               <div className="mt-3 rounded-[10px] bg-surface-soft px-3 py-2 text-[12px] text-muted-2">

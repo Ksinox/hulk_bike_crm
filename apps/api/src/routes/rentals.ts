@@ -89,6 +89,8 @@ const CreateRentalBody = z
     /** Новый формат экипировки — снимок из каталога */
     equipmentJson: z.array(EquipmentJsonItem).optional(),
     note: z.string().optional().nullable(),
+    /** v0.9.8: создана по произвольному («своему») тарифу (ставка вручную). */
+    customTariff: z.boolean().optional(),
   })
   .strict();
 
@@ -305,6 +307,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
         paymentMethod: d.paymentMethod,
         equipment: d.equipment ?? [],
         equipmentJson: (d.equipmentJson ?? []) as unknown as object,
+        customTariff: d.customTariff ?? false,
         mileageAtStart: scooterMileageSnapshot,
         note: d.note ?? null,
       })
@@ -355,6 +358,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
           days: row.days,
           sum: row.sum,
           deposit: row.deposit,
+          customTariff: row.customTariff,
           equipment: compEquip,
         },
       },

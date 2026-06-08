@@ -135,6 +135,8 @@ export type ApiRental = {
   rate: number;
   /** v0.4.25: 'day' (default) или 'week' — единица измерения тарифа. */
   rateUnit?: "day" | "week";
+  /** #168: создана по произвольному («своему») тарифу. */
+  customTariff?: boolean;
   deposit: number;
   /** v0.4.49: snapshot исходной суммы залога. Текущий deposit может
    *  быть меньше из-за списаний на ущерб/просрочку — UI показывает

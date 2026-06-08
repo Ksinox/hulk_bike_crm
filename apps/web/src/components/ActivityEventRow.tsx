@@ -518,7 +518,9 @@ export function formatActivitySummary(
         days && rate
           ? ` · ${days} ${plural(days, "день", "дня", "дней")} · ${money(rate)}/${rateUnit}`
           : "";
-      extras.push(`Аренда${tariff}: ${money(base)}`);
+      // #168: пометка «свой тариф» — ставка задана вручную, не по стандарту.
+      const customNote = comp.customTariff === true ? " · свой тариф" : "";
+      extras.push(`Аренда${tariff}${customNote}: ${money(base)}`);
     }
     for (const raw of equip) {
       const e = readRecord(raw);

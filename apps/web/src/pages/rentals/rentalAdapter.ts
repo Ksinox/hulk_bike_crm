@@ -38,6 +38,7 @@ export function adaptRental(
     tariffPeriod: r.tariffPeriod,
     rate: r.rate,
     rateUnit: r.rateUnit ?? "day",
+    customTariff: r.customTariff ?? false,
     days: r.days,
     sum: r.sum,
     deposit: r.deposit,

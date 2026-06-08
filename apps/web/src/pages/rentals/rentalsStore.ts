@@ -382,6 +382,7 @@ function buildRentalBody(
     tariffPeriod: r.tariffPeriod,
     rate: r.rate,
     rateUnit: r.rateUnit ?? "day",
+    customTariff: r.customTariff ?? false,
     deposit: r.deposit,
     depositItem: r.depositItem ?? null,
     startAt: ruToIso(r.start, r.startTime),
