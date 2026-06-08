@@ -2165,11 +2165,29 @@ export async function rentalsRoutes(app: FastifyInstance) {
       const newDailySum = sumPerDay(newItems);
       const dailyDelta = newDailySum - oldDailySum;
 
-      const now = new Date();
-      const endMs = rental.endPlannedAt.getTime();
+      // #179: «дней до конца аренды» считаем по МОСКОВСКОЙ ДАТЕ (как просрочка
+      // и весь остальной долговой расчёт — overdueDaysFor), а НЕ ceil от
+      // UTC-таймстампа. Иначе на UTC-сервере (вечер UTC = уже следующий день
+      // по МСК) + округление вверх давало на день больше, чем «осталось N дн»
+      // в карточке/пикере: пикер обещал +1500, а списывалось 1800. Теперь
+      // совпадает: разница календарных дат по МСК.
+      const toMsk = (d: Date) =>
+        new Date(d.toLocaleString("en-US", { timeZone: "Europe/Moscow" }));
+      const nowMsk = toMsk(new Date());
+      const endMsk = toMsk(rental.endPlannedAt);
+      const todayDate = new Date(
+        nowMsk.getFullYear(),
+        nowMsk.getMonth(),
+        nowMsk.getDate(),
+      );
+      const endDateOnly = new Date(
+        endMsk.getFullYear(),
+        endMsk.getMonth(),
+        endMsk.getDate(),
+      );
       const remainingDays = Math.max(
         0,
-        Math.ceil((endMs - now.getTime()) / 86_400_000),
+        Math.round((endDateOnly.getTime() - todayDate.getTime()) / 86_400_000),
       );
       const totalDelta = dailyDelta * remainingDays;
 
