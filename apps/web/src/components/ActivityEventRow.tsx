@@ -491,9 +491,38 @@ export function formatActivitySummary(
     };
   }
 
-  // ── Создание ──
+  // ── Создание аренды: показываем «тело» — из чего складывается сумма
+  //    (аренда + экипировка + залог). Снимок берётся из meta.composition
+  //    (см. бэкенд rentals.ts, лог rental_created). ──
   if (action === "created" && item.entity === "rental") {
-    return { title: "Аренда создана", change: null, extras: [] };
+    const comp = readRecord(readRecord(item.meta)?.composition);
+    if (!comp) return { title: "Аренда создана", change: null, extras: [] };
+    const extras: string[] = [];
+    const days = typeof comp.days === "number" ? comp.days : null;
+    const rate = typeof comp.rate === "number" ? comp.rate : null;
+    const rateUnit = comp.rateUnit === "week" ? "нед" : "сут";
+    const sum = typeof comp.sum === "number" ? comp.sum : null;
+    const deposit = typeof comp.deposit === "number" ? comp.deposit : null;
+    const equip = Array.isArray(comp.equipment) ? comp.equipment : [];
+    if (sum != null) {
+      const base =
+        days && rate
+          ? ` (${days} ${plural(days, "день", "дня", "дней")} × ${money(rate)}/${rateUnit})`
+          : "";
+      extras.push(`Аренда: ${money(sum)}${base}`);
+    }
+    for (const raw of equip) {
+      const e = readRecord(raw);
+      if (!e || typeof e.name !== "string" || !e.name.trim()) continue;
+      const free = e.free === true || !e.price;
+      extras.push(
+        `Экипировка · ${e.name}: ${free ? "бесплатно" : `${money(e.price)}/сут`}`,
+      );
+    }
+    if (deposit != null && deposit > 0) {
+      extras.push(`Залог (возвратный): ${money(deposit)}`);
+    }
+    return { title: "Аренда создана", change: null, extras };
   }
 
   // ── Редактирование (есть diff, но не покрыто выше) ──

@@ -330,11 +330,34 @@ export async function rentalsRoutes(app: FastifyInstance) {
     }
 
     const summary = await summaryForRental(row.id);
+    // v0.9.7: снимок «тела аренды» в meta — чтобы в истории и финдетализации
+    // видеть из чего складывается сумма (аренда + экипировка + залог).
+    const compEquip = (
+      (row.equipmentJson ?? []) as Array<{
+        name?: string;
+        price?: number;
+        free?: boolean;
+      }>
+    ).map((e) => ({
+      name: e.name ?? "",
+      price: e.price ?? 0,
+      free: e.free !== false,
+    }));
     await logActivity(req, {
       entity: "rental",
       entityId: row.id,
       action: "created",
       summary: `Создана аренда ${summary}`,
+      meta: {
+        composition: {
+          rate: row.rate,
+          rateUnit: row.rateUnit,
+          days: row.days,
+          sum: row.sum,
+          deposit: row.deposit,
+          equipment: compEquip,
+        },
+      },
     });
     return reply.code(201).send(row);
   });
