@@ -1698,17 +1698,22 @@ export function RentalCard({
         }
       />
       {(() => {
-        // v0.9.4: «Эта аренда» = оплата за ПОСЛЕДНИЙ период — берём сумму
-        // САМОГО ПОЗДНЕГО ПО ДАТЕ ПЛАТЕЖА rent-платежа цепочки (последнее
-        // продление, либо базовый период). Раньше брали по id, но id не
-        // всегда совпадает с хронологией → крупная цифра могла показывать
-        // не реально последний период. «Вся аренда (rental.sum)» из подписи
-        // убрана по просьбе заказчика — итог «за всё время» с разбивкой уже
-        // есть в блоке клиента (по наведению).
+        // v0.9.x: «Эта аренда» = оплата за ТЕКУЩИЙ (последний) период:
+        //   базовый/продление rent-платёж + доплаты за этот период
+        //   (экипировка/ручное/просрочка, проведённые с его начала).
+        // Раньше брали просто самый поздний rent-платёж по дате — и оплата
+        // ручного долга (напр. доплата за экипировку, пишется type='rent'
+        // с заметкой «Оплата ручного долга») ПОДМЕНЯЛА собой период:
+        // показывало 1500 (доплату) вместо аренды за период. Теперь период
+        // и доплаты разделены (та же классификация, что у ревизора).
         const rentPays = chainPayments.filter((p) => p.type === "rent");
-        const extendCount = rentPays.filter(
-          (p) => !!p.note && /^продлен/i.test(p.note),
-        ).length;
+        // Доплаты (не «новый период»): ручной долг и выкуп просрочки.
+        const isManualNote = (n?: string | null) =>
+          /ручн[а-яё]*\s+долг/i.test(n ?? "");
+        const isOverdueNote = (n?: string | null) => /просрочк/i.test(n ?? "");
+        const isPeriodPay = (p: { note?: string | null }) =>
+          !isManualNote(p.note) && !isOverdueNote(p.note);
+        const isExtNote = (n?: string | null) => /продлени[ея]/i.test(n ?? "");
         // Дата платежа из useChainPayments — русская «дд.мм.гггг[ чч:мм]».
         // Парсим в сортируемое число (лексикографически она не сортируется).
         const payTs = (s?: string): number => {
@@ -1724,18 +1729,49 @@ export function RentalCard({
             m[5] ? +m[5] : 0,
           ).getTime();
         };
-        const lastPeriodPaid = rentPays.length
-          ? [...rentPays].sort(
-              (a, b) =>
-                payTs(a.date) - payTs(b.date) || (a.id ?? 0) - (b.id ?? 0),
-            )[rentPays.length - 1]!.amount
-          : rental.sum;
+        const byDate = (
+          a: { date?: string; id?: number },
+          b: { date?: string; id?: number },
+        ) => payTs(a.date) - payTs(b.date) || (a.id ?? 0) - (b.id ?? 0);
+        const periodPays = rentPays.filter(isPeriodPay);
+        const extendCount = periodPays.filter((p) => isExtNote(p.note)).length;
+        // Якорь текущего периода — последний базовый/продление платёж.
+        const lastPeriodPay = periodPays.length
+          ? [...periodPays].sort(byDate)[periodPays.length - 1]!
+          : null;
+        const rentPart = lastPeriodPay ? lastPeriodPay.amount : rental.sum;
+        const periodTs = lastPeriodPay ? payTs(lastPeriodPay.date) : 0;
+        // Доплаты текущего периода — не-период rent-платежи с его начала.
+        const surchargePart = rentPays
+          .filter((p) => !isPeriodPay(p) && payTs(p.date) >= periodTs)
+          .reduce((s, p) => s + (p.amount ?? 0), 0);
+        const thisRentalTotal = rentPart + surchargePart;
         const hint = extendCount > 0 ? `продлений ${extendCount}` : undefined;
         return (
           <KpiCard
             label="Эта аренда"
-            value={`${fmt(lastPeriodPaid)} ₽`}
+            value={`${fmt(thisRentalTotal)} ₽`}
             hint={hint}
+            popover={
+              <div className="space-y-1">
+                <div className="font-bold text-ink">
+                  Эта аренда — {fmt(thisRentalTotal)} ₽
+                </div>
+                <div>
+                  аренда за период: <b>{fmt(rentPart)} ₽</b>
+                </div>
+                {surchargePart > 0 && (
+                  <div>
+                    доплаты за период (экип./ручное/просрочка):{" "}
+                    <b>{fmt(surchargePart)} ₽</b>
+                  </div>
+                )}
+                <div className="pt-0.5 text-[10px] text-muted-2">
+                  оплата за текущий открытый период
+                  {extendCount > 0 ? ` · продлений ${extendCount}` : ""}
+                </div>
+              </div>
+            }
           />
         );
       })()}

@@ -101,7 +101,10 @@ function Sticker({
         marginTop: overlap ? -5 : 0,
       }}
       className={cn(
-        "group/sticker relative overflow-hidden rounded-[3px] px-3 pb-2 pt-2.5 shadow-[3px_5px_10px_rgba(0,0,0,0.20)]",
+        // Тень — на СВОБОДНОЙ (левой) стороне: стикер приклеен правым краём к
+        // карточке, со стороны приклейки тени быть не должно (раньше тень шла
+        // вправо-вниз, на сторону приклейки). Теперь влево-вниз.
+        "group/sticker relative overflow-hidden rounded-[3px] px-3 pb-2 pt-2.5 shadow-[-5px_5px_11px_rgba(0,0,0,0.20)]",
         "transition-all duration-[260ms] ease-out",
         flying
           ? "pointer-events-none translate-y-24 scale-90 opacity-0"
@@ -119,7 +122,7 @@ function Sticker({
       {/* полупрозрачный «скотч» на ПРАВОМ краю по центру — стикер выглядит
           приклеенным правым краём к карточке аренды (скотч на стыке).
           Держим внутри (sticker overflow-hidden обрезал бы вынос наружу). */}
-      <span className="pointer-events-none absolute right-0.5 top-1/2 h-12 w-3.5 -translate-y-1/2 -rotate-2 bg-white/35 shadow-sm" />
+      <span className="pointer-events-none absolute right-0.5 top-1/2 h-12 w-3.5 -translate-y-1/2 -rotate-2 bg-white/35" />
 
       {onUnpin && (
         <button
