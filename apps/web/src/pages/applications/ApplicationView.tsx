@@ -272,6 +272,21 @@ export function ApplicationView({ app }: { app: ApiApplication }) {
               {ruDateTime(app.submittedAt ?? app.createdAt)}
             </div>
           </div>
+
+          {/* Быстрый взгляд «к оплате» — детальная финсводка справа в колонке */}
+          {quote && (
+            <div className="flex shrink-0 flex-col justify-center rounded-2xl bg-blue-50 px-4 py-3 text-center ring-1 ring-inset ring-blue-100">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-blue-700/70">
+                К оплате
+              </div>
+              <div className="font-display text-[26px] font-extrabold leading-none text-blue-700">
+                {rub(quote.total)} ₽
+              </div>
+              <div className="mt-1 text-[10.5px] font-semibold text-muted">
+                ориентир
+              </div>
+            </div>
+          )}
         </section>
 
         {/* ── Хочет арендовать: КРУПНО модель + экипировка + период ── */}
