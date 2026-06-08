@@ -11,9 +11,7 @@ import {
   ImageOff,
   FileText,
   AlertTriangle,
-  Wallet,
   IdCard,
-  Globe,
   Hash,
 } from "lucide-react";
 import { I18nProvider } from "react-aria-components";
@@ -238,7 +236,7 @@ export function ApplicationView({ app }: { app: ApiApplication }) {
             disabled={!selfie}
             onClick={() => selfie && setZoom("selfie")}
             className={cn(
-              "group relative aspect-[9/16] w-[124px] shrink-0 overflow-hidden rounded-[22px] ring-1 ring-inset ring-border shadow-card-sm sm:w-[140px]",
+              "group relative aspect-[9/16] w-[130px] shrink-0 overflow-hidden rounded-[22px] ring-1 ring-inset ring-border shadow-card sm:w-[164px]",
               selfie ? "bg-ink/5" : "bg-surface-soft",
             )}
             title={selfie ? "Открыть селфи" : undefined}
@@ -253,13 +251,14 @@ export function ApplicationView({ app }: { app: ApiApplication }) {
                   alt="селфи"
                   className="h-full w-full object-cover"
                 />
-                <span className="absolute bottom-1.5 right-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-black/45 text-white opacity-0 backdrop-blur-sm transition-opacity group-hover:opacity-100">
+                <span className="absolute bottom-2 right-2 flex h-7 w-7 items-center justify-center rounded-full bg-black/45 text-white opacity-0 backdrop-blur-sm transition-opacity group-hover:opacity-100">
                   <Maximize2 size={13} />
                 </span>
               </>
             ) : (
-              <span className="flex h-full w-full items-center justify-center text-muted-2">
-                <User size={40} />
+              <span className="flex h-full w-full flex-col items-center justify-center gap-1.5 text-muted-2">
+                <User size={36} />
+                <span className="text-[10px] font-semibold">нет селфи</span>
               </span>
             )}
           </button>
@@ -291,12 +290,13 @@ export function ApplicationView({ app }: { app: ApiApplication }) {
           </div>
         </section>
 
-        {/* ── Хочет арендовать: фирменный светлый стиль, аватарка-герой ── */}
+        {/* ── Что выбрал клиент: модель + экипировка + период + СУММА вместе,
+            одной презентацией (как Apple-карточка) ── */}
         {hasWishes && (
           <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-blue-50 via-surface to-blue-50/50 p-5 shadow-card ring-1 ring-inset ring-blue-100">
             <div className="relative z-10">
               <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-blue-700/60">
-                <Bike size={13} /> Хочет арендовать
+                <Bike size={13} /> Что выбрал клиент
               </span>
 
               {/* Имя модели — крупно, красивым шрифтом */}
@@ -351,7 +351,7 @@ export function ApplicationView({ app }: { app: ApiApplication }) {
                           </span>
                           {e.name}
                           <span className="text-muted-2">
-                            {e.isFree ? "бесплатно" : `+${rub(e.price)} ₽`}
+                            {e.isFree ? "бесплатно" : `+${rub(e.price)} ₽/сут`}
                           </span>
                         </span>
                       );
@@ -400,6 +400,37 @@ export function ApplicationView({ app }: { app: ApiApplication }) {
                   ) : null}
                 </div>
               </div>
+
+              {/* Финсводка — внутри карточки выбора: «скутер + экипировка +
+                  срок + СУММА» читаются одной презентацией. */}
+              {quote && (
+                <div className="mt-5 rounded-2xl bg-surface p-3.5 shadow-card-sm ring-1 ring-inset ring-border">
+                  <FinRow label="Аренда" value={`${rub(quote.rentSum)} ₽`} />
+                  {quote.equipSum > 0 && (
+                    <FinRow
+                      label="Экипировка"
+                      value={`${rub(quote.equipSum)} ₽`}
+                    />
+                  )}
+                  <FinRow
+                    label="Залог (возвратный)"
+                    value={`${rub(quote.deposit)} ₽`}
+                    muted
+                  />
+                  <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl bg-gradient-to-br from-blue-600 to-blue-700 px-4 py-3 text-white shadow-card-sm">
+                    <span className="text-[12px] font-bold uppercase tracking-wide text-white/80">
+                      Итого к оплате
+                    </span>
+                    <span className="font-display text-[28px] font-extrabold leading-none tabular-nums">
+                      {rub(quote.total)} ₽
+                    </span>
+                  </div>
+                  <p className="mt-2 px-0.5 text-[10.5px] leading-snug text-muted-2">
+                    Ориентир по тарифам каталога. Точную сумму зафиксируете при
+                    оформлении аренды.
+                  </p>
+                </div>
+              )}
             </div>
           </section>
         )}
@@ -431,83 +462,76 @@ export function ApplicationView({ app }: { app: ApiApplication }) {
 
       {/* ═══════════════ ПРАВАЯ КОЛОНКА (паспорт → даты → расчёт) ═══════════════ */}
       <div className="flex min-w-0 flex-col gap-4">
-        {/* ── Информация о клиенте: паспорт (не выделен) + адрес + анкета ── */}
+        {/* ── Личное дело: паспорт разнесён по полям (серия/номер/кем
+            выдан/дата/код) + адрес + анкета. Раньше всё было «в кучу». ── */}
         {(hasPassport ||
           app.passportRegistration ||
           app.liveAddress ||
           app.extraPhone) && (
           <div>
-            <SectionLabel icon={<User size={12} />}>
-              Информация о клиенте
-            </SectionLabel>
-            <div className="rounded-2xl bg-surface px-3.5 shadow-card-sm ring-1 ring-inset ring-border">
+            <SectionLabel icon={<IdCard size={12} />}>Личное дело</SectionLabel>
+            <div className="rounded-2xl bg-surface p-3 shadow-card-sm ring-1 ring-inset ring-border">
               {hasPassport &&
                 (app.isForeigner ? (
-                  <InfoRow
-                    icon={<IdCard size={14} />}
-                    label="Документ"
-                    value={app.passportRaw ?? "—"}
-                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <Field
+                      wide
+                      label="Документ иностранца"
+                      value={app.passportRaw}
+                    />
+                    <Field label="Дата рождения" value={ruDate(app.birthDate)} />
+                    <Field label="Гражданство" value="Иностранец" />
+                  </div>
                 ) : (
-                  <>
-                    <InfoRow
-                      icon={<IdCard size={14} />}
-                      label="Паспорт РФ"
+                  <div className="grid grid-cols-2 gap-2">
+                    <Field label="Серия паспорта" value={app.passportSeries} />
+                    <Field label="Номер паспорта" value={app.passportNumber} />
+                    <Field wide label="Кем выдан" value={app.passportIssuer} />
+                    <Field
+                      label="Дата выдачи"
                       value={
-                        <span className="tabular-nums">
-                          {app.passportSeries ?? "—"}{" "}
-                          <span className="text-muted-2">№</span>{" "}
-                          {app.passportNumber ?? "—"}
-                        </span>
+                        app.passportIssuedOn
+                          ? ruDate(app.passportIssuedOn)
+                          : null
                       }
                     />
-                    {issued && (
-                      <InfoRow label="Кем и когда выдан" value={issued} />
-                    )}
-                    {app.passportDivisionCode && (
-                      <InfoRow
-                        label="Код подразделения"
-                        value={app.passportDivisionCode}
-                      />
-                    )}
-                    <InfoRow
-                      label="Дата рождения"
-                      value={ruDate(app.birthDate)}
+                    <Field
+                      label="Код подразделения"
+                      value={app.passportDivisionCode}
                     />
-                  </>
+                    <Field label="Дата рождения" value={ruDate(app.birthDate)} />
+                    <Field label="Гражданство" value="РФ" />
+                  </div>
                 ))}
 
-              {app.passportRegistration && (
+              {/* Адрес и анкета — строками под паспортной сеткой. */}
+              <div className="mt-1 px-0.5">
+                {app.passportRegistration && (
+                  <InfoRow
+                    icon={<MapPin size={14} />}
+                    label="Регистрация"
+                    value={app.passportRegistration}
+                  />
+                )}
+                {app.liveAddress && !app.sameAddress && (
+                  <InfoRow label="Проживание" value={app.liveAddress} />
+                )}
+                {app.sameAddress && app.passportRegistration && (
+                  <InfoRow label="Проживание" value="совпадает с регистрацией" />
+                )}
+                {app.extraPhone && (
+                  <InfoRow
+                    icon={<Phone size={14} />}
+                    label="Доп. телефон"
+                    value={app.extraPhone}
+                  />
+                )}
                 <InfoRow
-                  icon={<MapPin size={14} />}
-                  label="Регистрация"
-                  value={app.passportRegistration}
+                  icon={<Hash size={14} />}
+                  label="Источник"
+                  value={sourceText(app)}
                 />
-              )}
-              {app.liveAddress && !app.sameAddress && (
-                <InfoRow label="Проживание" value={app.liveAddress} />
-              )}
-              {app.sameAddress && app.passportRegistration && (
-                <InfoRow label="Проживание" value="совпадает с регистрацией" />
-              )}
-
-              <InfoRow
-                icon={<Globe size={14} />}
-                label="Гражданство"
-                value={app.isForeigner ? "Иностранец" : "РФ"}
-              />
-              {app.extraPhone && (
-                <InfoRow
-                  icon={<Phone size={14} />}
-                  label="Доп. телефон"
-                  value={app.extraPhone}
-                />
-              )}
-              <InfoRow
-                icon={<Hash size={14} />}
-                label="Источник"
-                value={sourceText(app)}
-              />
+              </div>
             </div>
           </div>
         )}
@@ -536,38 +560,6 @@ export function ApplicationView({ app }: { app: ApiApplication }) {
                 connector
               />
               <DateNode label="Конец периода" date={ruDate(endIso)} />
-            </div>
-          </div>
-        )}
-
-        {/* ── Финансовая сводка — внизу блока ── */}
-        {quote && (
-          <div>
-            <SectionLabel icon={<Wallet size={12} />}>
-              Финансовая сводка
-            </SectionLabel>
-            <div className="rounded-2xl bg-surface p-3.5 shadow-card ring-1 ring-inset ring-border">
-              <FinRow label="Аренда" value={`${rub(quote.rentSum)} ₽`} />
-              {quote.equipSum > 0 && (
-                <FinRow label="Экипировка" value={`${rub(quote.equipSum)} ₽`} />
-              )}
-              <FinRow
-                label="Залог (возвратный)"
-                value={`${rub(quote.deposit)} ₽`}
-                muted
-              />
-              <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl bg-gradient-to-br from-blue-600 to-blue-700 px-4 py-3 text-white shadow-card-sm">
-                <span className="text-[12px] font-bold uppercase tracking-wide text-white/80">
-                  Итого к оплате
-                </span>
-                <span className="font-display text-[28px] font-extrabold leading-none tabular-nums">
-                  {rub(quote.total)} ₽
-                </span>
-              </div>
-              <p className="mt-2 px-0.5 text-[10.5px] leading-snug text-muted-2">
-                Ориентир по тарифам каталога. Точную сумму зафиксируете при
-                оформлении аренды.
-              </p>
             </div>
           </div>
         )}
@@ -689,6 +681,40 @@ function InfoRow({
       <span className="text-right text-[12.5px] font-semibold text-ink">
         {value}
       </span>
+    </div>
+  );
+}
+
+/* ===================== Поле паспорта (ячейка сетки) ===================== */
+function Field({
+  label,
+  value,
+  wide,
+}: {
+  label: string;
+  value: React.ReactNode;
+  wide?: boolean;
+}) {
+  const empty =
+    value == null || value === "" || value === "—" || value === false;
+  return (
+    <div
+      className={cn(
+        "rounded-xl bg-surface-soft/70 px-3 py-2 ring-1 ring-inset ring-border/70",
+        wide && "col-span-2",
+      )}
+    >
+      <div className="text-[9.5px] font-bold uppercase tracking-wider text-muted-2">
+        {label}
+      </div>
+      <div
+        className={cn(
+          "mt-0.5 break-words text-[13.5px] font-semibold tabular-nums",
+          empty ? "text-muted-2" : "text-ink",
+        )}
+      >
+        {empty ? "—" : value}
+      </div>
     </div>
   );
 }
