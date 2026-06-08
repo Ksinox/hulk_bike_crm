@@ -1,14 +1,15 @@
 import { useMemo, useState } from "react";
-import { Inbox, Phone, ChevronRight, Check, X } from "lucide-react";
+import { Inbox, Phone, ChevronRight, Check, X, Trash2 } from "lucide-react";
 import {
   useApplications,
   useRejectApplication,
+  useDeleteApplication,
   REJECTION_REASON_LABEL,
   type ApiApplication,
   type ApplicationStatus,
   type RejectionReasonCode,
 } from "@/lib/api/clientApplications";
-import { toast } from "@/lib/toast";
+import { toast, confirmDialog } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 import { MobileNewClient } from "../forms/MobileNewClient";
 import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
@@ -127,6 +128,7 @@ export function MobileApplications() {
             app={openApp}
             onAccept={() => setConvertApp(openApp)}
             onReject={() => setRejectApp(openApp)}
+            onDeleted={() => setOpenId(null)}
             onCreateRental={() => {
               if (openApp.clientId == null) return;
               setOpenId(null);
@@ -240,15 +242,30 @@ function AppDetail({
   onAccept,
   onReject,
   onCreateRental,
+  onDeleted,
 }: {
   app: ApiApplication;
   onAccept: () => void;
   onReject: () => void;
   onCreateRental: () => void;
+  onDeleted: () => void;
 }) {
+  const deleteApp = useDeleteApplication();
   const actionable = app.status === "new" || app.status === "viewed";
   // Принята, клиент создан, но аренду не дооформили — даём возобновить.
   const canResumeRental = app.status === "accepted" && app.clientId != null;
+  const handleDelete = async () => {
+    const ok = await confirmDialog({
+      title: "Удалить заявку?",
+      message:
+        "Заявка и её фото удалятся безвозвратно. Клиент и аренда по ней (если оформлены) останутся.",
+      confirmText: "Удалить",
+      danger: true,
+    });
+    if (!ok) return;
+    await deleteApp.mutateAsync(app.id);
+    onDeleted();
+  };
   return (
     <div className="pb-1">
       <ApplicationView app={app} />
@@ -292,6 +309,15 @@ function AppDetail({
             Заявка уже обработана
           </p>
         )}
+        {/* Удалить заявку безвозвратно (тест / клиент передумал). */}
+        <button
+          type="button"
+          onClick={handleDelete}
+          disabled={deleteApp.isPending}
+          className="mt-1 flex items-center justify-center gap-1.5 rounded-2xl py-2.5 text-[13px] font-semibold text-red-600 active:scale-[0.99] disabled:opacity-50"
+        >
+          <Trash2 size={15} /> Удалить заявку
+        </button>
       </div>
     </div>
   );

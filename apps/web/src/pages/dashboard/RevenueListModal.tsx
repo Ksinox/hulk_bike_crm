@@ -8,6 +8,7 @@ import {
   type RevenuePeriod,
   type MethodFilter,
   type RevenueScope,
+  type RevenueTypeFilter,
 } from "./RevenueRentalsList";
 import { useDashboardDrawer } from "./DashboardDrawer";
 import { DateRangePicker } from "@/components/ui/date-picker";
@@ -25,6 +26,17 @@ const METHOD_TABS: { id: MethodFilter; label: string }[] = [
   { id: "all", label: "Все" },
   { id: "cash", label: "Наличные" },
   { id: "cashless", label: "Безнал" },
+];
+
+const TYPE_TABS: { id: RevenueTypeFilter; label: string }[] = [
+  { id: "all", label: "Все виды" },
+  { id: "rent", label: "Аренда" },
+  { id: "extend", label: "Продление" },
+  { id: "fine", label: "Штраф" },
+  { id: "damage", label: "Ущерб" },
+  { id: "equipment_fee", label: "Экипировка" },
+  { id: "swap_fee", label: "Замена" },
+  { id: "parking", label: "Паркинг" },
 ];
 
 /**
@@ -66,6 +78,7 @@ export function RevenueListModal({
   } | null>(initialRange);
   const [methodFilter, setMethodFilter] =
     useState<MethodFilter>(initialMethodFilter);
+  const [typeFilter, setTypeFilter] = useState<RevenueTypeFilter>("all");
   const drawer = useDashboardDrawer();
 
   // Подписка на якоря: окно/подпись расчётного периода читаются из
@@ -196,13 +209,34 @@ export function RevenueListModal({
             periodLabel={periodLabel}
             scopeLabel={scopeLabel}
           />
-          <div className="mb-2 mt-5 text-[12px] font-semibold uppercase tracking-wider text-muted-2">
-            Платежи за период · детализация
+          <div className="mb-2 mt-5 flex flex-wrap items-center gap-2">
+            <span className="mr-1 text-[12px] font-semibold uppercase tracking-wider text-muted-2">
+              Платежи за период · детализация
+            </span>
+            {/* Фильтр по виду операции — сужает список (не сводку выше). */}
+            <div className="inline-flex flex-wrap gap-1">
+              {TYPE_TABS.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setTypeFilter(t.id)}
+                  className={cn(
+                    "rounded-full px-2.5 py-0.5 text-[11px] font-semibold transition-colors",
+                    typeFilter === t.id
+                      ? "bg-blue-600 text-white"
+                      : "bg-surface-soft text-muted-2 hover:text-ink",
+                  )}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
           </div>
           <RevenueRentalsList
             period={period}
             range={customRange}
             methodFilter={methodFilter}
+            typeFilter={typeFilter}
             scope={scope}
             onRowClick={(id) => {
               requestClose();

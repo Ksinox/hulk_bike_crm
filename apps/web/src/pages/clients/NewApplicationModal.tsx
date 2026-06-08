@@ -1,7 +1,10 @@
 import { useEffect } from "react";
 import { confirmDialog } from "@/lib/toast";
 import { AlertCircle, Bell, Bike, Check, Clock, Trash2, X } from "lucide-react";
-import type { ApiApplication } from "@/lib/api/clientApplications";
+import {
+  useDeleteApplication,
+  type ApiApplication,
+} from "@/lib/api/clientApplications";
 import { ApplicationView } from "@/pages/applications/ApplicationView";
 
 /**
@@ -21,7 +24,8 @@ type Props = {
   onReject?: () => void;
   /** Открывает форму причины и помечает заявку 'spam'. */
   onSpam?: () => void;
-  /** Legacy: пометить как спам через старый DELETE (виджет дашборда). */
+  /** @deprecated Игнорируется: удаление теперь самодостаточно внутри модалки
+   *  (жёсткий DELETE). Оставлен в типе, чтобы старые вызовы не падали. */
   onDelete?: () => void;
   /**
    * Заявка уже принята (клиент создан), но аренду не дооформили — даёт
@@ -39,7 +43,6 @@ export function NewApplicationModal({
   onLater,
   onReject,
   onSpam,
-  onDelete,
   onCreateRental,
   readOnly,
 }: Props) {
@@ -51,15 +54,21 @@ export function NewApplicationModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [onLater]);
 
-  const handleLegacyDelete = async () => {
-    if (!onDelete) return;
+  const deleteApp = useDeleteApplication();
+  const handleDelete = async () => {
     const ok = await confirmDialog({
-      title: "Удалить заявку как спам?",
-      message: "Удалить заявку как спам? Действие необратимо.",
-      confirmText: "Удалить",
+      title: "Удалить заявку?",
+      message:
+        "Заявка и её фото будут удалены безвозвратно. Если клиент и аренда по ней уже оформлены — они останутся (счётчик «оформлено в аренду» не изменится).",
+      confirmText: "Удалить заявку",
       danger: true,
     });
-    if (ok) onDelete();
+    if (!ok) return;
+    // Самодостаточный жёсткий DELETE: одинаково во всех местах, где
+    // показывается модалка. Старый проп onDelete был перегружен (в одних
+    // вызовах — delete, в других — markSpam), поэтому больше его не зовём.
+    await deleteApp.mutateAsync(application.id);
+    onLater();
   };
 
   return (
@@ -110,15 +119,16 @@ export function NewApplicationModal({
                   <Trash2 size={14} /> Отклонить
                 </button>
               )}
-              {!onSpam && !onReject && onDelete && (
-                <button
-                  type="button"
-                  onClick={handleLegacyDelete}
-                  className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-2 text-[12px] font-semibold text-red-600 transition-colors hover:bg-red-50"
-                >
-                  <Trash2 size={14} /> Это спам
-                </button>
-              )}
+              {/* Удалить заявку безвозвратно (тест / клиент передумал).
+                  Доступно всегда; спам/отклонить — мягкие статусы в архив. */}
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={deleteApp.isPending}
+                className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-2 text-[12px] font-semibold text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50"
+              >
+                <Trash2 size={14} /> Удалить
+              </button>
             </div>
             <div className="flex flex-1 gap-2 sm:justify-end">
               <button

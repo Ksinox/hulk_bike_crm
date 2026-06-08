@@ -93,15 +93,42 @@ export function isRevenuePayment(p: ApiPayment): boolean {
   return true;
 }
 
-// Человекочитаемый тип платежа.
-const TYPE_LABEL: Record<string, string> = {
+/** Тип-фильтр списка платежей (сверка по видам операций). */
+export type RevenueTypeFilter =
+  | "all"
+  | "rent"
+  | "extend"
+  | "fine"
+  | "damage"
+  | "equipment_fee"
+  | "swap_fee"
+  | "parking";
+
+/** Метка вида операции (без «all»). Продление выделено из аренды. */
+export const REVENUE_TYPE_LABEL: Record<
+  Exclude<RevenueTypeFilter, "all">,
+  string
+> = {
   rent: "Аренда",
+  extend: "Продление",
   fine: "Штраф",
   damage: "Ущерб",
-  swap_fee: "Замена скутера",
   equipment_fee: "Экипировка",
+  swap_fee: "Замена скутера",
   parking: "Паркинг",
 };
+
+/** Классифицирует платёж по виду; продление = rent с пометкой в note. */
+function paymentTypeKey(p: ApiPayment): Exclude<RevenueTypeFilter, "all"> {
+  if (p.type === "rent")
+    return p.note && /продлен/i.test(p.note) ? "extend" : "rent";
+  if (p.type === "fine") return "fine";
+  if (p.type === "damage") return "damage";
+  if (p.type === "equipment_fee") return "equipment_fee";
+  if (p.type === "swap_fee") return "swap_fee";
+  if (p.type === "parking") return "parking";
+  return "rent";
+}
 
 /**
  * v0.9: список ПЛАТЕЖЕЙ за период (раньше группировался по арендам). Каждый
@@ -119,6 +146,7 @@ export function RevenueRentalsList({
   dayFilter,
   range,
   methodFilter = "all",
+  typeFilter = "all",
   scope = "all",
 }: {
   period: RevenuePeriod;
@@ -130,6 +158,8 @@ export function RevenueRentalsList({
   range?: { from: string; to: string } | null;
   /** Способ оплаты: всё / только наличные / только безнал. */
   methodFilter?: MethodFilter;
+  /** Вид операции: всё / аренда / продление / штраф / ущерб / экип / … */
+  typeFilter?: RevenueTypeFilter;
   /** Область: только аренды или все операции (на будущее). */
   scope?: RevenueScope;
 }) {
@@ -167,6 +197,8 @@ export function RevenueRentalsList({
         if (t < start.getTime() || t >= end.getTime()) return false;
         if (methodFilter === "cash" && !isCashPayment(p)) return false;
         if (methodFilter === "cashless" && isCashPayment(p)) return false;
+        if (typeFilter !== "all" && paymentTypeKey(p) !== typeFilter)
+          return false;
         return true;
       })
       .map((p) => {
@@ -179,13 +211,26 @@ export function RevenueRentalsList({
           paidAt: p.paidAt!,
           amount: p.amount,
           cash: isCashPayment(p),
-          typeLabel: TYPE_LABEL[p.type] ?? p.type,
+          typeLabel: REVENUE_TYPE_LABEL[paymentTypeKey(p)],
           clientName: client?.name ?? "—",
           scooterName: scooter?.name ?? "—",
         };
       })
-      .sort((a, b) => b.paidAt.localeCompare(a.paidAt));
-  }, [rentals, payments, clients, scooters, start, end, methodFilter, scope]);
+      // v0.9.7: свежие сверху — по id платежа (= порядку фиксации), а НЕ по
+      // «дате оплаты». Иначе платёж, датированный задним числом (частый кейс
+      // при продлении), тонул вниз, хотя приняли его только что.
+      .sort((a, b) => b.paymentId - a.paymentId);
+  }, [
+    rentals,
+    payments,
+    clients,
+    scooters,
+    start,
+    end,
+    methodFilter,
+    typeFilter,
+    scope,
+  ]);
 
   const total = rows.reduce((s, r) => s + r.amount, 0);
   const cashTotal = rows

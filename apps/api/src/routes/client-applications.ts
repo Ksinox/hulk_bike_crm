@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { and, desc, eq, inArray, ilike, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, ilike, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/index.js";
 import {
@@ -7,6 +7,7 @@ import {
   clientApplications,
   clientDocuments,
   clients,
+  rentals,
 } from "../db/schema.js";
 import {
   copyObject,
@@ -163,6 +164,31 @@ export async function clientApplicationsRoutes(app: FastifyInstance) {
       };
     },
   );
+
+  /* GET /api/client-applications/converted-count
+   * Дашборд-метрика «заявки → аренда» (накопительно): сколько клиентов,
+   * пришедших из публичной заявки (fromApplication=true), имеют хотя бы одну
+   * НЕудалённую аренду (archivedAt IS NULL — active либо completed, но не
+   * ушедшую в архив). Устойчиво к удалению самой заявки (флаг живёт на
+   * клиенте); убывает только когда у клиента не осталось живых аренд.
+   * Статичный путь регистрируем раньше «/:id» (Fastify приоритизирует
+   * статические маршруты, но держим явно). */
+  app.get("/converted-count", async () => {
+    // clientId-ы, у которых есть хотя бы одна НЕархивная аренда.
+    const live = await db
+      .selectDistinct({ clientId: rentals.clientId })
+      .from(rentals)
+      .where(isNull(rentals.archivedAt));
+    const liveIds = live.map((r) => r.clientId);
+    if (liveIds.length === 0) return { count: 0 };
+    const rows = await db
+      .select({ id: clients.id })
+      .from(clients)
+      .where(
+        and(eq(clients.fromApplication, true), inArray(clients.id, liveIds)),
+      );
+    return { count: rows.length };
+  });
 
   /* GET /api/client-applications/:id — деталь */
   app.get<{ Params: { id: string } }>("/:id", async (req, reply) => {
@@ -440,6 +466,9 @@ export async function clientApplicationsRoutes(app: FastifyInstance) {
           ...clientFields,
           source: clientFields.source ?? "other",
           rating: clientFields.rating ?? 80,
+          // v0.9.7: клиент пришёл из публичной заявки — метка для
+          // дашборд-счётчика «заявки → аренда».
+          fromApplication: true,
         })
         .returning();
       if (!newClient) {

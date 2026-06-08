@@ -238,6 +238,14 @@ export const clients = pgTable(
     blacklistBy: text("blacklist_by"),
     /** «Не выходит на связь» — двусторонняя метка client↔rentals */
     unreachable: boolean("unreachable").notNull().default(false),
+    /**
+     * v0.9.7: клиент создан из публичной заявки (анкета по ссылке). Нужен
+     * для дашборд-метрики «заявки → аренда»: счёт устойчив к удалению самой
+     * заявки (флаг живёт на клиенте), убирается только когда удалены все его
+     * аренды. Ставится при convert; для старых клиентов проставляется
+     * backfill-ом в миграции по принятым заявкам.
+     */
+    fromApplication: boolean("from_application").notNull().default(false),
 
     // Паспорт
     birthDate: date("birth_date"),
