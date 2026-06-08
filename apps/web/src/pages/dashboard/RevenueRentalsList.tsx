@@ -16,7 +16,7 @@ export type MethodFilter = "all" | "cash" | "cashless";
 /**
  * Вычисляет окно [start; end] для выбранного периода.
  *  - day:   сегодня 00:00 — завтра 00:00
- *  - week:  понедельник этой недели — следующий понедельник
+ *  - week:  ПОСЛЕДНИЕ 7 ДНЕЙ (включая сегодня), скользящее окно
  *  - month: РАСЧЁТНЫЙ ПЕРИОД БИЗНЕСА (15→14, или другой день из настроек).
  */
 export function periodWindow(period: RevenuePeriod): {
@@ -30,10 +30,13 @@ export function periodWindow(period: RevenuePeriod): {
     return { start, end };
   }
   if (period === "week") {
-    const dow = now.getDay() === 0 ? 7 : now.getDay();
-    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    start.setDate(start.getDate() - (dow - 1));
-    const end = new Date(start.getTime() + 7 * 86_400_000);
+    // «Неделя» = последние 7 дней (включая сегодня), а НЕ календарная
+    // неделя с понедельника. Иначе в понедельник окно почти пустое: платежи
+    // конца прошлой недели (или датированные «датой оплаты» на пару дней
+    // назад — частый кейс при продлении) проваливались в «прошлую неделю»
+    // и вкладка показывала нули.
+    const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    const start = new Date(end.getTime() - 7 * 86_400_000);
     return { start, end };
   }
   const bp = currentBillingPeriod(now);
