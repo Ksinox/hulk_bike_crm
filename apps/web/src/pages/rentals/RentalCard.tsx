@@ -71,6 +71,7 @@ import {
   useRentalDebt,
   useChargeManualDebt,
   useForgiveOverdue,
+  equipmentDebtPortion,
 } from "@/lib/api/debt";
 import { useRentalParking, useEndParking } from "@/lib/api/parking";
 import { RentalActionsMenu, type MenuAction } from "./RentalActionsMenu";
@@ -864,6 +865,11 @@ export function RentalCard({
   );
   const damageBalance = debtSummary?.damageBalance ?? totalDebt;
   const manualBalance = debtSummary?.manualBalance ?? 0;
+  // #179: у каждого долга — понятная подпись «за что». Экипировочную доплату
+  // (manual_charge с комментарием «Изменение экипировки …») отделяем от
+  // обезличенного «ручного начисления» → подпись «за экипировку».
+  const equipmentManualBalance = equipmentDebtPortion(debtSummary);
+  const otherManualBalance = Math.max(0, manualBalance - equipmentManualBalance);
   // v0.8.0: неоплаченный паркинг — часть долга (с подписью «паркинг»).
   const parkingBalance = debtSummary?.parkingBalance ?? 0;
   // Кол-во неоплаченных дней паркинга — для подписи «за N дн».
@@ -882,7 +888,10 @@ export function RentalCard({
   if (overdueBalance > 0 && overdueDaysBalance + overdueFineBalance === 0)
     debtParts.push(`просрочка ${fmt(overdueBalance)} ₽`);
   if (damageBalance > 0) debtParts.push(`ущерб ${fmt(damageBalance)} ₽`);
-  if (manualBalance > 0) debtParts.push(`ручной ${fmt(manualBalance)} ₽`);
+  if (equipmentManualBalance > 0)
+    debtParts.push(`за экип. ${fmt(equipmentManualBalance)} ₽`);
+  if (otherManualBalance > 0)
+    debtParts.push(`ручной ${fmt(otherManualBalance)} ₽`);
   if (parkingBalance > 0) debtParts.push(`паркинг ${fmt(parkingBalance)} ₽`);
   const debtHint = debtTotal === 0 ? "нет долгов" : debtParts.join(" + ");
   // Просрочка — дни + дата + ставка/сут (для hover плашки «Просрочка»).
@@ -1675,8 +1684,11 @@ export function RentalCard({
               {damageBalance > 0 && (
                 <div>ущерб: <b>{fmt(damageBalance)} ₽</b></div>
               )}
-              {manualBalance > 0 && (
-                <div>ручной: <b>{fmt(manualBalance)} ₽</b></div>
+              {equipmentManualBalance > 0 && (
+                <div>за экипировку: <b>{fmt(equipmentManualBalance)} ₽</b></div>
+              )}
+              {otherManualBalance > 0 && (
+                <div>ручное начисление: <b>{fmt(otherManualBalance)} ₽</b></div>
               )}
               {parkingBalance > 0 && (
                 <div>паркинг: <b>{fmt(parkingBalance)} ₽</b></div>
@@ -2396,11 +2408,18 @@ export function RentalCard({
                         value={damageBalance}
                       />
                     )}
-                    {manualBalance > 0 && (
+                    {equipmentManualBalance > 0 && (
+                      <DebtRow
+                        label="За экипировку"
+                        formula="доплата за изменение экипировки на аренде"
+                        value={equipmentManualBalance}
+                      />
+                    )}
+                    {otherManualBalance > 0 && (
                       <DebtRow
                         label="Ручное начисление"
                         formula="начислено оператором вручную"
-                        value={manualBalance}
+                        value={otherManualBalance}
                       />
                     )}
                     {pending > 0 && (

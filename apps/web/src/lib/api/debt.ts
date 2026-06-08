@@ -99,6 +99,37 @@ export type DebtSummary = {
   }[];
 };
 
+/**
+ * Доля ручного долга (manualBalance), относящаяся к ЭКИПИРОВКЕ — для
+ * подписи «За экипировку» вместо обезличенного «Ручное начисление».
+ *
+ * Экипировочная доплата вешается как debt_entry(kind='manual_charge') с
+ * комментарием «Изменение экипировки (N дн × M ₽)» (см. equipment-change на
+ * бэке). Отделяем её от прочих ручных начислений по комментарию и
+ * пропорционально учитываем погашения/прощения (manual_forgive, в т.ч.
+ * manual_payment): equip = manualBalance × Σэкип-начислений / Σвсех-ручных.
+ */
+const EQUIP_DEBT_COMMENT_RE = /экипировк/i;
+export function equipmentDebtPortion(
+  summary:
+    | (Pick<DebtSummary, "manualBalance"> & { events: Pick<DebtEntry, "kind" | "amount" | "comment">[] })
+    | undefined
+    | null,
+): number {
+  if (!summary || summary.manualBalance <= 0) return 0;
+  const charges = summary.events.filter((e) => e.kind === "manual_charge");
+  const manualCharged = charges.reduce((s, e) => s + e.amount, 0);
+  if (manualCharged <= 0) return 0;
+  const equipCharged = charges
+    .filter((e) => EQUIP_DEBT_COMMENT_RE.test(e.comment ?? ""))
+    .reduce((s, e) => s + e.amount, 0);
+  if (equipCharged <= 0) return 0;
+  return Math.min(
+    summary.manualBalance,
+    Math.round((summary.manualBalance * equipCharged) / manualCharged),
+  );
+}
+
 export const debtKeys = {
   all: ["rental-debt"] as const,
   one: (rentalId: number) => [...debtKeys.all, rentalId] as const,
