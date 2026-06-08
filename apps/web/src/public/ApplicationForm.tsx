@@ -268,6 +268,13 @@ export function ApplicationForm() {
   // Сбрасывается при смене срока (useEffect ниже) — на новый срок совет
   // показываем заново.
   const [upsellDismissed, setUpsellDismissed] = useState(false);
+  // v0.9.5: сниппет «Ваш выбор» — управляемое раскрытие + флаг «трогал ли его
+  // клиент сам». Логика: если клиент сам открывал сниппет — по «Продолжить»
+  // НЕ раскрываем повторно (просто листаем). Если не открывал и есть выгодное
+  // предложение — первый клик «Продолжить» РАСКРЫВАЕТ сниппет (чтобы клиент
+  // точно увидел «можно выгоднее»), второй клик уже листает дальше.
+  const [wishBarOpen, setWishBarOpen] = useState(false);
+  const [wishBarTouched, setWishBarTouched] = useState(false);
   // Каталог для шагов «выбор аренды» (модель/экипировка/период). Грузим один
   // раз при входе в любой из wish-шагов и шарим между ними (не дёргаем API 3×).
   const [wishModels, setWishModels] = useState<RentalModel[]>([]);
@@ -284,6 +291,11 @@ export function ApplicationForm() {
   useEffect(() => {
     setUpsellDismissed(false);
   }, [form.wantDays]);
+  // v0.9.5: на каждый вход в новый шаг — сниппет свёрнут и «не трогали».
+  useEffect(() => {
+    setWishBarOpen(false);
+    setWishBarTouched(false);
+  }, [step]);
 
   const steps = useMemo(() => getSteps(form.isForeigner), [form.isForeigner]);
   const totalSteps = steps.length;
@@ -590,6 +602,19 @@ export function ApplicationForm() {
     !upsellDismissed &&
     computeWishUpsell(wishModel, wishDays) != null;
 
+  // v0.9.5: «Продолжить». На шаге периода, если есть выгодное предложение и
+  // клиент ещё НЕ открывал сниппет сам — первый клик раскрывает сниппет
+  // (чтобы клиент точно увидел «можно выгоднее»), не листая дальше. Если уже
+  // трогал сниппет (или выгоды нет) — обычный переход на следующий шаг.
+  const handleContinue = () => {
+    if (currentStepId === "wish_period" && wishHasUpsell && !wishBarTouched) {
+      setWishBarOpen(true);
+      setWishBarTouched(true);
+      return;
+    }
+    void goNext();
+  };
+
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="mx-auto flex min-h-screen max-w-md flex-col px-4 py-6">
@@ -716,6 +741,13 @@ export function ApplicationForm() {
               price={wishPrice}
               periodLabel={wishPeriodLabel}
               hasUpsell={wishHasUpsell}
+              open={wishBarOpen}
+              onOpenChange={(o) => {
+                setWishBarOpen(o);
+                // Клиент сам открыл сниппет — отмечаем, чтобы по «Продолжить»
+                // не раскрывать его повторно (просто листать дальше).
+                if (o) setWishBarTouched(true);
+              }}
               upsell={
                 currentStepId === "wish_period" && !upsellDismissed ? (
                   <WishUpsell
@@ -746,7 +778,7 @@ export function ApplicationForm() {
               currentStepId !== "agreement" && (
                 <button
                   type="button"
-                  onClick={goNext}
+                  onClick={handleContinue}
                   disabled={busy || !canStepForward()}
                   className="inline-flex h-12 flex-1 items-center justify-center gap-1.5 rounded-xl bg-slate-900 px-4 text-[14px] font-semibold text-white disabled:opacity-50"
                 >

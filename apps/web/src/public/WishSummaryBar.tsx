@@ -54,6 +54,8 @@ export function WishSummaryBar({
   periodLabel,
   upsell,
   hasUpsell,
+  open: openProp,
+  onOpenChange,
 }: {
   model: RentalModel | null;
   selectedEquipment: RentalEquipment[];
@@ -66,10 +68,18 @@ export function WishSummaryBar({
   /** true — есть выгода: показываем приманку в свёрнутой полоске, чтобы
    *  захотелось открыть. */
   hasUpsell?: boolean;
+  /** v0.9.5: управляемое раскрытие извне (родитель открывает сниппет по
+   *  «Продолжить», чтобы клиент увидел выгоду, а не проскочил). Если не
+   *  передано — компонент управляет раскрытием сам (внутренний стейт). */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
-  // Если есть выгодное предложение — сразу открываем сниппет, чтобы клиент
-  // его увидел (не листая и не догадываясь, что внутри что-то есть).
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = openProp ?? internalOpen;
+  const setOpen = (next: boolean) => {
+    if (onOpenChange) onOpenChange(next);
+    else setInternalOpen(next);
+  };
   if (!model) return null;
   const rub = (n: number) => `${n.toLocaleString("ru-RU")} ₽`;
 
@@ -78,7 +88,7 @@ export function WishSummaryBar({
       {/* Свёрнутая полоска — тап разворачивает. */}
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => setOpen(!open)}
         className="flex w-full items-center gap-2 px-4 py-2.5 text-left"
       >
         <Thumb avatarUrl={model.avatarUrl} fallback="scooter" tilt />
