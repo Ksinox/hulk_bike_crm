@@ -34,7 +34,14 @@ export function MobileBottomSheet({
   const [dragging, setDragging] = useState(false);
   const [closing, setClosing] = useState(false);
 
-  const close = () => setClosing(true);
+  const close = () => {
+    if (closing) return;
+    setClosing(true);
+    // Надёжный размонтаж после анимации ухода: не полагаемся на transitionend
+    // (он мог не выстрелить, если transform визуально не «дёрнулся») — иначе
+    // лист завис бы за экраном, а фон-затемнение блокировал бы весь UI.
+    window.setTimeout(onClose, 280);
+  };
 
   const onPointerDown = (e: React.PointerEvent) => {
     startY.current = e.clientY;
@@ -104,9 +111,6 @@ export function MobileBottomSheet({
         )}
         style={panelStyle}
         onClick={(e) => e.stopPropagation()}
-        onTransitionEnd={(e) => {
-          if (closing && e.propertyName === "transform") onClose();
-        }}
       >
         {/* «ручка» — тянем её вниз, чтобы закрыть лист */}
         <div
