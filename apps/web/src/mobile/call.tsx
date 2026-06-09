@@ -25,9 +25,11 @@ export function useCallClient() {
 
   const callClient = useCallback(
     (name: string, phones: Array<string | null | undefined>) => {
-      const list = phones
-        .map((p) => (p ?? "").trim())
-        .filter((p) => p.length > 0);
+      // Нормализуем, отбрасываем пустые и дубли (бывает, что во втором поле
+      // тот же номер — тогда не показываем бессмысленный выбор из одинаковых).
+      const list = Array.from(
+        new Set(phones.map((p) => (p ?? "").trim()).filter((p) => p.length > 0)),
+      );
       if (list.length === 0) return;
       if (list.length === 1) {
         window.location.href = `tel:${list[0]}`;
