@@ -14,7 +14,6 @@ import {
 import { ClientsList } from "./ClientsList";
 import { ClientCard } from "./ClientCard";
 import { AddClientModal } from "./AddClientModal";
-import { ShareApplicationButton } from "./ShareApplicationButton";
 import { ApplicationsBlock } from "./ApplicationsBlock";
 import { ApplicationsTab } from "./ApplicationsTab";
 import { useAllClients, useUnreachableSet } from "./clientStore";
@@ -207,7 +206,6 @@ export function Clients() {
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <ShareApplicationButton />
           <button
             type="button"
             onClick={() => setAddOpen(true)}

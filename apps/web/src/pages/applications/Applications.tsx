@@ -9,6 +9,7 @@ import {
   type ApplicationStatus,
 } from "@/lib/api/clientApplications";
 import { ApplicationsList } from "./ApplicationsList";
+import { SendApplicationButton } from "./SendApplicationButton";
 import { NewApplicationModal } from "@/pages/clients/NewApplicationModal";
 import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
 import { ApplicationConvertFlow } from "@/pages/clients/ApplicationConvertFlow";
@@ -101,17 +102,20 @@ export function Applications() {
             телефону и паспорту.
           </div>
         </div>
-        <div className="relative w-[320px]">
-          <Search
-            size={14}
-            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-2"
-          />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Поиск: ФИО, телефон, паспорт…"
-            className="h-10 w-full rounded-[12px] border border-border bg-surface pl-9 pr-3 text-[13px] outline-none focus:border-blue-600"
-          />
+        <div className="flex items-center gap-2">
+          <SendApplicationButton />
+          <div className="relative w-[280px]">
+            <Search
+              size={14}
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-2"
+            />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Поиск: ФИО, телефон, паспорт…"
+              className="h-10 w-full rounded-[12px] border border-border bg-surface pl-9 pr-3 text-[13px] outline-none focus:border-blue-600"
+            />
+          </div>
         </div>
       </header>
 

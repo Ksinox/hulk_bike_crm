@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { MobileNewClient } from "../forms/MobileNewClient";
 import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
 import { ApplicationView } from "@/pages/applications/ApplicationView";
+import { SendApplicationButton } from "@/pages/applications/SendApplicationButton";
 import type { ClientSource } from "@/lib/mock/clients";
 import {
   MobileChips,
@@ -100,6 +101,7 @@ export function MobileApplications() {
 
   return (
     <div className="flex flex-col gap-3">
+      <SendApplicationButton className="w-full justify-center py-2.5 text-[14px]" />
       <MobileChips options={chips} value={filter} onChange={setFilter} />
 
       {isLoading ? (
