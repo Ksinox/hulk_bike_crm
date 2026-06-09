@@ -2868,8 +2868,12 @@ export function RentalCard({
             </div>,
             document.body,
           )}
-        {/* Скроллируемое тело: header «прилипает» сверху внутри скролла. */}
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        {/* Скроллируемое тело: header «прилипает» сверху внутри скролла.
+            overflow-x-hidden — гасит ложный горизонтальный скролл: KPI-плашки
+            рендерят hover-поповеры (absolute, w-max), которые у правой колонки
+            заходят за край карточки и раздували её ширину (тот же эффект уже
+            ловили на мобиле). По вертикали скролл сохраняется. */}
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden">
           <div className="flex flex-col gap-3 p-5">{body}</div>
         </div>
         {/* Sticky footer: «Закрыть аренду» (нейтр.) / «Принять оплату» (зелёная) */}
