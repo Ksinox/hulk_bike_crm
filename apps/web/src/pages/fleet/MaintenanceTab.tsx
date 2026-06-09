@@ -187,7 +187,10 @@ export function RepairsTab({
 export function ExpensesTab({ scooterId }: { scooterId: number }) {
   const { data: items = [], isLoading } = useScooterMaintenance(scooterId);
   const [addOpen, setAddOpen] = useState(false);
-  const total = items.reduce((s, r) => s + r.amount, 0);
+  // Замена масла (kind:"oil") — событие обслуживания, а не расход: живёт в
+  // «Истории замен» на карточке скутера, в «Расходах» не дублируем.
+  const expenses = items.filter((m) => m.kind !== "oil");
+  const total = expenses.reduce((s, r) => s + r.amount, 0);
 
   return (
     <div className="flex flex-col gap-4">
@@ -200,9 +203,9 @@ export function ExpensesTab({ scooterId }: { scooterId: number }) {
             {total.toLocaleString("ru-RU")} ₽
           </div>
           <div className="text-[11px] text-muted">
-            {items.length === 0
+            {expenses.length === 0
               ? "записей пока нет"
-              : `${items.length} ${plural(items.length, ["запись", "записи", "записей"])}`}
+              : `${expenses.length} ${plural(expenses.length, ["запись", "записи", "записей"])}`}
           </div>
         </div>
         <button
@@ -218,7 +221,7 @@ export function ExpensesTab({ scooterId }: { scooterId: number }) {
         <div className="py-6 text-center text-[12px] text-muted">
           Загрузка…
         </div>
-      ) : items.length === 0 ? (
+      ) : expenses.length === 0 ? (
         <div className="flex items-center gap-3 rounded-xl bg-surface px-4 py-5 shadow-card-sm">
           <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-surface-soft text-muted-2">
             <Plus size={18} />
@@ -228,14 +231,15 @@ export function ExpensesTab({ scooterId }: { scooterId: number }) {
               Расходов пока нет
             </div>
             <div className="text-[12px] text-muted">
-              Замена масла, запчасти, прочие материалы. Ремонтные работы —
-              в табе «Ремонты».
+              Запчасти, расходники, прочие материалы. Замена масла — в блоке
+              «Обслуживание» карточки скутера, ремонтные работы — в табе
+              «Ремонты».
             </div>
           </div>
         </div>
       ) : (
         <div className="overflow-hidden rounded-xl bg-surface shadow-card-sm">
-          {items.map((m) => (
+          {expenses.map((m) => (
             <MaintRow key={m.id} m={m} />
           ))}
         </div>
@@ -392,7 +396,7 @@ function MaintenanceAddModal({
   onClose: () => void;
 }) {
   const mut = useCreateMaintenance();
-  const [kind, setKind] = useState<MaintenanceKind>("oil");
+  const [kind, setKind] = useState<MaintenanceKind>("parts");
   const [amount, setAmount] = useState(0);
   const [performedOn, setPerformedOn] = useState(todayYmd());
   const [mileage, setMileage] = useState<string>("");
@@ -437,10 +441,11 @@ function MaintenanceAddModal({
         <div className="flex flex-col gap-3.5 px-5 py-5">
           <Field label="Тип расхода">
             <div className="flex flex-wrap gap-1.5">
-              {/* v0.4.42: убран kind='repair'. Сам ремонт регистрируется
-                  через смену статуса скутера → repair_job + чек-лист
-                  на /service. Здесь — только расходные материалы. */}
-              {(["oil", "parts", "other"] as MaintenanceKind[]).map((k) => (
+              {/* v0.4.42: убран kind='repair' (ремонт — через смену статуса
+                  → repair_job на /service). Замена масла тоже убрана отсюда:
+                  это событие обслуживания, фиксируется в карточке скутера, а
+                  не как расход. Здесь — только расходные материалы. */}
+              {(["parts", "other"] as MaintenanceKind[]).map((k) => (
                 <button
                   key={k}
                   type="button"
