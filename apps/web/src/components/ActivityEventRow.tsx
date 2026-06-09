@@ -382,6 +382,14 @@ export function formatActivitySummary(
         extras: [],
       };
     }
+    // Откат создания аренды — аренда ушла в архив.
+    if (kind === "created") {
+      return {
+        title: "Откат создания аренды",
+        change: null,
+        extras: ["Аренда отправлена в архив"],
+      };
+    }
     const endp = readRecord(diff?.endPlannedAt);
     const sum = readRecord(diff?.sum);
     const extraDays = typeof m?.extraDays === "number" ? m.extraDays : null;

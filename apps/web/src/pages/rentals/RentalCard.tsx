@@ -476,7 +476,9 @@ export function RentalCard({
   const rollbackSlot = rbTarget
     ? {
         matchAction: ROLLBACK_MATCH[rbTarget.kind],
-        node: <RollbackButton rental={rental} target={rbTarget} />,
+        node: (
+          <RollbackButton rental={rental} target={rbTarget} onClose={onClose} />
+        ),
       }
     : undefined;
 

@@ -25,17 +25,19 @@ import type { Rental } from "@/lib/mock/rentals";
  * «промахивается» на старое продление, если сверху лежит другое действие.
  */
 
-export type RollbackKind = "extend" | "equipment";
+export type RollbackKind = "extend" | "equipment" | "created";
 
 export type RollbackTarget =
   | { kind: "extend"; paymentId: number; extraDays: number; amount: number }
-  | { kind: "equipment"; paymentId: number; amount: number; isRefund: boolean };
+  | { kind: "equipment"; paymentId: number; amount: number; isRefund: boolean }
+  | { kind: "created"; paymentId: number; amount: number };
 
 /** matchAction по виду — на какой строке хронологии висит кнопка. */
 export const ROLLBACK_MATCH: Record<RollbackKind, (action: string) => boolean> =
   {
     extend: (a) => a.includes("extend"),
     equipment: (a) => a.includes("equipment"),
+    created: (a) => a === "created",
   };
 
 function fmtRub(n: number): string {
@@ -100,6 +102,12 @@ export function useRollbackTarget(
       };
     }
 
+    // Создание аренды — последний платёж это «оплата аренды при создании».
+    if (last.action === "created") {
+      if (!/оплата\s+аренды.*создани/i.test(note)) return null;
+      return { kind: "created", paymentId: lastPay.id, amount: lastPay.amount };
+    }
+
     return null;
   }, [activity, payments, rental.id]);
 }
@@ -107,9 +115,12 @@ export function useRollbackTarget(
 export function RollbackButton({
   rental,
   target,
+  onClose,
 }: {
   rental: Rental;
   target: RollbackTarget;
+  /** Откат создания аренды архивирует её — карточку нужно закрыть. */
+  onClose?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -120,6 +131,8 @@ export function RollbackButton({
       await rollbackLastPayment(rental.id, target.paymentId);
       if (target.kind === "extend") {
         toast.success("Продление откачено", `Вернулось ${fmtRub(target.amount)} ₽`);
+      } else if (target.kind === "created") {
+        toast.success("Создание аренды откачено", "Аренда отправлена в архив");
       } else {
         toast.success(
           "Изменение экипировки откачено",
@@ -129,6 +142,8 @@ export function RollbackButton({
         );
       }
       setOpen(false);
+      // Аренда ушла в архив — закрываем карточку (её больше нет в активных).
+      if (target.kind === "created") onClose?.();
     } catch (e) {
       toast.error(
         "Не удалось откатить",
@@ -142,7 +157,9 @@ export function RollbackButton({
   const title =
     target.kind === "extend"
       ? "Откатить продление?"
-      : "Откатить изменение экипировки?";
+      : target.kind === "created"
+        ? "Откатить создание аренды?"
+        : "Откатить изменение экипировки?";
 
   return (
     <>
@@ -181,6 +198,8 @@ export function RollbackButton({
 
             {target.kind === "extend" ? (
               <ExtendPreview rental={rental} target={target} />
+            ) : target.kind === "created" ? (
+              <CreatedPreview target={target} />
             ) : (
               <EquipmentPreview target={target} />
             )}
@@ -189,7 +208,9 @@ export function RollbackButton({
               <Lock size={13} className="mt-px shrink-0" />
               {target.kind === "extend"
                 ? "Платёж продления удалится, период вернётся. "
-                : "Прежний набор экипировки вернётся, платёж удалится. "}
+                : target.kind === "created"
+                  ? "Аренда уйдёт в архив, скутер освободится, платёж создания удалится. "
+                  : "Прежний набор экипировки вернётся, платёж удалится. "}
               Доступно только сегодня — завтра откатить уже нельзя.
             </div>
 
@@ -240,6 +261,24 @@ function ExtendPreview({
         label="Сумма аренды"
         before={`${fmtRub(rental.sum)} ₽`}
         after={`${fmtRub(sumAfter)} ₽`}
+        accent
+      />
+    </div>
+  );
+}
+
+function CreatedPreview({
+  target,
+}: {
+  target: Extract<RollbackTarget, { kind: "created" }>;
+}) {
+  return (
+    <div className="space-y-2 rounded-xl bg-surface-soft p-3">
+      <Row label="Аренда" before="создана" after="в архив" />
+      <Row
+        label="Платёж создания"
+        before={`${fmtRub(target.amount)} ₽`}
+        after="удалить"
         accent
       />
     </div>

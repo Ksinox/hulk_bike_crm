@@ -329,6 +329,9 @@ export async function rentalsRoutes(app: FastifyInstance) {
         paid: true,
         paidAt: new Date(),
         note: "оплата аренды (автоматически при создании)",
+        // Снимок для «отката создания аренды в день»: kind=created.
+        // Откат архивирует аренду и удаляет этот платёж создания.
+        rollbackSnapshot: { kind: "created" } as unknown as object,
       });
     }
 
@@ -2108,7 +2111,12 @@ export async function rentalsRoutes(app: FastifyInstance) {
           depositRefundAmount?: number;
           clientId?: number;
         };
-        if (!snap || (snap.kind !== "extend" && snap.kind !== "equipment"))
+        if (
+          !snap ||
+          (snap.kind !== "extend" &&
+            snap.kind !== "equipment" &&
+            snap.kind !== "created")
+        )
           return { ok: false as const, error: "unsupported" as const };
 
         const [rentalNow] = await tx
@@ -2147,6 +2155,44 @@ export async function rentalsRoutes(app: FastifyInstance) {
             before: rentalNow,
             after: restored,
             extraDays: snap.extraDays ?? null,
+          };
+        }
+
+        // ── Откат создания аренды: архивируем аренду (status=completed +
+        //    archivedReason), освобождаем скутер, удаляем платёж создания.
+        //    Статуса 'cancelled' в enum нет — как в «Создано случайно». ──
+        if (snap.kind === "created") {
+          const [u] = await tx
+            .select({ name: usersTable.name })
+            .from(usersTable)
+            .where(eq(usersTable.id, req.user?.userId ?? -1));
+          const archivedByName = u?.name ?? "система";
+          const [archived] = await tx
+            .update(rentals)
+            .set({
+              status: "completed",
+              archivedAt: sql`now()`,
+              archivedBy: archivedByName,
+              archivedReason: "Откат создания аренды (в день)",
+              updatedAt: sql`now()`,
+            })
+            .where(eq(rentals.id, id))
+            .returning();
+          if (!archived)
+            return { ok: false as const, error: "rental_not_found" as const };
+          if (rentalNow.scooterId) {
+            await tx
+              .update(scooters)
+              .set({ baseStatus: "rental_pool", updatedAt: sql`now()` })
+              .where(eq(scooters.id, rentalNow.scooterId));
+          }
+          await tx.delete(payments).where(eq(payments.id, paymentId));
+          return {
+            ok: true as const,
+            kind: "created" as const,
+            before: rentalNow,
+            after: archived,
+            amount: pay.amount,
           };
         }
 
@@ -2220,6 +2266,22 @@ export async function rentalsRoutes(app: FastifyInstance) {
               from: out.before.sum,
               to: out.after.sum,
               kind: "money",
+            },
+          },
+        });
+      } else if (out.kind === "created") {
+        await logActivity(req, {
+          entity: "rental",
+          entityId: id,
+          action: "payment_rolled_back",
+          summary: `Откат создания аренды ${summary} — отправлена в архив, платёж ${out.amount.toLocaleString("ru-RU")} ₽ удалён`,
+          meta: { paymentId, kind: "created" },
+          diff: {
+            status: {
+              label: "Аренда",
+              from: "создана",
+              to: "в архиве (откат создания)",
+              kind: "text",
             },
           },
         });
