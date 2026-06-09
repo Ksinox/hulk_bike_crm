@@ -8,7 +8,6 @@ import {
   Maximize2,
   Phone,
   Wallet,
-  X,
 } from "lucide-react";
 import { useRentals } from "@/pages/rentals/rentalsStore";
 import { RentalCard } from "@/pages/rentals/RentalCard";
@@ -20,6 +19,7 @@ import type { ApiScooter } from "@/lib/api/types";
 import { ActivityFeed } from "@/pages/dashboard/ActivityFeed";
 import { useBillingPeriodRevenue } from "@/lib/useRevenue";
 import { MobileRevenueScreen } from "./MobileRevenueScreen";
+import { RowCallButton, useCallClient } from "../call";
 import { cn } from "@/lib/utils";
 import {
   formatRub,
@@ -48,10 +48,7 @@ export function MobileDashboard({
   // #172: открытие карточки аренды из строк просрочки/возврата + звонок.
   const rentals = useRentals();
   const [openRentalId, setOpenRentalId] = useState<number | null>(null);
-  const [callSheet, setCallSheet] = useState<{
-    name: string;
-    phones: string[];
-  } | null>(null);
+  const { callClient, callSheet } = useCallClient();
 
   if (m.isLoading) {
     return <DashboardSkeleton />;
@@ -70,16 +67,6 @@ export function MobileDashboard({
   const openPhones = openItem
     ? [openItem.clientPhone, openItem.clientPhone2].filter(Boolean)
     : [];
-  // Звонок клиенту: 1 телефон → сразу tel:, 2 → выбор куда звонить.
-  const callClient = (name: string, phones: string[]) => {
-    const list = phones.filter(Boolean);
-    if (list.length === 0) return;
-    if (list.length === 1) {
-      window.location.href = `tel:${list[0]}`;
-      return;
-    }
-    setCallSheet({ name, phones: list });
-  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -247,48 +234,9 @@ export function MobileDashboard({
         </div>
       )}
 
-      {/* Выбор номера для звонка (если у клиента два телефона). */}
-      {callSheet && (
-        <div
-          className="fixed inset-0 z-[70] flex items-end bg-ink/50 backdrop-blur-sm"
-          onClick={() => setCallSheet(null)}
-        >
-          <div
-            className="w-full rounded-t-3xl bg-surface p-4 pb-8"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="mb-1 flex items-center justify-between">
-              <div className="text-[15px] font-bold text-ink">
-                Позвонить · {callSheet.name}
-              </div>
-              <button
-                type="button"
-                onClick={() => setCallSheet(null)}
-                aria-label="Закрыть"
-                className="flex h-8 w-8 items-center justify-center rounded-full text-muted-2"
-              >
-                <X size={18} />
-              </button>
-            </div>
-            <div className="mb-3 text-[12px] text-muted-2">Выберите номер</div>
-            {callSheet.phones.map((ph, i) => (
-              <a
-                key={ph}
-                href={`tel:${ph}`}
-                onClick={() => setCallSheet(null)}
-                className="mb-2 flex items-center justify-center gap-2 rounded-2xl bg-green py-4 text-[16px] font-bold text-white active:scale-[0.99]"
-              >
-                <Phone size={18} /> {ph}
-                {i === 1 && (
-                  <span className="text-[12px] font-medium text-white/70">
-                    · доп.
-                  </span>
-                )}
-              </a>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* Выбор номера для звонка (если у клиента два телефона) — общий
+          нижний лист из mobile/call. */}
+      {callSheet}
     </div>
   );
 }
@@ -505,20 +453,6 @@ function Section({
       </div>
       <div className="flex flex-col divide-y divide-border">{children}</div>
     </section>
-  );
-}
-
-/** Кнопка-телефон в строке: мгновенный звонок (или выбор номера). */
-function RowCallButton({ onCall }: { onCall: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onCall}
-      aria-label="Позвонить клиенту"
-      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-green/10 text-green active:scale-90"
-    >
-      <Phone size={17} />
-    </button>
   );
 }
 

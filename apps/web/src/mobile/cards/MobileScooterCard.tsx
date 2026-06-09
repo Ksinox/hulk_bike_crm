@@ -44,6 +44,7 @@ import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { fileUrl } from "@/lib/files";
 import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
 import { EntityNotes } from "@/components/EntityNotes";
+import { useCallClient } from "../call";
 import { toast } from "@/lib/toast";
 import { askArchiveReason } from "@/pages/fleet/archiveReason";
 import type { Rental } from "@/lib/mock/rentals";
@@ -134,6 +135,7 @@ export function MobileScooterCard({
   const { data: me } = useMe();
   const canArchive = me?.role === "director" || me?.role === "creator";
   const archiveMut = useArchiveScooter();
+  const { callClient, callSheet } = useCallClient();
 
   const doArchive = async () => {
     const reason = await askArchiveReason(scooter.name);
@@ -290,13 +292,31 @@ export function MobileScooterCard({
                 {activeRental.start.slice(0, 5)} — {activeRental.endPlanned.slice(0, 5)}
               </span>
             </div>
-            <button
-              type="button"
-              onClick={() => navigate({ route: "rentals", rentalId: activeRental.id })}
-              className="mt-3 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl bg-white text-[13px] font-bold text-blue-700 active:scale-[0.99]"
-            >
-              Перейти к аренде <ArrowRight size={14} />
-            </button>
+            {/* Быстрые действия: «Позвонить» (зелёная — главное мобильное
+                действие, в зоне большого пальца) + переход к аренде. */}
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() =>
+                  callClient(activeClient.name, [
+                    activeClient.phone,
+                    activeClient.extraPhone,
+                  ])
+                }
+                className="flex min-h-[44px] items-center justify-center gap-2 rounded-xl bg-green text-[13px] font-bold text-white shadow-sm active:scale-[0.98]"
+              >
+                <Phone size={15} /> Позвонить
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  navigate({ route: "rentals", rentalId: activeRental.id })
+                }
+                className="flex min-h-[44px] items-center justify-center gap-2 rounded-xl bg-white text-[13px] font-bold text-blue-700 active:scale-[0.98]"
+              >
+                К аренде <ArrowRight size={14} />
+              </button>
+            </div>
           </section>
         ) : (
           status === "rental_pool" && (
@@ -644,6 +664,9 @@ export function MobileScooterCard({
           onClose={() => setOilOpen(false)}
         />
       )}
+
+      {/* Нижний лист выбора номера (если у клиента-арендатора два телефона). */}
+      {callSheet}
     </div>
   );
 }

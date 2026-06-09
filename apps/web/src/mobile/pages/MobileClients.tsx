@@ -3,6 +3,7 @@ import { Users, ChevronRight, Ban } from "lucide-react";
 import { MobileNewClient } from "../forms/MobileNewClient";
 import { MobileClientCard } from "../cards/MobileClientCard";
 import { usePageFab } from "../fab";
+import { RowCallButton, useCallClient } from "../call";
 import { useAllClients } from "@/pages/clients/clientStore";
 import { useRentals } from "@/pages/rentals/rentalsStore";
 import { ErrorBoundary } from "@/app/ErrorBoundary";
@@ -29,6 +30,7 @@ export function MobileClients() {
   const [search, setSearch] = useState("");
   const [openId, setOpenId] = useState<number | null>(null);
   const [newOpen, setNewOpen] = useState(false);
+  const { callClient, callSheet } = useCallClient();
   usePageFab("Клиент", () => setNewOpen(true));
 
   const activeSet = useMemo(() => {
@@ -102,6 +104,7 @@ export function MobileClients() {
               client={c}
               active={activeSet.has(c.id)}
               onClick={() => setOpenId(c.id)}
+              onCall={() => callClient(c.name, [c.phone, c.extraPhone])}
             />
           ))}
         </div>
@@ -121,6 +124,9 @@ export function MobileClients() {
           onCreated={(c) => setOpenId(c.id)}
         />
       )}
+
+      {/* Нижний лист выбора номера (если у клиента два телефона). */}
+      {callSheet}
     </div>
   );
 }
@@ -129,51 +135,68 @@ function ClientRow({
   client,
   active,
   onClick,
+  onCall,
 }: {
   client: Client;
   active: boolean;
   onClick: () => void;
+  onCall: () => void;
 }) {
   const initials = client.name
     .split(/\s+/)
     .slice(0, 2)
     .map((p) => p[0]?.toUpperCase() ?? "")
     .join("");
+  const hasPhone = !!(client.phone || client.extraPhone);
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex items-center gap-3 rounded-2xl bg-surface p-3 text-left shadow-card-sm active:scale-[0.99]"
-    >
-      <div
-        className={cn(
-          "flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[13px] font-bold",
-          client.blacklisted
-            ? "bg-red-soft text-red-ink"
-            : "bg-blue-50 text-blue-600",
-        )}
+    // Строка-обёртка — div, а не button: внутри живут ДВЕ кнопки (открыть
+    // карточку + позвонить), вложенные button'ы недопустимы.
+    <div className="flex items-center gap-2 rounded-2xl bg-surface p-3 shadow-card-sm">
+      <button
+        type="button"
+        onClick={onClick}
+        className="flex min-w-0 flex-1 items-center gap-3 text-left active:opacity-60"
       >
-        {initials || "?"}
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1.5">
-          <span className="truncate text-[14px] font-bold text-ink">
-            {client.name}
-          </span>
-          {client.blacklisted && <Ban size={13} className="shrink-0 text-red" />}
-          {active && !client.blacklisted && (
-            <span className="h-2 w-2 shrink-0 rounded-full bg-green" />
+        <div
+          className={cn(
+            "flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[13px] font-bold",
+            client.blacklisted
+              ? "bg-red-soft text-red-ink"
+              : "bg-blue-50 text-blue-600",
           )}
+        >
+          {initials || "?"}
         </div>
-        <div className="mt-0.5 truncate text-[12px] text-muted">{client.phone}</div>
-      </div>
-      {client.debt > 0 && (
-        <div className="text-right text-[13px] font-bold tabular-nums text-red">
-          {rub(client.debt)} ₽
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <span className="truncate text-[14px] font-bold text-ink">
+              {client.name}
+            </span>
+            {client.blacklisted && (
+              <Ban size={13} className="shrink-0 text-red" />
+            )}
+            {active && !client.blacklisted && (
+              <span className="h-2 w-2 shrink-0 rounded-full bg-green" />
+            )}
+          </div>
+          <div className="mt-0.5 truncate text-[12px] text-muted">
+            {client.phone}
+          </div>
         </div>
+        {client.debt > 0 && (
+          <div className="shrink-0 text-right text-[13px] font-bold tabular-nums text-red">
+            {rub(client.debt)} ₽
+          </div>
+        )}
+      </button>
+      {/* Звонок — основное быстрое действие; если телефона нет, оставляем
+          шеврон как намёк «тап откроет карточку». */}
+      {hasPhone ? (
+        <RowCallButton onCall={onCall} />
+      ) : (
+        <ChevronRight size={16} className="shrink-0 text-muted-2" />
       )}
-      <ChevronRight size={16} className="text-muted-2" />
-    </button>
+    </div>
   );
 }
 

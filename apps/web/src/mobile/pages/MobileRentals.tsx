@@ -7,6 +7,7 @@ import { MobileRevenueScreen } from "./MobileRevenueScreen";
 import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
 import { ErrorBoundary } from "@/app/ErrorBoundary";
 import { usePageFab } from "../fab";
+import { RowCallButton, useCallClient } from "../call";
 import type { Rental } from "@/lib/mock/rentals";
 import { useApiClients } from "@/lib/api/clients";
 import type { ApiClient } from "@/lib/api/types";
@@ -98,6 +99,7 @@ export function MobileRentals() {
   const rev = useBillingPeriodRevenue("rentals");
   /** Открыта форма создания аренды (переиспользуем десктоп-модалку). */
   const [newOpen, setNewOpen] = useState(false);
+  const { callClient, callSheet } = useCallClient();
   usePageFab("Аренда", () => setNewOpen(true));
 
   const today = todayRu();
@@ -196,15 +198,21 @@ export function MobileRentals() {
         />
       ) : (
         <div className="flex flex-col gap-2">
-          {filtered.map((r) => (
-            <RentalRow
-              key={r.id}
-              rental={r}
-              client={clientById.get(r.clientId) ?? null}
-              todayMs={todayMs}
-              onClick={() => setOpenId(r.id)}
-            />
-          ))}
+          {filtered.map((r) => {
+            const c = clientById.get(r.clientId) ?? null;
+            return (
+              <RentalRow
+                key={r.id}
+                rental={r}
+                client={c}
+                todayMs={todayMs}
+                onClick={() => setOpenId(r.id)}
+                onCall={() =>
+                  callClient(c?.name ?? "Клиент", [c?.phone, c?.extraPhone])
+                }
+              />
+            );
+          })}
         </div>
       )}
 
@@ -244,6 +252,9 @@ export function MobileRentals() {
           onClose={() => setRevenueOpen(false)}
         />
       )}
+
+      {/* Нижний лист выбора номера (если у клиента два телефона). */}
+      {callSheet}
     </div>
   );
 }
@@ -253,45 +264,58 @@ function RentalRow({
   client,
   todayMs,
   onClick,
+  onCall,
 }: {
   rental: Rental;
   client: ApiClient | null;
   todayMs: number;
   onClick: () => void;
+  onCall: () => void;
 }) {
   const meta = statusMeta(rental, todayMs);
+  const hasPhone = !!(client?.phone || client?.extraPhone);
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex items-center gap-3 rounded-2xl bg-surface p-3 text-left shadow-card-sm active:scale-[0.99]"
-    >
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="truncate text-[14px] font-bold text-ink">
-            {client?.name ?? "Без клиента"}
-          </span>
-          <span
-            className={cn(
-              "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold",
-              meta.cls,
-            )}
-          >
-            {meta.label}
-          </span>
+    // Обёртка-div: внутри две кнопки (открыть карточку + позвонить).
+    <div className="flex items-center gap-2 rounded-2xl bg-surface p-3 shadow-card-sm">
+      <button
+        type="button"
+        onClick={onClick}
+        className="flex min-w-0 flex-1 items-center gap-3 text-left active:opacity-60"
+      >
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="truncate text-[14px] font-bold text-ink">
+              {client?.name ?? "Без клиента"}
+            </span>
+            <span
+              className={cn(
+                "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold",
+                meta.cls,
+              )}
+            >
+              {meta.label}
+            </span>
+          </div>
+          <div className="mt-0.5 truncate text-[12px] text-muted">
+            {rental.scooter} · до {rental.endPlanned}
+          </div>
         </div>
-        <div className="mt-0.5 truncate text-[12px] text-muted">
-          {rental.scooter} · до {rental.endPlanned}
+        <div className="shrink-0 text-right">
+          <div className="text-[14px] font-bold tabular-nums text-ink">
+            {rub(rental.sum)} ₽
+          </div>
+          <div className="text-[11px] text-muted-2">
+            #{String(rental.id).padStart(4, "0")}
+          </div>
         </div>
-      </div>
-      <div className="text-right">
-        <div className="text-[14px] font-bold tabular-nums text-ink">
-          {rub(rental.sum)} ₽
-        </div>
-        <div className="text-[11px] text-muted-2">#{String(rental.id).padStart(4, "0")}</div>
-      </div>
-      <ChevronRight size={16} className="text-muted-2" />
-    </button>
+      </button>
+      {/* Звонок клиенту аренды; без телефона — шеврон «тап откроет карточку». */}
+      {hasPhone ? (
+        <RowCallButton onCall={onCall} />
+      ) : (
+        <ChevronRight size={16} className="shrink-0 text-muted-2" />
+      )}
+    </div>
   );
 }
 
