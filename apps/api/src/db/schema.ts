@@ -563,6 +563,14 @@ export const payments = pgTable(
      * Чтобы по акту считать остаток долга = total - depositCovered - sum(payments).
      */
     damageReportId: bigint("damage_report_id", { mode: "number" }),
+    /**
+     * Снимок пред-состояния аренды на момент действия, создавшего этот платёж
+     * (продление / платная смена экипировки). Нужен для «отката в день
+     * действия»: откатывая платёж, восстанавливаем аренду из этого снимка.
+     * NULL — у платежей, которые аренду не меняли (обычная оплата): их откат
+     * = снять флаг «оплачено».
+     */
+    rollbackSnapshot: jsonb("rollback_snapshot"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

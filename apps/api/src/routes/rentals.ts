@@ -1813,6 +1813,19 @@ export async function rentalsRoutes(app: FastifyInstance) {
             note: d.autoMarkPaid
               ? `продление на ${d.extraDays} дн (оплачено)${equipNote}`
               : `продление на ${d.extraDays} дн (ожидает оплаты)${equipNote}`,
+            // Снимок пред-состояния — для «отката продления в день действия».
+            rollbackSnapshot: {
+              kind: "extend",
+              extraDays: d.extraDays,
+              endPlannedAt: old.endPlannedAt.toISOString(),
+              days: old.days,
+              sum: old.sum,
+              tariffPeriod: old.tariffPeriod,
+              rate: old.rate,
+              rateUnit: old.rateUnit,
+              equipmentJson: old.equipmentJson,
+              equipment: old.equipment,
+            } as unknown as object,
           });
         }
         return updated;
@@ -1959,6 +1972,19 @@ export async function rentalsRoutes(app: FastifyInstance) {
             note: d.autoMarkPaid
               ? `продление на ${d.extraDays} дн (оплачено)${equipNote}`
               : `продление на ${d.extraDays} дн (ожидает оплаты)${equipNote}`,
+            // Снимок пред-состояния — для «отката продления в день действия».
+            rollbackSnapshot: {
+              kind: "extend",
+              extraDays: d.extraDays,
+              endPlannedAt: old.endPlannedAt.toISOString(),
+              days: old.days,
+              sum: old.sum,
+              tariffPeriod: old.tariffPeriod,
+              rate: old.rate,
+              rateUnit: old.rateUnit,
+              equipmentJson: old.equipmentJson,
+              equipment: old.equipment,
+            } as unknown as object,
           });
         }
         return { updated, old, extraSum };
