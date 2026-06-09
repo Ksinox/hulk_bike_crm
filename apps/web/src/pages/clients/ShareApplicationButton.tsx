@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Check, Copy, MessageCircle, Send, Share2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
+import { whatsappLink, telegramLink } from "@/lib/messengers";
 
 /**
  * Кнопка «Поделиться формой» в шапке /clients.
@@ -24,6 +25,7 @@ const SHARE_TEXT = `Здравствуйте! Для оформления аре
 
 export function ShareApplicationButton() {
   const [open, setOpen] = useState(false);
+  const [phone, setPhone] = useState("");
   const ref = useRef<HTMLDivElement>(null);
 
   // Закрываем popover по клику вне
@@ -38,21 +40,21 @@ export function ShareApplicationButton() {
     return () => document.removeEventListener("mousedown", onDocClick);
   }, [open]);
 
+  // С номером — открываем прямой чат с человеком (по номеру, без сохранения
+  // контакта) с уже вписанным текстом анкеты. Без номера — обычный «поделиться».
   const openWhatsapp = () => {
-    window.open(
-      `https://wa.me/?text=${encodeURIComponent(SHARE_TEXT)}`,
-      "_blank",
-      "noopener",
-    );
+    const link = phone.trim()
+      ? whatsappLink(phone, SHARE_TEXT)
+      : `https://wa.me/?text=${encodeURIComponent(SHARE_TEXT)}`;
+    if (link) window.open(link, "_blank", "noopener");
     setOpen(false);
   };
 
   const openTelegram = () => {
-    window.open(
-      `https://t.me/share/url?url=${encodeURIComponent(PUBLIC_FORM_URL)}&text=${encodeURIComponent("Анкета для оформления аренды скутера")}`,
-      "_blank",
-      "noopener",
-    );
+    const link = phone.trim()
+      ? telegramLink(phone, SHARE_TEXT)
+      : `https://t.me/share/url?url=${encodeURIComponent(PUBLIC_FORM_URL)}&text=${encodeURIComponent("Анкета для оформления аренды скутера")}`;
+    if (link) window.open(link, "_blank", "noopener");
     setOpen(false);
   };
 
@@ -94,6 +96,20 @@ export function ShareApplicationButton() {
             </div>
             <div className="mt-1 truncate font-mono text-[11px] text-muted-2">
               {PUBLIC_FORM_URL}
+            </div>
+          </div>
+          <div className="border-b border-border px-3 py-2.5">
+            <input
+              type="tel"
+              inputMode="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="Номер клиента (необязательно)"
+              className="w-full rounded-lg border border-border bg-surface-soft px-3 py-2 text-[13px] tabular-nums text-ink outline-none transition-colors placeholder:text-muted-2 focus:border-blue-400"
+            />
+            <div className="mt-1 text-[10.5px] leading-tight text-muted-2">
+              С номером WhatsApp/Telegram откроют чат с этим человеком напрямую —
+              без сохранения в контакты.
             </div>
           </div>
           <div className="flex flex-col p-2">
