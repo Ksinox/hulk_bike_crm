@@ -131,6 +131,19 @@ function ruToIso(dateRu: string, time = "12:00"): string {
   return `${m[3]}-${m[2]}-${m[1]}T${m[4] ?? time}:00+03:00`;
 }
 
+/**
+ * Откат последнего действия аренды «в день совершения» (пока — продления).
+ * Бэк бросает 409/422 (поздно / не последнее / не поддержано) — вызывающий
+ * ловит и показывает сообщение. На успехе — инвалидируем кеш аренд/платежей.
+ */
+export async function rollbackLastPayment(
+  rentalId: number,
+  paymentId: number,
+): Promise<void> {
+  await api.post(`/api/rentals/${rentalId}/rollback-payment`, { paymentId });
+  invAll();
+}
+
 export function setRentalStatus(id: number, status: RentalStatus) {
   api.patch(`/api/rentals/${id}`, { status }).then(invAll).catch(logErr("setRentalStatus"));
 }

@@ -40,6 +40,7 @@ import {
 import { effectiveRentalStatus } from "@/lib/rentalStatus";
 import { useClientUnreachable, clientStore } from "@/pages/clients/clientStore";
 import { StickerStack, NoteComposer } from "@/components/StickerStack";
+import { RollbackLastAction } from "./RollbackLastAction";
 import {
   useRentalCardStickers,
   useCreateSticker,
@@ -2021,6 +2022,9 @@ export function RentalCard({
       )}
 
       {/* =========== BANNERS =========== */}
+      {/* Откатить последнее действие (пока — продление) «в день совершения».
+          Сам решает, показываться ли (есть ли сегодня откатываемое продление). */}
+      <RollbackLastAction rental={rental} />
       {/* v0.8.0: паркинг — явно видно что аренда на паузе и сколько дней. */}
       {activeParking && (
         <div className="flex items-center gap-3 rounded-[12px] bg-yellow-50 px-3 py-2.5 text-[12.5px] text-yellow-900 ring-1 ring-inset ring-yellow-300">

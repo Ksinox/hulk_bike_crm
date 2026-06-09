@@ -2029,6 +2029,162 @@ export async function rentalsRoutes(app: FastifyInstance) {
   );
 
   /**
+   * POST /api/rentals/:id/rollback-payment — откат последнего действия
+   * «в день совершения» (защита от ошибочных действий: продлил/принял зря →
+   * откатил, пока не наступил следующий день).
+   *
+   * Phase 1: поддержан откат ПРОДЛЕНИЯ — платёж с rollbackSnapshot.kind='extend'.
+   * Восстанавливаем аренду из снимка (период/дни/сумма/тариф/ставка/экипировка)
+   * и удаляем платёж продления. Разрешено только если:
+   *   • роль финансовая (не механик);
+   *   • платёж принадлежит этой аренде и это продление (есть снимок);
+   *   • создан СЕГОДНЯ по МСК (по createdAt);
+   *   • это последнее действие аренды (нет более позднего платежа) — стопка undo;
+   *   • аренда не в архиве.
+   */
+  app.post<{ Params: { id: string } }>(
+    "/:id/rollback-payment",
+    async (req, reply) => {
+      if (!assertFinancialRole(req, reply)) return;
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id))
+        return reply.code(400).send({ error: "bad id" });
+      const parsed = z
+        .object({ paymentId: z.number().int().positive() })
+        .strict()
+        .safeParse(req.body);
+      if (!parsed.success)
+        return reply
+          .code(400)
+          .send({ error: "validation", issues: parsed.error.issues });
+      const paymentId = parsed.data.paymentId;
+
+      // Календарная дата по Москве (как и весь долговой расчёт в этом файле).
+      const mskDate = (d: Date): string => {
+        const m = new Date(
+          d.toLocaleString("en-US", { timeZone: "Europe/Moscow" }),
+        );
+        return `${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, "0")}-${String(m.getDate()).padStart(2, "0")}`;
+      };
+      const todayMsk = mskDate(new Date());
+
+      const out = await db.transaction(async (tx) => {
+        const [pay] = await tx
+          .select()
+          .from(payments)
+          .where(eq(payments.id, paymentId));
+        if (!pay || pay.rentalId !== id)
+          return { ok: false as const, error: "payment_not_found" as const };
+        if (mskDate(pay.createdAt) !== todayMsk)
+          return { ok: false as const, error: "too_late" as const };
+
+        // Это последнее действие аренды? (нет более позднего платежа.)
+        const newer = await tx
+          .select({ id: payments.id })
+          .from(payments)
+          .where(
+            and(
+              eq(payments.rentalId, id),
+              sql`${payments.createdAt} > ${pay.createdAt}`,
+            ),
+          )
+          .limit(1);
+        if (newer.length > 0)
+          return { ok: false as const, error: "not_last" as const };
+
+        const snap = pay.rollbackSnapshot as null | {
+          kind?: string;
+          extraDays?: number;
+          endPlannedAt?: string;
+          days?: number;
+          sum?: number;
+          tariffPeriod?: "short" | "week" | "month";
+          rate?: number;
+          rateUnit?: string;
+          equipmentJson?: unknown;
+          equipment?: string[] | null;
+        };
+        if (!snap || snap.kind !== "extend")
+          return { ok: false as const, error: "unsupported" as const };
+
+        const [rentalNow] = await tx
+          .select()
+          .from(rentals)
+          .where(eq(rentals.id, id));
+        if (!rentalNow) return { ok: false as const, error: "rental_not_found" as const };
+        if (rentalNow.archivedAt)
+          return { ok: false as const, error: "archived" as const };
+
+        const [restored] = await tx
+          .update(rentals)
+          .set({
+            endPlannedAt: new Date(snap.endPlannedAt as string),
+            days: snap.days as number,
+            sum: snap.sum as number,
+            tariffPeriod: snap.tariffPeriod as "short" | "week" | "month",
+            rate: snap.rate as number,
+            rateUnit: snap.rateUnit ?? "day",
+            equipmentJson: (snap.equipmentJson ?? []) as unknown as object,
+            equipment: snap.equipment ?? [],
+            updatedAt: sql`now()`,
+          })
+          .where(eq(rentals.id, id))
+          .returning();
+        if (!restored) return { ok: false as const, error: "rental_not_found" as const };
+
+        // Удаляем платёж продления (его снимок «увёл» аренду вперёд — теперь
+        // вернули назад, платёж больше не нужен).
+        await tx.delete(payments).where(eq(payments.id, paymentId));
+
+        return {
+          ok: true as const,
+          before: rentalNow,
+          after: restored,
+          extraDays: snap.extraDays ?? null,
+        };
+      });
+
+      if (!out.ok) {
+        const map: Record<string, [number, string]> = {
+          payment_not_found: [404, "Платёж не найден или не относится к этой аренде."],
+          too_late: [409, "Откатывать можно только в день действия — завтра уже нельзя."],
+          not_last: [409, "Откатить можно только последнее действие. Сначала откатите более позднее."],
+          unsupported: [422, "Пока поддержан только откат продления."],
+          rental_not_found: [404, "Аренда не найдена."],
+          archived: [409, "Аренда в архиве — откат недоступен."],
+        };
+        const [code, message] = map[out.error] ?? [400, "Не удалось откатить."];
+        return reply.code(code).send({ error: out.error, message });
+      }
+
+      const summary = await summaryForRental(id);
+      const returned = out.before.sum - out.after.sum;
+      await logActivity(req, {
+        entity: "rental",
+        entityId: id,
+        action: "payment_rolled_back",
+        summary: `Откат продления ${summary}${out.extraDays ? ` (−${out.extraDays} дн)` : ""} — вернулось ${returned.toLocaleString("ru-RU")} ₽`,
+        meta: { paymentId, kind: "extend", extraDays: out.extraDays },
+        diff: {
+          endPlannedAt: {
+            label: "Возврат",
+            from: out.before.endPlannedAt.toISOString(),
+            to: out.after.endPlannedAt.toISOString(),
+            kind: "date",
+          },
+          sum: {
+            label: "Сумма аренды",
+            from: out.before.sum,
+            to: out.after.sum,
+            kind: "money",
+          },
+        },
+      });
+      return out.after;
+    },
+  );
+
+  /**
    * v0.4.49: POST /api/rentals/:id/security-topup — пополнение залога.
    *
    * Доступно когда rental.deposit < rental.depositOriginal (т.е. ранее
