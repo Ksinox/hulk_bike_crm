@@ -390,6 +390,32 @@ export function formatActivitySummary(
         extras: ["Аренда отправлена в архив"],
       };
     }
+    // Откат приёма оплаты (выкуп просрочки / штраф / долг).
+    if (kind === "payment") {
+      const payKind = typeof m?.payKind === "string" ? m.payKind : null;
+      const title =
+        payKind === "overdue_days"
+          ? "Откат выкупа просрочки"
+          : payKind === "overdue_fine"
+            ? "Откат оплаты штрафа"
+            : "Откат оплаты долга";
+      const endpP = readRecord(diff?.endPlannedAt);
+      const sumP = readRecord(diff?.sum);
+      const payP = readRecord(diff?.payment);
+      let pchange: ChangeView | null = null;
+      const pextras: string[] = [];
+      if (endpP && (endpP.from != null || endpP.to != null)) {
+        pchange = {
+          from: formatDateLabel(endpP.from),
+          to: formatDateLabel(endpP.to),
+          tone: "blue",
+        };
+      }
+      if (sumP && (sumP.from != null || sumP.to != null))
+        pextras.push(`Сумма аренды: ${money(sumP.from)} → ${money(sumP.to)}`);
+      if (payP && payP.from != null) pextras.push(`Снято: ${money(payP.from)}`);
+      return { title, change: pchange, extras: pextras };
+    }
     const endp = readRecord(diff?.endPlannedAt);
     const sum = readRecord(diff?.sum);
     const extraDays = typeof m?.extraDays === "number" ? m.extraDays : null;

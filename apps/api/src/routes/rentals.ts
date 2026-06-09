@@ -2110,12 +2110,17 @@ export async function rentalsRoutes(app: FastifyInstance) {
           refundToDeposit?: boolean;
           depositRefundAmount?: number;
           clientId?: number;
+          // payment (un-pay): откат приёма оплаты долга/просрочки/штрафа
+          payKind?: "overdue_days" | "overdue_fine" | "manual";
+          debtEntryId?: number;
+          residualToDeposit?: number;
         };
         if (
           !snap ||
           (snap.kind !== "extend" &&
             snap.kind !== "equipment" &&
-            snap.kind !== "created")
+            snap.kind !== "created" &&
+            snap.kind !== "payment")
         )
           return { ok: false as const, error: "unsupported" as const };
 
@@ -2193,6 +2198,51 @@ export async function rentalsRoutes(app: FastifyInstance) {
             before: rentalNow,
             after: archived,
             amount: pay.amount,
+          };
+        }
+
+        // ── Откат приёма оплаты (un-pay): для выкупа просрочки возвращаем
+        //    период/дни/сумму до сдвига и списываем остаток с депозита;
+        //    удаляем долговую запись (debtEntries) и сам платёж. Штраф/ручной
+        //    долг — только удаление платежа+записи (аренду не двигали). ──
+        if (snap.kind === "payment") {
+          let restored = rentalNow;
+          if (snap.payKind === "overdue_days" && snap.endPlannedAt) {
+            const [u] = await tx
+              .update(rentals)
+              .set({
+                endPlannedAt: new Date(snap.endPlannedAt),
+                days: snap.days as number,
+                sum: snap.sum as number,
+                updatedAt: sql`now()`,
+              })
+              .where(eq(rentals.id, id))
+              .returning();
+            if (u) restored = u;
+            if (
+              snap.residualToDeposit &&
+              snap.residualToDeposit > 0 &&
+              snap.clientId
+            ) {
+              await tx.execute(sql`
+                UPDATE clients SET deposit_balance = deposit_balance - ${snap.residualToDeposit}
+                 WHERE id = ${snap.clientId}
+              `);
+            }
+          }
+          if (snap.debtEntryId) {
+            await tx
+              .delete(debtEntries)
+              .where(eq(debtEntries.id, snap.debtEntryId));
+          }
+          await tx.delete(payments).where(eq(payments.id, paymentId));
+          return {
+            ok: true as const,
+            kind: "payment" as const,
+            before: rentalNow,
+            after: restored,
+            amount: pay.amount,
+            payKind: snap.payKind ?? "manual",
           };
         }
 
@@ -2284,6 +2334,44 @@ export async function rentalsRoutes(app: FastifyInstance) {
               kind: "text",
             },
           },
+        });
+      } else if (out.kind === "payment") {
+        const label =
+          out.payKind === "overdue_days"
+            ? "выкупа просрочки"
+            : out.payKind === "overdue_fine"
+              ? "оплаты штрафа просрочки"
+              : "оплаты долга";
+        await logActivity(req, {
+          entity: "rental",
+          entityId: id,
+          action: "payment_rolled_back",
+          summary: `Откат ${label} ${summary} — снято ${out.amount.toLocaleString("ru-RU")} ₽`,
+          meta: { paymentId, kind: "payment", payKind: out.payKind },
+          diff:
+            out.payKind === "overdue_days"
+              ? {
+                  endPlannedAt: {
+                    label: "Возврат",
+                    from: out.before.endPlannedAt.toISOString(),
+                    to: out.after.endPlannedAt.toISOString(),
+                    kind: "date",
+                  },
+                  sum: {
+                    label: "Сумма аренды",
+                    from: out.before.sum,
+                    to: out.after.sum,
+                    kind: "money",
+                  },
+                }
+              : {
+                  payment: {
+                    label: "Снято",
+                    from: out.amount,
+                    to: 0,
+                    kind: "money",
+                  },
+                },
         });
       } else {
         // Откат изменения экипировки: показываем «было (после изм.) → стало
@@ -3618,6 +3706,19 @@ export async function rentalsRoutes(app: FastifyInstance) {
                 paid: true,
                 paidAt: payPaidAt,
                 note: `Оплата ${daysAdded} дн просрочки (продление endPlanned)`,
+                // Снимок для «отката оплаты в день»: вернуть период/дни/сумму
+                // аренды до сдвига, списать остаток с депозита, удалить долговую
+                // запись и сам платёж.
+                rollbackSnapshot: {
+                  kind: "payment",
+                  payKind: "overdue_days",
+                  debtEntryId: row?.id,
+                  endPlannedAt: r.endPlannedAt.toISOString(),
+                  days: r.days,
+                  sum: r.sum,
+                  residualToDeposit,
+                  clientId: r.clientId,
+                } as unknown as object,
               });
             }
           }
@@ -3642,6 +3743,11 @@ export async function rentalsRoutes(app: FastifyInstance) {
         paid: true,
         paidAt: payPaidAt,
         note: "Оплата штрафа просрочки",
+        rollbackSnapshot: {
+          kind: "payment",
+          payKind: "overdue_fine",
+          debtEntryId: row?.id,
+        } as unknown as object,
       });
     } else if (parsed.data.kind === "manual_payment") {
       // v0.5.1: оплата ручного долга = выручка по аренде. Раньше
@@ -3657,6 +3763,11 @@ export async function rentalsRoutes(app: FastifyInstance) {
         paid: true,
         paidAt: payPaidAt,
         note: `Оплата ручного долга${parsed.data.comment ? ": " + parsed.data.comment : ""}`,
+        rollbackSnapshot: {
+          kind: "payment",
+          payKind: "manual",
+          debtEntryId: row?.id,
+        } as unknown as object,
       });
     }
 

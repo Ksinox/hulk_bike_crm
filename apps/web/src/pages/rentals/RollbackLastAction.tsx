@@ -25,12 +25,14 @@ import type { Rental } from "@/lib/mock/rentals";
  * «промахивается» на старое продление, если сверху лежит другое действие.
  */
 
-export type RollbackKind = "extend" | "equipment" | "created";
+export type RollbackKind = "extend" | "equipment" | "created" | "payment";
+export type PayKind = "overdue_days" | "overdue_fine" | "manual";
 
 export type RollbackTarget =
   | { kind: "extend"; paymentId: number; extraDays: number; amount: number }
   | { kind: "equipment"; paymentId: number; amount: number; isRefund: boolean }
-  | { kind: "created"; paymentId: number; amount: number };
+  | { kind: "created"; paymentId: number; amount: number }
+  | { kind: "payment"; paymentId: number; amount: number; payKind: PayKind };
 
 /** matchAction по виду — на какой строке хронологии висит кнопка. */
 export const ROLLBACK_MATCH: Record<RollbackKind, (action: string) => boolean> =
@@ -38,6 +40,7 @@ export const ROLLBACK_MATCH: Record<RollbackKind, (action: string) => boolean> =
     extend: (a) => a.includes("extend"),
     equipment: (a) => a.includes("equipment"),
     created: (a) => a === "created",
+    payment: (a) => a === "debt_payment",
   };
 
 function fmtRub(n: number): string {
@@ -108,6 +111,23 @@ export function useRollbackTarget(
       return { kind: "created", paymentId: lastPay.id, amount: lastPay.amount };
     }
 
+    // Приём оплаты долга — последний платёж это rent/fine с пометкой
+    // «N дн просрочки» / «штрафа просрочки» / «ручного долга».
+    if (last.action === "debt_payment") {
+      let payKind: PayKind | null = null;
+      if (/\d+\s*дн\s+просрочки|просрочки\s*\(продление/i.test(note))
+        payKind = "overdue_days";
+      else if (/штрафа\s+просрочки/i.test(note)) payKind = "overdue_fine";
+      else if (/ручного\s+долга/i.test(note)) payKind = "manual";
+      if (!payKind) return null;
+      return {
+        kind: "payment",
+        paymentId: lastPay.id,
+        amount: lastPay.amount,
+        payKind,
+      };
+    }
+
     return null;
   }, [activity, payments, rental.id]);
 }
@@ -133,6 +153,8 @@ export function RollbackButton({
         toast.success("Продление откачено", `Вернулось ${fmtRub(target.amount)} ₽`);
       } else if (target.kind === "created") {
         toast.success("Создание аренды откачено", "Аренда отправлена в архив");
+      } else if (target.kind === "payment") {
+        toast.success("Оплата откачена", `Снято ${fmtRub(target.amount)} ₽`);
       } else {
         toast.success(
           "Изменение экипировки откачено",
@@ -159,7 +181,9 @@ export function RollbackButton({
       ? "Откатить продление?"
       : target.kind === "created"
         ? "Откатить создание аренды?"
-        : "Откатить изменение экипировки?";
+        : target.kind === "payment"
+          ? "Откатить оплату?"
+          : "Откатить изменение экипировки?";
 
   return (
     <>
@@ -200,6 +224,8 @@ export function RollbackButton({
               <ExtendPreview rental={rental} target={target} />
             ) : target.kind === "created" ? (
               <CreatedPreview target={target} />
+            ) : target.kind === "payment" ? (
+              <PaymentPreview target={target} />
             ) : (
               <EquipmentPreview target={target} />
             )}
@@ -210,7 +236,11 @@ export function RollbackButton({
                 ? "Платёж продления удалится, период вернётся. "
                 : target.kind === "created"
                   ? "Аренда уйдёт в архив, скутер освободится, платёж создания удалится. "
-                  : "Прежний набор экипировки вернётся, платёж удалится. "}
+                  : target.kind === "payment"
+                    ? target.payKind === "overdue_days"
+                      ? "Платёж удалится, период вернётся, остаток из депозита спишется. "
+                      : "Платёж удалится, долг снова станет открытым. "
+                    : "Прежний набор экипировки вернётся, платёж удалится. "}
               Доступно только сегодня — завтра откатить уже нельзя.
             </div>
 
@@ -261,6 +291,29 @@ function ExtendPreview({
         label="Сумма аренды"
         before={`${fmtRub(rental.sum)} ₽`}
         after={`${fmtRub(sumAfter)} ₽`}
+        accent
+      />
+    </div>
+  );
+}
+
+function PaymentPreview({
+  target,
+}: {
+  target: Extract<RollbackTarget, { kind: "payment" }>;
+}) {
+  const label =
+    target.payKind === "overdue_days"
+      ? "Выкуп просрочки"
+      : target.payKind === "overdue_fine"
+        ? "Оплата штрафа"
+        : "Оплата долга";
+  return (
+    <div className="space-y-2 rounded-xl bg-surface-soft p-3">
+      <Row
+        label={label}
+        before={`${fmtRub(target.amount)} ₽`}
+        after="отменить"
         accent
       />
     </div>
