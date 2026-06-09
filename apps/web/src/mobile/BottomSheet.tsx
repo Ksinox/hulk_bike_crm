@@ -27,6 +27,9 @@ export function MobileBottomSheet({
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const startY = useRef<number | null>(null);
+  // dragY дублируем в ref — решение «закрыть/вернуть» в endDrag не должно
+  // зависеть от тайминга ре-рендера (замыкание могло бы видеть старое значение).
+  const dragYRef = useRef(0);
   const [dragY, setDragY] = useState(0);
   const [dragging, setDragging] = useState(false);
   const [closing, setClosing] = useState(false);
@@ -35,20 +38,29 @@ export function MobileBottomSheet({
 
   const onPointerDown = (e: React.PointerEvent) => {
     startY.current = e.clientY;
+    dragYRef.current = 0;
     setDragging(true);
-    e.currentTarget.setPointerCapture?.(e.pointerId);
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      /* синтетический указатель — capture не критичен */
+    }
   };
   const onPointerMove = (e: React.PointerEvent) => {
     if (startY.current == null) return;
-    setDragY(Math.max(0, e.clientY - startY.current));
+    const dy = Math.max(0, e.clientY - startY.current);
+    dragYRef.current = dy;
+    setDragY(dy);
   };
   const endDrag = () => {
     if (startY.current == null) return;
     startY.current = null;
     setDragging(false);
     const h = panelRef.current?.offsetHeight ?? 400;
+    const dy = dragYRef.current;
+    dragYRef.current = 0;
     // закрываем, если утянули больше порога (≈28% высоты, не более 140px)
-    if (dragY > Math.min(140, h * 0.28)) close();
+    if (dy > Math.min(140, h * 0.28)) close();
     else setDragY(0);
   };
 
