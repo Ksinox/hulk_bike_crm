@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   ArrowRight,
   Bike,
+  ChevronLeft,
   Clock,
   Gauge,
   Maximize2,
@@ -48,6 +49,8 @@ export function MobileDashboard({
   // #172: открытие карточки аренды из строк просрочки/возврата + звонок.
   const rentals = useRentals();
   const [openRentalId, setOpenRentalId] = useState<number | null>(null);
+  // Полноэкранный список ВСЕХ просрочек (с дашборда «Все →»): звонок + карточка.
+  const [overdueListOpen, setOverdueListOpen] = useState(false);
   const { callClient, callSheet } = useCallClient();
 
   if (m.isLoading) {
@@ -182,7 +185,7 @@ export function MobileDashboard({
         count={m.overdueCount}
         icon={<AlertTriangle size={15} />}
         tone="red"
-        onMore={m.overdueCount > 0 ? () => onSelect("debtors") : undefined}
+        onMore={m.overdueCount > 0 ? () => setOverdueListOpen(true) : undefined}
       >
         {m.overdue.length === 0 ? (
           <EmptyRow text="Просрочек нет — все аренды в графике" />
@@ -207,6 +210,52 @@ export function MobileDashboard({
 
       {revenueOpen && (
         <MobileRevenueScreen scope="all" onClose={() => setRevenueOpen(false)} />
+      )}
+
+      {/* Полный список просрочек («Все →»): ВСЕ должники, у каждого — звонок
+          (кнопка справа) и тап по строке → карточка аренды. Модуль «Должники»
+          не задействуем: это быстрый операционный список просрочек. */}
+      {overdueListOpen && (
+        <div className="fixed inset-0 z-[50] flex h-[100dvh] min-h-0 flex-col bg-bg">
+          <header className="flex items-center gap-2 border-b border-border bg-surface px-2 py-2.5">
+            <button
+              type="button"
+              onClick={() => setOverdueListOpen(false)}
+              aria-label="Назад"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-muted active:bg-surface-soft"
+            >
+              <ChevronLeft size={22} />
+            </button>
+            <div className="min-w-0">
+              <div className="font-display text-[18px] font-extrabold leading-tight text-ink">
+                Все просрочки
+              </div>
+              <div className="text-[12px] text-muted">
+                {m.overdueCount}{" "}
+                {plural(m.overdueCount, ["должник", "должника", "должников"])} ·
+                долг {formatRub(m.overdueSum)} ₽
+              </div>
+            </div>
+          </header>
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3">
+            {m.overdue.length === 0 ? (
+              <EmptyRow text="Просрочек нет — все аренды в графике" />
+            ) : (
+              <div className="flex flex-col divide-y divide-border rounded-2xl bg-surface px-3 shadow-card">
+                {m.overdue.map((o) => (
+                  <OverdueRow
+                    key={o.rentalId}
+                    item={o}
+                    onOpen={() => setOpenRentalId(o.rentalId)}
+                    onCall={() =>
+                      callClient(o.clientName, [o.clientPhone, o.clientPhone2])
+                    }
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
       {/* #172: тап по строке просрочки/возврата → полноэкранная карточка
