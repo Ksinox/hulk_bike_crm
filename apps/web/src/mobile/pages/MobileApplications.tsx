@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Inbox, Phone, ChevronRight, Check, X, Trash2 } from "lucide-react";
+import { Inbox, ChevronRight } from "lucide-react";
 import {
   useApplications,
   useRejectApplication,
@@ -282,59 +282,27 @@ function AppDetail({
     await deleteApp.mutateAsync(app.id);
     onDeleted();
   };
+
+  // Все кнопки рендерит сам ApplicationView: на телефоне это sticky-панель
+  // внизу (Позвонить / Отклонить / Принять — под большой палец), плюс
+  // вторичная ссылка «Удалить заявку». Позвонить — через tel: внутри
+  // ApplicationView (onCall не передаём, берётся app.phone).
+  const acceptHandler = actionable
+    ? onAccept
+    : canResumeRental
+      ? onCreateRental
+      : undefined;
+  const acceptLabel = canResumeRental ? "Оформить аренду" : "Принять";
+
   return (
     <div className="pb-1">
-      <ApplicationView app={app} />
-
-      <div className="mt-5 flex flex-col gap-2">
-        {app.phone && (
-          <a
-            href={`tel:${app.phone}`}
-            className="flex items-center justify-center gap-2 rounded-2xl bg-blue-50 py-3 text-[14px] font-bold text-blue-700 ring-1 ring-inset ring-blue-100 active:scale-[0.99]"
-          >
-            <Phone size={17} /> Позвонить
-          </a>
-        )}
-        {actionable ? (
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={onReject}
-              className="flex flex-1 items-center justify-center gap-1.5 rounded-2xl bg-red-soft py-3.5 text-[14px] font-bold text-red-ink active:scale-[0.99]"
-            >
-              <X size={17} /> Отклонить
-            </button>
-            <button
-              type="button"
-              onClick={onAccept}
-              className="flex flex-[1.5] items-center justify-center gap-1.5 rounded-2xl bg-green py-3.5 text-[14px] font-bold text-white shadow-card-sm active:scale-[0.99]"
-            >
-              <Check size={17} /> Принять и оформить
-            </button>
-          </div>
-        ) : canResumeRental ? (
-          <button
-            type="button"
-            onClick={onCreateRental}
-            className="flex w-full items-center justify-center gap-1.5 rounded-2xl bg-green py-3.5 text-[14px] font-bold text-white shadow-card-sm active:scale-[0.99]"
-          >
-            <Check size={17} /> Оформить аренду
-          </button>
-        ) : (
-          <p className="text-center text-[12px] text-muted-2">
-            Заявка уже обработана
-          </p>
-        )}
-        {/* Удалить заявку безвозвратно (тест / клиент передумал). */}
-        <button
-          type="button"
-          onClick={handleDelete}
-          disabled={deleteApp.isPending}
-          className="mt-1 flex items-center justify-center gap-1.5 rounded-2xl py-2.5 text-[13px] font-semibold text-red-600 active:scale-[0.99] disabled:opacity-50"
-        >
-          <Trash2 size={15} /> Удалить заявку
-        </button>
-      </div>
+      <ApplicationView
+        app={app}
+        onAccept={acceptHandler}
+        acceptLabel={acceptLabel}
+        onReject={actionable ? onReject : undefined}
+        onDelete={handleDelete}
+      />
     </div>
   );
 }

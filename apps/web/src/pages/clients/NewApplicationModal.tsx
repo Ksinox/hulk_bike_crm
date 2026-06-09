@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { confirmDialog } from "@/lib/toast";
-import { AlertCircle, Bell, Bike, Check, Clock, Trash2, X } from "lucide-react";
+import { Bell, X } from "lucide-react";
 import {
   useDeleteApplication,
   type ApiApplication,
@@ -9,8 +9,10 @@ import { ApplicationView } from "@/pages/applications/ApplicationView";
 
 /**
  * Карточка новой заявки. Чистый просмотр «личного дела»: единый
- * ApplicationView (селфи + документы + сгруппированная инфа), снизу —
- * действия (спам/отклонить/позже/оформить). На мобиле — на весь экран.
+ * ApplicationView сам рендерит все действия (Принять/Отклонить под
+ * ключевыми датами на компе; sticky-панель снизу на узких ширинах) и
+ * вторичные ссылки (Позже / Спам / Удалить). Обёртка лишь прокидывает
+ * обработчики. На мобиле (телефон) используется отдельный AppDetail.
  *
  * Cross-origin картинки (web crm.hulkbike.ru, API api.hulkbike.ru) с
  * crossOrigin="use-credentials" — обрабатываются внутри ApplicationView.
@@ -71,6 +73,19 @@ export function NewApplicationModal({
     onLater();
   };
 
+  // Главная кнопка: «Принять» (новая) → конвертация; для уже принятой с
+  // клиентом — «Оформить аренду» (возобновление прерванного флоу); если
+  // принята и возобновить нечем — «Уже оформлено» (disabled).
+  const accepted = application.status === "accepted";
+  const canResume =
+    accepted && application.clientId != null && !!onCreateRental;
+  const onAccept = canResume ? onCreateRental : onConvertNow;
+  const acceptLabel = canResume
+    ? "Оформить аренду"
+    : accepted
+      ? "Уже оформлено"
+      : "Принять";
+
   return (
     <div className="fixed inset-0 z-[100] flex items-stretch justify-center overflow-y-auto bg-ink/60 p-0 backdrop-blur-sm sm:items-start sm:p-8">
       <div className="min-h-[100dvh] w-full rounded-none bg-surface shadow-card-lg sm:my-6 sm:min-h-0 sm:max-w-[640px] sm:rounded-3xl lg:max-w-[1080px]">
@@ -95,79 +110,19 @@ export function NewApplicationModal({
         </header>
 
         <div className="px-5 py-5 sm:px-6">
-          <ApplicationView app={application} />
+          <ApplicationView
+            app={application}
+            readOnly={readOnly}
+            onAccept={onAccept}
+            acceptLabel={acceptLabel}
+            acceptDisabled={accepted && !canResume}
+            onReject={onReject}
+            onSpam={onSpam}
+            onDelete={handleDelete}
+            onLater={onLater}
+          />
         </div>
 
-        {!readOnly && (
-          <footer className="sticky bottom-0 flex flex-col gap-2 border-t border-border bg-surface-soft/95 px-5 py-3.5 backdrop-blur-sm sm:flex-row sm:items-center sm:justify-between sm:px-6">
-            <div className="flex flex-wrap items-center gap-1">
-              {onSpam && (
-                <button
-                  type="button"
-                  onClick={onSpam}
-                  className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-2 text-[12px] font-semibold text-orange-ink transition-colors hover:bg-orange-soft/60"
-                >
-                  <AlertCircle size={14} /> Спам
-                </button>
-              )}
-              {onReject && (
-                <button
-                  type="button"
-                  onClick={onReject}
-                  className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-2 text-[12px] font-semibold text-red-ink transition-colors hover:bg-red-soft/60"
-                >
-                  <Trash2 size={14} /> Отклонить
-                </button>
-              )}
-              {/* Удалить заявку безвозвратно (тест / клиент передумал).
-                  Доступно всегда; спам/отклонить — мягкие статусы в архив. */}
-              <button
-                type="button"
-                onClick={handleDelete}
-                disabled={deleteApp.isPending}
-                className="inline-flex items-center justify-center gap-1.5 rounded-full px-3 py-2 text-[12px] font-semibold text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50"
-              >
-                <Trash2 size={14} /> Удалить
-              </button>
-            </div>
-            <div className="flex flex-1 gap-2 sm:justify-end">
-              <button
-                type="button"
-                onClick={onLater}
-                className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-full border border-border bg-white px-5 text-[14px] font-semibold text-ink transition-colors hover:bg-surface-soft sm:flex-initial"
-              >
-                <Clock size={16} /> Позже
-              </button>
-              {application.status === "accepted" &&
-              application.clientId != null &&
-              onCreateRental ? (
-                // Клиент уже создан, но аренду не дооформили — продолжаем с
-                // префиллом из заявки (модель/срок/экипировка). Данные заявки
-                // живут на сервере, поэтому прерванный флоу всегда можно
-                // возобновить отсюда, не вводя всё заново.
-                <button
-                  type="button"
-                  onClick={onCreateRental}
-                  className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-full bg-green px-5 text-[14px] font-bold text-white shadow-card-sm transition-colors hover:bg-green-ink sm:flex-initial"
-                >
-                  <Bike size={16} /> Оформить аренду
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={onConvertNow}
-                  disabled={application.status === "accepted"}
-                  className="inline-flex h-11 flex-1 items-center justify-center gap-1.5 rounded-full bg-green px-5 text-[14px] font-bold text-white shadow-card-sm transition-colors hover:bg-green-ink disabled:opacity-50 sm:flex-initial"
-                >
-                  <Check size={16} />{" "}
-                  {application.status === "accepted"
-                    ? "Уже оформлено"
-                    : "Оформить сейчас"}
-                </button>
-              )}
-            </div>
-          </footer>
-        )}
         {readOnly && (
           <footer className="flex justify-end border-t border-border bg-surface-soft px-6 py-4">
             <button
