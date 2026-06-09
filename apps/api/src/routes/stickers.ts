@@ -33,7 +33,9 @@ const CreateBody = z
 
 const ListQuery = z.object({
   entity: z.enum(ENTITIES),
-  entityId: z.coerce.number().int().positive(),
+  // entityId необязателен: без него возвращаем ВСЕ стикеры этого типа за один
+  // запрос (bulk — для мини-стикеров в списке аренд, без N+1 на строку).
+  entityId: z.coerce.number().int().positive().optional(),
   includeDismissed: z.coerce.boolean().optional(),
 });
 
@@ -50,13 +52,11 @@ export async function stickersRoutes(app: FastifyInstance) {
         .send({ error: "validation", issues: parsed.error.issues });
     }
     const { entity, entityId, includeDismissed } = parsed.data;
-    const where = includeDismissed
-      ? and(eq(noteStickers.entity, entity), eq(noteStickers.entityId, entityId))
-      : and(
-          eq(noteStickers.entity, entity),
-          eq(noteStickers.entityId, entityId),
-          isNull(noteStickers.dismissedAt),
-        );
+    const where = and(
+      eq(noteStickers.entity, entity),
+      entityId != null ? eq(noteStickers.entityId, entityId) : undefined,
+      includeDismissed ? undefined : isNull(noteStickers.dismissedAt),
+    );
     const rows = await db
       .select()
       .from(noteStickers)

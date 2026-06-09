@@ -68,6 +68,27 @@ export function useRentalCardStickers(
   return { stickers, isLoading: rentalQ.isLoading || clientQ.isLoading };
 }
 
+/**
+ * v0.9.x: цвета приклеенных стикеров КОНКРЕТНОЙ аренды — для мини-стикеров в
+ * списке аренд. Под капотом один bulk-запрос всех стикеров аренд (entity=rental
+ * без entityId), React Query дедупит его между всеми строками; на строку —
+ * только фильтр по rentalId. Без N+1.
+ */
+export function useRentalStickers(rentalId: number | null | undefined) {
+  const q = useQuery({
+    queryKey: [...stickerKeys.all, "rental", "bulk"],
+    queryFn: () => api.get<NoteSticker[]>("/api/stickers?entity=rental"),
+    staleTime: 30_000,
+  });
+  return useMemo(
+    () =>
+      rentalId == null
+        ? []
+        : (q.data ?? []).filter((s) => s.entityId === rentalId),
+    [q.data, rentalId],
+  );
+}
+
 function useInvalidateStickers() {
   const qc = useQueryClient();
   return () => {

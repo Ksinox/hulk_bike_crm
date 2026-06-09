@@ -8,6 +8,8 @@ import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
 import { ErrorBoundary } from "@/app/ErrorBoundary";
 import { usePageFab } from "../fab";
 import { RowCallButton, useCallClient } from "../call";
+import { useRentalStickers } from "@/lib/api/stickers";
+import { MiniStickers } from "@/components/StickerStack";
 import type { Rental } from "@/lib/mock/rentals";
 import { useApiClients } from "@/lib/api/clients";
 import type { ApiClient } from "@/lib/api/types";
@@ -274,6 +276,7 @@ function RentalRow({
 }) {
   const meta = statusMeta(rental, todayMs);
   const hasPhone = !!(client?.phone || client?.extraPhone);
+  const stickers = useRentalStickers(rental.id);
   return (
     // Обёртка-div: внутри две кнопки (открыть карточку + позвонить).
     <div className="flex items-center gap-2 rounded-2xl bg-surface p-3 shadow-card-sm">
@@ -283,6 +286,10 @@ function RentalRow({
         className="flex min-w-0 flex-1 items-center gap-3 text-left active:opacity-60"
       >
         <div className="min-w-0 flex-1">
+          {/* Мини-стикеры цветами заметок аренды — над именем, у края строки. */}
+          {stickers.length > 0 && (
+            <MiniStickers stickers={stickers} className="mb-0.5" />
+          )}
           <div className="flex items-center gap-2">
             <span className="truncate text-[14px] font-bold text-ink">
               {client?.name ?? "Без клиента"}

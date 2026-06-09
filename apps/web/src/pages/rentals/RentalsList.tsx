@@ -37,13 +37,31 @@ import { useApiScooters } from "@/lib/api/scooters";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { useDebtAggregate } from "@/lib/api/debt";
 import { useParkingSessions } from "@/lib/api/parking";
-import { useStickers, useCreateSticker } from "@/lib/api/stickers";
+import {
+  useStickers,
+  useCreateSticker,
+  useRentalStickers,
+} from "@/lib/api/stickers";
+import { MiniStickers } from "@/components/StickerStack";
 import { promptDialog } from "@/lib/toast";
 import { fileUrl } from "@/lib/files";
 import type { RentalsViewMode } from "./rentalsViewMode";
 
 function fmt(n: number) {
   return n.toLocaleString("ru-RU");
+}
+
+/** Мини-стикеры строки аренды (цвета её приклеенных заметок) — bulk, без N+1. */
+function RentalRowStickers({
+  rentalId,
+  className,
+}: {
+  rentalId: number;
+  className?: string;
+}) {
+  const stickers = useRentalStickers(rentalId);
+  if (!stickers.length) return null;
+  return <MiniStickers stickers={stickers} className={className} />;
 }
 
 /** Разбор «Jog #02» → { model: "Jog", num: "02" }. */
@@ -627,12 +645,17 @@ function RentalTableRow({
       <td className="px-4 py-5">
         <div className="flex items-center gap-3 min-w-0">
           <ClientAvatar clientId={row.clientId} name={row.clientName} w={42} h={42} />
-          <span
-            className="truncate text-[14px] font-semibold text-ink"
-            title={row.clientName}
-          >
-            {row.clientName}
-          </span>
+          <div className="min-w-0">
+            {/* Мини-стикеры цветами заметок аренды — видно сразу, что есть
+                заметки. */}
+            <RentalRowStickers rentalId={row.rental.id} className="mb-1" />
+            <span
+              className="block truncate text-[14px] font-semibold text-ink"
+              title={row.clientName}
+            >
+              {row.clientName}
+            </span>
+          </div>
         </div>
       </td>
       {/* v0.8.26 (G2): «Связь» сразу после имени — статус читается рядом с ФИО. */}

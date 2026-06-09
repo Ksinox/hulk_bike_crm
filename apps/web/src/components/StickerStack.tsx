@@ -43,6 +43,49 @@ function fmtDate(iso: string): string {
   }
 }
 
+/**
+ * Мини-стикеры — крошечные цветные «наклейки» БЕЗ текста, для списков (строки
+ * аренд). Дублируют цвета приклеенных заметок аренды: с одного взгляда видно,
+ * на каких арендах есть заметки и сколько/какого цвета. Лишние сверх `max` —
+ * как «+N».
+ */
+export function MiniStickers({
+  stickers,
+  max = 4,
+  className,
+}: {
+  stickers: { color: string }[];
+  max?: number;
+  className?: string;
+}) {
+  if (!stickers.length) return null;
+  const shown = stickers.slice(0, max);
+  const extra = stickers.length - shown.length;
+  return (
+    <div
+      className={cn("flex items-center gap-0.5", className)}
+      aria-label={`Заметок: ${stickers.length}`}
+      title={`Заметок: ${stickers.length}`}
+    >
+      {shown.map((s, i) => (
+        <span
+          key={i}
+          style={{ transform: `rotate(${i % 2 ? 4 : -4}deg)` }}
+          className={cn(
+            "inline-block h-3 w-3.5 shrink-0 rounded-[2px] shadow-[1px_1.5px_2px_rgba(0,0,0,0.18)] ring-1 ring-black/5",
+            (STICKER_COLORS[s.color] ?? STICKER_COLORS.yellow!).split(" ")[0],
+          )}
+        />
+      ))}
+      {extra > 0 && (
+        <span className="ml-0.5 text-[9px] font-bold leading-none text-muted-2">
+          +{extra}
+        </span>
+      )}
+    </div>
+  );
+}
+
 export function StickerStack({
   stickers,
   onUnpin,
