@@ -8,7 +8,7 @@
  * иконками, тот же что на дашборде и в полной ленте). Локальные функции
  * formatActivityShort / renderDiffLine / actionMeta удалены.
  */
-import { Fragment, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import { ArrowRight, History } from "lucide-react";
 import type { ApiActivityItem } from "@/lib/api/activity";
 import { ActivityEventRow } from "@/components/ActivityEventRow";
@@ -18,19 +18,24 @@ export function InlineHistory({
   loading,
   onExpand,
   limit = 5,
-  afterFirst,
+  rollback,
 }: {
   items: ApiActivityItem[];
   loading?: boolean;
   onExpand: () => void;
   limit?: number;
   /**
-   * Слот, который рендерится СРАЗУ под самым свежим событием (items[0]).
-   * Используется для «Откатить последнее действие» — кнопка живёт прямо
-   * в хронологии на последнем действии, а не отдельной плашкой над картой.
+   * Кнопка «Откатить» прямо НА СТРОКЕ той операции, для которой откат
+   * доступен (например, продление за сегодня). `matchAction` находит первую
+   * (самую свежую) подходящую строку, `node` рендерится её оверлеем справа.
+   * Условие истекло — родитель не передаёт rollback, кнопки нет.
    */
-  afterFirst?: ReactNode;
+  rollback?: { matchAction: (action: string) => boolean; node: ReactNode };
 }) {
+  const shown = items.slice(0, limit);
+  const rollbackIdx = rollback
+    ? shown.findIndex((it) => rollback.matchAction(it.action))
+    : -1;
   return (
     <div className="rounded-2xl bg-surface border border-border shadow-card-sm overflow-hidden">
       <div className="px-4 pt-3 pb-2 flex items-center justify-between border-b border-border">
@@ -56,11 +61,15 @@ export function InlineHistory({
           </div>
         ) : (
           <div className="px-3 py-2 flex flex-col gap-0.5">
-            {items.slice(0, limit).map((it, i) => (
-              <Fragment key={it.id}>
+            {shown.map((it, i) => (
+              <div key={it.id} className="relative">
                 <ActivityEventRow item={it} compact />
-                {i === 0 && afterFirst}
-              </Fragment>
+                {rollback && i === rollbackIdx && (
+                  <div className="absolute right-2 top-2 z-10">
+                    {rollback.node}
+                  </div>
+                )}
+              </div>
             ))}
           </div>
         )}

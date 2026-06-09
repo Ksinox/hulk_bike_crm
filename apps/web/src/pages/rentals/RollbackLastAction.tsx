@@ -9,14 +9,28 @@ import type { Rental } from "@/lib/mock/rentals";
 
 /**
  * «Откатить последнее действие» — защита от ошибочных действий «в день
- * совершения». Phase 1: откат ПРОДЛЕНИЯ. Если последнее действие аренды
- * сегодня — продление, показываем компактную кнопку «Откатить» прямо
- * В ХРОНОЛОГИИ (под самым свежим событием, через слот InlineHistory.afterFirst)
- * и окно подтверждения «было → станет». Бэк проверяет границу (сегодня по МСК,
- * это последнее действие, аренда не в архиве) и восстанавливает аренду из
- * снимка, удаляя платёж продления. Сам откат тоже пишется в хронологию
- * (action: payment_rolled_back).
+ * совершения». Phase 1: откат ПРОДЛЕНИЯ.
+ *
+ * UX (по правке заказчика): НЕ отдельная плашка с текстом, а просто кнопка
+ * «Откатить» ПРЯМО НА СТРОКЕ той операции в хронологии, для которой откат
+ * доступен. Условие истекло (наступил следующий день) — кнопки больше нет.
+ * По аналогии так же будет для любых будущих откатываемых операций.
+ *
+ *   • useRollbackTarget(rental) — есть ли сегодня откатываемое продление
+ *     (последний платёж аренды с пометкой «продление на N дн» за сегодня).
+ *   • <RollbackButton rental target /> — маленькая кнопка + окно подтверждения
+ *     «было → станет». Рендерится оверлеем на строке продления в InlineHistory.
+ *
+ * Бэк проверяет границу (сегодня по МСК, это последнее действие, аренда не в
+ * архиве), восстанавливает аренду из снимка и удаляет платёж продления. Сам
+ * откат пишется в хронологию (action: payment_rolled_back).
  */
+
+export type RollbackTarget = {
+  paymentId: number;
+  extraDays: number;
+  amount: number;
+};
 
 function fmtRub(n: number): string {
   return n.toLocaleString("ru-RU");
@@ -37,16 +51,14 @@ function mskDay(iso: string): string {
   return d.toISOString().slice(0, 10);
 }
 
-type Rollbackable = { paymentId: number; extraDays: number; amount: number };
-
-export function RollbackLastAction({ rental }: { rental: Rental }) {
+/**
+ * Есть ли у аренды откатываемое СЕГОДНЯ продление? Последнее действие аренды =
+ * платёж с максимальным createdAt. Откатываемо, если он СЕГОДНЯ (МСК) и это
+ * продление (по примечанию «продление на N дн»).
+ */
+export function useRollbackTarget(rental: Rental): RollbackTarget | null {
   const { data: payments } = useApiPayments(rental.id);
-  const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
-
-  // Последнее действие аренды = платёж с максимальным createdAt. Откатываемо,
-  // если он СЕГОДНЯ (МСК) и это продление (по примечанию «продление на N дн»).
-  const target = useMemo<Rollbackable | null>(() => {
+  return useMemo<RollbackTarget | null>(() => {
     const rows = (payments ?? []).filter((p) => p.rentalId === rental.id);
     if (!rows.length) return null;
     const last = [...rows].sort(
@@ -58,8 +70,17 @@ export function RollbackLastAction({ rental }: { rental: Rental }) {
     if (!m) return null;
     return { paymentId: last.id, extraDays: Number(m[1]), amount: last.amount };
   }, [payments, rental.id]);
+}
 
-  if (!target) return null;
+export function RollbackButton({
+  rental,
+  target,
+}: {
+  rental: Rental;
+  target: RollbackTarget;
+}) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   const curEnd = parseRu(rental.endPlanned);
   const newEnd = curEnd
@@ -85,21 +106,17 @@ export function RollbackLastAction({ rental }: { rental: Rental }) {
 
   return (
     <>
-      {/* Компактная полоска прямо в хронологии — «под последним действием».
-          Тон спокойный янтарный: это не тревога, а доступная отмена. */}
-      <div className="mx-1 mb-0.5 mt-0.5 flex items-center gap-2 rounded-[10px] border border-amber-200 bg-amber-50 px-2.5 py-1.5">
-        <Undo2 size={13} className="shrink-0 text-amber-600" />
-        <span className="min-w-0 flex-1 text-[11px] font-semibold leading-tight text-amber-800">
-          Продлили сегодня на {target.extraDays} дн — ошиблись?
-        </span>
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-600 px-2.5 py-1 text-[11px] font-bold text-white transition-colors hover:bg-amber-700"
-        >
-          <Undo2 size={12} /> Откатить
-        </button>
-      </div>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen(true);
+        }}
+        title="Откатить это продление (доступно только сегодня)"
+        className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-700 shadow-sm ring-1 ring-inset ring-amber-200 transition-colors hover:bg-amber-100 hover:text-amber-800"
+      >
+        <Undo2 size={11} /> Откатить
+      </button>
 
       {open && (
         <div

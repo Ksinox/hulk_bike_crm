@@ -40,7 +40,7 @@ import {
 import { effectiveRentalStatus } from "@/lib/rentalStatus";
 import { useClientUnreachable, clientStore } from "@/pages/clients/clientStore";
 import { StickerStack, NoteComposer } from "@/components/StickerStack";
-import { RollbackLastAction } from "./RollbackLastAction";
+import { useRollbackTarget, RollbackButton } from "./RollbackLastAction";
 import {
   useRentalCardStickers,
   useCreateSticker,
@@ -464,6 +464,16 @@ export function RentalCard({
   // под календарём. Полный список — в drawer'е (HistoryTab).
   const activityQ = useActivityTimeline("rental", rental.id, 50);
   const activityItems = activityQ.data?.items ?? [];
+  // Откат «в день совершения»: есть ли сегодня откатываемое продление.
+  // Если есть — кнопка «Откатить» рендерится прямо на строке продления
+  // в хронологии (InlineHistory.rollback). Истекло — null, кнопки нет.
+  const rbTarget = useRollbackTarget(rental);
+  const rollbackSlot = rbTarget
+    ? {
+        matchAction: (a: string) => a.includes("extend"),
+        node: <RollbackButton rental={rental} target={rbTarget} />,
+      }
+    : undefined;
 
   // Корневая (первая) аренда цепочки — её start показываем в шапке
   // карточки как «оригинальную» дату выдачи, даже если сейчас открыто
@@ -2547,7 +2557,7 @@ export function RentalCard({
               loading={activityQ.isLoading}
               onExpand={requestHistory}
               limit={5}
-              afterFirst={<RollbackLastAction rental={rental} />}
+              rollback={rollbackSlot}
             />
           </AccordionSection>
 
@@ -2676,7 +2686,7 @@ export function RentalCard({
               loading={activityQ.isLoading}
               onExpand={requestHistory}
               limit={5}
-              afterFirst={<RollbackLastAction rental={rental} />}
+              rollback={rollbackSlot}
             />
             <DocsInline rental={rental} />
           </div>
