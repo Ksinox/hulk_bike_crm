@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { and, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/index.js";
 import {
@@ -2085,7 +2085,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
           .where(
             and(
               eq(payments.rentalId, id),
-              sql`${payments.createdAt} > ${pay.createdAt}`,
+              gt(payments.createdAt, pay.createdAt),
             ),
           )
           .limit(1);
