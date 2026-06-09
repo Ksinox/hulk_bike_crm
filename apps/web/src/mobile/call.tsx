@@ -126,11 +126,12 @@ export function RowCallButton({
       }}
       aria-label="Позвонить клиенту"
       className={cn(
-        "flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-green/10 text-green active:scale-90",
+        // 44px — минимальный тач-таргет по правилам мобилки.
+        "flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-green/10 text-green active:scale-90",
         className,
       )}
     >
-      <Phone size={17} />
+      <Phone size={18} />
     </button>
   );
 }
