@@ -2079,15 +2079,13 @@ export async function rentalsRoutes(app: FastifyInstance) {
           return { ok: false as const, error: "too_late" as const };
 
         // Это последнее действие аренды? (нет более позднего платежа.)
+        // Сравниваем по id (bigserial монотонен с созданием), а НЕ по
+        // createdAt: JS Date теряет микросекунды timestamptz, из-за чего
+        // gt(createdAt, pay.createdAt) ложно ловил сам же платёж.
         const newer = await tx
           .select({ id: payments.id })
           .from(payments)
-          .where(
-            and(
-              eq(payments.rentalId, id),
-              gt(payments.createdAt, pay.createdAt),
-            ),
-          )
+          .where(and(eq(payments.rentalId, id), gt(payments.id, paymentId)))
           .limit(1);
         if (newer.length > 0)
           return { ok: false as const, error: "not_last" as const };
