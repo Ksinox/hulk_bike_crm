@@ -4,33 +4,39 @@ import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
 import { ApiError } from "@/lib/api";
 import { useApiPayments } from "@/lib/api/payments";
+import type { ApiActivityItem } from "@/lib/api/activity";
 import { rollbackLastPayment } from "./rentalsStore";
 import type { Rental } from "@/lib/mock/rentals";
 
 /**
  * «Откатить последнее действие» — защита от ошибочных действий «в день
- * совершения». Phase 1: откат ПРОДЛЕНИЯ.
+ * совершения». Кнопка «Откатить» висит ПРЯМО НА СТРОКЕ той операции в
+ * хронологии. Условие истекло (наступил следующий день / появилось новое
+ * действие сверху) — кнопки нет.
  *
- * UX (по правке заказчика): НЕ отдельная плашка с текстом, а просто кнопка
- * «Откатить» ПРЯМО НА СТРОКЕ той операции в хронологии, для которой откат
- * доступен. Условие истекло (наступил следующий день) — кнопки больше нет.
- * По аналогии так же будет для любых будущих откатываемых операций.
+ * Поддержанные операции (Phase 1–2):
+ *   • extend     — продление (восстановить период/сумму, удалить платёж);
+ *   • equipment  — изменение экипировки (вернуть набор, удалить доплату/
+ *                  возврат; для возврата на депозит — списать обратно).
  *
- *   • useRollbackTarget(rental) — есть ли сегодня откатываемое продление
- *     (последний платёж аренды с пометкой «продление на N дн» за сегодня).
- *   • <RollbackButton rental target /> — маленькая кнопка + окно подтверждения
- *     «было → станет». Рендерится оверлеем на строке продления в InlineHistory.
- *
- * Бэк проверяет границу (сегодня по МСК, это последнее действие, аренда не в
- * архиве), восстанавливает аренду из снимка и удаляет платёж продления. Сам
- * откат пишется в хронологию (action: payment_rolled_back).
+ * Привязка к «последнему действию»: смотрим на самое свежее событие
+ * хронологии (activity[0]). Если оно откатываемого типа, за сегодня, и ему
+ * соответствует последний платёж аренды — показываем кнопку. Так кнопка не
+ * «промахивается» на старое продление, если сверху лежит другое действие.
  */
 
-export type RollbackTarget = {
-  paymentId: number;
-  extraDays: number;
-  amount: number;
-};
+export type RollbackKind = "extend" | "equipment";
+
+export type RollbackTarget =
+  | { kind: "extend"; paymentId: number; extraDays: number; amount: number }
+  | { kind: "equipment"; paymentId: number; amount: number; isRefund: boolean };
+
+/** matchAction по виду — на какой строке хронологии висит кнопка. */
+export const ROLLBACK_MATCH: Record<RollbackKind, (action: string) => boolean> =
+  {
+    extend: (a) => a.includes("extend"),
+    equipment: (a) => a.includes("equipment"),
+  };
 
 function fmtRub(n: number): string {
   return n.toLocaleString("ru-RU");
@@ -51,25 +57,51 @@ function mskDay(iso: string): string {
   return d.toISOString().slice(0, 10);
 }
 
-/**
- * Есть ли у аренды откатываемое СЕГОДНЯ продление? Последнее действие аренды =
- * платёж с максимальным createdAt. Откатываемо, если он СЕГОДНЯ (МСК) и это
- * продление (по примечанию «продление на N дн»).
- */
-export function useRollbackTarget(rental: Rental): RollbackTarget | null {
+export function useRollbackTarget(
+  rental: Rental,
+  activity: ApiActivityItem[],
+): RollbackTarget | null {
   const { data: payments } = useApiPayments(rental.id);
   return useMemo<RollbackTarget | null>(() => {
+    const last = activity[0];
+    if (!last) return null;
+    const today = mskDay(new Date().toISOString());
+    if (mskDay(last.createdAt) !== today) return null;
+
     const rows = (payments ?? []).filter((p) => p.rentalId === rental.id);
-    if (!rows.length) return null;
-    const last = [...rows].sort(
+    const lastPay = [...rows].sort(
       (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
     )[0];
-    if (!last) return null;
-    if (mskDay(last.createdAt) !== mskDay(new Date().toISOString())) return null;
-    const m = (last.note ?? "").match(/продлени[ея]\s+на\s+(\d+)\s*дн/i);
-    if (!m) return null;
-    return { paymentId: last.id, extraDays: Number(m[1]), amount: last.amount };
-  }, [payments, rental.id]);
+    if (!lastPay) return null;
+    if (mskDay(lastPay.createdAt) !== today) return null;
+    const note = lastPay.note ?? "";
+
+    // Продление — последний платёж с пометкой «продление на N дн».
+    if (last.action.includes("extend")) {
+      const m = note.match(/продлени[ея]\s+на\s+(\d+)\s*дн/i);
+      if (!m) return null;
+      return {
+        kind: "extend",
+        paymentId: lastPay.id,
+        extraDays: Number(m[1]),
+        amount: lastPay.amount,
+      };
+    }
+
+    // Экипировка — только если последний платёж это её доплата/возврат
+    // (изменение «в долг» платежа не создаёт → откат пока не показываем).
+    if (last.action.includes("equipment")) {
+      if (!/экипировк/i.test(note)) return null;
+      return {
+        kind: "equipment",
+        paymentId: lastPay.id,
+        amount: lastPay.amount,
+        isRefund: /возврат/i.test(note),
+      };
+    }
+
+    return null;
+  }, [activity, payments, rental.id]);
 }
 
 export function RollbackButton({
@@ -82,17 +114,20 @@ export function RollbackButton({
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  const curEnd = parseRu(rental.endPlanned);
-  const newEnd = curEnd
-    ? new Date(curEnd.getTime() - target.extraDays * 86_400_000)
-    : null;
-  const sumAfter = rental.sum - target.amount;
-
   const doRollback = async () => {
     setBusy(true);
     try {
       await rollbackLastPayment(rental.id, target.paymentId);
-      toast.success("Продление откачено", `Вернулось ${fmtRub(target.amount)} ₽`);
+      if (target.kind === "extend") {
+        toast.success("Продление откачено", `Вернулось ${fmtRub(target.amount)} ₽`);
+      } else {
+        toast.success(
+          "Изменение экипировки откачено",
+          target.isRefund
+            ? `Возврат ${fmtRub(target.amount)} ₽ отменён`
+            : `Доплата ${fmtRub(target.amount)} ₽ отменена`,
+        );
+      }
       setOpen(false);
     } catch (e) {
       toast.error(
@@ -104,6 +139,11 @@ export function RollbackButton({
     }
   };
 
+  const title =
+    target.kind === "extend"
+      ? "Откатить продление?"
+      : "Откатить изменение экипировки?";
+
   return (
     <>
       <button
@@ -112,7 +152,7 @@ export function RollbackButton({
           e.stopPropagation();
           setOpen(true);
         }}
-        title="Откатить это продление (доступно только сегодня)"
+        title="Откатить это действие (доступно только сегодня)"
         className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-700 shadow-sm ring-1 ring-inset ring-amber-200 transition-colors hover:bg-amber-100 hover:text-amber-800"
       >
         <Undo2 size={11} /> Откатить
@@ -128,9 +168,7 @@ export function RollbackButton({
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-3 flex items-center justify-between">
-              <div className="text-[15px] font-bold text-ink">
-                Откатить продление?
-              </div>
+              <div className="text-[15px] font-bold text-ink">{title}</div>
               <button
                 type="button"
                 onClick={() => !busy && setOpen(false)}
@@ -141,23 +179,18 @@ export function RollbackButton({
               </button>
             </div>
 
-            <div className="space-y-2 rounded-xl bg-surface-soft p-3">
-              <Row label="Продление" before={`+${target.extraDays} дн`} after="убрать" />
-              {curEnd && newEnd && (
-                <Row label="Возврат" before={fmtRu(curEnd)} after={fmtRu(newEnd)} />
-              )}
-              <Row
-                label="Сумма аренды"
-                before={`${fmtRub(rental.sum)} ₽`}
-                after={`${fmtRub(sumAfter)} ₽`}
-                accent
-              />
-            </div>
+            {target.kind === "extend" ? (
+              <ExtendPreview rental={rental} target={target} />
+            ) : (
+              <EquipmentPreview target={target} />
+            )}
 
             <div className="mt-3 flex items-start gap-1.5 text-[11.5px] leading-snug text-muted">
               <Lock size={13} className="mt-px shrink-0" />
-              Платёж продления удалится, период вернётся. Доступно только сегодня
-              — завтра откатить уже нельзя.
+              {target.kind === "extend"
+                ? "Платёж продления удалится, период вернётся. "
+                : "Прежний набор экипировки вернётся, платёж удалится. "}
+              Доступно только сегодня — завтра откатить уже нельзя.
             </div>
 
             <div className="mt-4 flex gap-2">
@@ -182,6 +215,52 @@ export function RollbackButton({
         </div>
       )}
     </>
+  );
+}
+
+function ExtendPreview({
+  rental,
+  target,
+}: {
+  rental: Rental;
+  target: Extract<RollbackTarget, { kind: "extend" }>;
+}) {
+  const curEnd = parseRu(rental.endPlanned);
+  const newEnd = curEnd
+    ? new Date(curEnd.getTime() - target.extraDays * 86_400_000)
+    : null;
+  const sumAfter = rental.sum - target.amount;
+  return (
+    <div className="space-y-2 rounded-xl bg-surface-soft p-3">
+      <Row label="Продление" before={`+${target.extraDays} дн`} after="убрать" />
+      {curEnd && newEnd && (
+        <Row label="Возврат" before={fmtRu(curEnd)} after={fmtRu(newEnd)} />
+      )}
+      <Row
+        label="Сумма аренды"
+        before={`${fmtRub(rental.sum)} ₽`}
+        after={`${fmtRub(sumAfter)} ₽`}
+        accent
+      />
+    </div>
+  );
+}
+
+function EquipmentPreview({
+  target,
+}: {
+  target: Extract<RollbackTarget, { kind: "equipment" }>;
+}) {
+  return (
+    <div className="space-y-2 rounded-xl bg-surface-soft p-3">
+      <Row label="Экипировка" before="изменена" after="вернуть прежнюю" />
+      <Row
+        label={target.isRefund ? "Возврат клиенту" : "Доплата"}
+        before={`${fmtRub(target.amount)} ₽`}
+        after="отменить"
+        accent
+      />
+    </div>
   );
 }
 

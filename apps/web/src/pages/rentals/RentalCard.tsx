@@ -40,7 +40,11 @@ import {
 import { effectiveRentalStatus } from "@/lib/rentalStatus";
 import { useClientUnreachable, clientStore } from "@/pages/clients/clientStore";
 import { StickerStack, NoteComposer } from "@/components/StickerStack";
-import { useRollbackTarget, RollbackButton } from "./RollbackLastAction";
+import {
+  useRollbackTarget,
+  RollbackButton,
+  ROLLBACK_MATCH,
+} from "./RollbackLastAction";
 import {
   useRentalCardStickers,
   useCreateSticker,
@@ -464,13 +468,14 @@ export function RentalCard({
   // под календарём. Полный список — в drawer'е (HistoryTab).
   const activityQ = useActivityTimeline("rental", rental.id, 50);
   const activityItems = activityQ.data?.items ?? [];
-  // Откат «в день совершения»: есть ли сегодня откатываемое продление.
-  // Если есть — кнопка «Откатить» рендерится прямо на строке продления
-  // в хронологии (InlineHistory.rollback). Истекло — null, кнопки нет.
-  const rbTarget = useRollbackTarget(rental);
+  // Откат «в день совершения»: есть ли сегодня откатываемая операция
+  // (продление / изменение экипировки). Если есть — кнопка «Откатить»
+  // рендерится прямо на строке этой операции в хронологии
+  // (InlineHistory.rollback). Истекло / сверху новое действие — null.
+  const rbTarget = useRollbackTarget(rental, activityItems);
   const rollbackSlot = rbTarget
     ? {
-        matchAction: (a: string) => a.includes("extend"),
+        matchAction: ROLLBACK_MATCH[rbTarget.kind],
         node: <RollbackButton rental={rental} target={rbTarget} />,
       }
     : undefined;

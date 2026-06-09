@@ -2092,6 +2092,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
 
         const snap = pay.rollbackSnapshot as null | {
           kind?: string;
+          // extend
           extraDays?: number;
           endPlannedAt?: string;
           days?: number;
@@ -2099,10 +2100,15 @@ export async function rentalsRoutes(app: FastifyInstance) {
           tariffPeriod?: "short" | "week" | "month";
           rate?: number;
           rateUnit?: string;
+          // shared (extend + equipment): прежний набор экипировки
           equipmentJson?: unknown;
           equipment?: string[] | null;
+          // equipment: возврат на депозит — нужно списать обратно
+          refundToDeposit?: boolean;
+          depositRefundAmount?: number;
+          clientId?: number;
         };
-        if (!snap || snap.kind !== "extend")
+        if (!snap || (snap.kind !== "extend" && snap.kind !== "equipment"))
           return { ok: false as const, error: "unsupported" as const };
 
         const [rentalNow] = await tx
@@ -2113,32 +2119,70 @@ export async function rentalsRoutes(app: FastifyInstance) {
         if (rentalNow.archivedAt)
           return { ok: false as const, error: "archived" as const };
 
+        // ── Откат продления: восстанавливаем период/дни/сумму/тариф/экип. ──
+        if (snap.kind === "extend") {
+          const [restored] = await tx
+            .update(rentals)
+            .set({
+              endPlannedAt: new Date(snap.endPlannedAt as string),
+              days: snap.days as number,
+              sum: snap.sum as number,
+              tariffPeriod: snap.tariffPeriod as "short" | "week" | "month",
+              rate: snap.rate as number,
+              rateUnit: snap.rateUnit ?? "day",
+              equipmentJson: (snap.equipmentJson ?? []) as unknown as object,
+              equipment: snap.equipment ?? [],
+              updatedAt: sql`now()`,
+            })
+            .where(eq(rentals.id, id))
+            .returning();
+          if (!restored)
+            return { ok: false as const, error: "rental_not_found" as const };
+          // Удаляем платёж продления (его снимок «увёл» аренду вперёд — теперь
+          // вернули назад, платёж больше не нужен).
+          await tx.delete(payments).where(eq(payments.id, paymentId));
+          return {
+            ok: true as const,
+            kind: "extend" as const,
+            before: rentalNow,
+            after: restored,
+            extraDays: snap.extraDays ?? null,
+          };
+        }
+
+        // ── Откат изменения экипировки: возвращаем прежний набор, удаляем
+        //    платёж доплаты/возврата. Для возврата на депозит — списываем
+        //    обратно с депозита клиента. rentals.sum экипировка не двигает. ──
         const [restored] = await tx
           .update(rentals)
           .set({
-            endPlannedAt: new Date(snap.endPlannedAt as string),
-            days: snap.days as number,
-            sum: snap.sum as number,
-            tariffPeriod: snap.tariffPeriod as "short" | "week" | "month",
-            rate: snap.rate as number,
-            rateUnit: snap.rateUnit ?? "day",
-            equipmentJson: (snap.equipmentJson ?? []) as unknown as object,
             equipment: snap.equipment ?? [],
+            equipmentJson: (snap.equipmentJson ?? []) as unknown as object,
             updatedAt: sql`now()`,
           })
           .where(eq(rentals.id, id))
           .returning();
-        if (!restored) return { ok: false as const, error: "rental_not_found" as const };
-
-        // Удаляем платёж продления (его снимок «увёл» аренду вперёд — теперь
-        // вернули назад, платёж больше не нужен).
+        if (!restored)
+          return { ok: false as const, error: "rental_not_found" as const };
+        if (
+          snap.refundToDeposit &&
+          snap.clientId &&
+          typeof snap.depositRefundAmount === "number" &&
+          snap.depositRefundAmount > 0
+        ) {
+          await tx.execute(sql`
+            UPDATE clients SET deposit_balance = deposit_balance - ${snap.depositRefundAmount}
+             WHERE id = ${snap.clientId}
+          `);
+        }
         await tx.delete(payments).where(eq(payments.id, paymentId));
-
         return {
           ok: true as const,
+          kind: "equipment" as const,
           before: rentalNow,
           after: restored,
-          extraDays: snap.extraDays ?? null,
+          amount: pay.amount,
+          payType: pay.type,
         };
       });
 
@@ -2156,28 +2200,53 @@ export async function rentalsRoutes(app: FastifyInstance) {
       }
 
       const summary = await summaryForRental(id);
-      const returned = out.before.sum - out.after.sum;
-      await logActivity(req, {
-        entity: "rental",
-        entityId: id,
-        action: "payment_rolled_back",
-        summary: `Откат продления ${summary}${out.extraDays ? ` (−${out.extraDays} дн)` : ""} — вернулось ${returned.toLocaleString("ru-RU")} ₽`,
-        meta: { paymentId, kind: "extend", extraDays: out.extraDays },
-        diff: {
-          endPlannedAt: {
-            label: "Возврат",
-            from: out.before.endPlannedAt.toISOString(),
-            to: out.after.endPlannedAt.toISOString(),
-            kind: "date",
+      if (out.kind === "extend") {
+        const returned = out.before.sum - out.after.sum;
+        await logActivity(req, {
+          entity: "rental",
+          entityId: id,
+          action: "payment_rolled_back",
+          summary: `Откат продления ${summary}${out.extraDays ? ` (−${out.extraDays} дн)` : ""} — вернулось ${returned.toLocaleString("ru-RU")} ₽`,
+          meta: { paymentId, kind: "extend", extraDays: out.extraDays },
+          diff: {
+            endPlannedAt: {
+              label: "Возврат",
+              from: out.before.endPlannedAt.toISOString(),
+              to: out.after.endPlannedAt.toISOString(),
+              kind: "date",
+            },
+            sum: {
+              label: "Сумма аренды",
+              from: out.before.sum,
+              to: out.after.sum,
+              kind: "money",
+            },
           },
-          sum: {
-            label: "Сумма аренды",
-            from: out.before.sum,
-            to: out.after.sum,
-            kind: "money",
+        });
+      } else {
+        // Откат изменения экипировки: показываем «было (после изм.) → стало
+        // (вернули прежнее)» и отменённый платёж доплаты/возврата.
+        const names = (jsonVal: unknown): string[] =>
+          ((jsonVal ?? []) as Array<{ name?: string }>)
+            .map((e) => e.name ?? "")
+            .filter((n): n is string => n.length > 0);
+        const verb = out.payType === "refund" ? "возврат" : "доплата";
+        await logActivity(req, {
+          entity: "rental",
+          entityId: id,
+          action: "payment_rolled_back",
+          summary: `Откат изменения экипировки ${summary} — отменён ${verb} ${out.amount.toLocaleString("ru-RU")} ₽`,
+          meta: { paymentId, kind: "equipment" },
+          diff: {
+            items: {
+              label: "Экипировка",
+              from: names(out.before.equipmentJson),
+              to: names(out.after.equipmentJson),
+              kind: "list",
+            },
           },
-        },
-      });
+        });
+      }
       return out.after;
     },
   );
@@ -2381,6 +2450,16 @@ export async function rentalsRoutes(app: FastifyInstance) {
         userName = u?.name ?? "система";
       }
 
+      // Снимок пред-состояния для «отката изменения экипировки в день
+      // совершения» — кладём в rollbackSnapshot платежа доплаты/возврата.
+      // Откат вернёт прежний набор экипировки и удалит платёж (а для возврата
+      // на депозит — спишет обратно с депозита клиента).
+      const eqSnapshotBase = {
+        kind: "equipment" as const,
+        equipment: rental.equipment,
+        equipmentJson: rental.equipmentJson,
+      };
+
       const result = await db.transaction(async (tx) => {
         // 1. Обновляем equipmentJson + equipment (legacy text array
         //    должен быть синхронизирован, иначе UI карточки рендерит
@@ -2411,6 +2490,10 @@ export async function rentalsRoutes(app: FastifyInstance) {
               paid: true,
               paidAt: new Date(),
               note: `Доплата за изменение экипировки (${remainingDays} дн × ${dailyDelta} ₽)`,
+              rollbackSnapshot: {
+                ...eqSnapshotBase,
+                refundToDeposit: false,
+              } as unknown as object,
             });
           } else {
             // Висит как ручной долг — оператор примет позже через PaymentAcceptDialog
@@ -2436,6 +2519,10 @@ export async function rentalsRoutes(app: FastifyInstance) {
               paid: true,
               paidAt: new Date(),
               note: `Возврат за уменьшение экипировки (${remainingDays} дн × ${-dailyDelta} ₽) — выдан клиенту`,
+              rollbackSnapshot: {
+                ...eqSnapshotBase,
+                refundToDeposit: false,
+              } as unknown as object,
             });
           } else {
             // refundTo === 'deposit' (default): возврат на депозит клиента.
@@ -2452,6 +2539,12 @@ export async function rentalsRoutes(app: FastifyInstance) {
               paid: true,
               paidAt: new Date(),
               note: `Возврат за уменьшение экипировки (${remainingDays} дн × ${-dailyDelta} ₽) → депозит клиента`,
+              rollbackSnapshot: {
+                ...eqSnapshotBase,
+                refundToDeposit: true,
+                depositRefundAmount: -totalDelta,
+                clientId: rental.clientId,
+              } as unknown as object,
             });
           }
         }

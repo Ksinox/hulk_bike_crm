@@ -365,9 +365,25 @@ export function formatActivitySummary(
   // + diff.sum (money) и meta.extraDays. Должно матчиться ДО ветки «Платёж»,
   // иначе action.includes("payment") покажет «Принят платёж».
   if (action.includes("rolled_back")) {
+    const m = readRecord(item.meta);
+    const kind = typeof m?.kind === "string" ? m.kind : null;
+    // Откат изменения экипировки — показываем «набор после → прежний набор».
+    if (kind === "equipment") {
+      const eq = readRecord(diff?.items);
+      const from = readStringList(eq?.from);
+      const to = readStringList(eq?.to);
+      return {
+        title: "Откат изменения экипировки",
+        change: {
+          from: from.length ? from.join(", ") : "—",
+          to: to.length ? to.join(", ") : "—",
+          tone: "blue",
+        },
+        extras: [],
+      };
+    }
     const endp = readRecord(diff?.endPlannedAt);
     const sum = readRecord(diff?.sum);
-    const m = readRecord(item.meta);
     const extraDays = typeof m?.extraDays === "number" ? m.extraDays : null;
     let change: ChangeView | null = null;
     if (endp && (endp.from != null || endp.to != null)) {
