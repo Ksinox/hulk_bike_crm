@@ -6,6 +6,7 @@ import {
   Bike,
   Calendar,
   CheckCircle2,
+  ChevronDown,
   Clock,
   FileText,
   Flag,
@@ -22,9 +23,11 @@ import {
   User,
   Wallet,
   Wrench,
+  X,
   XCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useIsMobile } from "@/lib/useIsMobile";
 import {
   MIN_RENTAL_DAYS,
   ratePeriodForDays,
@@ -894,11 +897,6 @@ export function RentalCard({
     debtParts.push(`ручной ${fmt(otherManualBalance)} ₽`);
   if (parkingBalance > 0) debtParts.push(`паркинг ${fmt(parkingBalance)} ₽`);
   const debtHint = debtTotal === 0 ? "нет долгов" : debtParts.join(" + ");
-  // Просрочка — дни + дата + ставка/сут (для hover плашки «Просрочка»).
-  const overdueHint =
-    overdueDaysCount > 0
-      ? `${overdueDaysCount} дн с ${rental.endPlanned.slice(0, 5)}, ставка ${fmt(dailyRateForHint)} ₽/сут`
-      : "нет просрочки";
 
   const handleAction = async (id: string) => {
     if (id === "extend") return setExtendOpen(true);
@@ -1644,8 +1642,22 @@ export function RentalCard({
             popover={
               isOverdueKpi ? (
                 <div className="space-y-0.5">
-                  <div className="font-bold text-ink">Просрочка</div>
-                  <div>{overdueHint}</div>
+                  <div className="font-bold text-ink">
+                    Просрочка · {overdueDaysCount} дн
+                  </div>
+                  <div>
+                    взял: <b>{rootRental.start.slice(0, 10)}</b>
+                  </div>
+                  <div>
+                    возврат был: <b>{rental.endPlanned}</b>
+                  </div>
+                  <div>
+                    просрочен на: <b>{overdueDaysCount} дн</b>
+                  </div>
+                  <div className="pt-0.5 text-[10px] text-muted-2">
+                    ставка {fmt(fullDailyForOverdue)} ₽/сут
+                    {equipDailyForOverdue > 0 ? " (аренда + экипировка)" : ""}
+                  </div>
                 </div>
               ) : undefined
             }
@@ -1746,6 +1758,8 @@ export function RentalCard({
           .filter((p) => !isPeriodPay(p) && payTs(p.date) >= periodTs)
           .reduce((s, p) => s + (p.amount ?? 0), 0);
         const thisRentalTotal = rentPart + surchargePart;
+        const equipItems = rental.equipmentJson ?? [];
+        const deposit = rental.deposit ?? 0;
         const hint = extendCount > 0 ? `продлений ${extendCount}` : undefined;
         return (
           <KpiCard
@@ -1755,15 +1769,32 @@ export function RentalCard({
             popover={
               <div className="space-y-1">
                 <div className="font-bold text-ink">
-                  Эта аренда — {fmt(thisRentalTotal)} ₽
+                  Состав аренды — {fmt(thisRentalTotal)} ₽
                 </div>
                 <div>
                   аренда за период: <b>{fmt(rentPart)} ₽</b>
                 </div>
+                {equipItems.length > 0 && (
+                  <div className="text-[11px] leading-snug text-muted-2">
+                    в т.ч. экипировка:{" "}
+                    {equipItems.map((e, i) => (
+                      <span key={`${e.name}-${i}`}>
+                        {i > 0 ? ", " : ""}
+                        {e.name}
+                        {e.free ? " (беспл.)" : ` ${fmt(e.price)} ₽/сут`}
+                      </span>
+                    ))}
+                  </div>
+                )}
                 {surchargePart > 0 && (
                   <div>
-                    доплаты за период (экип./ручное/просрочка):{" "}
+                    доплаты за период (ручное/просрочка):{" "}
                     <b>{fmt(surchargePart)} ₽</b>
+                  </div>
+                )}
+                {deposit > 0 && (
+                  <div>
+                    залог (возвратный): <b>{fmt(deposit)} ₽</b>
                   </div>
                 )}
                 <div className="pt-0.5 text-[10px] text-muted-2">
@@ -3200,24 +3231,30 @@ function KpiCard({
    *  снизу плашки. Если не передан — плашка ведёт себя как раньше. */
   popover?: React.ReactNode;
 }) {
-  return (
-    <div
-      className={cn(
-        "relative rounded-[14px] border px-4 py-3 shadow-card-sm",
-        popover && "group",
-        accent === "muted"
-          ? "border-border bg-surface-soft/60"
-          : accent === "red"
-            ? "border-red-soft bg-surface shadow-[0_0_16px_-2px_hsl(var(--red-ink)/0.35),0_0_0_1px_hsl(var(--red-soft))]"
-            : "border-border bg-surface",
-      )}
-    >
-      {popover && (
-        // max-sm:hidden — на телефоне hover нет, поповер не показывается, но
-        // как absolute-элемент (w-max до 260px под узкой плашкой) он растягивал
-        // ширину карточки и давал горизонтальный скролл. Прячем его на мобиле:
-        // разбивка и так есть в разделе «Финансовая информация».
-        <div className="pointer-events-none absolute left-0 top-full z-50 mt-2 hidden w-max max-w-[260px] rounded-xl bg-surface p-3 text-[12px] leading-relaxed text-ink-2 opacity-0 shadow-card-lg ring-1 ring-border transition-opacity duration-150 group-hover:opacity-100 sm:block">
+  const isMobile = useIsMobile();
+  const [sheetOpen, setSheetOpen] = useState(false);
+  // На мобиле расшифровку убираем из плашки (чисто заголовок + значение) и
+  // показываем в нижнем сниппете по тапу. Контент сниппета — popover, а если
+  // его нет, но есть hint — сам hint.
+  const detail = popover ?? (hint ? <div>{hint}</div> : null);
+  const tappable = isMobile && !!detail;
+
+  const valueColor =
+    accent === "blue"
+      ? "text-blue-600"
+      : accent === "red"
+        ? "text-red-ink"
+        : accent === "muted"
+          ? "text-muted"
+          : "text-ink";
+
+  const inner = (
+    <>
+      {/* Десктоп: hover-поповер с разбивкой снизу плашки. На мобиле его не
+          рендерим (hover нет, а absolute-блок растягивал ширину карточки) —
+          вместо него нижний сниппет по тапу. */}
+      {popover && !isMobile && (
+        <div className="pointer-events-none absolute left-0 top-full z-50 mt-2 w-max max-w-[260px] rounded-xl bg-surface p-3 text-[12px] leading-relaxed text-ink-2 opacity-0 shadow-card-lg ring-1 ring-border transition-opacity duration-150 group-hover:opacity-100">
           {popover}
         </div>
       )}
@@ -3230,24 +3267,26 @@ function KpiCard({
           )}
         />
       )}
+      {/* На мобиле — намёк, что по тапу раскроются подробности. */}
+      {tappable && !BadgeIcon && (
+        <ChevronDown
+          size={15}
+          className="absolute right-2.5 top-3 text-muted-2"
+        />
+      )}
       <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
         {label}
       </div>
       <div
         className={cn(
           "mt-1 font-display text-[20px] font-extrabold leading-tight tabular-nums",
-          accent === "blue"
-            ? "text-blue-600"
-            : accent === "red"
-              ? "text-red-ink"
-              : accent === "muted"
-                ? "text-muted"
-                : "text-ink",
+          valueColor,
         )}
       >
         {value}
       </div>
-      {hint && (
+      {/* Инлайн-расшифровка — только на десктопе; на мобиле она в сниппете. */}
+      {hint && !tappable && (
         <div
           className={cn(
             "mt-1 inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider",
@@ -3262,6 +3301,104 @@ function KpiCard({
           {hint}
         </div>
       )}
+    </>
+  );
+
+  const baseCls = cn(
+    "relative rounded-[14px] border px-4 py-3 shadow-card-sm text-left",
+    popover && !isMobile && "group",
+    accent === "muted"
+      ? "border-border bg-surface-soft/60"
+      : accent === "red"
+        ? "border-red-soft bg-surface shadow-[0_0_16px_-2px_hsl(var(--red-ink)/0.35),0_0_0_1px_hsl(var(--red-soft))]"
+        : "border-border bg-surface",
+  );
+
+  if (tappable) {
+    return (
+      <>
+        <button
+          type="button"
+          onClick={() => setSheetOpen(true)}
+          className={cn(baseCls, "w-full active:scale-[0.98]")}
+        >
+          {inner}
+        </button>
+        {sheetOpen && (
+          <KpiDetailSheet
+            label={label}
+            value={value}
+            accent={accent}
+            onClose={() => setSheetOpen(false)}
+          >
+            {detail}
+          </KpiDetailSheet>
+        )}
+      </>
+    );
+  }
+
+  return <div className={baseCls}>{inner}</div>;
+}
+
+/** Нижний сниппет (bottom-sheet) с подробностями KPI-плашки — для мобилки. */
+function KpiDetailSheet({
+  label,
+  value,
+  accent,
+  onClose,
+  children,
+}: {
+  label: string;
+  value: string;
+  accent: KpiAccent;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  const valueColor =
+    accent === "blue"
+      ? "text-blue-600"
+      : accent === "red"
+        ? "text-red-ink"
+        : accent === "muted"
+          ? "text-muted"
+          : "text-ink";
+  return (
+    <div
+      className="fixed inset-0 z-[80] flex items-end bg-ink/50 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="w-full rounded-t-3xl bg-surface p-5 pb-8 shadow-card-lg"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
+              {label}
+            </div>
+            <div
+              className={cn(
+                "font-display text-[26px] font-extrabold leading-tight tabular-nums",
+                valueColor,
+              )}
+            >
+              {value}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Закрыть"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-soft text-muted-2 active:scale-90"
+          >
+            <X size={18} />
+          </button>
+        </div>
+        <div className="space-y-1 text-[14px] leading-relaxed text-ink-2 [&_b]:font-bold [&_b]:text-ink">
+          {children}
+        </div>
+      </div>
     </div>
   );
 }
