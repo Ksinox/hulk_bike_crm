@@ -7,14 +7,17 @@ import {
   ChevronLeft,
   Copy,
   FileText,
+  MessageCircle,
   Pencil,
   Phone,
   PhoneOff,
   Scale,
+  Send,
   Trash2,
   Inbox,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { whatsappLink, telegramLink } from "@/lib/messengers";
 import { getClientDetails, SOURCE_LABEL, type Client } from "@/lib/mock/clients";
 import {
   RentalsTab,
@@ -533,6 +536,25 @@ function PhoneRow({ phone, primary }: { phone: string; primary?: boolean }) {
             доп
           </span>
         )}
+      </a>
+      {/* Прямой чат по номеру — без сохранения в контакты. */}
+      <a
+        href={whatsappLink(phone)}
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label="Написать в WhatsApp"
+        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-green/10 text-green active:scale-90"
+      >
+        <MessageCircle size={18} />
+      </a>
+      <a
+        href={telegramLink(phone)}
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label="Написать в Telegram"
+        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-sky-100 text-sky-600 active:scale-90"
+      >
+        <Send size={17} />
       </a>
       <button
         type="button"

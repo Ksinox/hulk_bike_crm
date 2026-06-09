@@ -6,14 +6,17 @@ import {
   Check,
   Copy,
   FileText,
+  MessageCircle,
   Pencil,
   Phone,
   PhoneOff,
   Scale,
+  Send,
   Trash2,
   UploadCloud,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { whatsappLink, telegramLink } from "@/lib/messengers";
 import {
   getClientDetails,
   SOURCE_LABEL,
@@ -685,6 +688,25 @@ function PhoneDisplay({
           доп
         </span>
       )}
+      {/* Прямой чат по номеру — без сохранения контакта. */}
+      <a
+        href={whatsappLink(phone)}
+        target="_blank"
+        rel="noopener noreferrer"
+        title="Написать в WhatsApp"
+        className="flex h-6 w-6 items-center justify-center rounded-full text-green transition-colors hover:bg-green/10"
+      >
+        <MessageCircle size={13} />
+      </a>
+      <a
+        href={telegramLink(phone)}
+        target="_blank"
+        rel="noopener noreferrer"
+        title="Написать в Telegram"
+        className="flex h-6 w-6 items-center justify-center rounded-full text-sky-600 transition-colors hover:bg-sky-50"
+      >
+        <Send size={13} />
+      </a>
       <span className="relative inline-block">
         <button
           type="button"
