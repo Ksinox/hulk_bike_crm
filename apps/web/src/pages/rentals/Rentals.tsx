@@ -638,7 +638,9 @@ export function Rentals() {
             // что переключение список↔плитки больше не меняет ширину блока
             // (источник истины — список). min-w/max-w сохраняем как границы.
             listWidth == null && "w-fit",
-            "min-w-[700px] max-w-full",
+            // Адаптив ноутбуков: на узких (<1536) пол списка ниже, чтобы
+            // список + карточка помещались без горизонтального скролла.
+            "min-w-[560px] 2xl:min-w-[700px] max-w-full",
           )}
           style={listWidth != null ? { width: `${listWidth}px` } : undefined}
         >
@@ -750,12 +752,12 @@ export function Rentals() {
             // RentalCard), поэтому им клиппинг не мешает.
             "h-full min-h-0 shrink-0 overflow-hidden transition-[width,opacity,margin] duration-300 ease-in-out",
             selected && panelOpen
-              ? "ml-4 w-[600px] opacity-100"
+              ? "ml-4 w-[520px] 2xl:w-[600px] opacity-100"
               : "ml-0 w-0 opacity-0",
           )}
         >
           {selected && (
-            <div className="flex h-full min-h-0 w-[600px] flex-col overflow-hidden rounded-2xl border-l border-border bg-surface shadow-card-sm">
+            <div className="flex h-full min-h-0 w-[520px] 2xl:w-[600px] flex-col overflow-hidden rounded-2xl border-l border-border bg-surface shadow-card-sm">
               <ErrorBoundary key={selected.id}>
                 <RentalCard
                   rental={selected}
@@ -846,11 +848,13 @@ export function Rentals() {
         <div
           className={cn(
             "h-full min-h-0 shrink-0 overflow-hidden transition-[width,opacity,margin] duration-300 ease-in-out",
-            historyRental ? "ml-4 w-[420px] opacity-100" : "ml-0 w-0 opacity-0",
+            historyRental
+              ? "ml-4 w-[360px] 2xl:w-[420px] opacity-100"
+              : "ml-0 w-0 opacity-0",
           )}
         >
           {lastHistoryId != null && (
-            <div className="flex h-full min-h-0 w-[420px] flex-col overflow-hidden">
+            <div className="flex h-full min-h-0 w-[360px] 2xl:w-[420px] flex-col overflow-hidden">
               <ErrorBoundary key={`hist-${lastHistoryId}`}>
                 <RentalHistoryColumn
                   rentalId={lastHistoryId}
