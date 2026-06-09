@@ -1975,6 +1975,19 @@ export function RentalCard({
         </div>
       </header>
 
+      {/* #181: на мобиле «приклеенный» стикер-заметку показываем прямо в теле
+          карточки — как в вебе она видна сразу на карточке. На десктоп-drawer
+          работает portal-overlay у правого края (см. ниже, cardRect.left ≥ 220);
+          на телефоне карточка во весь экран (left≈0) — overlay не помещается,
+          поэтому рендерим стикер здесь, в потоке, под шапкой. */}
+      {drawerChrome && stickers.length > 0 && (!cardRect || cardRect.left < 220) && (
+        <div className="flex justify-center pt-1">
+          {/* На мобиле стикер — для просмотра; открепить/удалить можно в
+              разделе «Заметки» (там кнопки всегда видны, без hover). */}
+          <StickerStack stickers={stickers} />
+        </div>
+      )}
+
       {/* =========== BANNERS =========== */}
       {/* v0.8.0: паркинг — явно видно что аренда на паузе и сколько дней. */}
       {activeParking && (
@@ -3200,7 +3213,11 @@ function KpiCard({
       )}
     >
       {popover && (
-        <div className="pointer-events-none absolute left-0 top-full z-50 mt-2 w-max max-w-[260px] rounded-xl bg-surface p-3 text-[12px] leading-relaxed text-ink-2 opacity-0 shadow-card-lg ring-1 ring-border transition-opacity duration-150 group-hover:opacity-100">
+        // max-sm:hidden — на телефоне hover нет, поповер не показывается, но
+        // как absolute-элемент (w-max до 260px под узкой плашкой) он растягивал
+        // ширину карточки и давал горизонтальный скролл. Прячем его на мобиле:
+        // разбивка и так есть в разделе «Финансовая информация».
+        <div className="pointer-events-none absolute left-0 top-full z-50 mt-2 hidden w-max max-w-[260px] rounded-xl bg-surface p-3 text-[12px] leading-relaxed text-ink-2 opacity-0 shadow-card-lg ring-1 ring-border transition-opacity duration-150 group-hover:opacity-100 sm:block">
           {popover}
         </div>
       )}
