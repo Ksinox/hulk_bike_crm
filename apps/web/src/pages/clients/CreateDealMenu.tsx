@@ -8,6 +8,10 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { Client } from "@/lib/mock/clients";
+import { cn } from "@/lib/utils";
+import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
+import { navigate } from "@/app/navigationStore";
+import { toast } from "@/lib/toast";
 
 type DealType = "rental" | "installment" | "sale" | "repair";
 
@@ -50,6 +54,7 @@ const DEAL_TYPES: {
 
 export function CreateDealMenu({ client }: { client: Client }) {
   const [open, setOpen] = useState(false);
+  const [rentalOpen, setRentalOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -68,9 +73,11 @@ export function CreateDealMenu({ client }: { client: Client }) {
     };
   }, [open]);
 
-  const handlePick = (_type: DealType) => {
-    // Пока не реализовано — все пункты помечены «скоро», кнопки не кликабельны.
+  const handlePick = (type: DealType) => {
     setOpen(false);
+    // Пока включена только «Аренда» — открываем создание аренды с уже
+    // выбранным клиентом. Остальные типы сделок помечены «скоро».
+    if (type === "rental") setRentalOpen(true);
   };
 
   return (
@@ -96,24 +103,48 @@ export function CreateDealMenu({ client }: { client: Client }) {
           <div className="py-1">
             {DEAL_TYPES.map((dt) => {
               const Icon = dt.icon;
+              const blockedByBlacklist =
+                dt.blockIfBlacklisted && !!client.blacklisted;
+              // Пока включена только «Аренда»; остальные типы — «скоро».
+              const enabled = dt.id === "rental" && !blockedByBlacklist;
               return (
                 <button
                   key={dt.id}
                   type="button"
-                  disabled
-                  onClick={() => handlePick(dt.id)}
-                  title="Скоро появится"
-                  className="flex w-full cursor-not-allowed items-start gap-3 px-3 py-2.5 text-left opacity-55"
+                  disabled={!enabled}
+                  onClick={enabled ? () => handlePick(dt.id) : undefined}
+                  title={
+                    enabled
+                      ? ""
+                      : blockedByBlacklist
+                        ? "Клиент в чёрном списке"
+                        : "Скоро появится"
+                  }
+                  className={cn(
+                    "flex w-full items-start gap-3 px-3 py-2.5 text-left transition-colors",
+                    enabled
+                      ? "hover:bg-surface-soft"
+                      : "cursor-not-allowed opacity-55",
+                  )}
                 >
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-surface-soft text-muted-2">
+                  <div
+                    className={cn(
+                      "flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]",
+                      enabled
+                        ? "bg-blue-50 text-blue-600"
+                        : "bg-surface-soft text-muted-2",
+                    )}
+                  >
                     <Icon size={16} />
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 text-[13px] font-semibold text-ink">
                       {dt.label}
-                      <span className="rounded-full bg-surface-soft px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-muted-2">
-                        скоро
-                      </span>
+                      {!enabled && (
+                        <span className="rounded-full bg-surface-soft px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-muted-2">
+                          {blockedByBlacklist ? "ЧС" : "скоро"}
+                        </span>
+                      )}
                     </div>
                     <div className="mt-0.5 text-[11px] text-muted">
                       {dt.hint}
@@ -124,6 +155,20 @@ export function CreateDealMenu({ client }: { client: Client }) {
             })}
           </div>
         </div>
+      )}
+
+      {/* Создание аренды с уже выбранным клиентом; после создания —
+          переход к новой аренде. */}
+      {rentalOpen && (
+        <NewRentalModal
+          initialClientId={client.id}
+          onClose={() => setRentalOpen(false)}
+          onCreated={(r) => {
+            setRentalOpen(false);
+            toast.success("Аренда создана");
+            navigate({ route: "rentals", rentalId: r.id });
+          }}
+        />
       )}
     </div>
   );
