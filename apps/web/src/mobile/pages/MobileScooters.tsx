@@ -25,7 +25,14 @@ import {
   type ChipOption,
 } from "../ui";
 
-type Filter = "all" | "rented" | "rental_pool" | "repair" | "sale";
+type Filter =
+  | "all"
+  | "rented"
+  | "rental_pool"
+  | "repair"
+  | "dtp"
+  | "disassembly"
+  | "sale";
 
 const MODEL_LABEL: Record<ScooterModel, string> = {
   jog: "Yamaha Jog",
@@ -100,12 +107,14 @@ export function MobileScooters() {
   );
 
   const counts = useMemo(() => {
-    const c = { rented: 0, rental_pool: 0, repair: 0, sale: 0 };
+    const c = { rented: 0, rental_pool: 0, repair: 0, dtp: 0, disassembly: 0, sale: 0 };
     for (const s of live) {
       const st = displayStatus(s);
       if (st === "rented") c.rented++;
       else if (st === "rental_pool") c.rental_pool++;
       else if (st === "repair") c.repair++;
+      else if (st === "dtp") c.dtp++;
+      else if (st === "disassembly") c.disassembly++;
       else if (st === "for_sale" || st === "buyout") c.sale++;
     }
     return c;
@@ -139,6 +148,8 @@ export function MobileScooters() {
     { id: "rented", label: "В аренде", count: counts.rented },
     { id: "rental_pool", label: "Готов", count: counts.rental_pool },
     { id: "repair", label: "Ремонт", count: counts.repair },
+    { id: "dtp", label: "ДТП", count: counts.dtp },
+    { id: "disassembly", label: "Разборка", count: counts.disassembly },
     { id: "sale", label: "Продажа", count: counts.sale },
   ];
 

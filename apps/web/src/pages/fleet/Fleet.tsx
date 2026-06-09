@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { consumePending, navigate, type BackTarget } from "@/app/navigationStore";
 import {
+  AlertTriangle,
   ArrowDownNarrowWide,
   ArrowUpNarrowWide,
   Check,
@@ -11,6 +12,7 @@ import {
   Layers,
   LayoutGrid,
   ListFilter,
+  PackageOpen,
   Plus,
   Rows3,
   Search,
@@ -53,6 +55,8 @@ type StatusTab =
   | "rental_pool"
   | "rented"
   | "repair"
+  | "dtp"
+  | "disassembly"
   | "for_sale"
   | "ready";
 
@@ -173,6 +177,8 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
       rental_pool: 0,
       rented: 0,
       repair: 0,
+      dtp: 0,
+      disassembly: 0,
       for_sale: 0,
       total: rows.length,
     };
@@ -181,6 +187,8 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
       else if (r.status === "rental_pool") c.rental_pool++;
       else if (r.status === "rented") c.rented++;
       else if (r.status === "repair") c.repair++;
+      else if (r.status === "dtp") c.dtp++;
+      else if (r.status === "disassembly") c.disassembly++;
       else if (r.status === "for_sale") c.for_sale++;
     }
     return c;
@@ -289,7 +297,7 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
       )}
 
       {/* =========== KPI =========== */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
         <KpiTile
           label="Всего скутеров"
           value={counters.total}
@@ -343,6 +351,28 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
           active={tab === "repair"}
           onClick={() => {
             setTab("repair");
+          }}
+        />
+        <KpiTile
+          label="ДТП"
+          value={counters.dtp}
+          hint="после аварии"
+          icon={AlertTriangle}
+          accent="rose"
+          active={tab === "dtp"}
+          onClick={() => {
+            setTab("dtp");
+          }}
+        />
+        <KpiTile
+          label="На разборку"
+          value={counters.disassembly}
+          hint="идут на запчасти"
+          icon={PackageOpen}
+          accent="slate"
+          active={tab === "disassembly"}
+          onClick={() => {
+            setTab("disassembly");
           }}
         />
         <KpiTile
@@ -784,7 +814,7 @@ function KpiTile({
   value: number;
   hint: string;
   icon: typeof Key;
-  accent: "green" | "blue" | "red" | "violet" | "slate";
+  accent: "green" | "blue" | "red" | "rose" | "violet" | "slate";
   active: boolean;
   onClick: () => void;
 }) {
@@ -795,9 +825,11 @@ function KpiTile({
         ? "bg-blue-50 text-blue-700"
         : accent === "red"
           ? "bg-red-soft text-red-ink"
-          : accent === "slate"
-            ? "bg-ink text-white"
-            : "bg-purple-soft text-purple-ink";
+          : accent === "rose"
+            ? "bg-red text-white"
+            : accent === "slate"
+              ? "bg-ink text-white"
+              : "bg-purple-soft text-purple-ink";
   const valueCls =
     accent === "green"
       ? "text-green-ink"
@@ -805,9 +837,11 @@ function KpiTile({
         ? "text-blue-700"
         : accent === "red"
           ? "text-red-ink"
-          : accent === "slate"
-            ? "text-ink"
-            : "text-purple-ink";
+          : accent === "rose"
+            ? "text-red-ink"
+            : accent === "slate"
+              ? "text-ink"
+              : "text-purple-ink";
   return (
     <button
       type="button"
