@@ -62,7 +62,7 @@ export function MobileRevenueScreen({
   const heading = scope === "rentals" ? "Выручка — аренды" : "Выручка";
 
   return (
-    <div className="fixed inset-0 z-[60] flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-surface-soft">
+    <div className="fixed inset-0 z-[60] flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-surface-soft animate-slide-in-right">
       {/* Шапка */}
       <div className="flex items-center gap-2 border-b border-border bg-surface px-3 py-2.5">
         <button

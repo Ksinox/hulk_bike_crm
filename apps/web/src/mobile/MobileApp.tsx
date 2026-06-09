@@ -90,7 +90,11 @@ export function MobileApp({
         <MobileTopBar title={routeTitle(route)} />
 
         <main className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 pb-6 pt-3 overscroll-contain">
-          <MobilePage route={route} onSelect={go} />
+          {/* key={route} + fade — плавный переход между вкладками вместо резкой
+              подмены контента. */}
+          <div key={route} className="animate-fade-in">
+            <MobilePage route={route} onSelect={go} />
+          </div>
         </main>
 
         <MobileTabBar

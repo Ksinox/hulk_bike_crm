@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/lib/useIsMobile";
+import { MobileBottomSheet } from "@/mobile/BottomSheet";
 import {
   MIN_RENTAL_DAYS,
   ratePeriodForDays,
@@ -3364,42 +3365,38 @@ function KpiDetailSheet({
           ? "text-muted"
           : "text-ink";
   return (
-    <div
-      className="fixed inset-0 z-[80] flex items-end bg-ink/50 backdrop-blur-sm"
-      onClick={onClose}
-    >
-      <div
-        className="w-full rounded-t-3xl bg-surface p-5 pb-8 shadow-card-lg"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="mb-3 flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
-              {label}
+    <MobileBottomSheet onClose={onClose} z={80} panelClassName="px-5">
+      {({ close }) => (
+        <>
+          <div className="mb-3 flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
+                {label}
+              </div>
+              <div
+                className={cn(
+                  "font-display text-[26px] font-extrabold leading-tight tabular-nums",
+                  valueColor,
+                )}
+              >
+                {value}
+              </div>
             </div>
-            <div
-              className={cn(
-                "font-display text-[26px] font-extrabold leading-tight tabular-nums",
-                valueColor,
-              )}
+            <button
+              type="button"
+              onClick={close}
+              aria-label="Закрыть"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-soft text-muted-2 active:scale-90"
             >
-              {value}
-            </div>
+              <X size={18} />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Закрыть"
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-soft text-muted-2 active:scale-90"
-          >
-            <X size={18} />
-          </button>
-        </div>
-        <div className="space-y-1 text-[14px] leading-relaxed text-ink-2 [&_b]:font-bold [&_b]:text-ink">
-          {children}
-        </div>
-      </div>
-    </div>
+          <div className="space-y-1 text-[14px] leading-relaxed text-ink-2 [&_b]:font-bold [&_b]:text-ink">
+            {children}
+          </div>
+        </>
+      )}
+    </MobileBottomSheet>
   );
 }
 

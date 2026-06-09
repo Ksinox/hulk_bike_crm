@@ -166,7 +166,7 @@ export function MobileClientCard({
   ];
 
   return (
-    <div className="fixed inset-0 z-[55] flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-bg">
+    <div className="fixed inset-0 z-[55] flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-bg animate-slide-in-right">
       {/* Шапка экрана: назад · «Клиент» · редактировать */}
       <header className="flex h-14 shrink-0 items-center gap-1 border-b border-border bg-surface px-2 pt-[env(safe-area-inset-top)]">
         <button

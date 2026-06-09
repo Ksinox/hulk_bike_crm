@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import { Phone, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { MobileBottomSheet } from "./BottomSheet";
 
 /**
  * Общая инфраструктура «Позвонить клиенту» для мобильного слоя.
@@ -62,45 +63,41 @@ function CallSheet({
   onClose: () => void;
 }) {
   return (
-    <div
-      className="fixed inset-0 z-[70] flex items-end bg-ink/50 backdrop-blur-sm"
-      onClick={onClose}
-    >
-      <div
-        className="w-full rounded-t-3xl bg-surface p-4 pb-8"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="mb-1 flex items-center justify-between">
-          <div className="text-[15px] font-bold text-ink">
-            Позвонить · {name}
+    <MobileBottomSheet onClose={onClose} z={70} panelClassName="px-4">
+      {({ close }) => (
+        <>
+          <div className="mb-1 flex items-center justify-between">
+            <div className="text-[15px] font-bold text-ink">
+              Позвонить · {name}
+            </div>
+            <button
+              type="button"
+              onClick={close}
+              aria-label="Закрыть"
+              className="flex h-8 w-8 items-center justify-center rounded-full text-muted-2 active:bg-surface-soft"
+            >
+              <X size={18} />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Закрыть"
-            className="flex h-8 w-8 items-center justify-center rounded-full text-muted-2"
-          >
-            <X size={18} />
-          </button>
-        </div>
-        <div className="mb-3 text-[12px] text-muted-2">Выберите номер</div>
-        {phones.map((ph, i) => (
-          <a
-            key={ph}
-            href={`tel:${ph}`}
-            onClick={onClose}
-            className="mb-2 flex items-center justify-center gap-2 rounded-2xl bg-green py-4 text-[16px] font-bold text-white active:scale-[0.99]"
-          >
-            <Phone size={18} /> {ph}
-            {i === 1 && (
-              <span className="text-[12px] font-medium text-white/70">
-                · доп.
-              </span>
-            )}
-          </a>
-        ))}
-      </div>
-    </div>
+          <div className="mb-3 text-[12px] text-muted-2">Выберите номер</div>
+          {phones.map((ph, i) => (
+            <a
+              key={ph}
+              href={`tel:${ph}`}
+              onClick={close}
+              className="mb-2 flex items-center justify-center gap-2 rounded-2xl bg-green py-4 text-[16px] font-bold text-white active:scale-[0.99]"
+            >
+              <Phone size={18} /> {ph}
+              {i === 1 && (
+                <span className="text-[12px] font-medium text-white/70">
+                  · доп.
+                </span>
+              )}
+            </a>
+          ))}
+        </>
+      )}
+    </MobileBottomSheet>
   );
 }
 

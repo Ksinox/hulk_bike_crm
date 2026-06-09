@@ -216,7 +216,7 @@ export function MobileDashboard({
           (кнопка справа) и тап по строке → карточка аренды. Модуль «Должники»
           не задействуем: это быстрый операционный список просрочек. */}
       {overdueListOpen && (
-        <div className="fixed inset-0 z-[50] flex h-[100dvh] min-h-0 flex-col bg-bg">
+        <div className="fixed inset-0 z-[50] flex h-[100dvh] min-h-0 flex-col bg-bg animate-slide-in-right">
           <header className="flex items-center gap-2 border-b border-border bg-surface px-2 py-2.5">
             <button
               type="button"
@@ -262,7 +262,7 @@ export function MobileDashboard({
           аренды (те же блоки и заметки, что на десктопе). Плавающая кнопка
           «Позвонить» в зоне большого пальца + выбор номера если их два. */}
       {openRental && (
-        <div className="fixed inset-0 z-[55] flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-surface">
+        <div className="fixed inset-0 z-[55] flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-surface animate-slide-in-right">
           <ErrorBoundary key={openRental.id}>
             <RentalCard
               rental={openRental}

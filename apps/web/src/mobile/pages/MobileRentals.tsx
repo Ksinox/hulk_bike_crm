@@ -223,7 +223,7 @@ export function MobileRentals() {
           замена, история) — внутри неё. Без onRequestPayment/onOpenHistory
           карточка ведёт эти диалоги сама. */}
       {openRental && (
-        <div className="fixed inset-0 z-[55] flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-surface">
+        <div className="fixed inset-0 z-[55] flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-surface animate-slide-in-right">
           <ErrorBoundary key={openRental.id}>
             <RentalCard
               rental={openRental}
