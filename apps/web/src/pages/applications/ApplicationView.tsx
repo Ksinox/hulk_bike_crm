@@ -302,7 +302,7 @@ export function ApplicationView({
           <Bike size={13} /> Что выбрал клиент
         </span>
 
-        <h3 className="mt-1 font-display text-[34px] font-extrabold leading-none tracking-tight text-ink sm:text-[42px]">
+        <h3 className="mt-1 break-words font-display text-[26px] font-extrabold leading-none tracking-tight text-ink sm:text-[42px]">
           {modelName ?? "Модель не выбрана"}
         </h3>
 
@@ -360,8 +360,11 @@ export function ApplicationView({
           </div>
         )}
 
-        {/* Период + аватарка-герой */}
-        <div className="relative mt-5">
+        {/* Период + аватарка-герой.
+            На мобиле период живёт в блоке «Ключевые даты» (он поднят наверх),
+            поэтому большой календарь тут показываем ТОЛЬКО на десктопе (sm+) —
+            иначе он распирал карточку шире экрана. На мобиле — только скутер. */}
+        <div className="relative mt-4 sm:mt-5">
           {modelAvatar && (
             <img
               src={modelAvatar}
@@ -371,7 +374,7 @@ export function ApplicationView({
           )}
           <div className="relative z-10 flex items-center justify-center gap-4 sm:justify-start">
             {startCd && endCd ? (
-              <div className="w-fit rounded-2xl bg-surface p-2.5 text-ink shadow-card-lg ring-1 ring-inset ring-border">
+              <div className="hidden w-fit rounded-2xl bg-surface p-2.5 text-ink shadow-card-lg ring-1 ring-inset ring-border sm:block">
                 <I18nProvider locale="ru-RU">
                   <RangeCalendar
                     aria-label="Период аренды из заявки"
@@ -387,20 +390,20 @@ export function ApplicationView({
                 Дату согласует менеджер
               </div>
             ) : null}
-            {/* аватарка под календарём на мобилке */}
+            {/* Скутер крупно (на мобиле — единственный визуал периода). */}
             {modelAvatar && (
               <img
                 src={modelAvatar}
                 alt=""
                 aria-hidden
-                className="h-[120px] w-auto object-contain drop-shadow-lg sm:hidden"
+                className="h-[104px] w-auto max-w-full object-contain drop-shadow-lg sm:hidden"
               />
             )}
           </div>
         </div>
 
         {quote && (
-          <div className="relative z-10 mt-5 rounded-2xl bg-surface-soft p-3.5 ring-1 ring-inset ring-border">
+          <div className="relative z-10 mt-4 rounded-2xl bg-surface-soft p-3.5 ring-1 ring-inset ring-border sm:mt-5">
             <FinRow label="Аренда" value={`${rub(quote.rentSum)} ₽`} />
             {quote.equipSum > 0 && (
               <FinRow label="Экипировка" value={`${rub(quote.equipSum)} ₽`} />
@@ -410,15 +413,15 @@ export function ApplicationView({
               value={`${rub(quote.deposit)} ₽`}
               muted
             />
-            <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl bg-gradient-to-br from-blue-600 to-blue-700 px-4 py-3 text-white shadow-card-sm">
+            <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl bg-gradient-to-br from-blue-600 to-blue-700 px-4 py-2.5 text-white shadow-card-sm sm:py-3">
               <span className="text-[12px] font-bold uppercase tracking-wide text-white/80">
                 Итого к оплате
               </span>
-              <span className="font-display text-[28px] font-extrabold leading-none tabular-nums">
+              <span className="font-display text-[24px] font-extrabold leading-none tabular-nums sm:text-[28px]">
                 {rub(quote.total)} ₽
               </span>
             </div>
-            <p className="mt-2 px-0.5 text-[10.5px] leading-snug text-muted-2">
+            <p className="mt-2 hidden px-0.5 text-[10.5px] leading-snug text-muted-2 sm:block">
               Ориентир по тарифам каталога. Точную сумму зафиксируете при
               оформлении аренды.
             </p>
@@ -647,11 +650,14 @@ export function ApplicationView({
         </div>
       </div>
 
-      {/* ═════════════ МОБАЙЛ (<lg) ═════════════ */}
-      <div className="flex flex-col gap-4 lg:hidden">
+      {/* ═════════════ МОБАЙЛ (<lg) ═════════════
+          Порядок: инфа о клиенте → Ключевые даты → тело аренды (модель/
+          скутер/экипировка/итог) → проверка. Даты подняты наверх (просьба
+          заказчика), большой календарь в теле на мобиле скрыт. */}
+      <div className="flex flex-col gap-3 lg:hidden">
         {heroBlock}
-        {whatChosenBlock}
         {keyDatesBlock}
+        {whatChosenBlock}
         <div className="flex flex-col gap-2.5">
           <SectionLabel>Проверка клиента</SectionLabel>
           {docsAccordion}
@@ -666,9 +672,11 @@ export function ApplicationView({
         {showActions && <div className="h-2" />}
       </div>
 
-      {/* Мобильная нижняя панель действий — sticky, прилипает к низу модалки. */}
+      {/* Мобильная нижняя панель действий — sticky, прилипает к низу модалки.
+          -mx-4/px-4: на всю ширину контейнера, но БЕЗ переполнения — у листа
+          (MobileSheet) паддинг px-4 (16px), поэтому -mx-5 распирал шире экрана. */}
       {showActions && (
-        <div className="sticky bottom-0 z-20 -mx-5 mt-1 flex gap-2 border-t border-border bg-surface/95 px-5 py-3 backdrop-blur-md lg:hidden">
+        <div className="sticky bottom-0 z-20 -mx-4 mt-1 flex gap-2 border-t border-border bg-surface/95 px-4 py-3 backdrop-blur-md lg:hidden">
           {(onCall || app.phone) && (
             <button
               type="button"
