@@ -1,8 +1,5 @@
-import { Bell, Bike } from "lucide-react";
-import {
-  useApplications,
-  useConvertedApplicationsCount,
-} from "@/lib/api/clientApplications";
+import { Bell } from "lucide-react";
+import { useApplications } from "@/lib/api/clientApplications";
 import { KpiCard } from "./KpiCard";
 import { useDashboardDrawer } from "./DashboardDrawer";
 
@@ -17,8 +14,6 @@ import { useDashboardDrawer } from "./DashboardDrawer";
  */
 export function NewApplicationsWidget({ className }: { className?: string }) {
   const { data: items = [] } = useApplications();
-  // v0.9.7: накопительный счётчик «заявок, оформленных в аренду».
-  const { data: convertedCount = 0 } = useConvertedApplicationsCount();
   const newCount = items.filter((a) => a.status === "new").length;
   const total = items.length;
   const hasNew = newCount > 0;
@@ -49,19 +44,14 @@ export function NewApplicationsWidget({ className }: { className?: string }) {
             : undefined
         }
         foot={
-          <span className="flex flex-col gap-0.5 leading-tight">
-            {/* Накопительная сводка: сколько заявок с формы стали арендой. */}
-            <span className="inline-flex items-center gap-1 font-bold text-green-ink">
-              <Bike size={12} className="shrink-0" />
-              {convertedCount} оформлено в аренду
-            </span>
-            <span className="text-[11px] text-muted-2">
-              {total === 0
-                ? "Поделитесь ссылкой — клиент заполнит анкету сам"
-                : hasNew
-                  ? "Нажмите, чтобы открыть →"
-                  : "Все заявки просмотрены"}
-            </span>
+          // Конверсия «заявки → аренда» — в детальной статистике выручки
+          // (все показатели в одном месте), на виджете не дублируем.
+          <span className="text-[11px] text-muted-2">
+            {total === 0
+              ? "Поделитесь ссылкой — клиент заполнит анкету сам"
+              : hasNew
+                ? "Нажмите, чтобы открыть →"
+                : "Все заявки просмотрены"}
           </span>
         }
       />
