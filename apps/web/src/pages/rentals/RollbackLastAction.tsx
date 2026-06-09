@@ -10,10 +10,12 @@ import type { Rental } from "@/lib/mock/rentals";
 /**
  * «Откатить последнее действие» — защита от ошибочных действий «в день
  * совершения». Phase 1: откат ПРОДЛЕНИЯ. Если последнее действие аренды
- * сегодня — продление, показываем спокойную плашку с кнопкой «Откатить» и
- * окно подтверждения «было → станет». Бэк проверяет границу (сегодня по МСК,
+ * сегодня — продление, показываем компактную кнопку «Откатить» прямо
+ * В ХРОНОЛОГИИ (под самым свежим событием, через слот InlineHistory.afterFirst)
+ * и окно подтверждения «было → станет». Бэк проверяет границу (сегодня по МСК,
  * это последнее действие, аренда не в архиве) и восстанавливает аренду из
- * снимка, удаляя платёж продления.
+ * снимка, удаляя платёж продления. Сам откат тоже пишется в хронологию
+ * (action: payment_rolled_back).
  */
 
 function fmtRub(n: number): string {
@@ -83,24 +85,19 @@ export function RollbackLastAction({ rental }: { rental: Rental }) {
 
   return (
     <>
-      <div className="flex items-center gap-2.5 rounded-2xl border border-amber-200 bg-amber-50 px-3.5 py-2.5">
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
-          <Undo2 size={16} />
+      {/* Компактная полоска прямо в хронологии — «под последним действием».
+          Тон спокойный янтарный: это не тревога, а доступная отмена. */}
+      <div className="mx-1 mb-0.5 mt-0.5 flex items-center gap-2 rounded-[10px] border border-amber-200 bg-amber-50 px-2.5 py-1.5">
+        <Undo2 size={13} className="shrink-0 text-amber-600" />
+        <span className="min-w-0 flex-1 text-[11px] font-semibold leading-tight text-amber-800">
+          Продлили сегодня на {target.extraDays} дн — ошиблись?
         </span>
-        <div className="min-w-0 flex-1">
-          <div className="text-[13px] font-bold text-amber-900">
-            Продлили сегодня на {target.extraDays} дн
-          </div>
-          <div className="text-[11px] text-amber-700/80">
-            Ошиблись? Откат доступен только до конца дня.
-          </div>
-        </div>
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-600 px-3 py-1.5 text-[12px] font-bold text-white transition-colors hover:bg-amber-700"
+          className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-600 px-2.5 py-1 text-[11px] font-bold text-white transition-colors hover:bg-amber-700"
         >
-          <Undo2 size={13} /> Откатить
+          <Undo2 size={12} /> Откатить
         </button>
       </div>
 

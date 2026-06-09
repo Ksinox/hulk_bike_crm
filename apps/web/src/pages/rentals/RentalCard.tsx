@@ -2022,9 +2022,9 @@ export function RentalCard({
       )}
 
       {/* =========== BANNERS =========== */}
-      {/* Откатить последнее действие (пока — продление) «в день совершения».
-          Сам решает, показываться ли (есть ли сегодня откатываемое продление). */}
-      <RollbackLastAction rental={rental} />
+      {/* «Откатить последнее действие» переехал из баннера В ХРОНОЛОГИЮ —
+          компактная кнопка под самым свежим событием (см. InlineHistory
+          afterFirst ниже). */}
       {/* v0.8.0: паркинг — явно видно что аренда на паузе и сколько дней. */}
       {activeParking && (
         <div className="flex items-center gap-3 rounded-[12px] bg-yellow-50 px-3 py-2.5 text-[12.5px] text-yellow-900 ring-1 ring-inset ring-yellow-300">
@@ -2547,6 +2547,7 @@ export function RentalCard({
               loading={activityQ.isLoading}
               onExpand={requestHistory}
               limit={5}
+              afterFirst={<RollbackLastAction rental={rental} />}
             />
           </AccordionSection>
 
@@ -2675,6 +2676,7 @@ export function RentalCard({
               loading={activityQ.isLoading}
               onExpand={requestHistory}
               limit={5}
+              afterFirst={<RollbackLastAction rental={rental} />}
             />
             <DocsInline rental={rental} />
           </div>

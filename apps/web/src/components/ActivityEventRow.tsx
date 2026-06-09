@@ -44,6 +44,7 @@ export type ActivityCategory = "extend" | "swap" | "equipment" | "money";
 
 /** Маппинг action → категория фильтра (используется в полной ленте). */
 export function actionCategory(action: string): ActivityCategory | null {
+  if (action.includes("rolled_back")) return "extend";
   if (action.includes("extend")) return "extend";
   if (action.includes("scooter_swap") || action === "scooter_swapped")
     return "swap";
@@ -77,6 +78,7 @@ const EVENT_TONE_CLASS: Record<EventTone, string> = {
 };
 
 function eventVisual(action: string): { icon: LucideIcon; tone: EventTone } {
+  if (action.includes("rolled_back")) return { icon: RotateCcw, tone: "amber" };
   if (action.includes("parking")) return { icon: SquareParking, tone: "yellow" };
   if (action.includes("equipment")) return { icon: HardHat, tone: "orange" };
   if (action.includes("scooter_swap") || action === "scooter_swapped")
@@ -356,6 +358,36 @@ export function formatActivitySummary(
     const fl = feeLine();
     if (fl) extras.push(fl);
     return { title: "Продление аренды", change, extras };
+  }
+
+  // ── Откат продления («отменить действие» в день совершения) ──
+  // Бэк (rentals.ts, лог payment_rolled_back) кладёт diff.endPlannedAt (date)
+  // + diff.sum (money) и meta.extraDays. Должно матчиться ДО ветки «Платёж»,
+  // иначе action.includes("payment") покажет «Принят платёж».
+  if (action.includes("rolled_back")) {
+    const endp = readRecord(diff?.endPlannedAt);
+    const sum = readRecord(diff?.sum);
+    const m = readRecord(item.meta);
+    const extraDays = typeof m?.extraDays === "number" ? m.extraDays : null;
+    let change: ChangeView | null = null;
+    if (endp && (endp.from != null || endp.to != null)) {
+      change = {
+        from: formatDateLabel(endp.from),
+        to: formatDateLabel(endp.to),
+        tone: "blue",
+      };
+    }
+    const extras: string[] = [];
+    if (sum && (sum.from != null || sum.to != null)) {
+      extras.push(`Сумма аренды: ${money(sum.from)} → ${money(sum.to)}`);
+      const back = Number(sum.from ?? 0) - Number(sum.to ?? 0);
+      if (back > 0) extras.push(`Вернулось ${money(back)}`);
+    }
+    if (extraDays)
+      extras.push(
+        `Убрано продление: ${extraDays} ${plural(extraDays, "день", "дня", "дней")}`,
+      );
+    return { title: "Откат продления", change, extras };
   }
 
   // ── Платёж ──

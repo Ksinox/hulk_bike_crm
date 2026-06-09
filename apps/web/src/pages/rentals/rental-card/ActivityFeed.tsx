@@ -56,6 +56,7 @@ type FeedType =
   | "status"
   | "manual-debt"
   | "refund"
+  | "rollback"
   | "other";
 
 const FEED_TYPE: Record<
@@ -77,6 +78,7 @@ const FEED_TYPE: Record<
   status: { icon: RefreshCw, tone: "ink", label: "Статус" },
   "manual-debt": { icon: Plus, tone: "red", label: "Ручной долг" },
   refund: { icon: RotateCcw, tone: "green", label: "Возврат" },
+  rollback: { icon: RotateCcw, tone: "orange", label: "Откат" },
   other: { icon: MoreHorizontal, tone: "ink", label: "Событие" },
 };
 
@@ -126,6 +128,8 @@ function mapType(item: ApiActivityItem): FeedType {
   )
     return "created";
   if (a === "rental_extended" || a === "extended") return "extend";
+  if (a === "payment_rolled_back" || a.includes("rolled_back"))
+    return "rollback";
   if (a === "scooter_swapped") return "scooter";
   if (a === "equipment_changed") return "equipment";
   if (a === "completed") return "status";
@@ -197,9 +201,14 @@ export function ActivityFeed({
       if (filter !== "all") {
         if (
           filter === "money" &&
-          !["payment", "extend", "deposit", "deposit-up", "forgive"].includes(
-            type,
-          )
+          ![
+            "payment",
+            "extend",
+            "deposit",
+            "deposit-up",
+            "forgive",
+            "rollback",
+          ].includes(type)
         )
           return false;
         if (filter === "overdue" && !["overdue", "forgive"].includes(type))

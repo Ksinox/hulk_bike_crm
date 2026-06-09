@@ -8,6 +8,7 @@
  * иконками, тот же что на дашборде и в полной ленте). Локальные функции
  * formatActivityShort / renderDiffLine / actionMeta удалены.
  */
+import { Fragment, type ReactNode } from "react";
 import { ArrowRight, History } from "lucide-react";
 import type { ApiActivityItem } from "@/lib/api/activity";
 import { ActivityEventRow } from "@/components/ActivityEventRow";
@@ -17,11 +18,18 @@ export function InlineHistory({
   loading,
   onExpand,
   limit = 5,
+  afterFirst,
 }: {
   items: ApiActivityItem[];
   loading?: boolean;
   onExpand: () => void;
   limit?: number;
+  /**
+   * Слот, который рендерится СРАЗУ под самым свежим событием (items[0]).
+   * Используется для «Откатить последнее действие» — кнопка живёт прямо
+   * в хронологии на последнем действии, а не отдельной плашкой над картой.
+   */
+  afterFirst?: ReactNode;
 }) {
   return (
     <div className="rounded-2xl bg-surface border border-border shadow-card-sm overflow-hidden">
@@ -48,8 +56,11 @@ export function InlineHistory({
           </div>
         ) : (
           <div className="px-3 py-2 flex flex-col gap-0.5">
-            {items.slice(0, limit).map((it) => (
-              <ActivityEventRow key={it.id} item={it} compact />
+            {items.slice(0, limit).map((it, i) => (
+              <Fragment key={it.id}>
+                <ActivityEventRow item={it} compact />
+                {i === 0 && afterFirst}
+              </Fragment>
             ))}
           </div>
         )}
