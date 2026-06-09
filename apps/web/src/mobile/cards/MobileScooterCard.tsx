@@ -33,7 +33,7 @@ import { ScooterEditForm } from "@/pages/fleet/ScooterEditForm";
 import { ScooterDocumentsTab } from "@/pages/fleet/ScooterDocumentsTab";
 import { ScooterPhotosGallery } from "@/pages/fleet/ScooterPhotosGallery";
 import { ScooterStatusModal } from "@/pages/fleet/ScooterStatusModal";
-import { OilChangeDialog } from "@/pages/fleet/OilChangeDialog";
+import { OilChangeDialog, type OilMode } from "@/pages/fleet/OilChangeDialog";
 import { RepairsTab, ExpensesTab } from "@/pages/fleet/MaintenanceTab";
 import { useActivityTimeline } from "@/lib/api/activity";
 import { ActivityTimelineSection } from "@/pages/rentals/ActivityTimelineSection";
@@ -130,7 +130,7 @@ export function MobileScooterCard({
   const [editOpen, setEditOpen] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
   const [newRentalOpen, setNewRentalOpen] = useState(false);
-  const [oilOpen, setOilOpen] = useState(false);
+  const [oilMode, setOilMode] = useState<OilMode | null>(null);
   const [roiOpen, setRoiOpen] = useState(false);
   const { data: me } = useMe();
   const canArchive = me?.role === "director" || me?.role === "creator";
@@ -452,10 +452,18 @@ export function MobileScooterCard({
 
             <button
               type="button"
-              onClick={() => setOilOpen(true)}
+              onClick={() => setOilMode("change")}
               className="mt-2.5 flex min-h-[44px] w-full items-center justify-center rounded-xl border border-border text-[12px] font-semibold text-ink-2 active:bg-surface-soft"
             >
               Зафиксировать замену
+            </button>
+            {/* Точка отсчёта по пробегу — последняя замена для счётчика интервала. */}
+            <button
+              type="button"
+              onClick={() => setOilMode("baseline")}
+              className="mt-1.5 flex min-h-[40px] w-full items-center justify-center text-[12px] font-semibold text-blue-600 active:opacity-70"
+            >
+              Указать пробег прошлой замены
             </button>
           </section>
         )}
@@ -656,12 +664,13 @@ export function MobileScooterCard({
           }}
         />
       )}
-      {oilOpen && (
+      {oilMode && (
         <OilChangeDialog
           scooterId={scooter.id}
           scooterName={scooter.name}
           currentMileage={scooter.mileage}
-          onClose={() => setOilOpen(false)}
+          initialMode={oilMode}
+          onClose={() => setOilMode(null)}
         />
       )}
 

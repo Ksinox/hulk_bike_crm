@@ -32,7 +32,7 @@ import { ScooterEditForm } from "./ScooterEditForm";
 import { ScooterDocumentsTab } from "./ScooterDocumentsTab";
 import { ScooterPhotosGallery } from "./ScooterPhotosGallery";
 import { ScooterStatusModal } from "./ScooterStatusModal";
-import { OilChangeDialog } from "./OilChangeDialog";
+import { OilChangeDialog, type OilMode } from "./OilChangeDialog";
 import { RepairsTab, ExpensesTab } from "./MaintenanceTab";
 import { useActivityTimeline } from "@/lib/api/activity";
 import { ActivityTimelineSection } from "@/pages/rentals/ActivityTimelineSection";
@@ -143,7 +143,7 @@ export function ScooterCard({
   const [editOpen, setEditOpen] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
   const [newRentalOpen, setNewRentalOpen] = useState(false);
-  const [oilOpen, setOilOpen] = useState(false);
+  const [oilMode, setOilMode] = useState<OilMode | null>(null);
   const { data: me } = useMe();
   const canArchive = me?.role === "director" || me?.role === "creator";
   const archiveMut = useArchiveScooter();
@@ -615,14 +615,26 @@ export function ScooterCard({
               </div>
             )}
 
-            <button
-              type="button"
-              onClick={() => setOilOpen(true)}
-              className="mt-3 inline-flex w-full items-center justify-center rounded-full border border-border bg-surface px-3 py-1.5 text-[12px] font-semibold text-ink-2 transition-colors hover:bg-surface-soft"
-              title="Зафиксировать замену масла"
-            >
-              Зафиксировать замену
-            </button>
+            <div className="mt-3 flex flex-col items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setOilMode("change")}
+                className="inline-flex w-full items-center justify-center rounded-full border border-border bg-surface px-3 py-1.5 text-[12px] font-semibold text-ink-2 transition-colors hover:bg-surface-soft"
+                title="Записать новую замену масла"
+              >
+                Зафиксировать замену
+              </button>
+              {/* Точка отсчёта по пробегу — для скутеров без истории замен или
+                  чтобы поправить базу, от которой считается интервал. */}
+              <button
+                type="button"
+                onClick={() => setOilMode("baseline")}
+                className="text-[11px] font-semibold text-blue-600 hover:underline"
+                title="Задать пробег прошлой замены — точку отсчёта интервала"
+              >
+                Указать пробег прошлой замены
+              </button>
+            </div>
           </div>
           )}
         </aside>
@@ -973,12 +985,13 @@ export function ScooterCard({
           }}
         />
       )}
-      {oilOpen && (
+      {oilMode && (
         <OilChangeDialog
           scooterId={scooter.id}
           scooterName={scooter.name}
           currentMileage={scooter.mileage}
-          onClose={() => setOilOpen(false)}
+          initialMode={oilMode}
+          onClose={() => setOilMode(null)}
         />
       )}
     </main>
