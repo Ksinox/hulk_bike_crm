@@ -8,6 +8,7 @@ import {
   damageReports,
   damageReportItems,
   debtEntries,
+  noteStickers,
   parkingSessions,
   payments,
   rentals,
@@ -2090,6 +2091,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
       if (kind === "created") return (a) => a === "created";
       if (kind === "payment") return (a) => a === "debt_payment";
       if (kind === "security") return (a) => a === "security_topped_up";
+      if (kind === "parking") return (a) => a === "parking_paid";
       // extend и старые записи без kind — откат продления.
       return (a) => a === "rental_extended";
     }
@@ -2100,6 +2102,9 @@ export async function rentalsRoutes(app: FastifyInstance) {
       if (kind === "forgive_days")
         return (a) => a === "debt_overdue_days_forgiven";
       if (kind === "forgive_all") return (a) => a === "debt_overdue_forgiven";
+      if (kind === "swap") return (a) => a === "scooter_swapped";
+      if (kind === "parking_set") return (a) => a === "parking_set";
+      if (kind === "parking_end") return (a) => a === "parking_ended";
       return null;
     }
     // «Перевести в активную» отменяет завершение.
@@ -2154,6 +2159,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
     created: (a) => a === "created",
     payment: (a) => a === "debt_payment",
     security: (a) => a === "security_topped_up",
+    parking: (a) => a === "parking_paid",
   };
 
   /**
@@ -2242,6 +2248,8 @@ export async function rentalsRoutes(app: FastifyInstance) {
           // security: пополнение залога — прежние суммы залога
           deposit?: number;
           depositOriginal?: number;
+          // parking: раскладка оплаты по сессиям (un-pay паркинга)
+          allocations?: Array<{ sessionId: number; amount: number }>;
         };
         if (
           !snap ||
@@ -2249,7 +2257,8 @@ export async function rentalsRoutes(app: FastifyInstance) {
             snap.kind !== "equipment" &&
             snap.kind !== "created" &&
             snap.kind !== "payment" &&
-            snap.kind !== "security")
+            snap.kind !== "security" &&
+            snap.kind !== "parking")
         )
           return { ok: false as const, error: "unsupported" as const };
 
@@ -2379,6 +2388,32 @@ export async function rentalsRoutes(app: FastifyInstance) {
             after: restored,
             amount: pay.amount,
             payKind: snap.payKind ?? "manual",
+          };
+        }
+
+        // ── Откат оплаты паркинга: возвращаем paidAmount сессий по снимку
+        //    раскладки и удаляем parking-платёж (он был в выручке). ──
+        if (snap.kind === "parking") {
+          for (const a of snap.allocations ?? []) {
+            await tx
+              .update(parkingSessions)
+              .set({
+                paidAmount: sql`GREATEST(0, ${parkingSessions.paidAmount} - ${a.amount})`,
+              })
+              .where(
+                and(
+                  eq(parkingSessions.id, a.sessionId),
+                  eq(parkingSessions.rentalId, id),
+                ),
+              );
+          }
+          await tx.delete(payments).where(eq(payments.id, paymentId));
+          return {
+            ok: true as const,
+            kind: "parking" as const,
+            before: rentalNow,
+            after: rentalNow,
+            amount: pay.amount,
           };
         }
 
@@ -2546,6 +2581,22 @@ export async function rentalsRoutes(app: FastifyInstance) {
               label: "Залог",
               from: out.before.deposit ?? 0,
               to: out.after.deposit ?? 0,
+              kind: "money",
+            },
+          },
+        });
+      } else if (out.kind === "parking") {
+        await logActivity(req, {
+          entity: "rental",
+          entityId: id,
+          action: "payment_rolled_back",
+          summary: `Откат оплаты паркинга ${summary} — снято ${out.amount.toLocaleString("ru-RU")} ₽, долг по паркингу снова открыт`,
+          meta: { paymentId, kind: "parking" },
+          diff: {
+            payment: {
+              label: "Снято",
+              from: out.amount,
+              to: 0,
               kind: "money",
             },
           },
@@ -3018,6 +3069,20 @@ export async function rentalsRoutes(app: FastifyInstance) {
         const now = new Date();
         const prevScooterId = old.scooterId;
 
+        // Снимок пред-состояния для отката свапа «в день совершения»:
+        // статус прежнего скутера (свап его поменяет на oldScooterStatus),
+        // пробег-на-старте и заметка аренды (свап их перезапишет).
+        let prevScooterStatusBefore: string | null = null;
+        if (prevScooterId) {
+          const [prevSc] = await tx
+            .select({ baseStatus: scooters.baseStatus })
+            .from(scooters)
+            .where(eq(scooters.id, prevScooterId));
+          prevScooterStatusBefore = prevSc?.baseStatus ?? null;
+        }
+        const mileageAtStartBefore = old.mileageAtStart;
+        const noteBefore = old.note;
+
         // === Замена in-place ===
         // Раньше создавали child rental с parentRentalId — но это плодило
         // фантомные «продления» в цепочке после каждого свапа: 9 замен
@@ -3101,29 +3166,37 @@ export async function rentalsRoutes(app: FastifyInstance) {
         }
 
         // Запись в журнал замен — нужна шаблону act_swap.
-        await tx.insert(scooterSwaps).values({
-          rentalId: id,
-          prevScooterId,
-          newScooterId: d.newScooterId,
-          swapAt: now,
-          reason: d.reason ?? null,
-          feeAmount,
-          createdByUserId: req.user.userId,
-        });
+        const [swapRow] = await tx
+          .insert(scooterSwaps)
+          .values({
+            rentalId: id,
+            prevScooterId,
+            newScooterId: d.newScooterId,
+            swapAt: now,
+            reason: d.reason ?? null,
+            feeAmount,
+            createdByUserId: req.user.userId,
+          })
+          .returning();
 
         // Если разница есть — выставляем доплату как payment 'swap_fee',
         // не paid. Попадает в плашку «Долг» через chainPayments.
+        let feePaymentId: number | null = null;
         if (feeAmount > 0) {
-          await tx.insert(payments).values({
-            rentalId: id,
-            type: "swap_fee",
-            amount: feeAmount,
-            method: old.paymentMethod,
-            paid: false,
-            note: d.reason
-              ? `доплата за замену модели: ${d.reason}`
-              : `доплата за замену модели`,
-          });
+          const [feePay] = await tx
+            .insert(payments)
+            .values({
+              rentalId: id,
+              type: "swap_fee",
+              amount: feeAmount,
+              method: old.paymentMethod,
+              paid: false,
+              note: d.reason
+                ? `доплата за замену модели: ${d.reason}`
+                : `доплата за замену модели`,
+            })
+            .returning();
+          feePaymentId = feePay?.id ?? null;
         }
 
         // v0.6.51: замена на дешевле — возвращаем разницу в депозит клиента
@@ -3148,7 +3221,18 @@ export async function rentalsRoutes(app: FastifyInstance) {
           })
           .where(eq(rentals.id, id));
 
-        return { rentalId: id, feeAmount, refundAmount, prevScooterId };
+        return {
+          rentalId: id,
+          feeAmount,
+          refundAmount,
+          prevScooterId,
+          swapId: swapRow?.id ?? null,
+          feePaymentId,
+          prevScooterStatusBefore,
+          mileageAtStartBefore,
+          noteBefore,
+          clientId: old.clientId,
+        };
       });
 
       // v0.6.6: для diff достанем человекочитаемые имена скутеров.
@@ -3184,6 +3268,13 @@ export async function rentalsRoutes(app: FastifyInstance) {
           refundAmount: result.refundAmount,
           reason: d.reason ?? null,
           oldScooterDestination: d.oldScooterStatus,
+          // Снимок для отката свапа «в день совершения» (rollback-action).
+          swapId: result.swapId,
+          feePaymentId: result.feePaymentId,
+          prevScooterStatusBefore: result.prevScooterStatusBefore,
+          mileageAtStartBefore: result.mileageAtStartBefore,
+          noteBefore: result.noteBefore,
+          clientId: result.clientId,
         },
         diff: {
           scooter: {
@@ -4526,6 +4617,9 @@ export async function rentalsRoutes(app: FastifyInstance) {
         "debt_overdue_fine_forgiven",
         "debt_overdue_days_forgiven",
         "debt_overdue_forgiven",
+        "scooter_swapped",
+        "parking_set",
+        "parking_ended",
       ]);
 
       const out = await db.transaction(async (tx) => {
@@ -4561,7 +4655,212 @@ export async function rentalsRoutes(app: FastifyInstance) {
           fineAmount?: number;
           amountDays?: number;
           amountFine?: number;
+          // swap
+          swapId?: number | null;
+          feeAmount?: number;
+          feePaymentId?: number | null;
+          prevScooterId?: number | null;
+          newScooterId?: number;
+          prevScooterStatusBefore?: string | null;
+          mileageAtStartBefore?: number | null;
+          noteBefore?: string | null;
+          refundAmount?: number;
+          clientId?: number | null;
+          // parking
+          sessionId?: number | null;
+          before?: { endDate?: string; days?: number; amount?: number };
+          delta?: number;
         };
+
+        // ── Откат замены скутера: вернуть прежний скутер на аренду,
+        //    статусы скутеров и пробег/заметку как до свапа, удалить запись
+        //    замены, неоплаченную доплату и возврат разницы из депозита. ──
+        if (act.action === "scooter_swapped") {
+          if (typeof meta.swapId !== "number")
+            return { ok: false as const, error: "legacy_no_meta" as const };
+          const [swapRow] = await tx
+            .select()
+            .from(scooterSwaps)
+            .where(eq(scooterSwaps.id, meta.swapId));
+          if (!swapRow)
+            return { ok: false as const, error: "already_undone" as const };
+          // Состояние разъехалось (свап поверх свапа ловится not_last, но
+          // подстрахуемся): текущий скутер аренды должен быть «новым».
+          if (rentalNow.scooterId !== swapRow.newScooterId)
+            return { ok: false as const, error: "state_changed" as const };
+          // Доплата уже принята? Тогда сначала откатывают её приём.
+          if (typeof meta.feePaymentId === "number") {
+            const [feePay] = await tx
+              .select({ id: payments.id, paid: payments.paid })
+              .from(payments)
+              .where(eq(payments.id, meta.feePaymentId));
+            if (feePay?.paid)
+              return { ok: false as const, error: "fee_paid" as const };
+            if (feePay)
+              await tx.delete(payments).where(eq(payments.id, feePay.id));
+          }
+          await tx
+            .update(rentals)
+            .set({
+              scooterId: swapRow.prevScooterId,
+              mileageAtStart: meta.mileageAtStartBefore ?? null,
+              note: meta.noteBefore ?? null,
+              updatedAt: sql`now()`,
+            })
+            .where(eq(rentals.id, id));
+          // Новый скутер — обратно в парк; прежний — в статус до свапа.
+          await tx
+            .update(scooters)
+            .set({ baseStatus: "rental_pool", updatedAt: sql`now()` })
+            .where(eq(scooters.id, swapRow.newScooterId));
+          if (swapRow.prevScooterId != null) {
+            await tx
+              .update(scooters)
+              .set({
+                baseStatus: (meta.prevScooterStatusBefore ??
+                  "rental_pool") as typeof scooters.$inferSelect.baseStatus,
+                updatedAt: sql`now()`,
+              })
+              .where(eq(scooters.id, swapRow.prevScooterId));
+          }
+          // Возврат разницы (даунгрейд) уходил в депозит клиента — снимаем.
+          if (
+            typeof meta.refundAmount === "number" &&
+            meta.refundAmount > 0 &&
+            meta.clientId
+          ) {
+            await tx.execute(sql`
+              UPDATE clients SET deposit_balance = deposit_balance - ${meta.refundAmount}
+               WHERE id = ${meta.clientId}
+            `);
+          }
+          await tx.delete(scooterSwaps).where(eq(scooterSwaps.id, swapRow.id));
+          return {
+            ok: true as const,
+            action: act.action,
+            restoredTotal: meta.feeAmount ?? 0,
+            endBefore: null,
+            endAfter: null,
+            swapInfo: {
+              prevScooterId: swapRow.prevScooterId,
+              newScooterId: swapRow.newScooterId,
+              refundAmount: meta.refundAmount ?? 0,
+            },
+            parkingInfo: undefined,
+          };
+        }
+
+        // ── Откат постановки на паркинг: удалить сессию, вернуть сдвиг
+        //    возврата (как в DELETE сессии), убрать сегодняшний стикер. ──
+        if (act.action === "parking_set") {
+          if (typeof meta.sessionId !== "number")
+            return { ok: false as const, error: "legacy_no_meta" as const };
+          const [sess] = await tx
+            .select()
+            .from(parkingSessions)
+            .where(
+              and(
+                eq(parkingSessions.id, meta.sessionId),
+                eq(parkingSessions.rentalId, id),
+              ),
+            );
+          if (!sess)
+            return { ok: false as const, error: "already_undone" as const };
+          if ((sess.paidAmount ?? 0) > 0)
+            return { ok: false as const, error: "parking_paid" as const };
+          await tx
+            .delete(parkingSessions)
+            .where(eq(parkingSessions.id, sess.id));
+          if (sess.days > 0) {
+            await tx
+              .update(rentals)
+              .set({
+                endPlannedAt: new Date(
+                  rentalNow.endPlannedAt.getTime() -
+                    sess.days * 86_400_000,
+                ),
+                updatedAt: sql`now()`,
+              })
+              .where(eq(rentals.id, id));
+          }
+          // Стикер «Паркинг с …» создавался вместе с постановкой — убираем.
+          await tx
+            .delete(noteStickers)
+            .where(
+              and(
+                eq(noteStickers.entity, "rental"),
+                eq(noteStickers.entityId, id),
+                eq(noteStickers.kind, "parking"),
+                sql`${noteStickers.createdAt} >= now() - interval '1 day'`,
+              ),
+            );
+          return {
+            ok: true as const,
+            action: act.action,
+            restoredTotal: sess.amount,
+            endBefore: null,
+            endAfter: null,
+            swapInfo: undefined,
+            parkingInfo: {
+              startDate: sess.startDate,
+              endDate: sess.endDate,
+              days: sess.days,
+            },
+          };
+        }
+
+        // ── Откат снятия с паркинга: сессия снова active с прежними
+        //    датами/суммой, сдвиг возврата от снятия отменяется. ──
+        if (act.action === "parking_ended") {
+          if (typeof meta.sessionId !== "number" || !meta.before)
+            return { ok: false as const, error: "legacy_no_meta" as const };
+          const [sess] = await tx
+            .select()
+            .from(parkingSessions)
+            .where(
+              and(
+                eq(parkingSessions.id, meta.sessionId),
+                eq(parkingSessions.rentalId, id),
+              ),
+            );
+          if (!sess || sess.status !== "ended")
+            return { ok: false as const, error: "already_undone" as const };
+          await tx
+            .update(parkingSessions)
+            .set({
+              endDate: meta.before.endDate ?? sess.endDate,
+              days: meta.before.days ?? sess.days,
+              amount: meta.before.amount ?? sess.amount,
+              status: "active",
+              endedAt: null,
+            })
+            .where(eq(parkingSessions.id, sess.id));
+          const delta = typeof meta.delta === "number" ? meta.delta : 0;
+          if (delta !== 0) {
+            await tx
+              .update(rentals)
+              .set({
+                endPlannedAt: new Date(
+                  rentalNow.endPlannedAt.getTime() - delta * 86_400_000,
+                ),
+                updatedAt: sql`now()`,
+              })
+              .where(eq(rentals.id, id));
+          }
+          return {
+            ok: true as const,
+            action: act.action,
+            restoredTotal: meta.before.amount ?? 0,
+            endBefore: null,
+            endAfter: null,
+            swapInfo: undefined,
+            parkingInfo: {
+              startDate: sess.startDate,
+              endDate: meta.before.endDate ?? sess.endDate,
+              days: meta.before.days ?? sess.days,
+            },
+          };
+        }
 
         // Какие записи долга удалить. Для дней/всего — массив, для
         // штрафа/ручного — одна. Старые события (до этого релиза) meta не
@@ -4611,6 +4910,8 @@ export async function rentalsRoutes(app: FastifyInstance) {
           restoredTotal,
           endBefore,
           endAfter,
+          swapInfo: undefined,
+          parkingInfo: undefined,
         };
       });
 
@@ -4621,9 +4922,12 @@ export async function rentalsRoutes(app: FastifyInstance) {
           not_last: [409, "Откатить можно только последнее действие. Сначала откатите более позднее."],
           unsupported: [422, "Откат этого типа события не поддерживается."],
           legacy_no_meta: [422, "Событие создано до обновления — откат для него недоступен."],
-          already_undone: [409, "Записи долга уже удалены — откатывать нечего."],
+          already_undone: [409, "Откатывать нечего — записи уже удалены/изменены."],
           rental_not_found: [404, "Аренда не найдена."],
           archived: [409, "Аренда в архиве — откат недоступен."],
+          state_changed: [409, "Состояние аренды уже изменилось — откат невозможен."],
+          fee_paid: [409, "Доплата за замену уже принята — сначала откатите её приём."],
+          parking_paid: [409, "По паркингу уже принята оплата — сначала откатите её."],
         };
         const [code, message] = map[out.error] ?? [400, "Не удалось откатить."];
         return reply.code(code).send({ error: out.error, message });
@@ -4635,20 +4939,68 @@ export async function rentalsRoutes(app: FastifyInstance) {
         debt_overdue_fine_forgiven: "forgive_fine",
         debt_overdue_days_forgiven: "forgive_days",
         debt_overdue_forgiven: "forgive_all",
+        scooter_swapped: "swap",
+        parking_set: "parking_set",
+        parking_ended: "parking_end",
       };
       const TITLE_BY_ACTION: Record<string, string> = {
         debt_manual: "начисления долга",
         debt_overdue_fine_forgiven: "прощения штрафа",
         debt_overdue_days_forgiven: "прощения дней просрочки",
         debt_overdue_forgiven: "прощения просрочки",
+        scooter_swapped: "замены скутера",
+        parking_set: "постановки на паркинг",
+        parking_ended: "снятия с паркинга",
       };
-      await logActivity(req, {
-        entity: "rental",
-        entityId: id,
-        action: "action_rolled_back",
-        summary: `Откат ${TITLE_BY_ACTION[out.action] ?? "операции"} ${summary} — ${out.restoredTotal.toLocaleString("ru-RU")} ₽ ${out.action === "debt_manual" ? "снято с долга" : "вернулось в долг"}`,
-        meta: { activityId, kind: KIND_BY_ACTION[out.action] ?? null },
-        diff: {
+
+      // Сводка и diff — по виду операции.
+      let logSummary: string;
+      let logDiff: DiffPayload;
+      if (out.action === "scooter_swapped") {
+        const ids = [
+          out.swapInfo?.prevScooterId,
+          out.swapInfo?.newScooterId,
+        ].filter((n): n is number => typeof n === "number");
+        const named = ids.length
+          ? await db
+              .select({ id: scooters.id, name: scooters.name })
+              .from(scooters)
+              .where(inArray(scooters.id, ids))
+          : [];
+        const nameOf = (sid: number | null | undefined) =>
+          named.find((s) => s.id === sid)?.name ?? (sid ? `#${sid}` : "—");
+        logSummary = `Откат замены скутера ${summary} — вернулся ${nameOf(out.swapInfo?.prevScooterId)}${(out.swapInfo?.refundAmount ?? 0) > 0 ? `, возврат ${out.swapInfo!.refundAmount.toLocaleString("ru-RU")} ₽ снят с депозита` : ""}${out.restoredTotal > 0 ? `, доплата ${out.restoredTotal.toLocaleString("ru-RU")} ₽ отменена` : ""}`;
+        logDiff = {
+          scooter: {
+            label: "Скутер",
+            from: nameOf(out.swapInfo?.newScooterId),
+            to: nameOf(out.swapInfo?.prevScooterId),
+            kind: "text",
+          },
+        };
+      } else if (out.action === "parking_set") {
+        logSummary = `Откат постановки на паркинг ${summary} — сессия ${out.parkingInfo?.startDate ?? ""} удалена${(out.parkingInfo?.days ?? 0) > 0 ? `, возврат сдвинут назад на ${out.parkingInfo!.days} дн` : ""}`;
+        logDiff = {
+          parking: {
+            label: "Паркинг",
+            from: "поставлен",
+            to: "отменён",
+            kind: "text",
+          },
+        };
+      } else if (out.action === "parking_ended") {
+        logSummary = `Откат снятия с паркинга ${summary} — сессия снова открыта (${out.parkingInfo?.startDate ?? ""}–)`;
+        logDiff = {
+          parking: {
+            label: "Паркинг",
+            from: "снят",
+            to: "снова идёт",
+            kind: "text",
+          },
+        };
+      } else {
+        logSummary = `Откат ${TITLE_BY_ACTION[out.action] ?? "операции"} ${summary} — ${out.restoredTotal.toLocaleString("ru-RU")} ₽ ${out.action === "debt_manual" ? "снято с долга" : "вернулось в долг"}`;
+        logDiff = {
           debt: {
             label: out.action === "debt_manual" ? "Начисление" : "Прощение",
             from: out.restoredTotal,
@@ -4665,7 +5017,15 @@ export async function rentalsRoutes(app: FastifyInstance) {
                 },
               }
             : {}),
-        },
+        };
+      }
+      await logActivity(req, {
+        entity: "rental",
+        entityId: id,
+        action: "action_rolled_back",
+        summary: logSummary,
+        meta: { activityId, kind: KIND_BY_ACTION[out.action] ?? null },
+        diff: logDiff,
       });
       return { ok: true };
     },

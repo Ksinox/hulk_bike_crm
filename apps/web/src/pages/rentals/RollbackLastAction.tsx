@@ -80,7 +80,23 @@ export type RollbackTarget =
       amountDays: number;
       amountFine: number;
       daysShift: number;
-    };
+    }
+  | {
+      kind: "swap";
+      anchorId: number;
+      activityId: number;
+      feeAmount: number;
+      refundAmount: number;
+    }
+  | {
+      kind: "parking_set";
+      anchorId: number;
+      activityId: number;
+      days: number;
+      amount: number;
+    }
+  | { kind: "parking_end"; anchorId: number; activityId: number }
+  | { kind: "parking_paid"; anchorId: number; paymentId: number; amount: number };
 
 export type RollbackKind = RollbackTarget["kind"];
 
@@ -124,6 +140,7 @@ function cancelMatcher(row: ApiActivityItem): ((a: string) => boolean) | null {
     if (kind === "created") return (a) => a === "created";
     if (kind === "payment") return (a) => a === "debt_payment";
     if (kind === "security") return (a) => a === "security_topped_up";
+    if (kind === "parking") return (a) => a === "parking_paid";
     return (a) => a === "rental_extended";
   }
   if (row.action === "action_rolled_back") {
@@ -131,6 +148,9 @@ function cancelMatcher(row: ApiActivityItem): ((a: string) => boolean) | null {
     if (kind === "forgive_fine") return (a) => a === "debt_overdue_fine_forgiven";
     if (kind === "forgive_days") return (a) => a === "debt_overdue_days_forgiven";
     if (kind === "forgive_all") return (a) => a === "debt_overdue_forgiven";
+    if (kind === "swap") return (a) => a === "scooter_swapped";
+    if (kind === "parking_set") return (a) => a === "parking_set";
+    if (kind === "parking_end") return (a) => a === "parking_ended";
     return null;
   }
   if (row.action === "revert_completion") return (a) => a === "completed";
@@ -319,6 +339,49 @@ export function useRollbackTarget(
       };
     }
 
+    // Замена скутера (свап) — без платежа, якорь = событие журнала.
+    if (anchor.action === "scooter_swapped") {
+      if (typeof meta.swapId !== "number") return null; // legacy
+      return {
+        kind: "swap",
+        anchorId: anchor.id,
+        activityId: anchor.id,
+        feeAmount: Number(meta.feeAmount ?? 0),
+        refundAmount: Number(meta.refundAmount ?? 0),
+      };
+    }
+
+    // Постановка на паркинг.
+    if (anchor.action === "parking_set") {
+      if (typeof meta.sessionId !== "number") return null;
+      const p = (meta.parking ?? {}) as Record<string, unknown>;
+      return {
+        kind: "parking_set",
+        anchorId: anchor.id,
+        activityId: anchor.id,
+        days: Number(p.days ?? 0),
+        amount: Number(p.amount ?? 0),
+      };
+    }
+
+    // Снятие с паркинга.
+    if (anchor.action === "parking_ended") {
+      if (typeof meta.sessionId !== "number" || !meta.before) return null;
+      return { kind: "parking_end", anchorId: anchor.id, activityId: anchor.id };
+    }
+
+    // Оплата паркинга — платёж с пометкой «Оплата паркинга».
+    if (anchor.action === "parking_paid") {
+      if (!lastPay || !payToday) return null;
+      if (!/оплата\s+паркинга/i.test(note)) return null;
+      return {
+        kind: "parking_paid",
+        anchorId: anchor.id,
+        paymentId: lastPay.id,
+        amount: lastPay.amount,
+      };
+    }
+
     return null;
   }, [activity, payments, rental.id, rental.status]);
 }
@@ -336,6 +399,10 @@ const TITLE_BY_KIND: Record<RollbackKind, string> = {
   forgive_fine: "Откатить прощение штрафа?",
   forgive_days: "Откатить прощение дней?",
   forgive_all: "Откатить прощение просрочки?",
+  swap: "Откатить замену скутера?",
+  parking_set: "Откатить постановку на паркинг?",
+  parking_end: "Откатить снятие с паркинга?",
+  parking_paid: "Откатить оплату паркинга?",
 };
 
 const LOCK_BY_KIND: Record<RollbackKind, string> = {
@@ -352,6 +419,11 @@ const LOCK_BY_KIND: Record<RollbackKind, string> = {
     "Списание удалится, дата возврата сдвинется назад — долг снова появится. ",
   forgive_all:
     "Списания удалятся, дата возврата сдвинется назад — долг снова появится. ",
+  swap: "Вернётся прежний скутер, доплата/возврат разницы отменятся. ",
+  parking_set:
+    "Сессия паркинга удалится, дата возврата вернётся назад, стикер исчезнет. ",
+  parking_end: "Сессия паркинга снова станет открытой. ",
+  parking_paid: "Платёж удалится, долг по паркингу снова станет открытым. ",
 };
 
 export function RollbackButton({
@@ -377,7 +449,10 @@ export function RollbackButton({
         target.kind === "manual_debt" ||
         target.kind === "forgive_fine" ||
         target.kind === "forgive_days" ||
-        target.kind === "forgive_all"
+        target.kind === "forgive_all" ||
+        target.kind === "swap" ||
+        target.kind === "parking_set" ||
+        target.kind === "parking_end"
       ) {
         await rollbackAction(rental.id, target.activityId);
         if (target.kind === "manual_debt") {
@@ -385,6 +460,12 @@ export function RollbackButton({
             "Начисление откачено",
             `Долг ${fmtRub(target.amount)} ₽ удалён`,
           );
+        } else if (target.kind === "swap") {
+          toast.success("Замена скутера откачена", "Вернулся прежний скутер");
+        } else if (target.kind === "parking_set") {
+          toast.success("Постановка на паркинг откачена", "Сессия удалена");
+        } else if (target.kind === "parking_end") {
+          toast.success("Снятие с паркинга откачено", "Сессия снова открыта");
         } else {
           toast.success("Прощение откачено", "Долг снова в работе");
         }
@@ -403,6 +484,11 @@ export function RollbackButton({
           toast.success(
             "Пополнение залога откачено",
             `${fmtRub(target.amount)} ₽ — платёж удалён`,
+          );
+        } else if (target.kind === "parking_paid") {
+          toast.success(
+            "Оплата паркинга откачена",
+            `Снято ${fmtRub(target.amount)} ₽`,
           );
         } else {
           toast.success(
@@ -477,6 +563,14 @@ export function RollbackButton({
               <CompletedPreview />
             ) : target.kind === "manual_debt" ? (
               <ManualDebtPreview target={target} />
+            ) : target.kind === "swap" ? (
+              <SwapPreview target={target} />
+            ) : target.kind === "parking_set" ? (
+              <ParkingSetPreview target={target} />
+            ) : target.kind === "parking_end" ? (
+              <ParkingEndPreview />
+            ) : target.kind === "parking_paid" ? (
+              <ParkingPaidPreview target={target} />
             ) : (
               <ForgivePreview rental={rental} target={target} />
             )}
@@ -685,6 +779,79 @@ function ForgivePreview({
       {curEnd && backEnd && (
         <Row label="Возврат" before={fmtRu(curEnd)} after={fmtRu(backEnd)} />
       )}
+    </div>
+  );
+}
+
+function SwapPreview({
+  target,
+}: {
+  target: Extract<RollbackTarget, { kind: "swap" }>;
+}) {
+  return (
+    <div className="space-y-2 rounded-xl bg-surface-soft p-3">
+      <Row label="Скутер" before="заменён" after="вернуть прежний" />
+      {target.feeAmount > 0 && (
+        <Row
+          label="Доплата за модель"
+          before={`${fmtRub(target.feeAmount)} ₽`}
+          after="отменить"
+          accent
+        />
+      )}
+      {target.refundAmount > 0 && (
+        <Row
+          label="Возврат в депозит"
+          before={`${fmtRub(target.refundAmount)} ₽`}
+          after="снять обратно"
+          accent
+        />
+      )}
+    </div>
+  );
+}
+
+function ParkingSetPreview({
+  target,
+}: {
+  target: Extract<RollbackTarget, { kind: "parking_set" }>;
+}) {
+  return (
+    <div className="space-y-2 rounded-xl bg-surface-soft p-3">
+      <Row label="Паркинг" before="поставлен" after="отменить" />
+      {target.days > 0 && (
+        <Row
+          label="Сдвиг возврата"
+          before={`+${target.days} дн`}
+          after="вернуть"
+          accent
+        />
+      )}
+    </div>
+  );
+}
+
+function ParkingEndPreview() {
+  return (
+    <div className="space-y-2 rounded-xl bg-surface-soft p-3">
+      <Row label="Паркинг" before="снят" after="снова идёт" accent />
+    </div>
+  );
+}
+
+function ParkingPaidPreview({
+  target,
+}: {
+  target: Extract<RollbackTarget, { kind: "parking_paid" }>;
+}) {
+  return (
+    <div className="space-y-2 rounded-xl bg-surface-soft p-3">
+      <Row
+        label="Оплата паркинга"
+        before={`${fmtRub(target.amount)} ₽`}
+        after="отменить"
+        accent
+      />
     </div>
   );
 }

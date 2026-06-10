@@ -273,7 +273,12 @@ export async function parkingRoutes(app: FastifyInstance) {
       entityId: rentalId,
       action: "parking_set",
       summary: `Поставлен на паркинг с ${startDate} (открытый, макс ${MAX_DAYS} дн; 1-й день ${freeFirstDay ? "бесплатно" : "платно"})`,
-      meta: { parking: { startDate, endDate: endYmd, days, amount, freeFirstDay, open: true } },
+      // sessionId — для отката постановки «в день совершения» (rollback-action
+      // удаляет сессию и возвращает сдвиг возврата).
+      meta: {
+        sessionId: session?.id ?? null,
+        parking: { startDate, endDate: endYmd, days, amount, freeFirstDay, open: true },
+      },
     });
 
     // v0.8.18/0.8.27: стикер-заметка с водяным знаком «P» (синий).
@@ -348,7 +353,16 @@ export async function parkingRoutes(app: FastifyInstance) {
         entityId: rentalId,
         action: "parking_ended",
         summary: `Паркинг снят вручную: ${existing.startDate}–${newEnd} · ${newDays} дн · ${newAmount} ₽`,
+        // before/delta — для отката снятия «в день совершения» (rollback-action
+        // возвращает сессию в active с прежними датами и откатывает сдвиг).
         meta: {
+          sessionId: sid,
+          before: {
+            endDate: existing.endDate,
+            days: existing.days,
+            amount: existing.amount,
+          },
+          delta,
           parking: {
             startDate: existing.startDate,
             endDate: newEnd,
@@ -439,6 +453,9 @@ export async function parkingRoutes(app: FastifyInstance) {
 
       const applied = await db.transaction(async (tx) => {
         let used = 0;
+        // Раскладка оплаты по сессиям — кладём в снимок отката, чтобы un-pay
+        // вернул paidAmount каждой сессии ровно на принятое.
+        const allocations: Array<{ sessionId: number; amount: number }> = [];
         for (const s of sessions) {
           if (remaining <= 0) break;
           const due = Math.max(0, s.amount - s.paidAmount);
@@ -450,6 +467,7 @@ export async function parkingRoutes(app: FastifyInstance) {
             .where(eq(parkingSessions.id, s.id));
           remaining -= take;
           used += take;
+          allocations.push({ sessionId: s.id, amount: take });
         }
         if (used > 0) {
           await tx.insert(payments).values({
@@ -461,6 +479,10 @@ export async function parkingRoutes(app: FastifyInstance) {
             paidAt: new Date(),
             receivedByUserId: req.user?.userId ?? null,
             note: "Оплата паркинга",
+            rollbackSnapshot: {
+              kind: "parking",
+              allocations,
+            } as unknown as object,
           });
         }
         return used;

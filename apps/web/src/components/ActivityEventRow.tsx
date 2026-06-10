@@ -430,6 +430,44 @@ export function formatActivitySummary(
         extras: ["Платёж пополнения удалён"],
       };
     }
+    // Откат оплаты паркинга — долг по паркингу снова открыт.
+    if (kind === "parking") {
+      const payP = readRecord(diff?.payment);
+      return {
+        title: "Откат оплаты паркинга",
+        change: null,
+        extras:
+          payP && payP.from != null
+            ? [`Снято: ${money(payP.from)} — долг по паркингу снова открыт`]
+            : ["Долг по паркингу снова открыт"],
+      };
+    }
+    // Откат замены скутера / паркинг-операций (action_rolled_back).
+    if (kind === "swap") {
+      const sc = readRecord(diff?.scooter);
+      return {
+        title: "Откат замены скутера",
+        change:
+          sc && (sc.from != null || sc.to != null)
+            ? { from: String(sc.from ?? "—"), to: String(sc.to ?? "—"), tone: "blue" }
+            : null,
+        extras: [],
+      };
+    }
+    if (kind === "parking_set") {
+      return {
+        title: "Откат постановки на паркинг",
+        change: null,
+        extras: ["Сессия паркинга удалена, сдвиг возврата отменён"],
+      };
+    }
+    if (kind === "parking_end") {
+      return {
+        title: "Откат снятия с паркинга",
+        change: null,
+        extras: ["Сессия паркинга снова открыта"],
+      };
+    }
     // Откат безденежных операций (rollback-action): начисление / прощения.
     if (
       kind === "manual_debt" ||
