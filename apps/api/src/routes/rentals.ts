@@ -2031,6 +2031,131 @@ export async function rentalsRoutes(app: FastifyInstance) {
     },
   );
 
+  /** Календарная дата по Москве (YYYY-MM-DD) — граница «сегодня» для откатов. */
+  const mskDateStr = (d: Date): string => {
+    const m = new Date(
+      d.toLocaleString("en-US", { timeZone: "Europe/Moscow" }),
+    );
+    return `${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, "0")}-${String(m.getDate()).padStart(2, "0")}`;
+  };
+
+  /**
+   * Действия журнала, которые меняют состояние/деньги аренды. Только они
+   * участвуют в проверке «откатываемая операция всё ещё последняя» —
+   * заметки/просмотры/связь не мешают откату.
+   */
+  const ROLLBACK_STATE_ACTIONS = new Set([
+    "created",
+    "completed",
+    "revert_completion",
+    "rental_extended",
+    "equipment_changed",
+    "debt_payment",
+    "debt_manual",
+    "debt_overdue_days_forgiven",
+    "debt_overdue_fine_forgiven",
+    "debt_overdue_forgiven",
+    "debt_entry_deleted",
+    "security_topped_up",
+    "scooter_swapped",
+    "scooter_swap_deleted",
+    "payment_rolled_back",
+    "action_rolled_back",
+    "updated",
+    "archived",
+    "unarchived",
+    "chain_reset",
+    "parking_set",
+    "parking_ended",
+    "parking_deleted",
+    "parking_paid",
+    "status_changed",
+  ]);
+
+  /**
+   * Какую операцию отменяет строка-откат. Нужна для «прозрачности» откатов:
+   * пара (откат + отменённая операция) исключается из рассмотрения, и
+   * последним действием снова считается то, что было до них — так откаты
+   * можно «снимать слоями» (peel): откатил продление → можно откатить
+   * предыдущую оплату. Откаты идут строго с конца, поэтому стек (LIFO).
+   */
+  const rolledBackCancelMatcher = (row: {
+    action: string;
+    meta: unknown;
+  }): ((a: string) => boolean) | null => {
+    const m = (row.meta ?? {}) as Record<string, unknown>;
+    const kind = typeof m.kind === "string" ? m.kind : null;
+    if (row.action === "payment_rolled_back") {
+      if (kind === "equipment") return (a) => a === "equipment_changed";
+      if (kind === "created") return (a) => a === "created";
+      if (kind === "payment") return (a) => a === "debt_payment";
+      if (kind === "security") return (a) => a === "security_topped_up";
+      // extend и старые записи без kind — откат продления.
+      return (a) => a === "rental_extended";
+    }
+    if (row.action === "action_rolled_back") {
+      if (kind === "manual_debt") return (a) => a === "debt_manual";
+      if (kind === "forgive_fine")
+        return (a) => a === "debt_overdue_fine_forgiven";
+      if (kind === "forgive_days")
+        return (a) => a === "debt_overdue_days_forgiven";
+      if (kind === "forgive_all") return (a) => a === "debt_overdue_forgiven";
+      return null;
+    }
+    // «Перевести в активную» отменяет завершение.
+    if (row.action === "revert_completion") return (a) => a === "completed";
+    return null;
+  };
+
+  /**
+   * Последнее «эффективное» действие аренды по журналу: самая свежая
+   * state-строка, не считая пар (откат + отменённая операция). Используется
+   * как усиленный not_last-guard: откатывать можно только операцию, которая
+   * прямо сейчас является последним эффективным действием.
+   */
+  const latestEffectiveStateAction = async (
+    rentalId: number,
+  ): Promise<{ id: number; action: string; createdAt: Date } | null> => {
+    const rows = await db
+      .select({
+        id: activityLog.id,
+        action: activityLog.action,
+        meta: activityLog.meta,
+        createdAt: activityLog.createdAt,
+      })
+      .from(activityLog)
+      .where(
+        and(eq(activityLog.entity, "rental"), eq(activityLog.entityId, rentalId)),
+      )
+      .orderBy(desc(activityLog.id))
+      .limit(80);
+    const cancelStack: Array<(a: string) => boolean> = [];
+    for (const r of rows) {
+      if (!ROLLBACK_STATE_ACTIONS.has(r.action)) continue;
+      const matcher = rolledBackCancelMatcher(r);
+      if (matcher) {
+        cancelStack.push(matcher);
+        continue;
+      }
+      const top = cancelStack[cancelStack.length - 1];
+      if (top && top(r.action)) {
+        cancelStack.pop();
+        continue;
+      }
+      return { id: r.id, action: r.action, createdAt: r.createdAt };
+    }
+    return null;
+  };
+
+  /** Ожидаемое действие журнала для каждого вида платёжного отката. */
+  const EXPECTED_ACTION_BY_KIND: Record<string, (a: string) => boolean> = {
+    extend: (a) => a === "rental_extended",
+    equipment: (a) => a === "equipment_changed",
+    created: (a) => a === "created",
+    payment: (a) => a === "debt_payment",
+    security: (a) => a === "security_topped_up",
+  };
+
   /**
    * POST /api/rentals/:id/rollback-payment — откат последнего действия
    * «в день совершения» (защита от ошибочных действий: продлил/принял зря →
@@ -2114,15 +2239,26 @@ export async function rentalsRoutes(app: FastifyInstance) {
           payKind?: "overdue_days" | "overdue_fine" | "manual";
           debtEntryId?: number;
           residualToDeposit?: number;
+          // security: пополнение залога — прежние суммы залога
+          deposit?: number;
+          depositOriginal?: number;
         };
         if (
           !snap ||
           (snap.kind !== "extend" &&
             snap.kind !== "equipment" &&
             snap.kind !== "created" &&
-            snap.kind !== "payment")
+            snap.kind !== "payment" &&
+            snap.kind !== "security")
         )
           return { ok: false as const, error: "unsupported" as const };
+
+        // Усиленный not_last: операция должна быть последним ЭФФЕКТИВНЫМ
+        // действием и по журналу (платежи не видят беденежные операции —
+        // прощение/начисление долга/возврат — а они меняют состояние).
+        const eff = await latestEffectiveStateAction(id);
+        if (eff && !EXPECTED_ACTION_BY_KIND[snap.kind]?.(eff.action))
+          return { ok: false as const, error: "not_last" as const };
 
         const [rentalNow] = await tx
           .select()
@@ -2243,6 +2379,31 @@ export async function rentalsRoutes(app: FastifyInstance) {
             after: restored,
             amount: pay.amount,
             payKind: snap.payKind ?? "manual",
+          };
+        }
+
+        // ── Откат пополнения залога: возвращаем прежние deposit/depositOriginal
+        //    аренды и удаляем deposit-платёж пополнения. Выручку не трогает
+        //    (deposit исключён из revenue). ──
+        if (snap.kind === "security") {
+          const [restored] = await tx
+            .update(rentals)
+            .set({
+              deposit: snap.deposit ?? 0,
+              depositOriginal: snap.depositOriginal ?? 0,
+              updatedAt: sql`now()`,
+            })
+            .where(eq(rentals.id, id))
+            .returning();
+          if (!restored)
+            return { ok: false as const, error: "rental_not_found" as const };
+          await tx.delete(payments).where(eq(payments.id, paymentId));
+          return {
+            ok: true as const,
+            kind: "security" as const,
+            before: rentalNow,
+            after: restored,
+            amount: pay.amount,
           };
         }
 
@@ -2373,6 +2534,22 @@ export async function rentalsRoutes(app: FastifyInstance) {
                   },
                 },
         });
+      } else if (out.kind === "security") {
+        await logActivity(req, {
+          entity: "rental",
+          entityId: id,
+          action: "payment_rolled_back",
+          summary: `Откат пополнения залога ${summary} — ${out.amount.toLocaleString("ru-RU")} ₽ возвращено клиенту`,
+          meta: { paymentId, kind: "security" },
+          diff: {
+            deposit: {
+              label: "Залог",
+              from: out.before.deposit ?? 0,
+              to: out.after.deposit ?? 0,
+              kind: "money",
+            },
+          },
+        });
       } else {
         // Откат изменения экипировки: показываем «было (после изм.) → стало
         // (вернули прежнее)» и отменённый платёж доплаты/возврата.
@@ -2450,6 +2627,12 @@ export async function rentalsRoutes(app: FastifyInstance) {
           paid: true,
           paidAt: new Date(),
           note: "пополнение залога",
+          // Снимок пред-состояния для отката «в день совершения».
+          rollbackSnapshot: {
+            kind: "security",
+            deposit: rental.deposit ?? 0,
+            depositOriginal: rental.depositOriginal ?? 0,
+          } as unknown as object,
         });
         const newDeposit = (rental.deposit ?? 0) + parsed.data.amount;
         const newOriginal = Math.max(
@@ -3848,6 +4031,9 @@ export async function rentalsRoutes(app: FastifyInstance) {
       entityId: id,
       action: "debt_manual",
       summary: `Начислен долг ${parsed.data.amount} ₽ по аренде #${id}: ${parsed.data.comment}`,
+      // entryId/amount — для отката начисления «в день совершения»
+      // (rollback-action удаляет именно эту запись долга).
+      meta: { entryId: row?.id ?? null, amount: parsed.data.amount },
       diff: {
         debt: {
           label: "Долг",
@@ -4053,6 +4239,10 @@ export async function rentalsRoutes(app: FastifyInstance) {
           daysShift: norm.shift,
           newStatus: norm.newStatus,
           daysCount: parsed.data.daysCount ?? null,
+          // Для отката прощения «в день совершения»: какую запись удалять.
+          // Штраф-прощение endPlanned не сдвигает — восстановление не нужно.
+          entryId: row?.id ?? null,
+          amount: fineAmount,
         },
         diff: {
           fine: {
@@ -4113,16 +4303,21 @@ export async function rentalsRoutes(app: FastifyInstance) {
         fineRemaining,
         daysToShift * fineDailyRate,
       );
+      let autoFineRow: { id: number } | undefined;
       if (fineToForgive > 0) {
-        await db.insert(debtEntries).values({
-          rentalId: id,
-          kind: "overdue_fine_forgive",
-          amount: fineToForgive,
-          comment: `Авто-списание штрафа за прощённые ${daysToShift} дн`,
-          createdByUserId: userId,
-          createdByName: userName,
-          appliedToEndPlanned: true,
-        });
+        const [r2] = await db
+          .insert(debtEntries)
+          .values({
+            rentalId: id,
+            kind: "overdue_fine_forgive",
+            amount: fineToForgive,
+            comment: `Авто-списание штрафа за прощённые ${daysToShift} дн`,
+            createdByUserId: userId,
+            createdByName: userName,
+            appliedToEndPlanned: true,
+          })
+          .returning();
+        autoFineRow = r2;
       }
       const shiftRes = await shiftEndPlanned(daysToShift);
       // v0.4.68: страховка — если status всё ещё overdue (например shift=0
@@ -4144,6 +4339,14 @@ export async function rentalsRoutes(app: FastifyInstance) {
         meta: {
           daysToShift,
           newStatus: finalStatus,
+          // Для отката прощения: какие записи удалить (дни + авто-штраф)
+          // и куда вернуть endPlannedAt (абсолютный снимок до сдвига).
+          entryIds: [row?.id, autoFineRow?.id].filter(
+            (n): n is number => typeof n === "number",
+          ),
+          endPlannedBefore: rental.endPlannedAt.toISOString(),
+          amount: requestedAmount,
+          fineAmount: fineToForgive,
         },
         diff: {
           debt: {
@@ -4229,6 +4432,11 @@ export async function rentalsRoutes(app: FastifyInstance) {
       meta: {
         daysShift: finalShiftAll,
         newStatus: finalStatusAll,
+        // Для отката прощения: записи (дни и/или штраф) + снимок endPlanned.
+        entryIds: inserted.map((r) => r.id),
+        endPlannedBefore: rental.endPlannedAt.toISOString(),
+        amountDays: daysRemaining,
+        amountFine: fineRemaining,
       },
       diff: {
         debt: {
@@ -4278,4 +4486,188 @@ export async function rentalsRoutes(app: FastifyInstance) {
     });
     return { ok: true };
   });
+
+  /**
+   * POST /api/rentals/:id/rollback-action — откат БЕЗДЕНЕЖНОЙ операции
+   * «в день совершения». Якорь — строка журнала (activityId), а не платёж:
+   * эти операции платежей не создают.
+   *
+   * Поддержано:
+   *   • debt_manual                 — начисление ручного долга (удалить запись);
+   *   • debt_overdue_fine_forgiven  — прощение штрафа (удалить запись);
+   *   • debt_overdue_days_forgiven  — прощение дней (удалить записи дни+авто-
+   *                                   штраф, вернуть endPlannedAt из снимка);
+   *   • debt_overdue_forgiven       — сброс всей просрочки (аналогично).
+   *
+   * Условия — зеркало rollback-payment: финансовая роль; событие этой аренды
+   * и за СЕГОДНЯ по МСК; операция — последнее эффективное действие (по
+   * журналу, с учётом «прозрачности» пар откат+операция); аренда не в архиве;
+   * в meta есть entryId/entryIds (старые записи без них откату не подлежат).
+   */
+  app.post<{ Params: { id: string } }>(
+    "/:id/rollback-action",
+    async (req, reply) => {
+      if (!assertFinancialRole(req, reply)) return;
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id))
+        return reply.code(400).send({ error: "bad id" });
+      const parsed = z
+        .object({ activityId: z.number().int().positive() })
+        .strict()
+        .safeParse(req.body);
+      if (!parsed.success)
+        return reply
+          .code(400)
+          .send({ error: "validation", issues: parsed.error.issues });
+      const activityId = parsed.data.activityId;
+
+      const SUPPORTED = new Set([
+        "debt_manual",
+        "debt_overdue_fine_forgiven",
+        "debt_overdue_days_forgiven",
+        "debt_overdue_forgiven",
+      ]);
+
+      const out = await db.transaction(async (tx) => {
+        const [act] = await tx
+          .select()
+          .from(activityLog)
+          .where(eq(activityLog.id, activityId));
+        if (!act || act.entity !== "rental" || act.entityId !== id)
+          return { ok: false as const, error: "activity_not_found" as const };
+        if (!SUPPORTED.has(act.action))
+          return { ok: false as const, error: "unsupported" as const };
+        if (mskDateStr(act.createdAt) !== mskDateStr(new Date()))
+          return { ok: false as const, error: "too_late" as const };
+
+        const eff = await latestEffectiveStateAction(id);
+        if (!eff || eff.id !== activityId)
+          return { ok: false as const, error: "not_last" as const };
+
+        const [rentalNow] = await tx
+          .select()
+          .from(rentals)
+          .where(eq(rentals.id, id));
+        if (!rentalNow)
+          return { ok: false as const, error: "rental_not_found" as const };
+        if (rentalNow.archivedAt)
+          return { ok: false as const, error: "archived" as const };
+
+        const meta = (act.meta ?? {}) as {
+          entryId?: number | null;
+          entryIds?: number[];
+          endPlannedBefore?: string;
+          amount?: number;
+          fineAmount?: number;
+          amountDays?: number;
+          amountFine?: number;
+        };
+
+        // Какие записи долга удалить. Для дней/всего — массив, для
+        // штрафа/ручного — одна. Старые события (до этого релиза) meta не
+        // имеют — откат недоступен, честно говорим.
+        const entryIds =
+          act.action === "debt_overdue_days_forgiven" ||
+          act.action === "debt_overdue_forgiven"
+            ? meta.entryIds ?? []
+            : typeof meta.entryId === "number"
+              ? [meta.entryId]
+              : [];
+        if (entryIds.length === 0)
+          return { ok: false as const, error: "legacy_no_meta" as const };
+
+        const deleted = await tx
+          .delete(debtEntries)
+          .where(
+            and(
+              inArray(debtEntries.id, entryIds),
+              eq(debtEntries.rentalId, id),
+            ),
+          )
+          .returning({ id: debtEntries.id, amount: debtEntries.amount });
+        if (deleted.length === 0)
+          return { ok: false as const, error: "already_undone" as const };
+
+        // Прощение дней / всего сдвигало endPlannedAt — возвращаем из снимка.
+        let endBefore: Date | null = null;
+        let endAfter: Date | null = null;
+        if (
+          (act.action === "debt_overdue_days_forgiven" ||
+            act.action === "debt_overdue_forgiven") &&
+          meta.endPlannedBefore
+        ) {
+          endBefore = rentalNow.endPlannedAt;
+          endAfter = new Date(meta.endPlannedBefore);
+          await tx
+            .update(rentals)
+            .set({ endPlannedAt: endAfter, updatedAt: sql`now()` })
+            .where(eq(rentals.id, id));
+        }
+
+        const restoredTotal = deleted.reduce((s, r) => s + (r.amount ?? 0), 0);
+        return {
+          ok: true as const,
+          action: act.action,
+          restoredTotal,
+          endBefore,
+          endAfter,
+        };
+      });
+
+      if (!out.ok) {
+        const map: Record<string, [number, string]> = {
+          activity_not_found: [404, "Событие не найдено или не относится к этой аренде."],
+          too_late: [409, "Откатывать можно только в день действия — завтра уже нельзя."],
+          not_last: [409, "Откатить можно только последнее действие. Сначала откатите более позднее."],
+          unsupported: [422, "Откат этого типа события не поддерживается."],
+          legacy_no_meta: [422, "Событие создано до обновления — откат для него недоступен."],
+          already_undone: [409, "Записи долга уже удалены — откатывать нечего."],
+          rental_not_found: [404, "Аренда не найдена."],
+          archived: [409, "Аренда в архиве — откат недоступен."],
+        };
+        const [code, message] = map[out.error] ?? [400, "Не удалось откатить."];
+        return reply.code(code).send({ error: out.error, message });
+      }
+
+      const summary = await summaryForRental(id);
+      const KIND_BY_ACTION: Record<string, string> = {
+        debt_manual: "manual_debt",
+        debt_overdue_fine_forgiven: "forgive_fine",
+        debt_overdue_days_forgiven: "forgive_days",
+        debt_overdue_forgiven: "forgive_all",
+      };
+      const TITLE_BY_ACTION: Record<string, string> = {
+        debt_manual: "начисления долга",
+        debt_overdue_fine_forgiven: "прощения штрафа",
+        debt_overdue_days_forgiven: "прощения дней просрочки",
+        debt_overdue_forgiven: "прощения просрочки",
+      };
+      await logActivity(req, {
+        entity: "rental",
+        entityId: id,
+        action: "action_rolled_back",
+        summary: `Откат ${TITLE_BY_ACTION[out.action] ?? "операции"} ${summary} — ${out.restoredTotal.toLocaleString("ru-RU")} ₽ ${out.action === "debt_manual" ? "снято с долга" : "вернулось в долг"}`,
+        meta: { activityId, kind: KIND_BY_ACTION[out.action] ?? null },
+        diff: {
+          debt: {
+            label: out.action === "debt_manual" ? "Начисление" : "Прощение",
+            from: out.restoredTotal,
+            to: 0,
+            kind: "money",
+          },
+          ...(out.endBefore && out.endAfter
+            ? {
+                endPlannedAt: {
+                  label: "Возврат",
+                  from: out.endBefore.toISOString(),
+                  to: out.endAfter.toISOString(),
+                  kind: "date",
+                },
+              }
+            : {}),
+        },
+      });
+      return { ok: true };
+    },
+  );
 }

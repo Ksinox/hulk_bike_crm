@@ -144,6 +144,29 @@ export async function rollbackLastPayment(
   invAll();
 }
 
+/**
+ * Откат безденежной операции «в день совершения» — якорь строка журнала
+ * (начисление ручного долга, прощение штрафа/дней/просрочки).
+ */
+export async function rollbackAction(
+  rentalId: number,
+  activityId: number,
+): Promise<void> {
+  await api.post(`/api/rentals/${rentalId}/rollback-action`, { activityId });
+  invAll();
+}
+
+/**
+ * Откат завершения аренды (кнопка на строке «Завершена аренда» в хронологии,
+ * условия «сегодня + последнее действие» проверяет вызывающий). Использует
+ * существующий /revert-completion: статус→active, инспекция и refund-платёж
+ * удаляются, скутер снова занят.
+ */
+export async function rollbackCompletion(rentalId: number): Promise<void> {
+  await api.post(`/api/rentals/${rentalId}/revert-completion`, {});
+  invAll();
+}
+
 export function setRentalStatus(id: number, status: RentalStatus) {
   api.patch(`/api/rentals/${id}`, { status }).then(invAll).catch(logErr("setRentalStatus"));
 }

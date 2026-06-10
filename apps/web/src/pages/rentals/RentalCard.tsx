@@ -40,11 +40,7 @@ import {
 import { effectiveRentalStatus } from "@/lib/rentalStatus";
 import { useClientUnreachable, clientStore } from "@/pages/clients/clientStore";
 import { StickerStack, NoteComposer } from "@/components/StickerStack";
-import {
-  useRollbackTarget,
-  RollbackButton,
-  ROLLBACK_MATCH,
-} from "./RollbackLastAction";
+import { useRollbackTarget, RollbackButton } from "./RollbackLastAction";
 import {
   useRentalCardStickers,
   useCreateSticker,
@@ -475,7 +471,7 @@ export function RentalCard({
   const rbTarget = useRollbackTarget(rental, activityItems);
   const rollbackSlot = rbTarget
     ? {
-        matchAction: ROLLBACK_MATCH[rbTarget.kind],
+        anchorId: rbTarget.anchorId,
         node: (
           <RollbackButton rental={rental} target={rbTarget} onClose={onClose} />
         ),

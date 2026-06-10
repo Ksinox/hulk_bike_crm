@@ -79,6 +79,8 @@ const EVENT_TONE_CLASS: Record<EventTone, string> = {
 
 function eventVisual(action: string): { icon: LucideIcon; tone: EventTone } {
   if (action.includes("rolled_back")) return { icon: RotateCcw, tone: "amber" };
+  // «Перевести в активную» — по сути откат завершения, тот же визуальный язык.
+  if (action === "revert_completion") return { icon: RotateCcw, tone: "amber" };
   if (action.includes("parking")) return { icon: SquareParking, tone: "yellow" };
   if (action.includes("equipment")) return { icon: HardHat, tone: "orange" };
   if (action.includes("scooter_swap") || action === "scooter_swapped")
@@ -415,6 +417,54 @@ export function formatActivitySummary(
         pextras.push(`Сумма аренды: ${money(sumP.from)} → ${money(sumP.to)}`);
       if (payP && payP.from != null) pextras.push(`Снято: ${money(payP.from)}`);
       return { title, change: pchange, extras: pextras };
+    }
+    // Откат пополнения залога — залог вернулся к прежней сумме.
+    if (kind === "security") {
+      const dep = readRecord(diff?.deposit);
+      return {
+        title: "Откат пополнения залога",
+        change:
+          dep && (dep.from != null || dep.to != null)
+            ? { from: money(dep.from), to: money(dep.to), tone: "blue" }
+            : null,
+        extras: ["Платёж пополнения удалён"],
+      };
+    }
+    // Откат безденежных операций (rollback-action): начисление / прощения.
+    if (
+      kind === "manual_debt" ||
+      kind === "forgive_fine" ||
+      kind === "forgive_days" ||
+      kind === "forgive_all"
+    ) {
+      const titles: Record<string, string> = {
+        manual_debt: "Откат начисления долга",
+        forgive_fine: "Откат прощения штрафа",
+        forgive_days: "Откат прощения дней просрочки",
+        forgive_all: "Откат прощения просрочки",
+      };
+      const debt = readRecord(diff?.debt);
+      const endpA = readRecord(diff?.endPlannedAt);
+      const extras: string[] = [];
+      if (debt && debt.from != null) {
+        extras.push(
+          kind === "manual_debt"
+            ? `Начисление ${money(debt.from)} удалено`
+            : `${money(debt.from)} вернулось в долг`,
+        );
+      }
+      return {
+        title: titles[kind] ?? "Откат операции",
+        change:
+          endpA && (endpA.from != null || endpA.to != null)
+            ? {
+                from: formatDateLabel(endpA.from),
+                to: formatDateLabel(endpA.to),
+                tone: "blue",
+              }
+            : null,
+        extras,
+      };
     }
     const endp = readRecord(diff?.endPlannedAt);
     const sum = readRecord(diff?.sum);

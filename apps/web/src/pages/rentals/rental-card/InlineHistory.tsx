@@ -26,15 +26,15 @@ export function InlineHistory({
   limit?: number;
   /**
    * Кнопка «Откатить» прямо НА СТРОКЕ той операции, для которой откат
-   * доступен (например, продление за сегодня). `matchAction` находит первую
-   * (самую свежую) подходящую строку, `node` рендерится её оверлеем справа.
+   * доступен. `anchorId` — id строки журнала (его вычисляет useRollbackTarget,
+   * перешагивая пары «откат+операция»), `node` рендерится её оверлеем справа.
    * Условие истекло — родитель не передаёт rollback, кнопки нет.
    */
-  rollback?: { matchAction: (action: string) => boolean; node: ReactNode };
+  rollback?: { anchorId: number; node: ReactNode };
 }) {
   const shown = items.slice(0, limit);
   const rollbackIdx = rollback
-    ? shown.findIndex((it) => rollback.matchAction(it.action))
+    ? shown.findIndex((it) => it.id === rollback.anchorId)
     : -1;
   return (
     <div className="rounded-2xl bg-surface border border-border shadow-card-sm overflow-hidden">
