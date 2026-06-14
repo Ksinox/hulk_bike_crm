@@ -102,7 +102,8 @@ export function MobileRentals() {
   /** Открыта форма создания аренды (переиспользуем десктоп-модалку). */
   const [newOpen, setNewOpen] = useState(false);
   const { callClient, callSheet } = useCallClient();
-  usePageFab("Аренда", () => setNewOpen(true));
+  // Внутри карточки аренды (drill-in) кнопку «+ Аренда» прячем — она там лишняя.
+  usePageFab("Аренда", () => setNewOpen(true), openId != null);
 
   const today = todayRu();
   const todayMs = ddmmyyyyToMs(today);

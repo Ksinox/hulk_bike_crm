@@ -408,13 +408,14 @@ export function ApplicationView({
                   />
                 </I18nProvider>
               </div>
-              {/* Скутер крупно (на мобиле — единственный визуал периода). */}
+              {/* Скутер крупно (на мобиле — единственный визуал периода,
+                  календарь скрыт; делаем заметным, а не марку). */}
               {modelAvatar && (
                 <img
                   src={modelAvatar}
                   alt=""
                   aria-hidden
-                  className="h-[104px] w-auto max-w-full object-contain drop-shadow-lg sm:hidden"
+                  className="h-[140px] w-auto max-w-full object-contain drop-shadow-lg sm:hidden"
                 />
               )}
             </div>

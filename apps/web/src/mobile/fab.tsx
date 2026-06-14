@@ -31,14 +31,26 @@ export function FabProvider({
  * Регистрирует FAB активного экрана. Очищает при размонтировании.
  * onClick хранится в ref, чтобы пересоздание колбэка на ре-рендере не
  * перезапускало эффект (иначе цикл set → ре-рендер → set).
+ *
+ * hidden — скрыть кнопку (не регистрировать). Нужно, когда мы провалились
+ * ВНУТРЬ карточки (drill-in): внутри карточки аренды/клиента/скутера кнопка
+ * «+ Аренда/Клиент/Скутер» не нужна и мешает — снимаем её.
  */
-export function usePageFab(label: string, onClick: () => void) {
+export function usePageFab(
+  label: string,
+  onClick: () => void,
+  hidden?: boolean,
+) {
   const { set } = useContext(FabContext);
   const cb = useRef(onClick);
   cb.current = onClick;
   useEffect(() => {
+    if (hidden) {
+      set(null);
+      return;
+    }
     set({ label, onClick: () => cb.current() });
     return () => set(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [label]);
+  }, [label, hidden]);
 }

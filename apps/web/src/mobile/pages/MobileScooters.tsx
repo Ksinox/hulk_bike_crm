@@ -78,7 +78,8 @@ export function MobileScooters() {
   const [search, setSearch] = useState("");
   const [openId, setOpenId] = useState<number | null>(null);
   const [newOpen, setNewOpen] = useState(false);
-  usePageFab("Скутер", () => setNewOpen(true));
+  // Внутри карточки скутера (drill-in) кнопку «+ Скутер» прячем.
+  usePageFab("Скутер", () => setNewOpen(true), openId != null);
   // FleetScooter[] для полноэкранной карточки (та же, что на десктопе).
   const fleet = useFleetScooters();
 

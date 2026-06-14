@@ -31,7 +31,8 @@ export function MobileClients() {
   const [openId, setOpenId] = useState<number | null>(null);
   const [newOpen, setNewOpen] = useState(false);
   const { callClient, callSheet } = useCallClient();
-  usePageFab("Клиент", () => setNewOpen(true));
+  // Внутри карточки клиента (drill-in) кнопку «+ Клиент» прячем.
+  usePageFab("Клиент", () => setNewOpen(true), openId != null);
 
   const activeSet = useMemo(() => {
     const set = new Set<number>();
