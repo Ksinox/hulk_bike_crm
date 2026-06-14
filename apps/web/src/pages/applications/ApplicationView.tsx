@@ -205,10 +205,15 @@ export function ApplicationView({
   // «с сегодня»; не переткнул → планирует с сегодня). Новые заявки уже несут
   // дату (проставляется при отправке), а старые с пустой датой показываем от
   // даты подачи, а не пустыми «—».
-  const submissionIso = String(app.submittedAt ?? app.createdAt ?? "").slice(
-    0,
-    10,
-  );
+  // Дата подачи как YYYY-MM-DD в локальной зоне (как «подана 31.05» в шапке).
+  // НЕ slice(0,10) от ISO — там UTC, даёт −1 день для ночных подач по МСК.
+  const submissionIso = (() => {
+    const raw = app.submittedAt ?? app.createdAt;
+    if (!raw) return "";
+    const d = new Date(raw);
+    if (Number.isNaN(d.getTime())) return "";
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  })();
   const startDefaulted =
     !app.requestedStartDate && days > 0 && submissionIso.length === 10;
   const effectiveStartIso =
