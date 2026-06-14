@@ -399,7 +399,11 @@ export function ApplicationView({
                   <RangeCalendar
                     aria-label="Период аренды из заявки"
                     value={{ start: startCd, end: endCd }}
-                    defaultFocusedValue={startCd}
+                    // Фокус на месяце КОНЦА периода: задача — всегда показать
+                    // концовку. Влезли оба в один месяц — отлично, видно и
+                    // начало, и конец; не влезли (старт у конца месяца, период
+                    // ушёл дальше) — приоритет концу, его и показываем.
+                    defaultFocusedValue={endCd}
                     isReadOnly
                   />
                 </I18nProvider>
