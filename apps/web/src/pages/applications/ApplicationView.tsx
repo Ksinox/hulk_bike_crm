@@ -200,16 +200,23 @@ export function ApplicationView({
     [model, selEquip, days],
   );
 
+  // Дата начала: если клиент не выбрал её на календаре — трактуем как «с дня
+  // подачи» (так и задумано: в анкете календарь по умолчанию показывает старт
+  // «с сегодня»; не переткнул → планирует с сегодня). Новые заявки уже несут
+  // дату (проставляется при отправке), а старые с пустой датой показываем от
+  // даты подачи, а не пустыми «—».
+  const submissionIso = String(app.submittedAt ?? app.createdAt ?? "").slice(
+    0,
+    10,
+  );
+  const startDefaulted =
+    !app.requestedStartDate && days > 0 && submissionIso.length === 10;
+  const effectiveStartIso =
+    app.requestedStartDate || (startDefaulted ? submissionIso : null);
   const endIso =
-    app.requestedStartDate && days > 0
-      ? addDaysIso(app.requestedStartDate, days)
-      : null;
-  const startCd = isoToCd(app.requestedStartDate);
+    effectiveStartIso && days > 0 ? addDaysIso(effectiveStartIso, days) : null;
+  const startCd = isoToCd(effectiveStartIso);
   const endCd = isoToCd(endIso);
-  // Есть конкретные даты (клиент выбрал дату начала) — иначе «мягкая бронь»:
-  // клиент выбрал только срок (N дней), дату согласует менеджер. В этом случае
-  // не рисуем пустой таймлайн начало→конец и не цепляем absolute-скутер к
-  // короткой строке (он наезжал вниз на финсводку).
   const hasDates = !!(startCd && endCd);
 
   const hasWishes =
@@ -244,7 +251,7 @@ export function ApplicationView({
     : hasAddress
       ? "Заполнено"
       : null;
-  const hasKeyDates = hasWishes && (app.requestedStartDate || days > 0);
+  const hasKeyDates = hasWishes && days > 0;
 
   /* ───────────────────── Блоки (один источник для обоих деревьев) ───── */
 
@@ -446,10 +453,10 @@ export function ApplicationView({
 
   const keyDatesBlock = hasKeyDates ? (
     <KeyDatesCard
-      start={ruDate(app.requestedStartDate)}
+      start={ruDate(effectiveStartIso)}
       end={ruDate(endIso)}
       days={days}
-      pending={!hasDates}
+      note={startDefaulted ? "по умолчанию — день подачи" : undefined}
     />
   ) : null;
 
@@ -814,46 +821,20 @@ function KeyDatesCard({
   start,
   end,
   days,
-  pending,
+  note,
 }: {
   start: string;
   end: string;
   days: number;
-  /** Дата начала не выбрана (мягкая бронь) — показываем срок + «согласует
-   *  менеджер» вместо пустого таймлайна начало→конец. */
-  pending?: boolean;
+  /** Мелкая пометка под датами — напр. «по умолчанию — день подачи», когда
+   *  клиент не выбрал дату начала и мы взяли день подачи заявки. */
+  note?: string;
 }) {
   return (
     <div className="rounded-2xl bg-surface p-3.5 shadow-card-sm ring-1 ring-inset ring-border">
       <div className="mb-2.5 flex items-center gap-1.5 px-0.5 text-[11px] font-bold uppercase tracking-wider text-muted-2">
         <CalendarClock size={12} /> Ключевые даты
       </div>
-      {pending ? (
-        /* Мягкая бронь: дату начала клиент не выбрал. Показываем срок и
-           пометку, что дату согласует менеджер — без пустых «—». */
-        <div className="flex items-center gap-3">
-          {days > 0 && (
-            <div className="flex shrink-0 flex-col items-center rounded-full bg-blue-600 px-3.5 py-3 text-white shadow-card-sm">
-              <span className="font-display text-[20px] font-extrabold leading-none tabular-nums">
-                {days}
-              </span>
-              <span className="mt-0.5 text-[9.5px] font-bold uppercase tracking-wide text-white/80">
-                {daysWord(days)}
-              </span>
-            </div>
-          )}
-          <div className="min-w-0">
-            <div className="font-display text-[15px] font-extrabold leading-tight text-ink">
-              {days > 0 ? `Срок ${days} ${daysWord(days)}` : "Срок не указан"}
-            </div>
-            <div className="mt-1 flex items-center gap-1.5 text-[12px] text-muted">
-              <CalendarClock size={13} className="shrink-0 text-blue-600" />
-              Точную дату начала согласует менеджер
-            </div>
-          </div>
-        </div>
-      ) : (
-        <>
       {/* Десктоп: вертикальный таймлайн + круг-бейдж справа.
           Мобайл: горизонтально (начало — круг — конец). */}
       <div className="relative hidden sm:block">
@@ -901,7 +882,10 @@ function KeyDatesCard({
           </div>
         </div>
       </div>
-        </>
+      {note && (
+        <div className="mt-2 px-0.5 text-[10.5px] leading-snug text-muted-2">
+          {note}
+        </div>
       )}
     </div>
   );

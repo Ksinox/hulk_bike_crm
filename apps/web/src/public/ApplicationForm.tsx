@@ -215,7 +215,14 @@ function fieldsFromState(s: FormState): ApplicationFields {
     requestedModelName: nullableTrim(s.wantModel),
     requestedDays: s.wantModel && s.wantDays > 0 ? s.wantDays : null,
     requestedEquipmentIds: s.wantEquipmentIds.length ? s.wantEquipmentIds : null,
-    requestedStartDate: s.wantStartDate || null,
+    // Дата начала по умолчанию — день подачи (сегодня). Календарь и так
+    // показывает старт «с сегодня»; если клиент не переткнул дату (увидел
+    // «с сегодня», согласился) — wantStartDate остаётся пустым. Раньше это
+    // сохранялось как null → в CRM пустые «Ключевые даты». Трактуем как «с
+    // сегодня»: при выбранном периоде ставим сегодняшнюю дату.
+    requestedStartDate:
+      s.wantStartDate ||
+      (s.wantModel && s.wantDays > 0 ? todayIsoLocal() : null),
     honeypot: s.honeypot || null,
   };
 }
