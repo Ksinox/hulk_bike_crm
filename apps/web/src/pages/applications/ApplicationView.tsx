@@ -206,6 +206,11 @@ export function ApplicationView({
       : null;
   const startCd = isoToCd(app.requestedStartDate);
   const endCd = isoToCd(endIso);
+  // Есть конкретные даты (клиент выбрал дату начала) — иначе «мягкая бронь»:
+  // клиент выбрал только срок (N дней), дату согласует менеджер. В этом случае
+  // не рисуем пустой таймлайн начало→конец и не цепляем absolute-скутер к
+  // короткой строке (он наезжал вниз на финсводку).
+  const hasDates = !!(startCd && endCd);
 
   const hasWishes =
     !!app.requestedModel ||
@@ -360,20 +365,23 @@ export function ApplicationView({
           </div>
         )}
 
-        {/* Период + аватарка-герой.
-            На мобиле период живёт в блоке «Ключевые даты» (он поднят наверх),
-            поэтому большой календарь тут показываем ТОЛЬКО на десктопе (sm+) —
-            иначе он распирал карточку шире экрана. На мобиле — только скутер. */}
-        <div className="relative mt-4 sm:mt-5">
-          {modelAvatar && (
-            <img
-              src={modelAvatar}
-              alt={modelName ?? "модель"}
-              className="pointer-events-none absolute right-0 top-1/2 z-0 hidden w-[200px] -translate-y-1/2 object-contain opacity-95 drop-shadow-xl sm:block lg:w-[230px]"
-            />
-          )}
-          <div className="relative z-10 flex items-center justify-center gap-4 sm:justify-start">
-            {startCd && endCd ? (
+        {/* Период + скутер-герой.
+            Есть даты — десктоп: календарь + плавающий скутер справа (календарь
+            задаёт высоту, скутер не наезжает); мобайл: скутер (период живёт в
+            «Ключевые даты» сверху). Нет даты («мягкая бронь») — рисуем ТОЛЬКО
+            скутер обычным блоком (без absolute), иначе он, привязанный top-1/2 к
+            низкой строке, съезжал вниз на финсводку. Текст «дату согласует
+            менеджер» один раз — в блоке «Ключевые даты». */}
+        {hasDates ? (
+          <div className="relative mt-4 sm:mt-5">
+            {modelAvatar && (
+              <img
+                src={modelAvatar}
+                alt={modelName ?? "модель"}
+                className="pointer-events-none absolute right-0 top-1/2 z-0 hidden w-[200px] -translate-y-1/2 object-contain opacity-95 drop-shadow-xl sm:block lg:w-[230px]"
+              />
+            )}
+            <div className="relative z-10 flex items-center justify-center gap-4 sm:justify-start">
               <div className="hidden w-fit rounded-2xl bg-surface p-2.5 text-ink shadow-card-lg ring-1 ring-inset ring-border sm:block">
                 <I18nProvider locale="ru-RU">
                   <RangeCalendar
@@ -384,23 +392,28 @@ export function ApplicationView({
                   />
                 </I18nProvider>
               </div>
-            ) : days > 0 ? (
-              <div className="inline-flex items-center gap-2 rounded-2xl bg-surface-soft px-4 py-2.5 text-[13px] font-semibold text-ink ring-1 ring-inset ring-border">
-                <CalendarClock size={16} className="text-blue-600" />
-                Дату согласует менеджер
-              </div>
-            ) : null}
-            {/* Скутер крупно (на мобиле — единственный визуал периода). */}
-            {modelAvatar && (
+              {/* Скутер крупно (на мобиле — единственный визуал периода). */}
+              {modelAvatar && (
+                <img
+                  src={modelAvatar}
+                  alt=""
+                  aria-hidden
+                  className="h-[104px] w-auto max-w-full object-contain drop-shadow-lg sm:hidden"
+                />
+              )}
+            </div>
+          </div>
+        ) : (
+          modelAvatar && (
+            <div className="mt-4 flex justify-center sm:mt-5 sm:justify-start">
               <img
                 src={modelAvatar}
-                alt=""
-                aria-hidden
-                className="h-[104px] w-auto max-w-full object-contain drop-shadow-lg sm:hidden"
+                alt={modelName ?? "модель"}
+                className="h-[120px] w-auto max-w-full object-contain drop-shadow-lg sm:h-[150px]"
               />
-            )}
-          </div>
-        </div>
+            </div>
+          )
+        )}
 
         {quote && (
           <div className="relative z-10 mt-4 rounded-2xl bg-surface-soft p-3.5 ring-1 ring-inset ring-border sm:mt-5">
@@ -436,6 +449,7 @@ export function ApplicationView({
       start={ruDate(app.requestedStartDate)}
       end={ruDate(endIso)}
       days={days}
+      pending={!hasDates}
     />
   ) : null;
 
@@ -800,16 +814,46 @@ function KeyDatesCard({
   start,
   end,
   days,
+  pending,
 }: {
   start: string;
   end: string;
   days: number;
+  /** Дата начала не выбрана (мягкая бронь) — показываем срок + «согласует
+   *  менеджер» вместо пустого таймлайна начало→конец. */
+  pending?: boolean;
 }) {
   return (
     <div className="rounded-2xl bg-surface p-3.5 shadow-card-sm ring-1 ring-inset ring-border">
       <div className="mb-2.5 flex items-center gap-1.5 px-0.5 text-[11px] font-bold uppercase tracking-wider text-muted-2">
         <CalendarClock size={12} /> Ключевые даты
       </div>
+      {pending ? (
+        /* Мягкая бронь: дату начала клиент не выбрал. Показываем срок и
+           пометку, что дату согласует менеджер — без пустых «—». */
+        <div className="flex items-center gap-3">
+          {days > 0 && (
+            <div className="flex shrink-0 flex-col items-center rounded-full bg-blue-600 px-3.5 py-3 text-white shadow-card-sm">
+              <span className="font-display text-[20px] font-extrabold leading-none tabular-nums">
+                {days}
+              </span>
+              <span className="mt-0.5 text-[9.5px] font-bold uppercase tracking-wide text-white/80">
+                {daysWord(days)}
+              </span>
+            </div>
+          )}
+          <div className="min-w-0">
+            <div className="font-display text-[15px] font-extrabold leading-tight text-ink">
+              {days > 0 ? `Срок ${days} ${daysWord(days)}` : "Срок не указан"}
+            </div>
+            <div className="mt-1 flex items-center gap-1.5 text-[12px] text-muted">
+              <CalendarClock size={13} className="shrink-0 text-blue-600" />
+              Точную дату начала согласует менеджер
+            </div>
+          </div>
+        </div>
+      ) : (
+        <>
       {/* Десктоп: вертикальный таймлайн + круг-бейдж справа.
           Мобайл: горизонтально (начало — круг — конец). */}
       <div className="relative hidden sm:block">
@@ -857,6 +901,8 @@ function KeyDatesCard({
           </div>
         </div>
       </div>
+        </>
+      )}
     </div>
   );
 }
