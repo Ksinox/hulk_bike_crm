@@ -7,6 +7,7 @@ import { RevenueCard } from "./RevenueCard";
 import { ReturnsList } from "./ReturnsList";
 import { ReturnsTable } from "./ReturnsTable";
 import { OverdueTable } from "./OverdueTable";
+import { DebtorsNoRentalCard } from "./DebtorsNoRentalCard";
 import { ActivityFeed } from "./ActivityFeed";
 import { ClassicKpi, CLASSIC_KPI_ICONS } from "./ClassicKpi";
 import { NewApplicationsWidget } from "./NewApplicationsWidget";
@@ -148,6 +149,7 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
             items={metrics.overdue}
             onOpenRental={(id) => drawer.openRental(id)}
           />
+          <DebtorsNoRentalCard items={metrics.debtorsNoRental} />
           <ActivityFeed />
         </div>
         <div className="col-span-4 flex flex-col gap-4">
@@ -239,6 +241,7 @@ function ClassicVariant({ metrics }: { metrics: DashboardMetrics }) {
         compactHeader
         onOpenRental={(id) => drawer.openRental(id)}
       />
+      <DebtorsNoRentalCard className="col-span-12" items={metrics.debtorsNoRental} />
     </div>
   );
 }

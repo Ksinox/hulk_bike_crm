@@ -61,6 +61,9 @@ export type DashboardMetrics = {
   // Просрочки
   overdue: OverdueItem[];
 
+  /** F4: должники без активной аренды (висящий долг по ущербу). */
+  debtorsNoRental: DebtorNoRentalItem[];
+
   /**
    * Множества rentalId — для других виджетов где rentalId это первичный
    * ключ (например OverdueTable).
@@ -142,6 +145,14 @@ export type OverdueItem = {
   endPlannedAt: string;
   daysOverdue: number;
   debt: number;
+};
+
+/** F4: должник без активной аренды (висящий долг по ущербу). */
+export type DebtorNoRentalItem = {
+  clientId: number;
+  clientName: string;
+  clientPhone: string;
+  amount: number;
 };
 
 export function useDashboardMetrics(): DashboardMetrics {
@@ -509,6 +520,27 @@ export function useDashboardMetrics(): DashboardMetrics {
         rentalIds: [...ids].sort((a, b) => b - a),
       }));
 
+    // F4: должники БЕЗ активной аренды — клиенты с незакрытым долгом по ущербу
+    // (он «переезжает» с клиентом после возврата), у кого нет ни одной активной
+    // аренды. Такие теряются: в просрочках их нет (нет активной аренды), во
+    // вкладку «Клиенты» оператор почти не ходит. Выводим их отдельным блоком на
+    // дашборде, чтобы можно было отработать. Клиенты с активной арендой сюда НЕ
+    // попадают — их долг виден на карточке аренды (F3).
+    const activeClientIds = new Set(
+      rentals.filter((r) => r.status === "active").map((r) => r.clientId),
+    );
+    const debtorsNoRental: DebtorNoRentalItem[] = clients
+      .filter(
+        (c) => (c.unpaidDamageDebt ?? 0) > 0 && !activeClientIds.has(c.id),
+      )
+      .map((c) => ({
+        clientId: c.id,
+        clientName: c.name,
+        clientPhone: c.phone ?? "",
+        amount: c.unpaidDamageDebt ?? 0,
+      }))
+      .sort((a, b) => b.amount - a.amount);
+
     return {
       isLoading,
       hasAnyData,
@@ -544,6 +576,7 @@ export function useDashboardMetrics(): DashboardMetrics {
       revenueExpected,
       revenueExpectedCount,
       revenueByDay,
+      debtorsNoRental,
     };
   }, [
     clientsQ.data,
