@@ -489,7 +489,26 @@ export function PaymentAcceptDialog({
     overdueFineBalance +
     damageBalance +
     manualBalance;
-  const dueAmount = totalDebt + parkingDue;
+  // C3: «клиент вносит по долгу сейчас» — ОДНА сумма против общего долга.
+  // Пусто = гасим полностью (как было). Можно ввести меньше → частичное
+  // погашение: distribute() раскидает её по составу (просрочка→штраф→ущерб→…)
+  // по приоритету. Формулы и накопление долга НЕ трогаем — завтра он снова
+  // подрастёт штатно. Ограничиваем введённое суммой долга.
+  const [debtPayStr, setDebtPayStr] = useState("");
+  const paidDebtNow =
+    debtPayStr.trim() === ""
+      ? totalDebt
+      : Math.max(
+          0,
+          Math.min(
+            totalDebt,
+            parseInt(debtPayStr.replace(/\D/g, "") || "0", 10),
+          ),
+        );
+  const isPartialDebt = totalDebt > 0 && paidDebtNow < totalDebt;
+  const debtRemainAfter = Math.max(0, totalDebt - paidDebtNow);
+  // dueAmount теперь = сколько по долгу гасим СЕЙЧАС + паркинг (а не весь долг).
+  const dueAmount = paidDebtNow + parkingDue;
 
   // Источники
   // v0.6.7: депозит управляется одним checkbox'ом в footer'е (как в
@@ -1011,6 +1030,11 @@ export function PaymentAcceptDialog({
         accepted - topupAmount - parkingPayNow,
       );
       const ops = distribute(acceptedForDistribute);
+      // C3: при частичном погашении добавляем в комментарий «X из Y», чтобы в
+      // истории было видно «погасил долг … из …».
+      const debtNote = isPartialDebt
+        ? ` · частичное погашение долга ${fmt(paidDebtNow)} из ${fmt(totalDebt)} ₽`
+        : "";
       // Первый проход: всё кроме rent.
       for (const op of ops) {
         if (op.amount <= 0) continue;
@@ -1021,7 +1045,7 @@ export function PaymentAcceptDialog({
             amount: op.amount,
             method: op.method,
             paidAt: paymentTimestamp ?? undefined,
-            comment: `Оплата клиента (${methodLabel(op.method)})`,
+            comment: `Оплата клиента (${methodLabel(op.method)})${debtNote}`,
           });
         } else if (op.target === "overdue_fine") {
           await api.post(`/api/rentals/${rental.id}/debt/payment`, {
@@ -1029,7 +1053,7 @@ export function PaymentAcceptDialog({
             amount: op.amount,
             method: op.method,
             paidAt: paymentTimestamp ?? undefined,
-            comment: `Оплата клиента (${methodLabel(op.method)})`,
+            comment: `Оплата клиента (${methodLabel(op.method)})${debtNote}`,
           });
         } else if (op.target === "damage") {
           await api.post("/api/payments", {
@@ -1040,13 +1064,13 @@ export function PaymentAcceptDialog({
             paid: true,
             paidAt: paymentTimestamp ?? new Date().toISOString(),
             damageReportId: op.damageReportId,
-            note: "Оплата по акту",
+            note: `Оплата по акту${debtNote}`,
           });
         } else if (op.target === "manual") {
           await api.post(`/api/rentals/${rental.id}/debt/payment`, {
             kind: "manual_payment",
             amount: op.amount,
-            comment: `Оплата клиента (${methodLabel(op.method)})`,
+            comment: `Оплата клиента (${methodLabel(op.method)})${debtNote}`,
           });
         } else if (op.target === "deposit") {
           // v0.5.9: если оператор выбрал «В залог аренды», часть денег
@@ -2029,6 +2053,50 @@ export function PaymentAcceptDialog({
             Узкая ширина 440px требует разделения блоков по вертикали —
             раньше итог теснил итемизацию и кнопки сжимались. */}
         <div className="rounded-b-2xl border-t border-border bg-surface-soft pb-6">
+          {/* C3: «Клиент вносит по долгу сейчас» — одно поле против ОБЩЕГО
+              долга. Пусто = гасим полностью. Можно ввести меньше (частично) —
+              остаток просто останется долгом и завтра продолжит расти штатно.
+              Сумму раскидывает по составу distribute() по приоритету. */}
+          {totalDebt > 0 && (
+            <div className="border-b border-border px-5 py-3">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[12px] font-bold text-ink">
+                  Клиент вносит по долгу
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <input
+                    inputMode="numeric"
+                    value={debtPayStr}
+                    placeholder={String(totalDebt)}
+                    onChange={(e) =>
+                      setDebtPayStr(e.target.value.replace(/\D/g, ""))
+                    }
+                    className="w-28 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-right text-[14px] font-bold tabular-nums text-ink focus:border-blue-500 focus:outline-none"
+                  />
+                  <span className="text-[12px] text-muted">₽</span>
+                </div>
+              </div>
+              <div className="mt-1 flex items-center justify-between text-[11px]">
+                <span className="text-muted">
+                  из {fmt(totalDebt)} ₽ долга
+                  {isPartialDebt && (
+                    <button
+                      type="button"
+                      onClick={() => setDebtPayStr("")}
+                      className="ml-1.5 font-semibold text-blue-600 underline"
+                    >
+                      всё
+                    </button>
+                  )}
+                </span>
+                {isPartialDebt && (
+                  <span className="font-semibold text-orange-ink">
+                    останется {fmt(debtRemainAfter)} ₽
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
           {/* (1) Итемизация — каждая составляющая на своей строке.
               v0.6.53: цифры крупнее (text-[13.5px] вместо 11.5px). */}
           <div className="flex flex-col gap-2 px-5 py-3 text-[13.5px] font-semibold">
@@ -2044,25 +2112,44 @@ export function PaymentAcceptDialog({
               const otherDebt = pendingRent + damageBalance + manualBalance;
               return (
                 <>
-                  {overdueAfterForgive > 0 && (
-                    <FooterRow
-                      label={`Закрытие просрочки${overdueDaysHeader > 0 ? ` · ${overdueDaysHeader} дн` : ""}`}
-                      value={`${fmt(overdueAfterForgive)} ₽`}
-                      tone="red"
-                    />
-                  )}
-                  {overdueForgiven > 0 && (
-                    <FooterRow
-                      label="Просрочка прощена"
-                      value={`−${fmt(overdueForgiven)} ₽`}
-                      tone="green"
-                    />
-                  )}
-                  {otherDebt > 0 && (
-                    <FooterRow
-                      label="Прочий долг (экип./аренда/ущерб/ручной)"
-                      value={`${fmt(otherDebt)} ₽`}
-                    />
+                  {/* C3: при частичном погашении показываем ОДНУ строку «гашение
+                      долга» (сумма раскидывается по составу по приоритету) +
+                      сколько останется. При полном — обычная разбивка. */}
+                  {isPartialDebt ? (
+                    <>
+                      <FooterRow
+                        label="Гашение долга (частично)"
+                        value={`${fmt(paidDebtNow)} ₽`}
+                        tone="red"
+                      />
+                      <FooterRow
+                        label="Останется долга"
+                        value={`${fmt(debtRemainAfter)} ₽`}
+                      />
+                    </>
+                  ) : (
+                    <>
+                      {overdueAfterForgive > 0 && (
+                        <FooterRow
+                          label={`Закрытие просрочки${overdueDaysHeader > 0 ? ` · ${overdueDaysHeader} дн` : ""}`}
+                          value={`${fmt(overdueAfterForgive)} ₽`}
+                          tone="red"
+                        />
+                      )}
+                      {overdueForgiven > 0 && (
+                        <FooterRow
+                          label="Просрочка прощена"
+                          value={`−${fmt(overdueForgiven)} ₽`}
+                          tone="green"
+                        />
+                      )}
+                      {otherDebt > 0 && (
+                        <FooterRow
+                          label="Прочий долг (экип./аренда/ущерб/ручной)"
+                          value={`${fmt(otherDebt)} ₽`}
+                        />
+                      )}
+                    </>
                   )}
                   {extDays > 0 && (
                     <FooterRow
