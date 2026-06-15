@@ -536,7 +536,15 @@ export function Rentals() {
   // скрыть вручную (panelOpen=false) — список растянется на всю ширину,
   // выбранная строка останется подсвеченной. Клик по строке снова
   // открывает панель. Раньше (v0.7.0) была fixed overlay-drawer.
-  const selected = rentals.find((r) => r.id === selectedId) ?? null;
+  // R7: выбранную аренду ищем и в active, и в архиве — чтобы переход к
+  // аренде-источнику сквозного долга (часто завершённой/архивной) открывал
+  // её карточку прямо в макете страницы (на одном уровне), без съезжающей
+  // dashboard-колонки.
+  const selected =
+    rentals.find((r) => r.id === selectedId) ??
+    archivedList.find((r) => r.id === selectedId) ??
+    activeRentals.find((r) => r.id === selectedId) ??
+    null;
   // v0.7.3: высота прилипающих колонок (карточка/payment) = высота вьюпорта
   // минус electron-titlebar (36px). В web — чистые 100vh. Так footer карточки
   // и payment всегда виден: скроллится только внутреннее тело колонки.

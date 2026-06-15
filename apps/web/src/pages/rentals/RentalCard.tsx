@@ -416,17 +416,20 @@ export function RentalCard({
   // вернёт inDrawer=false, поведение сохранится прежнее (локальная
   // ClientQuickView через setClientQuickView).
   const drawer = useDashboardDrawer();
-  const isMobile = useIsMobile();
   const openClient = (clientId: number) => {
     if (drawer.inDrawer) drawer.openClientChain(clientId);
     else setClientQuickView(true);
   };
-  // F3: открыть тело аренды-источника долга. Десктоп — drawer-цепочка (грузит
-  // по id, в т.ч. архивные, работает и на стр. Аренды, и в дашборд-дровере).
-  // Мобилка — навигация на вкладку Аренды (там MobileRentals откроет карточку).
+  // F3/R7: открыть тело аренды-источника долга.
+  //  • Внутри дашборд-дровера (inDrawer) — стекуем цепочкой (выровнено, обе
+  //    карточки — колонки дровера).
+  //  • Иначе (страница «Аренды» или мобилка) — навигация на вкладку «Аренды»:
+  //    карточка-источник открывается ВНУТРИ макета страницы (на одном уровне),
+  //    а не отдельной dashboard-колонкой, которая «съезжала» по вертикали.
+  //    Rentals/MobileRentals резолвят выбранную аренду и из active, и из архива.
   const openSourceRental = (rentalId: number) => {
-    if (isMobile) navigate({ route: "rentals", rentalId });
-    else drawer.openRentalChain(rentalId);
+    if (drawer.inDrawer) drawer.openRentalChain(rentalId);
+    else navigate({ route: "rentals", rentalId });
   };
   const { data: me } = useMe();
   const deleteRental = useDeleteRental();
