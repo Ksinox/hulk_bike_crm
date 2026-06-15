@@ -15,7 +15,6 @@ import {
   PanelRightClose,
   ThumbsUp,
   Plus,
-  Repeat,
   ShieldAlert,
   SquareParking,
   StickyNote,
@@ -61,6 +60,7 @@ import { CalendarPanel } from "./rental-card/CalendarPanel";
 import { DocsInline } from "./rental-card/DocsInline";
 import { InlineHistory } from "./rental-card/InlineHistory";
 import { CrossRentalDebtBanner } from "./rental-card/CrossRentalDebtBanner";
+import { RentalBodyBreakdown } from "./rental-card/RentalBodyBreakdown";
 import { SideDrawer } from "./rental-card/SideDrawer";
 import { useActivityTimeline } from "@/lib/api/activity";
 import { HistoryTab, type HistoryFilter } from "./RentalCardTabs";
@@ -615,16 +615,13 @@ export function RentalCard({
     }
   };
 
-  // Текущий статус скутера — нужен для проверки конфликта (active rental
-  // + scooter в repair). См. блок «Скутер в ремонте» ниже.
+  // Текущий статус скутера — нужен для «возобновить аренду» (resume-damage)
+  // и для подсветки блока скутера «в ремонте» внутри MasterBlock (C1).
   const { data: apiScooters = [] } = useApiScooters();
   const currentScooter =
     rental.scooterId != null
       ? apiScooters.find((s) => s.id === rental.scooterId) ?? null
       : null;
-  const scooterInRepair =
-    currentScooter?.baseStatus === "repair" &&
-    (rental.status === "active" || rental.status === "overdue");
 
   // Акты о повреждениях по ВСЕЙ цепочке аренд (включая удалённые
   // сегменты — chainIdsFull, не chainIds). Заказчик в задаче 2 v0.2.91:
@@ -1782,7 +1779,6 @@ export function RentalCard({
           .filter((p) => !isPeriodPay(p) && payTs(p.date) >= periodTs)
           .reduce((s, p) => s + (p.amount ?? 0), 0);
         const thisRentalTotal = rentPart + surchargePart;
-        const equipItems = rental.equipmentJson ?? [];
         const deposit = rental.deposit ?? 0;
         const hint = extendCount > 0 ? `продлений ${extendCount}` : undefined;
         return (
@@ -1791,34 +1787,30 @@ export function RentalCard({
             value={`${fmt(thisRentalTotal)} ₽`}
             hint={hint}
             popover={
-              <div className="space-y-1">
-                <div className="font-bold text-ink">
-                  Состав аренды — {fmt(thisRentalTotal)} ₽
+              <div className="min-w-[248px] space-y-2">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="font-bold text-ink">Состав аренды</span>
+                  <span className="font-bold tabular-nums text-ink">
+                    {fmt(thisRentalTotal)} ₽
+                  </span>
                 </div>
-                <div>
-                  аренда за период: <b>{fmt(rentPart)} ₽</b>
-                </div>
-                {equipItems.length > 0 && (
-                  <div className="text-[11px] leading-snug text-muted-2">
-                    в т.ч. экипировка:{" "}
-                    {equipItems.map((e, i) => (
-                      <span key={`${e.name}-${i}`}>
-                        {i > 0 ? ", " : ""}
-                        {e.name}
-                        {e.free ? " (беспл.)" : ` ${fmt(e.price)} ₽/сут`}
-                      </span>
-                    ))}
-                  </div>
-                )}
+                {/* C5: построчно — скутер + экипировка с мини-аватарами,
+                    цена/сут и цена за период. */}
+                <RentalBodyBreakdown
+                  rental={rental}
+                  scooter={currentScooter}
+                  days={rental.days}
+                />
                 {surchargePart > 0 && (
-                  <div>
-                    доплаты за период (ручное/просрочка):{" "}
-                    <b>{fmt(surchargePart)} ₽</b>
+                  <div className="flex items-center justify-between gap-2 border-t border-border pt-1 text-[12px]">
+                    <span className="text-muted">доплаты (ручное/просрочка)</span>
+                    <b className="tabular-nums">{fmt(surchargePart)} ₽</b>
                   </div>
                 )}
                 {deposit > 0 && (
-                  <div>
-                    залог (возвратный): <b>{fmt(deposit)} ₽</b>
+                  <div className="flex items-center justify-between gap-2 text-[12px]">
+                    <span className="text-muted">залог (возвратный)</span>
+                    <b className="tabular-nums">{fmt(deposit)} ₽</b>
                   </div>
                 )}
                 <div className="pt-0.5 text-[10px] text-muted-2">
@@ -2185,41 +2177,9 @@ export function RentalCard({
           </span>
         </div>
       )}
-      {/*
-        v0.2.91: Скутер ушёл в ремонт, а аренда всё ещё активна — это
-        несогласованное состояние. Предлагаем оператору выбор:
-          • Заменить скутер на другой (открывает SwapScooterDialog)
-          • Перевести аренду в «Проблемную» (без скутера)
-        Эта плашка появляется автоматически после печати акта о
-        повреждениях с галкой «отправить в ремонт» и не уходит, пока
-        оператор явно не примет решение.
-      */}
-      {scooterInRepair && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-[12px] border-2 border-orange-500 bg-orange-soft/70 px-3 py-2 text-[13px] text-orange-ink">
-          <div className="flex items-start gap-2">
-            <Wrench size={16} className="mt-0.5 shrink-0" />
-            <div className="min-w-0">
-              <div className="font-bold">
-                Скутер ушёл в ремонт — нужно решение по аренде
-              </div>
-              <div className="text-[11px] opacity-80">
-                {currentScooter?.name ?? "Скутер"} переведён в статус
-                «На ремонте». Активная аренда не может оставаться на
-                ремонтном скутере. Выберите дальнейший шаг:
-              </div>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setSwapOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-[10px] bg-blue-600 px-3 py-1.5 text-[12px] font-bold text-white hover:bg-blue-700"
-            >
-              <Repeat size={12} /> Заменить скутер
-            </button>
-          </div>
-        </div>
-      )}
+      {/* C1: баннер «Скутер ушёл в ремонт» убран — состояние теперь
+          показывает сам блок скутера (жёлтый + ключ-оверлей + тултип),
+          клик по блоку открывает замену. Не сдвигаем контент карточки. */}
 
       {/* v0.5.2: баннер «Долг по ущербу» упрощён — реакция клиента
           (Согласен/Не согласен) убрана полностью (заказчик: «досудебную

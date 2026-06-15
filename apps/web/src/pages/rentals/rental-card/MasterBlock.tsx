@@ -31,6 +31,7 @@ import {
   Repeat,
   Shield,
   Wallet,
+  Wrench,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fileUrl } from "@/lib/files";
@@ -102,6 +103,12 @@ export function MasterBlock({
 }) {
   const equipmentJson = rental.equipmentJson ?? [];
   const clientPhoto = useClientPhoto(rental.clientId);
+
+  // C1: скутер в ремонте при живой аренде — несогласованное состояние.
+  // Подсвечиваем сам блок скутера (жёлтый + ключ-оверлей + тултип), вместо
+  // отдельного баннера сверху. Клик по блоку открывает замену скутера.
+  const scooterInRepair =
+    scooter?.baseStatus === "repair" && rental.status === "active";
 
   const [swapIdx, setSwapIdx] = useState<number | null>(null);
   const [hoverEqIdx, setHoverEqIdx] = useState<number | null>(null);
@@ -264,6 +271,7 @@ export function MasterBlock({
         fallbackName={rental.scooter}
         fallbackModel={rental.model}
         onSwap={onSwapScooter}
+        inRepair={scooterInRepair}
       />
 
       {/* ПРАВО — ЭКИПИРОВКА */}
@@ -539,6 +547,7 @@ export function MasterBlock({
           fallbackName={rental.scooter}
           fallbackModel={rental.model}
           onSwap={onSwapScooter}
+          inRepair={scooterInRepair}
         />
 
         {/* ЭКИПИРОВКА — полная ширина */}
@@ -740,11 +749,14 @@ function ScooterHorizontalRow({
   fallbackName,
   fallbackModel,
   onSwap,
+  inRepair = false,
 }: {
   scooter: ApiScooter | null;
   fallbackName: string;
   fallbackModel: string;
   onSwap: () => void;
+  /** C1: скутер в ремонте — блок жёлтый, в углу ключ, тултип-подсказка. */
+  inRepair?: boolean;
 }) {
   const { data: models = [] } = useApiScooterModels();
   const model = scooter
@@ -762,9 +774,23 @@ function ScooterHorizontalRow({
     <button
       type="button"
       onClick={onSwap}
-      title="Заменить скутер"
-      className="group relative flex items-center gap-4 rounded-2xl border border-border bg-surface p-3 text-left w-full transition-colors"
+      title={
+        inRepair
+          ? `${displayName} в ремонте — нажмите, чтобы заменить скутер`
+          : "Заменить скутер"
+      }
+      className={cn(
+        "group relative flex items-center gap-4 rounded-2xl border p-3 text-left w-full transition-colors",
+        inRepair
+          ? "border-amber-400 bg-amber-50 hover:border-amber-500"
+          : "border-border bg-surface",
+      )}
     >
+      {inRepair && (
+        <span className="pointer-events-none absolute -right-1.5 -top-1.5 z-20 inline-flex h-6 w-6 items-center justify-center rounded-full bg-amber-400 text-amber-950 shadow-card-sm ring-2 ring-surface">
+          <Wrench size={12} strokeWidth={2.4} />
+        </span>
+      )}
       {/* Фото скутера 88×88 (v0.6.51: иконка Repeat показывается в правом
           нижнем углу фото при hover на весь блок). */}
       <div className="relative shrink-0 h-[88px] w-[88px] rounded-[12px] bg-white overflow-hidden flex items-center justify-center">
@@ -777,7 +803,14 @@ function ScooterHorizontalRow({
         ) : (
           <Bike size={32} strokeWidth={1.5} className="text-muted-2" />
         )}
-        <span className="absolute bottom-1 right-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-white shadow-card-sm opacity-0 group-hover:opacity-100 transition-opacity">
+        <span
+          className={cn(
+            "absolute bottom-1 right-1 inline-flex h-6 w-6 items-center justify-center rounded-full text-white shadow-card-sm transition-opacity",
+            inRepair
+              ? "bg-amber-500 opacity-100"
+              : "bg-blue-600 opacity-0 group-hover:opacity-100",
+          )}
+        >
           <Repeat size={12} />
         </span>
       </div>
@@ -792,6 +825,11 @@ function ScooterHorizontalRow({
               {fmt(scooter.mileage)}
             </span>{" "}
             км
+          </div>
+        )}
+        {inRepair && (
+          <div className="mt-1 inline-flex items-center gap-1 text-[12px] font-semibold text-amber-700">
+            <Wrench size={12} /> в ремонте · необходимо заменить
           </div>
         )}
       </div>
@@ -809,11 +847,14 @@ function ScooterCompact({
   fallbackName,
   fallbackModel,
   onSwap,
+  inRepair = false,
 }: {
   scooter: ApiScooter | null;
   fallbackName: string;
   fallbackModel: string;
   onSwap: () => void;
+  /** C1: скутер в ремонте — блок жёлтый, в углу ключ, тултип-подсказка. */
+  inRepair?: boolean;
 }) {
   const { data: models = [] } = useApiScooterModels();
   const model = scooter
@@ -831,12 +872,29 @@ function ScooterCompact({
     <button
       type="button"
       onClick={onSwap}
-      title="Заменить скутер"
+      title={
+        inRepair
+          ? `${displayName} в ремонте — нажмите, чтобы заменить скутер`
+          : "Заменить скутер"
+      }
       // v0.7.12: overflow-visible — крупная аватарка справа может «вылезать»
       // за границы блока (живой эффект). min-h фиксирует высоту, чтобы фото
       // было крупным и заполняло её.
-      className="group relative flex min-h-[112px] w-full min-w-0 items-center gap-2 overflow-visible rounded-2xl border border-border bg-surface p-3 text-left transition-colors hover:border-blue-300"
+      // C1: при ремонте — жёлтая рамка/фон (сам по себе сигнал «обрати внимание»).
+      className={cn(
+        "group relative flex min-h-[112px] w-full min-w-0 items-center gap-2 overflow-visible rounded-2xl border p-3 text-left transition-colors",
+        inRepair
+          ? "border-amber-400 bg-amber-50 hover:border-amber-500"
+          : "border-border bg-surface hover:border-blue-300",
+      )}
     >
+      {/* C1: ключ-оверлей в правом верхнем углу — НЕ сдвигает контент
+          (absolute), pointer-events-none чтобы не перехватывать клик-замену. */}
+      {inRepair && (
+        <span className="pointer-events-none absolute -right-1.5 -top-1.5 z-20 inline-flex h-6 w-6 items-center justify-center rounded-full bg-amber-400 text-amber-950 shadow-card-sm ring-2 ring-surface">
+          <Wrench size={12} strokeWidth={2.4} />
+        </span>
+      )}
       {/* Метаданные — СЛЕВА (текст) */}
       <div className="relative z-10 flex-1 min-w-0">
         <ScooterNumberTitle name={displayName} model={displayModel} size="sm" />
@@ -847,6 +905,11 @@ function ScooterCompact({
               {fmt(scooter.mileage)}
             </span>{" "}
             км
+          </div>
+        )}
+        {inRepair && (
+          <div className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700">
+            <Wrench size={11} /> в ремонте · заменить
           </div>
         )}
       </div>
@@ -863,7 +926,16 @@ function ScooterCompact({
         ) : (
           <Bike size={40} strokeWidth={1.5} className="text-muted-2" />
         )}
-        <span className="absolute bottom-0 right-0 z-10 inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-white shadow-card-sm opacity-0 group-hover:opacity-100 transition-opacity">
+        <span
+          className={cn(
+            "absolute bottom-0 right-0 z-10 inline-flex h-6 w-6 items-center justify-center rounded-full text-white shadow-card-sm transition-opacity",
+            // При ремонте — кнопка-замена видна всегда (это нужное действие),
+            // иначе появляется на hover как раньше.
+            inRepair
+              ? "bg-amber-500 opacity-100"
+              : "bg-blue-600 opacity-0 group-hover:opacity-100",
+          )}
+        >
           <Repeat size={12} />
         </span>
       </div>
