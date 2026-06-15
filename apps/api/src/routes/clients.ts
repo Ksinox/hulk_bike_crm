@@ -171,7 +171,7 @@ export async function clientsRoutes(app: FastifyInstance) {
       JOIN rentals r ON r.id = dr.rental_id
       WHERE NOT EXISTS (
         SELECT 1 FROM debtors db WHERE db.related_rental_id = r.id
-            AND (db.stage IS NULL OR db.stage NOT LIKE 'closed_%')
+            AND db.stage::text NOT LIKE 'closed_%'
       )
       GROUP BY r.client_id
     `);
@@ -220,7 +220,7 @@ export async function clientsRoutes(app: FastifyInstance) {
       WHERE r.client_id = ${id}
         AND NOT EXISTS (
           SELECT 1 FROM debtors db WHERE db.related_rental_id = r.id
-            AND (db.stage IS NULL OR db.stage NOT LIKE 'closed_%')
+            AND db.stage::text NOT LIKE 'closed_%'
         )
     `);
     const debtRow = ((debtRaw as unknown as { rows?: Array<{ unpaidDamageDebt: number }> }).rows
@@ -266,7 +266,7 @@ export async function clientsRoutes(app: FastifyInstance) {
         WHERE r.client_id = ${id}
           AND NOT EXISTS (
             SELECT 1 FROM debtors db WHERE db.related_rental_id = r.id
-            AND (db.stage IS NULL OR db.stage NOT LIKE 'closed_%')
+            AND db.stage::text NOT LIKE 'closed_%'
           )
       `);
       type Row = {
