@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Users, ChevronRight, Ban } from "lucide-react";
+import { consumePending, onNavigate } from "@/app/navigationStore";
 import { MobileNewClient } from "../forms/MobileNewClient";
 import { MobileClientCard } from "../cards/MobileClientCard";
 import { usePageFab } from "../fab";
@@ -33,6 +34,19 @@ export function MobileClients() {
   const { callClient, callSheet } = useCallClient();
   // Внутри карточки клиента (drill-in) кнопку «+ Клиент» прячем.
   usePageFab("Клиент", () => setNewOpen(true), openId != null);
+
+  // navigate({route:"clients", clientId}) — открыть конкретного клиента
+  // (напр. тап по «висящему долгу» F4 на дашборде). Покрываем оба случая:
+  // вкладка уже открыта (onNavigate) и только что смонтирована (consumePending).
+  useEffect(() => {
+    const p = consumePending("clients");
+    if (p?.clientId != null) setOpenId(p.clientId);
+    return onNavigate((req) => {
+      if (req.route === "clients" && req.clientId != null) {
+        setOpenId(req.clientId);
+      }
+    });
+  }, []);
 
   const activeSet = useMemo(() => {
     const set = new Set<number>();

@@ -13,6 +13,7 @@ import {
 import { useRentals } from "@/pages/rentals/rentalsStore";
 import { RentalCard } from "@/pages/rentals/RentalCard";
 import { ErrorBoundary } from "@/app/ErrorBoundary";
+import { navigate } from "@/app/navigationStore";
 import type { RouteId } from "@/app/route";
 import { useMe } from "@/lib/api/auth";
 import { useApiScooters } from "@/lib/api/scooters";
@@ -27,6 +28,7 @@ import {
   greetingByHour,
   useDashboardMetrics,
   type DashboardMetrics,
+  type DebtorNoRentalItem,
   type OverdueItem,
   type ReturnItem,
 } from "@/pages/dashboard/useDashboardMetrics";
@@ -204,6 +206,28 @@ export function MobileDashboard({
             ))
         )}
       </Section>
+
+      {/* F4: висящие долги — должники без активной аренды (ущерб «переехал» с
+          клиентом). В просрочках их нет, во вкладку «Клиенты» оператор почти не
+          ходит — показываем здесь, чтобы не потерялись. Тап → карточка клиента.
+          Пусто → секцию не рендерим. */}
+      {m.debtorsNoRental.length > 0 && (
+        <Section
+          title="Висящие долги"
+          count={m.debtorsNoRental.length}
+          icon={<Wallet size={15} />}
+          tone="red"
+        >
+          {m.debtorsNoRental.map((d) => (
+            <DebtorNoRentalRow
+              key={d.clientId}
+              item={d}
+              onOpen={() => navigate({ route: "clients", clientId: d.clientId })}
+              onCall={() => callClient(d.clientName, [d.clientPhone])}
+            />
+          ))}
+        </Section>
+      )}
 
       {/* Последние действия — лента журнала (как в десктоп-CRM). */}
       <ActivityFeed compact />
@@ -577,6 +601,40 @@ function OverdueRow({
             {item.daysOverdue}{" "}
             {plural(item.daysOverdue, ["день", "дня", "дней"])}
           </div>
+        </div>
+      </button>
+      {hasPhone && <RowCallButton onCall={onCall} />}
+    </div>
+  );
+}
+
+function DebtorNoRentalRow({
+  item,
+  onOpen,
+  onCall,
+}: {
+  item: DebtorNoRentalItem;
+  onOpen: () => void;
+  onCall: () => void;
+}) {
+  const hasPhone = !!item.clientPhone;
+  return (
+    <div className="flex items-center gap-2 py-1">
+      <button
+        type="button"
+        onClick={onOpen}
+        className="flex min-w-0 flex-1 items-center gap-3 rounded-xl py-1.5 text-left active:bg-surface-soft"
+      >
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[13px] font-semibold text-ink">
+            {item.clientName}
+          </div>
+          <div className="truncate text-[11px] text-muted">
+            ущерб · скутер возвращён
+          </div>
+        </div>
+        <div className="shrink-0 text-[13px] font-bold tabular-nums text-red">
+          {formatRub(item.amount)} ₽
         </div>
       </button>
       {hasPhone && <RowCallButton onCall={onCall} />}
