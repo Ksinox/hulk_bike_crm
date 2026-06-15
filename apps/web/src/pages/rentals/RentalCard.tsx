@@ -1794,6 +1794,21 @@ export function RentalCard({
         const thisRentalTotal = rentPart + surchargePart;
         const deposit = rental.deposit ?? 0;
         const hint = extendCount > 0 ? `продлений ${extendCount}` : undefined;
+        // C5: дни ТЕКУЩЕГО периода (не всей аренды!) — выводим из суммы периода
+        // и дневной ставки (скутер/сут + платная экипировка/сут). Иначе у
+        // продлённой аренды rental.days = весь срок, и разбивка не сходилась
+        // с суммой «Эта аренда».
+        const equipDailyPaidForBody = (rental.equipmentJson ?? []).reduce(
+          (s, e) => s + (e.free ? 0 : e.price),
+          0,
+        );
+        const scooterDailyForBody =
+          rental.rateUnit === "week" ? Math.round(rental.rate / 7) : rental.rate;
+        const dailyTotalForBody = scooterDailyForBody + equipDailyPaidForBody;
+        const periodDaysForBody =
+          dailyTotalForBody > 0
+            ? Math.max(1, Math.round(rentPart / dailyTotalForBody))
+            : rental.days || 1;
         return (
           <KpiCard
             label="Эта аренда"
@@ -1812,7 +1827,7 @@ export function RentalCard({
                 <RentalBodyBreakdown
                   rental={rental}
                   scooter={currentScooter}
-                  days={rental.days}
+                  days={periodDaysForBody}
                 />
                 {surchargePart > 0 && (
                   <div className="flex items-center justify-between gap-2 border-t border-border pt-1 text-[12px]">
