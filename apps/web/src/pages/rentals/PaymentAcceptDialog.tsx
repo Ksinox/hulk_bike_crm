@@ -223,12 +223,106 @@ export function PaymentAcceptDialog({
   const overdueFineBalanceRaw = isBackdated
     ? overdueDaysCount * fineDailyRate
     : debt?.overdueFineBalance ?? 0;
-  const damageBalance = debt?.damageBalance ?? 0;
+  // C3: damageBalance (агрегат) больше не нужен — ущерб считаем построчно по
+  // damageReportDebts (остаток на каждый акт).
   const manualBalance = debt?.manualBalance ?? 0;
   // #179: «за экипировку» (доплата за смену экипировки на аренде) против
   // обезличенного «ручного начисления» — чтобы у долга была понятная подпись.
   const equipmentManualBalance = equipmentDebtPortion(debt);
   const otherManualBalance = Math.max(0, manualBalance - equipmentManualBalance);
+
+  // C3: остаток долга по каждому акту ущерба (для построчного выбора что
+  // гасим). Та же формула, что внутри distribute(): total − из залога − уже
+  // оплачено по акту. Единый источник для UI и распределения.
+  const damageReportDebts = useMemo(() => {
+    return (debt?.damageReports ?? [])
+      .map((dr) => {
+        const reportPaid = payments
+          .filter(
+            (p) =>
+              p.rentalId === rental.id &&
+              p.type === "damage" &&
+              p.paid &&
+              p.damageReportId === dr.id,
+          )
+          .reduce((s, p) => s + p.amount, 0);
+        return {
+          id: dr.id,
+          cap: Math.max(0, dr.total - dr.depositCovered - reportPaid),
+        };
+      })
+      .filter((d) => d.cap > 0);
+  }, [debt?.damageReports, payments, rental.id]);
+
+  // C3: построчный выбор «что гасим» (тумблер) + частичная сумма по каждой
+  // позиции долга — на случай если у клиента сейчас нет полной суммы.
+  // Покрываем БЕЗОПАСНЫЕ для частичной оплаты строки: неоплаченная аренда,
+  // ущерб (по каждому акту), за экипировку, ручное начисление. Просрочку
+  // (дни/штраф) оставляем на отдельном flow «Погасить / Простить» — у дней
+  // есть жёсткая привязка к сдвигу endPlanned на бэке (нельзя платить
+  // не-кратно ставке/сут). Паркинг — свой чекбокс «оплатить».
+  type DebtLineKey = string; // "rent" | "manual_equipment" | "manual_other" | `damage:${id}`
+  const debtLineDefs = useMemo(() => {
+    const defs: { key: DebtLineKey; label: string; cap: number }[] = [];
+    if (pendingRent > 0)
+      defs.push({ key: "rent", label: "Неоплаченная аренда", cap: pendingRent });
+    for (const d of damageReportDebts)
+      defs.push({
+        key: `damage:${d.id}`,
+        label:
+          damageReportDebts.length > 1 ? `Ущерб по акту #${d.id}` : "Ущерб по акту",
+        cap: d.cap,
+      });
+    if (equipmentManualBalance > 0)
+      defs.push({
+        key: "manual_equipment",
+        label: "За экипировку",
+        cap: equipmentManualBalance,
+      });
+    if (otherManualBalance > 0)
+      defs.push({
+        key: "manual_other",
+        label: "Ручное начисление",
+        cap: otherManualBalance,
+      });
+    return defs;
+  }, [pendingRent, damageReportDebts, equipmentManualBalance, otherManualBalance]);
+
+  // enabled/amount по каждой строке. Дефолт: включено + полная сумма (как
+  // было раньше — гасим всё), оператор может снять тумблер или ввести меньше.
+  const [lineEnabled, setLineEnabled] = useState<Record<string, boolean>>({});
+  const [lineAmountStr, setLineAmountStr] = useState<Record<string, string>>({});
+  // Сидируем строки при появлении (смена аренды/рефетч). Не затираем уже
+  // заданные оператором ключи; убираем исчезнувшие.
+  useEffect(() => {
+    setLineEnabled((prev) => {
+      const next: Record<string, boolean> = {};
+      for (const d of debtLineDefs) next[d.key] = prev[d.key] ?? true;
+      return next;
+    });
+    setLineAmountStr((prev) => {
+      const next: Record<string, string> = {};
+      for (const d of debtLineDefs) next[d.key] = prev[d.key] ?? String(d.cap);
+      return next;
+    });
+  }, [debtLineDefs]);
+
+  const lineSelected = (key: string, cap: number): number => {
+    if (lineEnabled[key] === false) return 0;
+    const raw = parseInt((lineAmountStr[key] ?? String(cap)).replace(/\D/g, ""), 10);
+    if (!Number.isFinite(raw)) return cap;
+    return Math.max(0, Math.min(cap, raw));
+  };
+  // Суммарно выбранный долг по построчным позициям.
+  const selRent = lineSelected("rent", pendingRent);
+  const selDamageByReport = damageReportDebts.map((d) => ({
+    id: d.id,
+    amount: lineSelected(`damage:${d.id}`, d.cap),
+  }));
+  const selDamage = selDamageByReport.reduce((s, d) => s + d.amount, 0);
+  const selManualEquip = lineSelected("manual_equipment", equipmentManualBalance);
+  const selManualOther = lineSelected("manual_other", otherManualBalance);
+  const selManual = selManualEquip + selManualOther;
 
   // v0.6.11: одно состояние выбора действия по просрочке (Step 1).
   type ForgiveChoice =
@@ -483,12 +577,15 @@ export function PaymentAcceptDialog({
   const parkingDue = unpaidParking > 0 && payParking ? unpaidParking : 0;
 
   // Долги (без extend — он считается по переплате)
+  // C3: rent/ущерб/ручное берём из ПОСТРОЧНОГО выбора (тумблер + частичная
+  // сумма). Просрочка (дни/штраф) — из forgive-flow (full balance после
+  // прощения). Так оператор может погасить, напр., только часть ущерба.
   const totalDebt =
-    pendingRent +
+    selRent +
     overdueDaysBalance +
     overdueFineBalance +
-    damageBalance +
-    manualBalance;
+    selDamage +
+    selManual;
   const dueAmount = totalDebt + parkingDue;
 
   // Источники
@@ -784,24 +881,19 @@ export function PaymentAcceptDialog({
       target: OpTarget;
       damageReportId?: number;
     }[] = [
+      // Просрочка (дни/штраф) — по forgive-балансу (не построчный выбор).
       { cap: overdueDaysBalance, target: "overdue_days" },
       { cap: overdueFineBalance, target: "overdue_fine" },
     ];
-    for (const dr of debt?.damageReports ?? []) {
-      const reportPaid = payments
-        .filter(
-          (p) =>
-            p.rentalId === rental.id &&
-            p.type === "damage" &&
-            p.paid &&
-            p.damageReportId === dr.id,
-        )
-        .reduce((s, p) => s + p.amount, 0);
-      const reportDebt = Math.max(0, dr.total - dr.depositCovered - reportPaid);
-      queue.push({ cap: reportDebt, target: "damage", damageReportId: dr.id });
+    // C3: ущерб — по ВЫБРАННОЙ сумме на каждый акт (тумблер + частично).
+    for (const d of selDamageByReport) {
+      if (d.amount > 0)
+        queue.push({ cap: d.amount, target: "damage", damageReportId: d.id });
     }
-    queue.push({ cap: manualBalance, target: "manual" });
-    queue.push({ cap: pendingRent, target: "rent" });
+    // C3: ручное — одна позиция на бэке (kind=manual_payment), но в UI
+    // показываем «за экипировку» / «ручное» раздельно; в очередь кладём сумму.
+    queue.push({ cap: selManual, target: "manual" });
+    queue.push({ cap: selRent, target: "rent" });
     // v0.4.49: rent от продления — отдельный target, добавляем в очередь
     // последним перед излишком. Маркер damageReportId=-1 — чтобы submit()
     // понимал что это продление и вызывал extend-inplace вместо обычного
@@ -1465,6 +1557,27 @@ export function PaymentAcceptDialog({
                 onClear={setClearDebt}
                 fmt={fmt}
               />
+              {/* C3: прочий долг (ущерб/экипировка/ручное/аренда) — построчно
+                  с тумблером и частичной суммой, доступно и при просрочке. */}
+              {debtLineDefs.length > 0 && (
+                <div className="mt-3">
+                  <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wider text-red-ink">
+                    Прочий долг — что гасим
+                  </div>
+                  <DebtLinesList
+                    defs={debtLineDefs}
+                    enabled={lineEnabled}
+                    amountStr={lineAmountStr}
+                    onToggle={(k) =>
+                      setLineEnabled((p) => ({ ...p, [k]: p[k] === false }))
+                    }
+                    onAmount={(k, v) =>
+                      setLineAmountStr((p) => ({ ...p, [k]: v }))
+                    }
+                    fmt={fmt}
+                  />
+                </div>
+              )}
             </div>
           )}
 
@@ -1499,30 +1612,19 @@ export function PaymentAcceptDialog({
                 </span>
               </div>
               <div className="flex flex-col gap-1.5">
-                {pendingRent > 0 && (
-                  <div className="flex items-center justify-between rounded-[10px] border border-border bg-surface px-3 py-2 text-[12px]">
-                    <span className="font-semibold text-ink">Неоплаченная аренда</span>
-                    <span className="font-bold tabular-nums text-ink">{fmt(pendingRent)} ₽</span>
-                  </div>
-                )}
-                {damageBalance > 0 && (
-                  <div className="flex items-center justify-between rounded-[10px] border border-border bg-surface px-3 py-2 text-[12px]">
-                    <span className="font-semibold text-ink">Ущерб по акту</span>
-                    <span className="font-bold tabular-nums text-ink">{fmt(damageBalance)} ₽</span>
-                  </div>
-                )}
-                {equipmentManualBalance > 0 && (
-                  <div className="flex items-center justify-between rounded-[10px] border border-border bg-surface px-3 py-2 text-[12px]">
-                    <span className="font-semibold text-ink">За экипировку</span>
-                    <span className="font-bold tabular-nums text-ink">{fmt(equipmentManualBalance)} ₽</span>
-                  </div>
-                )}
-                {otherManualBalance > 0 && (
-                  <div className="flex items-center justify-between rounded-[10px] border border-border bg-surface px-3 py-2 text-[12px]">
-                    <span className="font-semibold text-ink">Ручное начисление</span>
-                    <span className="font-bold tabular-nums text-ink">{fmt(otherManualBalance)} ₽</span>
-                  </div>
-                )}
+                {/* C3: построчно — тумблер + частичная сумма по каждой позиции. */}
+                <DebtLinesList
+                  defs={debtLineDefs}
+                  enabled={lineEnabled}
+                  amountStr={lineAmountStr}
+                  onToggle={(k) =>
+                    setLineEnabled((p) => ({ ...p, [k]: p[k] === false }))
+                  }
+                  onAmount={(k, v) =>
+                    setLineAmountStr((p) => ({ ...p, [k]: v }))
+                  }
+                  fmt={fmt}
+                />
                 {unpaidParking > 0 && (
                   <div className="flex items-center gap-2 rounded-[10px] border border-border bg-surface px-3 py-2">
                     <SquareParking size={16} className="shrink-0 text-blue-600" />
@@ -2041,7 +2143,8 @@ export function PaymentAcceptDialog({
               //   - депозит/topup
               const overdueAfterForgive = overdueDaysBalance + overdueFineBalance;
               const overdueForgiven = overdueBalanceRaw - overdueAfterForgive;
-              const otherDebt = pendingRent + damageBalance + manualBalance;
+              // C3: прочий долг = ВЫБРАННЫЕ построчно суммы (тумблер + частично).
+              const otherDebt = selRent + selDamage + selManual;
               return (
                 <>
                   {overdueAfterForgive > 0 && (
@@ -2442,6 +2545,105 @@ function FooterRow({
  *  - при выборе «N дней» → inline-input для редактирования; popover при
  *    этом остаётся открытым, чтобы оператор мог поправить N
  */
+
+/**
+ * C3: список позиций долга с тумблером (гасить/не гасить) и полем суммы
+ * (частичное погашение). По умолчанию всё включено и на полную сумму —
+ * как было. Оператор может снять тумблер или ввести меньшую сумму, если у
+ * клиента сейчас нет полной суммы. Сумма ограничена остатком по позиции.
+ */
+function DebtLinesList({
+  defs,
+  enabled,
+  amountStr,
+  onToggle,
+  onAmount,
+  fmt,
+}: {
+  defs: { key: string; label: string; cap: number }[];
+  enabled: Record<string, boolean>;
+  amountStr: Record<string, string>;
+  onToggle: (key: string) => void;
+  onAmount: (key: string, val: string) => void;
+  fmt: (n: number) => string;
+}) {
+  if (defs.length === 0) return null;
+  return (
+    <div className="flex flex-col gap-1.5">
+      {defs.map((d) => {
+        const on = enabled[d.key] !== false;
+        const raw = parseInt(
+          (amountStr[d.key] ?? String(d.cap)).replace(/\D/g, ""),
+          10,
+        );
+        const amt = on
+          ? Math.max(0, Math.min(d.cap, Number.isFinite(raw) ? raw : d.cap))
+          : 0;
+        const partial = on && amt < d.cap;
+        return (
+          <div
+            key={d.key}
+            className={cn(
+              "flex items-center gap-2.5 rounded-[10px] border px-3 py-2",
+              on
+                ? "border-border bg-surface"
+                : "border-dashed border-border bg-surface-soft/40",
+            )}
+          >
+            {/* тумблер «гасить / не гасить» */}
+            <button
+              type="button"
+              role="switch"
+              aria-checked={on}
+              onClick={() => onToggle(d.key)}
+              title={on ? "Не гасить сейчас" : "Гасить"}
+              className={cn(
+                "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors",
+                on ? "bg-blue-600" : "bg-border",
+              )}
+            >
+              <span
+                className={cn(
+                  "inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform",
+                  on ? "translate-x-[18px]" : "translate-x-0.5",
+                )}
+              />
+            </button>
+            <span
+              className={cn(
+                "min-w-0 flex-1 truncate text-[12px] font-semibold",
+                on ? "text-ink" : "text-muted-2",
+              )}
+            >
+              {d.label}
+            </span>
+            {on ? (
+              <div className="flex items-center gap-1">
+                <input
+                  inputMode="numeric"
+                  value={amountStr[d.key] ?? String(d.cap)}
+                  onChange={(e) =>
+                    onAmount(d.key, e.target.value.replace(/\D/g, ""))
+                  }
+                  className="w-[76px] rounded-md border border-border bg-surface px-2 py-1 text-right text-[12px] font-bold tabular-nums text-ink focus:border-blue-500 focus:outline-none"
+                />
+                <span className="text-[11px] text-muted">₽</span>
+              </div>
+            ) : (
+              <span className="text-[11px] font-semibold text-muted-2">
+                не гасим
+              </span>
+            )}
+            <span className="w-[58px] shrink-0 text-right text-[10px] leading-tight text-muted-2">
+              {partial ? `из ${fmt(d.cap)}` : on ? "полностью" : `${fmt(d.cap)} ₽`}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function ForgiveStepCards({
   forgiveChoice,
   setForgiveChoice,
