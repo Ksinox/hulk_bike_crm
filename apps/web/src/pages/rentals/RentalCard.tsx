@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import {
   AlertTriangle,
   ArrowRight,
+  ArrowUpRight,
   Bike,
   Calendar,
   CheckCircle2,
@@ -1587,11 +1588,6 @@ export function RentalCard({
   const debtBadgeNode = (
     <ClientDebtBadge
       crossSources={crossDebtSources}
-      currentDamage={totalDebt}
-      onClaim={
-        reportWithDebt ? () => setPreviewClaimId(reportWithDebt.id) : undefined
-      }
-      onPay={() => requestPayment(0)}
       onOpenSource={openSourceRental}
     />
   );
@@ -1632,7 +1628,10 @@ export function RentalCard({
           accent = "default";
         } else if (rental.status === "active" && daysLeft !== null) {
           if (daysLeft > 0) {
-            value = `осталось ${daysLeft} дн`;
+            // R5: метка «Осталось» + «N дн» (как «Просрочен N дн») — быстрее
+            // считывается, чем «Срок / осталось N дн».
+            label = "Осталось";
+            value = `${daysLeft} дн`;
             accent = daysLeft <= 2 ? "red" : "default";
           } else if (daysLeft === 0) {
             value = `возврат сегодня`;
@@ -2373,6 +2372,51 @@ export function RentalCard({
                   </div>
                 </div>
               </FinanceHoverCard>
+              {/* R6: долг с прошлых аренд (сквозной) — кликабельно, провал в
+                  ту аренду. Дублирует значок-алёрт у клиента, но тут — в финансах,
+                  как полноценная строка с переходом. */}
+              {crossDebtSources.length > 0 && (
+                <div className="rounded-[12px] border border-red-200 bg-red-soft/30 px-4 py-3">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <span className="inline-flex items-center gap-1.5 text-[12px] font-bold text-red-ink">
+                      <AlertTriangle size={13} /> Долг с прошлых аренд
+                    </span>
+                    <span className="font-display text-[15px] font-extrabold tabular-nums text-red-ink">
+                      {fmt(crossDebtSources.reduce((s, x) => s + x.amount, 0))} ₽
+                    </span>
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    {crossDebtSources.map((s) => (
+                      <button
+                        key={s.rentalId}
+                        type="button"
+                        onClick={() => openSourceRental(s.rentalId)}
+                        title={`Открыть аренду #${String(s.rentalId).padStart(4, "0")}`}
+                        className="group flex items-center gap-2 rounded-lg border border-red-200/70 bg-surface px-3 py-2 text-left transition-colors hover:border-red-300 hover:bg-red-soft/40"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-[12px] font-semibold text-ink">
+                            {s.scooterName}{" "}
+                            <span className="font-mono text-[10px] text-muted-2">
+                              #{String(s.rentalId).padStart(4, "0")}
+                            </span>
+                          </div>
+                          <div className="truncate text-[11px] text-muted">
+                            {s.label}
+                          </div>
+                        </div>
+                        <span className="shrink-0 text-[13px] font-bold tabular-nums text-red-ink">
+                          {fmt(s.amount)} ₽
+                        </span>
+                        <ArrowUpRight
+                          size={14}
+                          className="shrink-0 text-muted-2 transition-colors group-hover:text-red-600"
+                        />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               {/* v0.7.13: детальный «бухгалтерский» состав долга — каждая
                   строка с формулой расчёта (слева мелким серым), чтобы
                   объяснить клиенту из чего сложился долг. Цифры берём из
@@ -3191,6 +3235,22 @@ function KpiCard({
 }) {
   const isMobile = useIsMobile();
   const [sheetOpen, setSheetOpen] = useState(false);
+  // R3: десктоп-поповер рендерим ПОРТАЛОМ (fixed), чтобы его не обрезал
+  // скроллящийся контейнер карточки (раньше absolute-блок клипался справа).
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [popOpen, setPopOpen] = useState(false);
+  const [popPos, setPopPos] = useState<{ top: number; left: number } | null>(
+    null,
+  );
+  const showPop = () => {
+    const r = cardRef.current?.getBoundingClientRect();
+    if (r) {
+      const vw = window.innerWidth;
+      const left = Math.max(8, Math.min(r.left, vw - 320));
+      setPopPos({ top: r.bottom + 6, left });
+    }
+    setPopOpen(true);
+  };
   // На мобиле расшифровку убираем из плашки (чисто заголовок + значение) и
   // показываем в нижнем сниппете по тапу. Контент сниппета — popover, а если
   // его нет, но есть hint — сам hint.
@@ -3208,14 +3268,6 @@ function KpiCard({
 
   const inner = (
     <>
-      {/* Десктоп: hover-поповер с разбивкой снизу плашки. На мобиле его не
-          рендерим (hover нет, а absolute-блок растягивал ширину карточки) —
-          вместо него нижний сниппет по тапу. */}
-      {popover && !isMobile && (
-        <div className="pointer-events-none absolute left-0 top-full z-50 mt-2 w-max max-w-[260px] rounded-xl bg-surface p-3 text-[12px] leading-relaxed text-ink-2 opacity-0 shadow-card-lg ring-1 ring-border transition-opacity duration-150 group-hover:opacity-100">
-          {popover}
-        </div>
-      )}
       {BadgeIcon && (
         <BadgeIcon
           size={18}
@@ -3296,7 +3348,36 @@ function KpiCard({
     );
   }
 
-  return <div className={baseCls}>{inner}</div>;
+  return (
+    <div
+      ref={cardRef}
+      className={baseCls}
+      onMouseEnter={popover && !isMobile ? showPop : undefined}
+      onMouseLeave={popover && !isMobile ? () => setPopOpen(false) : undefined}
+    >
+      {inner}
+      {popover &&
+        !isMobile &&
+        popOpen &&
+        popPos &&
+        createPortal(
+          <div
+            style={{
+              position: "fixed",
+              top: popPos.top,
+              left: popPos.left,
+              minWidth: 280,
+              maxWidth: 360,
+              zIndex: 1000,
+            }}
+            className="pointer-events-none rounded-xl bg-surface p-3 text-[12px] leading-relaxed text-ink-2 shadow-card-lg ring-1 ring-border"
+          >
+            {popover}
+          </div>,
+          document.body,
+        )}
+    </div>
+  );
 }
 
 /** Нижний сниппет (bottom-sheet) с подробностями KPI-плашки — для мобилки. */

@@ -895,13 +895,6 @@ function ScooterCompact({
           : "border-border bg-surface hover:border-blue-300",
       )}
     >
-      {/* C1: ключ-оверлей в правом верхнем углу — НЕ сдвигает контент
-          (absolute), pointer-events-none чтобы не перехватывать клик-замену. */}
-      {inRepair && (
-        <span className="pointer-events-none absolute -right-1.5 -top-1.5 z-20 inline-flex h-6 w-6 items-center justify-center rounded-full bg-amber-400 text-amber-950 shadow-card-sm ring-2 ring-surface">
-          <Wrench size={12} strokeWidth={2.4} />
-        </span>
-      )}
       {/* Метаданные — СЛЕВА (текст) */}
       <div className="relative z-10 flex-1 min-w-0">
         <ScooterNumberTitle name={displayName} model={displayModel} size="sm" />
@@ -915,29 +908,37 @@ function ScooterCompact({
           </div>
         )}
         {inRepair && (
-          <div className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700">
-            <Wrench size={11} /> в ремонте · заменить
+          // R4: «в ремонте» крупнее, без лишней иконки (ключ теперь крупно на
+          // колесе скутера). Замена — по клику на блок / иконкой замены.
+          <div className="mt-1.5 inline-flex items-center rounded-md bg-amber-400/30 px-1.5 py-0.5 text-[12.5px] font-extrabold uppercase tracking-wide text-amber-800">
+            в ремонте
           </div>
         )}
       </div>
 
-      {/* Фото скутера — СПРАВА, крупное по высоте блока, с «вылезанием»
-          за рамку (scale-110 + overflow-visible на контейнере). */}
-      <div className="relative flex h-full min-h-[96px] w-[44%] shrink-0 items-center justify-center self-stretch overflow-visible">
+      {/* Фото скутера — СПРАВА. R4: держим картинку В ГРАНИЦАХ блока
+          (object-contain без scale-110), чтобы не обрезалась ancestor-ом. */}
+      <div className="relative flex h-full min-h-[96px] w-[46%] shrink-0 items-center justify-center self-stretch overflow-hidden">
         {avatarSrc ? (
           <img
             src={avatarSrc}
             alt={displayName}
-            className="h-full max-h-[120px] w-full origin-center scale-110 object-contain drop-shadow-[0_4px_10px_rgba(0,0,0,0.12)]"
+            className="h-full max-h-[108px] w-full object-contain drop-shadow-[0_4px_10px_rgba(0,0,0,0.12)]"
           />
         ) : (
           <Bike size={40} strokeWidth={1.5} className="text-muted-2" />
         )}
+        {/* R4: при ремонте — КРУПНЫЙ ключ «на колесе» (нижний-левый угол фото,
+            где заднее колесо). Сразу читается «скутер в ремонте». */}
+        {inRepair && (
+          <span className="pointer-events-none absolute bottom-0 left-0 z-20 inline-flex h-10 w-10 items-center justify-center rounded-full bg-amber-400 text-amber-950 shadow-card ring-2 ring-amber-50">
+            <Wrench size={20} strokeWidth={2.4} />
+          </span>
+        )}
+        {/* Иконка замены — нижний-правый угол. При ремонте видна всегда. */}
         <span
           className={cn(
             "absolute bottom-0 right-0 z-10 inline-flex h-6 w-6 items-center justify-center rounded-full text-white shadow-card-sm transition-opacity",
-            // При ремонте — кнопка-замена видна всегда (это нужное действие),
-            // иначе появляется на hover как раньше.
             inRepair
               ? "bg-amber-500 opacity-100"
               : "bg-blue-600 opacity-0 group-hover:opacity-100",

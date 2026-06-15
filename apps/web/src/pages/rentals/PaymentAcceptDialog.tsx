@@ -555,7 +555,14 @@ export function PaymentAcceptDialog({
   //   mode='amount' → вычисляется из amountInput (см. useEffect ниже).
   // В режиме days дефолт = 0 (оператор явно жмёт + или quick-pill),
   // если только не пришёл initialExtDays (drag-to-extend).
-  const extInputBase = Math.max(0, extInputOverride ?? 0);
+  // R1: продление прячем за тумблер. Выкл (по умолчанию) → блоки продления
+  // скрыты и extDays=0 (никакого начисления за продление), остаётся только
+  // оплата долга/просрочки. Вкл → весь функционал продления. Если пришёл
+  // initialExtDays (drag-to-extend на календаре) — тумблер сразу включён.
+  const [extendOn, setExtendOn] = useState<boolean>(
+    () => (initialExtDays ?? 0) > 0,
+  );
+  const extInputBase = extendOn ? Math.max(0, extInputOverride ?? 0) : 0;
   const extDays = extIsWeekly ? extInputBase * 7 : extInputBase;
   const extWeeks = extIsWeekly ? extInputBase : 0;
 
@@ -1576,8 +1583,42 @@ export function PaymentAcceptDialog({
             </div>
           )}
 
+          {/* R1: тумблер «Продлить аренду» — без него блоки продления скрыты
+              (обычная оплата долга), включаем — раскрываются. */}
+          {canExtend && (
+            <div className="flex items-center justify-between gap-2 border-b border-border px-5 py-3">
+              <div className="min-w-0">
+                <div className="text-[13px] font-bold text-ink">
+                  Продлить аренду
+                </div>
+                <div className="text-[11px] text-muted">
+                  {extendOn
+                    ? "выберите срок и условия ниже"
+                    : "включите, если клиент продлевает"}
+                </div>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={extendOn}
+                onClick={() => setExtendOn((v) => !v)}
+                title={extendOn ? "Не продлевать" : "Продлить аренду"}
+                className={cn(
+                  "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors",
+                  extendOn ? "bg-blue-600" : "bg-border",
+                )}
+              >
+                <span
+                  className={cn(
+                    "inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform",
+                    extendOn ? "translate-x-[22px]" : "translate-x-0.5",
+                  )}
+                />
+              </button>
+            </div>
+          )}
           {/* G2: блок продления + экипировки — только для активной аренды. */}
-          {canExtend && (<>
+          {canExtend && extendOn && (<>
           {/* ─── STEP 2: период продления ─────────────────────────────── */}
           <div className="border-b border-border px-5 py-3.5">
             <div className="mb-2.5 flex items-center gap-2">
