@@ -13,7 +13,6 @@ import {
   PhoneOff,
   Phone,
   PanelRightClose,
-  ThumbsUp,
   Plus,
   ShieldAlert,
   SquareParking,
@@ -47,7 +46,11 @@ import {
   useDeleteSticker,
   useRepinSticker,
 } from "@/lib/api/stickers";
-import { clientsKeys, useApiClients } from "@/lib/api/clients";
+import {
+  clientsKeys,
+  useApiClients,
+  useClientDebtSources,
+} from "@/lib/api/clients";
 import { queryClient } from "@/lib/queryClient";
 import { useApiScooters } from "@/lib/api/scooters";
 import { navigate } from "@/app/navigationStore";
@@ -59,7 +62,7 @@ import { AccordionSection } from "./rental-card/AccordionSection";
 import { CalendarPanel } from "./rental-card/CalendarPanel";
 import { DocsInline } from "./rental-card/DocsInline";
 import { InlineHistory } from "./rental-card/InlineHistory";
-import { CrossRentalDebtBanner } from "./rental-card/CrossRentalDebtBanner";
+import { ClientDebtBadge } from "./rental-card/ClientDebtBadge";
 import { RentalBodyBreakdown } from "./rental-card/RentalBodyBreakdown";
 import { SideDrawer } from "./rental-card/SideDrawer";
 import { useActivityTimeline } from "@/lib/api/activity";
@@ -431,6 +434,9 @@ export function RentalCard({
   const resetChain = useResetRentalChain();
   const isArchived = !!rental.archivedAt;
   const isCreator = me?.role === "creator";
+  // C2: источники сквозного долга клиента (ущерб с других аренд) — для
+  // значка-алёрта в блоке клиента. Долг текущей цепочки исключаем ниже.
+  const { data: clientDebtSources } = useClientDebtSources(rental.clientId);
 
   const { data: apiClients } = useApiClients();
   const client = useMemo(
@@ -1586,6 +1592,24 @@ export function RentalCard({
   const isCompletedWithDamage = effectiveStatus === "completed_damage";
   const canAcceptPayment = (isLive || isCompletedWithDamage) && !isArchived;
 
+  // C2: значок-алёрт о долге в блоке клиента вместо больших баннеров.
+  // crossDebtSources — долг по ДРУГИМ арендам (исключаем текущую цепочку,
+  // её ущерб = currentDamage=totalDebt и так в KPI «Долг»).
+  const crossDebtSources = (clientDebtSources ?? []).filter(
+    (s) => !chainIdsFull.includes(s.rentalId),
+  );
+  const debtBadgeNode = (
+    <ClientDebtBadge
+      crossSources={crossDebtSources}
+      currentDamage={totalDebt}
+      onClaim={
+        reportWithDebt ? () => setPreviewClaimId(reportWithDebt.id) : undefined
+      }
+      onPay={() => requestPayment(0)}
+      onOpenSource={openSourceRental}
+    />
+  );
+
   // v0.7.12: KPI-ряд (Срок/Просрочка · Долг · Эта аренда) вынесен в
   // переменную, чтобы рендерить его в разных местах: в обычном режиме —
   // в потоке body, в drawer-режиме — между секциями «Клиент» и «Скутер».
@@ -2181,51 +2205,11 @@ export function RentalCard({
           показывает сам блок скутера (жёлтый + ключ-оверлей + тултип),
           клик по блоку открывает замену. Не сдвигаем контент карточки. */}
 
-      {/* v0.5.2: баннер «Долг по ущербу» упрощён — реакция клиента
-          (Согласен/Не согласен) убрана полностью (заказчик: «досудебную
-          претензию печатают всегда, независимо от согласия»). Теперь:
-          • показывается долг + кнопка «Внести платёж»
-          • кнопка «Распечатать претензию» доступна всегда
-          • статус аренды никуда не уходит — оператор сам решит. */}
-      {totalDebt > 0 && reportWithDebt && (
-        <div className="flex flex-col gap-2 rounded-[12px] border-2 border-red-500 bg-red-soft/70 px-3 py-2 text-[13px] text-red-ink">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-start gap-2">
-              <AlertTriangle size={16} className="mt-0.5 shrink-0" />
-              <div className="min-w-0">
-                <div className="font-bold">
-                  Долг по ущербу:{" "}
-                  <span className="tabular-nums">{fmt(totalDebt)} ₽</span>
-                </div>
-                <div className="text-[11px] opacity-80">
-                  Всего по акту {fmt(reportWithDebt.total)} ₽, зачтено из залога{" "}
-                  {fmt(reportWithDebt.depositCovered)} ₽
-                  {reportWithDebt.paidSum > 0
-                    ? `, оплачено ${fmt(reportWithDebt.paidSum)} ₽`
-                    : ""}
-                  .
-                </div>
-              </div>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setPreviewClaimId(reportWithDebt.id)}
-                className="inline-flex items-center gap-1.5 rounded-[10px] border border-red-500 bg-white px-3 py-2 text-[12px] font-bold text-red-700 hover:bg-red-50"
-              >
-                Досудебная претензия
-              </button>
-              <button
-                type="button"
-                onClick={() => requestPayment(0)}
-                className="inline-flex items-center gap-1.5 rounded-[10px] bg-red-600 px-3 py-2 text-[12px] font-bold text-white hover:bg-red-700"
-              >
-                <Plus size={12} /> Внести платёж
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* C2: большой красный баннер «Долг по ущербу» убран. Долг по ущербу
+          (текущей аренды) + сквозной долг клиента теперь в компактном
+          значке-алёрте в блоке «Информация о клиенте» (ClientDebtBadge):
+          ховер показывает состав и действия (досудебная / внести платёж →
+          «Принять платёж»). Сумма долга также в KPI «Долг» с раскрытием. */}
       {/* v0.5.2: плашка «ущерб полностью оплачен» для завершённых аренд. */}
       {totalDebt === 0 &&
         reports.length > 0 &&
@@ -2256,43 +2240,10 @@ export function RentalCard({
           о клиенте» (см. блок accordion-секций ниже). */}
       {!drawerChrome && kpiStrip}
 
-      {/* F3: сквозной долг клиента по ДРУГИМ арендам (ущерб «переезжает» с
-          клиентом). Долг этой цепочки исключаем (он в KPI «Долг»). Клик —
-          открывает тело аренды-источника поверх (drawer-цепочка). */}
-      <CrossRentalDebtBanner
-        clientId={rental.clientId}
-        currentChainIds={chainIdsFull}
-        onOpenSource={openSourceRental}
-      />
-
-      {/*
-        v0.2.91: компактная панель платежа по ущербу для случая когда
-        клиент согласился (баннер скрыт). Долг виден в KPI «Долг», а
-        кнопка позволяет сразу внести очередной платёж в счёт погашения.
-      */}
-      {totalDebt > 0 &&
-        reportWithDebt &&
-        reportWithDebt.clientAgreement === "agreed" && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-[10px] border border-red-300 bg-red-soft/40 px-3 py-2 text-[12px] text-red-ink">
-          <div className="flex items-center gap-2">
-            <ThumbsUp size={13} className="text-green-700" />
-            <span>
-              <b>Клиент гасит ущерб.</b> Остаток долга{" "}
-              <b className="tabular-nums">{fmt(totalDebt)} ₽</b>
-              {reportWithDebt.paidSum > 0
-                ? ` (уже оплачено ${fmt(reportWithDebt.paidSum)} ₽)`
-                : ""}
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={() => requestPayment(0)}
-            className="inline-flex items-center gap-1.5 rounded-[10px] bg-red-600 px-3 py-1.5 text-[12px] font-bold text-white hover:bg-red-700"
-          >
-            <Plus size={12} /> Внести платёж по ущербу
-          </button>
-        </div>
-      )}
+      {/* C2: F3-баннер «Долг клиента по другим арендам» и плашка «Клиент
+          гасит ущерб» убраны — сквозной долг и текущий ущерб теперь в
+          значке-алёрте блока клиента (ClientDebtBadge) с ховером и
+          действиями через «Принять платёж». Не сдвигаем контент карточки. */}
 
       {/* v0.6.41: плашка «Пополнить залог» удалена — действие доступно
           через кнопку «Принять оплату» в шапке (одна точка входа). */}
@@ -2326,6 +2277,7 @@ export function RentalCard({
               onChangeEquipment={changeEquipmentHandler}
               onPayoutDeposit={handlePayoutDeposit}
               paidThisRental={paidIn}
+              debtBadge={debtBadgeNode}
             />
           </AccordionSection>
 

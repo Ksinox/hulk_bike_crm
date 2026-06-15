@@ -21,7 +21,7 @@
  *   - layout prop оставлен для совместимости (фактически всегда
  *     вертикальный сейчас).
  */
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import {
   Bike,
   Camera,
@@ -75,6 +75,7 @@ export function MasterBlock({
   onPayoutDeposit,
   section,
   paidThisRental,
+  debtBadge,
 }: {
   rental: Rental;
   client: ApiClient | null | undefined;
@@ -100,6 +101,9 @@ export function MasterBlock({
    *  RentalCard), а не lifetime клиента по всем арендам. Если не передан —
    *  fallback на clientStats.totalPaid (старое поведение). */
   paidThisRental?: number;
+  /** C2: значок-алёрт о долге клиента (ущерб этой аренды + сквозной долг).
+   *  Рендерится в строке KPI блока «Информация о клиенте». */
+  debtBadge?: ReactNode;
 }) {
   const equipmentJson = rental.equipmentJson ?? [];
   const clientPhoto = useClientPhoto(rental.clientId);
@@ -248,6 +252,9 @@ export function MasterBlock({
               <span>депозит · выдать</span>
             </button>
           )}
+          {/* C2: значок-алёрт о долге (ущерб + сквозной долг) — компактно,
+              детали и действия в ховере, без больших баннеров сверху. */}
+          {debtBadge}
         </div>
       </div>
     </div>
