@@ -21,7 +21,8 @@
  *   - layout prop оставлен для совместимости (фактически всегда
  *     вертикальный сейчас).
  */
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import {
   Bike,
   Camera,
@@ -76,6 +77,7 @@ export function MasterBlock({
   section,
   paidThisRental,
   debtBadge,
+  damageItems,
 }: {
   rental: Rental;
   client: ApiClient | null | undefined;
@@ -104,9 +106,36 @@ export function MasterBlock({
   /** C2: значок-алёрт о долге клиента (ущерб этой аренды + сквозной долг).
    *  Рендерится в строке KPI блока «Информация о клиенте». */
   debtBadge?: ReactNode;
+  /** R11: позиции зафиксированного ущерба (название + сумма) — для тултипа
+   *  «что сломано» при наведении на блок скутера в ремонте. */
+  damageItems?: { name: string; finalPrice: number; quantity?: number }[];
 }) {
   const equipmentJson = rental.equipmentJson ?? [];
   const clientPhoto = useClientPhoto(rental.clientId);
+
+  // R11: позиции акта ущерба — плоский список без привязки к предмету.
+  // Сопоставляем эвристически по названию: первое слово названия экипировки
+  // (≥3 букв) входит в название позиции. Названия экипировки (шлем/перчатки/
+  // дождевик) не пересекаются с деталями скутера (фара/масло/тормоз), поэтому
+  // ложных срабатываний почти нет; промах = «ничего не показали» (безопасно).
+  const allDamageItems = damageItems ?? [];
+  const damageKey = (name: string) => {
+    const w = name.trim().toLowerCase().split(/\s+/)[0] ?? "";
+    return w.length >= 3 ? w : "";
+  };
+  const matchEquipDamage = (equipName: string) => {
+    const key = damageKey(equipName);
+    if (!key) return [];
+    return allDamageItems.filter((d) => d.name.toLowerCase().includes(key));
+  };
+  // Ключи всех предметов экипировки — чтобы НЕ дублировать ущерб экипировки
+  // в тултипе скутера (он показывает только ремонт самого скутера).
+  const equipKeys = equipmentJson
+    .map((e) => damageKey(e.name))
+    .filter((k) => k.length > 0);
+  const scooterDamageItems = allDamageItems.filter(
+    (d) => !equipKeys.some((k) => d.name.toLowerCase().includes(k)),
+  );
 
   // C1: скутер в ремонте при живой аренде — несогласованное состояние.
   // Подсвечиваем сам блок скутера (жёлтый + ключ-оверлей + тултип), вместо
@@ -279,6 +308,7 @@ export function MasterBlock({
         fallbackModel={rental.model}
         onSwap={onSwapScooter}
         inRepair={scooterInRepair}
+        damageItems={scooterDamageItems}
       />
 
       {/* ПРАВО — ЭКИПИРОВКА */}
@@ -370,6 +400,7 @@ export function MasterBlock({
                     setPendingItem(null);
                   }}
                   onPreviewChange={setPendingItem}
+                  damageItems={matchEquipDamage(origIt.name)}
                 />
               );
             })}
@@ -646,6 +677,7 @@ export function MasterBlock({
                       setPendingItem(null);
                     }}
                     onPreviewChange={setPendingItem}
+                    damageItems={matchEquipDamage(origIt.name)}
                   />
                 );
               })}
@@ -855,6 +887,7 @@ function ScooterCompact({
   fallbackModel,
   onSwap,
   inRepair = false,
+  damageItems = [],
 }: {
   scooter: ApiScooter | null;
   fallbackName: string;
@@ -862,8 +895,25 @@ function ScooterCompact({
   onSwap: () => void;
   /** C1: скутер в ремонте — блок жёлтый, в углу ключ, тултип-подсказка. */
   inRepair?: boolean;
+  /** R11: позиции ущерба — показываем «что сломано» при наведении. */
+  damageItems?: { name: string; finalPrice: number; quantity?: number }[];
 }) {
   const { data: models = [] } = useApiScooterModels();
+  // R11: ховер-поповер с неисправностями (порталом, чтобы не клипался).
+  const ref = useRef<HTMLButtonElement>(null);
+  const [dmgOpen, setDmgOpen] = useState(false);
+  const [dmgPos, setDmgPos] = useState<{ top: number; left: number } | null>(
+    null,
+  );
+  const showDmg = () => {
+    if (!inRepair || damageItems.length === 0) return;
+    const r = ref.current?.getBoundingClientRect();
+    if (r) {
+      const vw = window.innerWidth;
+      setDmgPos({ top: r.bottom + 6, left: Math.max(8, Math.min(r.left, vw - 300)) });
+    }
+    setDmgOpen(true);
+  };
   const model = scooter
     ? scooter.modelId
       ? models.find((m) => m.id === scooter.modelId)
@@ -877,8 +927,11 @@ function ScooterCompact({
 
   return (
     <button
+      ref={ref}
       type="button"
       onClick={onSwap}
+      onMouseEnter={showDmg}
+      onMouseLeave={() => setDmgOpen(false)}
       title={
         inRepair
           ? `${displayName} в ремонте — нажмите, чтобы заменить скутер`
@@ -895,6 +948,43 @@ function ScooterCompact({
           : "border-border bg-surface hover:border-blue-300",
       )}
     >
+      {/* R11: ховер-поповер «что сломано» — позиции из акта ущерба. */}
+      {dmgOpen &&
+        dmgPos &&
+        createPortal(
+          <div
+            style={{
+              position: "fixed",
+              top: dmgPos.top,
+              left: dmgPos.left,
+              minWidth: 240,
+              maxWidth: 320,
+              zIndex: 1000,
+            }}
+            className="pointer-events-none rounded-xl border border-amber-200 bg-surface p-3 shadow-card-lg"
+          >
+            <div className="mb-1.5 inline-flex items-center gap-1.5 text-[12px] font-bold text-amber-800">
+              <Wrench size={13} /> Неисправности по акту
+            </div>
+            <div className="flex flex-col gap-1">
+              {damageItems.map((d, i) => (
+                <div
+                  key={`${d.name}-${i}`}
+                  className="flex items-center justify-between gap-2 text-[12px]"
+                >
+                  <span className="min-w-0 flex-1 truncate text-ink">
+                    {d.name}
+                    {(d.quantity ?? 1) > 1 ? ` ×${d.quantity}` : ""}
+                  </span>
+                  <span className="shrink-0 font-bold tabular-nums text-ink">
+                    {fmt(d.finalPrice * (d.quantity ?? 1))} ₽
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>,
+          document.body,
+        )}
       {/* R8: ключ — БЕЛЫЙ на янтарном (как иконка замены), крупно, в правом
           верхнем углу блока. */}
       {inRepair && (

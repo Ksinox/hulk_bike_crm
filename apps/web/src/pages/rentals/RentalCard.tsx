@@ -644,6 +644,9 @@ export function RentalCard({
   const damageReports = useChainDamageReports(chainIdsFull);
   const reports = damageReports.data;
   const totalDebt = reports.reduce((s, r) => s + r.debt, 0);
+  // R11: позиции ущерба (из всех актов цепочки) — для тултипа «что сломано»
+  // при наведении на блок скутера в ремонте.
+  const damageItemsAll = reports.flatMap((r) => r.items ?? []);
   // v0.3.8: серверная сводка по долгу — просрочка/ручной/ущерб + лента
   // событий (для таба «История долгов»). Источник правды для KPI «Долг».
   const debtQ = useRentalDebt(rental.id);
@@ -2306,6 +2309,7 @@ export function RentalCard({
               onSwapScooter={handleSwapScooter}
               onChangeEquipment={changeEquipmentHandler}
               onPayoutDeposit={handlePayoutDeposit}
+              damageItems={damageItemsAll}
             />
           </AccordionSection>
 

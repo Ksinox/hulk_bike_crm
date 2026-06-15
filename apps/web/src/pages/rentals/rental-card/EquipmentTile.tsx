@@ -12,10 +12,21 @@
  *
  * size: "sm" (60px, карточка компактная) | "md" (72px, остальное).
  */
-import { Repeat, Plus } from "lucide-react";
+import { useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { Repeat, Plus, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { EquipmentInlinePicker, EquipmentThumb } from "./EquipmentInlinePicker";
 import type { Rental } from "@/lib/mock/rentals";
+
+// R11: позиция ущерба по этой экипировке (название + сумма).
+export type TileDamageItem = {
+  name: string;
+  finalPrice: number;
+  quantity?: number;
+};
+
+const rub = (n: number) => n.toLocaleString("ru-RU");
 
 // Элемент для ОТОБРАЖЕНИЯ тайла (itemId может отсутствовать у легаси-записей).
 type EquipItem = {
@@ -91,6 +102,7 @@ export function EquipmentTile({
   onPreviewChange,
   localEquipment,
   onLocalChange,
+  damageItems = [],
 }: {
   rental: Rental;
   item: EquipItem;
@@ -110,18 +122,81 @@ export function EquipmentTile({
   // аренды/equipmentChangeAsync. Не заданы — обычный режим (карточка аренды).
   localEquipment?: EquipItem[];
   onLocalChange?: (next: EquipItem[]) => void;
+  // R11: позиции ущерба, сопоставленные этой экипировке по названию. Когда
+  // не пусто — на тайле жёлтый значок ⚠, по наведению — поповер «что сломано».
+  damageItems?: TileDamageItem[];
 }) {
   const s = SIZE[size];
+  const hasDamage = damageItems.length > 0;
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [dmgPos, setDmgPos] = useState<{ top: number; left: number } | null>(
+    null,
+  );
+  const showDmg = () => {
+    if (!hasDamage) return;
+    const r = wrapRef.current?.getBoundingClientRect();
+    if (r) {
+      const vw = window.innerWidth;
+      setDmgPos({
+        top: r.bottom + 6,
+        left: Math.max(8, Math.min(r.left - 90, vw - 300)),
+      });
+    }
+  };
   return (
     <div
+      ref={wrapRef}
       className={cn(
         "relative flex flex-col items-center",
         wrapperClassName,
         showingPending && "animate-pulse opacity-80",
       )}
-      onMouseEnter={() => canSwap && onHover(idx)}
-      onMouseLeave={() => onHover(null)}
+      onMouseEnter={() => {
+        if (canSwap) onHover(idx);
+        showDmg();
+      }}
+      onMouseLeave={() => {
+        onHover(null);
+        setDmgPos(null);
+      }}
     >
+      {/* R11: поповер «что повреждено по этой экипировке» (порталом). */}
+      {hasDamage &&
+        dmgPos &&
+        createPortal(
+          <div
+            style={{
+              position: "fixed",
+              top: dmgPos.top,
+              left: dmgPos.left,
+              minWidth: 220,
+              maxWidth: 300,
+              zIndex: 1000,
+            }}
+            className="pointer-events-none rounded-xl border border-amber-200 bg-surface p-3 shadow-card-lg"
+          >
+            <div className="mb-1.5 inline-flex items-center gap-1.5 text-[12px] font-bold text-amber-800">
+              <AlertTriangle size={13} /> Повреждения · {item.name}
+            </div>
+            <div className="flex flex-col gap-1">
+              {damageItems.map((d, i) => (
+                <div
+                  key={`${d.name}-${i}`}
+                  className="flex items-center justify-between gap-2 text-[12px]"
+                >
+                  <span className="min-w-0 flex-1 truncate text-ink">
+                    {d.name}
+                    {(d.quantity ?? 1) > 1 ? ` ×${d.quantity}` : ""}
+                  </span>
+                  <span className="shrink-0 font-bold tabular-nums text-ink">
+                    {rub(d.finalPrice * (d.quantity ?? 1))} ₽
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>,
+          document.body,
+        )}
       <button
         type="button"
         onClick={() => {
@@ -146,6 +221,12 @@ export function EquipmentTile({
           <EquipmentThumb item={item} />
         </span>
         <PriceBadge item={item} />
+        {/* R11: значок «есть повреждение по акту» — жёлтый ⚠ слева сверху. */}
+        {hasDamage && (
+          <span className="pointer-events-none absolute left-0.5 top-0.5 inline-flex h-[18px] w-[18px] items-center justify-center rounded-full bg-amber-500 text-white shadow-card-sm ring-2 ring-amber-50">
+            <AlertTriangle size={10} strokeWidth={2.4} />
+          </span>
+        )}
         {/* hover → иконка Repeat в правом нижнем углу */}
         {canSwap && isHover && !isOpen && (
           <span className="pointer-events-none absolute bottom-0.5 right-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-white shadow-card-sm">
