@@ -24,6 +24,33 @@ export function useApiClient(id: number | null) {
   });
 }
 
+/** Источник незакрытого долга клиента по аренде (F3): какая аренда, скутер,
+ *  период, сколько и за что. Сейчас — долг по ущербу (переезжает с клиентом). */
+export type ClientDebtSource = {
+  rentalId: number;
+  scooterName: string;
+  status: string;
+  archived: boolean;
+  startIso: string;
+  endPlannedIso: string;
+  type: "damage";
+  amount: number;
+  label: string;
+};
+
+export function useClientDebtSources(clientId: number | null | undefined) {
+  return useQuery({
+    queryKey: [...clientsKeys.byId(clientId ?? 0), "debt-sources"] as const,
+    queryFn: () =>
+      api
+        .get<{ items: ClientDebtSource[] }>(
+          `/api/clients/${clientId}/debt-sources`,
+        )
+        .then((r) => r.items),
+    enabled: clientId != null,
+  });
+}
+
 /** Тело POST /api/clients — подмножество ApiClient */
 export type CreateClientInput = {
   name: string;

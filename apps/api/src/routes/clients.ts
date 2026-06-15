@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/index.js";
-import { clients, debtorPayments, debtors } from "../db/schema.js";
+import { clients, debtorPayments, debtors, scooters } from "../db/schema.js";
 import { logActivity } from "../services/activityLog.js";
 import {
   loadStatementBundle,
@@ -230,6 +230,125 @@ export async function clientsRoutes(app: FastifyInstance) {
       debtorCases: debtorMap.get(id) ?? [],
     };
   });
+
+  // GET /api/clients/:id/debt-sources — ИСТОЧНИКИ незакрытого долга клиента
+  // по арендам (F3): по какой аренде, какой скутер/период, сколько и за что.
+  // Сейчас покрываем долг по УЩЕРБУ (он «переезжает» с клиентом после возврата
+  // и не виден в активных арендах). Совпадает с формулой unpaidDamageDebt:
+  // суммируем по арендам клиента, кроме тех, где уже заведено дело должника.
+  app.get<{ Params: { id: string } }>(
+    "/:id/debt-sources",
+    async (req, reply) => {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id))
+        return reply.code(400).send({ error: "bad id" });
+      const raw = await db.execute(sql`
+        SELECT
+          dr.id AS "drId",
+          dr.rental_id AS "rentalId",
+          dr.total::int AS "total",
+          dr.deposit_covered::int AS "depositCovered",
+          dr.note AS "note",
+          r.scooter_id AS "scooterId",
+          r.status AS "status",
+          r.archived_at AS "archivedAt",
+          r.start_at AS "startAt",
+          r.end_planned_at AS "endPlannedAt",
+          COALESCE((
+            SELECT SUM(p.amount) FROM payments p
+             WHERE p.damage_report_id = dr.id
+               AND p.type = 'damage' AND p.paid = true
+          ), 0)::int AS "paidDamage"
+        FROM damage_reports dr
+        JOIN rentals r ON r.id = dr.rental_id
+        WHERE r.client_id = ${id}
+          AND NOT EXISTS (
+            SELECT 1 FROM debtors db WHERE db.related_rental_id = r.id
+          )
+      `);
+      type Row = {
+        drId: number;
+        rentalId: number;
+        total: number;
+        depositCovered: number;
+        note: string | null;
+        scooterId: number | null;
+        status: string;
+        archivedAt: string | null;
+        startAt: string | Date;
+        endPlannedAt: string | Date;
+        paidDamage: number;
+      };
+      const list = ((raw as unknown as { rows?: Row[] }).rows ??
+        (raw as unknown as Row[])) as Row[];
+      // Группируем по аренде (на одной аренде может быть несколько актов).
+      const byRental = new Map<
+        number,
+        {
+          rentalId: number;
+          scooterId: number | null;
+          status: string;
+          archived: boolean;
+          startAt: string | Date;
+          endPlannedAt: string | Date;
+          amount: number;
+          notes: string[];
+        }
+      >();
+      for (const d of Array.isArray(list) ? list : []) {
+        const debt = Math.max(
+          0,
+          d.total - d.depositCovered - d.paidDamage,
+        );
+        if (debt <= 0) continue;
+        const ex = byRental.get(d.rentalId) ?? {
+          rentalId: d.rentalId,
+          scooterId: d.scooterId,
+          status: d.status,
+          archived: !!d.archivedAt,
+          startAt: d.startAt,
+          endPlannedAt: d.endPlannedAt,
+          amount: 0,
+          notes: [],
+        };
+        ex.amount += debt;
+        if (d.note && d.note.trim()) ex.notes.push(d.note.trim());
+        byRental.set(d.rentalId, ex);
+      }
+      const items = [...byRental.values()];
+      const scIds = items
+        .map((i) => i.scooterId)
+        .filter((x): x is number => typeof x === "number");
+      const scs = scIds.length
+        ? await db
+            .select({ id: scooters.id, name: scooters.name })
+            .from(scooters)
+            .where(inArray(scooters.id, scIds))
+        : [];
+      const scName = new Map(scs.map((s) => [s.id, s.name]));
+      return {
+        items: items.map((i) => ({
+          rentalId: i.rentalId,
+          scooterName: i.scooterId
+            ? (scName.get(i.scooterId) ?? `#${i.scooterId}`)
+            : "—",
+          status: i.status,
+          archived: i.archived,
+          startIso:
+            typeof i.startAt === "string"
+              ? i.startAt
+              : new Date(i.startAt).toISOString(),
+          endPlannedIso:
+            typeof i.endPlannedAt === "string"
+              ? i.endPlannedAt
+              : new Date(i.endPlannedAt).toISOString(),
+          type: "damage" as const,
+          amount: i.amount,
+          label: i.notes.length ? `Ущерб: ${i.notes.join("; ")}` : "Ущерб",
+        })),
+      };
+    },
+  );
 
   // POST /api/clients
   app.post("/", async (req, reply) => {

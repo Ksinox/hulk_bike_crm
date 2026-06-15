@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Bike, ChevronRight, Maximize2 } from "lucide-react";
+import { consumePending, onNavigate } from "@/app/navigationStore";
 import { useRentals, useArchivedRentals } from "@/pages/rentals/rentalsStore";
 import { RentalCard } from "@/pages/rentals/RentalCard";
 import { useBillingPeriodRevenue } from "@/lib/useRevenue";
@@ -105,6 +106,20 @@ export function MobileRentals() {
   // Внутри карточки аренды (drill-in) кнопку «+ Аренда» прячем — она там лишняя.
   usePageFab("Аренда", () => setNewOpen(true), openId != null);
 
+  // navigate({route:"rentals", rentalId}) — открыть конкретную карточку
+  // (напр. клик по плашке сквозного долга F3 → аренда-источник). Покрываем
+  // оба случая: вкладка уже открыта (onNavigate) и только что смонтирована
+  // (consumePending — pending живёт до прочтения).
+  useEffect(() => {
+    const p = consumePending("rentals");
+    if (p?.rentalId != null) setOpenId(p.rentalId);
+    return onNavigate((req) => {
+      if (req.route === "rentals" && req.rentalId != null) {
+        setOpenId(req.rentalId);
+      }
+    });
+  }, []);
+
   const today = todayRu();
   const todayMs = ddmmyyyyToMs(today);
 
@@ -160,7 +175,11 @@ export function MobileRentals() {
     { id: "completed", label: "Архив" },
   ];
 
-  const openRental = source.find((r) => r.id === openId) ?? null;
+  // Ищем открываемую аренду в обоих списках (активные + архив): источник
+  // сквозного долга (F3) может быть архивной арендой, а фильтр стоять на
+  // «Активные» — без этого карточка-источник не открылась бы.
+  const openRental =
+    [...active, ...archived].find((r) => r.id === openId) ?? null;
 
   return (
     // pb-20: нижний отступ, чтобы плавающая кнопка (FAB) не перекрывала

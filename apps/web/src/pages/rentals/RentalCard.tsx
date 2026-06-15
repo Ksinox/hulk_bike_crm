@@ -60,6 +60,7 @@ import { AccordionSection } from "./rental-card/AccordionSection";
 import { CalendarPanel } from "./rental-card/CalendarPanel";
 import { DocsInline } from "./rental-card/DocsInline";
 import { InlineHistory } from "./rental-card/InlineHistory";
+import { CrossRentalDebtBanner } from "./rental-card/CrossRentalDebtBanner";
 import { SideDrawer } from "./rental-card/SideDrawer";
 import { useActivityTimeline } from "@/lib/api/activity";
 import { HistoryTab, type HistoryFilter } from "./RentalCardTabs";
@@ -411,9 +412,17 @@ export function RentalCard({
   // вернёт inDrawer=false, поведение сохранится прежнее (локальная
   // ClientQuickView через setClientQuickView).
   const drawer = useDashboardDrawer();
+  const isMobile = useIsMobile();
   const openClient = (clientId: number) => {
     if (drawer.inDrawer) drawer.openClientChain(clientId);
     else setClientQuickView(true);
+  };
+  // F3: открыть тело аренды-источника долга. Десктоп — drawer-цепочка (грузит
+  // по id, в т.ч. архивные, работает и на стр. Аренды, и в дашборд-дровере).
+  // Мобилка — навигация на вкладку Аренды (там MobileRentals откроет карточку).
+  const openSourceRental = (rentalId: number) => {
+    if (isMobile) navigate({ route: "rentals", rentalId });
+    else drawer.openRentalChain(rentalId);
   };
   const { data: me } = useMe();
   const deleteRental = useDeleteRental();
@@ -2286,6 +2295,15 @@ export function RentalCard({
           режиме рендерится здесь; в drawer-режиме — после секции «Информация
           о клиенте» (см. блок accordion-секций ниже). */}
       {!drawerChrome && kpiStrip}
+
+      {/* F3: сквозной долг клиента по ДРУГИМ арендам (ущерб «переезжает» с
+          клиентом). Долг этой цепочки исключаем (он в KPI «Долг»). Клик —
+          открывает тело аренды-источника поверх (drawer-цепочка). */}
+      <CrossRentalDebtBanner
+        clientId={rental.clientId}
+        currentChainIds={chainIdsFull}
+        onOpenSource={openSourceRental}
+      />
 
       {/*
         v0.2.91: компактная панель платежа по ущербу для случая когда
