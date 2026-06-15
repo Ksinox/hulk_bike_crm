@@ -908,22 +908,8 @@ export function RentalCard({
     .reduce((sum, s) => sum + s.days, 0);
   const debtTotal =
     pending + overdueBalance + damageBalance + manualBalance + parkingBalance;
-  const debtParts: string[] = [];
-  if (pending > 0) debtParts.push(`не оплачено ${fmt(pending)} ₽`);
-  if (overdueRentBalance > 0)
-    debtParts.push(`аренда ${fmt(overdueRentBalance)} ₽`);
-  if (overdueEquipBalance > 0)
-    debtParts.push(`экип. ${fmt(overdueEquipBalance)} ₽`);
-  if (overdueFineBalance > 0) debtParts.push(`штраф ${fmt(overdueFineBalance)} ₽`);
-  if (overdueBalance > 0 && overdueDaysBalance + overdueFineBalance === 0)
-    debtParts.push(`просрочка ${fmt(overdueBalance)} ₽`);
-  if (damageBalance > 0) debtParts.push(`ущерб ${fmt(damageBalance)} ₽`);
-  if (equipmentManualBalance > 0)
-    debtParts.push(`за экип. ${fmt(equipmentManualBalance)} ₽`);
-  if (otherManualBalance > 0)
-    debtParts.push(`ручной ${fmt(otherManualBalance)} ₽`);
-  if (parkingBalance > 0) debtParts.push(`паркинг ${fmt(parkingBalance)} ₽`);
-  const debtHint = debtTotal === 0 ? "нет долгов" : debtParts.join(" + ");
+  // C4: длинная строка-состав долга (debtParts/debtHint) убрана из KPI —
+  // состав теперь только в hover-поповере «Долг». Карточка не растягивается.
 
   const handleAction = async (id: string) => {
     if (id === "extend") return setExtendOpen(true);
@@ -1714,7 +1700,10 @@ export function RentalCard({
       <KpiCard
         label="Долг"
         value={debtTotal > 0 ? `${fmt(debtTotal)} ₽` : "0 ₽"}
-        hint={debtHint}
+        // C4: при долге показываем ТОЛЬКО сумму (без длинной строки состава —
+        // она растягивала карточку). Состав — в hover-поповере / нижнем
+        // сниппете на мобиле. Когда долга нет — короткий «нет долгов».
+        hint={debtTotal > 0 ? undefined : "нет долгов"}
         accent={debtTotal > 0 ? "red" : "muted"}
         popover={
           debtTotal > 0 ? (
