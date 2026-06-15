@@ -532,16 +532,16 @@ export function PaymentAcceptDialog({
     0,
     rentalDepositOriginal - rentalDepositCurrent,
   );
-  const canTopupSecurity = !rental.depositItem && securityShortage > 0;
+  // R10: пополнить залог можно ВСЕГДА, когда залог денежный (не предмет) —
+  // не только при недостаче. Сумма НЕ ограничена (разным клиентам берут
+  // разный залог; бэк сам поднимет depositOriginal до новой суммы).
+  const canTopupSecurity = !rental.depositItem;
   const [topupSecurity, setTopupSecurity] = useState<boolean>(false);
   const [topupAmountStr, setTopupAmountStr] = useState<string>(() =>
-    canTopupSecurity ? String(securityShortage) : "",
+    securityShortage > 0 ? String(securityShortage) : "",
   );
   const topupAmount = topupSecurity
-    ? Math.min(
-        securityShortage,
-        Math.max(0, parseInt(topupAmountStr.replace(/\D/g, "") || "0", 10)),
-      )
+    ? Math.max(0, parseInt(topupAmountStr.replace(/\D/g, "") || "0", 10))
     : 0;
 
   // v0.6.7: списание с залога аренды убрано из UI — функциональность
@@ -2007,72 +2007,88 @@ export function PaymentAcceptDialog({
           />
           </>)}
 
-          {/* v0.6.11: «Пополнение залога» — отдельная секция, видна
-              когда залог денежный и rental.deposit < depositOriginal. */}
+          {/* R10: «Пополнить залог» — тумблер (а не галочка), без «+» и без
+              лимита суммы. Доступно всегда при денежном залоге: можно вернуть
+              недостачу ИЛИ поднять залог на любую сумму. */}
           {canTopupSecurity && (
             <div className="border-b border-border px-5 py-3">
-              <div className="mb-2 flex items-center gap-2">
-                <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-amber-500 text-[11px] font-bold text-white">
-                  <Wallet size={11} />
-                </span>
-                <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
-                  Пополнение залога
-                </div>
-                <div className="ml-auto text-[11px] text-muted">
-                  Залог{" "}
-                  <span className="font-semibold text-ink-2 tabular-nums">
-                    {fmt(rentalDepositCurrent)} ₽
-                  </span>{" "}
-                  из{" "}
-                  <span className="font-semibold text-ink-2 tabular-nums">
-                    {fmt(rentalDepositOriginal)} ₽
-                  </span>{" "}
-                  — не хватает{" "}
-                  <span className="font-semibold text-red-ink tabular-nums">
-                    {fmt(securityShortage)} ₽
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-500 text-white">
+                    <Wallet size={13} />
                   </span>
+                  <div className="min-w-0">
+                    <div className="text-[13px] font-bold text-ink">
+                      Пополнить залог
+                    </div>
+                    <div className="text-[11px] text-muted">
+                      {securityShortage > 0 ? (
+                        <>
+                          залог{" "}
+                          <span className="font-semibold tabular-nums text-ink-2">
+                            {fmt(rentalDepositCurrent)}
+                          </span>{" "}
+                          из {fmt(rentalDepositOriginal)} ₽ · не хватает{" "}
+                          <span className="font-semibold tabular-nums text-red-ink">
+                            {fmt(securityShortage)} ₽
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          текущий залог{" "}
+                          <span className="font-semibold tabular-nums text-ink-2">
+                            {fmt(rentalDepositCurrent)} ₽
+                          </span>{" "}
+                          · можно поднять на любую сумму
+                        </>
+                      )}
+                    </div>
+                  </div>
                 </div>
-              </div>
-              <label className="flex items-center gap-3">
-                <input
-                  type="checkbox"
-                  checked={topupSecurity}
-                  onChange={(e) => {
-                    setTopupSecurity(e.target.checked);
-                    if (e.target.checked && !topupAmountStr) {
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={topupSecurity}
+                  onClick={() => {
+                    const next = !topupSecurity;
+                    setTopupSecurity(next);
+                    if (next && !topupAmountStr && securityShortage > 0) {
                       setTopupAmountStr(String(securityShortage));
                     }
                   }}
-                  className="h-3.5 w-3.5 accent-amber-500"
-                />
-                <span className="text-[12px] font-semibold text-ink-2">
-                  Пополнить залог
-                </span>
-                <span className="inline-flex items-stretch overflow-hidden rounded-[10px] border border-border">
-                  <span className="bg-surface-soft px-2 py-1 text-[12px] font-bold text-muted">
-                    +
+                  className={cn(
+                    "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors",
+                    topupSecurity ? "bg-amber-500" : "bg-border",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform",
+                      topupSecurity ? "translate-x-[22px]" : "translate-x-0.5",
+                    )}
+                  />
+                </button>
+              </div>
+              {topupSecurity && (
+                <div className="mt-2.5 flex items-center justify-end gap-2">
+                  <span className="text-[11px] text-muted">
+                    внести в залог
                   </span>
                   <input
                     type="text"
                     inputMode="numeric"
                     value={topupAmountStr}
-                    disabled={!topupSecurity}
+                    placeholder={
+                      securityShortage > 0 ? String(securityShortage) : "сумма"
+                    }
                     onChange={(e) =>
                       setTopupAmountStr(e.target.value.replace(/\D/g, ""))
                     }
-                    className={cn(
-                      "w-[100px] bg-white px-2 py-1 text-[14px] font-bold tabular-nums text-ink outline-none",
-                      !topupSecurity && "text-muted-2",
-                    )}
+                    className="w-28 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-right text-[14px] font-bold tabular-nums text-ink focus:border-amber-500 focus:outline-none"
                   />
-                  <span className="flex items-center bg-surface-soft px-2 text-[12px] font-bold text-muted">
-                    ₽
-                  </span>
-                </span>
-                <span className="text-[11px] text-muted-2">
-                  макс {fmt(securityShortage)} ₽
-                </span>
-              </label>
+                  <span className="text-[12px] font-semibold text-muted">₽</span>
+                </div>
+              )}
             </div>
           )}
 

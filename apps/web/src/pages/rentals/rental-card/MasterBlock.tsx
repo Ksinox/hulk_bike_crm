@@ -895,6 +895,13 @@ function ScooterCompact({
           : "border-border bg-surface hover:border-blue-300",
       )}
     >
+      {/* R8: ключ — БЕЛЫЙ на янтарном (как иконка замены), крупно, в правом
+          верхнем углу блока. */}
+      {inRepair && (
+        <span className="pointer-events-none absolute right-2 top-2 z-20 inline-flex h-10 w-10 items-center justify-center rounded-full bg-amber-500 text-white shadow-card ring-2 ring-amber-50">
+          <Wrench size={20} strokeWidth={2.4} />
+        </span>
+      )}
       {/* Метаданные — СЛЕВА (текст) */}
       <div className="relative z-10 flex-1 min-w-0">
         <ScooterNumberTitle name={displayName} model={displayModel} size="sm" />
@@ -927,13 +934,6 @@ function ScooterCompact({
           />
         ) : (
           <Bike size={40} strokeWidth={1.5} className="text-muted-2" />
-        )}
-        {/* R4: при ремонте — КРУПНЫЙ ключ «на колесе» (нижний-левый угол фото,
-            где заднее колесо). Сразу читается «скутер в ремонте». */}
-        {inRepair && (
-          <span className="pointer-events-none absolute bottom-0 left-0 z-20 inline-flex h-10 w-10 items-center justify-center rounded-full bg-amber-400 text-amber-950 shadow-card ring-2 ring-amber-50">
-            <Wrench size={20} strokeWidth={2.4} />
-          </span>
         )}
         {/* Иконка замены — нижний-правый угол. При ремонте видна всегда. */}
         <span

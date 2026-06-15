@@ -1606,7 +1606,8 @@ export function RentalCard({
       )}
     >
       {(() => {
-        let label = "Срок";
+        // R9: метка «Осталось» вместо «Срок» — единообразно с активным кейсом.
+        let label = "Осталось";
         const totalDays = isExtended
           ? chainRentals.reduce((s, r) => s + (r.days || 0), 0)
           : rental.days;
