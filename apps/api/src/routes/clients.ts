@@ -245,11 +245,11 @@ export async function clientsRoutes(app: FastifyInstance) {
       const raw = await db.execute(sql`
         SELECT
           dr.id AS "drId",
-          dr.rental_id AS "rentalId",
+          dr.rental_id::int AS "rentalId",
           dr.total::int AS "total",
           dr.deposit_covered::int AS "depositCovered",
           dr.note AS "note",
-          r.scooter_id AS "scooterId",
+          r.scooter_id::int AS "scooterId",
           r.status AS "status",
           r.archived_at AS "archivedAt",
           r.start_at AS "startAt",
