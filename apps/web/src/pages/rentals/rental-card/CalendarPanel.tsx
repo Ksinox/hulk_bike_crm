@@ -17,6 +17,7 @@ import {
   MIN_RENTAL_DAYS,
   periodForDays,
   ratePeriodForDays,
+  TARIFF_PERIOD_LABEL,
   type Rental,
   type RentalStatus,
   type TariffPeriod,
@@ -89,6 +90,7 @@ export function CalendarPanel({
   canEditPeriod = true,
   lastBranch,
   previewRate,
+  rateForTariff,
   calendarBoxRef,
   hideCalendar,
   resetSignal,
@@ -152,6 +154,13 @@ export function CalendarPanel({
    * «Изменить период» и при фиксации нового sum.
    */
   previewRate?: (days: number) => number;
+  /**
+   * F1: ставка ₽/сут по ВЫБРАННОМУ тарифу (short/week/month) из сетки модели.
+   * Резолвится в RentalCard (resolveRate(rental, period)). Когда задана — в
+   * режиме «Изменить период» показываем переключатель тарифа: оператор может
+   * вручную выбрать ступень, сумма и остаток пересчитываются вживую.
+   */
+  rateForTariff?: (t: Exclude<TariffPeriod, "day">) => number;
   /** v0.6.13: ref на обёртку DragExtendCalendar — нужен для FLIP-измерения
    *  начальной позиции при подъёме календаря в floating-режим. */
   calendarBoxRef?: Ref<HTMLDivElement>;
@@ -204,9 +213,15 @@ export function CalendarPanel({
   const [editMode, setEditMode] = useState(false);
   // Выбранная новая дата возврата (ISO YYYY-MM-DD). null до входа в режим.
   const [editEndIso, setEditEndIso] = useState<string | null>(null);
+  // F1: ручной выбор тарифа в «Изменить период». null = авто (по числу дней).
+  const [tariffOverride, setTariffOverride] = useState<Exclude<
+    TariffPeriod,
+    "day"
+  > | null>(null);
   const exitEdit = () => {
     setEditMode(false);
     setEditEndIso(null);
+    setTariffOverride(null);
   };
   const enterEdit = () => {
     // Взаимоисключение: вход в «Изменить период» гасит паркинг.
@@ -217,6 +232,7 @@ export function CalendarPanel({
     // показывается приглушённым (editDim), а «Зафиксировать» стартует
     // неактивной. Новую дату возврата оператор кликает прямо на календаре.
     setEditEndIso(null);
+    setTariffOverride(null);
   };
 
   // v0.8.x: продлённая аренда — правим ТОЛЬКО последнюю ветку. Зона «было» на
@@ -267,20 +283,29 @@ export function CalendarPanel({
       // Дни последней ветки: новый возврат − end1 (зажато снизу нулём — на
       // end1 ветка схлопывается в 0 дней = продление отменено).
       const branchDays = Math.max(0, signedDiffDays(lb.end1Iso, editEndIso));
-      const branchRate = dailyRate; // ставка продления, без ре-тарификации
+      // F1: ставка ветки — текущая дневная (без ре-тарификации) ЛИБО выбранный
+      // вручную тариф из сетки модели.
+      const branchRate =
+        tariffOverride && rateForTariff
+          ? rateForTariff(tariffOverride)
+          : dailyRate;
       const branchSum = (branchRate + equipmentDaily) * branchDays;
       const days = rental.days - lb.branchDays + branchDays;
       const sum = rental.sum - lb.currentBranchAmount + branchSum;
-      // tariffPeriod для всей аренды считаем по ИТОГОВЫМ дням (поле rental).
-      const tariffPeriod = periodForDays(
-        Math.max(MIN_RENTAL_DAYS, days),
-      ) as Exclude<TariffPeriod, "day">;
+      // tariffPeriod для всей аренды считаем по ИТОГОВЫМ дням (поле rental),
+      // либо берём вручную выбранный тариф.
+      const tariffPeriod = (tariffOverride ??
+        periodForDays(Math.max(MIN_RENTAL_DAYS, days))) as Exclude<
+        TariffPeriod,
+        "day"
+      >;
       return {
         days,
         rate: branchRate,
         sum,
         tariffPeriod,
-        ratePeriod: ratePeriodForDays(Math.max(MIN_RENTAL_DAYS, days)),
+        ratePeriod:
+          tariffOverride ?? ratePeriodForDays(Math.max(MIN_RENTAL_DAYS, days)),
         branch: { days: branchDays, sum: branchSum, rate: branchRate },
       };
     }
@@ -292,15 +317,30 @@ export function CalendarPanel({
     // дневную ставку аренды (не нормализуем к каталожной — иначе открытие
     // без правок показывало бы ложную разницу и стирало возможную скидку).
     // При смене ступени — берём ставку новой ступени из каталога.
-    const rate = newTier === oldTier ? dailyRate : previewRate(days);
+    // F1: авто-ставка (как раньше) ЛИБО вручную выбранный тариф из сетки.
+    const autoRate = newTier === oldTier ? dailyRate : previewRate(days);
+    const rate =
+      tariffOverride && rateForTariff ? rateForTariff(tariffOverride) : autoRate;
     const sum = (rate + equipmentDaily) * days;
-    const tariffPeriod = periodForDays(days) as Exclude<TariffPeriod, "day">;
-    return { days, rate, sum, tariffPeriod, ratePeriod: newTier, branch: null };
+    const tariffPeriod = (tariffOverride ?? periodForDays(days)) as Exclude<
+      TariffPeriod,
+      "day"
+    >;
+    return {
+      days,
+      rate,
+      sum,
+      tariffPeriod,
+      ratePeriod: tariffOverride ?? newTier,
+      branch: null,
+    };
   }, [
     editMode,
     endIso,
     editEndIso,
     previewRate,
+    rateForTariff,
+    tariffOverride,
     equipmentDaily,
     rental.days,
     rental.sum,
@@ -691,6 +731,54 @@ export function CalendarPanel({
                   {fmtNum(Math.abs(editPreview.sum - rental.sum))} ₽
                 </div>
               )}
+            </div>
+          )}
+          {/* F1: переключатель тарифа — оператор вручную выбирает ступень
+              (₽/сут из сетки модели); дни/сумма/остаток пересчитываются вживую,
+              а «куда уходит остаток» спрашивается на «Зафиксировать». */}
+          {editPreview && rateForTariff && (
+            <div className="mt-2 border-t border-blue-200/70 pt-2">
+              <div className="mb-1 flex items-center gap-1.5">
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-blue-700/80">
+                  Тариф
+                </span>
+                {tariffOverride && (
+                  <button
+                    type="button"
+                    onClick={() => setTariffOverride(null)}
+                    className="text-[10px] font-semibold text-blue-700/70 underline-offset-2 hover:underline"
+                  >
+                    сбросить (авто)
+                  </button>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {(["short", "week", "month"] as const).map((t) => {
+                  const active = editPreview.ratePeriod === t;
+                  const r = rateForTariff(t);
+                  return (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => setTariffOverride(active ? null : t)}
+                      title={`Тариф «${TARIFF_PERIOD_LABEL[t]}» — ${r} ₽/сут`}
+                      className={cn(
+                        "flex flex-col items-start rounded-lg border px-2 py-1 text-left transition-colors",
+                        active
+                          ? "border-blue-500 bg-blue-100 text-blue-800 ring-1 ring-blue-300"
+                          : "border-border bg-surface text-ink-2 hover:border-blue-300",
+                      )}
+                    >
+                      <span className="text-[10px] font-semibold leading-tight">
+                        {TARIFF_PERIOD_LABEL[t]}
+                      </span>
+                      <span className="text-[11px] font-bold tabular-nums leading-tight">
+                        {fmtNum(r)} ₽/сут
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>

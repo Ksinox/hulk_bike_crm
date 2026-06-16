@@ -1328,6 +1328,10 @@ export function RentalCard({
   // периода считали ставку из того же источника, что создание/продление.
   const previewRate = (days: number): number =>
     resolveRate(rental, ratePeriodForDays(Math.max(MIN_RENTAL_DAYS, days)));
+  // F1: ставка ₽/сут по ВЫБРАННОМУ тарифу (ручной переключатель в «Изменить
+  // период»). Тот же резолвер, но по тарифной ступени, а не по числу дней.
+  const rateForTariff = (t: "short" | "week" | "month"): number =>
+    resolveRate(rental, t);
 
   // v0.8.x: «Изменить период» для ПРОДЛЁННЫХ аренд — правка ТОЛЬКО последней
   // ветки продления (анти-фрод: прошлые, уже оплаченные ветки не двигаем).
@@ -2296,6 +2300,7 @@ export function RentalCard({
             canEditPeriod={canEditPeriod}
             lastBranch={lastBranch}
             previewRate={previewRate}
+            rateForTariff={rateForTariff}
             resetSignal={onRequestPayment ? paymentResetSignal : calendarResetSignal}
             initialExtDays={
               (onRequestPayment ? paymentExtDays : paymentPrefillExtDays) ||
@@ -2629,6 +2634,7 @@ export function RentalCard({
               canEditPeriod={canEditPeriod}
               lastBranch={lastBranch}
               previewRate={previewRate}
+              rateForTariff={rateForTariff}
               // v0.7.3: при parent-managed Payment календарь синхронизируется
               // с состоянием в Rentals (число дней + сигнал сброса); иначе —
               // с локальным fallback-состоянием карточки.
