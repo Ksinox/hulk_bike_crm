@@ -63,7 +63,6 @@ import { AccordionSection } from "./rental-card/AccordionSection";
 import { CalendarPanel } from "./rental-card/CalendarPanel";
 import { DocsInline } from "./rental-card/DocsInline";
 import { InlineHistory } from "./rental-card/InlineHistory";
-import { ClientDebtBadge } from "./rental-card/ClientDebtBadge";
 import { RentalBodyBreakdown } from "./rental-card/RentalBodyBreakdown";
 import { SideDrawer } from "./rental-card/SideDrawer";
 import { useActivityTimeline } from "@/lib/api/activity";
@@ -1596,12 +1595,15 @@ export function RentalCard({
   const crossDebtSources = (clientDebtSources ?? []).filter(
     (s) => !chainIdsFull.includes(s.rentalId),
   );
-  const debtBadgeNode = (
-    <ClientDebtBadge
-      crossSources={crossDebtSources}
-      onOpenSource={openSourceRental}
-    />
-  );
+  // Сквозной долг (с прошлых аренд) — подмешиваем в KPI «Долг» со звёздочкой,
+  // а в поповере раскрываем отдельной секцией. combinedDebt = долг этой
+  // аренды + сквозной.
+  const crossDebtTotal = crossDebtSources.reduce((s, x) => s + x.amount, 0);
+  const combinedDebt = debtTotal + crossDebtTotal;
+  // Значок-алёрт ⚠ убран как дубль: сквозной долг теперь виден в KPI «Долг»
+  // (со звёздочкой + раскрытие) и строкой в «Финансовой информации» (с
+  // переходом в аренду-источник). crossDebtSources используются там.
+  const debtBadgeNode = null;
 
   // v0.7.12: KPI-ряд (Срок/Просрочка · Долг · Эта аренда) вынесен в
   // переменную, чтобы рендерить его в разных местах: в обычном режиме —
@@ -1710,18 +1712,37 @@ export function RentalCard({
           здесь только рендер + hover-поповер с детальным составом. */}
       <KpiCard
         label="Долг"
-        value={debtTotal > 0 ? `${fmt(debtTotal)} ₽` : "0 ₽"}
+        // Подмешиваем сквозной долг: значение = долг этой аренды + с прошлых.
+        // Звёздочка сигналит, что в сумме есть долг с других аренд.
+        value={
+          combinedDebt > 0
+            ? `${fmt(combinedDebt)} ₽${crossDebtTotal > 0 ? "*" : ""}`
+            : "0 ₽"
+        }
         // C4: при долге показываем ТОЛЬКО сумму (без длинной строки состава —
         // она растягивала карточку). Состав — в hover-поповере / нижнем
         // сниппете на мобиле. Когда долга нет — короткий «нет долгов».
-        hint={debtTotal > 0 ? undefined : "нет долгов"}
-        accent={debtTotal > 0 ? "red" : "muted"}
+        hint={
+          combinedDebt > 0
+            ? crossDebtTotal > 0
+              ? "* вкл. прошлые аренды"
+              : undefined
+            : "нет долгов"
+        }
+        accent={combinedDebt > 0 ? "red" : "muted"}
         popover={
-          debtTotal > 0 ? (
+          combinedDebt > 0 ? (
             <div className="space-y-1">
               <div className="font-bold text-ink">
-                Состав долга — {fmt(debtTotal)} ₽
+                Состав долга — {fmt(combinedDebt)} ₽
               </div>
+              {/* Долг ЭТОЙ аренды. Подзаголовок показываем только когда есть и
+                  сквозной долг — иначе и так понятно. */}
+              {debtTotal > 0 && crossDebtTotal > 0 && (
+                <div className="font-semibold text-ink-2">
+                  Эта аренда — {fmt(debtTotal)} ₽
+                </div>
+              )}
               {pending > 0 && (
                 <div>не оплачено: <b>{fmt(pending)} ₽</b></div>
               )}
@@ -1749,6 +1770,28 @@ export function RentalCard({
               )}
               {parkingBalance > 0 && (
                 <div>паркинг: <b>{fmt(parkingBalance)} ₽</b></div>
+              )}
+              {/* Сквозной долг (с прошлых аренд) — отдельной секцией под *. */}
+              {crossDebtTotal > 0 && (
+                <div className="mt-1.5 border-t border-border pt-1.5">
+                  <div className="font-semibold text-amber-700">
+                    * С прошлых аренд — {fmt(crossDebtTotal)} ₽
+                  </div>
+                  {crossDebtSources.map((s) => (
+                    <div
+                      key={s.rentalId}
+                      className="flex items-center justify-between gap-2"
+                    >
+                      <span className="min-w-0 flex-1 truncate text-muted">
+                        {s.scooterName} · #{String(s.rentalId).padStart(4, "0")}
+                      </span>
+                      <b className="shrink-0 tabular-nums">{fmt(s.amount)} ₽</b>
+                    </div>
+                  ))}
+                  <div className="mt-0.5 text-[10px] text-muted-2">
+                    переезжает за клиентом · принять в «Принять платёж»
+                  </div>
+                </div>
               )}
             </div>
           ) : undefined
@@ -2315,9 +2358,9 @@ export function RentalCard({
             icon={<Wallet size={15} className="text-muted-2" />}
             defaultOpen={false}
             badge={
-              debtTotal > 0 ? (
+              combinedDebt > 0 ? (
                 <span className="rounded-full bg-red-soft px-2 py-0.5 text-[11px] font-bold text-red-ink tabular-nums">
-                  {fmt(debtTotal)} ₽
+                  {fmt(combinedDebt)} ₽{crossDebtTotal > 0 ? "*" : ""}
                 </span>
               ) : undefined
             }

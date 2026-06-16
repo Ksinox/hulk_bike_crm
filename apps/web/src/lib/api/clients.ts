@@ -51,6 +51,38 @@ export function useClientDebtSources(clientId: number | null | undefined) {
   });
 }
 
+/**
+ * Принять оплату по СКВОЗНОМУ долгу клиента (ущерб с прошлых аренд). Сумму
+ * бэкенд распределяет по незакрытым актам (старые первыми). Инвалидируем всё,
+ * что показывает долг: карточка клиента, источники долга, платежи, агрегаты.
+ */
+export function usePayClientDamageDebt() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: {
+      clientId: number;
+      amount: number;
+      method?: "cash" | "card" | "transfer";
+    }) =>
+      api.post<{ paid: number; applied: { drId: number; amount: number }[] }>(
+        `/api/clients/${args.clientId}/pay-damage-debt`,
+        { amount: args.amount, method: args.method },
+      ),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: clientsKeys.all });
+      qc.invalidateQueries({
+        queryKey: [...clientsKeys.byId(vars.clientId), "debt-sources"],
+      });
+      qc.invalidateQueries({ queryKey: ["damage-reports"] });
+      qc.invalidateQueries({ queryKey: ["payments"] });
+      qc.invalidateQueries({ queryKey: ["rental-debt"] });
+      qc.invalidateQueries({ queryKey: ["debt-aggregate"] });
+      qc.invalidateQueries({ queryKey: ["rentals"] });
+      qc.invalidateQueries({ queryKey: ["activity"] });
+    },
+  });
+}
+
 /** Тело POST /api/clients — подмножество ApiClient */
 export type CreateClientInput = {
   name: string;

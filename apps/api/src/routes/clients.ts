@@ -2,7 +2,14 @@ import type { FastifyInstance } from "fastify";
 import { eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/index.js";
-import { clients, debtorPayments, debtors, scooters } from "../db/schema.js";
+import {
+  clients,
+  damageReports,
+  debtorPayments,
+  debtors,
+  payments,
+  scooters,
+} from "../db/schema.js";
 import { logActivity } from "../services/activityLog.js";
 import {
   loadStatementBundle,
@@ -350,6 +357,95 @@ export async function clientsRoutes(app: FastifyInstance) {
           label: i.notes.length ? `Ущерб: ${i.notes.join("; ")}` : "Ущерб",
         })),
       };
+    },
+  );
+
+  // POST /api/clients/:id/pay-damage-debt — принять оплату по СКВОЗНОМУ долгу
+  // клиента (ущерб с прошлых аренд, который «переехал» за клиентом). Сумму
+  // распределяем по незакрытым актам клиента (старые — первыми), записывая
+  // damage-платежи. Фильтр актов — тот же, что в debt-sources (кроме аренд с
+  // активным делом должника). Рубль-в-рубль: долг акта = total − depositCovered
+  // − Σ(damage-платежи), формулы не меняем — просто гасим существующий долг.
+  const PayDamageDebtBody = z.object({
+    amount: z.number().int().positive(),
+    method: z.enum(["cash", "card", "transfer"]).optional(),
+  });
+  app.post<{ Params: { id: string } }>(
+    "/:id/pay-damage-debt",
+    async (req, reply) => {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id))
+        return reply.code(400).send({ error: "bad id" });
+      const parsed = PayDamageDebtBody.safeParse(req.body);
+      if (!parsed.success)
+        return reply
+          .code(400)
+          .send({ error: "validation", issues: parsed.error.issues });
+      const method = parsed.data.method ?? "cash";
+      let remaining = parsed.data.amount;
+      const raw = await db.execute(sql`
+        SELECT dr.id AS "drId", dr.rental_id::int AS "rentalId",
+               dr.total::int AS "total",
+               dr.deposit_covered::int AS "depositCovered",
+               COALESCE((
+                 SELECT SUM(p.amount) FROM payments p
+                  WHERE p.damage_report_id = dr.id
+                    AND p.type = 'damage' AND p.paid = true
+               ), 0)::int AS "paidDamage"
+        FROM damage_reports dr
+        JOIN rentals r ON r.id = dr.rental_id
+        WHERE r.client_id = ${id}
+          AND NOT EXISTS (
+            SELECT 1 FROM debtors db WHERE db.related_rental_id = r.id
+              AND db.stage::text NOT LIKE 'closed_%'
+          )
+        ORDER BY dr.created_at ASC, dr.id ASC
+      `);
+      type Row = {
+        drId: number;
+        rentalId: number;
+        total: number;
+        depositCovered: number;
+        paidDamage: number;
+      };
+      const rows = ((raw as unknown as { rows?: Row[] }).rows ??
+        (raw as unknown as Row[])) as Row[];
+      const userId =
+        (req as unknown as { user?: { userId?: number } }).user?.userId ?? null;
+      const applied: { drId: number; rentalId: number; amount: number }[] = [];
+      for (const row of Array.isArray(rows) ? rows : []) {
+        if (remaining <= 0) break;
+        const debt = Math.max(
+          0,
+          row.total - row.depositCovered - row.paidDamage,
+        );
+        if (debt <= 0) continue;
+        const pay = Math.min(debt, remaining);
+        await db.insert(payments).values({
+          rentalId: row.rentalId,
+          type: "damage",
+          amount: pay,
+          method,
+          paid: true,
+          paidAt: new Date(),
+          note: "Погашение долга по ущербу (с прошлых аренд)",
+          receivedByUserId: userId,
+          damageReportId: row.drId,
+        });
+        applied.push({ drId: row.drId, rentalId: row.rentalId, amount: pay });
+        remaining -= pay;
+      }
+      const paidTotal = parsed.data.amount - remaining;
+      if (paidTotal > 0) {
+        await logActivity(req, {
+          entity: "client",
+          entityId: id,
+          action: "payment",
+          summary: `Погашение сквозного долга по ущербу ${paidTotal} ₽`,
+          meta: { applied, method },
+        });
+      }
+      return { paid: paidTotal, applied };
     },
   );
 
