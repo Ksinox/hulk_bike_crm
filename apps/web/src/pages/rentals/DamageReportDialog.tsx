@@ -784,6 +784,20 @@ export function DamageReportDialog({
                   {fmt(debt)} ₽
                 </span>
               </div>
+              {/* F2: остаток после зачёта залога — мягкий долг клиента. Едет
+                  за ним (виден в делах и в новых арендах), досудебка — отдельно
+                  и по желанию (не обязательна). */}
+              {debt > 0 && !depositIsItem && (
+                <div className="flex items-start gap-1.5 rounded-[10px] border border-amber-200 bg-amber-50/70 px-3 py-2 text-[11.5px] leading-snug text-amber-900">
+                  <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+                  <span>
+                    Остаток <b>{fmt(debt)} ₽</b> станет <b>мягким долгом клиента</b> —
+                    поедет за ним: будет виден в его делах и в новых арендах, пока
+                    не погасит. Досудебную претензию формировать <b>необязательно</b>
+                    — это отдельный шаг.
+                  </span>
+                </div>
+              )}
               <textarea
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
@@ -821,6 +835,18 @@ export function DamageReportDialog({
                   <Wrench size={12} className="text-muted-2" />
                   Отправить скутер в ремонт после сохранения
                 </label>
+              )}
+              {/* F2: если скутер уходит в ремонт, аренда остаётся без скутера —
+                  подсказываем заменить его, чтобы клиент продолжил кататься. */}
+              {!isEdit && sendToRepair && rental.status === "active" && (
+                <div className="flex items-start gap-1.5 rounded-[10px] border border-blue-200 bg-blue-50/70 px-3 py-2 text-[11.5px] leading-snug text-blue-900">
+                  <Wrench size={13} className="mt-0.5 shrink-0" />
+                  <span>
+                    Скутер уедет в ремонт — на этой аренде он станет недоступен.
+                    Чтобы клиент продолжил, <b>замените скутер</b>: в карточке аренды
+                    нажмите на блок скутера → «Заменить».
+                  </span>
+                </div>
               )}
             </div>
 
