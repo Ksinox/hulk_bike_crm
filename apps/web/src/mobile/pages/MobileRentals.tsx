@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { Bike, ChevronRight, Maximize2 } from "lucide-react";
 import { consumePending, onNavigate } from "@/app/navigationStore";
-import { useRentals, useArchivedRentals } from "@/pages/rentals/rentalsStore";
+import {
+  useRentals,
+  useArchivedRentals,
+  useCurrentPeriodSums,
+} from "@/pages/rentals/rentalsStore";
 import { RentalCard } from "@/pages/rentals/RentalCard";
 import { useBillingPeriodRevenue } from "@/lib/useRevenue";
 import { MobileRevenueScreen } from "./MobileRevenueScreen";
@@ -168,6 +172,10 @@ export function MobileRentals() {
       .sort((a, b) => b.id - a.id);
   }, [source, filter, search, clientById, today, todayMs]);
 
+  // F5: «Сумма» строки = «Эта аренда» (текущий период), как в карточке и
+  // десктоп-списке. Один и тот же computeCurrentPeriod.
+  const periodSums = useCurrentPeriodSums(filtered);
+
   const chips: ChipOption<Filter>[] = [
     { id: "active", label: "Активные", count: counts.act },
     { id: "overdue", label: "Просрочка", count: counts.over },
@@ -228,6 +236,7 @@ export function MobileRentals() {
                 rental={r}
                 client={c}
                 todayMs={todayMs}
+                currentPeriodSum={periodSums.get(r.id) ?? r.sum}
                 onClick={() => setOpenId(r.id)}
                 onCall={() =>
                   callClient(c?.name ?? "Клиент", [c?.phone, c?.extraPhone])
@@ -285,12 +294,14 @@ function RentalRow({
   rental,
   client,
   todayMs,
+  currentPeriodSum,
   onClick,
   onCall,
 }: {
   rental: Rental;
   client: ApiClient | null;
   todayMs: number;
+  currentPeriodSum: number;
   onClick: () => void;
   onCall: () => void;
 }) {
@@ -329,7 +340,7 @@ function RentalRow({
         </div>
         <div className="shrink-0 text-right">
           <div className="text-[14px] font-bold tabular-nums text-ink">
-            {rub(rental.sum)} ₽
+            {rub(currentPeriodSum)} ₽
           </div>
           <div className="text-[11px] text-muted-2">
             #{String(rental.id).padStart(4, "0")}

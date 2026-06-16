@@ -46,6 +46,7 @@ import { MiniStickers } from "@/components/StickerStack";
 import { promptDialog } from "@/lib/toast";
 import { fileUrl } from "@/lib/files";
 import type { RentalsViewMode } from "./rentalsViewMode";
+import { useCurrentPeriodSums } from "./rentalsStore";
 
 function fmt(n: number) {
   return n.toLocaleString("ru-RU");
@@ -173,6 +174,8 @@ type Row = {
   hasDebt: boolean;
   rightSum: number;
   pendingRent: number;
+  /** F5: «Эта аренда» (текущий период) — то же, что KPI в карточке. */
+  currentPeriodSum: number;
   danger: boolean;
   onParking: boolean;
   parkingDays: number;
@@ -293,6 +296,9 @@ export function RentalsList({
   const { data: debtAgg } = useDebtAggregate();
   const { data: parkingAll = [] } = useParkingSessions();
   const unreachableSet = useUnreachableSet();
+  // F5: «Сумма аренды» = «Эта аренда» из карточки (текущий период), не
+  // накопительная rental.sum. Один и тот же computeCurrentPeriod.
+  const periodSums = useCurrentPeriodSums(items);
 
   // Локальная сортировка только для табличного режима.
   const [sort, setSort] = useState<{ col: SortCol; dir: "asc" | "desc" } | null>(
@@ -376,6 +382,7 @@ export function RentalsList({
         hasDebt,
         rightSum: hasDebt ? displayDebt : pendingRent,
         pendingRent,
+        currentPeriodSum: periodSums.get(r.id) ?? r.sum,
         danger: isOverdue || hasDebt,
         // v0.8.5: бейдж 🅿 — если в ТЕКУЩЕЙ аренде (этой связке) есть
         // паркинг (любой, не только сейчас активный). Прошлые паркинги
@@ -388,7 +395,7 @@ export function RentalsList({
         unreachable: unreachableSet.has(r.clientId),
       };
     });
-  }, [items, apiClients, apiScooters, models, debtAgg, parkingAll, unreachableSet]);
+  }, [items, apiClients, apiScooters, models, debtAgg, parkingAll, unreachableSet, periodSums]);
 
   const sortedRows = useMemo<Row[]>(() => {
     if (!sort) return rows;
@@ -410,7 +417,7 @@ export function RentalsList({
         case "sum":
           return (a.rightSum - b.rightSum) * dir;
         case "rentSum":
-          return ((a.rental.sum ?? 0) - (b.rental.sum ?? 0)) * dir;
+          return (a.currentPeriodSum - b.currentPeriodSum) * dir;
         case "status":
           return (
             (STATUS_LABEL[a.effStatus] ?? a.effStatus).localeCompare(
@@ -698,9 +705,10 @@ function RentalTableRow({
           )}
         </td>
       )}
-      {/* v0.8.15: «Сумма аренды» — сколько стоит/оплачена аренда (rental.sum). */}
+      {/* F5: «Сумма аренды» = «Эта аренда» из карточки (текущий период),
+          а не накопительная rental.sum по всем продлениям. */}
       <td className="px-4 py-5 text-right tabular-nums whitespace-nowrap font-semibold text-ink-2">
-        {fmt(row.rental.sum)} ₽
+        {fmt(row.currentPeriodSum)} ₽
       </td>
       {/* «Долг» — задолженность (просрочка/ущерб/паркинг/неоплачено). */}
       <td className="px-4 py-5 text-right tabular-nums whitespace-nowrap">

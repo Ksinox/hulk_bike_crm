@@ -650,6 +650,99 @@ export function getRentalChainIds(
   return result;
 }
 
+/**
+ * v0.9.x: «Эта аренда» — оплата за ТЕКУЩИЙ (последний) период цепочки.
+ * Единый источник истины для KPI «Эта аренда» в карточке и колонки
+ * «Сумма аренды» в списке (F5). Раньше список показывал rental.sum
+ * (накопительную по всем продлениям) — расходилось с карточкой.
+ *
+ *   rentPart      = сумма последнего «периодного» rent-платежа
+ *                   (базовый/продление; НЕ ручной долг и НЕ выкуп просрочки)
+ *                   либо rental.sum, если периодных платежей ещё нет.
+ *   surchargePart = доплаты ТЕКУЩЕГО периода (не-период rent-платежи,
+ *                   проведённые с начала последнего периода).
+ *   total         = rentPart + surchargePart  ← это и есть «Эта аренда».
+ *
+ * Классификация по заметке — та же, что у ревизора (reconcile).
+ * chainPayments — UI-платежи цепочки (см. useChainPayments / toUiPayment),
+ * с датой в формате «дд.мм.гггг».
+ */
+export function computeCurrentPeriod(
+  chainPayments: Payment[],
+  rental: Pick<Rental, "sum">,
+): { total: number; rentPart: number; surchargePart: number; extendCount: number } {
+  const rentPays = chainPayments.filter((p) => p.type === "rent");
+  const isManualNote = (n?: string | null) => /ручн[а-яё]*\s+долг/i.test(n ?? "");
+  const isOverdueNote = (n?: string | null) => /просрочк/i.test(n ?? "");
+  const isPeriodPay = (p: { note?: string | null }) =>
+    !isManualNote(p.note) && !isOverdueNote(p.note);
+  const isExtNote = (n?: string | null) => /продлени[ея]/i.test(n ?? "");
+  const payTs = (s?: string): number => {
+    const m = (s ?? "").match(
+      /^(\d{2})\.(\d{2})\.(\d{4})(?:[ ,]+(\d{1,2}):(\d{2}))?/,
+    );
+    if (!m) return 0;
+    return new Date(
+      +m[3]!,
+      +m[2]! - 1,
+      +m[1]!,
+      m[4] ? +m[4] : 0,
+      m[5] ? +m[5] : 0,
+    ).getTime();
+  };
+  const byDate = (
+    a: { date?: string; id?: number },
+    b: { date?: string; id?: number },
+  ) => payTs(a.date) - payTs(b.date) || (a.id ?? 0) - (b.id ?? 0);
+  const periodPays = rentPays.filter(isPeriodPay);
+  const extendCount = periodPays.filter((p) => isExtNote(p.note)).length;
+  const lastPeriodPay = periodPays.length
+    ? [...periodPays].sort(byDate)[periodPays.length - 1]!
+    : null;
+  const rentPart = lastPeriodPay ? lastPeriodPay.amount : rental.sum;
+  const periodTs = lastPeriodPay ? payTs(lastPeriodPay.date) : 0;
+  const surchargePart = rentPays
+    .filter((p) => !isPeriodPay(p) && payTs(p.date) >= periodTs)
+    .reduce((s, p) => s + (p.amount ?? 0), 0);
+  return { total: rentPart + surchargePart, rentPart, surchargePart, extendCount };
+}
+
+/**
+ * F5: карта rentalId → «Эта аренда» (текущий период) для строк списка.
+ * Считает ровно как карточка: цепочка → её rent-платежи → последний период
+ * + доплаты периода. Платежи берём одним bulk-запросом (useApiPayments),
+ * цепочки — из active+archived. Ключ — id переданной аренды (любого сегмента
+ * цепочки); значение одинаково для всей цепочки, кроме fallback rental.sum,
+ * поэтому считаем по конкретной строке.
+ */
+export function useCurrentPeriodSums(rentalsForRows: Rental[]): Map<number, number> {
+  const paymentsQ = useApiPayments();
+  const active = useRentals();
+  const archived = useArchivedRentals();
+  return useMemo(() => {
+    const all = [...active, ...archived];
+    const byId = new Map(all.map((r) => [r.id, r] as const));
+    const byRental = new Map<number, import("@/lib/api/payments").ApiPayment[]>();
+    for (const p of paymentsQ.data ?? []) {
+      const arr = byRental.get(p.rentalId);
+      if (arr) arr.push(p);
+      else byRental.set(p.rentalId, [p]);
+    }
+    const out = new Map<number, number>();
+    for (const r of rentalsForRows) {
+      const chainIds = getRentalChainIds(r.id, all).filter((id) => {
+        const x = byId.get(id);
+        return !x || !x.archivedBy;
+      });
+      const chainPays = chainIds
+        .flatMap((id) => byRental.get(id) ?? [])
+        .map(toUiPayment);
+      out.set(r.id, computeCurrentPeriod(chainPays, r).total);
+    }
+    return out;
+  }, [rentalsForRows, paymentsQ.data, active, archived]);
+}
+
 export function useRentalsByClient(clientId: number): Rental[] {
   const rentals = useRentals();
   return useMemo(

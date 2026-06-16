@@ -86,6 +86,7 @@ import {
 import { useRentalParking, useEndParking } from "@/lib/api/parking";
 import { RentalActionsMenu, type MenuAction } from "./RentalActionsMenu";
 import {
+  computeCurrentPeriod,
   getRentalChainIds,
   patchRental,
   useChainPayments,
@@ -1758,46 +1759,16 @@ export function RentalCard({
         // с заметкой «Оплата ручного долга») ПОДМЕНЯЛА собой период:
         // показывало 1500 (доплату) вместо аренды за период. Теперь период
         // и доплаты разделены (та же классификация, что у ревизора).
-        const rentPays = chainPayments.filter((p) => p.type === "rent");
-        // Доплаты (не «новый период»): ручной долг и выкуп просрочки.
-        const isManualNote = (n?: string | null) =>
-          /ручн[а-яё]*\s+долг/i.test(n ?? "");
-        const isOverdueNote = (n?: string | null) => /просрочк/i.test(n ?? "");
-        const isPeriodPay = (p: { note?: string | null }) =>
-          !isManualNote(p.note) && !isOverdueNote(p.note);
-        const isExtNote = (n?: string | null) => /продлени[ея]/i.test(n ?? "");
-        // Дата платежа из useChainPayments — русская «дд.мм.гггг[ чч:мм]».
-        // Парсим в сортируемое число (лексикографически она не сортируется).
-        const payTs = (s?: string): number => {
-          const m = (s ?? "").match(
-            /^(\d{2})\.(\d{2})\.(\d{4})(?:[ ,]+(\d{1,2}):(\d{2}))?/,
-          );
-          if (!m) return 0;
-          return new Date(
-            +m[3]!,
-            +m[2]! - 1,
-            +m[1]!,
-            m[4] ? +m[4] : 0,
-            m[5] ? +m[5] : 0,
-          ).getTime();
-        };
-        const byDate = (
-          a: { date?: string; id?: number },
-          b: { date?: string; id?: number },
-        ) => payTs(a.date) - payTs(b.date) || (a.id ?? 0) - (b.id ?? 0);
-        const periodPays = rentPays.filter(isPeriodPay);
-        const extendCount = periodPays.filter((p) => isExtNote(p.note)).length;
-        // Якорь текущего периода — последний базовый/продление платёж.
-        const lastPeriodPay = periodPays.length
-          ? [...periodPays].sort(byDate)[periodPays.length - 1]!
-          : null;
-        const rentPart = lastPeriodPay ? lastPeriodPay.amount : rental.sum;
-        const periodTs = lastPeriodPay ? payTs(lastPeriodPay.date) : 0;
-        // Доплаты текущего периода — не-период rent-платежи с его начала.
-        const surchargePart = rentPays
-          .filter((p) => !isPeriodPay(p) && payTs(p.date) >= periodTs)
-          .reduce((s, p) => s + (p.amount ?? 0), 0);
-        const thisRentalTotal = rentPart + surchargePart;
+        // v0.9.x: единый источник истины — computeCurrentPeriod (та же
+        // функция питает колонку «Сумма аренды» в списке, F5). Ранее логика
+        // жила здесь инлайном; вынесена в rentalsStore, чтобы карточка и
+        // список НИКОГДА не расходились.
+        const {
+          total: thisRentalTotal,
+          rentPart,
+          surchargePart,
+          extendCount,
+        } = computeCurrentPeriod(chainPayments, rental);
         const deposit = rental.deposit ?? 0;
         const hint = extendCount > 0 ? `продлений ${extendCount}` : undefined;
         // C5: дни ТЕКУЩЕГО периода (не всей аренды!) — выводим из суммы периода
