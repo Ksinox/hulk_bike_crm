@@ -38,12 +38,21 @@ import {
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
 import { api } from "@/lib/api";
-import { useApiClients } from "@/lib/api/clients";
+import {
+  useApiClients,
+  useClientDebtSources,
+  usePayClientDamageDebt,
+} from "@/lib/api/clients";
 import { useApiPayments } from "@/lib/api/payments";
 import { useRentalDebt, equipmentDebtPortion } from "@/lib/api/debt";
 import { useRentalParking, unpaidParkingTotal } from "@/lib/api/parking";
 import { SquareParking } from "lucide-react";
-import { extendInplaceAsync } from "./rentalsStore";
+import {
+  extendInplaceAsync,
+  getRentalChainIds,
+  useRentals,
+  useArchivedRentals,
+} from "./rentalsStore";
 import { EquipmentTile, EquipmentAddTile } from "./rental-card/EquipmentTile";
 import type { Rental } from "@/lib/mock/rentals";
 import type { PaymentMethod } from "@/lib/mock/rentals";
@@ -509,6 +518,68 @@ export function PaymentAcceptDialog({
   const debtRemainAfter = Math.max(0, totalDebt - paidDebtNow);
   // dueAmount теперь = сколько по долгу гасим СЕЙЧАС + паркинг (а не весь долг).
   const dueAmount = paidDebtNow + parkingDue;
+
+  // ── Сквозной долг клиента: ущерб с ПРОШЛЫХ аренд (F3) ──
+  // Долг по ущербу «переезжает» за клиентом. В «Принять платёж» его не было
+  // видно — оператор не мог его погасить. Показываем отдельным блоком и
+  // принимаем оплату через /clients/:id/pay-damage-debt. Долг ТЕКУЩЕЙ цепочки
+  // исключаем — он уже учтён в totalDebt (damageBalance).
+  const { data: clientDebtSources = [] } = useClientDebtSources(rental.clientId);
+  const activeRentalsAll = useRentals();
+  const archivedRentalsAll = useArchivedRentals();
+  const currentChainIds = useMemo(
+    () =>
+      getRentalChainIds(rental.id, [
+        ...activeRentalsAll,
+        ...archivedRentalsAll,
+      ]),
+    [rental.id, activeRentalsAll, archivedRentalsAll],
+  );
+  const crossSources = useMemo(
+    () =>
+      clientDebtSources.filter((s) => !currentChainIds.includes(s.rentalId)),
+    [clientDebtSources, currentChainIds],
+  );
+  const crossDebtTotal = crossSources.reduce((s, x) => s + x.amount, 0);
+  const [crossPayStr, setCrossPayStr] = useState("");
+  const crossPayNow =
+    crossPayStr.trim() === ""
+      ? crossDebtTotal
+      : Math.max(
+          0,
+          Math.min(
+            crossDebtTotal,
+            parseInt(crossPayStr.replace(/\D/g, "") || "0", 10),
+          ),
+        );
+  const [crossMethod, setCrossMethod] = useState<"cash" | "card" | "transfer">(
+    "cash",
+  );
+  const payCrossDebt = usePayClientDamageDebt();
+  const handlePayCrossDebt = async () => {
+    if (crossPayNow <= 0 || payCrossDebt.isPending) return;
+    try {
+      const res = await payCrossDebt.mutateAsync({
+        clientId: rental.clientId,
+        amount: crossPayNow,
+        method: crossMethod,
+      });
+      toast.success(
+        "Долг с прошлых аренд погашен",
+        `Принято ${fmt(res.paid)} ₽${
+          res.paid < crossDebtTotal
+            ? ` · останется ${fmt(crossDebtTotal - res.paid)} ₽`
+            : ""
+        }`,
+      );
+      setCrossPayStr("");
+    } catch (e) {
+      toast.error(
+        "Не удалось принять оплату по долгу",
+        (e as Error).message ?? "",
+      );
+    }
+  };
 
   // Источники
   // v0.6.7: депозит управляется одним checkbox'ом в footer'е (как в
@@ -1428,6 +1499,87 @@ export function PaymentAcceptDialog({
         </div>
 
         <div className="flex-1 overflow-y-auto scrollbar-thin text-[13px] text-ink-2">
+          {/* ─── Сквозной долг (ущерб с прошлых аренд) — отдельным блоком,
+                принимаем оплату прямо тут, не трогая логику текущей аренды ── */}
+          {crossDebtTotal > 0 && (
+            <div className="border-b border-amber-200 bg-amber-50/70 px-5 py-3.5">
+              <div className="mb-2 flex items-center gap-2">
+                <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-amber-500 text-[12px] font-bold text-white">
+                  !
+                </span>
+                <div className="text-[11px] font-bold uppercase tracking-wider text-amber-800">
+                  Долг с прошлых аренд
+                </div>
+                <span className="ml-auto font-display text-[18px] font-extrabold tabular-nums text-amber-900">
+                  {fmt(crossDebtTotal)} ₽
+                </span>
+              </div>
+              <div className="mb-2.5 flex flex-col gap-0.5 text-[11.5px] text-amber-900/90">
+                {crossSources.map((s) => (
+                  <div
+                    key={s.rentalId}
+                    className="flex items-center justify-between gap-2"
+                  >
+                    <span className="min-w-0 flex-1 truncate">
+                      {s.label} · {s.scooterName} · аренда #
+                      {String(s.rentalId).padStart(4, "0")}
+                    </span>
+                    <b className="shrink-0 tabular-nums">{fmt(s.amount)} ₽</b>
+                  </div>
+                ))}
+              </div>
+              <div className="flex flex-wrap items-end gap-2">
+                <label className="flex flex-col gap-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-amber-800">
+                  Принять сейчас
+                  <input
+                    inputMode="numeric"
+                    value={crossPayStr}
+                    placeholder={String(crossDebtTotal)}
+                    onChange={(e) => setCrossPayStr(e.target.value)}
+                    className="w-28 rounded-lg border border-amber-300 bg-white px-2 py-1.5 text-[14px] font-bold tabular-nums text-ink outline-none focus:border-amber-500"
+                  />
+                </label>
+                <div className="flex gap-1">
+                  {(
+                    [
+                      ["cash", "Нал"],
+                      ["card", "Карта"],
+                      ["transfer", "Перевод"],
+                    ] as const
+                  ).map(([m, lbl]) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setCrossMethod(m)}
+                      className={cn(
+                        "rounded-lg border px-2 py-1.5 text-[11px] font-semibold transition-colors",
+                        crossMethod === m
+                          ? "border-amber-500 bg-amber-100 text-amber-900"
+                          : "border-amber-200 bg-white text-ink-2 hover:border-amber-400",
+                      )}
+                    >
+                      {lbl}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={handlePayCrossDebt}
+                  disabled={crossPayNow <= 0 || payCrossDebt.isPending}
+                  className="ml-auto rounded-lg bg-amber-600 px-3 py-2 text-[12px] font-bold text-white transition-colors hover:bg-amber-700 disabled:opacity-50"
+                >
+                  {payCrossDebt.isPending
+                    ? "Принимаем…"
+                    : `Принять ${fmt(crossPayNow)} ₽ по долгу`}
+                </button>
+              </div>
+              {crossPayNow > 0 && crossPayNow < crossDebtTotal && (
+                <div className="mt-1.5 text-[10.5px] text-amber-800/80">
+                  Частично · останется {fmt(crossDebtTotal - crossPayNow)} ₽ долга
+                </div>
+              )}
+            </div>
+          )}
           {/* ─── STEP 1 (если есть просрочка) ─────────────────────────── */}
           {isOverdueState && (
             <div
