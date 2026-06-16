@@ -63,7 +63,6 @@ import { AccordionSection } from "./rental-card/AccordionSection";
 import { CalendarPanel } from "./rental-card/CalendarPanel";
 import { DocsInline } from "./rental-card/DocsInline";
 import { InlineHistory } from "./rental-card/InlineHistory";
-import { ClientDebtBadge } from "./rental-card/ClientDebtBadge";
 import { RentalBodyBreakdown } from "./rental-card/RentalBodyBreakdown";
 import { SideDrawer } from "./rental-card/SideDrawer";
 import { useActivityTimeline } from "@/lib/api/activity";
@@ -1601,12 +1600,10 @@ export function RentalCard({
   // аренды + сквозной.
   const crossDebtTotal = crossDebtSources.reduce((s, x) => s + x.amount, 0);
   const combinedDebt = debtTotal + crossDebtTotal;
-  const debtBadgeNode = (
-    <ClientDebtBadge
-      crossSources={crossDebtSources}
-      onOpenSource={openSourceRental}
-    />
-  );
+  // Значок-алёрт ⚠ убран как дубль: сквозной долг теперь виден в KPI «Долг»
+  // (со звёздочкой + раскрытие) и строкой в «Финансовой информации» (с
+  // переходом в аренду-источник). crossDebtSources используются там.
+  const debtBadgeNode = null;
 
   // v0.7.12: KPI-ряд (Срок/Просрочка · Долг · Эта аренда) вынесен в
   // переменную, чтобы рендерить его в разных местах: в обычном режиме —
