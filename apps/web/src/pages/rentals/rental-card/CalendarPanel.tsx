@@ -754,8 +754,13 @@ export function CalendarPanel({
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {(["short", "week", "month"] as const).map((t) => {
-                  const active = editPreview.ratePeriod === t;
                   const r = rateForTariff(t);
+                  // Активна ступень, чью ставку показываем (ручной выбор —
+                  // напрямую; авто — сопоставляем по ₽/сут, т.к. ставка ветки
+                  // могла быть зафиксирована не по числу дней).
+                  const active = tariffOverride
+                    ? tariffOverride === t
+                    : editPreview.rate === r;
                   return (
                     <button
                       key={t}
