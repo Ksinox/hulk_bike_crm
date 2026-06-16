@@ -180,7 +180,7 @@ const CSS = `
  * и обязуется выплатить сумму ущерба до указанного срока, иначе
  * передача в суд.
  */
-function tplClaim(b: ClaimBundle): string {
+function tplClaim(b: ClaimBundle, dueDays = 21): string {
   const { report, rental, client, scooter, model, items } = b;
   const reportNo = String(report.id).padStart(4, "0");
   const reportDate = fmtDateRu(report.createdAt);
@@ -188,12 +188,14 @@ function tplClaim(b: ClaimBundle): string {
   const returnDate = fmtDateRu(rental.endActualAt ?? rental.endPlannedAt);
   const modelName = modelDisplayName(scooter, model);
   const total = report.total;
-  // Срок добровольной оплаты — 21 день от даты составления претензии.
+  // F2: срок добровольной оплаты задаётся оператором (по умолчанию 21 день)
+  // от даты составления претензии.
+  const days = Number.isFinite(dueDays) && dueDays > 0 ? Math.round(dueDays) : 21;
   const dueDate = (() => {
     const t = report.createdAt
       ? new Date(report.createdAt)
       : new Date();
-    const due = new Date(t.getTime() + 21 * 86_400_000);
+    const due = new Date(t.getTime() + days * 86_400_000);
     return fmtDateRu(due);
   })();
 
@@ -338,7 +340,10 @@ function tplClaim(b: ClaimBundle): string {
  * пользовательский override (templateKey='claim') — использует его +
  * подстановку переменных. Иначе — системный хардкод.
  */
-export async function renderClaimHtml(b: ClaimBundle): Promise<string> {
+export async function renderClaimHtml(
+  b: ClaimBundle,
+  dueDays = 21,
+): Promise<string> {
   const [override] = await db
     .select()
     .from(documentTemplates)
@@ -367,13 +372,14 @@ ${body}
 </div>
 </body></html>`;
   }
-  return tplClaim(b);
+  return tplClaim(b, dueDays);
 }
 
 export async function renderClaimHtmlForWord(
   b: ClaimBundle,
+  dueDays = 21,
 ): Promise<string> {
-  const html = await renderClaimHtml(b);
+  const html = await renderClaimHtml(b, dueDays);
   const stripped = html.replace(/@page\s*\{[^}]*\}/g, "");
   return stripped.replace(
     '<html lang="ru">',

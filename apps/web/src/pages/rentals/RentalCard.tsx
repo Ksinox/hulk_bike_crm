@@ -3161,14 +3161,36 @@ function ClaimDocumentPreview({
 }) {
   const base =
     import.meta.env.VITE_API_URL?.replace(/\/$/, "") ?? "http://localhost:4000";
-  const htmlUrl = `${base}/api/damage-reports/${reportId}/claim?format=html`;
-  const docxUrl = `${base}/api/damage-reports/${reportId}/claim?format=docx`;
+  // F2: оператор задаёт срок добровольной оплаты (дней). Меняет URL →
+  // превью и Word перегенерируются с новой датой «оплатить до».
+  const [dueDays, setDueDays] = useState(21);
+  const htmlUrl = `${base}/api/damage-reports/${reportId}/claim?format=html&days=${dueDays}`;
+  const docxUrl = `${base}/api/damage-reports/${reportId}/claim?format=docx&days=${dueDays}`;
   return (
     <DocumentPreviewModal
       title={`Досудебная претензия #${reportId}`}
       htmlUrl={htmlUrl}
       docxUrl={docxUrl}
       docxFilename={`Досудебная претензия ${String(reportId).padStart(4, "0")}.doc`}
+      headerExtra={
+        <label
+          title="Срок добровольной оплаты — дата «оплатить до» в претензии"
+          className="inline-flex items-center gap-1.5 rounded-full bg-surface px-3 py-1.5 text-[12px] font-semibold text-muted-2"
+        >
+          Срок оплаты
+          <select
+            value={dueDays}
+            onChange={(e) => setDueDays(Number(e.target.value))}
+            className="rounded-md border border-border bg-surface px-1.5 py-1 text-[12px] font-bold text-ink outline-none focus:border-blue-400"
+          >
+            {[7, 10, 14, 21, 30, 45, 60].map((d) => (
+              <option key={d} value={d}>
+                {d} дн
+              </option>
+            ))}
+          </select>
+        </label>
+      }
       onClose={onClose}
     />
   );

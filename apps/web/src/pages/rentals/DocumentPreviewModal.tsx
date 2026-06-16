@@ -35,6 +35,7 @@ export function DocumentPreviewModal({
   templateName,
   rentalId,
   documentType,
+  headerExtra,
   onClose,
 }: {
   title: string;
@@ -52,6 +53,9 @@ export function DocumentPreviewModal({
    *  событий можно открыть именно эту версию. */
   rentalId?: number;
   documentType?: string;
+  /** Доп. контрол в шапке превью (напр. срок досудебки, F2). Рендерится
+   *  слева от кнопок «Обновить/Печать», только в режиме предпросмотра. */
+  headerExtra?: import("react").ReactNode;
   onClose: () => void;
 }) {
   const [editingTemplate, setEditingTemplate] = useState(false);
@@ -238,6 +242,7 @@ export function DocumentPreviewModal({
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {!editingTemplate && headerExtra}
             {!editingTemplate && templateKey && (
               <button
                 type="button"

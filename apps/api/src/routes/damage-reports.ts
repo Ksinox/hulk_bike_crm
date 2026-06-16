@@ -453,16 +453,23 @@ export async function damageReportsRoutes(app: FastifyInstance) {
    *  когда клиент не согласен с актом. */
   app.get<{
     Params: { id: string };
-    Querystring: { format?: string };
+    Querystring: { format?: string; days?: string };
   }>("/:id/claim", async (req, reply) => {
     const id = Number(req.params.id);
     if (!Number.isFinite(id))
       return reply.code(400).send({ error: "bad id" });
     const bundle = await loadClaimBundle(id);
     if (!bundle) return reply.code(404).send({ error: "not found" });
+    // F2: срок добровольной оплаты (дней) задаёт оператор. По умолчанию 21,
+    // зажимаем в разумные рамки 1..180.
+    const dueDays = (() => {
+      const n = Number(req.query.days);
+      if (!Number.isFinite(n)) return 21;
+      return Math.min(180, Math.max(1, Math.round(n)));
+    })();
     const format = req.query.format === "docx" ? "docx" : "html";
     if (format === "html") {
-      const html = await renderClaimHtml(bundle);
+      const html = await renderClaimHtml(bundle, dueDays);
       reply
         .header("Content-Type", "text/html; charset=utf-8")
         .removeHeader("X-Frame-Options")
@@ -472,7 +479,7 @@ export async function damageReportsRoutes(app: FastifyInstance) {
         );
       return reply.send(html);
     }
-    const wordHtml = await renderClaimHtmlForWord(bundle);
+    const wordHtml = await renderClaimHtmlForWord(bundle, dueDays);
     const filename = `Досудебная претензия ${String(id).padStart(4, "0")}.doc`;
     reply
       .header("Content-Type", "application/msword; charset=utf-8")
