@@ -52,7 +52,11 @@ import {
   getRentalChainIds,
   useRentals,
   useArchivedRentals,
+  completeRentalNoDamage,
+  completeRentalWithDamage,
 } from "./rentalsStore";
+import { useReturnIntake, ReturnIntakeSection } from "./returnIntake";
+import { useCreateDamageReport } from "@/lib/api/damage-reports";
 import { EquipmentTile, EquipmentAddTile } from "./rental-card/EquipmentTile";
 import type { Rental } from "@/lib/mock/rentals";
 import type { PaymentMethod } from "@/lib/mock/rentals";
@@ -176,6 +180,15 @@ export function PaymentAcceptDialog({
   const { data: payments = [] } = useApiPayments();
   const debtQ = useRentalDebt(rental.id);
   const debt = debtQ.data;
+
+  // ── Этап 2: приёмка позиций при завершении аренды (единое окно) ──
+  // Хук владеет состоянием приёмки. enabled=completing — при обычном
+  // приёме оплаты запросов не делает и отдаёт пустую приёмку.
+  const intake = useReturnIntake(rental, completing);
+  // Зачёт залога в счёт ущерба: по умолчанию весь применимый залог идёт
+  // в ущерб (переключатель «вернуть залог клиенту»).
+  const [returnDepositInstead, setReturnDepositInstead] = useState(false);
+  const createDamageReport = useCreateDamageReport();
 
   // Неоплаченная аренда (rent payments paid=false)
   const pendingRent = useMemo(() => {
@@ -496,13 +509,30 @@ export function PaymentAcceptDialog({
   const [payParking, setPayParking] = useState(true);
   const parkingDue = unpaidParking > 0 && payParking ? unpaidParking : 0;
 
+  // Этап 2: ущерб по приёмке (только в режиме завершения). Залог по
+  // умолчанию идёт в счёт ущерба; «вернуть залог» обнуляет зачёт.
+  const intakeDamageTotal = completing ? intake.totalDamage : 0;
+  const depositForZachet = rental.deposit ?? 0;
+  const depositZachet =
+    completing && intake.hasDamage && !returnDepositInstead
+      ? Math.min(depositForZachet, intakeDamageTotal)
+      : 0;
+  // Остаток ущерба после зачёта залога → ляжет долгом на акт (мягкий долг).
+  const intakeDamageDebt = Math.max(0, intakeDamageTotal - depositZachet);
+  // Сколько залога вернётся клиенту (для подсказки в расчёте).
+  const depositReturnToClient =
+    completing && intake.hasDamage
+      ? Math.max(0, depositForZachet - depositZachet)
+      : 0;
+
   // Долги (без extend — он считается по переплате)
   const totalDebt =
     pendingRent +
     overdueDaysBalance +
     overdueFineBalance +
     damageBalance +
-    manualBalance;
+    manualBalance +
+    intakeDamageDebt;
   // C3: «клиент вносит по долгу сейчас» — ОДНА сумма против общего долга.
   // Пусто = гасим полностью (как было). Можно ввести меньше → частичное
   // погашение: distribute() раскидает её по составу (просрочка→штраф→ущерб→…)
@@ -879,7 +909,10 @@ export function PaymentAcceptDialog({
    * Это нужно чтобы revenue не задваивался: залог/депозит уже были
    * учтены раньше, повторный учёт исключается фильтром revenue.ts.
    */
-  const distribute = (acceptedAvail: number = accepted): Op[] => {
+  const distribute = (
+    acceptedAvail: number = accepted,
+    extraDamageSlots: { cap: number; damageReportId: number }[] = [],
+  ): Op[] => {
     // Шаг 1 — разложили общий totalReceived на «что именно платим»
     const queue: {
       cap: number;
@@ -901,6 +934,13 @@ export function PaymentAcceptDialog({
         .reduce((s, p) => s + p.amount, 0);
       const reportDebt = Math.max(0, dr.total - dr.depositCovered - reportPaid);
       queue.push({ cap: reportDebt, target: "damage", damageReportId: dr.id });
+    }
+    // Этап 2: акт, созданный в этом же сабмите завершения, ещё не попал
+    // в debt.damageReports (кэш) — добавляем его слот вручную, чтобы
+    // «вносит сейчас» лёг на новый ущерб по приоритету.
+    for (const s of extraDamageSlots) {
+      if (s.cap > 0)
+        queue.push({ cap: s.cap, target: "damage", damageReportId: s.damageReportId });
     }
     queue.push({ cap: manualBalance, target: "manual" });
     queue.push({ cap: pendingRent, target: "rent" });
@@ -1049,6 +1089,26 @@ export function PaymentAcceptDialog({
           });
         }
       }
+      // Этап 2: завершение с ущербом — СНАЧАЛА создаём акт ущерба
+      // (зачёт залога внутри), чтобы платёж «вносит сейчас» лёг на него
+      // через distribute(). Скутер в ремонт отправляет /complete по
+      // scooterNextStatus — не дублируем здесь (sendScooterToRepair=false).
+      let completionActId: number | null = null;
+      let completionActDebt = 0;
+      if (completing && intake.hasDamage) {
+        const created = await createDamageReport.mutateAsync({
+          rentalId: rental.id,
+          items: intake.buildDamageSeedItems(),
+          depositCovered: depositZachet,
+          note: null,
+          sendScooterToRepair: false,
+        });
+        completionActId = created.id;
+        completionActDebt = Math.max(
+          0,
+          (created.total ?? 0) - (created.depositCovered ?? 0),
+        );
+      }
       // 1. Списать депозит клиента (clients.deposit_balance), если используется
       if (depositToUse > 0) {
         await api.post(
@@ -1112,7 +1172,12 @@ export function PaymentAcceptDialog({
         0,
         accepted - topupAmount - parkingPayNow,
       );
-      const ops = distribute(acceptedForDistribute);
+      const ops = distribute(
+        acceptedForDistribute,
+        completionActId
+          ? [{ cap: completionActDebt, damageReportId: completionActId }]
+          : [],
+      );
       // C3: при частичном погашении добавляем в комментарий «X из Y», чтобы в
       // истории было видно «погасил долг … из …».
       const debtNote = isPartialDebt
@@ -1285,6 +1350,43 @@ export function PaymentAcceptDialog({
         }
       }
 
+      // Этап 2: завершение аренды — ПОСЛЕ всех платежей (акт+погашения
+      // уже проведены, остаток ущерба остаётся мягким долгом). Судьбу
+      // скутера задаёт scooterNextStatus из приёмки.
+      if (completing) {
+        const dateActual = intake.dateActualForApi();
+        const mileage = intake.mileageForApi();
+        const scooterNext = intake.scooterNextStatus;
+        if (intake.hasDamage) {
+          await completeRentalWithDamage(
+            rental.id,
+            {
+              dateActual,
+              conditionOk: false,
+              equipmentOk: true,
+              // Залог считается «возвращённым» только если зачёта не было.
+              depositReturned: depositZachet === 0,
+              damageNotes: "",
+              mileage,
+            },
+            0,
+            "",
+            scooterNext,
+          );
+        } else {
+          await completeRentalNoDamage(
+            rental.id,
+            {
+              dateActual,
+              conditionOk: true,
+              equipmentOk: true,
+              depositReturned: true,
+              mileage,
+            },
+            scooterNext,
+          );
+        }
+      }
       // v0.4.50: инвалидируем все связанные queries — фронт сразу
       // подтянет актуальные данные (payments, debt-summary, аренды).
       qc.invalidateQueries({ queryKey: ["payments"] });
@@ -1303,7 +1405,28 @@ export function PaymentAcceptDialog({
       // после оплаты ущерба через единое окно.
       qc.invalidateQueries({ queryKey: ["damage-reports"] });
 
-      if (overpay > 0) {
+      if (completing) {
+        // Этап 2: завершение. Остаток (underpay) остаётся мягким долгом —
+        // клиент уедет в должники/«Висящие долги», ничего не теряется.
+        if (underpay > 0) {
+          toast.info(
+            "Аренда завершена",
+            `Принято ${fmt(totalReceived)} ₽. Остаток ${fmt(underpay)} ₽ — мягкий долг клиента.`,
+          );
+        } else if (overpay > 0) {
+          toast.success(
+            "Аренда завершена",
+            `Переплата ${fmt(overpay)} ₽ ушла в депозит клиента.`,
+          );
+        } else {
+          toast.success(
+            "Аренда завершена",
+            intake.hasDamage
+              ? "Акт ущерба создан, расчёт проведён."
+              : "Расчёт проведён, скутер оформлен.",
+          );
+        }
+      } else if (overpay > 0) {
         toast.success(
           "Оплата принята",
           `Переплата ${fmt(overpay)} ₽ ушла в депозит клиента.`,
@@ -1439,6 +1562,16 @@ export function PaymentAcceptDialog({
   // (ущерб/ручной/паркинг) — без блока «период продления» и экипировки.
   const canExtend = rental.status === "active";
 
+  // Сумма «вносит сейчас» (после депозита) — крупное число «К приёму».
+  const amountDueNow = Math.max(0, grossTotal - depositToUse);
+  // Этап 2: блокировка кнопки. В завершении кнопка активна, даже если
+  // денег к приёму нет (чистый возврат), но заблокирована пока не
+  // приняты все позиции; способ оплаты обязателен только при accepted>0.
+  const submitDisabled =
+    saving ||
+    (accepted > 0 && method === null) ||
+    (completing ? intake.blocked : totalReceived <= 0 && !forgiveDebt);
+
   const mainPanel = (
       <div
         className={cn(
@@ -1467,10 +1600,14 @@ export function PaymentAcceptDialog({
                 inline ? "text-[16px] leading-tight" : "text-[14px]",
               )}
             >
-              {`Принять платёж · #${String(rental.id).padStart(4, "0")}`}
+              {completing
+                ? `Завершение аренды · #${String(rental.id).padStart(4, "0")}`
+                : `Принять платёж · #${String(rental.id).padStart(4, "0")}`}
             </div>
             <div className="mt-1 text-[11.5px] leading-snug text-muted">
-              {isOverdueState ? (
+              {completing ? (
+                <>Примите позиции, проведите расчёт и завершите аренду одним окном.</>
+              ) : isOverdueState ? (
                 <>
                   Просрочка{" "}
                   <span className="font-semibold text-red-ink tabular-nums">
@@ -1504,6 +1641,13 @@ export function PaymentAcceptDialog({
         </div>
 
         <div className="flex-1 overflow-y-auto scrollbar-thin text-[13px] text-ink-2">
+          {/* ─── Этап 2: приёмка позиций (только при завершении) — сверху,
+                расчёт ниже. Состояние каждой позиции обязательно. ── */}
+          {completing && (
+            <div className="border-b border-border px-5 py-4">
+              <ReturnIntakeSection intake={intake} />
+            </div>
+          )}
           {/* ─── Сквозной долг (ущерб с прошлых аренд) — отдельным блоком,
                 принимаем оплату прямо тут, не трогая логику текущей аренды ── */}
           {crossDebtTotal > 0 && (
@@ -2270,6 +2414,68 @@ export function PaymentAcceptDialog({
             Узкая ширина 440px требует разделения блоков по вертикали —
             раньше итог теснил итемизацию и кнопки сжимались. */}
         <div className="rounded-b-2xl border-t border-border bg-surface-soft pb-6">
+          {/* Этап 2: расчёт ущерба по приёмке + зачёт залога (завершение). */}
+          {completing && intake.hasDamage && (
+            <div className="border-b border-border bg-orange-soft/20 px-5 py-3">
+              <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wider text-orange-ink">
+                Ущерб по приёмке
+              </div>
+              <div className="flex flex-col gap-1 text-[12.5px]">
+                {intake.damageLines.map((l, i) => (
+                  <div key={i} className="flex items-center justify-between gap-2">
+                    <span className="min-w-0 flex-1 truncate text-ink-2">
+                      {l.label}
+                    </span>
+                    <b className="shrink-0 tabular-nums text-ink">
+                      {fmt(l.amount)} ₽
+                    </b>
+                  </div>
+                ))}
+                <div className="mt-0.5 flex items-center justify-between border-t border-orange-200/60 pt-1.5">
+                  <span className="font-semibold text-ink">Итого ущерб</span>
+                  <b className="tabular-nums text-ink">{fmt(intakeDamageTotal)} ₽</b>
+                </div>
+                {depositForZachet > 0 && (
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-ink-2">
+                      {returnDepositInstead
+                        ? "Залог — клиенту"
+                        : "Зачёт залога в ущерб"}
+                      <button
+                        type="button"
+                        onClick={() => setReturnDepositInstead((v) => !v)}
+                        className="ml-2 text-[11px] font-semibold text-blue-600 underline"
+                      >
+                        {returnDepositInstead ? "зачесть в ущерб" : "вернуть залог"}
+                      </button>
+                    </span>
+                    <b
+                      className={cn(
+                        "shrink-0 tabular-nums",
+                        returnDepositInstead ? "text-ink" : "text-green-ink",
+                      )}
+                    >
+                      {returnDepositInstead
+                        ? `${fmt(depositForZachet)} ₽`
+                        : `−${fmt(depositZachet)} ₽`}
+                    </b>
+                  </div>
+                )}
+                <div className="mt-0.5 flex items-center justify-between border-t border-orange-200/60 pt-1.5 text-[13.5px]">
+                  <span className="font-bold text-ink">В долг по ущербу</span>
+                  <b className="tabular-nums text-orange-ink">
+                    {fmt(intakeDamageDebt)} ₽
+                  </b>
+                </div>
+                {!returnDepositInstead && depositReturnToClient > 0 && (
+                  <div className="text-[11px] text-muted-2">
+                    Остаток залога клиенту:{" "}
+                    <b className="text-ink">{fmt(depositReturnToClient)} ₽</b>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
           {/* C3: «Клиент вносит по долгу сейчас» — одно поле против ОБЩЕГО
               долга. Пусто = гасим полностью. Можно ввести меньше (частично) —
               остаток просто останется долгом и завтра продолжит расти штатно.
@@ -2326,7 +2532,10 @@ export function PaymentAcceptDialog({
               //   - депозит/topup
               const overdueAfterForgive = overdueDaysBalance + overdueFineBalance;
               const overdueForgiven = overdueBalanceRaw - overdueAfterForgive;
-              const otherDebt = pendingRent + damageBalance + manualBalance;
+              // Этап 2: ущерб по приёмке входит в «прочий долг» (метка уже
+              // упоминает ущерб) — чтобы тали́ итемизации сходилась с totalDebt.
+              const otherDebt =
+                pendingRent + damageBalance + manualBalance + intakeDamageDebt;
               return (
                 <>
                   {/* C3: при частичном погашении показываем ОДНУ строку «гашение
@@ -2437,10 +2646,10 @@ export function PaymentAcceptDialog({
               для оператора, делаем максимально заметным. */}
           <div className="flex items-baseline justify-between border-t border-border px-5 py-4">
             <div className="text-[12px] font-bold uppercase tracking-wider text-muted-2">
-              К приёму
+              {completing ? "Вносит сейчас" : "К приёму"}
             </div>
             <div className="font-display text-[28px] font-extrabold leading-none tabular-nums text-blue-700">
-              {fmt(Math.max(0, grossTotal - depositToUse))} ₽
+              {fmt(amountDueNow)} ₽
             </div>
           </div>
 
@@ -2498,23 +2707,21 @@ export function PaymentAcceptDialog({
               <button
                 type="button"
                 onClick={submit}
-                disabled={
-                  saving ||
-                  (totalReceived <= 0 && !forgiveDebt) ||
-                  (accepted > 0 && method === null)
-                }
+                disabled={submitDisabled}
                 className={cn(
                   "inline-flex h-12 flex-[2] items-center justify-center gap-1.5 rounded-full px-4 text-[14px] font-bold text-white",
-                  saving ||
-                    (totalReceived <= 0 && !forgiveDebt) ||
-                    (accepted > 0 && method === null)
+                  submitDisabled
                     ? "cursor-not-allowed bg-surface text-muted-2"
-                    : "bg-blue-600 hover:bg-blue-700",
+                    : completing
+                      ? "bg-orange hover:bg-orange-ink"
+                      : "bg-blue-600 hover:bg-blue-700",
                 )}
               >
                 <Check size={14} />{" "}
-                {extDays > 0 && (forgiveDebt || dueAmount > 0)
-                  ? "Принять и продлить"
+                {completing
+                  ? amountDueNow > 0
+                    ? `Завершить · принять ${fmt(amountDueNow)} ₽`
+                    : "Завершить аренду"
                   : extDays > 0
                     ? "Принять и продлить"
                     : forgiveDebt
