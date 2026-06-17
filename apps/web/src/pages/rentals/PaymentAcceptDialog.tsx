@@ -1406,12 +1406,15 @@ export function PaymentAcceptDialog({
       qc.invalidateQueries({ queryKey: ["damage-reports"] });
 
       if (completing) {
-        // Этап 2: завершение. Остаток (underpay) остаётся мягким долгом —
-        // клиент уедет в должники/«Висящие долги», ничего не теряется.
-        if (underpay > 0) {
+        // Этап 2: завершение. Недосбор (частичная оплата долга) остаётся
+        // мягким долгом — клиент уедет в должники/«Висящие долги», ничего
+        // не теряется. В режиме завершения это debtRemainAfter (оператор
+        // осознанно собрал меньше) либо underpay.
+        const softLeft = Math.max(debtRemainAfter, underpay);
+        if (softLeft > 0) {
           toast.info(
             "Аренда завершена",
-            `Принято ${fmt(totalReceived)} ₽. Остаток ${fmt(underpay)} ₽ — мягкий долг клиента.`,
+            `Принято ${fmt(totalReceived)} ₽. Остаток ${fmt(softLeft)} ₽ — мягкий долг клиента.`,
           );
         } else if (overpay > 0) {
           toast.success(
@@ -2739,7 +2742,10 @@ export function PaymentAcceptDialog({
   // окном, только когда есть просрочка. Дата = ЯКОРЬ отсчёта («как будто
   // сегодня — эта дата»): просрочка и продление считаются от неё. Это НЕ
   // прощение — ничего не пишем в БД на этом шаге; пересчёт только в окне.
-  const needDateStep = hasOverdue && !dateConfirmed;
+  // В режиме завершения дату фиксируем в приёмке («Дата возврата») — не
+  // показываем отдельный шаг «когда поступила оплата» (это был бы второй
+  // экран, ровно то, от чего уходим). Просрочка считается на сегодня.
+  const needDateStep = !completing && hasOverdue && !dateConfirmed;
   // Просрочка НА выбранную дату (сколько дней просрочки на дату оплаты).
   const dateEffDays = effectiveOverdueDaysAsOf(
     rental.endPlanned,
