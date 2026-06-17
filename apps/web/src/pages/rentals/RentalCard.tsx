@@ -3029,20 +3029,35 @@ function FinanceHoverCard({
     width: number;
   } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
+  // Hover-intent: задержка закрытия, чтобы успеть увести курсор на поповер
+  // (между ними зазор). Вход в поповер отменяет закрытие.
+  const closeTimer = useRef<number | null>(null);
+  const cancelClose = () => {
+    if (closeTimer.current != null) {
+      window.clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+  };
+  const scheduleClose = () => {
+    cancelClose();
+    closeTimer.current = window.setTimeout(() => setOpen(false), 250);
+  };
+  useEffect(() => () => cancelClose(), []);
   const show = () => {
+    cancelClose();
     const r = ref.current?.getBoundingClientRect();
     if (r) setPos({ top: r.bottom, left: r.left, width: r.width });
     setOpen(true);
   };
   return (
-    <div ref={ref} onMouseEnter={show} onMouseLeave={() => setOpen(false)}>
+    <div ref={ref} onMouseEnter={show} onMouseLeave={scheduleClose}>
       {children}
       {open &&
         pos &&
         createPortal(
           <div
-            onMouseEnter={() => setOpen(true)}
-            onMouseLeave={() => setOpen(false)}
+            onMouseEnter={cancelClose}
+            onMouseLeave={scheduleClose}
             style={{
               position: "fixed",
               top: pos.top + 4,

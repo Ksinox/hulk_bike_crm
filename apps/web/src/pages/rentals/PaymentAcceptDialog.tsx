@@ -2784,6 +2784,7 @@ function ForgiveStepCards({
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [popoverPinned, setPopoverPinned] = useState(false);
   const hoverTimer = useRef<number | null>(null);
+  const closeTimer = useRef<number | null>(null);
   const anchorRef = useRef<HTMLDivElement | null>(null);
   // v0.6.12: позиция popover через portal — вычисляется по
   // getBoundingClientRect карточки «Простить». Iframe drawer'а имеет
@@ -2843,7 +2844,12 @@ function ForgiveStepCards({
       window.clearTimeout(hoverTimer.current);
       hoverTimer.current = null;
     }
-    if (!popoverPinned) setPopoverOpen(false);
+    // Hover-intent: закрываем с задержкой, чтобы успеть навести на сам
+    // popover (вход в него отменяет закрытие). Pinned (по клику) не трогаем.
+    if (!popoverPinned) {
+      if (closeTimer.current != null) window.clearTimeout(closeTimer.current);
+      closeTimer.current = window.setTimeout(() => setPopoverOpen(false), 250);
+    }
   };
   const pinOpen = () => {
     setPopoverOpen(true);
@@ -2948,7 +2954,13 @@ function ForgiveStepCards({
               className="fixed z-[201] w-[340px] rounded-[12px] border border-border bg-white shadow-card-lg"
               style={{ top: popoverPos.top, left: popoverPos.left }}
               onClick={(e) => e.stopPropagation()}
-              onMouseEnter={() => setPopoverOpen(true)}
+              onMouseEnter={() => {
+                if (closeTimer.current != null) {
+                  window.clearTimeout(closeTimer.current);
+                  closeTimer.current = null;
+                }
+                setPopoverOpen(true);
+              }}
             >
               {/* Все неоплаченные дни */}
               {hasOverdueDays && (
