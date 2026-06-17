@@ -40,9 +40,13 @@ import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { MobileApp } from "@/mobile/MobileApp";
 import { RentalCalculator } from "@/pages/calculator/RentalCalculator";
+import { useGlobalNumberWheelStep } from "@/lib/numberFieldGlobal";
 
 export function App() {
   const isMobile = useIsMobile();
+  // v0.9.2: глобально — колёсико над number-полем меняет значение (нативные
+  // стрелки убраны в CSS). ↑/↓ и нампад работают на сфокусированном поле.
+  useGlobalNumberWheelStep();
   const { data: me, isLoading, isError } = useMe();
   // v0.4.1: подгружаем глобальные настройки на старте — внутри хука
   // billing_period_start_day прокидывается в lib/billingPeriod (легаси
