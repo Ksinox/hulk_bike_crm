@@ -77,7 +77,7 @@ import {
 // больше не показывается.
 const METHODS: { id: PaymentMethod; label: string; Icon: typeof Banknote }[] = [
   { id: "cash", label: "Наличные", Icon: Banknote },
-  { id: "transfer", label: "Безнал", Icon: CreditCard },
+  { id: "transfer", label: "Перевод", Icon: CreditCard },
 ];
 
 // v0.8.32: тарифные «ступени» по числу дней продления. Источник истины
@@ -105,6 +105,7 @@ export function PaymentAcceptDialog({
   onPaymentDateChange,
   liftedFromRect,
   inline = false,
+  completing = false,
 }: {
   rental: Rental;
   onClose: () => void;
@@ -144,6 +145,10 @@ export function PaymentAcceptDialog({
   } | null;
   /** Встроенный режим для карточки аренды: панель занимает третью колонку, без overlay. */
   inline?: boolean;
+  /** Режим завершения аренды: прячем продление и пополнение залога (им тут
+   *  не место — мы завершаем), способы оплаты те же. Этап 1 редизайна
+   *  завершения; дальше сюда переедет приёмка позиций. */
+  completing?: boolean;
 }) {
   // v0.6.16: liftedFromRect больше не используется (floating-календарь
   // убран). Оставлен в API ради backwards-compat — RentalCard всё ещё
@@ -552,7 +557,7 @@ export function PaymentAcceptDialog({
             parseInt(crossPayStr.replace(/\D/g, "") || "0", 10),
           ),
         );
-  const [crossMethod, setCrossMethod] = useState<"cash" | "card" | "transfer">(
+  const [crossMethod, setCrossMethod] = useState<"cash" | "transfer">(
     "cash",
   );
   const payCrossDebt = usePayClientDamageDebt();
@@ -1542,8 +1547,7 @@ export function PaymentAcceptDialog({
                 <div className="flex gap-1">
                   {(
                     [
-                      ["cash", "Нал"],
-                      ["card", "Карта"],
+                      ["cash", "Наличные"],
                       ["transfer", "Перевод"],
                     ] as const
                   ).map(([m, lbl]) => (
@@ -1736,8 +1740,10 @@ export function PaymentAcceptDialog({
           )}
 
           {/* R1: тумблер «Продлить аренду» — без него блоки продления скрыты
-              (обычная оплата долга), включаем — раскрываются. */}
-          {canExtend && (
+              (обычная оплата долга), включаем — раскрываются.
+              В режиме завершения (completing) продление недоступно — мы
+              завершаем аренду, а не продлеваем. */}
+          {canExtend && !completing && (
             <div className="flex items-center justify-between gap-2 border-b border-border px-5 py-3">
               <div className="min-w-0">
                 <div className="text-[13px] font-bold text-ink">
@@ -2161,8 +2167,10 @@ export function PaymentAcceptDialog({
 
           {/* R10: «Пополнить залог» — тумблер (а не галочка), без «+» и без
               лимита суммы. Доступно всегда при денежном залоге: можно вернуть
-              недостачу ИЛИ поднять залог на любую сумму. */}
-          {canTopupSecurity && (
+              недостачу ИЛИ поднять залог на любую сумму.
+              В режиме завершения скрыто — залог не пополняют, а возвращают /
+              зачитывают в долг (отдельный контрол приедет на этапе 2). */}
+          {canTopupSecurity && !completing && (
             <div className="border-b border-border px-5 py-3">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex min-w-0 items-center gap-2">
