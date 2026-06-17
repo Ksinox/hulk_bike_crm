@@ -561,28 +561,96 @@ export function ReturnItemCard({
   onSetProblem: () => void;
   onEditProblem?: () => void;
 }) {
-  const tone =
-    state === "ok"
-      ? "border-emerald-400 ring-1 ring-emerald-200/60 bg-emerald-50/40"
-      : state === "problem"
-        ? "border-orange-400 ring-1 ring-orange-200/60 bg-orange-soft/30"
-        : "border-border bg-surface hover:border-blue-300";
   const isCompact = size === "compact";
-  const imageSize = isCompact ? "h-12 w-12" : "h-14 w-14";
-  const padding = isCompact ? "p-2.5" : "p-3";
-  const titleSize = isCompact ? "text-[13px]" : "text-[14px]";
-  const buttonHeight = isCompact ? "h-8" : "h-9";
-  const buttonText = isCompact ? "text-[11.5px]" : "text-[12.5px]";
+  const okActive = state === "ok";
+  const problemActive = state === "problem";
+  const tone =
+    okActive
+      ? "border-emerald-300 bg-emerald-50/40"
+      : problemActive
+        ? "border-orange-300 bg-orange-soft/25"
+        : "border-border bg-surface hover:border-blue-300";
+
+  // v0.9.3: сегментированный переключатель состояния (единый контрол, а не
+  // две обведённые кнопки) — аккуратнее (по утверждённому макету).
+  const segment = (
+    <div
+      className={cn(
+        "flex overflow-hidden rounded-lg border border-border",
+        isCompact ? "text-[11px]" : "text-[12.5px]",
+      )}
+    >
+      <button
+        type="button"
+        onClick={onSetOk}
+        className={cn(
+          "flex-1 font-semibold transition-colors",
+          isCompact ? "py-1.5" : "py-2",
+          okActive
+            ? "bg-emerald-500 text-white"
+            : "bg-surface text-ink-2 hover:bg-emerald-50",
+        )}
+      >
+        {isCompact ? "ОК" : "Без ущерба"}
+      </button>
+      <button
+        type="button"
+        onClick={onSetProblem}
+        className={cn(
+          "flex-1 border-l border-border font-semibold transition-colors",
+          isCompact ? "py-1.5" : "py-2",
+          problemActive
+            ? "bg-orange-500 text-white"
+            : "bg-surface text-ink-2 hover:bg-orange-soft/40",
+        )}
+      >
+        {isCompact ? "Ущерб" : "Есть ущерб"}
+      </button>
+    </div>
+  );
+
+  const chip = problemActive && damageInfo && (
+    <button
+      type="button"
+      onClick={onEditProblem}
+      className={cn(
+        "mt-1.5 flex w-full items-center justify-between gap-2 rounded-lg bg-orange-soft/55 px-2.5 py-1.5 text-orange-ink hover:bg-orange-soft/80",
+        isCompact ? "text-[10.5px]" : "text-[12px]",
+      )}
+    >
+      <span className="truncate font-semibold">{damageInfo}</span>
+      <span className="ml-1 shrink-0 text-[10px] underline opacity-80">
+        {isCompact ? "изм." : "изменить"}
+      </span>
+    </button>
+  );
+
+  // Компактная карточка (экипировка) — без фото, плотная сетка 2-в-ряд.
+  if (isCompact) {
+    return (
+      <div className={cn("rounded-xl border p-2.5 transition-colors", tone)}>
+        <div className="truncate text-[12.5px] font-semibold leading-tight text-ink">
+          {title}
+        </div>
+        {subtitle && (
+          <div className="truncate text-[10.5px] text-muted-2">{subtitle}</div>
+        )}
+        <div className="mt-2">{segment}</div>
+        {chip}
+      </div>
+    );
+  }
+
+  // Крупная карточка (скутер) — с фото.
   return (
-    <div className={cn("rounded-xl border transition-all", padding, tone)}>
+    <div className={cn("rounded-xl border p-3 transition-colors", tone)}>
       <div className="flex items-center gap-2.5">
         <div
           className={cn(
-            "shrink-0 items-center justify-center overflow-hidden rounded-lg ring-1 flex",
-            imageSize,
-            state === "ok"
+            "flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg ring-1",
+            okActive
               ? "ring-emerald-200 bg-emerald-50"
-              : state === "problem"
+              : problemActive
                 ? "ring-orange-200 bg-orange-soft/40"
                 : "ring-border bg-surface-soft",
           )}
@@ -590,65 +658,22 @@ export function ReturnItemCard({
           {imageUrl ? (
             <img src={imageUrl} alt="" className="h-full w-full bg-white object-contain" />
           ) : fallbackIcon === "scooter" ? (
-            <Bike size={isCompact ? 22 : 26} className="text-muted-2" strokeWidth={1.5} />
+            <Bike size={24} className="text-muted-2" strokeWidth={1.5} />
           ) : (
-            <ImageIcon size={isCompact ? 18 : 22} className="text-muted-2" strokeWidth={1.5} />
+            <ImageIcon size={20} className="text-muted-2" strokeWidth={1.5} />
           )}
         </div>
         <div className="min-w-0 flex-1">
-          <div className={cn("font-semibold text-ink truncate leading-tight", titleSize)}>
+          <div className="truncate text-[14px] font-semibold leading-tight text-ink">
             {title}
           </div>
           {subtitle && (
-            <div className="text-[11px] text-muted-2 truncate">{subtitle}</div>
+            <div className="truncate text-[11px] text-muted-2">{subtitle}</div>
           )}
         </div>
       </div>
-      <div className={cn("flex gap-1.5", isCompact ? "mt-2" : "mt-3 gap-2")}>
-        <button
-          type="button"
-          onClick={onSetOk}
-          className={cn(
-            "flex-1 rounded-lg border font-semibold transition-colors",
-            buttonHeight,
-            buttonText,
-            state === "ok"
-              ? "border-emerald-500 bg-emerald-500 text-white shadow-sm"
-              : "border-border bg-surface text-ink-2 hover:border-emerald-400 hover:bg-emerald-50/50 hover:text-emerald-700",
-          )}
-        >
-          {isCompact ? "ОК" : "Без ущерба"}
-        </button>
-        <button
-          type="button"
-          onClick={onSetProblem}
-          className={cn(
-            "flex-1 rounded-lg border font-semibold transition-colors",
-            buttonHeight,
-            buttonText,
-            state === "problem"
-              ? "border-orange-500 bg-orange-500 text-white shadow-sm"
-              : "border-border bg-surface text-ink-2 hover:border-orange-400 hover:bg-orange-soft/40 hover:text-orange-700",
-          )}
-        >
-          {isCompact ? "Ущерб" : "Есть ущерб"}
-        </button>
-      </div>
-      {state === "problem" && damageInfo && (
-        <button
-          type="button"
-          onClick={onEditProblem}
-          className={cn(
-            "flex w-full items-center justify-between rounded-lg bg-orange-soft/50 px-2.5 py-1.5 text-orange-ink hover:bg-orange-soft/80",
-            isCompact ? "mt-1.5 text-[11px]" : "mt-2.5 text-[12px]",
-          )}
-        >
-          <span className="truncate font-semibold">{damageInfo}</span>
-          <span className="ml-2 shrink-0 text-[10px] underline opacity-80">
-            изменить
-          </span>
-        </button>
-      )}
+      <div className="mt-2.5">{segment}</div>
+      {chip}
     </div>
   );
 }
