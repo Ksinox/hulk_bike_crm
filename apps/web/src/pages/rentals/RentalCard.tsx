@@ -3313,7 +3313,23 @@ function KpiCard({
   const [popPos, setPopPos] = useState<{ top: number; left: number } | null>(
     null,
   );
+  // Hover-intent: чтобы можно было увести курсор С плашки НА поповер (между
+  // ними зазор 6px), не закрываем мгновенно — даём задержку. Вход в поповер
+  // отменяет закрытие; уход с поповера — снова закрывает с задержкой.
+  const closeTimer = useRef<number | null>(null);
+  const cancelClose = () => {
+    if (closeTimer.current != null) {
+      window.clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+  };
+  const scheduleClose = () => {
+    cancelClose();
+    closeTimer.current = window.setTimeout(() => setPopOpen(false), 250);
+  };
+  useEffect(() => () => cancelClose(), []);
   const showPop = () => {
+    cancelClose();
     const r = cardRef.current?.getBoundingClientRect();
     if (r) {
       const vw = window.innerWidth;
@@ -3424,7 +3440,7 @@ function KpiCard({
       ref={cardRef}
       className={baseCls}
       onMouseEnter={popover && !isMobile ? showPop : undefined}
-      onMouseLeave={popover && !isMobile ? () => setPopOpen(false) : undefined}
+      onMouseLeave={popover && !isMobile ? scheduleClose : undefined}
     >
       {inner}
       {popover &&
@@ -3441,7 +3457,9 @@ function KpiCard({
               maxWidth: 360,
               zIndex: 1000,
             }}
-            className="pointer-events-none rounded-xl bg-surface p-3 text-[12px] leading-relaxed text-ink-2 shadow-card-lg ring-1 ring-border"
+            onMouseEnter={cancelClose}
+            onMouseLeave={scheduleClose}
+            className="rounded-xl bg-surface p-3 text-[12px] leading-relaxed text-ink-2 shadow-card-lg ring-1 ring-border"
           >
             {popover}
           </div>,
