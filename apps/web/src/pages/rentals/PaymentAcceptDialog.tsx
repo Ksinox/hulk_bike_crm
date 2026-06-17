@@ -57,6 +57,7 @@ import {
 } from "./rentalsStore";
 import { useReturnIntake, ReturnIntakeSection } from "./returnIntake";
 import { useCreateDamageReport } from "@/lib/api/damage-reports";
+import { DocumentPreviewModal } from "./DocumentPreviewModal";
 import { EquipmentTile, EquipmentAddTile } from "./rental-card/EquipmentTile";
 import type { Rental } from "@/lib/mock/rentals";
 import type { PaymentMethod } from "@/lib/mock/rentals";
@@ -189,6 +190,8 @@ export function PaymentAcceptDialog({
   // в ущерб (переключатель «вернуть залог клиенту»).
   const [returnDepositInstead, setReturnDepositInstead] = useState(false);
   const createDamageReport = useCreateDamageReport();
+  // v0.9.1: после завершения показываем акт возврата для печати.
+  const [actPreviewRentalId, setActPreviewRentalId] = useState<number | null>(null);
 
   // Неоплаченная аренда (rent payments paid=false)
   const pendingRent = useMemo(() => {
@@ -1451,7 +1454,14 @@ export function PaymentAcceptDialog({
       }
 
       onPaid?.();
-      requestClose();
+      // v0.9.1: при завершении открываем акт возврата (с позициями ущерба)
+      // для печати — оператор отдаёт клиенту. Дровер закроется после
+      // закрытия превью. Иначе (обычная оплата) — просто закрываемся.
+      if (completing) {
+        setActPreviewRentalId(rental.id);
+      } else {
+        requestClose();
+      }
     } catch (e) {
       toast.error("Не удалось принять оплату", (e as Error).message ?? "");
     } finally {
@@ -2487,13 +2497,16 @@ export function PaymentAcceptDialog({
             <div className="border-b border-border px-5 py-3">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[12px] font-bold text-ink">
-                  Клиент вносит по долгу
+                  {completing ? "Клиент платит сейчас" : "Клиент вносит по долгу"}
                 </span>
                 <div className="flex items-center gap-1.5">
                   <input
                     inputMode="numeric"
-                    value={debtPayStr}
-                    placeholder={String(totalDebt)}
+                    // v0.9.1: показываем РЕАЛЬНОЕ чёрное число (не серый
+                    // placeholder, который читался как «пусто»). Пусто в
+                    // состоянии = «полное закрытие» → выводим totalDebt.
+                    value={debtPayStr === "" ? String(paidDebtNow) : debtPayStr}
+                    onFocus={(e) => e.target.select()}
                     onChange={(e) =>
                       setDebtPayStr(e.target.value.replace(/\D/g, ""))
                     }
@@ -2504,20 +2517,24 @@ export function PaymentAcceptDialog({
               </div>
               <div className="mt-1 flex items-center justify-between text-[11px]">
                 <span className="text-muted">
-                  из {fmt(totalDebt)} ₽ долга
-                  {isPartialDebt && (
-                    <button
-                      type="button"
-                      onClick={() => setDebtPayStr("")}
-                      className="ml-1.5 font-semibold text-blue-600 underline"
-                    >
-                      всё
-                    </button>
+                  {isPartialDebt ? (
+                    <>
+                      из {fmt(totalDebt)} ₽ долга
+                      <button
+                        type="button"
+                        onClick={() => setDebtPayStr("")}
+                        className="ml-1.5 font-semibold text-blue-600 underline"
+                      >
+                        полностью
+                      </button>
+                    </>
+                  ) : (
+                    "полное закрытие долга"
                   )}
                 </span>
                 {isPartialDebt && (
                   <span className="font-semibold text-orange-ink">
-                    останется {fmt(debtRemainAfter)} ₽
+                    останется долгом {fmt(debtRemainAfter)} ₽
                   </span>
                 )}
               </div>
@@ -2535,10 +2552,9 @@ export function PaymentAcceptDialog({
               //   - депозит/topup
               const overdueAfterForgive = overdueDaysBalance + overdueFineBalance;
               const overdueForgiven = overdueBalanceRaw - overdueAfterForgive;
-              // Этап 2: ущерб по приёмке входит в «прочий долг» (метка уже
-              // упоминает ущерб) — чтобы тали́ итемизации сходилась с totalDebt.
-              const otherDebt =
-                pendingRent + damageBalance + manualBalance + intakeDamageDebt;
+              // v0.9.1: ущерб по приёмке — ОТДЕЛЬНОЙ строкой ниже (не лумпим в
+              // «прочий долг», иначе он дублировал блок «Ущерб по приёмке»).
+              const otherDebt = pendingRent + damageBalance + manualBalance;
               return (
                 <>
                   {/* C3: при частичном погашении показываем ОДНУ строку «гашение
@@ -2576,6 +2592,13 @@ export function PaymentAcceptDialog({
                         <FooterRow
                           label="Прочий долг (экип./аренда/ущерб/ручной)"
                           value={`${fmt(otherDebt)} ₽`}
+                        />
+                      )}
+                      {completing && intakeDamageDebt > 0 && (
+                        <FooterRow
+                          label="Ущерб по приёмке (в долг)"
+                          value={`${fmt(intakeDamageDebt)} ₽`}
+                          tone="red"
                         />
                       )}
                     </>
@@ -2649,7 +2672,7 @@ export function PaymentAcceptDialog({
               для оператора, делаем максимально заметным. */}
           <div className="flex items-baseline justify-between border-t border-border px-5 py-4">
             <div className="text-[12px] font-bold uppercase tracking-wider text-muted-2">
-              {completing ? "Вносит сейчас" : "К приёму"}
+              К приёму
             </div>
             <div className="font-display text-[28px] font-extrabold leading-none tabular-nums text-blue-700">
               {fmt(amountDueNow)} ₽
@@ -2882,16 +2905,49 @@ export function PaymentAcceptDialog({
 
   const panel = needDateStep ? dateStepPanel : mainPanel;
 
+  // v0.9.1: акт возврата после завершения — печать/скачивание. Закрытие
+  // превью закрывает и дровер.
+  const actPreview =
+    actPreviewRentalId != null
+      ? (() => {
+          const apiBase = (() => {
+            const envBase = import.meta.env.VITE_API_URL as string | undefined;
+            if (envBase) return envBase.replace(/\/$/, "");
+            return window.location.origin.includes("localhost")
+              ? "http://localhost:4000"
+              : window.location.origin
+                  .replace("crm-preview.", "api-preview.")
+                  .replace("crm.", "api.");
+          })();
+          return (
+            <DocumentPreviewModal
+              title="Акт возврата"
+              htmlUrl={`${apiBase}/api/rentals/${actPreviewRentalId}/document/act_return?format=html`}
+              docxUrl={`${apiBase}/api/rentals/${actPreviewRentalId}/document/act_return?format=docx`}
+              docxFilename={`act_return_${actPreviewRentalId}.docx`}
+              onClose={() => {
+                setActPreviewRentalId(null);
+                requestClose();
+              }}
+            />
+          );
+        })()
+      : null;
+
   if (inline) {
     return (
-      <aside className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-card-sm">
-        {panel}
-      </aside>
+      <>
+        <aside className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-card-sm">
+          {panel}
+        </aside>
+        {actPreview}
+      </>
     );
   }
 
   return (
     <>
+      {actPreview}
       {/* v0.6.46: drawer без backdrop'a — календарь и левая колонка карточки
           остаются чёткими и интерактивными. Панель slide-in справа, поверх
           контента, закрытие — крестик внутри / Escape. */}

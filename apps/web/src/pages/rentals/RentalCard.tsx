@@ -319,6 +319,7 @@ export function RentalCard({
   onSwapped,
   onClose,
   onRequestPayment,
+  onRequestComplete,
   paymentExtDays,
   paymentDateIso,
   paymentResetSignal,
@@ -345,6 +346,11 @@ export function RentalCard({
    *  (DashboardDrawer) — карточка открывает Payment внутри себя как
    *  раньше (inline-fallback через paymentRentalId). */
   onRequestPayment?: (rentalId: number, extDays: number) => void;
+  /** v0.9.1: запрос на завершение аренды у родителя (Rentals) — открывает
+   *  ту же push-колонку, что и оплата, но в режиме completing (приёмка +
+   *  расчёт). Если не передан (DashboardDrawer/мобила) — карточка
+   *  открывает дровер завершения внутри себя (overlay-fallback). */
+  onRequestComplete?: (rentalId: number) => void;
   /** v0.9: открыта ли сейчас панель/окно оплаты ИМЕННО для этой аренды
    *  (parent-managed на стр. Аренды). Когда true — кнопки «Принять оплату»
    *  на карточке дизейблятся (модуль уже открыт по ним). */
@@ -387,6 +393,14 @@ export function RentalCard({
   void onPaymentOpenChange;
   void initialTab; // v0.6.44: tabs убраны, prop оставлен для совместимости.
   const [action, setAction] = useState<ActionKind | null>(null);
+  // v0.9.1: «Завершить аренду» на стр. Аренды отдаём родителю — он открывает
+  // push-колонку (как «Принять оплату»), а не overlay поверх карточки.
+  useEffect(() => {
+    if (action === "complete" && onRequestComplete) {
+      onRequestComplete(rental.id);
+      setAction(null);
+    }
+  }, [action, onRequestComplete, rental.id]);
   const [extendOpen, setExtendOpen] = useState(false);
   // v0.8.0: бамп для входа в режим паркинга из ⋯-меню (CalendarPanel слушает).
   const [armParkingSignal, setArmParkingSignal] = useState(0);
@@ -2721,14 +2735,18 @@ export function RentalCard({
       )}
 
       {/* Этап 2: «Завершить аренду» — единое окно (приёмка + расчёт) в
-          дровере оплаты (PaymentAcceptDialog, режим completing). Раньше
-          было два окна: модалка приёмки RentalActionDialog → дровер оплаты. */}
+          дровере оплаты (PaymentAcceptDialog, режим completing). На стр.
+          Аренды родитель открывает push-колонку (onRequestComplete, см.
+          эффект ниже) — карточка сдвигается, как при «Принять оплату».
+          Без родителя (DashboardDrawer/мобила) — overlay-fallback здесь. */}
       {action === "complete" ? (
-        <PaymentAcceptDialog
-          rental={rental}
-          completing
-          onClose={() => setAction(null)}
-        />
+        onRequestComplete ? null : (
+          <PaymentAcceptDialog
+            rental={rental}
+            completing
+            onClose={() => setAction(null)}
+          />
+        )
       ) : action ? (
         <RentalActionDialog
           rental={rental}

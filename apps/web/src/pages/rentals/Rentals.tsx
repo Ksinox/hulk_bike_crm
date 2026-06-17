@@ -250,13 +250,24 @@ export function Rentals() {
   const [historyFilter, setHistoryFilter] = useState<
     "all" | "extend" | "swap" | "equipment" | "money" | undefined
   >(undefined);
+  // v0.9.1: завершение аренды использует ту же push-колонку, что и «Принять
+  // оплату» (не overlay) — режим completing.
+  const [paymentCompleting, setPaymentCompleting] = useState(false);
   const openPayment = (rentalId: number, extDays: number) => {
     setHistoryRentalId(null); // взаимоисключение с историей
+    setPaymentCompleting(false);
     setPaymentExtDays(extDays);
+    setPaymentRentalId(rentalId);
+  };
+  const openComplete = (rentalId: number) => {
+    setHistoryRentalId(null);
+    setPaymentExtDays(0);
+    setPaymentCompleting(true);
     setPaymentRentalId(rentalId);
   };
   const closePayment = () => {
     setPaymentRentalId(null);
+    setPaymentCompleting(false);
     setPaymentDateIso(null);
     setPaymentExtDays(0);
     // Бампаем сигнал — календарь карточки обнулит drag-extend.
@@ -778,6 +789,7 @@ export function Rentals() {
                   }
                   onClose={() => setPanelOpen(false)}
                   onRequestPayment={openPayment}
+                  onRequestComplete={openComplete}
                   paymentOpen={paymentRentalId === selected.id}
                   onOpenHistory={openHistory}
                   paymentExtDays={paymentExtDays}
@@ -816,6 +828,7 @@ export function Rentals() {
                 <PaymentAcceptDialog
                   rental={lastPaymentRental}
                   inline
+                  completing={paymentCompleting}
                   initialExtDays={paymentExtDays || undefined}
                   onExtDaysChange={setPaymentExtDays}
                   onPaymentDateChange={setPaymentDateIso}
@@ -837,6 +850,7 @@ export function Rentals() {
           <ErrorBoundary key={`pay-ovl-${paymentRental.id}`}>
             <PaymentAcceptDialog
               rental={paymentRental}
+              completing={paymentCompleting}
               initialExtDays={paymentExtDays || undefined}
               onExtDaysChange={setPaymentExtDays}
               onPaymentDateChange={setPaymentDateIso}

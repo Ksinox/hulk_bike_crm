@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Bike, Image as ImageIcon, X } from "lucide-react";
+import { Bike, Image as ImageIcon, X, Plus, Minus, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Rental } from "@/lib/mock/rentals";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -15,13 +15,10 @@ import type { DamageSeedItem } from "./DamageReportDialog";
  * RentalActionDialog в отдельный модуль, чтобы её можно было встроить
  * в дровер оплаты (PaymentAcceptDialog) — единое окно завершения.
  *
- * Здесь:
- *  - примитивы UI: ReturnItemCard, ScooterDamagePicker, EquipmentDamagePicker;
- *  - хук useReturnIntake(rental, enabled) — владеет всем состоянием приёмки
- *    (карточки позиций, повреждения, дата/пробег/судьба скутера) и считает
- *    производные (totalDamage, blocked, позиции для акта);
- *  - <ReturnIntakeSection intake={…} /> — рендер блока приёмки (без сводки
- *    по залогу — залог считается в РАСЧЁТЕ дровера).
+ * v0.9.1 (фидбэк preview): пикер ущерба переработан — у каждой выбранной
+ * позиции редактируемая цена и количество (степпер), без обрезания текста,
+ * + свои позиции. Модель: на каждую позицию приёмки (скутер / экипировка) —
+ * СПИСОК строк ущерба `DamageLine[]` (цена × кол-во).
  */
 
 function fmt(n: number) {
@@ -47,24 +44,31 @@ function todayStr(): string {
 
 export type CardKey = "scooter" | `equipment-${number}`;
 export type CardState = "ok" | "problem";
-export type EquipmentDamage = {
+
+/** Одна строка ущерба: позиция прайса (или своя) с ценой и количеством. */
+export type DamageLine = {
   name: string;
-  amount: number;
-  itemId?: number;
+  price: number; // цена за единицу (редактируемая)
+  quantity: number; // количество (степпер, ≥1)
+  itemId?: number; // id позиции прайса (null для своей)
   isCustom: boolean;
 };
-export type ScooterDamage = {
-  name: string;
-  amount: number;
-  itemId?: number;
-  isCustom: boolean;
-};
+
 export type ScooterNextStatus =
   | "rental_pool"
   | "repair"
   | "for_sale"
   | "disassembly"
   | "buyout";
+
+/** Цель открытого пикера ущерба. */
+type PickerTarget =
+  | { kind: "scooter" }
+  | { kind: "equipment"; key: CardKey; name: string }
+  | null;
+
+const lineTotal = (l: DamageLine) => l.price * l.quantity;
+const linesTotal = (lines: DamageLine[]) => lines.reduce((s, l) => s + lineTotal(l), 0);
 
 /** Производные данные приёмки, нужные дровер-расчёту и сабмиту. */
 export type ReturnIntake = ReturnType<typeof useReturnIntake>;
@@ -76,12 +80,12 @@ export type ReturnIntake = ReturnType<typeof useReturnIntake>;
  */
 export function useReturnIntake(rental: Rental, enabled: boolean) {
   const [cardStates, setCardStates] = useState<Record<string, CardState>>({});
+  // На каждую позицию (скутер / экипировка) — список строк ущерба.
+  const [scooterDamages, setScooterDamages] = useState<DamageLine[]>([]);
   const [equipmentDamages, setEquipmentDamages] = useState<
-    Record<string, EquipmentDamage>
+    Record<string, DamageLine[]>
   >({});
-  const [pickerKey, setPickerKey] = useState<CardKey | null>(null);
-  const [scooterDamages, setScooterDamages] = useState<ScooterDamage[]>([]);
-  const [scooterPickerOpen, setScooterPickerOpen] = useState(false);
+  const [pickerTarget, setPickerTarget] = useState<PickerTarget>(null);
   const [returnDate, setReturnDate] = useState<string>(() => isoToday());
   const [mileageAtReturn, setMileageAtReturn] = useState<string>("");
   const [scooterNextStatus, setScooterNextStatus] =
@@ -138,26 +142,27 @@ export function useReturnIntake(rental: Rental, enabled: boolean) {
   );
   const allDecided = allCards.every((k) => cardStates[k] != null);
 
+  const scooterDamageTotal = linesTotal(scooterDamages);
   const equipmentDamageTotal = equipmentCards.reduce((sum, key) => {
     if (cardStates[key] !== "problem") return sum;
-    return sum + (equipmentDamages[key]?.amount ?? 0);
+    return sum + linesTotal(equipmentDamages[key] ?? []);
   }, 0);
-  const scooterDamageTotal = scooterDamages.reduce((s, d) => s + d.amount, 0);
   const totalDamage = scooterDamageTotal + equipmentDamageTotal;
   const hasDamage = totalDamage > 0;
 
-  // Все ли проблемы экипировки заполнены (выбрана позиция/сумма).
+  // Проблема заполнена, если есть ≥1 строка с положительной суммой.
+  const linesFilled = (lines: DamageLine[]) =>
+    lines.length > 0 && lines.every((l) => l.price > 0 && l.quantity > 0 && l.name.trim());
   const allEquipmentProblemsFilled = equipmentCards.every((key) => {
     if (cardStates[key] !== "problem") return true;
-    const d = equipmentDamages[key];
-    return !!d && d.amount > 0 && d.name.trim().length > 0;
+    return linesFilled(equipmentDamages[key] ?? []);
   });
 
   // Кнопка «Завершить» заблокирована, пока по каждой позиции не выбрано
-  // состояние и проблемы не заполнены.
+  // состояние и все проблемы не заполнены.
   const blocked =
     !allDecided ||
-    (cardStates[scooterCard] === "problem" && scooterDamages.length === 0) ||
+    (cardStates[scooterCard] === "problem" && !linesFilled(scooterDamages)) ||
     !allEquipmentProblemsFilled;
 
   // v0.6.1: при появлении ущерба и если оператор не трогал dropdown —
@@ -175,48 +180,48 @@ export function useReturnIntake(rental: Rental, enabled: boolean) {
   // Позиции для создания акта ущерба (POST /damage-reports).
   const buildDamageSeedItems = (): DamageSeedItem[] => {
     const items: DamageSeedItem[] = [];
-    for (const d of scooterDamages) {
+    for (const l of scooterDamages) {
       items.push({
-        priceItemId: d.itemId ?? null,
-        name: `Скутер: ${d.name}`,
-        originalPrice: d.amount,
-        finalPrice: d.amount,
-        quantity: 1,
+        priceItemId: l.itemId ?? null,
+        name: `Скутер: ${l.name}`,
+        originalPrice: l.price,
+        finalPrice: l.price,
+        quantity: l.quantity,
         comment: null,
       });
     }
     for (const [key, state] of Object.entries(cardStates)) {
       if (key === "scooter" || state !== "problem") continue;
-      const damage = equipmentDamages[key];
-      if (!damage || damage.amount <= 0) continue;
       const idx = Number(key.split("-")[1]);
       const eqName = equipmentList[idx]?.name ?? "Экипировка";
-      items.push({
-        priceItemId: damage.itemId ?? null,
-        name: `Экипировка «${eqName}»: ${damage.name}`,
-        originalPrice: damage.amount,
-        finalPrice: damage.amount,
-        quantity: 1,
-        comment: null,
-      });
+      for (const l of equipmentDamages[key] ?? []) {
+        items.push({
+          priceItemId: l.itemId ?? null,
+          name: `Экипировка «${eqName}»: ${l.name}`,
+          originalPrice: l.price,
+          finalPrice: l.price,
+          quantity: l.quantity,
+          comment: null,
+        });
+      }
     }
     return items;
   };
 
-  // Краткие строки ущерба для блока расчёта.
+  // Краткие строки ущерба для блока расчёта (label + сумма строки).
   const damageLines = useMemo(() => {
-    const lines: { label: string; amount: number }[] = [];
-    for (const d of scooterDamages) {
-      lines.push({ label: `Скутер: ${d.name}`, amount: d.amount });
-    }
+    const out: { label: string; amount: number }[] = [];
+    const fmtLine = (l: DamageLine, prefix: string) => ({
+      label: `${prefix}: ${l.name}${l.quantity > 1 ? ` ×${l.quantity}` : ""}`,
+      amount: lineTotal(l),
+    });
+    for (const l of scooterDamages) out.push(fmtLine(l, "Скутер"));
     for (const key of equipmentCards) {
       if (cardStates[key] !== "problem") continue;
-      const d = equipmentDamages[key];
-      if (!d) continue;
       const eqName = equipmentList[Number(key.split("-")[1])]?.name ?? "Экипировка";
-      lines.push({ label: `${eqName}: ${d.name}`, amount: d.amount });
+      for (const l of equipmentDamages[key] ?? []) out.push(fmtLine(l, eqName));
     }
-    return lines;
+    return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scooterDamages, equipmentCards, cardStates, equipmentDamages, equipmentList]);
 
@@ -226,14 +231,12 @@ export function useReturnIntake(rental: Rental, enabled: boolean) {
     // state + setters
     cardStates,
     setCardStates,
-    equipmentDamages,
-    setEquipmentDamages,
-    pickerKey,
-    setPickerKey,
     scooterDamages,
     setScooterDamages,
-    scooterPickerOpen,
-    setScooterPickerOpen,
+    equipmentDamages,
+    setEquipmentDamages,
+    pickerTarget,
+    setPickerTarget,
     returnDate,
     setReturnDate,
     mileageAtReturn,
@@ -266,23 +269,31 @@ export function useReturnIntake(rental: Rental, enabled: boolean) {
   };
 }
 
+/** Краткая подпись ущерба для карточки позиции. */
+function damageSummary(lines: DamageLine[]): string | undefined {
+  if (lines.length === 0) return undefined;
+  if (lines.length === 1) {
+    const l = lines[0]!;
+    return `${l.name}${l.quantity > 1 ? ` ×${l.quantity}` : ""} — ${fmt(lineTotal(l))} ₽`;
+  }
+  return `${lines.length} позиции — ${fmt(linesTotal(lines))} ₽`;
+}
+
 /**
  * v0.9: блок приёмки позиций — карточки (скутер + экипировка), дата/пробег,
- * судьба скутера, пикеры. Без сводки по залогу (она в расчёте дровера).
+ * судьба скутера, пикер ущерба. Без сводки по залогу (она в расчёте дровера).
  */
 export function ReturnIntakeSection({ intake }: { intake: ReturnIntake }) {
   const {
     rental,
     cardStates,
     setCardStates,
-    equipmentDamages,
-    setEquipmentDamages,
-    pickerKey,
-    setPickerKey,
     scooterDamages,
     setScooterDamages,
-    scooterPickerOpen,
-    setScooterPickerOpen,
+    equipmentDamages,
+    setEquipmentDamages,
+    pickerTarget,
+    setPickerTarget,
     returnDate,
     setReturnDate,
     mileageAtReturn,
@@ -307,6 +318,14 @@ export function ReturnIntakeSection({ intake }: { intake: ReturnIntake }) {
     : undefined;
   const todayIso = isoToday();
 
+  // Сброс позиции в «не решено», если ущерб не выбран.
+  const clearCard = (key: CardKey) =>
+    setCardStates((s) => {
+      const next = { ...s };
+      delete next[key];
+      return next;
+    });
+
   return (
     <div className="space-y-4">
       {/* Карточки приёмки */}
@@ -322,29 +341,23 @@ export function ReturnIntakeSection({ intake }: { intake: ReturnIntake }) {
           fallbackIcon="scooter"
           state={scooterState}
           size="large"
-          damageInfo={
-            scooterState === "problem" && scooterDamages.length > 0
-              ? scooterDamages.length === 1
-                ? `${scooterDamages[0]!.name} — ${fmt(scooterDamages[0]!.amount)} ₽`
-                : `${scooterDamages.length} позиций — ${fmt(scooterDamages.reduce((a, b) => a + b.amount, 0))} ₽`
-              : undefined
-          }
+          damageInfo={scooterState === "problem" ? damageSummary(scooterDamages) : undefined}
           onSetOk={() => {
             setCardStates((s) => ({ ...s, [scooterCard]: "ok" }));
             setScooterDamages([]);
           }}
           onSetProblem={() => {
             setCardStates((s) => ({ ...s, [scooterCard]: "problem" }));
-            setScooterPickerOpen(true);
+            setPickerTarget({ kind: "scooter" });
           }}
-          onEditProblem={() => setScooterPickerOpen(true)}
+          onEditProblem={() => setPickerTarget({ kind: "scooter" })}
         />
         {/* Экипировка — компактная сетка 2 колонки */}
         {equipmentList.length > 0 && (
           <div className="grid grid-cols-2 gap-2">
             {equipmentList.map((eq, i) => {
               const key = `equipment-${i}` as CardKey;
-              const damage = equipmentDamages[key];
+              const lines = equipmentDamages[key] ?? [];
               const eqItem = eq.itemId
                 ? equipmentItems.find((x) => x.id === eq.itemId)
                 : null;
@@ -364,9 +377,7 @@ export function ReturnIntakeSection({ intake }: { intake: ReturnIntake }) {
                   state={cardStates[key]}
                   size="compact"
                   damageInfo={
-                    cardStates[key] === "problem" && damage
-                      ? `${damage.name} — ${fmt(damage.amount)} ₽`
-                      : undefined
+                    cardStates[key] === "problem" ? damageSummary(lines) : undefined
                   }
                   onSetOk={() => {
                     setCardStates((s) => ({ ...s, [key]: "ok" }));
@@ -378,9 +389,11 @@ export function ReturnIntakeSection({ intake }: { intake: ReturnIntake }) {
                   }}
                   onSetProblem={() => {
                     setCardStates((s) => ({ ...s, [key]: "problem" }));
-                    setPickerKey(key);
+                    setPickerTarget({ kind: "equipment", key, name: eq.name });
                   }}
-                  onEditProblem={() => setPickerKey(key)}
+                  onEditProblem={() =>
+                    setPickerTarget({ kind: "equipment", key, name: eq.name })
+                  }
                 />
               );
             })}
@@ -476,54 +489,45 @@ export function ReturnIntakeSection({ intake }: { intake: ReturnIntake }) {
         </div>
       )}
 
-      {/* Picker позиций экипировки из прайса */}
-      {pickerKey && pickerKey !== "scooter" && (
-        <EquipmentDamagePicker
+      {/* Пикер ущерба (один компонент для скутера и экипировки) */}
+      {pickerTarget && (
+        <DamagePicker
+          mode={pickerTarget.kind}
+          scooterModelId={pickerTarget.kind === "scooter" ? (scooter?.modelId ?? null) : null}
+          title={
+            pickerTarget.kind === "scooter"
+              ? `Повреждения · ${rental.scooter}`
+              : `Ущерб · ${pickerTarget.name}`
+          }
+          subtitle={
+            pickerTarget.kind === "scooter"
+              ? scooterModel?.name ?? null
+              : "позиция экипировки"
+          }
+          initial={
+            pickerTarget.kind === "scooter"
+              ? scooterDamages
+              : equipmentDamages[pickerTarget.key] ?? []
+          }
           onClose={() => {
-            const closingKey = pickerKey;
-            setPickerKey(null);
-            if (closingKey && !equipmentDamages[closingKey]) {
-              setCardStates((s) => {
-                const next = { ...s };
-                delete next[closingKey];
-                return next;
-              });
+            // Если ничего не выбрано — сбрасываем «problem».
+            const t = pickerTarget;
+            setPickerTarget(null);
+            if (t.kind === "scooter") {
+              if (scooterDamages.length === 0) clearCard("scooter");
+            } else {
+              if ((equipmentDamages[t.key] ?? []).length === 0) clearCard(t.key);
             }
           }}
-          presetName={equipmentList[Number(pickerKey.split("-")[1])]?.name ?? null}
-          onPick={(picked) => {
-            const k = pickerKey;
-            setEquipmentDamages((m) => ({ ...m, [k]: picked }));
-            setPickerKey(null);
-          }}
-        />
-      )}
-
-      {/* Picker повреждений скутера (multi-select из прайса) */}
-      {scooterPickerOpen && (
-        <ScooterDamagePicker
-          scooterModelId={scooter?.modelId ?? null}
-          modelName={scooterModel?.name ?? null}
-          initial={scooterDamages}
-          onClose={() => {
-            setScooterPickerOpen(false);
-            if (scooterDamages.length === 0) {
-              setCardStates((s) => {
-                const next = { ...s };
-                delete next[scooterCard];
-                return next;
-              });
-            }
-          }}
-          onApply={(damages) => {
-            setScooterDamages(damages);
-            setScooterPickerOpen(false);
-            if (damages.length === 0) {
-              setCardStates((s) => {
-                const next = { ...s };
-                delete next[scooterCard];
-                return next;
-              });
+          onApply={(lines) => {
+            const t = pickerTarget;
+            setPickerTarget(null);
+            if (t.kind === "scooter") {
+              setScooterDamages(lines);
+              if (lines.length === 0) clearCard("scooter");
+            } else {
+              setEquipmentDamages((m) => ({ ...m, [t.key]: lines }));
+              if (lines.length === 0) clearCard(t.key);
             }
           }}
         />
@@ -650,247 +654,113 @@ export function ReturnItemCard({
 }
 
 /**
- * v0.4.66: picker повреждений скутера. Multi-select из прайса (группы
- * текущей модели + общие «Повреждения»/«Штрафы») + опция «свой вариант».
+ * v0.9.1: единый пикер ущерба (скутер / экипировка). Переработан по фидбэку:
+ *  - выбранные позиции — редактируемые строки: цена (₽) + количество (степпер);
+ *  - каталог прайса — полный текст без обрезания, поиск, добавление по клику;
+ *  - «своя позиция» (название + цена);
+ *  - итог по строкам, кнопка «Применить».
  */
-export function ScooterDamagePicker({
+function DamagePicker({
+  mode,
   scooterModelId,
-  modelName,
+  title,
+  subtitle,
   initial,
   onApply,
   onClose,
 }: {
+  mode: "scooter" | "equipment";
   scooterModelId: number | null;
-  modelName: string | null;
-  initial: { name: string; amount: number; itemId?: number; isCustom: boolean }[];
-  onApply: (damages: { name: string; amount: number; itemId?: number; isCustom: boolean }[]) => void;
+  title: string;
+  subtitle: string | null;
+  initial: DamageLine[];
+  onApply: (lines: DamageLine[]) => void;
   onClose: () => void;
 }) {
   const groupsQ = useApiPriceList();
   const groups = groupsQ.data ?? [];
-  const ownGroups = groups.filter(
-    (g) => g.scooterModelId != null && g.scooterModelId === scooterModelId,
-  );
-  const generalGroups = groups.filter(
-    (g) => g.scooterModelId == null && !g.name.toLowerCase().includes("экипировк"),
-  );
-  const otherModelGroups = groups.filter(
-    (g) => g.scooterModelId != null && g.scooterModelId !== scooterModelId,
-  );
-  const visibleGroups = [...ownGroups, ...generalGroups, ...otherModelGroups];
 
-  const [selected, setSelected] = useState(initial);
-  const [customName, setCustomName] = useState("");
-  const [customAmount, setCustomAmount] = useState("");
-  const total = selected.reduce((s, d) => s + d.amount, 0);
-
-  const isPicked = (itemId: number) => selected.some((s) => s.itemId === itemId);
-  const togglePrice = (it: { id: number; name: string; priceA: number | null }) => {
-    if (isPicked(it.id)) {
-      setSelected((arr) => arr.filter((d) => d.itemId !== it.id));
-    } else {
-      setSelected((arr) => [
-        ...arr,
-        { itemId: it.id, name: it.name, amount: it.priceA ?? 0, isCustom: false },
-      ]);
+  // Каталог прайса в зависимости от режима.
+  const catalog = useMemo(() => {
+    if (mode === "equipment") {
+      return groups.filter((g) => g.name.toLowerCase().includes("экипировк"));
     }
+    // scooter: модельные текущей модели + общие (без экипировки)
+    const own = groups.filter((g) => g.scooterModelId != null && g.scooterModelId === scooterModelId);
+    const general = groups.filter(
+      (g) => g.scooterModelId == null && !g.name.toLowerCase().includes("экипировк"),
+    );
+    const other = groups.filter((g) => g.scooterModelId != null && g.scooterModelId !== scooterModelId);
+    return [...own, ...general, ...other];
+  }, [groups, mode, scooterModelId]);
+
+  const [lines, setLines] = useState<DamageLine[]>(initial);
+  const [query, setQuery] = useState("");
+  const [customName, setCustomName] = useState("");
+  const [customPrice, setCustomPrice] = useState("");
+  const total = linesTotal(lines);
+
+  const addFromPrice = (it: { id: number; name: string; priceA: number | null }) => {
+    setLines((arr) => {
+      const existing = arr.find((l) => l.itemId === it.id);
+      if (existing) {
+        // повторный клик по той же позиции — +1 к количеству
+        return arr.map((l) =>
+          l.itemId === it.id ? { ...l, quantity: l.quantity + 1 } : l,
+        );
+      }
+      return [
+        ...arr,
+        { itemId: it.id, name: it.name, price: it.priceA ?? 0, quantity: 1, isCustom: false },
+      ];
+    });
   };
   const addCustom = () => {
-    const amt = Math.floor(Number(customAmount));
-    if (!customName.trim() || !Number.isFinite(amt) || amt <= 0) return;
-    setSelected((arr) => [
+    const p = Math.floor(Number(customPrice));
+    if (!customName.trim() || !Number.isFinite(p) || p <= 0) return;
+    setLines((arr) => [
       ...arr,
-      { name: customName.trim(), amount: amt, isCustom: true },
+      { name: customName.trim(), price: p, quantity: 1, isCustom: true },
     ]);
     setCustomName("");
-    setCustomAmount("");
+    setCustomPrice("");
   };
-  const removeCustom = (idx: number) => {
-    setSelected((arr) => arr.filter((_, i) => i !== idx));
-  };
+  const removeLine = (idx: number) =>
+    setLines((arr) => arr.filter((_, i) => i !== idx));
+  const setLinePrice = (idx: number, price: number) =>
+    setLines((arr) => arr.map((l, i) => (i === idx ? { ...l, price: Math.max(0, price) } : l)));
+  const setLineQty = (idx: number, delta: number) =>
+    setLines((arr) =>
+      arr.map((l, i) => (i === idx ? { ...l, quantity: Math.max(1, l.quantity + delta) } : l)),
+    );
+
+  const ql = query.trim().toLowerCase();
+  const filteredCatalog = catalog
+    .map((g) => ({
+      ...g,
+      items: ql ? g.items.filter((it) => it.name.toLowerCase().includes(ql)) : g.items,
+    }))
+    .filter((g) => g.items.length > 0);
 
   return (
     <div
-      className="fixed inset-0 z-[140] flex items-center justify-center bg-ink/55 p-6 backdrop-blur-sm animate-backdrop-in"
+      className="fixed inset-0 z-[140] flex items-center justify-center bg-ink/55 p-4 backdrop-blur-sm animate-backdrop-in sm:p-6"
       onClick={onClose}
     >
       <div
-        className="flex w-full max-w-[560px] flex-col rounded-2xl bg-surface shadow-card-lg animate-modal-in"
+        className="flex w-full max-w-[600px] flex-col overflow-hidden rounded-2xl bg-surface shadow-card-lg animate-modal-in"
         onClick={(e) => e.stopPropagation()}
-        style={{ maxHeight: "85vh" }}
+        style={{ maxHeight: "88vh" }}
       >
-        <div className="flex items-center gap-3 rounded-t-2xl border-b border-border bg-surface-soft px-5 py-3">
-          <div className="min-w-0 flex-1">
-            <div className="text-[15px] font-semibold text-ink">
-              Повреждения скутера
-            </div>
-            {modelName && (
-              <div className="text-[11px] text-muted-2">
-                Прайс по модели · {modelName}
-              </div>
-            )}
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded-full text-muted hover:bg-border hover:text-ink"
-          >
-            <X size={16} />
-          </button>
-        </div>
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
-          {visibleGroups.length === 0 && (
-            <div className="text-[12px] text-muted-2">
-              Прайс пуст. Используй «свой вариант» ниже.
-            </div>
-          )}
-          {visibleGroups.map((g) => (
-            <div key={g.id}>
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-2 mb-1.5">
-                {g.name}
-                {g.scooterModelId == null && (
-                  <span className="ml-2 normal-case text-muted-2/70">общие</span>
-                )}
-              </div>
-              <div className="grid grid-cols-2 gap-1.5">
-                {g.items.map((it) => {
-                  const picked = isPicked(it.id);
-                  return (
-                    <button
-                      key={it.id}
-                      type="button"
-                      onClick={() => togglePrice(it)}
-                      className={cn(
-                        "flex items-center justify-between rounded-lg border px-3 py-2 text-[12.5px] transition-all",
-                        picked
-                          ? "border-orange-500 bg-orange-soft/40 text-orange-ink shadow-sm"
-                          : "border-border bg-surface text-ink-2 hover:border-orange-300 hover:bg-orange-soft/20",
-                      )}
-                    >
-                      <span className="truncate text-left">{it.name}</span>
-                      <span className="ml-2 shrink-0 tabular-nums font-semibold">
-                        {(it.priceA ?? 0).toLocaleString("ru-RU")} ₽
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-          {/* Custom */}
-          <div className="border-t border-border pt-3">
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-2 mb-1.5">
-              Свой вариант
-            </div>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={customName}
-                onChange={(e) => setCustomName(e.target.value)}
-                placeholder="Описание (например: разбит фонарь)"
-                className="h-9 flex-1 rounded-lg border border-border bg-surface px-3 text-[12.5px] outline-none focus:border-blue-600"
-              />
-              <input
-                type="number"
-                value={customAmount}
-                onChange={(e) => setCustomAmount(e.target.value)}
-                placeholder="₽"
-                className="h-9 w-24 rounded-lg border border-border bg-surface px-3 text-[12.5px] tabular-nums outline-none focus:border-blue-600"
-              />
-              <button
-                type="button"
-                onClick={addCustom}
-                disabled={!customName.trim() || !(Number(customAmount) > 0)}
-                className="h-9 rounded-lg bg-blue-600 px-3 text-[12.5px] font-semibold text-white disabled:opacity-40"
-              >
-                Добавить
-              </button>
-            </div>
-            {selected.filter((s) => s.isCustom).length > 0 && (
-              <div className="mt-2 space-y-1">
-                {selected
-                  .map((s, i) => ({ s, i }))
-                  .filter((x) => x.s.isCustom)
-                  .map(({ s, i }) => (
-                    <div
-                      key={i}
-                      className="flex items-center justify-between rounded-lg bg-orange-soft/40 px-3 py-1.5 text-[12px]"
-                    >
-                      <span className="truncate text-orange-ink">{s.name}</span>
-                      <span className="ml-2 flex shrink-0 items-center gap-2">
-                        <span className="tabular-nums font-semibold text-orange-ink">
-                          {s.amount.toLocaleString("ru-RU")} ₽
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => removeCustom(i)}
-                          className="text-orange-ink/70 hover:text-orange-ink"
-                        >
-                          <X size={14} />
-                        </button>
-                      </span>
-                    </div>
-                  ))}
-              </div>
-            )}
-          </div>
-        </div>
-        <div className="flex items-center justify-between gap-3 rounded-b-2xl border-t border-border bg-surface-soft px-5 py-3">
-          <div className="text-[12px] text-muted-2">
-            Выбрано: <b className="text-ink">{selected.length}</b> · итого{" "}
-            <b className="text-ink tabular-nums">{total.toLocaleString("ru-RU")} ₽</b>
-          </div>
-          <button
-            type="button"
-            onClick={() => onApply(selected)}
-            disabled={selected.length === 0}
-            className="rounded-full bg-blue-600 px-5 py-1.5 text-[12.5px] font-semibold text-white hover:bg-blue-700 disabled:opacity-40"
-          >
-            Применить
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/**
- * v0.4.62: модалка-пикер позиции из прайс-листа (группа «Экипировка»)
- * для фиксации ущерба по конкретной экипировке. Также позволяет
- * добавить «свой вариант» (название + сумма).
- */
-export function EquipmentDamagePicker({
-  presetName,
-  onPick,
-  onClose,
-}: {
-  presetName: string | null;
-  onPick: (d: {
-    name: string;
-    amount: number;
-    itemId?: number;
-    isCustom: boolean;
-  }) => void;
-  onClose: () => void;
-}) {
-  const groupsQ = useApiPriceList();
-  const groups = groupsQ.data ?? [];
-  const equipGroup = groups.find((g) => g.name.toLowerCase().includes("экипировк"));
-  const items = equipGroup?.items ?? [];
-  const [customName, setCustomName] = useState("");
-  const [customAmount, setCustomAmount] = useState("");
-  return (
-    <div
-      className="fixed inset-0 z-[140] flex items-center justify-center bg-ink/55 p-6 backdrop-blur-sm animate-backdrop-in"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-[440px] overflow-hidden rounded-2xl bg-surface shadow-card-lg animate-modal-in"
-        onClick={(e) => e.stopPropagation()}
-      >
+        {/* Header */}
         <div className="flex items-center gap-3 border-b border-border bg-surface-soft px-5 py-3">
-          <div className="min-w-0 flex-1 text-[15px] font-semibold text-ink">
-            Что с {presetName ? `«${presetName}»` : "экипировкой"}?
+          <div className="min-w-0 flex-1">
+            <div className="text-[15px] font-semibold text-ink">{title}</div>
+            {subtitle && (
+              <div className="text-[11px] text-muted-2">
+                Прайс {mode === "scooter" ? "по модели" : "экипировки"} · {subtitle}
+              </div>
+            )}
           </div>
           <button
             type="button"
@@ -900,77 +770,190 @@ export function EquipmentDamagePicker({
             <X size={16} />
           </button>
         </div>
-        <div className="max-h-[60vh] overflow-y-auto px-5 py-4">
-          <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-2 mb-2">
-            Позиции прайса
-          </div>
-          {items.length === 0 ? (
-            <div className="py-2 text-[12px] text-muted-2">
-              Прайс-лист пуст или группа «Экипировка» не найдена. Используй
-              «свой вариант» ниже.
-            </div>
-          ) : (
-            <div className="space-y-1">
-              {items.map((it) => (
-                <button
-                  key={it.id}
-                  type="button"
-                  onClick={() =>
-                    onPick({
-                      name: it.name,
-                      amount: it.priceA ?? 0,
-                      itemId: it.id,
-                      isCustom: false,
-                    })
-                  }
-                  className="flex w-full items-center justify-between rounded-[8px] border border-border bg-surface px-3 py-2 text-[13px] hover:border-blue-600 hover:bg-blue-soft"
-                >
-                  <span className="truncate text-left">{it.name}</span>
-                  <span className="tabular-nums font-semibold text-ink shrink-0 ml-2">
-                    {(it.priceA ?? 0).toLocaleString("ru-RU")} ₽
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
-          <div className="mt-4 border-t border-border pt-3">
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-2 mb-2">
-              Свой вариант
+
+        {/* Выбранные позиции — редактируемые строки */}
+        {lines.length > 0 && (
+          <div className="border-b border-border bg-orange-soft/15 px-4 py-3">
+            <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-orange-ink">
+              Что списываем ({lines.length})
             </div>
             <div className="space-y-2">
+              {lines.map((l, i) => (
+                <div
+                  key={i}
+                  className="rounded-xl border border-orange-200 bg-surface p-2.5 shadow-card-sm"
+                >
+                  <div className="flex items-start gap-2">
+                    <span className="min-w-0 flex-1 text-[13px] font-semibold text-ink break-words leading-snug">
+                      {l.name}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => removeLine(i)}
+                      className="-mr-1 -mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted-2 hover:bg-red-soft hover:text-red"
+                      title="Убрать"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                  <div className="mt-2 flex items-center gap-2">
+                    {/* Цена за единицу */}
+                    <div className="flex items-center rounded-lg border border-border bg-surface focus-within:border-blue-600">
+                      <input
+                        type="number"
+                        min={0}
+                        value={l.price}
+                        onChange={(e) => setLinePrice(i, Math.floor(Number(e.target.value)))}
+                        className="h-8 w-[78px] bg-transparent px-2.5 text-right text-[13px] font-semibold tabular-nums text-ink outline-none"
+                      />
+                      <span className="pr-2.5 text-[11px] text-muted-2">₽</span>
+                    </div>
+                    {/* Количество — степпер */}
+                    <div className="flex items-center rounded-lg border border-border bg-surface">
+                      <button
+                        type="button"
+                        onClick={() => setLineQty(i, -1)}
+                        disabled={l.quantity <= 1}
+                        className="flex h-8 w-8 items-center justify-center rounded-l-lg text-muted-2 hover:bg-border hover:text-ink disabled:opacity-30"
+                      >
+                        <Minus size={14} />
+                      </button>
+                      <span className="w-7 text-center text-[13px] font-semibold tabular-nums text-ink">
+                        {l.quantity}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setLineQty(i, +1)}
+                        className="flex h-8 w-8 items-center justify-center rounded-r-lg text-muted-2 hover:bg-border hover:text-ink"
+                      >
+                        <Plus size={14} />
+                      </button>
+                    </div>
+                    <span className="ml-auto text-[13px] font-bold tabular-nums text-orange-ink">
+                      {fmt(lineTotal(l))} ₽
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Каталог прайса + поиск */}
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="border-b border-border px-4 py-2.5">
+            <div className="flex items-center gap-2 rounded-lg border border-border bg-surface px-2.5 focus-within:border-blue-600">
+              <Search size={15} className="shrink-0 text-muted-2" />
               <input
                 type="text"
-                value={customName}
-                onChange={(e) => setCustomName(e.target.value)}
-                placeholder="Например: разбит визор шлема"
-                className="h-9 w-full rounded-[10px] border border-border bg-surface px-3 text-[13px] outline-none focus:border-blue-600"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Поиск по прайсу…"
+                className="h-8 w-full bg-transparent text-[13px] outline-none"
               />
+            </div>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+            {filteredCatalog.length === 0 && (
+              <div className="py-2 text-[12px] text-muted-2">
+                {catalog.length === 0
+                  ? "Прайс пуст — добавьте свою позицию ниже."
+                  : "Ничего не найдено по запросу."}
+              </div>
+            )}
+            <div className="space-y-3">
+              {filteredCatalog.map((g) => (
+                <div key={g.id}>
+                  <div className="mb-1 text-[10.5px] font-semibold uppercase tracking-wider text-muted-2">
+                    {g.name}
+                    {g.scooterModelId == null && mode === "scooter" && (
+                      <span className="ml-1.5 normal-case text-muted-2/70">общие</span>
+                    )}
+                  </div>
+                  <div className="space-y-1">
+                    {g.items.map((it) => {
+                      const added = lines.find((l) => l.itemId === it.id);
+                      return (
+                        <button
+                          key={it.id}
+                          type="button"
+                          onClick={() => addFromPrice(it)}
+                          className={cn(
+                            "flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-[13px] transition-colors",
+                            added
+                              ? "border-orange-300 bg-orange-soft/30"
+                              : "border-border bg-surface hover:border-orange-300 hover:bg-orange-soft/15",
+                          )}
+                        >
+                          <span className="min-w-0 flex-1 break-words leading-snug text-ink-2">
+                            {it.name}
+                          </span>
+                          <span className="shrink-0 tabular-nums font-semibold text-ink">
+                            {fmt(it.priceA ?? 0)} ₽
+                          </span>
+                          {added ? (
+                            <span className="flex h-6 min-w-6 shrink-0 items-center justify-center rounded-full bg-orange-500 px-1.5 text-[11px] font-bold text-white">
+                              ×{added.quantity}
+                            </span>
+                          ) : (
+                            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-soft text-blue-600">
+                              <Plus size={14} />
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Своя позиция */}
+            <div className="mt-3 border-t border-border pt-3">
+              <div className="mb-1.5 text-[10.5px] font-semibold uppercase tracking-wider text-muted-2">
+                Своя позиция
+              </div>
               <div className="flex gap-2">
                 <input
+                  type="text"
+                  value={customName}
+                  onChange={(e) => setCustomName(e.target.value)}
+                  placeholder="Например: разбит визор"
+                  className="h-9 min-w-0 flex-1 rounded-lg border border-border bg-surface px-3 text-[13px] outline-none focus:border-blue-600"
+                />
+                <input
                   type="number"
-                  min={0}
-                  value={customAmount}
-                  onChange={(e) => setCustomAmount(e.target.value)}
-                  placeholder="Сумма ₽"
-                  className="h-9 w-32 rounded-[10px] border border-border bg-surface px-3 text-[13px] tabular-nums outline-none focus:border-blue-600"
+                  value={customPrice}
+                  onChange={(e) => setCustomPrice(e.target.value)}
+                  placeholder="₽"
+                  className="h-9 w-20 rounded-lg border border-border bg-surface px-2.5 text-right text-[13px] tabular-nums outline-none focus:border-blue-600"
                 />
                 <button
                   type="button"
-                  disabled={!customName.trim() || !(Number(customAmount) > 0)}
-                  onClick={() =>
-                    onPick({
-                      name: customName.trim(),
-                      amount: Math.floor(Number(customAmount)),
-                      isCustom: true,
-                    })
-                  }
-                  className="h-9 flex-1 rounded-[10px] bg-blue-600 text-white text-[13px] font-semibold disabled:opacity-40"
+                  onClick={addCustom}
+                  disabled={!customName.trim() || !(Number(customPrice) > 0)}
+                  className="h-9 shrink-0 rounded-lg bg-blue-600 px-3 text-[12.5px] font-semibold text-white hover:bg-blue-700 disabled:opacity-40"
                 >
-                  Применить
+                  Добавить
                 </button>
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between gap-3 border-t border-border bg-surface-soft px-5 py-3">
+          <div className="text-[12px] text-muted-2">
+            Итого:{" "}
+            <b className="text-[15px] tabular-nums text-orange-ink">{fmt(total)} ₽</b>
+          </div>
+          <button
+            type="button"
+            onClick={() => onApply(lines)}
+            className="rounded-full bg-blue-600 px-5 py-2 text-[13px] font-semibold text-white hover:bg-blue-700"
+          >
+            {lines.length === 0 ? "Без ущерба" : "Применить"}
+          </button>
         </div>
       </div>
     </div>
