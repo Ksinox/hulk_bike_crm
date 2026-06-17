@@ -817,13 +817,21 @@ export function Rentals() {
         <div
           className={cn(
             "h-full min-h-0 shrink-0 overflow-hidden transition-[width,opacity,margin] duration-300 ease-in-out",
+            // v0.9.2: завершение — две колонки внутри → колонка шире.
             paymentRental && !narrowDesktop
-              ? "ml-4 w-[480px] opacity-100"
+              ? paymentCompleting
+                ? "ml-4 w-[720px] 2xl:w-[860px] opacity-100"
+                : "ml-4 w-[480px] opacity-100"
               : "ml-0 w-0 opacity-0",
           )}
         >
           {!narrowDesktop && lastPaymentRental && (
-            <div className="flex h-full min-h-0 w-[480px] flex-col overflow-hidden">
+            <div
+              className={cn(
+                "flex h-full min-h-0 flex-col overflow-hidden",
+                paymentCompleting ? "w-[720px] 2xl:w-[860px]" : "w-[480px]",
+              )}
+            >
               <ErrorBoundary key={`pay-${lastPaymentRental.id}`}>
                 <PaymentAcceptDialog
                   rental={lastPaymentRental}

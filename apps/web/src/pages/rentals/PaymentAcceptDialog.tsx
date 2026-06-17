@@ -2903,7 +2903,325 @@ export function PaymentAcceptDialog({
     </div>
   );
 
-  const panel = needDateStep ? dateStepPanel : mainPanel;
+  // v0.9.2: завершение — ДВЕ колонки. Слева приёмка (скроллится), справа
+  // расчёт (просрочка + ущерб + оплата) с прибитым низом — деньги и состав
+  // долга всегда на виду, не уезжают под приёмку. На узких/мобиле колонки
+  // складываются в одну (md:flex-row), расчёт идёт под приёмкой, низ прибит.
+  const completingPanel = (
+    <div
+      className={cn(
+        "flex h-full flex-col overflow-hidden bg-surface",
+        closing && "opacity-0 transition-opacity duration-150",
+      )}
+    >
+      <div className="flex items-center gap-3 border-b border-border bg-gradient-to-r from-blue-50 to-surface px-5 py-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white">
+          <Repeat size={16} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="text-[14px] font-bold text-ink">
+            {`Завершение аренды · #${String(rental.id).padStart(4, "0")}`}
+          </div>
+          <div className="mt-1 text-[11.5px] leading-snug text-muted">
+            Слева приёмка позиций, справа расчёт — завершите одним окном.
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={requestClose}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted hover:bg-border hover:text-ink"
+        >
+          <X size={16} />
+        </button>
+      </div>
+
+      <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+        {/* ЛЕВО — приёмка (свой скролл) */}
+        <div className="min-h-0 overflow-y-auto border-b border-border px-4 py-4 scrollbar-thin md:w-[44%] md:shrink-0 md:border-b-0 md:border-r">
+          <ReturnIntakeSection intake={intake} />
+        </div>
+
+        {/* ПРАВО — расчёт (скролл состава + прибитый низ) */}
+        <div className="flex min-h-0 flex-1 flex-col bg-surface-soft/40">
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4 scrollbar-thin text-[13px] text-ink-2">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-2">
+              Расчёт
+            </div>
+
+            {/* Сквозной долг (с прошлых аренд) */}
+            {crossDebtTotal > 0 && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3">
+                <div className="mb-1.5 flex items-center gap-2">
+                  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-amber-500 text-[11px] font-bold text-white">
+                    !
+                  </span>
+                  <span className="text-[11px] font-bold uppercase tracking-wide text-amber-800">
+                    Долг с прошлых аренд
+                  </span>
+                  <span className="ml-auto font-display text-[15px] font-extrabold tabular-nums text-amber-900">
+                    {fmt(crossDebtTotal)} ₽
+                  </span>
+                </div>
+                <div className="mb-2 flex flex-col gap-0.5 text-[11px] text-amber-900/90">
+                  {crossSources.map((s) => (
+                    <div key={s.rentalId} className="flex items-center justify-between gap-2">
+                      <span className="min-w-0 flex-1 truncate">
+                        {s.label} · #{String(s.rentalId).padStart(4, "0")}
+                      </span>
+                      <b className="shrink-0 tabular-nums">{fmt(s.amount)} ₽</b>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <input
+                    inputMode="numeric"
+                    value={crossPayStr}
+                    placeholder={String(crossDebtTotal)}
+                    onChange={(e) => setCrossPayStr(e.target.value.replace(/\D/g, ""))}
+                    className="w-20 rounded-lg border border-amber-300 bg-white px-2 py-1 text-right text-[13px] font-bold tabular-nums text-ink outline-none focus:border-amber-500"
+                  />
+                  <span className="text-[11px] text-amber-800">₽</span>
+                  {(["cash", "transfer"] as const).map((mm) => (
+                    <button
+                      key={mm}
+                      type="button"
+                      onClick={() => setCrossMethod(mm)}
+                      className={cn(
+                        "rounded-full border px-2.5 py-1 text-[11px] font-semibold",
+                        crossMethod === mm
+                          ? "border-amber-500 bg-amber-500 text-white"
+                          : "border-amber-300 bg-white text-amber-800",
+                      )}
+                    >
+                      {mm === "cash" ? "Наличные" : "Перевод"}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={handlePayCrossDebt}
+                    disabled={crossPayNow <= 0 || payCrossDebt.isPending}
+                    className="ml-auto rounded-full bg-amber-600 px-3 py-1 text-[11px] font-semibold text-white hover:bg-amber-700 disabled:opacity-40"
+                  >
+                    Принять {fmt(crossPayNow)} ₽
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Просрочка + прощение */}
+            {hasOverdue && (
+              <div className="rounded-xl border border-red-200 bg-red-soft/30 p-3">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-[12px] font-bold text-red-ink">
+                    Просрочка{overdueDaysHeader > 0 ? ` · ${overdueDaysHeader} дн` : ""}
+                  </span>
+                  <span className="font-display text-[15px] font-extrabold tabular-nums text-red-ink">
+                    {fmt(overdueBalanceRaw)} ₽
+                  </span>
+                </div>
+                <ForgiveStepCards
+                  forgiveChoice={forgiveChoice}
+                  setForgiveChoice={setForgiveChoice}
+                  forgiveDaysN={forgiveDaysN}
+                  setForgiveDaysN={setForgiveDaysN}
+                  forgiveFineN={forgiveFineN}
+                  setForgiveFineN={setForgiveFineN}
+                  fineDailyRate={fineDailyRate}
+                  overdueBalanceRaw={overdueBalanceRaw}
+                  overdueDaysBalanceRaw={overdueDaysBalanceRaw}
+                  overdueFineBalanceRaw={overdueFineBalanceRaw}
+                  overdueDaysCount={overdueDaysCount}
+                  hasOverdueDays={hasOverdueDays}
+                  hasOverdueFine={hasOverdueFine}
+                  onClear={setClearDebt}
+                  fmt={fmt}
+                />
+              </div>
+            )}
+
+            {/* Ущерб по приёмке — ИТОГОМ (детали в карточке приёмки слева + попап) */}
+            {intake.hasDamage && (
+              <div className="rounded-xl border border-orange-200 bg-orange-soft/20 p-3">
+                <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wider text-orange-ink">
+                  Ущерб по приёмке
+                </div>
+                <div className="flex items-center justify-between text-[13px]">
+                  <span className="text-ink-2">Итого ущерб</span>
+                  <b className="tabular-nums text-ink">{fmt(intakeDamageTotal)} ₽</b>
+                </div>
+                {depositForZachet > 0 && (
+                  <div className="mt-1 flex items-center justify-between gap-2 text-[12.5px]">
+                    <span className="text-ink-2">
+                      {returnDepositInstead ? "Залог — клиенту" : "Зачёт залога"}
+                      <button
+                        type="button"
+                        onClick={() => setReturnDepositInstead((v) => !v)}
+                        className="ml-1.5 text-[11px] font-semibold text-blue-600 underline"
+                      >
+                        {returnDepositInstead ? "зачесть" : "вернуть"}
+                      </button>
+                    </span>
+                    <b className={cn("shrink-0 tabular-nums", returnDepositInstead ? "text-ink" : "text-green-ink")}>
+                      {returnDepositInstead ? `${fmt(depositForZachet)} ₽` : `−${fmt(depositZachet)} ₽`}
+                    </b>
+                  </div>
+                )}
+                <div className="mt-1.5 flex items-center justify-between border-t border-orange-200/60 pt-1.5 text-[13px]">
+                  <span className="font-bold text-ink">В долг по ущербу</span>
+                  <b className="tabular-nums text-orange-ink">{fmt(intakeDamageDebt)} ₽</b>
+                </div>
+                {!returnDepositInstead && depositReturnToClient > 0 && (
+                  <div className="mt-0.5 text-[11px] text-muted-2">
+                    Остаток залога клиенту:{" "}
+                    <b className="text-ink">{fmt(depositReturnToClient)} ₽</b>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {totalDebt === 0 && !intake.hasDamage && crossDebtTotal === 0 && (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 px-3 py-2.5 text-[12.5px] text-emerald-700">
+                Долгов нет — аренда закроется без оплаты.
+              </div>
+            )}
+          </div>
+
+          {/* Прибитый низ: итого + платит сейчас + способ + кнопка */}
+          <div className="border-t border-border bg-surface px-4 py-3">
+            {totalDebt > 0 && (
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
+                  Итого долг
+                </span>
+                <span className="font-display text-[18px] font-extrabold tabular-nums text-ink">
+                  {fmt(totalDebt)} ₽
+                </span>
+              </div>
+            )}
+            {totalDebt > 0 && (
+              <div className="mb-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[12px] font-bold text-ink">Клиент платит сейчас</span>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      inputMode="numeric"
+                      value={debtPayStr === "" ? String(paidDebtNow) : debtPayStr}
+                      onFocus={(e) => e.target.select()}
+                      onChange={(e) => setDebtPayStr(e.target.value.replace(/\D/g, ""))}
+                      className="w-24 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-right text-[14px] font-bold tabular-nums text-ink focus:border-blue-500 focus:outline-none"
+                    />
+                    <span className="text-[12px] text-muted">₽</span>
+                  </div>
+                </div>
+                <div className="mt-1 flex items-center justify-between text-[11px]">
+                  <span className="text-muted">
+                    {isPartialDebt ? (
+                      <>
+                        из {fmt(totalDebt)} ₽
+                        <button
+                          type="button"
+                          onClick={() => setDebtPayStr("")}
+                          className="ml-1.5 font-semibold text-blue-600 underline"
+                        >
+                          полностью
+                        </button>
+                      </>
+                    ) : (
+                      "полное закрытие долга"
+                    )}
+                  </span>
+                  {isPartialDebt && (
+                    <span className="font-semibold text-orange-ink">
+                      останется долгом {fmt(debtRemainAfter)} ₽
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className="mb-2 flex items-baseline justify-between border-t border-border pt-2.5">
+              <span className="text-[12px] font-bold uppercase tracking-wider text-muted-2">
+                К приёму
+              </span>
+              <span className="font-display text-[24px] font-extrabold leading-none tabular-nums text-blue-700">
+                {fmt(amountDueNow)} ₽
+              </span>
+            </div>
+
+            <div className="mb-2.5">
+              <div className="mb-1.5 flex items-center gap-1.5">
+                <span className="text-[10.5px] font-bold uppercase tracking-wider text-muted-2">
+                  Способ оплаты
+                </span>
+                {accepted > 0 && method === null && (
+                  <span className="rounded-full bg-orange-soft px-1.5 py-0.5 text-[10px] font-bold text-orange-ink">
+                    выберите
+                  </span>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {METHODS.map((m) => {
+                  const active = method === m.id;
+                  const needsChoice = accepted > 0 && method === null;
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => setMethod(m.id)}
+                      className={cn(
+                        "flex h-11 items-center justify-center gap-2 rounded-xl border-2 text-[13.5px] font-bold transition-all",
+                        active
+                          ? "border-blue-600 bg-blue-600 text-white shadow-card-sm"
+                          : needsChoice
+                            ? "border-orange-ink/45 bg-orange-soft/40 text-ink"
+                            : "border-border bg-surface text-muted hover:border-blue-300 hover:text-ink",
+                      )}
+                    >
+                      <m.Icon size={17} />
+                      {m.label}
+                      {active && <Check size={14} strokeWidth={3} />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={requestClose}
+                className="h-12 flex-1 rounded-full border border-border bg-white px-3 text-[14px] font-semibold text-muted-2 hover:bg-surface-soft hover:text-ink-2"
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                onClick={submit}
+                disabled={submitDisabled}
+                className={cn(
+                  "inline-flex h-12 flex-[2] items-center justify-center gap-1.5 rounded-full px-4 text-[14px] font-bold text-white",
+                  submitDisabled
+                    ? "cursor-not-allowed bg-surface text-muted-2"
+                    : "bg-orange hover:bg-orange-ink",
+                )}
+              >
+                <Check size={14} />{" "}
+                {amountDueNow > 0
+                  ? `Завершить · принять ${fmt(amountDueNow)} ₽`
+                  : "Завершить аренду"}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  const panel = needDateStep
+    ? dateStepPanel
+    : completing
+      ? completingPanel
+      : mainPanel;
 
   // v0.9.1: акт возврата после завершения — печать/скачивание. Закрытие
   // превью закрывает и дровер.
@@ -2953,7 +3271,9 @@ export function PaymentAcceptDialog({
           контента, закрытие — крестик внутри / Escape. */}
       <aside
         className={cn(
-          "fixed right-0 top-0 bottom-0 z-[90] w-[min(95vw,480px)] bg-surface shadow-card-lg ring-1 ring-border flex flex-col",
+          "fixed right-0 top-0 bottom-0 z-[90] bg-surface shadow-card-lg ring-1 ring-border flex flex-col",
+          // v0.9.2: завершение шире (две колонки), обычная оплата — узкая.
+          completing ? "w-[min(96vw,900px)]" : "w-[min(95vw,480px)]",
           closing ? "animate-slide-out-right" : "animate-slide-in-right",
         )}
       >
