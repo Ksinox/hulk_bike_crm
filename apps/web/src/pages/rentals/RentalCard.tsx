@@ -2720,7 +2720,16 @@ export function RentalCard({
         </SideDrawer>
       )}
 
-      {action && (
+      {/* Этап 2: «Завершить аренду» — единое окно (приёмка + расчёт) в
+          дровере оплаты (PaymentAcceptDialog, режим completing). Раньше
+          было два окна: модалка приёмки RentalActionDialog → дровер оплаты. */}
+      {action === "complete" ? (
+        <PaymentAcceptDialog
+          rental={rental}
+          completing
+          onClose={() => setAction(null)}
+        />
+      ) : action ? (
         <RentalActionDialog
           rental={rental}
           action={action}
@@ -2732,7 +2741,7 @@ export function RentalCard({
             setDamageOpen(true);
           }}
         />
-      )}
+      ) : null}
       {/* «Изменить аренду» (RentalEditModal) удалён — сырая правка денег/
           периода заменена безопасными кнопками в карточке. */}
       {/* ConfirmPaymentDialog больше не используется — функционал убран. */}
