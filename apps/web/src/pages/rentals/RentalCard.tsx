@@ -28,6 +28,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { MobileBottomSheet } from "@/mobile/BottomSheet";
+import { useCallClient } from "@/mobile/call";
 import {
   MIN_RENTAL_DAYS,
   ratePeriodForDays,
@@ -458,6 +459,12 @@ export function RentalCard({
     () => apiClients?.find((c) => c.id === rental.clientId),
     [rental.clientId, apiClients],
   );
+  // Мобильная плавающая кнопка «Позвонить» в карточке аренды: тач-таргет под
+  // большим пальцем над футером, прячется при скролле. Звонок (или выбор из
+  // двух номеров) — через общий useCallClient.
+  const isMobile = useIsMobile();
+  const { callClient, callSheet } = useCallClient();
+  const drawerScrollRef = useRef<HTMLDivElement>(null);
   // ВАЖНО: для построения цепочки продлений берём И активные И архивные
   // аренды. При продлении parent rental уходит в архив, и без archivedRentals
   // мы бы потеряли его платежи в расчёте «За всё время».
@@ -2945,9 +2952,27 @@ export function RentalCard({
             рендерят hover-поповеры (absolute, w-max), которые у правой колонки
             заходят за край карточки и раздували её ширину (тот же эффект уже
             ловили на мобиле). По вертикали скролл сохраняется. */}
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden">
+        <div
+          ref={drawerScrollRef}
+          className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden"
+        >
           <div className="flex flex-col gap-3 p-5">{body}</div>
         </div>
+        {/* Мобильная плавающая кнопка звонка — над футером, прячется при скролле.
+            Если у клиента 2 номера — useCallClient покажет выбор (callSheet). */}
+        {isMobile && (client?.phone || client?.extraPhone) && (
+          <DrawerCallFab
+            scrollRef={drawerScrollRef}
+            hasFooter={canComplete || canAcceptPayment}
+            onCall={() =>
+              callClient(client?.name ?? "Клиент", [
+                client?.phone,
+                client?.extraPhone,
+              ])
+            }
+          />
+        )}
+        {callSheet}
         {/* Sticky footer: «Закрыть аренду» (нейтр.) / «Принять оплату» (зелёная) */}
         {(canComplete || canAcceptPayment) && (
           <div className="sticky bottom-0 flex gap-3 border-t border-border bg-surface p-4">
@@ -3590,6 +3615,55 @@ function KpiDetailSheet({
  * + мелкая серая формула расчёта (как считается), справа — сумма
  * (tabular-nums). Используется в секции «Финансовая информация».
  */
+/**
+ * Мобильная плавающая кнопка «Позвонить» в карточке аренды. Круглая, в правом
+ * нижнем углу над футером (под большим пальцем). Видна в покое, прячется во
+ * время скролла тела карточки (по событию scroll контейнера) и возвращается,
+ * когда скролл остановился. Тап → звонок (или выбор из двух номеров).
+ */
+function DrawerCallFab({
+  scrollRef,
+  hasFooter,
+  onCall,
+}: {
+  scrollRef: { current: HTMLDivElement | null };
+  hasFooter: boolean;
+  onCall: () => void;
+}) {
+  const [scrolling, setScrolling] = useState(false);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    let t: ReturnType<typeof setTimeout> | undefined;
+    const onScroll = () => {
+      setScrolling(true);
+      if (t) clearTimeout(t);
+      t = setTimeout(() => setScrolling(false), 240);
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      if (t) clearTimeout(t);
+    };
+  }, [scrollRef]);
+  return (
+    <button
+      type="button"
+      onClick={onCall}
+      aria-label="Позвонить клиенту"
+      className={cn(
+        "absolute right-4 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-green-600 text-white shadow-card-lg transition-all duration-200 active:scale-95",
+        hasFooter ? "bottom-[84px]" : "bottom-5",
+        scrolling
+          ? "pointer-events-none translate-y-3 opacity-0"
+          : "translate-y-0 opacity-100",
+      )}
+    >
+      <Phone size={22} />
+    </button>
+  );
+}
+
 function DebtRow({
   label,
   formula,
