@@ -888,7 +888,7 @@ function DamagePicker({
     .filter((g) => g.items.length > 0);
 
   return (
-    <div className="flex max-h-[88vh] w-[440px] shrink-0 flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-card-lg animate-modal-in">
+    <div className="flex max-h-[88vh] w-full shrink-0 flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-card-lg animate-modal-in md:w-[440px]">
         {/* Header */}
         <div className="flex items-center gap-3 border-b border-border bg-surface-soft px-5 py-3">
           <div className="min-w-0 flex-1">

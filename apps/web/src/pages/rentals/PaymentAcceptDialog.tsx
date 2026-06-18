@@ -3466,7 +3466,11 @@ export function PaymentAcceptDialog({
           {/* v0.9.4: пикер ущерба — отдельной панелью СЛЕВА, на том же слое
               (а не модалка поверх модалки). Окно завершения сдвигается вправо. */}
           <div
-            className="my-auto flex items-start justify-center gap-3"
+            // #27: на мобиле (<md) пикер и окно НЕ помещаются в ряд (440px +
+            // карточка шире экрана → горизонтальное переполнение). Поэтому на
+            // мобиле складываем в столбец (пикер сверху, полноширинный), на
+            // md+ — прежний ряд (пикер слева, окно справа).
+            className="my-auto flex w-full flex-col items-stretch gap-3 md:w-auto md:flex-row md:items-start md:justify-center"
             onClick={(e) => e.stopPropagation()}
           >
             <ReturnDamagePicker intake={intake} />
