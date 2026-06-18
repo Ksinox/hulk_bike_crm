@@ -9,6 +9,7 @@ import { ReturnsTable } from "./ReturnsTable";
 import { OverdueTable } from "./OverdueTable";
 import { DebtorsNoRentalCard } from "./DebtorsNoRentalCard";
 import { DebtsToCollect } from "./DebtsToCollect";
+import { ParkLoadGauge } from "./ParkLoadGauge";
 import { ActivityFeed } from "./ActivityFeed";
 import { ClassicKpi, CLASSIC_KPI_ICONS } from "./ClassicKpi";
 import { NewApplicationsWidget } from "./NewApplicationsWidget";
@@ -51,6 +52,20 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
   const drawer = useDashboardDrawer();
   return (
     <div className="grid auto-rows-[minmax(120px,auto)] grid-cols-12 gap-4">
+      {/* #дашборд: круговая загрузка парка — первой картой (вместо «Новых
+          заявок», которые остаются в разделе «Заявки»). */}
+      <div className="col-span-3">
+        <ParkLoadGauge
+          percent={metrics.loadPercent}
+          active={metrics.activeRentalsCount}
+          rentable={metrics.rentableFleet}
+          onClick={
+            metrics.activeRentalsCount > 0
+              ? () => drawer.openRentalsList("active")
+              : undefined
+          }
+        />
+      </div>
       <div className="col-span-3">
         <KpiCard
           blue
@@ -133,9 +148,6 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
             </span>
           }
         />
-      </div>
-      <div className="col-span-3">
-        <NewApplicationsWidget />
       </div>
 
       {/* Главная двухколоночная зона — левая и правая колонки независимы
