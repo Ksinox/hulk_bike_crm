@@ -520,24 +520,38 @@ export function useDashboardMetrics(): DashboardMetrics {
         rentalIds: [...ids].sort((a, b) => b - a),
       }));
 
-    // F4: должники БЕЗ активной аренды — клиенты с незакрытым долгом по ущербу
-    // (он «переезжает» с клиентом после возврата), у кого нет ни одной активной
-    // аренды. Такие теряются: в просрочках их нет (нет активной аренды), во
-    // вкладку «Клиенты» оператор почти не ходит. Выводим их отдельным блоком на
-    // дашборде, чтобы можно было отработать. Клиенты с активной арендой сюда НЕ
-    // попадают — их долг виден на карточке аренды (F3).
-    const activeClientIds = new Set(
-      rentals.filter((r) => r.status === "active").map((r) => r.clientId),
-    );
+    // F4 + #25: «Висящие долги» — клиенты с незакрытым долгом по ущербу,
+    // КОТОРЫЙ НЕ ВИДЕН на активной аренде. Такой долг «переезжает» с клиентом
+    // после возврата и легко теряется. Два случая, оба должны попасть в плашку:
+    //   • у клиента нет активной аренды → весь unpaidDamageDebt висит;
+    //   • у клиента ЕСТЬ активная аренда, но долг по ущербу с ДРУГОЙ (закрытой)
+    //     аренды — на текущей аренде он не показан (её ущерб = 0/меньше).
+    //     Раньше (#25, баг Комарова) такой клиент исключался целиком, и долг
+    //     2000 ₽ с прошлой аренды нигде не светился.
+    // «Висящая» сумма = unpaidDamageDebt − долг по ущербу на ЕГО активных
+    // арендах (тот виден на карточке аренды, не дублируем). debtAgg — только
+    // live-аренды, поэтому damageBalance в нём = ущерб на активной аренде.
+    const activeDamageByClient = new Map<number, number>();
+    for (const d of debtAgg) {
+      if ((d.damageBalance ?? 0) > 0) {
+        activeDamageByClient.set(
+          d.clientId,
+          (activeDamageByClient.get(d.clientId) ?? 0) + d.damageBalance,
+        );
+      }
+    }
     const debtorsNoRental: DebtorNoRentalItem[] = clients
-      .filter(
-        (c) => (c.unpaidDamageDebt ?? 0) > 0 && !activeClientIds.has(c.id),
-      )
-      .map((c) => ({
-        clientId: c.id,
-        clientName: c.name,
-        clientPhone: c.phone ?? "",
-        amount: c.unpaidDamageDebt ?? 0,
+      .map((c) => {
+        const totalDamage = c.unpaidDamageDebt ?? 0;
+        const onActive = activeDamageByClient.get(c.id) ?? 0;
+        return { c, hanging: Math.max(0, totalDamage - onActive) };
+      })
+      .filter((x) => x.hanging > 0)
+      .map((x) => ({
+        clientId: x.c.id,
+        clientName: x.c.name,
+        clientPhone: x.c.phone ?? "",
+        amount: x.hanging,
       }))
       .sort((a, b) => b.amount - a.amount);
 
