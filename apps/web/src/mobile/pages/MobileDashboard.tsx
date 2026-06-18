@@ -156,33 +156,8 @@ export function MobileDashboard({
         />
       </div>
 
-      {/* Статус парка */}
-      <MobileParkGrid metrics={m} />
-
-      {/* Возвраты сегодня */}
-      <Section
-        title="Возвраты сегодня"
-        count={m.returnsToday.length}
-        icon={<Clock size={15} />}
-      >
-        {m.returnsToday.length === 0 ? (
-          <EmptyRow text="Сегодня никто не возвращает" />
-        ) : (
-          m.returnsToday
-            .slice(0, 6)
-            .map((r) => (
-              <ReturnRow
-                key={r.rentalId}
-                item={r}
-                onOpen={() => setOpenRentalId(r.rentalId)}
-                onCall={() =>
-                  callClient(r.clientName, [r.clientPhone, r.clientPhone2])
-                }
-              />
-            ))
-        )}
-      </Section>
-
+      {/* #дашборд: долги (просрочки + висящие) подняты НАД парком — заказчик:
+          горящие деньги первыми, парк ниже (на мобиле тоже). */}
       {/* Просрочки */}
       <Section
         title="Просрочки"
@@ -231,6 +206,33 @@ export function MobileDashboard({
           ))}
         </Section>
       )}
+
+      {/* Статус парка — теперь ПОД долгами. */}
+      <MobileParkGrid metrics={m} />
+
+      {/* Возвраты сегодня */}
+      <Section
+        title="Возвраты сегодня"
+        count={m.returnsToday.length}
+        icon={<Clock size={15} />}
+      >
+        {m.returnsToday.length === 0 ? (
+          <EmptyRow text="Сегодня никто не возвращает" />
+        ) : (
+          m.returnsToday
+            .slice(0, 6)
+            .map((r) => (
+              <ReturnRow
+                key={r.rentalId}
+                item={r}
+                onOpen={() => setOpenRentalId(r.rentalId)}
+                onCall={() =>
+                  callClient(r.clientName, [r.clientPhone, r.clientPhone2])
+                }
+              />
+            ))
+        )}
+      </Section>
 
       {/* Последние действия — лента журнала (как в десктоп-CRM). */}
       <ActivityFeed compact />
