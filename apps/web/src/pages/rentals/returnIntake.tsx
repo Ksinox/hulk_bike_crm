@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { Bike, Image as ImageIcon, X, Plus, Minus, Search, ChevronDown, CheckCircle2 } from "lucide-react";
+import { Bike, Image as ImageIcon, X, Plus, Minus, Search, ChevronDown, CheckCircle2, Camera } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  DamageMediaCapture,
+  analyzeFile,
+  type StagedMedia,
+} from "./DamageMediaCapture";
 import type { Rental } from "@/lib/mock/rentals";
 import { DatePicker } from "@/components/ui/date-picker";
 import { useApiScooter } from "@/lib/api/scooters";
@@ -91,6 +96,27 @@ export function useReturnIntake(rental: Rental, enabled: boolean) {
   const [scooterNextStatus, setScooterNextStatus] =
     useState<ScooterNextStatus>("rental_pool");
   const [scooterStatusTouched, setScooterStatusTouched] = useState(false);
+  // #28: фото/видео ущерба — копим локально (staged), заливаем в акт после
+  // его создания на завершении (PaymentAcceptDialog). Привязка — на весь акт.
+  const [mediaStaged, setMediaStaged] = useState<StagedMedia[]>([]);
+  // Чистим objectURL'ы превью при размонтировании (не течёт память).
+  useEffect(() => {
+    return () => {
+      for (const m of mediaStaged) URL.revokeObjectURL(m.previewUrl);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const addMedia = async (files: File[]) => {
+    const items = await Promise.all(files.map((f) => analyzeFile(f)));
+    setMediaStaged((s) => [...s, ...items]);
+  };
+  const removeStagedMedia = (id: string) => {
+    setMediaStaged((s) => {
+      const it = s.find((x) => x.id === id);
+      if (it) URL.revokeObjectURL(it.previewUrl);
+      return s.filter((x) => x.id !== id);
+    });
+  };
 
   // Запрос скутера только когда блок реально показывается (завершение).
   const scooterQ = useApiScooter(enabled ? (rental.scooterId ?? null) : null);
@@ -251,6 +277,10 @@ export function useReturnIntake(rental: Rental, enabled: boolean) {
     setScooterNextStatus,
     scooterStatusTouched,
     setScooterStatusTouched,
+    // #28: медиа ущерба (staged → upload после создания акта)
+    mediaStaged,
+    addMedia,
+    removeStagedMedia,
     // data for rendering
     scooter,
     scooterModel,
@@ -316,8 +346,13 @@ export function ReturnIntakeSection({ intake }: { intake: ReturnIntake }) {
     scooterCard,
     positionCount,
     decidedCount,
+    mediaStaged,
+    addMedia,
+    removeStagedMedia,
   } = intake;
   const allChecked = positionCount > 0 && decidedCount === positionCount;
+  // #28: показываем блок фото/видео, когда по какой-либо позиции отмечен ущерб.
+  const anyDamage = Object.values(cardStates).some((v) => v === "problem");
 
   const scooterState = cardStates[scooterCard];
 
@@ -524,6 +559,32 @@ export function ReturnIntakeSection({ intake }: { intake: ReturnIntake }) {
           <div className="mt-1 text-[10.5px] text-muted-2">
             По умолчанию — назад в парк. При ущербе обычно выбирают «В ремонт».
           </div>
+        </div>
+      )}
+
+      {/* #28: фото/видео ущерба — опционально, прикрепляются к акту. Появляется,
+          когда по позиции отмечен ущерб. Чаще снимают на телефоне (камера),
+          на десктопе — загрузка файлом. Заливаются в акт на завершении. */}
+      {anyDamage && (
+        <div className="flex flex-col gap-2 rounded-[12px] border border-orange-200 bg-orange-soft/30 p-3">
+          <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-orange-ink">
+            <Camera size={13} /> Фото / видео ущерба
+            <span className="font-normal normal-case tracking-normal text-orange-ink/70">
+              · по желанию
+            </span>
+            {mediaStaged.length > 0 && (
+              <span className="ml-auto rounded-full bg-white px-1.5 text-[11px] font-bold text-orange-ink">
+                {mediaStaged.length}
+              </span>
+            )}
+          </div>
+          <DamageMediaCapture
+            staged={mediaStaged}
+            uploaded={[]}
+            onPick={addMedia}
+            onRemoveStaged={removeStagedMedia}
+            onRemoveUploaded={() => {}}
+          />
         </div>
       )}
 

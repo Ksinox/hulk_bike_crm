@@ -60,7 +60,10 @@ import {
   completeRentalWithDamage,
 } from "./rentalsStore";
 import { useReturnIntake, ReturnIntakeSection, ReturnDamagePicker } from "./returnIntake";
-import { useCreateDamageReport } from "@/lib/api/damage-reports";
+import {
+  useCreateDamageReport,
+  useUploadDamageMedia,
+} from "@/lib/api/damage-reports";
 import { DocumentPreviewModal } from "./DocumentPreviewModal";
 import { EquipmentTile, EquipmentAddTile } from "./rental-card/EquipmentTile";
 import type { Rental } from "@/lib/mock/rentals";
@@ -194,6 +197,7 @@ export function PaymentAcceptDialog({
   // в ущерб (переключатель «вернуть залог клиенту»).
   const [returnDepositInstead, setReturnDepositInstead] = useState(false);
   const createDamageReport = useCreateDamageReport();
+  const uploadDamageMedia = useUploadDamageMedia();
   // v0.9.1: после завершения показываем акт возврата для печати.
   const [actPreviewRentalId, setActPreviewRentalId] = useState<number | null>(null);
   // v0.9.3: меню «простить просрочку» (по клику) в режиме завершения.
@@ -1117,6 +1121,19 @@ export function PaymentAcceptDialog({
           0,
           (created.total ?? 0) - (created.depositCovered ?? 0),
         );
+        // #28: залить приложенные при приёмке фото/видео ущерба в акт.
+        // Медиа опционально — ошибка загрузки не должна валить завершение.
+        for (const m of intake.mediaStaged) {
+          try {
+            await uploadDamageMedia.mutateAsync({
+              reportId: created.id,
+              file: m.file,
+              durationSec: m.durationSec,
+            });
+          } catch {
+            /* не блокируем завершение из-за медиа */
+          }
+        }
       }
       // 1. Списать депозит клиента (clients.deposit_balance), если используется
       if (depositToUse > 0) {
