@@ -2652,8 +2652,7 @@ export function PaymentAcceptDialog({
               const overdueForgiven = overdueBalanceRaw - overdueAfterForgive;
               // v0.9.1: ущерб по приёмке — ОТДЕЛЬНОЙ строкой ниже (не лумпим в
               // «прочий долг», иначе он дублировал блок «Ущерб по приёмке»).
-              const otherDebt =
-                pendingRent + pendingSwapFee + damageBalance + manualBalance;
+              const otherDebt = pendingRent + damageBalance + manualBalance;
               return (
                 <>
                   {/* C3: при частичном погашении показываем ОДНУ строку «гашение
@@ -2685,6 +2684,12 @@ export function PaymentAcceptDialog({
                           label="Просрочка прощена"
                           value={`−${fmt(overdueForgiven)} ₽`}
                           tone="green"
+                        />
+                      )}
+                      {pendingSwapFee > 0 && (
+                        <FooterRow
+                          label="Доплата за замену скутера"
+                          value={`${fmt(pendingSwapFee)} ₽`}
                         />
                       )}
                       {otherDebt > 0 && (
@@ -3019,8 +3024,7 @@ export function PaymentAcceptDialog({
           : forgiveChoice === "fine" || forgiveChoice === "fine-n"
             ? "штраф"
             : "";
-  const otherExistingDebt =
-    pendingRent + pendingSwapFee + damageBalance + manualBalance;
+  const otherExistingDebt = pendingRent + damageBalance + manualBalance;
   const dayForgiveRate =
     overdueDaysCount > 0
       ? Math.round(overdueDaysBalanceRaw / overdueDaysCount)
@@ -3325,12 +3329,28 @@ export function PaymentAcceptDialog({
                 </div>
               )}
 
+              {/* #20-B: доплата за замену — отдельной именованной строкой */}
+              {pendingSwapFee > 0 && (
+                <div
+                  className={cn(
+                    "flex items-center justify-between gap-2 px-3.5 py-3 text-[13px] text-ink",
+                    (hasOverdue || intake.hasDamage) && "border-t border-border",
+                  )}
+                >
+                  <span className="flex items-center gap-2">
+                    <span className="h-[7px] w-[7px] shrink-0 rounded-full bg-muted-2" />
+                    Доплата за замену скутера
+                  </span>
+                  <b className="text-[13.5px] tabular-nums">{fmt(pendingSwapFee)} ₽</b>
+                </div>
+              )}
               {/* Прочий долг (аренда/ущерб прошлых актов/ручной) */}
               {otherExistingDebt > 0 && (
                 <div
                   className={cn(
                     "flex items-center justify-between gap-2 px-3.5 py-3 text-[13px] text-ink",
-                    (hasOverdue || intake.hasDamage) && "border-t border-border",
+                    (hasOverdue || intake.hasDamage || pendingSwapFee > 0) &&
+                      "border-t border-border",
                   )}
                 >
                   <span className="flex items-center gap-2">
