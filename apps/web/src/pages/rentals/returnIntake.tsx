@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Bike, Image as ImageIcon, X, Plus, Minus, Search, ChevronDown } from "lucide-react";
+import { Bike, Image as ImageIcon, X, Plus, Minus, Search, ChevronDown, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Rental } from "@/lib/mock/rentals";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -141,6 +141,12 @@ export function useReturnIntake(rental: Rental, enabled: boolean) {
     [equipmentCards],
   );
   const allDecided = allCards.every((k) => cardStates[k] != null);
+  // v0.9.5: прогресс приёмки — сколько позиций уже проверено (для индикатора).
+  const positionCount = allCards.length;
+  const decidedCount = allCards.reduce(
+    (n, k) => (cardStates[k] != null ? n + 1 : n),
+    0,
+  );
 
   const scooterDamageTotal = linesTotal(scooterDamages);
   const equipmentDamageTotal = equipmentCards.reduce((sum, key) => {
@@ -256,6 +262,8 @@ export function useReturnIntake(rental: Rental, enabled: boolean) {
     equipmentCards,
     // derived
     allDecided,
+    positionCount,
+    decidedCount,
     totalDamage,
     scooterDamageTotal,
     equipmentDamageTotal,
@@ -306,7 +314,10 @@ export function ReturnIntakeSection({ intake }: { intake: ReturnIntake }) {
     equipmentList,
     currentMileage,
     scooterCard,
+    positionCount,
+    decidedCount,
   } = intake;
+  const allChecked = positionCount > 0 && decidedCount === positionCount;
 
   const scooterState = cardStates[scooterCard];
 
@@ -320,8 +331,37 @@ export function ReturnIntakeSection({ intake }: { intake: ReturnIntake }) {
     <div className="space-y-4">
       {/* Карточки приёмки */}
       <div className="space-y-2.5">
-        <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-2">
-          Приёмка позиций
+        {/* v0.9.5: прогресс приёмки — индикатор «N / M проверено» + полоска,
+            синяя пока идёт, эмеральд + «готово» когда все позиции решены. */}
+        <div>
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-2">
+              Приёмка позиций
+            </span>
+            <span className="flex items-center gap-1 text-[11px] font-semibold tabular-nums">
+              {allChecked ? (
+                <span className="inline-flex animate-pop-in items-center gap-1 text-emerald-600">
+                  <CheckCircle2 size={13} /> готово
+                </span>
+              ) : (
+                <span className="text-muted-2/70">
+                  <span className="text-ink">{decidedCount}</span> / {positionCount}{" "}
+                  проверено
+                </span>
+              )}
+            </span>
+          </div>
+          <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-border/60">
+            <div
+              className={cn(
+                "h-full rounded-full transition-all duration-300 ease-out",
+                allChecked ? "bg-emerald-500" : "bg-blue-600",
+              )}
+              style={{
+                width: `${positionCount ? (decidedCount / positionCount) * 100 : 0}%`,
+              }}
+            />
+          </div>
         </div>
         {/* Скутер — основная позиция, во всю ширину */}
         <ReturnItemCard

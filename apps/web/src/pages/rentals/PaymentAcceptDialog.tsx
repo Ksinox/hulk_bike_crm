@@ -3070,7 +3070,7 @@ export function PaymentAcceptDialog({
                     </span>
                   </div>
                   {overdueForgivenAmt > 0 && (
-                    <div className="mt-1 flex items-center justify-between text-[12px]">
+                    <div className="mt-1 flex animate-toast-in items-center justify-between text-[12px]">
                       <span className="text-green-ink">прощено: {forgiveLabel}</span>
                       <b className="tabular-nums text-green-ink">
                         −{fmt(overdueForgivenAmt)} ₽
@@ -3184,7 +3184,12 @@ export function PaymentAcceptDialog({
 
               {/* Ущерб по приёмке — итогом */}
               {intake.hasDamage && (
-                <div className={cn("px-3.5 py-3", hasOverdue && "border-t border-border")}>
+                <div
+                  className={cn(
+                    "animate-toast-in px-3.5 py-3",
+                    hasOverdue && "border-t border-border",
+                  )}
+                >
                   <div className="flex items-center justify-between gap-2">
                     <span className="flex items-center gap-2 text-[13px] text-ink">
                       <span className="h-[7px] w-[7px] shrink-0 rounded-full bg-orange" />
@@ -3242,10 +3247,17 @@ export function PaymentAcceptDialog({
                 </div>
               )}
 
-              {/* Итого долг */}
-              <div className="flex items-baseline justify-between border-t border-border bg-surface-soft/70 px-3.5 py-3">
-                <span className="text-[11.5px] font-bold uppercase tracking-wide text-muted-2">
+              {/* Итого долг — receipt-style: пунктирный отрыв «как чек».
+                  v0.9.5: цвет суммы как сигнал — алый пока долг есть,
+                  эмеральд + чип «закрыт» когда всё погашено/прощено. */}
+              <div className="flex items-baseline justify-between border-t border-dashed border-muted-2/40 bg-surface-soft/70 px-3.5 py-3">
+                <span className="flex items-center gap-1.5 text-[11.5px] font-bold uppercase tracking-wide text-muted-2">
                   Итого долг
+                  {totalDebt === 0 && (
+                    <span className="inline-flex animate-pop-in items-center gap-0.5 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9.5px] font-bold normal-case tracking-normal text-emerald-700">
+                      <CheckCircle2 size={10} /> закрыт
+                    </span>
+                  )}
                 </span>
                 <span className="flex items-baseline gap-2">
                   {overdueForgivenAmt > 0 && (
@@ -3253,7 +3265,12 @@ export function PaymentAcceptDialog({
                       {fmt(totalDebt + overdueForgivenAmt)}
                     </span>
                   )}
-                  <span className="font-display text-[22px] font-extrabold tabular-nums text-ink">
+                  <span
+                    className={cn(
+                      "font-display text-[22px] font-extrabold tabular-nums transition-colors duration-300",
+                      totalDebt > 0 ? "text-red-ink" : "text-emerald-600",
+                    )}
+                  >
                     {fmt(totalDebt)} ₽
                   </span>
                 </span>
