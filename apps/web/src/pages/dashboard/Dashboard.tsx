@@ -116,7 +116,9 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
         <KpiCard
           title="Активных аренд"
           value={String(metrics.activeRentalsCount)}
-          unit={metrics.fleetTotal > 0 ? `/ ${metrics.fleetTotal}` : undefined}
+          unit={
+            metrics.rentableFleet > 0 ? `/ ${metrics.rentableFleet}` : undefined
+          }
           onClick={
             metrics.activeRentalsCount > 0
               ? () => drawer.openRentalsList("active")
@@ -124,7 +126,7 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
           }
           foot={
             <span>
-              {metrics.fleetTotal > 0
+              {metrics.rentableFleet > 0
                 ? `${metrics.loadPercent}% загрузка парка`
                 : "парк пока пустой"}
             </span>
@@ -215,12 +217,14 @@ function ClassicVariant({ metrics }: { metrics: DashboardMetrics }) {
         className="col-span-3"
         title="Активных аренд"
         value={String(metrics.activeRentalsCount)}
-        unit={metrics.fleetTotal > 0 ? `/${metrics.fleetTotal}` : undefined}
+        unit={
+          metrics.rentableFleet > 0 ? `/${metrics.rentableFleet}` : undefined
+        }
         icon={CLASSIC_KPI_ICONS.rent}
         iconTone="blue"
         foot={
           <span>
-            {metrics.fleetTotal > 0
+            {metrics.rentableFleet > 0
               ? `${metrics.loadPercent}% загрузка`
               : "парк пустой"}
           </span>

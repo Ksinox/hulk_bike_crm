@@ -139,8 +139,10 @@ export function MobileDashboard({
           tone="blue"
           label="Активных аренд"
           value={String(m.activeRentalsCount)}
-          unit={m.fleetTotal > 0 ? `/${m.fleetTotal}` : ""}
-          foot={m.fleetTotal > 0 ? `${m.loadPercent}% загрузка` : "парк пуст"}
+          unit={m.rentableFleet > 0 ? `/${m.rentableFleet}` : ""}
+          foot={
+            m.rentableFleet > 0 ? `${m.loadPercent}% загрузка` : "парк пуст"
+          }
           onClick={() => onSelect("rentals")}
         />
         <KpiTile

@@ -39,7 +39,9 @@ export type DashboardMetrics = {
 
   activeRentalsCount: number;
   fleetTotal: number;
-  loadPercent: number; // 0..100
+  /** #21: парк, ДОСТУПНЫЙ к аренде (rental_pool) — знаменатель «загрузки». */
+  rentableFleet: number;
+  loadPercent: number; // 0..100 (active / rentableFleet)
 
   tasksToday: number; // пока 0 — задач ещё нет в API
 
@@ -321,9 +323,8 @@ export function useDashboardMetrics(): DashboardMetrics {
       (r) => r.status === "active" && r.scooterId != null,
     ).length;
 
-    // fleetTotal — скутеры которые потенциально могут быть в парке аренды.
-    // Sold / buyout — выбыли из оборота, их в знаменатель загрузки не включаем,
-    // иначе загрузка будет искусственно занижена.
+    // fleetTotal — весь парк в обороте (для панели «Парк · N скутеров»).
+    // Sold / buyout — выбыли, их не показываем.
     const inCirculationStatuses = new Set([
       "ready",
       "rental_pool",
@@ -333,9 +334,17 @@ export function useDashboardMetrics(): DashboardMetrics {
     const fleetTotal = scooters.filter((s) =>
       inCirculationStatuses.has(s.baseStatus),
     ).length;
-    // Эффективный знаменатель загрузки — max(статичный парк, активные аренды),
-    // чтобы при редких проскальзываниях статусов не получить >100%.
-    const denom = Math.max(fleetTotal, activeRentalsCount);
+    // #21: «загрузка парка» = занято / ДОСТУПНЫЕ к аренде (rental_pool, как в
+    // Выручке): ремонт / разборка / ready (стейджинг) к аренде недоступны и в
+    // знаменатель не идут. rentableFleet включает и сейчас арендованные (они
+    // остаются rental_pool, просто заняты). max(...) — страховка от >100% при
+    // редком проскальзывании статусов.
+    const rentableFleet = scooters.filter(
+      (s) =>
+        s.baseStatus === "rental_pool" &&
+        !(s as { archivedAt?: string | null }).archivedAt,
+    ).length;
+    const denom = Math.max(rentableFleet, activeRentalsCount);
     const loadPercent =
       denom > 0 ? Math.round((activeRentalsCount / denom) * 100) : 0;
 
@@ -568,6 +577,7 @@ export function useDashboardMetrics(): DashboardMetrics {
       overdueDeltaFromYesterday: overdueRentals.length - overdueYesterday,
       activeRentalsCount,
       fleetTotal,
+      rentableFleet,
       loadPercent,
       tasksToday: 0, // задач ещё нет в API
       park,
