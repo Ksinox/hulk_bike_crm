@@ -213,6 +213,18 @@ export function PaymentAcceptDialog({
       .reduce((s, p) => s + p.amount, 0);
   }, [payments, rental.id]);
 
+  // #20-B: неоплаченная доплата за замену скутера (swap_fee, paid=false).
+  // Раньше не попадала ни в pendingRent (фильтр type==="rent"), ни в состав
+  // долга к приёму — висела в KPI «Долг», но собрать её через окно было нельзя.
+  // Теперь — отдельной строкой и слотом в распределении (как rent).
+  const pendingSwapFee = useMemo(() => {
+    return payments
+      .filter(
+        (p) => p.rentalId === rental.id && p.type === "swap_fee" && !p.paid,
+      )
+      .reduce((s, p) => s + p.amount, 0);
+  }, [payments, rental.id]);
+
   // v0.9.1: дата фактического поступления оплаты — «ЯКОРЬ ОТСЧЁТА».
   // По умолчанию сегодня. Оператор может указать прошедшую дату: клиент
   // заплатил вовремя, но зафиксировали позже. Тогда «как будто сегодня =
@@ -541,6 +553,7 @@ export function PaymentAcceptDialog({
   // Долги (без extend — он считается по переплате)
   const totalDebt =
     pendingRent +
+    pendingSwapFee +
     overdueDaysBalance +
     overdueFineBalance +
     damageBalance +
@@ -901,6 +914,7 @@ export function PaymentAcceptDialog({
     | "damage"
     | "manual"
     | "rent"
+    | "swap_fee"
     | "deposit";
   type Op = {
     target: OpTarget;
@@ -956,6 +970,8 @@ export function PaymentAcceptDialog({
         queue.push({ cap: s.cap, target: "damage", damageReportId: s.damageReportId });
     }
     queue.push({ cap: manualBalance, target: "manual" });
+    // #20-B: доплата за замену — слот перед rent (тот же тир, что аренда).
+    queue.push({ cap: pendingSwapFee, target: "swap_fee" });
     queue.push({ cap: pendingRent, target: "rent" });
     // v0.4.49: rent от продления — отдельный target, добавляем в очередь
     // последним перед излишком. Маркер damageReportId=-1 — чтобы submit()
@@ -1212,7 +1228,7 @@ export function PaymentAcceptDialog({
       // Первый проход: всё кроме rent.
       for (const op of ops) {
         if (op.amount <= 0) continue;
-        if (op.target === "rent") continue; // отложено
+        if (op.target === "rent" || op.target === "swap_fee") continue; // отложено (PATCH placeholder ниже)
         if (op.target === "overdue_days") {
           await api.post(`/api/rentals/${rental.id}/debt/payment`, {
             kind: "overdue_days_payment",
@@ -1373,6 +1389,55 @@ export function PaymentAcceptDialog({
               paidAt: paymentTimestamp ?? new Date().toISOString(),
             });
           }
+        }
+      }
+
+      // #20-B: проход по swap_fee — гасим существующие placeholder'ы
+      // (paid=false, созданы при свапе) PATCH paid=true, FIFO по id. Зеркало
+      // прохода по rent. Доплата за замену наконец-то собирается через окно.
+      const unpaidSwapFee = (freshPayments.items ?? [])
+        .filter(
+          (p) => p.rentalId === rental.id && p.type === "swap_fee" && !p.paid,
+        )
+        .sort((a, b) => a.id - b.id);
+      for (const op of ops) {
+        if (op.amount <= 0 || op.target !== "swap_fee") continue;
+        let amountLeft = op.amount;
+        while (amountLeft > 0 && unpaidSwapFee.length > 0) {
+          const ph = unpaidSwapFee[0]!;
+          if (ph.amount <= amountLeft) {
+            await api.patch(`/api/payments/${ph.id}`, {
+              paid: true,
+              paidAt: paymentTimestamp ?? new Date().toISOString(),
+              method: op.method,
+            });
+            amountLeft -= ph.amount;
+            unpaidSwapFee.shift();
+          } else {
+            await api.patch(`/api/payments/${ph.id}`, {
+              amount: ph.amount - amountLeft,
+            });
+            await api.post("/api/payments", {
+              rentalId: rental.id,
+              type: "swap_fee",
+              amount: amountLeft,
+              method: op.method,
+              paid: true,
+              paidAt: paymentTimestamp ?? new Date().toISOString(),
+            });
+            ph.amount = ph.amount - amountLeft;
+            amountLeft = 0;
+          }
+        }
+        if (amountLeft > 0) {
+          await api.post("/api/payments", {
+            rentalId: rental.id,
+            type: "swap_fee",
+            amount: amountLeft,
+            method: op.method,
+            paid: true,
+            paidAt: paymentTimestamp ?? new Date().toISOString(),
+          });
         }
       }
 
@@ -1870,6 +1935,16 @@ export function PaymentAcceptDialog({
                   <div className="flex items-center justify-between rounded-[10px] border border-border bg-surface px-3 py-2 text-[12px]">
                     <span className="font-semibold text-ink">Неоплаченная аренда</span>
                     <span className="font-bold tabular-nums text-ink">{fmt(pendingRent)} ₽</span>
+                  </div>
+                )}
+                {pendingSwapFee > 0 && (
+                  <div className="flex items-center justify-between rounded-[10px] border border-border bg-surface px-3 py-2 text-[12px]">
+                    <span className="font-semibold text-ink">
+                      Доплата за замену скутера
+                    </span>
+                    <span className="font-bold tabular-nums text-ink">
+                      {fmt(pendingSwapFee)} ₽
+                    </span>
                   </div>
                 )}
                 {damageBalance > 0 && (
@@ -2577,7 +2652,8 @@ export function PaymentAcceptDialog({
               const overdueForgiven = overdueBalanceRaw - overdueAfterForgive;
               // v0.9.1: ущерб по приёмке — ОТДЕЛЬНОЙ строкой ниже (не лумпим в
               // «прочий долг», иначе он дублировал блок «Ущерб по приёмке»).
-              const otherDebt = pendingRent + damageBalance + manualBalance;
+              const otherDebt =
+                pendingRent + pendingSwapFee + damageBalance + manualBalance;
               return (
                 <>
                   {/* C3: при частичном погашении показываем ОДНУ строку «гашение
@@ -2943,7 +3019,8 @@ export function PaymentAcceptDialog({
           : forgiveChoice === "fine" || forgiveChoice === "fine-n"
             ? "штраф"
             : "";
-  const otherExistingDebt = pendingRent + damageBalance + manualBalance;
+  const otherExistingDebt =
+    pendingRent + pendingSwapFee + damageBalance + manualBalance;
   const dayForgiveRate =
     overdueDaysCount > 0
       ? Math.round(overdueDaysBalanceRaw / overdueDaysCount)
