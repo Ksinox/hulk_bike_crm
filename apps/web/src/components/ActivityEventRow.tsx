@@ -23,6 +23,7 @@ import {
   CheckCircle2,
   Clock,
   FileText,
+  Flag,
   Gift,
   HardHat,
   Pencil,
@@ -102,7 +103,8 @@ function eventVisual(action: string): { icon: LucideIcon; tone: EventTone } {
   if (action.includes("debt") || action.includes("overdue"))
     return { icon: AlertTriangle, tone: "red" };
   if (action.includes("document")) return { icon: FileText, tone: "blue" };
-  if (action.includes("status") || action.includes("complet"))
+  if (action.includes("complet")) return { icon: Flag, tone: "green" };
+  if (action.includes("status"))
     return { icon: CheckCircle2, tone: "ink" };
   if (action.includes("archived") || action.includes("deleted"))
     return { icon: X, tone: "ink" };
@@ -678,8 +680,17 @@ export function formatActivitySummary(
         ).toLocaleString("ru-RU")} км`,
       );
     }
+    // #20: «Аренда завершена» вместо безликого «Изменён статус» — заказчик
+    // отдельно отметил, что этот заголовок с флагом ему нравится.
+    const toRaw = typeof st?.to === "string" ? st.to : null;
+    const title =
+      toRaw === "completed"
+        ? "Аренда завершена"
+        : toRaw === "active"
+          ? "Аренда возобновлена"
+          : "Изменён статус";
     return {
-      title: "Изменён статус",
+      title,
       change: fromS || toS ? { from: fromS, to: toS, tone: "blue" } : null,
       extras,
     };
