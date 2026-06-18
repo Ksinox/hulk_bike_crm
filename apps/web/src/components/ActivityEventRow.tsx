@@ -807,15 +807,6 @@ function formatDateTime(iso: string): string {
   });
 }
 
-function formatDateTimeShort(iso: string): string {
-  return new Date(iso).toLocaleString("ru-RU", {
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
 /** #20: полная дата+время «18.06.2026, 14:33» — точный момент для аудита. */
 function formatDateTimeFull(iso: string): string {
   return new Date(iso).toLocaleString("ru-RU", {
