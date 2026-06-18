@@ -15,6 +15,7 @@
  * Режим compact (дашборд, inline-история): иконка + краткое «было → стало»
  * в одну строку + дата. Без строк-последствий — минимально плотно.
  */
+import { Fragment, type ReactNode } from "react";
 import {
   AlertTriangle,
   ArrowRight,
@@ -158,6 +159,22 @@ export type ActivitySummaryView = {
   extras: string[];
   /** v0.7.16: изменения экипировки с миниатюрами (вместо change-пилюль). */
   equipment?: EquipmentChangeView[];
+  /**
+   * #20: денежный «заголовок» события для правой колонки ленты (вариант B) —
+   * одно число, которое глаз ловит первым: «+4 900 ₽» / «−5 500 ₽» / «3 500 ₽».
+   * tone: green — пришло, red — списано/прощено/долг, ink — нейтрально (сумма аренды).
+   */
+  headline?: { text: string; tone: "green" | "red" | "ink" };
+};
+
+/**
+ * #20: структурированный контекст события для кликабельных сущностей в ленте.
+ * Каждая часть открывает свою карточку: имя → клиент, скутер → скутер, #N → аренда.
+ */
+export type ActivityContextParts = {
+  client?: { id: number; name: string };
+  scooter?: { id: number; label: string };
+  rental?: { id: number; label: string };
 };
 
 /**
@@ -300,6 +317,13 @@ export function formatActivitySummary(
           : null,
       extras,
       equipment: equipment.length ? equipment : undefined,
+      headline:
+        feeAmount !== 0
+          ? {
+              text: `${isRefund ? "−" : "+"}${money(feeAmount)}`,
+              tone: isRefund ? "red" : "green",
+            }
+          : undefined,
     };
   }
 
@@ -328,6 +352,10 @@ export function formatActivitySummary(
       title: "Замена скутера",
       change: from || to ? { from, to, tone: "blue" } : null,
       extras,
+      headline:
+        fee && fee.to != null && Number(fee.to) > 0
+          ? { text: `+${money(fee.to)}`, tone: "green" }
+          : undefined,
     };
   }
 
@@ -562,12 +590,15 @@ export function formatActivitySummary(
           ? { from: null, to: money(amount), tone: "green" }
           : null,
       extras,
+      headline:
+        amount != null ? { text: `+${money(amount)}`, tone: "green" } : undefined,
     };
   }
 
   // ── Прощение долга ──
   if (action.includes("forgiv")) {
     // diff может содержать: debt/fine (money) + overdueDays (number, дни).
+    const m = readRecord(item.meta);
     const debt = readRecord(diff?.debt);
     const fine = readRecord(diff?.fine);
     const overdueDays = readRecord(diff?.overdueDays);
@@ -579,25 +610,38 @@ export function formatActivitySummary(
         ? "Прощены дни просрочки"
         : "Прощена просрочка";
     const extras: string[] = [];
-    if (
-      overdueDays &&
-      typeof overdueDays.from === "number" &&
-      overdueDays.from > 0
-    ) {
-      const d = overdueDays.from;
-      extras.push(`Снято дней просрочки: ${d} ${plural(d, "день", "дня", "дней")}`);
-    }
+    // #20: «за сколько» — сколько дней просрочки списано. Берём из diff.overdueDays,
+    // иначе из meta (daysToShift при прощении дней / daysCount при штрафе). Отвечает
+    // на вопрос заказчика «прощена просрочка — а за какой период?».
+    const daysForgiven =
+      overdueDays && typeof overdueDays.from === "number" && overdueDays.from > 0
+        ? overdueDays.from
+        : typeof m?.daysToShift === "number" && m.daysToShift > 0
+          ? m.daysToShift
+          : typeof m?.daysCount === "number" && m.daysCount > 0
+            ? m.daysCount
+            : null;
+    if (daysForgiven != null)
+      extras.push(
+        `Просрочка: ${daysForgiven} ${plural(daysForgiven, "день", "дня", "дней")}`,
+      );
     const fineLineForgiven = readRecord(diff?.fine);
     if (debt && fineLineForgiven && fineLineForgiven !== amountRec) {
       // target='all' иногда кладёт и debt, и fine — покажем штраф отдельно.
       extras.push(`Штраф: ${money(fineLineForgiven.from)}`);
     }
+    const forgivenAmount =
+      amountRec && amountRec.from != null ? Number(amountRec.from) : null;
     return {
       title,
       change: amountRec
         ? { from: money(amountRec.from), to: "0 ₽", tone: "green" }
         : null,
       extras,
+      headline:
+        forgivenAmount != null && forgivenAmount > 0
+          ? { text: `−${money(forgivenAmount)}`, tone: "red" }
+          : undefined,
     };
   }
 
@@ -616,6 +660,7 @@ export function formatActivitySummary(
       title,
       change: d ? { from: "—", to: money(d.to), tone: "red" } : null,
       extras: [],
+      headline: d && d.to != null ? { text: `+${money(d.to)}`, tone: "red" } : undefined,
     };
   }
 
@@ -704,7 +749,12 @@ export function formatActivitySummary(
       extras.push(`Залог (возвратный): ${money(deposit)}`);
     }
     if (sum != null) extras.push(`Итого аренды: ${money(sum)}`);
-    return { title: "Аренда создана", change: null, extras };
+    return {
+      title: "Аренда создана",
+      change: null,
+      extras,
+      headline: sum != null ? { text: money(sum), tone: "ink" } : undefined,
+    };
   }
 
   // ── Редактирование (есть diff, но не покрыто выше) ──
@@ -1010,6 +1060,87 @@ function EquipmentChangeBlock({
   );
 }
 
+/* ============================ Кликабельный контекст ============================ */
+
+/**
+ * #20: «Клиент · Скутер · #аренды» — каждая часть кликабельна и открывает свою
+ * карточку (имя → клиент, скутер → скутер, #N → аренда). Если опенер не передан
+ * (или нет id) — рендерим как обычный текст, без клика.
+ */
+function ContextChips({
+  parts,
+  onOpenClient,
+  onOpenScooter,
+  onOpenRental,
+}: {
+  parts: ActivityContextParts;
+  onOpenClient?: (id: number) => void;
+  onOpenScooter?: (id: number) => void;
+  onOpenRental?: (id: number) => void;
+}) {
+  const link =
+    "rounded font-semibold text-ink-2 transition-colors hover:text-blue-700 hover:underline underline-offset-2";
+  const plain = "font-semibold text-ink-2";
+  const nodes: ReactNode[] = [];
+  if (parts.client) {
+    const c = parts.client;
+    nodes.push(
+      onOpenClient ? (
+        <button key="c" type="button" onClick={() => onOpenClient(c.id)} className={link}>
+          {c.name}
+        </button>
+      ) : (
+        <span key="c" className={plain}>
+          {c.name}
+        </span>
+      ),
+    );
+  }
+  if (parts.scooter) {
+    const s = parts.scooter;
+    nodes.push(
+      onOpenScooter && s.id ? (
+        <button key="s" type="button" onClick={() => onOpenScooter(s.id)} className={link}>
+          {s.label}
+        </button>
+      ) : (
+        <span key="s" className={plain}>
+          {s.label}
+        </span>
+      ),
+    );
+  }
+  if (parts.rental) {
+    const r = parts.rental;
+    nodes.push(
+      onOpenRental ? (
+        <button
+          key="r"
+          type="button"
+          onClick={() => onOpenRental(r.id)}
+          className={cn(link, "tabular-nums")}
+        >
+          {r.label}
+        </button>
+      ) : (
+        <span key="r" className={cn(plain, "tabular-nums")}>
+          {r.label}
+        </span>
+      ),
+    );
+  }
+  return (
+    <>
+      {nodes.map((n, i) => (
+        <Fragment key={i}>
+          {i > 0 && <span className="text-muted-2 opacity-50">·</span>}
+          {n}
+        </Fragment>
+      ))}
+    </>
+  );
+}
+
 /* ============================ Основной компонент ============================ */
 
 export function ActivityEventRow({
@@ -1018,6 +1149,12 @@ export function ActivityEventRow({
   onOpen,
   compact = false,
   context,
+  feed = false,
+  contextParts,
+  onOpenClient,
+  onOpenScooter,
+  onOpenRental,
+  maxExtras,
 }: {
   item: ApiActivityItem;
   /** Кликабельна ли строка (открыть связанную сущность). */
@@ -1028,6 +1165,16 @@ export function ActivityEventRow({
   /** #20: строка контекста «Клиент · Скутер · #аренды» (резолвится в родителе,
    *  показывается в compact-ленте дашборда/журнала, чтобы было видно кто/что). */
   context?: string;
+  /** #20: просторная раскладка ленты (вариант B) — десктоп «Последние действия»:
+   *  слева суть + кликабельный контекст, справа сумма + дата/время + кто. */
+  feed?: boolean;
+  /** #20: структурированный контекст для кликабельных сущностей (feed-режим). */
+  contextParts?: ActivityContextParts;
+  onOpenClient?: (id: number) => void;
+  onOpenScooter?: (id: number) => void;
+  onOpenRental?: (id: number) => void;
+  /** #20: ограничить число строк-последствий (feed-режим: дашборд=3, журнал=все). */
+  maxExtras?: number;
 }) {
   const vis = eventVisual(item.action);
   const Icon = vis.icon;
@@ -1048,6 +1195,128 @@ export function ActivityEventRow({
     if (!eq) return null;
     return fileUrl(eq.avatarThumbKey ?? eq.avatarKey, { variant: "thumb" });
   };
+
+  // #20: просторная лента (вариант B) — десктоп «Последние действия».
+  // Слева: иконка + заголовок (+ флаг «ручное») + кликабельный контекст +
+  // экипировка-миниатюры / смысловое «было → стало» + пояснения.
+  // Справа: денежный заголовок (если есть) + точная дата/время + «N назад · кто».
+  if (feed) {
+    const extrasToShow =
+      maxExtras != null ? view.extras.slice(0, maxExtras) : view.extras;
+    const openPrimary = () => {
+      if (item.entityId == null) return;
+      if (item.entity === "rental") onOpenRental?.(item.entityId);
+      else if (item.entity === "scooter") onOpenScooter?.(item.entityId);
+      else if (item.entity === "client") onOpenClient?.(item.entityId);
+    };
+    const primaryClickable =
+      item.entityId != null &&
+      ((item.entity === "rental" && !!onOpenRental) ||
+        (item.entity === "scooter" && !!onOpenScooter) ||
+        (item.entity === "client" && !!onOpenClient));
+    const headlineTone =
+      view.headline?.tone === "green"
+        ? "text-green-ink"
+        : view.headline?.tone === "red"
+          ? "text-red-ink"
+          : "text-ink";
+    return (
+      <div className="flex w-full items-start gap-3 rounded-[12px] px-2.5 py-3 transition-colors hover:bg-surface-soft">
+        <span
+          className={cn(
+            "mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full",
+            EVENT_TONE_CLASS[vis.tone],
+          )}
+        >
+          <Icon size={17} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            {primaryClickable ? (
+              <button
+                type="button"
+                onClick={openPrimary}
+                className="rounded text-left text-[14px] font-bold leading-tight text-ink transition-colors hover:text-blue-700 hover:underline underline-offset-2"
+              >
+                {view.title}
+              </button>
+            ) : (
+              <span className="text-[14px] font-bold leading-tight text-ink">
+                {view.title}
+              </span>
+            )}
+            {isManual && (
+              <span className="shrink-0 rounded bg-amber-100 px-1.5 py-px text-[10px] font-bold text-amber-800">
+                ручное
+              </span>
+            )}
+          </div>
+          {contextParts && (
+            <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[12.5px] leading-tight">
+              <ContextChips
+                parts={contextParts}
+                onOpenClient={onOpenClient}
+                onOpenScooter={onOpenScooter}
+                onOpenRental={onOpenRental}
+              />
+            </div>
+          )}
+          {view.equipment && view.equipment.length > 0 && (
+            <div className="mt-1.5">
+              <EquipmentChangeBlock
+                items={view.equipment}
+                resolveThumb={resolveThumb}
+              />
+            </div>
+          )}
+          {/* В правую колонку уезжает только денежное «было → стало»; смысловое
+              (скутер/статус/период — синий тон) остаётся слева как пилюли. */}
+          {view.change && view.change.tone === "blue" && (
+            <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[12px] leading-snug">
+              <ChangePills change={view.change} size="md" />
+            </div>
+          )}
+          {extrasToShow.length > 0 && (
+            <div className="mt-1 flex flex-col gap-0.5">
+              {extrasToShow.map((ex, i) => (
+                <div key={i} className="text-[12px] text-ink-2">
+                  {ex}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="flex shrink-0 flex-col items-end gap-1 pl-2 text-right">
+          {view.headline && (
+            <div
+              className={cn(
+                "text-[16px] font-bold leading-none tabular-nums",
+                headlineTone,
+              )}
+            >
+              {view.headline.text}
+            </div>
+          )}
+          <div className="text-[11.5px] leading-tight text-muted-2">
+            <div className="whitespace-nowrap tabular-nums">
+              {formatDateTimeFull(item.createdAt)}
+            </div>
+            <div className="mt-0.5 whitespace-nowrap">
+              <span>{relativeTime(item.createdAt)}</span>
+              {item.userName && item.userName !== "система" && (
+                <>
+                  <span className="px-1 opacity-40">·</span>
+                  <span className="font-semibold text-ink-2">
+                    {item.userName}
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (compact) {
     return (
