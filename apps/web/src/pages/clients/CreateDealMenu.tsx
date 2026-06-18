@@ -52,7 +52,14 @@ const DEAL_TYPES: {
   },
 ];
 
-export function CreateDealMenu({ client }: { client: Client }) {
+export function CreateDealMenu({
+  client,
+  block,
+}: {
+  client: Client;
+  /** #30: на мобиле — крупная кнопка во всю ячейку (а не маленькая пилюля). */
+  block?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const [rentalOpen, setRentalOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -81,13 +88,18 @@ export function CreateDealMenu({ client }: { client: Client }) {
   };
 
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className={cn("relative", block && "w-full")}>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1 rounded-full bg-blue-600 px-3 py-1.5 text-[12px] font-semibold text-white transition-colors hover:bg-blue-700"
+        className={cn(
+          "items-center gap-1 bg-blue-600 font-semibold text-white transition-colors hover:bg-blue-700",
+          block
+            ? "flex min-h-[48px] w-full justify-center gap-1.5 rounded-xl text-[14px] font-bold active:scale-[0.98]"
+            : "inline-flex rounded-full px-3 py-1.5 text-[12px]",
+        )}
       >
-        <Plus size={13} /> Создать сделку
+        <Plus size={block ? 17 : 13} /> Создать сделку
       </button>
 
       {open && (

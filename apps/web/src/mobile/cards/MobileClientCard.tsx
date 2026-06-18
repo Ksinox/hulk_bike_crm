@@ -311,22 +311,55 @@ export function MobileClientCard({
           </div>
         </section>
 
-        {/* ===== Важные действия: Не на связи + Создать сделку ===== */}
-        <section className="grid grid-cols-2 gap-2">
+        {/* ===== Главные действия ===== Позвонить + Создать сделку (главные),
+            Написать в WhatsApp/Telegram, и слим-тумблер «не на связи». */}
+        <section className="space-y-2">
+          {/* Главные: позвонить по основному номеру + создать сделку */}
+          <div className="grid grid-cols-2 gap-2">
+            <a
+              href={`tel:${client.phone.replace(/\s/g, "")}`}
+              className="flex min-h-[48px] items-center justify-center gap-2 rounded-xl bg-blue-600 text-[14px] font-bold text-white active:scale-[0.98]"
+            >
+              <Phone size={17} />
+              Позвонить
+            </a>
+            <CreateDealMenu client={client} block />
+          </div>
+          {/* Написать — WhatsApp / Telegram (по основному номеру) */}
+          <div className="grid grid-cols-2 gap-2">
+            <a
+              href={whatsappLink(client.phone)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex min-h-[46px] items-center justify-center gap-2 rounded-xl bg-green/10 text-[13.5px] font-bold text-green ring-1 ring-inset ring-green/20 active:scale-[0.98]"
+            >
+              <MessageCircle size={17} />
+              WhatsApp
+            </a>
+            <a
+              href={telegramLink(client.phone)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex min-h-[46px] items-center justify-center gap-2 rounded-xl bg-sky-100 text-[13.5px] font-bold text-sky-600 ring-1 ring-inset ring-sky-200 active:scale-[0.98]"
+            >
+              <Send size={16} />
+              Telegram
+            </a>
+          </div>
+          {/* «Не на связи» — вторичный слим-тумблер статуса */}
           <button
             type="button"
             onClick={() => clientStore.setUnreachable(client.id, !unreachable)}
             className={cn(
-              "flex min-h-[46px] items-center justify-center gap-1.5 rounded-xl px-3 text-[13px] font-semibold active:scale-[0.99]",
+              "flex min-h-[38px] w-full items-center justify-center gap-1.5 rounded-xl text-[12.5px] font-semibold active:scale-[0.99]",
               unreachable
                 ? "bg-orange-soft text-orange-ink"
-                : "bg-surface text-ink shadow-card-sm",
+                : "bg-surface-soft text-muted-2",
             )}
           >
-            <PhoneOff size={15} />
-            {unreachable ? "На связи" : "Не на связи"}
+            <PhoneOff size={14} />
+            {unreachable ? "На связи" : "Отметить «не на связи»"}
           </button>
-          <CreateDealMenu client={client} />
         </section>
 
         {/* ===== Плашки ===== */}
@@ -537,25 +570,31 @@ function PhoneRow({ phone, primary }: { phone: string; primary?: boolean }) {
           </span>
         )}
       </a>
-      {/* Прямой чат по номеру — без сохранения в контакты. */}
-      <a
-        href={whatsappLink(phone)}
-        target="_blank"
-        rel="noopener noreferrer"
-        aria-label="Написать в WhatsApp"
-        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-green/10 text-green active:scale-90"
-      >
-        <MessageCircle size={18} />
-      </a>
-      <a
-        href={telegramLink(phone)}
-        target="_blank"
-        rel="noopener noreferrer"
-        aria-label="Написать в Telegram"
-        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-sky-100 text-sky-600 active:scale-90"
-      >
-        <Send size={17} />
-      </a>
+      {/* Прямой чат по номеру. У основного номера связь — в главных кнопках
+          (Позвонить/WhatsApp/Telegram), поэтому иконки тут только у доп-номера,
+          чтобы не дублировать. */}
+      {!primary && (
+        <>
+          <a
+            href={whatsappLink(phone)}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Написать в WhatsApp"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-green/10 text-green active:scale-90"
+          >
+            <MessageCircle size={18} />
+          </a>
+          <a
+            href={telegramLink(phone)}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Написать в Telegram"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-sky-100 text-sky-600 active:scale-90"
+          >
+            <Send size={17} />
+          </a>
+        </>
+      )}
       <button
         type="button"
         onClick={async () => {
