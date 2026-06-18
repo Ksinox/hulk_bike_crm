@@ -211,7 +211,6 @@ export function ParkPanel({
   }, [tiles]);
 
   const total = tiles.length;
-  const park = metrics.park;
 
   if (total === 0) {
     return (
@@ -233,36 +232,26 @@ export function ParkPanel({
 
   return (
     <Card className={className}>
-      <div className="mb-3.5 flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-2.5">
-          <h2 className="m-0 text-[20px] font-bold tracking-[-0.01em]">
-            Парк · {total} {plural(total, ["скутер", "скутера", "скутеров"])}
-          </h2>
-          <div className="flex gap-4 text-xs text-muted">
-            <span>
-              загружено <b className="text-ink font-bold">{metrics.loadPercent}%</b>
-            </span>
-            <span>
-              готов к аренде <b className="text-ink font-bold">{park.pool}</b>
-            </span>
-            {park.inRepair > 0 && (
-              <span>
-                в ремонте <b className="text-ink font-bold">{park.inRepair}</b>
-              </span>
-            )}
-          </div>
+      <div className="relative mb-3.5 flex flex-wrap items-center gap-3">
+        <h2 className="m-0 text-[20px] font-bold tracking-[-0.01em]">
+          Парк · {total} {plural(total, ["скутер", "скутера", "скутеров"])}
+        </h2>
+        {/* Фильтр-ядро по центру шапки — оверлей-полукруг разлетается от него
+            поверх блоков (загрузка/готов/ремонт показаны в гейдже и в счётчиках
+            самого фильтра, поэтому из шапки убраны). */}
+        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+          <ParkRadialFilters
+            total={total}
+            modelCounts={modelCounts}
+            statusCounts={statusCounts}
+            selectedModels={models}
+            selectedStatuses={statuses}
+            onToggleModel={toggleModel}
+            onClearModels={() => setModels(new Set())}
+            onToggleStatus={toggleStatus}
+            onClearStatuses={() => setStatuses(new Set())}
+          />
         </div>
-        <ParkRadialFilters
-          total={total}
-          modelCounts={modelCounts}
-          statusCounts={statusCounts}
-          selectedModels={models}
-          selectedStatuses={statuses}
-          onToggleModel={toggleModel}
-          onClearModels={() => setModels(new Set())}
-          onToggleStatus={toggleStatus}
-          onClearStatuses={() => setStatuses(new Set())}
-        />
       </div>
 
 
