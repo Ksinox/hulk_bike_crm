@@ -657,20 +657,29 @@ export function formatActivitySummary(
   }
 
   // ── Начисление долга / ущерб / просрочка ──
+  // Акт ущерба логируется как entity='damage_report' action='created' — ловим
+  // по entity, иначе он проваливался в «Отредактирована аренда» с непонятным
+  // «Позиции: → Приборная панель» (фикс самодостаточности записей журнала).
   if (
     action.includes("debt") ||
     action.includes("overdue") ||
-    action.includes("damage")
+    action.includes("damage") ||
+    item.entity === "damage_report"
   ) {
     const key = ["debt", "damage", "fine"].find((k) => diff?.[k]);
     const d = key ? readRecord(diff?.[key]) : null;
-    const title = action.includes("damage")
-      ? "Зафиксирован ущерб"
-      : "Начислен долг";
+    const isDamage =
+      action.includes("damage") || item.entity === "damage_report";
+    const title = isDamage ? "Зафиксирован ущерб" : "Начислен долг";
+    // Позиции повреждений (diff.items.to) — человекочитаемой строкой.
+    const itemsRec = readRecord(diff?.items);
+    const damaged = itemsRec ? readStringList(itemsRec.to) : [];
+    const extras: string[] = [];
+    if (damaged.length) extras.push(`Повреждения: ${damaged.join(", ")}`);
     return {
       title,
       change: d ? { from: "—", to: money(d.to), tone: "red" } : null,
-      extras: [],
+      extras,
       headline: d && d.to != null ? { text: `+${money(d.to)}`, tone: "red" } : undefined,
     };
   }
@@ -793,6 +802,8 @@ export function formatActivitySummary(
               return `${Number(v).toLocaleString("ru-RU")}${f.suffix ? ` ${f.suffix}` : ""}`;
             case "date":
               return formatDateLabel(v);
+            case "list":
+              return Array.isArray(v) ? (v.length ? v.join(", ") : "—") : String(v);
             default:
               return String(v);
           }

@@ -14,11 +14,26 @@ export type ApiActivityItem = {
   createdAt: string;
 };
 
+/** Фильтры модалки «Весь журнал» (серверная фильтрация). */
+export type ActivityFilters = {
+  from?: string; // YYYY-MM-DD
+  to?: string; // YYYY-MM-DD
+  category?: string;
+};
+
 export const activityKeys = {
   all: ["activity"] as const,
   recent: (limit: number) => [...activityKeys.all, "recent", limit] as const,
-  page: (limit: number, offset: number) =>
-    [...activityKeys.all, "page", limit, offset] as const,
+  page: (limit: number, offset: number, filters?: ActivityFilters) =>
+    [
+      ...activityKeys.all,
+      "page",
+      limit,
+      offset,
+      filters?.from ?? "",
+      filters?.to ?? "",
+      filters?.category ?? "",
+    ] as const,
 };
 
 /** Короткая лента для дашборда — без пагинации. */
@@ -35,14 +50,27 @@ export function useActivityLog(limit = 50) {
   });
 }
 
-/** Страничный доступ к журналу — для модалки «Весь журнал». */
-export function useActivityPage(limit: number, offset: number) {
+/** Страничный доступ к журналу — для модалки «Весь журнал». filters —
+ *  серверные фильтры по датам/типу действия (фильтруем ДО пагинации). */
+export function useActivityPage(
+  limit: number,
+  offset: number,
+  filters?: ActivityFilters,
+) {
   return useQuery({
-    queryKey: activityKeys.page(limit, offset),
-    queryFn: () =>
-      api.get<{ items: ApiActivityItem[]; total: number }>(
-        `/api/activity?limit=${limit}&offset=${offset}`,
-      ),
+    queryKey: activityKeys.page(limit, offset, filters),
+    queryFn: () => {
+      const qs = new URLSearchParams({
+        limit: String(limit),
+        offset: String(offset),
+      });
+      if (filters?.from) qs.set("from", filters.from);
+      if (filters?.to) qs.set("to", filters.to);
+      if (filters?.category) qs.set("category", filters.category);
+      return api.get<{ items: ApiActivityItem[]; total: number }>(
+        `/api/activity?${qs.toString()}`,
+      );
+    },
   });
 }
 

@@ -1,5 +1,17 @@
 import type { FastifyInstance } from "fastify";
-import { and, desc, eq, inArray, isNotNull, or, sql } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  gte,
+  ilike,
+  inArray,
+  isNotNull,
+  lt,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/index.js";
 import {
@@ -11,37 +23,118 @@ import {
 } from "../db/schema.js";
 
 /**
- * GET /api/activity?limit=50&offset=0
+ * Категории фильтра «Весь журнал» → условие по action/entity. Ключи совпадают
+ * с фронтом (ActivityFeed.tsx JOURNAL_CATEGORIES). Ущерб ловим и по entity
+ * (damage_report), т.к. его action='created'.
+ */
+function categoryCondition(cat: string): SQL | undefined {
+  const A = activityLog.action;
+  const E = activityLog.entity;
+  switch (cat) {
+    case "created":
+      return and(eq(E, "rental"), eq(A, "created"));
+    case "payment":
+      return or(ilike(A, "%payment%"), ilike(A, "%paid%"), eq(A, "debt_payment"));
+    case "extend":
+      return ilike(A, "%extend%");
+    case "swap":
+      return ilike(A, "%swap%");
+    case "equipment":
+      return ilike(A, "%equipment%");
+    case "damage":
+      return or(
+        eq(E, "damage_report"),
+        ilike(A, "%damage%"),
+        ilike(A, "%debt%"),
+        ilike(A, "%overdue%"),
+        ilike(A, "%forgiv%"),
+      );
+    case "complete":
+      return or(ilike(A, "%complet%"), ilike(A, "%status%"));
+    case "rollback":
+      return or(ilike(A, "%rolled_back%"), eq(A, "revert_completion"));
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * GET /api/activity?limit=50&offset=0&from=YYYY-MM-DD&to=YYYY-MM-DD&category=...
  * Лента последних действий. Видна всем авторизованным ролям.
  * Возвращает items + total чтобы UI мог пагинировать полный журнал.
+ * from/to/category — серверная фильтрация для модалки «Весь журнал»
+ * (фильтровать надо ДО пагинации, поэтому на сервере, не на клиенте).
  */
 export async function activityRoutes(app: FastifyInstance) {
-  app.get<{ Querystring: { limit?: string; offset?: string } }>(
-    "/",
-    async (req) => {
-      const Q = z.object({
-        limit: z.coerce.number().int().min(1).max(500).optional(),
-        offset: z.coerce.number().int().min(0).optional(),
-      });
-      const parsed = Q.safeParse(req.query);
-      const limit = parsed.success && parsed.data.limit ? parsed.data.limit : 50;
-      const offset = parsed.success && parsed.data.offset ? parsed.data.offset : 0;
+  app.get<{
+    Querystring: {
+      limit?: string;
+      offset?: string;
+      from?: string;
+      to?: string;
+      category?: string;
+    };
+  }>("/", async (req) => {
+    const Q = z.object({
+      limit: z.coerce.number().int().min(1).max(500).optional(),
+      offset: z.coerce.number().int().min(0).optional(),
+      from: z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/)
+        .optional(),
+      to: z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/)
+        .optional(),
+      category: z
+        .enum([
+          "created",
+          "payment",
+          "extend",
+          "swap",
+          "equipment",
+          "damage",
+          "complete",
+          "rollback",
+        ])
+        .optional(),
+    });
+    const parsed = Q.safeParse(req.query);
+    const data = parsed.success ? parsed.data : {};
+    const limit = data.limit ?? 50;
+    const offset = data.offset ?? 0;
 
-      const [rows, totalRow] = await Promise.all([
-        db
-          .select()
-          .from(activityLog)
-          .orderBy(desc(activityLog.createdAt))
-          .limit(limit)
-          .offset(offset),
-        db
-          .select({ count: sql<number>`count(*)::int` })
-          .from(activityLog),
-      ]);
+    const conds: SQL[] = [];
+    if (data.from) {
+      conds.push(gte(activityLog.createdAt, new Date(`${data.from}T00:00:00.000Z`)));
+    }
+    if (data.to) {
+      const t = new Date(`${data.to}T00:00:00.000Z`);
+      t.setUTCDate(t.getUTCDate() + 1); // включительно по конец дня
+      conds.push(lt(activityLog.createdAt, t));
+    }
+    if (data.category) {
+      const c = categoryCondition(data.category);
+      if (c) conds.push(c);
+    }
+    const whereCond = conds.length ? and(...conds) : undefined;
 
-      return { items: rows, total: totalRow[0]?.count ?? 0 };
-    },
-  );
+    const [rows, totalRow] = await Promise.all([
+      db
+        .select()
+        .from(activityLog)
+        .where(whereCond)
+        .orderBy(desc(activityLog.createdAt))
+        .limit(limit)
+        .offset(offset),
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(activityLog)
+        .where(whereCond),
+    ]);
+
+    return { items: rows, total: totalRow[0]?.count ?? 0 };
+  });
 
   /**
    * v0.4.5: «лента событий» по сущности — для табов «История» в карточках

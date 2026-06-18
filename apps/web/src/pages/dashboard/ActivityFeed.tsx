@@ -267,6 +267,24 @@ function FeedRow({
 
 const PAGE_SIZE = 25;
 
+/** Категории фильтра — ключи совпадают с бэком (activity.ts categoryCondition). */
+const JOURNAL_CATEGORIES: { key: string; label: string }[] = [
+  { key: "", label: "Все" },
+  { key: "created", label: "Создание" },
+  { key: "payment", label: "Платежи" },
+  { key: "extend", label: "Продления" },
+  { key: "swap", label: "Замена скутера" },
+  { key: "equipment", label: "Экипировка" },
+  { key: "damage", label: "Ущерб и долги" },
+  { key: "complete", label: "Завершение" },
+  { key: "rollback", label: "Откаты" },
+];
+
+const toISODate = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+    d.getDate(),
+  ).padStart(2, "0")}`;
+
 function FullJournalModal({
   compact,
   onClose,
@@ -275,21 +293,46 @@ function FullJournalModal({
   onClose: () => void;
 }) {
   const [page, setPage] = useState(0);
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [category, setCategory] = useState("");
+  const hasFilter = !!(from || to || category);
+
   const { data, isLoading, isFetching } = useActivityPage(
     PAGE_SIZE,
     page * PAGE_SIZE,
+    {
+      from: from || undefined,
+      to: to || undefined,
+      category: category || undefined,
+    },
   );
   const total = data?.total ?? 0;
   const items = data?.items ?? [];
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const resolveContext = useActivityContext();
 
+  const applyPreset = (days: number) => {
+    const now = new Date();
+    const start = new Date();
+    start.setDate(now.getDate() - days);
+    setFrom(toISODate(start));
+    setTo(toISODate(now));
+    setPage(0);
+  };
+  const resetFilters = () => {
+    setFrom("");
+    setTo("");
+    setCategory("");
+    setPage(0);
+  };
+
   return (
     <div
       className="fixed inset-0 z-[140] flex items-stretch justify-center overflow-y-auto bg-ink/55 p-0 backdrop-blur-sm sm:items-start sm:p-6"
     >
       <div
-        className="flex min-h-[100dvh] w-full flex-col overflow-hidden rounded-none bg-surface shadow-card-lg sm:mt-10 sm:min-h-0 sm:max-w-[760px] sm:rounded-2xl"
+        className="flex min-h-[100dvh] w-full flex-col overflow-hidden rounded-none bg-surface shadow-card-lg sm:mt-10 sm:min-h-0 sm:max-w-[820px] sm:rounded-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-border bg-surface-soft px-5 py-3">
@@ -298,7 +341,8 @@ function FullJournalModal({
               Журнал действий
             </div>
             <div className="text-[15px] font-bold text-ink">
-              Всего записей: <span className="tabular-nums">{total}</span>
+              {hasFilter ? "Найдено" : "Всего записей"}:{" "}
+              <span className="tabular-nums">{total}</span>
             </div>
           </div>
           <button
@@ -310,12 +354,87 @@ function FullJournalModal({
           </button>
         </div>
 
-        <div className="max-h-[70vh] overflow-y-auto px-5 py-3">
+        {/* #журнал: фильтры — по типу действия (чипы) и по датам (период + пресеты).
+            Фильтрация серверная (до пагинации), смена фильтра сбрасывает на 1-ю стр. */}
+        <div className="flex flex-col gap-2.5 border-b border-border px-5 py-3">
+          <div className="flex flex-wrap gap-1.5">
+            {JOURNAL_CATEGORIES.map((c) => (
+              <button
+                key={c.key || "all"}
+                type="button"
+                onClick={() => {
+                  setCategory(c.key);
+                  setPage(0);
+                }}
+                className={cn(
+                  "rounded-full px-3 py-1 text-[12px] font-semibold transition-colors",
+                  category === c.key
+                    ? "bg-ink text-white"
+                    : "bg-surface-soft text-ink-2 hover:bg-border",
+                )}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-[12px]">
+            <span className="font-medium text-muted-2">Период:</span>
+            <input
+              type="date"
+              value={from}
+              max={to || undefined}
+              onChange={(e) => {
+                setFrom(e.target.value);
+                setPage(0);
+              }}
+              className="rounded-lg border border-border bg-surface px-2 py-1 text-ink outline-none focus:border-blue-400"
+            />
+            <span className="text-muted-2">—</span>
+            <input
+              type="date"
+              value={to}
+              min={from || undefined}
+              onChange={(e) => {
+                setTo(e.target.value);
+                setPage(0);
+              }}
+              className="rounded-lg border border-border bg-surface px-2 py-1 text-ink outline-none focus:border-blue-400"
+            />
+            <span className="mx-1 h-4 w-px bg-border" />
+            {[
+              { label: "Сегодня", days: 0 },
+              { label: "7 дней", days: 7 },
+              { label: "30 дней", days: 30 },
+            ].map((p) => (
+              <button
+                key={p.label}
+                type="button"
+                onClick={() => applyPreset(p.days)}
+                className="rounded-full bg-surface-soft px-2.5 py-1 font-semibold text-ink-2 transition-colors hover:bg-border"
+              >
+                {p.label}
+              </button>
+            ))}
+            {hasFilter && (
+              <button
+                type="button"
+                onClick={resetFilters}
+                className="ml-auto inline-flex items-center gap-1 rounded-full px-2.5 py-1 font-semibold text-blue-700 hover:bg-blue-50"
+              >
+                <X size={12} /> Сбросить
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="max-h-[64vh] flex-1 overflow-y-auto px-5 py-3">
           {isLoading && items.length === 0 ? (
             <div className="py-8 text-center text-muted text-[13px]">Загрузка…</div>
           ) : items.length === 0 ? (
-            <div className="py-8 text-center text-muted text-[13px]">
-              Журнал пуст
+            <div className="py-10 text-center text-muted text-[13px]">
+              {hasFilter
+                ? "Ничего не найдено по выбранному фильтру"
+                : "Журнал пуст"}
             </div>
           ) : (
             <FeedList
