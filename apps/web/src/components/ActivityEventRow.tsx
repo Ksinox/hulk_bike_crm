@@ -338,9 +338,18 @@ export function formatActivitySummary(
     const extras: string[] = [];
     const fl = feeLine();
     if (fl) extras.push(fl);
-    // v0.8.14 (ревизор): причина замены и судьба старого скутера на момент.
-    if (typeof m?.reason === "string" && m.reason.trim())
-      extras.push(`Причина: ${m.reason.trim()}`);
+    // #20: причина замены — категория (reasonLabel) как основное «почему» +
+    // необязательный комментарий-цитата. Legacy-свапы без категории
+    // показывают старый свободный текст как и раньше.
+    const reasonLabel = typeof m?.reasonLabel === "string" ? m.reasonLabel : null;
+    const reasonComment =
+      typeof m?.reason === "string" && m.reason.trim() ? m.reason.trim() : null;
+    if (reasonLabel) {
+      extras.push(`Причина: ${reasonLabel}`);
+      if (reasonComment) extras.push(`«${reasonComment}»`);
+    } else if (reasonComment) {
+      extras.push(`Причина: ${reasonComment}`);
+    }
     if (typeof m?.oldScooterDestination === "string") {
       const dest =
         m.oldScooterDestination === "repair"

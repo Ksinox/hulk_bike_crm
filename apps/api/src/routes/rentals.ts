@@ -3016,6 +3016,14 @@ export async function rentalsRoutes(app: FastifyInstance) {
             .default("repair"),
           /** Опциональный комментарий к причине замены. */
           reason: z.string().max(500).optional(),
+          /**
+           * #20: структурированная категория причины замены. Заменяет
+           * свободный текст как основное «почему». reason остаётся
+           * необязательным уточняющим комментарием.
+           */
+          reasonCategory: z
+            .enum(["breakdown", "client_request", "maintenance", "other"])
+            .optional(),
         })
         .strict();
       const parsed = schema.safeParse(req.body);
@@ -3024,6 +3032,25 @@ export async function rentalsRoutes(app: FastifyInstance) {
           .code(400)
           .send({ error: "validation", issues: parsed.error.issues });
       const d = parsed.data;
+
+      // #20: категория причины замены → человекочитаемая метка. reason —
+      // необязательный комментарий. reasonText комбинирует их для записи
+      // свапа / заметки аренды / акта; категория отдельно уходит в лог.
+      const REASON_CAT_LABEL: Record<string, string> = {
+        breakdown: "Поломка",
+        client_request: "Клиент просит другую модель",
+        maintenance: "Плановое ТО",
+        other: "Другое",
+      };
+      const catLabel = d.reasonCategory
+        ? (REASON_CAT_LABEL[d.reasonCategory] ?? null)
+        : null;
+      const comment = d.reason?.trim() ? d.reason.trim() : null;
+      const reasonText = catLabel
+        ? comment
+          ? `${catLabel} — ${comment}`
+          : catLabel
+        : comment;
 
       const result = await db.transaction(async (tx) => {
         const [old] = await tx.select().from(rentals).where(eq(rentals.id, id));
@@ -3173,7 +3200,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
             prevScooterId,
             newScooterId: d.newScooterId,
             swapAt: now,
-            reason: d.reason ?? null,
+            reason: reasonText,
             feeAmount,
             createdByUserId: req.user.userId,
           })
@@ -3191,8 +3218,8 @@ export async function rentalsRoutes(app: FastifyInstance) {
               amount: feeAmount,
               method: old.paymentMethod,
               paid: false,
-              note: d.reason
-                ? `доплата за замену модели: ${d.reason}`
+              note: reasonText
+                ? `доплата за замену модели: ${reasonText}`
                 : `доплата за замену модели`,
             })
             .returning();
@@ -3214,8 +3241,8 @@ export async function rentalsRoutes(app: FastifyInstance) {
         await tx
           .update(rentals)
           .set({
-            note: d.reason
-              ? `замена скутера: ${d.reason}`
+            note: reasonText
+              ? `замена скутера: ${reasonText}`
               : `замена скутера`,
             updatedAt: sql`now()`,
           })
@@ -3256,7 +3283,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
         entity: "rental",
         entityId: id,
         action: "scooter_swapped",
-        summary: `Замена скутера в аренде #${String(id).padStart(4, "0")}${result.feeAmount > 0 ? ` (доплата ${result.feeAmount} ₽)` : ""}${result.refundAmount > 0 ? ` (возврат ${result.refundAmount} ₽ в депозит)` : ""}`,
+        summary: `Замена скутера${catLabel ? ` · ${catLabel}` : ""} в аренде #${String(id).padStart(4, "0")}${result.feeAmount > 0 ? ` (доплата ${result.feeAmount} ₽)` : ""}${result.refundAmount > 0 ? ` (возврат ${result.refundAmount} ₽ в депозит)` : ""}`,
         // v0.8.14: «ревизорские» поля — кто на кого заменён, причина и куда
         // ушёл старый скутер (в ремонт / обратно в парк) на момент замены.
         meta: {
@@ -3266,7 +3293,9 @@ export async function rentalsRoutes(app: FastifyInstance) {
           newScooterName,
           feeAmount: result.feeAmount,
           refundAmount: result.refundAmount,
-          reason: d.reason ?? null,
+          reason: comment,
+          reasonCategory: d.reasonCategory ?? null,
+          reasonLabel: catLabel,
           oldScooterDestination: d.oldScooterStatus,
           // Снимок для отката свапа «в день совершения» (rollback-action).
           swapId: result.swapId,

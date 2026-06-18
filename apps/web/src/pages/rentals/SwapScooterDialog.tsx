@@ -1,5 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowRight, Check, Loader2, Search, X } from "lucide-react";
+import {
+  ArrowRight,
+  Check,
+  Loader2,
+  MoreHorizontal,
+  RefreshCw,
+  Search,
+  Settings,
+  Wrench,
+  X,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
 import { useApiScooters } from "@/lib/api/scooters";
@@ -11,6 +22,32 @@ import type { ApiScooter, ScooterBaseStatus } from "@/lib/api/types";
 import { ScooterPosterAvatar } from "./ScooterPosterAvatar";
 
 type OldStatus = ScooterBaseStatus;
+
+/** #20: структурированная причина замены — основное «почему». */
+type SwapReasonCategory = "breakdown" | "client_request" | "maintenance" | "other";
+
+const REASON_CATEGORIES: {
+  value: SwapReasonCategory;
+  label: string;
+  icon: LucideIcon;
+  /** Куда по умолчанию деть старый скутер при этой причине. */
+  defaultOldStatus: OldStatus;
+}[] = [
+  { value: "breakdown", label: "Поломка", icon: Wrench, defaultOldStatus: "repair" },
+  {
+    value: "client_request",
+    label: "Клиент просит другую модель",
+    icon: RefreshCw,
+    defaultOldStatus: "rental_pool",
+  },
+  {
+    value: "maintenance",
+    label: "Плановое ТО",
+    icon: Settings,
+    defaultOldStatus: "repair",
+  },
+  { value: "other", label: "Другое", icon: MoreHorizontal, defaultOldStatus: "repair" },
+];
 
 /**
  * Замена скутера в аренде. v0.2.79 — двухколоночный layout.
@@ -38,9 +75,25 @@ export function SwapScooterDialog({
   const [closing, setClosing] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [reason, setReason] = useState("");
+  const [reasonCategory, setReasonCategory] = useState<SwapReasonCategory | null>(
+    null,
+  );
+  const [categoryError, setCategoryError] = useState(false);
   const [search, setSearch] = useState("");
   const [oldStatus, setOldStatus] = useState<OldStatus>("repair");
-  const [reasonError, setReasonError] = useState(false);
+  const [oldStatusTouched, setOldStatusTouched] = useState(false);
+
+  // #20: выбор категории причины. Если оператор ещё не трогал «куда деть
+  // старый скутер» вручную — подставляем умный дефолт под причину
+  // (поломка/ТО → в ремонт; клиент просит модель → обратно в парк).
+  const pickCategory = (c: SwapReasonCategory) => {
+    setReasonCategory(c);
+    setCategoryError(false);
+    if (!oldStatusTouched) {
+      const def = REASON_CATEGORIES.find((r) => r.value === c)?.defaultOldStatus;
+      if (def) setOldStatus(def);
+    }
+  };
 
   const requestClose = () => {
     if (closing) return;
@@ -159,11 +212,11 @@ export function SwapScooterDialog({
       toast.error("Не выбран скутер", "Кликните плитку из парка аренды");
       return;
     }
-    if (!reason.trim()) {
-      setReasonError(true);
+    if (!reasonCategory) {
+      setCategoryError(true);
       toast.error(
-        "Нужна причина замены",
-        "Опишите кратко: что случилось со скутером?",
+        "Укажите причину замены",
+        "Выберите: поломка / другая модель / ТО / другое",
       );
       return;
     }
@@ -172,7 +225,8 @@ export function SwapScooterDialog({
         rentalId: rental.id,
         newScooterId: selectedId,
         oldScooterStatus: oldStatus,
-        reason: reason.trim(),
+        reasonCategory,
+        ...(reason.trim() ? { reason: reason.trim() } : {}),
       });
       // Замена теперь in-place: API меняет scooterId в текущей аренде,
       // новой связки не создаётся. Возвращается обновлённый rental
@@ -318,7 +372,10 @@ export function SwapScooterDialog({
                     <button
                       key={o.value}
                       type="button"
-                      onClick={() => setOldStatus(o.value)}
+                      onClick={() => {
+                        setOldStatus(o.value);
+                        setOldStatusTouched(true);
+                      }}
                       className={cn(
                         "flex items-start gap-2.5 rounded-xl px-3 py-2 text-left transition-colors",
                         active
@@ -396,32 +453,41 @@ export function SwapScooterDialog({
           </div>
         </div>
 
-        {/* REASON + ACTIONS */}
+        {/* #20: КАТЕГОРИЯ ПРИЧИНЫ + комментарий (необязательно) */}
         <div className="border-t border-border bg-surface-soft px-5 py-3">
-          <label className="block">
-            <div className="mb-1 flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-muted-2">
-              Причина замены <span className="text-red-600">*</span>
-            </div>
-            <input
-              value={reason}
-              onChange={(e) => {
-                setReason(e.target.value);
-                if (reasonError && e.target.value.trim())
-                  setReasonError(false);
-              }}
-              placeholder="например: сломалась амортизация, клиент пожаловался на тормоза"
-              className={cn(
-                "h-9 w-full rounded-[10px] border bg-white px-3 text-[12px] outline-none",
-                reasonError
-                  ? "border-red-500 focus:border-red-600"
-                  : "border-border focus:border-blue-600",
-              )}
-            />
-            <div className="mt-1 text-[11px] text-muted-2">
-              Заметка останется в истории — при наведении на скутер в блоке
-              «Ранее в этой аренде» она будет видна оператору.
-            </div>
-          </label>
+          <div className="mb-1.5 flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-muted-2">
+            Почему меняем? <span className="text-red-600">*</span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {REASON_CATEGORIES.map((c) => {
+              const active = reasonCategory === c.value;
+              const Icon = c.icon;
+              return (
+                <button
+                  key={c.value}
+                  type="button"
+                  onClick={() => pickCategory(c.value)}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-[10px] border px-3 py-1.5 text-[12.5px] font-semibold transition-colors",
+                    active
+                      ? "border-blue-600 bg-blue-50 text-blue-700"
+                      : categoryError
+                        ? "border-red-300 bg-white text-ink-2 hover:bg-surface-soft"
+                        : "border-border bg-white text-ink-2 hover:bg-surface-soft",
+                  )}
+                >
+                  <Icon size={14} />
+                  {c.label}
+                </button>
+              );
+            })}
+          </div>
+          <input
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="Комментарий (необязательно): что именно, детали…"
+            className="mt-2.5 h-9 w-full rounded-[10px] border border-border bg-white px-3 text-[12px] outline-none focus:border-blue-600"
+          />
         </div>
 
         <div className="flex items-center justify-between gap-2 border-t border-border bg-white px-4 py-2">
