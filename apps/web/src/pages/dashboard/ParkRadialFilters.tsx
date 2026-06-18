@@ -198,15 +198,19 @@ function ModelItem({
       onClick={onClick}
       className="flex flex-col items-center gap-1.5"
     >
-      <span
-        className={cn(
-          "relative flex h-12 w-12 items-center justify-center overflow-hidden rounded-full bg-surface-soft ring-2 transition-all",
-          selected ? "ring-blue-500" : "ring-border hover:ring-blue-300",
-        )}
-      >
-        {children}
+      {/* relative-обёртка БЕЗ overflow — чтобы бейдж лёг ПОВЕРХ круга, а не
+          обрезался ободком (overflow-hidden живёт только на самом круге). */}
+      <span className="relative">
+        <span
+          className={cn(
+            "flex h-12 w-12 items-center justify-center overflow-hidden rounded-full bg-surface-soft ring-2 transition-all",
+            selected ? "ring-blue-500" : "ring-border hover:ring-blue-300",
+          )}
+        >
+          {children}
+        </span>
         {count > 0 && (
-          <span className="absolute -right-0.5 -top-0.5 rounded-full border border-surface bg-surface px-1 text-[10px] font-bold text-muted-2">
+          <span className="absolute -right-1 -top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-ink px-1 text-[10px] font-bold leading-none text-white ring-2 ring-surface">
             {count}
           </span>
         )}
