@@ -9,6 +9,7 @@ import {
   type RevenueScope,
 } from "@/pages/dashboard/RevenueRentalsList";
 import { RevenueDashboard } from "@/pages/dashboard/RevenueDashboard";
+import { DateRangePicker } from "@/components/ui/date-picker";
 import { useRevenueAnalytics } from "@/lib/useRevenueAnalytics";
 import { useBillingPeriodAnchors } from "@/lib/api/billing-period";
 import { useRentals, useArchivedRentals } from "@/pages/rentals/rentalsStore";
@@ -33,15 +34,22 @@ export function MobileRevenueScreen({
   const [period, setPeriod] = useState<RevenuePeriod>("month");
   const [method, setMethod] = useState<MethodFilter>("all");
   const [openId, setOpenId] = useState<number | null>(null);
+  // #24: произвольный период (календарь) на мобиле — как на десктопе. Если
+  // задан, перекрывает чипсы День/Неделя/Месяц (они подсвечиваются как
+  // неактивные).
+  const [customRange, setCustomRange] = useState<{
+    from: string;
+    to: string;
+  } | null>(null);
 
   // Подписка на якоря: окно/подпись расчётного периода считаются через
   // глобал billingPeriod, который заполняется с сервера асинхронно.
   // Без подписки экран мог бы открыться со стале-периодом (день 15).
   const anchorsQ = useBillingPeriodAnchors();
   const { start, end } = useMemo(
-    () => resolveRevenueWindow({ period }),
+    () => resolveRevenueWindow({ period, range: customRange }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [period, anchorsQ.data],
+    [period, customRange, anchorsQ.data],
   );
   const a = useRevenueAnalytics({ scope, start, end });
 
@@ -52,8 +60,9 @@ export function MobileRevenueScreen({
     [active, archived, openId],
   );
 
-  const periodLabel =
-    period === "day"
+  const periodLabel = customRange
+    ? `${customRange.from.slice(8, 10)}.${customRange.from.slice(5, 7)} — ${customRange.to.slice(8, 10)}.${customRange.to.slice(5, 7)}`
+    : period === "day"
       ? "Сегодня"
       : period === "week"
         ? "Эта неделя"
@@ -78,7 +87,7 @@ export function MobileRevenueScreen({
         </div>
       </div>
 
-      {/* Контролы: период + способ оплаты (чипсами) */}
+      {/* Контролы: период (чипсы + произвольный диапазон) + способ оплаты */}
       <div className="flex flex-col gap-2 border-b border-border bg-surface px-3 py-2">
         <MobileChips
           options={[
@@ -86,8 +95,23 @@ export function MobileRevenueScreen({
             { id: "week" as RevenuePeriod, label: "Неделя" },
             { id: "month" as RevenuePeriod, label: "Месяц" },
           ]}
-          value={period}
-          onChange={setPeriod}
+          // #24: при выбранном произвольном диапазоне чипсы гасим (пустое
+          // значение не совпадает ни с одним id).
+          value={customRange ? ("" as RevenuePeriod) : period}
+          onChange={(p) => {
+            setPeriod(p);
+            setCustomRange(null);
+          }}
+        />
+        {/* #24: произвольный период — календарь на всю ширину под чипсами
+            (как DateRangePicker на десктопе, но full-width под телефон). */}
+        <DateRangePicker
+          from={customRange?.from ?? null}
+          to={customRange?.to ?? null}
+          placeholder="Произвольный период"
+          onChange={({ from, to }) =>
+            setCustomRange(from && to ? { from, to } : null)
+          }
         />
         <MobileChips
           options={[
@@ -108,6 +132,7 @@ export function MobileRevenueScreen({
         </div>
         <RevenueRentalsList
           period={period}
+          range={customRange}
           methodFilter={method}
           scope={scope}
           compact={false}
