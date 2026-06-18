@@ -233,7 +233,7 @@ export function ParkPanel({
 
   return (
     <Card className={className}>
-      <div className="mb-3.5 flex flex-wrap items-center justify-between gap-3">
+      <div className="mb-3.5 flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-2.5">
           <h2 className="m-0 text-[20px] font-bold tracking-[-0.01em]">
             Парк · {total} {plural(total, ["скутер", "скутера", "скутеров"])}

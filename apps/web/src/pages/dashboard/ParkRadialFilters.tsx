@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { Bike, ChevronDown, LayoutGrid } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { fileUrl } from "@/lib/files";
@@ -123,7 +123,7 @@ export function ParkRadialFilters({
         onMouseLeave={() => setOpen(null)}
       >
         <Plaque label="Модель" value={modelSummary} active={open === "model"} />
-        <Fan open={open === "model"}>
+        <Fan open={open === "model"} radius={170}>
           <FanOpt
             pos={ALL_POS}
             delay={0}
@@ -157,7 +157,7 @@ export function ParkRadialFilters({
         onMouseLeave={() => setOpen(null)}
       >
         <Plaque label="Статус" value={statusSummary} active={open === "status"} />
-        <Fan open={open === "status"}>
+        <Fan open={open === "status"} radius={235}>
           <FanOpt
             pos={STATUS_ALL_POS}
             delay={0}
@@ -215,12 +215,42 @@ function Plaque({
   );
 }
 
-function Fan({ open, children }: { open: boolean; children: React.ReactNode }) {
+function Fan({
+  open,
+  radius,
+  children,
+}: {
+  open: boolean;
+  radius: number;
+  children: React.ReactNode;
+}) {
   return (
     <div
-      className="absolute left-1/2 z-50 h-[230px] w-[400px] -translate-x-1/2"
-      style={{ bottom: "calc(100% + 2px)", pointerEvents: open ? "auto" : "none" }}
+      className="absolute left-1/2 z-50 -translate-x-1/2"
+      style={{
+        bottom: "calc(100% + 2px)",
+        width: radius * 2 + 20,
+        height: radius + 24,
+        pointerEvents: open ? "auto" : "none",
+      }}
     >
+      {/* Белая подложка-полукруг под веером — кружки и подписи читаются
+          поверх блока «Долги к сбору», который над парком. */}
+      <div
+        className="absolute bottom-0 left-1/2 border border-border bg-surface shadow-card-lg"
+        style={{
+          width: radius * 2,
+          height: radius,
+          marginLeft: -radius,
+          borderRadius: `${radius}px ${radius}px 0 0`,
+          opacity: open ? 1 : 0,
+          transform: open ? "scale(1)" : "scale(0.65)",
+          transformOrigin: "bottom center",
+          transition:
+            "opacity 0.25s, transform 0.3s cubic-bezier(0.34,1.4,0.5,1)",
+        }}
+        aria-hidden
+      />
       {children}
     </div>
   );
@@ -282,27 +312,10 @@ function FanOpt({
 }
 
 function Avatar({ url, fallbackAll }: { url?: string | null; fallbackAll?: boolean }) {
-  if (fallbackAll) {
-    return (
-      <span className="text-[15px] text-muted-2" aria-hidden>
-        ▦
-      </span>
-    );
-  }
-  if (url) {
-    return (
-      <img
-        src={url}
-        alt=""
-        className="h-9 w-9 rounded-full object-cover"
-      />
-    );
-  }
-  return (
-    <span className="text-[15px] text-muted-2" aria-hidden>
-      🛵
-    </span>
-  );
+  if (fallbackAll) return <LayoutGrid size={18} className="text-muted-2" />;
+  if (url)
+    return <img src={url} alt="" className="h-9 w-9 rounded-full object-cover" />;
+  return <Bike size={18} className="text-muted-2" />;
 }
 
 function Dot({ color, mark }: { color?: string; mark?: string }) {
