@@ -139,6 +139,8 @@ export type ReturnItem = {
 
 export type OverdueItem = {
   rentalId: number;
+  /** #дашборд: нужен для перехода в карточку клиента из «Долгов к сбору». */
+  clientId: number;
   scooterName: string;
   clientName: string;
   clientPhone: string;
@@ -303,6 +305,7 @@ export function useDashboardMetrics(): DashboardMetrics {
       const daysOverdue = Math.max(0, daysBetweenYmd(endDateKey, todayKey));
       return {
         rentalId: r.id,
+        clientId: r.clientId,
         scooterName: sc?.name ?? "—",
         clientName: cl?.name ?? "—",
         clientPhone: cl?.phone ?? "",

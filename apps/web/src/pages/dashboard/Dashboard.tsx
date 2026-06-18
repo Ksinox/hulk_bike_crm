@@ -8,6 +8,7 @@ import { ReturnsList } from "./ReturnsList";
 import { ReturnsTable } from "./ReturnsTable";
 import { OverdueTable } from "./OverdueTable";
 import { DebtorsNoRentalCard } from "./DebtorsNoRentalCard";
+import { DebtsToCollect } from "./DebtsToCollect";
 import { ActivityFeed } from "./ActivityFeed";
 import { ClassicKpi, CLASSIC_KPI_ICONS } from "./ClassicKpi";
 import { NewApplicationsWidget } from "./NewApplicationsWidget";
@@ -143,15 +144,18 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
           items-start гарантирует что флексы не растягиваются друг под друга. */}
       <div className="col-span-12 grid auto-rows-[minmax(120px,max-content)] grid-cols-12 items-start gap-4">
         <div className="col-span-8 flex flex-col gap-4">
+          {/* #дашборд: «Долги к сбору» подняты НАД парком — горящие деньги
+              первыми, парк (на 100+ скутеров разрастается) ниже. */}
+          <DebtsToCollect
+            overdue={metrics.overdue}
+            debtors={metrics.debtorsNoRental}
+            onOpenRental={(id) => drawer.openRental(id)}
+            onOpenClient={(id) => drawer.openClient(id)}
+          />
           <ParkPanel
             metrics={metrics}
             onOpenRental={(id) => drawer.openRental(id)}
           />
-          <OverdueTable
-            items={metrics.overdue}
-            onOpenRental={(id) => drawer.openRental(id)}
-          />
-          <DebtorsNoRentalCard items={metrics.debtorsNoRental} />
           <ActivityFeed />
         </div>
         <div className="col-span-4 flex flex-col gap-4">
