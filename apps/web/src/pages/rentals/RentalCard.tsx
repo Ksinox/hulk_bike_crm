@@ -706,6 +706,18 @@ export function RentalCard({
   const reportWithDebt = reports.find((r) => r.debt > 0) ?? null;
   const reportLatest =
     reports.length > 0 ? reports[reports.length - 1]! : null;
+  // #26: «за что» ущерб — короткий список повреждённых позиций из акта-должника
+  // (для подписи в «Составе долга», чтобы было видно, за что начислен ущерб).
+  const damageWhatItems = (reportWithDebt?.items ?? [])
+    .map((i) => i.name)
+    .filter(Boolean);
+  const damageWhatLabel =
+    damageWhatItems.length > 0
+      ? damageWhatItems.slice(0, 3).join(", ") +
+        (damageWhatItems.length > 3
+          ? ` и ещё ${damageWhatItems.length - 3}`
+          : "")
+      : "зафиксирован в акте о повреждениях";
   // v0.2.75: hasDamage опирается только на формальные акты о повреждениях.
   // Старое поле rental.damageAmount больше не учитываем — в UI его нет.
   const hasDamage = reports.length > 0;
@@ -1771,7 +1783,12 @@ export function RentalCard({
                   <div>просрочка: <b>{fmt(overdueBalance)} ₽</b></div>
                 )}
               {damageBalance > 0 && (
-                <div>ущерб: <b>{fmt(damageBalance)} ₽</b></div>
+                <div>
+                  ущерб: <b>{fmt(damageBalance)} ₽</b>
+                  {damageWhatItems.length > 0 && (
+                    <span className="text-muted"> · {damageWhatLabel}</span>
+                  )}
+                </div>
               )}
               {equipmentManualBalance > 0 && (
                 <div>за экипировку: <b>{fmt(equipmentManualBalance)} ₽</b></div>
@@ -2518,8 +2535,13 @@ export function RentalCard({
                     {damageBalance > 0 && (
                       <DebtRow
                         label="Ущерб по акту"
-                        formula="зафиксирован в акте о повреждениях"
+                        formula={damageWhatLabel}
                         value={damageBalance}
+                        onOpenAct={
+                          reportWithDebt
+                            ? () => setPreviewDamageId(reportWithDebt.id)
+                            : undefined
+                        }
                       />
                     )}
                     {equipmentManualBalance > 0 && (
@@ -3572,15 +3594,25 @@ function DebtRow({
   label,
   formula,
   value,
+  onOpenAct,
 }: {
   label: string;
   formula?: string;
   value: number;
+  /** #26: если задано — строка кликабельна и открывает акт о повреждениях. */
+  onOpenAct?: () => void;
 }) {
-  return (
-    <div className="flex items-start justify-between gap-3">
+  const body = (
+    <>
       <div className="min-w-0">
-        <div className="text-ink-2">{label}</div>
+        <div className="flex items-center gap-1.5 text-ink-2">
+          {label}
+          {onOpenAct && (
+            <span className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-blue-600">
+              акт <ArrowUpRight size={11} />
+            </span>
+          )}
+        </div>
         {formula && (
           <div className="text-[11px] leading-tight text-muted-2">
             {formula}
@@ -3590,8 +3622,21 @@ function DebtRow({
       <span className="shrink-0 font-semibold tabular-nums text-ink">
         {fmt(value)} ₽
       </span>
-    </div>
+    </>
   );
+  if (onOpenAct) {
+    return (
+      <button
+        type="button"
+        onClick={onOpenAct}
+        title="Открыть акт о повреждениях — что повреждено"
+        className="-mx-1.5 flex w-[calc(100%+0.75rem)] items-start justify-between gap-3 rounded-lg px-1.5 py-1 text-left transition-colors hover:bg-blue-soft/40"
+      >
+        {body}
+      </button>
+    );
+  }
+  return <div className="flex items-start justify-between gap-3">{body}</div>;
 }
 
 function pluralRental(n: number): string {
