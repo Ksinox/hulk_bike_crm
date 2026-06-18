@@ -393,14 +393,11 @@ export function RentalCard({
   void onPaymentOpenChange;
   void initialTab; // v0.6.44: tabs убраны, prop оставлен для совместимости.
   const [action, setAction] = useState<ActionKind | null>(null);
-  // v0.9.1: «Завершить аренду» на стр. Аренды отдаём родителю — он открывает
-  // push-колонку (как «Принять оплату»), а не overlay поверх карточки.
-  useEffect(() => {
-    if (action === "complete" && onRequestComplete) {
-      onRequestComplete(rental.id);
-      setAction(null);
-    }
-  }, [action, onRequestComplete, rental.id]);
+  // v0.9.4: «Завершить аренду» открывает компактную карточку-модалку по
+  // центру (PaymentAcceptDialog completing сам рисует центрированный
+  // контент-хайт макет). Старый push-колоночный путь (onRequestComplete)
+  // больше не используется — prop оставлен для совместимости.
+  void onRequestComplete;
   const [extendOpen, setExtendOpen] = useState(false);
   // v0.8.0: бамп для входа в режим паркинга из ⋯-меню (CalendarPanel слушает).
   const [armParkingSignal, setArmParkingSignal] = useState(0);
@@ -2734,19 +2731,15 @@ export function RentalCard({
         </SideDrawer>
       )}
 
-      {/* Этап 2: «Завершить аренду» — единое окно (приёмка + расчёт) в
-          дровере оплаты (PaymentAcceptDialog, режим completing). На стр.
-          Аренды родитель открывает push-колонку (onRequestComplete, см.
-          эффект ниже) — карточка сдвигается, как при «Принять оплату».
-          Без родителя (DashboardDrawer/мобила) — overlay-fallback здесь. */}
+      {/* Этап 2: «Завершить аренду» — единое окно (приёмка + расчёт) в режиме
+          completing. PaymentAcceptDialog сам рисует компактную карточку-
+          модалку по центру (контент-хайт, как в макете). */}
       {action === "complete" ? (
-        onRequestComplete ? null : (
-          <PaymentAcceptDialog
-            rental={rental}
-            completing
-            onClose={() => setAction(null)}
-          />
-        )
+        <PaymentAcceptDialog
+          rental={rental}
+          completing
+          onClose={() => setAction(null)}
+        />
       ) : action ? (
         <RentalActionDialog
           rental={rental}

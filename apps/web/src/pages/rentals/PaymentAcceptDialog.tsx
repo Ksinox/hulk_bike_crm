@@ -2935,12 +2935,15 @@ export function PaymentAcceptDialog({
   const completingPanel = (
     <div
       className={cn(
-        "flex h-full flex-col overflow-hidden bg-surface",
+        // v0.9.4: компактная карточка по ВЫСОТЕ КОНТЕНТА (как в макете) —
+        // не на всю высоту вьюпорта. Растёт вниз с числом позиций, до 88vh,
+        // дальше тело скроллится. Низ (К приёму/Завершить) всегда прибит.
+        "flex max-h-[88vh] w-full flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-card-lg",
         closing && "opacity-0 transition-opacity duration-150",
       )}
     >
       {/* Шапка */}
-      <div className="flex items-center gap-3 border-b border-border px-5 py-3">
+      <div className="flex shrink-0 items-center gap-3 border-b border-border px-5 py-3">
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white">
           <Repeat size={15} />
         </div>
@@ -2964,15 +2967,16 @@ export function PaymentAcceptDialog({
         </button>
       </div>
 
-      {/* Тело — две колонки */}
-      <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-        {/* ЛЕВО — приёмка (свой скролл) */}
-        <div className="min-h-0 overflow-y-auto border-b border-border px-4 py-4 scrollbar-thin md:w-[42%] md:shrink-0 md:border-b-0 md:border-r">
+      {/* Тело — две колонки. Скроллится ЦЕЛИКОМ (низ панели прибит ниже),
+          колонки равной высоты (счёт «дотягивается» до приёмки). */}
+      <div className="flex min-h-0 flex-col overflow-y-auto scrollbar-thin md:flex-row md:items-stretch">
+        {/* ЛЕВО — приёмка */}
+        <div className="border-b border-border px-4 py-4 md:w-[42%] md:shrink-0 md:border-b-0 md:border-r">
           <ReturnIntakeSection intake={intake} />
         </div>
 
-        {/* ПРАВО — счёт (свой скролл) */}
-        <div className="min-h-0 flex-1 overflow-y-auto bg-surface-soft px-4 py-4 scrollbar-thin">
+        {/* ПРАВО — счёт */}
+        <div className="flex-1 bg-surface-soft px-4 py-4">
           <div className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted-2">
             Счёт к закрытию
           </div>
@@ -3264,7 +3268,7 @@ export function PaymentAcceptDialog({
       </div>
 
       {/* НИЗ — единая панель действия во всю ширину */}
-      <div className="border-t border-border bg-surface px-5 py-3">
+      <div className="shrink-0 border-t border-border bg-surface px-5 py-3">
         {totalDebt > 0 && (
           <div className="mb-2.5 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
             <div className="flex items-center gap-2.5">
@@ -3398,6 +3402,28 @@ export function PaymentAcceptDialog({
           );
         })()
       : null;
+
+  // v0.9.4: завершение — компактная карточка по высоте контента, по центру
+  // (как в утверждённом макете), а не колонка/драйвер на всю высоту. Растёт
+  // вниз с числом позиций; лёгкий бэкдроп (не тёмный) — фон остаётся читаем.
+  if (completing) {
+    return (
+      <>
+        {actPreview}
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-ink/25 p-4 backdrop-blur-sm sm:p-6"
+          onClick={requestClose}
+        >
+          <div
+            className="my-auto w-full max-w-[940px]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {completingPanel}
+          </div>
+        </div>
+      </>
+    );
+  }
 
   if (inline) {
     return (
