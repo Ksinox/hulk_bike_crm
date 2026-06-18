@@ -59,7 +59,7 @@ import {
   completeRentalNoDamage,
   completeRentalWithDamage,
 } from "./rentalsStore";
-import { useReturnIntake, ReturnIntakeSection } from "./returnIntake";
+import { useReturnIntake, ReturnIntakeSection, ReturnDamagePicker } from "./returnIntake";
 import { useCreateDamageReport } from "@/lib/api/damage-reports";
 import { DocumentPreviewModal } from "./DocumentPreviewModal";
 import { EquipmentTile, EquipmentAddTile } from "./rental-card/EquipmentTile";
@@ -2971,7 +2971,7 @@ export function PaymentAcceptDialog({
           колонки равной высоты (счёт «дотягивается» до приёмки). */}
       <div className="flex min-h-0 flex-col overflow-y-auto scrollbar-thin md:flex-row md:items-stretch">
         {/* ЛЕВО — приёмка */}
-        <div className="border-b border-border px-4 py-4 md:w-[42%] md:shrink-0 md:border-b-0 md:border-r">
+        <div className="border-b border-border px-4 py-4 md:w-1/2 md:shrink-0 md:border-b-0 md:border-r">
           <ReturnIntakeSection intake={intake} />
         </div>
 
@@ -3267,102 +3267,117 @@ export function PaymentAcceptDialog({
         </div>
       </div>
 
-      {/* НИЗ — единая панель действия во всю ширину */}
-      <div className="shrink-0 border-t border-border bg-surface px-5 py-3">
+      {/* НИЗ — приём оплаты: «платит сейчас» крупно (именно это число вводим),
+          справочно «к оплате», затем способ, затем кнопка. */}
+      <div className="shrink-0 border-t border-border bg-surface px-5 py-3.5">
         {totalDebt > 0 && (
-          <div className="mb-2.5 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-            <div className="flex items-center gap-2.5">
-              <span className="text-[12.5px] font-bold text-ink">
-                Клиент платит сейчас
-              </span>
-              <span className="flex items-center gap-1">
+          <div className="mb-3 flex flex-wrap items-end justify-between gap-x-5 gap-y-3">
+            {/* Главный ввод — сколько клиент вносит сейчас */}
+            <div>
+              <div className="flex items-baseline gap-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
+                  Клиент платит сейчас
+                </span>
+                <span className="text-[11px] text-muted-2">
+                  из {fmt(totalDebt)} ₽ к оплате
+                </span>
+              </div>
+              <div className="mt-1 flex items-baseline gap-1.5">
                 <input
                   inputMode="numeric"
                   value={debtPayStr === "" ? String(paidDebtNow) : debtPayStr}
                   onFocus={(e) => e.target.select()}
                   onChange={(e) => setDebtPayStr(e.target.value.replace(/\D/g, ""))}
-                  className="w-24 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-right text-[14px] font-bold tabular-nums text-ink focus:border-blue-500 focus:outline-none"
+                  className="w-[148px] rounded-xl border-2 border-blue-200 bg-blue-soft/15 px-3 py-1 text-right font-display text-[26px] font-extrabold tabular-nums text-blue-700 outline-none focus:border-blue-500"
                 />
-                <span className="text-[12px] text-muted">₽</span>
-              </span>
-              <span className="text-[11px] text-muted-2">
+                <span className="font-display text-[19px] font-extrabold text-blue-700">
+                  ₽
+                </span>
+              </div>
+              <div className="mt-1 text-[11.5px]">
                 {isPartialDebt ? (
                   <>
-                    останется долгом {fmt(debtRemainAfter)} ₽
+                    <span className="font-semibold text-orange-ink">
+                      останется долгом {fmt(debtRemainAfter)} ₽
+                    </span>
                     <button
                       type="button"
                       onClick={() => setDebtPayStr("")}
                       className="ml-1.5 font-semibold text-blue-600 underline"
                     >
-                      всё
+                      платит всё
                     </button>
                   </>
                 ) : (
-                  "= полное закрытие долга"
+                  <span className="text-green-ink">полное закрытие долга</span>
                 )}
-              </span>
+              </div>
             </div>
-            <div className="flex overflow-hidden rounded-lg border border-border text-[12.5px]">
-              {METHODS.map((m, i) => {
-                const active = method === m.id;
-                const needsChoice = accepted > 0 && method === null;
-                return (
-                  <button
-                    key={m.id}
-                    type="button"
-                    onClick={() => setMethod(m.id)}
-                    className={cn(
-                      "flex items-center gap-1.5 px-3.5 py-2 font-semibold transition-colors",
-                      i > 0 && "border-l border-border",
-                      active
-                        ? "bg-blue-600 text-white"
-                        : needsChoice
-                          ? "bg-orange-soft/40 text-ink"
-                          : "bg-surface text-muted hover:text-ink",
-                    )}
-                  >
-                    <m.Icon size={15} />
-                    {m.label}
-                  </button>
-                );
-              })}
+            {/* Способ оплаты */}
+            <div>
+              <div className="mb-1 flex items-center gap-1.5">
+                <span className="text-[10.5px] font-bold uppercase tracking-wider text-muted-2">
+                  Способ
+                </span>
+                {accepted > 0 && method === null && (
+                  <span className="rounded-full bg-orange-soft px-1.5 py-0.5 text-[10px] font-bold text-orange-ink">
+                    выберите
+                  </span>
+                )}
+              </div>
+              <div className="flex overflow-hidden rounded-xl border border-border text-[12.5px]">
+                {METHODS.map((m, i) => {
+                  const active = method === m.id;
+                  const needsChoice = accepted > 0 && method === null;
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => setMethod(m.id)}
+                      className={cn(
+                        "flex items-center gap-1.5 px-3.5 py-2 font-semibold transition-colors",
+                        i > 0 && "border-l border-border",
+                        active
+                          ? "bg-blue-600 text-white"
+                          : needsChoice
+                            ? "bg-orange-soft/40 text-ink"
+                            : "bg-surface text-muted hover:text-ink",
+                      )}
+                    >
+                      <m.Icon size={15} />
+                      {m.label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
         )}
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-baseline gap-2.5">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
-              К приёму
-            </span>
-            <span className="font-display text-[26px] font-extrabold leading-none tabular-nums text-blue-700">
-              {fmt(amountDueNow)} ₽
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={requestClose}
-              className="h-11 rounded-full border border-border bg-white px-4 text-[13px] font-semibold text-muted-2 hover:bg-surface-soft hover:text-ink-2"
-            >
-              Отмена
-            </button>
-            <button
-              type="button"
-              onClick={submit}
-              disabled={submitDisabled}
-              className={cn(
-                "inline-flex h-11 items-center justify-center gap-1.5 rounded-full px-5 text-[14px] font-bold text-white",
-                submitDisabled
-                  ? "cursor-not-allowed bg-surface text-muted-2"
-                  : "bg-orange hover:bg-orange-ink",
-              )}
-            >
-              <Check size={15} />{" "}
-              {amountDueNow > 0
-                ? `Завершить · принять ${fmt(amountDueNow)} ₽`
-                : "Завершить аренду"}
-            </button>
-          </div>
+        {/* Кнопка действия */}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={requestClose}
+            className="h-12 shrink-0 rounded-full border border-border bg-white px-4 text-[13px] font-semibold text-muted-2 hover:bg-surface-soft hover:text-ink-2"
+          >
+            Отмена
+          </button>
+          <button
+            type="button"
+            onClick={submit}
+            disabled={submitDisabled}
+            className={cn(
+              "inline-flex h-12 flex-1 items-center justify-center gap-1.5 rounded-full text-[14.5px] font-bold text-white",
+              submitDisabled
+                ? "cursor-not-allowed bg-surface text-muted-2"
+                : "bg-orange hover:bg-orange-ink",
+            )}
+          >
+            <Check size={16} />{" "}
+            {amountDueNow > 0
+              ? `Завершить и принять ${fmt(amountDueNow)} ₽`
+              : "Завершить аренду"}
+          </button>
         </div>
       </div>
     </div>
@@ -3414,11 +3429,14 @@ export function PaymentAcceptDialog({
           className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-ink/25 p-4 backdrop-blur-sm sm:p-6"
           onClick={requestClose}
         >
+          {/* v0.9.4: пикер ущерба — отдельной панелью СЛЕВА, на том же слое
+              (а не модалка поверх модалки). Окно завершения сдвигается вправо. */}
           <div
-            className="my-auto w-full max-w-[940px]"
+            className="my-auto flex items-start justify-center gap-3"
             onClick={(e) => e.stopPropagation()}
           >
-            {completingPanel}
+            <ReturnDamagePicker intake={intake} />
+            <div className="w-full max-w-[760px]">{completingPanel}</div>
           </div>
         </div>
       </>

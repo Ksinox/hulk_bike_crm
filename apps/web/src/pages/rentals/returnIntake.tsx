@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Bike, Image as ImageIcon, X, Plus, Minus, Search } from "lucide-react";
+import { Bike, Image as ImageIcon, X, Plus, Minus, Search, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Rental } from "@/lib/mock/rentals";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -292,7 +292,6 @@ export function ReturnIntakeSection({ intake }: { intake: ReturnIntake }) {
     setScooterDamages,
     equipmentDamages,
     setEquipmentDamages,
-    pickerTarget,
     setPickerTarget,
     returnDate,
     setReturnDate,
@@ -301,7 +300,6 @@ export function ReturnIntakeSection({ intake }: { intake: ReturnIntake }) {
     scooterNextStatus,
     setScooterNextStatus,
     setScooterStatusTouched,
-    scooter,
     scooterModel,
     scooterAvatar,
     equipmentItems,
@@ -317,14 +315,6 @@ export function ReturnIntakeSection({ intake }: { intake: ReturnIntake }) {
     ? `${startMatch[3]}-${startMatch[2]}-${startMatch[1]}`
     : undefined;
   const todayIso = isoToday();
-
-  // Сброс позиции в «не решено», если ущерб не выбран.
-  const clearCard = (key: CardKey) =>
-    setCardStates((s) => {
-      const next = { ...s };
-      delete next[key];
-      return next;
-    });
 
   return (
     <div className="space-y-4">
@@ -423,7 +413,14 @@ export function ReturnIntakeSection({ intake }: { intake: ReturnIntake }) {
         </div>
         <div>
           <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-2">
-            Пробег, км <span className="text-muted-2/70 normal-case">опц.</span>
+            Пробег, км{" "}
+            {currentMileage != null ? (
+              <span className="normal-case text-muted-2/70">
+                · было {currentMileage.toLocaleString("ru-RU")}
+              </span>
+            ) : (
+              <span className="normal-case text-muted-2/70">опц.</span>
+            )}
           </label>
           <input
             type="number"
@@ -437,31 +434,21 @@ export function ReturnIntakeSection({ intake }: { intake: ReturnIntake }) {
             }
             className="mt-1 h-9 w-full rounded-[10px] border border-border bg-surface px-3 text-[13px] tabular-nums outline-none focus:border-blue-600"
           />
+          {currentMileage != null &&
+            mileageAtReturn &&
+            (Number(mileageAtReturn) > currentMileage ? (
+              <div className="mt-1 text-[10.5px] font-semibold text-green-ink">
+                + {(Number(mileageAtReturn) - currentMileage).toLocaleString("ru-RU")} км
+                за аренду
+              </div>
+            ) : Number(mileageAtReturn) > 0 &&
+              Number(mileageAtReturn) < currentMileage ? (
+              <div className="mt-1 text-[10.5px] text-orange-ink">
+                ⚠ меньше текущего — изменение игнорируется
+              </div>
+            ) : null)}
         </div>
       </div>
-      {currentMileage != null && mileageAtReturn && (
-        <div className="-mt-2 text-[11px] text-muted-2">
-          {Number(mileageAtReturn) > currentMileage && (
-            <>
-              Пробег скутера обновится:{" "}
-              <b className="text-ink tabular-nums">
-                {currentMileage.toLocaleString("ru-RU")}
-              </b>{" "}
-              →{" "}
-              <b className="text-ink tabular-nums">
-                {Number(mileageAtReturn).toLocaleString("ru-RU")}
-              </b>{" "}
-              км (+{(Number(mileageAtReturn) - currentMileage).toLocaleString("ru-RU")}).
-            </>
-          )}
-          {Number(mileageAtReturn) > 0 &&
-            Number(mileageAtReturn) < currentMileage && (
-              <span className="text-orange-ink">
-                ⚠ Введённое значение меньше текущего ({currentMileage.toLocaleString("ru-RU")} км) — изменение игнорируется.
-              </span>
-            )}
-        </div>
-      )}
 
       {/* v0.6.1: выбор статуса скутера после завершения */}
       {rental.scooterId != null && (
@@ -469,70 +456,102 @@ export function ReturnIntakeSection({ intake }: { intake: ReturnIntake }) {
           <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-2">
             Что делать со скутером?
           </label>
-          <select
-            value={scooterNextStatus}
-            onChange={(e) => {
-              setScooterStatusTouched(true);
-              setScooterNextStatus(e.target.value as ScooterNextStatus);
-            }}
-            className="mt-1 h-9 w-full rounded-[10px] border border-border bg-surface px-3 text-[13px] text-ink outline-none focus:border-blue-600"
-          >
-            <option value="rental_pool">Готов к аренде (в парк)</option>
-            <option value="repair">В ремонт</option>
-            <option value="for_sale">Выставить на продажу</option>
-            <option value="disassembly">На разборку</option>
-            <option value="buyout">Передать клиенту в выкуп</option>
-          </select>
+          <div className="relative mt-1">
+            <select
+              value={scooterNextStatus}
+              onChange={(e) => {
+                setScooterStatusTouched(true);
+                setScooterNextStatus(e.target.value as ScooterNextStatus);
+              }}
+              className={cn(
+                "h-9 w-full cursor-pointer appearance-none rounded-[10px] border bg-surface pl-3 pr-9 text-[13px] font-medium text-ink outline-none focus:border-blue-600",
+                scooterNextStatus === "repair"
+                  ? "border-orange-300 bg-orange-soft/20 text-orange-ink"
+                  : "border-border",
+              )}
+            >
+              <option value="rental_pool">Готов к аренде (в парк)</option>
+              <option value="repair">В ремонт</option>
+              <option value="for_sale">Выставить на продажу</option>
+              <option value="disassembly">На разборку</option>
+              <option value="buyout">Передать клиенту в выкуп</option>
+            </select>
+            <ChevronDown
+              size={15}
+              className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-muted-2"
+            />
+          </div>
           <div className="mt-1 text-[10.5px] text-muted-2">
             По умолчанию — назад в парк. При ущербе обычно выбирают «В ремонт».
           </div>
         </div>
       )}
 
-      {/* Пикер ущерба (один компонент для скутера и экипировки) */}
-      {pickerTarget && (
-        <DamagePicker
-          mode={pickerTarget.kind}
-          scooterModelId={pickerTarget.kind === "scooter" ? (scooter?.modelId ?? null) : null}
-          title={
-            pickerTarget.kind === "scooter"
-              ? `Повреждения · ${rental.scooter}`
-              : `Ущерб · ${pickerTarget.name}`
-          }
-          subtitle={
-            pickerTarget.kind === "scooter"
-              ? scooterModel?.name ?? null
-              : "позиция экипировки"
-          }
-          initial={
-            pickerTarget.kind === "scooter"
-              ? scooterDamages
-              : equipmentDamages[pickerTarget.key] ?? []
-          }
-          onClose={() => {
-            // Если ничего не выбрано — сбрасываем «problem».
-            const t = pickerTarget;
-            setPickerTarget(null);
-            if (t.kind === "scooter") {
-              if (scooterDamages.length === 0) clearCard("scooter");
-            } else {
-              if ((equipmentDamages[t.key] ?? []).length === 0) clearCard(t.key);
-            }
-          }}
-          onApply={(lines) => {
-            const t = pickerTarget;
-            setPickerTarget(null);
-            if (t.kind === "scooter") {
-              setScooterDamages(lines);
-              if (lines.length === 0) clearCard("scooter");
-            } else {
-              setEquipmentDamages((m) => ({ ...m, [t.key]: lines }));
-              if (lines.length === 0) clearCard(t.key);
-            }
-          }}
-        />
-      )}
+      {/* Пикер ущерба рендерится РЯДОМ с окном завершения (см.
+          <ReturnDamagePicker> в PaymentAcceptDialog), а не поверх него. */}
     </div>
+  );
+}
+
+/**
+ * v0.9.4: пикер ущерба как ОТДЕЛЬНАЯ панель сбоку от окна завершения (а не
+ * модалка поверх модалки). Рендерится PaymentAcceptDialog слева от карточки
+ * завершения, когда выбрана позиция (intake.pickerTarget). null — если пикер
+ * закрыт.
+ */
+export function ReturnDamagePicker({ intake }: { intake: ReturnIntake }) {
+  const {
+    rental,
+    pickerTarget,
+    setPickerTarget,
+    scooterDamages,
+    setScooterDamages,
+    equipmentDamages,
+    setEquipmentDamages,
+    setCardStates,
+    scooter,
+    scooterModel,
+  } = intake;
+  if (!pickerTarget) return null;
+  const t = pickerTarget;
+  const clearCard = (key: CardKey) =>
+    setCardStates((s) => {
+      const next = { ...s };
+      delete next[key];
+      return next;
+    });
+  return (
+    <DamagePicker
+      mode={t.kind}
+      scooterModelId={t.kind === "scooter" ? (scooter?.modelId ?? null) : null}
+      title={
+        t.kind === "scooter"
+          ? `Повреждения · ${rental.scooter}`
+          : `Ущерб · ${t.name}`
+      }
+      subtitle={
+        t.kind === "scooter" ? scooterModel?.name ?? null : "позиция экипировки"
+      }
+      initial={t.kind === "scooter" ? scooterDamages : equipmentDamages[t.key] ?? []}
+      onClose={() => {
+        setPickerTarget(null);
+        if (t.kind === "scooter") {
+          if (scooterDamages.length === 0) clearCard("scooter");
+        } else {
+          if ((equipmentDamages[t.key] ?? []).length === 0) clearCard(t.key);
+        }
+      }}
+      onApply={(lines) => {
+        setPickerTarget(null);
+        if (t.kind === "scooter") {
+          setScooterDamages(lines);
+          if (lines.length === 0) clearCard("scooter");
+        } else {
+          setEquipmentDamages((m) => ({ ...m, [t.key]: lines }));
+          if (lines.length === 0) clearCard(t.key);
+        }
+      }}
+    />
   );
 }
 
@@ -768,15 +787,7 @@ function DamagePicker({
     .filter((g) => g.items.length > 0);
 
   return (
-    <div
-      className="fixed inset-0 z-[140] flex items-center justify-center bg-ink/55 p-4 backdrop-blur-sm animate-backdrop-in sm:p-6"
-      onClick={onClose}
-    >
-      <div
-        className="flex w-full max-w-[600px] flex-col overflow-hidden rounded-2xl bg-surface shadow-card-lg animate-modal-in"
-        onClick={(e) => e.stopPropagation()}
-        style={{ maxHeight: "88vh" }}
-      >
+    <div className="flex max-h-[88vh] w-[440px] shrink-0 flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-card-lg animate-modal-in">
         {/* Header */}
         <div className="flex items-center gap-3 border-b border-border bg-surface-soft px-5 py-3">
           <div className="min-w-0 flex-1">
@@ -980,7 +991,6 @@ function DamagePicker({
             {lines.length === 0 ? "Без ущерба" : "Применить"}
           </button>
         </div>
-      </div>
     </div>
   );
 }
