@@ -79,7 +79,13 @@ const EVENT_TONE_CLASS: Record<EventTone, string> = {
   ink: "bg-surface-soft text-ink-2",
 };
 
-function eventVisual(action: string): { icon: LucideIcon; tone: EventTone } {
+function eventVisual(
+  action: string,
+  entity?: string,
+): { icon: LucideIcon; tone: EventTone } {
+  // Акт ущерба (entity=damage_report, action=created) — иконка-предупреждение,
+  // а не синяя «искра» создания.
+  if (entity === "damage_report") return { icon: AlertTriangle, tone: "amber" };
   if (action.includes("rolled_back")) return { icon: RotateCcw, tone: "amber" };
   // «Перевести в активную» — по сути откат завершения, тот же визуальный язык.
   if (action === "revert_completion") return { icon: RotateCcw, tone: "amber" };
@@ -1207,7 +1213,7 @@ export function ActivityEventRow({
   /** #20: ограничить число строк-последствий (feed-режим: дашборд=3, журнал=все). */
   maxExtras?: number;
 }) {
-  const vis = eventVisual(item.action);
+  const vis = eventVisual(item.action, item.entity);
   const Icon = vis.icon;
   const view = formatActivitySummary(item);
   const interactive = clickable && !!onOpen;
