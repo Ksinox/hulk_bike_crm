@@ -74,7 +74,7 @@ export type RevenueAnalytics = {
 };
 
 const TYPE_META: Record<RevenueTypeKey, { label: string; color: string }> = {
-  rent: { label: "Аренда", color: "#3B82F6" },
+  rent: { label: "Новые аренды", color: "#3B82F6" },
   extend: { label: "Продление", color: "#22C55E" },
   fine: { label: "Штраф", color: "#F59E0B" },
   damage: { label: "Ущерб", color: "#EF4444" },
@@ -282,10 +282,15 @@ export function useRevenueAnalytics(opts: {
     const activeRentals = activeRentalsData.filter(
       (r) => r.status === "active",
     ).length;
+    // v0.9.5 (#21): «Загрузка парка» — знаменатель = парк, ДОСТУПНЫЙ к аренде
+    // (rental_pool, как в NewRentalModal: сдаём только rental_pool). Считаем
+    // и свободные, и сейчас арендованные (они остаются rental_pool, просто
+    // заняты) — это рабочий парк. Ремонт / продажа / разборка / выкуп / дтп /
+    // ready (стейджинг) / архив — НЕ доступны к аренде, в знаменатель не идут.
     const totalScooters = scooters.filter(
       (s) =>
         !(s as { archivedAt?: string | null }).archivedAt &&
-        s.baseStatus !== "sold",
+        s.baseStatus === "rental_pool",
     ).length;
     const parkUtil =
       totalScooters > 0

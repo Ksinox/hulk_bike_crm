@@ -14,8 +14,24 @@ import { useDashboardDrawer } from "./DashboardDrawer";
  */
 export function NewApplicationsWidget({ className }: { className?: string }) {
   const { data: items = [] } = useApplications();
-  const newCount = items.filter((a) => a.status === "new").length;
-  const total = items.length;
+
+  // v0.9.5 (#22): плашка считает заявки ЗА ТЕКУЩИЙ МЕСЯЦ (а не за всё время) —
+  // отражает приток этого месяца, а не вечно растущий итог. Черновики (draft,
+  // ещё не отправлены клиентом) в счёт не идут. Дата — submittedAt (когда
+  // заявка пришла), c фолбэком на createdAt.
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1).getTime();
+  const monthName = now.toLocaleDateString("ru-RU", { month: "long" });
+  const monthItems = items.filter((a) => {
+    if (a.status === "draft") return false;
+    const iso = a.submittedAt ?? a.createdAt;
+    if (!iso) return false;
+    const t = new Date(iso).getTime();
+    return t >= monthStart && t < monthEnd;
+  });
+  const total = monthItems.length;
+  const newCount = monthItems.filter((a) => a.status === "new").length;
   const hasNew = newCount > 0;
 
   // v0.4.39: открываем drawer-список заявок (а не уводим на /clients).
@@ -44,14 +60,14 @@ export function NewApplicationsWidget({ className }: { className?: string }) {
             : undefined
         }
         foot={
-          // Конверсия «заявки → аренда» — в детальной статистике выручки
-          // (все показатели в одном месте), на виджете не дублируем.
+          // v0.9.5 (#22): подпись подчёркивает, что счёт — за текущий месяц.
+          // Конверсия «заявки → аренда» — в детальной статистике выручки.
           <span className="text-[11px] text-muted-2">
             {total === 0
-              ? "Поделитесь ссылкой — клиент заполнит анкету сам"
+              ? `За ${monthName} заявок пока нет`
               : hasNew
                 ? "Нажмите, чтобы открыть →"
-                : "Все заявки просмотрены"}
+                : `За ${monthName} — все просмотрены`}
           </span>
         }
       />
