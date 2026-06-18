@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Activity,
   ChevronLeft,
@@ -15,8 +15,46 @@ import {
 } from "@/lib/api/activity";
 import { ActivityEventRow } from "@/components/ActivityEventRow";
 import { useDashboardDrawer } from "./DashboardDrawer";
+import { useRentals, useArchivedRentals } from "@/pages/rentals/rentalsStore";
+import { useApiClients } from "@/lib/api/clients";
 
 const FEED_LIMIT = 5;
+
+/**
+ * #20: резолвер контекста события — «Клиент · Скутер · #аренды». Берёт уже
+ * закэшированные аренды (активные+архивные) и клиентов — доп. запросов не
+ * делает. Большинство событий имеют entity='rental' + entityId=id аренды;
+ * у акта ущерба номер аренды парсим из summary.
+ */
+function useActivityContext() {
+  const active = useRentals();
+  const archived = useArchivedRentals();
+  const { data: clients = [] } = useApiClients();
+  return useMemo(() => {
+    const rentalById = new Map(
+      [...active, ...archived].map((r) => [r.id, r] as const),
+    );
+    const clientById = new Map(clients.map((c) => [c.id, c] as const));
+    const pad = (n: number) => `#${String(n).padStart(4, "0")}`;
+    const forRental = (rentalId: number): string | undefined => {
+      const r = rentalById.get(rentalId);
+      if (!r) return undefined;
+      const cn = clientById.get(r.clientId)?.name;
+      return [cn, r.scooter, pad(rentalId)].filter(Boolean).join(" · ");
+    };
+    return (item: ApiActivityItem): string | undefined => {
+      if (item.entity === "rental" && item.entityId != null)
+        return forRental(item.entityId);
+      if (item.entity === "damage_report") {
+        const m = /аренд\w*\s+#?0*(\d+)/i.exec(item.summary || "");
+        if (m) return forRental(Number(m[1]));
+      }
+      if (item.entity === "client" && item.entityId != null)
+        return clientById.get(item.entityId)?.name;
+      return undefined;
+    };
+  }, [active, archived, clients]);
+}
 
 export function ActivityFeed({
   className,
@@ -29,6 +67,7 @@ export function ActivityFeed({
   // Полный журнал — через модалку с пагинацией.
   const { data: items = [], isLoading } = useActivityLog(FEED_LIMIT);
   const [openFull, setOpenFull] = useState(false);
+  const resolveContext = useActivityContext();
 
   return (
     <Card className={className}>
@@ -70,7 +109,7 @@ export function ActivityFeed({
       ) : (
         <div className="flex flex-col gap-0.5">
           {items.map((it) => (
-            <FeedRow key={it.id} it={it} />
+            <FeedRow key={it.id} it={it} context={resolveContext(it)} />
           ))}
         </div>
       )}
@@ -85,7 +124,7 @@ export function ActivityFeed({
  * (единый визуальный язык «было → стало» с иконками). Клик открывает
  * связанную сущность в drawer-стеке.
  */
-function FeedRow({ it }: { it: ApiActivityItem }) {
+function FeedRow({ it, context }: { it: ApiActivityItem; context?: string }) {
   const drawer = useDashboardDrawer();
   const clickable =
     it.entityId != null &&
@@ -104,6 +143,7 @@ function FeedRow({ it }: { it: ApiActivityItem }) {
       compact
       clickable={clickable}
       onOpen={handleClick}
+      context={context}
     />
   );
 }
@@ -121,6 +161,7 @@ function FullJournalModal({ onClose }: { onClose: () => void }) {
   const total = data?.total ?? 0;
   const items = data?.items ?? [];
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const resolveContext = useActivityContext();
 
   return (
     <div
@@ -158,7 +199,7 @@ function FullJournalModal({ onClose }: { onClose: () => void }) {
           ) : (
             <div className="flex flex-col gap-0.5">
               {items.map((it) => (
-                <FeedRow key={it.id} it={it} />
+                <FeedRow key={it.id} it={it} context={resolveContext(it)} />
               ))}
             </div>
           )}

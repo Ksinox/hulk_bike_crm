@@ -816,6 +816,35 @@ function formatDateTimeShort(iso: string): string {
   });
 }
 
+/** #20: полная дата+время «18.06.2026, 14:33» — точный момент для аудита. */
+function formatDateTimeFull(iso: string): string {
+  return new Date(iso).toLocaleString("ru-RU", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+/** #20: относительное время «5 минут назад» — для удобства, рядом с точным. */
+function relativeTime(iso: string): string {
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "";
+  const s = Math.max(0, Math.round((Date.now() - then) / 1000));
+  if (s < 45) return "только что";
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m} ${plural(m, "минуту", "минуты", "минут")} назад`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h} ${plural(h, "час", "часа", "часов")} назад`;
+  const d = Math.round(h / 24);
+  if (d < 30) return `${d} ${plural(d, "день", "дня", "дней")} назад`;
+  const mo = Math.round(d / 30);
+  if (mo < 12) return `${mo} ${plural(mo, "месяц", "месяца", "месяцев")} назад`;
+  const y = Math.round(mo / 12);
+  return `${y} ${plural(y, "год", "года", "лет")} назад`;
+}
+
 /* ============================ Пилюля «было → стало» ============================ */
 
 function ChangePills({
@@ -997,6 +1026,7 @@ export function ActivityEventRow({
   clickable = false,
   onOpen,
   compact = false,
+  context,
 }: {
   item: ApiActivityItem;
   /** Кликабельна ли строка (открыть связанную сущность). */
@@ -1004,11 +1034,17 @@ export function ActivityEventRow({
   onOpen?: () => void;
   /** Плотный режим: одна строка, без extras (дашборд, inline-история). */
   compact?: boolean;
+  /** #20: строка контекста «Клиент · Скутер · #аренды» (резолвится в родителе,
+   *  показывается в compact-ленте дашборда/журнала, чтобы было видно кто/что). */
+  context?: string;
 }) {
   const vis = eventVisual(item.action);
   const Icon = vis.icon;
   const view = formatActivitySummary(item);
   const interactive = clickable && !!onOpen;
+  // #20: ручные/нестандартные операции (прощение, ручное начисление, откат,
+  // возврат) — помечаем флагом, чтобы при аудите глаз цеплял их среди рутины.
+  const isManual = /forgiv|manual|rolled_back|refund/.test(item.action);
 
   // v0.7.16: резолвер миниатюры экипировки по названию.
   // Матчим название из meta.diff.items → equipment row → thumb-ключ → URL.
@@ -1046,9 +1082,21 @@ export function ActivityEventRow({
           <Icon size={12} />
         </span>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[12px] font-bold leading-tight text-ink">
-            {view.title}
+          <div className="flex items-center gap-1.5">
+            <span className="truncate text-[12px] font-bold leading-tight text-ink">
+              {view.title}
+            </span>
+            {isManual && (
+              <span className="shrink-0 rounded bg-amber-100 px-1.5 py-px text-[10px] font-bold text-amber-800">
+                ручное
+              </span>
+            )}
           </div>
+          {context && (
+            <div className="mt-0.5 truncate text-[11px] font-medium text-ink-2">
+              {context}
+            </div>
+          )}
           {view.equipment && view.equipment.length > 0 && (
             <div className="mt-1">
               <EquipmentChangeBlock
@@ -1069,11 +1117,16 @@ export function ActivityEventRow({
               {view.extras[0]}
             </div>
           )}
-          <div className="mt-0.5 text-[10px] leading-tight text-muted tabular-nums">
-            {formatDateTimeShort(item.createdAt)}
+          {/* #20: точная дата+время (момент для аудита) + относительное «N назад». */}
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-1 text-[10px] leading-tight text-muted">
+            <span className="tabular-nums">
+              {formatDateTimeFull(item.createdAt)}
+            </span>
+            <span className="opacity-40">·</span>
+            <span>{relativeTime(item.createdAt)}</span>
             {item.userName && item.userName !== "система" && (
               <>
-                <span className="opacity-40"> · </span>
+                <span className="opacity-40">·</span>
                 <span>{item.userName}</span>
               </>
             )}
