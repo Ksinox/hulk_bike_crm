@@ -2,8 +2,8 @@
  * Морфящийся зелёно-синий градиент-наполнитель круга загрузки парка — чистый
  * CSS (без библиотек/three/WebGL/водяных знаков; лёгкий, без лага). Эффект —
  * mesh-градиент из цветовых пятен, которые «плавают» по кругу (анимация
- * background-position). Обрезка по волне-уровню (на % загрузки) живёт в
- * ParkLoadGauge (clip-path). Default-export сохранён ради React.lazy.
+ * background-position). Обрезка по уровню (на % загрузки) и бегущие волны
+ * живут в ParkLoadGauge (alpha-маска). Default-export сохранён ради React.lazy.
  */
 export default function LiquidGradient() {
   return (

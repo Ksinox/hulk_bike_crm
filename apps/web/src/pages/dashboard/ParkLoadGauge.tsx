@@ -6,16 +6,16 @@ const LiquidGradient = lazy(() => import("./LiquidGradient"));
 
 /**
  * Круговая загрузка парка — KPI-карточка-герой. Светлый круг (бело-серый
- * градиент), внутри анимированный градиент @firecms/neat (зелёно-синий,
- * плавно перетекающий) залит снизу на % загрузки. Поверхность жидкости —
- * ВОЛНА (clip-path по синусоиде, поднимается с %), а не прямая линия. По
- * центру белый круг с крупным % → донат-диаграмма. Neat ленив (отдельный
- * чанк) + ErrorBoundary с CSS-градиент-фолбэком.
+ * градиент), внутри морфящийся зелёно-синий градиент (LiquidGradient) залит
+ * снизу на % загрузки. Поверхность — ДВЕ БЕГУЩИЕ ВОЛНЫ (alpha-маска по
+ * тайлу-синусоиде, mask-position-x анимируется; разная длина/скорость/
+ * направление → параллакс «живой жидкости»), а не статичная линия. По центру
+ * белый круг с крупным % → донат-диаграмма. Градиент ленив (отдельный чанк) +
+ * ErrorBoundary с CSS-градиент-фолбэком.
  */
 
 const SIZE = 100;
 const CENTER = 60; // белый круг по центру → донат
-const CLIP_ID = "parkLiquidClip";
 
 /** Запасной CSS-градиент (зелёно-синий) — пока грузится Neat / если WebGL упал. */
 function GradientFallback() {
@@ -75,10 +75,27 @@ export function ParkLoadGauge({
     };
   }, [pct]);
 
-  // Уровень поверхности (в координатах круга 0..SIZE) + волна-синусоида.
+  // Уровень поверхности жидкости (0..SIZE сверху вниз) на % загрузки.
   const sY = SIZE - (SIZE * pct) / 100;
-  const A = 3.5; // амплитуда волны
-  const wavePath = `M 0 ${sY} Q ${SIZE * 0.25} ${sY - A} ${SIZE * 0.5} ${sY} T ${SIZE} ${sY} L ${SIZE} ${SIZE} L 0 ${SIZE} Z`;
+  // Две «живые» волны: разная длина/амплитуда/скорость/направление → параллакс.
+  // Маска (alpha) по тайлу-синусоиде, бесшовно повторяется по X; уровень sY
+  // вшит в кадры анимации mask-position.
+  const W1 = 48,
+    A1 = 4.5; // дальняя волна — медленная, влево, основное тело
+  const W2 = 32,
+    A2 = 3; // ближняя волна — быстрее, вправо, полупрозрачный гребень
+  const waveTile = (w: number, a: number) =>
+    `url("data:image/svg+xml,${encodeURIComponent(
+      `<svg xmlns='http://www.w3.org/2000/svg' width='${w}' height='${SIZE}' preserveAspectRatio='none'><path d='M0 ${a} Q${w / 4} 0 ${w / 2} ${a} T${w} ${a} V${SIZE} H0 Z' fill='white'/></svg>`,
+    )}")`;
+  const waveLayer = (w: number, a: number): React.CSSProperties => ({
+    WebkitMaskImage: waveTile(w, a),
+    maskImage: waveTile(w, a),
+    WebkitMaskRepeat: "repeat-x",
+    maskRepeat: "repeat-x",
+    WebkitMaskSize: `${w}px ${SIZE}px`,
+    maskSize: `${w}px ${SIZE}px`,
+  });
 
   return (
     <Card className={cn("flex h-full items-center", className)}>
@@ -101,19 +118,30 @@ export function ParkLoadGauge({
             boxShadow: "inset 0 1px 4px rgba(15,23,42,0.08)",
           }}
         >
-          {/* clip-path жидкости — волна на уровне % (поднимается с загрузкой) */}
-          <svg width="0" height="0" className="absolute" aria-hidden>
-            <defs>
-              <clipPath id={CLIP_ID} clipPathUnits="userSpaceOnUse">
-                <path d={wavePath} />
-              </clipPath>
-            </defs>
-          </svg>
+          {/* Бегущие волны — mask-position-x скроллит тайл-синусоиду (уровень
+              sY вшит в кадры по Y). Разные направления → волны расходятся. */}
+          <style>{`@keyframes pkWaveA{from{-webkit-mask-position:0 ${sY - A1}px;mask-position:0 ${sY - A1}px}to{-webkit-mask-position:-${W1}px ${sY - A1}px;mask-position:-${W1}px ${sY - A1}px}}@keyframes pkWaveB{from{-webkit-mask-position:0 ${sY - A2}px;mask-position:0 ${sY - A2}px}to{-webkit-mask-position:${W2}px ${sY - A2}px;mask-position:${W2}px ${sY - A2}px}}`}</style>
 
-          {/* Жидкость — Neat-градиент, обрезан волной снизу */}
+          {/* Дальняя волна — основное тело жидкости */}
           <div
             className="absolute inset-0"
-            style={{ clipPath: `url(#${CLIP_ID})` }}
+            style={{ ...waveLayer(W1, A1), animation: "pkWaveA 5s linear infinite" }}
+          >
+            <GLBoundary>
+              <Suspense fallback={<GradientFallback />}>
+                <LiquidGradient />
+              </Suspense>
+            </GLBoundary>
+          </div>
+
+          {/* Ближняя волна — полупрозрачный гребень для глубины/параллакса */}
+          <div
+            className="absolute inset-0"
+            style={{
+              ...waveLayer(W2, A2),
+              opacity: 0.5,
+              animation: "pkWaveB 3.4s linear infinite",
+            }}
           >
             <GLBoundary>
               <Suspense fallback={<GradientFallback />}>
