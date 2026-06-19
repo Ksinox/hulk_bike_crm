@@ -827,6 +827,7 @@ export function Rentals() {
                   onRequestPayment={openPayment}
                   onRequestComplete={openComplete}
                   onRequestParking={openParking}
+                  onCancelParking={closePayment}
                   paymentOpen={paymentRentalId === selected.id}
                   onOpenHistory={openHistory}
                   paymentExtDays={paymentExtDays}

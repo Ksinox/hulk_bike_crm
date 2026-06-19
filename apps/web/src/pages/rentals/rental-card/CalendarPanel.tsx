@@ -110,6 +110,7 @@ export function CalendarPanel({
   armParkingSignal,
   paymentDateIso,
   onParkingPeriod,
+  onParkingCancel,
 }: {
   rental: Rental;
   effectiveStatus: RentalStatus;
@@ -194,6 +195,11 @@ export function CalendarPanel({
    *  паркинг-дровер у родителя (push-колонка). Если не передан — карточка
    *  откроет дровер сама (overlay-fallback). */
   onParkingPeriod?: (startIso: string, days: number) => void;
+  /** Отмена паркинга на карточке (кнопка «Отмена») → закрыть паркинг-дровер
+   *  у родителя (push-колонка), если он открыт. Иначе рассинхрон: календарь
+   *  вышел из режима, а дровер висит. В fallback-режиме дровер закрывается
+   *  через setLocalPeriod(null) — этот колбэк нужен только для host-режима. */
+  onParkingCancel?: () => void;
 }) {
   const startIso = ruToIso(rental.start);
   const endIso = ruToIso(rental.endPlanned);
@@ -517,6 +523,11 @@ export function CalendarPanel({
     setDraftEnd(null);
     setParkingHoverEnd(null);
     setFreeFirstDay(true);
+    // Закрываем дровер, иначе он повиснет без выбора на календаре:
+    //   • fallback (дашборд/мобила) — свой inline-дровер;
+    //   • host (Аренды) — push-колонка у родителя.
+    setLocalPeriod(null);
+    onParkingCancel?.();
   };
 
   // Родитель закрыл паркинг-дровер (Оплатить / В долг / Отмена) → он бампает

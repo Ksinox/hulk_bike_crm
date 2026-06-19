@@ -322,6 +322,7 @@ export function RentalCard({
   onRequestPayment,
   onRequestComplete,
   onRequestParking,
+  onCancelParking,
   paymentExtDays,
   paymentDateIso,
   paymentResetSignal,
@@ -357,6 +358,9 @@ export function RentalCard({
    *  календаре периодом. Если не передан (DashboardDrawer/мобила) — карточка
    *  откроет дровер внутри себя (overlay-fallback в CalendarPanel). */
   onRequestParking?: (rentalId: number, startIso: string, days: number) => void;
+  /** Отмена паркинга на карточке → закрыть паркинг-дровер (push-колонка) у
+   *  родителя. Парный к onRequestParking; в fallback-режиме не нужен. */
+  onCancelParking?: () => void;
   /** v0.9: открыта ли сейчас панель/окно оплаты ИМЕННО для этой аренды
    *  (parent-managed на стр. Аренды). Когда true — кнопки «Принять оплату»
    *  на карточке дизейблятся (модуль уже открыт по ним). */
@@ -2396,6 +2400,7 @@ export function RentalCard({
                 ? (s, d) => onRequestParking(rental.id, s, d)
                 : undefined
             }
+            onParkingCancel={onCancelParking}
           />
 
           <AccordionSection
@@ -2743,6 +2748,7 @@ export function RentalCard({
                   ? (s, d) => onRequestParking(rental.id, s, d)
                   : undefined
               }
+              onParkingCancel={onCancelParking}
             />
             {/* v0.6.50: «Последние события» — InlineHistory под календарём. */}
             <InlineHistory
