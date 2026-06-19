@@ -80,10 +80,10 @@ export function ParkLoadGauge({
   // Две «живые» волны: разная длина/амплитуда/скорость/направление → параллакс.
   // Маска (alpha) по тайлу-синусоиде, бесшовно повторяется по X; уровень sY
   // вшит в кадры анимации mask-position.
-  const W1 = 48,
-    A1 = 4.5; // дальняя волна — медленная, влево, основное тело
-  const W2 = 32,
-    A2 = 3; // ближняя волна — быстрее, вправо, полупрозрачный гребень
+  const W1 = 46,
+    A1 = 6.5; // дальняя волна — медленная, влево, основное тело
+  const W2 = 30,
+    A2 = 4.5; // ближняя волна — быстрее, вправо, полупрозрачный гребень
   const waveTile = (w: number, a: number) =>
     `url("data:image/svg+xml,${encodeURIComponent(
       `<svg xmlns='http://www.w3.org/2000/svg' width='${w}' height='${SIZE}' preserveAspectRatio='none'><path d='M0 ${a} Q${w / 4} 0 ${w / 2} ${a} T${w} ${a} V${SIZE} H0 Z' fill='white'/></svg>`,
