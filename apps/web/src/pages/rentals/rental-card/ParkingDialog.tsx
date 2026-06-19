@@ -3,71 +3,62 @@ import { SquareParking, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ApiError } from "@/lib/api";
 import { toast } from "@/lib/toast";
-import { DatePicker } from "@/components/ui/date-picker";
 import type { Rental } from "@/lib/mock/rentals";
 import {
   useCreateParking,
   usePayParking,
   parkingAmount,
   PARKING_RATE_PER_DAY,
-  PARKING_MAX_DAYS,
 } from "@/lib/api/parking";
 
 /**
  * Паркинг — «Период · предоплата» внутри БОКОВОГО дровера приёмки оплаты
- * (заказчик: все приёмки через один боковой дровер, начинка под ситуацию).
- * Рендерится в том же слоте, что и PaymentAcceptDialog: inline — push-колонка
- * на странице Аренд; иначе — slide-in справа (оверлей, как у обычной оплаты).
+ * (заказчик: все приёмки через один боковой дровер с подменой контента).
+ * Период (начало + дни) ВЫБИРАЕТСЯ НА КАЛЕНДАРЕ карточки и приходит сюда
+ * пропсами — здесь он read-only (чтобы не было рассинхрона с календарём;
+ * поменять период — закрыть дровер и кликнуть на календаре заново).
  *
- * Здесь только режим ПЕРИОДА: дата начала + число дней (1–7) → сумма сразу →
- * «Оплатить N ₽» (поставить + принять оплату) либо «В долг» (поставить без
- * оплаты; сумма повиснет долгом по паркингу). «Просто поставить» (открытый,
- * постоплата) делается мгновенно из карточки, без этого дровера.
+ * Рендерится в том же слоте, что и PaymentAcceptDialog: inline — push-колонка
+ * на странице Аренд (сдвигает карточку); иначе — slide-in справа (fallback
+ * для дашборда/мобилы).
  */
 
-const todayMskIso = () =>
-  new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow" }).format(
-    new Date(),
-  );
 const plusDaysIso = (iso: string, n: number) =>
   new Date(Date.parse(`${iso}T00:00:00Z`) + n * 86_400_000)
     .toISOString()
     .slice(0, 10);
 const fmtRu = (iso: string) => {
   const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  return m ? `${m[3]}.${m[2]}` : iso;
-};
-/** DD.MM.YYYY → YYYY-MM-DD (дата выдачи аренды как нижняя граница). */
-const ruToIso = (ru: string): string | null => {
-  const m = ru.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
-  return m ? `${m[3]}-${m[2]}-${m[1]}` : null;
+  return m ? `${m[3]}.${m[2]}.${m[1].slice(2)}` : iso;
 };
 
 export function ParkingDrawer({
   rental,
+  startIso,
+  days,
   inline = false,
   onClose,
 }: {
   rental: Rental;
+  startIso: string;
+  days: number;
   inline?: boolean;
   onClose: () => void;
 }) {
   const create = useCreateParking();
   const pay = usePayParking();
   const [freeFirstDay, setFreeFirstDay] = useState(true);
-  const [startIso, setStartIso] = useState<string>(todayMskIso());
-  const [days, setDays] = useState(3);
   const [method, setMethod] = useState<"cash" | "transfer">("cash");
   const busy = create.isPending || pay.isPending;
 
-  const minStartIso = ruToIso(rental.start);
+  const safeDays = Math.max(1, days);
   const endIso = useMemo(
-    () => plusDaysIso(startIso, Math.max(1, days) - 1),
-    [startIso, days],
+    () => plusDaysIso(startIso, safeDays - 1),
+    [startIso, safeDays],
   );
   const amount = useMemo(
-    () => parkingAmount(days, freeFirstDay),
-    [days, freeFirstDay],
+    () => parkingAmount(safeDays, freeFirstDay),
+    [safeDays, freeFirstDay],
   );
 
   const errToast = (e: unknown) => {
@@ -78,7 +69,7 @@ export function ParkingDrawer({
     toast.error(msg || "Не удалось");
   };
 
-  const submitPeriod = async (collect: boolean) => {
+  const submit = async (collect: boolean) => {
     try {
       await create.mutateAsync({
         rentalId: rental.id,
@@ -88,11 +79,11 @@ export function ParkingDrawer({
       });
       if (collect && amount > 0) {
         await pay.mutateAsync({ rentalId: rental.id, amount, method });
-        toast.success("Паркинг оплачен", `${days} дн · ${amount} ₽`);
+        toast.success("Паркинг оплачен", `${safeDays} дн · ${amount} ₽`);
       } else {
         toast.success(
           "Паркинг поставлен",
-          amount > 0 ? `${amount} ₽ — в долг` : `${days} дн`,
+          amount > 0 ? `${amount} ₽ — в долг` : `${safeDays} дн`,
         );
       }
       onClose();
@@ -103,7 +94,6 @@ export function ParkingDrawer({
 
   const body = (
     <>
-      {/* Шапка */}
       <div className="flex items-center justify-between border-b border-border px-5 py-3.5">
         <div className="inline-flex items-center gap-2 text-[15px] font-bold text-ink">
           <SquareParking size={17} className="text-yellow-600" /> Паркинг ·
@@ -118,45 +108,17 @@ export function ParkingDrawer({
         </button>
       </div>
 
-      {/* Тело */}
       <div className="flex flex-1 flex-col gap-3.5 overflow-y-auto px-5 py-4">
-        <label className="flex flex-col gap-1">
-          <span className="text-[12px] font-medium text-muted-2">
-            Дата начала
-          </span>
-          <DatePicker
-            value={startIso}
-            onChange={(v) => v && setStartIso(v)}
-            minDate={minStartIso ?? undefined}
-            clearable={false}
-          />
-        </label>
-
-        <div className="flex items-center justify-between">
-          <span className="text-[13px] font-medium text-ink-2">
-            Сколько дней
-          </span>
-          <div className="inline-flex items-center gap-2.5">
-            <button
-              type="button"
-              onClick={() => setDays((d) => Math.max(1, d - 1))}
-              className="flex h-7 w-7 items-center justify-center rounded-lg border border-border text-[16px] font-bold text-ink-2 hover:bg-surface-soft"
-            >
-              −
-            </button>
-            <span className="w-6 text-center text-[16px] font-bold tabular-nums text-ink">
-              {days}
-            </span>
-            <button
-              type="button"
-              onClick={() => setDays((d) => Math.min(PARKING_MAX_DAYS, d + 1))}
-              className="flex h-7 w-7 items-center justify-center rounded-lg border border-border text-[16px] font-bold text-ink-2 hover:bg-surface-soft"
-            >
-              +
-            </button>
-            <span className="ml-1 text-[12px] text-muted-2">
-              до {fmtRu(endIso)}
-            </span>
+        {/* Период (выбран на календаре) */}
+        <div className="rounded-[10px] border border-yellow-300 bg-yellow-50 px-3 py-2.5">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-yellow-700">
+            Период паркинга
+          </div>
+          <div className="mt-0.5 text-[14px] font-bold text-ink">
+            {fmtRu(startIso)} – {fmtRu(endIso)} · {safeDays} дн
+          </div>
+          <div className="text-[11px] text-muted-2">
+            изменить — на календаре карточки
           </div>
         </div>
 
@@ -183,7 +145,7 @@ export function ParkingDrawer({
 
         <div className="flex items-center justify-between rounded-[10px] bg-surface-soft px-3 py-2.5">
           <span className="text-[12px] text-muted-2">
-            {days} дн × {PARKING_RATE_PER_DAY} ₽
+            {safeDays} дн × {PARKING_RATE_PER_DAY} ₽
             {freeFirstDay ? " · 1-й бесплатно" : ""}
           </span>
           <b className="text-[17px] font-extrabold tabular-nums text-ink">
@@ -217,11 +179,10 @@ export function ParkingDrawer({
         )}
       </div>
 
-      {/* Низ */}
       <div className="flex flex-col gap-2 border-t border-border bg-surface-soft px-5 py-4">
         <button
           type="button"
-          onClick={() => submitPeriod(true)}
+          onClick={() => submit(true)}
           disabled={busy}
           className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-ink px-4 text-[14px] font-bold text-white transition-colors hover:bg-blue-600 disabled:opacity-60"
         >
@@ -232,7 +193,7 @@ export function ParkingDrawer({
         {amount > 0 && (
           <button
             type="button"
-            onClick={() => submitPeriod(false)}
+            onClick={() => submit(false)}
             disabled={busy}
             className="inline-flex h-9 items-center justify-center rounded-lg px-4 text-[13px] font-semibold text-muted transition-colors hover:bg-surface hover:text-ink disabled:opacity-60"
           >
@@ -243,8 +204,6 @@ export function ParkingDrawer({
     </>
   );
 
-  // inline — push-колонка (страница Аренд); иначе — slide-in справа (оверлей),
-  // как у PaymentAcceptDialog. Без затемнения: карточка слева остаётся читаема.
   if (inline) {
     return (
       <aside className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-card-sm">

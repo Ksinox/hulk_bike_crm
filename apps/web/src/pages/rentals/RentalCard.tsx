@@ -321,6 +321,7 @@ export function RentalCard({
   onClose,
   onRequestPayment,
   onRequestComplete,
+  onRequestParking,
   paymentExtDays,
   paymentDateIso,
   paymentResetSignal,
@@ -352,6 +353,10 @@ export function RentalCard({
    *  расчёт). Если не передан (DashboardDrawer/мобила) — карточка
    *  открывает дровер завершения внутри себя (overlay-fallback). */
   onRequestComplete?: (rentalId: number) => void;
+  /** Паркинг-период: открыть паркинг-дровер (push-колонка) с выбранным на
+   *  календаре периодом. Если не передан (DashboardDrawer/мобила) — карточка
+   *  откроет дровер внутри себя (overlay-fallback в CalendarPanel). */
+  onRequestParking?: (rentalId: number, startIso: string, days: number) => void;
   /** v0.9: открыта ли сейчас панель/окно оплаты ИМЕННО для этой аренды
    *  (parent-managed на стр. Аренды). Когда true — кнопки «Принять оплату»
    *  на карточке дизейблятся (модуль уже открыт по ним). */
@@ -2386,6 +2391,11 @@ export function RentalCard({
             }
             paymentDateIso={onRequestPayment ? paymentDateIso : undefined}
             armParkingSignal={armParkingSignal}
+            onParkingPeriod={
+              onRequestParking
+                ? (s, d) => onRequestParking(rental.id, s, d)
+                : undefined
+            }
           />
 
           <AccordionSection
@@ -2728,6 +2738,11 @@ export function RentalCard({
               }
               paymentDateIso={onRequestPayment ? paymentDateIso : undefined}
               armParkingSignal={armParkingSignal}
+              onParkingPeriod={
+                onRequestParking
+                  ? (s, d) => onRequestParking(rental.id, s, d)
+                  : undefined
+              }
             />
             {/* v0.6.50: «Последние события» — InlineHistory под календарём. */}
             <InlineHistory
