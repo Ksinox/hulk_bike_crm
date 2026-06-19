@@ -6,17 +6,18 @@ const LiquidGradient = lazy(() => import("./LiquidGradient"));
 
 /**
  * Круговая загрузка парка — KPI-карточка-герой. Светлый круг (бело-серый
- * градиент), по КОЛЬЦУ вокруг белого центра течёт анимированный градиент-
- * жидкость (ShaderGradient, зеленовато-синий), залитая снизу на % загрузки
- * с волнистой «живой» поверхностью (две SVG-волны едут по горизонтали).
- * По центру белый круг с крупным % — получается донат-диаграмма.
- * Three.js ленив (LiquidGradient) + ErrorBoundary с CSS-градиент-фолбэком.
+ * градиент), внутри анимированный градиент @firecms/neat (зелёно-синий,
+ * плавно перетекающий) залит снизу на % загрузки. Поверхность жидкости —
+ * ВОЛНА (clip-path по синусоиде, поднимается с %), а не прямая линия. По
+ * центру белый круг с крупным % → донат-диаграмма. Neat ленив (отдельный
+ * чанк) + ErrorBoundary с CSS-градиент-фолбэком.
  */
 
 const SIZE = 100;
 const CENTER = 60; // белый круг по центру → донат
+const CLIP_ID = "parkLiquidClip";
 
-/** Запасной CSS-градиент (зелёно-синий) — пока грузится Three.js / если WebGL упал. */
+/** Запасной CSS-градиент (зелёно-синий) — пока грузится Neat / если WebGL упал. */
 function GradientFallback() {
   return (
     <div
@@ -40,41 +41,6 @@ class GLBoundary extends Component<
   render() {
     return this.state.failed ? <GradientFallback /> : this.props.children;
   }
-}
-
-/** Волнистая «живая» поверхность — две SVG-волны (перёд/зад) едут влево с
- *  разной скоростью, слегка заходя за линию уровня (чтобы не была прямой). */
-function LiquidWaves({ surfaceTopPct }: { surfaceTopPct: number }) {
-  return (
-    <div
-      className="pointer-events-none absolute inset-x-0"
-      style={{ top: `calc(${surfaceTopPct}% - 8px)`, height: 16 }}
-    >
-      <svg
-        viewBox="0 0 200 16"
-        preserveAspectRatio="none"
-        className="absolute left-0 top-0 h-full"
-        style={{ width: "200%", animation: "parkWaveMove 4.5s linear infinite" }}
-      >
-        <path
-          d="M0 8 Q12.5 4 25 8 T50 8 T75 8 T100 8 T125 8 T150 8 T175 8 T200 8 V16 H0 Z"
-          fill="#2F86DB"
-          opacity="0.4"
-        />
-      </svg>
-      <svg
-        viewBox="0 0 200 16"
-        preserveAspectRatio="none"
-        className="absolute left-0 top-0 h-full"
-        style={{ width: "200%", animation: "parkWaveMove 3s linear infinite" }}
-      >
-        <path
-          d="M0 8 Q12.5 12 25 8 T50 8 T75 8 T100 8 T125 8 T150 8 T175 8 T200 8 V16 H0 Z"
-          fill="#22A8C0"
-        />
-      </svg>
-    </div>
-  );
 }
 
 export function ParkLoadGauge({
@@ -109,9 +75,13 @@ export function ParkLoadGauge({
     };
   }, [pct]);
 
+  // Уровень поверхности (в координатах круга 0..SIZE) + волна-синусоида.
+  const sY = SIZE - (SIZE * pct) / 100;
+  const A = 3.5; // амплитуда волны
+  const wavePath = `M 0 ${sY} Q ${SIZE * 0.25} ${sY - A} ${SIZE * 0.5} ${sY} T ${SIZE} ${sY} L ${SIZE} ${SIZE} L 0 ${SIZE} Z`;
+
   return (
     <Card className={cn("flex h-full items-center", className)}>
-      <style>{`@keyframes parkWaveMove{from{transform:translateX(0)}to{transform:translateX(-50%)}}`}</style>
       <button
         type="button"
         onClick={onClick}
@@ -121,7 +91,7 @@ export function ParkLoadGauge({
           onClick ? "cursor-pointer" : "cursor-default",
         )}
       >
-        {/* Светлый круг с жидкостью по кольцу */}
+        {/* Светлый круг с жидкостью */}
         <div
           className="relative shrink-0 overflow-hidden rounded-full ring-1 ring-black/[0.06]"
           style={{
@@ -131,10 +101,19 @@ export function ParkLoadGauge({
             boxShadow: "inset 0 1px 4px rgba(15,23,42,0.08)",
           }}
         >
-          {/* Жидкость — шейдер, обрезан снизу на процент загрузки */}
+          {/* clip-path жидкости — волна на уровне % (поднимается с загрузкой) */}
+          <svg width="0" height="0" className="absolute" aria-hidden>
+            <defs>
+              <clipPath id={CLIP_ID} clipPathUnits="userSpaceOnUse">
+                <path d={wavePath} />
+              </clipPath>
+            </defs>
+          </svg>
+
+          {/* Жидкость — Neat-градиент, обрезан волной снизу */}
           <div
-            className="absolute inset-0 transition-[clip-path] duration-1000 ease-out"
-            style={{ clipPath: `inset(${100 - pct}% 0 0 0)` }}
+            className="absolute inset-0"
+            style={{ clipPath: `url(#${CLIP_ID})` }}
           >
             <GLBoundary>
               <Suspense fallback={<GradientFallback />}>
@@ -142,9 +121,6 @@ export function ParkLoadGauge({
               </Suspense>
             </GLBoundary>
           </div>
-
-          {/* Волнистая поверхность жидкости */}
-          {pct > 0 && pct < 100 && <LiquidWaves surfaceTopPct={100 - pct} />}
 
           {/* Белый круг по центру → донат-диаграмма, % на белом */}
           <div
