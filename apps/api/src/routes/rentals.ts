@@ -4707,8 +4707,15 @@ export async function rentalsRoutes(app: FastifyInstance) {
           clientId?: number | null;
           // parking
           sessionId?: number | null;
-          before?: { endDate?: string; days?: number; amount?: number };
+          before?: {
+            endDate?: string;
+            days?: number;
+            amount?: number;
+            paidAmount?: number;
+          };
           delta?: number;
+          // parking ранний возврат: излишек, вернувшийся на депозит
+          refund?: number;
         };
 
         // ── Откат замены скутера: вернуть прежний скутер на аренду,
@@ -4870,6 +4877,8 @@ export async function rentalsRoutes(app: FastifyInstance) {
               endDate: meta.before.endDate ?? sess.endDate,
               days: meta.before.days ?? sess.days,
               amount: meta.before.amount ?? sess.amount,
+              // v3.3: ранний возврат менял paidAmount — восстанавливаем.
+              paidAmount: meta.before.paidAmount ?? sess.paidAmount,
               status: "active",
               endedAt: null,
             })
@@ -4885,6 +4894,17 @@ export async function rentalsRoutes(app: FastifyInstance) {
                 updatedAt: sql`now()`,
               })
               .where(eq(rentals.id, id));
+          }
+          // v3.3: ранний возврат вернул излишек на депозит — снимаем обратно.
+          const refundBack =
+            typeof meta.refund === "number" ? meta.refund : 0;
+          const refundClientId =
+            typeof meta.clientId === "number" ? meta.clientId : null;
+          if (refundBack > 0 && refundClientId) {
+            await tx.execute(sql`
+              UPDATE clients SET deposit_balance = deposit_balance - ${refundBack}
+               WHERE id = ${refundClientId}
+            `);
           }
           return {
             ok: true as const,

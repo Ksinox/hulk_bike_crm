@@ -124,8 +124,9 @@ export function useEditParking() {
 export function useEndParking() {
   const invalidate = useInvalidateParking();
   return useMutation({
+    // refund — излишек предоплаты при раннем возврате (упал на депозит клиента).
     mutationFn: (args: { rentalId: number; sessionId: number }) =>
-      api.post<{ session: ParkingSession }>(
+      api.post<{ session: ParkingSession; refund?: number }>(
         `/api/rentals/${args.rentalId}/parking/${args.sessionId}/end`,
         {},
       ),

@@ -445,12 +445,21 @@ export function CalendarPanel({
       });
       return;
     }
-    // Предоплаченный — закрываем (ранний пересчёт-на-депозит — отдельный этап).
+    // Предоплаченный: ранний возврат бэкенд пересчитывает по факту и
+    // возвращает излишек на депозит клиента (показываем в тосте).
     if (activeSession.prepaid) {
-      endParking.mutate(args, {
-        onSuccess: () => toast.success("Снят с паркинга", "Возврат пересчитан"),
-        onError: () => toast.error("Не удалось снять с паркинга"),
-      });
+      endParking
+        .mutateAsync(args)
+        .then((res) => {
+          const refund = res.refund ?? 0;
+          toast.success(
+            "Снят с паркинга",
+            refund > 0
+              ? `Излишек ${refund.toLocaleString("ru-RU")} ₽ → депозит клиента`
+              : "Возврат пересчитан",
+          );
+        })
+        .catch(() => toast.error("Не удалось снять с паркинга"));
       return;
     }
     // ОТКРЫТЫЙ (постоплата): закрываем сессию и открываем окно оплаты с
