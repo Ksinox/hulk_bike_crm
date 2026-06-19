@@ -1,48 +1,28 @@
-import { useEffect, useRef } from "react";
-import { NeatGradient, type NeatConfig } from "@firecms/neat";
-
 /**
- * Анимированный градиент-наполнитель круга загрузки парка на @firecms/neat
- * (заменил ShaderGradient/three+react-three-fiber — тот тормозил и тянул
- * тяжёлый стек). Neat сам по себе на WebGL, плавно перетекающие фирменные
- * зелёно-синие цвета. Заливает весь холст; обрезка по «волне»-уровню (на %
- * загрузки) живёт в ParkLoadGauge (clip-path). Грузится лениво (React.lazy) —
- * Neat уезжает в отдельный чанк.
+ * Морфящийся зелёно-синий градиент-наполнитель круга загрузки парка — чистый
+ * CSS (без библиотек/three/WebGL/водяных знаков; лёгкий, без лага). Эффект —
+ * mesh-градиент из цветовых пятен, которые «плавают» по кругу (анимация
+ * background-position). Обрезка по волне-уровню (на % загрузки) живёт в
+ * ParkLoadGauge (clip-path). Default-export сохранён ради React.lazy.
  */
-
-const NEAT_CONFIG: NeatConfig = {
-  colors: [
-    { color: "#1D9E75", enabled: true }, // фирменный зелёный
-    { color: "#17E7FF", enabled: true }, // циан
-    { color: "#2F86DB", enabled: true }, // фирменный синий
-    { color: "#22C3A6", enabled: true }, // бирюза
-    { color: "#34D399", enabled: true }, // светло-зелёный
-  ],
-  speed: 4,
-  horizontalPressure: 3,
-  verticalPressure: 4,
-  waveFrequencyX: 2.5,
-  waveFrequencyY: 2.5,
-  waveAmplitude: 6,
-  shadows: 6,
-  highlights: 4,
-  colorBrightness: 1.05,
-  colorSaturation: 3,
-  wireframe: false,
-  colorBlending: 6,
-  backgroundColor: "#1D9E75",
-  backgroundAlpha: 1,
-  // Маленький холст (≈100px) — низкое разрешение хватает и не грузит GPU.
-  resolution: 0.5,
-  shapeType: "plane",
-};
-
 export default function LiquidGradient() {
-  const ref = useRef<HTMLCanvasElement>(null);
-  useEffect(() => {
-    if (!ref.current) return;
-    const gradient = new NeatGradient({ ref: ref.current, ...NEAT_CONFIG });
-    return () => gradient.destroy();
-  }, []);
-  return <canvas ref={ref} className="absolute inset-0 h-full w-full" />;
+  return (
+    <div className="absolute inset-0 overflow-hidden">
+      <style>{`@keyframes parkLiquidFlow{0%{background-position:0% 0%}25%{background-position:100% 0%}50%{background-position:100% 100%}75%{background-position:0% 100%}100%{background-position:0% 0%}}`}</style>
+      <div
+        className="absolute inset-[-30%]"
+        style={{
+          background: [
+            "radial-gradient(circle at 25% 25%, #34D399 0%, transparent 45%)",
+            "radial-gradient(circle at 80% 30%, #17E7FF 0%, transparent 45%)",
+            "radial-gradient(circle at 70% 80%, #2F86DB 0%, transparent 50%)",
+            "radial-gradient(circle at 25% 75%, #1D9E75 0%, transparent 50%)",
+            "#22A8C0",
+          ].join(","),
+          backgroundSize: "200% 200%",
+          animation: "parkLiquidFlow 9s ease-in-out infinite",
+        }}
+      />
+    </div>
+  );
 }
