@@ -2250,6 +2250,8 @@ export async function rentalsRoutes(app: FastifyInstance) {
           depositOriginal?: number;
           // parking: раскладка оплаты по сессиям (un-pay паркинга)
           allocations?: Array<{ sessionId: number; amount: number }>;
+          // parking оплачен с депозита клиента — вернуть кошелёк при откате
+          depositSpent?: number;
         };
         if (
           !snap ||
@@ -2406,6 +2408,14 @@ export async function rentalsRoutes(app: FastifyInstance) {
                   eq(parkingSessions.rentalId, id),
                 ),
               );
+          }
+          // Оплата была с депозита — возвращаем кошелёк клиента (зеркало
+          // списания в /parking/pay; revenue не трогаем — deposit исключён).
+          if (snap.depositSpent && snap.depositSpent > 0 && snap.clientId) {
+            await tx.execute(sql`
+              UPDATE clients SET deposit_balance = deposit_balance + ${snap.depositSpent}
+               WHERE id = ${snap.clientId}
+            `);
           }
           await tx.delete(payments).where(eq(payments.id, paymentId));
           return {

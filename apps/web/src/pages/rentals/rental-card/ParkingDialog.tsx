@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { SquareParking, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ApiError } from "@/lib/api";
@@ -10,6 +10,7 @@ import {
   parkingAmount,
   PARKING_RATE_PER_DAY,
 } from "@/lib/api/parking";
+import { useApiClient } from "@/lib/api/clients";
 
 /**
  * Паркинг — «Период · предоплата» внутри БОКОВОГО дровера приёмки оплаты
@@ -48,8 +49,11 @@ export function ParkingDrawer({
   const create = useCreateParking();
   const pay = usePayParking();
   const [freeFirstDay, setFreeFirstDay] = useState(true);
-  const [method, setMethod] = useState<"cash" | "transfer">("cash");
+  const [method, setMethod] = useState<"cash" | "transfer" | "deposit">("cash");
   const busy = create.isPending || pay.isPending;
+  // Депозит клиента (кошелёк) — можно оплатить паркинг с него, если хватает.
+  const { data: client } = useApiClient(rental.clientId ?? null);
+  const depositBalance = client?.depositBalance ?? 0;
 
   const safeDays = Math.max(1, days);
   const endIso = useMemo(
@@ -60,6 +64,12 @@ export function ParkingDrawer({
     () => parkingAmount(safeDays, freeFirstDay),
     [safeDays, freeFirstDay],
   );
+
+  // Если выбран депозит, но на полную оплату не хватает (период вырос) —
+  // откатываемся на наличные, чтобы не слать заведомо отклоняемую оплату.
+  useEffect(() => {
+    if (method === "deposit" && depositBalance < amount) setMethod("cash");
+  }, [method, depositBalance, amount]);
 
   const errToast = (e: unknown) => {
     const msg =
@@ -174,7 +184,33 @@ export function ParkingDrawer({
                   {m === "cash" ? "Наличные" : "Перевод"}
                 </button>
               ))}
+              {depositBalance > 0 && (
+                <button
+                  type="button"
+                  disabled={depositBalance < amount}
+                  onClick={() => setMethod("deposit")}
+                  title={
+                    depositBalance < amount
+                      ? "Недостаточно средств на депозите клиента"
+                      : undefined
+                  }
+                  className={cn(
+                    "flex-1 rounded-lg border py-2 text-[13px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-40",
+                    method === "deposit"
+                      ? "border-blue-500 bg-blue-50 text-blue-700"
+                      : "border-border text-ink-2 hover:bg-surface-soft",
+                  )}
+                >
+                  Депозит
+                </button>
+              )}
             </div>
+            {depositBalance > 0 && (
+              <span className="text-[11px] text-muted-2">
+                На депозите клиента: {depositBalance.toLocaleString("ru-RU")} ₽
+                {depositBalance < amount ? " — на полную оплату не хватит" : ""}
+              </span>
+            )}
           </div>
         )}
       </div>

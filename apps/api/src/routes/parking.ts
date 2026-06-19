@@ -1,8 +1,14 @@
 import type { FastifyInstance } from "fastify";
-import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/index.js";
-import { parkingSessions, payments, rentals, noteStickers } from "../db/schema.js";
+import {
+  parkingSessions,
+  payments,
+  rentals,
+  noteStickers,
+  clients,
+} from "../db/schema.js";
 import { logActivity } from "../services/activityLog.js";
 
 /* ============================================================
@@ -525,48 +531,91 @@ export async function parkingRoutes(app: FastifyInstance) {
       let remaining = parsed.data.amount;
       const method = parsed.data.method ?? "cash";
 
+      // Для оплаты С ДЕПОЗИТА нужен клиент — списываем его кошелёк.
+      const [rentalRow] = await db
+        .select({ clientId: rentals.clientId })
+        .from(rentals)
+        .where(eq(rentals.id, rentalId));
+      const clientId = rentalRow?.clientId ?? null;
+
       const sessions = await db
         .select()
         .from(parkingSessions)
         .where(eq(parkingSessions.rentalId, rentalId))
         .orderBy(parkingSessions.startDate);
 
-      const applied = await db.transaction(async (tx) => {
-        let used = 0;
-        // Раскладка оплаты по сессиям — кладём в снимок отката, чтобы un-pay
-        // вернул paidAmount каждой сессии ровно на принятое.
-        const allocations: Array<{ sessionId: number; amount: number }> = [];
-        for (const s of sessions) {
-          if (remaining <= 0) break;
-          const due = Math.max(0, s.amount - s.paidAmount);
-          if (due <= 0) continue;
-          const take = Math.min(due, remaining);
-          await tx
-            .update(parkingSessions)
-            .set({ paidAmount: s.paidAmount + take })
-            .where(eq(parkingSessions.id, s.id));
-          remaining -= take;
-          used += take;
-          allocations.push({ sessionId: s.id, amount: take });
-        }
-        if (used > 0) {
-          await tx.insert(payments).values({
-            rentalId,
-            type: "parking",
-            amount: used,
-            method,
-            paid: true,
-            paidAt: new Date(),
-            receivedByUserId: req.user?.userId ?? null,
-            note: "Оплата паркинга",
-            rollbackSnapshot: {
-              kind: "parking",
-              allocations,
-            } as unknown as object,
+      let applied = 0;
+      try {
+        applied = await db.transaction(async (tx) => {
+          let used = 0;
+          // Раскладка оплаты по сессиям — кладём в снимок отката, чтобы un-pay
+          // вернул paidAmount каждой сессии ровно на принятое.
+          const allocations: Array<{ sessionId: number; amount: number }> = [];
+          for (const s of sessions) {
+            if (remaining <= 0) break;
+            const due = Math.max(0, s.amount - s.paidAmount);
+            if (due <= 0) continue;
+            const take = Math.min(due, remaining);
+            await tx
+              .update(parkingSessions)
+              .set({ paidAmount: s.paidAmount + take })
+              .where(eq(parkingSessions.id, s.id));
+            remaining -= take;
+            used += take;
+            allocations.push({ sessionId: s.id, amount: take });
+          }
+          // Оплата с депозита клиента: списываем кошелёк (revenue исключает
+          // method='deposit'). Не хватает баланса → откатываем транзакцию.
+          let depositSpent = 0;
+          if (method === "deposit" && used > 0) {
+            if (!clientId) throw new Error("no_client");
+            const [c] = await tx
+              .select({ balance: clients.depositBalance })
+              .from(clients)
+              .where(eq(clients.id, clientId));
+            if (!c || c.balance < used) throw new Error("insufficient_deposit");
+            await tx
+              .update(clients)
+              .set({
+                depositBalance: sql`${clients.depositBalance} - ${used}`,
+              })
+              .where(eq(clients.id, clientId));
+            depositSpent = used;
+          }
+          if (used > 0) {
+            await tx.insert(payments).values({
+              rentalId,
+              type: "parking",
+              amount: used,
+              method,
+              paid: true,
+              paidAt: new Date(),
+              receivedByUserId: req.user?.userId ?? null,
+              note: "Оплата паркинга",
+              rollbackSnapshot: {
+                kind: "parking",
+                allocations,
+                // Для отката оплаты с депозита — вернуть кошелёк клиента.
+                depositSpent,
+                clientId,
+              } as unknown as object,
+            });
+          }
+          return used;
+        });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "";
+        if (msg === "insufficient_deposit")
+          return reply.code(400).send({
+            error: "insufficient_deposit",
+            message: "Недостаточно средств на депозите клиента",
           });
-        }
-        return used;
-      });
+        if (msg === "no_client")
+          return reply
+            .code(400)
+            .send({ error: "no_client", message: "У аренды нет клиента" });
+        throw e;
+      }
 
       if (applied > 0) {
         await logActivity(req, {
