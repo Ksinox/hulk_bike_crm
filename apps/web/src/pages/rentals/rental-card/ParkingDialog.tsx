@@ -13,11 +13,14 @@ import {
 import { useApiClient } from "@/lib/api/clients";
 
 /**
- * Паркинг — «Период · предоплата» внутри БОКОВОГО дровера приёмки оплаты
- * (заказчик: все приёмки через один боковой дровер с подменой контента).
- * Период (начало + дни) ВЫБИРАЕТСЯ НА КАЛЕНДАРЕ карточки и приходит сюда
- * пропсами — здесь он read-only (чтобы не было рассинхрона с календарём;
- * поменять период — закрыть дровер и кликнуть на календаре заново).
+ * Паркинг в БОКОВОМ дровере приёмки оплаты (заказчик: все приёмки через один
+ * боковой дровер с подменой контента). Два режима:
+ *   • «период» (по умолчанию) — создаёт предоплаченную сессию [startIso..+days]
+ *     и сразу принимает оплату (или «в долг»). Период выбран на календаре —
+ *     здесь read-only.
+ *   • «расчёт» (settle) — открытый паркинг УЖЕ снят (сессия закрыта); здесь
+ *     только принимаем оплату накопленной суммы (нал/перевод/депозит) или
+ *     закрываем → счёт падает в долг.
  *
  * Рендерится в том же слоте, что и PaymentAcceptDialog: inline — push-колонка
  * на странице Аренд (сдвигает карточку); иначе — slide-in справа (fallback
@@ -39,12 +42,16 @@ export function ParkingDrawer({
   days,
   inline = false,
   onClose,
+  settle,
 }: {
   rental: Rental;
   startIso: string;
   days: number;
   inline?: boolean;
   onClose: () => void;
+  /** Режим РАСЧЁТА снятого открытого паркинга: сессия уже закрыта, здесь
+   *  только принимаем оплату накопленной суммы (или закрываем → долг). */
+  settle?: { sessionId: number; amount: number };
 }) {
   const create = useCreateParking();
   const pay = usePayParking();
@@ -55,15 +62,18 @@ export function ParkingDrawer({
   const { data: client } = useApiClient(rental.clientId ?? null);
   const depositBalance = client?.depositBalance ?? 0;
 
+  const isSettle = !!settle;
   const safeDays = Math.max(1, days);
   const endIso = useMemo(
     () => plusDaysIso(startIso, safeDays - 1),
     [startIso, safeDays],
   );
-  const amount = useMemo(
+  const periodAmount = useMemo(
     () => parkingAmount(safeDays, freeFirstDay),
     [safeDays, freeFirstDay],
   );
+  // Сумма к оплате: в режиме расчёта — накопленное по сессии; иначе — по периоду.
+  const amount = settle ? settle.amount : periodAmount;
 
   // Если выбран депозит, но на полную оплату не хватает (период вырос) —
   // откатываемся на наличные, чтобы не слать заведомо отклоняемую оплату.
@@ -81,6 +91,23 @@ export function ParkingDrawer({
 
   const submit = async (collect: boolean) => {
     try {
+      if (isSettle) {
+        // Сессия уже закрыта снятием — только принимаем оплату накопленного.
+        if (collect && amount > 0) {
+          await pay.mutateAsync({ rentalId: rental.id, amount, method });
+          toast.success(
+            "Паркинг оплачен",
+            `${amount.toLocaleString("ru-RU")} ₽`,
+          );
+        } else {
+          toast.success(
+            "Снят с паркинга",
+            amount > 0 ? `${amount.toLocaleString("ru-RU")} ₽ — в долг` : "",
+          );
+        }
+        onClose();
+        return;
+      }
       await create.mutateAsync({
         rentalId: rental.id,
         startDate: startIso,
@@ -106,8 +133,8 @@ export function ParkingDrawer({
     <>
       <div className="flex items-center justify-between border-b border-border px-5 py-3.5">
         <div className="inline-flex items-center gap-2 text-[15px] font-bold text-ink">
-          <SquareParking size={17} className="text-yellow-600" /> Паркинг ·
-          период
+          <SquareParking size={17} className="text-yellow-600" /> Паркинг ·{" "}
+          {isSettle ? "оплата" : "период"}
         </div>
         <button
           type="button"
@@ -119,44 +146,51 @@ export function ParkingDrawer({
       </div>
 
       <div className="flex flex-1 flex-col gap-3.5 overflow-y-auto px-5 py-4">
-        {/* Период (выбран на календаре) */}
+        {/* Период (выбран на календаре / накоплен открытым паркингом) */}
         <div className="rounded-[10px] border border-yellow-300 bg-yellow-50 px-3 py-2.5">
           <div className="text-[11px] font-semibold uppercase tracking-wide text-yellow-700">
-            Период паркинга
+            {isSettle ? "Паркинг снят · к оплате" : "Период паркинга"}
           </div>
           <div className="mt-0.5 text-[14px] font-bold text-ink">
             {fmtRu(startIso)} – {fmtRu(endIso)} · {safeDays} дн
           </div>
           <div className="text-[11px] text-muted-2">
-            изменить — на календаре карточки
+            {isSettle
+              ? "оплата по факту или закрыть в долг"
+              : "изменить — на календаре карточки"}
           </div>
         </div>
 
-        <label className="flex items-center justify-between">
-          <span className="text-[13px] text-ink-2">1-й день бесплатно</span>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={freeFirstDay}
-            onClick={() => setFreeFirstDay((v) => !v)}
-            className={cn(
-              "relative h-5 w-9 shrink-0 rounded-full transition-colors",
-              freeFirstDay ? "bg-blue-600" : "bg-border",
-            )}
-          >
-            <span
+        {/* Тумблер «1-й день бесплатно» — только при создании периода; при
+            расчёте снятого паркинга сумма уже зафиксирована сессией. */}
+        {!isSettle && (
+          <label className="flex items-center justify-between">
+            <span className="text-[13px] text-ink-2">1-й день бесплатно</span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={freeFirstDay}
+              onClick={() => setFreeFirstDay((v) => !v)}
               className={cn(
-                "absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all",
-                freeFirstDay ? "left-[18px]" : "left-0.5",
+                "relative h-5 w-9 shrink-0 rounded-full transition-colors",
+                freeFirstDay ? "bg-blue-600" : "bg-border",
               )}
-            />
-          </button>
-        </label>
+            >
+              <span
+                className={cn(
+                  "absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all",
+                  freeFirstDay ? "left-[18px]" : "left-0.5",
+                )}
+              />
+            </button>
+          </label>
+        )}
 
         <div className="flex items-center justify-between rounded-[10px] bg-surface-soft px-3 py-2.5">
           <span className="text-[12px] text-muted-2">
-            {safeDays} дн × {PARKING_RATE_PER_DAY} ₽
-            {freeFirstDay ? " · 1-й бесплатно" : ""}
+            {isSettle
+              ? `Накоплено за ${safeDays} дн`
+              : `${safeDays} дн × ${PARKING_RATE_PER_DAY} ₽${freeFirstDay ? " · 1-й бесплатно" : ""}`}
           </span>
           <b className="text-[17px] font-extrabold tabular-nums text-ink">
             {amount.toLocaleString("ru-RU")} ₽
@@ -224,7 +258,9 @@ export function ParkingDrawer({
         >
           {amount > 0
             ? `Оплатить ${amount.toLocaleString("ru-RU")} ₽`
-            : "Поставить"}
+            : isSettle
+              ? "Готово"
+              : "Поставить"}
         </button>
         {amount > 0 && (
           <button

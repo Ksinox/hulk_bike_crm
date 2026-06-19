@@ -194,7 +194,11 @@ export function CalendarPanel({
   /** Паркинг-период: оператор выбрал период на календаре → открыть
    *  паркинг-дровер у родителя (push-колонка). Если не передан — карточка
    *  откроет дровер сама (overlay-fallback). */
-  onParkingPeriod?: (startIso: string, days: number) => void;
+  onParkingPeriod?: (
+    startIso: string,
+    days: number,
+    settle?: { sessionId: number; amount: number },
+  ) => void;
   /** Отмена паркинга на карточке (кнопка «Отмена») → закрыть паркинг-дровер
    *  у родителя (push-колонка), если он открыт. Иначе рассинхрон: календарь
    *  вышел из режима, а дровер висит. В fallback-режиме дровер закрывается
@@ -236,6 +240,8 @@ export function CalendarPanel({
   const [localPeriod, setLocalPeriod] = useState<{
     startDate: string;
     days: number;
+    /** Режим расчёта снятого открытого паркинга (сессия уже закрыта). */
+    settle?: { sessionId: number; amount: number };
   } | null>(null);
   const [parkingMenuOpen, setParkingMenuOpen] = useState(false);
 
@@ -431,13 +437,38 @@ export function CalendarPanel({
   const removeParking = () => {
     if (!activeSession) return;
     const args = { rentalId: rental.id, sessionId: activeSession.id };
-    const opts = {
-      onSuccess: () => toast.success("Снят с паркинга", "Возврат пересчитан"),
-      onError: () => toast.error("Не удалось снять с паркинга"),
-    };
-    // Уже начавшийся паркинг — закрываем сегодня (end); будущий — удаляем.
-    if (activeSession.startDate <= todayIso()) endParking.mutate(args, opts);
-    else deleteParking.mutate(args, opts);
+    // Будущий паркинг — просто удаляем (накопления нет).
+    if (activeSession.startDate > todayIso()) {
+      deleteParking.mutate(args, {
+        onSuccess: () => toast.success("Паркинг отменён"),
+        onError: () => toast.error("Не удалось снять с паркинга"),
+      });
+      return;
+    }
+    // Предоплаченный — закрываем (ранний пересчёт-на-депозит — отдельный этап).
+    if (activeSession.prepaid) {
+      endParking.mutate(args, {
+        onSuccess: () => toast.success("Снят с паркинга", "Возврат пересчитан"),
+        onError: () => toast.error("Не удалось снять с паркинга"),
+      });
+      return;
+    }
+    // ОТКРЫТЫЙ (постоплата): закрываем сессию и открываем окно оплаты с
+    // накопленной суммой → Оплатить (нал/перевод/депозит) или закрыть → долг.
+    endParking
+      .mutateAsync(args)
+      .then((res) => {
+        const s = res.session;
+        const unpaid = Math.max(0, s.amount - s.paidAmount);
+        if (unpaid <= 0) {
+          toast.success("Снят с паркинга");
+          return;
+        }
+        const settle = { sessionId: s.id, amount: unpaid };
+        if (onParkingPeriod) onParkingPeriod(s.startDate, s.days, settle);
+        else setLocalPeriod({ startDate: s.startDate, days: s.days, settle });
+      })
+      .catch(() => toast.error("Не удалось снять с паркинга"));
   };
 
   // Вход в режим по сигналу из ⋯-меню.
@@ -620,6 +651,7 @@ export function CalendarPanel({
           rental={rental}
           startIso={localPeriod.startDate}
           days={localPeriod.days}
+          settle={localPeriod.settle}
           onClose={() => {
             setLocalPeriod(null);
             exitParking();

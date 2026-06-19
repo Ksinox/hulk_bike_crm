@@ -73,7 +73,13 @@ type Target =
 type SideColumn =
   | { kind: "payment"; rentalId: number; extDays: number }
   | { kind: "history"; rentalId: number }
-  | { kind: "parking"; rentalId: number; startIso: string; days: number }
+  | {
+      kind: "parking";
+      rentalId: number;
+      startIso: string;
+      days: number;
+      settle?: { sessionId: number; amount: number };
+    }
   | null;
 
 type Ctx = {
@@ -103,7 +109,13 @@ type Ctx = {
   openHistory: (rentalId: number) => void;
   closeHistory: () => void;
   // Паркинг-период (push-колонка, как оплата) — период выбран на календаре.
-  openParking: (rentalId: number, startIso: string, days: number) => void;
+  // settle → режим оплаты снятого открытого паркинга (накопленное).
+  openParking: (
+    rentalId: number,
+    startIso: string,
+    days: number,
+    settle?: { sessionId: number; amount: number },
+  ) => void;
   closeParking: () => void;
 };
 
@@ -258,8 +270,8 @@ export function DashboardDrawerProvider({ children }: { children: ReactNode }) {
       // Паркинг: период выбран на календаре карточки → push-колонка справа
       // (как оплата). Закрытие бампает sideResetSignal → карточка выходит из
       // режима паркинга (resetSignal в CalendarPanel).
-      openParking: (rentalId, startIso, days) =>
-        setSide({ kind: "parking", rentalId, startIso, days }),
+      openParking: (rentalId, startIso, days, settle) =>
+        setSide({ kind: "parking", rentalId, startIso, days, settle }),
       closeParking: () => {
         setSide((s) => (s && s.kind === "parking" ? null : s));
         setSideResetSignal((n) => n + 1);
@@ -424,6 +436,7 @@ function SideDrawerColumn({
             rentalId={data.rentalId}
             startIso={data.startIso}
             days={data.days}
+            settle={data.settle}
             onClose={onCloseParking}
           />
         ) : (
@@ -484,11 +497,13 @@ function SideParkingContent({
   rentalId,
   startIso,
   days,
+  settle,
   onClose,
 }: {
   rentalId: number;
   startIso: string;
   days: number;
+  settle?: { sessionId: number; amount: number };
   onClose: () => void;
 }) {
   const active = useRentals();
@@ -510,6 +525,7 @@ function SideParkingContent({
         rental={rental}
         startIso={startIso}
         days={days}
+        settle={settle}
         inline
         onClose={onClose}
       />
@@ -762,8 +778,8 @@ function RentalCardWithSide({
       onClose={onClose}
       onSwapped={(newId) => onOpenRental(newId)}
       onRequestPayment={(rid, ext) => drawer.openPayment(rid, ext)}
-      onRequestParking={(rid, startIso, days) =>
-        drawer.openParking(rid, startIso, days)
+      onRequestParking={(rid, startIso, days, settle) =>
+        drawer.openParking(rid, startIso, days, settle)
       }
       onCancelParking={() => drawer.closeParking()}
       onOpenHistory={(rid) => drawer.openHistory(rid)}

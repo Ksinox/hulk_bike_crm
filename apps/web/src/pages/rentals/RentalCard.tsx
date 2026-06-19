@@ -357,7 +357,12 @@ export function RentalCard({
   /** Паркинг-период: открыть паркинг-дровер (push-колонка) с выбранным на
    *  календаре периодом. Если не передан (DashboardDrawer/мобила) — карточка
    *  откроет дровер внутри себя (overlay-fallback в CalendarPanel). */
-  onRequestParking?: (rentalId: number, startIso: string, days: number) => void;
+  onRequestParking?: (
+    rentalId: number,
+    startIso: string,
+    days: number,
+    settle?: { sessionId: number; amount: number },
+  ) => void;
   /** Отмена паркинга на карточке → закрыть паркинг-дровер (push-колонка) у
    *  родителя. Парный к onRequestParking; в fallback-режиме не нужен. */
   onCancelParking?: () => void;
@@ -2397,7 +2402,7 @@ export function RentalCard({
             armParkingSignal={armParkingSignal}
             onParkingPeriod={
               onRequestParking
-                ? (s, d) => onRequestParking(rental.id, s, d)
+                ? (s, d, settle) => onRequestParking(rental.id, s, d, settle)
                 : undefined
             }
             onParkingCancel={onCancelParking}
@@ -2745,7 +2750,7 @@ export function RentalCard({
               armParkingSignal={armParkingSignal}
               onParkingPeriod={
                 onRequestParking
-                  ? (s, d) => onRequestParking(rental.id, s, d)
+                  ? (s, d, settle) => onRequestParking(rental.id, s, d, settle)
                   : undefined
               }
               onParkingCancel={onCancelParking}

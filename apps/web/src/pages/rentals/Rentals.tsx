@@ -260,6 +260,12 @@ export function Rentals() {
   const [paymentParking, setPaymentParking] = useState(false);
   const [parkingStartIso, setParkingStartIso] = useState<string | null>(null);
   const [parkingDays, setParkingDays] = useState(1);
+  // Режим расчёта снятого открытого паркинга (сессия уже закрыта) — иначе null
+  // (обычная постановка периода). Как и период, НЕ сбрасываем в closePayment.
+  const [parkingSettle, setParkingSettle] = useState<{
+    sessionId: number;
+    amount: number;
+  } | null>(null);
   const openPayment = (rentalId: number, extDays: number) => {
     setHistoryRentalId(null); // взаимоисключение с историей
     setPaymentCompleting(false);
@@ -275,13 +281,20 @@ export function Rentals() {
     setPaymentRentalId(rentalId);
   };
   // Период выбран на календаре карточки → открываем паркинг-дровер.
-  const openParking = (rentalId: number, startIso: string, days: number) => {
+  // settle задан → режим оплаты снятого открытого паркинга (накопленное).
+  const openParking = (
+    rentalId: number,
+    startIso: string,
+    days: number,
+    settle?: { sessionId: number; amount: number },
+  ) => {
     setHistoryRentalId(null);
     setPaymentCompleting(false);
     setPaymentExtDays(0);
     setPaymentParking(true);
     setParkingStartIso(startIso);
     setParkingDays(Math.max(1, days));
+    setParkingSettle(settle ?? null);
     setPaymentRentalId(rentalId);
   };
   const closePayment = () => {
@@ -876,6 +889,7 @@ export function Rentals() {
                     rental={lastPaymentRental}
                     startIso={parkingStartIso ?? ""}
                     days={parkingDays}
+                    settle={parkingSettle ?? undefined}
                     inline
                     onClose={closePayment}
                   />
@@ -909,6 +923,7 @@ export function Rentals() {
                 rental={paymentRental}
                 startIso={parkingStartIso ?? ""}
                 days={parkingDays}
+                settle={parkingSettle ?? undefined}
                 onClose={closePayment}
               />
             ) : (
