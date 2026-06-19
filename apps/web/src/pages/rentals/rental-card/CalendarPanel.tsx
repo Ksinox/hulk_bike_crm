@@ -31,6 +31,7 @@ import {
 } from "@/lib/api/parking";
 import { toast } from "@/lib/toast";
 import { ApiError } from "@/lib/api";
+import { ParkingDialog } from "./ParkingDialog";
 
 /** DD.MM.YYYY → YYYY-MM-DD */
 function ruToIso(ru: string | undefined | null): string | null {
@@ -202,6 +203,9 @@ export function CalendarPanel({
   // v0.8.27 (G4): паркинг открытый — выбираем только дату начала; конец
   // определяется ручным/авто снятием. Тумблер «первый день бесплатно».
   const [freeFirstDay, setFreeFirstDay] = useState(true);
+  // Окно постановки/оплаты паркинга (оба режима). Заменяет старый календарный
+  // режим выбора даты — он оставлен дормантным под флагом parkingMode.
+  const [payDialogOpen, setPayDialogOpen] = useState(false);
 
   /* ---- v0.6.50 «ИЗМЕНИТЬ ПЕРИОД» ---- */
   // Коррекция аренды: перевыбор ТОЛЬКО даты возврата (старт фиксирован).
@@ -454,12 +458,11 @@ export function CalendarPanel({
 
   const toggleParkingButton = () => {
     if (!parkingMode) {
-      // Взаимоисключение с «Изменить период».
+      // Открываем окно паркинга (оба режима + оплата). Старый календарный
+      // режим (parkingMode/draftStart) оставлен дормантным.
       setEditMode(false);
       setEditEndIso(null);
-      setParkingMode(true);
-      setDraftStart(null);
-      setFreeFirstDay(true);
+      setPayDialogOpen(true);
       return;
     }
     // повторный клик = зафиксировать (нужна выбранная дата начала)
@@ -498,6 +501,13 @@ export function CalendarPanel({
 
   return (
     <div className="rounded-2xl bg-surface border border-border shadow-card-sm p-4">
+      {payDialogOpen && (
+        <ParkingDialog
+          rentalId={rental.id}
+          minStartIso={startIso}
+          onClose={() => setPayDialogOpen(false)}
+        />
+      )}
       {/* v0.6.49: заголовок «ДАТА ВОЗВРАТА» — uppercase серым по эталону.
           v0.8.0: кнопка 🅿 справа — вход/фиксация режима паркинга. */}
       <div className="flex items-center justify-between mb-2.5">
