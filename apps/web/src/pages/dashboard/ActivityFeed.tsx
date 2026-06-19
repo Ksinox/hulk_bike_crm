@@ -4,6 +4,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Maximize2,
+  Minimize2,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -305,6 +306,23 @@ const toISODate = (d: Date) =>
     d.getDate(),
   ).padStart(2, "0")}`;
 
+/** Номера страниц с многоточиями для постраничной пагинации: 1 … 4 5 6 … 19.
+ *  current/total — 1-based. */
+function pageList(current: number, total: number): (number | "…")[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const out: (number | "…")[] = [1];
+  if (current > 4) out.push("…");
+  for (
+    let i = Math.max(2, current - 1);
+    i <= Math.min(total - 1, current + 1);
+    i++
+  )
+    out.push(i);
+  if (current < total - 3) out.push("…");
+  out.push(total);
+  return out;
+}
+
 function FullJournalModal({
   compact,
   onClose,
@@ -316,6 +334,7 @@ function FullJournalModal({
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [category, setCategory] = useState("");
+  const [fullscreen, setFullscreen] = useState(false);
   const hasFilter = !!(from || to || category);
 
   const { data, isLoading, isFetching } = useActivityPage(
@@ -349,10 +368,20 @@ function FullJournalModal({
 
   return (
     <div
-      className="fixed inset-0 z-[140] flex items-stretch justify-center overflow-y-auto bg-ink/55 p-0 backdrop-blur-sm sm:items-start sm:p-6"
+      className={cn(
+        "fixed inset-0 z-[140] flex overflow-y-auto bg-ink/55 backdrop-blur-sm",
+        fullscreen
+          ? "p-0"
+          : "items-stretch justify-center p-0 sm:items-start sm:p-6",
+      )}
     >
       <div
-        className="flex min-h-[100dvh] w-full flex-col overflow-hidden rounded-none bg-surface shadow-card-lg sm:mt-10 sm:min-h-0 sm:max-w-[820px] sm:rounded-2xl"
+        className={cn(
+          "flex w-full flex-col overflow-hidden bg-surface shadow-card-lg",
+          fullscreen
+            ? "h-screen rounded-none"
+            : "min-h-[100dvh] rounded-none sm:mt-10 sm:min-h-0 sm:max-w-[820px] sm:rounded-2xl",
+        )}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-border bg-surface-soft px-5 py-3">
@@ -365,13 +394,23 @@ function FullJournalModal({
               <span className="tabular-nums">{total}</span>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-2 hover:bg-white hover:text-ink"
-          >
-            <X size={16} />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setFullscreen((v) => !v)}
+              className="hidden h-8 w-8 items-center justify-center rounded-lg text-muted-2 hover:bg-white hover:text-ink sm:flex"
+              title={fullscreen ? "Свернуть в окно" : "Открыть на весь экран"}
+            >
+              {fullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-2 hover:bg-white hover:text-ink"
+            >
+              <X size={16} />
+            </button>
+          </div>
         </div>
 
         {/* #журнал: фильтры — по типу действия (чипы) и по датам (период + пресеты).
@@ -436,7 +475,12 @@ function FullJournalModal({
           </div>
         </div>
 
-        <div className="max-h-[64vh] flex-1 overflow-y-auto px-5 py-3">
+        <div
+          className={cn(
+            "flex-1 overflow-y-auto px-5 py-3",
+            !fullscreen && "max-h-[64vh]",
+          )}
+        >
           {isLoading && items.length === 0 ? (
             <div className="py-8 text-center text-muted text-[13px]">Загрузка…</div>
           ) : items.length === 0 ? (
@@ -454,39 +498,67 @@ function FullJournalModal({
           )}
         </div>
 
-        <div className="flex items-center justify-between gap-2 border-t border-border bg-surface-soft px-5 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border bg-surface-soft px-5 py-3">
           <div className="text-[11px] text-muted-2">
-            Стр. {page + 1} из {totalPages}
+            {total > 0 && (
+              <span className="tabular-nums">
+                {page * PAGE_SIZE + 1}–{Math.min(total, (page + 1) * PAGE_SIZE)}{" "}
+                из {total}
+              </span>
+            )}
             {isFetching && items.length > 0 && (
               <span className="ml-2 text-muted">обновление…</span>
             )}
           </div>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1">
             <button
               type="button"
               disabled={page === 0}
               onClick={() => setPage((p) => Math.max(0, p - 1))}
               className={cn(
-                "inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-[12px] font-semibold",
+                "flex h-7 w-7 items-center justify-center rounded-lg",
                 page === 0
-                  ? "cursor-not-allowed bg-surface text-muted-2"
-                  : "bg-surface text-ink hover:bg-border",
+                  ? "cursor-not-allowed text-muted-2"
+                  : "text-ink hover:bg-border",
               )}
+              title="Предыдущая страница"
             >
-              <ChevronLeft size={13} /> Назад
+              <ChevronLeft size={15} />
             </button>
+            {pageList(page + 1, totalPages).map((p, i) =>
+              p === "…" ? (
+                <span key={`e${i}`} className="px-1 text-[12px] text-muted-2">
+                  …
+                </span>
+              ) : (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setPage(p - 1)}
+                  className={cn(
+                    "flex h-7 min-w-7 items-center justify-center rounded-lg px-1.5 text-[12px] font-semibold tabular-nums transition-colors",
+                    p - 1 === page
+                      ? "bg-ink text-white"
+                      : "text-ink-2 hover:bg-border",
+                  )}
+                >
+                  {p}
+                </button>
+              ),
+            )}
             <button
               type="button"
               disabled={page + 1 >= totalPages}
               onClick={() => setPage((p) => p + 1)}
               className={cn(
-                "inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-[12px] font-semibold",
+                "flex h-7 w-7 items-center justify-center rounded-lg",
                 page + 1 >= totalPages
-                  ? "cursor-not-allowed bg-surface text-muted-2"
-                  : "bg-ink text-white hover:bg-blue-600",
+                  ? "cursor-not-allowed text-muted-2"
+                  : "text-ink hover:bg-border",
               )}
+              title="Следующая страница"
             >
-              Вперёд <ChevronRight size={13} />
+              <ChevronRight size={15} />
             </button>
           </div>
         </div>
