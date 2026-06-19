@@ -20,6 +20,7 @@ import {
 import { useDashboardDrawer } from "./DashboardDrawer";
 import { useRentals, useArchivedRentals } from "@/pages/rentals/rentalsStore";
 import { useApiClients } from "@/lib/api/clients";
+import { useDebtorsList } from "@/lib/api/debtors";
 
 const FEED_LIMIT = 5;
 
@@ -34,12 +35,24 @@ function useActivityContext() {
   const active = useRentals();
   const archived = useArchivedRentals();
   const { data: clients = [] } = useApiClients();
+  // Должники (открытые + закрытые) — чтобы события дел резолвили клиента «с кем».
+  const { data: debtorsOpen } = useDebtorsList();
+  const { data: debtorsClosed } = useDebtorsList({ closed: true });
   return useMemo(() => {
     const rentalById = new Map(
       [...active, ...archived].map((r) => [r.id, r] as const),
     );
     const clientById = new Map(clients.map((c) => [c.id, c] as const));
+    const debtorById = new Map(
+      [...(debtorsOpen?.items ?? []), ...(debtorsClosed?.items ?? [])].map(
+        (d) => [d.id, d] as const,
+      ),
+    );
     const pad = (n: number) => `#${String(n).padStart(4, "0")}`;
+    const forClient = (clientId: number): ActivityContextParts | undefined => {
+      const c = clientById.get(clientId);
+      return c ? { client: { id: c.id, name: c.name } } : undefined;
+    };
     const forRental = (rentalId: number): ActivityContextParts | undefined => {
       const r = rentalById.get(rentalId);
       if (!r) return undefined;
@@ -54,17 +67,23 @@ function useActivityContext() {
     return (item: ApiActivityItem): ActivityContextParts | undefined => {
       if (item.entity === "rental" && item.entityId != null)
         return forRental(item.entityId);
+      // Акт ущерба: номер аренды берём из summary «Аренда #NNNN: …».
+      // (\S*, а НЕ \w*: \w в JS-регексе НЕ матчит кириллицу, из-за чего
+      //  «Аренда» не парсилась и контекст «с кем/по какой аренде» был пуст.)
       if (item.entity === "damage_report") {
-        const m = /аренд\w*\s+#?0*(\d+)/i.exec(item.summary || "");
+        const m = /аренд\S*\s*#?\s*0*(\d+)/i.exec(item.summary || "");
         if (m) return forRental(Number(m[1]));
       }
-      if (item.entity === "client" && item.entityId != null) {
-        const c = clientById.get(item.entityId);
-        if (c) return { client: { id: c.id, name: c.name } };
+      // Дело-должник → клиент (имя «с кем»). entityId = id дела.
+      if (item.entity === "debtor" && item.entityId != null) {
+        const d = debtorById.get(item.entityId);
+        if (d?.clientId != null) return forClient(d.clientId);
       }
+      if (item.entity === "client" && item.entityId != null)
+        return forClient(item.entityId);
       return undefined;
     };
-  }, [active, archived, clients]);
+  }, [active, archived, clients, debtorsOpen, debtorsClosed]);
 }
 
 /** #20: плоская строка контекста для compact-ленты (мобила/классика). */
