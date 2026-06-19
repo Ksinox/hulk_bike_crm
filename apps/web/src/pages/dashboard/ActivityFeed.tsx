@@ -21,6 +21,7 @@ import { useDashboardDrawer } from "./DashboardDrawer";
 import { useRentals, useArchivedRentals } from "@/pages/rentals/rentalsStore";
 import { useApiClients } from "@/lib/api/clients";
 import { useDebtorsList } from "@/lib/api/debtors";
+import { DateRangePicker } from "@/components/ui/date-picker";
 
 const FEED_LIMIT = 5;
 
@@ -398,26 +399,15 @@ function FullJournalModal({
           </div>
           <div className="flex flex-wrap items-center gap-2 text-[12px]">
             <span className="font-medium text-muted-2">Период:</span>
-            <input
-              type="date"
-              value={from}
-              max={to || undefined}
-              onChange={(e) => {
-                setFrom(e.target.value);
+            <DateRangePicker
+              from={from || null}
+              to={to || null}
+              onChange={(next) => {
+                setFrom(next.from ?? "");
+                setTo(next.to ?? "");
                 setPage(0);
               }}
-              className="rounded-lg border border-border bg-surface px-2 py-1 text-ink outline-none focus:border-blue-400"
-            />
-            <span className="text-muted-2">—</span>
-            <input
-              type="date"
-              value={to}
-              min={from || undefined}
-              onChange={(e) => {
-                setTo(e.target.value);
-                setPage(0);
-              }}
-              className="rounded-lg border border-border bg-surface px-2 py-1 text-ink outline-none focus:border-blue-400"
+              className="w-[220px]"
             />
             <span className="mx-1 h-4 w-px bg-border" />
             {[
