@@ -465,13 +465,13 @@ export function CalendarPanel({
           return;
         }
         const settle = { sessionId: s.id, amount: unpaid };
-        console.log("[parking-settle]", {
+        (window as unknown as { __psd?: unknown }).__psd = {
           unpaid,
           hasCallback: !!onParkingPeriod,
           startDate: s.startDate,
           days: s.days,
           settle,
-        });
+        };
         if (onParkingPeriod) onParkingPeriod(s.startDate, s.days, settle);
         else setLocalPeriod({ startDate: s.startDate, days: s.days, settle });
       })
