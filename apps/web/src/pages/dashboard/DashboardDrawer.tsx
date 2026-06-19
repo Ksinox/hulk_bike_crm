@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { navigate } from "@/app/navigationStore";
 import { RentalCard, RentalHistoryColumn } from "@/pages/rentals/RentalCard";
 import { PaymentAcceptDialog } from "@/pages/rentals/PaymentAcceptDialog";
+import { ParkingDrawer } from "@/pages/rentals/rental-card/ParkingDialog";
 import { ErrorBoundary } from "@/app/ErrorBoundary";
 import {
   useRentals,
@@ -72,6 +73,7 @@ type Target =
 type SideColumn =
   | { kind: "payment"; rentalId: number; extDays: number }
   | { kind: "history"; rentalId: number }
+  | { kind: "parking"; rentalId: number; startIso: string; days: number }
   | null;
 
 type Ctx = {
@@ -100,6 +102,9 @@ type Ctx = {
   closePayment: () => void;
   openHistory: (rentalId: number) => void;
   closeHistory: () => void;
+  // Паркинг-период (push-колонка, как оплата) — период выбран на календаре.
+  openParking: (rentalId: number, startIso: string, days: number) => void;
+  closeParking: () => void;
 };
 
 const DashboardDrawerCtx = createContext<Ctx | null>(null);
@@ -128,6 +133,8 @@ export function useDashboardDrawer(): Ctx {
       closePayment: () => {},
       openHistory: () => {},
       closeHistory: () => {},
+      openParking: () => {},
+      closeParking: () => {},
     }
   );
 }
@@ -211,7 +218,8 @@ export function DashboardDrawerProvider({ children }: { children: ReactNode }) {
         // Esc/back сначала закрывает side-колонку (оплата/история), затем
         // верхнюю панель стека.
         if (side) {
-          if (side.kind === "payment") setSideResetSignal((n) => n + 1);
+          if (side.kind === "payment" || side.kind === "parking")
+            setSideResetSignal((n) => n + 1);
           setSide(null);
           return;
         }
@@ -247,6 +255,15 @@ export function DashboardDrawerProvider({ children }: { children: ReactNode }) {
       openHistory: (rentalId) => setSide({ kind: "history", rentalId }),
       closeHistory: () =>
         setSide((s) => (s && s.kind === "history" ? null : s)),
+      // Паркинг: период выбран на календаре карточки → push-колонка справа
+      // (как оплата). Закрытие бампает sideResetSignal → карточка выходит из
+      // режима паркинга (resetSignal в CalendarPanel).
+      openParking: (rentalId, startIso, days) =>
+        setSide({ kind: "parking", rentalId, startIso, days }),
+      closeParking: () => {
+        setSide((s) => (s && s.kind === "parking" ? null : s));
+        setSideResetSignal((n) => n + 1);
+      },
     }),
     [stack, side, sideResetSignal],
   );
@@ -338,6 +355,7 @@ export function DashboardDrawerStack() {
                 }
                 onClosePayment={ctx.closePayment}
                 onCloseHistory={ctx.closeHistory}
+                onCloseParking={ctx.closeParking}
                 onExtDaysChange={ctx.setPaymentExtDays}
               />
             )}
@@ -358,12 +376,14 @@ function SideDrawerColumn({
   closing,
   onClosePayment,
   onCloseHistory,
+  onCloseParking,
   onExtDaysChange,
 }: {
   data: NonNullable<SideColumn>;
   closing: boolean;
   onClosePayment: () => void;
   onCloseHistory: () => void;
+  onCloseParking: () => void;
   onExtDaysChange: (days: number) => void;
 }) {
   const [entered, setEntered] = useState(false);
@@ -378,7 +398,8 @@ function SideDrawerColumn({
     };
   }, []);
   const isOpen = entered && !closing;
-  const width = data.kind === "payment" ? 480 : 420;
+  const width =
+    data.kind === "payment" ? 480 : data.kind === "parking" ? 460 : 420;
   return (
     <aside
       className={cn(
@@ -397,6 +418,13 @@ function SideDrawerColumn({
             extDays={data.extDays}
             onClose={onClosePayment}
             onExtDaysChange={onExtDaysChange}
+          />
+        ) : data.kind === "parking" ? (
+          <SideParkingContent
+            rentalId={data.rentalId}
+            startIso={data.startIso}
+            days={data.days}
+            onClose={onCloseParking}
           />
         ) : (
           <ErrorBoundary key={`hist-${data.rentalId}`}>
@@ -446,6 +474,44 @@ function SidePaymentContent({
         onPaid={() => {
           /* invalidations — внутри диалога */
         }}
+      />
+    </ErrorBoundary>
+  );
+}
+
+/** Паркинг-период в side-колонке (период выбран на календаре карточки). */
+function SideParkingContent({
+  rentalId,
+  startIso,
+  days,
+  onClose,
+}: {
+  rentalId: number;
+  startIso: string;
+  days: number;
+  onClose: () => void;
+}) {
+  const active = useRentals();
+  const archived = useArchivedRentals();
+  const rental = useMemo(
+    () => [...active, ...archived].find((r) => r.id === rentalId) ?? null,
+    [active, archived, rentalId],
+  );
+  if (!rental) {
+    return (
+      <div className="flex h-full items-center justify-center text-muted">
+        Аренда не найдена.
+      </div>
+    );
+  }
+  return (
+    <ErrorBoundary key={`park-${rentalId}`}>
+      <ParkingDrawer
+        rental={rental}
+        startIso={startIso}
+        days={days}
+        inline
+        onClose={onClose}
       />
     </ErrorBoundary>
   );
@@ -696,6 +762,10 @@ function RentalCardWithSide({
       onClose={onClose}
       onSwapped={(newId) => onOpenRental(newId)}
       onRequestPayment={(rid, ext) => drawer.openPayment(rid, ext)}
+      onRequestParking={(rid, startIso, days) =>
+        drawer.openParking(rid, startIso, days)
+      }
+      onCancelParking={() => drawer.closeParking()}
       onOpenHistory={(rid) => drawer.openHistory(rid)}
       paymentExtDays={paymentExtDays}
       paymentResetSignal={drawer.sideResetSignal}
