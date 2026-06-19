@@ -54,7 +54,7 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
     <div className="grid auto-rows-[minmax(120px,auto)] grid-cols-12 gap-4">
       {/* #дашборд: круговая загрузка парка — первой картой (вместо «Новых
           заявок», которые остаются в разделе «Заявки»). */}
-      <div className="col-span-3">
+      <div className="col-span-3 [&>div]:h-full">
         <ParkLoadGauge
           percent={metrics.loadPercent}
           active={metrics.activeRentalsCount}
@@ -66,7 +66,7 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
           }
         />
       </div>
-      <div className="col-span-3">
+      <div className="col-span-3 [&>div]:h-full">
         <KpiCard
           blue
           title="Поступит сегодня"
@@ -95,7 +95,7 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
           }
         />
       </div>
-      <div className="col-span-3">
+      <div className="col-span-3 [&>div]:h-full">
         <KpiCard
           title="Просрочено"
           value={String(metrics.overdueCount)}
@@ -128,7 +128,7 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
           }
         />
       </div>
-      <div className="col-span-3">
+      <div className="col-span-3 [&>div]:h-full">
         <KpiCard
           title="Активных аренд"
           value={String(metrics.activeRentalsCount)}

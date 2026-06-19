@@ -18,9 +18,9 @@ export default function LiquidGradient() {
         control="props"
         type="waterPlane"
         animate="on"
-        color1="#5606ff"
-        color2="#fe8989"
-        color3="#000000"
+        color1="#1D9E75"
+        color2="#22A8C0"
+        color3="#2F86DB"
         uSpeed={0.3}
         uStrength={1.6}
         uDensity={1.8}
