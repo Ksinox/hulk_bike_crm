@@ -296,12 +296,6 @@ export function Rentals() {
     setParkingDays(Math.max(1, days));
     setParkingSettle(settle ?? null);
     setPaymentRentalId(rentalId);
-    (window as unknown as { __op?: unknown }).__op = {
-      rentalId,
-      startIso,
-      days,
-      settle,
-    };
   };
   const closePayment = () => {
     setPaymentRentalId(null);
