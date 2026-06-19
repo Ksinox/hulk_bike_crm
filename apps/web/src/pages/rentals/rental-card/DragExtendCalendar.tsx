@@ -132,6 +132,7 @@ export function DragExtendCalendar({
   parkingRanges,
   parkingOccupiedRanges,
   onParkingPick,
+  onParkingHover,
   parkingSelectableFromIso,
   parkingSelectableToIso,
   editPeriodMode = false,
@@ -180,6 +181,8 @@ export function DragExtendCalendar({
    */
   parkingOccupiedRanges?: { startIso: string; endIso: string }[];
   onParkingPick?: (iso: string) => void;
+  /** Паркинг: наведённая дата для live-превью периода/суммы; null — курсор ушёл. */
+  onParkingHover?: (iso: string | null) => void;
   parkingSelectableFromIso?: string | null;
   parkingSelectableToIso?: string | null;
   /**
@@ -394,12 +397,27 @@ export function DragExtendCalendar({
   // под курсором (живой превью, как при продлении). Уважает editMinReturnIso
   // (раньше минимума не подсвечиваем). Делегирование как у onClickGrid.
   const onHoverGrid = (e: React.MouseEvent) => {
-    if (disabled || !editPeriodMode) return;
+    if (disabled) return;
+    if (!editPeriodMode && !parkingMode) return;
     const tgt = (e.target as HTMLElement).closest(
       "[data-date]",
     ) as HTMLElement | null;
     const iso = tgt?.getAttribute("data-date") ?? null;
     const k = iso ? isoToKey(iso) : null;
+    // Паркинг: репортим наведённую дату вверх для live-превью периода/суммы
+    // (если в окне выбора и не занята другой сессией), иначе null.
+    if (parkingMode) {
+      if (
+        !k ||
+        isOutsideParkingWindow(keyToTime(k)) ||
+        isOccupiedParkingDay(keyToTime(k))
+      ) {
+        onParkingHover?.(null);
+        return;
+      }
+      onParkingHover?.(iso);
+      return;
+    }
     if (!k) {
       setEditHoverK(null);
       return;
@@ -613,7 +631,10 @@ export function DragExtendCalendar({
     <div
       onClick={onClickGrid}
       onMouseOver={onHoverGrid}
-      onMouseLeave={() => setEditHoverK(null)}
+      onMouseLeave={() => {
+        setEditHoverK(null);
+        onParkingHover?.(null);
+      }}
       // v0.7.13: тонкая рамка вокруг сетки месяца — чтобы календарь
       // визуально выделялся в блоке (раньше цифры «парили в воздухе»).
       className="w-full rounded-xl border border-border bg-surface p-2.5"

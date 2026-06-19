@@ -9,7 +9,7 @@
  * дня запускает preview, на mouse-up вызывается onCommitExtend(days) — RentalCard
  * открывает PaymentAcceptDialog с предзаполненным числом дней.
  */
-import { useMemo, useState, type Ref } from "react";
+import { useEffect, useMemo, useState, type Ref } from "react";
 import { CalendarCog, SquareParking, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DragExtendCalendar } from "./DragExtendCalendar";
@@ -27,6 +27,7 @@ import {
   useCreateParking,
   useEndParking,
   useDeleteParking,
+  parkingAmount,
   PARKING_MAX_DAYS,
 } from "@/lib/api/parking";
 import { toast } from "@/lib/toast";
@@ -215,6 +216,10 @@ export function CalendarPanel({
   const deleteParking = useDeleteParking();
   const [parkingMode, setParkingMode] = useState(false);
   const [draftStart, setDraftStart] = useState<string | null>(null);
+  // Конец выбранного периода (фиксируется 2-м кликом, жёлтым) + наведённая
+  // дата (live-превью периода/суммы при перетягивании по календарю).
+  const [draftEnd, setDraftEnd] = useState<string | null>(null);
+  const [parkingHoverEnd, setParkingHoverEnd] = useState<string | null>(null);
   // v0.8.27 (G4): паркинг открытый — выбираем только дату начала; конец
   // определяется ручным/авто снятием. Тумблер «первый день бесплатно».
   const [freeFirstDay, setFreeFirstDay] = useState(true);
@@ -452,9 +457,18 @@ export function CalendarPanel({
       startIso: s.startDate,
       endIso: s.endDate,
     }));
-    if (draftStart) ranges.push({ startIso: draftStart, endIso: draftStart });
+    // Черновик периода — жёлтым: от начала до зафиксированного конца, либо до
+    // наведённой даты (live-превью), либо одиночный день начала.
+    if (draftStart) {
+      const end =
+        draftEnd ??
+        (parkingHoverEnd && parkingHoverEnd >= draftStart
+          ? parkingHoverEnd
+          : draftStart);
+      ranges.push({ startIso: draftStart, endIso: end });
+    }
     return ranges;
-  }, [sessions, draftStart]);
+  }, [sessions, draftStart, draftEnd, parkingHoverEnd]);
 
   // F3: периоды УЖЕ существующих сессий (без черновика) — их дни нельзя
   // выбрать повторно. Один день не может попасть в паркинг дважды.
@@ -472,28 +486,51 @@ export function CalendarPanel({
   // Двухкликовый выбор ПЕРИОДА паркинга: 1-й клик — начало, 2-й — конец
   // (в пределах 7 дн). Как выбрали конец — открываем паркинг-дровер.
   const handleParkingPick = (iso: string) => {
-    if (!draftStart) {
+    // Новый выбор начинается, если периода ещё нет или он уже завершён —
+    // ОСТАёМСЯ в режиме паркинга, пока не оплатим/в-долг/отмена.
+    if (!draftStart || draftEnd) {
       setDraftStart(iso);
+      setDraftEnd(null);
+      setParkingHoverEnd(null);
       return;
     }
     if (iso >= draftStart && inclusiveDaysP(draftStart, iso) <= PARKING_MAX_DAYS) {
       const s = draftStart;
       const d = inclusiveDaysP(s, iso);
-      setParkingMode(false);
-      setDraftStart(null);
+      // Фиксируем период (жёлтым) и открываем/обновляем дровер; режим паркинга
+      // НЕ выходим — повторный клик перевыберет период (синхронно дроверу).
+      setDraftEnd(iso);
+      setParkingHoverEnd(null);
       if (onParkingPeriod) onParkingPeriod(s, d);
       else setLocalPeriod({ startDate: s, days: d });
       return;
     }
     // клик раньше начала или > лимита — начинаем период заново с этого дня
     setDraftStart(iso);
+    setDraftEnd(null);
+    setParkingHoverEnd(null);
   };
 
   const exitParking = () => {
     setParkingMode(false);
     setDraftStart(null);
+    setDraftEnd(null);
+    setParkingHoverEnd(null);
     setFreeFirstDay(true);
   };
+
+  // Родитель закрыл паркинг-дровер (Оплатить / В долг / Отмена) → он бампает
+  // resetSignal. Это наш сигнал выйти из режима паркинга и очистить черновик
+  // периода. Пока дровер открыт, parkingMode остаётся включённым, поэтому
+  // повторный клик по календарю перевыбирает период (синхронно с дровером).
+  useEffect(() => {
+    setParkingMode(false);
+    setDraftStart(null);
+    setDraftEnd(null);
+    setParkingHoverEnd(null);
+    setFreeFirstDay(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resetSignal]);
 
   // «Просто поставить» — открытый паркинг (постоплата) мгновенно с сегодня,
   // без дровера (оплата по факту при снятии).
@@ -572,7 +609,10 @@ export function CalendarPanel({
           rental={rental}
           startIso={localPeriod.startDate}
           days={localPeriod.days}
-          onClose={() => setLocalPeriod(null)}
+          onClose={() => {
+            setLocalPeriod(null);
+            exitParking();
+          }}
         />
       )}
       {/* v0.6.49: заголовок «ДАТА ВОЗВРАТА» — uppercase серым по эталону.
@@ -711,21 +751,53 @@ export function CalendarPanel({
 
       {/* v0.8.28 (H6): сводка открытого паркинга. Тумблер «1-й день бесплатно»
           убран с карточки — все расчёты происходят на этапе «Принять оплату». */}
-      {parkingMode && (
-        <div className="mb-2.5 rounded-[10px] border border-yellow-300 bg-yellow-50 px-3 py-2 text-[12px] text-yellow-900">
-          {!draftStart ? (
-            <span>
-              Кликните на календаре <b>дату начала</b> периода паркинга (можно и
-              вперёд).
-            </span>
-          ) : (
-            <span>
-              Начало <b>{isoToShort(draftStart)}</b> · кликните <b>дату конца</b>{" "}
-              (макс {PARKING_MAX_DAYS} дн) — откроется окно оплаты.
-            </span>
-          )}
-        </div>
-      )}
+      {parkingMode &&
+        (() => {
+          // Live-конец периода: зафиксированный 2-м кликом → наведённый при
+          // перетягивании → нет. Пока тянем по календарю, считаем дни и сумму
+          // тут же, ничего не фиксируя.
+          const liveEnd =
+            draftStart == null
+              ? null
+              : (draftEnd ??
+                (parkingHoverEnd && parkingHoverEnd >= draftStart
+                  ? parkingHoverEnd
+                  : null));
+          const liveDays =
+            draftStart && liveEnd ? inclusiveDaysP(draftStart, liveEnd) : 0;
+          const liveAmount = liveDays
+            ? parkingAmount(liveDays, freeFirstDay)
+            : 0;
+          return (
+            <div className="mb-2.5 rounded-[10px] border border-yellow-300 bg-yellow-50 px-3 py-2 text-[12px] text-yellow-900">
+              {!draftStart ? (
+                <span>
+                  Кликните на календаре <b>дату начала</b> периода паркинга
+                  (можно и вперёд).
+                </span>
+              ) : !liveEnd ? (
+                <span>
+                  Начало <b>{isoToShort(draftStart)}</b> · наведите/кликните{" "}
+                  <b>дату конца</b> (макс {PARKING_MAX_DAYS} дн).
+                </span>
+              ) : (
+                <div className="flex items-center justify-between gap-2">
+                  <span>
+                    Паркинг{" "}
+                    <b>
+                      {isoToShort(draftStart)}–{isoToShort(liveEnd)}
+                    </b>{" "}
+                    · <b>{liveDays}</b> дн
+                    {freeFirstDay ? " · 1-й день бесплатно" : ""}
+                  </span>
+                  <span className="shrink-0 font-semibold tabular-nums">
+                    {fmtNum(liveAmount)} ₽
+                  </span>
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
       {/* v0.6.50: «Изменить период» правится ПРЯМО на календаре — новую дату
           возврата оператор кликает на той же сетке (текущий период там
@@ -947,6 +1019,7 @@ export function CalendarPanel({
               parkingRanges={parkingRanges}
               parkingOccupiedRanges={parkingOccupiedRanges}
               onParkingPick={handleParkingPick}
+              onParkingHover={(iso) => setParkingHoverEnd(iso)}
               parkingSelectableFromIso={selFrom}
               parkingSelectableToIso={selTo}
               editPeriodMode={editMode}
