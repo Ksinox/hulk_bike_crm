@@ -31,7 +31,7 @@ import {
 } from "@/lib/api/parking";
 import { toast } from "@/lib/toast";
 import { ApiError } from "@/lib/api";
-import { ParkingDialog } from "./ParkingDialog";
+import { ParkingDrawer } from "./ParkingDialog";
 
 /** DD.MM.YYYY → YYYY-MM-DD */
 function ruToIso(ru: string | undefined | null): string | null {
@@ -206,6 +206,7 @@ export function CalendarPanel({
   // Окно постановки/оплаты паркинга (оба режима). Заменяет старый календарный
   // режим выбора даты — он оставлен дормантным под флагом parkingMode.
   const [payDialogOpen, setPayDialogOpen] = useState(false);
+  const [parkingMenuOpen, setParkingMenuOpen] = useState(false);
 
   /* ---- v0.6.50 «ИЗМЕНИТЬ ПЕРИОД» ---- */
   // Коррекция аренды: перевыбор ТОЛЬКО даты возврата (старт фиксирован).
@@ -456,13 +457,40 @@ export function CalendarPanel({
     setFreeFirstDay(true);
   };
 
+  // «Просто поставить» — открытый паркинг (постоплата) мгновенно с сегодня,
+  // без дровера (оплата по факту при снятии).
+  const instantOpenParking = () => {
+    const today = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Europe/Moscow",
+    }).format(new Date());
+    createParking.mutate(
+      { rentalId: rental.id, startDate: today, freeFirstDay: true },
+      {
+        onSuccess: () =>
+          toast.success("Поставлен на паркинг", "Открытый · оплата по факту"),
+        onError: (err) => {
+          const overlap =
+            err instanceof ApiError &&
+            err.status === 400 &&
+            (err.body as { error?: string } | null)?.error ===
+              "parking_overlap";
+          toast.error(
+            overlap
+              ? "Период паркинга пересекается с уже существующим"
+              : "Не удалось поставить на паркинг",
+          );
+        },
+      },
+    );
+  };
+
   const toggleParkingButton = () => {
     if (!parkingMode) {
-      // Открываем окно паркинга (оба режима + оплата). Старый календарный
-      // режим (parkingMode/draftStart) оставлен дормантным.
+      // Меню выбора: «просто поставить» (открытый) / «на период» (дровер оплаты).
+      // Старый календарный режим (parkingMode/draftStart) оставлен дормантным.
       setEditMode(false);
       setEditEndIso(null);
-      setPayDialogOpen(true);
+      setParkingMenuOpen((v) => !v);
       return;
     }
     // повторный клик = зафиксировать (нужна выбранная дата начала)
@@ -502,11 +530,7 @@ export function CalendarPanel({
   return (
     <div className="rounded-2xl bg-surface border border-border shadow-card-sm p-4">
       {payDialogOpen && (
-        <ParkingDialog
-          rentalId={rental.id}
-          minStartIso={startIso}
-          onClose={() => setPayDialogOpen(false)}
-        />
+        <ParkingDrawer rental={rental} onClose={() => setPayDialogOpen(false)} />
       )}
       {/* v0.6.49: заголовок «ДАТА ВОЗВРАТА» — uppercase серым по эталону.
           v0.8.0: кнопка 🅿 справа — вход/фиксация режима паркинга. */}
@@ -580,29 +604,57 @@ export function CalendarPanel({
                 <SquareParking size={14} /> Снять с паркинга
               </button>
             ) : (
-              <button
-                type="button"
-                onClick={toggleParkingButton}
-                disabled={parkingMode && !draftStart}
-                title={
-                  parkingMode ? "Зафиксировать паркинг" : "Поставить на паркинг"
-                }
-                className={cn(
-                  "inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-[12px] font-semibold shadow-sm transition-colors active:scale-[0.98] disabled:opacity-60",
-                  parkingMode
-                    ? draftStart
-                      ? "border-yellow-500 bg-yellow-400 text-yellow-950 hover:bg-yellow-500"
-                      : "border-yellow-300 bg-yellow-100 text-yellow-800"
-                    : "border-yellow-300 bg-yellow-100 text-yellow-900 hover:border-yellow-400 hover:bg-yellow-200",
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={toggleParkingButton}
+                  title="Поставить на паркинг"
+                  className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-yellow-300 bg-yellow-100 px-3 text-[12px] font-semibold text-yellow-900 shadow-sm transition-colors hover:border-yellow-400 hover:bg-yellow-200 active:scale-[0.98]"
+                >
+                  <SquareParking size={14} /> Поставить на паркинг
+                </button>
+                {parkingMenuOpen && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-20"
+                      onClick={() => setParkingMenuOpen(false)}
+                    />
+                    <div className="absolute right-0 top-[calc(100%+4px)] z-30 w-60 overflow-hidden rounded-xl border border-border bg-surface py-1 shadow-card-lg">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setParkingMenuOpen(false);
+                          instantOpenParking();
+                        }}
+                        className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left hover:bg-surface-soft"
+                      >
+                        <span className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-ink">
+                          <SquareParking size={13} className="text-yellow-600" />{" "}
+                          Просто поставить
+                        </span>
+                        <span className="text-[11px] text-muted-2">
+                          Открытый · оплата по факту при снятии
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setParkingMenuOpen(false);
+                          setPayDialogOpen(true);
+                        }}
+                        className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left hover:bg-surface-soft"
+                      >
+                        <span className="text-[13px] font-semibold text-ink">
+                          На период · оплата
+                        </span>
+                        <span className="text-[11px] text-muted-2">
+                          Выбрать дни и сразу оплатить (или в долг)
+                        </span>
+                      </button>
+                    </div>
+                  </>
                 )}
-              >
-                <SquareParking size={14} />
-                {parkingMode
-                  ? draftStart
-                    ? "Зафиксировать"
-                    : "Выберите дату"
-                  : "Поставить на паркинг"}
-              </button>
+              </div>
                 )}
               </>
             )}
