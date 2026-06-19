@@ -22,6 +22,8 @@ export type ParkingSession = {
   days: number;
   ratePerDay: number;
   freeFirstDay: boolean;
+  /** true — предоплаченный фиксированный период (дни закреплены); false — открытый. */
+  prepaid: boolean;
   amount: number;
   paidAmount: number;
   status: "active" | "ended";
@@ -82,15 +84,21 @@ function useInvalidateParking() {
 export function useCreateParking() {
   const invalidate = useInvalidateParking();
   return useMutation({
-    // v0.8.27 (G4): открытый паркинг — задаём дату начала + «1-й день бесплатно».
+    // Открытый паркинг — дата начала; предоплата — ещё endDate (фикс. период).
     mutationFn: (args: {
       rentalId: number;
       startDate: string;
+      /** Задан → предоплаченный фиксированный период [startDate, endDate]. */
+      endDate?: string;
       freeFirstDay: boolean;
     }) =>
       api.post<{ session: ParkingSession }>(
         `/api/rentals/${args.rentalId}/parking`,
-        { startDate: args.startDate, freeFirstDay: args.freeFirstDay },
+        {
+          startDate: args.startDate,
+          freeFirstDay: args.freeFirstDay,
+          ...(args.endDate ? { endDate: args.endDate } : {}),
+        },
       ),
     onSuccess: invalidate,
   });
