@@ -16,10 +16,25 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { AlertTriangle, CheckCircle2, Info, X } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Info,
+  Undo2,
+  X,
+  XOctagon,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export type ToastKind = "info" | "success" | "error" | "warn";
+
+/** Действие «Отменить» в тосте: пока идёт полоса-таймер (ttl), клик откатывает
+ *  только что сделанную операцию (наш rollback). Не успел — тост исчезнет, но
+ *  откат всё ещё доступен в хронологии события. */
+export type ToastAction = {
+  label: string;
+  onAct: () => void | Promise<void>;
+};
 
 export type Toast = {
   id: string;
@@ -27,6 +42,7 @@ export type Toast = {
   title: string;
   message?: string;
   ttl: number;
+  action?: ToastAction;
 };
 
 type Listener = (toasts: Toast[]) => void;
@@ -43,9 +59,10 @@ function push(
   title: string,
   message?: string,
   ttl = 4500,
+  action?: ToastAction,
 ): string {
   const id = `t_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-  state.toasts = [...state.toasts, { id, kind, title, message, ttl }];
+  state.toasts = [...state.toasts, { id, kind, title, message, ttl, action }];
   emit();
   return id;
 }
@@ -60,6 +77,23 @@ export const toast = {
   success: (title: string, message?: string) => push("success", title, message),
   error: (title: string, message?: string) => push("error", title, message, 6000),
   warn: (title: string, message?: string) => push("warn", title, message, 5500),
+  /**
+   * Тост со встроенной кнопкой отмены и полосой-таймером (по умолчанию 10 сек).
+   * onAct вызывается при клике «Отменить» (наш откат операции). По умолчанию
+   * вид success — «сделано, можно отменить».
+   */
+  action: (opts: {
+    kind?: ToastKind;
+    title: string;
+    message?: string;
+    actionLabel?: string;
+    onAction: () => void | Promise<void>;
+    ttl?: number;
+  }) =>
+    push(opts.kind ?? "success", opts.title, opts.message, opts.ttl ?? 10000, {
+      label: opts.actionLabel ?? "Отменить",
+      onAct: opts.onAction,
+    }),
   dismiss,
 };
 
@@ -78,7 +112,13 @@ export function useToasts(): Toast[] {
 export function ToastContainer() {
   const toasts = useToasts();
   return (
-    <div className="pointer-events-none fixed bottom-4 right-4 z-[1000] flex max-w-[380px] flex-col gap-2">
+    <div className="pointer-events-none fixed bottom-4 right-4 z-[1000] flex w-full max-w-sm flex-col gap-2.5">
+      <style>{`
+@keyframes toastSpringIn{0%{opacity:0;transform:translateY(18px) scale(.9)}55%{opacity:1;transform:translateY(-3px) scale(1.015)}100%{transform:translateY(0) scale(1)}}
+@keyframes toastBar{from{transform:scaleX(1)}to{transform:scaleX(0)}}
+.toast-bar{animation:toastBar linear forwards;transform-origin:left}
+.toast-row:hover .toast-bar{animation-play-state:paused}
+`}</style>
       {toasts.map((t) => (
         <ToastRow key={t.id} toast={t} />
       ))}
@@ -86,76 +126,131 @@ export function ToastContainer() {
   );
 }
 
+const TOAST_ICON = {
+  success: CheckCircle2,
+  warn: AlertTriangle,
+  info: Info,
+  error: XOctagon,
+} as const;
+
+// Светлый стиль (как AlertToast default): белый фон, цветная рамка/иконка.
+const TOAST_BORDER: Record<ToastKind, string> = {
+  success: "border-green/40",
+  warn: "border-amber-300",
+  info: "border-blue-300",
+  error: "border-red/40",
+};
+const TOAST_ICON_CLS: Record<ToastKind, string> = {
+  success: "text-green-ink",
+  warn: "text-amber-500",
+  info: "text-blue-500",
+  error: "text-red",
+};
+const TOAST_BAR_CLS: Record<ToastKind, string> = {
+  success: "bg-green",
+  warn: "bg-amber-400",
+  info: "bg-blue-500",
+  error: "bg-red",
+};
+
 function ToastRow({ toast: t }: { toast: Toast }) {
-  const ref = useRef<HTMLDivElement>(null);
   const [closing, setClosing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  // Пауза таймера авто-закрытия при наведении (чтобы успеть прочитать/отменить).
+  const remainingRef = useRef(t.ttl);
+  const startRef = useRef(0);
+  const timerRef = useRef<number | null>(null);
+
+  const close = () => {
+    setClosing(true);
+    window.setTimeout(() => dismiss(t.id), 200);
+  };
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setClosing(true);
-      window.setTimeout(() => dismiss(t.id), 180);
-    }, t.ttl);
-    return () => window.clearTimeout(timer);
-  }, [t.id, t.ttl]);
+    const startTimer = () => {
+      startRef.current = performance.now();
+      timerRef.current = window.setTimeout(close, remainingRef.current);
+    };
+    startTimer();
+    return () => {
+      if (timerRef.current) window.clearTimeout(timerRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [t.id]);
 
-  const Icon =
-    t.kind === "success"
-      ? CheckCircle2
-      : t.kind === "error"
-        ? AlertTriangle
-        : t.kind === "warn"
-          ? AlertTriangle
-          : Info;
+  const pause = () => {
+    if (timerRef.current) {
+      window.clearTimeout(timerRef.current);
+      remainingRef.current -= performance.now() - startRef.current;
+    }
+  };
+  const resume = () => {
+    startRef.current = performance.now();
+    timerRef.current = window.setTimeout(close, Math.max(300, remainingRef.current));
+  };
 
-  const colors =
-    t.kind === "success"
-      ? "border-green/40 bg-green-soft"
-      : t.kind === "error"
-        ? "border-red/40 bg-red-soft"
-        : t.kind === "warn"
-          ? "border-amber-400/40 bg-amber-50"
-          : "border-blue-600/30 bg-blue-50";
-  const iconCls =
-    t.kind === "success"
-      ? "text-green-ink"
-      : t.kind === "error"
-        ? "text-red-ink"
-        : t.kind === "warn"
-          ? "text-amber-700"
-          : "text-blue-700";
+  const Icon = TOAST_ICON[t.kind];
+
+  const onUndo = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await t.action?.onAct();
+    } finally {
+      close();
+    }
+  };
 
   return (
     <div
-      ref={ref}
+      onMouseEnter={pause}
+      onMouseLeave={resume}
+      role="alert"
       className={cn(
-        "pointer-events-auto flex items-start gap-2.5 rounded-2xl border bg-surface p-3 shadow-card-lg transition-all",
-        colors,
-        closing
-          ? "translate-x-6 opacity-0"
-          : "animate-toast-in translate-x-0 opacity-100",
+        "toast-row pointer-events-auto relative w-full overflow-hidden rounded-xl border bg-surface shadow-card-lg",
+        TOAST_BORDER[t.kind],
+        closing ? "translate-x-4 opacity-0 transition-all duration-200" : "",
       )}
+      style={closing ? undefined : { animation: "toastSpringIn .42s cubic-bezier(.34,1.56,.64,1) both" }}
     >
-      <div className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-lg", iconCls)}>
-        <Icon size={16} />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="text-[13px] font-bold text-ink">{t.title}</div>
-        {t.message && (
-          <div className="mt-0.5 text-[12px] leading-snug text-ink-2">
-            {t.message}
+      <div className="flex items-start gap-3 p-3.5">
+        <Icon size={20} className={cn("mt-px shrink-0", TOAST_ICON_CLS[t.kind])} />
+        <div className="min-w-0 flex-1">
+          <div className="text-[13.5px] font-semibold leading-tight text-ink">
+            {t.title}
           </div>
-        )}
+          {t.message && (
+            <div className="mt-0.5 text-[12.5px] leading-snug text-ink-2">
+              {t.message}
+            </div>
+          )}
+          {t.action && (
+            <button
+              type="button"
+              onClick={onUndo}
+              disabled={busy}
+              className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-surface-soft px-2.5 py-1 text-[12px] font-bold text-ink ring-1 ring-inset ring-border transition-colors hover:bg-border disabled:opacity-60"
+            >
+              <Undo2 size={12} /> {busy ? "Отменяем…" : t.action.label}
+            </button>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={close}
+          aria-label="Закрыть"
+          className="-mr-1 -mt-1 shrink-0 rounded-full p-1 text-muted-2 transition-colors hover:bg-surface-soft hover:text-ink"
+        >
+          <X size={15} />
+        </button>
       </div>
-      <button
-        type="button"
-        onClick={() => {
-          setClosing(true);
-          window.setTimeout(() => dismiss(t.id), 150);
-        }}
-        className="shrink-0 text-muted-2 hover:text-ink"
-      >
-        <X size={14} />
-      </button>
+      {/* Полоса-таймер снизу: бежит за ttl, на hover — пауза. */}
+      {!closing && (
+        <div
+          className={cn("toast-bar absolute bottom-0 left-0 h-[3px] w-full", TOAST_BAR_CLS[t.kind])}
+          style={{ animationDuration: `${t.ttl}ms` }}
+        />
+      )}
     </div>
   );
 }
