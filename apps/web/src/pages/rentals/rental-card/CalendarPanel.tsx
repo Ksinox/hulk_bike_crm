@@ -437,8 +437,17 @@ export function CalendarPanel({
   const removeParking = () => {
     if (!activeSession) return;
     const args = { rentalId: rental.id, sessionId: activeSession.id };
+    const dbg = (window as unknown as { __rp?: Record<string, unknown> });
+    dbg.__rp = {
+      prepaid: activeSession.prepaid,
+      startDate: activeSession.startDate,
+      today: todayIso(),
+      sessionId: activeSession.id,
+      branch: "?",
+    };
     // Будущий паркинг — просто удаляем (накопления нет).
     if (activeSession.startDate > todayIso()) {
+      dbg.__rp.branch = "future";
       deleteParking.mutate(args, {
         onSuccess: () => toast.success("Паркинг отменён"),
         onError: () => toast.error("Не удалось снять с паркинга"),
@@ -447,18 +456,24 @@ export function CalendarPanel({
     }
     // Предоплаченный — закрываем (ранний пересчёт-на-депозит — отдельный этап).
     if (activeSession.prepaid) {
+      dbg.__rp.branch = "prepaid";
       endParking.mutate(args, {
         onSuccess: () => toast.success("Снят с паркинга", "Возврат пересчитан"),
         onError: () => toast.error("Не удалось снять с паркинга"),
       });
       return;
     }
+    dbg.__rp.branch = "open";
     // ОТКРЫТЫЙ (постоплата): закрываем сессию и открываем окно оплаты с
     // накопленной суммой → Оплатить (нал/перевод/депозит) или закрыть → долг.
     endParking
       .mutateAsync(args)
       .then((res) => {
         const s = res.session;
+        (window as unknown as { __rpThen?: unknown }).__rpThen = {
+          amount: s?.amount,
+          paidAmount: s?.paidAmount,
+        };
         const unpaid = Math.max(0, s.amount - s.paidAmount);
         if (unpaid <= 0) {
           toast.success("Снят с паркинга");
@@ -475,7 +490,10 @@ export function CalendarPanel({
         if (onParkingPeriod) onParkingPeriod(s.startDate, s.days, settle);
         else setLocalPeriod({ startDate: s.startDate, days: s.days, settle });
       })
-      .catch(() => toast.error("Не удалось снять с паркинга"));
+      .catch((e) => {
+        (window as unknown as { __rpCatch?: unknown }).__rpCatch = String(e);
+        toast.error("Не удалось снять с паркинга");
+      });
   };
 
   // Вход в режим по сигналу из ⋯-меню.
