@@ -573,7 +573,7 @@ export function formatActivitySummary(
     return { title: "Откат продления", change, extras };
   }
 
-  // ── Платёж ──
+  // ── Платёж / выдача средств ──
   if (
     action.includes("payment") ||
     action.includes("paid") ||
@@ -581,7 +581,29 @@ export function formatActivitySummary(
   ) {
     const pay = readRecord(diff?.payment);
     const m = readRecord(item.meta);
-    const amount = pay?.to ?? m?.amount;
+    // Сумма: diff.payment.to → meta.amount → Σ meta.applied[].amount → из summary.
+    // (У платежей по клиенту/делу/депозиту структурной суммы нет — раньше из-за
+    //  этого показывался голый «Принят платёж» без суммы и назначения.)
+    let amount: number | null =
+      typeof pay?.to === "number"
+        ? pay.to
+        : typeof m?.amount === "number"
+          ? m.amount
+          : null;
+    const applied = m?.applied;
+    if (amount == null && Array.isArray(applied)) {
+      const s = (applied as unknown[]).reduce(
+        (acc: number, a) => acc + (Number(readRecord(a)?.amount) || 0),
+        0,
+      );
+      if (s > 0) amount = s;
+    }
+    if (amount == null) {
+      const mm = /(\d[\d\s ]*)\s*₽/.exec(item.summary || "");
+      if (mm) amount = Number(mm[1].replace(/[\s ]/g, "")) || null;
+    }
+    const isPayout = /paid_out|payout/.test(action);
+    const kind = typeof m?.kind === "string" ? m.kind : null;
     // v0.8.25 (F9): назначение платежа — чтобы было видно «за что».
     const KIND_LABEL: Record<string, string> = {
       overdue_days_payment: "за просроченные дни",
@@ -591,24 +613,47 @@ export function formatActivitySummary(
       parking: "за паркинг",
       damage: "по акту ущерба",
     };
-    const extras: string[] = [];
-    const kind = typeof m?.kind === "string" ? m.kind : null;
-    if (kind && KIND_LABEL[kind]) extras.push(`Назначение: ${KIND_LABEL[kind]}`);
-    if (typeof m?.comment === "string" && m.comment.trim())
-      extras.push(`«${m.comment.trim()}»`);
-    if (typeof m?.endPlannedShift === "number" && m.endPlannedShift > 0)
-      extras.push(`Возврат сдвинут на ${m.endPlannedShift} дн`);
-    if (typeof m?.residualToDeposit === "number" && m.residualToDeposit > 0)
-      extras.push(`Остаток ${money(m.residualToDeposit)} → депозит клиента`);
+
+    // Платёж по аренде со структурой — привычный вид «Принят платёж» + назначение.
+    if (item.entity === "rental" && (kind != null || pay?.to != null)) {
+      const extras: string[] = [];
+      if (kind && KIND_LABEL[kind]) extras.push(`Назначение: ${KIND_LABEL[kind]}`);
+      if (typeof m?.comment === "string" && m.comment.trim())
+        extras.push(`«${m.comment.trim()}»`);
+      if (typeof m?.endPlannedShift === "number" && m.endPlannedShift > 0)
+        extras.push(`Возврат сдвинут на ${m.endPlannedShift} дн`);
+      if (typeof m?.residualToDeposit === "number" && m.residualToDeposit > 0)
+        extras.push(`Остаток ${money(m.residualToDeposit)} → депозит клиента`);
+      return {
+        title: "Принят платёж",
+        change:
+          amount != null
+            ? { from: null, to: money(amount), tone: "green" }
+            : null,
+        extras,
+        headline:
+          amount != null
+            ? { text: `+${money(amount)}`, tone: "green" }
+            : undefined,
+      };
+    }
+
+    // Прочие денежные движения (клиент/дело/депозит): summary самодостаточен
+    // («Погашение сквозного долга по ущербу 3000 ₽», «D-009: платёж 10 000 ₽…»,
+    //  «Депозит выдан клиенту −2500 ₽…») — он и есть заголовок. Выдача — красным.
     return {
-      title: "Принят платёж",
-      change:
-        amount != null
-          ? { from: null, to: money(amount), tone: "green" }
-          : null,
-      extras,
+      title:
+        (item.summary || "").trim() ||
+        (isPayout ? "Выдача средств" : "Принят платёж"),
+      change: null,
+      extras: [],
       headline:
-        amount != null ? { text: `+${money(amount)}`, tone: "green" } : undefined,
+        amount != null
+          ? {
+              text: `${isPayout ? "−" : "+"}${money(amount)}`,
+              tone: isPayout ? "red" : "green",
+            }
+          : undefined,
     };
   }
 
