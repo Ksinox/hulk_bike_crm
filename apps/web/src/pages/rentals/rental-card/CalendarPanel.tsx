@@ -783,8 +783,8 @@ export function CalendarPanel({
             <div className="mb-2.5 rounded-[10px] border border-yellow-300 bg-yellow-50 px-3 py-2 text-[12px] text-yellow-900">
               {!draftStart ? (
                 <span>
-                  Кликните на календаре <b>дату начала</b> периода паркинга
-                  (можно и вперёд).
+                  Кликните <b>дату начала</b> паркинга — можно задним числом (по
+                  прошедшим/просроченным дням) или вперёд.
                 </span>
               ) : !liveEnd ? (
                 <span>

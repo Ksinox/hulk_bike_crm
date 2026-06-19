@@ -564,8 +564,30 @@ export function DragExtendCalendar({
     } else if (zone) {
       const prevK = fromJsDate(new Date(k.y, k.m, k.d - 1));
       const nextK = fromJsDate(new Date(k.y, k.m, k.d + 1));
-      const isLeftEdge = zoneOf(prevK) == null;
-      const isRightEdge = zoneOf(nextK) == null;
+      const prevZ = zoneOf(prevK);
+      const nextZ = zoneOf(nextK);
+      // v0.8.x: в режиме паркинга период аренды (blue/red) ПРИГЛУШАЕМ — как
+      // только вошли в режим, календарь читается как поверхность выбора
+      // паркинга. Дни при этом остаются кликабельными: паркинг можно отметить
+      // и задним числом, поверх уже прошедших/просроченных дней аренды (если
+      // оператор забыл поставить раньше). Просрочка остаётся бледно-красной —
+      // оператору видно, какие дни «лишние» и просятся в паркинг.
+      const mutedRental =
+        parkingMode && (zone === "blue" || zone === "red");
+      const isRentalZone = (z: ReturnType<typeof zoneOf>) =>
+        z === "blue" || z === "red";
+      // Края скругляем по принадлежности к ТОЙ ЖЕ визуальной группе:
+      //  • паркинг — сосед не паркинг (жёлтые «ручки» даже внутри аренды);
+      //  • приглушённая аренда — сосед не аренда (единая серо-цветная полоса);
+      //  • обычные зоны — сосед пустой (как было раньше).
+      const sameGroup = (z: ReturnType<typeof zoneOf>): boolean =>
+        zone === "parking"
+          ? z === "parking"
+          : mutedRental
+            ? isRentalZone(z)
+            : z != null;
+      const isLeftEdge = !sameGroup(prevZ);
+      const isRightEdge = !sameGroup(nextZ);
       const isEdge = isLeftEdge || isRightEdge;
 
       const colorCls =
@@ -573,13 +595,17 @@ export function DragExtendCalendar({
           ? isEdge
             ? "bg-yellow-400 text-yellow-950"
             : "bg-yellow-200 text-yellow-900"
-          : isEdge
-            ? "bg-ink text-white"
-            : zone === "blue"
-              ? "bg-blue-200 text-blue-900"
-              : zone === "red"
-                ? "bg-red-200 text-red-900"
-                : "bg-emerald-200 text-emerald-900";
+          : mutedRental
+            ? zone === "red"
+              ? "bg-red-100/60 text-red-400"
+              : "bg-blue-100/50 text-blue-400"
+            : isEdge
+              ? "bg-ink text-white"
+              : zone === "blue"
+                ? "bg-blue-200 text-blue-900"
+                : zone === "red"
+                  ? "bg-red-200 text-red-900"
+                  : "bg-emerald-200 text-emerald-900";
 
       const roundCls =
         isLeftEdge && isRightEdge
