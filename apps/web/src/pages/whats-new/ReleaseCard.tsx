@@ -45,18 +45,32 @@ export function ReleaseCard({
       <div className="relative overflow-hidden rounded-2xl bg-ink px-5 py-5 text-white shadow-card">
         {/* мягкое синее свечение в углу — фирменный акцент, не AI-градиент */}
         <div className="pointer-events-none absolute -right-20 -top-20 h-56 w-56 rounded-full bg-blue-600/30 blur-[80px]" />
-        <div className="relative flex flex-wrap items-end gap-x-6 gap-y-3">
-          <div className="shrink-0">
-            <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/55">
-              Версия
+        <div className="relative flex flex-col gap-3">
+          {/* Строка: версия слева + счётчик правок справа */}
+          <div className="flex items-end justify-between gap-4">
+            <div className="min-w-0">
+              <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/55">
+                Версия
+              </div>
+              <div className="font-display text-[40px] font-extrabold leading-none tabular-nums sm:text-[44px]">
+                <span className="mr-0.5 align-top text-[22px] text-white/40 sm:text-[24px]">
+                  v
+                </span>
+                {release.version}
+              </div>
             </div>
-            <div className="font-display text-[44px] font-extrabold leading-none tabular-nums">
-              <span className="mr-0.5 align-top text-[24px] text-white/40">v</span>
-              {release.version}
+            <div className="shrink-0 text-right">
+              <div className="font-display text-[28px] font-extrabold leading-none tabular-nums sm:text-[30px]">
+                {release.commitCount}
+              </div>
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-white/55">
+                {pluralRu(release.commitCount, "правка", "правки", "правок")}
+              </div>
             </div>
           </div>
 
-          <div className="min-w-0 flex-1">
+          {/* Бейдж + дата + заголовок — на всю ширину (не зажат между числами) */}
+          <div>
             <div className="flex flex-wrap items-center gap-2">
               {current && (
                 <span className="rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
@@ -67,18 +81,9 @@ export function ReleaseCard({
                 {formatDateRu(release.date)}
               </span>
             </div>
-            <h2 className="mt-1.5 font-display text-[18px] font-bold leading-tight text-white">
+            <h2 className="mt-1.5 font-display text-[17px] font-bold leading-snug text-white sm:text-[19px]">
               {release.title}
             </h2>
-          </div>
-
-          <div className="shrink-0 text-right">
-            <div className="font-display text-[30px] font-extrabold leading-none tabular-nums">
-              {release.commitCount}
-            </div>
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-white/55">
-              {pluralRu(release.commitCount, "правка", "правки", "правок")}
-            </div>
           </div>
         </div>
       </div>
