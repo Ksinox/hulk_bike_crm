@@ -185,14 +185,49 @@ export type ActivityContextParts = {
   rental?: { id: number; label: string };
 };
 
+/** Способ оплаты cash/transfer/deposit → человекочитаемо (или null). */
+function paymentMethodLabel(m: unknown): string | null {
+  if (m === "cash") return "наличные";
+  if (m === "transfer") return "перевод";
+  if (m === "deposit") return "из депозита";
+  return null;
+}
+
 /**
  * Разбирает событие в визуальную форму:
  *   • title  — короткий заголовок («Изменена экипировка»),
  *   • change — основное «было → стало» (две пилюли + стрелка),
  *   • extras — доп. последствия одной строкой (доплата, новая сумма).
  * Берёт структурированный meta.diff (см. apps/api/.../activityLog.ts).
+ *
+ * Обёртка над buildActivitySummary: УНИВЕРСАЛЬНО дописывает «Оплата: нал/перевод/
+ * из депозита» (meta.method) и «Возврат: …» (meta.refundTo) — чтобы по любому
+ * денежному событию хронологии было видно, как двигались деньги (запрос
+ * заказчика: восстановить полную картину аренды по событиям).
  */
 export function formatActivitySummary(
+  item: ApiActivityItem,
+): ActivitySummaryView {
+  const view = buildActivitySummary(item);
+  const m = readRecord(item.meta);
+  const method = paymentMethodLabel(m?.method);
+  if (method && !view.extras.some((e) => e.startsWith("Оплата:"))) {
+    view.extras = [...view.extras, `Оплата: ${method}`];
+  }
+  const refundTo = m?.refundTo;
+  if (
+    (refundTo === "cash" || refundTo === "deposit") &&
+    !view.extras.some((e) => e.startsWith("Возврат:"))
+  ) {
+    view.extras = [
+      ...view.extras,
+      `Возврат: ${refundTo === "cash" ? "налом клиенту" : "в депозит клиента"}`,
+    ];
+  }
+  return view;
+}
+
+function buildActivitySummary(
   item: ApiActivityItem,
 ): ActivitySummaryView {
   const action = item.action;
@@ -251,6 +286,14 @@ export function formatActivitySummary(
       extras.push(`${short(p.startDate)}–${short(p.endDate)}`);
     if (p?.days != null) extras.push(`${Number(p.days)} дн`);
     if (p?.amount != null) extras.push(money(p.amount));
+    // Досрочное снятие предоплаченного паркинга — излишек уходит в депозит.
+    const pm = readRecord(item.meta);
+    if (
+      action === "parking_ended" &&
+      pm?.refund != null &&
+      Number(pm.refund) > 0
+    )
+      extras.push(`Излишек ${money(pm.refund)} → депозит клиента`);
     return { title, change: null, extras };
   }
 
@@ -344,6 +387,10 @@ export function formatActivitySummary(
     const extras: string[] = [];
     const fl = feeLine();
     if (fl) extras.push(fl);
+    // Возврат разницы при замене на дешевле — уходит в депозит клиента.
+    const swapRefund = readRecord(diff?.refund);
+    if (swapRefund && swapRefund.to != null && Number(swapRefund.to) > 0)
+      extras.push(`Возврат ${money(swapRefund.to)} → депозит клиента`);
     // #20: причина замены — категория (reasonLabel) как основное «почему» +
     // необязательный комментарий-цитата. Legacy-свапы без категории
     // показывают старый свободный текст как и раньше.
@@ -735,6 +782,25 @@ export function formatActivitySummary(
     };
   }
 
+  // ── Пополнение залога ──
+  if (action.includes("security")) {
+    const dep = readRecord(diff?.deposit);
+    const m = readRecord(item.meta);
+    const amount = typeof m?.amount === "number" ? m.amount : null;
+    return {
+      title: "Пополнен залог",
+      change:
+        dep && (dep.from != null || dep.to != null)
+          ? { from: money(dep.from), to: money(dep.to), tone: "green" }
+          : null,
+      extras: [],
+      headline:
+        amount != null && amount > 0
+          ? { text: `+${money(amount)}`, tone: "green" }
+          : undefined,
+    };
+  }
+
   // ── Завершение / возврат завершения / статус ──
   if (action.includes("complet") || action.includes("status")) {
     const st = readRecord(diff?.status);
@@ -747,6 +813,16 @@ export function formatActivitySummary(
         `Пробег: ${Number(mileage.from).toLocaleString("ru-RU")} → ${Number(
           mileage.to,
         ).toLocaleString("ru-RU")} км`,
+      );
+    }
+    // Судьба залога при сдаче (meta.deposit) — вернули клиенту или удержали.
+    const dep = readRecord(readRecord(item.meta)?.deposit);
+    if (dep && dep.returned != null) {
+      const amt = Number(dep.amount ?? 0);
+      extras.push(
+        dep.returned
+          ? `Залог возвращён клиенту${amt > 0 ? `: ${money(amt)}` : ""}`
+          : `Залог удержан${amt > 0 ? `: ${money(amt)}` : ""}`,
       );
     }
     // #20: «Аренда завершена» вместо безликого «Изменён статус» — заказчик

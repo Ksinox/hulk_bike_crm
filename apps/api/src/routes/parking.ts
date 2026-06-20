@@ -696,7 +696,7 @@ export async function parkingRoutes(app: FastifyInstance) {
           entityId: rentalId,
           action: "parking_paid",
           summary: `Оплата паркинга: ${applied.toLocaleString("ru-RU")} ₽`,
-          meta: { parking: { amount: applied } },
+          meta: { parking: { amount: applied }, method },
         });
       }
 

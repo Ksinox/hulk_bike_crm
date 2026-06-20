@@ -410,7 +410,11 @@ export async function damageReportsRoutes(app: FastifyInstance) {
         entityId: id,
         action: "payment",
         summary: `Платёж за ущерб ${parsed.data.amount} ₽ по акту #${id}`,
-        meta: { paymentId: pay!.id, amount: parsed.data.amount },
+        meta: {
+          paymentId: pay!.id,
+          amount: parsed.data.amount,
+          method: parsed.data.method,
+        },
       });
       return await loadReportFull(id);
     },

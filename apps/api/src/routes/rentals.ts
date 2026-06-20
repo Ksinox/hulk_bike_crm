@@ -365,6 +365,9 @@ export async function rentalsRoutes(app: FastifyInstance) {
           customTariff: row.customTariff,
           equipment: compEquip,
         },
+        // Способ оплаты — только если при создании реально взяли платёж
+        // (issued && sum>0). Создание «в долг» метод не пишет.
+        method: issued && row.sum > 0 ? row.paymentMethod : undefined,
       },
     });
     return reply.code(201).send(row);
@@ -1590,6 +1593,14 @@ export async function rentalsRoutes(app: FastifyInstance) {
               }
             : {}),
         },
+        // Судьба залога при сдаче — чтобы по хронологии было видно, вернули
+        // клиенту или удержали и сколько (структурно, а не только в summary).
+        meta: {
+          deposit: {
+            returned: !!d.depositReturned,
+            amount: result.rental.deposit ?? 0,
+          },
+        },
       });
       // v0.4.60: лог изменения пробега скутера (на сущность scooter,
       // чтобы запись была видна в карточке скутера и в его таймлайне).
@@ -2005,6 +2016,11 @@ export async function rentalsRoutes(app: FastifyInstance) {
           newRate: d.newRate,
           newRateUnit: d.newRateUnit ?? "day",
           newEndPlannedAt: result.updated.endPlannedAt,
+          // Способ оплаты — только если продление оплатили сразу (не «в долг»).
+          method:
+            result.extraSum > 0 && d.autoMarkPaid
+              ? result.updated.paymentMethod
+              : undefined,
         },
         diff: {
           endPlannedAt: {
@@ -2967,6 +2983,12 @@ export async function rentalsRoutes(app: FastifyInstance) {
           remainingDays,
           totalDelta,
           payNow: parsed.data.payNow,
+          // Способ оплаты доплаты (если оплатили сразу) / куда ушёл возврат.
+          method:
+            totalDelta > 0 && parsed.data.payNow
+              ? parsed.data.method
+              : undefined,
+          refundTo: totalDelta < 0 ? parsed.data.refundTo : undefined,
         },
         diff: {
           items: {
@@ -4101,6 +4123,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
         kind: parsed.data.kind,
         comment: parsed.data.comment ?? null,
         amount: parsed.data.amount,
+        method: payMethod,
       },
       diff: {
         payment: {
