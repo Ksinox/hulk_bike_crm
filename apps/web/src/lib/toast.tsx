@@ -112,12 +112,15 @@ export function useToasts(): Toast[] {
 export function ToastContainer() {
   const toasts = useToasts();
   return (
-    <div className="pointer-events-none fixed bottom-5 right-5 z-[1000] flex w-full max-w-[440px] flex-col gap-3">
+    <div className="pointer-events-none fixed left-3 right-3 top-3 z-[1000] flex flex-col gap-2 sm:bottom-5 sm:left-auto sm:right-5 sm:top-auto sm:w-full sm:max-w-[440px] sm:gap-3">
       <style>{`
 @keyframes toastSpringIn{0%{opacity:0;transform:translateY(18px) scale(.9)}55%{opacity:1;transform:translateY(-3px) scale(1.015)}100%{transform:translateY(0) scale(1)}}
+@keyframes toastSpringInTop{0%{opacity:0;transform:translateY(-18px) scale(.94)}55%{opacity:1;transform:translateY(3px) scale(1.012)}100%{transform:translateY(0) scale(1)}}
 @keyframes toastBar{from{transform:scaleX(1)}to{transform:scaleX(0)}}
 .toast-bar{animation:toastBar linear forwards;transform-origin:left}
 .toast-row:hover .toast-bar{animation-play-state:paused}
+.toast-in{animation:toastSpringInTop .42s cubic-bezier(.34,1.56,.64,1) both}
+@media(min-width:640px){.toast-in{animation:toastSpringIn .42s cubic-bezier(.34,1.56,.64,1) both}}
 `}</style>
       {toasts.map((t) => (
         <ToastRow key={t.id} toast={t} />
@@ -209,18 +212,25 @@ function ToastRow({ toast: t }: { toast: Toast }) {
       className={cn(
         "toast-row pointer-events-auto relative w-full overflow-hidden rounded-xl border bg-surface shadow-card-lg",
         TOAST_BORDER[t.kind],
-        closing ? "translate-x-4 opacity-0 transition-all duration-200" : "",
+        closing
+          ? "-translate-y-2 opacity-0 transition-all duration-200 sm:translate-y-0 sm:translate-x-4"
+          : "toast-in",
       )}
-      style={closing ? undefined : { animation: "toastSpringIn .42s cubic-bezier(.34,1.56,.64,1) both" }}
     >
-      <div className="flex items-start gap-3.5 p-4 pb-[18px]">
-        <Icon size={26} className={cn("mt-0.5 shrink-0", TOAST_ICON_CLS[t.kind])} />
+      <div className="flex items-start gap-2.5 p-3 pb-3.5 sm:gap-3.5 sm:p-4 sm:pb-[18px]">
+        <Icon
+          size={26}
+          className={cn(
+            "mt-0.5 h-[22px] w-[22px] shrink-0 sm:h-[26px] sm:w-[26px]",
+            TOAST_ICON_CLS[t.kind],
+          )}
+        />
         <div className="min-w-0 flex-1">
-          <div className="text-[15.5px] font-bold leading-tight text-ink">
+          <div className="text-[14px] font-bold leading-tight text-ink sm:text-[15.5px]">
             {t.title}
           </div>
           {t.message && (
-            <div className="mt-1 text-[13.5px] leading-snug text-ink-2">
+            <div className="mt-0.5 text-[12.5px] leading-snug text-ink-2 sm:mt-1 sm:text-[13.5px]">
               {t.message}
             </div>
           )}
@@ -229,7 +239,7 @@ function ToastRow({ toast: t }: { toast: Toast }) {
               type="button"
               onClick={onUndo}
               disabled={busy}
-              className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg bg-surface-soft px-3.5 py-2 text-[13.5px] font-bold text-ink ring-1 ring-inset ring-border transition-colors hover:bg-border hover:text-ink active:scale-[0.98] disabled:opacity-60"
+              className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-surface-soft px-3 py-1.5 text-[12.5px] font-bold text-ink ring-1 ring-inset ring-border transition-colors hover:bg-border hover:text-ink active:scale-[0.98] disabled:opacity-60 sm:mt-2.5 sm:px-3.5 sm:py-2 sm:text-[13.5px]"
             >
               <Undo2 size={15} /> {busy ? "Отменяем…" : t.action.label}
             </button>
