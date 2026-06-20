@@ -2,10 +2,8 @@ import { useState } from "react";
 import {
   AlertTriangle,
   ArrowRight,
-  Bike,
   ChevronLeft,
   Clock,
-  Gauge,
   Maximize2,
   Phone,
   Wallet,
@@ -19,6 +17,7 @@ import { useMe } from "@/lib/api/auth";
 import { useApiScooters } from "@/lib/api/scooters";
 import type { ApiScooter } from "@/lib/api/types";
 import { ActivityFeed } from "@/pages/dashboard/ActivityFeed";
+import { ParkLoadGauge } from "@/pages/dashboard/ParkLoadGauge";
 import { useBillingPeriodRevenue } from "@/lib/useRevenue";
 import { MobileRevenueScreen } from "./MobileRevenueScreen";
 import { RowCallButton, useCallClient } from "../call";
@@ -107,8 +106,20 @@ export function MobileDashboard({
         </div>
       </button>
 
-      {/* KPI 2×2 */}
-      <div className="grid grid-cols-2 gap-3">
+      {/* Загрузка парка — круг-гейдж (живая жидкость, объединяет загрузку парка
+          и активные аренды) РЯДОМ с плашкой «Поступит сегодня». Плашки
+          «Просрочено» / «Активных аренд» / «Загрузка парка» убраны: просрочки
+          видны списком ниже, активные аренды и % загрузки — внутри круга. */}
+      <div className="grid grid-cols-2 items-stretch gap-3">
+        <ParkLoadGauge
+          percent={m.loadPercent}
+          active={m.activeRentalsCount}
+          rentable={m.rentableFleet}
+          onClick={() => onSelect("fleet")}
+          size={84}
+          layout="stack"
+          className="rounded-2xl p-3.5"
+        />
         <KpiTile
           icon={<Wallet size={16} />}
           tone="green"
@@ -120,39 +131,6 @@ export function MobileDashboard({
               ? `${m.todayIncomingCount} ${plural(m.todayIncomingCount, ["возврат", "возврата", "возвратов"])}`
               : "нет возвратов"
           }
-        />
-        <KpiTile
-          icon={<AlertTriangle size={16} />}
-          tone={m.overdueCount > 0 ? "red" : "neutral"}
-          label="Просрочено"
-          value={String(m.overdueCount)}
-          unit={m.overdueCount > 0 ? "шт" : ""}
-          foot={
-            m.overdueCount > 0
-              ? `долг ${formatRub(m.overdueSum)} ₽`
-              : "нет просрочек"
-          }
-          onClick={m.overdueCount > 0 ? () => onSelect("debtors") : undefined}
-        />
-        <KpiTile
-          icon={<Bike size={16} />}
-          tone="blue"
-          label="Активных аренд"
-          value={String(m.activeRentalsCount)}
-          unit={m.rentableFleet > 0 ? `/${m.rentableFleet}` : ""}
-          foot={
-            m.rentableFleet > 0 ? `${m.loadPercent}% загрузка` : "парк пуст"
-          }
-          onClick={() => onSelect("rentals")}
-        />
-        <KpiTile
-          icon={<Gauge size={16} />}
-          tone="neutral"
-          label="Загрузка парка"
-          value={String(m.loadPercent)}
-          unit="%"
-          foot={`${m.park.pool} готов к аренде · ${m.park.inRepair} в ремонте`}
-          onClick={() => onSelect("fleet")}
         />
       </div>
 

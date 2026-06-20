@@ -12,10 +12,11 @@ const LiquidGradient = lazy(() => import("./LiquidGradient"));
  * направление → параллакс «живой жидкости»), а не статичная линия. По центру
  * белый круг с крупным % → донат-диаграмма. Градиент ленив (отдельный чанк) +
  * ErrorBoundary с CSS-градиент-фолбэком.
+ *
+ * size  — диаметр круга (десктоп 100, мобила компактнее).
+ * layout — "row" (круг + подписи сбоку, десктоп) | "stack" (круг сверху,
+ *          подписи под ним по центру — для узкой мобильной колонки).
  */
-
-const SIZE = 100;
-const CENTER = 60; // белый круг по центру → донат
 
 /** Запасной CSS-градиент (зелёно-синий) — пока грузится Neat / если WebGL упал. */
 function GradientFallback() {
@@ -49,14 +50,21 @@ export function ParkLoadGauge({
   rentable,
   onClick,
   className,
+  size = 100,
+  layout = "row",
 }: {
   percent: number;
   active: number;
   rentable: number;
   onClick?: () => void;
   className?: string;
+  size?: number;
+  layout?: "row" | "stack";
 }) {
   const pct = Math.max(0, Math.min(100, Math.round(percent)));
+  const SIZE = size;
+  const CENTER = Math.round(size * 0.6); // белый круг по центру → донат
+  const stack = layout === "stack";
 
   // Число считается вверх 0 → pct.
   const [shown, setShown] = useState(0);
@@ -104,7 +112,10 @@ export function ParkLoadGauge({
         onClick={onClick}
         disabled={!onClick}
         className={cn(
-          "flex w-full items-center gap-4 text-left",
+          "w-full text-left",
+          stack
+            ? "flex flex-col items-center gap-2 text-center"
+            : "flex items-center gap-4",
           onClick ? "cursor-pointer" : "cursor-default",
         )}
       >
@@ -159,22 +170,42 @@ export function ParkLoadGauge({
               boxShadow: "0 1px 6px rgba(15,23,42,0.13)",
             }}
           >
-            <span className="font-display text-[21px] font-extrabold leading-none tabular-nums text-ink">
+            <span
+              className="font-display font-extrabold leading-none tabular-nums text-ink"
+              style={{ fontSize: Math.round(SIZE * 0.21) }}
+            >
               {shown}%
             </span>
-            <span className="mt-0.5 text-[7.5px] font-bold uppercase tracking-[0.12em] text-muted-2">
+            <span
+              className="mt-0.5 font-bold uppercase tracking-[0.12em] text-muted-2"
+              style={{ fontSize: Math.max(7, Math.round(SIZE * 0.078)) }}
+            >
               загрузка
             </span>
           </div>
         </div>
 
-        {/* Подписи справа */}
-        <div className="min-w-0">
-          <div className="text-[12px] font-medium text-muted">Загрузка парка</div>
-          <div className="mt-1 font-display text-[19px] font-extrabold leading-tight text-ink">
+        {/* Подписи: справа (row) или под кругом по центру (stack) */}
+        <div className={cn("min-w-0", stack && "flex flex-col items-center")}>
+          {!stack && (
+            <div className="text-[12px] font-medium text-muted">
+              Загрузка парка
+            </div>
+          )}
+          <div
+            className={cn(
+              "font-display font-extrabold leading-tight text-ink",
+              stack ? "text-[15px]" : "mt-1 text-[19px]",
+            )}
+          >
             {active}&nbsp;в&nbsp;аренде
           </div>
-          <div className="mt-0.5 text-[11px] text-muted-2">
+          <div
+            className={cn(
+              "text-[11px] text-muted-2",
+              stack ? "mt-0.5" : "mt-0.5",
+            )}
+          >
             из {rentable} доступных
           </div>
         </div>
