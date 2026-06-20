@@ -11,6 +11,7 @@ import {
   PARKING_RATE_PER_DAY,
 } from "@/lib/api/parking";
 import { useApiClient } from "@/lib/api/clients";
+import { toastRentalDone } from "../rentalUndo";
 
 /**
  * Паркинг в БОКОВОМ дровере приёмки оплаты (заказчик: все приёмки через один
@@ -95,12 +96,14 @@ export function ParkingDrawer({
         // Сессия уже закрыта снятием — только принимаем оплату накопленного.
         if (collect && amount > 0) {
           await pay.mutateAsync({ rentalId: rental.id, amount, method });
-          toast.success(
+          toastRentalDone(
+            rental,
             "Паркинг оплачен",
             `${amount.toLocaleString("ru-RU")} ₽`,
           );
         } else {
-          toast.success(
+          toastRentalDone(
+            rental,
             "Снят с паркинга",
             amount > 0 ? `${amount.toLocaleString("ru-RU")} ₽ — в долг` : "",
           );
@@ -116,9 +119,10 @@ export function ParkingDrawer({
       });
       if (collect && amount > 0) {
         await pay.mutateAsync({ rentalId: rental.id, amount, method });
-        toast.success("Паркинг оплачен", `${safeDays} дн · ${amount} ₽`);
+        toastRentalDone(rental, "Паркинг оплачен", `${safeDays} дн · ${amount} ₽`);
       } else {
-        toast.success(
+        toastRentalDone(
+          rental,
           "Паркинг поставлен",
           amount > 0 ? `${amount} ₽ — в долг` : `${safeDays} дн`,
         );

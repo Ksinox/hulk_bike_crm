@@ -1,5 +1,4 @@
-import { Sparkles, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Sparkles, RefreshCw, X } from "lucide-react";
 
 type Props = {
   title: string;
@@ -9,6 +8,12 @@ type Props = {
   onClose: () => void;
 };
 
+/**
+ * Тост «Доступна новая версия» — в одном визуальном языке с lib/toast
+ * (светлый bg-surface, цветная рамка/иконка, жирный заголовок, spring-вход).
+ * Отличия от обычных тостов: ПЕРСИСТЕНТНЫЙ (не авто-исчезает, без полосы-
+ * таймера) и CTA «Обновить» — крупная синяя кнопка (главное действие).
+ */
 export function UpdateToast({
   title,
   description,
@@ -17,31 +22,37 @@ export function UpdateToast({
   onClose,
 }: Props) {
   return (
-    <div className="fixed bottom-6 right-6 z-50 w-[360px] animate-modal-in rounded-lg border bg-card p-4 shadow-card-hover">
-      <div className="flex items-start gap-3">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-          <Sparkles className="h-4 w-4" />
-        </div>
-        <div className="flex-1 space-y-1">
-          <div className="flex items-start justify-between gap-2">
-            <div className="text-sm font-semibold">{title}</div>
-            <button
-              onClick={onClose}
-              aria-label="Закрыть"
-              className="text-muted-foreground transition-colors hover:text-foreground"
-            >
-              <X className="h-4 w-4" />
-            </button>
+    <div
+      role="alert"
+      className="animate-modal-in fixed bottom-5 right-5 z-[1001] w-full max-w-[440px] overflow-hidden rounded-xl border border-blue-300 bg-surface shadow-card-lg"
+    >
+      <div className="flex items-start gap-3.5 p-4 pb-[18px]">
+        <Sparkles size={26} className="mt-0.5 shrink-0 text-blue-500" />
+        <div className="min-w-0 flex-1">
+          <div className="text-[15.5px] font-bold leading-tight text-ink">
+            {title}
           </div>
-          <div className="text-xs text-muted-foreground">{description}</div>
+          <div className="mt-1 text-[13.5px] leading-snug text-ink-2">
+            {description}
+          </div>
           {actionLabel && onAction && (
-            <div className="pt-2">
-              <Button size="sm" onClick={onAction}>
-                {actionLabel}
-              </Button>
-            </div>
+            <button
+              type="button"
+              onClick={onAction}
+              className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg bg-blue-500 px-3.5 py-2 text-[13.5px] font-bold text-white transition-colors hover:bg-blue-600 active:scale-[0.98]"
+            >
+              <RefreshCw size={15} /> {actionLabel}
+            </button>
           )}
         </div>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Закрыть"
+          className="-mr-1 -mt-1 shrink-0 rounded-full p-1.5 text-muted-2 transition-colors hover:bg-surface-soft hover:text-ink"
+        >
+          <X size={17} />
+        </button>
       </div>
     </div>
   );

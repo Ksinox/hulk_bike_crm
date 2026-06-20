@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { useDebtAggregate, useForgiveOverdue } from "@/lib/api/debt";
 import { toast } from "@/lib/toast";
+import { toastRentalDone } from "../rentalUndo";
 import type { DebtSummary } from "@/lib/api/debt";
 
 function fmt(n: number) {
@@ -110,7 +111,11 @@ export function OverdueActionsPopover({
         target,
         daysCount,
       });
-      toast.success("Списано", `${(r.amount ?? 0).toLocaleString("ru-RU")} ₽`);
+      toastRentalDone(
+        { id: rentalId, status: "active" },
+        "Списано",
+        `${(r.amount ?? 0).toLocaleString("ru-RU")} ₽`,
+      );
       onClose();
     } catch (e) {
       toast.error("Не удалось", (e as Error).message ?? "");

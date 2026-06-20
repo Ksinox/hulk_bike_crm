@@ -16,6 +16,7 @@ import { Check, Shield, X, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
 import { topupSecurityAsync } from "./rentalsStore";
+import { toastRentalDone } from "./rentalUndo";
 
 export function SecurityTopupDialog({
   rentalId,
@@ -59,7 +60,8 @@ export function SecurityTopupDialog({
     setSaving(true);
     try {
       await topupSecurityAsync(rentalId, amount, method);
-      toast.success(
+      toastRentalDone(
+        { id: rentalId, status: "active" },
         "Залог пополнен",
         `+${fmt(amount)} ₽ · теперь ${fmt(currentDeposit + amount)} ₽`,
       );

@@ -13,6 +13,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
+import { toastRentalDone } from "./rentalUndo";
 import { useApiScooters } from "@/lib/api/scooters";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { useApiRentals, useSwapScooter } from "@/lib/api/rentals";
@@ -236,7 +237,8 @@ export function SwapScooterDialog({
       const statusLabel =
         SCOOTER_BASE_STATUS_OPTIONS.find((o) => o.value === oldStatus)?.label ??
         oldStatus;
-      toast.success(
+      toastRentalDone(
+        rental,
         "Скутер заменён",
         `Старый → «${statusLabel}». Печатайте акт приёма-передачи.`,
       );

@@ -112,7 +112,7 @@ export function useToasts(): Toast[] {
 export function ToastContainer() {
   const toasts = useToasts();
   return (
-    <div className="pointer-events-none fixed bottom-4 right-4 z-[1000] flex w-full max-w-sm flex-col gap-2.5">
+    <div className="pointer-events-none fixed bottom-5 right-5 z-[1000] flex w-full max-w-[440px] flex-col gap-3">
       <style>{`
 @keyframes toastSpringIn{0%{opacity:0;transform:translateY(18px) scale(.9)}55%{opacity:1;transform:translateY(-3px) scale(1.015)}100%{transform:translateY(0) scale(1)}}
 @keyframes toastBar{from{transform:scaleX(1)}to{transform:scaleX(0)}}
@@ -213,14 +213,14 @@ function ToastRow({ toast: t }: { toast: Toast }) {
       )}
       style={closing ? undefined : { animation: "toastSpringIn .42s cubic-bezier(.34,1.56,.64,1) both" }}
     >
-      <div className="flex items-start gap-3 p-3.5">
-        <Icon size={20} className={cn("mt-px shrink-0", TOAST_ICON_CLS[t.kind])} />
+      <div className="flex items-start gap-3.5 p-4 pb-[18px]">
+        <Icon size={26} className={cn("mt-0.5 shrink-0", TOAST_ICON_CLS[t.kind])} />
         <div className="min-w-0 flex-1">
-          <div className="text-[13.5px] font-semibold leading-tight text-ink">
+          <div className="text-[15.5px] font-bold leading-tight text-ink">
             {t.title}
           </div>
           {t.message && (
-            <div className="mt-0.5 text-[12.5px] leading-snug text-ink-2">
+            <div className="mt-1 text-[13.5px] leading-snug text-ink-2">
               {t.message}
             </div>
           )}
@@ -229,9 +229,9 @@ function ToastRow({ toast: t }: { toast: Toast }) {
               type="button"
               onClick={onUndo}
               disabled={busy}
-              className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-surface-soft px-2.5 py-1 text-[12px] font-bold text-ink ring-1 ring-inset ring-border transition-colors hover:bg-border disabled:opacity-60"
+              className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg bg-surface-soft px-3.5 py-2 text-[13.5px] font-bold text-ink ring-1 ring-inset ring-border transition-colors hover:bg-border hover:text-ink active:scale-[0.98] disabled:opacity-60"
             >
-              <Undo2 size={12} /> {busy ? "Отменяем…" : t.action.label}
+              <Undo2 size={15} /> {busy ? "Отменяем…" : t.action.label}
             </button>
           )}
         </div>
@@ -239,15 +239,15 @@ function ToastRow({ toast: t }: { toast: Toast }) {
           type="button"
           onClick={close}
           aria-label="Закрыть"
-          className="-mr-1 -mt-1 shrink-0 rounded-full p-1 text-muted-2 transition-colors hover:bg-surface-soft hover:text-ink"
+          className="-mr-1 -mt-1 shrink-0 rounded-full p-1.5 text-muted-2 transition-colors hover:bg-surface-soft hover:text-ink"
         >
-          <X size={15} />
+          <X size={17} />
         </button>
       </div>
       {/* Полоса-таймер снизу: бежит за ttl, на hover — пауза. */}
       {!closing && (
         <div
-          className={cn("toast-bar absolute bottom-0 left-0 h-[3px] w-full", TOAST_BAR_CLS[t.kind])}
+          className={cn("toast-bar absolute bottom-0 left-0 h-1 w-full", TOAST_BAR_CLS[t.kind])}
           style={{ animationDuration: `${t.ttl}ms` }}
         />
       )}

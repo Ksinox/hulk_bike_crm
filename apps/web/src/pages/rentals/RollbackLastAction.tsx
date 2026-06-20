@@ -3,7 +3,7 @@ import { Undo2, X, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
 import { ApiError } from "@/lib/api";
-import { useApiPayments } from "@/lib/api/payments";
+import { useApiPayments, type ApiPayment } from "@/lib/api/payments";
 import type { ApiActivityItem } from "@/lib/api/activity";
 import {
   rollbackLastPayment,
@@ -186,12 +186,19 @@ function mskDay(iso: string): string {
   return d.toISOString().slice(0, 10);
 }
 
-export function useRollbackTarget(
-  rental: Rental,
+/** Минимум полей аренды для вычисления/выполнения отката — id (платежи,
+ *  rollback-вызовы) + status (детект «завершения»). Позволяет звать откат там,
+ *  где под рукой только rentalId (напр. тостовая «Отмена», SecurityTopupDialog). */
+export type RollbackRentalRef = Pick<Rental, "id" | "status">;
+
+/** Чистая (без хуков) версия — нужна и для тостовой «Отмены» (undoLastRentalAction
+ *  тянет свежую хронологию+платежи и зовёт это), и для хука ниже. */
+export function computeRollbackTarget(
+  rental: RollbackRentalRef,
   activity: ApiActivityItem[],
+  payments: ApiPayment[],
 ): RollbackTarget | null {
-  const { data: payments } = useApiPayments(rental.id);
-  return useMemo<RollbackTarget | null>(() => {
+  {
     // 1) Эффективная верхняя state-строка (скип пар откат+операция).
     let anchor: ApiActivityItem | null = null;
     const stack: Array<(a: string) => boolean> = [];
@@ -419,7 +426,58 @@ export function useRollbackTarget(
     }
 
     return null;
-  }, [activity, payments, rental.id, rental.status]);
+  }
+}
+
+export function useRollbackTarget(
+  rental: Rental,
+  activity: ApiActivityItem[],
+): RollbackTarget | null {
+  const { data: payments } = useApiPayments(rental.id);
+  return useMemo<RollbackTarget | null>(
+    () => computeRollbackTarget(rental, activity, payments ?? []),
+    [activity, payments, rental.id, rental.status],
+  );
+}
+
+/**
+ * Выполнить откат по target (БЕЗ тостов). Единая точка диспетчеризации —
+ * используется и кнопкой «Откатить» в таймлайне (doRollback ниже), и тостовой
+ * «Отменой» (undoLastRentalAction). Менять диспетчеризацию — ТОЛЬКО здесь;
+ * doRollback тоже зовёт эту функцию.
+ *   parkScope (для оплаченного паркинга со связкой постановки): "both" —
+ *   снять и оплату, и постановку (дефолт); "payment" — только оплату.
+ */
+export async function executeRollbackTarget(
+  rental: Pick<Rental, "id">,
+  target: RollbackTarget,
+  opts?: { parkScope?: "payment" | "both" },
+): Promise<void> {
+  if (target.kind === "completed") {
+    await rollbackCompletion(rental.id);
+    return;
+  }
+  if (
+    target.kind === "manual_debt" ||
+    target.kind === "forgive_fine" ||
+    target.kind === "forgive_days" ||
+    target.kind === "forgive_all" ||
+    target.kind === "swap" ||
+    target.kind === "parking_set" ||
+    target.kind === "parking_end"
+  ) {
+    await rollbackAction(rental.id, target.activityId);
+    return;
+  }
+  if (target.kind === "parking_paid") {
+    await rollbackLastPayment(rental.id, target.paymentId);
+    if (target.underlyingSet && (opts?.parkScope ?? "both") === "both") {
+      await rollbackAction(rental.id, target.underlyingSet.activityId);
+    }
+    return;
+  }
+  // extend / created / payment / security / equipment
+  await rollbackLastPayment(rental.id, target.paymentId);
 }
 
 /* ───────────────────────────── Кнопка + модал ───────────────────────── */
@@ -482,76 +540,55 @@ export function RollbackButton({
   const doRollback = async () => {
     setBusy(true);
     try {
+      await executeRollbackTarget(rental, target, { parkScope });
       if (target.kind === "completed") {
-        await rollbackCompletion(rental.id);
         toast.success("Завершение откачено", "Аренда снова активная");
+      } else if (target.kind === "manual_debt") {
+        toast.success(
+          "Начисление откачено",
+          `Долг ${fmtRub(target.amount)} ₽ удалён`,
+        );
+      } else if (target.kind === "swap") {
+        toast.success("Замена скутера откачена", "Вернулся прежний скутер");
+      } else if (target.kind === "parking_set") {
+        toast.success("Постановка на паркинг откачена", "Сессия удалена");
+      } else if (target.kind === "parking_end") {
+        toast.success("Снятие с паркинга откачено", "Сессия снова открыта");
       } else if (
-        target.kind === "manual_debt" ||
         target.kind === "forgive_fine" ||
         target.kind === "forgive_days" ||
-        target.kind === "forgive_all" ||
-        target.kind === "swap" ||
-        target.kind === "parking_set" ||
-        target.kind === "parking_end"
+        target.kind === "forgive_all"
       ) {
-        await rollbackAction(rental.id, target.activityId);
-        if (target.kind === "manual_debt") {
-          toast.success(
-            "Начисление откачено",
-            `Долг ${fmtRub(target.amount)} ₽ удалён`,
-          );
-        } else if (target.kind === "swap") {
-          toast.success("Замена скутера откачена", "Вернулся прежний скутер");
-        } else if (target.kind === "parking_set") {
-          toast.success("Постановка на паркинг откачена", "Сессия удалена");
-        } else if (target.kind === "parking_end") {
-          toast.success("Снятие с паркинга откачено", "Сессия снова открыта");
-        } else {
-          toast.success("Прощение откачено", "Долг снова в работе");
-        }
+        toast.success("Прощение откачено", "Долг снова в работе");
       } else if (target.kind === "parking_paid") {
-        // Сначала снимаем оплату (un-pay → долг по паркингу). Если выбрано «и
-        // постановку» и она есть — затем удаляем сессию и возвращаем сдвиг
-        // возврата (порядок важен: платёж ссылается на сессию).
-        await rollbackLastPayment(rental.id, target.paymentId);
-        if (target.underlyingSet && parkScope === "both") {
-          await rollbackAction(rental.id, target.underlyingSet.activityId);
-          toast.success(
-            "Паркинг откачен",
-            `Снято ${fmtRub(target.amount)} ₽, постановка отменена`,
-          );
-        } else {
-          toast.success(
-            "Оплата паркинга откачена",
-            target.underlyingSet
+        toast.success(
+          target.underlyingSet && parkScope === "both"
+            ? "Паркинг откачен"
+            : "Оплата паркинга откачена",
+          target.underlyingSet && parkScope === "both"
+            ? `Снято ${fmtRub(target.amount)} ₽, постановка отменена`
+            : target.underlyingSet
               ? `Снято ${fmtRub(target.amount)} ₽ — паркинг остался в долг`
               : `Снято ${fmtRub(target.amount)} ₽`,
-          );
-        }
-      } else {
-        await rollbackLastPayment(rental.id, target.paymentId);
-        if (target.kind === "extend") {
-          toast.success(
-            "Продление откачено",
-            `Вернулось ${fmtRub(target.amount)} ₽`,
-          );
-        } else if (target.kind === "created") {
-          toast.success("Создание аренды откачено", "Аренда отправлена в архив");
-        } else if (target.kind === "payment") {
-          toast.success("Оплата откачена", `Снято ${fmtRub(target.amount)} ₽`);
-        } else if (target.kind === "security") {
-          toast.success(
-            "Пополнение залога откачено",
-            `${fmtRub(target.amount)} ₽ — платёж удалён`,
-          );
-        } else {
-          toast.success(
-            "Изменение экипировки откачено",
-            target.isRefund
-              ? `Возврат ${fmtRub(target.amount)} ₽ отменён`
-              : `Доплата ${fmtRub(target.amount)} ₽ отменена`,
-          );
-        }
+        );
+      } else if (target.kind === "extend") {
+        toast.success("Продление откачено", `Вернулось ${fmtRub(target.amount)} ₽`);
+      } else if (target.kind === "created") {
+        toast.success("Создание аренды откачено", "Аренда отправлена в архив");
+      } else if (target.kind === "payment") {
+        toast.success("Оплата откачена", `Снято ${fmtRub(target.amount)} ₽`);
+      } else if (target.kind === "security") {
+        toast.success(
+          "Пополнение залога откачено",
+          `${fmtRub(target.amount)} ₽ — платёж удалён`,
+        );
+      } else if (target.kind === "equipment") {
+        toast.success(
+          "Изменение экипировки откачено",
+          target.isRefund
+            ? `Возврат ${fmtRub(target.amount)} ₽ отменён`
+            : `Доплата ${fmtRub(target.amount)} ₽ отменена`,
+        );
       }
       setOpen(false);
       // Аренда ушла в архив — закрываем карточку (её больше нет в активных).

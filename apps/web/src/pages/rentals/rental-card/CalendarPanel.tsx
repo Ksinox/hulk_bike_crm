@@ -33,6 +33,7 @@ import {
 import { toast } from "@/lib/toast";
 import { ApiError } from "@/lib/api";
 import { ParkingDrawer } from "./ParkingDialog";
+import { toastRentalDone } from "../rentalUndo";
 
 /** Паркинг-период: YYYY-MM-DD + n дней / число суток в периоде включительно. */
 const addDaysIsoP = (iso: string, n: number) =>
@@ -452,7 +453,8 @@ export function CalendarPanel({
         .mutateAsync(args)
         .then((res) => {
           const refund = res.refund ?? 0;
-          toast.success(
+          toastRentalDone(
+            rental,
             "Снят с паркинга",
             refund > 0
               ? `Излишек ${refund.toLocaleString("ru-RU")} ₽ → депозит клиента`
@@ -470,7 +472,7 @@ export function CalendarPanel({
         const s = res.session;
         const unpaid = Math.max(0, s.amount - s.paidAmount);
         if (unpaid <= 0) {
-          toast.success("Снят с паркинга");
+          toastRentalDone(rental, "Снят с паркинга");
           return;
         }
         const settle = { sessionId: s.id, amount: unpaid };
@@ -593,7 +595,11 @@ export function CalendarPanel({
       { rentalId: rental.id, startDate: today, freeFirstDay: true },
       {
         onSuccess: () =>
-          toast.success("Поставлен на паркинг", "Открытый · оплата по факту"),
+          toastRentalDone(
+            rental,
+            "Поставлен на паркинг",
+            "Открытый · оплата по факту",
+          ),
         onError: (err) => {
           const overlap =
             err instanceof ApiError &&
@@ -625,7 +631,8 @@ export function CalendarPanel({
         { rentalId: rental.id, startDate: draftStart, freeFirstDay },
         {
           onSuccess: () => {
-            toast.success(
+            toastRentalDone(
+              rental,
               "Поставлен на паркинг",
               "Идёт до снятия (макс 7 дн)",
             );

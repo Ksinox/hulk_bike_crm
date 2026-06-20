@@ -41,6 +41,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
+import { toastRentalDone } from "./rentalUndo";
 import { api } from "@/lib/api";
 import {
   useApiClients,
@@ -1501,19 +1502,27 @@ export function PaymentAcceptDialog({
         // мягким долгом — клиент уедет в должники/«Висящие долги», ничего
         // не теряется. В режиме завершения это debtRemainAfter (оператор
         // осознанно собрал меньше) либо underpay.
+        // Завершение откатываемо (rollback-completion) — тост с «Отменить».
+        // rental.status в пропсе ещё «active», поэтому статус для расчёта цели
+        // отката передаём явно «completed».
+        const doneRef = { id: rental.id, status: "completed" as const };
         const softLeft = Math.max(debtRemainAfter, underpay);
         if (softLeft > 0) {
-          toast.info(
+          toastRentalDone(
+            doneRef,
             "Аренда завершена",
             `Принято ${fmt(totalReceived)} ₽. Остаток ${fmt(softLeft)} ₽ — мягкий долг клиента.`,
+            { kind: "info" },
           );
         } else if (overpay > 0) {
-          toast.success(
+          toastRentalDone(
+            doneRef,
             "Аренда завершена",
             `Переплата ${fmt(overpay)} ₽ ушла в депозит клиента.`,
           );
         } else {
-          toast.success(
+          toastRentalDone(
+            doneRef,
             "Аренда завершена",
             intake.hasDamage
               ? "Акт ущерба создан, расчёт проведён."
@@ -1521,19 +1530,23 @@ export function PaymentAcceptDialog({
           );
         }
       } else if (overpay > 0) {
-        toast.success(
+        toastRentalDone(
+          rental,
           "Оплата принята",
           `Переплата ${fmt(overpay)} ₽ ушла в депозит клиента.`,
         );
       } else if (underpay > 0) {
-        toast.info(
+        toastRentalDone(
+          rental,
           "Принят частичный платёж",
           `Зачтено ${fmt(totalReceived)} ₽. Остаток ${fmt(underpay)} ₽ висит за клиентом.`,
+          { kind: "info" },
         );
       } else {
         // #177: точная формулировка — для чистого продления «переплаты в
         // депозит» нет (см. extCharged выше), не вводим оператора в заблуждение.
-        toast.success(
+        toastRentalDone(
+          rental,
           "Оплата принята",
           extCharged > 0
             ? "Продление оформлено, платёж зачтён."

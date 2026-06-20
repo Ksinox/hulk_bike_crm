@@ -107,6 +107,7 @@ import { useDashboardDrawer } from "@/pages/dashboard/DashboardDrawer";
 import { useMe } from "@/lib/api/auth";
 import { confirmDialog, pickAction, promptDialog } from "@/lib/toast";
 import { toast } from "@/lib/toast";
+import { toastRentalDone } from "./rentalUndo";
 import { ApiError, api } from "@/lib/api";
 
 // v0.6.44: tabs убраны, оставлен type-alias для совместимости с props
@@ -1097,7 +1098,8 @@ export function RentalCard({
           amount,
           comment: comment.trim(),
         });
-        toast.success(
+        toastRentalDone(
+          rental,
           "Долг начислен",
           `+${amount.toLocaleString("ru-RU")} ₽ по аренде. Запись в Истории долгов.`,
         );
@@ -1215,7 +1217,8 @@ export function RentalCard({
         const shiftHint = r.daysShift
           ? ` · endPlanned +${r.daysShift} дн${r.newStatus ? ", статус → active" : ""}`
           : "";
-        toast.success(
+        toastRentalDone(
+          rental,
           successTitle,
           `Списано ${(r.amount ?? 0).toLocaleString("ru-RU")} ₽. Запись в Истории долгов.${shiftHint}`,
         );
@@ -2162,7 +2165,7 @@ export function RentalCard({
                 { rentalId: rental.id, sessionId: activeParking.id },
                 {
                   onSuccess: () =>
-                    toast.success("Снят с паркинга", "Возврат пересчитан"),
+                    toastRentalDone(rental, "Снят с паркинга", "Возврат пересчитан"),
                   onError: () => toast.error("Не удалось снять с паркинга"),
                 },
               )
