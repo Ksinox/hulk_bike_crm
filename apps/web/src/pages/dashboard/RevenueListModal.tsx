@@ -208,6 +208,8 @@ export function RevenueListModal({
             a={analytics}
             periodLabel={periodLabel}
             scopeLabel={scopeLabel}
+            start={start}
+            end={end}
           />
           <div className="mb-2 mt-5 flex flex-wrap items-center gap-2">
             <span className="mr-1 text-[12px] font-semibold uppercase tracking-wider text-muted-2">

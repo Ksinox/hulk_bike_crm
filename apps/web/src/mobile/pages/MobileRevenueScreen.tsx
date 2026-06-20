@@ -126,7 +126,13 @@ export function MobileRevenueScreen({
 
       {/* Прокручиваемое тело: аналитика + детализация платежей */}
       <div className="flex-1 overflow-y-auto scrollbar-thin px-3 py-3 pb-20">
-        <RevenueDashboard a={a} periodLabel={periodLabel} scopeLabel={scopeLabel} />
+        <RevenueDashboard
+          a={a}
+          periodLabel={periodLabel}
+          scopeLabel={scopeLabel}
+          start={start}
+          end={end}
+        />
         <div className="mb-2 mt-5 text-[12px] font-semibold uppercase tracking-wider text-muted-2">
           Платежи за период · детализация
         </div>
