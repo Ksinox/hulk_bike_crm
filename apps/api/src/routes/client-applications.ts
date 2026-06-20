@@ -423,7 +423,8 @@ export async function clientApplicationsRoutes(app: FastifyInstance) {
 
   /* POST /api/client-applications/:id/convert
    * Создаёт клиента из заявки + переносит файлы из applications/* в clients/*.
-   * После успеха заявка удаляется. */
+   * Заявка НЕ удаляется: помечается status='accepted' + clientId/acceptedAt
+   * (нужна для архива карточки клиента и для воронки «заявки → аренда»). */
   app.post<{ Params: { id: string }; Body: unknown }>(
     "/:id/convert",
     async (req, reply) => {
