@@ -61,10 +61,10 @@ export function ReleaseCard({
             </div>
             <div className="shrink-0 text-right">
               <div className="font-display text-[28px] font-extrabold leading-none tabular-nums sm:text-[30px]">
-                {release.commitCount}
+                {detailCount}
               </div>
               <div className="text-[10px] font-semibold uppercase tracking-wider text-white/55">
-                {pluralRu(release.commitCount, "правка", "правки", "правок")}
+                {pluralRu(detailCount, "правка", "правки", "правок")}
               </div>
             </div>
           </div>
