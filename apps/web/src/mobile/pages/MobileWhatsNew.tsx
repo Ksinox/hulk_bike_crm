@@ -4,6 +4,8 @@ import {
   type ChangelogCategory,
   type ChangelogEntry,
 } from "@/data/changelog";
+import { releases } from "@/data/releases";
+import { ReleaseCard } from "@/pages/whats-new/ReleaseCard";
 import { markChangelogSeen } from "@/pages/whats-new/useUnreadChangelog";
 import { cn } from "@/lib/utils";
 
@@ -42,6 +44,21 @@ export function MobileWhatsNew() {
 
   return (
     <div className="flex flex-col gap-5">
+      <style>{`@keyframes wnFadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}`}</style>
+
+      {/* Релизы по версиям — крупные «было→стало» + полный список (адаптив). */}
+      {releases.map((r, i) => (
+        <ReleaseCard key={r.version} release={r} current={i === 0} />
+      ))}
+
+      {/* Архив — прежняя лента по датам. */}
+      <div className="flex items-center gap-3 px-1">
+        <h2 className="text-[12px] font-bold uppercase tracking-wider text-muted-2">
+          Ранее
+        </h2>
+        <div className="h-px flex-1 bg-border" />
+      </div>
+
       {groups.map(([date, entries]) => (
         <section key={date}>
           <div className="mb-2 px-1 text-[13px] font-bold text-muted">
