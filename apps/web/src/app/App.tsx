@@ -67,7 +67,11 @@ export function App() {
   }, [me?.role]);
 
   useEffect(() => {
-    return startWebVersionCheck((next) => setWebUpdate(next));
+    // В webUpdate кладём пользовательскую версию (1.0.0) для тоста; если её нет
+    // в version.json (старая сборка) — падаем на build-id.
+    return startWebVersionCheck((next, _cur, appVersion) =>
+      setWebUpdate(appVersion ?? next),
+    );
   }, []);
 
   useEffect(() => {
@@ -300,10 +304,17 @@ function AppShell({
         )}
         {webUpdate && (
           <UpdateToast
-            title="Доступна новая версия"
-            description={`Обновите страницу, чтобы перейти на ${webUpdate}.`}
+            title={`Доступна версия ${webUpdate}`}
+            description="Обновите страницу — или посмотрите, что изменилось."
             actionLabel="Обновить"
             onAction={() => window.location.reload()}
+            secondaryLabel="Что нового"
+            onSecondary={() => {
+              // Перезагружаемся в раздел «Что нового» — новый бандл покажет
+              // карточку свежего релиза.
+              saveRoute("whats-new");
+              window.location.reload();
+            }}
             onClose={onCloseUpdate}
           />
         )}

@@ -124,24 +124,6 @@ export function useApplications(params?: ApplicationListParams) {
   });
 }
 
-/**
- * Дашборд-метрика «заявки → аренда» (накопительно): сколько заявок с нашей
- * формы оформлено в аренду (клиент из заявки имеет хотя бы одну неудалённую
- * аренду). Ключ — потомок applicationsKeys.all, поэтому инвалидируется вместе
- * с заявками (convert/delete). refetchInterval страхует случай удаления аренды
- * (оно инвалидирует rentals, не заявки) — счётчик подтянется в течение минуты.
- */
-export function useConvertedApplicationsCount() {
-  return useQuery({
-    queryKey: [...applicationsKeys.all, "converted-count"] as const,
-    queryFn: () =>
-      api
-        .get<{ count: number }>("/api/client-applications/converted-count")
-        .then((r) => r.count),
-    refetchInterval: 60_000,
-  });
-}
-
 export function useApplication(id: number | null) {
   return useQuery({
     queryKey: id == null ? applicationsKeys.all : applicationsKeys.byId(id),

@@ -2,10 +2,10 @@ import { isElectron } from "@/platform";
 
 const CHECK_INTERVAL_MS = 5 * 60 * 1000;
 
-type VersionPayload = { version: string };
+type VersionPayload = { version: string; appVersion?: string };
 
 export function startWebVersionCheck(
-  onNewVersion: (next: string, current: string) => void,
+  onNewVersion: (next: string, current: string, appVersion?: string) => void,
 ) {
   if (isElectron) return () => {};
 
@@ -23,7 +23,7 @@ export function startWebVersionCheck(
         return;
       }
       if (data.version !== currentVersion) {
-        onNewVersion(data.version, currentVersion);
+        onNewVersion(data.version, currentVersion, data.appVersion);
       }
     } catch {
       // Сеть/парсинг — игнорируем, попробуем в следующий раз

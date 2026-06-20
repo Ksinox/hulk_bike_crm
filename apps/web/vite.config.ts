@@ -25,12 +25,23 @@ function emitVersionJson(): Plugin {
   } catch {
     // .git нет (Docker-сборка из копии исходников) — остаётся 'build'
   }
+  // Пользовательская версия (1.0.0) — для тоста «Доступна новая версия N» и
+  // раздела «Что нового». Доступна и в Docker-сборке (package.json — исходник).
+  let appVersion = "0.0.0";
+  try {
+    const pkg = JSON.parse(
+      fs.readFileSync(path.resolve(__dirname, "package.json"), "utf8"),
+    ) as { version?: string };
+    appVersion = pkg.version ?? "0.0.0";
+  } catch {
+    // package.json недоступен — оставляем заглушку
+  }
   const version = `${sha}.${Date.now().toString(36)}`;
   return {
     name: "emit-version-json",
     closeBundle() {
       const out = path.resolve(__dirname, "dist", "version.json");
-      fs.writeFileSync(out, `${JSON.stringify({ version })}\n`);
+      fs.writeFileSync(out, `${JSON.stringify({ version, appVersion })}\n`);
     },
   };
 }
