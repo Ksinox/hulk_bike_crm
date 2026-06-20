@@ -105,12 +105,31 @@ export function App() {
     return <ForceChangePassword />;
   }
 
+  // Тост «Доступна новая версия» — ОБЩИЙ для мобилы и десктопа (раньше жил
+  // только внутри AppShell → на мобиле не показывался вовсе). Версия в
+  // заголовке + кнопка «Что нового» (перезагрузка в раздел релизов).
+  const updateToastNode = webUpdate ? (
+    <UpdateToast
+      title={`Доступна версия ${webUpdate}`}
+      description="Обновите страницу — или посмотрите, что изменилось."
+      actionLabel="Обновить"
+      onAction={() => window.location.reload()}
+      secondaryLabel="Что нового"
+      onSecondary={() => {
+        saveRoute("whats-new");
+        window.location.reload();
+      }}
+      onClose={() => setWebUpdate(null)}
+    />
+  ) : null;
+
   // Мобильный слой — отдельная оболочка (нижний таб-бар + свои экраны).
   // Десктоп-путь ниже не задействуется. Навигация общая (route/onSelect).
   if (isMobile) {
     return (
       <DashboardDrawerProvider>
         <MobileApp route={route} onSelect={onSelect} />
+        {updateToastNode}
         <NewApplicationDetector />
         <RentalCalculator />
         <ToastContainer />
@@ -123,12 +142,8 @@ export function App() {
 
   return (
     <DashboardDrawerProvider>
-      <AppShell
-        route={route}
-        onSelect={onSelect}
-        webUpdate={webUpdate}
-        onCloseUpdate={() => setWebUpdate(null)}
-      />
+      <AppShell route={route} onSelect={onSelect} />
+      {updateToastNode}
       <NewApplicationDetector />
       <RentalCalculator />
       <ToastContainer />
@@ -151,13 +166,9 @@ export function App() {
 function AppShell({
   route,
   onSelect,
-  webUpdate,
-  onCloseUpdate,
 }: {
   route: RouteId;
   onSelect: (id: RouteId) => void;
-  webUpdate: string | null;
-  onCloseUpdate: () => void;
 }) {
   const { stack, close } = useDashboardDrawer();
   const hasDrawers = stack.length > 0;
@@ -301,22 +312,6 @@ function AppShell({
           >
             {pageNode}
           </div>
-        )}
-        {webUpdate && (
-          <UpdateToast
-            title={`Доступна версия ${webUpdate}`}
-            description="Обновите страницу — или посмотрите, что изменилось."
-            actionLabel="Обновить"
-            onAction={() => window.location.reload()}
-            secondaryLabel="Что нового"
-            onSecondary={() => {
-              // Перезагружаемся в раздел «Что нового» — новый бандл покажет
-              // карточку свежего релиза.
-              saveRoute("whats-new");
-              window.location.reload();
-            }}
-            onClose={onCloseUpdate}
-          />
         )}
       </div>
     </>
