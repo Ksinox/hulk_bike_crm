@@ -3356,23 +3356,40 @@ function ClaimDocumentPreview({
       docxUrl={docxUrl}
       docxFilename={`Досудебная претензия ${String(reportId).padStart(4, "0")}.doc`}
       headerExtra={
-        <label
-          title="Срок добровольной оплаты — дата «оплатить до» в претензии"
-          className="inline-flex items-center gap-1.5 rounded-full bg-surface px-3 py-1.5 text-[12px] font-semibold text-muted-2"
+        // Срок добровольной оплаты: быстрые пресеты + ПРОИЗВОЛЬНОЕ число дней
+        // (поле ввода). Дата «оплатить до» в претензии = дата акта + N дней.
+        <div
+          title="Срок добровольной оплаты — дата «оплатить до» в претензии (1–180 дней)"
+          className="inline-flex items-center gap-1 rounded-full bg-surface px-3 py-1.5 text-[12px] font-semibold text-muted-2"
         >
           Срок оплаты
-          <select
+          {[14, 21, 30].map((d) => (
+            <button
+              key={d}
+              type="button"
+              onClick={() => setDueDays(d)}
+              className={cn(
+                "rounded-md px-1.5 py-0.5 text-[12px] font-bold transition-colors",
+                dueDays === d ? "bg-blue-600 text-white" : "text-ink-2 hover:bg-border",
+              )}
+            >
+              {d}
+            </button>
+          ))}
+          <input
+            type="number"
+            min={1}
+            max={180}
             value={dueDays}
-            onChange={(e) => setDueDays(Number(e.target.value))}
-            className="rounded-md border border-border bg-surface px-1.5 py-1 text-[12px] font-bold text-ink outline-none focus:border-blue-400"
-          >
-            {[7, 10, 14, 21, 30, 45, 60].map((d) => (
-              <option key={d} value={d}>
-                {d} дн
-              </option>
-            ))}
-          </select>
-        </label>
+            onChange={(e) => {
+              const n = Math.round(Number(e.target.value));
+              if (!Number.isFinite(n)) return;
+              setDueDays(Math.max(1, Math.min(180, n)));
+            }}
+            className="w-12 rounded-md border border-border bg-surface px-1 py-0.5 text-center text-[12px] font-bold text-ink outline-none focus:border-blue-400"
+          />
+          дн
+        </div>
       }
       onClose={onClose}
     />
