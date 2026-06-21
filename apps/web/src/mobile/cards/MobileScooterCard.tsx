@@ -369,6 +369,10 @@ export function MobileScooterCard({
               label="Дата покупки"
               value={scooter.purchaseDate ? reformatDate(scooter.purchaseDate) : "—"}
             />
+            <Spec
+              label="Рыночная стоимость"
+              value={scooter.marketValue ? `${fmt(scooter.marketValue)} ₽` : "—"}
+            />
             {scooter.note && <Spec label="Комментарий" value={scooter.note} />}
           </div>
         </section>

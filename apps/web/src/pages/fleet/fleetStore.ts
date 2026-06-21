@@ -88,6 +88,7 @@ export function addScooter(data: Omit<FleetScooter, "id">): FleetScooter {
     baseStatus: data.baseStatus,
     purchaseDate: ruToIsoDate(data.purchaseDate),
     purchasePrice: data.purchasePrice ?? null,
+    marketValue: data.marketValue ?? null,
     lastOilChangeMileage: data.lastOilChangeMileage ?? null,
     note: data.note ?? null,
   };
@@ -146,6 +147,9 @@ export function patchScooter(id: number, patch: Partial<FleetScooter>) {
   }
   if (patch.purchasePrice !== undefined) {
     apiPatch.purchasePrice = patch.purchasePrice ?? null;
+  }
+  if (patch.marketValue !== undefined) {
+    apiPatch.marketValue = patch.marketValue ?? null;
   }
   if (patch.lastOilChangeMileage !== undefined) {
     apiPatch.lastOilChangeMileage = patch.lastOilChangeMileage ?? null;

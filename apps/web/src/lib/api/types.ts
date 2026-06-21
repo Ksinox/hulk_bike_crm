@@ -87,6 +87,7 @@ export type ApiScooter = {
   baseStatus: ScooterBaseStatus;
   purchaseDate: string | null;
   purchasePrice: number | null;
+  marketValue: number | null;
   lastOilChangeMileage: number | null;
   note: string | null;
   archivedAt: string | null;

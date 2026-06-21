@@ -38,6 +38,7 @@ export type CreateScooterInput = {
   baseStatus?: ApiScooter["baseStatus"];
   purchaseDate?: string | null;
   purchasePrice?: number | null;
+  marketValue?: number | null;
   lastOilChangeMileage?: number | null;
   note?: string | null;
 };

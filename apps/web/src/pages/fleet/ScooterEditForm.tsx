@@ -79,6 +79,9 @@ export function ScooterEditForm({
   const [purchasePrice, setPurchasePrice] = useState(
     scooter.purchasePrice != null ? String(scooter.purchasePrice) : "",
   );
+  const [marketValue, setMarketValue] = useState(
+    scooter.marketValue != null ? String(scooter.marketValue) : "",
+  );
 
   const requestClose = () => {
     if (closing) return;
@@ -136,6 +139,10 @@ export function ScooterEditForm({
       const n = Number(purchasePrice);
       patch.purchasePrice = Number.isFinite(n) && n > 0 ? n : undefined;
     }
+    // Рыночная стоимость — в договор (стоимость при утрате). Не «только
+    // директору»: это договорная величина, не закупочная себестоимость.
+    const mv = Number(marketValue);
+    patch.marketValue = Number.isFinite(mv) && mv > 0 ? mv : undefined;
     patchScooter(scooter.id, patch);
     requestClose();
   };
@@ -296,6 +303,23 @@ export function ScooterEditForm({
                 />
               </Field>
             )}
+
+            <Field
+              label="Рыночная стоимость, ₽"
+              hint={
+                <span className="text-[11px] text-muted-2">
+                  в договор — стоимость при утрате
+                </span>
+              }
+            >
+              <input
+                type="number"
+                value={marketValue}
+                onChange={(e) => setMarketValue(e.target.value)}
+                placeholder="150000"
+                className="h-10 w-full rounded-[10px] border border-border bg-surface px-3 text-[14px] font-semibold tabular-nums text-ink outline-none focus:border-blue-600"
+              />
+            </Field>
 
             <Field label="Комментарий">
               <textarea

@@ -24,6 +24,7 @@ export function adaptScooter(a: ApiScooter): FleetScooter {
     color: a.color ?? undefined,
     purchaseDate: isoDateToRu(a.purchaseDate),
     purchasePrice: a.purchasePrice ?? undefined,
+    marketValue: a.marketValue ?? undefined,
     lastOilChangeMileage: a.lastOilChangeMileage ?? undefined,
     note: a.note ?? undefined,
   };

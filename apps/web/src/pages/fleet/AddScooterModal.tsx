@@ -75,6 +75,7 @@ export function AddScooterModal({ onClose }: { onClose: () => void }) {
   const [color, setColor] = useState("");
   const [purchaseDate, setPurchaseDate] = useState(toDateInput(todayRu()));
   const [purchasePrice, setPurchasePrice] = useState("");
+  const [marketValue, setMarketValue] = useState("");
   const [status, setStatus] = useState<ScooterBaseStatus>("ready");
   const [note, setNote] = useState("");
 
@@ -147,6 +148,7 @@ export function AddScooterModal({ onClose }: { onClose: () => void }) {
         role === "director" && purchasePrice
           ? Number(purchasePrice) || undefined
           : undefined,
+      marketValue: marketValue ? Number(marketValue) || undefined : undefined,
       note: note.trim() || undefined,
     });
     requestClose();
@@ -344,6 +346,24 @@ export function AddScooterModal({ onClose }: { onClose: () => void }) {
                 />
               </Field>
             )}
+
+            <Field
+              label="Рыночная стоимость, ₽"
+              hint={
+                <span className="text-[11px] text-muted-2">
+                  в договор — стоимость при утрате
+                </span>
+              }
+            >
+              <input
+                type="number"
+                min={0}
+                value={marketValue}
+                onChange={(e) => setMarketValue(e.target.value)}
+                placeholder="150000"
+                className="h-10 w-full rounded-[10px] border border-border bg-surface px-3 text-[14px] font-semibold tabular-nums text-ink outline-none focus:border-blue-600"
+              />
+            </Field>
 
             <Field label="Стартовый статус">
               <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">

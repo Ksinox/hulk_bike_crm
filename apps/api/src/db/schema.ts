@@ -338,6 +338,9 @@ export const scooters = pgTable(
     purchaseDate: date("purchase_date"),
     /** Цена закупа, ₽. Читается только директором на уровне API. */
     purchasePrice: integer("purchase_price"),
+    /** Рыночная стоимость, ₽. Подставляется в договор (п. 4.1 «стоимость
+     *  Скутера при утрате»). NULL → договор берёт purchasePrice (back-compat). */
+    marketValue: integer("market_value"),
     /** Пробег на момент последней замены масла, км */
     lastOilChangeMileage: integer("last_oil_change_mileage"),
     note: text("note"),
