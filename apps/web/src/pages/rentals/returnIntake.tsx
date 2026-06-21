@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { Bike, Image as ImageIcon, X, Plus, Minus, Search, ChevronDown, CheckCircle2, Camera } from "lucide-react";
+import { Bike, Image as ImageIcon, X, Plus, Minus, Search, ChevronDown, ChevronLeft, Pencil, CheckCircle2, Camera } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useIsMobile } from "@/lib/useIsMobile";
+import { MobileNumPad } from "@/mobile/MobileNumPad";
 import {
   DamageMediaCapture,
   analyzeFile,
@@ -878,6 +880,19 @@ function DamagePicker({
     setLines((arr) =>
       arr.map((l, i) => (i === idx ? { ...l, quantity: Math.max(1, l.quantity + delta) } : l)),
     );
+  const setLineQtyAbs = (idx: number, q: number) =>
+    setLines((arr) =>
+      arr.map((l, i) => (i === idx ? { ...l, quantity: Math.max(1, q) } : l)),
+    );
+
+  // Мобильный нативный ввод числа (цена/кол-во строки, цена своей позиции).
+  const isMobile = useIsMobile();
+  const [numpad, setNumpad] = useState<null | {
+    label: string;
+    sublabel?: string;
+    initial: number;
+    onConfirm: (n: number) => void;
+  }>(null);
 
   const ql = query.trim().toLowerCase();
   const filteredCatalog = catalog
@@ -886,6 +901,265 @@ function DamagePicker({
       items: ql ? g.items.filter((it) => it.name.toLowerCase().includes(ql)) : g.items,
     }))
     .filter((g) => g.items.length > 0);
+
+  // ─────────────── Мобильный полноэкранный пикер ущерба ───────────────
+  // «Проблема» на позиции открывает тот же flow, что фиксация ущерба:
+  // поиск по прайсу, добавление, своя позиция, правка цены/кол-ва через
+  // нативную клавиатуру. Выезжает как полный экран поверх мастера закрытия.
+  if (isMobile) {
+    return (
+      <div className="fixed inset-0 z-[130] flex flex-col bg-surface animate-fade-in">
+        {/* Header */}
+        <div className="flex items-center gap-2 border-b border-border bg-surface-soft px-3 py-2.5">
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-9 w-9 items-center justify-center rounded-full text-ink-2 active:bg-border"
+          >
+            <ChevronLeft size={20} />
+          </button>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[15px] font-semibold text-ink">
+              {title}
+            </div>
+            {subtitle && (
+              <div className="truncate text-[11px] text-muted-2">
+                Прайс {mode === "scooter" ? "по модели" : "экипировки"} ·{" "}
+                {subtitle}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto px-4 py-3">
+          {/* Выбранные строки */}
+          {lines.length > 0 && (
+            <div className="mb-3">
+              <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-orange-ink">
+                Что списываем ({lines.length})
+              </div>
+              <div className="space-y-2">
+                {lines.map((l, i) => (
+                  <div
+                    key={i}
+                    className="animate-item-pop rounded-2xl border border-orange-200 bg-surface p-3"
+                  >
+                    <div className="flex items-start gap-2">
+                      <span className="min-w-0 flex-1 text-[14px] font-semibold leading-snug text-ink">
+                        {l.name}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => removeLine(i)}
+                        className="-mr-1 -mt-1 flex h-8 w-8 items-center justify-center rounded-full text-muted-2 active:bg-red-soft active:text-red"
+                      >
+                        <X size={16} />
+                      </button>
+                    </div>
+                    <div className="mt-2 flex items-center gap-2">
+                      <div className="flex items-center rounded-xl border border-border bg-surface-soft">
+                        <button
+                          type="button"
+                          onClick={() => setLineQty(i, -1)}
+                          disabled={l.quantity <= 1}
+                          className="flex h-10 w-10 items-center justify-center text-ink-2 active:bg-border disabled:opacity-30"
+                        >
+                          <Minus size={15} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setNumpad({
+                              label: "Количество",
+                              sublabel: l.name,
+                              initial: l.quantity,
+                              onConfirm: (n) => setLineQtyAbs(i, n),
+                            })
+                          }
+                          className="min-w-[34px] text-center text-[15px] font-semibold tabular-nums text-ink"
+                        >
+                          {l.quantity}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setLineQty(i, +1)}
+                          className="flex h-10 w-10 items-center justify-center text-ink-2 active:bg-border"
+                        >
+                          <Plus size={15} />
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setNumpad({
+                            label: "Цена позиции",
+                            sublabel: l.name,
+                            initial: l.price,
+                            onConfirm: (n) => setLinePrice(i, n),
+                          })
+                        }
+                        className="flex h-10 flex-1 items-center justify-between rounded-xl border border-border bg-surface-soft px-3 active:border-blue-400"
+                      >
+                        <span className="text-[15px] font-semibold tabular-nums text-ink">
+                          {fmt(l.price)} ₽
+                        </span>
+                        <Pencil size={13} className="text-muted-2" />
+                      </button>
+                      <span className="shrink-0 text-[15px] font-bold tabular-nums text-orange-ink">
+                        {fmt(lineTotal(l))} ₽
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Поиск */}
+          <div className="sticky top-0 z-10 -mx-4 bg-surface px-4 pb-2">
+            <div className="flex items-center gap-2 rounded-xl border border-border bg-surface-soft px-3 focus-within:border-blue-600">
+              <Search size={16} className="shrink-0 text-muted-2" />
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Поиск по прайсу…"
+                className="h-11 w-full bg-transparent text-[14px] outline-none"
+              />
+            </div>
+          </div>
+
+          {/* Каталог */}
+          {filteredCatalog.length === 0 && (
+            <div className="py-2 text-[13px] text-muted-2">
+              {catalog.length === 0
+                ? "Прайс пуст — добавьте свою позицию ниже."
+                : "Ничего не найдено по запросу."}
+            </div>
+          )}
+          <div className="space-y-3">
+            {filteredCatalog.map((g) => (
+              <div key={g.id}>
+                <div className="mb-1 text-[10.5px] font-semibold uppercase tracking-wider text-muted-2">
+                  {g.name}
+                </div>
+                <div className="space-y-1.5">
+                  {g.items.map((it) => {
+                    const added = lines.find((l) => l.itemId === it.id);
+                    return (
+                      <button
+                        key={it.id}
+                        type="button"
+                        onClick={() => addFromPrice(it)}
+                        className={cn(
+                          "flex w-full items-center gap-2 rounded-xl border px-3 py-3 text-left text-[14px] transition-colors",
+                          added
+                            ? "border-orange-300 bg-orange-soft/30"
+                            : "border-border bg-surface active:bg-orange-soft/15",
+                        )}
+                      >
+                        <span className="min-w-0 flex-1 leading-snug text-ink-2">
+                          {it.name}
+                        </span>
+                        <span className="shrink-0 font-semibold tabular-nums text-ink">
+                          {fmt(it.priceA ?? 0)} ₽
+                        </span>
+                        {added ? (
+                          <span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-orange-500 px-1.5 text-[11px] font-bold text-white">
+                            ×{added.quantity}
+                          </span>
+                        ) : (
+                          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-soft text-blue-600">
+                            <Plus size={15} />
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Своя позиция */}
+          <div className="mt-3 border-t border-border pt-3">
+            <div className="mb-1.5 text-[10.5px] font-semibold uppercase tracking-wider text-muted-2">
+              Своя позиция
+            </div>
+            <input
+              type="text"
+              value={customName}
+              onChange={(e) => setCustomName(e.target.value)}
+              placeholder="Например: разбит визор"
+              className="h-11 w-full rounded-xl border border-border bg-surface-soft px-3 text-[14px] outline-none focus:border-blue-600"
+            />
+            <div className="mt-2 flex gap-2">
+              <button
+                type="button"
+                onClick={() =>
+                  setNumpad({
+                    label: "Цена своей позиции",
+                    initial: Number(customPrice) || 0,
+                    onConfirm: (n) => setCustomPrice(String(n)),
+                  })
+                }
+                className="flex h-11 flex-1 items-center justify-between rounded-xl border border-border bg-surface-soft px-3 active:border-blue-400"
+              >
+                <span
+                  className={cn(
+                    "text-[15px] font-semibold tabular-nums",
+                    customPrice ? "text-ink" : "text-muted-2",
+                  )}
+                >
+                  {customPrice ? `${fmt(Number(customPrice))} ₽` : "Цена ₽"}
+                </span>
+                <Pencil size={13} className="text-muted-2" />
+              </button>
+              <button
+                type="button"
+                onClick={addCustom}
+                disabled={!customName.trim() || !(Number(customPrice) > 0)}
+                className="h-11 shrink-0 rounded-xl bg-blue-600 px-4 text-[14px] font-semibold text-white disabled:opacity-40"
+              >
+                Добавить
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="border-t border-border bg-surface px-4 py-3 pb-[max(env(safe-area-inset-bottom),0.75rem)]">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-[13px] text-muted-2">Итого</span>
+            <span className="font-display text-[18px] font-extrabold tabular-nums text-orange-ink">
+              {fmt(total)} ₽
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => onApply(lines)}
+            className="h-12 w-full rounded-2xl bg-blue-600 text-[15px] font-bold text-white transition-transform active:scale-[0.98]"
+          >
+            {lines.length === 0 ? "Без ущерба" : "Применить"}
+          </button>
+        </div>
+
+        {numpad && (
+          <MobileNumPad
+            label={numpad.label}
+            sublabel={numpad.sublabel}
+            initial={numpad.initial}
+            onCancel={() => setNumpad(null)}
+            onConfirm={(n) => {
+              numpad.onConfirm(n);
+              setNumpad(null);
+            }}
+          />
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="flex max-h-[88vh] w-full shrink-0 flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-card-lg animate-modal-in md:w-[440px]">

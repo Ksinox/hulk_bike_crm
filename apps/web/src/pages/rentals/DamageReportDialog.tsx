@@ -3,10 +3,12 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronRight,
+  ChevronLeft,
   Search,
   Plus,
   Minus,
   Trash2,
+  Pencil,
   X,
   Wrench,
   Loader2,
@@ -37,6 +39,8 @@ import {
   analyzeFile,
   type StagedMedia,
 } from "./DamageMediaCapture";
+import { useIsMobile } from "@/lib/useIsMobile";
+import { MobileNumPad } from "@/mobile/MobileNumPad";
 
 function fmt(n: number) {
   return n.toLocaleString("ru-RU");
@@ -329,6 +333,52 @@ export function DamageReportDialog({
     }
   };
 
+  // === Мобильный пошаговый мастер ===
+  // На телефоне диалог разворачивается в полноэкранный мастер из 3 шагов:
+  //  0 — что повреждено (поиск/прейскурант/своя позиция),
+  //  1 — суммы и зачёт залога (правка через нативную клавиатуру MobileNumPad),
+  //  2 — фото, комментарий, «в ремонт» и сохранение.
+  // Десктоп использует прежний двухколоночный layout ниже без изменений.
+  const isMobile = useIsMobile();
+  const [step, setStep] = useState(0);
+  const [stepDir, setStepDir] = useState<"fwd" | "back">("fwd");
+  const [numpad, setNumpad] = useState<null | {
+    label: string;
+    sublabel?: string;
+    hint?: string;
+    initial: number;
+    max?: number;
+    onConfirm: (n: number) => void;
+  }>(null);
+  const goStep = (n: number) => {
+    setStepDir(n >= step ? "fwd" : "back");
+    setStep(n);
+  };
+  // «Своя позиция» — добавляем строку с priceItemId=null; имя/цену оператор
+  // правит на шаге сумм (имя — инпут, цена — нативная клавиатура).
+  const addCustomItem = () => {
+    const uid = `custom-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    setSelected((p) => [
+      ...p,
+      {
+        uid,
+        priceItemId: null,
+        name: "Прочее повреждение",
+        originalPrice: 0,
+        finalPrice: 0,
+        quantity: 1,
+        comment: "",
+      },
+    ]);
+  };
+  const toggleGroup = (id: number) =>
+    setOpenGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
   // Минимальная валидация: должна быть выбрана хотя бы одна позиция.
   // Комментарии «где конкретно» опциональны — необязательно их заполнять,
   // чтобы создать акт.
@@ -415,6 +465,554 @@ export function DamageReportDialog({
       );
     }
   };
+
+  // ===================== МОБИЛЬНЫЙ МАСТЕР =====================
+  if (isMobile) {
+    const stepTitles = ["Что повреждено", "Суммы и зачёт", "Фото и сохранение"];
+    const canNext = step === 0 ? selected.length > 0 : true;
+    const stepAnim = stepDir === "fwd" ? "animate-wz-fwd" : "animate-wz-back";
+
+    const fallbackChips = needsFallback ? (
+      <div className="mt-2 rounded-xl bg-amber-50 px-3 py-2.5 text-[13px] text-amber-900">
+        <div className="font-semibold">По какому прайсу считать «Детали»?</div>
+        <div className="mt-1.5 flex flex-wrap gap-1.5">
+          {Array.from(
+            new Set(
+              otherModelGroups
+                .map((g) => g.scooterModelId)
+                .filter((x): x is number => x != null),
+            ),
+          ).map((mid) => {
+            const m = models.data?.find((x) => x.id === mid);
+            if (!m) return null;
+            return (
+              <button
+                key={mid}
+                type="button"
+                onClick={() => setFallbackModelId(mid)}
+                className={cn(
+                  "rounded-lg border border-border bg-white px-3 py-1.5 text-[13px] font-semibold",
+                  fallbackModelId === mid && "border-amber-500 bg-amber-100",
+                )}
+              >
+                {m.name}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    ) : null;
+
+    return (
+      <div
+        className={cn(
+          "fixed inset-0 z-[120] flex flex-col bg-surface",
+          closing ? "animate-fade-out" : "animate-fade-in",
+        )}
+      >
+        {/* HEADER */}
+        <div className="flex items-center gap-2 border-b border-border bg-surface-soft px-3 py-2.5">
+          <button
+            type="button"
+            onClick={step === 0 ? requestClose : () => goStep(step - 1)}
+            className="flex h-9 w-9 items-center justify-center rounded-full text-ink-2 active:bg-border"
+          >
+            {step === 0 ? <X size={18} /> : <ChevronLeft size={20} />}
+          </button>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[15px] font-semibold text-ink">
+              {isEdit ? "Изменить акт" : "Зафиксировать ущерб"}
+            </div>
+            <div className="truncate text-[11px] text-muted-2">
+              {rental.scooter}
+              {modelName ? ` · ${modelName}` : ""} · {clientName}
+            </div>
+          </div>
+          <div className="text-[11px] font-semibold text-muted-2">
+            {step + 1}/3
+          </div>
+        </div>
+        {/* PROGRESS */}
+        <div className="h-1 w-full bg-border">
+          <div
+            className="h-full bg-blue-600 transition-all duration-300"
+            style={{ width: `${((step + 1) / 3) * 100}%` }}
+          />
+        </div>
+        <div className="px-4 pb-1 pt-3">
+          <div className="text-[12px] font-bold uppercase tracking-wider text-blue-700">
+            Шаг {step + 1} · {stepTitles[step]}
+          </div>
+        </div>
+
+        {/* BODY */}
+        <div key={step} className={cn("flex-1 overflow-y-auto px-4 pb-3", stepAnim)}>
+          {/* ---------- ШАГ 0: что повреждено ---------- */}
+          {step === 0 && (
+            <>
+              <div className="sticky top-0 z-10 -mx-4 bg-surface px-4 pb-2 pt-1">
+                <div className="relative">
+                  <Search
+                    size={16}
+                    className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-2"
+                  />
+                  <input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Поиск по позициям…"
+                    className="h-11 w-full rounded-xl border border-border bg-surface-soft pl-9 pr-3 text-[14px] outline-none focus:border-blue-600"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={addCustomItem}
+                  className="mt-2 flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-dashed border-blue-300 bg-blue-50 text-[14px] font-semibold text-blue-700 transition-transform active:scale-[0.99]"
+                >
+                  <Plus size={16} /> Своя позиция
+                </button>
+              </div>
+              {fallbackChips}
+              {list.isLoading ? (
+                <div className="flex items-center justify-center gap-2 py-10 text-muted-2">
+                  <Loader2 size={14} className="animate-spin" /> Загружаем…
+                </div>
+              ) : visibleGroups.length === 0 ? (
+                <div className="mt-2 rounded-xl border border-dashed border-border p-6 text-center text-[13px] text-muted-2">
+                  Прейскурант пуст. Заполните его в «Документы → Прейскурант».
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2 pt-2">
+                  {visibleGroups.map((g) => {
+                    const isOpen = openGroups.has(g.id);
+                    const items = g.items.filter(matchItem);
+                    if (searchLower && items.length === 0) return null;
+                    const linkedModel =
+                      g.scooterModelId != null
+                        ? models.data?.find((m) => m.id === g.scooterModelId)
+                        : null;
+                    return (
+                      <div
+                        key={g.id}
+                        className="overflow-hidden rounded-2xl border border-border"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => toggleGroup(g.id)}
+                          className="flex w-full items-center gap-2 bg-surface-soft px-3 py-3 text-left active:bg-blue-50"
+                        >
+                          {isOpen || searchLower ? (
+                            <ChevronDown size={16} className="text-muted-2" />
+                          ) : (
+                            <ChevronRight size={16} className="text-muted-2" />
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[14px] font-semibold text-ink">
+                                {g.name}
+                              </span>
+                              {linkedModel ? (
+                                <span className="rounded-full bg-blue-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-blue-700">
+                                  {linkedModel.name}
+                                </span>
+                              ) : (
+                                <span className="rounded-full bg-surface px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-muted-2">
+                                  общая
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-0.5 text-[11px] text-muted-2">
+                              {g.items.length} поз.
+                            </div>
+                          </div>
+                        </button>
+                        {(isOpen || searchLower) && (
+                          <div className="divide-y divide-border">
+                            {items.map((it) => {
+                              const useB =
+                                g.hasTwoPrices &&
+                                modelName?.toLowerCase().includes("jog");
+                              const price = useB
+                                ? it.priceB
+                                : it.priceA ?? it.priceB;
+                              return (
+                                <button
+                                  key={it.id}
+                                  type="button"
+                                  onClick={() => addItem(g, it)}
+                                  className="flex w-full items-center justify-between gap-2 px-3 py-3 text-left active:bg-blue-50"
+                                >
+                                  <span className="min-w-0 flex-1 text-[14px] text-ink">
+                                    {it.name}
+                                  </span>
+                                  <span className="text-[13px] font-semibold tabular-nums text-ink">
+                                    {price == null ? "—" : `${fmt(price)} ₽`}
+                                  </span>
+                                  <Plus size={15} className="text-blue-600" />
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* ---------- ШАГ 1: суммы и зачёт залога ---------- */}
+          {step === 1 && (
+            <div className="flex flex-col gap-2.5 pt-1">
+              {selected.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-border p-6 text-center text-[13px] text-muted-2">
+                  Вернитесь на шаг назад и выберите, что повреждено.
+                </div>
+              ) : (
+                selected.map((s) => (
+                  <div
+                    key={s.uid}
+                    className="animate-item-pop rounded-2xl border border-border bg-surface p-3"
+                  >
+                    <div className="flex items-start gap-2">
+                      {s.priceItemId == null ? (
+                        <input
+                          value={s.name}
+                          onChange={(e) =>
+                            patchSel(s.uid, { name: e.target.value })
+                          }
+                          placeholder="Название позиции"
+                          className="min-w-0 flex-1 rounded-lg border border-border bg-surface-soft px-2 py-1.5 text-[14px] font-semibold text-ink outline-none focus:border-blue-600"
+                        />
+                      ) : (
+                        <div className="min-w-0 flex-1 text-[14px] font-semibold text-ink">
+                          {s.name}
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => removeUid(s.uid)}
+                        className="-mr-1 -mt-1 flex h-8 w-8 items-center justify-center rounded-full text-muted-2 active:bg-red-soft active:text-red-600"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                    <div className="mt-2 flex items-center gap-2">
+                      {/* Кол-во */}
+                      <div className="flex items-center rounded-xl border border-border bg-surface-soft">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            patchSel(s.uid, {
+                              quantity: Math.max(1, s.quantity - 1),
+                            })
+                          }
+                          className="flex h-10 w-10 items-center justify-center text-ink-2 active:bg-border"
+                        >
+                          <Minus size={15} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setNumpad({
+                              label: "Количество",
+                              sublabel: s.name,
+                              initial: s.quantity,
+                              onConfirm: (n) =>
+                                patchSel(s.uid, { quantity: Math.max(1, n) }),
+                            })
+                          }
+                          className="min-w-[34px] text-center text-[15px] font-semibold tabular-nums text-ink"
+                        >
+                          {s.quantity}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            patchSel(s.uid, { quantity: s.quantity + 1 })
+                          }
+                          className="flex h-10 w-10 items-center justify-center text-ink-2 active:bg-border"
+                        >
+                          <Plus size={15} />
+                        </button>
+                      </div>
+                      {/* Цена — нативная клавиатура */}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setNumpad({
+                            label: "Цена позиции",
+                            sublabel: s.name,
+                            hint:
+                              s.originalPrice > 0
+                                ? `из прейскуранта: ${fmt(s.originalPrice)} ₽`
+                                : undefined,
+                            initial: s.finalPrice,
+                            onConfirm: (n) =>
+                              patchSel(s.uid, { finalPrice: n }),
+                          })
+                        }
+                        className="flex h-10 flex-1 items-center justify-between rounded-xl border border-border bg-surface-soft px-3 active:border-blue-400"
+                      >
+                        <span className="text-[15px] font-semibold tabular-nums text-ink">
+                          {fmt(s.finalPrice)} ₽
+                        </span>
+                        <Pencil size={13} className="text-muted-2" />
+                      </button>
+                    </div>
+                    <div className="mt-1.5 flex items-center justify-between">
+                      <span className="text-[12px] text-muted-2">Сумма</span>
+                      <span className="text-[15px] font-bold tabular-nums text-ink">
+                        {fmt(s.finalPrice * s.quantity)} ₽
+                      </span>
+                    </div>
+                    <input
+                      value={s.comment ?? ""}
+                      onChange={(e) =>
+                        patchSel(s.uid, { comment: e.target.value })
+                      }
+                      placeholder="Где именно (необязательно)"
+                      className="mt-2 w-full rounded-lg border border-border bg-surface-soft px-2.5 py-2 text-[13px] outline-none focus:border-blue-600"
+                    />
+                  </div>
+                ))
+              )}
+              <button
+                type="button"
+                onClick={addCustomItem}
+                className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-dashed border-blue-300 bg-blue-50 text-[14px] font-semibold text-blue-700 transition-transform active:scale-[0.99]"
+              >
+                <Plus size={16} /> Своя позиция
+              </button>
+
+              {/* Зачёт из залога */}
+              {depositIsItem ? (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-[13px] text-amber-900">
+                  <b>Залог — предмет</b>, не деньги. Удерживайте предмет до
+                  полного покрытия долга — деньгами зачитывать нечего.
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-border bg-surface-soft p-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[13px] text-muted-2">
+                      Зачесть из залога
+                    </span>
+                    <span className="text-[11px] text-muted-2">
+                      макс {fmt(rental.deposit ?? 0)} ₽
+                    </span>
+                  </div>
+                  <div className="mt-2 flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={depositMax <= 0}
+                      onClick={() =>
+                        setNumpad({
+                          label: "Зачесть из залога",
+                          hint: `макс ${fmt(depositMax)} ₽`,
+                          initial: depositCovered,
+                          max: depositMax,
+                          onConfirm: setDepositCovered,
+                        })
+                      }
+                      className="flex h-11 flex-1 items-center justify-between rounded-xl border border-border bg-surface px-3 active:border-blue-400 disabled:opacity-50"
+                    >
+                      <span className="text-[16px] font-bold tabular-nums text-ink">
+                        {fmt(depositCovered)} ₽
+                      </span>
+                      <Pencil size={14} className="text-muted-2" />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={depositMax <= 0}
+                      onClick={() => setDepositCovered(depositMax)}
+                      className={cn(
+                        "h-11 rounded-xl border px-3 text-[13px] font-semibold",
+                        depositCovered === depositMax && depositMax > 0
+                          ? "border-blue-500 bg-blue-50 text-blue-700"
+                          : "border-border bg-surface text-ink-2",
+                      )}
+                    >
+                      Весь
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ---------- ШАГ 2: фото + сохранение ---------- */}
+          {step === 2 && (
+            <div className="flex flex-col gap-3 pt-1">
+              <div className="rounded-2xl border border-border bg-surface-soft p-3 text-[13px]">
+                <div className="flex justify-between">
+                  <span className="text-muted-2">Итого по акту</span>
+                  <span className="font-semibold tabular-nums text-ink">
+                    {fmt(total)} ₽
+                  </span>
+                </div>
+                {!depositIsItem && (
+                  <div className="mt-1 flex justify-between">
+                    <span className="text-muted-2">Зачёт из залога</span>
+                    <span className="tabular-nums text-ink-2">
+                      −{fmt(depositCovered)} ₽
+                    </span>
+                  </div>
+                )}
+                <div className="mt-1.5 flex justify-between border-t border-border pt-1.5 text-[14px] font-bold">
+                  <span className="text-ink">К доплате (долг)</span>
+                  <span
+                    className={cn(
+                      "tabular-nums",
+                      debt > 0 ? "text-red-600" : "text-green-600",
+                    )}
+                  >
+                    {fmt(debt)} ₽
+                  </span>
+                </div>
+              </div>
+              {debt > 0 && !depositIsItem && (
+                <div className="flex items-start gap-1.5 rounded-2xl border border-amber-200 bg-amber-50/70 px-3 py-2.5 text-[12px] leading-snug text-amber-900">
+                  <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+                  <span>
+                    Остаток <b>{fmt(debt)} ₽</b> станет{" "}
+                    <b>мягким долгом клиента</b> — поедет за ним, пока не
+                    погасит. Досудебную претензию формировать необязательно.
+                  </span>
+                </div>
+              )}
+              <textarea
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="Комментарий к акту (необязательно)"
+                rows={2}
+                className="rounded-xl border border-border bg-surface-soft px-3 py-2 text-[14px] outline-none focus:border-blue-600"
+              />
+              <div className="flex flex-col gap-2 rounded-2xl border border-orange-200 bg-orange-soft/40 p-3">
+                <div className="flex items-center gap-1.5 text-[13px] font-bold text-orange-ink">
+                  <Camera size={14} /> Фото и видео повреждений
+                  {uploadedMedia.length + staged.length > 0 && (
+                    <span className="ml-auto rounded-full bg-white px-2 text-[12px] font-bold text-orange-ink">
+                      {uploadedMedia.length + staged.length}
+                    </span>
+                  )}
+                </div>
+                <DamageMediaCapture
+                  staged={staged}
+                  uploaded={uploadedMedia}
+                  onPick={onPickMedia}
+                  onRemoveStaged={removeStaged}
+                  onRemoveUploaded={removeUploaded}
+                  busy={mediaBusy}
+                  disabled={isPending}
+                />
+              </div>
+              {!isEdit && (
+                <button
+                  type="button"
+                  onClick={() => setSendToRepair((v) => !v)}
+                  className="flex items-center gap-3 rounded-2xl border border-border bg-surface-soft p-3 text-left transition-transform active:scale-[0.99]"
+                >
+                  <span
+                    className={cn(
+                      "relative h-6 w-11 shrink-0 rounded-full transition-colors",
+                      sendToRepair ? "bg-blue-600" : "bg-muted-2/40",
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all",
+                        sendToRepair ? "left-[22px]" : "left-0.5",
+                      )}
+                    />
+                  </span>
+                  <span className="flex items-center gap-1.5 text-[14px] font-medium text-ink">
+                    <Wrench size={14} className="text-muted-2" /> Отправить
+                    скутер в ремонт
+                  </span>
+                </button>
+              )}
+              {!isEdit && sendToRepair && rental.status === "active" && (
+                <div className="flex items-start gap-1.5 rounded-2xl border border-blue-200 bg-blue-50/70 px-3 py-2.5 text-[12px] leading-snug text-blue-900">
+                  <Wrench size={14} className="mt-0.5 shrink-0" />
+                  <span>
+                    Скутер уедет в ремонт — на этой аренде он станет
+                    недоступен. Чтобы клиент продолжил, <b>замените скутер</b> в
+                    карточке аренды.
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* FOOTER */}
+        <div className="border-t border-border bg-surface px-4 py-3 pb-[max(env(safe-area-inset-bottom),0.75rem)]">
+          {step < 2 && selected.length > 0 && (
+            <div
+              key={`sum-${selected.length}-${total}`}
+              className="mb-2 flex animate-item-pop items-center justify-between"
+            >
+              <span className="text-[12px] text-muted-2">
+                Выбрано {selected.length} · итог
+              </span>
+              <span className="text-[15px] font-bold tabular-nums text-ink">
+                {fmt(total)} ₽
+              </span>
+            </div>
+          )}
+          <div className="flex gap-2">
+            {step > 0 && (
+              <button
+                type="button"
+                onClick={() => goStep(step - 1)}
+                className="h-12 flex-1 rounded-2xl bg-surface-soft text-[15px] font-semibold text-ink-2 transition-transform active:scale-[0.98]"
+              >
+                Назад
+              </button>
+            )}
+            {step < 2 ? (
+              <button
+                type="button"
+                onClick={() => goStep(step + 1)}
+                disabled={!canNext}
+                className="h-12 flex-[2] rounded-2xl bg-blue-600 text-[15px] font-bold text-white transition-transform active:scale-[0.98] disabled:opacity-50"
+              >
+                Далее
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={onSubmit}
+                disabled={!valid || isPending || mediaBusy}
+                className="h-12 flex-[2] rounded-2xl bg-red-600 text-[15px] font-bold text-white transition-transform active:scale-[0.98] disabled:opacity-50"
+              >
+                {isPending || mediaBusy
+                  ? "Сохраняем…"
+                  : isEdit
+                    ? "Сохранить"
+                    : (submitLabel ?? "Создать акт")}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {numpad && (
+          <MobileNumPad
+            label={numpad.label}
+            sublabel={numpad.sublabel}
+            hint={numpad.hint}
+            initial={numpad.initial}
+            max={numpad.max}
+            onCancel={() => setNumpad(null)}
+            onConfirm={(n) => {
+              numpad.onConfirm(n);
+              setNumpad(null);
+            }}
+          />
+        )}
+      </div>
+    );
+  }
 
   return (
     <div

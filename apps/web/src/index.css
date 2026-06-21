@@ -275,6 +275,48 @@
   animation: fade-out 240ms ease-in-out both;
 }
 
+/* Мобильные мастера (ущерб/закрытие): лёгкий горизонтальный слайд шагов
+   вперёд/назад + плавное появление новых позиций в списке. */
+@keyframes wz-fwd {
+  from {
+    opacity: 0;
+    transform: translateX(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+@keyframes wz-back {
+  from {
+    opacity: 0;
+    transform: translateX(-18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+.animate-wz-fwd {
+  animation: wz-fwd 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.animate-wz-back {
+  animation: wz-back 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes item-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.animate-item-pop {
+  animation: item-pop 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
 @keyframes task-flyaway {
   0% {
     transform: translate(0, 0) scale(1) rotate(0deg);
