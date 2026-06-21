@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
-import { eq, asc, and, sum } from "drizzle-orm";
+import { eq, asc, and, sum, ne } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/index.js";
 import {
@@ -571,19 +571,51 @@ export async function damageReportsRoutes(app: FastifyInstance) {
       .from(damageReports)
       .where(eq(damageReports.id, id));
     if (!report) return reply.code(404).send({ error: "not found" });
-    // Проверим — нет ли платежей (тогда удалять нельзя без отвязки).
+    // Проверим — нет ли РЕАЛЬНЫХ платежей (тогда удалять нельзя без отвязки).
+    // deposit_forfeit — внутренняя запись зачёта залога (не живые деньги),
+    // её из проверки исключаем и снимаем вместе с актом (ниже).
     const sumRows = await db
       .select({
         paidSum: sum(payments.amount),
       })
       .from(payments)
-      .where(eq(payments.damageReportId, id));
+      .where(
+        and(
+          eq(payments.damageReportId, id),
+          ne(payments.type, "deposit_forfeit"),
+        ),
+      );
     const paidSum = sumRows[0]?.paidSum;
     if (paidSum && Number(paidSum) > 0) {
       return reply.code(409).send({
         error: "has_payments",
         message: "По акту уже есть платежи — удаление заблокировано.",
       });
+    }
+    // Снимаем зачёт залога: удаляем deposit_forfeit (иначе остался бы
+    // «осиротевший» платёж, продолжающий капать в выручку) и возвращаем
+    // удержанную сумму обратно на залог аренды.
+    if ((report.depositCovered ?? 0) > 0) {
+      await syncDepositForfeit(
+        report.rentalId,
+        id,
+        0,
+        report.createdAt ?? new Date(),
+      );
+      const [r] = await db
+        .select()
+        .from(rentals)
+        .where(eq(rentals.id, report.rentalId));
+      if (r) {
+        const cur = r.deposit ?? 0;
+        const original = r.depositOriginal ?? cur;
+        await db
+          .update(rentals)
+          .set({
+            deposit: Math.min(original, cur + (report.depositCovered ?? 0)),
+          })
+          .where(eq(rentals.id, report.rentalId));
+      }
     }
     await db.delete(damageReports).where(eq(damageReports.id, id));
     await logActivity(req, {
