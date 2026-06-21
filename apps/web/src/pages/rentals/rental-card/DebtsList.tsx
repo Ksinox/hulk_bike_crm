@@ -211,6 +211,20 @@ export function DebtsList({
     });
   }
 
+  // Пересчёт по замене модели (swap_fee) — отдельные строки. Неоплаченный =
+  // открытый долг, оплаченный = закрыт. Раньше swap_fee в этой ленте не было,
+  // и долг по замене был «невидим» здесь (виден только в KPI «Долг»).
+  for (const p of data.payments.filter((pp) => pp.type === "swap_fee")) {
+    const date = new Date(p.createdAt).toLocaleDateString("ru-RU");
+    rows.push({
+      key: `swapfee-${p.id}`,
+      status: p.paid ? "paid" : "open",
+      title: `Пересчёт по замене модели · ${date}`,
+      note: p.note || "разница ставок × остаток дней",
+      amount: p.amount,
+    });
+  }
+
   if (rows.length === 0) {
     return (
       <div className="p-5">

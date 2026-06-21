@@ -907,6 +907,15 @@ export function RentalCard({
   // void чтобы линтер не ругался.
   void chainExpected;
 
+  // swap_fee (пересчёт по замене модели) — отделяем из обезличенного
+  // «не оплачено по аренде», чтобы в составе долга было видно ИЗ-ЗА ЧЕГО долг
+  // (а не подписывать доплату за замену как «плановая оплата аренды»).
+  const swapFeePending = chainPayments
+    .filter((p) => !p.paid && p.type === "swap_fee")
+    .filter((p) => activeRentalIdsForPending.has(p.rentalId))
+    .reduce((s, p) => s + p.amount, 0);
+  const pendingOther = Math.max(0, pending - swapFeePending);
+
   // v0.7.8: состав долга/просрочки — единый источник для KPI-плашек,
   // их hover-поповеров и accordion-секции «Финансовая информация».
   // Логика НЕ меняется: те же поля debtSummary что и в KPI-плашке ниже.
@@ -1790,8 +1799,13 @@ export function RentalCard({
                   Эта аренда — {fmt(debtTotal)} ₽
                 </div>
               )}
-              {pending > 0 && (
-                <div>не оплачено: <b>{fmt(pending)} ₽</b></div>
+              {swapFeePending > 0 && (
+                <div>
+                  пересчёт по замене модели: <b>{fmt(swapFeePending)} ₽</b>
+                </div>
+              )}
+              {pendingOther > 0 && (
+                <div>не оплачено: <b>{fmt(pendingOther)} ₽</b></div>
               )}
               {overdueRentBalance > 0 && (
                 <div>аренда за дни: <b>{fmt(overdueRentBalance)} ₽</b></div>
@@ -2588,11 +2602,18 @@ export function RentalCard({
                         value={otherManualBalance}
                       />
                     )}
-                    {pending > 0 && (
+                    {swapFeePending > 0 && (
+                      <DebtRow
+                        label="Пересчёт по замене модели"
+                        formula="разница ставок × остаток дней"
+                        value={swapFeePending}
+                      />
+                    )}
+                    {pendingOther > 0 && (
                       <DebtRow
                         label="Не оплачено по аренде"
                         formula="плановая оплата аренды"
-                        value={pending}
+                        value={pendingOther}
                       />
                     )}
                     {parkingBalance > 0 && (
