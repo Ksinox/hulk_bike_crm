@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useIsMobile } from "@/lib/useIsMobile";
 import { toast } from "@/lib/toast";
 import { toastRentalDone } from "./rentalUndo";
 import { useApiScooters } from "@/lib/api/scooters";
@@ -83,6 +84,10 @@ export function SwapScooterDialog({
   const [search, setSearch] = useState("");
   const [oldStatus, setOldStatus] = useState<OldStatus>("repair");
   const [oldStatusTouched, setOldStatusTouched] = useState(false);
+  // Мобильный пошаговый мастер: 0 — старый скутер, 1 — причина,
+  // 2 — новый скутер, 3 — подтверждение. На десктопе не используется.
+  const [step, setStep] = useState(0);
+  const isMobile = useIsMobile();
 
   // #20: выбор категории причины. Если оператор ещё не трогал «куда деть
   // старый скутер» вручную — подставляем умный дефолт под причину
@@ -249,6 +254,333 @@ export function SwapScooterDialog({
       toast.error("Не удалось заменить", (e as Error).message ?? "");
     }
   };
+
+  // ============ МОБИЛЬНЫЙ ПОШАГОВЫЙ МАСТЕР ============
+  // На телефоне один плотный экран не помещался (вёрстка ехала). Разбиваем
+  // на 4 шага с навигацией назад/далее: старый скутер → причина → новый
+  // скутер → проверка. Десктоп оставляем как есть (двухколоночный).
+  if (isMobile) {
+    const STEP_TITLES = ["Старый скутер", "Причина", "Новый скутер", "Проверка"];
+    const stepValid = [
+      true,
+      !!reasonCategory,
+      !!selectedId,
+      !!selectedId && !!reasonCategory,
+    ];
+    const modelNameOf = (sc: ApiScooter | null) => {
+      if (!sc) return "—";
+      const l = models.find((m) => m.id === sc.modelId);
+      return l?.name ?? MODEL_LABEL[sc.model] ?? "—";
+    };
+    const goBack = () =>
+      step === 0 ? requestClose() : setStep((s) => Math.max(0, s - 1));
+    const goNext = () => {
+      if (!stepValid[step]) {
+        if (step === 1) {
+          setCategoryError(true);
+          toast.error("Укажите причину замены", "Выберите вариант ниже");
+        } else if (step === 2) {
+          toast.error("Не выбран скутер", "Выберите из парка аренды");
+        }
+        return;
+      }
+      setStep((s) => Math.min(3, s + 1));
+    };
+    const statusLabel =
+      SCOOTER_BASE_STATUS_OPTIONS.find((o) => o.value === oldStatus)?.label ??
+      oldStatus;
+    const reasonLabel =
+      REASON_CATEGORIES.find((c) => c.value === reasonCategory)?.label ?? "—";
+
+    return (
+      <div
+        className={cn(
+          "fixed inset-0 z-[120] flex flex-col bg-surface",
+          closing ? "animate-modal-out" : "animate-modal-in",
+        )}
+      >
+        {/* HEADER + ПРОГРЕСС */}
+        <div className="border-b border-border bg-surface-soft px-4 pb-2.5 pt-3">
+          <div className="flex items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <div className="text-[14px] font-semibold text-ink">
+                Замена скутера
+              </div>
+              <div className="text-[11px] text-muted-2">
+                Аренда #{String(rental.id).padStart(4, "0")} · шаг {step + 1} из 4
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={requestClose}
+              className="flex h-8 w-8 items-center justify-center rounded-full text-muted hover:bg-border hover:text-ink"
+            >
+              <X size={16} />
+            </button>
+          </div>
+          <div className="mt-2.5 flex items-center gap-1.5">
+            {STEP_TITLES.map((t, i) => (
+              <div
+                key={t}
+                className={cn(
+                  "h-1.5 flex-1 rounded-full transition-colors",
+                  i <= step ? "bg-blue-600" : "bg-border",
+                )}
+              />
+            ))}
+          </div>
+          <div className="mt-1.5 text-[12px] font-bold text-blue-700">
+            {STEP_TITLES[step]}
+          </div>
+        </div>
+
+        {/* КОНТЕКСТ: текущий → новый */}
+        <div className="flex items-center gap-2 border-b border-border bg-white px-4 py-2 text-[12px]">
+          <span className="font-semibold text-ink">{rental.scooter}</span>
+          <ArrowRight size={14} className="text-blue-600" />
+          <span
+            className={cn(
+              "font-semibold",
+              newScooter ? "text-blue-700" : "text-muted-2",
+            )}
+          >
+            {newScooter ? newScooter.name : "не выбран"}
+          </span>
+        </div>
+
+        {/* ТЕЛО ТЕКУЩЕГО ШАГА */}
+        <div className="flex-1 overflow-y-auto p-4">
+          {step === 0 && (
+            <div>
+              <div className="mb-4 flex items-center gap-3 rounded-2xl border border-border bg-white p-3">
+                <ScooterPosterAvatar scooter={currentScooter} size="md" />
+                <div className="min-w-0">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
+                    Текущий скутер
+                  </div>
+                  <div className="font-display text-[18px] font-extrabold leading-tight text-ink">
+                    {rental.scooter}
+                  </div>
+                  <div className="text-[12px] text-muted-2">
+                    {modelNameOf(currentScooter)}
+                  </div>
+                  {currentScooter?.mileage != null && (
+                    <div className="text-[11px] text-muted-2">
+                      Пробег: {currentScooter.mileage.toLocaleString("ru-RU")} км
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="mb-2 text-[13px] font-bold text-ink">
+                Что делаем со старым скутером?
+              </div>
+              <div className="flex flex-col gap-2">
+                {SCOOTER_BASE_STATUS_OPTIONS.map((o) => {
+                  const active = o.value === oldStatus;
+                  return (
+                    <button
+                      key={o.value}
+                      type="button"
+                      onClick={() => {
+                        setOldStatus(o.value);
+                        setOldStatusTouched(true);
+                      }}
+                      className={cn(
+                        "flex items-start gap-3 rounded-2xl border px-3.5 py-3 text-left transition-colors",
+                        active
+                          ? "border-blue-600 bg-blue-50"
+                          : "border-border bg-white active:bg-surface-soft",
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full",
+                          active
+                            ? "bg-blue-600 text-white"
+                            : "border border-border bg-white",
+                        )}
+                      >
+                        {active && <Check size={12} strokeWidth={3} />}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div
+                          className={cn(
+                            "text-[14px] font-bold",
+                            active ? "text-blue-700" : "text-ink",
+                          )}
+                        >
+                          {o.label}
+                        </div>
+                        <div className="text-[12px] text-muted">{o.hint}</div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {step === 1 && (
+            <div>
+              <div className="mb-2 text-[13px] font-bold text-ink">
+                Почему меняем? <span className="text-red-600">*</span>
+              </div>
+              <div className="flex flex-col gap-2">
+                {REASON_CATEGORIES.map((c) => {
+                  const active = reasonCategory === c.value;
+                  const Icon = c.icon;
+                  return (
+                    <button
+                      key={c.value}
+                      type="button"
+                      onClick={() => {
+                        setReasonCategory(c.value);
+                        setCategoryError(false);
+                      }}
+                      className={cn(
+                        "flex items-center gap-3 rounded-2xl border px-3.5 py-3 text-left transition-colors",
+                        active
+                          ? "border-blue-600 bg-blue-50 text-blue-700"
+                          : categoryError
+                            ? "border-red-300 bg-white text-ink-2"
+                            : "border-border bg-white text-ink-2 active:bg-surface-soft",
+                      )}
+                    >
+                      <Icon
+                        size={18}
+                        className={active ? "text-blue-600" : "text-muted-2"}
+                      />
+                      <span className="text-[14px] font-bold">{c.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="mb-1.5 mt-4 text-[12px] font-semibold text-muted-2">
+                Комментарий (необязательно)
+              </div>
+              <textarea
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                rows={3}
+                placeholder="Что именно, детали…"
+                className="w-full resize-none rounded-2xl border border-border bg-white px-3.5 py-3 text-[14px] outline-none focus:border-blue-600"
+              />
+            </div>
+          )}
+
+          {step === 2 && (
+            <div>
+              <div className="relative mb-3">
+                <Search
+                  size={15}
+                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-2"
+                />
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Поиск по номеру или модели…"
+                  className="h-11 w-full rounded-2xl border border-border bg-white pl-9 pr-3 text-[14px] outline-none focus:border-blue-600"
+                />
+              </div>
+              <div className="mb-2 text-[12px] font-bold uppercase tracking-wider text-muted-2">
+                Парк аренды · {totalCount} {pluralUnit(totalCount)}
+              </div>
+              {totalCount === 0 ? (
+                <div className="rounded-2xl border border-dashed border-border p-8 text-center text-[13px] text-muted-2">
+                  Нет доступных скутеров в парке аренды
+                  {search ? " по этому запросу" : ""}.
+                </div>
+              ) : (
+                <div className="flex flex-col gap-4">
+                  {byModel.map((group) => (
+                    <ParkGroup
+                      key={group.modelEnum}
+                      title={group.modelName}
+                      items={group.items}
+                      selectedId={selectedId}
+                      onPick={setSelectedId}
+                      big
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {step === 3 && (
+            <div>
+              <div className="rounded-2xl border border-border bg-white p-4">
+                <div className="mb-3 flex items-center justify-center gap-3">
+                  <div className="flex flex-col items-center gap-1">
+                    <ScooterPosterAvatar scooter={currentScooter} size="md" />
+                    <div className="text-[12px] font-bold text-ink">
+                      {rental.scooter}
+                    </div>
+                  </div>
+                  <ArrowRight size={22} className="text-blue-600" />
+                  <div className="flex flex-col items-center gap-1">
+                    <ScooterPosterAvatar
+                      scooter={newScooter}
+                      size="md"
+                      highlighted
+                    />
+                    <div className="text-[12px] font-bold text-blue-700">
+                      {newScooter?.name ?? "—"}
+                    </div>
+                  </div>
+                </div>
+                <dl className="border-t border-border">
+                  <SwapSummaryRow label="Старый скутер →" value={statusLabel} />
+                  <SwapSummaryRow label="Причина" value={reasonLabel} />
+                  {reason.trim() && (
+                    <SwapSummaryRow label="Комментарий" value={reason.trim()} />
+                  )}
+                </dl>
+              </div>
+              <div className="mt-3 rounded-2xl bg-blue-50 p-3 text-[12px] leading-relaxed text-blue-700">
+                Срок аренды (плановый возврат) сохраняется. После замены
+                откроется превью акта приёма-передачи.
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ФУТЕР: назад / далее (или заменить) */}
+        <div
+          className="flex items-center gap-2.5 border-t border-border bg-white px-4 py-3"
+          style={{ paddingBottom: "max(12px, env(safe-area-inset-bottom))" }}
+        >
+          <button
+            type="button"
+            onClick={goBack}
+            className="rounded-2xl bg-surface-soft px-5 py-3 text-[14px] font-semibold text-ink-2 active:bg-surface"
+          >
+            {step === 0 ? "Отмена" : "← Назад"}
+          </button>
+          {step < 3 ? (
+            <button
+              type="button"
+              onClick={goNext}
+              disabled={!stepValid[step]}
+              className="flex-1 rounded-2xl bg-blue-600 px-5 py-3 text-[14px] font-bold text-white active:bg-blue-700 disabled:opacity-50"
+            >
+              Далее →
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={submit}
+              disabled={!selectedId || swap.isPending}
+              className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-blue-600 px-5 py-3 text-[14px] font-bold text-white active:bg-blue-700 disabled:opacity-50"
+            >
+              {swap.isPending && <Loader2 size={16} className="animate-spin" />}
+              Заменить и распечатать акт
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -526,24 +858,33 @@ function ParkGroup({
   items,
   selectedId,
   onPick,
+  big = false,
 }: {
   title: string;
   items: ApiScooter[];
   selectedId: number | null;
   onPick: (id: number) => void;
+  /** Крупные плитки для тача (мобильный мастер). */
+  big?: boolean;
 }) {
   return (
     <div>
       <div className="mb-1.5 flex items-baseline gap-2">
-        <div className="text-[12px] font-bold text-ink">{title}</div>
+        <div
+          className={cn("font-bold text-ink", big ? "text-[13px]" : "text-[12px]")}
+        >
+          {title}
+        </div>
         <div className="text-[11px] text-muted-2">
           {items.length} {pluralUnit(items.length)}
         </div>
       </div>
       <div
-        className="grid gap-1.5"
+        className={big ? "grid gap-2" : "grid gap-1.5"}
         style={{
-          gridTemplateColumns: "repeat(auto-fill, minmax(48px, 1fr))",
+          gridTemplateColumns: big
+            ? "repeat(auto-fill, minmax(58px, 1fr))"
+            : "repeat(auto-fill, minmax(48px, 1fr))",
         }}
       >
         {items.map((s) => {
@@ -556,7 +897,8 @@ function ParkGroup({
               onClick={() => onPick(s.id)}
               title={s.name}
               className={cn(
-                "flex aspect-square cursor-pointer flex-col items-center justify-center rounded-[10px] border-2 text-[12px] font-bold transition-all hover:-translate-y-0.5",
+                "flex aspect-square cursor-pointer flex-col items-center justify-center rounded-[12px] border-2 font-bold transition-all",
+                big ? "text-[15px]" : "text-[12px] hover:-translate-y-0.5",
                 isSel
                   ? "border-blue-600 bg-blue-50 text-blue-700 shadow-card"
                   : "border-green-500/40 bg-green-soft/60 text-green-ink hover:border-green-500",
@@ -567,6 +909,16 @@ function ParkGroup({
           );
         })}
       </div>
+    </div>
+  );
+}
+
+/** Строка «метка — значение» в шаге проверки мобильного мастера. */
+function SwapSummaryRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-3 border-b border-border py-2.5 last:border-b-0">
+      <dt className="text-[12px] text-muted-2">{label}</dt>
+      <dd className="text-right text-[13px] font-semibold text-ink">{value}</dd>
     </div>
   );
 }
