@@ -51,8 +51,9 @@ function shouldCount(p: ApiPayment, period: BillingPeriod): boolean {
   if (!p.paidAt) return false;
   if (p.type === "deposit" || p.type === "refund") return false;
   // v0.4.34: исключаем method='deposit' — оплата за счёт залога/депозита
-  // клиента, не должна попадать в выручку повторно.
-  if (p.method === "deposit") return false;
+  // клиента, не должна попадать в выручку повторно. ИСКЛЮЧЕНИЕ:
+  // deposit_forfeit — удержанный в счёт ущерба залог = доход.
+  if (p.method === "deposit" && p.type !== "deposit_forfeit") return false;
   const t = new Date(p.paidAt).getTime();
   return t >= period.start.getTime() && t < period.end.getTime();
 }

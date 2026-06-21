@@ -826,7 +826,9 @@ export function RentalCard({
         p.paid &&
         p.type !== "refund" &&
         p.type !== "deposit" &&
-        p.method !== "deposit",
+        // method='deposit' исключаем (оплата с депозита уже учтена), КРОМЕ
+        // deposit_forfeit — удержанный в счёт ущерба залог это доход.
+        (p.method !== "deposit" || p.type === "deposit_forfeit"),
     )
     .reduce((s, p) => s + p.amount, 0);
   // v0.8.8: список финопераций для ховера «За всё время» (оплаченные,
@@ -838,6 +840,7 @@ export function RentalCard({
     swap_fee: "Замена скутера",
     equipment_fee: "Экипировка",
     parking: "Паркинг",
+    deposit_forfeit: "Зачёт залога в ущерб",
   };
   // v0.8.16 (C2): период каждой финоперации для ховера «За всё время».
   // Аренда/штраф/замена/экипировка → период аренды (по rentalId платежа);
@@ -866,7 +869,7 @@ export function RentalCard({
         p.paid &&
         p.type !== "refund" &&
         p.type !== "deposit" &&
-        p.method !== "deposit",
+        (p.method !== "deposit" || p.type === "deposit_forfeit"),
     )
     .slice()
     .sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""))

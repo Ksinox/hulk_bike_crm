@@ -63,7 +63,9 @@ export function RevenueCard({
     const inWindow = payments.filter((p) => {
       if (!p.paid || !p.paidAt) return false;
       if (p.type === "deposit" || p.type === "refund") return false;
-      if (p.method === "deposit") return false;
+      // deposit_forfeit (удержанный в ущерб залог) — доход, остальные
+      // method='deposit' — внутренние, в выручку не идут.
+      if (p.method === "deposit" && p.type !== "deposit_forfeit") return false;
       const t = new Date(p.paidAt).getTime();
       return t >= win.start.getTime() && t < win.end.getTime();
     });
@@ -163,7 +165,7 @@ export function RevenueCard({
     for (const p of payments) {
       if (!p.paid || !p.paidAt) continue;
       if (p.type === "deposit" || p.type === "refund") continue;
-      if (p.method === "deposit") continue;
+      if (p.method === "deposit" && p.type !== "deposit_forfeit") continue;
       const t = new Date(p.paidAt).getTime();
       if (t < win.start.getTime() || t >= win.end.getTime()) continue;
       if (!customRange && selectedDay && p.paidAt.slice(0, 10) !== selectedDay)

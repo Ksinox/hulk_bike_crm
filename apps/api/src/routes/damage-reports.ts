@@ -27,6 +27,53 @@ import {
 import { ensureRepairJobForScooter } from "./repair-jobs.js";
 
 /**
+ * Синхронизирует «зачёт залога в счёт ущерба» (deposit_forfeit) с текущим
+ * depositCovered акта. Платёж нужен ТОЛЬКО для учёта выручки: удержанный залог
+ * перестаёт быть возвратным и становится доходом. На расчёт долга НЕ влияет
+ * (долг = total − depositCovered − Σ damage-платежей). Держим ровно один такой
+ * платёж на акт, amount = depositCovered; depositCovered=0 → удаляем.
+ */
+async function syncDepositForfeit(
+  rentalId: number,
+  damageReportId: number,
+  depositCovered: number,
+  paidAt: Date,
+): Promise<void> {
+  const [existing] = await db
+    .select()
+    .from(payments)
+    .where(
+      and(
+        eq(payments.damageReportId, damageReportId),
+        eq(payments.type, "deposit_forfeit"),
+      ),
+    );
+  if (depositCovered > 0) {
+    if (existing) {
+      if (existing.amount !== depositCovered) {
+        await db
+          .update(payments)
+          .set({ amount: depositCovered })
+          .where(eq(payments.id, existing.id));
+      }
+    } else {
+      await db.insert(payments).values({
+        rentalId,
+        type: "deposit_forfeit",
+        amount: depositCovered,
+        method: "deposit",
+        paid: true,
+        paidAt,
+        note: "Зачёт залога в счёт ущерба",
+        damageReportId,
+      });
+    }
+  } else if (existing) {
+    await db.delete(payments).where(eq(payments.id, existing.id));
+  }
+}
+
+/**
  * Акты о повреждениях.
  *
  * Бизнес-логика:
@@ -220,6 +267,13 @@ export async function damageReportsRoutes(app: FastifyInstance) {
         })
         .where(eq(rentals.id, rentalId));
     }
+    // Удержанный залог → платёж deposit_forfeit (учёт выручки, не долг).
+    await syncDepositForfeit(
+      rentalId,
+      report!.id,
+      cappedDeposit,
+      report!.createdAt ?? new Date(),
+    );
     if (items.length > 0) {
       await db.insert(damageReportItems).values(
         items.map((it, i) => ({
@@ -364,6 +418,19 @@ export async function damageReportsRoutes(app: FastifyInstance) {
       }
     }
     await db.update(damageReports).set(next).where(eq(damageReports.id, id));
+    // Синхронизируем deposit_forfeit с актуальным depositCovered.
+    {
+      const effCovered =
+        parsed.data.depositCovered !== undefined
+          ? parsed.data.depositCovered
+          : report.depositCovered ?? 0;
+      await syncDepositForfeit(
+        report.rentalId,
+        id,
+        effCovered,
+        report.createdAt ?? new Date(),
+      );
+    }
     await logActivity(req, {
       entity: "damage_report",
       entityId: id,

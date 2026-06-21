@@ -90,7 +90,9 @@ export function isRevenuePayment(p: ApiPayment): boolean {
   if (p.type === "deposit" || p.type === "refund") return false;
   // method='deposit' — оплата из депозита клиента: не нал и не безнал
   // (реальные деньги уже были выручкой раньше). В сверку не идёт.
-  if (p.method === "deposit") return false;
+  // ИСКЛЮЧЕНИЕ: deposit_forfeit — удержанный в счёт ущерба залог = доход,
+  // учитываем в выручке (в нал/безнал-разбивке попадёт в «безнал»).
+  if (p.method === "deposit" && p.type !== "deposit_forfeit") return false;
   return true;
 }
 
