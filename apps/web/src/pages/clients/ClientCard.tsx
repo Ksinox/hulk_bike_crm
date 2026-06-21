@@ -416,7 +416,9 @@ export function ClientCard({ client }: { client: Client }) {
       </div>
 
       {/* Banners */}
-      {rentalDraftApp && (
+      {/* Предзаполненную заявку показываем только если у клиента НЕТ активной
+          аренды — иначе она не нужна (клиент уже катается). */}
+      {rentalDraftApp && !activeRental && (
         <div className="flex items-start gap-2.5 rounded-[14px] bg-blue-50 p-3 text-[13px] text-blue-900 ring-1 ring-inset ring-blue-100">
           <Inbox size={16} className="mt-0.5 shrink-0 text-blue-600" />
           <div className="min-w-0 flex-1">

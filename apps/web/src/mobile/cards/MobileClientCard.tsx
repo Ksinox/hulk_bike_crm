@@ -363,7 +363,8 @@ export function MobileClientCard({
         </section>
 
         {/* ===== Плашки ===== */}
-        {rentalDraftApp && (
+        {/* Предзаполненную заявку прячем, если у клиента есть активная аренда. */}
+        {rentalDraftApp && !activeRental && (
           <div className="rounded-2xl bg-blue-50 p-3 text-[13px] text-blue-900 ring-1 ring-inset ring-blue-100">
             <div className="flex items-start gap-2">
               <Inbox size={16} className="mt-0.5 shrink-0 text-blue-600" />
