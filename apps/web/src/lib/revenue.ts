@@ -32,7 +32,10 @@ export function revenueFromPayments(
       // v0.4.34: исключаем method='deposit' — это оплата за счёт залога
       // или депозита клиента, который уже учитывался при выдаче аренды.
       // Не вычитать его — двойной счёт revenue.
-      if (p.method === "deposit") return false;
+      // ИСКЛЮЧЕНИЕ: deposit_forfeit — удержанный в счёт ущерба залог. Он
+      // перестаёт быть возвратным и становится доходом, поэтому считаем его
+      // в выручке, хотя method='deposit'.
+      if (p.method === "deposit" && p.type !== "deposit_forfeit") return false;
       if (!p.paidAt) return false;
       if (rangeStart || rangeEnd) {
         const t = new Date(p.paidAt).getTime();

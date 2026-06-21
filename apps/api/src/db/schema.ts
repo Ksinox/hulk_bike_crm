@@ -123,6 +123,12 @@ export const paymentTypeEnum = pgEnum("payment_type", [
   /** v0.8.0: оплата паркинга (1-е сутки бесплатно, далее 250 ₽/сут).
    *  Попадает в revenue и в «За всё время» клиента. */
   "parking",
+  /** Зачёт залога в счёт ущерба. Когда залог удержан (depositCovered на
+   *  акте) — он перестаёт быть возвратным и становится ВЫРУЧКОЙ. Это
+   *  отдельный платёж только для учёта дохода; на расчёт долга НЕ влияет
+   *  (долг = total − depositCovered − Σ damage-платежей, deposit_forfeit
+   *  туда не входит). amount = depositCovered, method = 'deposit'. */
+  "deposit_forfeit",
 ]);
 
 export const clientDocKindEnum = pgEnum("client_doc_kind", [
