@@ -6,8 +6,10 @@ import {
   type ChangelogCategory,
   type ChangelogEntry,
 } from "@/data/changelog";
+import { releases } from "@/data/releases";
 import { cn } from "@/lib/utils";
 import { ChangelogRow } from "./ChangelogRow";
+import { ReleaseCard } from "./ReleaseCard";
 import { markChangelogSeen } from "./useUnreadChangelog";
 
 // Порядок категорий внутри одной даты — сверху самые «громкие».
@@ -112,9 +114,29 @@ export function WhatsNew() {
         </h1>
         <div className="mt-1.5 text-[13px] text-muted-2">
           Изменения в CRM, объяснённые простым языком — без терминов.
-          Наведите на любое улучшение, чтобы увидеть «Было / Стало».
+          Сверху — крупные изменения «Было / Стало», ниже — полный список правок.
         </div>
       </header>
+
+      <style>{`@keyframes wnFadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}`}</style>
+
+      {/* Релизы по версиям — крупные «Было → Стало» + полный список правок. */}
+      {releases.map((r, i) => (
+        <ReleaseCard
+          key={r.version}
+          release={r}
+          current={i === 0}
+          defaultOpen={false}
+        />
+      ))}
+
+      {/* ── Архив: прежняя лента изменений по датам ── */}
+      <div className="mt-2 flex items-center gap-3 px-1">
+        <h2 className="text-[13px] font-bold uppercase tracking-wider text-muted-2">
+          Ранее
+        </h2>
+        <div className="h-px flex-1 bg-border" />
+      </div>
 
       <div className="flex min-w-0 flex-1 gap-4">
         {/* Sticky-навигатор по датам — обновляется при скролле. */}

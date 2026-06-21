@@ -55,6 +55,8 @@ export type FleetScooter = {
   purchaseDate?: string;
   /** цена закупа, ₽ (виден только директору) */
   purchasePrice?: number;
+  /** рыночная стоимость, ₽ — в договор (стоимость при утрате) */
+  marketValue?: number;
   /** Пробег скутера на момент последней замены масла, км */
   lastOilChangeMileage?: number;
   /**

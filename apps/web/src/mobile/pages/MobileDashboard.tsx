@@ -2,10 +2,8 @@ import { useState } from "react";
 import {
   AlertTriangle,
   ArrowRight,
-  Bike,
   ChevronLeft,
   Clock,
-  Gauge,
   Maximize2,
   Phone,
   Wallet,
@@ -19,6 +17,7 @@ import { useMe } from "@/lib/api/auth";
 import { useApiScooters } from "@/lib/api/scooters";
 import type { ApiScooter } from "@/lib/api/types";
 import { ActivityFeed } from "@/pages/dashboard/ActivityFeed";
+import { ParkLoadGauge } from "@/pages/dashboard/ParkLoadGauge";
 import { useBillingPeriodRevenue } from "@/lib/useRevenue";
 import { MobileRevenueScreen } from "./MobileRevenueScreen";
 import { RowCallButton, useCallClient } from "../call";
@@ -107,8 +106,20 @@ export function MobileDashboard({
         </div>
       </button>
 
-      {/* KPI 2×2 */}
-      <div className="grid grid-cols-2 gap-3">
+      {/* Загрузка парка — круг-гейдж (живая жидкость, объединяет загрузку парка
+          и активные аренды) РЯДОМ с плашкой «Поступит сегодня». Плашки
+          «Просрочено» / «Активных аренд» / «Загрузка парка» убраны: просрочки
+          видны списком ниже, активные аренды и % загрузки — внутри круга. */}
+      <div className="grid grid-cols-2 items-stretch gap-3">
+        <ParkLoadGauge
+          percent={m.loadPercent}
+          active={m.activeRentalsCount}
+          rentable={m.rentableFleet}
+          onClick={() => onSelect("fleet")}
+          size={84}
+          layout="stack"
+          className="rounded-2xl p-3.5"
+        />
         <KpiTile
           icon={<Wallet size={16} />}
           tone="green"
@@ -121,66 +132,10 @@ export function MobileDashboard({
               : "нет возвратов"
           }
         />
-        <KpiTile
-          icon={<AlertTriangle size={16} />}
-          tone={m.overdueCount > 0 ? "red" : "neutral"}
-          label="Просрочено"
-          value={String(m.overdueCount)}
-          unit={m.overdueCount > 0 ? "шт" : ""}
-          foot={
-            m.overdueCount > 0
-              ? `долг ${formatRub(m.overdueSum)} ₽`
-              : "нет просрочек"
-          }
-          onClick={m.overdueCount > 0 ? () => onSelect("debtors") : undefined}
-        />
-        <KpiTile
-          icon={<Bike size={16} />}
-          tone="blue"
-          label="Активных аренд"
-          value={String(m.activeRentalsCount)}
-          unit={m.fleetTotal > 0 ? `/${m.fleetTotal}` : ""}
-          foot={m.fleetTotal > 0 ? `${m.loadPercent}% загрузка` : "парк пуст"}
-          onClick={() => onSelect("rentals")}
-        />
-        <KpiTile
-          icon={<Gauge size={16} />}
-          tone="neutral"
-          label="Загрузка парка"
-          value={String(m.loadPercent)}
-          unit="%"
-          foot={`${m.park.pool} готов к аренде · ${m.park.inRepair} в ремонте`}
-          onClick={() => onSelect("fleet")}
-        />
       </div>
 
-      {/* Статус парка */}
-      <MobileParkGrid metrics={m} />
-
-      {/* Возвраты сегодня */}
-      <Section
-        title="Возвраты сегодня"
-        count={m.returnsToday.length}
-        icon={<Clock size={15} />}
-      >
-        {m.returnsToday.length === 0 ? (
-          <EmptyRow text="Сегодня никто не возвращает" />
-        ) : (
-          m.returnsToday
-            .slice(0, 6)
-            .map((r) => (
-              <ReturnRow
-                key={r.rentalId}
-                item={r}
-                onOpen={() => setOpenRentalId(r.rentalId)}
-                onCall={() =>
-                  callClient(r.clientName, [r.clientPhone, r.clientPhone2])
-                }
-              />
-            ))
-        )}
-      </Section>
-
+      {/* #дашборд: долги (просрочки + висящие) подняты НАД парком — заказчик:
+          горящие деньги первыми, парк ниже (на мобиле тоже). */}
       {/* Просрочки */}
       <Section
         title="Просрочки"
@@ -207,9 +162,10 @@ export function MobileDashboard({
         )}
       </Section>
 
-      {/* F4: висящие долги — должники без активной аренды (ущерб «переехал» с
-          клиентом). В просрочках их нет, во вкладку «Клиенты» оператор почти не
-          ходит — показываем здесь, чтобы не потерялись. Тап → карточка клиента.
+      {/* F4 + #25: висящие долги — клиенты с долгом по ущербу, который не виден
+          на активной аренде (нет активной аренды ИЛИ долг с другой, закрытой).
+          В просрочках их нет, во вкладку «Клиенты» оператор почти не ходит —
+          показываем здесь, чтобы не потерялись. Тап → карточка клиента.
           Пусто → секцию не рендерим. */}
       {m.debtorsNoRental.length > 0 && (
         <Section
@@ -228,6 +184,33 @@ export function MobileDashboard({
           ))}
         </Section>
       )}
+
+      {/* Статус парка — теперь ПОД долгами. */}
+      <MobileParkGrid metrics={m} />
+
+      {/* Возвраты сегодня */}
+      <Section
+        title="Возвраты сегодня"
+        count={m.returnsToday.length}
+        icon={<Clock size={15} />}
+      >
+        {m.returnsToday.length === 0 ? (
+          <EmptyRow text="Сегодня никто не возвращает" />
+        ) : (
+          m.returnsToday
+            .slice(0, 6)
+            .map((r) => (
+              <ReturnRow
+                key={r.rentalId}
+                item={r}
+                onOpen={() => setOpenRentalId(r.rentalId)}
+                onCall={() =>
+                  callClient(r.clientName, [r.clientPhone, r.clientPhone2])
+                }
+              />
+            ))
+        )}
+      </Section>
 
       {/* Последние действия — лента журнала (как в десктоп-CRM). */}
       <ActivityFeed compact />
@@ -630,7 +613,7 @@ function DebtorNoRentalRow({
             {item.clientName}
           </div>
           <div className="truncate text-[11px] text-muted">
-            ущерб · скутер возвращён
+            ущерб с прошлых аренд
           </div>
         </div>
         <div className="shrink-0 text-[13px] font-bold tabular-nums text-red">

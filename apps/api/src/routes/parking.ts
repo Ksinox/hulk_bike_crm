@@ -1,8 +1,14 @@
 import type { FastifyInstance } from "fastify";
-import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/index.js";
-import { parkingSessions, payments, rentals, noteStickers } from "../db/schema.js";
+import {
+  parkingSessions,
+  payments,
+  rentals,
+  noteStickers,
+  clients,
+} from "../db/schema.js";
 import { logActivity } from "../services/activityLog.js";
 
 /* ============================================================
@@ -25,12 +31,16 @@ const RATE_PER_DAY = 250;
 const MAX_DAYS = 7;
 const YMD = /^\d{4}-\d{2}-\d{2}$/;
 
-// v0.8.27 (G4): паркинг открытый — задаём только дату начала + тумблер
-// «первый день бесплатно». Период не выбираем; идёт пока не снимут вручную
-// либо авто-снятие через MAX_DAYS.
+// Паркинг бывает двух видов:
+//  • открытый (постоплата) — задаём только дату начала; растёт по дню, оплата
+//    при снятии (v0.8.27 G4);
+//  • предоплата (фикс. период) — задаём ещё и endDate (диапазон в календаре);
+//    дни/конец закреплены, сумма известна сразу.
+// freeFirstDay — тумблер «1-й день бесплатно» (по умолчанию ВКЛ).
 const StartBody = z
   .object({
     startDate: z.string().regex(YMD),
+    endDate: z.string().regex(YMD).optional(),
     freeFirstDay: z.boolean().optional().default(true),
   })
   .strict();
@@ -142,6 +152,17 @@ export async function parkingRoutes(app: FastifyInstance) {
     let mutated = false;
     for (const s of rows) {
       if (s.status !== "active") continue;
+      // Предоплата — фикс. период: не растим; авто-закрытие по окончании.
+      if (s.prepaid) {
+        if (today > s.endDate) {
+          await db
+            .update(parkingSessions)
+            .set({ status: "ended", endedAt: new Date() })
+            .where(eq(parkingSessions.id, s.id));
+          mutated = true;
+        }
+        continue;
+      }
       const { endYmd, days, capped } = activeParkingState(s.startDate, today);
       if (days === s.days && endYmd === s.endDate && !capped) continue;
       mutated = true;
@@ -193,12 +214,26 @@ export async function parkingRoutes(app: FastifyInstance) {
       return reply
         .code(400)
         .send({ error: "validation", issues: parsed.error.issues });
-    const { startDate, freeFirstDay } = parsed.data;
+    const { startDate, endDate, freeFirstDay } = parsed.data;
+    const isPrepaid = !!endDate;
     const [rental] = await db
       .select()
       .from(rentals)
       .where(eq(rentals.id, rentalId));
     if (!rental) return reply.code(404).send({ error: "rental not found" });
+
+    // Предоплата: валидируем диапазон [startDate, endDate] и лимит дней.
+    if (isPrepaid) {
+      if (endDate! < startDate)
+        return reply
+          .code(400)
+          .send({ error: "bad_range", message: "Конец периода раньше начала" });
+      if (inclusiveDays(startDate, endDate!) > MAX_DAYS)
+        return reply.code(400).send({
+          error: "too_long",
+          message: `Максимум ${MAX_DAYS} дней в одном периоде паркинга`,
+        });
+    }
 
     // Паркинг не может начинаться раньше выдачи скутера.
     const rentalStartYmd = new Intl.DateTimeFormat("en-CA", {
@@ -221,7 +256,8 @@ export async function parkingRoutes(app: FastifyInstance) {
     // a1 ≤ b2 && b1 ≤ a2. Сравнение строк YYYY-MM-DD лексикографически
     // эквивалентно сравнению дат.
     const newStart = startDate;
-    const newMaxEnd = addDaysYmd(startDate, MAX_DAYS - 1);
+    // предоплата занимает ровно выбранный период; открытый — потенциальные MAX дней.
+    const newMaxEnd = isPrepaid ? endDate! : addDaysYmd(startDate, MAX_DAYS - 1);
     const existing = await db
       .select({
         startDate: parkingSessions.startDate,
@@ -239,9 +275,12 @@ export async function parkingRoutes(app: FastifyInstance) {
       });
     }
 
-    // Открытая сессия: считаем дни на сегодня (0 если старт в будущем).
+    // Предоплата — фикс. период [startDate, endDate]; открытый — считаем дни на
+    // сегодня (0 если старт в будущем) и далее растим лениво в GET /parking.
     const today = todayMskYmd();
-    const { endYmd, days } = activeParkingState(startDate, today);
+    const openState = isPrepaid ? null : activeParkingState(startDate, today);
+    const endYmd = isPrepaid ? endDate! : openState!.endYmd;
+    const days = isPrepaid ? inclusiveDays(startDate, endDate!) : openState!.days;
     const amount = parkingAmount(days, freeFirstDay);
     const session = await db.transaction(async (tx) => {
       const [s] = await tx
@@ -253,6 +292,7 @@ export async function parkingRoutes(app: FastifyInstance) {
           days,
           ratePerDay: RATE_PER_DAY,
           freeFirstDay,
+          prepaid: isPrepaid,
           amount,
           paidAmount: 0,
           status: "active",
@@ -272,12 +312,22 @@ export async function parkingRoutes(app: FastifyInstance) {
       entity: "rental",
       entityId: rentalId,
       action: "parking_set",
-      summary: `Поставлен на паркинг с ${startDate} (открытый, макс ${MAX_DAYS} дн; 1-й день ${freeFirstDay ? "бесплатно" : "платно"})`,
+      summary: isPrepaid
+        ? `Поставлен на паркинг (предоплата) ${startDate}–${endYmd} · ${days} дн · ${amount} ₽ (1-й день ${freeFirstDay ? "бесплатно" : "платно"})`
+        : `Поставлен на паркинг с ${startDate} (открытый, макс ${MAX_DAYS} дн; 1-й день ${freeFirstDay ? "бесплатно" : "платно"})`,
       // sessionId — для отката постановки «в день совершения» (rollback-action
       // удаляет сессию и возвращает сдвиг возврата).
       meta: {
         sessionId: session?.id ?? null,
-        parking: { startDate, endDate: endYmd, days, amount, freeFirstDay, open: true },
+        parking: {
+          startDate,
+          endDate: endYmd,
+          days,
+          amount,
+          freeFirstDay,
+          prepaid: isPrepaid,
+          open: !isPrepaid,
+        },
       },
     });
 
@@ -286,7 +336,9 @@ export async function parkingRoutes(app: FastifyInstance) {
       entity: "rental",
       entityId: rentalId,
       kind: "parking",
-      text: `Паркинг с ${dm(startDate)} · идёт${days > 0 ? ` · ${days} дн` : ""}`,
+      text: isPrepaid
+        ? `Паркинг ${dm(startDate)}–${dm(endYmd)} · ${days} дн (предоплата)`
+        : `Паркинг с ${dm(startDate)} · идёт${days > 0 ? ` · ${days} дн` : ""}`,
       color: "blue",
       createdByUserId: req.user?.userId ?? null,
       createdByName: req.user?.login ?? null,
@@ -317,6 +369,113 @@ export async function parkingRoutes(app: FastifyInstance) {
           ),
         );
       if (!existing) return reply.code(404).send({ error: "not found" });
+
+      // Предоплата.
+      if (existing.prepaid) {
+        const todayP = todayMskYmd();
+        // РАННИЙ ВОЗВРАТ: снимаем РАНЬШЕ оплаченного конца (today < endDate) —
+        // пересчитываем по факту, излишек возвращаем на депозит клиента (как
+        // при замене скутера; «выдать» — потом через deposit/payout). Возврат
+        // аренды откатывается на неиспользованные дни (end_planned −= N−M).
+        if (todayP < existing.endDate) {
+          const rawDays = inclusiveDays(existing.startDate, todayP);
+          const newDays = Math.max(0, Math.min(existing.days, rawDays));
+          const newAmount = parkingAmount(newDays, existing.freeFirstDay);
+          const deltaDays = newDays - existing.days; // ≤ 0
+          const refund = Math.max(0, existing.paidAmount - newAmount);
+          const newPaid = Math.min(existing.paidAmount, newAmount);
+          const newEnd =
+            newDays > 0
+              ? addDaysYmd(existing.startDate, newDays - 1)
+              : existing.startDate;
+          const [rr] = await db
+            .select({ clientId: rentals.clientId })
+            .from(rentals)
+            .where(eq(rentals.id, rentalId));
+          const clientId = rr?.clientId ?? null;
+          const updated = await db.transaction(async (tx) => {
+            const [s] = await tx
+              .update(parkingSessions)
+              .set({
+                endDate: newEnd,
+                days: newDays,
+                amount: newAmount,
+                paidAmount: newPaid,
+                status: "ended",
+                endedAt: new Date(),
+              })
+              .where(eq(parkingSessions.id, sid))
+              .returning();
+            await shiftEndPlanned(tx, rentalId, deltaDays);
+            if (refund > 0 && clientId) {
+              await tx
+                .update(clients)
+                .set({
+                  depositBalance: sql`${clients.depositBalance} + ${refund}`,
+                })
+                .where(eq(clients.id, clientId));
+            }
+            return s;
+          });
+          await logActivity(req, {
+            entity: "rental",
+            entityId: rentalId,
+            action: "parking_ended",
+            summary: `Паркинг (предоплата) снят досрочно: ${existing.startDate}–${newEnd} · ${newDays} дн · ${newAmount} ₽${refund > 0 ? `; излишек ${refund} ₽ → депозит клиента` : ""}`,
+            meta: {
+              sessionId: sid,
+              prepaid: true,
+              earlyReturn: true,
+              before: {
+                endDate: existing.endDate,
+                days: existing.days,
+                amount: existing.amount,
+                paidAmount: existing.paidAmount,
+              },
+              delta: deltaDays,
+              refund,
+              clientId,
+              parking: {
+                startDate: existing.startDate,
+                endDate: newEnd,
+                days: newDays,
+                amount: newAmount,
+              },
+            },
+          });
+          return { session: updated, refund };
+        }
+        // Период отработан (today ≥ endDate) — просто закрываем.
+        const [s] = await db
+          .update(parkingSessions)
+          .set({ status: "ended", endedAt: new Date() })
+          .where(eq(parkingSessions.id, sid))
+          .returning();
+        await logActivity(req, {
+          entity: "rental",
+          entityId: rentalId,
+          action: "parking_ended",
+          summary: `Паркинг (предоплата) снят: ${existing.startDate}–${existing.endDate} · ${existing.days} дн · ${existing.amount} ₽`,
+          meta: {
+            sessionId: sid,
+            prepaid: true,
+            before: {
+              endDate: existing.endDate,
+              days: existing.days,
+              amount: existing.amount,
+              paidAmount: existing.paidAmount,
+            },
+            delta: 0,
+            parking: {
+              startDate: existing.startDate,
+              endDate: existing.endDate,
+              days: existing.days,
+              amount: existing.amount,
+            },
+          },
+        });
+        return { session: s };
+      }
 
       const today = todayMskYmd();
       // v0.8.27: ручное снятие — сегодня ещё считается паркингом; ограничиваем
@@ -445,48 +604,91 @@ export async function parkingRoutes(app: FastifyInstance) {
       let remaining = parsed.data.amount;
       const method = parsed.data.method ?? "cash";
 
+      // Для оплаты С ДЕПОЗИТА нужен клиент — списываем его кошелёк.
+      const [rentalRow] = await db
+        .select({ clientId: rentals.clientId })
+        .from(rentals)
+        .where(eq(rentals.id, rentalId));
+      const clientId = rentalRow?.clientId ?? null;
+
       const sessions = await db
         .select()
         .from(parkingSessions)
         .where(eq(parkingSessions.rentalId, rentalId))
         .orderBy(parkingSessions.startDate);
 
-      const applied = await db.transaction(async (tx) => {
-        let used = 0;
-        // Раскладка оплаты по сессиям — кладём в снимок отката, чтобы un-pay
-        // вернул paidAmount каждой сессии ровно на принятое.
-        const allocations: Array<{ sessionId: number; amount: number }> = [];
-        for (const s of sessions) {
-          if (remaining <= 0) break;
-          const due = Math.max(0, s.amount - s.paidAmount);
-          if (due <= 0) continue;
-          const take = Math.min(due, remaining);
-          await tx
-            .update(parkingSessions)
-            .set({ paidAmount: s.paidAmount + take })
-            .where(eq(parkingSessions.id, s.id));
-          remaining -= take;
-          used += take;
-          allocations.push({ sessionId: s.id, amount: take });
-        }
-        if (used > 0) {
-          await tx.insert(payments).values({
-            rentalId,
-            type: "parking",
-            amount: used,
-            method,
-            paid: true,
-            paidAt: new Date(),
-            receivedByUserId: req.user?.userId ?? null,
-            note: "Оплата паркинга",
-            rollbackSnapshot: {
-              kind: "parking",
-              allocations,
-            } as unknown as object,
+      let applied = 0;
+      try {
+        applied = await db.transaction(async (tx) => {
+          let used = 0;
+          // Раскладка оплаты по сессиям — кладём в снимок отката, чтобы un-pay
+          // вернул paidAmount каждой сессии ровно на принятое.
+          const allocations: Array<{ sessionId: number; amount: number }> = [];
+          for (const s of sessions) {
+            if (remaining <= 0) break;
+            const due = Math.max(0, s.amount - s.paidAmount);
+            if (due <= 0) continue;
+            const take = Math.min(due, remaining);
+            await tx
+              .update(parkingSessions)
+              .set({ paidAmount: s.paidAmount + take })
+              .where(eq(parkingSessions.id, s.id));
+            remaining -= take;
+            used += take;
+            allocations.push({ sessionId: s.id, amount: take });
+          }
+          // Оплата с депозита клиента: списываем кошелёк (revenue исключает
+          // method='deposit'). Не хватает баланса → откатываем транзакцию.
+          let depositSpent = 0;
+          if (method === "deposit" && used > 0) {
+            if (!clientId) throw new Error("no_client");
+            const [c] = await tx
+              .select({ balance: clients.depositBalance })
+              .from(clients)
+              .where(eq(clients.id, clientId));
+            if (!c || c.balance < used) throw new Error("insufficient_deposit");
+            await tx
+              .update(clients)
+              .set({
+                depositBalance: sql`${clients.depositBalance} - ${used}`,
+              })
+              .where(eq(clients.id, clientId));
+            depositSpent = used;
+          }
+          if (used > 0) {
+            await tx.insert(payments).values({
+              rentalId,
+              type: "parking",
+              amount: used,
+              method,
+              paid: true,
+              paidAt: new Date(),
+              receivedByUserId: req.user?.userId ?? null,
+              note: "Оплата паркинга",
+              rollbackSnapshot: {
+                kind: "parking",
+                allocations,
+                // Для отката оплаты с депозита — вернуть кошелёк клиента.
+                depositSpent,
+                clientId,
+              } as unknown as object,
+            });
+          }
+          return used;
+        });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "";
+        if (msg === "insufficient_deposit")
+          return reply.code(400).send({
+            error: "insufficient_deposit",
+            message: "Недостаточно средств на депозите клиента",
           });
-        }
-        return used;
-      });
+        if (msg === "no_client")
+          return reply
+            .code(400)
+            .send({ error: "no_client", message: "У аренды нет клиента" });
+        throw e;
+      }
 
       if (applied > 0) {
         await logActivity(req, {
@@ -494,7 +696,7 @@ export async function parkingRoutes(app: FastifyInstance) {
           entityId: rentalId,
           action: "parking_paid",
           summary: `Оплата паркинга: ${applied.toLocaleString("ru-RU")} ₽`,
-          meta: { parking: { amount: applied } },
+          meta: { parking: { amount: applied }, method },
         });
       }
 

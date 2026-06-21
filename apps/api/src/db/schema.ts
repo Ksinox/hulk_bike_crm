@@ -338,6 +338,9 @@ export const scooters = pgTable(
     purchaseDate: date("purchase_date"),
     /** Цена закупа, ₽. Читается только директором на уровне API. */
     purchasePrice: integer("purchase_price"),
+    /** Рыночная стоимость, ₽. Подставляется в договор (п. 4.1 «стоимость
+     *  Скутера при утрате»). NULL → договор берёт purchasePrice (back-compat). */
+    marketValue: integer("market_value"),
     /** Пробег на момент последней замены масла, км */
     lastOilChangeMileage: integer("last_oil_change_mileage"),
     note: text("note"),
@@ -1692,6 +1695,13 @@ export const parkingSessions = pgTable(
     ratePerDay: integer("rate_per_day").notNull().default(250),
     /** 1-е сутки бесплатные. */
     freeFirstDay: boolean("free_first_day").notNull().default(true),
+    /**
+     * true — предоплаченный ФИКСИРОВАННЫЙ период (дни/endDate закреплены при
+     * постановке, НЕ растут по дню; авто-закрытие по окончании периода).
+     * false — открытый паркинг (растёт по дню, постоплата). По умолчанию false
+     * — совместимо с существующими открытыми сессиями.
+     */
+    prepaid: boolean("prepaid").notNull().default(false),
     /** Стоимость = ratePerDay × (days − 1) при freeFirstDay. */
     amount: integer("amount").notNull(),
     /** Сколько уже оплачено по этой сессии. */

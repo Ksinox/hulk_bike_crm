@@ -28,6 +28,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { MobileBottomSheet } from "@/mobile/BottomSheet";
+import { useCallClient } from "@/mobile/call";
 import {
   MIN_RENTAL_DAYS,
   ratePeriodForDays,
@@ -106,6 +107,7 @@ import { useDashboardDrawer } from "@/pages/dashboard/DashboardDrawer";
 import { useMe } from "@/lib/api/auth";
 import { confirmDialog, pickAction, promptDialog } from "@/lib/toast";
 import { toast } from "@/lib/toast";
+import { toastRentalDone } from "./rentalUndo";
 import { ApiError, api } from "@/lib/api";
 
 // v0.6.44: tabs убраны, оставлен type-alias для совместимости с props
@@ -319,6 +321,9 @@ export function RentalCard({
   onSwapped,
   onClose,
   onRequestPayment,
+  onRequestComplete,
+  onRequestParking,
+  onCancelParking,
   paymentExtDays,
   paymentDateIso,
   paymentResetSignal,
@@ -345,6 +350,23 @@ export function RentalCard({
    *  (DashboardDrawer) — карточка открывает Payment внутри себя как
    *  раньше (inline-fallback через paymentRentalId). */
   onRequestPayment?: (rentalId: number, extDays: number) => void;
+  /** v0.9.1: запрос на завершение аренды у родителя (Rentals) — открывает
+   *  ту же push-колонку, что и оплата, но в режиме completing (приёмка +
+   *  расчёт). Если не передан (DashboardDrawer/мобила) — карточка
+   *  открывает дровер завершения внутри себя (overlay-fallback). */
+  onRequestComplete?: (rentalId: number) => void;
+  /** Паркинг-период: открыть паркинг-дровер (push-колонка) с выбранным на
+   *  календаре периодом. Если не передан (DashboardDrawer/мобила) — карточка
+   *  откроет дровер внутри себя (overlay-fallback в CalendarPanel). */
+  onRequestParking?: (
+    rentalId: number,
+    startIso: string,
+    days: number,
+    settle?: { sessionId: number; amount: number },
+  ) => void;
+  /** Отмена паркинга на карточке → закрыть паркинг-дровер (push-колонка) у
+   *  родителя. Парный к onRequestParking; в fallback-режиме не нужен. */
+  onCancelParking?: () => void;
   /** v0.9: открыта ли сейчас панель/окно оплаты ИМЕННО для этой аренды
    *  (parent-managed на стр. Аренды). Когда true — кнопки «Принять оплату»
    *  на карточке дизейблятся (модуль уже открыт по ним). */
@@ -387,6 +409,11 @@ export function RentalCard({
   void onPaymentOpenChange;
   void initialTab; // v0.6.44: tabs убраны, prop оставлен для совместимости.
   const [action, setAction] = useState<ActionKind | null>(null);
+  // v0.9.4: «Завершить аренду» открывает компактную карточку-модалку по
+  // центру (PaymentAcceptDialog completing сам рисует центрированный
+  // контент-хайт макет). Старый push-колоночный путь (onRequestComplete)
+  // больше не используется — prop оставлен для совместимости.
+  void onRequestComplete;
   const [extendOpen, setExtendOpen] = useState(false);
   // v0.8.0: бамп для входа в режим паркинга из ⋯-меню (CalendarPanel слушает).
   const [armParkingSignal, setArmParkingSignal] = useState(0);
@@ -447,6 +474,12 @@ export function RentalCard({
     () => apiClients?.find((c) => c.id === rental.clientId),
     [rental.clientId, apiClients],
   );
+  // Мобильная плавающая кнопка «Позвонить» в карточке аренды: тач-таргет под
+  // большим пальцем над футером, прячется при скролле. Звонок (или выбор из
+  // двух номеров) — через общий useCallClient.
+  const isMobile = useIsMobile();
+  const { callClient, callSheet } = useCallClient();
+  const drawerScrollRef = useRef<HTMLDivElement>(null);
   // ВАЖНО: для построения цепочки продлений берём И активные И архивные
   // аренды. При продлении parent rental уходит в архив, и без archivedRentals
   // мы бы потеряли его платежи в расчёте «За всё время».
@@ -695,6 +728,18 @@ export function RentalCard({
   const reportWithDebt = reports.find((r) => r.debt > 0) ?? null;
   const reportLatest =
     reports.length > 0 ? reports[reports.length - 1]! : null;
+  // #26: «за что» ущерб — короткий список повреждённых позиций из акта-должника
+  // (для подписи в «Составе долга», чтобы было видно, за что начислен ущерб).
+  const damageWhatItems = (reportWithDebt?.items ?? [])
+    .map((i) => i.name)
+    .filter(Boolean);
+  const damageWhatLabel =
+    damageWhatItems.length > 0
+      ? damageWhatItems.slice(0, 3).join(", ") +
+        (damageWhatItems.length > 3
+          ? ` и ещё ${damageWhatItems.length - 3}`
+          : "")
+      : "зафиксирован в акте о повреждениях";
   // v0.2.75: hasDamage опирается только на формальные акты о повреждениях.
   // Старое поле rental.damageAmount больше не учитываем — в UI его нет.
   const hasDamage = reports.length > 0;
@@ -1053,7 +1098,8 @@ export function RentalCard({
           amount,
           comment: comment.trim(),
         });
-        toast.success(
+        toastRentalDone(
+          rental,
           "Долг начислен",
           `+${amount.toLocaleString("ru-RU")} ₽ по аренде. Запись в Истории долгов.`,
         );
@@ -1171,7 +1217,8 @@ export function RentalCard({
         const shiftHint = r.daysShift
           ? ` · endPlanned +${r.daysShift} дн${r.newStatus ? ", статус → active" : ""}`
           : "";
-        toast.success(
+        toastRentalDone(
+          rental,
           successTitle,
           `Списано ${(r.amount ?? 0).toLocaleString("ru-RU")} ₽. Запись в Истории долгов.${shiftHint}`,
         );
@@ -1760,7 +1807,12 @@ export function RentalCard({
                   <div>просрочка: <b>{fmt(overdueBalance)} ₽</b></div>
                 )}
               {damageBalance > 0 && (
-                <div>ущерб: <b>{fmt(damageBalance)} ₽</b></div>
+                <div>
+                  ущерб: <b>{fmt(damageBalance)} ₽</b>
+                  {damageWhatItems.length > 0 && (
+                    <span className="text-muted"> · {damageWhatLabel}</span>
+                  )}
+                </div>
               )}
               {equipmentManualBalance > 0 && (
                 <div>за экипировку: <b>{fmt(equipmentManualBalance)} ₽</b></div>
@@ -2113,7 +2165,7 @@ export function RentalCard({
                 { rentalId: rental.id, sessionId: activeParking.id },
                 {
                   onSuccess: () =>
-                    toast.success("Снят с паркинга", "Возврат пересчитан"),
+                    toastRentalDone(rental, "Снят с паркинга", "Возврат пересчитан"),
                   onError: () => toast.error("Не удалось снять с паркинга"),
                 },
               )
@@ -2351,6 +2403,12 @@ export function RentalCard({
             }
             paymentDateIso={onRequestPayment ? paymentDateIso : undefined}
             armParkingSignal={armParkingSignal}
+            onParkingPeriod={
+              onRequestParking
+                ? (s, d, settle) => onRequestParking(rental.id, s, d, settle)
+                : undefined
+            }
+            onParkingCancel={onCancelParking}
           />
 
           <AccordionSection
@@ -2507,8 +2565,13 @@ export function RentalCard({
                     {damageBalance > 0 && (
                       <DebtRow
                         label="Ущерб по акту"
-                        formula="зафиксирован в акте о повреждениях"
+                        formula={damageWhatLabel}
                         value={damageBalance}
+                        onOpenAct={
+                          reportWithDebt
+                            ? () => setPreviewDamageId(reportWithDebt.id)
+                            : undefined
+                        }
                       />
                     )}
                     {equipmentManualBalance > 0 && (
@@ -2688,6 +2751,12 @@ export function RentalCard({
               }
               paymentDateIso={onRequestPayment ? paymentDateIso : undefined}
               armParkingSignal={armParkingSignal}
+              onParkingPeriod={
+                onRequestParking
+                  ? (s, d, settle) => onRequestParking(rental.id, s, d, settle)
+                  : undefined
+              }
+              onParkingCancel={onCancelParking}
             />
             {/* v0.6.50: «Последние события» — InlineHistory под календарём. */}
             <InlineHistory
@@ -2720,7 +2789,16 @@ export function RentalCard({
         </SideDrawer>
       )}
 
-      {action && (
+      {/* Этап 2: «Завершить аренду» — единое окно (приёмка + расчёт) в режиме
+          completing. PaymentAcceptDialog сам рисует компактную карточку-
+          модалку по центру (контент-хайт, как в макете). */}
+      {action === "complete" ? (
+        <PaymentAcceptDialog
+          rental={rental}
+          completing
+          onClose={() => setAction(null)}
+        />
+      ) : action ? (
         <RentalActionDialog
           rental={rental}
           action={action}
@@ -2732,7 +2810,7 @@ export function RentalCard({
             setDamageOpen(true);
           }}
         />
-      )}
+      ) : null}
       {/* «Изменить аренду» (RentalEditModal) удалён — сырая правка денег/
           периода заменена безопасными кнопками в карточке. */}
       {/* ConfirmPaymentDialog больше не используется — функционал убран. */}
@@ -2903,9 +2981,27 @@ export function RentalCard({
             рендерят hover-поповеры (absolute, w-max), которые у правой колонки
             заходят за край карточки и раздували её ширину (тот же эффект уже
             ловили на мобиле). По вертикали скролл сохраняется. */}
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden">
+        <div
+          ref={drawerScrollRef}
+          className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden"
+        >
           <div className="flex flex-col gap-3 p-5">{body}</div>
         </div>
+        {/* Мобильная плавающая кнопка звонка — над футером, прячется при скролле.
+            Если у клиента 2 номера — useCallClient покажет выбор (callSheet). */}
+        {isMobile && (client?.phone || client?.extraPhone) && (
+          <DrawerCallFab
+            scrollRef={drawerScrollRef}
+            hasFooter={canComplete || canAcceptPayment}
+            onCall={() =>
+              callClient(client?.name ?? "Клиент", [
+                client?.phone,
+                client?.extraPhone,
+              ])
+            }
+          />
+        )}
+        {callSheet}
         {/* Sticky footer: «Закрыть аренду» (нейтр.) / «Принять оплату» (зелёная) */}
         {(canComplete || canAcceptPayment) && (
           <div className="sticky bottom-0 flex gap-3 border-t border-border bg-surface p-4">
@@ -3029,20 +3125,35 @@ function FinanceHoverCard({
     width: number;
   } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
+  // Hover-intent: задержка закрытия, чтобы успеть увести курсор на поповер
+  // (между ними зазор). Вход в поповер отменяет закрытие.
+  const closeTimer = useRef<number | null>(null);
+  const cancelClose = () => {
+    if (closeTimer.current != null) {
+      window.clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+  };
+  const scheduleClose = () => {
+    cancelClose();
+    closeTimer.current = window.setTimeout(() => setOpen(false), 250);
+  };
+  useEffect(() => () => cancelClose(), []);
   const show = () => {
+    cancelClose();
     const r = ref.current?.getBoundingClientRect();
     if (r) setPos({ top: r.bottom, left: r.left, width: r.width });
     setOpen(true);
   };
   return (
-    <div ref={ref} onMouseEnter={show} onMouseLeave={() => setOpen(false)}>
+    <div ref={ref} onMouseEnter={show} onMouseLeave={scheduleClose}>
       {children}
       {open &&
         pos &&
         createPortal(
           <div
-            onMouseEnter={() => setOpen(true)}
-            onMouseLeave={() => setOpen(false)}
+            onMouseEnter={cancelClose}
+            onMouseLeave={scheduleClose}
             style={{
               position: "fixed",
               top: pos.top + 4,
@@ -3313,7 +3424,23 @@ function KpiCard({
   const [popPos, setPopPos] = useState<{ top: number; left: number } | null>(
     null,
   );
+  // Hover-intent: чтобы можно было увести курсор С плашки НА поповер (между
+  // ними зазор 6px), не закрываем мгновенно — даём задержку. Вход в поповер
+  // отменяет закрытие; уход с поповера — снова закрывает с задержкой.
+  const closeTimer = useRef<number | null>(null);
+  const cancelClose = () => {
+    if (closeTimer.current != null) {
+      window.clearTimeout(closeTimer.current);
+      closeTimer.current = null;
+    }
+  };
+  const scheduleClose = () => {
+    cancelClose();
+    closeTimer.current = window.setTimeout(() => setPopOpen(false), 250);
+  };
+  useEffect(() => () => cancelClose(), []);
   const showPop = () => {
+    cancelClose();
     const r = cardRef.current?.getBoundingClientRect();
     if (r) {
       const vw = window.innerWidth;
@@ -3424,7 +3551,7 @@ function KpiCard({
       ref={cardRef}
       className={baseCls}
       onMouseEnter={popover && !isMobile ? showPop : undefined}
-      onMouseLeave={popover && !isMobile ? () => setPopOpen(false) : undefined}
+      onMouseLeave={popover && !isMobile ? scheduleClose : undefined}
     >
       {inner}
       {popover &&
@@ -3441,7 +3568,9 @@ function KpiCard({
               maxWidth: 360,
               zIndex: 1000,
             }}
-            className="pointer-events-none rounded-xl bg-surface p-3 text-[12px] leading-relaxed text-ink-2 shadow-card-lg ring-1 ring-border"
+            onMouseEnter={cancelClose}
+            onMouseLeave={scheduleClose}
+            className="rounded-xl bg-surface p-3 text-[12px] leading-relaxed text-ink-2 shadow-card-lg ring-1 ring-border"
           >
             {popover}
           </div>,
@@ -3515,19 +3644,78 @@ function KpiDetailSheet({
  * + мелкая серая формула расчёта (как считается), справа — сумма
  * (tabular-nums). Используется в секции «Финансовая информация».
  */
+/**
+ * Мобильная плавающая кнопка «Позвонить» в карточке аренды. Круглая, в правом
+ * нижнем углу над футером (под большим пальцем). Видна в покое, прячется во
+ * время скролла тела карточки (по событию scroll контейнера) и возвращается,
+ * когда скролл остановился. Тап → звонок (или выбор из двух номеров).
+ */
+function DrawerCallFab({
+  scrollRef,
+  hasFooter,
+  onCall,
+}: {
+  scrollRef: { current: HTMLDivElement | null };
+  hasFooter: boolean;
+  onCall: () => void;
+}) {
+  const [scrolling, setScrolling] = useState(false);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    let t: ReturnType<typeof setTimeout> | undefined;
+    const onScroll = () => {
+      setScrolling(true);
+      if (t) clearTimeout(t);
+      t = setTimeout(() => setScrolling(false), 240);
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      if (t) clearTimeout(t);
+    };
+  }, [scrollRef]);
+  return (
+    <button
+      type="button"
+      onClick={onCall}
+      aria-label="Позвонить клиенту"
+      className={cn(
+        "absolute right-4 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-green-600 text-white shadow-card-lg transition-all duration-200 active:scale-95",
+        hasFooter ? "bottom-[84px]" : "bottom-5",
+        scrolling
+          ? "pointer-events-none translate-y-3 opacity-0"
+          : "translate-y-0 opacity-100",
+      )}
+    >
+      <Phone size={22} />
+    </button>
+  );
+}
+
 function DebtRow({
   label,
   formula,
   value,
+  onOpenAct,
 }: {
   label: string;
   formula?: string;
   value: number;
+  /** #26: если задано — строка кликабельна и открывает акт о повреждениях. */
+  onOpenAct?: () => void;
 }) {
-  return (
-    <div className="flex items-start justify-between gap-3">
+  const body = (
+    <>
       <div className="min-w-0">
-        <div className="text-ink-2">{label}</div>
+        <div className="flex items-center gap-1.5 text-ink-2">
+          {label}
+          {onOpenAct && (
+            <span className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-blue-600">
+              акт <ArrowUpRight size={11} />
+            </span>
+          )}
+        </div>
         {formula && (
           <div className="text-[11px] leading-tight text-muted-2">
             {formula}
@@ -3537,8 +3725,21 @@ function DebtRow({
       <span className="shrink-0 font-semibold tabular-nums text-ink">
         {fmt(value)} ₽
       </span>
-    </div>
+    </>
   );
+  if (onOpenAct) {
+    return (
+      <button
+        type="button"
+        onClick={onOpenAct}
+        title="Открыть акт о повреждениях — что повреждено"
+        className="-mx-1.5 flex w-[calc(100%+0.75rem)] items-start justify-between gap-3 rounded-lg px-1.5 py-1 text-left transition-colors hover:bg-blue-soft/40"
+      >
+        {body}
+      </button>
+    );
+  }
+  return <div className="flex items-start justify-between gap-3">{body}</div>;
 }
 
 function pluralRental(n: number): string {

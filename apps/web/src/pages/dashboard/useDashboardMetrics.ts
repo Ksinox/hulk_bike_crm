@@ -39,7 +39,9 @@ export type DashboardMetrics = {
 
   activeRentalsCount: number;
   fleetTotal: number;
-  loadPercent: number; // 0..100
+  /** #21: парк, ДОСТУПНЫЙ к аренде (rental_pool) — знаменатель «загрузки». */
+  rentableFleet: number;
+  loadPercent: number; // 0..100 (active / rentableFleet)
 
   tasksToday: number; // пока 0 — задач ещё нет в API
 
@@ -137,6 +139,8 @@ export type ReturnItem = {
 
 export type OverdueItem = {
   rentalId: number;
+  /** #дашборд: нужен для перехода в карточку клиента из «Долгов к сбору». */
+  clientId: number;
   scooterName: string;
   clientName: string;
   clientPhone: string;
@@ -301,6 +305,7 @@ export function useDashboardMetrics(): DashboardMetrics {
       const daysOverdue = Math.max(0, daysBetweenYmd(endDateKey, todayKey));
       return {
         rentalId: r.id,
+        clientId: r.clientId,
         scooterName: sc?.name ?? "—",
         clientName: cl?.name ?? "—",
         clientPhone: cl?.phone ?? "",
@@ -321,9 +326,8 @@ export function useDashboardMetrics(): DashboardMetrics {
       (r) => r.status === "active" && r.scooterId != null,
     ).length;
 
-    // fleetTotal — скутеры которые потенциально могут быть в парке аренды.
-    // Sold / buyout — выбыли из оборота, их в знаменатель загрузки не включаем,
-    // иначе загрузка будет искусственно занижена.
+    // fleetTotal — весь парк в обороте (для панели «Парк · N скутеров»).
+    // Sold / buyout — выбыли, их не показываем.
     const inCirculationStatuses = new Set([
       "ready",
       "rental_pool",
@@ -333,9 +337,17 @@ export function useDashboardMetrics(): DashboardMetrics {
     const fleetTotal = scooters.filter((s) =>
       inCirculationStatuses.has(s.baseStatus),
     ).length;
-    // Эффективный знаменатель загрузки — max(статичный парк, активные аренды),
-    // чтобы при редких проскальзываниях статусов не получить >100%.
-    const denom = Math.max(fleetTotal, activeRentalsCount);
+    // #21: «загрузка парка» = занято / ДОСТУПНЫЕ к аренде (rental_pool, как в
+    // Выручке): ремонт / разборка / ready (стейджинг) к аренде недоступны и в
+    // знаменатель не идут. rentableFleet включает и сейчас арендованные (они
+    // остаются rental_pool, просто заняты). max(...) — страховка от >100% при
+    // редком проскальзывании статусов.
+    const rentableFleet = scooters.filter(
+      (s) =>
+        s.baseStatus === "rental_pool" &&
+        !(s as { archivedAt?: string | null }).archivedAt,
+    ).length;
+    const denom = Math.max(rentableFleet, activeRentalsCount);
     const loadPercent =
       denom > 0 ? Math.round((activeRentalsCount / denom) * 100) : 0;
 
@@ -520,24 +532,38 @@ export function useDashboardMetrics(): DashboardMetrics {
         rentalIds: [...ids].sort((a, b) => b - a),
       }));
 
-    // F4: должники БЕЗ активной аренды — клиенты с незакрытым долгом по ущербу
-    // (он «переезжает» с клиентом после возврата), у кого нет ни одной активной
-    // аренды. Такие теряются: в просрочках их нет (нет активной аренды), во
-    // вкладку «Клиенты» оператор почти не ходит. Выводим их отдельным блоком на
-    // дашборде, чтобы можно было отработать. Клиенты с активной арендой сюда НЕ
-    // попадают — их долг виден на карточке аренды (F3).
-    const activeClientIds = new Set(
-      rentals.filter((r) => r.status === "active").map((r) => r.clientId),
-    );
+    // F4 + #25: «Висящие долги» — клиенты с незакрытым долгом по ущербу,
+    // КОТОРЫЙ НЕ ВИДЕН на активной аренде. Такой долг «переезжает» с клиентом
+    // после возврата и легко теряется. Два случая, оба должны попасть в плашку:
+    //   • у клиента нет активной аренды → весь unpaidDamageDebt висит;
+    //   • у клиента ЕСТЬ активная аренда, но долг по ущербу с ДРУГОЙ (закрытой)
+    //     аренды — на текущей аренде он не показан (её ущерб = 0/меньше).
+    //     Раньше (#25, баг Комарова) такой клиент исключался целиком, и долг
+    //     2000 ₽ с прошлой аренды нигде не светился.
+    // «Висящая» сумма = unpaidDamageDebt − долг по ущербу на ЕГО активных
+    // арендах (тот виден на карточке аренды, не дублируем). debtAgg — только
+    // live-аренды, поэтому damageBalance в нём = ущерб на активной аренде.
+    const activeDamageByClient = new Map<number, number>();
+    for (const d of debtAgg) {
+      if ((d.damageBalance ?? 0) > 0) {
+        activeDamageByClient.set(
+          d.clientId,
+          (activeDamageByClient.get(d.clientId) ?? 0) + d.damageBalance,
+        );
+      }
+    }
     const debtorsNoRental: DebtorNoRentalItem[] = clients
-      .filter(
-        (c) => (c.unpaidDamageDebt ?? 0) > 0 && !activeClientIds.has(c.id),
-      )
-      .map((c) => ({
-        clientId: c.id,
-        clientName: c.name,
-        clientPhone: c.phone ?? "",
-        amount: c.unpaidDamageDebt ?? 0,
+      .map((c) => {
+        const totalDamage = c.unpaidDamageDebt ?? 0;
+        const onActive = activeDamageByClient.get(c.id) ?? 0;
+        return { c, hanging: Math.max(0, totalDamage - onActive) };
+      })
+      .filter((x) => x.hanging > 0)
+      .map((x) => ({
+        clientId: x.c.id,
+        clientName: x.c.name,
+        clientPhone: x.c.phone ?? "",
+        amount: x.hanging,
       }))
       .sort((a, b) => b.amount - a.amount);
 
@@ -554,6 +580,7 @@ export function useDashboardMetrics(): DashboardMetrics {
       overdueDeltaFromYesterday: overdueRentals.length - overdueYesterday,
       activeRentalsCount,
       fleetTotal,
+      rentableFleet,
       loadPercent,
       tasksToday: 0, // задач ещё нет в API
       park,

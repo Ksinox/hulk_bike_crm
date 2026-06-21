@@ -9,7 +9,7 @@
  * дня запускает preview, на mouse-up вызывается onCommitExtend(days) — RentalCard
  * открывает PaymentAcceptDialog с предзаполненным числом дней.
  */
-import { useMemo, useState, type Ref } from "react";
+import { useEffect, useMemo, useState, type Ref } from "react";
 import { CalendarCog, SquareParking, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DragExtendCalendar } from "./DragExtendCalendar";
@@ -27,10 +27,23 @@ import {
   useCreateParking,
   useEndParking,
   useDeleteParking,
+  parkingAmount,
   PARKING_MAX_DAYS,
 } from "@/lib/api/parking";
 import { toast } from "@/lib/toast";
 import { ApiError } from "@/lib/api";
+import { ParkingDrawer } from "./ParkingDialog";
+import { toastRentalDone } from "../rentalUndo";
+
+/** Паркинг-период: YYYY-MM-DD + n дней / число суток в периоде включительно. */
+const addDaysIsoP = (iso: string, n: number) =>
+  new Date(Date.parse(`${iso}T00:00:00Z`) + n * 86_400_000)
+    .toISOString()
+    .slice(0, 10);
+const inclusiveDaysP = (a: string, b: string) =>
+  Math.round(
+    (Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000,
+  ) + 1;
 
 /** DD.MM.YYYY → YYYY-MM-DD */
 function ruToIso(ru: string | undefined | null): string | null {
@@ -97,6 +110,8 @@ export function CalendarPanel({
   initialExtDays,
   armParkingSignal,
   paymentDateIso,
+  onParkingPeriod,
+  onParkingCancel,
 }: {
   rental: Rental;
   effectiveStatus: RentalStatus;
@@ -177,6 +192,19 @@ export function CalendarPanel({
   armParkingSignal?: number;
   /** v0.9.4: дата оплаты (back-date) — якорь превью продления в календаре. */
   paymentDateIso?: string | null;
+  /** Паркинг-период: оператор выбрал период на календаре → открыть
+   *  паркинг-дровер у родителя (push-колонка). Если не передан — карточка
+   *  откроет дровер сама (overlay-fallback). */
+  onParkingPeriod?: (
+    startIso: string,
+    days: number,
+    settle?: { sessionId: number; amount: number },
+  ) => void;
+  /** Отмена паркинга на карточке (кнопка «Отмена») → закрыть паркинг-дровер
+   *  у родителя (push-колонка), если он открыт. Иначе рассинхрон: календарь
+   *  вышел из режима, а дровер висит. В fallback-режиме дровер закрывается
+   *  через setLocalPeriod(null) — этот колбэк нужен только для host-режима. */
+  onParkingCancel?: () => void;
 }) {
   const startIso = ruToIso(rental.start);
   const endIso = ruToIso(rental.endPlanned);
@@ -199,9 +227,24 @@ export function CalendarPanel({
   const deleteParking = useDeleteParking();
   const [parkingMode, setParkingMode] = useState(false);
   const [draftStart, setDraftStart] = useState<string | null>(null);
+  // Конец выбранного периода (фиксируется 2-м кликом, жёлтым) + наведённая
+  // дата (live-превью периода/суммы при перетягивании по календарю).
+  const [draftEnd, setDraftEnd] = useState<string | null>(null);
+  const [parkingHoverEnd, setParkingHoverEnd] = useState<string | null>(null);
   // v0.8.27 (G4): паркинг открытый — выбираем только дату начала; конец
   // определяется ручным/авто снятием. Тумблер «первый день бесплатно».
   const [freeFirstDay, setFreeFirstDay] = useState(true);
+  // Окно постановки/оплаты паркинга (оба режима). Заменяет старый календарный
+  // режим выбора даты — он оставлен дормантным под флагом parkingMode.
+  // Fallback-дровер паркинга (когда родитель не управляет push-колонкой —
+  // дашборд/мобила): период, выбранный на календаре.
+  const [localPeriod, setLocalPeriod] = useState<{
+    startDate: string;
+    days: number;
+    /** Режим расчёта снятого открытого паркинга (сессия уже закрыта). */
+    settle?: { sessionId: number; amount: number };
+  } | null>(null);
+  const [parkingMenuOpen, setParkingMenuOpen] = useState(false);
 
   /* ---- v0.6.50 «ИЗМЕНИТЬ ПЕРИОД» ---- */
   // Коррекция аренды: перевыбор ТОЛЬКО даты возврата (старт фиксирован).
@@ -395,13 +438,48 @@ export function CalendarPanel({
   const removeParking = () => {
     if (!activeSession) return;
     const args = { rentalId: rental.id, sessionId: activeSession.id };
-    const opts = {
-      onSuccess: () => toast.success("Снят с паркинга", "Возврат пересчитан"),
-      onError: () => toast.error("Не удалось снять с паркинга"),
-    };
-    // Уже начавшийся паркинг — закрываем сегодня (end); будущий — удаляем.
-    if (activeSession.startDate <= todayIso()) endParking.mutate(args, opts);
-    else deleteParking.mutate(args, opts);
+    // Будущий паркинг — просто удаляем (накопления нет).
+    if (activeSession.startDate > todayIso()) {
+      deleteParking.mutate(args, {
+        onSuccess: () => toast.success("Паркинг отменён"),
+        onError: () => toast.error("Не удалось снять с паркинга"),
+      });
+      return;
+    }
+    // Предоплаченный: ранний возврат бэкенд пересчитывает по факту и
+    // возвращает излишек на депозит клиента (показываем в тосте).
+    if (activeSession.prepaid) {
+      endParking
+        .mutateAsync(args)
+        .then((res) => {
+          const refund = res.refund ?? 0;
+          toastRentalDone(
+            rental,
+            "Снят с паркинга",
+            refund > 0
+              ? `Излишек ${refund.toLocaleString("ru-RU")} ₽ → депозит клиента`
+              : "Возврат пересчитан",
+          );
+        })
+        .catch(() => toast.error("Не удалось снять с паркинга"));
+      return;
+    }
+    // ОТКРЫТЫЙ (постоплата): закрываем сессию и открываем окно оплаты с
+    // накопленной суммой → Оплатить (нал/перевод/депозит) или закрыть → долг.
+    endParking
+      .mutateAsync(args)
+      .then((res) => {
+        const s = res.session;
+        const unpaid = Math.max(0, s.amount - s.paidAmount);
+        if (unpaid <= 0) {
+          toastRentalDone(rental, "Снят с паркинга");
+          return;
+        }
+        const settle = { sessionId: s.id, amount: unpaid };
+        if (onParkingPeriod) onParkingPeriod(s.startDate, s.days, settle);
+        else setLocalPeriod({ startDate: s.startDate, days: s.days, settle });
+      })
+      .catch(() => toast.error("Не удалось снять с паркинга"));
   };
 
   // Вход в режим по сигналу из ⋯-меню.
@@ -427,9 +505,18 @@ export function CalendarPanel({
       startIso: s.startDate,
       endIso: s.endDate,
     }));
-    if (draftStart) ranges.push({ startIso: draftStart, endIso: draftStart });
+    // Черновик периода — жёлтым: от начала до зафиксированного конца, либо до
+    // наведённой даты (live-превью), либо одиночный день начала.
+    if (draftStart) {
+      const end =
+        draftEnd ??
+        (parkingHoverEnd && parkingHoverEnd >= draftStart
+          ? parkingHoverEnd
+          : draftStart);
+      ranges.push({ startIso: draftStart, endIso: end });
+    }
     return ranges;
-  }, [sessions, draftStart]);
+  }, [sessions, draftStart, draftEnd, parkingHoverEnd]);
 
   // F3: периоды УЖЕ существующих сессий (без черновика) — их дни нельзя
   // выбрать повторно. Один день не может попасть в паркинг дважды.
@@ -438,28 +525,104 @@ export function CalendarPanel({
     [sessions],
   );
 
-  // Окно выбора: начало паркинга не раньше выдачи; конец открыт.
-  const selFrom = startIso;
-  const selTo: string | null = null;
+  // Окно выбора: до выбора начала — от выдачи; после — конец в пределах 7 дн.
+  const selFrom = draftStart ?? startIso;
+  const selTo: string | null = draftStart
+    ? addDaysIsoP(draftStart, PARKING_MAX_DAYS - 1)
+    : null;
 
+  // Двухкликовый выбор ПЕРИОДА паркинга: 1-й клик — начало, 2-й — конец
+  // (в пределах 7 дн). Как выбрали конец — открываем паркинг-дровер.
   const handleParkingPick = (iso: string) => {
+    // Новый выбор начинается, если периода ещё нет или он уже завершён —
+    // ОСТАёМСЯ в режиме паркинга, пока не оплатим/в-долг/отмена.
+    if (!draftStart || draftEnd) {
+      setDraftStart(iso);
+      setDraftEnd(null);
+      setParkingHoverEnd(null);
+      return;
+    }
+    if (iso >= draftStart && inclusiveDaysP(draftStart, iso) <= PARKING_MAX_DAYS) {
+      const s = draftStart;
+      const d = inclusiveDaysP(s, iso);
+      // Фиксируем период (жёлтым) и открываем/обновляем дровер; режим паркинга
+      // НЕ выходим — повторный клик перевыберет период (синхронно дроверу).
+      setDraftEnd(iso);
+      setParkingHoverEnd(null);
+      if (onParkingPeriod) onParkingPeriod(s, d);
+      else setLocalPeriod({ startDate: s, days: d });
+      return;
+    }
+    // клик раньше начала или > лимита — начинаем период заново с этого дня
     setDraftStart(iso);
+    setDraftEnd(null);
+    setParkingHoverEnd(null);
   };
 
   const exitParking = () => {
     setParkingMode(false);
     setDraftStart(null);
+    setDraftEnd(null);
+    setParkingHoverEnd(null);
     setFreeFirstDay(true);
+    // Закрываем дровер, иначе он повиснет без выбора на календаре:
+    //   • fallback (дашборд/мобила) — свой inline-дровер;
+    //   • host (Аренды) — push-колонка у родителя.
+    setLocalPeriod(null);
+    onParkingCancel?.();
+  };
+
+  // Родитель закрыл паркинг-дровер (Оплатить / В долг / Отмена) → он бампает
+  // resetSignal. Это наш сигнал выйти из режима паркинга и очистить черновик
+  // периода. Пока дровер открыт, parkingMode остаётся включённым, поэтому
+  // повторный клик по календарю перевыбирает период (синхронно с дровером).
+  useEffect(() => {
+    setParkingMode(false);
+    setDraftStart(null);
+    setDraftEnd(null);
+    setParkingHoverEnd(null);
+    setFreeFirstDay(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resetSignal]);
+
+  // «Просто поставить» — открытый паркинг (постоплата) мгновенно с сегодня,
+  // без дровера (оплата по факту при снятии).
+  const instantOpenParking = () => {
+    const today = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Europe/Moscow",
+    }).format(new Date());
+    createParking.mutate(
+      { rentalId: rental.id, startDate: today, freeFirstDay: true },
+      {
+        onSuccess: () =>
+          toastRentalDone(
+            rental,
+            "Поставлен на паркинг",
+            "Открытый · оплата по факту",
+          ),
+        onError: (err) => {
+          const overlap =
+            err instanceof ApiError &&
+            err.status === 400 &&
+            (err.body as { error?: string } | null)?.error ===
+              "parking_overlap";
+          toast.error(
+            overlap
+              ? "Период паркинга пересекается с уже существующим"
+              : "Не удалось поставить на паркинг",
+          );
+        },
+      },
+    );
   };
 
   const toggleParkingButton = () => {
     if (!parkingMode) {
-      // Взаимоисключение с «Изменить период».
+      // Меню выбора: «просто поставить» (открытый) / «на период» (дровер оплаты).
+      // Старый календарный режим (parkingMode/draftStart) оставлен дормантным.
       setEditMode(false);
       setEditEndIso(null);
-      setParkingMode(true);
-      setDraftStart(null);
-      setFreeFirstDay(true);
+      setParkingMenuOpen((v) => !v);
       return;
     }
     // повторный клик = зафиксировать (нужна выбранная дата начала)
@@ -468,7 +631,8 @@ export function CalendarPanel({
         { rentalId: rental.id, startDate: draftStart, freeFirstDay },
         {
           onSuccess: () => {
-            toast.success(
+            toastRentalDone(
+              rental,
               "Поставлен на паркинг",
               "Идёт до снятия (макс 7 дн)",
             );
@@ -498,6 +662,18 @@ export function CalendarPanel({
 
   return (
     <div className="rounded-2xl bg-surface border border-border shadow-card-sm p-4">
+      {localPeriod && (
+        <ParkingDrawer
+          rental={rental}
+          startIso={localPeriod.startDate}
+          days={localPeriod.days}
+          settle={localPeriod.settle}
+          onClose={() => {
+            setLocalPeriod(null);
+            exitParking();
+          }}
+        />
+      )}
       {/* v0.6.49: заголовок «ДАТА ВОЗВРАТА» — uppercase серым по эталону.
           v0.8.0: кнопка 🅿 справа — вход/фиксация режима паркинга. */}
       <div className="flex items-center justify-between mb-2.5">
@@ -559,7 +735,8 @@ export function CalendarPanel({
                 {/* v0.8.15/0.8.18: явная КНОПКА. Без паркинга — «Поставить на
                     паркинг»; если паркинг уже есть — «Снять с паркинга» (красная);
                     в режиме выбора — «Выберите период»/«Зафиксировать». */}
-                {!parkingMode && activeSession ? (
+                {!parkingMode &&
+                  (activeSession ? (
               <button
                 type="button"
                 onClick={removeParking}
@@ -570,30 +747,61 @@ export function CalendarPanel({
                 <SquareParking size={14} /> Снять с паркинга
               </button>
             ) : (
-              <button
-                type="button"
-                onClick={toggleParkingButton}
-                disabled={parkingMode && !draftStart}
-                title={
-                  parkingMode ? "Зафиксировать паркинг" : "Поставить на паркинг"
-                }
-                className={cn(
-                  "inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-[12px] font-semibold shadow-sm transition-colors active:scale-[0.98] disabled:opacity-60",
-                  parkingMode
-                    ? draftStart
-                      ? "border-yellow-500 bg-yellow-400 text-yellow-950 hover:bg-yellow-500"
-                      : "border-yellow-300 bg-yellow-100 text-yellow-800"
-                    : "border-yellow-300 bg-yellow-100 text-yellow-900 hover:border-yellow-400 hover:bg-yellow-200",
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={toggleParkingButton}
+                  title="Поставить на паркинг"
+                  className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-yellow-300 bg-yellow-100 px-3 text-[12px] font-semibold text-yellow-900 shadow-sm transition-colors hover:border-yellow-400 hover:bg-yellow-200 active:scale-[0.98]"
+                >
+                  <SquareParking size={14} /> Поставить на паркинг
+                </button>
+                {parkingMenuOpen && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-20"
+                      onClick={() => setParkingMenuOpen(false)}
+                    />
+                    <div className="absolute right-0 top-[calc(100%+4px)] z-30 w-60 overflow-hidden rounded-xl border border-border bg-surface py-1 shadow-card-lg">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setParkingMenuOpen(false);
+                          instantOpenParking();
+                        }}
+                        className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left hover:bg-surface-soft"
+                      >
+                        <span className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-ink">
+                          <SquareParking size={13} className="text-yellow-600" />{" "}
+                          Просто поставить
+                        </span>
+                        <span className="text-[11px] text-muted-2">
+                          Открытый · оплата по факту при снятии
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setParkingMenuOpen(false);
+                          setEditMode(false);
+                          setEditEndIso(null);
+                          setParkingMode(true);
+                          setDraftStart(null);
+                        }}
+                        className="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left hover:bg-surface-soft"
+                      >
+                        <span className="text-[13px] font-semibold text-ink">
+                          На период · оплата
+                        </span>
+                        <span className="text-[11px] text-muted-2">
+                          Выбрать дни и сразу оплатить (или в долг)
+                        </span>
+                      </button>
+                    </div>
+                  </>
                 )}
-              >
-                <SquareParking size={14} />
-                {parkingMode
-                  ? draftStart
-                    ? "Зафиксировать"
-                    : "Выберите дату"
-                  : "Поставить на паркинг"}
-              </button>
-                )}
+              </div>
+                  ))}
               </>
             )}
           </div>
@@ -602,21 +810,53 @@ export function CalendarPanel({
 
       {/* v0.8.28 (H6): сводка открытого паркинга. Тумблер «1-й день бесплатно»
           убран с карточки — все расчёты происходят на этапе «Принять оплату». */}
-      {parkingMode && (
-        <div className="mb-2.5 rounded-[10px] border border-yellow-300 bg-yellow-50 px-3 py-2 text-[12px] text-yellow-900">
-          {!draftStart ? (
-            <span>
-              🅿 Выберите <b>дату начала</b> паркинга. Идёт до снятия вручную
-              (или авто через {PARKING_MAX_DAYS} дн).
-            </span>
-          ) : (
-            <span>
-              Старт <b>{isoToShort(draftStart)}</b> · идёт до снятия ·{" "}
-              1-й день бесплатно, далее 250 ₽/сут
-            </span>
-          )}
-        </div>
-      )}
+      {parkingMode &&
+        (() => {
+          // Live-конец периода: зафиксированный 2-м кликом → наведённый при
+          // перетягивании → нет. Пока тянем по календарю, считаем дни и сумму
+          // тут же, ничего не фиксируя.
+          const liveEnd =
+            draftStart == null
+              ? null
+              : (draftEnd ??
+                (parkingHoverEnd && parkingHoverEnd >= draftStart
+                  ? parkingHoverEnd
+                  : null));
+          const liveDays =
+            draftStart && liveEnd ? inclusiveDaysP(draftStart, liveEnd) : 0;
+          const liveAmount = liveDays
+            ? parkingAmount(liveDays, freeFirstDay)
+            : 0;
+          return (
+            <div className="mb-2.5 rounded-[10px] border border-yellow-300 bg-yellow-50 px-3 py-2 text-[12px] text-yellow-900">
+              {!draftStart ? (
+                <span>
+                  Кликните <b>дату начала</b> паркинга — можно задним числом (по
+                  прошедшим/просроченным дням) или вперёд.
+                </span>
+              ) : !liveEnd ? (
+                <span>
+                  Начало <b>{isoToShort(draftStart)}</b> · наведите/кликните{" "}
+                  <b>дату конца</b> (макс {PARKING_MAX_DAYS} дн).
+                </span>
+              ) : (
+                <div className="flex items-center justify-between gap-2">
+                  <span>
+                    Паркинг{" "}
+                    <b>
+                      {isoToShort(draftStart)}–{isoToShort(liveEnd)}
+                    </b>{" "}
+                    · <b>{liveDays}</b> дн
+                    {freeFirstDay ? " · 1-й день бесплатно" : ""}
+                  </span>
+                  <span className="shrink-0 font-semibold tabular-nums">
+                    {fmtNum(liveAmount)} ₽
+                  </span>
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
       {/* v0.6.50: «Изменить период» правится ПРЯМО на календаре — новую дату
           возврата оператор кликает на той же сетке (текущий период там
@@ -838,6 +1078,7 @@ export function CalendarPanel({
               parkingRanges={parkingRanges}
               parkingOccupiedRanges={parkingOccupiedRanges}
               onParkingPick={handleParkingPick}
+              onParkingHover={(iso) => setParkingHoverEnd(iso)}
               parkingSelectableFromIso={selFrom}
               parkingSelectableToIso={selTo}
               editPeriodMode={editMode}

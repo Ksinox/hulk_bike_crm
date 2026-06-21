@@ -24,10 +24,7 @@ import {
   Send,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import {
-  useApplications,
-  useConvertedApplicationsCount,
-} from "@/lib/api/clientApplications";
+import { useApplications } from "@/lib/api/clientApplications";
 import type { RevenueAnalytics } from "@/lib/useRevenueAnalytics";
 
 const fmt = (n: number) => n.toLocaleString("ru-RU");
@@ -45,10 +42,16 @@ export function RevenueDashboard({
   a,
   periodLabel,
   scopeLabel,
+  start,
+  end,
 }: {
   a: RevenueAnalytics;
   periodLabel: string;
   scopeLabel: string;
+  /** Окно выбранного периода — для воронки «заявки → аренда» (та же [start, end)
+   *  что и у выручки). */
+  start: Date;
+  end: Date;
 }) {
   const cashPct =
     a.total > 0 ? Math.round((a.cashTotal / a.total) * 100) : 0;
@@ -65,18 +68,40 @@ export function RevenueDashboard({
   const maxTariff = Math.max(1, ...a.topTariffs.map((t) => t.count));
   const up = (a.deltaPct ?? 0) >= 0;
 
-  // Воронка «заявки → аренда» (накопительно, не зависит от периода): сколько
-  // анкет с публичной формы получили, сколько дошли до оформления аренды и
-  // какая конверсия. Все показатели бизнеса — в одном месте.
+  // Воронка «заявки → аренда» ЗА ВЫБРАННЫЙ ПЕРИОД (когорта по дате заявки):
+  // из заявок, ПОЛУЧЕННЫХ в окне [start, end), сколько уже оформлено (accepted)
+  // и какая конверсия. Реагирует на табы День/Неделя/Месяц/Произвольный — как
+  // и вся остальная сводка. Когортный подход: конверсия всегда ≤100% (считаем
+  // долю оформленных среди полученных именно в этом периоде).
   const { data: allApps = [] } = useApplications({ status: "all", poll: false });
-  const { data: convertedCount = 0 } = useConvertedApplicationsCount();
-  const receivedApps = allApps.filter(
-    (ap) => ap.status !== "draft" && ap.status !== "cancelled",
-  ).length;
-  const conversionPct =
-    receivedApps > 0
-      ? Math.min(100, Math.round((convertedCount / receivedApps) * 100))
-      : 0;
+  const { receivedApps, convertedCount, conversionPct } = useMemo(() => {
+    const startMs = start.getTime();
+    const endMs = end.getTime();
+    const inWin = (iso: string | null) => {
+      if (!iso) return false;
+      const t = new Date(iso).getTime();
+      return t >= startMs && t < endMs;
+    };
+    // «Получено» — заявка вошла в воронку в этом периоде (по дате отправки
+    // формы, а для ручных/легаси — по дате создания). Черновики и отменённые
+    // не считаем.
+    const received = allApps.filter(
+      (ap) =>
+        ap.status !== "draft" &&
+        ap.status !== "cancelled" &&
+        inWin(ap.submittedAt ?? ap.createdAt),
+    );
+    const converted = received.filter((ap) => ap.status === "accepted").length;
+    const pct =
+      received.length > 0
+        ? Math.min(100, Math.round((converted / received.length) * 100))
+        : 0;
+    return {
+      receivedApps: received.length,
+      convertedCount: converted,
+      conversionPct: pct,
+    };
+  }, [allApps, start, end]);
 
   // Прогноз vs прошлый период — обгоняем/недоберём.
   const fcVsPrev =
@@ -279,7 +304,7 @@ export function RevenueDashboard({
             <Inbox size={14} /> Заявки → аренда
           </span>
           <span className="font-normal normal-case text-muted-2/70">
-            · за всё время
+            · {periodLabel}
           </span>
         </div>
         <div className="grid grid-cols-3 gap-3">

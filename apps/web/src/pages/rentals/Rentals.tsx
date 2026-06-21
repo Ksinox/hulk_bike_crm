@@ -33,6 +33,7 @@ import { useBillingPeriodRevenue } from "@/lib/useRevenue";
 import { ErrorBoundary } from "@/app/ErrorBoundary";
 import { isElectron } from "@/platform";
 import { PaymentAcceptDialog } from "./PaymentAcceptDialog";
+import { ParkingDrawer } from "./rental-card/ParkingDialog";
 import { RevenueListModal } from "@/pages/dashboard/RevenueListModal";
 import type { ApiClient } from "@/lib/api/types";
 import {
@@ -250,13 +251,59 @@ export function Rentals() {
   const [historyFilter, setHistoryFilter] = useState<
     "all" | "extend" | "swap" | "equipment" | "money" | undefined
   >(undefined);
+  // v0.9.1: завершение аренды использует ту же push-колонку, что и «Принять
+  // оплату» (не overlay) — режим completing.
+  const [paymentCompleting, setPaymentCompleting] = useState(false);
+  // Паркинг-период: тот же дровер «Принять оплату» (push-колонка), но контент
+  // подменён на паркинг. Период (начало + дни) — общее состояние, как
+  // paymentExtDays у продления: и календарь карточки, и дровер читают/пишут его.
+  const [paymentParking, setPaymentParking] = useState(false);
+  const [parkingStartIso, setParkingStartIso] = useState<string | null>(null);
+  const [parkingDays, setParkingDays] = useState(1);
+  // Режим расчёта снятого открытого паркинга (сессия уже закрыта) — иначе null
+  // (обычная постановка периода). Как и период, НЕ сбрасываем в closePayment.
+  const [parkingSettle, setParkingSettle] = useState<{
+    sessionId: number;
+    amount: number;
+  } | null>(null);
   const openPayment = (rentalId: number, extDays: number) => {
     setHistoryRentalId(null); // взаимоисключение с историей
+    setPaymentCompleting(false);
+    setPaymentParking(false);
     setPaymentExtDays(extDays);
+    setPaymentRentalId(rentalId);
+  };
+  const openComplete = (rentalId: number) => {
+    setHistoryRentalId(null);
+    setPaymentExtDays(0);
+    setPaymentCompleting(true);
+    setPaymentParking(false);
+    setPaymentRentalId(rentalId);
+  };
+  // Период выбран на календаре карточки → открываем паркинг-дровер.
+  // settle задан → режим оплаты снятого открытого паркинга (накопленное).
+  const openParking = (
+    rentalId: number,
+    startIso: string,
+    days: number,
+    settle?: { sessionId: number; amount: number },
+  ) => {
+    setHistoryRentalId(null);
+    setPaymentCompleting(false);
+    setPaymentExtDays(0);
+    setPaymentParking(true);
+    setParkingStartIso(startIso);
+    setParkingDays(Math.max(1, days));
+    setParkingSettle(settle ?? null);
     setPaymentRentalId(rentalId);
   };
   const closePayment = () => {
     setPaymentRentalId(null);
+    setPaymentCompleting(false);
+    setPaymentParking(false);
+    // parkingStartIso/parkingDays НЕ сбрасываем тут — колонка ещё уезжает
+    // (lastParking держит контент ~320ms), пустая дата уронила бы дровер.
+    // Перезапишутся при следующем openParking.
     setPaymentDateIso(null);
     setPaymentExtDays(0);
     // Бампаем сигнал — календарь карточки обнулит drag-extend.
@@ -578,6 +625,19 @@ export function Rentals() {
     const t = window.setTimeout(() => setLastPaymentRental(null), 320);
     return () => window.clearTimeout(t);
   }, [paymentRental]);
+  // Держим флаг «паркинг» во время exit-анимации колонки (как lastPaymentRental),
+  // иначе при закрытии контент мигнёт обратно на PaymentAcceptDialog.
+  const [lastParking, setLastParking] = useState(false);
+  useEffect(() => {
+    if (paymentRental && paymentParking) {
+      setLastParking(true);
+      return;
+    }
+    if (!paymentRental) {
+      const t = window.setTimeout(() => setLastParking(false), 320);
+      return () => window.clearTimeout(t);
+    }
+  }, [paymentRental, paymentParking]);
   // v0.7.9: история-связка должна существовать в текущем списке.
   const historyRental =
     historyRentalId != null
@@ -778,6 +838,9 @@ export function Rentals() {
                   }
                   onClose={() => setPanelOpen(false)}
                   onRequestPayment={openPayment}
+                  onRequestComplete={openComplete}
+                  onRequestParking={openParking}
+                  onCancelParking={closePayment}
                   paymentOpen={paymentRentalId === selected.id}
                   onOpenHistory={openHistory}
                   paymentExtDays={paymentExtDays}
@@ -805,25 +868,45 @@ export function Rentals() {
         <div
           className={cn(
             "h-full min-h-0 shrink-0 overflow-hidden transition-[width,opacity,margin] duration-300 ease-in-out",
+            // v0.9.2: завершение — две колонки внутри → колонка шире.
             paymentRental && !narrowDesktop
-              ? "ml-4 w-[480px] opacity-100"
+              ? paymentCompleting
+                ? "ml-4 w-[720px] 2xl:w-[860px] opacity-100"
+                : "ml-4 w-[480px] opacity-100"
               : "ml-0 w-0 opacity-0",
           )}
         >
           {!narrowDesktop && lastPaymentRental && (
-            <div className="flex h-full min-h-0 w-[480px] flex-col overflow-hidden">
+            <div
+              className={cn(
+                "flex h-full min-h-0 flex-col overflow-hidden",
+                paymentCompleting ? "w-[720px] 2xl:w-[860px]" : "w-[480px]",
+              )}
+            >
               <ErrorBoundary key={`pay-${lastPaymentRental.id}`}>
-                <PaymentAcceptDialog
-                  rental={lastPaymentRental}
-                  inline
-                  initialExtDays={paymentExtDays || undefined}
-                  onExtDaysChange={setPaymentExtDays}
-                  onPaymentDateChange={setPaymentDateIso}
-                  onClose={closePayment}
-                  onPaid={() => {
-                    /* invalidations происходят внутри диалога */
-                  }}
-                />
+                {lastParking ? (
+                  <ParkingDrawer
+                    rental={lastPaymentRental}
+                    startIso={parkingStartIso ?? ""}
+                    days={parkingDays}
+                    settle={parkingSettle ?? undefined}
+                    inline
+                    onClose={closePayment}
+                  />
+                ) : (
+                  <PaymentAcceptDialog
+                    rental={lastPaymentRental}
+                    inline
+                    completing={paymentCompleting}
+                    initialExtDays={paymentExtDays || undefined}
+                    onExtDaysChange={setPaymentExtDays}
+                    onPaymentDateChange={setPaymentDateIso}
+                    onClose={closePayment}
+                    onPaid={() => {
+                      /* invalidations происходят внутри диалога */
+                    }}
+                  />
+                )}
               </ErrorBoundary>
             </div>
           )}
@@ -835,16 +918,27 @@ export function Rentals() {
             drawer (w-[min(95vw,480px)]) — всегда влезает и доступен. */}
         {narrowDesktop && paymentRental && (
           <ErrorBoundary key={`pay-ovl-${paymentRental.id}`}>
-            <PaymentAcceptDialog
-              rental={paymentRental}
-              initialExtDays={paymentExtDays || undefined}
-              onExtDaysChange={setPaymentExtDays}
-              onPaymentDateChange={setPaymentDateIso}
-              onClose={closePayment}
-              onPaid={() => {
-                /* invalidations происходят внутри диалога */
-              }}
-            />
+            {paymentParking ? (
+              <ParkingDrawer
+                rental={paymentRental}
+                startIso={parkingStartIso ?? ""}
+                days={parkingDays}
+                settle={parkingSettle ?? undefined}
+                onClose={closePayment}
+              />
+            ) : (
+              <PaymentAcceptDialog
+                rental={paymentRental}
+                completing={paymentCompleting}
+                initialExtDays={paymentExtDays || undefined}
+                onExtDaysChange={setPaymentExtDays}
+                onPaymentDateChange={setPaymentDateIso}
+                onClose={closePayment}
+                onPaid={() => {
+                  /* invalidations происходят внутри диалога */
+                }}
+              />
+            )}
           </ErrorBoundary>
         )}
 

@@ -1190,6 +1190,7 @@ export function RentalActionDialog({
       {paymentDialogOpen && (
         <PaymentAcceptDialog
           rental={rental}
+          completing={action === "complete"}
           onClose={() => {
             setPaymentDialogOpen(false);
             // После закрытия debt-aggregate сам обновится через invAll

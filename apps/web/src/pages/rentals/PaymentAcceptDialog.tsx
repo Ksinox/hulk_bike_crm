@@ -34,9 +34,14 @@ import {
   Wallet,
   Banknote,
   CreditCard,
+  CheckCircle2,
+  Circle,
+  Minus,
+  Plus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
+import { toastRentalDone } from "./rentalUndo";
 import { api } from "@/lib/api";
 import {
   useApiClients,
@@ -52,7 +57,15 @@ import {
   getRentalChainIds,
   useRentals,
   useArchivedRentals,
+  completeRentalNoDamage,
+  completeRentalWithDamage,
 } from "./rentalsStore";
+import { useReturnIntake, ReturnIntakeSection, ReturnDamagePicker } from "./returnIntake";
+import {
+  useCreateDamageReport,
+  useUploadDamageMedia,
+} from "@/lib/api/damage-reports";
+import { DocumentPreviewModal } from "./DocumentPreviewModal";
 import { EquipmentTile, EquipmentAddTile } from "./rental-card/EquipmentTile";
 import type { Rental } from "@/lib/mock/rentals";
 import type { PaymentMethod } from "@/lib/mock/rentals";
@@ -77,7 +90,7 @@ import {
 // больше не показывается.
 const METHODS: { id: PaymentMethod; label: string; Icon: typeof Banknote }[] = [
   { id: "cash", label: "Наличные", Icon: Banknote },
-  { id: "transfer", label: "Безнал", Icon: CreditCard },
+  { id: "transfer", label: "Перевод", Icon: CreditCard },
 ];
 
 // v0.8.32: тарифные «ступени» по числу дней продления. Источник истины
@@ -105,6 +118,7 @@ export function PaymentAcceptDialog({
   onPaymentDateChange,
   liftedFromRect,
   inline = false,
+  completing = false,
 }: {
   rental: Rental;
   onClose: () => void;
@@ -144,6 +158,10 @@ export function PaymentAcceptDialog({
   } | null;
   /** Встроенный режим для карточки аренды: панель занимает третью колонку, без overlay. */
   inline?: boolean;
+  /** Режим завершения аренды: прячем продление и пополнение залога (им тут
+   *  не место — мы завершаем), способы оплаты те же. Этап 1 редизайна
+   *  завершения; дальше сюда переедет приёмка позиций. */
+  completing?: boolean;
 }) {
   // v0.6.16: liftedFromRect больше не используется (floating-календарь
   // убран). Оставлен в API ради backwards-compat — RentalCard всё ещё
@@ -172,12 +190,38 @@ export function PaymentAcceptDialog({
   const debtQ = useRentalDebt(rental.id);
   const debt = debtQ.data;
 
+  // ── Этап 2: приёмка позиций при завершении аренды (единое окно) ──
+  // Хук владеет состоянием приёмки. enabled=completing — при обычном
+  // приёме оплаты запросов не делает и отдаёт пустую приёмку.
+  const intake = useReturnIntake(rental, completing);
+  // Зачёт залога в счёт ущерба: по умолчанию весь применимый залог идёт
+  // в ущерб (переключатель «вернуть залог клиенту»).
+  const [returnDepositInstead, setReturnDepositInstead] = useState(false);
+  const createDamageReport = useCreateDamageReport();
+  const uploadDamageMedia = useUploadDamageMedia();
+  // v0.9.1: после завершения показываем акт возврата для печати.
+  const [actPreviewRentalId, setActPreviewRentalId] = useState<number | null>(null);
+  // v0.9.3: меню «простить просрочку» (по клику) в режиме завершения.
+  const [forgiveMenuOpen, setForgiveMenuOpen] = useState(false);
+
   // Неоплаченная аренда (rent payments paid=false)
   const pendingRent = useMemo(() => {
     return payments
       .filter(
         (p) =>
           p.rentalId === rental.id && p.type === "rent" && !p.paid,
+      )
+      .reduce((s, p) => s + p.amount, 0);
+  }, [payments, rental.id]);
+
+  // #20-B: неоплаченная доплата за замену скутера (swap_fee, paid=false).
+  // Раньше не попадала ни в pendingRent (фильтр type==="rent"), ни в состав
+  // долга к приёму — висела в KPI «Долг», но собрать её через окно было нельзя.
+  // Теперь — отдельной строкой и слотом в распределении (как rent).
+  const pendingSwapFee = useMemo(() => {
+    return payments
+      .filter(
+        (p) => p.rentalId === rental.id && p.type === "swap_fee" && !p.paid,
       )
       .reduce((s, p) => s + p.amount, 0);
   }, [payments, rental.id]);
@@ -491,13 +535,31 @@ export function PaymentAcceptDialog({
   const [payParking, setPayParking] = useState(true);
   const parkingDue = unpaidParking > 0 && payParking ? unpaidParking : 0;
 
+  // Этап 2: ущерб по приёмке (только в режиме завершения). Залог по
+  // умолчанию идёт в счёт ущерба; «вернуть залог» обнуляет зачёт.
+  const intakeDamageTotal = completing ? intake.totalDamage : 0;
+  const depositForZachet = rental.deposit ?? 0;
+  const depositZachet =
+    completing && intake.hasDamage && !returnDepositInstead
+      ? Math.min(depositForZachet, intakeDamageTotal)
+      : 0;
+  // Остаток ущерба после зачёта залога → ляжет долгом на акт (мягкий долг).
+  const intakeDamageDebt = Math.max(0, intakeDamageTotal - depositZachet);
+  // Сколько залога вернётся клиенту (для подсказки в расчёте).
+  const depositReturnToClient =
+    completing && intake.hasDamage
+      ? Math.max(0, depositForZachet - depositZachet)
+      : 0;
+
   // Долги (без extend — он считается по переплате)
   const totalDebt =
     pendingRent +
+    pendingSwapFee +
     overdueDaysBalance +
     overdueFineBalance +
     damageBalance +
-    manualBalance;
+    manualBalance +
+    intakeDamageDebt;
   // C3: «клиент вносит по долгу сейчас» — ОДНА сумма против общего долга.
   // Пусто = гасим полностью (как было). Можно ввести меньше → частичное
   // погашение: distribute() раскидает её по составу (просрочка→штраф→ущерб→…)
@@ -552,7 +614,7 @@ export function PaymentAcceptDialog({
             parseInt(crossPayStr.replace(/\D/g, "") || "0", 10),
           ),
         );
-  const [crossMethod, setCrossMethod] = useState<"cash" | "card" | "transfer">(
+  const [crossMethod, setCrossMethod] = useState<"cash" | "transfer">(
     "cash",
   );
   const payCrossDebt = usePayClientDamageDebt();
@@ -853,6 +915,7 @@ export function PaymentAcceptDialog({
     | "damage"
     | "manual"
     | "rent"
+    | "swap_fee"
     | "deposit";
   type Op = {
     target: OpTarget;
@@ -874,7 +937,10 @@ export function PaymentAcceptDialog({
    * Это нужно чтобы revenue не задваивался: залог/депозит уже были
    * учтены раньше, повторный учёт исключается фильтром revenue.ts.
    */
-  const distribute = (acceptedAvail: number = accepted): Op[] => {
+  const distribute = (
+    acceptedAvail: number = accepted,
+    extraDamageSlots: { cap: number; damageReportId: number }[] = [],
+  ): Op[] => {
     // Шаг 1 — разложили общий totalReceived на «что именно платим»
     const queue: {
       cap: number;
@@ -897,7 +963,16 @@ export function PaymentAcceptDialog({
       const reportDebt = Math.max(0, dr.total - dr.depositCovered - reportPaid);
       queue.push({ cap: reportDebt, target: "damage", damageReportId: dr.id });
     }
+    // Этап 2: акт, созданный в этом же сабмите завершения, ещё не попал
+    // в debt.damageReports (кэш) — добавляем его слот вручную, чтобы
+    // «вносит сейчас» лёг на новый ущерб по приоритету.
+    for (const s of extraDamageSlots) {
+      if (s.cap > 0)
+        queue.push({ cap: s.cap, target: "damage", damageReportId: s.damageReportId });
+    }
     queue.push({ cap: manualBalance, target: "manual" });
+    // #20-B: доплата за замену — слот перед rent (тот же тир, что аренда).
+    queue.push({ cap: pendingSwapFee, target: "swap_fee" });
     queue.push({ cap: pendingRent, target: "rent" });
     // v0.4.49: rent от продления — отдельный target, добавляем в очередь
     // последним перед излишком. Маркер damageReportId=-1 — чтобы submit()
@@ -1044,6 +1119,39 @@ export function PaymentAcceptDialog({
           });
         }
       }
+      // Этап 2: завершение с ущербом — СНАЧАЛА создаём акт ущерба
+      // (зачёт залога внутри), чтобы платёж «вносит сейчас» лёг на него
+      // через distribute(). Скутер в ремонт отправляет /complete по
+      // scooterNextStatus — не дублируем здесь (sendScooterToRepair=false).
+      let completionActId: number | null = null;
+      let completionActDebt = 0;
+      if (completing && intake.hasDamage) {
+        const created = await createDamageReport.mutateAsync({
+          rentalId: rental.id,
+          items: intake.buildDamageSeedItems(),
+          depositCovered: depositZachet,
+          note: null,
+          sendScooterToRepair: false,
+        });
+        completionActId = created.id;
+        completionActDebt = Math.max(
+          0,
+          (created.total ?? 0) - (created.depositCovered ?? 0),
+        );
+        // #28: залить приложенные при приёмке фото/видео ущерба в акт.
+        // Медиа опционально — ошибка загрузки не должна валить завершение.
+        for (const m of intake.mediaStaged) {
+          try {
+            await uploadDamageMedia.mutateAsync({
+              reportId: created.id,
+              file: m.file,
+              durationSec: m.durationSec,
+            });
+          } catch {
+            /* не блокируем завершение из-за медиа */
+          }
+        }
+      }
       // 1. Списать депозит клиента (clients.deposit_balance), если используется
       if (depositToUse > 0) {
         await api.post(
@@ -1107,7 +1215,12 @@ export function PaymentAcceptDialog({
         0,
         accepted - topupAmount - parkingPayNow,
       );
-      const ops = distribute(acceptedForDistribute);
+      const ops = distribute(
+        acceptedForDistribute,
+        completionActId
+          ? [{ cap: completionActDebt, damageReportId: completionActId }]
+          : [],
+      );
       // C3: при частичном погашении добавляем в комментарий «X из Y», чтобы в
       // истории было видно «погасил долг … из …».
       const debtNote = isPartialDebt
@@ -1116,7 +1229,7 @@ export function PaymentAcceptDialog({
       // Первый проход: всё кроме rent.
       for (const op of ops) {
         if (op.amount <= 0) continue;
-        if (op.target === "rent") continue; // отложено
+        if (op.target === "rent" || op.target === "swap_fee") continue; // отложено (PATCH placeholder ниже)
         if (op.target === "overdue_days") {
           await api.post(`/api/rentals/${rental.id}/debt/payment`, {
             kind: "overdue_days_payment",
@@ -1280,6 +1393,92 @@ export function PaymentAcceptDialog({
         }
       }
 
+      // #20-B: проход по swap_fee — гасим существующие placeholder'ы
+      // (paid=false, созданы при свапе) PATCH paid=true, FIFO по id. Зеркало
+      // прохода по rent. Доплата за замену наконец-то собирается через окно.
+      const unpaidSwapFee = (freshPayments.items ?? [])
+        .filter(
+          (p) => p.rentalId === rental.id && p.type === "swap_fee" && !p.paid,
+        )
+        .sort((a, b) => a.id - b.id);
+      for (const op of ops) {
+        if (op.amount <= 0 || op.target !== "swap_fee") continue;
+        let amountLeft = op.amount;
+        while (amountLeft > 0 && unpaidSwapFee.length > 0) {
+          const ph = unpaidSwapFee[0]!;
+          if (ph.amount <= amountLeft) {
+            await api.patch(`/api/payments/${ph.id}`, {
+              paid: true,
+              paidAt: paymentTimestamp ?? new Date().toISOString(),
+              method: op.method,
+            });
+            amountLeft -= ph.amount;
+            unpaidSwapFee.shift();
+          } else {
+            await api.patch(`/api/payments/${ph.id}`, {
+              amount: ph.amount - amountLeft,
+            });
+            await api.post("/api/payments", {
+              rentalId: rental.id,
+              type: "swap_fee",
+              amount: amountLeft,
+              method: op.method,
+              paid: true,
+              paidAt: paymentTimestamp ?? new Date().toISOString(),
+            });
+            ph.amount = ph.amount - amountLeft;
+            amountLeft = 0;
+          }
+        }
+        if (amountLeft > 0) {
+          await api.post("/api/payments", {
+            rentalId: rental.id,
+            type: "swap_fee",
+            amount: amountLeft,
+            method: op.method,
+            paid: true,
+            paidAt: paymentTimestamp ?? new Date().toISOString(),
+          });
+        }
+      }
+
+      // Этап 2: завершение аренды — ПОСЛЕ всех платежей (акт+погашения
+      // уже проведены, остаток ущерба остаётся мягким долгом). Судьбу
+      // скутера задаёт scooterNextStatus из приёмки.
+      if (completing) {
+        const dateActual = intake.dateActualForApi();
+        const mileage = intake.mileageForApi();
+        const scooterNext = intake.scooterNextStatus;
+        if (intake.hasDamage) {
+          await completeRentalWithDamage(
+            rental.id,
+            {
+              dateActual,
+              conditionOk: false,
+              equipmentOk: true,
+              // Залог считается «возвращённым» только если зачёта не было.
+              depositReturned: depositZachet === 0,
+              damageNotes: "",
+              mileage,
+            },
+            0,
+            "",
+            scooterNext,
+          );
+        } else {
+          await completeRentalNoDamage(
+            rental.id,
+            {
+              dateActual,
+              conditionOk: true,
+              equipmentOk: true,
+              depositReturned: true,
+              mileage,
+            },
+            scooterNext,
+          );
+        }
+      }
       // v0.4.50: инвалидируем все связанные queries — фронт сразу
       // подтянет актуальные данные (payments, debt-summary, аренды).
       qc.invalidateQueries({ queryKey: ["payments"] });
@@ -1298,20 +1497,56 @@ export function PaymentAcceptDialog({
       // после оплаты ущерба через единое окно.
       qc.invalidateQueries({ queryKey: ["damage-reports"] });
 
-      if (overpay > 0) {
-        toast.success(
+      if (completing) {
+        // Этап 2: завершение. Недосбор (частичная оплата долга) остаётся
+        // мягким долгом — клиент уедет в должники/«Висящие долги», ничего
+        // не теряется. В режиме завершения это debtRemainAfter (оператор
+        // осознанно собрал меньше) либо underpay.
+        // Завершение откатываемо (rollback-completion) — тост с «Отменить».
+        // rental.status в пропсе ещё «active», поэтому статус для расчёта цели
+        // отката передаём явно «completed».
+        const doneRef = { id: rental.id, status: "completed" as const };
+        const softLeft = Math.max(debtRemainAfter, underpay);
+        if (softLeft > 0) {
+          toastRentalDone(
+            doneRef,
+            "Аренда завершена",
+            `Принято ${fmt(totalReceived)} ₽. Остаток ${fmt(softLeft)} ₽ — мягкий долг клиента.`,
+            { kind: "info" },
+          );
+        } else if (overpay > 0) {
+          toastRentalDone(
+            doneRef,
+            "Аренда завершена",
+            `Переплата ${fmt(overpay)} ₽ ушла в депозит клиента.`,
+          );
+        } else {
+          toastRentalDone(
+            doneRef,
+            "Аренда завершена",
+            intake.hasDamage
+              ? "Акт ущерба создан, расчёт проведён."
+              : "Расчёт проведён, скутер оформлен.",
+          );
+        }
+      } else if (overpay > 0) {
+        toastRentalDone(
+          rental,
           "Оплата принята",
           `Переплата ${fmt(overpay)} ₽ ушла в депозит клиента.`,
         );
       } else if (underpay > 0) {
-        toast.info(
+        toastRentalDone(
+          rental,
           "Принят частичный платёж",
           `Зачтено ${fmt(totalReceived)} ₽. Остаток ${fmt(underpay)} ₽ висит за клиентом.`,
+          { kind: "info" },
         );
       } else {
         // #177: точная формулировка — для чистого продления «переплаты в
         // депозит» нет (см. extCharged выше), не вводим оператора в заблуждение.
-        toast.success(
+        toastRentalDone(
+          rental,
           "Оплата принята",
           extCharged > 0
             ? "Продление оформлено, платёж зачтён."
@@ -1320,7 +1555,14 @@ export function PaymentAcceptDialog({
       }
 
       onPaid?.();
-      requestClose();
+      // v0.9.1: при завершении открываем акт возврата (с позициями ущерба)
+      // для печати — оператор отдаёт клиенту. Дровер закроется после
+      // закрытия превью. Иначе (обычная оплата) — просто закрываемся.
+      if (completing) {
+        setActPreviewRentalId(rental.id);
+      } else {
+        requestClose();
+      }
     } catch (e) {
       toast.error("Не удалось принять оплату", (e as Error).message ?? "");
     } finally {
@@ -1434,6 +1676,16 @@ export function PaymentAcceptDialog({
   // (ущерб/ручной/паркинг) — без блока «период продления» и экипировки.
   const canExtend = rental.status === "active";
 
+  // Сумма «вносит сейчас» (после депозита) — крупное число «К приёму».
+  const amountDueNow = Math.max(0, grossTotal - depositToUse);
+  // Этап 2: блокировка кнопки. В завершении кнопка активна, даже если
+  // денег к приёму нет (чистый возврат), но заблокирована пока не
+  // приняты все позиции; способ оплаты обязателен только при accepted>0.
+  const submitDisabled =
+    saving ||
+    (accepted > 0 && method === null) ||
+    (completing ? intake.blocked : totalReceived <= 0 && !forgiveDebt);
+
   const mainPanel = (
       <div
         className={cn(
@@ -1462,10 +1714,14 @@ export function PaymentAcceptDialog({
                 inline ? "text-[16px] leading-tight" : "text-[14px]",
               )}
             >
-              {`Принять платёж · #${String(rental.id).padStart(4, "0")}`}
+              {completing
+                ? `Завершение аренды · #${String(rental.id).padStart(4, "0")}`
+                : `Принять платёж · #${String(rental.id).padStart(4, "0")}`}
             </div>
             <div className="mt-1 text-[11.5px] leading-snug text-muted">
-              {isOverdueState ? (
+              {completing ? (
+                <>Примите позиции, проведите расчёт и завершите аренду одним окном.</>
+              ) : isOverdueState ? (
                 <>
                   Просрочка{" "}
                   <span className="font-semibold text-red-ink tabular-nums">
@@ -1499,6 +1755,13 @@ export function PaymentAcceptDialog({
         </div>
 
         <div className="flex-1 overflow-y-auto scrollbar-thin text-[13px] text-ink-2">
+          {/* ─── Этап 2: приёмка позиций (только при завершении) — сверху,
+                расчёт ниже. Состояние каждой позиции обязательно. ── */}
+          {completing && (
+            <div className="border-b border-border px-5 py-4">
+              <ReturnIntakeSection intake={intake} />
+            </div>
+          )}
           {/* ─── Сквозной долг (ущерб с прошлых аренд) — отдельным блоком,
                 принимаем оплату прямо тут, не трогая логику текущей аренды ── */}
           {crossDebtTotal > 0 && (
@@ -1542,8 +1805,7 @@ export function PaymentAcceptDialog({
                 <div className="flex gap-1">
                   {(
                     [
-                      ["cash", "Нал"],
-                      ["card", "Карта"],
+                      ["cash", "Наличные"],
                       ["transfer", "Перевод"],
                     ] as const
                   ).map(([m, lbl]) => (
@@ -1688,6 +1950,16 @@ export function PaymentAcceptDialog({
                     <span className="font-bold tabular-nums text-ink">{fmt(pendingRent)} ₽</span>
                   </div>
                 )}
+                {pendingSwapFee > 0 && (
+                  <div className="flex items-center justify-between rounded-[10px] border border-border bg-surface px-3 py-2 text-[12px]">
+                    <span className="font-semibold text-ink">
+                      Доплата за замену скутера
+                    </span>
+                    <span className="font-bold tabular-nums text-ink">
+                      {fmt(pendingSwapFee)} ₽
+                    </span>
+                  </div>
+                )}
                 {damageBalance > 0 && (
                   <div className="flex items-center justify-between rounded-[10px] border border-border bg-surface px-3 py-2 text-[12px]">
                     <span className="font-semibold text-ink">Ущерб по акту</span>
@@ -1736,8 +2008,10 @@ export function PaymentAcceptDialog({
           )}
 
           {/* R1: тумблер «Продлить аренду» — без него блоки продления скрыты
-              (обычная оплата долга), включаем — раскрываются. */}
-          {canExtend && (
+              (обычная оплата долга), включаем — раскрываются.
+              В режиме завершения (completing) продление недоступно — мы
+              завершаем аренду, а не продлеваем. */}
+          {canExtend && !completing && (
             <div className="flex items-center justify-between gap-2 border-b border-border px-5 py-3">
               <div className="min-w-0">
                 <div className="text-[13px] font-bold text-ink">
@@ -2161,8 +2435,10 @@ export function PaymentAcceptDialog({
 
           {/* R10: «Пополнить залог» — тумблер (а не галочка), без «+» и без
               лимита суммы. Доступно всегда при денежном залоге: можно вернуть
-              недостачу ИЛИ поднять залог на любую сумму. */}
-          {canTopupSecurity && (
+              недостачу ИЛИ поднять залог на любую сумму.
+              В режиме завершения скрыто — залог не пополняют, а возвращают /
+              зачитывают в долг (отдельный контрол приедет на этапе 2). */}
+          {canTopupSecurity && !completing && (
             <div className="border-b border-border px-5 py-3">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex min-w-0 items-center gap-2">
@@ -2262,6 +2538,68 @@ export function PaymentAcceptDialog({
             Узкая ширина 440px требует разделения блоков по вертикали —
             раньше итог теснил итемизацию и кнопки сжимались. */}
         <div className="rounded-b-2xl border-t border-border bg-surface-soft pb-6">
+          {/* Этап 2: расчёт ущерба по приёмке + зачёт залога (завершение). */}
+          {completing && intake.hasDamage && (
+            <div className="border-b border-border bg-orange-soft/20 px-5 py-3">
+              <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wider text-orange-ink">
+                Ущерб по приёмке
+              </div>
+              <div className="flex flex-col gap-1 text-[12.5px]">
+                {intake.damageLines.map((l, i) => (
+                  <div key={i} className="flex items-center justify-between gap-2">
+                    <span className="min-w-0 flex-1 truncate text-ink-2">
+                      {l.label}
+                    </span>
+                    <b className="shrink-0 tabular-nums text-ink">
+                      {fmt(l.amount)} ₽
+                    </b>
+                  </div>
+                ))}
+                <div className="mt-0.5 flex items-center justify-between border-t border-orange-200/60 pt-1.5">
+                  <span className="font-semibold text-ink">Итого ущерб</span>
+                  <b className="tabular-nums text-ink">{fmt(intakeDamageTotal)} ₽</b>
+                </div>
+                {depositForZachet > 0 && (
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-ink-2">
+                      {returnDepositInstead
+                        ? "Залог — клиенту"
+                        : "Зачёт залога в ущерб"}
+                      <button
+                        type="button"
+                        onClick={() => setReturnDepositInstead((v) => !v)}
+                        className="ml-2 text-[11px] font-semibold text-blue-600 underline"
+                      >
+                        {returnDepositInstead ? "зачесть в ущерб" : "вернуть залог"}
+                      </button>
+                    </span>
+                    <b
+                      className={cn(
+                        "shrink-0 tabular-nums",
+                        returnDepositInstead ? "text-ink" : "text-green-ink",
+                      )}
+                    >
+                      {returnDepositInstead
+                        ? `${fmt(depositForZachet)} ₽`
+                        : `−${fmt(depositZachet)} ₽`}
+                    </b>
+                  </div>
+                )}
+                <div className="mt-0.5 flex items-center justify-between border-t border-orange-200/60 pt-1.5 text-[13.5px]">
+                  <span className="font-bold text-ink">В долг по ущербу</span>
+                  <b className="tabular-nums text-orange-ink">
+                    {fmt(intakeDamageDebt)} ₽
+                  </b>
+                </div>
+                {!returnDepositInstead && depositReturnToClient > 0 && (
+                  <div className="text-[11px] text-muted-2">
+                    Остаток залога клиенту:{" "}
+                    <b className="text-ink">{fmt(depositReturnToClient)} ₽</b>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
           {/* C3: «Клиент вносит по долгу сейчас» — одно поле против ОБЩЕГО
               долга. Пусто = гасим полностью. Можно ввести меньше (частично) —
               остаток просто останется долгом и завтра продолжит расти штатно.
@@ -2270,13 +2608,16 @@ export function PaymentAcceptDialog({
             <div className="border-b border-border px-5 py-3">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[12px] font-bold text-ink">
-                  Клиент вносит по долгу
+                  {completing ? "Клиент платит сейчас" : "Клиент вносит по долгу"}
                 </span>
                 <div className="flex items-center gap-1.5">
                   <input
                     inputMode="numeric"
-                    value={debtPayStr}
-                    placeholder={String(totalDebt)}
+                    // v0.9.1: показываем РЕАЛЬНОЕ чёрное число (не серый
+                    // placeholder, который читался как «пусто»). Пусто в
+                    // состоянии = «полное закрытие» → выводим totalDebt.
+                    value={debtPayStr === "" ? String(paidDebtNow) : debtPayStr}
+                    onFocus={(e) => e.target.select()}
                     onChange={(e) =>
                       setDebtPayStr(e.target.value.replace(/\D/g, ""))
                     }
@@ -2287,20 +2628,24 @@ export function PaymentAcceptDialog({
               </div>
               <div className="mt-1 flex items-center justify-between text-[11px]">
                 <span className="text-muted">
-                  из {fmt(totalDebt)} ₽ долга
-                  {isPartialDebt && (
-                    <button
-                      type="button"
-                      onClick={() => setDebtPayStr("")}
-                      className="ml-1.5 font-semibold text-blue-600 underline"
-                    >
-                      всё
-                    </button>
+                  {isPartialDebt ? (
+                    <>
+                      из {fmt(totalDebt)} ₽ долга
+                      <button
+                        type="button"
+                        onClick={() => setDebtPayStr("")}
+                        className="ml-1.5 font-semibold text-blue-600 underline"
+                      >
+                        полностью
+                      </button>
+                    </>
+                  ) : (
+                    "полное закрытие долга"
                   )}
                 </span>
                 {isPartialDebt && (
                   <span className="font-semibold text-orange-ink">
-                    останется {fmt(debtRemainAfter)} ₽
+                    останется долгом {fmt(debtRemainAfter)} ₽
                   </span>
                 )}
               </div>
@@ -2318,6 +2663,8 @@ export function PaymentAcceptDialog({
               //   - депозит/topup
               const overdueAfterForgive = overdueDaysBalance + overdueFineBalance;
               const overdueForgiven = overdueBalanceRaw - overdueAfterForgive;
+              // v0.9.1: ущерб по приёмке — ОТДЕЛЬНОЙ строкой ниже (не лумпим в
+              // «прочий долг», иначе он дублировал блок «Ущерб по приёмке»).
               const otherDebt = pendingRent + damageBalance + manualBalance;
               return (
                 <>
@@ -2352,10 +2699,23 @@ export function PaymentAcceptDialog({
                           tone="green"
                         />
                       )}
+                      {pendingSwapFee > 0 && (
+                        <FooterRow
+                          label="Доплата за замену скутера"
+                          value={`${fmt(pendingSwapFee)} ₽`}
+                        />
+                      )}
                       {otherDebt > 0 && (
                         <FooterRow
                           label="Прочий долг (экип./аренда/ущерб/ручной)"
                           value={`${fmt(otherDebt)} ₽`}
+                        />
+                      )}
+                      {completing && intakeDamageDebt > 0 && (
+                        <FooterRow
+                          label="Ущерб по приёмке (в долг)"
+                          value={`${fmt(intakeDamageDebt)} ₽`}
+                          tone="red"
                         />
                       )}
                     </>
@@ -2432,7 +2792,7 @@ export function PaymentAcceptDialog({
               К приёму
             </div>
             <div className="font-display text-[28px] font-extrabold leading-none tabular-nums text-blue-700">
-              {fmt(Math.max(0, grossTotal - depositToUse))} ₽
+              {fmt(amountDueNow)} ₽
             </div>
           </div>
 
@@ -2490,23 +2850,21 @@ export function PaymentAcceptDialog({
               <button
                 type="button"
                 onClick={submit}
-                disabled={
-                  saving ||
-                  (totalReceived <= 0 && !forgiveDebt) ||
-                  (accepted > 0 && method === null)
-                }
+                disabled={submitDisabled}
                 className={cn(
                   "inline-flex h-12 flex-[2] items-center justify-center gap-1.5 rounded-full px-4 text-[14px] font-bold text-white",
-                  saving ||
-                    (totalReceived <= 0 && !forgiveDebt) ||
-                    (accepted > 0 && method === null)
+                  submitDisabled
                     ? "cursor-not-allowed bg-surface text-muted-2"
-                    : "bg-blue-600 hover:bg-blue-700",
+                    : completing
+                      ? "bg-orange hover:bg-orange-ink"
+                      : "bg-blue-600 hover:bg-blue-700",
                 )}
               >
                 <Check size={14} />{" "}
-                {extDays > 0 && (forgiveDebt || dueAmount > 0)
-                  ? "Принять и продлить"
+                {completing
+                  ? amountDueNow > 0
+                    ? `Завершить · принять ${fmt(amountDueNow)} ₽`
+                    : "Завершить аренду"
                   : extDays > 0
                     ? "Принять и продлить"
                     : forgiveDebt
@@ -2524,7 +2882,10 @@ export function PaymentAcceptDialog({
   // окном, только когда есть просрочка. Дата = ЯКОРЬ отсчёта («как будто
   // сегодня — эта дата»): просрочка и продление считаются от неё. Это НЕ
   // прощение — ничего не пишем в БД на этом шаге; пересчёт только в окне.
-  const needDateStep = hasOverdue && !dateConfirmed;
+  // В режиме завершения дату фиксируем в приёмке («Дата возврата») — не
+  // показываем отдельный шаг «когда поступила оплата» (это был бы второй
+  // экран, ровно то, от чего уходим). Просрочка считается на сегодня.
+  const needDateStep = !completing && hasOverdue && !dateConfirmed;
   // Просрочка НА выбранную дату (сколько дней просрочки на дату оплаты).
   const dateEffDays = effectiveOverdueDaysAsOf(
     rental.endPlanned,
@@ -2659,24 +3020,599 @@ export function PaymentAcceptDialog({
     </div>
   );
 
-  const panel = needDateStep ? dateStepPanel : mainPanel;
+  // v0.9.2: завершение — ДВЕ колонки. Слева приёмка (скроллится), справа
+  // расчёт (просрочка + ущерб + оплата) с прибитым низом — деньги и состав
+  // долга всегда на виду, не уезжают под приёмку. На узких/мобиле колонки
+  // складываются в одну (md:flex-row), расчёт идёт под приёмкой, низ прибит.
+  // v0.9.3: производные для «счёта» завершения (двухколоночный макет v3).
+  const overduePostForgive = overdueDaysBalance + overdueFineBalance;
+  const overdueForgivenAmt = Math.max(0, overdueBalanceRaw - overduePostForgive);
+  const forgiveLabel =
+    forgiveChoice === "all"
+      ? "вся просрочка"
+      : forgiveChoice === "days-all"
+        ? "все дни"
+        : forgiveChoice === "days-n"
+          ? `${forgiveDaysN} дн`
+          : forgiveChoice === "fine" || forgiveChoice === "fine-n"
+            ? "штраф"
+            : "";
+  const otherExistingDebt = pendingRent + damageBalance + manualBalance;
+  const dayForgiveRate =
+    overdueDaysCount > 0
+      ? Math.round(overdueDaysBalanceRaw / overdueDaysCount)
+      : 0;
+
+  const completingPanel = (
+    <div
+      className={cn(
+        // v0.9.4: компактная карточка по ВЫСОТЕ КОНТЕНТА (как в макете) —
+        // не на всю высоту вьюпорта. Растёт вниз с числом позиций, до 88vh,
+        // дальше тело скроллится. Низ (К приёму/Завершить) всегда прибит.
+        "flex max-h-[88vh] w-full flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-card-lg",
+        closing && "opacity-0 transition-opacity duration-150",
+      )}
+    >
+      {/* Шапка */}
+      <div className="flex shrink-0 items-center gap-3 border-b border-border px-5 py-3">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white">
+          <Repeat size={15} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="text-[14px] font-bold text-ink">
+            {`Завершение аренды · #${String(rental.id).padStart(4, "0")}`}
+          </div>
+          <div className="mt-0.5 truncate text-[11.5px] leading-snug text-muted">
+            {(rental as { clientName?: string }).clientName
+              ? `${(rental as { clientName?: string }).clientName} · `
+              : ""}
+            {rental.scooter}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={requestClose}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted hover:bg-border hover:text-ink"
+        >
+          <X size={16} />
+        </button>
+      </div>
+
+      {/* Тело — две колонки. Скроллится ЦЕЛИКОМ (низ панели прибит ниже),
+          колонки равной высоты (счёт «дотягивается» до приёмки). */}
+      <div className="flex min-h-0 flex-col overflow-y-auto scrollbar-thin md:flex-row md:items-stretch">
+        {/* ЛЕВО — приёмка */}
+        <div className="border-b border-border px-4 py-4 md:w-1/2 md:shrink-0 md:border-b-0 md:border-r">
+          <ReturnIntakeSection intake={intake} />
+        </div>
+
+        {/* ПРАВО — счёт */}
+        <div className="flex-1 bg-surface-soft px-4 py-4">
+          <div className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted-2">
+            Счёт к закрытию
+          </div>
+
+          {/* Сквозной долг с прошлых аренд — отдельный поток оплаты */}
+          {crossDebtTotal > 0 && (
+            <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50/70 p-3">
+              <div className="mb-1.5 flex items-center gap-2">
+                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-amber-500 text-[11px] font-bold text-white">
+                  !
+                </span>
+                <span className="text-[11px] font-bold uppercase tracking-wide text-amber-800">
+                  Долг с прошлых аренд
+                </span>
+                <span className="ml-auto font-display text-[15px] font-extrabold tabular-nums text-amber-900">
+                  {fmt(crossDebtTotal)} ₽
+                </span>
+              </div>
+              <div className="mb-2 flex flex-col gap-0.5 text-[11px] text-amber-900/90">
+                {crossSources.map((s) => (
+                  <div key={s.rentalId} className="flex items-center justify-between gap-2">
+                    <span className="min-w-0 flex-1 truncate">
+                      {s.label} · #{String(s.rentalId).padStart(4, "0")}
+                    </span>
+                    <b className="shrink-0 tabular-nums">{fmt(s.amount)} ₽</b>
+                  </div>
+                ))}
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <input
+                  inputMode="numeric"
+                  value={crossPayStr}
+                  placeholder={String(crossDebtTotal)}
+                  onChange={(e) => setCrossPayStr(e.target.value.replace(/\D/g, ""))}
+                  className="w-20 rounded-lg border border-amber-300 bg-white px-2 py-1 text-right text-[13px] font-bold tabular-nums text-ink outline-none focus:border-amber-500"
+                />
+                <span className="text-[11px] text-amber-800">₽</span>
+                {(["cash", "transfer"] as const).map((mm) => (
+                  <button
+                    key={mm}
+                    type="button"
+                    onClick={() => setCrossMethod(mm)}
+                    className={cn(
+                      "rounded-full border px-2.5 py-1 text-[11px] font-semibold",
+                      crossMethod === mm
+                        ? "border-amber-500 bg-amber-500 text-white"
+                        : "border-amber-300 bg-white text-amber-800",
+                    )}
+                  >
+                    {mm === "cash" ? "Наличные" : "Перевод"}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={handlePayCrossDebt}
+                  disabled={crossPayNow <= 0 || payCrossDebt.isPending}
+                  className="ml-auto rounded-full bg-amber-600 px-3 py-1 text-[11px] font-semibold text-white hover:bg-amber-700 disabled:opacity-40"
+                >
+                  Принять {fmt(crossPayNow)} ₽
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Чек этой аренды */}
+          {hasOverdue || intake.hasDamage || otherExistingDebt > 0 ? (
+            <div className="overflow-hidden rounded-xl border border-border bg-surface">
+              {/* Просрочка + прощение по клику */}
+              {hasOverdue && (
+                <div className="px-3.5 py-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-2 text-[13px] text-ink">
+                      <span className="h-[7px] w-[7px] shrink-0 rounded-full bg-red" />
+                      Просрочка{overdueDaysHeader > 0 ? ` · ${overdueDaysHeader} дн` : ""}
+                    </span>
+                    <span className="flex items-center gap-2.5">
+                      <button
+                        type="button"
+                        onClick={() => setForgiveMenuOpen((o) => !o)}
+                        className="inline-flex items-center gap-0.5 text-[11.5px] font-medium text-blue-600 hover:underline"
+                      >
+                        {forgiveChoice !== "clear" ? "изменить" : "простить"}
+                        <ChevronRight
+                          size={12}
+                          className={cn("transition-transform", forgiveMenuOpen && "rotate-90")}
+                        />
+                      </button>
+                      <b className="text-[13.5px] tabular-nums text-ink">
+                        {fmt(overdueBalanceRaw)} ₽
+                      </b>
+                    </span>
+                  </div>
+                  {overdueForgivenAmt > 0 && (
+                    <div className="mt-1 flex animate-toast-in items-center justify-between text-[12px]">
+                      <span className="text-green-ink">прощено: {forgiveLabel}</span>
+                      <b className="tabular-nums text-green-ink">
+                        −{fmt(overdueForgivenAmt)} ₽
+                      </b>
+                    </div>
+                  )}
+                  {forgiveMenuOpen && (
+                    <div className="mt-2 overflow-hidden rounded-lg border border-border bg-surface">
+                      <div className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wide text-muted-2">
+                        Простить просрочку
+                      </div>
+                      {[
+                        { key: "all", label: "Всё — дни и штраф", amount: overdueBalanceRaw, show: true },
+                        { key: "days-all", label: "Только дни (без штрафа)", amount: overdueDaysBalanceRaw, show: hasOverdueDays && hasOverdueFine },
+                        { key: "fine", label: "Только штраф 50%", amount: overdueFineBalanceRaw, show: hasOverdueFine },
+                      ]
+                        .filter((o) => o.show)
+                        .map((o) => {
+                          const active = forgiveChoice === o.key;
+                          return (
+                            <button
+                              key={o.key}
+                              type="button"
+                              onClick={() => {
+                                setForgiveChoice(o.key as typeof forgiveChoice);
+                                setForgiveMenuOpen(false);
+                              }}
+                              className={cn(
+                                "flex w-full items-center justify-between gap-2 border-t border-border px-3 py-2 text-[12.5px]",
+                                active ? "bg-blue-soft/60 text-blue-700" : "text-ink-2 hover:bg-surface-soft",
+                              )}
+                            >
+                              <span className="flex items-center gap-2">
+                                {active ? (
+                                  <CheckCircle2 size={15} className="text-blue-600" />
+                                ) : (
+                                  <Circle size={15} className="text-muted-2" />
+                                )}
+                                {o.label}
+                              </span>
+                              <b className="tabular-nums text-muted">−{fmt(o.amount)} ₽</b>
+                            </button>
+                          );
+                        })}
+                      {hasOverdueDays && (
+                        <div
+                          className={cn(
+                            "flex items-center justify-between gap-2 border-t border-border px-3 py-2 text-[12.5px]",
+                            forgiveChoice === "days-n" ? "bg-blue-soft/60 text-blue-700" : "text-ink-2",
+                          )}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setForgiveChoice("days-n");
+                              setForgiveMenuOpen(false);
+                            }}
+                            className="flex items-center gap-2"
+                          >
+                            {forgiveChoice === "days-n" ? (
+                              <CheckCircle2 size={15} className="text-blue-600" />
+                            ) : (
+                              <Circle size={15} className="text-muted-2" />
+                            )}
+                            N дней
+                          </button>
+                          <span className="flex items-center gap-2">
+                            <span className="flex items-center overflow-hidden rounded-md border border-border">
+                              <button
+                                type="button"
+                                onClick={() => setForgiveDaysN((n) => Math.max(1, n - 1))}
+                                className="flex h-6 w-6 items-center justify-center text-muted-2 hover:bg-border"
+                              >
+                                <Minus size={12} />
+                              </button>
+                              <span className="w-6 text-center text-[12px] font-semibold tabular-nums">
+                                {forgiveDaysN}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setForgiveDaysN((n) => Math.min(overdueDaysCount, n + 1))
+                                }
+                                className="flex h-6 w-6 items-center justify-center text-muted-2 hover:bg-border"
+                              >
+                                <Plus size={12} />
+                              </button>
+                            </span>
+                            <b className="w-16 text-right tabular-nums text-muted">
+                              −{fmt(forgiveDaysN * dayForgiveRate)} ₽
+                            </b>
+                          </span>
+                        </div>
+                      )}
+                      {forgiveChoice !== "clear" && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setClearDebt();
+                            setForgiveMenuOpen(false);
+                          }}
+                          className="flex w-full items-center gap-2 border-t border-border px-3 py-2 text-[12px] text-muted hover:bg-surface-soft"
+                        >
+                          <X size={14} /> Не прощать
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Ущерб по приёмке — итогом */}
+              {intake.hasDamage && (
+                <div
+                  className={cn(
+                    "animate-toast-in px-3.5 py-3",
+                    hasOverdue && "border-t border-border",
+                  )}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-2 text-[13px] text-ink">
+                      <span className="h-[7px] w-[7px] shrink-0 rounded-full bg-orange" />
+                      Ущерб по приёмке
+                    </span>
+                    <b className="text-[13.5px] tabular-nums text-ink">
+                      {fmt(intakeDamageTotal)} ₽
+                    </b>
+                  </div>
+                  {depositForZachet > 0 && (
+                    <div className="mt-1 flex items-center justify-between pl-3.5 text-[12px]">
+                      <span className="text-muted">
+                        зачёт залога{" "}
+                        <button
+                          type="button"
+                          onClick={() => setReturnDepositInstead((v) => !v)}
+                          className="font-medium text-blue-600 underline"
+                        >
+                          {returnDepositInstead ? "зачесть" : "вернуть"}
+                        </button>
+                      </span>
+                      <b
+                        className={cn(
+                          "tabular-nums",
+                          returnDepositInstead ? "text-ink" : "text-green-ink",
+                        )}
+                      >
+                        {returnDepositInstead
+                          ? `${fmt(depositForZachet)} ₽`
+                          : `−${fmt(depositZachet)} ₽`}
+                      </b>
+                    </div>
+                  )}
+                  {!returnDepositInstead && depositReturnToClient > 0 && (
+                    <div className="mt-0.5 pl-3.5 text-[11px] text-muted-2">
+                      остаток залога клиенту: {fmt(depositReturnToClient)} ₽
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* #20-B: доплата за замену — отдельной именованной строкой */}
+              {pendingSwapFee > 0 && (
+                <div
+                  className={cn(
+                    "flex items-center justify-between gap-2 px-3.5 py-3 text-[13px] text-ink",
+                    (hasOverdue || intake.hasDamage) && "border-t border-border",
+                  )}
+                >
+                  <span className="flex items-center gap-2">
+                    <span className="h-[7px] w-[7px] shrink-0 rounded-full bg-muted-2" />
+                    Доплата за замену скутера
+                  </span>
+                  <b className="text-[13.5px] tabular-nums">{fmt(pendingSwapFee)} ₽</b>
+                </div>
+              )}
+              {/* Прочий долг (аренда/ущерб прошлых актов/ручной) */}
+              {otherExistingDebt > 0 && (
+                <div
+                  className={cn(
+                    "flex items-center justify-between gap-2 px-3.5 py-3 text-[13px] text-ink",
+                    (hasOverdue || intake.hasDamage || pendingSwapFee > 0) &&
+                      "border-t border-border",
+                  )}
+                >
+                  <span className="flex items-center gap-2">
+                    <span className="h-[7px] w-[7px] shrink-0 rounded-full bg-muted-2" />
+                    Прочий долг (аренда/ущерб/ручной)
+                  </span>
+                  <b className="text-[13.5px] tabular-nums">{fmt(otherExistingDebt)} ₽</b>
+                </div>
+              )}
+
+              {/* Итого долг — receipt-style: пунктирный отрыв «как чек».
+                  v0.9.5: цвет суммы как сигнал — алый пока долг есть,
+                  эмеральд + чип «закрыт» когда всё погашено/прощено. */}
+              <div className="flex items-baseline justify-between border-t border-dashed border-muted-2/40 bg-surface-soft/70 px-3.5 py-3">
+                <span className="flex items-center gap-1.5 text-[11.5px] font-bold uppercase tracking-wide text-muted-2">
+                  Итого долг
+                  {totalDebt === 0 && (
+                    <span className="inline-flex animate-pop-in items-center gap-0.5 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9.5px] font-bold normal-case tracking-normal text-emerald-700">
+                      <CheckCircle2 size={10} /> закрыт
+                    </span>
+                  )}
+                </span>
+                <span className="flex items-baseline gap-2">
+                  {overdueForgivenAmt > 0 && (
+                    <span className="text-[12px] text-muted-2 line-through tabular-nums">
+                      {fmt(totalDebt + overdueForgivenAmt)}
+                    </span>
+                  )}
+                  <span
+                    className={cn(
+                      "font-display text-[22px] font-extrabold tabular-nums transition-colors duration-300",
+                      totalDebt > 0 ? "text-red-ink" : "text-emerald-600",
+                    )}
+                  >
+                    {fmt(totalDebt)} ₽
+                  </span>
+                </span>
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 px-3.5 py-3 text-[12.5px] text-emerald-700">
+              Долгов нет — аренда закроется без оплаты.
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* НИЗ — приём оплаты: «платит сейчас» крупно (именно это число вводим),
+          справочно «к оплате», затем способ, затем кнопка. */}
+      <div className="shrink-0 border-t border-border bg-surface px-5 py-3.5">
+        {totalDebt > 0 && (
+          <div className="mb-3 flex flex-wrap items-end justify-between gap-x-5 gap-y-3">
+            {/* Главный ввод — сколько клиент вносит сейчас */}
+            <div>
+              <div className="flex items-baseline gap-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
+                  Клиент платит сейчас
+                </span>
+                <span className="text-[11px] text-muted-2">
+                  из {fmt(totalDebt)} ₽ к оплате
+                </span>
+              </div>
+              <div className="mt-1 flex items-baseline gap-1.5">
+                <input
+                  inputMode="numeric"
+                  value={debtPayStr === "" ? String(paidDebtNow) : debtPayStr}
+                  onFocus={(e) => e.target.select()}
+                  onChange={(e) => setDebtPayStr(e.target.value.replace(/\D/g, ""))}
+                  className="w-[148px] rounded-xl border-2 border-blue-200 bg-blue-soft/15 px-3 py-1 text-right font-display text-[26px] font-extrabold tabular-nums text-blue-700 outline-none focus:border-blue-500"
+                />
+                <span className="font-display text-[19px] font-extrabold text-blue-700">
+                  ₽
+                </span>
+              </div>
+              <div className="mt-1 text-[11.5px]">
+                {isPartialDebt ? (
+                  <>
+                    <span className="font-semibold text-orange-ink">
+                      останется долгом {fmt(debtRemainAfter)} ₽
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setDebtPayStr("")}
+                      className="ml-1.5 font-semibold text-blue-600 underline"
+                    >
+                      платит всё
+                    </button>
+                  </>
+                ) : (
+                  <span className="text-green-ink">полное закрытие долга</span>
+                )}
+              </div>
+            </div>
+            {/* Способ оплаты */}
+            <div>
+              <div className="mb-1 flex items-center gap-1.5">
+                <span className="text-[10.5px] font-bold uppercase tracking-wider text-muted-2">
+                  Способ
+                </span>
+                {accepted > 0 && method === null && (
+                  <span className="rounded-full bg-orange-soft px-1.5 py-0.5 text-[10px] font-bold text-orange-ink">
+                    выберите
+                  </span>
+                )}
+              </div>
+              <div className="flex overflow-hidden rounded-xl border border-border text-[12.5px]">
+                {METHODS.map((m, i) => {
+                  const active = method === m.id;
+                  const needsChoice = accepted > 0 && method === null;
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => setMethod(m.id)}
+                      className={cn(
+                        "flex items-center gap-1.5 px-3.5 py-2 font-semibold transition-colors",
+                        i > 0 && "border-l border-border",
+                        active
+                          ? "bg-blue-600 text-white"
+                          : needsChoice
+                            ? "bg-orange-soft/40 text-ink"
+                            : "bg-surface text-muted hover:text-ink",
+                      )}
+                    >
+                      <m.Icon size={15} />
+                      {m.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+        {/* Кнопка действия */}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={requestClose}
+            className="h-12 shrink-0 rounded-full border border-border bg-white px-4 text-[13px] font-semibold text-muted-2 hover:bg-surface-soft hover:text-ink-2"
+          >
+            Отмена
+          </button>
+          <button
+            type="button"
+            onClick={submit}
+            disabled={submitDisabled}
+            className={cn(
+              "inline-flex h-12 flex-1 items-center justify-center gap-1.5 rounded-full text-[14.5px] font-bold text-white",
+              submitDisabled
+                ? "cursor-not-allowed bg-surface text-muted-2"
+                : "bg-orange hover:bg-orange-ink",
+            )}
+          >
+            <Check size={16} />{" "}
+            {amountDueNow > 0
+              ? `Завершить и принять ${fmt(amountDueNow)} ₽`
+              : "Завершить аренду"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  const panel = needDateStep
+    ? dateStepPanel
+    : completing
+      ? completingPanel
+      : mainPanel;
+
+  // v0.9.1: акт возврата после завершения — печать/скачивание. Закрытие
+  // превью закрывает и дровер.
+  const actPreview =
+    actPreviewRentalId != null
+      ? (() => {
+          const apiBase = (() => {
+            const envBase = import.meta.env.VITE_API_URL as string | undefined;
+            if (envBase) return envBase.replace(/\/$/, "");
+            return window.location.origin.includes("localhost")
+              ? "http://localhost:4000"
+              : window.location.origin
+                  .replace("crm-preview.", "api-preview.")
+                  .replace("crm.", "api.");
+          })();
+          return (
+            <DocumentPreviewModal
+              title="Акт возврата"
+              htmlUrl={`${apiBase}/api/rentals/${actPreviewRentalId}/document/act_return?format=html`}
+              docxUrl={`${apiBase}/api/rentals/${actPreviewRentalId}/document/act_return?format=docx`}
+              docxFilename={`act_return_${actPreviewRentalId}.docx`}
+              onClose={() => {
+                setActPreviewRentalId(null);
+                requestClose();
+              }}
+            />
+          );
+        })()
+      : null;
+
+  // v0.9.4: завершение — компактная карточка по высоте контента, по центру
+  // (как в утверждённом макете), а не колонка/драйвер на всю высоту. Растёт
+  // вниз с числом позиций; лёгкий бэкдроп (не тёмный) — фон остаётся читаем.
+  if (completing) {
+    return (
+      <>
+        {actPreview}
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-ink/25 p-4 backdrop-blur-sm sm:p-6"
+          onClick={requestClose}
+        >
+          {/* v0.9.4: пикер ущерба — отдельной панелью СЛЕВА, на том же слое
+              (а не модалка поверх модалки). Окно завершения сдвигается вправо. */}
+          <div
+            // #27: на мобиле (<md) пикер и окно НЕ помещаются в ряд (440px +
+            // карточка шире экрана → горизонтальное переполнение). Поэтому на
+            // мобиле складываем в столбец (пикер сверху, полноширинный), на
+            // md+ — прежний ряд (пикер слева, окно справа).
+            className="my-auto flex w-full flex-col items-stretch gap-3 md:w-auto md:flex-row md:items-start md:justify-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <ReturnDamagePicker intake={intake} />
+            <div className="w-full max-w-[760px]">{completingPanel}</div>
+          </div>
+        </div>
+      </>
+    );
+  }
 
   if (inline) {
     return (
-      <aside className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-card-sm">
-        {panel}
-      </aside>
+      <>
+        <aside className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-card-sm">
+          {panel}
+        </aside>
+        {actPreview}
+      </>
     );
   }
 
   return (
     <>
+      {actPreview}
       {/* v0.6.46: drawer без backdrop'a — календарь и левая колонка карточки
           остаются чёткими и интерактивными. Панель slide-in справа, поверх
           контента, закрытие — крестик внутри / Escape. */}
       <aside
         className={cn(
-          "fixed right-0 top-0 bottom-0 z-[90] w-[min(95vw,480px)] bg-surface shadow-card-lg ring-1 ring-border flex flex-col",
+          "fixed right-0 top-0 bottom-0 z-[90] bg-surface shadow-card-lg ring-1 ring-border flex flex-col",
+          // v0.9.2: завершение шире (две колонки), обычная оплата — узкая.
+          completing ? "w-[min(96vw,900px)]" : "w-[min(95vw,480px)]",
           closing ? "animate-slide-out-right" : "animate-slide-in-right",
         )}
       >
@@ -2776,6 +3712,7 @@ function ForgiveStepCards({
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [popoverPinned, setPopoverPinned] = useState(false);
   const hoverTimer = useRef<number | null>(null);
+  const closeTimer = useRef<number | null>(null);
   const anchorRef = useRef<HTMLDivElement | null>(null);
   // v0.6.12: позиция popover через portal — вычисляется по
   // getBoundingClientRect карточки «Простить». Iframe drawer'а имеет
@@ -2835,7 +3772,12 @@ function ForgiveStepCards({
       window.clearTimeout(hoverTimer.current);
       hoverTimer.current = null;
     }
-    if (!popoverPinned) setPopoverOpen(false);
+    // Hover-intent: закрываем с задержкой, чтобы успеть навести на сам
+    // popover (вход в него отменяет закрытие). Pinned (по клику) не трогаем.
+    if (!popoverPinned) {
+      if (closeTimer.current != null) window.clearTimeout(closeTimer.current);
+      closeTimer.current = window.setTimeout(() => setPopoverOpen(false), 250);
+    }
   };
   const pinOpen = () => {
     setPopoverOpen(true);
@@ -2940,7 +3882,13 @@ function ForgiveStepCards({
               className="fixed z-[201] w-[340px] rounded-[12px] border border-border bg-white shadow-card-lg"
               style={{ top: popoverPos.top, left: popoverPos.left }}
               onClick={(e) => e.stopPropagation()}
-              onMouseEnter={() => setPopoverOpen(true)}
+              onMouseEnter={() => {
+                if (closeTimer.current != null) {
+                  window.clearTimeout(closeTimer.current);
+                  closeTimer.current = null;
+                }
+                setPopoverOpen(true);
+              }}
             >
               {/* Все неоплаченные дни */}
               {hasOverdueDays && (

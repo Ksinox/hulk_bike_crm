@@ -34,6 +34,7 @@ const CreateScooterBody = z
     baseStatus: ScooterBaseStatusEnum.optional(),
     purchaseDate: z.string().optional().nullable(),
     purchasePrice: z.number().int().min(0).optional().nullable(),
+    marketValue: z.number().int().min(0).optional().nullable(),
     lastOilChangeMileage: z.number().int().min(0).optional().nullable(),
     note: z.string().max(500).optional().nullable(),
   })

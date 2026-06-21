@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { ChevronLeft } from "lucide-react";
+import { CalendarDays, ChevronDown, ChevronLeft, X } from "lucide-react";
+import { cn } from "@/lib/utils";
 import {
   RevenueRentalsList,
   resolveRevenueWindow,
@@ -9,6 +10,7 @@ import {
   type RevenueScope,
 } from "@/pages/dashboard/RevenueRentalsList";
 import { RevenueDashboard } from "@/pages/dashboard/RevenueDashboard";
+import { InlineRangeCalendar } from "@/components/ui/date-picker";
 import { useRevenueAnalytics } from "@/lib/useRevenueAnalytics";
 import { useBillingPeriodAnchors } from "@/lib/api/billing-period";
 import { useRentals, useArchivedRentals } from "@/pages/rentals/rentalsStore";
@@ -33,15 +35,25 @@ export function MobileRevenueScreen({
   const [period, setPeriod] = useState<RevenuePeriod>("month");
   const [method, setMethod] = useState<MethodFilter>("all");
   const [openId, setOpenId] = useState<number | null>(null);
+  // #24: произвольный период (календарь) на мобиле — как на десктопе. Если
+  // задан, перекрывает чипсы День/Неделя/Месяц (они подсвечиваются как
+  // неактивные).
+  const [customRange, setCustomRange] = useState<{
+    from: string;
+    to: string;
+  } | null>(null);
+  // #4: раскрытие инлайн-календаря произвольного периода (без поповера —
+  // на узком экране дропдаун ехал криво/перекрывал контролы).
+  const [calOpen, setCalOpen] = useState(false);
 
   // Подписка на якоря: окно/подпись расчётного периода считаются через
   // глобал billingPeriod, который заполняется с сервера асинхронно.
   // Без подписки экран мог бы открыться со стале-периодом (день 15).
   const anchorsQ = useBillingPeriodAnchors();
   const { start, end } = useMemo(
-    () => resolveRevenueWindow({ period }),
+    () => resolveRevenueWindow({ period, range: customRange }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [period, anchorsQ.data],
+    [period, customRange, anchorsQ.data],
   );
   const a = useRevenueAnalytics({ scope, start, end });
 
@@ -52,8 +64,9 @@ export function MobileRevenueScreen({
     [active, archived, openId],
   );
 
-  const periodLabel =
-    period === "day"
+  const periodLabel = customRange
+    ? `${customRange.from.slice(8, 10)}.${customRange.from.slice(5, 7)} — ${customRange.to.slice(8, 10)}.${customRange.to.slice(5, 7)}`
+    : period === "day"
       ? "Сегодня"
       : period === "week"
         ? "Эта неделя"
@@ -78,7 +91,7 @@ export function MobileRevenueScreen({
         </div>
       </div>
 
-      {/* Контролы: период + способ оплаты (чипсами) */}
+      {/* Контролы: период (чипсы + произвольный диапазон) + способ оплаты */}
       <div className="flex flex-col gap-2 border-b border-border bg-surface px-3 py-2">
         <MobileChips
           options={[
@@ -86,9 +99,68 @@ export function MobileRevenueScreen({
             { id: "week" as RevenuePeriod, label: "Неделя" },
             { id: "month" as RevenuePeriod, label: "Месяц" },
           ]}
-          value={period}
-          onChange={setPeriod}
+          // #24: при выбранном произвольном диапазоне чипсы гасим (пустое
+          // значение не совпадает ни с одним id).
+          value={customRange ? ("" as RevenuePeriod) : period}
+          onChange={(p) => {
+            setPeriod(p);
+            setCustomRange(null);
+          }}
         />
+        {/* #4: произвольный период на мобиле — кнопка-раскрывашка + ИНЛАЙН
+            календарь под ней (а не поповер: на узком экране дропдаун ехал
+            криво и перекрывал чипсы способа оплаты). */}
+        <div className="flex flex-col gap-2">
+          <button
+            type="button"
+            onClick={() => setCalOpen((v) => !v)}
+            className={cn(
+              "inline-flex h-10 w-full items-center justify-between gap-2 rounded-[10px] border px-3 text-[13px] transition-colors",
+              customRange
+                ? "border-blue-300 bg-blue-50 text-ink"
+                : "border-border bg-surface text-muted-2",
+            )}
+          >
+            <span className="flex items-center gap-2">
+              <CalendarDays size={15} />
+              {customRange
+                ? `${customRange.from.slice(8, 10)}.${customRange.from.slice(5, 7)} — ${customRange.to.slice(8, 10)}.${customRange.to.slice(5, 7)}`
+                : "Произвольный период"}
+            </span>
+            {customRange ? (
+              <span
+                role="button"
+                aria-label="Сбросить период"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setCustomRange(null);
+                  setCalOpen(false);
+                }}
+                className="flex h-6 w-6 items-center justify-center rounded-full text-muted-2 active:bg-red-50 active:text-red-ink"
+              >
+                <X size={14} />
+              </span>
+            ) : (
+              <ChevronDown
+                size={16}
+                className={cn(
+                  "shrink-0 transition-transform",
+                  calOpen && "rotate-180",
+                )}
+              />
+            )}
+          </button>
+          {calOpen && (
+            <InlineRangeCalendar
+              from={customRange?.from ?? null}
+              to={customRange?.to ?? null}
+              onChange={({ from, to }) => {
+                setCustomRange({ from, to });
+                setCalOpen(false);
+              }}
+            />
+          )}
+        </div>
         <MobileChips
           options={[
             { id: "all" as MethodFilter, label: "Все" },
@@ -102,12 +174,19 @@ export function MobileRevenueScreen({
 
       {/* Прокручиваемое тело: аналитика + детализация платежей */}
       <div className="flex-1 overflow-y-auto scrollbar-thin px-3 py-3 pb-20">
-        <RevenueDashboard a={a} periodLabel={periodLabel} scopeLabel={scopeLabel} />
+        <RevenueDashboard
+          a={a}
+          periodLabel={periodLabel}
+          scopeLabel={scopeLabel}
+          start={start}
+          end={end}
+        />
         <div className="mb-2 mt-5 text-[12px] font-semibold uppercase tracking-wider text-muted-2">
           Платежи за период · детализация
         </div>
         <RevenueRentalsList
           period={period}
+          range={customRange}
           methodFilter={method}
           scope={scope}
           compact={false}

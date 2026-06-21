@@ -14,6 +14,7 @@ import {
   ParkTileHoverCard,
   useTileHoverPreview,
 } from "./ParkTileHoverCard";
+import { ParkRadialFilters, type ParkStatusId } from "./ParkRadialFilters";
 
 /** Извлечь номер из имени скутера ("Jog #07" → 7). Используется для
  * сортировки плиток парка по возрастанию номера, без блочной разбивки
@@ -37,33 +38,9 @@ type TileStatus =
   | "sold"
   | "disassembly";
 
-type ModelFilter = "all" | ScooterModel;
-type StatusFilter = "all" | TileStatus | "returns_today";
-
-const MODEL_CHIPS: { id: ModelFilter; label: string }[] = [
-  { id: "all", label: "Все модели" },
-  { id: "jog", label: "Jog" },
-  { id: "gear", label: "Gear" },
-  { id: "honda", label: "Honda" },
-  { id: "tank", label: "Tank" },
-];
-
-const STATUS_CHIPS: { id: StatusFilter; label: string; swatch: string }[] = [
-  { id: "all", label: "всё", swatch: "hsl(var(--muted))" },
-  { id: "rented", label: "активная аренда", swatch: "hsl(var(--blue))" },
-  // Чип «опаздывает» — фоном синий (плитка остаётся синей), но
-  // визуально swatch — красный, чтобы соответствовать пульсирующему
-  // свечению на плитке.
-  { id: "late_today", label: "опаздывает", swatch: "hsl(var(--red))" },
-  { id: "overdue", label: "просрочка / ущерб", swatch: "hsl(var(--red))" },
-  { id: "returns_today", label: "возврат сегодня", swatch: "hsl(var(--blue-600))" },
-  { id: "pool", label: "готов к аренде", swatch: "hsl(var(--green))" },
-  { id: "ready", label: "не распределён", swatch: "hsl(var(--border-strong))" },
-  { id: "repair", label: "ремонт", swatch: "hsl(var(--orange))" },
-  { id: "for_sale", label: "продажа", swatch: "hsl(var(--purple))" },
-  { id: "disassembly", label: "разборка", swatch: "hsl(var(--ink))" },
-  { id: "sold", label: "продан", swatch: "hsl(var(--border))" },
-];
+// #дашборд: модели/статусы фильтруются через радиальные плашки
+// (ParkRadialFilters). Мультивыбор — наборы Set ниже. Старые ChipRow-чипы
+// (MODEL_CHIPS/STATUS_CHIPS) убраны.
 
 // Лейблы статусов — раньше использовались в title-tooltip плиток.
 // После v0.3.2 нативный tooltip убран в пользу ParkTileHoverCard;
@@ -99,8 +76,23 @@ export function ParkPanel({
   const scootersQ = useApiScooters();
   const rentalsQ = useApiRentals();
   const patchScooter = usePatchScooter();
-  const [model, setModel] = useState<ModelFilter>("all");
-  const [status, setStatus] = useState<StatusFilter>("all");
+  // Мультивыбор: пустой набор = «все». Тап по варианту переключает его.
+  const [models, setModels] = useState<Set<ScooterModel>>(() => new Set());
+  const [statuses, setStatuses] = useState<Set<ParkStatusId>>(() => new Set());
+  const toggleModel = (id: ScooterModel) =>
+    setModels((prev) => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  const toggleStatus = (id: ParkStatusId) =>
+    setStatuses((prev) => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
   const [cols, setCols] = useState(12);
   /** Открыта форма «Оформить аренду», с преднабранным скутером */
   const [newRentalFor, setNewRentalFor] = useState<string | null>(null);
@@ -219,7 +211,6 @@ export function ParkPanel({
   }, [tiles]);
 
   const total = tiles.length;
-  const park = metrics.park;
 
   if (total === 0) {
     return (
@@ -242,58 +233,22 @@ export function ParkPanel({
   return (
     <Card className={className}>
       <div className="mb-3.5 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2.5">
-          <h2 className="m-0 text-[20px] font-bold tracking-[-0.01em]">
-            Парк · {total} {plural(total, ["скутер", "скутера", "скутеров"])}
-          </h2>
-          <div className="flex gap-4 text-xs text-muted">
-            <span>
-              загружено <b className="text-ink font-bold">{metrics.loadPercent}%</b>
-            </span>
-            <span>
-              готов к аренде <b className="text-ink font-bold">{park.pool}</b>
-            </span>
-            {park.inRepair > 0 && (
-              <span>
-                в ремонте <b className="text-ink font-bold">{park.inRepair}</b>
-              </span>
-            )}
-          </div>
-        </div>
-        <ChipRow>
-          {MODEL_CHIPS.map((c) => (
-            <Chip
-              key={c.id}
-              active={model === c.id}
-              onClick={() => setModel(c.id)}
-            >
-              {c.label}{" "}
-              <Count active={model === c.id}>
-                {c.id === "all" ? total : modelCounts[c.id] ?? 0}
-              </Count>
-            </Chip>
-          ))}
-        </ChipRow>
+        <h2 className="m-0 text-[20px] font-bold tracking-[-0.01em]">
+          Парк · {total} {plural(total, ["скутер", "скутера", "скутеров"])}
+        </h2>
+        <ParkRadialFilters
+          total={total}
+          modelCounts={modelCounts}
+          statusCounts={statusCounts}
+          selectedModels={models}
+          selectedStatuses={statuses}
+          onToggleModel={toggleModel}
+          onClearModels={() => setModels(new Set())}
+          onToggleStatus={toggleStatus}
+          onClearStatuses={() => setStatuses(new Set())}
+        />
       </div>
 
-      <ChipRow className="mb-2.5">
-        {STATUS_CHIPS.map((c) => (
-          <Chip
-            key={c.id}
-            active={status === c.id}
-            onClick={() => setStatus(c.id)}
-          >
-            <span
-              className="h-2 w-2 rounded-full"
-              style={{ background: c.swatch }}
-            />
-            {c.label}{" "}
-            <Count active={status === c.id}>
-              {c.id === "all" ? total : statusCounts[c.id] ?? 0}
-            </Count>
-          </Chip>
-        ))}
-      </ChipRow>
 
       <div className="mb-3 flex items-center gap-2.5 rounded-xl bg-surface-soft px-3 py-2 text-xs text-muted">
         <Minus size={14} className="text-muted" />
@@ -317,7 +272,7 @@ export function ParkPanel({
         style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}
       >
         {tiles.map((s) => {
-          const modelMatch = model === "all" || s.model === model;
+          const modelMatch = models.size === 0 || models.has(s.model);
           if (!modelMatch) return null;
           // v0.4.59: фильтр «активная аренда» — все скутеры у которых
           // есть аренда в работе (rented + overdue + late_today +
@@ -335,14 +290,14 @@ export function ParkPanel({
             "late_today",
             "returning",
           ]);
+          const matchOneStatus = (st: ParkStatusId) =>
+            st === "returns_today"
+              ? s.isReturnToday
+              : st === "rented"
+                ? RENTED_STATUSES.has(s.status)
+                : s.status === st;
           const statusMatch =
-            status === "all"
-              ? true
-              : status === "returns_today"
-                ? s.isReturnToday
-                : status === "rented"
-                  ? RENTED_STATUSES.has(s.status)
-                  : s.status === status;
+            statuses.size === 0 || [...statuses].some(matchOneStatus);
           const num = s.name.split("#")[1] ?? s.name;
           const handleClick = () => {
             // Клик в зависимости от статуса — разные операционные действия.

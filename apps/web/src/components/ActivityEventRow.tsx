@@ -15,6 +15,7 @@
  * Режим compact (дашборд, inline-история): иконка + краткое «было → стало»
  * в одну строку + дата. Без строк-последствий — минимально плотно.
  */
+import { Fragment, type ReactNode } from "react";
 import {
   AlertTriangle,
   ArrowRight,
@@ -22,6 +23,7 @@ import {
   CheckCircle2,
   Clock,
   FileText,
+  Flag,
   Gift,
   HardHat,
   Pencil,
@@ -77,7 +79,13 @@ const EVENT_TONE_CLASS: Record<EventTone, string> = {
   ink: "bg-surface-soft text-ink-2",
 };
 
-function eventVisual(action: string): { icon: LucideIcon; tone: EventTone } {
+function eventVisual(
+  action: string,
+  entity?: string,
+): { icon: LucideIcon; tone: EventTone } {
+  // Акт ущерба (entity=damage_report, action=created) — иконка-предупреждение,
+  // а не синяя «искра» создания.
+  if (entity === "damage_report") return { icon: AlertTriangle, tone: "amber" };
   if (action.includes("rolled_back")) return { icon: RotateCcw, tone: "amber" };
   // «Перевести в активную» — по сути откат завершения, тот же визуальный язык.
   if (action === "revert_completion") return { icon: RotateCcw, tone: "amber" };
@@ -101,7 +109,8 @@ function eventVisual(action: string): { icon: LucideIcon; tone: EventTone } {
   if (action.includes("debt") || action.includes("overdue"))
     return { icon: AlertTriangle, tone: "red" };
   if (action.includes("document")) return { icon: FileText, tone: "blue" };
-  if (action.includes("status") || action.includes("complet"))
+  if (action.includes("complet")) return { icon: Flag, tone: "green" };
+  if (action.includes("status"))
     return { icon: CheckCircle2, tone: "ink" };
   if (action.includes("archived") || action.includes("deleted"))
     return { icon: X, tone: "ink" };
@@ -158,7 +167,31 @@ export type ActivitySummaryView = {
   extras: string[];
   /** v0.7.16: изменения экипировки с миниатюрами (вместо change-пилюль). */
   equipment?: EquipmentChangeView[];
+  /**
+   * #20: денежный «заголовок» события для правой колонки ленты (вариант B) —
+   * одно число, которое глаз ловит первым: «+4 900 ₽» / «−5 500 ₽» / «3 500 ₽».
+   * tone: green — пришло, red — списано/прощено/долг, ink — нейтрально (сумма аренды).
+   */
+  headline?: { text: string; tone: "green" | "red" | "ink" };
 };
+
+/**
+ * #20: структурированный контекст события для кликабельных сущностей в ленте.
+ * Каждая часть открывает свою карточку: имя → клиент, скутер → скутер, #N → аренда.
+ */
+export type ActivityContextParts = {
+  client?: { id: number; name: string };
+  scooter?: { id: number; label: string };
+  rental?: { id: number; label: string };
+};
+
+/** Способ оплаты cash/transfer/deposit → человекочитаемо (или null). */
+function paymentMethodLabel(m: unknown): string | null {
+  if (m === "cash") return "наличные";
+  if (m === "transfer") return "перевод";
+  if (m === "deposit") return "из депозита";
+  return null;
+}
 
 /**
  * Разбирает событие в визуальную форму:
@@ -166,8 +199,35 @@ export type ActivitySummaryView = {
  *   • change — основное «было → стало» (две пилюли + стрелка),
  *   • extras — доп. последствия одной строкой (доплата, новая сумма).
  * Берёт структурированный meta.diff (см. apps/api/.../activityLog.ts).
+ *
+ * Обёртка над buildActivitySummary: УНИВЕРСАЛЬНО дописывает «Оплата: нал/перевод/
+ * из депозита» (meta.method) и «Возврат: …» (meta.refundTo) — чтобы по любому
+ * денежному событию хронологии было видно, как двигались деньги (запрос
+ * заказчика: восстановить полную картину аренды по событиям).
  */
 export function formatActivitySummary(
+  item: ApiActivityItem,
+): ActivitySummaryView {
+  const view = buildActivitySummary(item);
+  const m = readRecord(item.meta);
+  const method = paymentMethodLabel(m?.method);
+  if (method && !view.extras.some((e) => e.startsWith("Оплата:"))) {
+    view.extras = [...view.extras, `Оплата: ${method}`];
+  }
+  const refundTo = m?.refundTo;
+  if (
+    (refundTo === "cash" || refundTo === "deposit") &&
+    !view.extras.some((e) => e.startsWith("Возврат:"))
+  ) {
+    view.extras = [
+      ...view.extras,
+      `Возврат: ${refundTo === "cash" ? "налом клиенту" : "в депозит клиента"}`,
+    ];
+  }
+  return view;
+}
+
+function buildActivitySummary(
   item: ApiActivityItem,
 ): ActivitySummaryView {
   const action = item.action;
@@ -226,6 +286,14 @@ export function formatActivitySummary(
       extras.push(`${short(p.startDate)}–${short(p.endDate)}`);
     if (p?.days != null) extras.push(`${Number(p.days)} дн`);
     if (p?.amount != null) extras.push(money(p.amount));
+    // Досрочное снятие предоплаченного паркинга — излишек уходит в депозит.
+    const pm = readRecord(item.meta);
+    if (
+      action === "parking_ended" &&
+      pm?.refund != null &&
+      Number(pm.refund) > 0
+    )
+      extras.push(`Излишек ${money(pm.refund)} → депозит клиента`);
     return { title, change: null, extras };
   }
 
@@ -300,6 +368,13 @@ export function formatActivitySummary(
           : null,
       extras,
       equipment: equipment.length ? equipment : undefined,
+      headline:
+        feeAmount !== 0
+          ? {
+              text: `${isRefund ? "−" : "+"}${money(feeAmount)}`,
+              tone: isRefund ? "red" : "green",
+            }
+          : undefined,
     };
   }
 
@@ -312,9 +387,22 @@ export function formatActivitySummary(
     const extras: string[] = [];
     const fl = feeLine();
     if (fl) extras.push(fl);
-    // v0.8.14 (ревизор): причина замены и судьба старого скутера на момент.
-    if (typeof m?.reason === "string" && m.reason.trim())
-      extras.push(`Причина: ${m.reason.trim()}`);
+    // Возврат разницы при замене на дешевле — уходит в депозит клиента.
+    const swapRefund = readRecord(diff?.refund);
+    if (swapRefund && swapRefund.to != null && Number(swapRefund.to) > 0)
+      extras.push(`Возврат ${money(swapRefund.to)} → депозит клиента`);
+    // #20: причина замены — категория (reasonLabel) как основное «почему» +
+    // необязательный комментарий-цитата. Legacy-свапы без категории
+    // показывают старый свободный текст как и раньше.
+    const reasonLabel = typeof m?.reasonLabel === "string" ? m.reasonLabel : null;
+    const reasonComment =
+      typeof m?.reason === "string" && m.reason.trim() ? m.reason.trim() : null;
+    if (reasonLabel) {
+      extras.push(`Причина: ${reasonLabel}`);
+      if (reasonComment) extras.push(`«${reasonComment}»`);
+    } else if (reasonComment) {
+      extras.push(`Причина: ${reasonComment}`);
+    }
     if (typeof m?.oldScooterDestination === "string") {
       const dest =
         m.oldScooterDestination === "repair"
@@ -328,6 +416,10 @@ export function formatActivitySummary(
       title: "Замена скутера",
       change: from || to ? { from, to, tone: "blue" } : null,
       extras,
+      headline:
+        fee && fee.to != null && Number(fee.to) > 0
+          ? { text: `+${money(fee.to)}`, tone: "green" }
+          : undefined,
     };
   }
 
@@ -528,7 +620,7 @@ export function formatActivitySummary(
     return { title: "Откат продления", change, extras };
   }
 
-  // ── Платёж ──
+  // ── Платёж / выдача средств ──
   if (
     action.includes("payment") ||
     action.includes("paid") ||
@@ -536,7 +628,29 @@ export function formatActivitySummary(
   ) {
     const pay = readRecord(diff?.payment);
     const m = readRecord(item.meta);
-    const amount = pay?.to ?? m?.amount;
+    // Сумма: diff.payment.to → meta.amount → Σ meta.applied[].amount → из summary.
+    // (У платежей по клиенту/делу/депозиту структурной суммы нет — раньше из-за
+    //  этого показывался голый «Принят платёж» без суммы и назначения.)
+    let amount: number | null =
+      typeof pay?.to === "number"
+        ? pay.to
+        : typeof m?.amount === "number"
+          ? m.amount
+          : null;
+    const applied = m?.applied;
+    if (amount == null && Array.isArray(applied)) {
+      const s = (applied as unknown[]).reduce(
+        (acc: number, a) => acc + (Number(readRecord(a)?.amount) || 0),
+        0,
+      );
+      if (s > 0) amount = s;
+    }
+    if (amount == null) {
+      const mm = /(\d[\d\s ]*)\s*₽/.exec(item.summary || "");
+      if (mm) amount = Number(mm[1].replace(/[\s ]/g, "")) || null;
+    }
+    const isPayout = /paid_out|payout/.test(action);
+    const kind = typeof m?.kind === "string" ? m.kind : null;
     // v0.8.25 (F9): назначение платежа — чтобы было видно «за что».
     const KIND_LABEL: Record<string, string> = {
       overdue_days_payment: "за просроченные дни",
@@ -546,28 +660,54 @@ export function formatActivitySummary(
       parking: "за паркинг",
       damage: "по акту ущерба",
     };
-    const extras: string[] = [];
-    const kind = typeof m?.kind === "string" ? m.kind : null;
-    if (kind && KIND_LABEL[kind]) extras.push(`Назначение: ${KIND_LABEL[kind]}`);
-    if (typeof m?.comment === "string" && m.comment.trim())
-      extras.push(`«${m.comment.trim()}»`);
-    if (typeof m?.endPlannedShift === "number" && m.endPlannedShift > 0)
-      extras.push(`Возврат сдвинут на ${m.endPlannedShift} дн`);
-    if (typeof m?.residualToDeposit === "number" && m.residualToDeposit > 0)
-      extras.push(`Остаток ${money(m.residualToDeposit)} → депозит клиента`);
+
+    // Платёж по аренде со структурой — привычный вид «Принят платёж» + назначение.
+    if (item.entity === "rental" && (kind != null || pay?.to != null)) {
+      const extras: string[] = [];
+      if (kind && KIND_LABEL[kind]) extras.push(`Назначение: ${KIND_LABEL[kind]}`);
+      if (typeof m?.comment === "string" && m.comment.trim())
+        extras.push(`«${m.comment.trim()}»`);
+      if (typeof m?.endPlannedShift === "number" && m.endPlannedShift > 0)
+        extras.push(`Возврат сдвинут на ${m.endPlannedShift} дн`);
+      if (typeof m?.residualToDeposit === "number" && m.residualToDeposit > 0)
+        extras.push(`Остаток ${money(m.residualToDeposit)} → депозит клиента`);
+      return {
+        title: "Принят платёж",
+        change:
+          amount != null
+            ? { from: null, to: money(amount), tone: "green" }
+            : null,
+        extras,
+        headline:
+          amount != null
+            ? { text: `+${money(amount)}`, tone: "green" }
+            : undefined,
+      };
+    }
+
+    // Прочие денежные движения (клиент/дело/депозит): summary самодостаточен
+    // («Погашение сквозного долга по ущербу 3000 ₽», «D-009: платёж 10 000 ₽…»,
+    //  «Депозит выдан клиенту −2500 ₽…») — он и есть заголовок. Выдача — красным.
     return {
-      title: "Принят платёж",
-      change:
+      title:
+        (item.summary || "").trim() ||
+        (isPayout ? "Выдача средств" : "Принят платёж"),
+      change: null,
+      extras: [],
+      headline:
         amount != null
-          ? { from: null, to: money(amount), tone: "green" }
-          : null,
-      extras,
+          ? {
+              text: `${isPayout ? "−" : "+"}${money(amount)}`,
+              tone: isPayout ? "red" : "green",
+            }
+          : undefined,
     };
   }
 
   // ── Прощение долга ──
   if (action.includes("forgiv")) {
     // diff может содержать: debt/fine (money) + overdueDays (number, дни).
+    const m = readRecord(item.meta);
     const debt = readRecord(diff?.debt);
     const fine = readRecord(diff?.fine);
     const overdueDays = readRecord(diff?.overdueDays);
@@ -579,43 +719,85 @@ export function formatActivitySummary(
         ? "Прощены дни просрочки"
         : "Прощена просрочка";
     const extras: string[] = [];
-    if (
-      overdueDays &&
-      typeof overdueDays.from === "number" &&
-      overdueDays.from > 0
-    ) {
-      const d = overdueDays.from;
-      extras.push(`Снято дней просрочки: ${d} ${plural(d, "день", "дня", "дней")}`);
-    }
+    // #20: «за сколько» — сколько дней просрочки списано. Берём из diff.overdueDays,
+    // иначе из meta (daysToShift при прощении дней / daysCount при штрафе). Отвечает
+    // на вопрос заказчика «прощена просрочка — а за какой период?».
+    const daysForgiven =
+      overdueDays && typeof overdueDays.from === "number" && overdueDays.from > 0
+        ? overdueDays.from
+        : typeof m?.daysToShift === "number" && m.daysToShift > 0
+          ? m.daysToShift
+          : typeof m?.daysCount === "number" && m.daysCount > 0
+            ? m.daysCount
+            : null;
+    if (daysForgiven != null)
+      extras.push(
+        `Просрочка: ${daysForgiven} ${plural(daysForgiven, "день", "дня", "дней")}`,
+      );
     const fineLineForgiven = readRecord(diff?.fine);
     if (debt && fineLineForgiven && fineLineForgiven !== amountRec) {
       // target='all' иногда кладёт и debt, и fine — покажем штраф отдельно.
       extras.push(`Штраф: ${money(fineLineForgiven.from)}`);
     }
+    const forgivenAmount =
+      amountRec && amountRec.from != null ? Number(amountRec.from) : null;
     return {
       title,
       change: amountRec
         ? { from: money(amountRec.from), to: "0 ₽", tone: "green" }
         : null,
       extras,
+      headline:
+        forgivenAmount != null && forgivenAmount > 0
+          ? { text: `−${money(forgivenAmount)}`, tone: "red" }
+          : undefined,
     };
   }
 
   // ── Начисление долга / ущерб / просрочка ──
+  // Акт ущерба логируется как entity='damage_report' action='created' — ловим
+  // по entity, иначе он проваливался в «Отредактирована аренда» с непонятным
+  // «Позиции: → Приборная панель» (фикс самодостаточности записей журнала).
   if (
     action.includes("debt") ||
     action.includes("overdue") ||
-    action.includes("damage")
+    action.includes("damage") ||
+    item.entity === "damage_report"
   ) {
     const key = ["debt", "damage", "fine"].find((k) => diff?.[k]);
     const d = key ? readRecord(diff?.[key]) : null;
-    const title = action.includes("damage")
-      ? "Зафиксирован ущерб"
-      : "Начислен долг";
+    const isDamage =
+      action.includes("damage") || item.entity === "damage_report";
+    const title = isDamage ? "Зафиксирован ущерб" : "Начислен долг";
+    // Позиции повреждений (diff.items.to) — человекочитаемой строкой.
+    const itemsRec = readRecord(diff?.items);
+    const damaged = itemsRec ? readStringList(itemsRec.to) : [];
+    const extras: string[] = [];
+    if (damaged.length) extras.push(`Повреждения: ${damaged.join(", ")}`);
     return {
       title,
       change: d ? { from: "—", to: money(d.to), tone: "red" } : null,
+      extras,
+      headline: d && d.to != null ? { text: `+${money(d.to)}`, tone: "red" } : undefined,
+    };
+  }
+
+  // ── Пополнение залога ──
+  if (action.includes("security")) {
+    const dep = readRecord(diff?.deposit);
+    const m = readRecord(item.meta);
+    const amount = typeof m?.amount === "number" ? m.amount : null;
+    return {
+      title: "Пополнен залог",
+      change:
+        dep && (dep.from != null || dep.to != null)
+          ? { from: money(dep.from), to: money(dep.to), tone: "green" }
+          : null,
       extras: [],
+      headline:
+        amount != null && amount > 0
+          ? { text: `+${money(amount)}`, tone: "green" }
+          : undefined,
     };
   }
 
@@ -633,8 +815,27 @@ export function formatActivitySummary(
         ).toLocaleString("ru-RU")} км`,
       );
     }
+    // Судьба залога при сдаче (meta.deposit) — вернули клиенту или удержали.
+    const dep = readRecord(readRecord(item.meta)?.deposit);
+    if (dep && dep.returned != null) {
+      const amt = Number(dep.amount ?? 0);
+      extras.push(
+        dep.returned
+          ? `Залог возвращён клиенту${amt > 0 ? `: ${money(amt)}` : ""}`
+          : `Залог удержан${amt > 0 ? `: ${money(amt)}` : ""}`,
+      );
+    }
+    // #20: «Аренда завершена» вместо безликого «Изменён статус» — заказчик
+    // отдельно отметил, что этот заголовок с флагом ему нравится.
+    const toRaw = typeof st?.to === "string" ? st.to : null;
+    const title =
+      toRaw === "completed"
+        ? "Аренда завершена"
+        : toRaw === "active"
+          ? "Аренда возобновлена"
+          : "Изменён статус";
     return {
-      title: "Изменён статус",
+      title,
       change: fromS || toS ? { from: fromS, to: toS, tone: "blue" } : null,
       extras,
     };
@@ -704,7 +905,12 @@ export function formatActivitySummary(
       extras.push(`Залог (возвратный): ${money(deposit)}`);
     }
     if (sum != null) extras.push(`Итого аренды: ${money(sum)}`);
-    return { title: "Аренда создана", change: null, extras };
+    return {
+      title: "Аренда создана",
+      change: null,
+      extras,
+      headline: sum != null ? { text: money(sum), tone: "ink" } : undefined,
+    };
   }
 
   // ── Редактирование (есть diff, но не покрыто выше) ──
@@ -723,6 +929,8 @@ export function formatActivitySummary(
               return `${Number(v).toLocaleString("ru-RU")}${f.suffix ? ` ${f.suffix}` : ""}`;
             case "date":
               return formatDateLabel(v);
+            case "list":
+              return Array.isArray(v) ? (v.length ? v.join(", ") : "—") : String(v);
             default:
               return String(v);
           }
@@ -807,13 +1015,33 @@ function formatDateTime(iso: string): string {
   });
 }
 
-function formatDateTimeShort(iso: string): string {
+/** #20: полная дата+время «18.06.2026, 14:33» — точный момент для аудита. */
+function formatDateTimeFull(iso: string): string {
   return new Date(iso).toLocaleString("ru-RU", {
     day: "2-digit",
     month: "2-digit",
+    year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+/** #20: относительное время «5 минут назад» — для удобства, рядом с точным. */
+function relativeTime(iso: string): string {
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "";
+  const s = Math.max(0, Math.round((Date.now() - then) / 1000));
+  if (s < 45) return "только что";
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m} ${plural(m, "минуту", "минуты", "минут")} назад`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h} ${plural(h, "час", "часа", "часов")} назад`;
+  const d = Math.round(h / 24);
+  if (d < 30) return `${d} ${plural(d, "день", "дня", "дней")} назад`;
+  const mo = Math.round(d / 30);
+  if (mo < 12) return `${mo} ${plural(mo, "месяц", "месяца", "месяцев")} назад`;
+  const y = Math.round(mo / 12);
+  return `${y} ${plural(y, "год", "года", "лет")} назад`;
 }
 
 /* ============================ Пилюля «было → стало» ============================ */
@@ -990,6 +1218,87 @@ function EquipmentChangeBlock({
   );
 }
 
+/* ============================ Кликабельный контекст ============================ */
+
+/**
+ * #20: «Клиент · Скутер · #аренды» — каждая часть кликабельна и открывает свою
+ * карточку (имя → клиент, скутер → скутер, #N → аренда). Если опенер не передан
+ * (или нет id) — рендерим как обычный текст, без клика.
+ */
+function ContextChips({
+  parts,
+  onOpenClient,
+  onOpenScooter,
+  onOpenRental,
+}: {
+  parts: ActivityContextParts;
+  onOpenClient?: (id: number) => void;
+  onOpenScooter?: (id: number) => void;
+  onOpenRental?: (id: number) => void;
+}) {
+  const link =
+    "rounded font-semibold text-ink-2 transition-colors hover:text-blue-700 hover:underline underline-offset-2";
+  const plain = "font-semibold text-ink-2";
+  const nodes: ReactNode[] = [];
+  if (parts.client) {
+    const c = parts.client;
+    nodes.push(
+      onOpenClient ? (
+        <button key="c" type="button" onClick={() => onOpenClient(c.id)} className={link}>
+          {c.name}
+        </button>
+      ) : (
+        <span key="c" className={plain}>
+          {c.name}
+        </span>
+      ),
+    );
+  }
+  if (parts.scooter) {
+    const s = parts.scooter;
+    nodes.push(
+      onOpenScooter && s.id ? (
+        <button key="s" type="button" onClick={() => onOpenScooter(s.id)} className={link}>
+          {s.label}
+        </button>
+      ) : (
+        <span key="s" className={plain}>
+          {s.label}
+        </span>
+      ),
+    );
+  }
+  if (parts.rental) {
+    const r = parts.rental;
+    nodes.push(
+      onOpenRental ? (
+        <button
+          key="r"
+          type="button"
+          onClick={() => onOpenRental(r.id)}
+          className={cn(link, "tabular-nums")}
+        >
+          {r.label}
+        </button>
+      ) : (
+        <span key="r" className={cn(plain, "tabular-nums")}>
+          {r.label}
+        </span>
+      ),
+    );
+  }
+  return (
+    <>
+      {nodes.map((n, i) => (
+        <Fragment key={i}>
+          {i > 0 && <span className="text-muted-2 opacity-50">·</span>}
+          {n}
+        </Fragment>
+      ))}
+    </>
+  );
+}
+
 /* ============================ Основной компонент ============================ */
 
 export function ActivityEventRow({
@@ -997,6 +1306,13 @@ export function ActivityEventRow({
   clickable = false,
   onOpen,
   compact = false,
+  context,
+  feed = false,
+  contextParts,
+  onOpenClient,
+  onOpenScooter,
+  onOpenRental,
+  maxExtras,
 }: {
   item: ApiActivityItem;
   /** Кликабельна ли строка (открыть связанную сущность). */
@@ -1004,11 +1320,27 @@ export function ActivityEventRow({
   onOpen?: () => void;
   /** Плотный режим: одна строка, без extras (дашборд, inline-история). */
   compact?: boolean;
+  /** #20: строка контекста «Клиент · Скутер · #аренды» (резолвится в родителе,
+   *  показывается в compact-ленте дашборда/журнала, чтобы было видно кто/что). */
+  context?: string;
+  /** #20: просторная раскладка ленты (вариант B) — десктоп «Последние действия»:
+   *  слева суть + кликабельный контекст, справа сумма + дата/время + кто. */
+  feed?: boolean;
+  /** #20: структурированный контекст для кликабельных сущностей (feed-режим). */
+  contextParts?: ActivityContextParts;
+  onOpenClient?: (id: number) => void;
+  onOpenScooter?: (id: number) => void;
+  onOpenRental?: (id: number) => void;
+  /** #20: ограничить число строк-последствий (feed-режим: дашборд=3, журнал=все). */
+  maxExtras?: number;
 }) {
-  const vis = eventVisual(item.action);
+  const vis = eventVisual(item.action, item.entity);
   const Icon = vis.icon;
   const view = formatActivitySummary(item);
   const interactive = clickable && !!onOpen;
+  // #20: ручные/нестандартные операции (прощение, ручное начисление, откат,
+  // возврат) — помечаем флагом, чтобы при аудите глаз цеплял их среди рутины.
+  const isManual = /forgiv|manual|rolled_back|refund/.test(item.action);
 
   // v0.7.16: резолвер миниатюры экипировки по названию.
   // Матчим название из meta.diff.items → equipment row → thumb-ключ → URL.
@@ -1021,6 +1353,128 @@ export function ActivityEventRow({
     if (!eq) return null;
     return fileUrl(eq.avatarThumbKey ?? eq.avatarKey, { variant: "thumb" });
   };
+
+  // #20: просторная лента (вариант B) — десктоп «Последние действия».
+  // Слева: иконка + заголовок (+ флаг «ручное») + кликабельный контекст +
+  // экипировка-миниатюры / смысловое «было → стало» + пояснения.
+  // Справа: денежный заголовок (если есть) + точная дата/время + «N назад · кто».
+  if (feed) {
+    const extrasToShow =
+      maxExtras != null ? view.extras.slice(0, maxExtras) : view.extras;
+    const openPrimary = () => {
+      if (item.entityId == null) return;
+      if (item.entity === "rental") onOpenRental?.(item.entityId);
+      else if (item.entity === "scooter") onOpenScooter?.(item.entityId);
+      else if (item.entity === "client") onOpenClient?.(item.entityId);
+    };
+    const primaryClickable =
+      item.entityId != null &&
+      ((item.entity === "rental" && !!onOpenRental) ||
+        (item.entity === "scooter" && !!onOpenScooter) ||
+        (item.entity === "client" && !!onOpenClient));
+    const headlineTone =
+      view.headline?.tone === "green"
+        ? "text-green-ink"
+        : view.headline?.tone === "red"
+          ? "text-red-ink"
+          : "text-ink";
+    return (
+      <div className="flex w-full items-start gap-3 rounded-[12px] px-2.5 py-3 transition-colors hover:bg-surface-soft">
+        <span
+          className={cn(
+            "mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full",
+            EVENT_TONE_CLASS[vis.tone],
+          )}
+        >
+          <Icon size={17} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            {primaryClickable ? (
+              <button
+                type="button"
+                onClick={openPrimary}
+                className="rounded text-left text-[14px] font-bold leading-tight text-ink transition-colors hover:text-blue-700 hover:underline underline-offset-2"
+              >
+                {view.title}
+              </button>
+            ) : (
+              <span className="text-[14px] font-bold leading-tight text-ink">
+                {view.title}
+              </span>
+            )}
+            {isManual && (
+              <span className="shrink-0 rounded bg-amber-100 px-1.5 py-px text-[10px] font-bold text-amber-800">
+                ручное
+              </span>
+            )}
+          </div>
+          {contextParts && (
+            <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-[12.5px] leading-tight">
+              <ContextChips
+                parts={contextParts}
+                onOpenClient={onOpenClient}
+                onOpenScooter={onOpenScooter}
+                onOpenRental={onOpenRental}
+              />
+            </div>
+          )}
+          {view.equipment && view.equipment.length > 0 && (
+            <div className="mt-1.5">
+              <EquipmentChangeBlock
+                items={view.equipment}
+                resolveThumb={resolveThumb}
+              />
+            </div>
+          )}
+          {/* В правую колонку уезжает только денежное «было → стало»; смысловое
+              (скутер/статус/период — синий тон) остаётся слева как пилюли. */}
+          {view.change && view.change.tone === "blue" && (
+            <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[12px] leading-snug">
+              <ChangePills change={view.change} size="md" />
+            </div>
+          )}
+          {extrasToShow.length > 0 && (
+            <div className="mt-1 flex flex-col gap-0.5">
+              {extrasToShow.map((ex, i) => (
+                <div key={i} className="text-[12px] text-ink-2">
+                  {ex}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="flex shrink-0 flex-col items-end gap-1 pl-2 text-right">
+          {view.headline && (
+            <div
+              className={cn(
+                "text-[16px] font-bold leading-none tabular-nums",
+                headlineTone,
+              )}
+            >
+              {view.headline.text}
+            </div>
+          )}
+          <div className="text-[11.5px] leading-tight text-muted-2">
+            <div className="whitespace-nowrap tabular-nums">
+              {formatDateTimeFull(item.createdAt)}
+            </div>
+            <div className="mt-0.5 whitespace-nowrap">
+              <span>{relativeTime(item.createdAt)}</span>
+              {item.userName && item.userName !== "система" && (
+                <>
+                  <span className="px-1 opacity-40">·</span>
+                  <span className="font-semibold text-ink-2">
+                    {item.userName}
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (compact) {
     return (
@@ -1046,9 +1500,21 @@ export function ActivityEventRow({
           <Icon size={12} />
         </span>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[12px] font-bold leading-tight text-ink">
-            {view.title}
+          <div className="flex items-center gap-1.5">
+            <span className="truncate text-[12px] font-bold leading-tight text-ink">
+              {view.title}
+            </span>
+            {isManual && (
+              <span className="shrink-0 rounded bg-amber-100 px-1.5 py-px text-[10px] font-bold text-amber-800">
+                ручное
+              </span>
+            )}
           </div>
+          {context && (
+            <div className="mt-0.5 truncate text-[11px] font-medium text-ink-2">
+              {context}
+            </div>
+          )}
           {view.equipment && view.equipment.length > 0 && (
             <div className="mt-1">
               <EquipmentChangeBlock
@@ -1069,11 +1535,16 @@ export function ActivityEventRow({
               {view.extras[0]}
             </div>
           )}
-          <div className="mt-0.5 text-[10px] leading-tight text-muted tabular-nums">
-            {formatDateTimeShort(item.createdAt)}
+          {/* #20: точная дата+время (момент для аудита) + относительное «N назад». */}
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-1 text-[10px] leading-tight text-muted">
+            <span className="tabular-nums">
+              {formatDateTimeFull(item.createdAt)}
+            </span>
+            <span className="opacity-40">·</span>
+            <span>{relativeTime(item.createdAt)}</span>
             {item.userName && item.userName !== "система" && (
               <>
-                <span className="opacity-40"> · </span>
+                <span className="opacity-40">·</span>
                 <span>{item.userName}</span>
               </>
             )}

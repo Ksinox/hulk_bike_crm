@@ -8,6 +8,8 @@ import { ReturnsList } from "./ReturnsList";
 import { ReturnsTable } from "./ReturnsTable";
 import { OverdueTable } from "./OverdueTable";
 import { DebtorsNoRentalCard } from "./DebtorsNoRentalCard";
+import { DebtsToCollect } from "./DebtsToCollect";
+import { ParkLoadGauge } from "./ParkLoadGauge";
 import { ActivityFeed } from "./ActivityFeed";
 import { ClassicKpi, CLASSIC_KPI_ICONS } from "./ClassicKpi";
 import { NewApplicationsWidget } from "./NewApplicationsWidget";
@@ -50,7 +52,21 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
   const drawer = useDashboardDrawer();
   return (
     <div className="grid auto-rows-[minmax(120px,auto)] grid-cols-12 gap-4">
-      <div className="col-span-3">
+      {/* #дашборд: круговая загрузка парка — первой картой (вместо «Новых
+          заявок», которые остаются в разделе «Заявки»). */}
+      <div className="col-span-3 [&>div]:h-full">
+        <ParkLoadGauge
+          percent={metrics.loadPercent}
+          active={metrics.activeRentalsCount}
+          rentable={metrics.rentableFleet}
+          onClick={
+            metrics.activeRentalsCount > 0
+              ? () => drawer.openRentalsList("active")
+              : undefined
+          }
+        />
+      </div>
+      <div className="col-span-3 [&>div]:h-full">
         <KpiCard
           blue
           title="Поступит сегодня"
@@ -79,7 +95,7 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
           }
         />
       </div>
-      <div className="col-span-3">
+      <div className="col-span-3 [&>div]:h-full">
         <KpiCard
           title="Просрочено"
           value={String(metrics.overdueCount)}
@@ -112,11 +128,13 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
           }
         />
       </div>
-      <div className="col-span-3">
+      <div className="col-span-3 [&>div]:h-full">
         <KpiCard
           title="Активных аренд"
           value={String(metrics.activeRentalsCount)}
-          unit={metrics.fleetTotal > 0 ? `/ ${metrics.fleetTotal}` : undefined}
+          unit={
+            metrics.rentableFleet > 0 ? `/ ${metrics.rentableFleet}` : undefined
+          }
           onClick={
             metrics.activeRentalsCount > 0
               ? () => drawer.openRentalsList("active")
@@ -124,15 +142,12 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
           }
           foot={
             <span>
-              {metrics.fleetTotal > 0
+              {metrics.rentableFleet > 0
                 ? `${metrics.loadPercent}% загрузка парка`
                 : "парк пока пустой"}
             </span>
           }
         />
-      </div>
-      <div className="col-span-3">
-        <NewApplicationsWidget />
       </div>
 
       {/* Главная двухколоночная зона — левая и правая колонки независимы
@@ -141,15 +156,18 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
           items-start гарантирует что флексы не растягиваются друг под друга. */}
       <div className="col-span-12 grid auto-rows-[minmax(120px,max-content)] grid-cols-12 items-start gap-4">
         <div className="col-span-8 flex flex-col gap-4">
+          {/* #дашборд: «Долги к сбору» подняты НАД парком — горящие деньги
+              первыми, парк (на 100+ скутеров разрастается) ниже. */}
+          <DebtsToCollect
+            overdue={metrics.overdue}
+            debtors={metrics.debtorsNoRental}
+            onOpenRental={(id) => drawer.openRental(id)}
+            onOpenClient={(id) => drawer.openClient(id)}
+          />
           <ParkPanel
             metrics={metrics}
             onOpenRental={(id) => drawer.openRental(id)}
           />
-          <OverdueTable
-            items={metrics.overdue}
-            onOpenRental={(id) => drawer.openRental(id)}
-          />
-          <DebtorsNoRentalCard items={metrics.debtorsNoRental} />
           <ActivityFeed />
         </div>
         <div className="col-span-4 flex flex-col gap-4">
@@ -215,12 +233,14 @@ function ClassicVariant({ metrics }: { metrics: DashboardMetrics }) {
         className="col-span-3"
         title="Активных аренд"
         value={String(metrics.activeRentalsCount)}
-        unit={metrics.fleetTotal > 0 ? `/${metrics.fleetTotal}` : undefined}
+        unit={
+          metrics.rentableFleet > 0 ? `/${metrics.rentableFleet}` : undefined
+        }
         icon={CLASSIC_KPI_ICONS.rent}
         iconTone="blue"
         foot={
           <span>
-            {metrics.fleetTotal > 0
+            {metrics.rentableFleet > 0
               ? `${metrics.loadPercent}% загрузка`
               : "парк пустой"}
           </span>

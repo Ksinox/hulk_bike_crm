@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
+import { toastRentalDone } from "./rentalUndo";
 import { useApiEquipment } from "@/lib/api/equipment";
 import { equipmentChangeAsync } from "./rentalsStore";
 import type { Rental } from "@/lib/mock/rentals";
@@ -154,7 +155,7 @@ export function EquipmentChangeDialog({
             : refundTo === "cash"
               ? `Возврат ${fmt(-totalDelta)} ₽ выдан клиенту`
               : `Возврат ${fmt(-totalDelta)} ₽ → депозит клиента`;
-      toast.success("Экипировка изменена", msg);
+      toastRentalDone(rental, "Экипировка изменена", msg);
       requestClose();
     } catch (e) {
       toast.error("Не удалось изменить", (e as Error).message ?? "");

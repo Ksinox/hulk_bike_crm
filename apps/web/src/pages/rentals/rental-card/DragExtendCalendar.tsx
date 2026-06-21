@@ -132,6 +132,7 @@ export function DragExtendCalendar({
   parkingRanges,
   parkingOccupiedRanges,
   onParkingPick,
+  onParkingHover,
   parkingSelectableFromIso,
   parkingSelectableToIso,
   editPeriodMode = false,
@@ -180,6 +181,8 @@ export function DragExtendCalendar({
    */
   parkingOccupiedRanges?: { startIso: string; endIso: string }[];
   onParkingPick?: (iso: string) => void;
+  /** Паркинг: наведённая дата для live-превью периода/суммы; null — курсор ушёл. */
+  onParkingHover?: (iso: string | null) => void;
   parkingSelectableFromIso?: string | null;
   parkingSelectableToIso?: string | null;
   /**
@@ -394,12 +397,27 @@ export function DragExtendCalendar({
   // под курсором (живой превью, как при продлении). Уважает editMinReturnIso
   // (раньше минимума не подсвечиваем). Делегирование как у onClickGrid.
   const onHoverGrid = (e: React.MouseEvent) => {
-    if (disabled || !editPeriodMode) return;
+    if (disabled) return;
+    if (!editPeriodMode && !parkingMode) return;
     const tgt = (e.target as HTMLElement).closest(
       "[data-date]",
     ) as HTMLElement | null;
     const iso = tgt?.getAttribute("data-date") ?? null;
     const k = iso ? isoToKey(iso) : null;
+    // Паркинг: репортим наведённую дату вверх для live-превью периода/суммы
+    // (если в окне выбора и не занята другой сессией), иначе null.
+    if (parkingMode) {
+      if (
+        !k ||
+        isOutsideParkingWindow(keyToTime(k)) ||
+        isOccupiedParkingDay(keyToTime(k))
+      ) {
+        onParkingHover?.(null);
+        return;
+      }
+      onParkingHover?.(iso);
+      return;
+    }
     if (!k) {
       setEditHoverK(null);
       return;
@@ -546,8 +564,30 @@ export function DragExtendCalendar({
     } else if (zone) {
       const prevK = fromJsDate(new Date(k.y, k.m, k.d - 1));
       const nextK = fromJsDate(new Date(k.y, k.m, k.d + 1));
-      const isLeftEdge = zoneOf(prevK) == null;
-      const isRightEdge = zoneOf(nextK) == null;
+      const prevZ = zoneOf(prevK);
+      const nextZ = zoneOf(nextK);
+      // v0.8.x: в режиме паркинга период аренды (blue/red) ПРИГЛУШАЕМ — как
+      // только вошли в режим, календарь читается как поверхность выбора
+      // паркинга. Дни при этом остаются кликабельными: паркинг можно отметить
+      // и задним числом, поверх уже прошедших/просроченных дней аренды (если
+      // оператор забыл поставить раньше). Просрочка остаётся бледно-красной —
+      // оператору видно, какие дни «лишние» и просятся в паркинг.
+      const mutedRental =
+        parkingMode && (zone === "blue" || zone === "red");
+      const isRentalZone = (z: ReturnType<typeof zoneOf>) =>
+        z === "blue" || z === "red";
+      // Края скругляем по принадлежности к ТОЙ ЖЕ визуальной группе:
+      //  • паркинг — сосед не паркинг (жёлтые «ручки» даже внутри аренды);
+      //  • приглушённая аренда — сосед не аренда (единая серо-цветная полоса);
+      //  • обычные зоны — сосед пустой (как было раньше).
+      const sameGroup = (z: ReturnType<typeof zoneOf>): boolean =>
+        zone === "parking"
+          ? z === "parking"
+          : mutedRental
+            ? isRentalZone(z)
+            : z != null;
+      const isLeftEdge = !sameGroup(prevZ);
+      const isRightEdge = !sameGroup(nextZ);
       const isEdge = isLeftEdge || isRightEdge;
 
       const colorCls =
@@ -555,13 +595,17 @@ export function DragExtendCalendar({
           ? isEdge
             ? "bg-yellow-400 text-yellow-950"
             : "bg-yellow-200 text-yellow-900"
-          : isEdge
-            ? "bg-ink text-white"
-            : zone === "blue"
-              ? "bg-blue-200 text-blue-900"
-              : zone === "red"
-                ? "bg-red-200 text-red-900"
-                : "bg-emerald-200 text-emerald-900";
+          : mutedRental
+            ? zone === "red"
+              ? "bg-red-100/60 text-red-400"
+              : "bg-blue-100/50 text-blue-400"
+            : isEdge
+              ? "bg-ink text-white"
+              : zone === "blue"
+                ? "bg-blue-200 text-blue-900"
+                : zone === "red"
+                  ? "bg-red-200 text-red-900"
+                  : "bg-emerald-200 text-emerald-900";
 
       const roundCls =
         isLeftEdge && isRightEdge
@@ -613,7 +657,10 @@ export function DragExtendCalendar({
     <div
       onClick={onClickGrid}
       onMouseOver={onHoverGrid}
-      onMouseLeave={() => setEditHoverK(null)}
+      onMouseLeave={() => {
+        setEditHoverK(null);
+        onParkingHover?.(null);
+      }}
       // v0.7.13: тонкая рамка вокруг сетки месяца — чтобы календарь
       // визуально выделялся в блоке (раньше цифры «парили в воздухе»).
       className="w-full rounded-xl border border-border bg-surface p-2.5"

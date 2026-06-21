@@ -375,6 +375,14 @@ export function ScooterCard({
                     : "—"
                 }
               />
+              <SpecCell
+                label="Рыночная стоимость"
+                value={
+                  scooter.marketValue
+                    ? `${fmt(scooter.marketValue)} ₽`
+                    : "—"
+                }
+              />
               {scooter.note && (
                 <SpecCell label="Комментарий" value={scooter.note} />
               )}

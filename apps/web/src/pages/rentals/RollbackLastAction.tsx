@@ -3,7 +3,7 @@ import { Undo2, X, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
 import { ApiError } from "@/lib/api";
-import { useApiPayments } from "@/lib/api/payments";
+import { useApiPayments, type ApiPayment } from "@/lib/api/payments";
 import type { ApiActivityItem } from "@/lib/api/activity";
 import {
   rollbackLastPayment,
@@ -96,7 +96,17 @@ export type RollbackTarget =
       amount: number;
     }
   | { kind: "parking_end"; anchorId: number; activityId: number }
-  | { kind: "parking_paid"; anchorId: number; paymentId: number; amount: number };
+  | {
+      kind: "parking_paid";
+      anchorId: number;
+      paymentId: number;
+      amount: number;
+      /** Если паркинг был ПОСТАВЛЕН и сразу ОПЛАЧЕН одним потоком — ссылка на
+       *  событие постановки (parking_set) того же дня. Тогда откат предлагает
+       *  выбор: снять только оплату или ещё и постановку (иначе оператор не
+       *  догадается, что откатывать надо дважды). */
+      underlyingSet?: { activityId: number; days: number; amount: number };
+    };
 
 export type RollbackKind = RollbackTarget["kind"];
 
@@ -176,12 +186,19 @@ function mskDay(iso: string): string {
   return d.toISOString().slice(0, 10);
 }
 
-export function useRollbackTarget(
-  rental: Rental,
+/** Минимум полей аренды для вычисления/выполнения отката — id (платежи,
+ *  rollback-вызовы) + status (детект «завершения»). Позволяет звать откат там,
+ *  где под рукой только rentalId (напр. тостовая «Отмена», SecurityTopupDialog). */
+export type RollbackRentalRef = Pick<Rental, "id" | "status">;
+
+/** Чистая (без хуков) версия — нужна и для тостовой «Отмены» (undoLastRentalAction
+ *  тянет свежую хронологию+платежи и зовёт это), и для хука ниже. */
+export function computeRollbackTarget(
+  rental: RollbackRentalRef,
   activity: ApiActivityItem[],
+  payments: ApiPayment[],
 ): RollbackTarget | null {
-  const { data: payments } = useApiPayments(rental.id);
-  return useMemo<RollbackTarget | null>(() => {
+  {
     // 1) Эффективная верхняя state-строка (скип пар откат+операция).
     let anchor: ApiActivityItem | null = null;
     const stack: Array<(a: string) => boolean> = [];
@@ -374,16 +391,93 @@ export function useRollbackTarget(
     if (anchor.action === "parking_paid") {
       if (!lastPay || !payToday) return null;
       if (!/оплата\s+паркинга/i.test(note)) return null;
+      // Ближайшее state-событие НИЖЕ оплаты: если это постановка (parking_set)
+      // того же дня — паркинг поставили и сразу оплатили одним потоком. Тогда
+      // дадим выбрать, откатывать ли заодно и постановку.
+      let underlyingSet:
+        | { activityId: number; days: number; amount: number }
+        | undefined;
+      const anchorIdx = activity.findIndex((r) => r.id === anchor.id);
+      for (let j = anchorIdx + 1; j < activity.length; j++) {
+        const r = activity[j];
+        if (!STATE_ACTIONS.has(r.action)) continue;
+        const sm = (r.meta ?? {}) as Record<string, unknown>;
+        if (
+          r.action === "parking_set" &&
+          mskDay(r.createdAt) === today &&
+          typeof sm.sessionId === "number"
+        ) {
+          const p = (sm.parking ?? {}) as Record<string, unknown>;
+          underlyingSet = {
+            activityId: r.id,
+            days: Number(p.days ?? 0),
+            amount: Number(p.amount ?? 0),
+          };
+        }
+        break; // только ближайшее state-событие ниже оплаты
+      }
       return {
         kind: "parking_paid",
         anchorId: anchor.id,
         paymentId: lastPay.id,
         amount: lastPay.amount,
+        underlyingSet,
       };
     }
 
     return null;
-  }, [activity, payments, rental.id, rental.status]);
+  }
+}
+
+export function useRollbackTarget(
+  rental: Rental,
+  activity: ApiActivityItem[],
+): RollbackTarget | null {
+  const { data: payments } = useApiPayments(rental.id);
+  return useMemo<RollbackTarget | null>(
+    () => computeRollbackTarget(rental, activity, payments ?? []),
+    [activity, payments, rental.id, rental.status],
+  );
+}
+
+/**
+ * Выполнить откат по target (БЕЗ тостов). Единая точка диспетчеризации —
+ * используется и кнопкой «Откатить» в таймлайне (doRollback ниже), и тостовой
+ * «Отменой» (undoLastRentalAction). Менять диспетчеризацию — ТОЛЬКО здесь;
+ * doRollback тоже зовёт эту функцию.
+ *   parkScope (для оплаченного паркинга со связкой постановки): "both" —
+ *   снять и оплату, и постановку (дефолт); "payment" — только оплату.
+ */
+export async function executeRollbackTarget(
+  rental: Pick<Rental, "id">,
+  target: RollbackTarget,
+  opts?: { parkScope?: "payment" | "both" },
+): Promise<void> {
+  if (target.kind === "completed") {
+    await rollbackCompletion(rental.id);
+    return;
+  }
+  if (
+    target.kind === "manual_debt" ||
+    target.kind === "forgive_fine" ||
+    target.kind === "forgive_days" ||
+    target.kind === "forgive_all" ||
+    target.kind === "swap" ||
+    target.kind === "parking_set" ||
+    target.kind === "parking_end"
+  ) {
+    await rollbackAction(rental.id, target.activityId);
+    return;
+  }
+  if (target.kind === "parking_paid") {
+    await rollbackLastPayment(rental.id, target.paymentId);
+    if (target.underlyingSet && (opts?.parkScope ?? "both") === "both") {
+      await rollbackAction(rental.id, target.underlyingSet.activityId);
+    }
+    return;
+  }
+  // extend / created / payment / security / equipment
+  await rollbackLastPayment(rental.id, target.paymentId);
 }
 
 /* ───────────────────────────── Кнопка + модал ───────────────────────── */
@@ -438,66 +532,63 @@ export function RollbackButton({
 }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Для оплаченного паркинга со связанной постановкой: что откатывать —
+  // только оплату или ещё и постановку. По умолчанию — всё (частый случай:
+  // паркинг поставили по ошибке).
+  const [parkScope, setParkScope] = useState<"payment" | "both">("both");
 
   const doRollback = async () => {
     setBusy(true);
     try {
+      await executeRollbackTarget(rental, target, { parkScope });
       if (target.kind === "completed") {
-        await rollbackCompletion(rental.id);
         toast.success("Завершение откачено", "Аренда снова активная");
+      } else if (target.kind === "manual_debt") {
+        toast.success(
+          "Начисление откачено",
+          `Долг ${fmtRub(target.amount)} ₽ удалён`,
+        );
+      } else if (target.kind === "swap") {
+        toast.success("Замена скутера откачена", "Вернулся прежний скутер");
+      } else if (target.kind === "parking_set") {
+        toast.success("Постановка на паркинг откачена", "Сессия удалена");
+      } else if (target.kind === "parking_end") {
+        toast.success("Снятие с паркинга откачено", "Сессия снова открыта");
       } else if (
-        target.kind === "manual_debt" ||
         target.kind === "forgive_fine" ||
         target.kind === "forgive_days" ||
-        target.kind === "forgive_all" ||
-        target.kind === "swap" ||
-        target.kind === "parking_set" ||
-        target.kind === "parking_end"
+        target.kind === "forgive_all"
       ) {
-        await rollbackAction(rental.id, target.activityId);
-        if (target.kind === "manual_debt") {
-          toast.success(
-            "Начисление откачено",
-            `Долг ${fmtRub(target.amount)} ₽ удалён`,
-          );
-        } else if (target.kind === "swap") {
-          toast.success("Замена скутера откачена", "Вернулся прежний скутер");
-        } else if (target.kind === "parking_set") {
-          toast.success("Постановка на паркинг откачена", "Сессия удалена");
-        } else if (target.kind === "parking_end") {
-          toast.success("Снятие с паркинга откачено", "Сессия снова открыта");
-        } else {
-          toast.success("Прощение откачено", "Долг снова в работе");
-        }
-      } else {
-        await rollbackLastPayment(rental.id, target.paymentId);
-        if (target.kind === "extend") {
-          toast.success(
-            "Продление откачено",
-            `Вернулось ${fmtRub(target.amount)} ₽`,
-          );
-        } else if (target.kind === "created") {
-          toast.success("Создание аренды откачено", "Аренда отправлена в архив");
-        } else if (target.kind === "payment") {
-          toast.success("Оплата откачена", `Снято ${fmtRub(target.amount)} ₽`);
-        } else if (target.kind === "security") {
-          toast.success(
-            "Пополнение залога откачено",
-            `${fmtRub(target.amount)} ₽ — платёж удалён`,
-          );
-        } else if (target.kind === "parking_paid") {
-          toast.success(
-            "Оплата паркинга откачена",
-            `Снято ${fmtRub(target.amount)} ₽`,
-          );
-        } else {
-          toast.success(
-            "Изменение экипировки откачено",
-            target.isRefund
-              ? `Возврат ${fmtRub(target.amount)} ₽ отменён`
-              : `Доплата ${fmtRub(target.amount)} ₽ отменена`,
-          );
-        }
+        toast.success("Прощение откачено", "Долг снова в работе");
+      } else if (target.kind === "parking_paid") {
+        toast.success(
+          target.underlyingSet && parkScope === "both"
+            ? "Паркинг откачен"
+            : "Оплата паркинга откачена",
+          target.underlyingSet && parkScope === "both"
+            ? `Снято ${fmtRub(target.amount)} ₽, постановка отменена`
+            : target.underlyingSet
+              ? `Снято ${fmtRub(target.amount)} ₽ — паркинг остался в долг`
+              : `Снято ${fmtRub(target.amount)} ₽`,
+        );
+      } else if (target.kind === "extend") {
+        toast.success("Продление откачено", `Вернулось ${fmtRub(target.amount)} ₽`);
+      } else if (target.kind === "created") {
+        toast.success("Создание аренды откачено", "Аренда отправлена в архив");
+      } else if (target.kind === "payment") {
+        toast.success("Оплата откачена", `Снято ${fmtRub(target.amount)} ₽`);
+      } else if (target.kind === "security") {
+        toast.success(
+          "Пополнение залога откачено",
+          `${fmtRub(target.amount)} ₽ — платёж удалён`,
+        );
+      } else if (target.kind === "equipment") {
+        toast.success(
+          "Изменение экипировки откачено",
+          target.isRefund
+            ? `Возврат ${fmtRub(target.amount)} ₽ отменён`
+            : `Доплата ${fmtRub(target.amount)} ₽ отменена`,
+        );
       }
       setOpen(false);
       // Аренда ушла в архив — закрываем карточку (её больше нет в активных).
@@ -512,12 +603,26 @@ export function RollbackButton({
     }
   };
 
+  // Заголовок/подсказка зависят от того, оплаченный ли это паркинг со связкой
+  // (тогда речь про весь паркинг, а не только платёж) и что выбрано откатить.
+  const hasParkChoice =
+    target.kind === "parking_paid" && !!target.underlyingSet;
+  const dialogTitle = hasParkChoice
+    ? "Откатить паркинг?"
+    : TITLE_BY_KIND[target.kind];
+  const lockText = hasParkChoice
+    ? parkScope === "both"
+      ? "Платёж удалится, сессия паркинга удалится, дата возврата вернётся назад. "
+      : "Платёж удалится, долг по паркингу снова откроется (паркинг останется). "
+    : LOCK_BY_KIND[target.kind];
+
   return (
     <>
       <button
         type="button"
         onClick={(e) => {
           e.stopPropagation();
+          setParkScope("both");
           setOpen(true);
         }}
         title="Откатить это действие (доступно только сегодня)"
@@ -537,7 +642,7 @@ export function RollbackButton({
           >
             <div className="mb-3 flex items-center justify-between">
               <div className="text-[15px] font-bold text-ink">
-                {TITLE_BY_KIND[target.kind]}
+                {dialogTitle}
               </div>
               <button
                 type="button"
@@ -570,14 +675,18 @@ export function RollbackButton({
             ) : target.kind === "parking_end" ? (
               <ParkingEndPreview />
             ) : target.kind === "parking_paid" ? (
-              <ParkingPaidPreview target={target} />
+              <ParkingPaidPreview
+                target={target}
+                scope={parkScope}
+                onScope={setParkScope}
+              />
             ) : (
               <ForgivePreview rental={rental} target={target} />
             )}
 
             <div className="mt-3 flex items-start gap-1.5 text-[11.5px] leading-snug text-muted">
               <Lock size={13} className="mt-px shrink-0" />
-              {LOCK_BY_KIND[target.kind]}
+              {lockText}
               Доступно только сегодня — завтра откатить уже нельзя.
             </div>
 
@@ -841,18 +950,89 @@ function ParkingEndPreview() {
 
 function ParkingPaidPreview({
   target,
+  scope,
+  onScope,
 }: {
   target: Extract<RollbackTarget, { kind: "parking_paid" }>;
+  scope: "payment" | "both";
+  onScope: (s: "payment" | "both") => void;
+}) {
+  // Оплата отдельно от постановки — простой превью, без выбора.
+  if (!target.underlyingSet) {
+    return (
+      <div className="space-y-2 rounded-xl bg-surface-soft p-3">
+        <Row
+          label="Оплата паркинга"
+          before={`${fmtRub(target.amount)} ₽`}
+          after="отменить"
+          accent
+        />
+      </div>
+    );
+  }
+  // Паркинг поставлен и сразу оплачен — спрашиваем, что откатывать (иначе
+  // оператор не догадается, что нужно два отката).
+  const days = target.underlyingSet.days;
+  return (
+    <div className="space-y-2.5">
+      <p className="text-[12.5px] leading-snug text-muted">
+        Этот паркинг поставили и сразу оплатили. Что откатить?
+      </p>
+      <div className="space-y-2">
+        <ScopeOption
+          active={scope === "payment"}
+          onClick={() => onScope("payment")}
+          title="Только оплату"
+          desc={`Снять ${fmtRub(target.amount)} ₽ — паркинг останется (в долг).`}
+        />
+        <ScopeOption
+          active={scope === "both"}
+          onClick={() => onScope("both")}
+          title="Оплату и постановку"
+          desc={`Снять ${fmtRub(target.amount)} ₽ и убрать паркинг${days > 0 ? ` (возврат −${days} дн)` : ""}.`}
+        />
+      </div>
+    </div>
+  );
+}
+
+function ScopeOption({
+  active,
+  onClick,
+  title,
+  desc,
+}: {
+  active: boolean;
+  onClick: () => void;
+  title: string;
+  desc: string;
 }) {
   return (
-    <div className="space-y-2 rounded-xl bg-surface-soft p-3">
-      <Row
-        label="Оплата паркинга"
-        before={`${fmtRub(target.amount)} ₽`}
-        after="отменить"
-        accent
-      />
-    </div>
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex w-full items-start gap-2.5 rounded-xl border p-3 text-left transition-colors",
+        active
+          ? "border-amber-300 bg-amber-50 ring-1 ring-inset ring-amber-200"
+          : "border-border bg-surface hover:bg-surface-soft",
+      )}
+    >
+      <span
+        className={cn(
+          "mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2",
+          active ? "border-amber-500" : "border-border",
+        )}
+      >
+        {active && <span className="h-2 w-2 rounded-full bg-amber-500" />}
+      </span>
+      <span className="min-w-0">
+        <span className="block text-[13px] font-semibold text-ink">{title}</span>
+        <span className="block text-[11.5px] leading-snug text-muted-2">
+          {desc}
+        </span>
+      </span>
+    </button>
   );
 }
 

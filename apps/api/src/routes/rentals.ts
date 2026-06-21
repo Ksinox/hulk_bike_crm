@@ -365,6 +365,9 @@ export async function rentalsRoutes(app: FastifyInstance) {
           customTariff: row.customTariff,
           equipment: compEquip,
         },
+        // Способ оплаты — только если при создании реально взяли платёж
+        // (issued && sum>0). Создание «в долг» метод не пишет.
+        method: issued && row.sum > 0 ? row.paymentMethod : undefined,
       },
     });
     return reply.code(201).send(row);
@@ -1590,6 +1593,14 @@ export async function rentalsRoutes(app: FastifyInstance) {
               }
             : {}),
         },
+        // Судьба залога при сдаче — чтобы по хронологии было видно, вернули
+        // клиенту или удержали и сколько (структурно, а не только в summary).
+        meta: {
+          deposit: {
+            returned: !!d.depositReturned,
+            amount: result.rental.deposit ?? 0,
+          },
+        },
       });
       // v0.4.60: лог изменения пробега скутера (на сущность scooter,
       // чтобы запись была видна в карточке скутера и в его таймлайне).
@@ -2005,6 +2016,11 @@ export async function rentalsRoutes(app: FastifyInstance) {
           newRate: d.newRate,
           newRateUnit: d.newRateUnit ?? "day",
           newEndPlannedAt: result.updated.endPlannedAt,
+          // Способ оплаты — только если продление оплатили сразу (не «в долг»).
+          method:
+            result.extraSum > 0 && d.autoMarkPaid
+              ? result.updated.paymentMethod
+              : undefined,
         },
         diff: {
           endPlannedAt: {
@@ -2250,6 +2266,8 @@ export async function rentalsRoutes(app: FastifyInstance) {
           depositOriginal?: number;
           // parking: раскладка оплаты по сессиям (un-pay паркинга)
           allocations?: Array<{ sessionId: number; amount: number }>;
+          // parking оплачен с депозита клиента — вернуть кошелёк при откате
+          depositSpent?: number;
         };
         if (
           !snap ||
@@ -2406,6 +2424,14 @@ export async function rentalsRoutes(app: FastifyInstance) {
                   eq(parkingSessions.rentalId, id),
                 ),
               );
+          }
+          // Оплата была с депозита — возвращаем кошелёк клиента (зеркало
+          // списания в /parking/pay; revenue не трогаем — deposit исключён).
+          if (snap.depositSpent && snap.depositSpent > 0 && snap.clientId) {
+            await tx.execute(sql`
+              UPDATE clients SET deposit_balance = deposit_balance + ${snap.depositSpent}
+               WHERE id = ${snap.clientId}
+            `);
           }
           await tx.delete(payments).where(eq(payments.id, paymentId));
           return {
@@ -2957,6 +2983,12 @@ export async function rentalsRoutes(app: FastifyInstance) {
           remainingDays,
           totalDelta,
           payNow: parsed.data.payNow,
+          // Способ оплаты доплаты (если оплатили сразу) / куда ушёл возврат.
+          method:
+            totalDelta > 0 && parsed.data.payNow
+              ? parsed.data.method
+              : undefined,
+          refundTo: totalDelta < 0 ? parsed.data.refundTo : undefined,
         },
         diff: {
           items: {
@@ -3016,6 +3048,14 @@ export async function rentalsRoutes(app: FastifyInstance) {
             .default("repair"),
           /** Опциональный комментарий к причине замены. */
           reason: z.string().max(500).optional(),
+          /**
+           * #20: структурированная категория причины замены. Заменяет
+           * свободный текст как основное «почему». reason остаётся
+           * необязательным уточняющим комментарием.
+           */
+          reasonCategory: z
+            .enum(["breakdown", "client_request", "maintenance", "other"])
+            .optional(),
         })
         .strict();
       const parsed = schema.safeParse(req.body);
@@ -3024,6 +3064,25 @@ export async function rentalsRoutes(app: FastifyInstance) {
           .code(400)
           .send({ error: "validation", issues: parsed.error.issues });
       const d = parsed.data;
+
+      // #20: категория причины замены → человекочитаемая метка. reason —
+      // необязательный комментарий. reasonText комбинирует их для записи
+      // свапа / заметки аренды / акта; категория отдельно уходит в лог.
+      const REASON_CAT_LABEL: Record<string, string> = {
+        breakdown: "Поломка",
+        client_request: "Клиент просит другую модель",
+        maintenance: "Плановое ТО",
+        other: "Другое",
+      };
+      const catLabel = d.reasonCategory
+        ? (REASON_CAT_LABEL[d.reasonCategory] ?? null)
+        : null;
+      const comment = d.reason?.trim() ? d.reason.trim() : null;
+      const reasonText = catLabel
+        ? comment
+          ? `${catLabel} — ${comment}`
+          : catLabel
+        : comment;
 
       const result = await db.transaction(async (tx) => {
         const [old] = await tx.select().from(rentals).where(eq(rentals.id, id));
@@ -3173,7 +3232,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
             prevScooterId,
             newScooterId: d.newScooterId,
             swapAt: now,
-            reason: d.reason ?? null,
+            reason: reasonText,
             feeAmount,
             createdByUserId: req.user.userId,
           })
@@ -3191,8 +3250,8 @@ export async function rentalsRoutes(app: FastifyInstance) {
               amount: feeAmount,
               method: old.paymentMethod,
               paid: false,
-              note: d.reason
-                ? `доплата за замену модели: ${d.reason}`
+              note: reasonText
+                ? `доплата за замену модели: ${reasonText}`
                 : `доплата за замену модели`,
             })
             .returning();
@@ -3214,8 +3273,8 @@ export async function rentalsRoutes(app: FastifyInstance) {
         await tx
           .update(rentals)
           .set({
-            note: d.reason
-              ? `замена скутера: ${d.reason}`
+            note: reasonText
+              ? `замена скутера: ${reasonText}`
               : `замена скутера`,
             updatedAt: sql`now()`,
           })
@@ -3256,7 +3315,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
         entity: "rental",
         entityId: id,
         action: "scooter_swapped",
-        summary: `Замена скутера в аренде #${String(id).padStart(4, "0")}${result.feeAmount > 0 ? ` (доплата ${result.feeAmount} ₽)` : ""}${result.refundAmount > 0 ? ` (возврат ${result.refundAmount} ₽ в депозит)` : ""}`,
+        summary: `Замена скутера${catLabel ? ` · ${catLabel}` : ""} в аренде #${String(id).padStart(4, "0")}${result.feeAmount > 0 ? ` (доплата ${result.feeAmount} ₽)` : ""}${result.refundAmount > 0 ? ` (возврат ${result.refundAmount} ₽ в депозит)` : ""}`,
         // v0.8.14: «ревизорские» поля — кто на кого заменён, причина и куда
         // ушёл старый скутер (в ремонт / обратно в парк) на момент замены.
         meta: {
@@ -3266,7 +3325,9 @@ export async function rentalsRoutes(app: FastifyInstance) {
           newScooterName,
           feeAmount: result.feeAmount,
           refundAmount: result.refundAmount,
-          reason: d.reason ?? null,
+          reason: comment,
+          reasonCategory: d.reasonCategory ?? null,
+          reasonLabel: catLabel,
           oldScooterDestination: d.oldScooterStatus,
           // Снимок для отката свапа «в день совершения» (rollback-action).
           swapId: result.swapId,
@@ -4062,6 +4123,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
         kind: parsed.data.kind,
         comment: parsed.data.comment ?? null,
         amount: parsed.data.amount,
+        method: payMethod,
       },
       diff: {
         payment: {
@@ -4668,8 +4730,15 @@ export async function rentalsRoutes(app: FastifyInstance) {
           clientId?: number | null;
           // parking
           sessionId?: number | null;
-          before?: { endDate?: string; days?: number; amount?: number };
+          before?: {
+            endDate?: string;
+            days?: number;
+            amount?: number;
+            paidAmount?: number;
+          };
           delta?: number;
+          // parking ранний возврат: излишек, вернувшийся на депозит
+          refund?: number;
         };
 
         // ── Откат замены скутера: вернуть прежний скутер на аренду,
@@ -4831,6 +4900,8 @@ export async function rentalsRoutes(app: FastifyInstance) {
               endDate: meta.before.endDate ?? sess.endDate,
               days: meta.before.days ?? sess.days,
               amount: meta.before.amount ?? sess.amount,
+              // v3.3: ранний возврат менял paidAmount — восстанавливаем.
+              paidAmount: meta.before.paidAmount ?? sess.paidAmount,
               status: "active",
               endedAt: null,
             })
@@ -4846,6 +4917,17 @@ export async function rentalsRoutes(app: FastifyInstance) {
                 updatedAt: sql`now()`,
               })
               .where(eq(rentals.id, id));
+          }
+          // v3.3: ранний возврат вернул излишек на депозит — снимаем обратно.
+          const refundBack =
+            typeof meta.refund === "number" ? meta.refund : 0;
+          const refundClientId =
+            typeof meta.clientId === "number" ? meta.clientId : null;
+          if (refundBack > 0 && refundClientId) {
+            await tx.execute(sql`
+              UPDATE clients SET deposit_balance = deposit_balance - ${refundBack}
+               WHERE id = ${refundClientId}
+            `);
           }
           return {
             ok: true as const,

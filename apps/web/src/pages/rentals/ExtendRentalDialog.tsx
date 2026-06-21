@@ -12,6 +12,7 @@ import {
 import { useModelRateResolver } from "@/lib/api/scooter-models";
 import { extendInplaceAsync } from "./rentalsStore";
 import { toast } from "@/lib/toast";
+import { toastRentalDone } from "./rentalUndo";
 import { PaymentAcceptDialog } from "./PaymentAcceptDialog";
 import { EquipmentEditor } from "./EquipmentEditor";
 
@@ -217,7 +218,7 @@ export function ExtendRentalDialog({
           requestClose();
         }}
         onPaid={() => {
-          toast.success("Продление оплачено");
+          toastRentalDone(paymentForRental, "Продление оплачено");
           setPaymentForRental(null);
           requestClose();
         }}
