@@ -84,8 +84,10 @@ export const VARIABLE_CATALOG: VariableGroup[] = [
       { key: "scooter.year", label: "Год выпуска" },
       { key: "scooter.color", label: "Цвет" },
       { key: "scooter.mileage", label: "Пробег, км" },
-      { key: "scooter.purchasePrice", label: "Стоимость скутера, ₽" },
-      { key: "scooter.purchasePriceWords", label: "Стоимость прописью" },
+      { key: "scooter.marketValue", label: "Рыночная стоимость, ₽" },
+      { key: "scooter.marketValueWords", label: "Рыночная стоимость прописью" },
+      { key: "scooter.purchasePrice", label: "Стоимость скутера (рыночная), ₽" },
+      { key: "scooter.purchasePriceWords", label: "Стоимость скутера прописью" },
     ],
   },
   {
@@ -314,8 +316,15 @@ export function resolveVariable(key: string, b: Bundle): string {
   // scooter.*
   if (key.startsWith("scooter.")) {
     const prop = key.slice("scooter.".length);
-    if (prop === "purchasePrice") return fmtMoney(scooter?.purchasePrice ?? 0);
-    if (prop === "purchasePriceWords") return moneyWords(scooter?.purchasePrice ?? 0);
+    // Стоимость скутера для договора — РЫНОЧНАЯ (marketValue); если не задана,
+    // fallback на закупочную (purchasePrice). Та же формула, что в системном
+    // шаблоне (п.4.1). Пользовательские шаблоны исторически используют пилюлю
+    // scooter.purchasePrice — поэтому она тоже отдаёт рыночную стоимость,
+    // иначе в кастомном «Договоре + Акте» подставлялся 0 (purchasePrice пуст).
+    if (prop === "purchasePrice" || prop === "marketValue")
+      return fmtMoney(scooter?.marketValue ?? scooter?.purchasePrice ?? 0);
+    if (prop === "purchasePriceWords" || prop === "marketValueWords")
+      return moneyWords(scooter?.marketValue ?? scooter?.purchasePrice ?? 0);
     if (prop === "mileage") return scooter?.mileage != null ? String(scooter.mileage) : "—";
     const v = (scooter as unknown as Record<string, unknown> | null)?.[prop];
     return v != null && v !== "" ? String(v) : "—";
