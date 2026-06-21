@@ -214,7 +214,7 @@ export function DocumentPreviewModal({
   // 960px достаточно (документ A4-формата).
   const containerClass = editingTemplate
     ? "fixed inset-0 z-[120] flex items-stretch justify-center bg-ink/60 backdrop-blur-sm"
-    : "fixed inset-0 z-[120] flex items-stretch justify-center bg-ink/60 p-4 backdrop-blur-sm";
+    : "fixed inset-0 z-[120] flex items-stretch justify-center bg-ink/60 p-0 sm:p-4 backdrop-blur-sm";
 
   return (
     <div
@@ -224,7 +224,7 @@ export function DocumentPreviewModal({
         className={
           editingTemplate
             ? "relative flex h-full w-full flex-col overflow-hidden bg-surface"
-            : "relative flex w-full max-w-[960px] flex-col overflow-hidden rounded-2xl bg-surface shadow-card-lg"
+            : "relative flex h-full w-full flex-col overflow-hidden bg-surface sm:h-auto sm:max-h-[94vh] sm:max-w-[960px] sm:rounded-2xl sm:shadow-card-lg"
         }
         onClick={(e) => e.stopPropagation()}
       >
@@ -248,7 +248,7 @@ export function DocumentPreviewModal({
                 type="button"
                 onClick={() => setEditingTemplate(true)}
                 title="Открыть шаблон документа в редакторе и подправить текст. После сохранения превью обновится."
-                className="inline-flex items-center gap-1.5 rounded-full bg-surface px-3 py-2 text-[12px] font-semibold text-muted-2 transition-colors hover:bg-blue-50 hover:text-blue-700"
+                className="hidden sm:inline-flex items-center gap-1.5 rounded-full bg-surface px-3 py-2 text-[12px] font-semibold text-muted-2 transition-colors hover:bg-blue-50 hover:text-blue-700"
               >
                 <Pencil size={13} /> Подправить шаблон
               </button>
@@ -261,7 +261,8 @@ export function DocumentPreviewModal({
                   title="Перегенерировать превью со свежими данными клиента/скутера"
                   className="inline-flex items-center gap-1.5 rounded-full bg-surface px-3 py-2 text-[12px] font-semibold text-muted-2 transition-colors hover:bg-blue-50 hover:text-blue-700"
                 >
-                  <RefreshCw size={13} /> Обновить
+                  <RefreshCw size={13} />{" "}
+                  <span className="hidden sm:inline">Обновить</span>
                 </button>
                 <button
                   type="button"
@@ -285,7 +286,7 @@ export function DocumentPreviewModal({
                   type="button"
                   onClick={handleDownloadWord}
                   disabled={downloading}
-                  className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-4 py-2 text-[13px] font-bold text-blue-700 transition-colors hover:bg-blue-100"
+                  className="hidden sm:inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-4 py-2 text-[13px] font-bold text-blue-700 transition-colors hover:bg-blue-100"
                 >
                   {downloading ? (
                     <Loader2 size={14} className="animate-spin" />
@@ -300,7 +301,7 @@ export function DocumentPreviewModal({
                     onClick={handleSaveSnapshot}
                     disabled={saveSnapshot.isPending}
                     title="Заморозить текущий рендер: сохранить эту версию документа в карточку аренды. Дальше через ленту событий или вкладку «Документы» можно открыть именно её — даже если данные клиента/скутера потом изменятся."
-                    className="inline-flex items-center gap-1.5 rounded-full bg-green-soft px-4 py-2 text-[13px] font-bold text-green-ink transition-colors hover:bg-green-100"
+                    className="hidden sm:inline-flex items-center gap-1.5 rounded-full bg-green-soft px-4 py-2 text-[13px] font-bold text-green-ink transition-colors hover:bg-green-100"
                   >
                     {saveSnapshot.isPending ? (
                       <Loader2 size={14} className="animate-spin" />
@@ -326,10 +327,9 @@ export function DocumentPreviewModal({
         {/* Hint */}
         {!editingTemplate && (
           <div className="border-b border-border bg-blue-50/60 px-5 py-2 text-[11px] text-blue-900">
-            Чтобы сохранить <b>PDF</b> — нажмите «Печать» и в диалоге браузера
-            выберите «Сохранить как PDF». Для <b>Word</b> используйте кнопку
-            «Скачать Word» — файл можно открыть и подкорректировать в Microsoft
-            Word.
+            <b>Печать:</b> на телефоне в окне печати выберите ваш Wi-Fi принтер
+            (он должен быть в той же сети). На компьютере можно «Сохранить как
+            PDF». «Скачать Word» — файл для правки в Microsoft Word.
           </div>
         )}
 

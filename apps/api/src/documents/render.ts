@@ -388,6 +388,10 @@ const CSS = `
   /* Экранная обёртка (в iframe для preview), при печати — прозрачно */
   .wrap { background: #fff; }
   @media screen { body { background: #f5f5f5; } .wrap { margin: 0 auto; padding: 16pt; max-width: 820px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); } }
+  /* На телефоне документ должен помещаться по ширине экрана (а не A4-разворот
+     шире вьюпорта). viewport=device-width уже задан в <head>; здесь убираем
+     поля/тень и разрешаем .wrap занимать всю ширину. */
+  @media screen and (max-width: 560px) { body { background: #fff; } .wrap { padding: 12px; max-width: 100%; box-shadow: none; } table { font-size: 10pt; } }
 </style>
 `;
 
@@ -411,7 +415,7 @@ function tplContract(b: Bundle): string {
   // Сумма еженедельной рассрочки (одна неделя = 7 × тариф/сут)
   const weeklyAmount = rental.rate * 7;
 
-  return `<!doctype html><html lang="ru"><head><meta charset="utf-8">
+  return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Договор проката №${contractNumber}</title>${CSS}</head><body>
 ${TOOLBAR}
 <div class="wrap">
@@ -616,7 +620,7 @@ function tplAct(b: Bundle, kind: "transfer" | "return"): string {
     price: number;
   }>;
 
-  return `<!doctype html><html lang="ru"><head><meta charset="utf-8">
+  return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>${subtitle} по договору №${contractNumber}</title>${CSS}</head><body>
 ${TOOLBAR}
 <div class="wrap">
@@ -721,7 +725,7 @@ function tplActSwap(b: Bundle): string {
     price: number;
   }>;
 
-  return `<!doctype html><html lang="ru"><head><meta charset="utf-8">
+  return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Акт приёма-передачи и замены скутера по договору №${contractNumber}</title>${CSS}</head><body>
 ${TOOLBAR}
 <div class="wrap">
@@ -812,7 +816,7 @@ ${TOOLBAR}
 function tplPurchaseDeposit(b: Bundle): string {
   const { rental, client, scooter, model } = b;
   const today = fmtDateRu(new Date());
-  return `<!doctype html><html lang="ru"><head><meta charset="utf-8">
+  return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Договор задатка при купле-продаже скутера</title>${CSS}</head><body>
 ${TOOLBAR}
 <div class="wrap">
@@ -1023,7 +1027,7 @@ async function getOverrideHtml(
  * стилями (Times New Roman, поля, нумерация .cl/.cl2 и т.д.).
  */
 function wrapAsPage(title: string, body: string): string {
-  return `<!doctype html><html lang="ru"><head><meta charset="utf-8">
+  return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>${title}</title>${CSS}</head><body>
 ${TOOLBAR}
 <div class="wrap">
