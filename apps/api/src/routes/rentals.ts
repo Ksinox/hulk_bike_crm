@@ -1071,6 +1071,14 @@ export async function rentalsRoutes(app: FastifyInstance) {
         }
       }
 
+      // ОГРАНИЧЕНИЕ: если откатываемая замена была НА ДЕШЁВУЮ модель, она при
+      // совершении могла (а) зачесть висящий swap_fee и/или (б) вернуть разницу
+      // в депозит. Здесь это НЕ восстанавливается обратно (scooter_swaps хранит
+      // только feeAmount, не canceledFee/refundToDeposit). То есть откат
+      // refund-замены вернёт скутер, но не «вернёт» погашенный долг / не снимет
+      // депозит. Это согласуется с прежним поведением (депозит и до правки не
+      // откатывался) и приемлемо: ручное удаление замены — редкая операция
+      // creator/director. Полная симметрия отката — отдельная задача.
       await db.delete(scooterSwaps).where(eq(scooterSwaps.id, sid));
       await logActivity(req, {
         entity: "rental",
@@ -3193,32 +3201,53 @@ export async function rentalsRoutes(app: FastifyInstance) {
             .where(eq(scooters.id, prevScooterId));
         }
 
-        // Доплата за смену модели — если у нового скутера ставка выше.
-        // Ставку нового скутера берём по тарифной ступени аренды (по числу
-        // дней аренды old.days — ту же ступень, на которой считалась исходная
-        // ставка; для 1-2 дней это dayRate, а не shortRate). Доплату начисляем
-        // на ОСТАТОК дней до endPlannedAt. Если ставки равны или новая ниже —
-        // нулевая разница, payment не создаём.
+        // Пересчёт при смене модели. КЛЮЧЕВОЕ: базу берём от ВЫБЫВАЮЩЕГО
+        // скутера — фактической ставки, по которой клиент едет ПРЯМО СЕЙЧАС, —
+        // а НЕ от rental.rate. rental.rate заморожен на исходной модели и при
+        // заменах не меняется; если сравнивать с ним, обратная замена на
+        // исходную модель не отыгрывает прежнюю доплату (баг Жукова: Jog→Gear
+        // →Jog в тот же период оставлял висящий долг 700 — Jog==rental.rate→0).
+        // Ставки берём по тарифной ступени аренды (rateTierForDays(old.days)).
+        // Доплату/возврат начисляем на ОСТАТОК дней до endPlannedAt: если день
+        // не прошёл — обратная замена обнуляет доплату; если на дорогой модели
+        // прошёл день — остаётся доплата ровно за тот день.
         let feeAmount = 0;
-        // v0.6.51: замена на более ДЕШЁВУЮ модель → возврат разницы клиенту
-        // в депозит (симметрично доплате при апгрейде). Депозит потом можно
-        // выдать клиенту (deposit/payout). Разница = (старая−новая)×остаток дн.
         let refundAmount = 0;
-        if (newScooter.modelId != null) {
-          const [newModel] = await tx
-            .select()
-            .from(scooterModels)
-            .where(eq(scooterModels.id, newScooter.modelId));
-          if (newModel) {
-            const tier = rateTierForDays(old.days);
-            const newRate = pickRateByPeriod(newModel, tier);
+        let daysLeft = 1;
+        {
+          const tier = rateTierForDays(old.days);
+          const msLeft = old.endPlannedAt.getTime() - now.getTime();
+          daysLeft = Math.max(1, Math.ceil(msLeft / 86_400_000));
+
+          // Ставка ВЫБЫВАЮЩЕГО (текущего) скутера — по его модели.
+          let currentRate = old.rate;
+          if (prevScooterId != null) {
+            const [prevSc] = await tx
+              .select({ modelId: scooters.modelId })
+              .from(scooters)
+              .where(eq(scooters.id, prevScooterId));
+            if (prevSc?.modelId != null) {
+              const [prevModel] = await tx
+                .select()
+                .from(scooterModels)
+                .where(eq(scooterModels.id, prevSc.modelId));
+              const pr = prevModel ? pickRateByPeriod(prevModel, tier) : null;
+              if (pr != null) currentRate = pr;
+            }
+          }
+
+          // Ставка НОВОГО скутера — по его модели, та же тарифная ступень.
+          if (newScooter.modelId != null) {
+            const [newModel] = await tx
+              .select()
+              .from(scooterModels)
+              .where(eq(scooterModels.id, newScooter.modelId));
+            const newRate = newModel ? pickRateByPeriod(newModel, tier) : null;
             if (newRate != null) {
-              const msLeft = old.endPlannedAt.getTime() - now.getTime();
-              const daysLeft = Math.max(1, Math.ceil(msLeft / 86_400_000));
-              if (newRate > old.rate) {
-                feeAmount = (newRate - old.rate) * daysLeft;
-              } else if (newRate < old.rate) {
-                refundAmount = (old.rate - newRate) * daysLeft;
+              if (newRate > currentRate) {
+                feeAmount = (newRate - currentRate) * daysLeft;
+              } else if (newRate < currentRate) {
+                refundAmount = (currentRate - newRate) * daysLeft;
               }
             }
           }
@@ -3251,22 +3280,56 @@ export async function rentalsRoutes(app: FastifyInstance) {
               method: old.paymentMethod,
               paid: false,
               note: reasonText
-                ? `доплата за замену модели: ${reasonText}`
-                : `доплата за замену модели`,
+                ? `пересчёт по замене модели на ${daysLeft} дн.: ${reasonText}`
+                : `пересчёт по замене модели на ${daysLeft} дн.`,
             })
             .returning();
           feePaymentId = feePay?.id ?? null;
         }
 
-        // v0.6.51: замена на дешевле — возвращаем разницу в депозит клиента
-        // (потом можно выдать через deposit/payout).
-        if (refundAmount > 0 && old.clientId) {
-          await tx
-            .update(clients)
-            .set({
-              depositBalance: sql`${clients.depositBalance} + ${refundAmount}`,
-            })
-            .where(eq(clients.id, old.clientId));
+        // Возврат при замене на более дешёвую модель сначала ГАСИТ
+        // неоплаченные swap_fee этой аренды (взаимозачёт), и только остаток
+        // уходит в депозит. Иначе обратная замена в тот же период
+        // (Jog→Gear→Jog) плодила «долг 700 + депозит 700» вместо честного 0.
+        let canceledFee = 0;
+        let refundToDeposit = refundAmount;
+        if (refundAmount > 0) {
+          const unpaidFees = await tx
+            .select()
+            .from(payments)
+            .where(
+              and(
+                eq(payments.rentalId, id),
+                eq(payments.type, "swap_fee"),
+                eq(payments.paid, false),
+              ),
+            )
+            .orderBy(desc(payments.createdAt));
+          let remaining = refundAmount;
+          for (const f of unpaidFees) {
+            if (remaining <= 0) break;
+            if (f.amount <= remaining) {
+              await tx.delete(payments).where(eq(payments.id, f.id));
+              remaining -= f.amount;
+              canceledFee += f.amount;
+            } else {
+              await tx
+                .update(payments)
+                .set({ amount: f.amount - remaining })
+                .where(eq(payments.id, f.id));
+              canceledFee += remaining;
+              remaining = 0;
+            }
+          }
+          refundToDeposit = remaining;
+          if (refundToDeposit > 0 && old.clientId) {
+            await tx
+              .update(clients)
+              .set({
+                depositBalance: sql`${clients.depositBalance} + ${refundToDeposit}`,
+              })
+              .where(eq(clients.id, old.clientId));
+          }
         }
 
         // Note аренды — для отображения в карточке.
@@ -3284,6 +3347,8 @@ export async function rentalsRoutes(app: FastifyInstance) {
           rentalId: id,
           feeAmount,
           refundAmount,
+          canceledFee,
+          refundToDeposit,
           prevScooterId,
           swapId: swapRow?.id ?? null,
           feePaymentId,
@@ -3315,7 +3380,7 @@ export async function rentalsRoutes(app: FastifyInstance) {
         entity: "rental",
         entityId: id,
         action: "scooter_swapped",
-        summary: `Замена скутера${catLabel ? ` · ${catLabel}` : ""} в аренде #${String(id).padStart(4, "0")}${result.feeAmount > 0 ? ` (доплата ${result.feeAmount} ₽)` : ""}${result.refundAmount > 0 ? ` (возврат ${result.refundAmount} ₽ в депозит)` : ""}`,
+        summary: `Замена скутера${catLabel ? ` · ${catLabel}` : ""} в аренде #${String(id).padStart(4, "0")}${result.feeAmount > 0 ? ` (доплата ${result.feeAmount} ₽)` : ""}${result.canceledFee > 0 ? ` (погашен долг по замене ${result.canceledFee} ₽)` : ""}${result.refundToDeposit > 0 ? ` (возврат ${result.refundToDeposit} ₽ в депозит)` : ""}`,
         // v0.8.14: «ревизорские» поля — кто на кого заменён, причина и куда
         // ушёл старый скутер (в ремонт / обратно в парк) на момент замены.
         meta: {
@@ -3325,6 +3390,8 @@ export async function rentalsRoutes(app: FastifyInstance) {
           newScooterName,
           feeAmount: result.feeAmount,
           refundAmount: result.refundAmount,
+          canceledFee: result.canceledFee,
+          refundToDeposit: result.refundToDeposit,
           reason: comment,
           reasonCategory: d.reasonCategory ?? null,
           reasonLabel: catLabel,
@@ -3354,12 +3421,22 @@ export async function rentalsRoutes(app: FastifyInstance) {
                 },
               }
             : {}),
-          ...(result.refundAmount > 0
+          ...(result.canceledFee > 0
+            ? {
+                canceledFee: {
+                  label: "Погашен долг по замене",
+                  from: 0,
+                  to: result.canceledFee,
+                  kind: "money",
+                },
+              }
+            : {}),
+          ...(result.refundToDeposit > 0
             ? {
                 refund: {
                   label: "Возврат в депозит",
                   from: 0,
-                  to: result.refundAmount,
+                  to: result.refundToDeposit,
                   kind: "money",
                 },
               }
