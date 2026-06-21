@@ -73,6 +73,7 @@ export async function activityRoutes(app: FastifyInstance) {
       from?: string;
       to?: string;
       category?: string;
+      role?: string;
     };
   }>("/", async (req) => {
     const Q = z.object({
@@ -98,6 +99,8 @@ export async function activityRoutes(app: FastifyInstance) {
           "rollback",
         ])
         .optional(),
+      // Фильтр по исполнителю (роли): director / admin / creator / mechanic / accountant.
+      role: z.string().max(40).optional(),
     });
     const parsed = Q.safeParse(req.query);
     const data = parsed.success ? parsed.data : {};
@@ -116,6 +119,9 @@ export async function activityRoutes(app: FastifyInstance) {
     if (data.category) {
       const c = categoryCondition(data.category);
       if (c) conds.push(c);
+    }
+    if (data.role) {
+      conds.push(eq(activityLog.userRole, data.role));
     }
     const whereCond = conds.length ? and(...conds) : undefined;
 

@@ -19,6 +19,7 @@ export type ActivityFilters = {
   from?: string; // YYYY-MM-DD
   to?: string; // YYYY-MM-DD
   category?: string;
+  role?: string; // фильтр по исполнителю (роли): director / admin / ...
 };
 
 export const activityKeys = {
@@ -33,6 +34,7 @@ export const activityKeys = {
       filters?.from ?? "",
       filters?.to ?? "",
       filters?.category ?? "",
+      filters?.role ?? "",
     ] as const,
 };
 
@@ -67,6 +69,7 @@ export function useActivityPage(
       if (filters?.from) qs.set("from", filters.from);
       if (filters?.to) qs.set("to", filters.to);
       if (filters?.category) qs.set("category", filters.category);
+      if (filters?.role) qs.set("role", filters.role);
       return api.get<{ items: ApiActivityItem[]; total: number }>(
         `/api/activity?${qs.toString()}`,
       );

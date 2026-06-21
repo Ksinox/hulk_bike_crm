@@ -301,6 +301,14 @@ const JOURNAL_CATEGORIES: { key: string; label: string }[] = [
   { key: "rollback", label: "Откаты" },
 ];
 
+/** Роли-исполнители для фильтра «кто сделал». Ключи = activity_log.user_role. */
+const JOURNAL_ROLES: { key: string; label: string }[] = [
+  { key: "", label: "Все" },
+  { key: "director", label: "Директор" },
+  { key: "admin", label: "Администратор" },
+  { key: "creator", label: "Создатель" },
+];
+
 const toISODate = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
     d.getDate(),
@@ -334,8 +342,9 @@ function FullJournalModal({
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [category, setCategory] = useState("");
+  const [role, setRole] = useState("");
   const [fullscreen, setFullscreen] = useState(false);
-  const hasFilter = !!(from || to || category);
+  const hasFilter = !!(from || to || category || role);
 
   const { data, isLoading, isFetching } = useActivityPage(
     PAGE_SIZE,
@@ -344,6 +353,7 @@ function FullJournalModal({
       from: from || undefined,
       to: to || undefined,
       category: category || undefined,
+      role: role || undefined,
     },
   );
   const total = data?.total ?? 0;
@@ -363,6 +373,7 @@ function FullJournalModal({
     setFrom("");
     setTo("");
     setCategory("");
+    setRole("");
     setPage(0);
   };
 
@@ -433,6 +444,30 @@ function FullJournalModal({
                 )}
               >
                 {c.label}
+              </button>
+            ))}
+          </div>
+          {/* #журнал: фильтр по исполнителю (роли). */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="mr-0.5 text-[12px] font-medium text-muted-2">
+              Исполнитель:
+            </span>
+            {JOURNAL_ROLES.map((rl) => (
+              <button
+                key={rl.key || "all"}
+                type="button"
+                onClick={() => {
+                  setRole(rl.key);
+                  setPage(0);
+                }}
+                className={cn(
+                  "rounded-full px-3 py-1 text-[12px] font-semibold transition-colors",
+                  role === rl.key
+                    ? "bg-blue-600 text-white"
+                    : "bg-surface-soft text-ink-2 hover:bg-border",
+                )}
+              >
+                {rl.label}
               </button>
             ))}
           </div>
