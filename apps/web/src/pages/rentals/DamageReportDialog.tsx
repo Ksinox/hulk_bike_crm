@@ -257,7 +257,8 @@ export function DamageReportDialog({
   }, [depositMax]);
   const debt = Math.max(0, total - depositCovered);
 
-  const [sendToRepair, setSendToRepair] = useState(!isEdit);
+  // По умолчанию ВЫКЛ — сотрудник явно решает, отправлять ли скутер в ремонт.
+  const [sendToRepair, setSendToRepair] = useState(false);
   const [note, setNote] = useState(existing?.note ?? "");
 
   const create = useCreateDamageReport();

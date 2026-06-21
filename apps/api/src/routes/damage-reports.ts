@@ -97,7 +97,7 @@ const CreateBody = z.object({
   rentalId: z.number().int().positive(),
   depositCovered: z.number().int().min(0).default(0),
   note: z.string().max(2000).nullable().optional(),
-  sendScooterToRepair: z.boolean().default(true),
+  sendScooterToRepair: z.boolean().default(false),
   items: z.array(ItemInput).min(1),
 });
 
