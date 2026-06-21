@@ -1,8 +1,9 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { Camera, Images, X, Play, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fileUrl } from "@/lib/files";
 import type { ApiDamageMedia } from "@/lib/api/damage-reports";
+import { MediaLightbox, type LightboxItem } from "@/components/MediaLightbox";
 
 /**
  * Захват фото/видео повреждений при приёмке по ущербу.
@@ -87,6 +88,28 @@ export function DamageMediaCapture({
     e.target.value = "";
   };
   const total = staged.length + uploaded.length;
+
+  // Единый список для лайтбокса (тот же порядок, что в гриде: сперва
+  // загруженные, потом локально выбранные). Индекс плитки = индекс здесь.
+  const lightboxItems: LightboxItem[] = [
+    ...uploaded.map((m) => ({
+      kind: m.kind,
+      url:
+        m.kind === "photo"
+          ? (fileUrl(m.fileKey, { variant: "view" }) ?? "")
+          : (fileUrl(m.fileKey) ?? ""),
+      downloadUrl: fileUrl(m.fileKey) ?? undefined,
+      durationSec: m.durationSec,
+      name: m.fileName,
+    })),
+    ...staged.map((s) => ({
+      kind: s.kind,
+      url: s.previewUrl,
+      durationSec: s.durationSec,
+    })),
+  ];
+  const [lightbox, setLightbox] = useState<number | null>(null);
+
   return (
     <div className="flex flex-col gap-2.5">
       <div className="grid grid-cols-2 gap-2">
@@ -131,7 +154,7 @@ export function DamageMediaCapture({
         </div>
       ) : (
         <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-          {uploaded.map((m) => (
+          {uploaded.map((m, i) => (
             <MediaTile
               key={`u${m.id}`}
               kind={m.kind}
@@ -140,27 +163,34 @@ export function DamageMediaCapture({
                   ? fileUrl(m.fileKey, { variant: "thumb" })
                   : null
               }
-              openUrl={fileUrl(m.fileKey, {
-                variant: m.kind === "photo" ? "view" : undefined,
-              })}
               durationSec={m.durationSec}
+              onOpen={() => setLightbox(i)}
               onRemove={
                 onRemoveUploaded ? () => onRemoveUploaded(m.id) : undefined
               }
             />
           ))}
-          {staged.map((s) => (
+          {staged.map((s, j) => (
             <MediaTile
               key={s.id}
               kind={s.kind}
               src={s.kind === "photo" ? s.previewUrl : null}
-              openUrl={s.previewUrl}
               durationSec={s.durationSec}
               busy={busy}
+              onOpen={() => setLightbox(uploaded.length + j)}
               onRemove={() => onRemoveStaged(s.id)}
             />
           ))}
         </div>
+      )}
+
+      {lightbox != null && (
+        <MediaLightbox
+          items={lightboxItems}
+          index={lightbox}
+          onIndexChange={setLightbox}
+          onClose={() => setLightbox(null)}
+        />
       )}
     </div>
   );
@@ -169,14 +199,14 @@ export function DamageMediaCapture({
 function MediaTile({
   kind,
   src,
-  openUrl,
+  onOpen,
   durationSec,
   onRemove,
   busy,
 }: {
   kind: "photo" | "video";
   src: string | null;
-  openUrl: string | null;
+  onOpen: () => void;
   durationSec?: number | null;
   onRemove?: () => void;
   busy?: boolean;
@@ -184,25 +214,28 @@ function MediaTile({
   return (
     <div className="relative aspect-square overflow-hidden rounded-xl bg-ink/5 ring-1 ring-inset ring-border">
       {kind === "photo" && src ? (
-        <a href={openUrl ?? undefined} target="_blank" rel="noreferrer">
+        <button
+          type="button"
+          onClick={onOpen}
+          className="block h-full w-full transition-transform active:scale-[0.97]"
+        >
           <img
             src={src}
             className="h-full w-full object-cover"
             alt="повреждение"
           />
-        </a>
+        </button>
       ) : (
-        <a
-          href={openUrl ?? undefined}
-          target="_blank"
-          rel="noreferrer"
-          className="flex h-full w-full flex-col items-center justify-center bg-ink text-white"
+        <button
+          type="button"
+          onClick={onOpen}
+          className="flex h-full w-full flex-col items-center justify-center bg-ink text-white transition-transform active:scale-[0.97]"
         >
-          <Play size={20} className="fill-white" />
-          <span className="mt-1 text-[10.5px] font-semibold tabular-nums">
+          <Play size={22} className="fill-white" />
+          <span className="mt-1 rounded-full bg-white/15 px-1.5 text-[10.5px] font-semibold tabular-nums">
             {fmtDuration(durationSec)}
           </span>
-        </a>
+        </button>
       )}
       {busy && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/30">

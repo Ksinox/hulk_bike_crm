@@ -17,7 +17,7 @@
  *   2) Каждый damage report — отдельная строка (open / forgiven / paid).
  *   3) Каждое manual_charge event — строка (open / paid).
  */
-import { AlertTriangle, ArrowRight, Check } from "lucide-react";
+import { AlertTriangle, ArrowRight, Check, Camera } from "lucide-react";
 import { useApiRentals } from "@/lib/api/rentals";
 import { useRentalDebt } from "@/lib/api/debt";
 import { useChainDamageReports } from "@/lib/api/damage-reports";
@@ -34,6 +34,8 @@ type DebtRow = {
   title: string;
   note: string;
   amount: number;
+  /** Кол-во приложенных фото/видео (для акта ущерба) — чип «N медиа». */
+  mediaCount?: number;
   onClick?: () => void;
 };
 
@@ -151,6 +153,7 @@ export function DebtsList({
     if (r.debt > 0) {
       rows.push({
         key: `damage-${r.id}-open`,
+        mediaCount: r.media?.length ?? 0,
         status: "open",
         title: `Ущерб #${r.id} · ${date}`,
         note: `всего ${fmt(r.total)} ₽ · из залога ${fmt(r.depositCovered)} ₽${r.paidSum > 0 ? ` · оплачено ${fmt(r.paidSum)} ₽` : ""}`,
@@ -162,6 +165,7 @@ export function DebtsList({
       // — значит часть просто списана.
       rows.push({
         key: `damage-${r.id}-forgiven`,
+        mediaCount: r.media?.length ?? 0,
         status: "forgiven",
         title: `Ущерб #${r.id} · ${date}`,
         note: `всего ${fmt(r.total)} ₽ · из залога ${fmt(r.depositCovered)} ₽${r.paidSum > 0 ? ` · оплачено ${fmt(r.paidSum)} ₽` : ""}`,
@@ -171,6 +175,7 @@ export function DebtsList({
     } else {
       rows.push({
         key: `damage-${r.id}-paid`,
+        mediaCount: r.media?.length ?? 0,
         status: "paid",
         title: `Ущерб #${r.id} · ${date}`,
         note: `всего ${fmt(r.total)} ₽ · из залога ${fmt(r.depositCovered)} ₽${r.paidSum > 0 ? ` · оплачено ${fmt(r.paidSum)} ₽` : ""}`,
@@ -286,6 +291,11 @@ function DebtRowCard({ row }: { row: DebtRow }) {
             {row.note}
           </div>
         )}
+        {row.mediaCount ? (
+          <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-blue-soft px-1.5 py-0.5 text-[10px] font-bold text-blue-700">
+            <Camera size={10} /> {row.mediaCount} фото/видео
+          </div>
+        ) : null}
       </div>
       <div className="text-right shrink-0">
         <div
