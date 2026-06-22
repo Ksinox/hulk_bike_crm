@@ -5,7 +5,6 @@ import {
   ChevronLeft,
   Clock,
   Maximize2,
-  Phone,
   Wallet,
 } from "lucide-react";
 import { useRentals } from "@/pages/rentals/rentalsStore";
@@ -62,16 +61,6 @@ export function MobileDashboard({
     openRentalId != null
       ? rentals.find((r) => r.id === openRentalId) ?? null
       : null;
-  const openItem =
-    openRentalId != null
-      ? [...m.overdue, ...m.returnsToday].find(
-          (x) => x.rentalId === openRentalId,
-        ) ?? null
-      : null;
-  const openPhones = openItem
-    ? [openItem.clientPhone, openItem.clientPhone2].filter(Boolean)
-    : [];
-
   return (
     <div className="flex flex-col gap-4">
       {/* Приветствие */}
@@ -266,8 +255,9 @@ export function MobileDashboard({
       )}
 
       {/* #172: тап по строке просрочки/возврата → полноэкранная карточка
-          аренды (те же блоки и заметки, что на десктопе). Плавающая кнопка
-          «Позвонить» в зоне большого пальца + выбор номера если их два. */}
+          аренды (те же блоки и заметки, что на десктопе). Кнопка «Позвонить» —
+          это плавающий FAB внутри самой карточки (drawerChrome), отдельную
+          здесь НЕ дублируем (баг: на дашборде было две кнопки звонка). */}
       {openRental && (
         <div className="fixed inset-0 z-[55] flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-surface animate-slide-in-right">
           <ErrorBoundary key={openRental.id}>
@@ -278,15 +268,6 @@ export function MobileDashboard({
               onSwapped={(id) => setOpenRentalId(id)}
             />
           </ErrorBoundary>
-          {openPhones.length > 0 && openItem && (
-            <button
-              type="button"
-              onClick={() => callClient(openItem.clientName, openPhones)}
-              className="fixed bottom-24 right-4 z-[60] inline-flex h-14 items-center gap-2 rounded-full bg-green px-5 text-[15px] font-bold text-white shadow-card-lg active:scale-95"
-            >
-              <Phone size={20} /> Позвонить
-            </button>
-          )}
         </div>
       )}
 
