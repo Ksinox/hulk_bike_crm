@@ -4263,7 +4263,13 @@ export async function rentalsRoutes(app: FastifyInstance) {
       summary: `Начислен долг ${parsed.data.amount} ₽ по аренде #${id}: ${parsed.data.comment}`,
       // entryId/amount — для отката начисления «в день совершения»
       // (rollback-action удаляет именно эту запись долга).
-      meta: { entryId: row?.id ?? null, amount: parsed.data.amount },
+      // comment — «за что» начислен долг: показываем в хронологии (структурно,
+      // а не только хвостом summary), чтобы всегда было видно причину.
+      meta: {
+        entryId: row?.id ?? null,
+        amount: parsed.data.amount,
+        comment: parsed.data.comment,
+      },
       diff: {
         debt: {
           label: "Долг",

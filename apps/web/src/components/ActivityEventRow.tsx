@@ -774,6 +774,16 @@ function buildActivitySummary(
     const damaged = itemsRec ? readStringList(itemsRec.to) : [];
     const extras: string[] = [];
     if (damaged.length) extras.push(`Повреждения: ${damaged.join(", ")}`);
+    // «За что» начислен долг: комментарий оператора. Новые события несут его
+    // в meta.comment; старые — хвостом summary («… по аренде #N: текст»).
+    const mDebt = readRecord(item.meta);
+    const debtComment =
+      typeof mDebt?.comment === "string" && mDebt.comment.trim()
+        ? mDebt.comment.trim()
+        : action === "debt_manual"
+          ? commentFromSummary(item.summary)
+          : null;
+    if (debtComment) extras.push(`«${debtComment}»`);
     return {
       title,
       change: d ? { from: "—", to: money(d.to), tone: "red" } : null,
@@ -959,6 +969,16 @@ function shortSummary(summary: string): string {
     "",
   );
   return s.trim() || summary;
+}
+
+/** Хвост-комментарий из summary вида «… по аренде #N: текст» (для старых
+ *  событий ручного начисления, где meta.comment ещё не сохранялся). */
+function commentFromSummary(summary: string | null | undefined): string | null {
+  if (!summary) return null;
+  const idx = summary.indexOf(": ");
+  if (idx < 0) return null;
+  const tail = summary.slice(idx + 2).trim();
+  return tail || null;
 }
 
 function statusLabel(s: string): string {
