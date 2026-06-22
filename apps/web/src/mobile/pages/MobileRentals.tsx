@@ -17,6 +17,8 @@ import { useRentalStickers } from "@/lib/api/stickers";
 import { MiniStickers } from "@/components/StickerStack";
 import type { Rental } from "@/lib/mock/rentals";
 import { useApiClients } from "@/lib/api/clients";
+import { useDebtAggregate } from "@/lib/api/debt";
+import { effectiveRentalStatus } from "@/lib/rentalStatus";
 import type { ApiClient } from "@/lib/api/types";
 import {
   matchId,
@@ -41,31 +43,23 @@ function todayRu(): string {
   return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}`;
 }
 
-function ddmmyyyyToMs(s: string): number {
-  const [d, m, y] = s.split(".").map(Number);
-  if (!d || !m || !y) return NaN;
-  return new Date(y, m - 1, d).getTime();
+/** Просрочка — по эффективному статусу (дата возврата + долг), а не по
+ *  «застывшему» БД-статусу: после паркинга/продления endPlanned уходит в
+ *  будущее (не просрочка), а при долге=0 — «ожидаем возврат», не просрочка. */
+function isOverdue(r: Rental, debt: number): boolean {
+  return effectiveRentalStatus(r.status, r.endPlanned, debt) === "overdue";
 }
 
-function isOverdue(r: Rental, todayMs: number): boolean {
-  if (r.status === "overdue") return true;
-  if (r.status !== "active") return false;
-  const end = ddmmyyyyToMs(r.endPlanned);
-  return !Number.isNaN(end) && end < todayMs;
-}
-
-/** Метка и тон статуса для пилюли. */
-function statusMeta(
-  r: Rental,
-  todayMs: number,
-): { label: string; cls: string } {
-  if (isOverdue(r, todayMs))
-    return { label: "Просрочка", cls: "bg-red-soft text-red-ink" };
-  switch (r.status) {
-    case "active":
-      return { label: "Активна", cls: "bg-green-soft text-green-ink" };
+/** Метка и тон статуса для пилюли — единый расчёт effectiveRentalStatus. */
+function statusMeta(r: Rental, debt: number): { label: string; cls: string } {
+  const eff = effectiveRentalStatus(r.status, r.endPlanned, debt);
+  switch (eff) {
+    case "overdue":
+      return { label: "Просрочка", cls: "bg-red-soft text-red-ink" };
     case "returning":
       return { label: "Возврат", cls: "bg-orange-soft text-orange-ink" };
+    case "active":
+      return { label: "Активна", cls: "bg-green-soft text-green-ink" };
     case "new_request":
       return { label: "Новая", cls: "bg-blue-50 text-blue-600" };
     case "meeting":
@@ -125,7 +119,13 @@ export function MobileRentals() {
   }, []);
 
   const today = todayRu();
-  const todayMs = ddmmyyyyToMs(today);
+  const { data: debtAgg = [] } = useDebtAggregate();
+  // Реальный долг аренды (как в десктоп-списке): просрочка + ущерб + ручной.
+  // Паркинг сюда НЕ входит — он не делает аренду просроченной.
+  const realDebtOf = (id: number): number => {
+    const d = debtAgg.find((x) => x.rentalId === id);
+    return d ? d.overdueBalance + d.damageBalance + d.manualBalance : 0;
+  };
 
   const source = filter === "completed" ? archived : active;
 
@@ -136,18 +136,19 @@ export function MobileRentals() {
     for (const r of active) {
       const finished = r.status === "completed" || r.status === "cancelled";
       if (!finished) act++;
-      if (isOverdue(r, todayMs)) over++;
+      if (isOverdue(r, realDebtOf(r.id))) over++;
       if (r.status === "returning" || (r.status === "active" && r.endPlanned === today))
         ret++;
     }
     return { act, over, ret };
-  }, [active, today, todayMs]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, today, debtAgg]);
 
   const filtered = useMemo(() => {
     const matchStatus = (r: Rental): boolean => {
       const finished = r.status === "completed" || r.status === "cancelled";
       if (filter === "active") return !finished;
-      if (filter === "overdue") return isOverdue(r, todayMs);
+      if (filter === "overdue") return isOverdue(r, realDebtOf(r.id));
       if (filter === "return_today")
         return (
           r.status === "returning" ||
@@ -170,7 +171,8 @@ export function MobileRentals() {
     return source
       .filter((r) => matchStatus(r) && matchSearch(r))
       .sort((a, b) => b.id - a.id);
-  }, [source, filter, search, clientById, today, todayMs]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [source, filter, search, clientById, today, debtAgg]);
 
   // F5: «Сумма» строки = «Эта аренда» (текущий период), как в карточке и
   // десктоп-списке. Один и тот же computeCurrentPeriod.
@@ -235,7 +237,7 @@ export function MobileRentals() {
                 key={r.id}
                 rental={r}
                 client={c}
-                todayMs={todayMs}
+                debt={realDebtOf(r.id)}
                 currentPeriodSum={periodSums.get(r.id) ?? r.sum}
                 onClick={() => setOpenId(r.id)}
                 onCall={() =>
@@ -293,19 +295,19 @@ export function MobileRentals() {
 function RentalRow({
   rental,
   client,
-  todayMs,
+  debt,
   currentPeriodSum,
   onClick,
   onCall,
 }: {
   rental: Rental;
   client: ApiClient | null;
-  todayMs: number;
+  debt: number;
   currentPeriodSum: number;
   onClick: () => void;
   onCall: () => void;
 }) {
-  const meta = statusMeta(rental, todayMs);
+  const meta = statusMeta(rental, debt);
   const hasPhone = !!(client?.phone || client?.extraPhone);
   const stickers = useRentalStickers(rental.id);
   return (

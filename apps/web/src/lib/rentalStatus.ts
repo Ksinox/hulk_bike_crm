@@ -48,23 +48,27 @@ export function effectiveRentalStatus(
   if (status === "completed" && totalDebt !== undefined && totalDebt > 0) {
     return "completed_damage";
   }
-  // v0.4.71: расширили обработку — раньше функция работала только при
-  // status='active'. Теперь если в БД status='overdue' (поставлен
-  // scheduler'ом) и долг=0 (клиент всё погасил / простили) —
-  // нормализуем в UI: returning если endPlanned <= today, active иначе.
-  // Бэк-нормализация status в БД делается отдельно в API /debt.
-  if (status === "overdue" && totalDebt !== undefined && totalDebt <= 0) {
-    if (!endPlanned) return "active";
+  // Статус 'overdue' в БД (его ставит scheduler) нормализуем по АКТУАЛЬНОЙ
+  // дате возврата. Просрочка — это «дата возврата в прошлом». Если возврат
+  // сдвинут в будущее (паркинг / продление), это уже НЕ просрочка — ДАЖЕ если
+  // остался долг (долг показывается отдельным флагом hasDebt). Это чинит баг:
+  // после паркинга в списках продолжали висеть «дни просрочки».
+  // v0.4.71 нормализовал 'overdue' только при долге=0; теперь — всегда по дате.
+  if (status === "overdue") {
     let endKey: string | null = null;
-    const ru = /^(\d{2})\.(\d{2})\.(\d{4})/.exec(endPlanned);
-    if (ru) endKey = `${ru[3]}-${ru[2]}-${ru[1]}`;
-    else if (/^\d{4}-\d{2}-\d{2}/.test(endPlanned))
-      endKey = endPlanned.slice(0, 10);
-    if (!endKey) return "active";
+    if (endPlanned) {
+      const ru = /^(\d{2})\.(\d{2})\.(\d{4})/.exec(endPlanned);
+      if (ru) endKey = `${ru[3]}-${ru[2]}-${ru[1]}`;
+      else if (/^\d{4}-\d{2}-\d{2}/.test(endPlanned))
+        endKey = endPlanned.slice(0, 10);
+    }
     const today = todayKey(now);
-    if (endKey < today) return "returning";
-    if (endKey === today) return "returning";
-    return "active";
+    // Дата возврата в будущем → не просрочка (вернёмся к active).
+    if (endKey && endKey > today) return "active";
+    // Дата сегодня/в прошлом/неизвестна: без долга — «ожидаем возврат»,
+    // с долгом — настоящая просрочка.
+    if (totalDebt !== undefined && totalDebt <= 0) return "returning";
+    return "overdue";
   }
   if (status !== "active") return status;
   if (!endPlanned) return status;
