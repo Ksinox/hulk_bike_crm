@@ -378,6 +378,19 @@ export function DamageReportDialog({
       else next.add(id);
       return next;
     });
+  // Защита от случайного закрытия: если есть несохранённые фото/видео (или при
+  // создании — выбранные позиции) — переспрашиваем, чтобы работу не потерять.
+  const guardedClose = () => {
+    const hasUnsaved = staged.length > 0 || (!isEdit && selected.length > 0);
+    if (
+      hasUnsaved &&
+      !window.confirm(
+        "Закрыть без сохранения? Приложенные фото/видео и изменения пропадут.",
+      )
+    )
+      return;
+    requestClose();
+  };
 
   // Минимальная валидация: должна быть выбрана хотя бы одна позиция.
   // Комментарии «где конкретно» опциональны — необязательно их заполнять,
@@ -620,7 +633,7 @@ export function DamageReportDialog({
         <div className="flex items-center gap-2 border-b border-border bg-surface-soft px-3 py-2.5">
           <button
             type="button"
-            onClick={step === 0 ? requestClose : () => goStep(step - 1)}
+            onClick={step === 0 ? guardedClose : () => goStep(step - 1)}
             className="flex h-9 w-9 items-center justify-center rounded-full text-ink-2 active:bg-border"
           >
             {step === 0 ? <X size={18} /> : <ChevronLeft size={20} />}

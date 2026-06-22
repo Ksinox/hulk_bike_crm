@@ -26,6 +26,9 @@ export type StagedMedia = {
   previewUrl: string;
   kind: "photo" | "video";
   durationSec?: number;
+  /** Кадр-постер видео (data URL), best-effort — чтобы плитка и лайтбокс
+   *  показывали первый кадр, а не чёрный экран до запуска. */
+  posterUrl?: string;
 };
 
 let _uid = 0;
@@ -37,10 +40,56 @@ export async function analyzeFile(file: File): Promise<StagedMedia> {
     : "photo";
   const previewUrl = URL.createObjectURL(file);
   let durationSec: number | undefined;
+  let posterUrl: string | undefined;
   if (kind === "video") {
     durationSec = await readVideoDuration(previewUrl).catch(() => undefined);
+    posterUrl = await makeVideoPoster(previewUrl).catch(() => undefined);
   }
-  return { id: `s${++_uid}`, file, previewUrl, kind, durationSec };
+  return { id: `s${++_uid}`, file, previewUrl, kind, durationSec, posterUrl };
+}
+
+/**
+ * Снять кадр-постер из локального видео через canvas. Best-effort: на части
+ * мобильных браузеров может не выйти — тогда undefined и показываем заглушку.
+ * Постер нужен, чтобы плитка/лайтбокс не были чёрными до запуска видео.
+ */
+function makeVideoPoster(url: string): Promise<string | undefined> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (v?: string) => {
+      if (settled) return;
+      settled = true;
+      resolve(v);
+    };
+    const video = document.createElement("video");
+    video.preload = "metadata";
+    video.muted = true;
+    video.playsInline = true;
+    video.src = url;
+    video.onloadeddata = () => {
+      try {
+        // небольшой отступ от 0 — на первом кадре часто чёрнота
+        video.currentTime = Math.min(0.1, (video.duration || 1) / 2);
+      } catch {
+        finish(undefined);
+      }
+    };
+    video.onseeked = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = video.videoWidth || 320;
+        canvas.height = video.videoHeight || 240;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return finish(undefined);
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        finish(canvas.toDataURL("image/jpeg", 0.7));
+      } catch {
+        finish(undefined);
+      }
+    };
+    video.onerror = () => finish(undefined);
+    window.setTimeout(() => finish(undefined), 4000);
+  });
 }
 
 function readVideoDuration(url: string): Promise<number> {
@@ -105,6 +154,7 @@ export function DamageMediaCapture({
     ...staged.map((s) => ({
       kind: s.kind,
       url: s.previewUrl,
+      poster: s.kind === "video" ? s.posterUrl : undefined,
       durationSec: s.durationSec,
     })),
   ];
@@ -174,7 +224,7 @@ export function DamageMediaCapture({
             <MediaTile
               key={s.id}
               kind={s.kind}
-              src={s.kind === "photo" ? s.previewUrl : null}
+              src={s.kind === "photo" ? s.previewUrl : (s.posterUrl ?? null)}
               durationSec={s.durationSec}
               busy={busy}
               onOpen={() => setLightbox(uploaded.length + j)}
@@ -213,17 +263,29 @@ function MediaTile({
 }) {
   return (
     <div className="relative aspect-square overflow-hidden rounded-xl bg-ink/5 ring-1 ring-inset ring-border">
-      {kind === "photo" && src ? (
+      {src ? (
         <button
           type="button"
           onClick={onOpen}
-          className="block h-full w-full transition-transform active:scale-[0.97]"
+          className="relative block h-full w-full transition-transform active:scale-[0.97]"
         >
           <img
             src={src}
             className="h-full w-full object-cover"
             alt="повреждение"
           />
+          {kind === "video" && (
+            <>
+              <span className="absolute inset-0 flex items-center justify-center">
+                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-black/55">
+                  <Play size={16} className="fill-white text-white" />
+                </span>
+              </span>
+              <span className="absolute bottom-1 left-1 rounded bg-black/60 px-1 text-[10px] font-semibold tabular-nums text-white">
+                {fmtDuration(durationSec)}
+              </span>
+            </>
+          )}
         </button>
       ) : (
         <button

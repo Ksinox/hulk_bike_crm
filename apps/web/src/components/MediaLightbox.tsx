@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { X, ChevronLeft, ChevronRight, Download } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -15,6 +15,8 @@ export type LightboxItem = {
   kind: "photo" | "video";
   /** URL для показа: view-вариант фото / оригинал видео / локальный objectURL. */
   url: string;
+  /** Кадр-постер для видео (чтобы не было чёрного экрана до запуска). */
+  poster?: string;
   /** URL оригинала для скачивания (если есть). */
   downloadUrl?: string;
   durationSec?: number | null;
@@ -35,6 +37,11 @@ export function MediaLightbox({
   const cur = items[index];
   const canPrev = index > 0;
   const canNext = index < items.length - 1;
+  // Сброс ошибки видео при смене кадра.
+  const [videoError, setVideoError] = useState(false);
+  useEffect(() => {
+    setVideoError(false);
+  }, [index]);
 
   const go = (d: number) => {
     const n = index + d;
@@ -118,14 +125,31 @@ export function MediaLightbox({
             alt={cur.name ?? "повреждение"}
             className="max-h-full max-w-full animate-fade-in object-contain"
           />
+        ) : videoError ? (
+          <div className="flex max-w-xs flex-col items-center gap-1.5 px-8 text-center">
+            <span className="text-[14px] font-medium text-white/85">
+              Предпросмотр видео недоступен в этом браузере.
+            </span>
+            <span className="text-[12px] text-white/55">
+              Видео приложено к акту — оно сохранится и будет доступно после
+              «Сохранить».
+            </span>
+          </div>
         ) : (
+          // muted+autoPlay+playsInline — самый надёжный способ показать кадр
+          // видео встроенно на iOS (без чёрного экрана); poster — пока грузится.
+          // Звук включается тапом по контролам.
           <video
             key={cur.url}
             src={cur.url}
+            poster={cur.poster || undefined}
             controls
             autoPlay
+            muted
             playsInline
-            className="max-h-full max-w-full animate-fade-in"
+            preload="auto"
+            className="max-h-full max-w-full bg-black"
+            onError={() => setVideoError(true)}
           />
         )}
 
