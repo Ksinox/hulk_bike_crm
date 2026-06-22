@@ -56,8 +56,26 @@ export async function getObjectStream(key: string): Promise<NodeJS.ReadableStrea
   return s3.getObject(config.s3.bucket, key);
 }
 
-/** Удалить файл */
+/**
+ * Удалить файл ВМЕСТЕ с его image-вариантами (__view__ / __thumb__), если они
+ * были сгенерированы (putObjectWithImageVariants для фото/аватарок). Для
+ * не-картинок (PDF/видео/docx) вариантов нет — попытки удаления безвредно
+ * игнорируются. Это не даёт хранилищу забиваться сиротами-превью: раньше
+ * removeObject убирал только оригинал, а thumb/view оставались навсегда.
+ *
+ * Оригинал удаляем с await (поведение как раньше — ошибка пробрасывается,
+ * вызывающие оборачивают в .catch при необходимости); варианты — best-effort.
+ */
 export async function removeObject(key: string): Promise<void> {
+  if (!key) return;
+  const dot = key.lastIndexOf(".");
+  const base = dot < 0 ? key : key.slice(0, dot);
+  void s3
+    .removeObject(config.s3.bucket, `${base}.__view__.webp`)
+    .catch(() => {});
+  void s3
+    .removeObject(config.s3.bucket, `${base}.__thumb__.webp`)
+    .catch(() => {});
   await s3.removeObject(config.s3.bucket, key);
 }
 

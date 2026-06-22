@@ -742,6 +742,8 @@ export async function damageReportsRoutes(app: FastifyInstance) {
         .from(damageReportMedia)
         .where(eq(damageReportMedia.id, mediaId));
       if (!row) return reply.code(404).send({ error: "not found" });
+      // removeObject теперь сам чистит image-варианты (thumb/view) — не
+      // оставляем сирот в хранилище. Для видео-mp4 вариантов нет (no-op).
       await removeObject(row.fileKey).catch(() => {});
       if (row.posterKey) await removeObject(row.posterKey).catch(() => {});
       await db
