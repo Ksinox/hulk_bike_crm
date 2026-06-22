@@ -68,6 +68,7 @@ import { navigate } from "@/app/navigationStore";
 import { useDashboardDrawer } from "@/pages/dashboard/DashboardDrawer";
 import { toast, confirmDialog } from "@/lib/toast";
 import { DocumentPreviewModal } from "./DocumentPreviewModal";
+import { ClaimDocumentPreview } from "./ClaimDocumentPreview";
 import { DragExtendCalendar } from "./rental-card/DragExtendCalendar";
 import {
   useDamageReports,
@@ -1684,11 +1685,8 @@ function DamageReportCard({ rental }: { rental: Rental }) {
         })}
       </div>
       {claimPreviewId != null && (
-        <DocumentPreviewModal
-          title={`Досудебная претензия по акту #${claimPreviewId}`}
-          htmlUrl={`${API_BASE}/api/damage-reports/${claimPreviewId}/claim?format=html`}
-          docxUrl={`${API_BASE}/api/damage-reports/${claimPreviewId}/claim?format=docx`}
-          docxFilename={`Досудебная претензия ${String(claimPreviewId).padStart(4, "0")}.doc`}
+        <ClaimDocumentPreview
+          reportId={claimPreviewId}
           onClose={() => setClaimPreviewId(null)}
         />
       )}

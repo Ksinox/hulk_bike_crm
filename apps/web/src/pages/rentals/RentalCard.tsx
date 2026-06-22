@@ -76,6 +76,7 @@ import { SwapScooterDialog } from "./SwapScooterDialog";
 import { DamageReportDialog } from "./DamageReportDialog";
 import { EquipmentChangeDialog } from "./EquipmentChangeDialog";
 import { DocumentPreviewModal } from "./DocumentPreviewModal";
+import { ClaimDocumentPreview } from "./ClaimDocumentPreview";
 import { useChainDamageReports } from "@/lib/api/damage-reports";
 import {
   useRentalDebt,
@@ -3397,67 +3398,8 @@ export function ActTransferPreview({
   );
 }
 
-/** Превью досудебной претензии для печати. */
-function ClaimDocumentPreview({
-  reportId,
-  onClose,
-}: {
-  reportId: number;
-  onClose: () => void;
-}) {
-  const base =
-    import.meta.env.VITE_API_URL?.replace(/\/$/, "") ?? "http://localhost:4000";
-  // F2: оператор задаёт срок добровольной оплаты (дней). Меняет URL →
-  // превью и Word перегенерируются с новой датой «оплатить до».
-  const [dueDays, setDueDays] = useState(21);
-  const htmlUrl = `${base}/api/damage-reports/${reportId}/claim?format=html&days=${dueDays}`;
-  const docxUrl = `${base}/api/damage-reports/${reportId}/claim?format=docx&days=${dueDays}`;
-  return (
-    <DocumentPreviewModal
-      title={`Досудебная претензия #${reportId}`}
-      htmlUrl={htmlUrl}
-      docxUrl={docxUrl}
-      docxFilename={`Досудебная претензия ${String(reportId).padStart(4, "0")}.doc`}
-      headerExtra={
-        // Срок добровольной оплаты: быстрые пресеты + ПРОИЗВОЛЬНОЕ число дней
-        // (поле ввода). Дата «оплатить до» в претензии = дата акта + N дней.
-        <div
-          title="Срок добровольной оплаты — дата «оплатить до» в претензии (1–180 дней)"
-          className="inline-flex items-center gap-1 rounded-full bg-surface px-3 py-1.5 text-[12px] font-semibold text-muted-2"
-        >
-          Срок оплаты
-          {[14, 21, 30].map((d) => (
-            <button
-              key={d}
-              type="button"
-              onClick={() => setDueDays(d)}
-              className={cn(
-                "rounded-md px-1.5 py-0.5 text-[12px] font-bold transition-colors",
-                dueDays === d ? "bg-blue-600 text-white" : "text-ink-2 hover:bg-border",
-              )}
-            >
-              {d}
-            </button>
-          ))}
-          <input
-            type="number"
-            min={1}
-            max={180}
-            value={dueDays}
-            onChange={(e) => {
-              const n = Math.round(Number(e.target.value));
-              if (!Number.isFinite(n)) return;
-              setDueDays(Math.max(1, Math.min(180, n)));
-            }}
-            className="w-12 rounded-md border border-border bg-surface px-1 py-0.5 text-center text-[12px] font-bold text-ink outline-none focus:border-blue-400"
-          />
-          дн
-        </div>
-      }
-      onClose={onClose}
-    />
-  );
-}
+// ClaimDocumentPreview вынесен в ./ClaimDocumentPreview (общий компонент для
+// карточки и вкладки «Документы», с мобильным нативным вводом срока).
 
 /** Превью акта о повреждениях для печати. */
 function DamageDocumentPreview({
