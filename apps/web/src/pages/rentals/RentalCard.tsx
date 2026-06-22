@@ -235,6 +235,7 @@ function statusActions(
       // вёл на старый RentalActionDialog (legacy форма с типами
       // rent/fine/damage/deposit без депозита/залога/просрочки).
       return withExtras([
+        { id: "extend", label: "Продлить аренду", icon: Calendar, tone: "ghost" },
         { id: "complete", label: "Завершить аренду", icon: ArrowRight, tone: "ghost" },
       ]);
     case "overdue":
@@ -247,6 +248,7 @@ function statusActions(
       //    ущерб) и далее работает по акту, претензии и/или
       //    отдельным процедурам, без отдельной кнопки в карточке.
       return withExtras([
+        { id: "extend", label: "Продлить аренду", icon: Calendar, tone: "ghost" },
         { id: "complete", label: "Завершить аренду", icon: ArrowRight, tone: "primary" },
       ]);
     case "returning":
