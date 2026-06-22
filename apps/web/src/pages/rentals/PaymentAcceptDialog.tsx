@@ -41,7 +41,7 @@ import {
   Pencil,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { toast } from "@/lib/toast";
+import { toast, confirmDialog } from "@/lib/toast";
 import { toastRentalDone } from "./rentalUndo";
 import { api } from "@/lib/api";
 import {
@@ -4386,46 +4386,8 @@ export function PaymentAcceptDialog({
                     )}
                   </div>
                 )}
-                {/* Клиент вносит наличными/переводом — остаток после залога/
-                    депозита (можно ввести меньше → часть останется долгом). */}
-                <div className="rounded-2xl border border-border bg-surface p-3">
-                  <button
-                    type="button"
-                    onClick={() => setPayPad("cash")}
-                    className="flex w-full items-center justify-between rounded-xl border-2 border-blue-200 bg-blue-soft/15 px-3.5 py-3 text-left transition-colors active:border-blue-400"
-                  >
-                    <span className="text-[12px] font-bold uppercase tracking-wider text-muted-2">Клиент вносит</span>
-                    <span className="flex items-center gap-1.5">
-                      <span className="font-display text-[22px] font-extrabold tabular-nums text-blue-700">{fmt(accepted)} ₽</span>
-                      <Pencil size={14} className="text-blue-600" />
-                    </span>
-                  </button>
-                  {accepted > 0 && (
-                    <div className="mt-2.5">
-                      <div className="mb-1 flex items-center gap-1.5">
-                        <span className="text-[11px] font-bold uppercase tracking-wider text-muted-2">Способ</span>
-                        {method === null && <span className="rounded-full bg-orange-soft px-1.5 py-0.5 text-[10px] font-bold text-orange-ink">выберите</span>}
-                      </div>
-                      <div className="flex gap-2">
-                        {METHODS.map((m) => {
-                          const active = method === m.id;
-                          return (
-                            <button
-                              key={m.id}
-                              type="button"
-                              onClick={() => setMethod(m.id)}
-                              className={cn("flex h-11 flex-1 items-center justify-center gap-2 rounded-2xl border text-[14px] font-semibold transition-colors", active ? "border-blue-600 bg-blue-600 text-white" : "border-border bg-surface text-ink-2")}
-                            >
-                              <m.Icon size={16} /> {m.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Сводка: сколько закрываем сейчас / останется долгом. */}
+                {/* Сводка: сколько закрываем сейчас / останется долгом.
+                    Наличные («принимаем») вынесены ВНИЗ к кнопке — без дублей. */}
                 <div className="rounded-2xl bg-surface-soft px-4 py-3">
                   <div className="flex items-baseline justify-between text-[13px]">
                     <span className="text-muted-2">Закрываем сейчас</span>
@@ -4440,26 +4402,72 @@ export function PaymentAcceptDialog({
             )}
           </div>
 
-          {/* FOOTER */}
+          {/* FOOTER — сумму наличных задаём ЗДЕСЬ (один раз, рядом с кнопкой),
+              «Принять» спрашивает подтверждение. Без дублей сумм. */}
           <div className="border-t border-border bg-surface px-4 py-3 pb-[max(env(safe-area-inset-bottom),0.75rem)]">
-            {payStep === 1 && (
-              <div className="mb-2.5 flex items-baseline justify-between">
-                <span className="text-[12px] font-bold uppercase tracking-wider text-muted-2">К приёму наличными</span>
-                <span className="font-display text-[26px] font-extrabold tabular-nums text-blue-700">{fmt(accepted)} ₽</span>
-              </div>
-            )}
-            <div className="flex gap-2">
-              {payStep > 0 && (
-                <button type="button" onClick={() => goPayStep(payStep - 1)} className="h-12 flex-1 rounded-2xl bg-surface-soft text-[15px] font-semibold text-ink-2 transition-transform active:scale-[0.98]">Назад</button>
-              )}
-              {payStep < 1 ? (
-                <button type="button" onClick={() => goPayStep(1)} disabled={noDebt} className="h-12 flex-[2] rounded-2xl bg-blue-600 text-[15px] font-bold text-white transition-transform active:scale-[0.98] disabled:opacity-50">Далее</button>
-              ) : (
-                <button type="button" onClick={submit} disabled={submitDisabled} className={cn("inline-flex h-12 flex-[2] items-center justify-center gap-1.5 rounded-2xl text-[15px] font-bold text-white transition-transform active:scale-[0.98]", submitDisabled ? "bg-surface-soft text-muted-2" : "bg-green-600")}>
-                  <Check size={16} /> {accepted > 0 ? `Принять ${fmt(accepted)} ₽` : "Провести"}
+            {payStep === 0 ? (
+              <button
+                type="button"
+                onClick={() => goPayStep(1)}
+                disabled={noDebt}
+                className="h-12 w-full rounded-2xl bg-blue-600 text-[15px] font-bold text-white transition-transform active:scale-[0.98] disabled:opacity-50"
+              >
+                Далее
+              </button>
+            ) : (
+              <>
+                {/* Сумма наличных, которую реально принимаем у клиента. */}
+                <button
+                  type="button"
+                  onClick={() => setPayPad("cash")}
+                  className="mb-2.5 flex w-full items-center justify-between rounded-2xl border-2 border-blue-200 bg-blue-soft/15 px-4 py-3 text-left transition-colors active:border-blue-400"
+                >
+                  <span className="text-[12px] font-bold uppercase tracking-wider text-muted-2">Принимаем наличными</span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="font-display text-[26px] font-extrabold tabular-nums text-blue-700">{fmt(accepted)} ₽</span>
+                    <Pencil size={15} className="text-blue-600" />
+                  </span>
                 </button>
-              )}
-            </div>
+                {accepted > 0 && (
+                  <div className="mb-2.5 flex items-center gap-2">
+                    {METHODS.map((m) => {
+                      const active = method === m.id;
+                      return (
+                        <button
+                          key={m.id}
+                          type="button"
+                          onClick={() => setMethod(m.id)}
+                          className={cn("flex h-10 flex-1 items-center justify-center gap-1.5 rounded-xl border text-[13px] font-semibold transition-colors", active ? "border-blue-600 bg-blue-600 text-white" : "border-border bg-surface text-ink-2")}
+                        >
+                          <m.Icon size={15} /> {m.label}
+                        </button>
+                      );
+                    })}
+                    {method === null && (
+                      <span className="shrink-0 rounded-full bg-orange-soft px-1.5 py-1 text-[10px] font-bold text-orange-ink">способ?</span>
+                    )}
+                  </div>
+                )}
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => goPayStep(0)} className="h-12 flex-1 rounded-2xl bg-surface-soft text-[15px] font-semibold text-ink-2 transition-transform active:scale-[0.98]">Назад</button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const ok = await confirmDialog({
+                        title: "Принять оплату?",
+                        message: `Закрываем ${fmt(coveredNow)} ₽${remainDebt > 0 ? `, останется долгом ${fmt(remainDebt)} ₽` : " — долг закрывается полностью"}.`,
+                        confirmText: "Да, принять",
+                      });
+                      if (ok) submit();
+                    }}
+                    disabled={submitDisabled}
+                    className={cn("inline-flex h-12 flex-[2] items-center justify-center gap-1.5 rounded-2xl text-[15px] font-bold text-white transition-transform active:scale-[0.98]", submitDisabled ? "bg-surface-soft text-muted-2" : "bg-green-600")}
+                  >
+                    <Check size={16} /> Принять
+                  </button>
+                </div>
+              </>
+            )}
           </div>
 
           {/* Нижний лист «простить просрочку» */}
