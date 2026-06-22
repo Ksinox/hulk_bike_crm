@@ -667,6 +667,9 @@ export function PaymentAcceptDialog({
   // нужно для оплаты — min(остаток депозита, итог к оплате), НЕ весь баланс.
   // depositToUse/remainingAfterDeposit считаются ниже, после grossTotal.
   const [useDeposit, setUseDeposit] = useState<boolean>(false);
+  // «Из залога»: гасить долг деньгами залога аренды (rental.deposit).
+  const [useSecurity, setUseSecurity] = useState<boolean>(false);
+  const [securityComment, setSecurityComment] = useState<string>("");
 
   // v0.8.33 (K1): блок «Закрыть из залога» удалён — функциональность
   // переехала в RentalActionDialog («Закрыть аренду»). При продлении
@@ -695,11 +698,18 @@ export function PaymentAcceptDialog({
     ? Math.max(0, parseInt(topupAmountStr.replace(/\D/g, "") || "0", 10))
     : 0;
 
-  // v0.6.7: списание с залога аренды убрано из UI — функциональность
-  // не входит в новый дизайн (extension-drawer.jsx). securityToUse=0
-  // всегда. Если когда-то понадобится — добавить через отдельный flow,
-  // не в основном диалоге приёма оплаты.
-  const securityToUse = 0;
+  // «Из залога» (#26): гасим долг деньгами залога. Доступно когда залог
+  // денежный и после авто-зачёта по приёмке ущерба (depositZachet) что-то
+  // осталось. Берём не больше остатка залога и не больше гасимого сейчас долга
+  // (чтобы залог не «перелился» в продление/кошелёк клиента — distribute
+  // съест его строго по долговым слотам).
+  const securityAvailable = Math.max(0, rentalDepositCurrent - depositZachet);
+  const canUseSecurity =
+    !rental.depositItem && securityAvailable > 0 && paidDebtNow > 0;
+  const securityToUse =
+    useSecurity && canUseSecurity
+      ? Math.min(securityAvailable, paidDebtNow)
+      : 0;
 
   // v0.6.7: extInputBase — кол-во ЕДИНИЦ продления (дней или недель).
   //   mode='days'   → управляется через спиннер/quick-presets (extInputOverride).
@@ -792,8 +802,14 @@ export function PaymentAcceptDialog({
   // депозита, grossTotal). Излишек остаётся на депозите клиента (раньше
   // checkbox списывал ВЕСЬ баланс, даже если к оплате было меньше — клиент
   // терял лишнее, а «к оплате» не сходилось с тем, что просит модуль).
-  const depositToUse = useDeposit ? Math.min(depositBalance, grossTotal) : 0;
-  const remainingAfterDeposit = Math.max(0, grossTotal - depositToUse);
+  // Залог (securityToUse) списывается первым, депозит клиента — на остаток.
+  const depositToUse = useDeposit
+    ? Math.min(depositBalance, Math.max(0, grossTotal - securityToUse))
+    : 0;
+  const remainingAfterDeposit = Math.max(
+    0,
+    grossTotal - securityToUse - depositToUse,
+  );
   const remainingAfterSecurity = remainingAfterDeposit;
   // v0.4.83: «Принято от клиента» — пустое поле когда сумма 0, чтоб
   // оператор не стирал нолик при наборе.
@@ -807,9 +823,9 @@ export function PaymentAcceptDialog({
   // В режиме amount — управляется отдельно через amountInput.
   useEffect(() => {
     if (mode === "amount") return;
-    const target = Math.max(0, grossTotal - depositToUse);
+    const target = Math.max(0, grossTotal - securityToUse - depositToUse);
     setAcceptedStr(target > 0 ? String(target) : "");
-  }, [grossTotal, depositToUse, mode]);
+  }, [grossTotal, securityToUse, depositToUse, mode]);
 
   const accepted = Number(acceptedStr.replace(/\D/g, "")) || 0;
   const totalReceived = depositToUse + securityToUse + accepted;
@@ -1004,39 +1020,15 @@ export function PaymentAcceptDialog({
       queue.push({ cap: periodTotal, target: "rent", damageReportId: -1 });
     }
 
-    // Шаг 2 — funding-источники в порядке списания.
-    // Security-залог НЕЛЬЗЯ использовать на rent и manual — только
-    // на ущерб/просрочку. Поэтому обрабатываем его отдельно «съев»
-    // только подходящие slots, остаток (если есть) в funding-цепочку
-    // НЕ пускаем (вернётся в rental.deposit как излишек security).
+    // Шаг 2 — funding-источники в порядке списания: залог аренды (если включён
+    // «Из залога») → депозит клиента → принятые деньги. Залог теперь можно
+    // направлять на ЛЮБОЙ долг (просрочка/штраф/ущерб/ручной/замена/аренда) —
+    // он capнут до paidDebtNow, поэтому в продление не перельётся. Залог и
+    // депозит идут method='deposit' (в выручку повторно не падают); удержанный
+    // залог проводим доходом отдельно (deposit_forfeit) в submit().
     const ops: Op[] = [];
-
-    // 2A — security: только overdue_*/damage
-    let secLeft = securityToUse;
-    if (secLeft > 0) {
-      for (const slot of queue) {
-        if (secLeft <= 0) break;
-        if (
-          slot.target !== "overdue_days" &&
-          slot.target !== "overdue_fine" &&
-          slot.target !== "damage"
-        )
-          continue;
-        if (slot.cap <= 0) continue;
-        const take = Math.min(secLeft, slot.cap);
-        ops.push({
-          target: slot.target,
-          amount: take,
-          damageReportId: slot.damageReportId,
-          method: "deposit",
-        });
-        slot.cap -= take;
-        secLeft -= take;
-      }
-    }
-
-    // 2B — основной funding: clientDeposit → accepted
     const funding: { amount: number; method: PaymentMethod }[] = [
+      { amount: securityToUse, method: "deposit" },
       { amount: depositToUse, method: "deposit" },
       { amount: acceptedAvail, method: payMethod },
     ];
@@ -1181,21 +1173,19 @@ export function PaymentAcceptDialog({
           },
         );
       }
-      // 2. Списать с залога (rental.deposit). v0.4.34: сам факт списания
-      //    теперь оформлен через payment(method='deposit') в шаге 3 —
-      //    PATCH здесь только уменьшает rental.deposit на сумму, чтобы
-      //    залог не использовали повторно.
-      // v0.6.7: securityToUse=0 всегда (UI убран) — блок dead-code,
-      //    оставлен на случай возврата функциональности.
+      // 2. «Из залога»: удерживаем залог в счёт долга. Эндпоинт уменьшает
+      //    rental.deposit, проводит сумму доходом (deposit_forfeit) и пишет
+      //    причину в хронологию + заметку. Сам долг гасят payment'ы с
+      //    method='deposit' из distribute (ниже) — здесь только источник денег
+      //    и единичный учёт выручки (без двойного счёта).
       if (securityToUse > 0) {
-        const securityMaxCurrent = rental.deposit ?? 0;
-        const newDepositValue = Math.max(0, securityMaxCurrent - securityToUse);
-        await api.patch(`/api/rentals/${rental.id}`, {
-          deposit: newDepositValue,
-          note:
-            (rental.note ?? "") +
-            (rental.note ? " · " : "") +
-            `с залога списано ${securityToUse} ₽ в счёт долга`,
+        await api.post(`/api/rentals/${rental.id}/deposit/withhold`, {
+          amount: securityToUse,
+          comment:
+            securityComment.trim() ||
+            (isPartialDebt
+              ? `Погашение долга из залога (${fmt(securityToUse)} из ${fmt(totalDebt)} ₽)`
+              : "Погашение долга из залога"),
         });
       }
       // 3. Выполнить распределение всех принятых средств.
@@ -1695,7 +1685,7 @@ export function PaymentAcceptDialog({
   const canExtend = rental.status === "active";
 
   // Сумма «вносит сейчас» (после депозита) — крупное число «К приёму».
-  const amountDueNow = Math.max(0, grossTotal - depositToUse);
+  const amountDueNow = Math.max(0, grossTotal - securityToUse - depositToUse);
   // Этап 2: блокировка кнопки. В завершении кнопка активна, даже если
   // денег к приёму нет (чистый возврат), но заблокирована пока не
   // приняты все позиции; способ оплаты обязателен только при accepted>0.
@@ -2754,6 +2744,13 @@ export function PaymentAcceptDialog({
                       value={`${fmt(equipDaily * extDays)} ₽`}
                     />
                   )}
+                  {securityToUse > 0 && (
+                    <FooterRow
+                      label="Из залога"
+                      value={`−${fmt(securityToUse)} ₽`}
+                      tone="green"
+                    />
+                  )}
                   {depositToUse > 0 && (
                     <FooterRow
                       label="Списано с депозита"
@@ -2776,6 +2773,30 @@ export function PaymentAcceptDialog({
                 </>
               );
             })()}
+            {canUseSecurity && (
+              <>
+                <label className="mt-1 flex cursor-pointer items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={useSecurity}
+                    onChange={(e) => setUseSecurity(e.target.checked)}
+                    className="h-3.5 w-3.5 accent-amber-600"
+                  />
+                  <span className="text-[11.5px] text-ink-2">
+                    Гасить из залога (доступно {fmt(securityAvailable)} ₽)
+                  </span>
+                </label>
+                {useSecurity && (
+                  <input
+                    type="text"
+                    value={securityComment}
+                    onChange={(e) => setSecurityComment(e.target.value)}
+                    placeholder="За что списываем залог (в историю и заметку)"
+                    className="ml-5 w-[calc(100%-1.25rem)] rounded-lg border border-border bg-surface px-2.5 py-1.5 text-[11.5px] text-ink outline-none placeholder:text-muted-2 focus:border-amber-400"
+                  />
+                )}
+              </>
+            )}
             {depositBalance > 0 && (
               <label className="mt-1 flex cursor-pointer items-center gap-2">
                 <input
