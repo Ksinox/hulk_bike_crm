@@ -4279,6 +4279,17 @@ export async function rentalsRoutes(app: FastifyInstance) {
         },
       },
     });
+    // «Все комментарии — в заметки»: причина начисления оседает заметкой, чтобы
+    // была видна в разделе «Заметки» аренды (не только в хронологии).
+    await db.insert(noteStickers).values({
+      entity: "rental",
+      entityId: id,
+      kind: "note",
+      text: `Долг +${parsed.data.amount} ₽: ${parsed.data.comment}`,
+      color: "red",
+      createdByUserId: userId,
+      createdByName: userName,
+    });
     return row;
   });
 
