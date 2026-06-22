@@ -174,16 +174,10 @@ function buildDamageContext(b: DamageBundle): Record<string, string> {
   const rows = items
     .map((it, i) => {
       const sum = it.finalPrice * it.quantity;
-      const discount =
-        it.originalPrice > it.finalPrice
-          ? Math.round(
-              ((it.originalPrice - it.finalPrice) / it.originalPrice) * 100,
-            )
-          : 0;
-      const priceCell =
-        discount > 0
-          ? `<span style="text-decoration: line-through; color:#666">${fmtMoney(it.originalPrice)}</span> <b>${fmtMoney(it.finalPrice)}</b><br><span class="small">скидка −${discount}%</span>`
-          : `${fmtMoney(it.finalPrice)}`;
+      // Цена в акте = та, что оператор вбил (finalPrice). Прайс-лист может быть
+      // и больше, и меньше введённой — никаких «скидок»/зачёркиваний не
+      // показываем, печатаем ровно введённую стоимость.
+      const priceCell = `${fmtMoney(it.finalPrice)}`;
       return `
         <tr>
           <td class="center">${i + 1}</td>
@@ -310,16 +304,10 @@ function renderDamageHtmlSystem(b: DamageBundle): string {
   const rows = items
     .map((it, i) => {
       const sum = it.finalPrice * it.quantity;
-      const discount =
-        it.originalPrice > it.finalPrice
-          ? Math.round(
-              ((it.originalPrice - it.finalPrice) / it.originalPrice) * 100,
-            )
-          : 0;
-      const priceCell =
-        discount > 0
-          ? `<span style="text-decoration: line-through; color:#666">${fmtMoney(it.originalPrice)}</span> <b>${fmtMoney(it.finalPrice)}</b><br><span class="small">скидка −${discount}%</span>`
-          : `${fmtMoney(it.finalPrice)}`;
+      // Цена в акте = та, что оператор вбил (finalPrice). Прайс-лист может быть
+      // и больше, и меньше введённой — никаких «скидок»/зачёркиваний не
+      // показываем, печатаем ровно введённую стоимость.
+      const priceCell = `${fmtMoney(it.finalPrice)}`;
       return `
         <tr>
           <td class="center">${i + 1}</td>
