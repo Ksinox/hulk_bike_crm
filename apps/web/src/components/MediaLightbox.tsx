@@ -42,8 +42,13 @@ export function MediaLightbox({
   const canNext = index < items.length - 1;
   // Сброс ошибки видео при смене кадра.
   const [videoError, setVideoError] = useState(false);
+  // Как видео заполняет экран: "cover" = на весь экран без рамок (как
+  // рилсы/шортсы, слегка обрезает края) / "contain" = вписать целиком (видно
+  // весь кадр, но возможны чёрные поля). По умолчанию — заполнять (нет рамок).
+  const [videoFit, setVideoFit] = useState<"cover" | "contain">("cover");
   useEffect(() => {
     setVideoError(false);
+    setVideoFit("cover");
   }, [index]);
 
   const go = (d: number) => {
@@ -111,6 +116,20 @@ export function MediaLightbox({
           {index + 1} / {items.length}
         </span>
         <div className="flex items-center gap-1">
+          {cur.kind === "video" && !cur.processing && !videoError && (
+            <button
+              type="button"
+              onClick={() =>
+                setVideoFit((f) => (f === "cover" ? "contain" : "cover"))
+              }
+              aria-label={
+                videoFit === "cover" ? "Вписать целиком" : "Заполнить экран"
+              }
+              className="flex h-9 items-center justify-center rounded-full px-3 text-[12px] font-semibold text-white/85 transition-colors hover:bg-white/10"
+            >
+              {videoFit === "cover" ? "Вписать" : "Заполнить"}
+            </button>
+          )}
           {cur.kind === "video" && !cur.processing && !videoError && (
             <button
               type="button"
@@ -193,7 +212,12 @@ export function MediaLightbox({
             muted
             playsInline
             preload="auto"
-            className="max-h-full max-w-full bg-black"
+            className={cn(
+              "bg-black",
+              videoFit === "cover"
+                ? "h-full w-full object-cover"
+                : "max-h-full max-w-full object-contain",
+            )}
             onError={() => setVideoError(true)}
           />
         )}

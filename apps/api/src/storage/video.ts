@@ -51,16 +51,21 @@ export async function transcodeVideo(
   const posterPath = join(dir, "poster.jpg");
   try {
     await writeFile(inPath, buf);
-    // Качество как у YouTube/Instagram: держим до 1080p (по большей стороне
-    // ≤1920, 4K ужимаем до 1080p), H.264 High + yuv420p (играет везде), CRF 20
-    // (визуально почти без потерь — качество задаёт CRF, а не битрейт), чётные
-    // размеры, авто-поворот (ffmpeg применяет display-matrix), faststart.
+    // Качество «как у Telegram» (по итогам ресёрча, см. ниже). H.264/AAC —
+    // единственный кодек, который играет ВЕЗДЕ (iOS Safari + Android Chrome);
+    // HEVC/VP9/AV1 кросс-платформенно ненадёжны. «Мыло» давали ДВЕ вещи:
+    //   1) preset veryfast — слабые motion-estimation/psy-rd, смазывает мелочь
+    //      (царапины/трещины). → preset slow (главный выигрыш).
+    //   2) даунскейл 4K→1080p дефолтным bicubic. → scale flags=lanczos (резче).
+    // Плюс CRF 18 (вместо 20 — чуть больше деталей) и БЕЗ -tune, чтобы остался
+    // дефолтный psy-rd=1.0 (встроенный «резкач»). High-профиль/yuv420p/faststart
+    // — без изменений. Видео короткие (сек–мин), транскод фоновый → slow ок.
     await run("ffmpeg", [
       "-y",
       "-i",
       inPath,
       "-vf",
-      "scale=min(1920\\,iw):min(1920\\,ih):force_original_aspect_ratio=decrease:force_divisible_by=2",
+      "scale=min(1920\\,iw):min(1920\\,ih):force_original_aspect_ratio=decrease:force_divisible_by=2:flags=lanczos+accurate_rnd",
       "-c:v",
       "libx264",
       "-profile:v",
@@ -68,9 +73,9 @@ export async function transcodeVideo(
       "-pix_fmt",
       "yuv420p",
       "-preset",
-      "veryfast",
+      "slow",
       "-crf",
-      "20",
+      "18",
       "-c:a",
       "aac",
       "-b:a",
