@@ -98,12 +98,13 @@ export function MediaLightbox({
     // z-[200] над всем; portal в body — иначе fixed «ловится» трансформом
     // родителя (анимация шага мастера), и оверлей не на весь экран.
     <div
-      className="fixed inset-0 z-[200] flex flex-col bg-black/95 animate-fade-in"
+      className="fixed inset-0 z-[200] bg-black animate-fade-in"
       onClick={onClose}
     >
-      {/* Верхняя панель */}
+      {/* Верхняя панель — поверх медиа (оверлей), чтобы видео/фото занимали
+          ВЕСЬ экран. */}
       <div
-        className="flex items-center justify-between px-4 py-3 pt-[max(env(safe-area-inset-top),0.75rem)]"
+        className="absolute inset-x-0 top-0 z-10 flex items-center justify-between bg-gradient-to-b from-black/70 to-transparent px-4 py-3 pt-[max(env(safe-area-inset-top),0.75rem)]"
         onClick={(e) => e.stopPropagation()}
       >
         <span className="text-[13px] font-medium tabular-nums text-white/80">
@@ -143,9 +144,9 @@ export function MediaLightbox({
         </div>
       </div>
 
-      {/* Содержимое */}
+      {/* Содержимое — на ВЕСЬ экран (медиа object-contain заполняет область). */}
       <div
-        className="relative flex flex-1 items-center justify-center overflow-hidden px-2 pb-3"
+        className="absolute inset-0 flex items-center justify-center overflow-hidden"
         onClick={(e) => e.stopPropagation()}
         onTouchStart={onTouchStart}
         onTouchEnd={onTouchEnd}
@@ -219,10 +220,10 @@ export function MediaLightbox({
         )}
       </div>
 
-      {/* Точки-индикаторы */}
+      {/* Точки-индикаторы — поверх медиа снизу. */}
       {items.length > 1 && (
         <div
-          className="flex flex-wrap justify-center gap-1.5 px-4 pb-[max(env(safe-area-inset-bottom),1rem)]"
+          className="absolute inset-x-0 bottom-0 z-10 flex flex-wrap justify-center gap-1.5 bg-gradient-to-t from-black/50 to-transparent px-4 pb-[max(env(safe-area-inset-bottom),1rem)] pt-6"
           onClick={(e) => e.stopPropagation()}
         >
           {items.map((_, i) => (
