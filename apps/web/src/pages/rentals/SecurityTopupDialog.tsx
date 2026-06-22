@@ -12,6 +12,7 @@
  * вообще (плашка скрыта на уровне RentalCard).
  */
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { Check, Shield, X, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
@@ -74,7 +75,10 @@ export function SecurityTopupDialog({
     }
   };
 
-  return (
+  // Портал в body: на мобиле диалог открывается из карточки в слайд-анимации
+  // (transform), а fixed-оверлей внутри transform на iOS «ловится» и
+  // позиционируется неверно. Портал выносит его на верхний уровень.
+  return createPortal(
     <div
       className={cn(
         "fixed inset-0 z-[120] flex items-stretch justify-center overflow-y-auto bg-ink/55 p-0 backdrop-blur-sm sm:items-center sm:p-6",
@@ -193,6 +197,7 @@ export function SecurityTopupDialog({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

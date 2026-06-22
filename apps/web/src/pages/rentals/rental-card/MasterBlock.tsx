@@ -74,6 +74,7 @@ export function MasterBlock({
   onSwapScooter,
   onChangeEquipment,
   onPayoutDeposit,
+  onTopupDeposit,
   section,
   paidThisRental,
   debtBadge,
@@ -93,6 +94,8 @@ export function MasterBlock({
   onChangeEquipment?: () => void;
   /** v0.6.51: клик по сумме депозита → диалог «Выдать депозит клиенту». */
   onPayoutDeposit?: () => void;
+  /** Клик по плашке залога → диалог «Пополнить залог» (только денежный залог). */
+  onTopupDeposit?: () => void;
   onRecordDamage?: () => void;
   layout?: "horizontal" | "vertical";
   /** v0.7.8: в drawer-режиме карточка разбита на accordion-секции —
@@ -156,6 +159,8 @@ export function MasterBlock({
   const originalDeposit = rental.depositOriginal ?? currentDeposit;
   const depositSpent = Math.max(0, originalDeposit - currentDeposit);
   const depositItem = rental.depositItem ?? null;
+  // Плашку залога можно тапнуть → «Пополнить залог» (только денежный залог).
+  const canTopupDeposit = !depositItem && !!onTopupDeposit;
 
   // KPI клиента — единый источник: useClientStats считает фактические
   // дни в аренде (с учётом просрочки) и реально оплаченное за всё время
@@ -428,7 +433,17 @@ export function MasterBlock({
   // ── БЛОК 3 — Залог | Депозит (grid-cols-2) ──
   const depositBlock = (
     <div className="grid grid-cols-2 gap-3">
-      <div className="min-w-0 rounded-[12px] border border-border bg-surface px-4 py-3">
+      <button
+        type="button"
+        onClick={canTopupDeposit ? onTopupDeposit : undefined}
+        disabled={!canTopupDeposit}
+        title={canTopupDeposit ? "Пополнить залог" : undefined}
+        className={`min-w-0 rounded-[12px] border border-border bg-surface px-4 py-3 text-left transition-colors ${
+          canTopupDeposit
+            ? "cursor-pointer hover:border-amber-300 hover:bg-amber-50/50"
+            : "cursor-default"
+        }`}
+      >
         <div className="text-[11px] font-semibold text-muted-2 inline-flex items-center gap-1">
           <Shield size={11} /> Залог
         </div>
@@ -442,7 +457,12 @@ export function MasterBlock({
               ? `из ${fmt(originalDeposit)} ₽ — списано ${fmt(depositSpent)} ₽`
               : "на балансе компании"}
         </div>
-      </div>
+        {canTopupDeposit && (
+          <div className="mt-1 inline-flex items-center gap-0.5 text-[10px] font-semibold text-amber-700">
+            <Plus size={10} /> Пополнить
+          </div>
+        )}
+      </button>
       <div className="min-w-0 rounded-[12px] border border-border bg-surface px-4 py-3">
         <div className="text-[11px] font-semibold text-muted-2 inline-flex items-center gap-1">
           <Wallet size={11} /> Депозит
@@ -705,7 +725,17 @@ export function MasterBlock({
           v0.6.40: жёсткий 50/50 grid, min-w-0 на обеих ячейках
           чтобы ни одна не растягивала соседа. */}
       <div className="grid grid-cols-2 gap-3 p-5">
-        <div className="min-w-0 rounded-[12px] border border-border bg-surface px-4 py-3">
+        <button
+          type="button"
+          onClick={canTopupDeposit ? onTopupDeposit : undefined}
+          disabled={!canTopupDeposit}
+          title={canTopupDeposit ? "Пополнить залог" : undefined}
+          className={`min-w-0 rounded-[12px] border border-border bg-surface px-4 py-3 text-left transition-colors ${
+            canTopupDeposit
+              ? "cursor-pointer hover:border-amber-300 hover:bg-amber-50/50"
+              : "cursor-default"
+          }`}
+        >
           <div className="text-[11px] font-semibold text-muted-2 inline-flex items-center gap-1">
             <Shield size={11} /> Залог
           </div>
@@ -719,7 +749,12 @@ export function MasterBlock({
                 ? `из ${fmt(originalDeposit)} ₽ — списано ${fmt(depositSpent)} ₽`
                 : "на балансе компании"}
           </div>
-        </div>
+          {canTopupDeposit && (
+            <div className="mt-1 inline-flex items-center gap-0.5 text-[10px] font-semibold text-amber-700">
+              <Plus size={10} /> Пополнить
+            </div>
+          )}
+        </button>
         <div className="min-w-0 rounded-[12px] border border-border bg-surface px-4 py-3">
           <div className="text-[11px] font-semibold text-muted-2 inline-flex items-center gap-1">
             <Wallet size={11} /> Депозит

@@ -77,6 +77,7 @@ import { DamageReportDialog } from "./DamageReportDialog";
 import { EquipmentChangeDialog } from "./EquipmentChangeDialog";
 import { DocumentPreviewModal } from "./DocumentPreviewModal";
 import { ClaimDocumentPreview } from "./ClaimDocumentPreview";
+import { SecurityTopupDialog } from "./SecurityTopupDialog";
 import { useChainDamageReports } from "@/lib/api/damage-reports";
 import {
   useRentalDebt,
@@ -436,6 +437,9 @@ export function RentalCard({
   const [damageOpen, setDamageOpen] = useState(false);
   const [editingReportId, setEditingReportId] = useState<number | null>(null);
   const [previewDamageId, setPreviewDamageId] = useState<number | null>(null);
+  // «Пополнить залог» — открывается тапом по плашке залога в «Финансовой
+  // информации» (а не из «Принять оплату», где пополнение нелогично).
+  const [topupOpen, setTopupOpen] = useState(false);
   const [previewClaimId, setPreviewClaimId] = useState<number | null>(null);
   const [swapOpen, setSwapOpen] = useState(false);
   const [clientQuickView, setClientQuickView] = useState(false);
@@ -2507,6 +2511,7 @@ export function RentalCard({
                 onOpenClientProfile={() => client && openClient(client.id)}
                 onSwapScooter={handleSwapScooter}
                 onChangeEquipment={changeEquipmentHandler}
+                onTopupDeposit={() => setTopupOpen(true)}
               />
               {/* v0.7.11: «За всё время аренд клиента» (paidIn). v0.8.8: при
                   наведении — ховер со сводкой финопераций + «Подробнее» →
@@ -2808,6 +2813,7 @@ export function RentalCard({
               onSwapScooter={handleSwapScooter}
               onChangeEquipment={changeEquipmentHandler}
               onPayoutDeposit={handlePayoutDeposit}
+              onTopupDeposit={() => setTopupOpen(true)}
               paidThisRental={paidIn}
             />
           </div>
@@ -3007,6 +3013,15 @@ export function RentalCard({
         <ClaimDocumentPreview
           reportId={previewClaimId}
           onClose={() => setPreviewClaimId(null)}
+        />
+      )}
+
+      {topupOpen && (
+        <SecurityTopupDialog
+          rentalId={rental.id}
+          currentDeposit={rental.deposit ?? 0}
+          originalDeposit={rental.depositOriginal ?? rental.deposit ?? 0}
+          onClose={() => setTopupOpen(false)}
         />
       )}
 

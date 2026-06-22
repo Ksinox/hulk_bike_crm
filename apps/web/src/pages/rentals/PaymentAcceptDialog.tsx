@@ -667,36 +667,24 @@ export function PaymentAcceptDialog({
   // нужно для оплаты — min(остаток депозита, итог к оплате), НЕ весь баланс.
   // depositToUse/remainingAfterDeposit считаются ниже, после grossTotal.
   const [useDeposit, setUseDeposit] = useState<boolean>(false);
+  // Сумма к списанию с депозита клиента (пусто → максимум). Тумблер + поле.
+  const [depositToUseStr, setDepositToUseStr] = useState<string>("");
   // «Из залога»: гасить долг деньгами залога аренды (rental.deposit).
   const [useSecurity, setUseSecurity] = useState<boolean>(false);
+  // Сумма к списанию с залога (пусто → максимум). Тумблер + поле + комментарий.
+  const [securityToUseStr, setSecurityToUseStr] = useState<string>("");
   const [securityComment, setSecurityComment] = useState<string>("");
 
   // v0.8.33 (K1): блок «Закрыть из залога» удалён — функциональность
   // переехала в RentalActionDialog («Закрыть аренду»). При продлении
   // залог не трогаем, он лежит до завершения аренды.
 
-  // v0.6.11: пополнение залога. Доступно когда:
-  //  - залог денежный (depositItem === null/undefined)
-  //  - rental.deposit < rental.depositOriginal (есть «недостача»)
-  // По умолчанию сумма = shortage, оператор может править input.
+  // Пополнение залога ПЕРЕЕХАЛО на плашку «Залог» в «Финансовой информации»
+  // (тап → диалог «Пополнить залог»). В приёме оплаты пополнять залог нелогично
+  // (тут принимаем долг ОТ клиента), поэтому topupAmount=0 — все формулы
+  // `+ topupAmount` остаются, но ничего не прибавляют.
   const rentalDepositCurrent = rental.deposit ?? 0;
-  const rentalDepositOriginal =
-    (rental as { depositOriginal?: number }).depositOriginal ?? rentalDepositCurrent;
-  const securityShortage = Math.max(
-    0,
-    rentalDepositOriginal - rentalDepositCurrent,
-  );
-  // R10: пополнить залог можно ВСЕГДА, когда залог денежный (не предмет) —
-  // не только при недостаче. Сумма НЕ ограничена (разным клиентам берут
-  // разный залог; бэк сам поднимет depositOriginal до новой суммы).
-  const canTopupSecurity = !rental.depositItem;
-  const [topupSecurity, setTopupSecurity] = useState<boolean>(false);
-  const [topupAmountStr, setTopupAmountStr] = useState<string>(() =>
-    securityShortage > 0 ? String(securityShortage) : "",
-  );
-  const topupAmount = topupSecurity
-    ? Math.max(0, parseInt(topupAmountStr.replace(/\D/g, "") || "0", 10))
-    : 0;
+  const topupAmount = 0;
 
   // «Из залога» (#26): гасим долг деньгами залога. Доступно когда залог
   // денежный и после авто-зачёта по приёмке ущерба (depositZachet) что-то
@@ -706,10 +694,18 @@ export function PaymentAcceptDialog({
   const securityAvailable = Math.max(0, rentalDepositCurrent - depositZachet);
   const canUseSecurity =
     !rental.depositItem && securityAvailable > 0 && paidDebtNow > 0;
-  const securityToUse =
-    useSecurity && canUseSecurity
-      ? Math.min(securityAvailable, paidDebtNow)
-      : 0;
+  // Максимум, что есть смысл взять из залога: остаток залога, но не больше
+  // гасимого сейчас долга. Поле суммы пустое → берём максимум (удобный дефолт),
+  // иначе — введённую сумму, клампим к максимуму.
+  const securityCap = Math.min(securityAvailable, paidDebtNow);
+  const securityToUse = !(useSecurity && canUseSecurity)
+    ? 0
+    : securityToUseStr.trim() === ""
+      ? securityCap
+      : Math.min(
+          securityCap,
+          Math.max(0, parseInt(securityToUseStr.replace(/\D/g, "") || "0", 10)),
+        );
 
   // v0.6.7: extInputBase — кол-во ЕДИНИЦ продления (дней или недель).
   //   mode='days'   → управляется через спиннер/quick-presets (extInputOverride).
@@ -803,9 +799,20 @@ export function PaymentAcceptDialog({
   // checkbox списывал ВЕСЬ баланс, даже если к оплате было меньше — клиент
   // терял лишнее, а «к оплате» не сходилось с тем, что просит модуль).
   // Залог (securityToUse) списывается первым, депозит клиента — на остаток.
-  const depositToUse = useDeposit
-    ? Math.min(depositBalance, Math.max(0, grossTotal - securityToUse))
-    : 0;
+  // Берём введённую сумму, но не больше баланса депозита и не больше остатка к
+  // оплате после залога. Пусто → максимум.
+  const depositCap = Math.min(
+    depositBalance,
+    Math.max(0, grossTotal - securityToUse),
+  );
+  const depositToUse = !useDeposit
+    ? 0
+    : depositToUseStr.trim() === ""
+      ? depositCap
+      : Math.min(
+          depositCap,
+          Math.max(0, parseInt(depositToUseStr.replace(/\D/g, "") || "0", 10)),
+        );
   const remainingAfterDeposit = Math.max(
     0,
     grossTotal - securityToUse - depositToUse,
@@ -2441,92 +2448,9 @@ export function PaymentAcceptDialog({
           />
           </>)}
 
-          {/* R10: «Пополнить залог» — тумблер (а не галочка), без «+» и без
-              лимита суммы. Доступно всегда при денежном залоге: можно вернуть
-              недостачу ИЛИ поднять залог на любую сумму.
-              В режиме завершения скрыто — залог не пополняют, а возвращают /
-              зачитывают в долг (отдельный контрол приедет на этапе 2). */}
-          {canTopupSecurity && !completing && (
-            <div className="border-b border-border px-5 py-3">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex min-w-0 items-center gap-2">
-                  <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amber-500 text-white">
-                    <Wallet size={13} />
-                  </span>
-                  <div className="min-w-0">
-                    <div className="text-[13px] font-bold text-ink">
-                      Пополнить залог
-                    </div>
-                    <div className="text-[11px] text-muted">
-                      {securityShortage > 0 ? (
-                        <>
-                          залог{" "}
-                          <span className="font-semibold tabular-nums text-ink-2">
-                            {fmt(rentalDepositCurrent)}
-                          </span>{" "}
-                          из {fmt(rentalDepositOriginal)} ₽ · не хватает{" "}
-                          <span className="font-semibold tabular-nums text-red-ink">
-                            {fmt(securityShortage)} ₽
-                          </span>
-                        </>
-                      ) : (
-                        <>
-                          текущий залог{" "}
-                          <span className="font-semibold tabular-nums text-ink-2">
-                            {fmt(rentalDepositCurrent)} ₽
-                          </span>{" "}
-                          · можно поднять на любую сумму
-                        </>
-                      )}
-                    </div>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={topupSecurity}
-                  onClick={() => {
-                    const next = !topupSecurity;
-                    setTopupSecurity(next);
-                    if (next && !topupAmountStr && securityShortage > 0) {
-                      setTopupAmountStr(String(securityShortage));
-                    }
-                  }}
-                  className={cn(
-                    "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors",
-                    topupSecurity ? "bg-amber-500" : "bg-border",
-                  )}
-                >
-                  <span
-                    className={cn(
-                      "inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform",
-                      topupSecurity ? "translate-x-[22px]" : "translate-x-0.5",
-                    )}
-                  />
-                </button>
-              </div>
-              {topupSecurity && (
-                <div className="mt-2.5 flex items-center justify-end gap-2">
-                  <span className="text-[11px] text-muted">
-                    внести в залог
-                  </span>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    value={topupAmountStr}
-                    placeholder={
-                      securityShortage > 0 ? String(securityShortage) : "сумма"
-                    }
-                    onChange={(e) =>
-                      setTopupAmountStr(e.target.value.replace(/\D/g, ""))
-                    }
-                    className="w-28 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-right text-[14px] font-bold tabular-nums text-ink focus:border-amber-500 focus:outline-none"
-                  />
-                  <span className="text-[12px] font-semibold text-muted">₽</span>
-                </div>
-              )}
-            </div>
-          )}
+          {/* «Пополнить залог» убрано из приёма оплаты (нелогично принимать
+              долг ОТ клиента и одновременно пополнять залог). Пополнение теперь
+              — тап по плашке «Залог» в «Финансовой информации» карточки. */}
 
           {/* v0.8.32: блок «не хватает на выбранные дни» удалён — в режиме
               «по сумме клиента» число дней теперь всегда полностью покрыто
@@ -2758,12 +2682,6 @@ export function PaymentAcceptDialog({
                       tone="green"
                     />
                   )}
-                  {topupAmount > 0 && (
-                    <FooterRow
-                      label="Пополнение залога"
-                      value={`+${fmt(topupAmount)} ₽`}
-                    />
-                  )}
                   {parkingDue > 0 && (
                     <FooterRow
                       label={`Паркинг · ${unpaidParkingDays} ${unpaidParkingDays === 1 ? "день" : "дн"}`}
@@ -2773,43 +2691,106 @@ export function PaymentAcceptDialog({
                 </>
               );
             })()}
+            {/* Источники погашения — крупные тумблеры с полем суммы (а не
+                микро-галочки): «Из залога» аренды и «С депозита» клиента. */}
             {canUseSecurity && (
-              <>
-                <label className="mt-1 flex cursor-pointer items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={useSecurity}
-                    onChange={(e) => setUseSecurity(e.target.checked)}
-                    className="h-3.5 w-3.5 accent-amber-600"
-                  />
-                  <span className="text-[11.5px] text-ink-2">
-                    Гасить из залога (доступно {fmt(securityAvailable)} ₽)
+              <div className="mt-2 rounded-[12px] border border-amber-200 bg-amber-50/40 px-3 py-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[12.5px] font-semibold text-ink">
+                    Гасить из залога
+                    <span className="ml-1 text-[11px] font-normal text-muted">
+                      доступно {fmt(securityAvailable)} ₽
+                    </span>
                   </span>
-                </label>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={useSecurity}
+                    onClick={() => setUseSecurity(!useSecurity)}
+                    className={cn(
+                      "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors",
+                      useSecurity ? "bg-amber-500" : "bg-border",
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform",
+                        useSecurity ? "translate-x-[22px]" : "translate-x-0.5",
+                      )}
+                    />
+                  </button>
+                </div>
                 {useSecurity && (
-                  <input
-                    type="text"
-                    value={securityComment}
-                    onChange={(e) => setSecurityComment(e.target.value)}
-                    placeholder="За что списываем залог (в историю и заметку)"
-                    className="ml-5 w-[calc(100%-1.25rem)] rounded-lg border border-border bg-surface px-2.5 py-1.5 text-[11.5px] text-ink outline-none placeholder:text-muted-2 focus:border-amber-400"
-                  />
+                  <div className="mt-2.5 flex flex-col gap-2">
+                    <div className="flex items-center justify-end gap-2">
+                      <span className="text-[11px] text-muted">сумма из залога</span>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={securityToUseStr}
+                        placeholder={String(securityCap)}
+                        onChange={(e) =>
+                          setSecurityToUseStr(e.target.value.replace(/\D/g, ""))
+                        }
+                        className="w-28 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-right text-[14px] font-bold tabular-nums text-ink focus:border-amber-500 focus:outline-none"
+                      />
+                      <span className="text-[12px] font-semibold text-muted">₽</span>
+                    </div>
+                    <input
+                      type="text"
+                      value={securityComment}
+                      onChange={(e) => setSecurityComment(e.target.value)}
+                      placeholder="За что списываем залог (в историю и заметку)"
+                      className="w-full rounded-lg border border-border bg-surface px-2.5 py-1.5 text-[11.5px] text-ink outline-none placeholder:text-muted-2 focus:border-amber-400"
+                    />
+                  </div>
                 )}
-              </>
+              </div>
             )}
             {depositBalance > 0 && (
-              <label className="mt-1 flex cursor-pointer items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={useDeposit}
-                  onChange={(e) => setUseDeposit(e.target.checked)}
-                  disabled={depositBalance === 0}
-                  className="h-3.5 w-3.5 accent-blue-600"
-                />
-                <span className="text-[11.5px] text-ink-2">
-                  Списать с депозита ({fmt(depositBalance)} ₽)
-                </span>
-              </label>
+              <div className="mt-2 rounded-[12px] border border-blue-200 bg-blue-50/40 px-3 py-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[12.5px] font-semibold text-ink">
+                    Списать с депозита
+                    <span className="ml-1 text-[11px] font-normal text-muted">
+                      доступно {fmt(depositBalance)} ₽
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={useDeposit}
+                    onClick={() => setUseDeposit(!useDeposit)}
+                    className={cn(
+                      "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors",
+                      useDeposit ? "bg-blue-600" : "bg-border",
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform",
+                        useDeposit ? "translate-x-[22px]" : "translate-x-0.5",
+                      )}
+                    />
+                  </button>
+                </div>
+                {useDeposit && (
+                  <div className="mt-2.5 flex items-center justify-end gap-2">
+                    <span className="text-[11px] text-muted">сумма с депозита</span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={depositToUseStr}
+                      placeholder={String(depositCap)}
+                      onChange={(e) =>
+                        setDepositToUseStr(e.target.value.replace(/\D/g, ""))
+                      }
+                      className="w-28 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-right text-[14px] font-bold tabular-nums text-ink focus:border-blue-500 focus:outline-none"
+                    />
+                    <span className="text-[12px] font-semibold text-muted">₽</span>
+                  </div>
+                )}
+              </div>
             )}
           </div>
 
