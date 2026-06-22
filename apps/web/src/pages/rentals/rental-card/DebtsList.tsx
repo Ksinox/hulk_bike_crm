@@ -211,7 +211,13 @@ export function DebtsList({
       key: `manual-${ev.id}`,
       status,
       title: `Ручное начисление · ${date}`,
-      note: ev.comment ? `«${ev.comment}»` : ev.createdByName ?? "оператор",
+      // Комментарий (за что) И кто поставил — оба, как просил заказчик.
+      note: [
+        ev.comment ? `«${ev.comment}»` : null,
+        ev.createdByName ?? "оператор",
+      ]
+        .filter(Boolean)
+        .join(" · "),
       amount,
     });
   }

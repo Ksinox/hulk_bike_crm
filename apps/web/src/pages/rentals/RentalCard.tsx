@@ -980,6 +980,17 @@ export function RentalCard({
   // обезличенного «ручного начисления» → подпись «за экипировку».
   const equipmentManualBalance = equipmentDebtPortion(debtSummary);
   const otherManualBalance = Math.max(0, manualBalance - equipmentManualBalance);
+  // Комментарии ручных начислений (за что) — для подписи в KPI-плашке долга.
+  // Экипировочные начисления исключаем (у них своя строка «За экипировку»).
+  const otherManualComment = (debtSummary?.events ?? [])
+    .filter(
+      (e) =>
+        e.kind === "manual_charge" &&
+        !!e.comment &&
+        !/экипировк/i.test(e.comment ?? ""),
+    )
+    .map((e) => e.comment as string)
+    .join(" · ");
   // v0.8.0: неоплаченный паркинг — часть долга (с подписью «паркинг»).
   const parkingBalance = debtSummary?.parkingBalance ?? 0;
   // Кол-во неоплаченных дней паркинга — для подписи «за N дн».
@@ -2666,7 +2677,9 @@ export function RentalCard({
                     {otherManualBalance > 0 && (
                       <DebtRow
                         label="Ручное начисление"
-                        formula="начислено оператором вручную"
+                        formula={
+                          otherManualComment || "начислено оператором вручную"
+                        }
                         value={otherManualBalance}
                       />
                     )}
