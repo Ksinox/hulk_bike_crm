@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   ArrowLeft,
   Download,
@@ -216,7 +217,11 @@ export function DocumentPreviewModal({
     ? "fixed inset-0 z-[120] flex items-stretch justify-center bg-ink/60 backdrop-blur-sm"
     : "fixed inset-0 z-[120] flex items-stretch justify-center bg-ink/60 p-0 sm:p-4 backdrop-blur-sm";
 
-  return (
+  // Портал в body: иначе fixed-оверлей «ловится» трансформом родителя
+  // (мобильная карточка аренды анимируется слайдом) и превью открывается не на
+  // весь экран / невидимо. После «Зафиксировать ущерб» акт не открывался именно
+  // из-за этого.
+  return createPortal(
     <div
       className={containerClass}
     >
@@ -381,6 +386,7 @@ export function DocumentPreviewModal({
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

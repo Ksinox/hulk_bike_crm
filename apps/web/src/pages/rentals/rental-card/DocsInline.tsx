@@ -162,6 +162,11 @@ function SnapshotsBlock({ rental }: { rental: Rental }) {
   const snapshotsQ = useApiRentalDocSnapshots(rental.id);
   const deleteSnapshot = useDeleteRentalDocSnapshot();
   const items = snapshotsQ.data ?? [];
+  // v1.0.1: сохранённые версии тоже открываем в нормальном окне предпросмотра
+  // (с кнопками «Печать»/«Скачать»), а не «голым» HTML в новой вкладке.
+  const [preview, setPreview] = useState<{ id: number; title: string } | null>(
+    null,
+  );
 
   if (items.length === 0) return null;
 
@@ -187,31 +192,28 @@ function SnapshotsBlock({ rental }: { rental: Rental }) {
         <div
           key={s.id}
           title={s.title}
-          className="rounded-[12px] border border-blue-100 bg-blue-50/30 p-2 flex items-center gap-2"
+          className="rounded-[12px] border border-blue-100 bg-blue-50/30 p-2 flex items-center gap-2 transition-colors hover:bg-blue-50/60"
         >
-          <div className="h-9 w-9 rounded-[9px] bg-white text-blue-700 flex items-center justify-center flex-col shrink-0 border border-blue-100">
-            <FileText size={12} />
-            <span className="text-[7px] font-bold uppercase tabular-nums mt-0.5">
-              СН
-            </span>
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="text-[11.5px] font-semibold text-ink leading-tight whitespace-normal break-words">
-              {s.title}
-            </div>
-            <div className="text-[9.5px] text-muted leading-tight mt-0.5">
-              {new Date(s.savedAt).toLocaleDateString("ru-RU")}
-            </div>
-          </div>
-          <a
-            href={rentalDocSnapshotUrl(s.id, "html")}
-            target="_blank"
-            rel="noreferrer"
-            className="h-7 w-7 rounded-full hover:bg-white text-muted hover:text-ink flex items-center justify-center shrink-0"
-            title="Открыть"
+          <button
+            type="button"
+            onClick={() => setPreview({ id: s.id, title: s.title })}
+            className="flex min-w-0 flex-1 items-center gap-2 text-left"
           >
-            <FileText size={12} />
-          </a>
+            <div className="h-9 w-9 rounded-[9px] bg-white text-blue-700 flex items-center justify-center flex-col shrink-0 border border-blue-100">
+              <FileText size={12} />
+              <span className="text-[7px] font-bold uppercase tabular-nums mt-0.5">
+                СН
+              </span>
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-[11.5px] font-semibold text-ink leading-tight whitespace-normal break-words">
+                {s.title}
+              </div>
+              <div className="text-[9.5px] text-muted leading-tight mt-0.5">
+                {new Date(s.savedAt).toLocaleDateString("ru-RU")}
+              </div>
+            </div>
+          </button>
           <button
             type="button"
             onClick={() => handleDelete(s.id, s.title)}
@@ -222,6 +224,15 @@ function SnapshotsBlock({ rental }: { rental: Rental }) {
           </button>
         </div>
       ))}
+      {preview && (
+        <DocumentPreviewModal
+          title={preview.title}
+          htmlUrl={rentalDocSnapshotUrl(preview.id, "html")}
+          docxUrl={rentalDocSnapshotUrl(preview.id, "docx")}
+          docxFilename={`${preview.title}.doc`}
+          onClose={() => setPreview(null)}
+        />
+      )}
     </>
   );
 }

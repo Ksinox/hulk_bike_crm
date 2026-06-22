@@ -2979,7 +2979,13 @@ export function RentalCard({
               rental={rental}
               existing={r}
               onClose={() => setEditingReportId(null)}
-              onCreated={() => setEditingReportId(null)}
+              onCreated={(reportId) => {
+                // И при ИЗМЕНЕНИИ акта (не только создании) открываем превью
+                // акта для печати — заказчик: «хоть создаём, хоть меняем — окно
+                // печати должно появиться».
+                setEditingReportId(null);
+                setPreviewDamageId(reportId);
+              }}
             />
           );
         })()}
