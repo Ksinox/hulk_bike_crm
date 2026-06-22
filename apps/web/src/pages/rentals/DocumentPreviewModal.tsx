@@ -260,14 +260,16 @@ export function DocumentPreviewModal({
             )}
             {!editingTemplate && (
               <>
+                {/* «Обновить» — desktop-only: на мобиле шапка и так тесная
+                    (чип срока + Печать + закрыть), а свежие данные подтянутся
+                    при повторном открытии превью. */}
                 <button
                   type="button"
                   onClick={() => setReloadKey(Date.now())}
                   title="Перегенерировать превью со свежими данными клиента/скутера"
-                  className="inline-flex items-center gap-1.5 rounded-full bg-surface px-3 py-2 text-[12px] font-semibold text-muted-2 transition-colors hover:bg-blue-50 hover:text-blue-700"
+                  className="hidden sm:inline-flex items-center gap-1.5 rounded-full bg-surface px-3 py-2 text-[12px] font-semibold text-muted-2 transition-colors hover:bg-blue-50 hover:text-blue-700"
                 >
-                  <RefreshCw size={13} />{" "}
-                  <span className="hidden sm:inline">Обновить</span>
+                  <RefreshCw size={13} /> Обновить
                 </button>
                 <button
                   type="button"
