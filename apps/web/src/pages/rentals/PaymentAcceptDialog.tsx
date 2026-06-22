@@ -4193,12 +4193,12 @@ export function PaymentAcceptDialog({
   }
 
   // ── Мобильный мастер «Принять платёж» (mid-rental, без завершения) ──
-  // Десктоп использует прежнюю панель; на мобиле прежняя вёрстка «ехала»
-  // (длинный скролл, всплывашка «простить» уезжала за край). Здесь 2 шага:
-  // Долг → Оплата, нативная клавиатура, нижний лист прощения, sticky-футер.
-  // Продление тут НЕ делаем — для него отдельное действие «Продлить аренду».
+  // На мобиле — ТОТ ЖЕ функционал, что на десктопе, просто разбит на экраны:
+  // Долг → Продление → Оплата. Вся логика/сабмит общие (тот же extendOn,
+  // extendInplaceAsync, distribute, источники) — отличается только вёрстка.
   if (isMobile) {
-    const pTitles = ["Долг", "Оплата"];
+    const pTitles = ["Долг", "Продление", "Оплата"];
+    const stepCount = pTitles.length;
     const pAnim = payStepDir === "fwd" ? "animate-wz-fwd" : "animate-wz-back";
     const forgiveOptions = [
       { key: "all", label: "Всё — дни и штраф", amount: overdueBalanceRaw, show: true },
@@ -4217,14 +4217,16 @@ export function PaymentAcceptDialog({
     ].filter((o) => o.show);
     const totalDue = totalDebt + parkingDue;
     const noDebt = totalDue <= 0;
-    // Остаток к внесению наличными после залога/депозита.
-    const cashMax = Math.max(0, totalDue - securityToUse - depositToUse);
-    // Сколько всего закрываем сейчас и сколько останется долгом.
-    const coveredNow = Math.min(totalDue, securityToUse + depositToUse + accepted);
-    const remainDebt = Math.max(0, totalDue - coveredNow);
+    // Предоплата = нет долга И не продлеваем (клиент просто кладёт на депозит).
+    const isPrepay = noDebt && periodTotal <= 0;
+    // Всё к сбору = долг(+паркинг) + продление; наличные = это минус источники.
+    const cashMax = Math.max(0, grossTotal - securityToUse - depositToUse);
+    // Сколько всего закрываем сейчас и сколько останется (долг/недобор продления).
+    const coveredNow = Math.min(grossTotal, securityToUse + depositToUse + accepted);
+    const remainDebt = Math.max(0, grossTotal - coveredNow);
     const padCfg =
       payPad === "cash"
-        ? noDebt
+        ? isPrepay
           ? { label: "Сумма депозита", hint: "предоплата клиента", initial: accepted, max: undefined as number | undefined }
           : { label: "Клиент вносит", hint: `остаток ${fmt(cashMax)} ₽`, initial: accepted, max: cashMax as number | undefined }
         : payPad === "security"
@@ -4250,14 +4252,14 @@ export function PaymentAcceptDialog({
               <div className="truncate text-[11px] text-muted-2">{rental.scooter}</div>
             </div>
             <div className="text-[11px] font-semibold text-muted-2">
-              {payStep + 1}/2
+              {payStep + 1}/{stepCount}
             </div>
           </div>
           {/* PROGRESS */}
           <div className="h-1 w-full bg-border">
             <div
               className="h-full bg-blue-600 transition-all duration-300"
-              style={{ width: `${((payStep + 1) / 2) * 100}%` }}
+              style={{ width: `${((payStep + 1) / stepCount) * 100}%` }}
             />
           </div>
           <div className="px-4 pb-1 pt-3">
@@ -4272,52 +4274,13 @@ export function PaymentAcceptDialog({
             {payStep === 0 && (
               <div className="flex flex-col gap-3 pt-1">
                 {noDebt ? (
-                  <div className="flex flex-col gap-3 pt-1">
-                    {/* «Умное пустое»: долгов нет → принимаем как предоплату
-                        (пополнение депозита клиента). */}
-                    <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 px-4 py-4 text-center">
-                      <div className="text-[14px] font-semibold text-emerald-700">
-                        У клиента нет долгов
-                      </div>
-                      <div className="mt-0.5 text-[12px] text-emerald-700/80">
-                        Принять можно как предоплату — пополнить депозит клиента.
-                      </div>
+                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 px-4 py-5 text-center">
+                    <div className="text-[14px] font-semibold text-emerald-700">
+                      У клиента нет долгов
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setPayPad("cash")}
-                      className="flex w-full items-center justify-between rounded-2xl border-2 border-blue-200 bg-blue-soft/15 px-4 py-3.5 text-left transition-colors active:border-blue-400"
-                    >
-                      <span className="text-[12px] font-bold uppercase tracking-wider text-muted-2">
-                        Пополнить депозит на
-                      </span>
-                      <span className="flex items-center gap-1.5">
-                        <span className="font-display text-[26px] font-extrabold tabular-nums text-blue-700">{fmt(accepted)} ₽</span>
-                        <Pencil size={15} className="text-blue-600" />
-                      </span>
-                    </button>
-                    {accepted > 0 && (
-                      <div className="flex items-center gap-2">
-                        {METHODS.map((m) => {
-                          const active = method === m.id;
-                          return (
-                            <button
-                              key={m.id}
-                              type="button"
-                              onClick={() => setMethod(m.id)}
-                              className={cn("flex h-11 flex-1 items-center justify-center gap-1.5 rounded-2xl border text-[14px] font-semibold transition-colors", active ? "border-blue-600 bg-blue-600 text-white" : "border-border bg-surface text-ink-2")}
-                            >
-                              <m.Icon size={16} /> {m.label}
-                            </button>
-                          );
-                        })}
-                        {method === null && (
-                          <span className="shrink-0 rounded-full bg-orange-soft px-1.5 py-1 text-[10px] font-bold text-orange-ink">способ?</span>
-                        )}
-                      </div>
-                    )}
-                    <div className="rounded-xl bg-surface-soft px-3 py-2 text-[11.5px] text-muted-2">
-                      Сейчас на депозите клиента: <b className="text-ink-2">{fmt(depositBalance)} ₽</b>. Продление — отдельно, «Продлить аренду» в меню.
+                    <div className="mt-0.5 text-[12px] text-emerald-700/80">
+                      Дальше можно продлить аренду; а если клиент просто вносит
+                      деньги — на шаге «Оплата» примите их как предоплату (депозит).
                     </div>
                   </div>
                 ) : (
@@ -4391,9 +4354,128 @@ export function PaymentAcceptDialog({
               </div>
             )}
 
-            {/* ----- ШАГ 1: ОПЛАТА ----- */}
+            {/* ----- ШАГ 1: ПРОДЛЕНИЕ (та же логика, что на десктопе) ----- */}
             {payStep === 1 && (
               <div className="flex flex-col gap-3 pt-1">
+                {!canExtend ? (
+                  <div className="rounded-2xl border border-border bg-surface-soft px-4 py-6 text-center text-[13px] text-muted-2">
+                    Продление недоступно для этой аренды.
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between gap-2 rounded-2xl border border-border bg-surface p-3.5">
+                      <div className="min-w-0">
+                        <div className="text-[14px] font-semibold text-ink">Продлить аренду</div>
+                        <div className="text-[11.5px] text-muted">
+                          {extendOn ? "выберите срок и тариф" : "включите, если клиент продлевает"}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={extendOn}
+                        onClick={() => setExtendOn((v) => !v)}
+                        className={cn("relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors", extendOn ? "bg-blue-600" : "bg-border")}
+                      >
+                        <span className={cn("inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform", extendOn ? "translate-x-[22px]" : "translate-x-0.5")} />
+                      </button>
+                    </div>
+
+                    {extendOn && (
+                      <>
+                        {!priorHintDismissed && (
+                          <div className="rounded-2xl border border-blue-100 bg-blue-50/70 px-3.5 py-3">
+                            <div className="text-[12.5px] font-bold text-blue-800">Применить прошлые условия?</div>
+                            <div className="mt-0.5 text-[11.5px] text-blue-700/90">
+                              ~{priorDays} дн · {TARIFF_PERIOD_LABEL[rental.tariffPeriod]} · {rental.rate} ₽/{rental.rateUnit === "week" ? "нед" : "сут"}{rental.customTariff ? " · свой" : ""}
+                            </div>
+                            <div className="mt-2 flex gap-2">
+                              <button type="button" onClick={applyPriorConditions} className="inline-flex items-center gap-1 rounded-full bg-blue-600 px-3.5 py-1.5 text-[12px] font-semibold text-white">
+                                <Check size={12} /> Да, применить
+                              </button>
+                              <button type="button" onClick={() => setPriorHintDismissed(true)} className="inline-flex items-center rounded-full px-3.5 py-1.5 text-[12px] font-semibold text-muted">Нет</button>
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="rounded-2xl border border-border bg-surface p-3.5">
+                          <div className="mb-2 flex items-center justify-between">
+                            <span className="text-[11px] font-bold uppercase tracking-wider text-muted-2">На сколько {extIsWeekly ? "недель" : "дней"}</span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <button type="button" onClick={() => { setOverpayDest("extend"); setExtInputOverride(Math.max(0, (extInputOverride ?? extInputBase) - 1)); }} className="flex h-12 w-12 items-center justify-center rounded-2xl bg-surface-soft text-[24px] text-muted-2 active:bg-border">−</button>
+                            <div className="flex-1 text-center">
+                              <div className="font-display text-[34px] font-extrabold leading-none tabular-nums text-ink">{extInputBase}</div>
+                              <div className="text-[11px] text-muted">{extIsWeekly ? (extInputBase === 1 ? "неделя" : "недель") : (extInputBase === 1 ? "день" : "дней")}</div>
+                            </div>
+                            <button type="button" onClick={() => { setOverpayDest("extend"); setExtInputOverride((extInputOverride ?? extInputBase) + 1); }} className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-600 text-[24px] text-white active:bg-blue-700">+</button>
+                          </div>
+                          <div className="mt-2.5 flex flex-wrap gap-1.5">
+                            {(extIsWeekly ? [0, 1, 2, 4, 8] : [0, 3, 7, 14, 30]).map((n) => {
+                              const active = extIsWeekly ? extWeeks === n : extDays === n;
+                              return (
+                                <button key={n} type="button" onClick={() => { setOverpayDest("extend"); setExtInputOverride(n); if (selectedTariff !== "custom") setTariffPinned(false); }} className={cn("rounded-full border px-3 py-1.5 text-[12px] font-semibold transition-colors", active ? "border-blue-200 bg-blue-50 text-blue-700" : "border-border text-muted")}>
+                                  {n === 0 ? "Без продл." : extIsWeekly ? `${n} нед` : `${n}д`}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        <div className="rounded-2xl border border-border bg-surface p-3.5">
+                          <div className="mb-1.5 flex items-center justify-between">
+                            <span className="text-[11px] font-bold uppercase tracking-wider text-muted-2">Тариф (по сроку)</span>
+                            <span className="text-[11px] text-muted-2 tabular-nums">{extIsWeekly ? `${extRate} ₽/нед · ≈${extDailyRate} ₽/сут` : `${extRate} ₽/сут`}</span>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {(["day", "short", "week", "month"] as const).map((p) => {
+                              const active = selectedTariff === p;
+                              return (
+                                <div key={p} className={cn("inline-flex items-center gap-1 rounded-full border px-2.5 py-1.5 text-[11px] font-semibold", active ? "border-blue-600 bg-blue-50 text-blue-700" : "border-transparent bg-surface-soft text-muted-2 opacity-55")}>
+                                  {active ? <Check size={11} className="text-blue-600" /> : <Lock size={9} className="text-muted-2/60" />}
+                                  {TARIFF_PERIOD_LABEL[p]} · {modelRate(p)}
+                                </div>
+                              );
+                            })}
+                          </div>
+                          <label className="mt-2 inline-flex cursor-pointer items-center gap-1.5">
+                            <input type="checkbox" checked={selectedTariff === "custom"} onChange={(e) => { setSelectedTariff(e.target.checked ? "custom" : initialTariff); setTariffPinned(e.target.checked); }} className="h-3.5 w-3.5 accent-blue-600" />
+                            <span className="text-[12px] font-semibold text-ink-2">Свой тариф</span>
+                          </label>
+                          {selectedTariff === "custom" && (
+                            <input type="text" inputMode="numeric" value={extCustomRate || ""} onChange={(e) => setExtCustomRate(Math.max(0, parseInt(e.target.value.replace(/\D/g, "") || "0", 10)))} placeholder="3000 (₽/сут)" className="mt-2 w-full rounded-xl border border-border bg-surface px-3 py-2.5 text-[14px] font-bold tabular-nums text-ink outline-none focus:border-blue-500" />
+                          )}
+                        </div>
+
+                        <EquipmentStep rental={rental} equipment={equipment} equipDaily={equipDaily} hasDebtStep={false} onLocalChange={setExtEquipment} />
+
+                        <div className="flex items-center justify-between rounded-2xl bg-surface-soft px-4 py-3">
+                          <div>
+                            <div className="text-[10.5px] font-bold uppercase tracking-wider text-muted-2">Новый возврат</div>
+                            <div className="font-display text-[18px] font-extrabold tabular-nums text-blue-700">{newEnd && extDays > 0 ? fmtDDMMYYYY(newEnd) : "—"}</div>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-[10.5px] font-bold uppercase tracking-wider text-muted-2">За продление</div>
+                            <div className="font-display text-[18px] font-extrabold tabular-nums text-ink">{fmt(periodTotal)} ₽</div>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* ----- ШАГ 2: ОПЛАТА ----- */}
+            {payStep === 2 && (
+              <div className="flex flex-col gap-3 pt-1">
+                {isPrepay ? (
+                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 px-4 py-5 text-center text-[13px] text-emerald-700">
+                    Долгов и продления нет — принимаем как <b>предоплату</b>:
+                    сумма ниже пойдёт на депозит клиента.
+                  </div>
+                ) : (
+                  <>
                 {canUseSecurity && (
                   <div className="rounded-2xl border border-amber-200 bg-amber-50/40 p-3">
                     <div className="flex items-center justify-between gap-2">
@@ -4471,6 +4553,8 @@ export function PaymentAcceptDialog({
                     <b className={cn("font-display text-[17px] tabular-nums", remainDebt > 0 ? "text-orange-ink" : "text-emerald-600")}>{fmt(remainDebt)} ₽</b>
                   </div>
                 </div>
+                  </>
+                )}
               </div>
             )}
           </div>
@@ -4478,42 +4562,37 @@ export function PaymentAcceptDialog({
           {/* FOOTER — сумму наличных задаём ЗДЕСЬ (один раз, рядом с кнопкой),
               «Принять» спрашивает подтверждение. Без дублей сумм. */}
           <div className="border-t border-border bg-surface px-4 py-3 pb-[max(env(safe-area-inset-bottom),0.75rem)]">
-            {payStep === 0 ? (
-              noDebt ? (
+            {payStep < 2 ? (
+              <div className="flex gap-2">
+                {payStep > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => goPayStep(payStep - 1)}
+                    className="h-12 flex-1 rounded-2xl bg-surface-soft text-[15px] font-semibold text-ink-2 transition-transform active:scale-[0.98]"
+                  >
+                    Назад
+                  </button>
+                )}
                 <button
                   type="button"
-                  onClick={submitDepositTopup}
-                  disabled={saving || accepted <= 0 || method === null}
-                  className={cn(
-                    "inline-flex h-12 w-full items-center justify-center gap-1.5 rounded-2xl text-[15px] font-bold text-white transition-transform active:scale-[0.98]",
-                    saving || accepted <= 0 || method === null
-                      ? "bg-surface-soft text-muted-2"
-                      : "bg-blue-600",
-                  )}
-                >
-                  <Check size={16} />{" "}
-                  {accepted > 0
-                    ? `Пополнить депозит ${fmt(accepted)} ₽`
-                    : "Введите сумму депозита"}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => goPayStep(1)}
-                  className="h-12 w-full rounded-2xl bg-blue-600 text-[15px] font-bold text-white transition-transform active:scale-[0.98]"
+                  onClick={() => goPayStep(payStep + 1)}
+                  className="h-12 flex-[2] rounded-2xl bg-blue-600 text-[15px] font-bold text-white transition-transform active:scale-[0.98]"
                 >
                   Далее
                 </button>
-              )
+              </div>
             ) : (
               <>
-                {/* Сумма наличных, которую реально принимаем у клиента. */}
+                {/* Сумма наличных, которую реально принимаем (или сумма депозита,
+                    если это предоплата). */}
                 <button
                   type="button"
                   onClick={() => setPayPad("cash")}
                   className="mb-2.5 flex w-full items-center justify-between rounded-2xl border-2 border-blue-200 bg-blue-soft/15 px-4 py-3 text-left transition-colors active:border-blue-400"
                 >
-                  <span className="text-[12px] font-bold uppercase tracking-wider text-muted-2">Принимаем наличными</span>
+                  <span className="text-[12px] font-bold uppercase tracking-wider text-muted-2">
+                    {isPrepay ? "Пополнить депозит на" : "Принимаем наличными"}
+                  </span>
                   <span className="flex items-center gap-1.5">
                     <span className="font-display text-[26px] font-extrabold tabular-nums text-blue-700">{fmt(accepted)} ₽</span>
                     <Pencil size={15} className="text-blue-600" />
@@ -4540,22 +4619,33 @@ export function PaymentAcceptDialog({
                   </div>
                 )}
                 <div className="flex gap-2">
-                  <button type="button" onClick={() => goPayStep(0)} className="h-12 flex-1 rounded-2xl bg-surface-soft text-[15px] font-semibold text-ink-2 transition-transform active:scale-[0.98]">Назад</button>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      const ok = await confirmDialog({
-                        title: "Принять оплату?",
-                        message: `Закрываем ${fmt(coveredNow)} ₽${remainDebt > 0 ? `, останется долгом ${fmt(remainDebt)} ₽` : " — долг закрывается полностью"}.`,
-                        confirmText: "Да, принять",
-                      });
-                      if (ok) submit();
-                    }}
-                    disabled={submitDisabled}
-                    className={cn("inline-flex h-12 flex-[2] items-center justify-center gap-1.5 rounded-2xl text-[15px] font-bold text-white transition-transform active:scale-[0.98]", submitDisabled ? "bg-surface-soft text-muted-2" : "bg-green-600")}
-                  >
-                    <Check size={16} /> Принять
-                  </button>
+                  <button type="button" onClick={() => goPayStep(1)} className="h-12 flex-1 rounded-2xl bg-surface-soft text-[15px] font-semibold text-ink-2 transition-transform active:scale-[0.98]">Назад</button>
+                  {isPrepay ? (
+                    <button
+                      type="button"
+                      onClick={submitDepositTopup}
+                      disabled={saving || accepted <= 0 || method === null}
+                      className={cn("inline-flex h-12 flex-[2] items-center justify-center gap-1.5 rounded-2xl text-[15px] font-bold text-white transition-transform active:scale-[0.98]", saving || accepted <= 0 || method === null ? "bg-surface-soft text-muted-2" : "bg-blue-600")}
+                    >
+                      <Check size={16} /> {accepted > 0 ? `Пополнить депозит ${fmt(accepted)} ₽` : "Введите сумму"}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const ok = await confirmDialog({
+                          title: "Принять оплату?",
+                          message: `Закрываем ${fmt(coveredNow)} ₽${remainDebt > 0 ? `, останется долгом ${fmt(remainDebt)} ₽` : " — всё закрывается полностью"}.`,
+                          confirmText: "Да, принять",
+                        });
+                        if (ok) submit();
+                      }}
+                      disabled={submitDisabled}
+                      className={cn("inline-flex h-12 flex-[2] items-center justify-center gap-1.5 rounded-2xl text-[15px] font-bold text-white transition-transform active:scale-[0.98]", submitDisabled ? "bg-surface-soft text-muted-2" : "bg-green-600")}
+                    >
+                      <Check size={16} /> Принять
+                    </button>
+                  )}
                 </div>
               </>
             )}
