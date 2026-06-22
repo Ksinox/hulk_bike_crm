@@ -1606,6 +1606,35 @@ export function PaymentAcceptDialog({
     }
   };
 
+  // «Умное пустое» (мобила): у клиента нет долгов → принимаем как ПРЕДОПЛАТУ —
+  // пополняем депозит клиента (его «кошелёк»), не трогая долги/аренду.
+  const submitDepositTopup = async () => {
+    if (saving || accepted <= 0 || method === null) return;
+    setSaving(true);
+    try {
+      await api.post(`/api/clients/${rental.clientId}/deposit/charge`, {
+        amount: accepted,
+        comment: `Пополнение депозита (предоплата, ${methodLabel(method)})`,
+        rentalId: rental.id,
+      });
+      qc.invalidateQueries({ queryKey: ["clients"] });
+      qc.invalidateQueries({ queryKey: ["payments"] });
+      qc.invalidateQueries({ queryKey: ["activity"] });
+      qc.invalidateQueries({ queryKey: ["revenue"] });
+      toastRentalDone(
+        rental,
+        "Депозит пополнен",
+        `+${fmt(accepted)} ₽ на депозит клиента.`,
+      );
+      onPaid?.();
+      requestClose();
+    } catch (e) {
+      toast.error("Не удалось пополнить депозит", (e as Error).message ?? "");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   function methodLabel(m: PaymentMethod): string {
     if (m === "cash") return "наличные";
     if (m === "transfer") return "перевод";
@@ -4195,10 +4224,12 @@ export function PaymentAcceptDialog({
     const remainDebt = Math.max(0, totalDue - coveredNow);
     const padCfg =
       payPad === "cash"
-        ? { label: "Клиент вносит", hint: `остаток ${fmt(cashMax)} ₽`, initial: accepted, max: cashMax }
+        ? noDebt
+          ? { label: "Сумма депозита", hint: "предоплата клиента", initial: accepted, max: undefined as number | undefined }
+          : { label: "Клиент вносит", hint: `остаток ${fmt(cashMax)} ₽`, initial: accepted, max: cashMax as number | undefined }
         : payPad === "security"
-          ? { label: "Сумма из залога", hint: `доступно ${fmt(securityAvailable)} ₽`, initial: securityToUse, max: securityCap }
-          : { label: "Сумма с депозита", hint: `доступно ${fmt(depositBalance)} ₽`, initial: depositToUse, max: depositCap };
+          ? { label: "Сумма из залога", hint: `доступно ${fmt(securityAvailable)} ₽`, initial: securityToUse, max: securityCap as number | undefined }
+          : { label: "Сумма с депозита", hint: `доступно ${fmt(depositBalance)} ₽`, initial: depositToUse, max: depositCap as number | undefined };
     return (
       <>
         {actPreview}
@@ -4241,10 +4272,52 @@ export function PaymentAcceptDialog({
             {payStep === 0 && (
               <div className="flex flex-col gap-3 pt-1">
                 {noDebt ? (
-                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 px-4 py-6 text-center text-[14px] font-medium text-emerald-700">
-                    Долга нет — принимать нечего.
-                    <div className="mt-1 text-[12px] font-normal text-emerald-700/80">
-                      Для продления — «Продлить аренду» в меню действий.
+                  <div className="flex flex-col gap-3 pt-1">
+                    {/* «Умное пустое»: долгов нет → принимаем как предоплату
+                        (пополнение депозита клиента). */}
+                    <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 px-4 py-4 text-center">
+                      <div className="text-[14px] font-semibold text-emerald-700">
+                        У клиента нет долгов
+                      </div>
+                      <div className="mt-0.5 text-[12px] text-emerald-700/80">
+                        Принять можно как предоплату — пополнить депозит клиента.
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setPayPad("cash")}
+                      className="flex w-full items-center justify-between rounded-2xl border-2 border-blue-200 bg-blue-soft/15 px-4 py-3.5 text-left transition-colors active:border-blue-400"
+                    >
+                      <span className="text-[12px] font-bold uppercase tracking-wider text-muted-2">
+                        Пополнить депозит на
+                      </span>
+                      <span className="flex items-center gap-1.5">
+                        <span className="font-display text-[26px] font-extrabold tabular-nums text-blue-700">{fmt(accepted)} ₽</span>
+                        <Pencil size={15} className="text-blue-600" />
+                      </span>
+                    </button>
+                    {accepted > 0 && (
+                      <div className="flex items-center gap-2">
+                        {METHODS.map((m) => {
+                          const active = method === m.id;
+                          return (
+                            <button
+                              key={m.id}
+                              type="button"
+                              onClick={() => setMethod(m.id)}
+                              className={cn("flex h-11 flex-1 items-center justify-center gap-1.5 rounded-2xl border text-[14px] font-semibold transition-colors", active ? "border-blue-600 bg-blue-600 text-white" : "border-border bg-surface text-ink-2")}
+                            >
+                              <m.Icon size={16} /> {m.label}
+                            </button>
+                          );
+                        })}
+                        {method === null && (
+                          <span className="shrink-0 rounded-full bg-orange-soft px-1.5 py-1 text-[10px] font-bold text-orange-ink">способ?</span>
+                        )}
+                      </div>
+                    )}
+                    <div className="rounded-xl bg-surface-soft px-3 py-2 text-[11.5px] text-muted-2">
+                      Сейчас на депозите клиента: <b className="text-ink-2">{fmt(depositBalance)} ₽</b>. Продление — отдельно, «Продлить аренду» в меню.
                     </div>
                   </div>
                 ) : (
@@ -4406,14 +4479,32 @@ export function PaymentAcceptDialog({
               «Принять» спрашивает подтверждение. Без дублей сумм. */}
           <div className="border-t border-border bg-surface px-4 py-3 pb-[max(env(safe-area-inset-bottom),0.75rem)]">
             {payStep === 0 ? (
-              <button
-                type="button"
-                onClick={() => goPayStep(1)}
-                disabled={noDebt}
-                className="h-12 w-full rounded-2xl bg-blue-600 text-[15px] font-bold text-white transition-transform active:scale-[0.98] disabled:opacity-50"
-              >
-                Далее
-              </button>
+              noDebt ? (
+                <button
+                  type="button"
+                  onClick={submitDepositTopup}
+                  disabled={saving || accepted <= 0 || method === null}
+                  className={cn(
+                    "inline-flex h-12 w-full items-center justify-center gap-1.5 rounded-2xl text-[15px] font-bold text-white transition-transform active:scale-[0.98]",
+                    saving || accepted <= 0 || method === null
+                      ? "bg-surface-soft text-muted-2"
+                      : "bg-blue-600",
+                  )}
+                >
+                  <Check size={16} />{" "}
+                  {accepted > 0
+                    ? `Пополнить депозит ${fmt(accepted)} ₽`
+                    : "Введите сумму депозита"}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => goPayStep(1)}
+                  className="h-12 w-full rounded-2xl bg-blue-600 text-[15px] font-bold text-white transition-transform active:scale-[0.98]"
+                >
+                  Далее
+                </button>
+              )
             ) : (
               <>
                 {/* Сумма наличных, которую реально принимаем у клиента. */}
