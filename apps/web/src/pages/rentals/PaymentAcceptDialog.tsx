@@ -32,7 +32,6 @@ import {
   Calendar as CalendarIcon,
   ChevronRight,
   ChevronLeft,
-  Wallet,
   Banknote,
   CreditCard,
   CheckCircle2,
