@@ -147,6 +147,11 @@ export function DamageMediaCapture({
         m.kind === "photo"
           ? (fileUrl(m.fileKey, { variant: "view" }) ?? "")
           : (fileUrl(m.fileKey) ?? ""),
+      poster:
+        m.kind === "video"
+          ? (fileUrl(m.posterKey, { variant: "view" }) ?? undefined)
+          : undefined,
+      processing: m.kind === "video" && m.status !== "ready",
       downloadUrl: fileUrl(m.fileKey) ?? undefined,
       durationSec: m.durationSec,
       name: m.fileName,
@@ -204,22 +209,28 @@ export function DamageMediaCapture({
         </div>
       ) : (
         <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-          {uploaded.map((m, i) => (
-            <MediaTile
-              key={`u${m.id}`}
-              kind={m.kind}
-              src={
-                m.kind === "photo"
-                  ? fileUrl(m.fileKey, { variant: "thumb" })
-                  : null
-              }
-              durationSec={m.durationSec}
-              onOpen={() => setLightbox(i)}
-              onRemove={
-                onRemoveUploaded ? () => onRemoveUploaded(m.id) : undefined
-              }
-            />
-          ))}
+          {uploaded.map((m, i) => {
+            const processing = m.kind === "video" && m.status !== "ready";
+            return (
+              <MediaTile
+                key={`u${m.id}`}
+                kind={m.kind}
+                src={
+                  processing
+                    ? null
+                    : m.kind === "photo"
+                      ? fileUrl(m.fileKey, { variant: "thumb" })
+                      : fileUrl(m.posterKey, { variant: "thumb" })
+                }
+                durationSec={m.durationSec}
+                processing={processing}
+                onOpen={() => setLightbox(i)}
+                onRemove={
+                  onRemoveUploaded ? () => onRemoveUploaded(m.id) : undefined
+                }
+              />
+            );
+          })}
           {staged.map((s, j) => (
             <MediaTile
               key={s.id}
@@ -253,6 +264,7 @@ function MediaTile({
   durationSec,
   onRemove,
   busy,
+  processing,
 }: {
   kind: "photo" | "video";
   src: string | null;
@@ -260,10 +272,26 @@ function MediaTile({
   durationSec?: number | null;
   onRemove?: () => void;
   busy?: boolean;
+  /** Видео ещё перекодируется на сервере — показываем «обработка». */
+  processing?: boolean;
 }) {
   return (
     <div className="relative aspect-square overflow-hidden rounded-xl bg-ink/5 ring-1 ring-inset ring-border">
-      {src ? (
+      {processing ? (
+        <button
+          type="button"
+          onClick={onOpen}
+          className="flex h-full w-full flex-col items-center justify-center gap-1 bg-ink/85 text-white"
+        >
+          <Loader2 size={18} className="animate-spin" />
+          <span className="text-[10px] font-semibold">обработка…</span>
+          {durationSec ? (
+            <span className="text-[9.5px] text-white/60 tabular-nums">
+              {fmtDuration(durationSec)}
+            </span>
+          ) : null}
+        </button>
+      ) : src ? (
         <button
           type="button"
           onClick={onOpen}

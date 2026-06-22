@@ -25,7 +25,9 @@ RUN pnpm --filter api build
 # ---------- runtime: только prod deps + скомпилированный dist ----------
 FROM node:20-alpine
 WORKDIR /app
-RUN apk add --no-cache tini && corepack enable
+# ffmpeg — перекодирование видео ущерба в H.264 MP4 + кадр-обложка (поворот с
+# телефонов «вшивается» в пиксели, файл играет на любом устройстве/браузере).
+RUN apk add --no-cache tini ffmpeg && corepack enable
 ENTRYPOINT ["/sbin/tini", "--"]
 
 # Ставим prod-зависимости заново — чистый node_modules без dev-пакетов

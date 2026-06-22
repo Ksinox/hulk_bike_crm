@@ -1193,6 +1193,10 @@ export const damageReportMedia = pgTable(
     /** 'photo' | 'video' — определяется по mime на загрузке. */
     kind: text("kind").notNull().default("photo"),
     fileKey: text("file_key").notNull(),
+    /** Кадр-обложка (JPEG) для видео — кадр из ролика. NULL для фото. */
+    posterKey: text("poster_key"),
+    /** 'processing' — ffmpeg ещё перекодирует видео; 'ready' — готово/фото. */
+    status: text("status").notNull().default("ready"),
     fileName: text("file_name").notNull(),
     mimeType: text("mime_type").notNull(),
     size: integer("size").notNull().default(0),

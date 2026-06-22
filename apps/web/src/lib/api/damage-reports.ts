@@ -14,6 +14,10 @@ export type ApiDamageMedia = {
   reportId: number;
   kind: "photo" | "video";
   fileKey: string;
+  /** Кадр-обложка видео (JPEG-ключ). NULL для фото. */
+  posterKey: string | null;
+  /** 'processing' — видео ещё перекодируется на сервере; 'ready' — готово/фото. */
+  status: "processing" | "ready" | string;
   fileName: string;
   mimeType: string;
   size: number;
@@ -21,6 +25,13 @@ export type ApiDamageMedia = {
   uploadedByUserId: number | null;
   uploadedAt: string;
 };
+
+/** Есть ли среди отчётов видео в обработке — чтобы поллить до готовности. */
+function damageHasProcessing(items?: ApiDamageReport[]): boolean {
+  return !!items?.some((r) =>
+    (r.media ?? []).some((m) => m.status === "processing"),
+  );
+}
 
 export type ApiDamageReportItem = {
   id: number;
@@ -110,6 +121,9 @@ export function useDamageReports(rentalId: number | null) {
           `/api/damage-reports?rentalId=${rentalId}`,
         )
         .then((r) => r.items),
+    // Пока видео перекодируется на сервере — обновляем чаще, чтобы обложка
+    // и воспроизведение появились без ручного рефреша.
+    refetchInterval: (q) => (damageHasProcessing(q.state.data) ? 5000 : false),
   });
 }
 
@@ -151,6 +165,8 @@ export function useChainDamageReports(rentalIds: number[]) {
       // Кэш по id живёт независимо от цепочки — react-query уже умеет
       // дедуплицировать через queryKey.
       staleTime: 30_000,
+      refetchInterval: (q: { state: { data?: ApiDamageReport[] } }) =>
+        damageHasProcessing(q.state.data) ? 5000 : false,
     })),
   });
   const data: ApiDamageReport[] = queries.flatMap((q) => q.data ?? []);

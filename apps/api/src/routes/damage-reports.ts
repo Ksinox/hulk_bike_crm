@@ -1,4 +1,8 @@
-import type { FastifyInstance, FastifyRequest } from "fastify";
+import type {
+  FastifyInstance,
+  FastifyRequest,
+  FastifyBaseLogger,
+} from "fastify";
 import { eq, asc, and, sum, ne } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/index.js";
@@ -11,8 +15,9 @@ import {
   scooters,
   users,
 } from "../db/schema.js";
-import { makeFileKey, removeObject } from "../storage/index.js";
+import { makeFileKey, removeObject, putObject } from "../storage/index.js";
 import { putObjectWithImageVariants } from "../storage/image.js";
+import { transcodeVideo } from "../storage/video.js";
 import { logActivity } from "../services/activityLog.js";
 import {
   loadDamageBundle,
@@ -665,20 +670,52 @@ export async function damageReportsRoutes(app: FastifyInstance) {
         message: "К акту прикладываются только фото и видео.",
       });
     }
-    const key = makeFileKey(`damages/${id}`, fileName);
-    // putObjectWithImageVariants: фото → +thumb/view, видео → сохраняется как есть.
-    await putObjectWithImageVariants(key, fileBuf, mimeType);
     const userId = getUserId(req);
+
+    // ── Фото: как раньше — thumb/view-варианты, сразу ready. ──
+    if (kind === "photo") {
+      const key = makeFileKey(`damages/${id}`, fileName);
+      await putObjectWithImageVariants(key, fileBuf, mimeType);
+      const [row] = await db
+        .insert(damageReportMedia)
+        .values({
+          reportId: id,
+          kind: "photo",
+          fileKey: key,
+          fileName,
+          mimeType,
+          size: fileBuf.length,
+          durationSec,
+          status: "ready",
+          uploadedByUserId: userId,
+        })
+        .returning();
+      await logActivity(req, {
+        entity: "damage_report",
+        entityId: id,
+        action: "media_added",
+        summary: `К акту #${id} добавлено фото повреждения`,
+        meta: { mediaId: row!.id, kind: "photo" },
+      });
+      return reply.code(201).send(row);
+    }
+
+    // ── Видео: сохраняем оригинал сразу (доступен/скачивается), статус
+    // processing; в фоне ffmpeg → H.264 MP4 + обложка, потом подменяем запись.
+    // Так запрос не блокируется тяжёлым перекодированием.
+    const origKey = makeFileKey(`damages/${id}`, fileName);
+    await putObject(origKey, fileBuf, mimeType);
     const [row] = await db
       .insert(damageReportMedia)
       .values({
         reportId: id,
-        kind,
-        fileKey: key,
+        kind: "video",
+        fileKey: origKey,
         fileName,
         mimeType,
         size: fileBuf.length,
         durationSec,
+        status: "processing",
         uploadedByUserId: userId,
       })
       .returning();
@@ -686,9 +723,10 @@ export async function damageReportsRoutes(app: FastifyInstance) {
       entity: "damage_report",
       entityId: id,
       action: "media_added",
-      summary: `К акту #${id} добавлено ${kind === "video" ? "видео" : "фото"} повреждения`,
-      meta: { mediaId: row!.id, kind },
+      summary: `К акту #${id} добавлено видео повреждения`,
+      meta: { mediaId: row!.id, kind: "video" },
     });
+    void processDamageVideo(app.log, row!.id, id, fileBuf, fileName, origKey);
     return reply.code(201).send(row);
   });
 
@@ -705,10 +743,60 @@ export async function damageReportsRoutes(app: FastifyInstance) {
         .where(eq(damageReportMedia.id, mediaId));
       if (!row) return reply.code(404).send({ error: "not found" });
       await removeObject(row.fileKey).catch(() => {});
+      if (row.posterKey) await removeObject(row.posterKey).catch(() => {});
       await db
         .delete(damageReportMedia)
         .where(eq(damageReportMedia.id, mediaId));
       return reply.code(204).send();
     },
   );
+}
+
+/**
+ * Фоновое перекодирование видео ущерба: ffmpeg → H.264 MP4 + JPEG-обложка,
+ * затем подменяем запись (fileKey → mp4, posterKey, status=ready) и удаляем
+ * оригинал. Запускается fire-and-forget после ответа на загрузку. При ошибке
+ * оставляем оригинал и помечаем ready (чтобы файл хотя бы был доступен).
+ */
+async function processDamageVideo(
+  log: FastifyBaseLogger,
+  mediaId: number,
+  reportId: number,
+  buf: Buffer,
+  fileName: string,
+  origKey: string,
+): Promise<void> {
+  try {
+    const { mp4, poster } = await transcodeVideo(buf, fileName);
+    const base = fileName.replace(/\.[^.]+$/, "") || "video";
+    const mp4Key = makeFileKey(`damages/${reportId}`, `${base}.mp4`);
+    await putObject(mp4Key, mp4, "video/mp4");
+    let posterKey: string | null = null;
+    if (poster) {
+      posterKey = makeFileKey(`damages/${reportId}`, `${base}.jpg`);
+      // putObjectWithImageVariants — обложке тоже сделает thumb/view.
+      await putObjectWithImageVariants(posterKey, poster, "image/jpeg");
+    }
+    await db
+      .update(damageReportMedia)
+      .set({
+        fileKey: mp4Key,
+        posterKey,
+        mimeType: "video/mp4",
+        size: mp4.length,
+        status: "ready",
+      })
+      .where(eq(damageReportMedia.id, mediaId));
+    await removeObject(origKey).catch(() => {});
+    log.info({ mediaId, reportId }, "damage video transcoded");
+  } catch (e) {
+    log.error({ err: e, mediaId }, "damage video transcode failed");
+    // Не удалось перекодировать — оставляем оригинал, помечаем ready
+    // (хотя бы скачать/открыть нативно можно).
+    await db
+      .update(damageReportMedia)
+      .set({ status: "ready" })
+      .where(eq(damageReportMedia.id, mediaId))
+      .catch(() => {});
+  }
 }

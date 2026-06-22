@@ -288,6 +288,13 @@ export function DamageReportDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Подхватываем обновления медиа с сервера в уже открытом диалоге: например
+  // видео доперекодировалось (processing → ready, появилась обложка) — список
+  // обновляется по поллингу запроса акта.
+  useEffect(() => {
+    if (existing?.media) setUploadedMedia(existing.media);
+  }, [existing?.media]);
+
   const onPickMedia = async (files: File[]) => {
     const items = await Promise.all(files.map((f) => analyzeFile(f)));
     if (isEdit && existing) {

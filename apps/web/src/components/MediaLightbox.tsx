@@ -17,6 +17,8 @@ export type LightboxItem = {
   url: string;
   /** Кадр-постер для видео (чтобы не было чёрного экрана до запуска). */
   poster?: string;
+  /** Видео ещё перекодируется на сервере — показываем «обрабатывается». */
+  processing?: boolean;
   /** URL оригинала для скачивания (если есть). */
   downloadUrl?: string;
   durationSec?: number | null;
@@ -125,6 +127,17 @@ export function MediaLightbox({
             alt={cur.name ?? "повреждение"}
             className="max-h-full max-w-full animate-fade-in object-contain"
           />
+        ) : cur.processing ? (
+          <div className="flex max-w-xs flex-col items-center gap-2 px-8 text-center">
+            <span className="h-7 w-7 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+            <span className="text-[14px] font-medium text-white/85">
+              Видео обрабатывается…
+            </span>
+            <span className="text-[12px] text-white/55">
+              Готовим версию, которая откроется на любом устройстве. Обычно
+              несколько секунд.
+            </span>
+          </div>
         ) : videoError ? (
           <div className="flex max-w-xs flex-col items-center gap-1.5 px-8 text-center">
             <span className="text-[14px] font-medium text-white/85">
