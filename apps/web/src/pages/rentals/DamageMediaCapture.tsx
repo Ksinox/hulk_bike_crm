@@ -203,6 +203,14 @@ export function DamageMediaCapture({
         onChange={pick}
       />
 
+      {/* Подсказка по качеству: iOS «Снять» пишет в пониженном качестве
+          (ограничение Apple), «Галерея» отдаёт оригинал в полном качестве. */}
+      <p className="text-[11px] leading-snug text-muted-2">
+        Для чётких деталей (царапины, трещины) снимите в приложении «Камера» и
+        приложите через «Галерея» — там полное качество. Кнопка «Снять» на iPhone
+        пишет в пониженном качестве (ограничение iOS).
+      </p>
+
       {total === 0 ? (
         <div className="rounded-xl border border-dashed border-border bg-surface-soft px-3 py-4 text-center text-[12px] text-muted-2">
           Сфотографируйте или снимите видео повреждений — приложатся к акту.

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { X, ChevronLeft, ChevronRight, Download } from "lucide-react";
+import { createPortal } from "react-dom";
+import { X, ChevronLeft, ChevronRight, Download, Maximize2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
@@ -74,9 +75,28 @@ export function MediaLightbox({
     else if (dx < -50) go(1);
   };
 
+  // Нативный полный экран ОС (на iOS — webkitEnterFullscreen с поворотом для
+  // 16:9; на Android/десктопе — requestFullscreen). Вызывается из тапа = жест.
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const goFullscreen = () => {
+    const v = videoRef.current as
+      | (HTMLVideoElement & {
+          webkitEnterFullscreen?: () => void;
+          webkitRequestFullscreen?: () => void;
+        })
+      | null;
+    if (!v) return;
+    if (typeof v.webkitEnterFullscreen === "function") v.webkitEnterFullscreen();
+    else if (typeof v.requestFullscreen === "function") void v.requestFullscreen();
+    else if (typeof v.webkitRequestFullscreen === "function")
+      v.webkitRequestFullscreen();
+  };
+
   if (!cur) return null;
 
-  return (
+  return createPortal(
+    // z-[200] над всем; portal в body — иначе fixed «ловится» трансформом
+    // родителя (анимация шага мастера), и оверлей не на весь экран.
     <div
       className="fixed inset-0 z-[200] flex flex-col bg-black/95 animate-fade-in"
       onClick={onClose}
@@ -90,6 +110,16 @@ export function MediaLightbox({
           {index + 1} / {items.length}
         </span>
         <div className="flex items-center gap-1">
+          {cur.kind === "video" && !cur.processing && !videoError && (
+            <button
+              type="button"
+              onClick={goFullscreen}
+              aria-label="Во весь экран"
+              className="flex h-9 w-9 items-center justify-center rounded-full text-white/80 transition-colors hover:bg-white/10"
+            >
+              <Maximize2 size={18} />
+            </button>
+          )}
           {cur.downloadUrl && (
             <a
               href={cur.downloadUrl}
@@ -154,6 +184,7 @@ export function MediaLightbox({
           // Звук включается тапом по контролам.
           <video
             key={cur.url}
+            ref={videoRef}
             src={cur.url}
             poster={cur.poster || undefined}
             controls
@@ -208,6 +239,7 @@ export function MediaLightbox({
           ))}
         </div>
       )}
-    </div>
+    </div>,
+    document.body,
   );
 }
