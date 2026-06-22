@@ -232,9 +232,12 @@ export function PaymentAcceptDialog({
     setPayStep(n);
   };
   // Какое поле редактирует нативная клавиатура в этом мастере.
-  const [payPad, setPayPad] = useState<null | "debt" | "security" | "deposit">(
+  const [payPad, setPayPad] = useState<null | "cash" | "security" | "deposit">(
     null,
   );
+  // Оператор вручную задал «клиент вносит» (частичная оплата) → не
+  // перерассчитываем наличные автоматически от остатка.
+  const [cashTouched, setCashTouched] = useState(false);
 
   // Неоплаченная аренда (rent payments paid=false)
   const pendingRent = useMemo(() => {
@@ -844,9 +847,13 @@ export function PaymentAcceptDialog({
   // В режиме amount — управляется отдельно через amountInput.
   useEffect(() => {
     if (mode === "amount") return;
+    // На мобиле наличные = остаток после залога/депозита, но оператор может
+    // ввести меньше (частичная оплата) — тогда cashTouched и авто-перерасчёт
+    // выключается, чтобы залог/депозит не «съедали» введённую сумму.
+    if (isMobile && cashTouched) return;
     const target = Math.max(0, grossTotal - securityToUse - depositToUse);
     setAcceptedStr(target > 0 ? String(target) : "");
-  }, [grossTotal, securityToUse, depositToUse, mode]);
+  }, [grossTotal, securityToUse, depositToUse, mode, isMobile, cashTouched]);
 
   const accepted = Number(acceptedStr.replace(/\D/g, "")) || 0;
   const totalReceived = depositToUse + securityToUse + accepted;
@@ -4181,9 +4188,14 @@ export function PaymentAcceptDialog({
     ].filter((o) => o.show);
     const totalDue = totalDebt + parkingDue;
     const noDebt = totalDue <= 0;
+    // Остаток к внесению наличными после залога/депозита.
+    const cashMax = Math.max(0, totalDue - securityToUse - depositToUse);
+    // Сколько всего закрываем сейчас и сколько останется долгом.
+    const coveredNow = Math.min(totalDue, securityToUse + depositToUse + accepted);
+    const remainDebt = Math.max(0, totalDue - coveredNow);
     const padCfg =
-      payPad === "debt"
-        ? { label: "Гасит долг сейчас", hint: `из ${fmt(totalDebt)} ₽`, initial: paidDebtNow, max: totalDebt }
+      payPad === "cash"
+        ? { label: "Клиент вносит", hint: `остаток ${fmt(cashMax)} ₽`, initial: accepted, max: cashMax }
         : payPad === "security"
           ? { label: "Сумма из залога", hint: `доступно ${fmt(securityAvailable)} ₽`, initial: securityToUse, max: securityCap }
           : { label: "Сумма с депозита", hint: `доступно ${fmt(depositBalance)} ₽`, initial: depositToUse, max: depositCap };
@@ -4297,34 +4309,10 @@ export function PaymentAcceptDialog({
                       </div>
                     </div>
 
-                    {totalDebt > 0 && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => setPayPad("debt")}
-                          className="rounded-2xl border-2 border-blue-200 bg-blue-soft/15 p-4 text-left transition-colors active:border-blue-400"
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="text-[12px] font-bold uppercase tracking-wider text-muted-2">Гасит долг сейчас</span>
-                            <Pencil size={14} className="text-blue-600" />
-                          </div>
-                          <div className="mt-1 font-display text-[34px] font-extrabold leading-tight tabular-nums text-blue-700">
-                            {fmt(paidDebtNow)} <span className="text-[22px]">₽</span>
-                          </div>
-                          <div className="mt-0.5 text-[12px] text-muted-2">из {fmt(totalDebt)} ₽ долга</div>
-                        </button>
-                        <div className="text-[12.5px]">
-                          {isPartialDebt ? (
-                            <span className="font-semibold text-orange-ink">
-                              останется долгом {fmt(debtRemainAfter)} ₽
-                              <button type="button" onClick={() => setDebtPayStr("")} className="ml-1.5 font-semibold text-blue-600 underline">платит всё</button>
-                            </span>
-                          ) : (
-                            <span className="text-green-ink">полное закрытие долга</span>
-                          )}
-                        </div>
-                      </>
-                    )}
+                    <div className="rounded-2xl border border-blue-100 bg-blue-50/30 px-4 py-3 text-center text-[12.5px] text-blue-800">
+                      Дальше выберите, чем закрываем: залог, депозит, наличные —
+                      и сколько вносит клиент.
+                    </div>
                   </>
                 )}
               </div>
@@ -4344,7 +4332,10 @@ export function PaymentAcceptDialog({
                         type="button"
                         role="switch"
                         aria-checked={useSecurity}
-                        onClick={() => setUseSecurity(!useSecurity)}
+                        onClick={() => {
+                          setUseSecurity(!useSecurity);
+                          setCashTouched(false);
+                        }}
                         className={cn("relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors", useSecurity ? "bg-amber-500" : "bg-border")}
                       >
                         <span className={cn("inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform", useSecurity ? "translate-x-[22px]" : "translate-x-0.5")} />
@@ -4378,7 +4369,10 @@ export function PaymentAcceptDialog({
                         type="button"
                         role="switch"
                         aria-checked={useDeposit}
-                        onClick={() => setUseDeposit(!useDeposit)}
+                        onClick={() => {
+                          setUseDeposit(!useDeposit);
+                          setCashTouched(false);
+                        }}
                         className={cn("relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors", useDeposit ? "bg-blue-600" : "bg-border")}
                       >
                         <span className={cn("inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform", useDeposit ? "translate-x-[22px]" : "translate-x-0.5")} />
@@ -4392,33 +4386,56 @@ export function PaymentAcceptDialog({
                     )}
                   </div>
                 )}
-                {amountDueNow > 0 ? (
-                  <div>
-                    <div className="mb-1 flex items-center gap-1.5">
-                      <span className="text-[11px] font-bold uppercase tracking-wider text-muted-2">Способ оплаты</span>
-                      {method === null && <span className="rounded-full bg-orange-soft px-1.5 py-0.5 text-[10px] font-bold text-orange-ink">выберите</span>}
+                {/* Клиент вносит наличными/переводом — остаток после залога/
+                    депозита (можно ввести меньше → часть останется долгом). */}
+                <div className="rounded-2xl border border-border bg-surface p-3">
+                  <button
+                    type="button"
+                    onClick={() => setPayPad("cash")}
+                    className="flex w-full items-center justify-between rounded-xl border-2 border-blue-200 bg-blue-soft/15 px-3.5 py-3 text-left transition-colors active:border-blue-400"
+                  >
+                    <span className="text-[12px] font-bold uppercase tracking-wider text-muted-2">Клиент вносит</span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="font-display text-[22px] font-extrabold tabular-nums text-blue-700">{fmt(accepted)} ₽</span>
+                      <Pencil size={14} className="text-blue-600" />
+                    </span>
+                  </button>
+                  {accepted > 0 && (
+                    <div className="mt-2.5">
+                      <div className="mb-1 flex items-center gap-1.5">
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-muted-2">Способ</span>
+                        {method === null && <span className="rounded-full bg-orange-soft px-1.5 py-0.5 text-[10px] font-bold text-orange-ink">выберите</span>}
+                      </div>
+                      <div className="flex gap-2">
+                        {METHODS.map((m) => {
+                          const active = method === m.id;
+                          return (
+                            <button
+                              key={m.id}
+                              type="button"
+                              onClick={() => setMethod(m.id)}
+                              className={cn("flex h-11 flex-1 items-center justify-center gap-2 rounded-2xl border text-[14px] font-semibold transition-colors", active ? "border-blue-600 bg-blue-600 text-white" : "border-border bg-surface text-ink-2")}
+                            >
+                              <m.Icon size={16} /> {m.label}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
-                    <div className="flex gap-2">
-                      {METHODS.map((m) => {
-                        const active = method === m.id;
-                        return (
-                          <button
-                            key={m.id}
-                            type="button"
-                            onClick={() => setMethod(m.id)}
-                            className={cn("flex h-12 flex-1 items-center justify-center gap-2 rounded-2xl border text-[14px] font-semibold transition-colors", active ? "border-blue-600 bg-blue-600 text-white" : "border-border bg-surface text-ink-2")}
-                          >
-                            <m.Icon size={16} /> {m.label}
-                          </button>
-                        );
-                      })}
-                    </div>
+                  )}
+                </div>
+
+                {/* Сводка: сколько закрываем сейчас / останется долгом. */}
+                <div className="rounded-2xl bg-surface-soft px-4 py-3">
+                  <div className="flex items-baseline justify-between text-[13px]">
+                    <span className="text-muted-2">Закрываем сейчас</span>
+                    <b className="font-display text-[17px] tabular-nums text-ink">{fmt(coveredNow)} ₽</b>
                   </div>
-                ) : (
-                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 px-4 py-5 text-center text-[14px] font-medium text-emerald-700">
-                    Наличными платить не нужно — всё покрыто залогом/депозитом.
+                  <div className="mt-1 flex items-baseline justify-between text-[13px]">
+                    <span className="text-muted-2">Останется долгом</span>
+                    <b className={cn("font-display text-[17px] tabular-nums", remainDebt > 0 ? "text-orange-ink" : "text-emerald-600")}>{fmt(remainDebt)} ₽</b>
                   </div>
-                )}
+                </div>
               </div>
             )}
           </div>
@@ -4427,8 +4444,8 @@ export function PaymentAcceptDialog({
           <div className="border-t border-border bg-surface px-4 py-3 pb-[max(env(safe-area-inset-bottom),0.75rem)]">
             {payStep === 1 && (
               <div className="mb-2.5 flex items-baseline justify-between">
-                <span className="text-[12px] font-bold uppercase tracking-wider text-muted-2">К приёму</span>
-                <span className="font-display text-[26px] font-extrabold tabular-nums text-blue-700">{fmt(amountDueNow)} ₽</span>
+                <span className="text-[12px] font-bold uppercase tracking-wider text-muted-2">К приёму наличными</span>
+                <span className="font-display text-[26px] font-extrabold tabular-nums text-blue-700">{fmt(accepted)} ₽</span>
               </div>
             )}
             <div className="flex gap-2">
@@ -4439,7 +4456,7 @@ export function PaymentAcceptDialog({
                 <button type="button" onClick={() => goPayStep(1)} disabled={noDebt} className="h-12 flex-[2] rounded-2xl bg-blue-600 text-[15px] font-bold text-white transition-transform active:scale-[0.98] disabled:opacity-50">Далее</button>
               ) : (
                 <button type="button" onClick={submit} disabled={submitDisabled} className={cn("inline-flex h-12 flex-[2] items-center justify-center gap-1.5 rounded-2xl text-[15px] font-bold text-white transition-transform active:scale-[0.98]", submitDisabled ? "bg-surface-soft text-muted-2" : "bg-green-600")}>
-                  <Check size={16} /> {amountDueNow > 0 ? `Принять ${fmt(amountDueNow)} ₽` : "Провести"}
+                  <Check size={16} /> {accepted > 0 ? `Принять ${fmt(accepted)} ₽` : "Провести"}
                 </button>
               )}
             </div>
@@ -4522,9 +4539,16 @@ export function PaymentAcceptDialog({
               max={padCfg.max}
               onCancel={() => setPayPad(null)}
               onConfirm={(n) => {
-                if (payPad === "debt") setDebtPayStr(String(n));
-                else if (payPad === "security") setSecurityToUseStr(String(n));
-                else setDepositToUseStr(String(n));
+                if (payPad === "cash") {
+                  setAcceptedStr(String(n));
+                  setCashTouched(true);
+                } else if (payPad === "security") {
+                  setSecurityToUseStr(String(n));
+                  setCashTouched(false);
+                } else {
+                  setDepositToUseStr(String(n));
+                  setCashTouched(false);
+                }
                 setPayPad(null);
               }}
             />
