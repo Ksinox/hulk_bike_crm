@@ -103,6 +103,7 @@ function eventVisual(
     action === "debt_payment"
   )
     return { icon: Wallet, tone: "green" };
+  if (action === "deposit_withheld") return { icon: Wallet, tone: "amber" };
   if (action.includes("refund") || action.includes("security"))
     return { icon: RotateCcw, tone: "green" };
   if (action.includes("damage")) return { icon: AlertTriangle, tone: "amber" };
@@ -259,6 +260,31 @@ function buildActivitySummary(
       title: `${what} ${verb}`,
       change: null,
       extras: text ? [`«${text}»`] : [],
+    };
+  }
+
+  // ── Удержание из залога (списание залога в доход) ──
+  if (action === "deposit_withheld") {
+    const m = readRecord(item.meta);
+    const dep = readRecord(diff?.deposit);
+    const amount = typeof m?.amount === "number" ? m.amount : null;
+    const comment =
+      typeof m?.comment === "string" && m.comment.trim()
+        ? m.comment.trim()
+        : null;
+    const extras: string[] = [];
+    if (comment) extras.push(`«${comment}»`);
+    return {
+      title: "Удержано из залога",
+      change:
+        dep && (dep.from != null || dep.to != null)
+          ? { from: money(dep.from), to: money(dep.to), tone: "blue" }
+          : null,
+      extras,
+      headline:
+        amount != null && amount > 0
+          ? { text: `+${money(amount)}`, tone: "green" }
+          : undefined,
     };
   }
 

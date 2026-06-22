@@ -215,6 +215,34 @@ export function useChargeManualDebt() {
 }
 
 /**
+ * Удержать сумму из ЗАЛОГА (rental.deposit) в доход — «списать залог» за
+ * провинность/повреждение/любую причину с комментарием. Сервер уменьшает залог,
+ * фиксирует сумму как выручку (deposit_forfeit), пишет в хронологию + создаёт
+ * заметку (видно «за что»).
+ */
+export function useWithholdDeposit() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { rentalId: number; amount: number; comment: string }) =>
+      api.post<{ ok: true; deposit: number; withheld: number }>(
+        `/api/rentals/${args.rentalId}/deposit/withhold`,
+        { amount: args.amount, comment: args.comment },
+      ),
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: debtKeys.one(vars.rentalId) });
+      qc.invalidateQueries({ queryKey: debtKeys.aggregate });
+      qc.invalidateQueries({ queryKey: ["rentals"] });
+      qc.invalidateQueries({ queryKey: ["rentals-archived"] });
+      qc.invalidateQueries({ queryKey: ["payments"] });
+      qc.invalidateQueries({ queryKey: ["revenue"] });
+      qc.invalidateQueries({ queryKey: ["clients"] });
+      qc.invalidateQueries({ queryKey: ["activity"] });
+      qc.invalidateQueries({ queryKey: ["stickers"] });
+    },
+  });
+}
+
+/**
  * v0.4.3: списание просрочки с выбором что списать.
  *  • target='all'  — и неоплаченные дни, и штраф 50%
  *  • target='fine' — только штраф (дни остаются)

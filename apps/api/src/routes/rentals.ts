@@ -4294,6 +4294,101 @@ export async function rentalsRoutes(app: FastifyInstance) {
   });
 
   /**
+   * Удержать сумму из ЗАЛОГА (rental.deposit) в доход — «списать залог» за
+   * провинность/повреждение/любую причину. Это:
+   *  • уменьшает возвратный залог (rental.deposit −= take);
+   *  • фиксирует take как ВЫРУЧКУ (payment type='deposit_forfeit' — залог
+   *    перестал быть возвратным, стал доходом, как зачёт залога в ущерб);
+   *  • пишет причину в хронологию (было→стало по залогу) + создаёт ЗАМЕТКУ,
+   *    чтобы «за что» было видно везде.
+   * Доступно директору/создателю (финансовая операция). Откат — через снятие
+   * платежа (rollbackSnapshot восстанавливает прежний залог).
+   */
+  app.post<{
+    Params: { id: string };
+    Body: { amount: number; comment: string };
+  }>("/:id/deposit/withhold", async (req, reply) => {
+    if (!assertFinancialRole(req, reply)) return;
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
+    const Body = z.object({
+      amount: z.number().int().positive(),
+      comment: z.string().trim().min(1).max(500),
+    });
+    const parsed = Body.safeParse(req.body);
+    if (!parsed.success) {
+      return reply
+        .code(400)
+        .send({ error: "validation", issues: parsed.error.issues });
+    }
+    const [r] = await db
+      .select({ deposit: rentals.deposit })
+      .from(rentals)
+      .where(eq(rentals.id, id));
+    if (!r) return reply.code(404).send({ error: "not found" });
+    const available = r.deposit ?? 0;
+    if (available <= 0) {
+      return reply
+        .code(400)
+        .send({ error: "no_deposit", message: "Залог пуст — удерживать нечего." });
+    }
+    const take = Math.min(parsed.data.amount, available);
+    const newDeposit = available - take;
+    const userId = req.user?.userId ?? null;
+    let userName = "система";
+    if (userId) {
+      const [u] = await db
+        .select({ name: usersTable.name })
+        .from(usersTable)
+        .where(eq(usersTable.id, userId));
+      userName = u?.name ?? "система";
+    }
+    await db
+      .update(rentals)
+      .set({ deposit: newDeposit, updatedAt: new Date() })
+      .where(eq(rentals.id, id));
+    await db.insert(payments).values({
+      rentalId: id,
+      type: "deposit_forfeit",
+      amount: take,
+      method: "deposit",
+      paid: true,
+      paidAt: new Date(),
+      note: `Удержание из залога: ${parsed.data.comment}`,
+      receivedByUserId: userId,
+      rollbackSnapshot: {
+        kind: "deposit_withhold",
+        prevDeposit: available,
+      } as unknown as object,
+    });
+    await logActivity(req, {
+      entity: "rental",
+      entityId: id,
+      action: "deposit_withheld",
+      summary: `Удержано из залога ${take} ₽ по аренде #${id}: ${parsed.data.comment}`,
+      meta: { amount: take, comment: parsed.data.comment, method: "deposit" },
+      diff: {
+        deposit: {
+          label: "Залог",
+          from: available,
+          to: newDeposit,
+          kind: "money",
+        },
+      },
+    });
+    await db.insert(noteStickers).values({
+      entity: "rental",
+      entityId: id,
+      kind: "note",
+      text: `Удержано из залога ${take} ₽: ${parsed.data.comment}`,
+      color: "amber",
+      createdByUserId: userId,
+      createdByName: userName,
+    });
+    return { ok: true, deposit: newDeposit, withheld: take };
+  });
+
+  /**
    * v0.4.3 / v0.4.4: списание просрочки с возможностью выбрать что списываем.
    *  body.target:
    *   • 'days' — только «неоплаченные дни» (rate × days), штраф остаётся

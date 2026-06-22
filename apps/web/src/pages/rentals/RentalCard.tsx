@@ -80,6 +80,7 @@ import { useChainDamageReports } from "@/lib/api/damage-reports";
 import {
   useRentalDebt,
   useChargeManualDebt,
+  useWithholdDeposit,
   useForgiveOverdue,
   equipmentDebtPortion,
 } from "@/lib/api/debt";
@@ -180,6 +181,13 @@ function statusActions(
       id: "charge-debt",
       label: "Начислить долг",
       icon: Plus,
+      tone: "warn",
+    },
+    // Удержать из залога (списать залог в доход) с причиной → выручка + заметка.
+    {
+      id: "withhold-deposit",
+      label: "Удержать из залога",
+      icon: Wallet,
       tone: "warn",
     },
     // v0.8.0: паркинг — дубль точки входа (основная кнопка 🅿 в календаре).
@@ -724,6 +732,7 @@ export function RentalCard({
     : 0;
 
   const chargeManualMut = useChargeManualDebt();
+  const withholdDepositMut = useWithholdDeposit();
   const forgiveOverdueMut = useForgiveOverdue();
   const reportWithDebt = reports.find((r) => r.debt > 0) ?? null;
   const reportLatest =
@@ -1117,6 +1126,54 @@ export function RentalCard({
         );
       } catch (e) {
         toast.error("Не удалось начислить", (e as Error).message ?? "");
+      }
+      return;
+    }
+    if (id === "withhold-deposit") {
+      // Удержать из залога в доход (списать залог) с обязательной причиной.
+      const available = rental.deposit ?? 0;
+      if (available <= 0) {
+        toast.error("Залог пуст", "Удерживать нечего.");
+        return;
+      }
+      const amountStr = await promptDialog({
+        title: `Сколько удержать из залога, ₽ (доступно ${available.toLocaleString("ru-RU")})`,
+        placeholder: "Например, 500",
+      });
+      if (!amountStr) return;
+      const amount = Number(amountStr.replace(/\D/g, ""));
+      if (!Number.isFinite(amount) || amount <= 0) {
+        toast.error("Неверная сумма", "Введите положительное число.");
+        return;
+      }
+      if (amount > available) {
+        toast.error(
+          "Больше залога",
+          `Доступно ${available.toLocaleString("ru-RU")} ₽.`,
+        );
+        return;
+      }
+      const comment = await promptDialog({
+        title: "Комментарий — за что удерживаем (видно всем):",
+        multiline: true,
+      });
+      if (comment == null || !comment.trim()) {
+        toast.error("Нужен комментарий", "Без него удержание недопустимо.");
+        return;
+      }
+      try {
+        await withholdDepositMut.mutateAsync({
+          rentalId: rental.id,
+          amount,
+          comment: comment.trim(),
+        });
+        toastRentalDone(
+          rental,
+          "Удержано из залога",
+          `−${amount.toLocaleString("ru-RU")} ₽ из залога · доход. Причина в заметке и истории.`,
+        );
+      } catch (e) {
+        toast.error("Не удалось удержать", (e as Error).message ?? "");
       }
       return;
     }
