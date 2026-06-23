@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { usePersistedState } from "@/lib/usePersistedState";
 import { clientStore } from "@/pages/clients/clientStore";
 import type { Client, ClientSource } from "@/lib/mock/clients";
 import {
@@ -81,17 +82,48 @@ export function MobileNewClient({
   const isConvert = applicationId != null;
   const convertMut = useConvertApplication();
 
-  const [name, setName] = useState(initial?.name ?? "");
-  const [phone, setPhone] = useState(initial?.phone ?? "");
-  const [phone2, setPhone2] = useState(initial?.phone2 ?? "");
-  const [birth, setBirth] = useState(initial?.birth ?? "");
-  const [foreigner, setForeigner] = useState<"rf" | "foreign">(
+  // v1.0.4: черновик формы переживает случайный refresh. Ключ — по заявке
+  // (или "new"), чтобы черновики разных заявок не смешивались. Файлов нет —
+  // поля текстовые. clearDraft() на успехе и при подтверждённом закрытии.
+  const dk = `mnc:${applicationId ?? "new"}`;
+  const [name, setName, cName] = usePersistedState(`${dk}:name`, initial?.name ?? "");
+  const [phone, setPhone, cPhone] = usePersistedState(`${dk}:phone`, initial?.phone ?? "");
+  const [phone2, setPhone2, cPhone2] = usePersistedState(
+    `${dk}:phone2`,
+    initial?.phone2 ?? "",
+  );
+  const [birth, setBirth, cBirth] = usePersistedState(`${dk}:birth`, initial?.birth ?? "");
+  const [foreigner, setForeigner, cForeigner] = usePersistedState<"rf" | "foreign">(
+    `${dk}:foreigner`,
     initial?.isForeigner ? "foreign" : "rf",
   );
-  const [passSer, setPassSer] = useState(initial?.passSer ?? "");
-  const [passNum, setPassNum] = useState(initial?.passNum ?? "");
-  const [passportRaw, setPassportRaw] = useState(initial?.passportRaw ?? "");
-  const [source, setSource] = useState<ClientSource | null>(initial?.source ?? null);
+  const [passSer, setPassSer, cPassSer] = usePersistedState(
+    `${dk}:passSer`,
+    initial?.passSer ?? "",
+  );
+  const [passNum, setPassNum, cPassNum] = usePersistedState(
+    `${dk}:passNum`,
+    initial?.passNum ?? "",
+  );
+  const [passportRaw, setPassportRaw, cPassportRaw] = usePersistedState(
+    `${dk}:passportRaw`,
+    initial?.passportRaw ?? "",
+  );
+  const [source, setSource, cSource] = usePersistedState<ClientSource | null>(
+    `${dk}:source`,
+    initial?.source ?? null,
+  );
+  const clearDraft = () => {
+    cName();
+    cPhone();
+    cPhone2();
+    cBirth();
+    cForeigner();
+    cPassSer();
+    cPassNum();
+    cPassportRaw();
+    cSource();
+  };
   const [touched, setTouched] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -127,6 +159,7 @@ export function MobileNewClient({
 
   const handleClose = () => {
     if (!dirty) {
+      clearDraft();
       onClose();
       return;
     }
@@ -137,7 +170,10 @@ export function MobileNewClient({
       cancelText: "Остаться",
       danger: true,
     }).then((ok) => {
-      if (ok) onClose();
+      if (ok) {
+        clearDraft();
+        onClose();
+      }
     });
   };
 
@@ -172,6 +208,7 @@ export function MobileNewClient({
         toast.success("Клиент оформлен", name.trim());
         // Чейним к оформлению аренды (как на десктопе). Раньше в convert-ветке
         // onCreated не вызывался — мобильный флоу обрывался на «закрыть».
+        clearDraft();
         onCreated?.({ ...(created as unknown as Client) });
         onClose();
         return;
@@ -194,6 +231,7 @@ export function MobileNewClient({
       });
       if (phone2.trim()) clientStore.setExtraPhone(created.id, phone2.trim());
       toast.success("Клиент создан", name.trim());
+      clearDraft();
       onCreated?.(created);
       onClose();
     } catch (e) {
