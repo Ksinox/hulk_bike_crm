@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { usePersistedFormState } from "@/lib/usePersistedState";
 import { X } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
@@ -329,7 +330,19 @@ export function AddClientModal({
 }) {
   const isEdit = !!editing;
   const qc = useQueryClient();
-  const [f, setF] = useState<Form>(() => {
+  // v1.0.4: черновик формы переживает случайное обновление страницы.
+  // Ключ — по сущности (заявка/новый), чтобы черновики не путались. Файлы
+  // (селфи/сканы) не сохраняем (см. omit). Редактирование не черновим.
+  const draftKey = `client-form:${
+    editing
+      ? `edit-${editing.id}`
+      : applicationId
+        ? `app-${applicationId}`
+        : "new"
+  }`;
+  const [f, setF, clearDraft] = usePersistedFormState<Form>(
+    draftKey,
+    () => {
     const base = initialForm(editing ?? null);
     if (!editing && initialData) {
       return {
@@ -363,7 +376,20 @@ export function AddClientModal({
       };
     }
     return base;
-  });
+    },
+    {
+      // Файлы (UploadedFile-обёртки) не сериализуются в sessionStorage —
+      // после refresh их прикладывают заново; напечатанный текст вернётся.
+      omit: [
+        "photoFile",
+        "passportMainFile",
+        "passportRegFile",
+        "licenseFile",
+        "contractFile",
+      ],
+      disabled: isEdit,
+    },
+  );
   const [closing, setClosing] = useState(false);
   const [touched, setTouched] = useState<Record<string, boolean>>(() =>
     isEdit
@@ -442,7 +468,12 @@ export function AddClientModal({
       cancelText: "Остаться",
       danger: true,
     }).then((ok) => {
-      if (ok) doClose();
+      if (ok) {
+        // Пользователь подтвердил «данные будут потеряны» — чистим и черновик,
+        // иначе при следующем открытии той же заявки текст «воскреснет».
+        clearDraft();
+        doClose();
+      }
     });
   };
 
@@ -1274,6 +1305,7 @@ export function AddClientModal({
                       // сохранения?» нельзя (иначе диалог всплыл бы поверх
                       // следующего шага — оформления аренды).
                       dirtyRef.current = false;
+                      clearDraft();
                       onCreated?.({
                         ...(created as unknown as Client),
                       });
@@ -1331,6 +1363,7 @@ export function AddClientModal({
                     }
                     if (f.phone2) clientStore.setExtraPhone(created.id, f.phone2);
                     dirtyRef.current = false;
+                    clearDraft();
                     onCreated?.(created);
                     requestClose();
                   } catch (e) {

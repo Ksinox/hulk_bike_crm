@@ -9,6 +9,7 @@ import {
 } from "react";
 import { Check, ExternalLink, Eye, MailQuestion, Trash2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { usePersistedState } from "@/lib/usePersistedState";
 import { navigate } from "@/app/navigationStore";
 import { RentalCard, RentalHistoryColumn } from "@/pages/rentals/RentalCard";
 import { PaymentAcceptDialog } from "@/pages/rentals/PaymentAcceptDialog";
@@ -170,8 +171,18 @@ function pushUnique(stack: Target[], next: Target): Target[] {
 }
 
 export function DashboardDrawerProvider({ children }: { children: ReactNode }) {
-  const [stack, setStack] = useState<Target[]>([]);
-  const [side, setSide] = useState<SideColumn>(null);
+  // v1.0.4: открытые карточки/колонки переживают обновление страницы.
+  // Храним лёгкие таргеты ({kind,id}) и side-колонку (rentalId+параметры) в
+  // sessionStorage — при F5 карточки переоткрываются (данные подтянет React
+  // Query по id). version бампать при изменении формы Target/SideColumn.
+  const [stack, setStack] = usePersistedState<Target[]>(
+    "nav:drawer-stack",
+    [],
+    { version: 1 },
+  );
+  const [side, setSide] = usePersistedState<SideColumn>("nav:drawer-side", null, {
+    version: 1,
+  });
   const [sideResetSignal, setSideResetSignal] = useState(0);
   const ctx: Ctx = useMemo(
     () => ({
