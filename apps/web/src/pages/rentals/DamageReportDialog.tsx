@@ -17,6 +17,7 @@ import {
 import { cn } from "@/lib/utils";
 import { type Rental } from "@/lib/mock/rentals";
 import { toast } from "@/lib/toast";
+import { deleteFileWithUndo } from "@/lib/deleteFileWithUndo";
 import {
   type ApiPriceGroup,
   type ApiPriceItem,
@@ -331,13 +332,31 @@ export function DamageReportDialog({
     });
   };
 
-  const removeUploaded = async (mediaId: number) => {
-    setUploadedMedia((u) => u.filter((m) => m.id !== mediaId));
-    try {
-      await deleteMedia.mutateAsync(mediaId);
-    } catch (e) {
-      toast.error("Не удалось удалить медиа", (e as Error).message ?? "");
-    }
+  const removeUploaded = (mediaId: number) => {
+    const idx = uploadedMedia.findIndex((m) => m.id === mediaId);
+    if (idx < 0) return;
+    const item = uploadedMedia[idx];
+    void deleteFileWithUndo({
+      what: item.kind === "video" ? "видео" : "фото",
+      onRemove: () => setUploadedMedia((u) => u.filter((m) => m.id !== mediaId)),
+      onRestore: () =>
+        setUploadedMedia((u) => {
+          if (u.some((m) => m.id === mediaId)) return u;
+          const copy = [...u];
+          copy.splice(Math.min(idx, copy.length), 0, item);
+          return copy;
+        }),
+      onCommit: async () => {
+        try {
+          await deleteMedia.mutateAsync(mediaId);
+        } catch (e) {
+          toast.error("Не удалось удалить медиа", (e as Error).message ?? "");
+          setUploadedMedia((u) =>
+            u.some((m) => m.id === mediaId) ? u : [...u, item],
+          );
+        }
+      },
+    });
   };
 
   // === Мобильный пошаговый мастер ===

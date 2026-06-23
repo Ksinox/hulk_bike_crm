@@ -12,6 +12,7 @@ import {
 } from "@/lib/api/documents";
 import { fileUrl } from "@/lib/files";
 import { toast } from "@/lib/toast";
+import { deleteFileWithUndo } from "@/lib/deleteFileWithUndo";
 
 type Size = "sm" | "md" | "lg" | "xl";
 
@@ -87,7 +88,9 @@ export function ClientPhoto({
           title: photoDoc.title || `Фото · ${client.name}`,
         }
       : null;
-  const photo = photoFromDocs ?? localPhoto;
+  // Скрываем фото на время окна отмены удаления (до коммита на сервер).
+  const [hiddenForDelete, setHiddenForDelete] = useState(false);
+  const photo = hiddenForDelete ? null : (photoFromDocs ?? localPhoto);
   const [previewing, setPreviewing] = useState(false);
   const replaceRef = useRef<HTMLInputElement>(null);
 
@@ -152,21 +155,32 @@ export function ClientPhoto({
     }
   };
 
-  const handleDelete = async () => {
+  const handleDelete = () => {
     setPreviewing(false);
     if (onChange) {
+      // Контролируемый режим (форма): отдаём наверх, откат — забота формы.
       onChange(null);
       return;
     }
     const oldPhotos = (docsQ.data ?? []).filter((d) => d.kind === "photo");
-    clientStore.setPhoto(client.id, null);
-    try {
-      for (const old of oldPhotos) {
-        await deleteDoc.mutateAsync(old.id);
-      }
-    } catch (e) {
-      toast.error("Не удалось удалить фото", (e as Error).message ?? "");
-    }
+    if (oldPhotos.length === 0) return;
+    void deleteFileWithUndo({
+      what: "фото",
+      onRemove: () => {
+        setHiddenForDelete(true);
+        clientStore.setPhoto(client.id, null);
+      },
+      onRestore: () => setHiddenForDelete(false),
+      onCommit: async () => {
+        try {
+          for (const old of oldPhotos) await deleteDoc.mutateAsync(old.id);
+          await docsQ.refetch();
+        } catch (e) {
+          toast.error("Не удалось удалить фото", (e as Error).message ?? "");
+          setHiddenForDelete(false);
+        }
+      },
+    });
   };
 
   return (

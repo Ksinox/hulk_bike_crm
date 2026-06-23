@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { Camera, Loader2, Plus, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { confirmDialog } from "@/lib/toast";
+import { deleteFileWithUndo } from "@/lib/deleteFileWithUndo";
 import {
   fileUrl,
   useApiScooterDocs,
@@ -29,6 +29,12 @@ export function ScooterPhotosGallery({ scooterId }: { scooterId: number }) {
     () => docs.filter((d) => d.kind === "photo"),
     [docs],
   );
+  // Скрытые на время окна отмены (удаление с откатом).
+  const [hiddenIds, setHiddenIds] = useState<Set<number>>(new Set());
+  const visiblePhotos = useMemo(
+    () => photos.filter((p) => !hiddenIds.has(p.id)),
+    [photos, hiddenIds],
+  );
 
   const limitReached = photos.length >= MAX_PHOTOS;
 
@@ -43,15 +49,26 @@ export function ScooterPhotosGallery({ scooterId }: { scooterId: number }) {
     }
   };
 
-  const onDelete = async (doc: ApiScooterDoc) => {
-    const ok = await confirmDialog({
-      title: "Удалить фото?",
-      message: `Удалить фото «${doc.fileName}»?`,
-      confirmText: "Удалить",
-      danger: true,
+  const unhide = (id: number) =>
+    setHiddenIds((s) => {
+      const n = new Set(s);
+      n.delete(id);
+      return n;
     });
-    if (!ok) return;
-    deleteMut.mutate(doc.id);
+
+  const onDelete = (doc: ApiScooterDoc) => {
+    void deleteFileWithUndo({
+      what: "фото",
+      onRemove: () => setHiddenIds((s) => new Set(s).add(doc.id)),
+      onRestore: () => unhide(doc.id),
+      onCommit: async () => {
+        try {
+          await deleteMut.mutateAsync(doc.id);
+        } finally {
+          unhide(doc.id);
+        }
+      },
+    });
   };
 
   return (
@@ -102,7 +119,7 @@ export function ScooterPhotosGallery({ scooterId }: { scooterId: number }) {
         }}
       />
 
-      {photos.length === 0 ? (
+      {visiblePhotos.length === 0 ? (
         <div
           onClick={onPick}
           className="flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-[12px] border-2 border-dashed border-border bg-surface-soft/50 px-3 py-6 text-center transition-colors hover:border-blue-600/50 hover:bg-blue-50/40"
@@ -119,7 +136,7 @@ export function ScooterPhotosGallery({ scooterId }: { scooterId: number }) {
         </div>
       ) : (
         <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-4 md:grid-cols-5">
-          {photos.map((p) => (
+          {visiblePhotos.map((p) => (
             <div
               key={p.id}
               className="group relative aspect-square overflow-hidden rounded-[12px] border border-border bg-surface-soft"

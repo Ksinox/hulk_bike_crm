@@ -34,6 +34,11 @@ export type ToastKind = "info" | "success" | "error" | "warn";
 export type ToastAction = {
   label: string;
   onAct: () => void | Promise<void>;
+  /** Вызывается, когда тост закрылся БЕЗ нажатия «Отменить» (таймер истёк или
+   *  закрыли крестиком) — окно отмены прошло. Для отложенных коммитов
+   *  (напр. реальное удаление файла с сервера). Учитывает паузу таймера на
+   *  hover, т.к. срабатывает на фактическом закрытии тоста. */
+  onExpire?: () => void | Promise<void>;
 };
 
 export type Toast = {
@@ -88,11 +93,14 @@ export const toast = {
     message?: string;
     actionLabel?: string;
     onAction: () => void | Promise<void>;
+    /** Окно отмены прошло (таймер/крестик, не «Отменить») — коммит операции. */
+    onExpire?: () => void | Promise<void>;
     ttl?: number;
   }) =>
     push(opts.kind ?? "success", opts.title, opts.message, opts.ttl ?? 10000, {
       label: opts.actionLabel ?? "Отменить",
       onAct: opts.onAction,
+      onExpire: opts.onExpire,
     }),
   dismiss,
 };
@@ -164,7 +172,13 @@ function ToastRow({ toast: t }: { toast: Toast }) {
   const startRef = useRef(0);
   const timerRef = useRef<number | null>(null);
 
+  const actedRef = useRef(false);
+  const closingRef = useRef(false);
   const close = () => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    // Закрылись без «Отменить» (таймер истёк / крестик) → окно отмены прошло.
+    if (!actedRef.current && t.action?.onExpire) void t.action.onExpire();
     setClosing(true);
     window.setTimeout(() => dismiss(t.id), 200);
   };
@@ -196,6 +210,7 @@ function ToastRow({ toast: t }: { toast: Toast }) {
 
   const onUndo = async () => {
     if (busy) return;
+    actedRef.current = true; // «Отменить» нажата → onExpire НЕ вызываем
     setBusy(true);
     try {
       await t.action?.onAct();

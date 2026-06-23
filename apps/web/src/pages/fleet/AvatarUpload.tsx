@@ -2,7 +2,8 @@ import { useRef, useState } from "react";
 import { ImagePlus, Loader2, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fileUrl } from "@/lib/files";
-import { confirmDialog, toast } from "@/lib/toast";
+import { toast } from "@/lib/toast";
+import { deleteFileWithUndo } from "@/lib/deleteFileWithUndo";
 import { ImageCropDialog, type CropResult } from "@/components/ImageCropDialog";
 
 /**
@@ -42,12 +43,16 @@ export function AvatarUpload({
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
+  // Во время окна отмены прячем аватарку из превью (как будто уже удалена).
+  const [optimisticallyRemoved, setOptimisticallyRemoved] = useState(false);
 
   // Превью: предпочитаем ручную кропнутую миниатюру (avatarThumbKey),
   // fallback на оригинал. В обоих случаях просим у API thumb-вариант
   // (sharp-уменьшенный ~30 КБ) — даже если фолбэкнулись на avatarKey,
   // он не будет тянуться полным размером.
-  const url = fileUrl(avatarThumbKey ?? avatarKey, { variant: "thumb" });
+  const baseUrl = fileUrl(avatarThumbKey ?? avatarKey, { variant: "thumb" });
+  // null во время окна отмены → превью показывает плейсхолдер «нет фото».
+  const url = optimisticallyRemoved ? null : baseUrl;
 
   const handleFile = (f: File | null) => {
     if (!f) return;
@@ -120,16 +125,17 @@ export function AvatarUpload({
           {url && onRemove && (
             <button
               type="button"
-              onClick={async () => {
-                const ok = await confirmDialog({
-                  title: "Удалить аватарку?",
-                  message: "Файл будет удалён. Можно будет загрузить новую.",
-                  confirmText: "Удалить",
-                  danger: true,
-                });
-                if (!ok) return;
-                onRemove();
-              }}
+              onClick={() =>
+                void deleteFileWithUndo({
+                  what: "аватарку",
+                  onRemove: () => setOptimisticallyRemoved(true),
+                  onRestore: () => setOptimisticallyRemoved(false),
+                  onCommit: async () => {
+                    await onRemove();
+                    setOptimisticallyRemoved(false);
+                  },
+                })
+              }
               disabled={removing}
               className="inline-flex items-center gap-1.5 rounded-full bg-surface-soft px-3 py-1.5 text-[12px] font-semibold text-muted-2 hover:bg-red-soft hover:text-red-ink"
             >
