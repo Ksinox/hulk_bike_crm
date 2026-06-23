@@ -4,6 +4,8 @@ import { cn } from "@/lib/utils";
 import { fileUrl } from "@/lib/files";
 import type { ApiDamageMedia } from "@/lib/api/damage-reports";
 import { MediaLightbox, type LightboxItem } from "@/components/MediaLightbox";
+import { useIsMobile } from "@/lib/useIsMobile";
+import { CameraCapture } from "@/mobile/CameraCapture";
 
 /**
  * Захват фото/видео повреждений при приёмке по ущербу.
@@ -131,6 +133,14 @@ export function DamageMediaCapture({
 }) {
   const camRef = useRef<HTMLInputElement>(null);
   const galRef = useRef<HTMLInputElement>(null);
+  const isMobile = useIsMobile();
+  // На мобиле «Снять» открывает СВОЮ камеру (getUserMedia, высокое качество).
+  // На десктопе (или без getUserMedia) — обычный input capture.
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const canUseInAppCamera =
+    isMobile &&
+    typeof navigator !== "undefined" &&
+    !!navigator.mediaDevices?.getUserMedia;
   const pick = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
     if (files.length) onPick(files);
@@ -171,7 +181,9 @@ export function DamageMediaCapture({
         <button
           type="button"
           disabled={disabled}
-          onClick={() => camRef.current?.click()}
+          onClick={() =>
+            canUseInAppCamera ? setCameraOpen(true) : camRef.current?.click()
+          }
           className="flex h-12 items-center justify-center gap-2 rounded-xl bg-orange-soft text-[13.5px] font-bold text-orange-ink ring-1 ring-inset ring-orange-200 transition-transform active:scale-[0.98] disabled:opacity-50"
         >
           <Camera size={18} /> Снять
@@ -203,12 +215,20 @@ export function DamageMediaCapture({
         onChange={pick}
       />
 
-      {/* Подсказка по качеству: iOS «Снять» пишет в пониженном качестве
-          (ограничение Apple), «Галерея» отдаёт оригинал в полном качестве. */}
+      {cameraOpen && (
+        <CameraCapture
+          onCapture={(file) => onPick([file])}
+          onClose={() => setCameraOpen(false)}
+          onFallback={() => camRef.current?.click()}
+        />
+      )}
+
+      {/* «Снять» = камера приложения (getUserMedia) в высоком качестве —
+          обходит ограничение iOS-инпута. «Галерея» — оригинал из медиатеки. */}
       <p className="text-[11px] leading-snug text-muted-2">
-        Для чётких деталей (царапины, трещины) снимите в приложении «Камера» и
-        приложите через «Галерея» — там полное качество. Кнопка «Снять» на iPhone
-        пишет в пониженном качестве (ограничение iOS).
+        {canUseInAppCamera
+          ? "«Снять» — камера приложения в высоком качестве (один проход, без лишнего сжатия). «Галерея» — оригинал из медиатеки телефона."
+          : "Для чётких деталей снимите в приложении «Камера» и приложите через «Галерея» — там полное качество."}
       </p>
 
       {total === 0 ? (
