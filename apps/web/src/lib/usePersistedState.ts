@@ -101,6 +101,78 @@ export function usePersistedState<T>(
  *
  * clear() вызывать после успешной отправки, чтобы заполненное не «воскресало».
  */
+/**
+ * Восстанавливает «открытый экран» (drill-in карточки на мобиле) ТОЛЬКО после
+ * перезагрузки страницы (F5), но НЕ при обычном переключении вкладок таб-бара.
+ *
+ * Зачем отдельный хук: мобильные страницы (MobileRentals и т.п.) ремаунтятся
+ * при каждом переключении таба. Если просто персистить openId, карточка
+ * всплывала бы при каждом заходе на вкладку (тап «Аренды» → сразу карточка,
+ * а не список). Здесь восстановление происходит лишь на ПЕРВОМ монтировании
+ * ключа в сессии документа И лишь если документ был перезагружен.
+ */
+const reloadConsumedKeys = new Set<string>();
+
+function wasPageReloaded(): boolean {
+  try {
+    const nav = performance.getEntriesByType("navigation")[0] as
+      | PerformanceNavigationTiming
+      | undefined;
+    return nav?.type === "reload";
+  } catch {
+    return false;
+  }
+}
+
+export function useReloadRestoredState<T>(
+  key: string,
+  initial: T,
+  opts?: { storage?: StorageKind; version?: number },
+): [T, React.Dispatch<React.SetStateAction<T>>] {
+  const kind = opts?.storage ?? "session";
+  const version = opts?.version ?? 1;
+  const fullKey = `hulk-screen:${key}:v${version}`;
+  const storeRef = useRef<Storage | null>(getStore(kind));
+
+  const [state, setState] = useState<T>(() => {
+    const store = storeRef.current;
+    if (store && wasPageReloaded() && !reloadConsumedKeys.has(fullKey)) {
+      // Перезагрузка + первый монт этого ключа → восстанавливаем экран.
+      reloadConsumedKeys.add(fullKey);
+      try {
+        const raw = store.getItem(fullKey);
+        if (raw != null) return JSON.parse(raw) as T;
+      } catch {
+        /* битый JSON — игнор */
+      }
+      return initial;
+    }
+    // Обычная навигация / повторный монт (tab-switch) → чистый старт.
+    reloadConsumedKeys.add(fullKey);
+    if (store) {
+      try {
+        store.removeItem(fullKey);
+      } catch {
+        /* ignore */
+      }
+    }
+    return initial;
+  });
+
+  useEffect(() => {
+    const store = storeRef.current;
+    if (!store) return;
+    try {
+      if (state == null) store.removeItem(fullKey);
+      else store.setItem(fullKey, JSON.stringify(state));
+    } catch {
+      /* ignore */
+    }
+  }, [fullKey, state]);
+
+  return [state, setState];
+}
+
 export function usePersistedFormState<T extends object>(
   key: string,
   initialFactory: () => T,

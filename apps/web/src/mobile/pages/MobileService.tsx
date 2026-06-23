@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useReloadRestoredState } from "@/lib/usePersistedState";
 import { Wrench, ChevronRight } from "lucide-react";
 import {
   useRepairJobs,
@@ -41,7 +42,10 @@ function progressLabel(progress: ApiRepairProgress[]): string {
 export function MobileService() {
   const [filter, setFilter] = useState<Filter>("active");
   const [search, setSearch] = useState("");
-  const [openId, setOpenId] = useState<number | null>(null);
+  const [openId, setOpenId] = useReloadRestoredState<number | null>(
+    "mobile:service:openId",
+    null,
+  );
 
   const activeQ = useRepairJobs({ status: "active" });
   const completedQ = useRepairJobs({ status: "completed" });

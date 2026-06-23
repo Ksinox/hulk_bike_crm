@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useReloadRestoredState } from "@/lib/usePersistedState";
 import { ShoppingBag, Bike } from "lucide-react";
 import { useApiScooters } from "@/lib/api/scooters";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
@@ -76,7 +77,10 @@ export function MobileScooters() {
   };
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
-  const [openId, setOpenId] = useState<number | null>(null);
+  const [openId, setOpenId] = useReloadRestoredState<number | null>(
+    "mobile:scooters:openId",
+    null,
+  );
   const [newOpen, setNewOpen] = useState(false);
   // Внутри карточки скутера (drill-in) кнопку «+ Скутер» прячем.
   usePageFab("Скутер", () => setNewOpen(true), openId != null);

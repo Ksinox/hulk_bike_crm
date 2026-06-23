@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useReloadRestoredState } from "@/lib/usePersistedState";
 import { Bike, ChevronRight, Maximize2 } from "lucide-react";
 import { consumePending, onNavigate } from "@/app/navigationStore";
 import {
@@ -95,7 +96,10 @@ export function MobileRentals() {
 
   const [filter, setFilter] = useState<Filter>("active");
   const [search, setSearch] = useState("");
-  const [openId, setOpenId] = useState<number | null>(null);
+  const [openId, setOpenId] = useReloadRestoredState<number | null>(
+    "mobile:rentals:openId",
+    null,
+  );
   const [revenueOpen, setRevenueOpen] = useState(false);
   const rev = useBillingPeriodRevenue("rentals");
   /** Открыта форма создания аренды (переиспользуем десктоп-модалку). */

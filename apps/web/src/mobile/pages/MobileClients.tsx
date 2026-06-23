@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useReloadRestoredState } from "@/lib/usePersistedState";
 import { Users, ChevronRight, Ban } from "lucide-react";
 import { consumePending, onNavigate } from "@/app/navigationStore";
 import { MobileNewClient } from "../forms/MobileNewClient";
@@ -29,7 +30,10 @@ export function MobileClients() {
   const rentals = useRentals();
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
-  const [openId, setOpenId] = useState<number | null>(null);
+  const [openId, setOpenId] = useReloadRestoredState<number | null>(
+    "mobile:clients:openId",
+    null,
+  );
   const [newOpen, setNewOpen] = useState(false);
   const { callClient, callSheet } = useCallClient();
   // Внутри карточки клиента (drill-in) кнопку «+ Клиент» прячем.

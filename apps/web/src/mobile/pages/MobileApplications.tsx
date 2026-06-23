@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useReloadRestoredState } from "@/lib/usePersistedState";
 import { Inbox, ChevronRight } from "lucide-react";
 import {
   useApplications,
@@ -55,7 +56,10 @@ function formatDate(iso: string | null): string {
 
 export function MobileApplications() {
   const [filter, setFilter] = useState<Filter>("active");
-  const [openId, setOpenId] = useState<number | null>(null);
+  const [openId, setOpenId] = useReloadRestoredState<number | null>(
+    "mobile:applications:openId",
+    null,
+  );
   /** Заявка, оформляемая в клиента (открыта форма convert). */
   const [convertApp, setConvertApp] = useState<ApiApplication | null>(null);
   /** Заявка, для которой открыт выбор причины отклонения. */
