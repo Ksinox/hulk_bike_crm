@@ -27,11 +27,14 @@ import {
   useCreateDamageReport,
   usePatchDamageReport,
   useUploadDamageMedia,
+  useUploadDraftDamageMedia,
+  fetchDraftDamageMedia,
   useDeleteDamageMedia,
   type ApiDamageReport,
   type ApiDamageMedia,
   type CreateDamageItem,
 } from "@/lib/api/damage-reports";
+import { usePersistedState } from "@/lib/usePersistedState";
 import { useApiScooters } from "@/lib/api/scooters";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { useApiClients } from "@/lib/api/clients";
@@ -275,6 +278,15 @@ export function DamageReportDialog({
   // При создании — стейджим локально и грузим после создания акта.
   const uploadMedia = useUploadDamageMedia();
   const deleteMedia = useDeleteDamageMedia();
+  const uploadDraftMedia = useUploadDraftDamageMedia();
+  // Part B: стабильный токен черновика нового акта (per rental). Медиа грузится
+  // сразу на сервер по этому токену → переживает refresh; при создании акта
+  // привязывается. Для редактирования не нужен (медиа уже на акте).
+  const [draftToken, , clearDraftToken] = usePersistedState<string>(
+    `damage-draft-token:rental-${rental.id}`,
+    () => `dmg-${rental.id}-${Math.random().toString(36).slice(2, 12)}`,
+    { disabled: isEdit },
+  );
   const [staged, setStaged] = useState<StagedMedia[]>([]);
   const [uploadedMedia, setUploadedMedia] = useState<ApiDamageMedia[]>(
     existing?.media ?? [],
@@ -295,6 +307,25 @@ export function DamageReportDialog({
   useEffect(() => {
     if (existing?.media) setUploadedMedia(existing.media);
   }, [existing?.media]);
+
+  // Part B: восстановить eager-загруженное медиа НОВОГО акта после refresh.
+  // При первом открытии токен свежий → список пуст. После F5 + переоткрытия
+  // тот же токен (sessionStorage) вернёт уже загруженные на сервер фото/видео.
+  useEffect(() => {
+    if (isEdit || !draftToken) return;
+    let cancelled = false;
+    void fetchDraftDamageMedia(draftToken).then((items) => {
+      if (cancelled || !items.length) return;
+      setUploadedMedia((u) => {
+        const have = new Set(u.map((m) => m.id));
+        return [...u, ...items.filter((m) => !have.has(m.id))];
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEdit, draftToken]);
 
   const onPickMedia = async (files: File[]) => {
     const items = await Promise.all(files.map((f) => analyzeFile(f)));
@@ -319,8 +350,29 @@ export function DamageReportDialog({
       }
       setMediaBusy(false);
     } else {
-      // Создание — копим локально, загрузим после создания акта.
+      // Part B: новый акт — грузим медиа СРАЗУ на сервер по draft-токену
+      // (eager), чтобы переживало refresh. Успех → в uploadedMedia; неудача →
+      // остаётся в staged и догрузится при сохранении (fallback).
+      setMediaBusy(true);
       setStaged((s) => [...s, ...items]);
+      for (const it of items) {
+        try {
+          const m = await uploadDraftMedia.mutateAsync({
+            draftToken,
+            file: it.file,
+            durationSec: it.durationSec,
+          });
+          setUploadedMedia((u) => [...u, m]);
+          setStaged((s) => s.filter((x) => x.id !== it.id));
+          URL.revokeObjectURL(it.previewUrl);
+        } catch (e) {
+          toast.error(
+            "Медиа загрузится при сохранении",
+            (e as Error).message ?? "",
+          );
+        }
+      }
+      setMediaBusy(false);
     }
   };
 
@@ -407,7 +459,9 @@ export function DamageReportDialog({
   // Защита от случайного закрытия: если есть несохранённые фото/видео (или при
   // создании — выбранные позиции) — переспрашиваем, чтобы работу не потерять.
   const guardedClose = () => {
-    const hasUnsaved = staged.length > 0 || (!isEdit && selected.length > 0);
+    const hasUnsaved =
+      staged.length > 0 ||
+      (!isEdit && (selected.length > 0 || uploadedMedia.length > 0));
     if (
       hasUnsaved &&
       !window.confirm(
@@ -415,6 +469,13 @@ export function DamageReportDialog({
       )
     )
       return;
+    // Part B: новый акт закрыли без сохранения → чистим черновик. Удаляем
+    // eager-загруженные orphan-медиа с сервера и сбрасываем токен, иначе при
+    // переоткрытии они «воскреснут». (F5 сюда НЕ заходит → медиа переживает.)
+    if (!isEdit) {
+      for (const m of uploadedMedia) deleteMedia.mutate(m.id);
+      clearDraftToken();
+    }
     requestClose();
   };
 
@@ -455,6 +516,8 @@ export function DamageReportDialog({
             depositCovered,
             note: note.trim() || null,
             sendScooterToRepair: sendToRepair,
+            // Part B: привязать eager-загруженные медиа к новому акту.
+            draftToken,
           });
       // Safety: API мог вернуть некорректный объект — защищаемся от null.
       if (!created || typeof created.id !== "number") {
@@ -494,6 +557,8 @@ export function DamageReportDialog({
         setStaged([]);
         setMediaBusy(false);
       }
+      // Акт сохранён, медиа привязаны → черновик-токен больше не нужен.
+      if (!isEdit) clearDraftToken();
       requestClose();
       window.setTimeout(() => onCreated?.(reportId), 200);
     } catch (e) {
@@ -1086,7 +1151,7 @@ export function DamageReportDialog({
           </div>
           <button
             type="button"
-            onClick={requestClose}
+            onClick={guardedClose}
             className="flex h-8 w-8 items-center justify-center rounded-full text-muted hover:bg-border hover:text-ink"
           >
             <X size={16} />
@@ -1494,7 +1559,7 @@ export function DamageReportDialog({
             <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-2">
               <button
                 type="button"
-                onClick={requestClose}
+                onClick={guardedClose}
                 className="rounded-[10px] bg-surface-soft px-4 py-2 text-[13px] font-semibold text-ink-2 hover:bg-surface"
               >
                 Отмена

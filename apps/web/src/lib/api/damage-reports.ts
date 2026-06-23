@@ -96,6 +96,8 @@ export type CreateDamageReportInput = {
   depositCovered?: number;
   note?: string | null;
   sendScooterToRepair?: boolean;
+  /** Part B: токен черновика — привязать загруженные заранее медиа к акту. */
+  draftToken?: string | null;
 };
 
 export type DamagePaymentInput = {
@@ -304,6 +306,63 @@ export function useUploadDamageMedia() {
       qc.invalidateQueries({ queryKey: damageReportsKeys.all });
     },
   });
+}
+
+/**
+ * Part B: загрузить медиа НОВОГО (ещё не сохранённого) акта по draft-токену.
+ * Медиа уходит на сервер сразу при выборе (eager upload) → переживает refresh.
+ * Привязка к акту произойдёт при создании (передаём draftToken в create).
+ */
+export function useUploadDraftDamageMedia() {
+  return useMutation({
+    mutationFn: async (args: {
+      draftToken: string;
+      file: File;
+      durationSec?: number | null;
+    }) => {
+      const fd = new FormData();
+      fd.append("file", args.file);
+      fd.append("draftToken", args.draftToken);
+      if (args.durationSec != null && args.durationSec > 0) {
+        fd.append("durationSec", String(Math.round(args.durationSec)));
+      }
+      const res = await fetch(
+        `${API_BASE}/api/damage-reports/draft-media`,
+        { method: "POST", credentials: "include", body: fd },
+      );
+      if (!res.ok) {
+        let body: unknown = null;
+        try {
+          body = await res.json();
+        } catch {
+          /* ignore */
+        }
+        const msg =
+          (body as { message?: string; error?: string })?.message ??
+          (body as { message?: string; error?: string })?.error ??
+          `upload ${res.status}`;
+        throw new Error(msg);
+      }
+      return (await res.json()) as ApiDamageMedia;
+    },
+  });
+}
+
+/** Part B: список draft-медиа по токену (восстановление формы после F5). */
+export async function fetchDraftDamageMedia(
+  token: string,
+): Promise<ApiDamageMedia[]> {
+  try {
+    const res = await fetch(
+      `${API_BASE}/api/damage-reports/draft-media?token=${encodeURIComponent(token)}`,
+      { credentials: "include" },
+    );
+    if (!res.ok) return [];
+    const body = (await res.json()) as { items?: ApiDamageMedia[] };
+    return body.items ?? [];
+  } catch {
+    return [];
+  }
 }
 
 /** Удалить медиа повреждения. */
