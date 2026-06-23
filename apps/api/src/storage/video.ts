@@ -51,21 +51,21 @@ export async function transcodeVideo(
   const posterPath = join(dir, "poster.jpg");
   try {
     await writeFile(inPath, buf);
-    // Качество «как у Telegram» (по итогам ресёрча, см. ниже). H.264/AAC —
-    // единственный кодек, который играет ВЕЗДЕ (iOS Safari + Android Chrome);
-    // HEVC/VP9/AV1 кросс-платформенно ненадёжны. «Мыло» давали ДВЕ вещи:
-    //   1) preset veryfast — слабые motion-estimation/psy-rd, смазывает мелочь
-    //      (царапины/трещины). → preset slow (главный выигрыш).
-    //   2) даунскейл 4K→1080p дефолтным bicubic. → scale flags=lanczos (резче).
-    // Плюс CRF 18 (вместо 20 — чуть больше деталей) и БЕЗ -tune, чтобы остался
-    // дефолтный psy-rd=1.0 (встроенный «резкач»). High-профиль/yuv420p/faststart
-    // — без изменений. Видео короткие (сек–мин), транскод фоновый → slow ок.
+    // Качество «как у Telegram» (по итогам ресёрча). H.264/AAC — единственный
+    // кодек, который играет ВЕЗДЕ (iOS Safari + Android Chrome). «Мыло» давали:
+    //   1) preset veryfast → slow (главный выигрыш по чёткости мелочи).
+    //   2) даунскейл дефолтным bicubic → lanczos.
+    // По просьбе заказчика (детали царапин/трещин всё ещё слабоваты) подняли
+    // ПОТОЛОК разрешения 1080p→1440p (большая сторона ≤2560): 1440p/4K-исходники
+    // теперь сохраняют больше деталей (1080p-исходники не апскейлим — decrease).
+    // И CRF 18→16 (визуально прозрачно, больше высокочастотной детали).
+    // БЕЗ -tune (psy-rd=1.0 остаётся). Видео короткие, транскод фоновый → slow ок.
     await run("ffmpeg", [
       "-y",
       "-i",
       inPath,
       "-vf",
-      "scale=min(1920\\,iw):min(1920\\,ih):force_original_aspect_ratio=decrease:force_divisible_by=2:flags=lanczos+accurate_rnd",
+      "scale=min(2560\\,iw):min(2560\\,ih):force_original_aspect_ratio=decrease:force_divisible_by=2:flags=lanczos+accurate_rnd",
       "-c:v",
       "libx264",
       "-profile:v",
@@ -75,7 +75,7 @@ export async function transcodeVideo(
       "-preset",
       "slow",
       "-crf",
-      "18",
+      "16",
       "-c:a",
       "aac",
       "-b:a",
