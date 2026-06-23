@@ -104,6 +104,8 @@ const CreateBody = z.object({
   note: z.string().max(2000).nullable().optional(),
   sendScooterToRepair: z.boolean().default(false),
   items: z.array(ItemInput).min(1),
+  /** Part B: токен черновика — привязать загруженные заранее медиа к акту. */
+  draftToken: z.string().max(80).nullable().optional(),
 });
 
 const PatchBody = z.object({
@@ -228,8 +230,14 @@ export async function damageReportsRoutes(app: FastifyInstance) {
       return reply
         .code(400)
         .send({ error: "validation", issues: parsed.error.issues });
-    const { rentalId, items, depositCovered, note, sendScooterToRepair } =
-      parsed.data;
+    const {
+      rentalId,
+      items,
+      depositCovered,
+      note,
+      sendScooterToRepair,
+      draftToken,
+    } = parsed.data;
     // Грузим аренду — нужен скутер и залог.
     const [rental] = await db
       .select()
@@ -292,6 +300,13 @@ export async function damageReportsRoutes(app: FastifyInstance) {
           sortOrder: i,
         })),
       );
+    }
+    // Part B: привязать медиа, загруженное по draft-токену ДО создания акта.
+    if (draftToken) {
+      await db
+        .update(damageReportMedia)
+        .set({ reportId: report!.id, draftToken: null })
+        .where(eq(damageReportMedia.draftToken, draftToken));
     }
     // v0.2.75: статус аренды НЕ меняем при создании акта.
     // Реакция клиента (agreed/disputed) проставляется отдельным endpoint
@@ -726,7 +741,14 @@ export async function damageReportsRoutes(app: FastifyInstance) {
       summary: `К акту #${id} добавлено видео повреждения`,
       meta: { mediaId: row!.id, kind: "video" },
     });
-    void processDamageVideo(app.log, row!.id, id, fileBuf, fileName, origKey);
+    void processDamageVideo(
+      app.log,
+      row!.id,
+      `damages/${id}`,
+      fileBuf,
+      fileName,
+      origKey,
+    );
     return reply.code(201).send(row);
   });
 
@@ -752,6 +774,70 @@ export async function damageReportsRoutes(app: FastifyInstance) {
       return reply.code(204).send();
     },
   );
+
+  /**
+   * Part B: загрузить медиа НОВОГО (ещё не сохранённого) акта по draft-токену.
+   * Кладём как «сироту» (reportId=null, draft_token=token); при сохранении
+   * акта привязываем. multipart: file, durationSec?, draftToken.
+   */
+  app.post("/draft-media", async (req, reply) => {
+    const parts = req.parts({
+      limits: { fileSize: MAX_DAMAGE_MEDIA_SIZE, files: 1 },
+    });
+    let fileBuf: Buffer | null = null;
+    let fileName = "media";
+    let mimeType = "application/octet-stream";
+    let durationSec: number | null = null;
+    let draftToken: string | null = null;
+    for await (const part of parts) {
+      if (part.type === "file") {
+        fileBuf = await part.toBuffer();
+        fileName = part.filename;
+        mimeType = part.mimetype;
+      } else if (part.type === "field") {
+        if (part.fieldname === "durationSec") {
+          const n = Number(part.value);
+          if (Number.isFinite(n) && n > 0) durationSec = Math.round(n);
+        } else if (part.fieldname === "draftToken") {
+          draftToken = String(part.value).slice(0, 80) || null;
+        }
+      }
+    }
+    if (!fileBuf) return reply.code(400).send({ error: "file required" });
+    if (!draftToken)
+      return reply.code(400).send({ error: "draftToken required" });
+    const row = await storeOneDamageMedia(app.log, {
+      reportId: null,
+      draftToken,
+      keyPrefix: `damages/draft/${draftToken}`,
+      fileBuf,
+      fileName,
+      mimeType,
+      durationSec,
+      userId: getUserId(req),
+    });
+    if (!row)
+      return reply.code(400).send({
+        error: "unsupported_media",
+        message: "Прикладываются только фото и видео.",
+      });
+    return reply.code(201).send(row);
+  });
+
+  /** Part B: список draft-медиа по токену (восстановление формы после F5). */
+  app.get<{ Querystring: { token?: string } }>(
+    "/draft-media",
+    async (req, reply) => {
+      const token = req.query.token;
+      if (!token) return reply.code(400).send({ error: "token required" });
+      const rows = await db
+        .select()
+        .from(damageReportMedia)
+        .where(eq(damageReportMedia.draftToken, token))
+        .orderBy(asc(damageReportMedia.id));
+      return { items: rows };
+    },
+  );
 }
 
 /**
@@ -763,7 +849,7 @@ export async function damageReportsRoutes(app: FastifyInstance) {
 async function processDamageVideo(
   log: FastifyBaseLogger,
   mediaId: number,
-  reportId: number,
+  keyPrefix: string,
   buf: Buffer,
   fileName: string,
   origKey: string,
@@ -771,11 +857,11 @@ async function processDamageVideo(
   try {
     const { mp4, poster } = await transcodeVideo(buf, fileName);
     const base = fileName.replace(/\.[^.]+$/, "") || "video";
-    const mp4Key = makeFileKey(`damages/${reportId}`, `${base}.mp4`);
+    const mp4Key = makeFileKey(keyPrefix, `${base}.mp4`);
     await putObject(mp4Key, mp4, "video/mp4");
     let posterKey: string | null = null;
     if (poster) {
-      posterKey = makeFileKey(`damages/${reportId}`, `${base}.jpg`);
+      posterKey = makeFileKey(keyPrefix, `${base}.jpg`);
       // putObjectWithImageVariants — обложке тоже сделает thumb/view.
       await putObjectWithImageVariants(posterKey, poster, "image/jpeg");
     }
@@ -790,7 +876,7 @@ async function processDamageVideo(
       })
       .where(eq(damageReportMedia.id, mediaId));
     await removeObject(origKey).catch(() => {});
-    log.info({ mediaId, reportId }, "damage video transcoded");
+    log.info({ mediaId }, "damage video transcoded");
   } catch (e) {
     log.error({ err: e, mediaId }, "damage video transcode failed");
     // Не удалось перекодировать — оставляем оригинал, помечаем ready
@@ -801,4 +887,60 @@ async function processDamageVideo(
       .where(eq(damageReportMedia.id, mediaId))
       .catch(() => {});
   }
+}
+
+/**
+ * Сохраняет ОДНО медиа ущерба: фото → variants + ready; видео → оригинал +
+ * processing + фоновый транскод. Привязка через reportId ИЛИ draftToken,
+ * keyPrefix — папка в S3. Возвращает строку, либо null если тип не фото/видео.
+ */
+async function storeOneDamageMedia(
+  log: FastifyBaseLogger,
+  opts: {
+    reportId: number | null;
+    draftToken: string | null;
+    keyPrefix: string;
+    fileBuf: Buffer;
+    fileName: string;
+    mimeType: string;
+    durationSec: number | null;
+    userId: number | null;
+  },
+): Promise<typeof damageReportMedia.$inferSelect | null> {
+  const kind = mediaKindFromMime(opts.mimeType);
+  if (!kind) return null;
+  const common = {
+    reportId: opts.reportId,
+    draftToken: opts.draftToken,
+    fileName: opts.fileName,
+    mimeType: opts.mimeType,
+    size: opts.fileBuf.length,
+    durationSec: opts.durationSec,
+    uploadedByUserId: opts.userId,
+  };
+  if (kind === "photo") {
+    const key = makeFileKey(opts.keyPrefix, opts.fileName);
+    await putObjectWithImageVariants(key, opts.fileBuf, opts.mimeType);
+    const [row] = await db
+      .insert(damageReportMedia)
+      .values({ ...common, kind: "photo", fileKey: key, status: "ready" })
+      .returning();
+    return row ?? null;
+  }
+  const origKey = makeFileKey(opts.keyPrefix, opts.fileName);
+  await putObject(origKey, opts.fileBuf, opts.mimeType);
+  const [row] = await db
+    .insert(damageReportMedia)
+    .values({ ...common, kind: "video", fileKey: origKey, status: "processing" })
+    .returning();
+  if (row)
+    void processDamageVideo(
+      log,
+      row.id,
+      opts.keyPrefix,
+      opts.fileBuf,
+      opts.fileName,
+      origKey,
+    );
+  return row ?? null;
 }
