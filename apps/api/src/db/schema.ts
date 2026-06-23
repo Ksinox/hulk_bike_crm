@@ -1187,9 +1187,15 @@ export const damageReportMedia = pgTable(
   "damage_report_media",
   {
     id: bigserial("id", { mode: "number" }).primaryKey(),
-    reportId: bigint("report_id", { mode: "number" })
-      .notNull()
-      .references(() => damageReports.id, { onDelete: "cascade" }),
+    // Part B: nullable — медиа может быть загружено ДО создания акта (eager
+    // upload новой формы). Привязывается к акту при сохранении.
+    reportId: bigint("report_id", { mode: "number" }).references(
+      () => damageReports.id,
+      { onDelete: "cascade" },
+    ),
+    /** Токен черновика для медиа-сирот (reportId IS NULL). По нему фронт
+     *  грузит/листает/привязывает медиа новой формы. Крон чистит старых сирот. */
+    draftToken: text("draft_token"),
     /** 'photo' | 'video' — определяется по mime на загрузке. */
     kind: text("kind").notNull().default("photo"),
     fileKey: text("file_key").notNull(),
@@ -1211,6 +1217,9 @@ export const damageReportMedia = pgTable(
   },
   (t) => ({
     reportIdx: index("damage_report_media_report_idx").on(t.reportId),
+    draftTokenIdx: index("damage_report_media_draft_token_idx").on(
+      t.draftToken,
+    ),
   }),
 );
 
