@@ -36,7 +36,6 @@ apps/web/src/pages/rentals/DamageReportDialog.tsx
 apps/web/src/pages/rentals/RentalActionDialog.tsx
 apps/web/src/pages/dashboard/RevenueListModal.tsx
 apps/web/src/pages/rentals/DamageReportPaymentDialog.tsx
-apps/web/src/pages/rentals/ExtendRentalDialog.tsx
 apps/web/src/pages/rentals/NewRentalModal.tsx
 apps/web/src/pages/fleet/ScooterEditForm.tsx
 apps/web/src/pages/fleet/AddScooterModal.tsx

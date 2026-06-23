@@ -571,7 +571,7 @@
 - **completed_damage / problem:** Сбросить «проблемная» (`normalize-status`), Возобновить аренду (`resume-damage`), Претензия (`claim`) + extras
 - **police / court:** Скутер вернулся — завершить (`complete`), Закрыть с ущербом (`set-damage`), Отменить дело (`revert-police`) + extras
 - **extras (живые статусы):** Зафиксировать/Изменить ущерб (`set-damage`), Начислить долг (`charge-debt`), Сбросить просрочку (`forgive-overdue`), Не выходит на связь / Снять (`mark-/unmark-unreachable`)
-- **footer/CTA:** Принять оплату (`PaymentAcceptDialog`), Продлить (`ExtendRentalDialog`), Заменить скутер (`SwapScooterDialog`), Изменить экипировку (`EquipmentChangeDialog`), Пополнить залог (`SecurityTopupDialog`), Редактировать (`RentalEditModal`)
+- **footer/CTA:** Принять оплату (`PaymentAcceptDialog`), Заменить скутер (`SwapScooterDialog`), Изменить экипировку (`EquipmentChangeDialog`), Пополнить залог (`SecurityTopupDialog`), Редактировать (`RentalEditModal`)
 
 ### Статусы скутера (`scooter.baseStatus`)
 | Статус | Название |

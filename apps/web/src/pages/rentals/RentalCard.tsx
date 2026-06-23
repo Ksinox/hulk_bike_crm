@@ -69,7 +69,6 @@ import { SideDrawer } from "./rental-card/SideDrawer";
 import { useActivityTimeline } from "@/lib/api/activity";
 import { HistoryTab, type HistoryFilter } from "./RentalCardTabs";
 import { RentalActionDialog, type ActionKind } from "./RentalActionDialog";
-import { ExtendRentalDialog } from "./ExtendRentalDialog";
 import { PaymentAcceptDialog } from "./PaymentAcceptDialog";
 import { askRentalDeleteReason } from "./deleteRentalReason";
 import { SwapScooterDialog } from "./SwapScooterDialog";
@@ -424,7 +423,6 @@ export function RentalCard({
   // контент-хайт макет). Старый push-колоночный путь (onRequestComplete)
   // больше не используется — prop оставлен для совместимости.
   void onRequestComplete;
-  const [extendOpen, setExtendOpen] = useState(false);
   // v0.8.0: бамп для входа в режим паркинга из ⋯-меню (CalendarPanel слушает).
   const [armParkingSignal, setArmParkingSignal] = useState(0);
   // v0.3.9: после продления / оплаты — открываем диалог приёма оплаты
@@ -1001,7 +999,6 @@ export function RentalCard({
   // состав теперь только в hover-поповере «Долг». Карточка не растягивается.
 
   const handleAction = async (id: string) => {
-    if (id === "extend") return setExtendOpen(true);
     if (id === "add-note") return setAddNoteOpen(true);
     // v0.8.0: вход в режим паркинга (основная кнопка 🅿 — в календаре).
     if (id === "set-parking") return setArmParkingSignal((n) => n + 1);
@@ -2915,22 +2912,6 @@ export function RentalCard({
       {/* «Изменить аренду» (RentalEditModal) удалён — сырая правка денег/
           периода заменена безопасными кнопками в карточке. */}
       {/* ConfirmPaymentDialog больше не используется — функционал убран. */}
-      {extendOpen && (
-        <ExtendRentalDialog
-          rental={rental}
-          onClose={() => setExtendOpen(false)}
-          onExtended={(r) => {
-            // v0.3.9: после продления переключаем фокус на новую связку
-            // и сразу открываем диалог приёма оплаты — оператор вводит
-            // принятую сумму, переплата уходит в депозит.
-            navigate({ route: "rentals", rentalId: r.id });
-            // v0.7.3: делегируем открытие Payment родителю (push-колонка),
-            // иначе открываем inline внутри карточки.
-            if (onRequestPayment) onRequestPayment(r.id, 0);
-            else setPaymentRentalId(r.id);
-          }}
-        />
-      )}
       {/* v0.7.3: inline-Payment (overlay внутри карточки) рендерим ТОЛЬКО
           в fallback-режиме — когда родитель не управляет Payment-колонкой
           (DashboardDrawer). На странице Аренд Payment рендерится как push-

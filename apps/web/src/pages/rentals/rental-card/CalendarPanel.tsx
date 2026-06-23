@@ -297,8 +297,8 @@ export function CalendarPanel({
     : endIso
       ? addDaysIso(endIso, -Math.max(0, rental.days - MIN_RENTAL_DAYS))
       : null;
-  // Дневная стоимость платной экипировки (как в ExtendRentalDialog) —
-  // прибавляется к ставке при расчёте суммы.
+  // Дневная стоимость платной экипировки — прибавляется к ставке
+  // при расчёте суммы.
   const equipmentDaily = useMemo(
     () =>
       (rental.equipmentJson ?? []).reduce(

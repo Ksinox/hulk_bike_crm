@@ -223,8 +223,8 @@ export function PaymentAcceptDialog({
 
   // ── Мобильный мастер «Принять платёж» (mid-rental, без завершения): 2 шага ──
   //  0 — Долг (состав + сколько гасит + прощение), 1 — Оплата (источники
-  //  залог/депозит + способ + К приёму). Продление здесь НЕ делаем — для него
-  //  есть отдельное действие «Продлить аренду» (ExtendRentalDialog).
+  //  залог/депозит + способ + К приёму). Продление здесь НЕ делаем — оно
+  //  живёт тумблером extendOn в десктоп-режиме «Принять оплату».
   const [payStep, setPayStep] = useState(0);
   const [payStepDir, setPayStepDir] = useState<"fwd" | "back">("fwd");
   const goPayStep = (n: number) => {
