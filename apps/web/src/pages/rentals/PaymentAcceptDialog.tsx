@@ -4197,8 +4197,20 @@ export function PaymentAcceptDialog({
   // Долг → Продление → Оплата. Вся логика/сабмит общие (тот же extendOn,
   // extendInplaceAsync, distribute, источники) — отличается только вёрстка.
   if (isMobile) {
-    const pTitles = ["Долг", "Продление", "Оплата"];
-    const stepCount = pTitles.length;
+    // Умные шаги: показываем только применимые (нет долга → без «Долга»;
+    // аренда не активна → без «Продления»). «Оплата» — всегда последняя.
+    const wizSteps: ("debt" | "extend" | "pay")[] = [
+      ...(totalDebt + parkingDue > 0 ? (["debt"] as const) : []),
+      ...(canExtend ? (["extend"] as const) : []),
+      "pay",
+    ];
+    const stepCount = wizSteps.length;
+    const curStep = wizSteps[payStep] ?? wizSteps[stepCount - 1];
+    const stepTitle: Record<"debt" | "extend" | "pay", string> = {
+      debt: "Долг",
+      extend: "Продление",
+      pay: "Оплата",
+    };
     const pAnim = payStepDir === "fwd" ? "animate-wz-fwd" : "animate-wz-back";
     const forgiveOptions = [
       { key: "all", label: "Всё — дни и штраф", amount: overdueBalanceRaw, show: true },
@@ -4264,14 +4276,14 @@ export function PaymentAcceptDialog({
           </div>
           <div className="px-4 pb-1 pt-3">
             <div className="text-[12px] font-bold uppercase tracking-wider text-blue-700">
-              Шаг {payStep + 1} · {pTitles[payStep]}
+              Шаг {payStep + 1} · {stepTitle[curStep]}
             </div>
           </div>
 
           {/* BODY */}
           <div key={payStep} className={cn("flex-1 overflow-y-auto px-4 pb-3", pAnim)}>
-            {/* ----- ШАГ 0: ДОЛГ ----- */}
-            {payStep === 0 && (
+            {/* ----- ШАГ «ДОЛГ» ----- */}
+            {curStep === "debt" && (
               <div className="flex flex-col gap-3 pt-1">
                 {noDebt ? (
                   <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 px-4 py-5 text-center">
@@ -4354,8 +4366,8 @@ export function PaymentAcceptDialog({
               </div>
             )}
 
-            {/* ----- ШАГ 1: ПРОДЛЕНИЕ (та же логика, что на десктопе) ----- */}
-            {payStep === 1 && (
+            {/* ----- ШАГ «ПРОДЛЕНИЕ» (та же логика, что на десктопе) ----- */}
+            {curStep === "extend" && (
               <div className="flex flex-col gap-3 pt-1">
                 {!canExtend ? (
                   <div className="rounded-2xl border border-border bg-surface-soft px-4 py-6 text-center text-[13px] text-muted-2">
@@ -4466,8 +4478,8 @@ export function PaymentAcceptDialog({
               </div>
             )}
 
-            {/* ----- ШАГ 2: ОПЛАТА ----- */}
-            {payStep === 2 && (
+            {/* ----- ШАГ «ОПЛАТА» ----- */}
+            {curStep === "pay" && (
               <div className="flex flex-col gap-3 pt-1">
                 {isPrepay ? (
                   <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 px-4 py-5 text-center text-[13px] text-emerald-700">
@@ -4562,7 +4574,7 @@ export function PaymentAcceptDialog({
           {/* FOOTER — сумму наличных задаём ЗДЕСЬ (один раз, рядом с кнопкой),
               «Принять» спрашивает подтверждение. Без дублей сумм. */}
           <div className="border-t border-border bg-surface px-4 py-3 pb-[max(env(safe-area-inset-bottom),0.75rem)]">
-            {payStep < 2 ? (
+            {curStep !== "pay" ? (
               <div className="flex gap-2">
                 {payStep > 0 && (
                   <button
@@ -4619,7 +4631,7 @@ export function PaymentAcceptDialog({
                   </div>
                 )}
                 <div className="flex gap-2">
-                  <button type="button" onClick={() => goPayStep(1)} className="h-12 flex-1 rounded-2xl bg-surface-soft text-[15px] font-semibold text-ink-2 transition-transform active:scale-[0.98]">Назад</button>
+                  <button type="button" onClick={() => (payStep === 0 ? requestClose() : goPayStep(payStep - 1))} className="h-12 flex-1 rounded-2xl bg-surface-soft text-[15px] font-semibold text-ink-2 transition-transform active:scale-[0.98]">{payStep === 0 ? "Отмена" : "Назад"}</button>
                   {isPrepay ? (
                     <button
                       type="button"

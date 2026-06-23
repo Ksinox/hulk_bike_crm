@@ -27,6 +27,7 @@ import {
   Bike,
   Camera,
   Clock,
+  Minus,
   Pencil,
   Plus,
   Repeat,
@@ -75,6 +76,7 @@ export function MasterBlock({
   onChangeEquipment,
   onPayoutDeposit,
   onTopupDeposit,
+  onWithholdDeposit,
   section,
   paidThisRental,
   debtBadge,
@@ -96,6 +98,8 @@ export function MasterBlock({
   onPayoutDeposit?: () => void;
   /** Клик по плашке залога → диалог «Пополнить залог» (только денежный залог). */
   onTopupDeposit?: () => void;
+  /** Кнопка «Удержать из залога» (списать залог в доход с причиной). */
+  onWithholdDeposit?: () => void;
   onRecordDamage?: () => void;
   layout?: "horizontal" | "vertical";
   /** v0.7.8: в drawer-режиме карточка разбита на accordion-секции —
@@ -159,8 +163,52 @@ export function MasterBlock({
   const originalDeposit = rental.depositOriginal ?? currentDeposit;
   const depositSpent = Math.max(0, originalDeposit - currentDeposit);
   const depositItem = rental.depositItem ?? null;
-  // Плашку залога можно тапнуть → «Пополнить залог» (только денежный залог).
-  const canTopupDeposit = !depositItem && !!onTopupDeposit;
+  // Денежный залог → показываем аккуратные кнопки-иконки «Пополнить» (вернуть
+  // в залог) и «Удержать» (списать залог в доход). Одинаково в карточке (моб.) и
+  // на десктопе. Предметный залог (depositItem) кнопок не имеет.
+  const showDepositActions =
+    !depositItem && (!!onTopupDeposit || !!onWithholdDeposit);
+  const depositTile = (
+    <div className="min-w-0 rounded-[12px] border border-border bg-surface px-4 py-3">
+      <div className="inline-flex items-center gap-1 text-[11px] font-semibold text-muted-2">
+        <Shield size={11} /> Залог
+      </div>
+      <div className="mt-0.5 truncate font-display text-[16px] font-extrabold leading-tight tabular-nums text-ink">
+        {depositItem ? depositItem : `${fmt(currentDeposit)} ₽`}
+      </div>
+      <div className="mt-0.5 truncate text-[10px] text-muted">
+        {depositItem
+          ? "предметный залог"
+          : depositSpent > 0
+            ? `из ${fmt(originalDeposit)} ₽ — списано ${fmt(depositSpent)} ₽`
+            : "на балансе компании"}
+      </div>
+      {showDepositActions && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {onTopupDeposit && (
+            <button
+              type="button"
+              onClick={onTopupDeposit}
+              title="Пополнить залог"
+              className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-1 text-[10.5px] font-semibold text-blue-700 transition-colors hover:bg-blue-100"
+            >
+              <Plus size={11} /> Пополнить
+            </button>
+          )}
+          {onWithholdDeposit && currentDeposit > 0 && (
+            <button
+              type="button"
+              onClick={onWithholdDeposit}
+              title="Удержать из залога (списать в доход)"
+              className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-1 text-[10.5px] font-semibold text-amber-700 transition-colors hover:bg-amber-100"
+            >
+              <Minus size={11} /> Удержать
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
 
   // KPI клиента — единый источник: useClientStats считает фактические
   // дни в аренде (с учётом просрочки) и реально оплаченное за всё время
@@ -433,36 +481,7 @@ export function MasterBlock({
   // ── БЛОК 3 — Залог | Депозит (grid-cols-2) ──
   const depositBlock = (
     <div className="grid grid-cols-2 gap-3">
-      <button
-        type="button"
-        onClick={canTopupDeposit ? onTopupDeposit : undefined}
-        disabled={!canTopupDeposit}
-        title={canTopupDeposit ? "Пополнить залог" : undefined}
-        className={`min-w-0 rounded-[12px] border border-border bg-surface px-4 py-3 text-left transition-colors ${
-          canTopupDeposit
-            ? "cursor-pointer hover:border-amber-300 hover:bg-amber-50/50"
-            : "cursor-default"
-        }`}
-      >
-        <div className="text-[11px] font-semibold text-muted-2 inline-flex items-center gap-1">
-          <Shield size={11} /> Залог
-        </div>
-        <div className="mt-0.5 font-display text-[16px] font-extrabold tabular-nums text-ink leading-tight truncate">
-          {depositItem ? depositItem : `${fmt(currentDeposit)} ₽`}
-        </div>
-        <div className="mt-0.5 text-[10px] text-muted truncate">
-          {depositItem
-            ? "предметный залог"
-            : depositSpent > 0
-              ? `из ${fmt(originalDeposit)} ₽ — списано ${fmt(depositSpent)} ₽`
-              : "на балансе компании"}
-        </div>
-        {canTopupDeposit && (
-          <div className="mt-1 inline-flex items-center gap-0.5 text-[10px] font-semibold text-amber-700">
-            <Plus size={10} /> Пополнить
-          </div>
-        )}
-      </button>
+      {depositTile}
       <div className="min-w-0 rounded-[12px] border border-border bg-surface px-4 py-3">
         <div className="text-[11px] font-semibold text-muted-2 inline-flex items-center gap-1">
           <Wallet size={11} /> Депозит
@@ -725,36 +744,7 @@ export function MasterBlock({
           v0.6.40: жёсткий 50/50 grid, min-w-0 на обеих ячейках
           чтобы ни одна не растягивала соседа. */}
       <div className="grid grid-cols-2 gap-3 p-5">
-        <button
-          type="button"
-          onClick={canTopupDeposit ? onTopupDeposit : undefined}
-          disabled={!canTopupDeposit}
-          title={canTopupDeposit ? "Пополнить залог" : undefined}
-          className={`min-w-0 rounded-[12px] border border-border bg-surface px-4 py-3 text-left transition-colors ${
-            canTopupDeposit
-              ? "cursor-pointer hover:border-amber-300 hover:bg-amber-50/50"
-              : "cursor-default"
-          }`}
-        >
-          <div className="text-[11px] font-semibold text-muted-2 inline-flex items-center gap-1">
-            <Shield size={11} /> Залог
-          </div>
-          <div className="mt-0.5 font-display text-[16px] font-extrabold tabular-nums text-ink leading-tight truncate">
-            {depositItem ? depositItem : `${fmt(currentDeposit)} ₽`}
-          </div>
-          <div className="mt-0.5 text-[10px] text-muted truncate">
-            {depositItem
-              ? "предметный залог"
-              : depositSpent > 0
-                ? `из ${fmt(originalDeposit)} ₽ — списано ${fmt(depositSpent)} ₽`
-                : "на балансе компании"}
-          </div>
-          {canTopupDeposit && (
-            <div className="mt-1 inline-flex items-center gap-0.5 text-[10px] font-semibold text-amber-700">
-              <Plus size={10} /> Пополнить
-            </div>
-          )}
-        </button>
+        {depositTile}
         <div className="min-w-0 rounded-[12px] border border-border bg-surface px-4 py-3">
           <div className="text-[11px] font-semibold text-muted-2 inline-flex items-center gap-1">
             <Wallet size={11} /> Депозит

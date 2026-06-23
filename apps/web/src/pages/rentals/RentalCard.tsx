@@ -2520,6 +2520,7 @@ export function RentalCard({
                 onSwapScooter={handleSwapScooter}
                 onChangeEquipment={changeEquipmentHandler}
                 onTopupDeposit={() => setTopupOpen(true)}
+                onWithholdDeposit={() => handleAction("withhold-deposit")}
               />
               {/* v0.7.11: «За всё время аренд клиента» (paidIn). v0.8.8: при
                   наведении — ховер со сводкой финопераций + «Подробнее» →
@@ -2824,6 +2825,7 @@ export function RentalCard({
               onChangeEquipment={changeEquipmentHandler}
               onPayoutDeposit={handlePayoutDeposit}
               onTopupDeposit={() => setTopupOpen(true)}
+              onWithholdDeposit={() => handleAction("withhold-deposit")}
               paidThisRental={paidIn}
             />
           </div>
