@@ -2220,9 +2220,9 @@ export function RentalCard({
           поэтому рендерим стикер здесь, в потоке, под шапкой. */}
       {drawerChrome && stickers.length > 0 && (!cardRect || cardRect.left < 220) && (
         <div className="flex justify-center pt-1">
-          {/* На мобиле стикер — для просмотра; открепить/удалить можно в
-              разделе «Заметки» (там кнопки всегда видны, без hover). */}
-          <StickerStack stickers={stickers} />
+          {/* На телефоне «×» на стикере всегда видна (без hover, увеличенный
+              тач-таргет) — открепить можно прямо отсюда, как на десктопе. */}
+          <StickerStack stickers={stickers} onUnpin={unpinSticker} />
         </div>
       )}
 

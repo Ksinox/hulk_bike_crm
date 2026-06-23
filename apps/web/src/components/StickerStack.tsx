@@ -172,9 +172,10 @@ function Sticker({
           type="button"
           onClick={() => onUnpin(sticker.id)}
           title="Открепить (уйдёт в раздел «Заметки»)"
-          className="absolute right-1 top-1 inline-flex h-4 w-4 items-center justify-center rounded-full text-black/40 opacity-0 transition-opacity hover:bg-black/10 hover:text-black/70 group-hover/sticker:opacity-100"
+          aria-label="Открепить заметку"
+          className="absolute right-0.5 top-0.5 inline-flex h-7 w-7 items-center justify-center rounded-full text-black/55 opacity-100 transition-opacity hover:bg-black/10 hover:text-black/70 sm:right-1 sm:top-1 sm:h-4 sm:w-4 sm:text-black/40 sm:opacity-0 sm:group-hover/sticker:opacity-100"
         >
-          <X size={11} />
+          <X size={13} />
         </button>
       )}
 
