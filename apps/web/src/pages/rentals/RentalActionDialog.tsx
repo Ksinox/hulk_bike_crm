@@ -147,6 +147,9 @@ export function RentalActionDialog({
   // v0.5.9: после успешного /complete показываем превью акта возврата.
   // Закрываем главный диалог, но превью остаётся для печати.
   const [returnDocPreview, setReturnDocPreview] = useState<number | null>(null);
+  // Акт ПОВРЕЖДЕНИЙ на печать после завершения с ущербом (заказчик: «договор
+  // должен выскакивать всегда»). Показываем перед актом возврата.
+  const [damageActPreview, setDamageActPreview] = useState<number | null>(null);
   // v0.4.66: открыть PaymentAcceptDialog если есть долг по аренде.
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   // v0.8.34 (F2): при выборе «Создать акт» в FinalActDialog открываем
@@ -359,7 +362,7 @@ export function RentalActionDialog({
   // (он сам начислил долг и зачёл залог). Здесь только завершаем аренду —
   // долг по ущербу остаётся на аренде (damage_reports.debt>0), и карточка
   // покажет «Завершена с ущербом» (см. F1 в effectiveRentalStatus).
-  const finalizeAfterAct = async () => {
+  const finalizeAfterAct = async (reportId: number) => {
     try {
       await completeRentalWithDamage(
         rental.id,
@@ -378,8 +381,9 @@ export function RentalActionDialog({
     } catch (e) {
       console.error("completeRentalWithDamage failed", e);
     }
-    // v0.5.9: после успешного завершения открываем акт возврата.
-    setReturnDocPreview(rental.id);
+    // Сначала акт ПОВРЕЖДЕНИЙ на печать (договор всегда выскакивает), после
+    // его закрытия — акт возврата.
+    setDamageActPreview(reportId);
   };
   void onOpenDamage; // legacy props, больше не используется в complete
 
@@ -908,6 +912,34 @@ export function RentalActionDialog({
     requestClose();
   };
 
+  // Акт ПОВРЕЖДЕНИЙ на печать — первым после завершения с ущербом. По
+  // закрытию открываем акт возврата (returnDocPreview).
+  if (damageActPreview != null) {
+    const base = (() => {
+      const envBase = import.meta.env.VITE_API_URL as string | undefined;
+      if (envBase) return envBase.replace(/\/$/, "");
+      return window.location.origin.includes("localhost")
+        ? "http://localhost:4000"
+        : window.location.origin
+            .replace("crm-preview.", "api-preview.")
+            .replace("crm.", "api.");
+    })();
+    const htmlUrl = `${base}/api/damage-reports/${damageActPreview}/document?format=html`;
+    const docxUrl = `${base}/api/damage-reports/${damageActPreview}/document?format=docx`;
+    return (
+      <DocumentPreviewModal
+        title={`Акт о повреждениях #${damageActPreview}`}
+        htmlUrl={htmlUrl}
+        docxUrl={docxUrl}
+        docxFilename={`Акт о повреждениях ${String(damageActPreview).padStart(4, "0")}.doc`}
+        onClose={() => {
+          setDamageActPreview(null);
+          setReturnDocPreview(rental.id);
+        }}
+      />
+    );
+  }
+
   // v0.5.9: после успешного /complete вместо закрытия диалога
   // отображаем DocumentPreviewModal с актом возврата — оператор
   // печатает/скачивает и закрывает превью.
@@ -1238,9 +1270,9 @@ export function RentalActionDialog({
           seedItems={damageSeed}
           submitLabel="Создать акт и завершить"
           onClose={() => setDamageSeed(null)}
-          onCreated={() => {
+          onCreated={(reportId) => {
             setDamageSeed(null);
-            void finalizeAfterAct();
+            void finalizeAfterAct(reportId);
           }}
         />
       )}
