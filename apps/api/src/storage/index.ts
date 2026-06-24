@@ -70,6 +70,16 @@ export async function getPartialObjectStream(
   return s3.getPartialObject(config.s3.bucket, key, offset, length);
 }
 
+/** Прочитать объект целиком в Buffer (для пере-обработки видео-сирот). */
+export async function getObjectBuffer(key: string): Promise<Buffer> {
+  const stream = await s3.getObject(config.s3.bucket, key);
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream as AsyncIterable<Buffer | string>) {
+    chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+  }
+  return Buffer.concat(chunks);
+}
+
 /**
  * Удалить файл ВМЕСТЕ с его image-вариантами (__view__ / __thumb__), если они
  * были сгенерированы (putObjectWithImageVariants для фото/аватарок). Для

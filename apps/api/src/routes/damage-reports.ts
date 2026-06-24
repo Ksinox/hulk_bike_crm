@@ -17,7 +17,7 @@ import {
 } from "../db/schema.js";
 import { makeFileKey, removeObject, putObject } from "../storage/index.js";
 import { putObjectWithImageVariants } from "../storage/image.js";
-import { transcodeVideo } from "../storage/video.js";
+import { processDamageVideo } from "../services/damageVideoProcessor.js";
 import { logActivity } from "../services/activityLog.js";
 import {
   loadDamageBundle,
@@ -838,55 +838,6 @@ export async function damageReportsRoutes(app: FastifyInstance) {
       return { items: rows };
     },
   );
-}
-
-/**
- * Фоновое перекодирование видео ущерба: ffmpeg → H.264 MP4 + JPEG-обложка,
- * затем подменяем запись (fileKey → mp4, posterKey, status=ready) и удаляем
- * оригинал. Запускается fire-and-forget после ответа на загрузку. При ошибке
- * оставляем оригинал и помечаем ready (чтобы файл хотя бы был доступен).
- */
-async function processDamageVideo(
-  log: FastifyBaseLogger,
-  mediaId: number,
-  keyPrefix: string,
-  buf: Buffer,
-  fileName: string,
-  origKey: string,
-): Promise<void> {
-  try {
-    const { mp4, poster } = await transcodeVideo(buf, fileName);
-    const base = fileName.replace(/\.[^.]+$/, "") || "video";
-    const mp4Key = makeFileKey(keyPrefix, `${base}.mp4`);
-    await putObject(mp4Key, mp4, "video/mp4");
-    let posterKey: string | null = null;
-    if (poster) {
-      posterKey = makeFileKey(keyPrefix, `${base}.jpg`);
-      // putObjectWithImageVariants — обложке тоже сделает thumb/view.
-      await putObjectWithImageVariants(posterKey, poster, "image/jpeg");
-    }
-    await db
-      .update(damageReportMedia)
-      .set({
-        fileKey: mp4Key,
-        posterKey,
-        mimeType: "video/mp4",
-        size: mp4.length,
-        status: "ready",
-      })
-      .where(eq(damageReportMedia.id, mediaId));
-    await removeObject(origKey).catch(() => {});
-    log.info({ mediaId }, "damage video transcoded");
-  } catch (e) {
-    log.error({ err: e, mediaId }, "damage video transcode failed");
-    // Не удалось перекодировать — оставляем оригинал, помечаем ready
-    // (хотя бы скачать/открыть нативно можно).
-    await db
-      .update(damageReportMedia)
-      .set({ status: "ready" })
-      .where(eq(damageReportMedia.id, mediaId))
-      .catch(() => {});
-  }
 }
 
 /**
