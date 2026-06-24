@@ -18,18 +18,42 @@ import { join } from "node:path";
  * ffprobe/ffmpeg доступны в рантайм-образе API (apk add ffmpeg).
  */
 
-function run(cmd: string, args: string[]): Promise<void> {
+function run(
+  cmd: string,
+  args: string[],
+  timeoutMs = 4 * 60 * 1000,
+): Promise<void> {
   return new Promise((resolve, reject) => {
     const proc = spawn(cmd, args, { stdio: ["ignore", "ignore", "pipe"] });
     let err = "";
+    let settled = false;
+    const finish = (cb: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      cb();
+    };
+    // Подстраховка: если ffmpeg завис (битый вход и т.п.) — убиваем, чтобы
+    // видео не висело в «processing» вечно. Вызывающий по ошибке оставит
+    // оригинал и пометит ready.
+    const timer = setTimeout(() => {
+      try {
+        proc.kill("SIGKILL");
+      } catch {
+        /* ignore */
+      }
+      finish(() => reject(new Error(`${cmd} timeout ${timeoutMs}ms`)));
+    }, timeoutMs);
     proc.stderr?.on("data", (d) => {
       err += d.toString();
     });
-    proc.on("error", reject);
+    proc.on("error", (e) => finish(() => reject(e)));
     proc.on("close", (code) =>
-      code === 0
-        ? resolve()
-        : reject(new Error(`${cmd} exited ${code}: ${err.slice(-800)}`)),
+      finish(() =>
+        code === 0
+          ? resolve()
+          : reject(new Error(`${cmd} exited ${code}: ${err.slice(-800)}`)),
+      ),
     );
   });
 }
@@ -92,8 +116,10 @@ function transcodeArgs(inPath: string, outPath: string): string[] {
     "high",
     "-pix_fmt",
     "yuv420p",
+    // medium вместо slow — заметно быстрее, при lanczos+CRF16 резкость сохраняется
+    // (slow на маломощном сервере давал минуты ожидания).
     "-preset",
-    "slow",
+    "medium",
     "-crf",
     "16",
     "-c:a",
