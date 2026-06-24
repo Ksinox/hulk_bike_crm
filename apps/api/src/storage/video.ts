@@ -106,22 +106,23 @@ function transcodeArgs(inPath: string, outPath: string): string[] {
     "-y",
     "-i",
     inPath,
-    // Потолок 1440p (большая сторона ≤2560), 1080p не апскейлим; lanczos —
-    // резче дефолтного bicubic.
+    // Потолок 1080p (большая сторона ≤1920): для документации повреждений
+    // достаточно, кодируется заметно быстрее 1440p. lanczos — резче bicubic.
     "-vf",
-    "scale=min(2560\\,iw):min(2560\\,ih):force_original_aspect_ratio=decrease:force_divisible_by=2:flags=lanczos+accurate_rnd",
+    "scale=min(1920\\,iw):min(1920\\,ih):force_original_aspect_ratio=decrease:force_divisible_by=2:flags=lanczos+accurate_rnd",
     "-c:v",
     "libx264",
     "-profile:v",
     "high",
     "-pix_fmt",
     "yuv420p",
-    // medium вместо slow — заметно быстрее, при lanczos+CRF16 резкость сохраняется
-    // (slow на маломощном сервере давал минуты ожидания).
+    // veryfast + CRF 20 — быстрый транскод при визуально хорошем качестве.
+    // (medium/CRF16 на слабом сервере давал минуты ожидания; для видео
+    //  ущерба важнее «сразу смотрибельно», чем студийный битрейт.)
     "-preset",
-    "medium",
+    "veryfast",
     "-crf",
-    "16",
+    "20",
     "-c:a",
     "aac",
     "-b:a",
