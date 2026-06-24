@@ -35,30 +35,51 @@ function forcedMobile(): boolean | null {
   return null;
 }
 
+/**
+ * Вычисляет «мобильный ли вьюпорт» с учётом поворота телефона.
+ *
+ * Раньше был просто max-width < breakpoint. Проблема: телефон в АЛЬБОМНОЙ
+ * ориентации шире breakpoint (напр. 844px) → раскладка перекидывалась на
+ * десктоп → менялось всё дерево компонентов (MobileApp → AppShell) →
+ * РЕМАУНТ → терялось состояние («всё сбрасывалось» при повороте).
+ *
+ * Теперь телефон остаётся мобильным в обеих ориентациях: если устройство
+ * тач (primary pointer coarse) и КОРОТКАЯ сторона экрана < breakpoint —
+ * это телефон, держим мобильную раскладку. Узкие окна (любой указатель)
+ * по-прежнему мобильные (max-width), десктоп с мышью — нет.
+ */
+function computeIsMobile(breakpoint: number): boolean {
+  const forced = forcedMobile();
+  if (forced !== null) return forced;
+  if (typeof window === "undefined") return false;
+  const w = window.innerWidth;
+  if (w < breakpoint) return true;
+  try {
+    const coarse =
+      window.matchMedia?.("(pointer: coarse)")?.matches ?? false;
+    if (coarse && Math.min(w, window.innerHeight) < breakpoint) return true;
+  } catch {
+    /* ignore */
+  }
+  return false;
+}
+
 export function useIsMobile(breakpoint = 768): boolean {
-  const query = `(max-width: ${breakpoint - 1}px)`;
-  const [isMobile, setIsMobile] = useState<boolean>(() => {
-    const forced = forcedMobile();
-    if (forced !== null) return forced;
-    if (typeof window === "undefined" || !window.matchMedia) return false;
-    return window.matchMedia(query).matches;
-  });
+  const [isMobile, setIsMobile] = useState<boolean>(() =>
+    computeIsMobile(breakpoint),
+  );
 
   useEffect(() => {
-    if (typeof window === "undefined" || !window.matchMedia) return;
-    const forced = forcedMobile();
-    if (forced !== null) {
-      setIsMobile(forced);
-      return;
-    }
-    const mql = window.matchMedia(query);
-    const onChange = (e: MediaQueryListEvent) => setIsMobile(e.matches);
-    // Синхронизируем сразу — на случай если значение успело измениться
-    // между первым рендером и подпиской.
-    setIsMobile(mql.matches);
-    mql.addEventListener("change", onChange);
-    return () => mql.removeEventListener("change", onChange);
-  }, [query]);
+    if (typeof window === "undefined") return;
+    const update = () => setIsMobile(computeIsMobile(breakpoint));
+    update(); // синхронизируем после первого рендера
+    window.addEventListener("resize", update);
+    window.addEventListener("orientationchange", update);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("orientationchange", update);
+    };
+  }, [breakpoint]);
 
   return isMobile;
 }
