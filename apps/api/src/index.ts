@@ -300,6 +300,12 @@ async function bootstrap() {
   );
   scheduleRentalArchive();
 
+  // Part B: чистка медиа-сирот ущерба (eager upload без сохранения акта).
+  const { scheduleDamageMediaCleanup } = await import(
+    "./services/damageMediaCleanup.js"
+  );
+  scheduleDamageMediaCleanup();
+
   // v0.9.4: разовая сверка легаси app_settings.billing_period_start_day с
   // актуальным якорём расчётного периода. Поле устарело (источник правды —
   // billing_period_anchors), но если оно осталось рассинхронизированным
