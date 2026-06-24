@@ -105,8 +105,9 @@ export function MobileRentals() {
   /** Открыта форма создания аренды (переиспользуем десктоп-модалку). */
   const [newOpen, setNewOpen] = useState(false);
   const { callClient, callSheet } = useCallClient();
-  // Внутри карточки аренды (drill-in) кнопку «+ Аренда» прячем — она там лишняя.
-  usePageFab("Аренда", () => setNewOpen(true), openId != null);
+  // Прячем «+ Аренда» внутри карточки (drill-in) И пока открыта форма создания —
+  // иначе кнопка нелогично висит поверх окна новой аренды.
+  usePageFab("Аренда", () => setNewOpen(true), openId != null || newOpen);
 
   // navigate({route:"rentals", rentalId}) — открыть конкретную карточку
   // (напр. клик по плашке сквозного долга F3 → аренда-источник). Покрываем

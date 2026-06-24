@@ -68,7 +68,9 @@ export function MediaLightbox({
     setVideoError(false);
     setVideoFit("cover");
     setLoupe(null);
-  }, [index]);
+    // cur.url меняется, когда видео доготовилось (оригинал → mp4) — сбрасываем
+    // ошибку, чтобы готовая универсальная версия проигралась.
+  }, [index, cur.url]);
   useEffect(
     () => () => {
       if (holdTimer.current) window.clearTimeout(holdTimer.current);
@@ -253,49 +255,61 @@ export function MediaLightbox({
             alt={cur.name ?? "повреждение"}
             className="max-h-full max-w-full animate-fade-in object-contain"
           />
-        ) : cur.processing ? (
-          <div className="flex max-w-xs flex-col items-center gap-2 px-8 text-center">
-            <span className="h-7 w-7 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-            <span className="text-[14px] font-medium text-white/85">
-              Видео обрабатывается…
-            </span>
-            <span className="text-[12px] text-white/55">
-              Готовим версию, которая откроется на любом устройстве. Обычно
-              несколько секунд.
-            </span>
-          </div>
         ) : videoError ? (
-          <div className="flex max-w-xs flex-col items-center gap-1.5 px-8 text-center">
-            <span className="text-[14px] font-medium text-white/85">
-              Предпросмотр видео недоступен в этом браузере.
-            </span>
-            <span className="text-[12px] text-white/55">
-              Видео приложено к акту — оно сохранится и будет доступно после
-              «Сохранить».
-            </span>
-          </div>
+          cur.processing ? (
+            // Оригинал не проигрался на ЭТОМ устройстве (напр. HEVC на Android),
+            // а универсальная версия ещё готовится в фоне.
+            <div className="flex max-w-xs flex-col items-center gap-2 px-8 text-center">
+              <span className="h-7 w-7 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+              <span className="text-[14px] font-medium text-white/85">
+                Готовим версию для этого устройства…
+              </span>
+              <span className="text-[12px] text-white/55">
+                Видео уже сохранено. Универсальная версия откроется автоматически,
+                как будет готова.
+              </span>
+            </div>
+          ) : (
+            <div className="flex max-w-xs flex-col items-center gap-1.5 px-8 text-center">
+              <span className="text-[14px] font-medium text-white/85">
+                Предпросмотр видео недоступен в этом браузере.
+              </span>
+              <span className="text-[12px] text-white/55">
+                Видео приложено к акту — оно сохранится и будет доступно после
+                «Сохранить».
+              </span>
+            </div>
+          )
         ) : (
-          // muted+autoPlay+playsInline — самый надёжный способ показать кадр
-          // видео встроенно на iOS (без чёрного экрана); poster — пока грузится.
-          // Звук включается тапом по контролам.
-          <video
-            key={cur.url}
-            ref={videoRef}
-            src={cur.url}
-            poster={cur.poster || undefined}
-            controls
-            autoPlay
-            muted
-            playsInline
-            preload="auto"
-            className={cn(
-              "bg-black",
-              videoFit === "cover"
-                ? "h-full w-full object-cover"
-                : "max-h-full max-w-full object-contain",
+          // Играем СРАЗУ. Пока сервер готовит универсальную версию (processing),
+          // показываем оригинал — на устройстве записи он проигрывается. Ждать
+          // обработки не нужно: внизу — ненавязчивый индикатор «готовим».
+          <>
+            <video
+              key={cur.url}
+              ref={videoRef}
+              src={cur.url}
+              poster={cur.poster || undefined}
+              controls
+              autoPlay
+              muted
+              playsInline
+              preload="auto"
+              className={cn(
+                "bg-black",
+                videoFit === "cover"
+                  ? "h-full w-full object-cover"
+                  : "max-h-full max-w-full object-contain",
+              )}
+              onError={() => setVideoError(true)}
+            />
+            {cur.processing && (
+              <div className="pointer-events-none absolute left-1/2 top-[calc(env(safe-area-inset-top)+3.25rem)] z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-black/60 px-3 py-1.5 text-[12px] font-medium text-white/90 backdrop-blur-sm">
+                <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                Готовим версию для других устройств…
+              </div>
             )}
-            onError={() => setVideoError(true)}
-          />
+          </>
         )}
 
         {canPrev && (

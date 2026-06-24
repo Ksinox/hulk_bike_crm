@@ -82,8 +82,8 @@ export function MobileScooters() {
     null,
   );
   const [newOpen, setNewOpen] = useState(false);
-  // Внутри карточки скутера (drill-in) кнопку «+ Скутер» прячем.
-  usePageFab("Скутер", () => setNewOpen(true), openId != null);
+  // Прячем «+ Скутер» внутри карточки (drill-in) И пока открыта форма создания.
+  usePageFab("Скутер", () => setNewOpen(true), openId != null || newOpen);
   // FleetScooter[] для полноэкранной карточки (та же, что на десктопе).
   const fleet = useFleetScooters();
 
