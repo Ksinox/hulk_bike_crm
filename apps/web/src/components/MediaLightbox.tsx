@@ -3,6 +3,10 @@ import { createPortal } from "react-dom";
 import { X, ChevronLeft, ChevronRight, Download, Maximize2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+// Лупа-увеличитель фото: размер квадратика и кратность зума.
+const LOUPE_SIZE = 132; // px
+const LOUPE_ZOOM = 2.6;
+
 /**
  * Полноэкранный просмотрщик фото/видео (lightbox) — современный паттерн как в
  * iOS Photos / PhotoSwipe: затемнённый фон, фото по размеру экрана, видео
@@ -46,10 +50,31 @@ export function MediaLightbox({
   // рилсы/шортсы, слегка обрезает края) / "contain" = вписать целиком (видно
   // весь кадр, но возможны чёрные поля). По умолчанию — заполнять (нет рамок).
   const [videoFit, setVideoFit] = useState<"cover" | "contain">("cover");
+  // Лупа для фото: долгий тап → квадратик с увеличенным участком над пальцем.
+  const imgRef = useRef<HTMLImageElement>(null);
+  const [loupe, setLoupe] = useState<{
+    sx: number;
+    sy: number;
+    px: number;
+    py: number;
+    iw: number;
+    ih: number;
+  } | null>(null);
+  const holdTimer = useRef<number | null>(null);
+  const startPt = useRef<{ x: number; y: number } | null>(null);
+  const lastPt = useRef<{ x: number; y: number } | null>(null);
+  const isSwipe = useRef(false);
   useEffect(() => {
     setVideoError(false);
     setVideoFit("cover");
+    setLoupe(null);
   }, [index]);
+  useEffect(
+    () => () => {
+      if (holdTimer.current) window.clearTimeout(holdTimer.current);
+    },
+    [],
+  );
 
   const go = (d: number) => {
     const n = index + d;
@@ -67,15 +92,64 @@ export function MediaLightbox({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [index, items.length]);
 
-  // Свайп влево/вправо на тач-экранах.
-  const touchX = useRef<number | null>(null);
+  // Тач по ФОТО: долгий тап (~240мс без сдвига) → лупа, следует за пальцем;
+  // быстрый горизонтальный свайп → листание. Различаем по удержанию/смещению.
+  const showLoupeAt = (x: number, y: number) => {
+    const img = imgRef.current;
+    if (!img) return;
+    const r = img.getBoundingClientRect();
+    if (r.width < 1 || r.height < 1) return;
+    const px = Math.max(0, Math.min(1, (x - r.left) / r.width));
+    const py = Math.max(0, Math.min(1, (y - r.top) / r.height));
+    setLoupe({ sx: x, sy: y, px, py, iw: r.width, ih: r.height });
+  };
   const onTouchStart = (e: React.TouchEvent) => {
-    touchX.current = e.touches[0]?.clientX ?? null;
+    const t = e.touches[0];
+    if (!t) return;
+    startPt.current = { x: t.clientX, y: t.clientY };
+    lastPt.current = { x: t.clientX, y: t.clientY };
+    isSwipe.current = false;
+    if (holdTimer.current) window.clearTimeout(holdTimer.current);
+    if (cur.kind === "photo") {
+      holdTimer.current = window.setTimeout(() => {
+        if (!isSwipe.current && lastPt.current) {
+          showLoupeAt(lastPt.current.x, lastPt.current.y);
+        }
+      }, 240);
+    }
+  };
+  const onTouchMove = (e: React.TouchEvent) => {
+    const t = e.touches[0];
+    if (!t) return;
+    lastPt.current = { x: t.clientX, y: t.clientY };
+    if (loupe) {
+      showLoupeAt(t.clientX, t.clientY);
+      return;
+    }
+    const s = startPt.current;
+    if (s && (Math.abs(t.clientX - s.x) > 12 || Math.abs(t.clientY - s.y) > 12)) {
+      isSwipe.current = true;
+      if (holdTimer.current) {
+        window.clearTimeout(holdTimer.current);
+        holdTimer.current = null;
+      }
+    }
   };
   const onTouchEnd = (e: React.TouchEvent) => {
-    if (touchX.current == null) return;
-    const dx = (e.changedTouches[0]?.clientX ?? 0) - touchX.current;
-    touchX.current = null;
+    if (holdTimer.current) {
+      window.clearTimeout(holdTimer.current);
+      holdTimer.current = null;
+    }
+    if (loupe) {
+      // лупа была активна → просто прячем, без листания
+      setLoupe(null);
+      startPt.current = null;
+      return;
+    }
+    const s = startPt.current;
+    startPt.current = null;
+    if (!s) return;
+    const dx = (e.changedTouches[0]?.clientX ?? 0) - s.x;
     if (dx > 50) go(-1);
     else if (dx < -50) go(1);
   };
@@ -168,11 +242,13 @@ export function MediaLightbox({
         className="absolute inset-0 flex items-center justify-center overflow-hidden"
         onClick={(e) => e.stopPropagation()}
         onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
       >
         {cur.kind === "photo" ? (
           <img
             key={cur.url}
+            ref={imgRef}
             src={cur.url}
             alt={cur.name ?? "повреждение"}
             className="max-h-full max-w-full animate-fade-in object-contain"
@@ -262,6 +338,38 @@ export function MediaLightbox({
               )}
             />
           ))}
+        </div>
+      )}
+
+      {/* Лупа: квадратик с увеличенным участком фото над пальцем. Фон —
+          тот же URL фото, увеличенный в LOUPE_ZOOM раз и спозиционированный
+          так, чтобы точка под пальцем оказалась в центре лупы. */}
+      {loupe && cur.kind === "photo" && (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute z-30 overflow-hidden rounded-2xl border-2 border-white/85 shadow-2xl ring-1 ring-black/40"
+          style={{
+            width: LOUPE_SIZE,
+            height: LOUPE_SIZE,
+            left: Math.max(
+              6,
+              Math.min(
+                window.innerWidth - LOUPE_SIZE - 6,
+                loupe.sx - LOUPE_SIZE / 2,
+              ),
+            ),
+            top:
+              loupe.sy - LOUPE_SIZE - 28 >= 6
+                ? loupe.sy - LOUPE_SIZE - 28
+                : loupe.sy + 28,
+            backgroundColor: "#000",
+            backgroundImage: `url("${cur.url}")`,
+            backgroundRepeat: "no-repeat",
+            backgroundSize: `${loupe.iw * LOUPE_ZOOM}px ${loupe.ih * LOUPE_ZOOM}px`,
+            backgroundPosition: `${LOUPE_SIZE / 2 - loupe.px * loupe.iw * LOUPE_ZOOM}px ${LOUPE_SIZE / 2 - loupe.py * loupe.ih * LOUPE_ZOOM}px`,
+          }}
+        >
+          <span className="absolute left-1/2 top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/60" />
         </div>
       )}
     </div>,
