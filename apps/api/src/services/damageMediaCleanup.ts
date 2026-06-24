@@ -13,11 +13,16 @@
 import { db } from "../db/index.js";
 import { damageReportMedia } from "../db/schema.js";
 import { removeObject } from "../storage/index.js";
-import { and, inArray, isNotNull, isNull, lt } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, lt } from "drizzle-orm";
 
 const TICK_INTERVAL_MS = 6 * 60 * 60 * 1000; // раз в 6 часов
 const MAX_AGE_HOURS = 24;
 const BATCH = 500;
+
+// Видео в "processing" дольше этого считаем осиротевшим (рестарт оборвал
+// фоновый транскод). Таймаут транскода — 4 мин, так что 10 мин безопасно.
+const PROCESSING_STALE_MIN = 10;
+const RECOVERY_INTERVAL_MS = 5 * 60 * 1000; // разморозка — каждые 5 минут
 
 async function tickCleanup(): Promise<void> {
   try {
@@ -60,12 +65,63 @@ async function tickCleanup(): Promise<void> {
 }
 
 /**
- * Запускает scheduler чистки: первый прогон через 45 секунд после старта,
- * далее раз в 6 часов.
+ * Разморозка «зависших» видео ущерба.
+ *
+ * processDamageVideo (fire-and-forget) ставит status=ready и при успешном
+ * транскоде, И при ошибке/таймауте (оставляя оригинал). Запись остаётся в
+ * "processing" ТОЛЬКО если процесс API умер на полпути — деплой, рестарт или
+ * краш оборвали фоновую задачу до того, как она обновила статус. Тогда в
+ * лайтбоксе спиннер «готовим версию…» крутится вечно, хотя оригинал давно на
+ * месте и проигрывается.
+ *
+ * Лечим: видео в "processing" старше PROCESSING_STALE_MIN считаем осиротевшим
+ * и помечаем ready (оригинал доступен, откроется нативно; HEVC-перекодирование
+ * не случилось, но это лучше вечного спиннера). Идемпотентно.
+ */
+async function recoverStuckProcessingVideos(): Promise<void> {
+  try {
+    const cutoff = new Date(Date.now() - PROCESSING_STALE_MIN * 60 * 1000);
+    const recovered = await db
+      .update(damageReportMedia)
+      .set({ status: "ready" })
+      .where(
+        and(
+          eq(damageReportMedia.kind, "video"),
+          eq(damageReportMedia.status, "processing"),
+          lt(damageReportMedia.uploadedAt, cutoff),
+        ),
+      )
+      .returning({ id: damageReportMedia.id });
+    if (recovered.length > 0) {
+      console.log(
+        `[damage-media-recovery] разморожено зависших видео: ${
+          recovered.length
+        } (ids: ${recovered
+          .map((r) => r.id)
+          .slice(0, 20)
+          .join(",")}${recovered.length > 20 ? "…" : ""})`,
+      );
+    }
+  } catch (e) {
+    console.error(
+      "[damage-media-recovery] tick failed:",
+      (e as Error).message ?? e,
+    );
+  }
+}
+
+/**
+ * Запускает scheduler: чистка сирот (раз в 6ч) + разморозка зависших видео
+ * (через 20с после старта — быстро лечим осиротевших после деплоя, далее
+ * каждые 5 минут).
  */
 export function scheduleDamageMediaCleanup(): void {
   setTimeout(tickCleanup, 45_000);
   setInterval(tickCleanup, TICK_INTERVAL_MS);
+  setTimeout(recoverStuckProcessingVideos, 20_000);
+  setInterval(recoverStuckProcessingVideos, RECOVERY_INTERVAL_MS);
   // eslint-disable-next-line no-console
-  console.log("damage-media-cleanup: активирован (раз в 6 часов)");
+  console.log(
+    "damage-media-cleanup: активирован (чистка сирот 6ч + разморозка видео 5мин)",
+  );
 }
