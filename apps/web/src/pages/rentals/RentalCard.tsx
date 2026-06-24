@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/lib/useIsMobile";
+import { useReloadRestoredState } from "@/lib/usePersistedState";
 import { MobileBottomSheet } from "@/mobile/BottomSheet";
 import { useCallClient } from "@/mobile/call";
 import {
@@ -432,8 +433,16 @@ export function RentalCard({
   const [calendarResetSignal, setCalendarResetSignal] = useState(0);
   // v0.4.49: модалки пополнения залога и изменения экипировки
   const [equipmentChangeOpen, setEquipmentChangeOpen] = useState(false);
-  const [damageOpen, setDamageOpen] = useState(false);
-  const [editingReportId, setEditingReportId] = useState<number | null>(null);
+  // Переживают F5: если оператор обновил страницу с открытым «Зафиксировать
+  // ущерб» (или редактированием акта) — вернётся тот же экран, а не схлопнется
+  // в карточку аренды. Только реальный reload, не обычная навигация.
+  const [damageOpen, setDamageOpen] = useReloadRestoredState<boolean>(
+    `rental-card:${rental.id}:damage-open`,
+    false,
+  );
+  const [editingReportId, setEditingReportId] = useReloadRestoredState<
+    number | null
+  >(`rental-card:${rental.id}:editing-report`, null);
   const [previewDamageId, setPreviewDamageId] = useState<number | null>(null);
   // «Пополнить залог» — открывается тапом по плашке залога в «Финансовой
   // информации» (а не из «Принять оплату», где пополнение нелогично).

@@ -179,7 +179,13 @@ export function DamageReportDialog({
     !searchLower || it.name.toLowerCase().includes(searchLower);
 
   // === Корзина «выбранных позиций» ===
-  const [selected, setSelected] = useState<Selected[]>(() => {
+  // Переживает F5 (draft per rental): оператор не теряет расчёт при обновлении
+  // страницы / обрыве сети. Только для нового акта; чистим при сохранении.
+  const [selected, setSelected, clearSelectedDraft] = usePersistedState<
+    Selected[]
+  >(
+    `damage-draft-items:rental-${rental.id}`,
+    () => {
     if (existing?.items?.length) {
       return existing.items.map((it, i) => ({
         uid: `existing-${it.id}-${i}`,
@@ -204,7 +210,9 @@ export function DamageReportDialog({
       }));
     }
     return [];
-  });
+    },
+    { disabled: isEdit },
+  );
 
   const addItem = (g: ApiPriceGroup, it: ApiPriceItem) => {
     // Для legacy двух-колоночных групп берём приоритетно цену по модели аренды.
@@ -246,7 +254,10 @@ export function DamageReportDialog({
   // удерживается у нас до полного покрытия долга (информационный режим).
   const depositIsItem = (rental.deposit ?? 0) <= 0;
   const depositMax = Math.min(rental.deposit ?? 0, total);
-  const [depositCovered, setDepositCovered] = useState<number>(() => {
+  const [depositCovered, setDepositCovered, clearDepositDraft] =
+    usePersistedState<number>(
+      `damage-draft-deposit:rental-${rental.id}`,
+      () => {
     if (existing) return existing.depositCovered ?? 0;
     // v0.8.34 (F2): при предзаполнении из потока завершения по умолчанию
     // зачитываем весь применимый залог (как делал прежний finalizeWithAct).
@@ -258,7 +269,9 @@ export function DamageReportDialog({
       return Math.min(rental.deposit ?? 0, seedTotal);
     }
     return 0;
-  });
+      },
+      { disabled: isEdit },
+    );
   useEffect(() => {
     // Если итог уменьшился ниже текущего зачёта — ужмём.
     setDepositCovered((c) => Math.min(c, depositMax));
@@ -267,7 +280,11 @@ export function DamageReportDialog({
 
   // По умолчанию ВЫКЛ — сотрудник явно решает, отправлять ли скутер в ремонт.
   const [sendToRepair, setSendToRepair] = useState(false);
-  const [note, setNote] = useState(existing?.note ?? "");
+  const [note, setNote, clearNoteDraft] = usePersistedState<string>(
+    `damage-draft-note:rental-${rental.id}`,
+    () => existing?.note ?? "",
+    { disabled: isEdit },
+  );
 
   const create = useCreateDamageReport();
   const patch = usePatchDamageReport();
@@ -475,6 +492,9 @@ export function DamageReportDialog({
     if (!isEdit) {
       for (const m of uploadedMedia) deleteMedia.mutate(m.id);
       clearDraftToken();
+      clearSelectedDraft();
+      clearDepositDraft();
+      clearNoteDraft();
     }
     requestClose();
   };
@@ -557,8 +577,13 @@ export function DamageReportDialog({
         setStaged([]);
         setMediaBusy(false);
       }
-      // Акт сохранён, медиа привязаны → черновик-токен больше не нужен.
-      if (!isEdit) clearDraftToken();
+      // Акт сохранён, медиа привязаны → черновик больше не нужен.
+      if (!isEdit) {
+        clearDraftToken();
+        clearSelectedDraft();
+        clearDepositDraft();
+        clearNoteDraft();
+      }
       requestClose();
       window.setTimeout(() => onCreated?.(reportId), 200);
     } catch (e) {
