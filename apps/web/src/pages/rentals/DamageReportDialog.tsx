@@ -896,6 +896,61 @@ export function DamageReportDialog({
           {/* ---------- ШАГ 1: расчёт и сохранение ---------- */}
           {step === 1 && (
             <div className="flex flex-col gap-3 pt-1">
+              {/* Сначала — что задокументировали: фото/видео + «в ремонт». */}
+              <div className="flex flex-col gap-2 rounded-2xl border border-orange-200 bg-orange-soft/40 p-3">
+                <div className="flex items-center gap-1.5 text-[13px] font-bold text-orange-ink">
+                  <Camera size={14} /> Фото и видео повреждений
+                  {uploadedMedia.length + staged.length > 0 && (
+                    <span className="ml-auto rounded-full bg-white px-2 text-[12px] font-bold text-orange-ink">
+                      {uploadedMedia.length + staged.length}
+                    </span>
+                  )}
+                </div>
+                <DamageMediaCapture
+                  staged={staged}
+                  uploaded={uploadedMedia}
+                  onPick={onPickMedia}
+                  onRemoveStaged={removeStaged}
+                  onRemoveUploaded={removeUploaded}
+                  busy={mediaBusy}
+                  disabled={isPending}
+                />
+              </div>
+              {!isEdit && (
+                <button
+                  type="button"
+                  onClick={() => setSendToRepair((v) => !v)}
+                  className="flex items-center gap-3 rounded-2xl border border-border bg-surface-soft p-3 text-left transition-transform active:scale-[0.99]"
+                >
+                  <span
+                    className={cn(
+                      "relative h-6 w-11 shrink-0 rounded-full transition-colors",
+                      sendToRepair ? "bg-blue-600" : "bg-muted-2/40",
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all",
+                        sendToRepair ? "left-[22px]" : "left-0.5",
+                      )}
+                    />
+                  </span>
+                  <span className="flex items-center gap-1.5 text-[14px] font-medium text-ink">
+                    <Wrench size={14} className="text-muted-2" /> Отправить
+                    скутер в ремонт
+                  </span>
+                </button>
+              )}
+              {!isEdit && sendToRepair && rental.status === "active" && (
+                <div className="flex items-start gap-1.5 rounded-2xl border border-blue-200 bg-blue-50/70 px-3 py-2.5 text-[12px] leading-snug text-blue-900">
+                  <Wrench size={14} className="mt-0.5 shrink-0" />
+                  <span>
+                    Скутер уедет в ремонт — на этой аренде он станет
+                    недоступен. Чтобы клиент продолжил, <b>замените скутер</b> в
+                    карточке аренды.
+                  </span>
+                </div>
+              )}
               {/* Зачёт из залога */}
               {depositIsItem ? (
                 <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-[13px] text-amber-900">
@@ -994,60 +1049,6 @@ export function DamageReportDialog({
                 rows={2}
                 className="rounded-xl border border-border bg-surface-soft px-3 py-2 text-[14px] outline-none focus:border-blue-600"
               />
-              <div className="flex flex-col gap-2 rounded-2xl border border-orange-200 bg-orange-soft/40 p-3">
-                <div className="flex items-center gap-1.5 text-[13px] font-bold text-orange-ink">
-                  <Camera size={14} /> Фото и видео повреждений
-                  {uploadedMedia.length + staged.length > 0 && (
-                    <span className="ml-auto rounded-full bg-white px-2 text-[12px] font-bold text-orange-ink">
-                      {uploadedMedia.length + staged.length}
-                    </span>
-                  )}
-                </div>
-                <DamageMediaCapture
-                  staged={staged}
-                  uploaded={uploadedMedia}
-                  onPick={onPickMedia}
-                  onRemoveStaged={removeStaged}
-                  onRemoveUploaded={removeUploaded}
-                  busy={mediaBusy}
-                  disabled={isPending}
-                />
-              </div>
-              {!isEdit && (
-                <button
-                  type="button"
-                  onClick={() => setSendToRepair((v) => !v)}
-                  className="flex items-center gap-3 rounded-2xl border border-border bg-surface-soft p-3 text-left transition-transform active:scale-[0.99]"
-                >
-                  <span
-                    className={cn(
-                      "relative h-6 w-11 shrink-0 rounded-full transition-colors",
-                      sendToRepair ? "bg-blue-600" : "bg-muted-2/40",
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        "absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all",
-                        sendToRepair ? "left-[22px]" : "left-0.5",
-                      )}
-                    />
-                  </span>
-                  <span className="flex items-center gap-1.5 text-[14px] font-medium text-ink">
-                    <Wrench size={14} className="text-muted-2" /> Отправить
-                    скутер в ремонт
-                  </span>
-                </button>
-              )}
-              {!isEdit && sendToRepair && rental.status === "active" && (
-                <div className="flex items-start gap-1.5 rounded-2xl border border-blue-200 bg-blue-50/70 px-3 py-2.5 text-[12px] leading-snug text-blue-900">
-                  <Wrench size={14} className="mt-0.5 shrink-0" />
-                  <span>
-                    Скутер уедет в ремонт — на этой аренде он станет
-                    недоступен. Чтобы клиент продолжил, <b>замените скутер</b> в
-                    карточке аренды.
-                  </span>
-                </div>
-              )}
             </div>
           )}
         </div>
