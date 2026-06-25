@@ -195,3 +195,46 @@ export async function transcodeVideo(
     await rm(dir, { recursive: true, force: true }).catch(() => {});
   }
 }
+
+/**
+ * Быстрый разбор загруженного видео: кодек + (если уже H.264) кадр-обложка.
+ * Нужен, чтобы решить — отдавать КАК ЕСТЬ (web-готовый H.264, без всякого
+ * перекодирования, как делает Telegram: записал → отправил) или гнать в
+ * фоновый транскод (HEVC/VP9/иное, что не играет на чужих устройствах).
+ * Один temp-файл, один проход. H.264 проигрывается прогрессивно по HTTP Range.
+ */
+export async function inspectVideoForServe(
+  buf: Buffer,
+  originalName: string,
+): Promise<{ codec: string | null; poster: Buffer | null }> {
+  const dir = await mkdtemp(join(tmpdir(), "dmginspect-"));
+  const inPath = join(dir, `in${extOf(originalName)}`);
+  const posterPath = join(dir, "poster.jpg");
+  try {
+    await writeFile(inPath, buf);
+    const codec = await probeVideoCodec(inPath);
+    let poster: Buffer | null = null;
+    if (codec === "h264") {
+      try {
+        await run("ffmpeg", [
+          "-y",
+          "-ss",
+          "0.3",
+          "-i",
+          inPath,
+          "-frames:v",
+          "1",
+          "-q:v",
+          "3",
+          posterPath,
+        ]);
+        poster = await readFile(posterPath);
+      } catch {
+        poster = null; // обложка опциональна
+      }
+    }
+    return { codec, poster };
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}

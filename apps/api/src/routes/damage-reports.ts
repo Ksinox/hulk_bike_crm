@@ -18,6 +18,7 @@ import {
 import { makeFileKey, removeObject, putObject } from "../storage/index.js";
 import { putObjectWithImageVariants } from "../storage/image.js";
 import { processDamageVideo } from "../services/damageVideoProcessor.js";
+import { inspectVideoForServe } from "../storage/video.js";
 import { logActivity } from "../services/activityLog.js";
 import {
   loadDamageBundle,
@@ -678,77 +679,33 @@ export async function damageReportsRoutes(app: FastifyInstance) {
       }
     }
     if (!fileBuf) return reply.code(400).send({ error: "file required" });
-    const kind = mediaKindFromMime(mimeType);
-    if (!kind) {
+    // Единая точка сохранения медиа (фото → ready; H.264 → ready как есть;
+    // HEVC/иное → фоновый транскод). Логика в storeOneDamageMedia.
+    const row = await storeOneDamageMedia(app.log, {
+      reportId: id,
+      draftToken: null,
+      keyPrefix: `damages/${id}`,
+      fileBuf,
+      fileName,
+      mimeType,
+      durationSec,
+      userId: getUserId(req),
+    });
+    if (!row) {
       return reply.code(400).send({
         error: "unsupported_media",
         message: "К акту прикладываются только фото и видео.",
       });
     }
-    const userId = getUserId(req);
-
-    // ── Фото: как раньше — thumb/view-варианты, сразу ready. ──
-    if (kind === "photo") {
-      const key = makeFileKey(`damages/${id}`, fileName);
-      await putObjectWithImageVariants(key, fileBuf, mimeType);
-      const [row] = await db
-        .insert(damageReportMedia)
-        .values({
-          reportId: id,
-          kind: "photo",
-          fileKey: key,
-          fileName,
-          mimeType,
-          size: fileBuf.length,
-          durationSec,
-          status: "ready",
-          uploadedByUserId: userId,
-        })
-        .returning();
-      await logActivity(req, {
-        entity: "damage_report",
-        entityId: id,
-        action: "media_added",
-        summary: `К акту #${id} добавлено фото повреждения`,
-        meta: { mediaId: row!.id, kind: "photo" },
-      });
-      return reply.code(201).send(row);
-    }
-
-    // ── Видео: сохраняем оригинал сразу (доступен/скачивается), статус
-    // processing; в фоне ffmpeg → H.264 MP4 + обложка, потом подменяем запись.
-    // Так запрос не блокируется тяжёлым перекодированием.
-    const origKey = makeFileKey(`damages/${id}`, fileName);
-    await putObject(origKey, fileBuf, mimeType);
-    const [row] = await db
-      .insert(damageReportMedia)
-      .values({
-        reportId: id,
-        kind: "video",
-        fileKey: origKey,
-        fileName,
-        mimeType,
-        size: fileBuf.length,
-        durationSec,
-        status: "processing",
-        uploadedByUserId: userId,
-      })
-      .returning();
     await logActivity(req, {
       entity: "damage_report",
       entityId: id,
       action: "media_added",
-      summary: `К акту #${id} добавлено видео повреждения`,
-      meta: { mediaId: row!.id, kind: "video" },
+      summary: `К акту #${id} добавлено ${
+        row.kind === "photo" ? "фото" : "видео"
+      } повреждения`,
+      meta: { mediaId: row.id, kind: row.kind },
     });
-    void processDamageVideo(
-      app.log,
-      row!.id,
-      `damages/${id}`,
-      fileBuf,
-      fileName,
-      origKey,
-    );
     return reply.code(201).send(row);
   });
 
@@ -878,8 +835,40 @@ async function storeOneDamageMedia(
       .returning();
     return row ?? null;
   }
+  // Видео. Уже web-готовый H.264 → отдаём КАК ЕСТЬ, сразу ready, без транскода
+  // (как Telegram: записал → отправил). HTTP Range даёт прогрессивное
+  // проигрывание. Только быстрая обложка. HEVC/VP9/иное → фоновый транскод в
+  // H.264 (чтобы играло на чужих устройствах).
   const origKey = makeFileKey(opts.keyPrefix, opts.fileName);
   await putObject(origKey, opts.fileBuf, opts.mimeType);
+  const { codec, poster } = await inspectVideoForServe(
+    opts.fileBuf,
+    opts.fileName,
+  );
+  if (codec === "h264") {
+    let posterKey: string | null = null;
+    if (poster) {
+      const base = opts.fileName.replace(/\.[^.]+$/, "") || "video";
+      const pk = makeFileKey(opts.keyPrefix, `${base}.jpg`);
+      try {
+        await putObjectWithImageVariants(pk, poster, "image/jpeg");
+        posterKey = pk;
+      } catch {
+        posterKey = null;
+      }
+    }
+    const [row] = await db
+      .insert(damageReportMedia)
+      .values({
+        ...common,
+        kind: "video",
+        fileKey: origKey,
+        posterKey,
+        status: "ready",
+      })
+      .returning();
+    return row ?? null;
+  }
   const [row] = await db
     .insert(damageReportMedia)
     .values({ ...common, kind: "video", fileKey: origKey, status: "processing" })
