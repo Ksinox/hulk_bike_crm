@@ -53,8 +53,9 @@ export function MediaLightbox({
   const [videoError, setVideoError] = useState(false);
   // Как видео заполняет экран: "cover" = на весь экран без рамок (как
   // рилсы/шортсы, слегка обрезает края) / "contain" = вписать целиком (видно
-  // весь кадр, но возможны чёрные поля). По умолчанию — заполнять (нет рамок).
-  const [videoFit, setVideoFit] = useState<"cover" | "contain">("cover");
+  // весь кадр). Зафиксировано в "contain": видео всегда вписано, переключатель
+  // «вписать/заполнить» убран (для весь-экран — отдельная кнопка).
+  const [videoFit] = useState<"cover" | "contain">("contain");
   // Лупа для фото: долгий тап → квадратик с увеличенным участком над пальцем.
   const imgRef = useRef<HTMLImageElement>(null);
   const [loupe, setLoupe] = useState<{
@@ -71,7 +72,6 @@ export function MediaLightbox({
   const isSwipe = useRef(false);
   useEffect(() => {
     setVideoError(false);
-    setVideoFit("cover");
     setLoupe(null);
     // cur.url меняется, когда видео доготовилось (оригинал → mp4) — сбрасываем
     // ошибку, чтобы готовая универсальная версия проигралась.
@@ -265,20 +265,6 @@ export function MediaLightbox({
           {cur.kind === "video" && !cur.processing && !videoError && (
             <button
               type="button"
-              onClick={() =>
-                setVideoFit((f) => (f === "cover" ? "contain" : "cover"))
-              }
-              aria-label={
-                videoFit === "cover" ? "Вписать целиком" : "Заполнить экран"
-              }
-              className="flex h-9 items-center justify-center rounded-full px-3 text-[12px] font-semibold text-white/85 transition-colors hover:bg-white/10"
-            >
-              {videoFit === "cover" ? "Вписать" : "Заполнить"}
-            </button>
-          )}
-          {cur.kind === "video" && !cur.processing && !videoError && (
-            <button
-              type="button"
               onClick={goFullscreen}
               aria-label="Во весь экран"
               className="flex h-9 w-9 items-center justify-center rounded-full text-white/80 transition-colors hover:bg-white/10"
@@ -393,7 +379,14 @@ export function MediaLightbox({
       {/* Точки-индикаторы — поверх медиа снизу. */}
       {items.length > 1 && (
         <div
-          className="absolute inset-x-0 bottom-0 z-10 flex flex-wrap justify-center gap-1.5 bg-gradient-to-t from-black/50 to-transparent px-4 pb-[max(env(safe-area-inset-bottom),1rem)] pt-6"
+          className={cn(
+            "absolute inset-x-0 z-10 flex flex-wrap justify-center gap-1.5 px-4",
+            // Видео: нативные контролы внизу — поднимаем точки над ними, чтобы
+            // не налегали. Фото: точки у самого низа с градиентом-подложкой.
+            cur.kind === "video"
+              ? "bottom-[3.5rem]"
+              : "bottom-0 bg-gradient-to-t from-black/50 to-transparent pb-[max(env(safe-area-inset-bottom),1rem)] pt-6",
+          )}
           onClick={(e) => e.stopPropagation()}
         >
           {items.map((_, i) => (
