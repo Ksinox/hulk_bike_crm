@@ -197,31 +197,54 @@ export async function transcodeVideo(
 }
 
 /**
- * Быстрый разбор загруженного видео: кодек + (если уже H.264) кадр-обложка.
- * Нужен, чтобы решить — отдавать КАК ЕСТЬ (web-готовый H.264, без всякого
- * перекодирования, как делает Telegram: записал → отправил) или гнать в
- * фоновый транскод (HEVC/VP9/иное, что не играет на чужих устройствах).
- * Один temp-файл, один проход. H.264 проигрывается прогрессивно по HTTP Range.
+ * Быстрый разбор загруженного видео для отдачи в веб.
+ *
+ * H.264 → faststart-РЕМУКС (`-c copy +faststart`, ~0.5с, БЕЗ пере-кодирования)
+ * + кадр-обложка. faststart = moov-атом (индекс) в НАЧАЛЕ файла → видео играет
+ * ПО МЕРЕ ЗАГРУЗКИ (прогрессивно, как телега/ютуб), а не ждёт полной выкачки.
+ * Качество не трогаем — это смена контейнера, не сжатие.
+ *
+ * HEVC/VP9/иное → codec возвращаем как есть, mp4=null (вызывающий положит
+ * оригинал и поставит фоновый транскод в H.264 для чужих устройств).
+ * Один temp-каталог, синхронно — никакого фонового шага, нечему орфаниться.
  */
 export async function inspectVideoForServe(
   buf: Buffer,
   originalName: string,
-): Promise<{ codec: string | null; poster: Buffer | null }> {
+): Promise<{ codec: string | null; mp4: Buffer | null; poster: Buffer | null }> {
   const dir = await mkdtemp(join(tmpdir(), "dmginspect-"));
   const inPath = join(dir, `in${extOf(originalName)}`);
+  const outPath = join(dir, "out.mp4");
   const posterPath = join(dir, "poster.jpg");
   try {
     await writeFile(inPath, buf);
     const codec = await probeVideoCodec(inPath);
+    let mp4: Buffer | null = null;
     let poster: Buffer | null = null;
     if (codec === "h264") {
+      try {
+        await run("ffmpeg", [
+          "-y",
+          "-i",
+          inPath,
+          "-c",
+          "copy",
+          "-movflags",
+          "+faststart",
+          outPath,
+        ]);
+        mp4 = await readFile(outPath);
+      } catch {
+        mp4 = null; // ремукс не вышел → вызывающий отдаст оригинал как есть
+      }
+      // Обложка из готового файла (или оригинала, если ремукс не удался).
       try {
         await run("ffmpeg", [
           "-y",
           "-ss",
           "0.3",
           "-i",
-          inPath,
+          mp4 ? outPath : inPath,
           "-frames:v",
           "1",
           "-q:v",
@@ -233,7 +256,7 @@ export async function inspectVideoForServe(
         poster = null; // обложка опциональна
       }
     }
-    return { codec, poster };
+    return { codec, mp4, poster };
   } finally {
     await rm(dir, { recursive: true, force: true }).catch(() => {});
   }

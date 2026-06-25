@@ -835,20 +835,27 @@ async function storeOneDamageMedia(
       .returning();
     return row ?? null;
   }
-  // Видео. Уже web-готовый H.264 → отдаём КАК ЕСТЬ, сразу ready, без транскода
-  // (как Telegram: записал → отправил). HTTP Range даёт прогрессивное
-  // проигрывание. Только быстрая обложка. HEVC/VP9/иное → фоновый транскод в
-  // H.264 (чтобы играло на чужих устройствах).
-  const origKey = makeFileKey(opts.keyPrefix, opts.fileName);
-  await putObject(origKey, opts.fileBuf, opts.mimeType);
-  const { codec, poster } = await inspectVideoForServe(
+  // Видео. H.264 → faststart-ремукс (прогрессивное проигрывание: играет по мере
+  // загрузки) + обложка, сразу ready, БЕЗ фонового шага. HEVC/VP9/иное →
+  // оригинал + фоновый транскод в H.264 (чтобы играло на чужих устройствах).
+  const { codec, mp4, poster } = await inspectVideoForServe(
     opts.fileBuf,
     opts.fileName,
   );
   if (codec === "h264") {
+    const base = opts.fileName.replace(/\.[^.]+$/, "") || "video";
+    const useRemux = mp4 != null; // faststart-версия, если ремукс удался
+    const fileKey = makeFileKey(
+      opts.keyPrefix,
+      useRemux ? `${base}.mp4` : opts.fileName,
+    );
+    await putObject(
+      fileKey,
+      useRemux ? mp4! : opts.fileBuf,
+      useRemux ? "video/mp4" : opts.mimeType,
+    );
     let posterKey: string | null = null;
     if (poster) {
-      const base = opts.fileName.replace(/\.[^.]+$/, "") || "video";
       const pk = makeFileKey(opts.keyPrefix, `${base}.jpg`);
       try {
         await putObjectWithImageVariants(pk, poster, "image/jpeg");
@@ -862,13 +869,18 @@ async function storeOneDamageMedia(
       .values({
         ...common,
         kind: "video",
-        fileKey: origKey,
+        fileKey,
         posterKey,
+        mimeType: useRemux ? "video/mp4" : opts.mimeType,
+        size: useRemux ? mp4!.length : opts.fileBuf.length,
         status: "ready",
       })
       .returning();
     return row ?? null;
   }
+  // HEVC/VP9/иное → оригинал + фоновый транскод в H.264.
+  const origKey = makeFileKey(opts.keyPrefix, opts.fileName);
+  await putObject(origKey, opts.fileBuf, opts.mimeType);
   const [row] = await db
     .insert(damageReportMedia)
     .values({ ...common, kind: "video", fileKey: origKey, status: "processing" })
