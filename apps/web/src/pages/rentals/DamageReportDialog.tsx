@@ -309,6 +309,8 @@ export function DamageReportDialog({
     existing?.media ?? [],
   );
   const [mediaBusy, setMediaBusy] = useState(false);
+  // Прогресс заливки текущего файла (0..100) — для полосы «как в телеге».
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
 
   // Чистим objectURL'ы при размонтировании, чтобы не текла память.
   useEffect(() => {
@@ -352,10 +354,12 @@ export function DamageReportDialog({
       setStaged((s) => [...s, ...items]);
       for (const it of items) {
         try {
+          setUploadProgress(0);
           const m = await uploadMedia.mutateAsync({
             reportId: existing.id,
             file: it.file,
             durationSec: it.durationSec,
+            onProgress: setUploadProgress,
           });
           setUploadedMedia((u) => [...u, m]);
         } catch (e) {
@@ -363,6 +367,7 @@ export function DamageReportDialog({
         } finally {
           setStaged((s) => s.filter((x) => x.id !== it.id));
           URL.revokeObjectURL(it.previewUrl);
+          setUploadProgress(null);
         }
       }
       setMediaBusy(false);
@@ -374,10 +379,12 @@ export function DamageReportDialog({
       setStaged((s) => [...s, ...items]);
       for (const it of items) {
         try {
+          setUploadProgress(0);
           const m = await uploadDraftMedia.mutateAsync({
             draftToken,
             file: it.file,
             durationSec: it.durationSec,
+            onProgress: setUploadProgress,
           });
           setUploadedMedia((u) => [...u, m]);
           setStaged((s) => s.filter((x) => x.id !== it.id));
@@ -387,6 +394,8 @@ export function DamageReportDialog({
             "Медиа загрузится при сохранении",
             (e as Error).message ?? "",
           );
+        } finally {
+          setUploadProgress(null);
         }
       }
       setMediaBusy(false);
@@ -938,6 +947,7 @@ export function DamageReportDialog({
                   onRemoveStaged={removeStaged}
                   onRemoveUploaded={removeUploaded}
                   busy={mediaBusy}
+                  uploadProgress={uploadProgress}
                   disabled={isPending}
                 />
               </div>
@@ -1554,6 +1564,7 @@ export function DamageReportDialog({
                   onRemoveStaged={removeStaged}
                   onRemoveUploaded={removeUploaded}
                   busy={mediaBusy}
+                  uploadProgress={uploadProgress}
                   disabled={isPending}
                 />
               </div>

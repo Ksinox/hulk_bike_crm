@@ -7,6 +7,11 @@ import { cn } from "@/lib/utils";
 const LOUPE_SIZE = 132; // px
 const LOUPE_ZOOM = 2.6;
 
+// Кэш video-элементов между открытиями лайтбокса: повторный тап по тому же
+// ролику НЕ перекачивает его заново — буфер остаётся в переиспользуемом
+// элементе. Ограничиваем ~6 роликами, чтобы не есть память.
+const videoElCache = new Map<string, HTMLVideoElement>();
+
 /**
  * Полноэкранный просмотрщик фото/видео (lightbox) — современный паттерн как в
  * iOS Photos / PhotoSwipe: затемнённый фон, фото по размеру экрана, видео
@@ -158,7 +163,7 @@ export function MediaLightbox({
 
   // Нативный полный экран ОС (на iOS — webkitEnterFullscreen с поворотом для
   // 16:9; на Android/десктопе — requestFullscreen). Вызывается из тапа = жест.
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const goFullscreen = () => {
     const v = videoRef.current as
       | (HTMLVideoElement & {
@@ -172,6 +177,71 @@ export function MediaLightbox({
     else if (typeof v.webkitRequestFullscreen === "function")
       v.webkitRequestFullscreen();
   };
+
+  // A: переиспользуем video-элемент между открытиями — повторный тап не качает
+  // ролик заново. Монтируем кэшированный элемент в host; при закрытии детачим
+  // (но оставляем в кэше с буфером). Класс «вписать/заполнить» меняем на лету.
+  const videoHostRef = useRef<HTMLDivElement>(null);
+  const fitClass = (fit: "cover" | "contain") =>
+    cn(
+      "bg-black",
+      fit === "cover"
+        ? "h-full w-full object-cover"
+        : "max-h-full max-w-full object-contain",
+    );
+  useEffect(() => {
+    if (cur.kind !== "video" || videoError) return;
+    const host = videoHostRef.current;
+    if (!host) return;
+    let el = videoElCache.get(cur.url);
+    if (!el) {
+      el = document.createElement("video");
+      el.src = cur.url;
+      el.controls = true;
+      el.muted = true;
+      el.playsInline = true;
+      el.setAttribute("playsinline", "");
+      el.setAttribute("webkit-playsinline", "");
+      el.preload = "auto";
+      if (cur.poster) el.poster = cur.poster;
+      videoElCache.set(cur.url, el);
+      if (videoElCache.size > 6) {
+        for (const [k, v] of videoElCache) {
+          if (k === cur.url) continue;
+          v.removeAttribute("src");
+          try {
+            v.load();
+          } catch {
+            /* ignore */
+          }
+          videoElCache.delete(k);
+          break;
+        }
+      }
+    }
+    const videoEl = el;
+    videoEl.className = fitClass(videoFit);
+    videoRef.current = videoEl;
+    const onErr = () => setVideoError(true);
+    videoEl.addEventListener("error", onErr);
+    host.appendChild(videoEl);
+    try {
+      videoEl.currentTime = 0;
+    } catch {
+      /* ignore */
+    }
+    void videoEl.play().catch(() => {});
+    return () => {
+      videoEl.removeEventListener("error", onErr);
+      videoEl.pause();
+      if (videoEl.parentNode === host) host.removeChild(videoEl);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cur.kind, cur.url, cur.poster, videoError]);
+  useEffect(() => {
+    if (videoRef.current) videoRef.current.className = fitClass(videoFit);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [videoFit]);
 
   if (!cur) return null;
 
@@ -285,23 +355,9 @@ export function MediaLightbox({
           // показываем оригинал — на устройстве записи он проигрывается. Ждать
           // обработки не нужно: внизу — ненавязчивый индикатор «готовим».
           <>
-            <video
-              key={cur.url}
-              ref={videoRef}
-              src={cur.url}
-              poster={cur.poster || undefined}
-              controls
-              autoPlay
-              muted
-              playsInline
-              preload="auto"
-              className={cn(
-                "bg-black",
-                videoFit === "cover"
-                  ? "h-full w-full object-cover"
-                  : "max-h-full max-w-full object-contain",
-              )}
-              onError={() => setVideoError(true)}
+            <div
+              ref={videoHostRef}
+              className="flex h-full w-full items-center justify-center"
             />
             {cur.processing && (
               <div className="pointer-events-none absolute left-1/2 top-[calc(env(safe-area-inset-top)+3.25rem)] z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-black/60 px-3 py-1.5 text-[12px] font-medium text-white/90 backdrop-blur-sm">

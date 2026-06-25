@@ -119,6 +119,7 @@ export function DamageMediaCapture({
   onRemoveStaged,
   onRemoveUploaded,
   busy,
+  uploadProgress,
   disabled,
 }: {
   staged: StagedMedia[];
@@ -129,6 +130,8 @@ export function DamageMediaCapture({
   onRemoveUploaded?: (mediaId: number) => void;
   /** Идёт загрузка staged → показываем спиннер поверх. */
   busy?: boolean;
+  /** Прогресс заливки текущего файла 0..100 — для полосы. */
+  uploadProgress?: number | null;
   disabled?: boolean;
 }) {
   const camRef = useRef<HTMLInputElement>(null);
@@ -198,12 +201,33 @@ export function DamageMediaCapture({
         </button>
       </div>
 
-      {/* Явный индикатор заливки — чтобы после «Готово» было видно, что файл
-          прикрепляется, а не «ничего не происходит». */}
-      {busy && (
-        <div className="flex items-center justify-center gap-2 rounded-xl bg-blue-50 px-3 py-2.5 text-[13px] font-semibold text-blue-700 ring-1 ring-inset ring-blue-100">
-          <Loader2 size={16} className="animate-spin" />
-          Загружается на сервер, подождите…
+      {/* Полоса прогресса заливки (как в телеге): видно, сколько уже ушло на
+          сервер, а не просто «ничего не происходит». */}
+      {(busy || uploadProgress != null) && (
+        <div className="rounded-xl bg-blue-50 px-3 py-2.5 ring-1 ring-inset ring-blue-100">
+          {uploadProgress != null ? (
+            <>
+              <div className="mb-1.5 flex items-center justify-between text-[12.5px] font-semibold text-blue-700">
+                <span>
+                  {uploadProgress < 100
+                    ? "Загружается на сервер"
+                    : "Почти готово…"}
+                </span>
+                <span className="tabular-nums">{uploadProgress}%</span>
+              </div>
+              <div className="h-1.5 overflow-hidden rounded-full bg-blue-200/60">
+                <div
+                  className="h-full rounded-full bg-blue-500 transition-[width] duration-200"
+                  style={{ width: `${uploadProgress}%` }}
+                />
+              </div>
+            </>
+          ) : (
+            <div className="flex items-center justify-center gap-2 text-[13px] font-semibold text-blue-700">
+              <Loader2 size={16} className="animate-spin" />
+              Загружается на сервер, подождите…
+            </div>
+          )}
         </div>
       )}
 
