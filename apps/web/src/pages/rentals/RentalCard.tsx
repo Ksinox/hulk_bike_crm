@@ -3465,17 +3465,15 @@ function DamageDocumentPreview({
       htmlUrl={htmlUrl}
       docxUrl={docxUrl}
       docxFilename={`Акт о повреждениях ${String(reportId).padStart(4, "0")}.doc`}
-      headerExtra={
-        onOpenClaim ? (
-          <button
-            type="button"
-            onClick={onOpenClaim}
-            title="Сформировать досудебную претензию по этому акту (со своим сроком оплаты)"
-            className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-2 text-[12px] font-semibold text-amber-800 transition-colors hover:bg-amber-100"
-          >
-            <AlertTriangle size={13} /> Досудебная претензия →
-          </button>
-        ) : undefined
+      bottomAction={
+        onOpenClaim
+          ? {
+              label: "Досудебная претензия",
+              mobileLabel: "Досудебная",
+              icon: <AlertTriangle size={15} />,
+              onClick: onOpenClaim,
+            }
+          : undefined
       }
       onClose={onClose}
     />

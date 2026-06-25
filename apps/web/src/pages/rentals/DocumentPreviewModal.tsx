@@ -37,6 +37,7 @@ export function DocumentPreviewModal({
   rentalId,
   documentType,
   headerExtra,
+  bottomAction,
   onClose,
 }: {
   title: string;
@@ -57,6 +58,15 @@ export function DocumentPreviewModal({
   /** Доп. контрол в шапке превью (напр. срок досудебки, F2). Рендерится
    *  слева от кнопок «Обновить/Печать», только в режиме предпросмотра. */
   headerExtra?: import("react").ReactNode;
+  /** Заметное действие (напр. «Досудебная претензия»): на десктопе — чип в
+   *  шапке, на мобиле — крупная кнопка в нижней панели рядом с «Печать»,
+   *  чтобы оператор её точно увидел (в тесной шапке телефона она терялась). */
+  bottomAction?: {
+    label: string;
+    mobileLabel?: string;
+    icon?: import("react").ReactNode;
+    onClick: () => void;
+  };
   onClose: () => void;
 }) {
   const [editingTemplate, setEditingTemplate] = useState(false);
@@ -248,6 +258,15 @@ export function DocumentPreviewModal({
           </div>
           <div className="flex items-center gap-2">
             {!editingTemplate && headerExtra}
+            {!editingTemplate && bottomAction && (
+              <button
+                type="button"
+                onClick={bottomAction.onClick}
+                className="hidden sm:inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-2 text-[12px] font-semibold text-amber-800 transition-colors hover:bg-amber-100"
+              >
+                {bottomAction.icon} {bottomAction.label} →
+              </button>
+            )}
             {!editingTemplate && templateKey && (
               <button
                 type="button"
@@ -392,25 +411,22 @@ export function DocumentPreviewModal({
             в шапке (тут sm:hidden). «Закрыть» остаётся сверху. */}
         {!editingTemplate && (
           <div className="flex items-center gap-2 border-t border-border bg-surface px-4 py-3 pb-[max(env(safe-area-inset-bottom),0.75rem)] sm:hidden">
-            <button
-              type="button"
-              onClick={handleDownloadWord}
-              disabled={downloading}
-              className="flex h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-blue-50 text-[14px] font-bold text-blue-700 active:scale-[0.98] disabled:opacity-60"
-            >
-              {downloading ? (
-                <Loader2 size={16} className="animate-spin" />
-              ) : (
-                <Download size={16} />
-              )}
-              Word
-            </button>
+            {bottomAction && (
+              <button
+                type="button"
+                onClick={bottomAction.onClick}
+                className="flex h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-amber-100 px-2 text-[13px] font-bold text-amber-800 active:scale-[0.98]"
+              >
+                {bottomAction.icon}
+                {bottomAction.mobileLabel ?? bottomAction.label}
+              </button>
+            )}
             <button
               type="button"
               onClick={handlePrint}
               disabled={!iframeReady || printing}
               className={cn(
-                "flex h-12 flex-[2] items-center justify-center gap-2 rounded-xl text-[15px] font-bold text-white active:scale-[0.98]",
+                "flex h-12 flex-1 items-center justify-center gap-2 rounded-xl text-[15px] font-bold text-white active:scale-[0.98]",
                 iframeReady && !printing
                   ? "bg-ink"
                   : "cursor-not-allowed bg-surface text-muted-2",
