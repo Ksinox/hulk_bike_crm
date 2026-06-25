@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, ChevronLeft, ChevronRight, Download, Maximize2 } from "lucide-react";
+import { X, ChevronLeft, ChevronRight, Download } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // Лупа-увеличитель фото: размер квадратика и кратность зума.
@@ -161,22 +161,10 @@ export function MediaLightbox({
     else if (dx < -50) go(1);
   };
 
-  // Нативный полный экран ОС (на iOS — webkitEnterFullscreen с поворотом для
-  // 16:9; на Android/десктопе — requestFullscreen). Вызывается из тапа = жест.
+  // Ссылка на текущий <video> (имп. элемент кэшируется между открытиями).
+  // Полноэкранный режим даёт сам нативный плеер (кнопка ⛶ в его контролах) —
+  // отдельную кнопку сверху не держим, чтобы не дублировать.
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const goFullscreen = () => {
-    const v = videoRef.current as
-      | (HTMLVideoElement & {
-          webkitEnterFullscreen?: () => void;
-          webkitRequestFullscreen?: () => void;
-        })
-      | null;
-    if (!v) return;
-    if (typeof v.webkitEnterFullscreen === "function") v.webkitEnterFullscreen();
-    else if (typeof v.requestFullscreen === "function") void v.requestFullscreen();
-    else if (typeof v.webkitRequestFullscreen === "function")
-      v.webkitRequestFullscreen();
-  };
 
   // A: переиспользуем video-элемент между открытиями — повторный тап не качает
   // ролик заново. Монтируем кэшированный элемент в host; при закрытии детачим
@@ -262,17 +250,10 @@ export function MediaLightbox({
           {index + 1} / {items.length}
         </span>
         <div className="flex items-center gap-1">
-          {cur.kind === "video" && !cur.processing && !videoError && (
-            <button
-              type="button"
-              onClick={goFullscreen}
-              aria-label="Во весь экран"
-              className="flex h-9 w-9 items-center justify-center rounded-full text-white/80 transition-colors hover:bg-white/10"
-            >
-              <Maximize2 size={18} />
-            </button>
-          )}
-          {cur.downloadUrl && (
+          {/* Видео: «во весь экран» и «скачать» уже есть в НАТИВНЫХ контролах
+              плеера снизу (кнопка ⛶ и меню ⋮) — не дублируем сверху. Скачивание
+              оставляем только для ФОТО (у картинок своего плеера нет). */}
+          {cur.kind === "photo" && cur.downloadUrl && (
             <a
               href={cur.downloadUrl}
               target="_blank"
