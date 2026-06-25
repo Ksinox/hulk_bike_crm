@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { Pencil, Play, Printer } from "lucide-react";
+import { ChevronDown, History, Pencil, Play, Printer } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fileUrl } from "@/lib/files";
 import { MediaLightbox, type LightboxItem } from "@/components/MediaLightbox";
+import { DamageRevisionHistory } from "./DamageRevisionHistory";
 import type { ApiDamageReport } from "@/lib/api/damage-reports";
 
 /**
@@ -58,6 +59,7 @@ export function DamageActBlock({
     name: m.fileName,
   }));
   const [lightbox, setLightbox] = useState<number | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
 
   return (
     <div className="flex flex-col gap-3">
@@ -182,6 +184,34 @@ export function DamageActBlock({
             >
               <Printer size={15} /> Печать акта
             </button>
+          )}
+        </div>
+      )}
+
+      {latest && (
+        <div>
+          <button
+            type="button"
+            onClick={() => setShowHistory((v) => !v)}
+            className="flex w-full items-center justify-between rounded-xl bg-surface-soft px-3 py-2.5 text-[12px] font-semibold text-muted transition-colors hover:bg-border/40"
+          >
+            <span className="flex items-center gap-1.5">
+              <History size={14} /> История правок и целостность
+              {(latest.revisionNo ?? 1) > 1 && (
+                <span className="rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-bold text-blue-700">
+                  ред. {latest.revisionNo}
+                </span>
+              )}
+            </span>
+            <ChevronDown
+              size={15}
+              className={cn("transition-transform", showHistory && "rotate-180")}
+            />
+          </button>
+          {showHistory && (
+            <div className="mt-2">
+              <DamageRevisionHistory reportId={latest.id} />
+            </div>
           )}
         </div>
       )}

@@ -74,11 +74,44 @@ export type ApiDamageReport = {
   clientAgreement: DamageClientAgreement;
   createdAt: string;
   updatedAt: string;
+  /** Этап 2: номер текущей ревизии (1 = создание, +1 на каждую правку). */
+  revisionNo?: number;
+  /** Этап 2: head-хэш цепочки ревизий (защита от подделки). */
+  contentHash?: string | null;
   items: ApiDamageReportItem[];
   media: ApiDamageMedia[];
   payments: ApiDamagePayment[];
   paidSum: number;
   debt: number;
+};
+
+/** Этап 2: иммутабельный снимок акта (одна ревизия). */
+export type ApiDamageRevision = {
+  id: number;
+  reportId: number;
+  revisionNo: number;
+  total: number;
+  depositCovered: number;
+  note: string | null;
+  itemsJson: Array<{
+    name: string;
+    originalPrice: number;
+    finalPrice: number;
+    quantity: number;
+    comment: string | null;
+    priceItemId: number | null;
+  }>;
+  clientAgreement: string;
+  editedByUserId: number | null;
+  editedByUserName: string | null;
+  prevHash: string | null;
+  contentHash: string;
+  createdAt: string;
+};
+
+export type DamageRevisionsResponse = {
+  revisions: ApiDamageRevision[];
+  integrity: { ok: boolean; brokenAt: number | null };
 };
 
 export type CreateDamageItem = {
@@ -126,6 +159,22 @@ export function useDamageReports(rentalId: number | null) {
     // Пока видео перекодируется на сервере — обновляем чаще, чтобы обложка
     // и воспроизведение появились без ручного рефреша.
     refetchInterval: (q) => (damageHasProcessing(q.state.data) ? 5000 : false),
+  });
+}
+
+/**
+ * Этап 2: история ревизий акта + статус целостности хэш-цепочки. Грузим лениво
+ * (enabled) — только когда пользователь раскрыл «Историю правок».
+ */
+export function useDamageRevisions(reportId: number | null, enabled = true) {
+  return useQuery({
+    enabled: reportId != null && enabled,
+    queryKey: [...damageReportsKeys.byId(reportId ?? 0), "revisions"] as const,
+    queryFn: () =>
+      api.get<DamageRevisionsResponse>(
+        `/api/damage-reports/${reportId}/revisions`,
+      ),
+    staleTime: 30_000,
   });
 }
 
