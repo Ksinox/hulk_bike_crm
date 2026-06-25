@@ -10,6 +10,7 @@ import {
   damageReports,
   damageReportItems,
   damageReportMedia,
+  damageReportRevisions,
   payments,
   rentals,
   scooters,
@@ -19,7 +20,11 @@ import { makeFileKey, removeObject, putObject } from "../storage/index.js";
 import { putObjectWithImageVariants } from "../storage/image.js";
 import { processDamageVideo } from "../services/damageVideoProcessor.js";
 import { inspectVideoForServe } from "../storage/video.js";
-import { logActivity } from "../services/activityLog.js";
+import { logActivity, type DiffPayload } from "../services/activityLog.js";
+import {
+  writeDamageRevision,
+  verifyRevisionChain,
+} from "../services/damageRevisions.js";
 import {
   loadDamageBundle,
   renderDamageHtml,
@@ -357,6 +362,31 @@ export async function damageReportsRoutes(app: FastifyInstance) {
         },
       },
     });
+    // Этап 2: ревизия 1 (создание) + head-хэш в акт (старт хэш-цепочки).
+    const headHash = await writeDamageRevision({
+      reportId: report!.id,
+      content: {
+        revisionNo: 1,
+        total,
+        depositCovered: cappedDeposit,
+        note: note ?? null,
+        clientAgreement: "pending",
+        items: items.map((it) => ({
+          name: it.name,
+          originalPrice: it.originalPrice,
+          finalPrice: it.finalPrice,
+          quantity: it.quantity,
+          comment: it.comment ?? null,
+          priceItemId: it.priceItemId ?? null,
+        })),
+      },
+      editedByUserId: userId,
+      prevHash: null,
+    });
+    await db
+      .update(damageReports)
+      .set({ contentHash: headHash })
+      .where(eq(damageReports.id, report!.id));
     return await loadReportFull(report!.id);
   });
 
@@ -375,8 +405,32 @@ export async function damageReportsRoutes(app: FastifyInstance) {
       .from(damageReports)
       .where(eq(damageReports.id, id));
     if (!report) return reply.code(404).send({ error: "not found" });
+    const userId = getUserId(req);
+    // Старое состояние — для diff и (если акт легаси без ревизий) снимка rev 1.
+    const oldItems = await db
+      .select()
+      .from(damageReportItems)
+      .where(eq(damageReportItems.reportId, id))
+      .orderBy(asc(damageReportItems.sortOrder));
+    const oldTotal = report.total;
+    const toRevItem = (it: {
+      name: string;
+      originalPrice: number;
+      finalPrice: number;
+      quantity: number;
+      comment?: string | null;
+      priceItemId?: number | null;
+    }) => ({
+      name: it.name,
+      originalPrice: it.originalPrice,
+      finalPrice: it.finalPrice,
+      quantity: it.quantity,
+      comment: it.comment ?? null,
+      priceItemId: it.priceItemId ?? null,
+    });
     const next: Partial<typeof damageReports.$inferInsert> = {
       updatedAt: new Date(),
+      updatedByUserId: userId,
     };
     if (parsed.data.note !== undefined) next.note = parsed.data.note ?? null;
     // v0.4.97: при изменении depositCovered — переносим delta на rental.deposit.
@@ -438,6 +492,10 @@ export async function damageReportsRoutes(app: FastifyInstance) {
         );
       }
     }
+    // Этап 2 — замок согласия: правка СОГЛАСОВАННОГО акта сбрасывает согласие
+    // обратно в «на согласовании» (клиент подтверждает новую сумму заново).
+    const wasAgreed = report.clientAgreement === "agreed";
+    if (wasAgreed) next.clientAgreement = "pending";
     await db.update(damageReports).set(next).where(eq(damageReports.id, id));
     // Синхронизируем deposit_forfeit с актуальным depositCovered.
     {
@@ -452,13 +510,119 @@ export async function damageReportsRoutes(app: FastifyInstance) {
         report.createdAt ?? new Date(),
       );
     }
+    // Этап 2: новая ревизия (НОВОЕ состояние) + хэш-цепочка. Если акт легаси
+    // (ревизий ещё нет) — сперва снимок СТАРОГО состояния как rev 1.
+    const newItems = parsed.data.items
+      ? parsed.data.items.map(toRevItem)
+      : oldItems.map(toRevItem);
+    const newTotal = next.total ?? oldTotal;
+    const newCovered = next.depositCovered ?? report.depositCovered ?? 0;
+    const newNote = next.note !== undefined ? next.note ?? null : report.note;
+    const newAgreement = next.clientAgreement ?? report.clientAgreement;
+    const revs = await db
+      .select()
+      .from(damageReportRevisions)
+      .where(eq(damageReportRevisions.reportId, id))
+      .orderBy(asc(damageReportRevisions.revisionNo));
+    let prevHash: string | null = null;
+    let nextRevNo = 1;
+    if (revs.length === 0) {
+      prevHash = await writeDamageRevision({
+        reportId: id,
+        content: {
+          revisionNo: 1,
+          total: oldTotal,
+          depositCovered: report.depositCovered ?? 0,
+          note: report.note,
+          clientAgreement: report.clientAgreement,
+          items: oldItems.map(toRevItem),
+        },
+        editedByUserId: report.createdByUserId ?? null,
+        prevHash: null,
+      });
+      nextRevNo = 2;
+    } else {
+      const last = revs[revs.length - 1]!;
+      prevHash = last.contentHash;
+      nextRevNo = last.revisionNo + 1;
+    }
+    const headHash = await writeDamageRevision({
+      reportId: id,
+      content: {
+        revisionNo: nextRevNo,
+        total: newTotal,
+        depositCovered: newCovered,
+        note: newNote,
+        clientAgreement: newAgreement,
+        items: newItems,
+      },
+      editedByUserId: userId,
+      prevHash,
+    });
+    await db
+      .update(damageReports)
+      .set({ contentHash: headHash, revisionNo: nextRevNo })
+      .where(eq(damageReports.id, id));
+    // Аудит-diff (было→стало) в ленту событий.
+    const diff: DiffPayload = {};
+    if (newTotal !== oldTotal)
+      diff.damage = {
+        label: "Ущерб",
+        from: oldTotal,
+        to: newTotal,
+        kind: "money",
+      };
+    if (parsed.data.items)
+      diff.items = {
+        label: "Позиции",
+        from: oldItems.map((i) => i.name),
+        to: newItems.map((i) => i.name),
+        kind: "list",
+      };
+    if (wasAgreed)
+      diff.agreement = {
+        label: "Согласование",
+        from: "согласовано",
+        to: "сброшено — на согласовании",
+        kind: "text",
+      };
     await logActivity(req, {
       entity: "damage_report",
       entityId: id,
       action: "updated",
-      summary: `Акт о повреждениях #${id} изменён`,
+      summary: `Акт о повреждениях #${id} изменён → ревизия ${nextRevNo}${
+        wasAgreed ? " (сброшено согласование)" : ""
+      }`,
+      meta: { revisionNo: nextRevNo, total: newTotal },
+      diff: Object.keys(diff).length > 0 ? diff : undefined,
     });
     return await loadReportFull(id);
+  });
+
+  /** Этап 2: история ревизий акта + статус целостности хэш-цепочки. */
+  app.get<{ Params: { id: string } }>("/:id/revisions", async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
+    const revs = await db
+      .select()
+      .from(damageReportRevisions)
+      .where(eq(damageReportRevisions.reportId, id))
+      .orderBy(asc(damageReportRevisions.revisionNo));
+    const { ok, brokenAt } = verifyRevisionChain(revs);
+    return { revisions: revs, integrity: { ok, brokenAt } };
+  });
+
+  /** Этап 2: быстрая проверка целостности цепочки ревизий (для бейджа). */
+  app.get<{ Params: { id: string } }>("/:id/integrity", async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
+    const revs = await db
+      .select()
+      .from(damageReportRevisions)
+      .where(eq(damageReportRevisions.reportId, id))
+      .orderBy(asc(damageReportRevisions.revisionNo));
+    const { ok, brokenAt } = verifyRevisionChain(revs);
+    return { ok, brokenAt, revisionCount: revs.length };
   });
 
   /** Внести платёж по акту. Авто-проставляет receivedByUserId. */
