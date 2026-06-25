@@ -3746,16 +3746,40 @@ function DrawerCallFab({
   onCall: () => void;
 }) {
   const [scrolling, setScrolling] = useState(false);
+  // Прячемся, если под кнопкой оказался кликабельный контрол (напр. «Изменить
+  // акт»/«Печать акта» в блоке акта): FAB не должен налегать на действия и
+  // перехватывать тап. Проверяем элемент под центром FAB после остановки скролла.
+  const [covering, setCovering] = useState(false);
+  const ref = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     let t: ReturnType<typeof setTimeout> | undefined;
+    const checkCover = () => {
+      const fab = ref.current;
+      if (!fab) return;
+      const r = fab.getBoundingClientRect();
+      const stack = document.elementsFromPoint(
+        r.left + r.width / 2,
+        r.top + r.height / 2,
+      );
+      setCovering(
+        stack.some(
+          (e) =>
+            e !== fab && !fab.contains(e) && !!e.closest("button,a,[role=button]"),
+        ),
+      );
+    };
     const onScroll = () => {
       setScrolling(true);
       if (t) clearTimeout(t);
-      t = setTimeout(() => setScrolling(false), 240);
+      t = setTimeout(() => {
+        setScrolling(false);
+        checkCover();
+      }, 240);
     };
     el.addEventListener("scroll", onScroll, { passive: true });
+    checkCover();
     return () => {
       el.removeEventListener("scroll", onScroll);
       if (t) clearTimeout(t);
@@ -3763,13 +3787,14 @@ function DrawerCallFab({
   }, [scrollRef]);
   return (
     <button
+      ref={ref}
       type="button"
       onClick={onCall}
       aria-label="Позвонить клиенту"
       className={cn(
         "absolute right-4 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-green-600 text-white shadow-card-lg transition-all duration-200 active:scale-95",
         hasFooter ? "bottom-[84px]" : "bottom-5",
-        scrolling
+        scrolling || covering
           ? "pointer-events-none translate-y-3 opacity-0"
           : "translate-y-0 opacity-100",
       )}

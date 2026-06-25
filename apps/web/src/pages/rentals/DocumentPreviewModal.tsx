@@ -354,8 +354,11 @@ export function DocumentPreviewModal({
         {!editingTemplate && (
           <div className="border-b border-border bg-blue-50/60 px-5 py-2 text-[11px] text-blue-900">
             <b>Печать:</b> на телефоне в окне печати выберите ваш Wi-Fi принтер
-            (он должен быть в той же сети). На компьютере можно «Сохранить как
-            PDF». «Скачать Word» — файл для правки в Microsoft Word.
+            (он должен быть в той же сети).
+            <span className="hidden sm:inline">
+              {" "}На компьютере можно «Сохранить как PDF». «Скачать Word» — файл
+              для правки в Microsoft Word.
+            </span>
           </div>
         )}
 
