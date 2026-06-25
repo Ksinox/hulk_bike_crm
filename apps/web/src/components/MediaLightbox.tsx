@@ -357,17 +357,12 @@ export function MediaLightbox({
         )}
       </div>
 
-      {/* Точки-индикаторы — поверх медиа снизу. */}
-      {items.length > 1 && (
+      {/* Точки-индикаторы — только для ФОТО. У видео снизу нативные контролы
+          плеера (плей/перемотка/звук/⛶/⋮), а позицию показывает верхний счётчик
+          «N / M» + стрелки ‹ ›; точки бы налегали на контролы. */}
+      {items.length > 1 && cur.kind === "photo" && (
         <div
-          className={cn(
-            "absolute inset-x-0 z-10 flex flex-wrap justify-center gap-1.5 px-4",
-            // Видео: нативные контролы внизу — поднимаем точки над ними, чтобы
-            // не налегали. Фото: точки у самого низа с градиентом-подложкой.
-            cur.kind === "video"
-              ? "bottom-[3.5rem]"
-              : "bottom-0 bg-gradient-to-t from-black/50 to-transparent pb-[max(env(safe-area-inset-bottom),1rem)] pt-6",
-          )}
+          className="absolute inset-x-0 bottom-0 z-10 flex flex-wrap justify-center gap-1.5 bg-gradient-to-t from-black/50 to-transparent px-4 pb-[max(env(safe-area-inset-bottom),1rem)] pt-6"
           onClick={(e) => e.stopPropagation()}
         >
           {items.map((_, i) => (
