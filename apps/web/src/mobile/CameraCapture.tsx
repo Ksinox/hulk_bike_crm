@@ -231,13 +231,13 @@ export function CameraCapture({
               autoPlay
               loop
               playsInline
-              className="absolute inset-0 h-full w-full bg-black object-contain"
+              className="absolute inset-x-0 top-0 bottom-[5.75rem] bg-black object-contain"
             />
           ) : (
             <img
               src={captured.url}
               alt="Превью снимка"
-              className="absolute inset-0 h-full w-full bg-black object-contain"
+              className="absolute inset-x-0 top-0 bottom-[5.75rem] bg-black object-contain"
             />
           )}
           <div className="relative z-10 flex items-center justify-between px-4 pb-3 pt-[max(env(safe-area-inset-top),0.75rem)]">

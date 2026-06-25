@@ -197,6 +197,16 @@ export function DamageMediaCapture({
           <Images size={18} /> Галерея
         </button>
       </div>
+
+      {/* Явный индикатор заливки — чтобы после «Готово» было видно, что файл
+          прикрепляется, а не «ничего не происходит». */}
+      {busy && (
+        <div className="flex items-center justify-center gap-2 rounded-xl bg-blue-50 px-3 py-2.5 text-[13px] font-semibold text-blue-700 ring-1 ring-inset ring-blue-100">
+          <Loader2 size={16} className="animate-spin" />
+          Загружается на сервер, подождите…
+        </div>
+      )}
+
       {/* capture="environment" — задняя камера телефона; фото ИЛИ видео */}
       <input
         ref={camRef}
