@@ -74,6 +74,7 @@ import { PaymentAcceptDialog } from "./PaymentAcceptDialog";
 import { askRentalDeleteReason } from "./deleteRentalReason";
 import { SwapScooterDialog } from "./SwapScooterDialog";
 import { DamageReportDialog } from "./DamageReportDialog";
+import { DamageActBlock } from "./rental-card/DamageActBlock";
 import { EquipmentChangeDialog } from "./EquipmentChangeDialog";
 import { DocumentPreviewModal } from "./DocumentPreviewModal";
 import { ClaimDocumentPreview } from "./ClaimDocumentPreview";
@@ -2506,6 +2507,23 @@ export function RentalCard({
             }
             onParkingCancel={onCancelParking}
           />
+
+          {hasDamage && (
+            <AccordionSection
+              title="Акт о повреждениях"
+              icon={<AlertTriangle size={15} className="text-red" />}
+              defaultOpen
+              badge={
+                totalDebt > 0 ? (
+                  <span className="rounded-full bg-red-soft px-2 py-0.5 text-[11px] font-bold text-red-ink tabular-nums">
+                    {fmt(totalDebt)} ₽
+                  </span>
+                ) : undefined
+              }
+            >
+              <DamageActBlock reports={reports} />
+            </AccordionSection>
+          )}
 
           <AccordionSection
             title="Финансовая информация"
