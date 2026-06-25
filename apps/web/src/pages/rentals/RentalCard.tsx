@@ -3758,17 +3758,24 @@ function DrawerCallFab({
     const checkCover = () => {
       const fab = ref.current;
       if (!fab) return;
-      const r = fab.getBoundingClientRect();
-      const stack = document.elementsFromPoint(
-        r.left + r.width / 2,
-        r.top + r.height / 2,
-      );
-      setCovering(
-        stack.some(
-          (e) =>
-            e !== fab && !fab.contains(e) && !!e.closest("button,a,[role=button]"),
-        ),
-      );
+      const fr = fab.getBoundingClientRect();
+      // Пересекается ли FAB с каким-нибудь кликабельным контролом ТЕЛА карточки
+      // (футер — отдельный элемент, не считаем). Если да — прячемся, чтобы не
+      // налегать и не перехватывать тап по кнопке под нами.
+      let hit = false;
+      el.querySelectorAll("button,a,[role=button]").forEach((c) => {
+        if (hit || c === fab) return;
+        const cr = c.getBoundingClientRect();
+        if (cr.width < 1 || cr.height < 1) return;
+        if (
+          cr.left < fr.right &&
+          cr.right > fr.left &&
+          cr.top < fr.bottom &&
+          cr.bottom > fr.top
+        )
+          hit = true;
+      });
+      setCovering(hit);
     };
     const onScroll = () => {
       setScrolling(true);
