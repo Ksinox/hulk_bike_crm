@@ -2521,7 +2521,11 @@ export function RentalCard({
                 ) : undefined
               }
             >
-              <DamageActBlock reports={reports} />
+              <DamageActBlock
+                reports={reports}
+                onEditReport={(id) => setEditingReportId(id)}
+                onPrintReport={(id) => setPreviewDamageId(id)}
+              />
             </AccordionSection>
           )}
 

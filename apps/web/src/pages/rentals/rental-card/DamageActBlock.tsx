@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Play } from "lucide-react";
+import { Pencil, Play, Printer } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fileUrl } from "@/lib/files";
 import { MediaLightbox, type LightboxItem } from "@/components/MediaLightbox";
@@ -23,7 +23,17 @@ const AGREEMENT: Record<string, { label: string; cls: string }> = {
   disputed: { label: "спор", cls: "bg-red-soft text-red-ink" },
 };
 
-export function DamageActBlock({ reports }: { reports: ApiDamageReport[] }) {
+export function DamageActBlock({
+  reports,
+  onEditReport,
+  onPrintReport,
+}: {
+  reports: ApiDamageReport[];
+  /** Открыть последний акт на правку (DamageReportDialog в режиме edit). */
+  onEditReport?: (reportId: number) => void;
+  /** Открыть предпросмотр/печать акта (DocumentPreviewModal). */
+  onPrintReport?: (reportId: number) => void;
+}) {
   const allMedia = reports.flatMap((r) => r.media ?? []);
   const total = reports.reduce((s, r) => s + r.total, 0);
   const debt = reports.reduce((s, r) => s + r.debt, 0);
@@ -150,6 +160,29 @@ export function DamageActBlock({ reports }: { reports: ApiDamageReport[] }) {
       ) : (
         <div className="rounded-xl border border-dashed border-border px-3 py-3 text-center text-[12px] text-muted-2">
           К акту не приложено фото/видео.
+        </div>
+      )}
+
+      {latest && (onEditReport || onPrintReport) && (
+        <div className="flex gap-2">
+          {onEditReport && (
+            <button
+              type="button"
+              onClick={() => onEditReport(latest.id)}
+              className="flex h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-ink text-[13px] font-bold text-white transition-colors hover:bg-blue-600 active:scale-[0.98]"
+            >
+              <Pencil size={15} /> Изменить акт
+            </button>
+          )}
+          {onPrintReport && (
+            <button
+              type="button"
+              onClick={() => onPrintReport(latest.id)}
+              className="flex h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-blue-50 text-[13px] font-bold text-blue-700 transition-colors hover:bg-blue-100 active:scale-[0.98]"
+            >
+              <Printer size={15} /> Печать акта
+            </button>
+          )}
         </div>
       )}
 

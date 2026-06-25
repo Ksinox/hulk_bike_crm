@@ -276,7 +276,7 @@ export function DocumentPreviewModal({
                   onClick={handlePrint}
                   disabled={!iframeReady || printing}
                   className={cn(
-                    "inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-bold text-white transition-colors",
+                    "hidden sm:inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-bold text-white transition-colors",
                     iframeReady && !printing
                       ? "bg-ink hover:bg-blue-600"
                       : "cursor-not-allowed bg-surface text-muted-2",
@@ -385,6 +385,44 @@ export function DocumentPreviewModal({
                 className="h-full min-h-[70vh] w-full bg-white"
               />
             )}
+          </div>
+        )}
+
+        {/* Мобильная нижняя панель — печать «под палец». На десктопе действия
+            в шапке (тут sm:hidden). «Закрыть» остаётся сверху. */}
+        {!editingTemplate && (
+          <div className="flex items-center gap-2 border-t border-border bg-surface px-4 py-3 pb-[max(env(safe-area-inset-bottom),0.75rem)] sm:hidden">
+            <button
+              type="button"
+              onClick={handleDownloadWord}
+              disabled={downloading}
+              className="flex h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-blue-50 text-[14px] font-bold text-blue-700 active:scale-[0.98] disabled:opacity-60"
+            >
+              {downloading ? (
+                <Loader2 size={16} className="animate-spin" />
+              ) : (
+                <Download size={16} />
+              )}
+              Word
+            </button>
+            <button
+              type="button"
+              onClick={handlePrint}
+              disabled={!iframeReady || printing}
+              className={cn(
+                "flex h-12 flex-[2] items-center justify-center gap-2 rounded-xl text-[15px] font-bold text-white active:scale-[0.98]",
+                iframeReady && !printing
+                  ? "bg-ink"
+                  : "cursor-not-allowed bg-surface text-muted-2",
+              )}
+            >
+              {printing ? (
+                <Loader2 size={16} className="animate-spin" />
+              ) : (
+                <Printer size={16} />
+              )}
+              Печать
+            </button>
           </div>
         )}
       </div>
