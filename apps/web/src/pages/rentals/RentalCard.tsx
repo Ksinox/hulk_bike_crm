@@ -449,6 +449,12 @@ export function RentalCard({
   // «Пополнить залог» — открывается тапом по плашке залога в «Финансовой
   // информации» (а не из «Принять оплату», где пополнение нелогично).
   const [topupOpen, setTopupOpen] = useState(false);
+  // Недостаток залога (списали в счёт ущерба/удержаний) — для красного флажка
+  // на плашке «Долг» и кнопки пополнения в блоке акта.
+  const depositGap = Math.max(
+    0,
+    (rental.depositOriginal ?? rental.deposit ?? 0) - (rental.deposit ?? 0),
+  );
   const [previewClaimId, setPreviewClaimId] = useState<number | null>(null);
   const [swapOpen, setSwapOpen] = useState(false);
   const [clientQuickView, setClientQuickView] = useState(false);
@@ -1852,6 +1858,16 @@ export function RentalCard({
           здесь только рендер + hover-поповер с детальным составом. */}
       <KpiCard
         label="Долг"
+        depositAlert={
+          depositGap > 0
+            ? {
+                onClick: () => setTopupOpen(true),
+                title: `Залог неполный: ${fmt(rental.deposit ?? 0)} из ${fmt(
+                  rental.depositOriginal ?? rental.deposit ?? 0,
+                )} ₽ — пополнить`,
+              }
+            : undefined
+        }
         // Подмешиваем сквозной долг: значение = долг этой аренды + с прошлых.
         // Звёздочка сигналит, что в сумме есть долг с других аренд.
         value={
@@ -3502,6 +3518,7 @@ function KpiCard({
   badgeIcon: BadgeIcon,
   accent = "default",
   popover,
+  depositAlert,
 }: {
   label: string;
   value: string;
@@ -3512,6 +3529,9 @@ function KpiCard({
   /** v0.7.8: детальный состав при наведении (hover). Показывается поповером
    *  снизу плашки. Если не передан — плашка ведёт себя как раньше. */
   popover?: React.ReactNode;
+  /** Красный флажок «залог неполный» в углу плашки. Клик → пополнить залог
+   *  (тот же диалог). stopPropagation — не задевает тап/поповер плашки. */
+  depositAlert?: { onClick: () => void; title: string };
 }) {
   const isMobile = useIsMobile();
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -3573,8 +3593,32 @@ function KpiCard({
           )}
         />
       )}
+      {/* Красный флажок «залог неполный» поверх плашки — клик ведёт в пополнение
+          залога (stopPropagation, чтобы не сработал тап/поповер плашки). */}
+      {depositAlert && (
+        <span
+          role="button"
+          tabIndex={0}
+          title={depositAlert.title}
+          aria-label={depositAlert.title}
+          onClick={(e) => {
+            e.stopPropagation();
+            depositAlert.onClick();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              e.stopPropagation();
+              depositAlert.onClick();
+            }
+          }}
+          className="absolute right-2 top-2 z-10 flex h-6 w-6 cursor-pointer items-center justify-center rounded-full bg-red-soft text-red-ink transition-colors hover:bg-red-100"
+        >
+          <ShieldAlert size={14} />
+        </span>
+      )}
       {/* На мобиле — намёк, что по тапу раскроются подробности. */}
-      {tappable && !BadgeIcon && (
+      {tappable && !BadgeIcon && !depositAlert && (
         <ChevronDown
           size={15}
           className="absolute right-2.5 top-3 text-muted-2"

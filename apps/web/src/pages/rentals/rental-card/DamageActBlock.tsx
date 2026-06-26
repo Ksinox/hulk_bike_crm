@@ -121,33 +121,15 @@ export function DamageActBlock({
               {fmt(total)} ₽
             </div>
           </div>
-          <div className="flex shrink-0 items-center gap-1.5">
-            {debt > 0 ? (
-              <span className="flex items-center gap-1 rounded-full bg-red-soft px-2.5 py-1 text-[11px] font-bold text-red-ink">
-                <Clock size={12} /> Долг {fmt(debt)} ₽
-              </span>
-            ) : (
-              <span className="flex items-center gap-1 rounded-full bg-green-soft px-2.5 py-1 text-[11px] font-bold text-green-ink">
-                <Check size={12} /> Оплачен
-              </span>
-            )}
-            {/* Залог стал неполным (списали в счёт ущерба) — красный флажок
-                прямо на плашке суммы, виден даже когда долга нет. Клик → тот же
-                диалог пополнения, что и в «Финансовой». */}
-            {onTopupDeposit && depositGap > 0 && (
-              <button
-                type="button"
-                onClick={onTopupDeposit}
-                title={`Залог неполный: ${fmt(deposit ?? 0)} из ${fmt(
-                  depositOriginal ?? 0,
-                )} ₽ — пополнить`}
-                aria-label="Залог неполный — пополнить"
-                className="flex h-8 w-8 items-center justify-center rounded-full bg-red-soft text-red-ink transition-colors hover:bg-red-100 active:scale-95"
-              >
-                <ShieldAlert size={16} />
-              </button>
-            )}
-          </div>
+          {debt > 0 ? (
+            <span className="flex shrink-0 items-center gap-1 rounded-full bg-red-soft px-2.5 py-1 text-[11px] font-bold text-red-ink">
+              <Clock size={12} /> Долг {fmt(debt)} ₽
+            </span>
+          ) : (
+            <span className="flex shrink-0 items-center gap-1 rounded-full bg-green-soft px-2.5 py-1 text-[11px] font-bold text-green-ink">
+              <Check size={12} /> Оплачен
+            </span>
+          )}
         </div>
         {total > 0 && (
           <>
@@ -272,6 +254,18 @@ export function DamageActBlock({
             </button>
           )}
         </div>
+      )}
+
+      {/* Залог стал неполным (списали в счёт ущерба) — кнопка пополнения прямо
+          в акте. Тот же диалог, что флажок на плашке «Долг» и «Финансовая». */}
+      {onTopupDeposit && depositGap > 0 && (
+        <button
+          type="button"
+          onClick={onTopupDeposit}
+          className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-amber-50 text-[13px] font-bold text-amber-800 transition-colors hover:bg-amber-100 active:scale-[0.98]"
+        >
+          <ShieldAlert size={15} /> Пополнить залог · +{fmt(depositGap)} ₽
+        </button>
       )}
 
       {latest && debt > 0 && onOpenDebtor && (
