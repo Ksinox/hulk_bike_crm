@@ -39,6 +39,7 @@ import {
 } from "@/lib/debtors/types";
 import { DonutProgress } from "@/components/DonutProgress";
 import { ScheduleBuilderDialog } from "./ScheduleBuilderDialog";
+import { DamageDebtorActSection } from "./DamageDebtorActSection";
 import { toast, confirmDialog } from "@/lib/toast";
 
 // Локальная копия логики state machine для UI (зеркало бэка).
@@ -542,6 +543,15 @@ export function DebtorCase({
                 </div>
               </div>
             </div>
+          )}
+
+          {/* Этап 3: связанный акт о повреждениях — медиа-доказательства +
+              печать претензии прямо из дела. */}
+          {d.damageReportId != null && (
+            <DamageDebtorActSection
+              rentalId={d.relatedRentalId}
+              reportId={d.damageReportId}
+            />
           )}
 
           {/* Хронология */}
