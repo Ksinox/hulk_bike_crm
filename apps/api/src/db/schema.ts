@@ -1910,6 +1910,11 @@ export const debtors = pgTable(
       () => rentals.id,
       { onDelete: "set null" },
     ),
+    // Этап 3: прямая связь с актом о повреждениях (досудебка заводится из акта).
+    damageReportId: bigint("damage_report_id", { mode: "number" }).references(
+      () => damageReports.id,
+      { onDelete: "set null" },
+    ),
     // closing
     closedAt: timestamp("closed_at", { withTimezone: true }),
     closedReason: text("closed_reason"),
@@ -1928,6 +1933,7 @@ export const debtors = pgTable(
     stageIdx: index("debtors_stage_idx").on(t.stage),
     clientIdx: index("debtors_client_idx").on(t.clientId),
     rentalIdx: index("debtors_rental_idx").on(t.relatedRentalId),
+    damageReportIdx: index("debtors_damage_report_idx").on(t.damageReportId),
     createdAtIdx: index("debtors_created_at_idx").on(t.createdAt),
   }),
 );

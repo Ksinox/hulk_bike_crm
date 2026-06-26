@@ -30,6 +30,7 @@ import { useIsMobile } from "@/lib/useIsMobile";
 import { useReloadRestoredState } from "@/lib/usePersistedState";
 import { MobileBottomSheet } from "@/mobile/BottomSheet";
 import { useCallClient } from "@/mobile/call";
+import { openOrCreateDamageDebtor } from "@/lib/api/debtors";
 import {
   MIN_RENTAL_DAYS,
   ratePeriodForDays,
@@ -2525,6 +2526,14 @@ export function RentalCard({
                 reports={reports}
                 onEditReport={(id) => setEditingReportId(id)}
                 onPrintReport={(id) => setPreviewDamageId(id)}
+                onOpenDebtor={(report, debt) =>
+                  openOrCreateDamageDebtor({
+                    reportId: report.id,
+                    rentalId: report.rentalId,
+                    clientId: rental.clientId ?? null,
+                    amount: debt,
+                  })
+                }
               />
             </AccordionSection>
           )}

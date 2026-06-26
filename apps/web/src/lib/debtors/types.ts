@@ -51,6 +51,8 @@ export type Debtor = {
   lawyerName: string | null;
   lastLawyerUpdateAt: string | null;
   relatedRentalId: number | null;
+  /** Этап 3: акт о повреждениях, из которого заведено дело. */
+  damageReportId: number | null;
   closedAt: string | null;
   closedReason: string | null;
   createdAt: string;

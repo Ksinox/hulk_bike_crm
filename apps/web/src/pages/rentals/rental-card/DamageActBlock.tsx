@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronDown, History, Pencil, Play, Printer } from "lucide-react";
+import { ChevronDown, History, Pencil, Play, Printer, Scale } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fileUrl } from "@/lib/files";
 import { MediaLightbox, type LightboxItem } from "@/components/MediaLightbox";
@@ -28,12 +28,15 @@ export function DamageActBlock({
   reports,
   onEditReport,
   onPrintReport,
+  onOpenDebtor,
 }: {
   reports: ApiDamageReport[];
   /** Открыть последний акт на правку (DamageReportDialog в режиме edit). */
   onEditReport?: (reportId: number) => void;
   /** Открыть предпросмотр/печать акта (DocumentPreviewModal). */
   onPrintReport?: (reportId: number) => void;
+  /** Этап 3: открыть/завести досудебное дело по акту (передаём акт + долг). */
+  onOpenDebtor?: (report: ApiDamageReport, debt: number) => void;
 }) {
   const allMedia = reports.flatMap((r) => r.media ?? []);
   const total = reports.reduce((s, r) => s + r.total, 0);
@@ -186,6 +189,16 @@ export function DamageActBlock({
             </button>
           )}
         </div>
+      )}
+
+      {latest && debt > 0 && onOpenDebtor && (
+        <button
+          type="button"
+          onClick={() => onOpenDebtor(latest, debt)}
+          className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-red-soft text-[13px] font-bold text-red-ink transition-colors active:scale-[0.98]"
+        >
+          <Scale size={15} /> Досудебное дело →
+        </button>
       )}
 
       {latest && (

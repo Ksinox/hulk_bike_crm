@@ -3,6 +3,8 @@
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { navigate } from "@/app/navigationStore";
+import { toast } from "@/lib/toast";
 import type {
   Debtor,
   DebtorDetail,
@@ -29,6 +31,43 @@ const keys = {
 function invalidateLinked(qc: ReturnType<typeof useQueryClient>) {
   qc.invalidateQueries({ queryKey: ["clients"] });
   qc.invalidateQueries({ queryKey: ["activity"] });
+}
+
+/**
+ * Этап 3: открыть (или, если ещё нет, завести) досудебное дело из акта о
+ * повреждениях и перейти к нему. Дело по акту ищем по damageReportId; нет —
+ * создаём (клиент аренды, тип «ущерб», сумма = долг по акту, связи на аренду
+ * и акт). Навигация — общий navigate({route:"debtors", debtorId}).
+ */
+export async function openOrCreateDamageDebtor(args: {
+  reportId: number;
+  rentalId: number;
+  clientId: number | null;
+  amount: number;
+}): Promise<void> {
+  try {
+    const found = await api.get<{ debtor: Debtor | null }>(
+      `/api/debtors/by-damage-report/${args.reportId}`,
+    );
+    if (found.debtor) {
+      navigate({ route: "debtors", debtorId: found.debtor.id });
+      return;
+    }
+    const created = await api.post<Debtor>("/api/debtors", {
+      clientId: args.clientId,
+      type: "damage",
+      totalAmount: Math.max(1, Math.round(args.amount)),
+      relatedRentalId: args.rentalId,
+      damageReportId: args.reportId,
+      comment: `Заведено из акта о повреждениях #${args.reportId}`,
+    });
+    navigate({ route: "debtors", debtorId: created.id });
+  } catch (e) {
+    toast.error(
+      "Не удалось открыть досудебное дело",
+      (e as Error).message ?? "",
+    );
+  }
 }
 
 export function useDebtorsList(params?: { stage?: string; type?: string; closed?: boolean }) {
@@ -92,6 +131,7 @@ export function useCreateDebtor() {
       comment?: string | null;
       insuranceCompany?: string | null;
       relatedRentalId?: number | null;
+      damageReportId?: number | null;
     }) => api.post<Debtor>("/api/debtors", body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: keys.all });
