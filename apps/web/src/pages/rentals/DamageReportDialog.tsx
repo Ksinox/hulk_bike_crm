@@ -467,7 +467,9 @@ export function DamageReportDialog({
       {
         uid,
         priceItemId: null,
-        name: "Прочее повреждение",
+        // Пустое имя → оператор вписывает название сам (плейсхолдер
+        // подсказывает). На сохранении пустое имя добираем из комментария.
+        name: "",
         originalPrice: 0,
         finalPrice: 0,
         quantity: 1,
@@ -524,7 +526,13 @@ export function DamageReportDialog({
     try {
       const items = selected.map((s) => ({
         priceItemId: s.priceItemId ?? null,
-        name: s.name,
+        // Своя позиция: название = что вписал оператор, иначе из комментария,
+        // иначе дефолт. Так в акте/претензии она печатается как обычная
+        // позиция, а не служебным «Прочее повреждение».
+        name:
+          s.priceItemId == null
+            ? s.name.trim() || (s.comment ?? "").trim() || "Прочее повреждение"
+            : s.name,
         originalPrice: s.originalPrice,
         finalPrice: s.finalPrice,
         quantity: s.quantity,
@@ -632,7 +640,7 @@ export function DamageReportDialog({
             <input
               value={s.name}
               onChange={(e) => patchSel(s.uid, { name: e.target.value })}
-              placeholder="Название позиции"
+              placeholder="Название повреждения (напр. Карбюратор)"
               className="min-w-0 flex-1 rounded-lg border border-border bg-surface-soft px-2 py-1.5 text-[14px] font-semibold text-ink outline-none focus:border-blue-600"
             />
           ) : (
@@ -1394,7 +1402,7 @@ export function DamageReportDialog({
                                 onChange={(e) =>
                                   patchSel(s.uid, { name: e.target.value })
                                 }
-                                placeholder="Название позиции"
+                                placeholder="Название повреждения (напр. Карбюратор)"
                                 className="w-full rounded-[6px] border border-border bg-surface-soft px-1.5 py-1 text-[13px] font-semibold text-ink outline-none focus:border-blue-600"
                               />
                             ) : (

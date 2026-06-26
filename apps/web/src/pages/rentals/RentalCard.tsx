@@ -449,6 +449,20 @@ export function RentalCard({
   // «Пополнить залог» — открывается тапом по плашке залога в «Финансовой
   // информации» (а не из «Принять оплату», где пополнение нелогично).
   const [topupOpen, setTopupOpen] = useState(false);
+  // Подсветка блока акта после перехода из поповера «Долг» (клик по строке
+  // «ущерб» проскролливает к акту и кратко подсвечивает его).
+  const [damageFlash, setDamageFlash] = useState(false);
+  const scrollToDamageAct = () => {
+    // Небольшая задержка — чтобы мобильный bottom-sheet KPI успел закрыться и
+    // разблокировать скролл тела перед прокруткой к блоку акта.
+    window.setTimeout(() => {
+      const el = document.getElementById("damage-act-section");
+      if (!el) return;
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+      setDamageFlash(true);
+      window.setTimeout(() => setDamageFlash(false), 1600);
+    }, 120);
+  };
   // Недостаток залога (списали в счёт ущерба/удержаний) — для красного флажка
   // на плашке «Долг» и кнопки пополнения в блоке акта.
   const depositGap = Math.max(
@@ -760,7 +774,13 @@ export function RentalCard({
   // #26: «за что» ущерб — короткий список повреждённых позиций из акта-должника
   // (для подписи в «Составе долга», чтобы было видно, за что начислен ущерб).
   const damageWhatItems = (reportWithDebt?.items ?? [])
-    .map((i) => i.name)
+    .map((i) => {
+      const nm = (i.name ?? "").trim();
+      const cm = (i.comment ?? "").trim();
+      // Своя позиция с дефолтным именем — показываем комментарий (реальное
+      // описание), как и в печатном акте.
+      return (nm === "" || nm === "Прочее повреждение") && cm ? cm : nm;
+    })
     .filter(Boolean);
   const damageWhatLabel =
     damageWhatItems.length > 0
@@ -1921,12 +1941,23 @@ export function RentalCard({
                   <div>просрочка: <b>{fmt(overdueBalance)} ₽</b></div>
                 )}
               {damageBalance > 0 && (
-                <div>
-                  ущерб: <b>{fmt(damageBalance)} ₽</b>
-                  {damageWhatItems.length > 0 && (
-                    <span className="text-muted"> · {damageWhatLabel}</span>
-                  )}
-                </div>
+                <button
+                  type="button"
+                  data-dismiss-sheet
+                  onClick={scrollToDamageAct}
+                  title="Открыть акт о повреждениях"
+                  className="group/da -mx-1 flex w-[calc(100%+0.5rem)] items-start gap-1.5 rounded-md px-1 py-0.5 text-left transition-colors hover:bg-red-soft/60"
+                >
+                  <span className="min-w-0 flex-1">
+                    ущерб: <b>{fmt(damageBalance)} ₽</b>
+                    {damageWhatItems.length > 0 && (
+                      <span className="text-muted"> · {damageWhatLabel}</span>
+                    )}
+                  </span>
+                  <span className="mt-px shrink-0 whitespace-nowrap text-[10px] font-bold uppercase tracking-wide text-red-ink opacity-60 transition-opacity group-hover/da:opacity-100">
+                    к акту →
+                  </span>
+                </button>
               )}
               {equipmentManualBalance > 0 && (
                 <div>за экипировку: <b>{fmt(equipmentManualBalance)} ₽</b></div>
@@ -2526,6 +2557,14 @@ export function RentalCard({
           />
 
           {hasDamage && (
+            <div
+              id="damage-act-section"
+              className={cn(
+                "scroll-mt-4 rounded-2xl transition-shadow duration-500",
+                damageFlash &&
+                  "ring-2 ring-red-400 ring-offset-2 ring-offset-surface",
+              )}
+            >
             <AccordionSection
               title="Акт о повреждениях"
               icon={<AlertTriangle size={15} className="text-red" />}
@@ -2555,6 +2594,7 @@ export function RentalCard({
                 onTopupDeposit={() => setTopupOpen(true)}
               />
             </AccordionSection>
+            </div>
           )}
 
           <AccordionSection
@@ -3771,7 +3811,15 @@ function KpiDetailSheet({
               <X size={18} />
             </button>
           </div>
-          <div className="space-y-1 text-[14px] leading-relaxed text-ink-2 [&_b]:font-bold [&_b]:text-ink">
+          <div
+            onClick={(e) => {
+              // Строки-кнопки с [data-dismiss-sheet] (напр. «ущерб → к акту»)
+              // закрывают sheet, чтобы стал виден блок, к которому скроллим.
+              if ((e.target as HTMLElement).closest?.("[data-dismiss-sheet]"))
+                close();
+            }}
+            className="space-y-1 text-[14px] leading-relaxed text-ink-2 [&_b]:font-bold [&_b]:text-ink"
+          >
             {children}
           </div>
         </>
