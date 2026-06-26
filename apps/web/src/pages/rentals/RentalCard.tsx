@@ -453,15 +453,19 @@ export function RentalCard({
   // «ущерб» проскролливает к акту и кратко подсвечивает его).
   const [damageFlash, setDamageFlash] = useState(false);
   const scrollToDamageAct = () => {
-    // Небольшая задержка — чтобы мобильный bottom-sheet KPI успел закрыться и
-    // разблокировать скролл тела перед прокруткой к блоку акта.
+    // Сначала даём мобильному bottom-sheet KPI доиграть закрытие (~280мс,
+    // см. BottomSheet), иначе скролл стартует на «уезжающем» layout. На
+    // устойчивом layout скроллим к блоку акта и подсвечиваем его.
+    // behavior:'auto' — вложенный overflow-контейнер этого экрана не
+    // поддерживает smooth (проверено: и scrollIntoView, и scrollTo smooth
+    // игнорируются); мгновенный скролл + flash-подсветка как визуальный якорь.
     window.setTimeout(() => {
       const el = document.getElementById("damage-act-section");
       if (!el) return;
-      el.scrollIntoView({ behavior: "smooth", block: "start" });
+      el.scrollIntoView({ behavior: "auto", block: "start" });
       setDamageFlash(true);
-      window.setTimeout(() => setDamageFlash(false), 1600);
-    }, 120);
+      window.setTimeout(() => setDamageFlash(false), 1800);
+    }, 300);
   };
   // Недостаток залога (списали в счёт ущерба/удержаний) — для красного флажка
   // на плашке «Долг» и кнопки пополнения в блоке акта.
