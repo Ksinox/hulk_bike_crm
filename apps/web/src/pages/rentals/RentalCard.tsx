@@ -3756,6 +3756,17 @@ function KpiCard({
             }}
             onMouseEnter={cancelClose}
             onMouseLeave={scheduleClose}
+            onClick={(e) => {
+              // Клик по строке-кнопке с [data-dismiss-sheet] (напр.
+              // «ущерб → к акту») закрывает поповер, чтобы он не висел над
+              // блоком, к которому проскроллили.
+              if (
+                (e.target as HTMLElement).closest?.("[data-dismiss-sheet]")
+              ) {
+                cancelClose();
+                setPopOpen(false);
+              }
+            }}
             className="rounded-xl bg-surface p-3 text-[12px] leading-relaxed text-ink-2 shadow-card-lg ring-1 ring-border"
           >
             {popover}
