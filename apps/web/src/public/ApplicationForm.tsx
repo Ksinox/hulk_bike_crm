@@ -1986,18 +1986,35 @@ function WishPeriodStep({
     <div className="space-y-3">
       <h1 className="text-[22px] font-bold text-slate-900">Выберите период</h1>
       <InlineRangeCalendar
-        from={startIso}
-        to={endIso}
+        // Календарь стартует ПУСТЫМ (без преселекта today→+7): иначе клиент
+        // видел готовый диапазон и тапал только дату конца, а react-aria
+        // воспринимал это как НАЧАЛО нового диапазона → период считался
+        // неверно. Теперь чистый флоу «тап начала → тап конца».
+        from={form.wantStartDate || null}
+        to={form.wantStartDate ? endIso : null}
         minDate={todayIsoLocal()}
         onChange={({ from, to }) => {
           setField("wantStartDate", from);
           setField("wantDays", Math.max(1, daysBetweenIso(from, to)));
         }}
       />
-      <div className="text-center text-[13px] leading-snug text-slate-500">
-        Тапните дату начала, затем дату конца. Стоимость и подсказки — в блоке
-        «Ваш выбор» внизу.
-      </div>
+      {form.wantStartDate ? (
+        // Явный итог выбора — клиент СРАЗУ видит период и число дней и ловит
+        // случайный перевыбор (напр. «с 05.07 по 24.07 · 19 дней» вместо
+        // нужного). Раньше итог был только в свёрнутом «Ваш выбор» внизу.
+        <div className="rounded-xl bg-blue-50 px-3 py-2 text-center text-[14px] font-bold text-blue-700">
+          С {isoToDDMM(startIso)} по {isoToDDMM(endIso)} · {days}{" "}
+          {daysWord(days)}
+          <div className="mt-0.5 text-[12px] font-medium text-blue-600/80">
+            Не тот период? Тапните дату начала заново.
+          </div>
+        </div>
+      ) : (
+        <div className="text-center text-[13px] leading-snug text-slate-500">
+          Тапните дату начала, затем дату конца. Нужен другой месяц — листайте
+          стрелками над календарём. Стоимость — в блоке «Ваш выбор» внизу.
+        </div>
+      )}
     </div>
   );
 }

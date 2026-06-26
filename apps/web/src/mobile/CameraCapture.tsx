@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Camera, RotateCcw, X } from "lucide-react";
+import { Camera, Check, RotateCcw, X } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 /**
  * Своя камера в приложении (как у Instagram) — getUserMedia + MediaRecorder.
@@ -8,18 +9,25 @@ import { Camera, RotateCcw, X } from "lucide-react";
  * Зачем: на iPhone кнопка `<input type=file capture>` пишет видео в ПОНИЖЕННОМ
  * качестве (программное ограничение iOS — подтверждено WebKit-багом #179994).
  * getUserMedia запрашивает высокое разрешение напрямую, MediaRecorder пишет в
- * один проход на высоком битрейте → на iOS это сразу H.264/MP4 (сервер потом
- * только ремуксит, без второго сжатия). Если камера/запись недоступны —
- * фолбэк на обычный `<input capture>` (onFallback).
+ * один проход → на iOS это сразу H.264/MP4 (сервер потом только ремуксит, без
+ * второго сжатия). Если камера/запись недоступны — фолбэк на обычный
+ * `<input capture>` (onFallback).
+ *
+ * Флоу как в телеге/инсте: снял фото или видео → СНАЧАЛА превью (можно
+ * посмотреть, что получилось) → «Готово» прикрепляет, «Переснять» возвращает
+ * к камере. Прикрепление (и фоновая загрузка) стартует только после «Готово».
  *
  * Ресёрч: constraints через `ideal`-диапазоны (НЕ `exact` — кидает
- * OverconstrainedError на iOS), битрейт 10–12 Мбит/с для резкого 1080p.
+ * OverconstrainedError на iOS), битрейт ~8 Мбит/с — резкий 1080p при умеренном
+ * размере файла (12 Мбит/с давал ~64 МБ за 40 сек → долгая загрузка с телефона).
  */
 function fmtTime(s: number): string {
   const m = Math.floor(s / 60);
   const r = s % 60;
   return `${m}:${String(r).padStart(2, "0")}`;
 }
+
+type Captured = { file: File; url: string; kind: "photo" | "video" };
 
 export function CameraCapture({
   onCapture,
@@ -39,6 +47,8 @@ export function CameraCapture({
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [facing, setFacing] = useState<"environment" | "user">("environment");
+  // Снятый, но ещё НЕ подтверждённый кадр/видео — показываем превью.
+  const [captured, setCaptured] = useState<Captured | null>(null);
 
   const stopStream = () => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -112,7 +122,8 @@ export function CameraCapture({
     try {
       rec = new MediaRecorder(stream, {
         ...(mime ? { mimeType: mime } : {}),
-        videoBitsPerSecond: 12_000_000, // ~12 Мбит/с — резкий 1080p
+        // ~8 Мбит/с — резкий 1080p при разумном размере (быстрая загрузка).
+        videoBitsPerSecond: 8_000_000,
       });
     } catch {
       try {
@@ -129,11 +140,11 @@ export function CameraCapture({
       const type = rec.mimeType || mime || "video/mp4";
       const blob = new Blob(chunksRef.current, { type });
       const ext = type.includes("mp4") ? "mp4" : "webm";
-      const file = new File([blob], `ущерб-видео-${chunksRef.current.length}.${ext}`, {
+      const file = new File([blob], `ущерб-видео-${Date.now()}.${ext}`, {
         type,
       });
-      onCapture(file);
-      onClose();
+      // НЕ прикрепляем сразу — показываем превью для подтверждения (как фото).
+      setCaptured({ file, url: URL.createObjectURL(blob), kind: "video" });
     };
     recRef.current = rec;
     setElapsed(0);
@@ -166,103 +177,181 @@ export function CameraCapture({
         const file = new File([blob], `ущерб-фото-${Date.now()}.jpg`, {
           type: "image/jpeg",
         });
-        onCapture(file);
-        onClose();
+        // Сначала превью — подтвердить («Готово») или переснять.
+        setCaptured({ file, url: URL.createObjectURL(blob), kind: "photo" });
       },
       "image/jpeg",
       0.95,
     );
   };
 
+  // Превью снятого: переснять (вернуться к живой камере — поток ещё работает)
+  // или подтвердить (прикрепить + закрыть).
+  const retake = () => {
+    if (captured) URL.revokeObjectURL(captured.url);
+    setCaptured(null);
+    setElapsed(0);
+  };
+  const useCaptured = () => {
+    if (!captured) return;
+    const f = captured.file;
+    URL.revokeObjectURL(captured.url);
+    setCaptured(null);
+    stopStream();
+    onCapture(f);
+    onClose();
+  };
+  const closeAll = () => {
+    if (captured) URL.revokeObjectURL(captured.url);
+    stopStream();
+    onClose();
+  };
+
   return createPortal(
     <div className="fixed inset-0 z-[200] flex flex-col bg-black">
+      {/* Живой поток камеры (прячем, пока показываем превью снятого). */}
       <video
         ref={videoRef}
         playsInline
         muted
         autoPlay
-        className="absolute inset-0 h-full w-full object-cover"
+        className={cn(
+          "absolute inset-0 h-full w-full object-cover",
+          captured && "hidden",
+        )}
       />
 
-      {/* Верхняя панель */}
-      <div className="relative z-10 flex items-center justify-between px-4 pb-3 pt-[max(env(safe-area-inset-top),0.75rem)]">
-        <button
-          type="button"
-          onClick={() => {
-            stopStream();
-            onClose();
-          }}
-          className="flex h-10 w-10 items-center justify-center rounded-full bg-black/40 text-white"
-          aria-label="Закрыть"
-        >
-          <X size={20} />
-        </button>
-        {recording && (
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-black/50 px-3 py-1 text-[13px] font-semibold tabular-nums text-white">
-            <span className="h-2 w-2 animate-pulse rounded-full bg-red-500" />
-            {fmtTime(elapsed)}
-          </span>
-        )}
-        {!recording && !error && (
-          <button
-            type="button"
-            onClick={() => setFacing((f) => (f === "environment" ? "user" : "environment"))}
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-black/40 text-white"
-            aria-label="Сменить камеру"
-          >
-            <RotateCcw size={18} />
-          </button>
-        )}
-        {(recording || error) && <span className="h-10 w-10" />}
-      </div>
-
-      {error && (
-        <div className="relative z-10 mx-4 mt-2 rounded-2xl bg-black/60 px-4 py-4 text-center text-[13px] text-white/90">
-          {error}
-          <button
-            type="button"
-            onClick={() => {
-              stopStream();
-              onClose();
-              onFallback();
-            }}
-            className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-white px-4 py-2.5 text-[14px] font-bold text-ink"
-          >
-            <Camera size={16} /> Обычная камера телефона
-          </button>
-        </div>
-      )}
-
-      {/* Нижние контролы */}
-      {!error && (
-        <div className="relative z-10 mt-auto flex items-center justify-around px-8 pb-[max(env(safe-area-inset-bottom),1.5rem)] pt-4">
-          <button
-            type="button"
-            onClick={takePhoto}
-            disabled={recording}
-            className="flex h-12 w-16 items-center justify-center rounded-2xl bg-black/40 text-[12px] font-semibold text-white disabled:opacity-30"
-          >
-            Фото
-          </button>
-
-          <button
-            type="button"
-            onClick={recording ? stopRecording : startRecording}
-            aria-label={recording ? "Остановить запись" : "Снять видео"}
-            className="flex h-20 w-20 items-center justify-center rounded-full border-4 border-white/90 transition-transform active:scale-95"
-          >
-            <span
-              className={
-                recording
-                  ? "h-7 w-7 rounded-md bg-red-500"
-                  : "h-14 w-14 rounded-full bg-red-500"
-              }
+      {captured ? (
+        /* ── Превью снятого: посмотреть → «Готово» или «Переснять» ── */
+        <>
+          {captured.kind === "video" ? (
+            <video
+              src={captured.url}
+              controls
+              autoPlay
+              loop
+              playsInline
+              className="absolute inset-x-0 top-0 bottom-[5.75rem] bg-black object-contain"
             />
-          </button>
+          ) : (
+            <img
+              src={captured.url}
+              alt="Превью снимка"
+              className="absolute inset-x-0 top-0 bottom-[5.75rem] bg-black object-contain"
+            />
+          )}
+          <div className="relative z-10 flex items-center justify-between px-4 pb-3 pt-[max(env(safe-area-inset-top),0.75rem)]">
+            <button
+              type="button"
+              onClick={closeAll}
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-black/40 text-white"
+              aria-label="Закрыть"
+            >
+              <X size={20} />
+            </button>
+            <span className="rounded-full bg-black/50 px-3 py-1 text-[13px] font-semibold text-white">
+              {captured.kind === "video" ? "Проверьте видео" : "Проверьте снимок"}
+            </span>
+            <span className="h-10 w-10" />
+          </div>
+          <div className="relative z-10 mt-auto flex items-center gap-3 px-6 pb-[max(env(safe-area-inset-bottom),1.5rem)] pt-4">
+            <button
+              type="button"
+              onClick={retake}
+              className="flex h-12 flex-1 items-center justify-center gap-2 rounded-2xl bg-black/50 text-[14px] font-bold text-white ring-1 ring-inset ring-white/30 transition-transform active:scale-[0.98]"
+            >
+              <RotateCcw size={17} /> Переснять
+            </button>
+            <button
+              type="button"
+              onClick={useCaptured}
+              className="flex h-12 flex-1 items-center justify-center gap-2 rounded-2xl bg-white text-[14px] font-bold text-ink transition-transform active:scale-[0.98]"
+            >
+              <Check size={18} /> Готово
+            </button>
+          </div>
+        </>
+      ) : (
+        /* ── Живая камера ── */
+        <>
+          <div className="relative z-10 flex items-center justify-between px-4 pb-3 pt-[max(env(safe-area-inset-top),0.75rem)]">
+            <button
+              type="button"
+              onClick={closeAll}
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-black/40 text-white"
+              aria-label="Закрыть"
+            >
+              <X size={20} />
+            </button>
+            {recording && (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-black/50 px-3 py-1 text-[13px] font-semibold tabular-nums text-white">
+                <span className="h-2 w-2 animate-pulse rounded-full bg-red-500" />
+                {fmtTime(elapsed)}
+              </span>
+            )}
+            {!recording && !error && (
+              <button
+                type="button"
+                onClick={() =>
+                  setFacing((f) => (f === "environment" ? "user" : "environment"))
+                }
+                className="flex h-10 w-10 items-center justify-center rounded-full bg-black/40 text-white"
+                aria-label="Сменить камеру"
+              >
+                <RotateCcw size={18} />
+              </button>
+            )}
+            {(recording || error) && <span className="h-10 w-10" />}
+          </div>
 
-          {/* спейсер для симметрии с «Фото» */}
-          <span className="h-12 w-16" />
-        </div>
+          {error && (
+            <div className="relative z-10 mx-4 mt-2 rounded-2xl bg-black/60 px-4 py-4 text-center text-[13px] text-white/90">
+              {error}
+              <button
+                type="button"
+                onClick={() => {
+                  stopStream();
+                  onClose();
+                  onFallback();
+                }}
+                className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-white px-4 py-2.5 text-[14px] font-bold text-ink"
+              >
+                <Camera size={16} /> Обычная камера телефона
+              </button>
+            </div>
+          )}
+
+          {!error && (
+            <div className="relative z-10 mt-auto flex items-center justify-around px-8 pb-[max(env(safe-area-inset-bottom),1.5rem)] pt-4">
+              <button
+                type="button"
+                onClick={takePhoto}
+                disabled={recording}
+                className="flex h-12 w-16 items-center justify-center rounded-2xl bg-black/40 text-[12px] font-semibold text-white disabled:opacity-30"
+              >
+                Фото
+              </button>
+
+              <button
+                type="button"
+                onClick={recording ? stopRecording : startRecording}
+                aria-label={recording ? "Остановить запись" : "Снять видео"}
+                className="flex h-20 w-20 items-center justify-center rounded-full border-4 border-white/90 transition-transform active:scale-95"
+              >
+                <span
+                  className={
+                    recording
+                      ? "h-7 w-7 rounded-md bg-red-500"
+                      : "h-14 w-14 rounded-full bg-red-500"
+                  }
+                />
+              </button>
+
+              {/* спейсер для симметрии с «Фото» */}
+              <span className="h-12 w-16" />
+            </div>
+          )}
+        </>
       )}
     </div>,
     document.body,

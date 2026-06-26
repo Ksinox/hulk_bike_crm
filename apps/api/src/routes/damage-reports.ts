@@ -10,6 +10,7 @@ import {
   damageReports,
   damageReportItems,
   damageReportMedia,
+  damageReportRevisions,
   payments,
   rentals,
   scooters,
@@ -17,8 +18,13 @@ import {
 } from "../db/schema.js";
 import { makeFileKey, removeObject, putObject } from "../storage/index.js";
 import { putObjectWithImageVariants } from "../storage/image.js";
-import { transcodeVideo } from "../storage/video.js";
-import { logActivity } from "../services/activityLog.js";
+import { processDamageVideo } from "../services/damageVideoProcessor.js";
+import { inspectVideoForServe } from "../storage/video.js";
+import { logActivity, type DiffPayload } from "../services/activityLog.js";
+import {
+  writeDamageRevision,
+  verifyRevisionChain,
+} from "../services/damageRevisions.js";
 import {
   loadDamageBundle,
   renderDamageHtml,
@@ -356,6 +362,31 @@ export async function damageReportsRoutes(app: FastifyInstance) {
         },
       },
     });
+    // Этап 2: ревизия 1 (создание) + head-хэш в акт (старт хэш-цепочки).
+    const headHash = await writeDamageRevision({
+      reportId: report!.id,
+      content: {
+        revisionNo: 1,
+        total,
+        depositCovered: cappedDeposit,
+        note: note ?? null,
+        clientAgreement: "pending",
+        items: items.map((it) => ({
+          name: it.name,
+          originalPrice: it.originalPrice,
+          finalPrice: it.finalPrice,
+          quantity: it.quantity,
+          comment: it.comment ?? null,
+          priceItemId: it.priceItemId ?? null,
+        })),
+      },
+      editedByUserId: userId,
+      prevHash: null,
+    });
+    await db
+      .update(damageReports)
+      .set({ contentHash: headHash })
+      .where(eq(damageReports.id, report!.id));
     return await loadReportFull(report!.id);
   });
 
@@ -374,8 +405,32 @@ export async function damageReportsRoutes(app: FastifyInstance) {
       .from(damageReports)
       .where(eq(damageReports.id, id));
     if (!report) return reply.code(404).send({ error: "not found" });
+    const userId = getUserId(req);
+    // Старое состояние — для diff и (если акт легаси без ревизий) снимка rev 1.
+    const oldItems = await db
+      .select()
+      .from(damageReportItems)
+      .where(eq(damageReportItems.reportId, id))
+      .orderBy(asc(damageReportItems.sortOrder));
+    const oldTotal = report.total;
+    const toRevItem = (it: {
+      name: string;
+      originalPrice: number;
+      finalPrice: number;
+      quantity: number;
+      comment?: string | null;
+      priceItemId?: number | null;
+    }) => ({
+      name: it.name,
+      originalPrice: it.originalPrice,
+      finalPrice: it.finalPrice,
+      quantity: it.quantity,
+      comment: it.comment ?? null,
+      priceItemId: it.priceItemId ?? null,
+    });
     const next: Partial<typeof damageReports.$inferInsert> = {
       updatedAt: new Date(),
+      updatedByUserId: userId,
     };
     if (parsed.data.note !== undefined) next.note = parsed.data.note ?? null;
     // v0.4.97: при изменении depositCovered — переносим delta на rental.deposit.
@@ -437,6 +492,10 @@ export async function damageReportsRoutes(app: FastifyInstance) {
         );
       }
     }
+    // Этап 2 — замок согласия: правка СОГЛАСОВАННОГО акта сбрасывает согласие
+    // обратно в «на согласовании» (клиент подтверждает новую сумму заново).
+    const wasAgreed = report.clientAgreement === "agreed";
+    if (wasAgreed) next.clientAgreement = "pending";
     await db.update(damageReports).set(next).where(eq(damageReports.id, id));
     // Синхронизируем deposit_forfeit с актуальным depositCovered.
     {
@@ -451,13 +510,119 @@ export async function damageReportsRoutes(app: FastifyInstance) {
         report.createdAt ?? new Date(),
       );
     }
+    // Этап 2: новая ревизия (НОВОЕ состояние) + хэш-цепочка. Если акт легаси
+    // (ревизий ещё нет) — сперва снимок СТАРОГО состояния как rev 1.
+    const newItems = parsed.data.items
+      ? parsed.data.items.map(toRevItem)
+      : oldItems.map(toRevItem);
+    const newTotal = next.total ?? oldTotal;
+    const newCovered = next.depositCovered ?? report.depositCovered ?? 0;
+    const newNote = next.note !== undefined ? next.note ?? null : report.note;
+    const newAgreement = next.clientAgreement ?? report.clientAgreement;
+    const revs = await db
+      .select()
+      .from(damageReportRevisions)
+      .where(eq(damageReportRevisions.reportId, id))
+      .orderBy(asc(damageReportRevisions.revisionNo));
+    let prevHash: string | null = null;
+    let nextRevNo = 1;
+    if (revs.length === 0) {
+      prevHash = await writeDamageRevision({
+        reportId: id,
+        content: {
+          revisionNo: 1,
+          total: oldTotal,
+          depositCovered: report.depositCovered ?? 0,
+          note: report.note,
+          clientAgreement: report.clientAgreement,
+          items: oldItems.map(toRevItem),
+        },
+        editedByUserId: report.createdByUserId ?? null,
+        prevHash: null,
+      });
+      nextRevNo = 2;
+    } else {
+      const last = revs[revs.length - 1]!;
+      prevHash = last.contentHash;
+      nextRevNo = last.revisionNo + 1;
+    }
+    const headHash = await writeDamageRevision({
+      reportId: id,
+      content: {
+        revisionNo: nextRevNo,
+        total: newTotal,
+        depositCovered: newCovered,
+        note: newNote,
+        clientAgreement: newAgreement,
+        items: newItems,
+      },
+      editedByUserId: userId,
+      prevHash,
+    });
+    await db
+      .update(damageReports)
+      .set({ contentHash: headHash, revisionNo: nextRevNo })
+      .where(eq(damageReports.id, id));
+    // Аудит-diff (было→стало) в ленту событий.
+    const diff: DiffPayload = {};
+    if (newTotal !== oldTotal)
+      diff.damage = {
+        label: "Ущерб",
+        from: oldTotal,
+        to: newTotal,
+        kind: "money",
+      };
+    if (parsed.data.items)
+      diff.items = {
+        label: "Позиции",
+        from: oldItems.map((i) => i.name),
+        to: newItems.map((i) => i.name),
+        kind: "list",
+      };
+    if (wasAgreed)
+      diff.agreement = {
+        label: "Согласование",
+        from: "согласовано",
+        to: "сброшено — на согласовании",
+        kind: "text",
+      };
     await logActivity(req, {
       entity: "damage_report",
       entityId: id,
       action: "updated",
-      summary: `Акт о повреждениях #${id} изменён`,
+      summary: `Акт о повреждениях #${id} изменён → ревизия ${nextRevNo}${
+        wasAgreed ? " (сброшено согласование)" : ""
+      }`,
+      meta: { revisionNo: nextRevNo, total: newTotal },
+      diff: Object.keys(diff).length > 0 ? diff : undefined,
     });
     return await loadReportFull(id);
+  });
+
+  /** Этап 2: история ревизий акта + статус целостности хэш-цепочки. */
+  app.get<{ Params: { id: string } }>("/:id/revisions", async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
+    const revs = await db
+      .select()
+      .from(damageReportRevisions)
+      .where(eq(damageReportRevisions.reportId, id))
+      .orderBy(asc(damageReportRevisions.revisionNo));
+    const { ok, brokenAt } = verifyRevisionChain(revs);
+    return { revisions: revs, integrity: { ok, brokenAt } };
+  });
+
+  /** Этап 2: быстрая проверка целостности цепочки ревизий (для бейджа). */
+  app.get<{ Params: { id: string } }>("/:id/integrity", async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
+    const revs = await db
+      .select()
+      .from(damageReportRevisions)
+      .where(eq(damageReportRevisions.reportId, id))
+      .orderBy(asc(damageReportRevisions.revisionNo));
+    const { ok, brokenAt } = verifyRevisionChain(revs);
+    return { ok, brokenAt, revisionCount: revs.length };
   });
 
   /** Внести платёж по акту. Авто-проставляет receivedByUserId. */
@@ -678,77 +843,33 @@ export async function damageReportsRoutes(app: FastifyInstance) {
       }
     }
     if (!fileBuf) return reply.code(400).send({ error: "file required" });
-    const kind = mediaKindFromMime(mimeType);
-    if (!kind) {
+    // Единая точка сохранения медиа (фото → ready; H.264 → ready как есть;
+    // HEVC/иное → фоновый транскод). Логика в storeOneDamageMedia.
+    const row = await storeOneDamageMedia(app.log, {
+      reportId: id,
+      draftToken: null,
+      keyPrefix: `damages/${id}`,
+      fileBuf,
+      fileName,
+      mimeType,
+      durationSec,
+      userId: getUserId(req),
+    });
+    if (!row) {
       return reply.code(400).send({
         error: "unsupported_media",
         message: "К акту прикладываются только фото и видео.",
       });
     }
-    const userId = getUserId(req);
-
-    // ── Фото: как раньше — thumb/view-варианты, сразу ready. ──
-    if (kind === "photo") {
-      const key = makeFileKey(`damages/${id}`, fileName);
-      await putObjectWithImageVariants(key, fileBuf, mimeType);
-      const [row] = await db
-        .insert(damageReportMedia)
-        .values({
-          reportId: id,
-          kind: "photo",
-          fileKey: key,
-          fileName,
-          mimeType,
-          size: fileBuf.length,
-          durationSec,
-          status: "ready",
-          uploadedByUserId: userId,
-        })
-        .returning();
-      await logActivity(req, {
-        entity: "damage_report",
-        entityId: id,
-        action: "media_added",
-        summary: `К акту #${id} добавлено фото повреждения`,
-        meta: { mediaId: row!.id, kind: "photo" },
-      });
-      return reply.code(201).send(row);
-    }
-
-    // ── Видео: сохраняем оригинал сразу (доступен/скачивается), статус
-    // processing; в фоне ffmpeg → H.264 MP4 + обложка, потом подменяем запись.
-    // Так запрос не блокируется тяжёлым перекодированием.
-    const origKey = makeFileKey(`damages/${id}`, fileName);
-    await putObject(origKey, fileBuf, mimeType);
-    const [row] = await db
-      .insert(damageReportMedia)
-      .values({
-        reportId: id,
-        kind: "video",
-        fileKey: origKey,
-        fileName,
-        mimeType,
-        size: fileBuf.length,
-        durationSec,
-        status: "processing",
-        uploadedByUserId: userId,
-      })
-      .returning();
     await logActivity(req, {
       entity: "damage_report",
       entityId: id,
       action: "media_added",
-      summary: `К акту #${id} добавлено видео повреждения`,
-      meta: { mediaId: row!.id, kind: "video" },
+      summary: `К акту #${id} добавлено ${
+        row.kind === "photo" ? "фото" : "видео"
+      } повреждения`,
+      meta: { mediaId: row.id, kind: row.kind },
     });
-    void processDamageVideo(
-      app.log,
-      row!.id,
-      `damages/${id}`,
-      fileBuf,
-      fileName,
-      origKey,
-    );
     return reply.code(201).send(row);
   });
 
@@ -841,55 +962,6 @@ export async function damageReportsRoutes(app: FastifyInstance) {
 }
 
 /**
- * Фоновое перекодирование видео ущерба: ffmpeg → H.264 MP4 + JPEG-обложка,
- * затем подменяем запись (fileKey → mp4, posterKey, status=ready) и удаляем
- * оригинал. Запускается fire-and-forget после ответа на загрузку. При ошибке
- * оставляем оригинал и помечаем ready (чтобы файл хотя бы был доступен).
- */
-async function processDamageVideo(
-  log: FastifyBaseLogger,
-  mediaId: number,
-  keyPrefix: string,
-  buf: Buffer,
-  fileName: string,
-  origKey: string,
-): Promise<void> {
-  try {
-    const { mp4, poster } = await transcodeVideo(buf, fileName);
-    const base = fileName.replace(/\.[^.]+$/, "") || "video";
-    const mp4Key = makeFileKey(keyPrefix, `${base}.mp4`);
-    await putObject(mp4Key, mp4, "video/mp4");
-    let posterKey: string | null = null;
-    if (poster) {
-      posterKey = makeFileKey(keyPrefix, `${base}.jpg`);
-      // putObjectWithImageVariants — обложке тоже сделает thumb/view.
-      await putObjectWithImageVariants(posterKey, poster, "image/jpeg");
-    }
-    await db
-      .update(damageReportMedia)
-      .set({
-        fileKey: mp4Key,
-        posterKey,
-        mimeType: "video/mp4",
-        size: mp4.length,
-        status: "ready",
-      })
-      .where(eq(damageReportMedia.id, mediaId));
-    await removeObject(origKey).catch(() => {});
-    log.info({ mediaId }, "damage video transcoded");
-  } catch (e) {
-    log.error({ err: e, mediaId }, "damage video transcode failed");
-    // Не удалось перекодировать — оставляем оригинал, помечаем ready
-    // (хотя бы скачать/открыть нативно можно).
-    await db
-      .update(damageReportMedia)
-      .set({ status: "ready" })
-      .where(eq(damageReportMedia.id, mediaId))
-      .catch(() => {});
-  }
-}
-
-/**
  * Сохраняет ОДНО медиа ущерба: фото → variants + ready; видео → оригинал +
  * processing + фоновый транскод. Привязка через reportId ИЛИ draftToken,
  * keyPrefix — папка в S3. Возвращает строку, либо null если тип не фото/видео.
@@ -927,6 +999,50 @@ async function storeOneDamageMedia(
       .returning();
     return row ?? null;
   }
+  // Видео. H.264 → faststart-ремукс (прогрессивное проигрывание: играет по мере
+  // загрузки) + обложка, сразу ready, БЕЗ фонового шага. HEVC/VP9/иное →
+  // оригинал + фоновый транскод в H.264 (чтобы играло на чужих устройствах).
+  const { codec, mp4, poster } = await inspectVideoForServe(
+    opts.fileBuf,
+    opts.fileName,
+  );
+  if (codec === "h264") {
+    const base = opts.fileName.replace(/\.[^.]+$/, "") || "video";
+    const useRemux = mp4 != null; // faststart-версия, если ремукс удался
+    const fileKey = makeFileKey(
+      opts.keyPrefix,
+      useRemux ? `${base}.mp4` : opts.fileName,
+    );
+    await putObject(
+      fileKey,
+      useRemux ? mp4! : opts.fileBuf,
+      useRemux ? "video/mp4" : opts.mimeType,
+    );
+    let posterKey: string | null = null;
+    if (poster) {
+      const pk = makeFileKey(opts.keyPrefix, `${base}.jpg`);
+      try {
+        await putObjectWithImageVariants(pk, poster, "image/jpeg");
+        posterKey = pk;
+      } catch {
+        posterKey = null;
+      }
+    }
+    const [row] = await db
+      .insert(damageReportMedia)
+      .values({
+        ...common,
+        kind: "video",
+        fileKey,
+        posterKey,
+        mimeType: useRemux ? "video/mp4" : opts.mimeType,
+        size: useRemux ? mp4!.length : opts.fileBuf.length,
+        status: "ready",
+      })
+      .returning();
+    return row ?? null;
+  }
+  // HEVC/VP9/иное → оригинал + фоновый транскод в H.264.
   const origKey = makeFileKey(opts.keyPrefix, opts.fileName);
   await putObject(origKey, opts.fileBuf, opts.mimeType);
   const [row] = await db

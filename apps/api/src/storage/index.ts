@@ -57,6 +57,30 @@ export async function getObjectStream(key: string): Promise<NodeJS.ReadableStrea
 }
 
 /**
+ * Поток для ЧАСТИ файла (HTTP Range). offset — смещение в байтах, length —
+ * сколько байт читать. Нужно для прогрессивного проигрывания/перемотки видео:
+ * браузер запрашивает кусками (Range: bytes=…), а мы отдаём ровно их (206),
+ * не качая весь файл целиком.
+ */
+export async function getPartialObjectStream(
+  key: string,
+  offset: number,
+  length: number,
+): Promise<NodeJS.ReadableStream> {
+  return s3.getPartialObject(config.s3.bucket, key, offset, length);
+}
+
+/** Прочитать объект целиком в Buffer (для пере-обработки видео-сирот). */
+export async function getObjectBuffer(key: string): Promise<Buffer> {
+  const stream = await s3.getObject(config.s3.bucket, key);
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream as AsyncIterable<Buffer | string>) {
+    chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+  }
+  return Buffer.concat(chunks);
+}
+
+/**
  * Удалить файл ВМЕСТЕ с его image-вариантами (__view__ / __thumb__), если они
  * были сгенерированы (putObjectWithImageVariants для фото/аватарок). Для
  * не-картинок (PDF/видео/docx) вариантов нет — попытки удаления безвредно

@@ -96,6 +96,8 @@ const CreateBody = z.object({
   comment: z.string().max(2000).nullable().optional(),
   insuranceCompany: z.string().max(200).nullable().optional(),
   relatedRentalId: z.number().int().positive().nullable().optional(),
+  /** Этап 3: акт о повреждениях, из которого заводится дело. */
+  damageReportId: z.number().int().positive().nullable().optional(),
 });
 
 const PatchBody = z.object({
@@ -537,6 +539,7 @@ export async function debtorsRoutes(app: FastifyInstance) {
         comment: body.comment ?? null,
         insuranceCompany: body.insuranceCompany ?? null,
         relatedRentalId: body.relatedRentalId ?? null,
+        damageReportId: body.damageReportId ?? null,
         createdByUserId: userId,
       })
       .returning();
@@ -558,6 +561,24 @@ export async function debtorsRoutes(app: FastifyInstance) {
     });
     return reply.code(201).send(row);
   });
+
+  // ---------- GET /by-damage-report/:reportId (Этап 3) ----------
+  // Найти дело, заведённое из акта — для кнопки «Досудебное дело →»: открыть
+  // существующее или, если нет, фронт создаст новое.
+  app.get<{ Params: { reportId: string } }>(
+    "/by-damage-report/:reportId",
+    async (req, reply) => {
+      const reportId = Number(req.params.reportId);
+      if (!Number.isFinite(reportId))
+        return reply.code(400).send({ error: "bad id" });
+      const [row] = await db
+        .select()
+        .from(debtors)
+        .where(eq(debtors.damageReportId, reportId))
+        .limit(1);
+      return { debtor: row ?? null };
+    },
+  );
 
   // ---------- PATCH /:id ----------
   app.patch<{ Params: { id: string } }>("/:id", async (req, reply) => {

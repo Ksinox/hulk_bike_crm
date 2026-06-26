@@ -18,18 +18,42 @@ import { join } from "node:path";
  * ffprobe/ffmpeg доступны в рантайм-образе API (apk add ffmpeg).
  */
 
-function run(cmd: string, args: string[]): Promise<void> {
+function run(
+  cmd: string,
+  args: string[],
+  timeoutMs = 4 * 60 * 1000,
+): Promise<void> {
   return new Promise((resolve, reject) => {
     const proc = spawn(cmd, args, { stdio: ["ignore", "ignore", "pipe"] });
     let err = "";
+    let settled = false;
+    const finish = (cb: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      cb();
+    };
+    // Подстраховка: если ffmpeg завис (битый вход и т.п.) — убиваем, чтобы
+    // видео не висело в «processing» вечно. Вызывающий по ошибке оставит
+    // оригинал и пометит ready.
+    const timer = setTimeout(() => {
+      try {
+        proc.kill("SIGKILL");
+      } catch {
+        /* ignore */
+      }
+      finish(() => reject(new Error(`${cmd} timeout ${timeoutMs}ms`)));
+    }, timeoutMs);
     proc.stderr?.on("data", (d) => {
       err += d.toString();
     });
-    proc.on("error", reject);
+    proc.on("error", (e) => finish(() => reject(e)));
     proc.on("close", (code) =>
-      code === 0
-        ? resolve()
-        : reject(new Error(`${cmd} exited ${code}: ${err.slice(-800)}`)),
+      finish(() =>
+        code === 0
+          ? resolve()
+          : reject(new Error(`${cmd} exited ${code}: ${err.slice(-800)}`)),
+      ),
     );
   });
 }
@@ -82,20 +106,23 @@ function transcodeArgs(inPath: string, outPath: string): string[] {
     "-y",
     "-i",
     inPath,
-    // Потолок 1440p (большая сторона ≤2560), 1080p не апскейлим; lanczos —
-    // резче дефолтного bicubic.
+    // Потолок 1080p (большая сторона ≤1920): для документации повреждений
+    // достаточно, кодируется заметно быстрее 1440p. lanczos — резче bicubic.
     "-vf",
-    "scale=min(2560\\,iw):min(2560\\,ih):force_original_aspect_ratio=decrease:force_divisible_by=2:flags=lanczos+accurate_rnd",
+    "scale=min(1920\\,iw):min(1920\\,ih):force_original_aspect_ratio=decrease:force_divisible_by=2:flags=lanczos+accurate_rnd",
     "-c:v",
     "libx264",
     "-profile:v",
     "high",
     "-pix_fmt",
     "yuv420p",
+    // veryfast + CRF 20 — быстрый транскод при визуально хорошем качестве.
+    // (medium/CRF16 на слабом сервере давал минуты ожидания; для видео
+    //  ущерба важнее «сразу смотрибельно», чем студийный битрейт.)
     "-preset",
-    "slow",
+    "veryfast",
     "-crf",
-    "16",
+    "20",
     "-c:a",
     "aac",
     "-b:a",
@@ -164,6 +191,72 @@ export async function transcodeVideo(
     }
     const mp4 = await readFile(outPath);
     return { mp4, poster };
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+/**
+ * Быстрый разбор загруженного видео для отдачи в веб.
+ *
+ * H.264 → faststart-РЕМУКС (`-c copy +faststart`, ~0.5с, БЕЗ пере-кодирования)
+ * + кадр-обложка. faststart = moov-атом (индекс) в НАЧАЛЕ файла → видео играет
+ * ПО МЕРЕ ЗАГРУЗКИ (прогрессивно, как телега/ютуб), а не ждёт полной выкачки.
+ * Качество не трогаем — это смена контейнера, не сжатие.
+ *
+ * HEVC/VP9/иное → codec возвращаем как есть, mp4=null (вызывающий положит
+ * оригинал и поставит фоновый транскод в H.264 для чужих устройств).
+ * Один temp-каталог, синхронно — никакого фонового шага, нечему орфаниться.
+ */
+export async function inspectVideoForServe(
+  buf: Buffer,
+  originalName: string,
+): Promise<{ codec: string | null; mp4: Buffer | null; poster: Buffer | null }> {
+  const dir = await mkdtemp(join(tmpdir(), "dmginspect-"));
+  const inPath = join(dir, `in${extOf(originalName)}`);
+  const outPath = join(dir, "out.mp4");
+  const posterPath = join(dir, "poster.jpg");
+  try {
+    await writeFile(inPath, buf);
+    const codec = await probeVideoCodec(inPath);
+    let mp4: Buffer | null = null;
+    let poster: Buffer | null = null;
+    if (codec === "h264") {
+      try {
+        await run("ffmpeg", [
+          "-y",
+          "-i",
+          inPath,
+          "-c",
+          "copy",
+          "-movflags",
+          "+faststart",
+          outPath,
+        ]);
+        mp4 = await readFile(outPath);
+      } catch {
+        mp4 = null; // ремукс не вышел → вызывающий отдаст оригинал как есть
+      }
+      // Обложка из готового файла (или оригинала, если ремукс не удался).
+      try {
+        await run("ffmpeg", [
+          "-y",
+          "-ss",
+          "0.3",
+          "-i",
+          mp4 ? outPath : inPath,
+          "-frames:v",
+          "1",
+          "-q:v",
+          "3",
+          posterPath,
+        ]);
+        poster = await readFile(posterPath);
+      } catch {
+        poster = null; // обложка опциональна
+      }
+    }
+    return { codec, mp4, poster };
   } finally {
     await rm(dir, { recursive: true, force: true }).catch(() => {});
   }

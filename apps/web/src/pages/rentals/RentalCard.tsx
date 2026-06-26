@@ -27,8 +27,10 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/lib/useIsMobile";
+import { useReloadRestoredState } from "@/lib/usePersistedState";
 import { MobileBottomSheet } from "@/mobile/BottomSheet";
 import { useCallClient } from "@/mobile/call";
+import { openOrCreateDamageDebtor } from "@/lib/api/debtors";
 import {
   MIN_RENTAL_DAYS,
   ratePeriodForDays,
@@ -73,6 +75,7 @@ import { PaymentAcceptDialog } from "./PaymentAcceptDialog";
 import { askRentalDeleteReason } from "./deleteRentalReason";
 import { SwapScooterDialog } from "./SwapScooterDialog";
 import { DamageReportDialog } from "./DamageReportDialog";
+import { DamageActBlock } from "./rental-card/DamageActBlock";
 import { EquipmentChangeDialog } from "./EquipmentChangeDialog";
 import { DocumentPreviewModal } from "./DocumentPreviewModal";
 import { ClaimDocumentPreview } from "./ClaimDocumentPreview";
@@ -432,8 +435,16 @@ export function RentalCard({
   const [calendarResetSignal, setCalendarResetSignal] = useState(0);
   // v0.4.49: модалки пополнения залога и изменения экипировки
   const [equipmentChangeOpen, setEquipmentChangeOpen] = useState(false);
-  const [damageOpen, setDamageOpen] = useState(false);
-  const [editingReportId, setEditingReportId] = useState<number | null>(null);
+  // Переживают F5: если оператор обновил страницу с открытым «Зафиксировать
+  // ущерб» (или редактированием акта) — вернётся тот же экран, а не схлопнется
+  // в карточку аренды. Только реальный reload, не обычная навигация.
+  const [damageOpen, setDamageOpen] = useReloadRestoredState<boolean>(
+    `rental-card:${rental.id}:damage-open`,
+    false,
+  );
+  const [editingReportId, setEditingReportId] = useReloadRestoredState<
+    number | null
+  >(`rental-card:${rental.id}:editing-report`, null);
   const [previewDamageId, setPreviewDamageId] = useState<number | null>(null);
   // «Пополнить залог» — открывается тапом по плашке залога в «Финансовой
   // информации» (а не из «Принять оплату», где пополнение нелогично).
@@ -2498,6 +2509,35 @@ export function RentalCard({
             onParkingCancel={onCancelParking}
           />
 
+          {hasDamage && (
+            <AccordionSection
+              title="Акт о повреждениях"
+              icon={<AlertTriangle size={15} className="text-red" />}
+              defaultOpen
+              badge={
+                totalDebt > 0 ? (
+                  <span className="rounded-full bg-red-soft px-2 py-0.5 text-[11px] font-bold text-red-ink tabular-nums">
+                    {fmt(totalDebt)} ₽
+                  </span>
+                ) : undefined
+              }
+            >
+              <DamageActBlock
+                reports={reports}
+                onEditReport={(id) => setEditingReportId(id)}
+                onPrintReport={(id) => setPreviewDamageId(id)}
+                onOpenDebtor={(report, debt) =>
+                  openOrCreateDamageDebtor({
+                    reportId: report.id,
+                    rentalId: report.rentalId,
+                    clientId: rental.clientId ?? null,
+                    amount: debt,
+                  })
+                }
+              />
+            </AccordionSection>
+          )}
+
           <AccordionSection
             title="Финансовая информация"
             icon={<Wallet size={15} className="text-muted-2" />}
@@ -3434,17 +3474,15 @@ function DamageDocumentPreview({
       htmlUrl={htmlUrl}
       docxUrl={docxUrl}
       docxFilename={`Акт о повреждениях ${String(reportId).padStart(4, "0")}.doc`}
-      headerExtra={
-        onOpenClaim ? (
-          <button
-            type="button"
-            onClick={onOpenClaim}
-            title="Сформировать досудебную претензию по этому акту (со своим сроком оплаты)"
-            className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-2 text-[12px] font-semibold text-amber-800 transition-colors hover:bg-amber-100"
-          >
-            <AlertTriangle size={13} /> Досудебная претензия →
-          </button>
-        ) : undefined
+      bottomAction={
+        onOpenClaim
+          ? {
+              label: "Досудебная претензия",
+              mobileLabel: "Досудебная",
+              icon: <AlertTriangle size={15} />,
+              onClick: onOpenClaim,
+            }
+          : undefined
       }
       onClose={onClose}
     />
@@ -3717,16 +3755,47 @@ function DrawerCallFab({
   onCall: () => void;
 }) {
   const [scrolling, setScrolling] = useState(false);
+  // Прячемся, если под кнопкой оказался кликабельный контрол (напр. «Изменить
+  // акт»/«Печать акта» в блоке акта): FAB не должен налегать на действия и
+  // перехватывать тап. Проверяем элемент под центром FAB после остановки скролла.
+  const [covering, setCovering] = useState(false);
+  const ref = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     let t: ReturnType<typeof setTimeout> | undefined;
+    const checkCover = () => {
+      const fab = ref.current;
+      if (!fab) return;
+      const fr = fab.getBoundingClientRect();
+      // Пересекается ли FAB с каким-нибудь кликабельным контролом ТЕЛА карточки
+      // (футер — отдельный элемент, не считаем). Если да — прячемся, чтобы не
+      // налегать и не перехватывать тап по кнопке под нами.
+      let hit = false;
+      el.querySelectorAll("button,a,[role=button]").forEach((c) => {
+        if (hit || c === fab) return;
+        const cr = c.getBoundingClientRect();
+        if (cr.width < 1 || cr.height < 1) return;
+        if (
+          cr.left < fr.right &&
+          cr.right > fr.left &&
+          cr.top < fr.bottom &&
+          cr.bottom > fr.top
+        )
+          hit = true;
+      });
+      setCovering(hit);
+    };
     const onScroll = () => {
       setScrolling(true);
       if (t) clearTimeout(t);
-      t = setTimeout(() => setScrolling(false), 240);
+      t = setTimeout(() => {
+        setScrolling(false);
+        checkCover();
+      }, 240);
     };
     el.addEventListener("scroll", onScroll, { passive: true });
+    checkCover();
     return () => {
       el.removeEventListener("scroll", onScroll);
       if (t) clearTimeout(t);
@@ -3734,13 +3803,14 @@ function DrawerCallFab({
   }, [scrollRef]);
   return (
     <button
+      ref={ref}
       type="button"
       onClick={onCall}
       aria-label="Позвонить клиенту"
       className={cn(
         "absolute right-4 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-green-600 text-white shadow-card-lg transition-all duration-200 active:scale-95",
         hasFooter ? "bottom-[84px]" : "bottom-5",
-        scrolling
+        scrolling || covering
           ? "pointer-events-none translate-y-3 opacity-0"
           : "translate-y-0 opacity-100",
       )}

@@ -41,19 +41,23 @@ type RangeCalendarProps = ComponentProps<typeof RangeCalendarRac> &
   BaseCalendarProps;
 
 const CalendarHeader = () => (
-  <header className="flex w-full items-center gap-1 pb-1">
+  // Стрелки месяца — заметные кнопки (фон + рамка + крупная иконка), а не
+  // бледные иконки: клиенты в анкете не находили «следующий месяц».
+  <header className="flex w-full items-center gap-1 pb-1.5">
     <Button
       slot="previous"
-      className="flex size-9 items-center justify-center rounded-lg text-muted-2 outline-offset-2 transition-colors hover:bg-blue-50 hover:text-blue-700 focus:outline-none data-[focus-visible]:outline data-[focus-visible]:outline-2 data-[focus-visible]:outline-blue-200"
+      aria-label="Предыдущий месяц"
+      className="flex size-10 items-center justify-center rounded-xl bg-surface-soft text-ink-2 ring-1 ring-inset ring-border outline-offset-2 transition-colors hover:bg-blue-50 hover:text-blue-700 hover:ring-blue-200 focus:outline-none data-[focus-visible]:outline data-[focus-visible]:outline-2 data-[focus-visible]:outline-blue-200"
     >
-      <ChevronLeft size={16} strokeWidth={2} />
+      <ChevronLeft size={18} strokeWidth={2.5} />
     </Button>
-    <HeadingRac className="grow text-center text-[13px] font-semibold capitalize text-ink" />
+    <HeadingRac className="grow text-center text-[14px] font-bold capitalize text-ink" />
     <Button
       slot="next"
-      className="flex size-9 items-center justify-center rounded-lg text-muted-2 outline-offset-2 transition-colors hover:bg-blue-50 hover:text-blue-700 focus:outline-none data-[focus-visible]:outline data-[focus-visible]:outline-2 data-[focus-visible]:outline-blue-200"
+      aria-label="Следующий месяц"
+      className="flex size-10 items-center justify-center rounded-xl bg-surface-soft text-ink-2 ring-1 ring-inset ring-border outline-offset-2 transition-colors hover:bg-blue-50 hover:text-blue-700 hover:ring-blue-200 focus:outline-none data-[focus-visible]:outline data-[focus-visible]:outline-2 data-[focus-visible]:outline-blue-200"
     >
-      <ChevronRight size={16} strokeWidth={2} />
+      <ChevronRight size={18} strokeWidth={2.5} />
     </Button>
   </header>
 );

@@ -36,8 +36,8 @@ export function MobileClients() {
   );
   const [newOpen, setNewOpen] = useState(false);
   const { callClient, callSheet } = useCallClient();
-  // Внутри карточки клиента (drill-in) кнопку «+ Клиент» прячем.
-  usePageFab("Клиент", () => setNewOpen(true), openId != null);
+  // Прячем «+ Клиент» внутри карточки (drill-in) И пока открыта форма создания.
+  usePageFab("Клиент", () => setNewOpen(true), openId != null || newOpen);
 
   // navigate({route:"clients", clientId}) — открыть конкретного клиента
   // (напр. тап по «висящему долгу» F4 на дашборде). Покрываем оба случая:

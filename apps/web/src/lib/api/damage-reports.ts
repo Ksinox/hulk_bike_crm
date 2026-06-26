@@ -74,11 +74,44 @@ export type ApiDamageReport = {
   clientAgreement: DamageClientAgreement;
   createdAt: string;
   updatedAt: string;
+  /** Этап 2: номер текущей ревизии (1 = создание, +1 на каждую правку). */
+  revisionNo?: number;
+  /** Этап 2: head-хэш цепочки ревизий (защита от подделки). */
+  contentHash?: string | null;
   items: ApiDamageReportItem[];
   media: ApiDamageMedia[];
   payments: ApiDamagePayment[];
   paidSum: number;
   debt: number;
+};
+
+/** Этап 2: иммутабельный снимок акта (одна ревизия). */
+export type ApiDamageRevision = {
+  id: number;
+  reportId: number;
+  revisionNo: number;
+  total: number;
+  depositCovered: number;
+  note: string | null;
+  itemsJson: Array<{
+    name: string;
+    originalPrice: number;
+    finalPrice: number;
+    quantity: number;
+    comment: string | null;
+    priceItemId: number | null;
+  }>;
+  clientAgreement: string;
+  editedByUserId: number | null;
+  editedByUserName: string | null;
+  prevHash: string | null;
+  contentHash: string;
+  createdAt: string;
+};
+
+export type DamageRevisionsResponse = {
+  revisions: ApiDamageRevision[];
+  integrity: { ok: boolean; brokenAt: number | null };
 };
 
 export type CreateDamageItem = {
@@ -126,6 +159,22 @@ export function useDamageReports(rentalId: number | null) {
     // Пока видео перекодируется на сервере — обновляем чаще, чтобы обложка
     // и воспроизведение появились без ручного рефреша.
     refetchInterval: (q) => (damageHasProcessing(q.state.data) ? 5000 : false),
+  });
+}
+
+/**
+ * Этап 2: история ревизий акта + статус целостности хэш-цепочки. Грузим лениво
+ * (enabled) — только когда пользователь раскрыл «Историю правок».
+ */
+export function useDamageRevisions(reportId: number | null, enabled = true) {
+  return useQuery({
+    enabled: reportId != null && enabled,
+    queryKey: [...damageReportsKeys.byId(reportId ?? 0), "revisions"] as const,
+    queryFn: () =>
+      api.get<DamageRevisionsResponse>(
+        `/api/damage-reports/${reportId}/revisions`,
+      ),
+    staleTime: 30_000,
   });
 }
 
@@ -266,9 +315,54 @@ export function useDamagePayment() {
 }
 
 /**
- * Загрузить фото/видео повреждения к акту. multipart — через raw fetch
- * (api.post обернул бы в JSON). durationSec — длительность видео в секундах
- * (опционально, считаем на клиенте до загрузки).
+ * multipart-загрузка медиа через XHR (не fetch): fetch не отдаёт прогресс
+ * аплоада, а нам нужна полоса заливки «как в телеге». onProgress(pct 0..100).
+ */
+function xhrUploadMedia(
+  url: string,
+  fd: FormData,
+  onProgress?: (pct: number) => void,
+): Promise<ApiDamageMedia> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", url);
+    xhr.withCredentials = true;
+    if (onProgress) {
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) {
+          onProgress(Math.round((e.loaded / e.total) * 100));
+        }
+      };
+    }
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText) as ApiDamageMedia);
+        } catch {
+          reject(new Error("Некорректный ответ сервера"));
+        }
+      } else {
+        let msg = `upload ${xhr.status}`;
+        try {
+          const b = JSON.parse(xhr.responseText) as {
+            message?: string;
+            error?: string;
+          };
+          msg = b.message ?? b.error ?? msg;
+        } catch {
+          /* ignore */
+        }
+        reject(new Error(msg));
+      }
+    };
+    xhr.onerror = () => reject(new Error("Сбой сети при загрузке"));
+    xhr.send(fd);
+  });
+}
+
+/**
+ * Загрузить фото/видео повреждения к акту. multipart через XHR (с прогрессом).
+ * durationSec — длительность видео (опц.). onProgress — полоса заливки.
  */
 export function useUploadDamageMedia() {
   const qc = useQueryClient();
@@ -277,30 +371,18 @@ export function useUploadDamageMedia() {
       reportId: number;
       file: File;
       durationSec?: number | null;
+      onProgress?: (pct: number) => void;
     }) => {
       const fd = new FormData();
       fd.append("file", args.file);
       if (args.durationSec != null && args.durationSec > 0) {
         fd.append("durationSec", String(Math.round(args.durationSec)));
       }
-      const res = await fetch(
+      return xhrUploadMedia(
         `${API_BASE}/api/damage-reports/${args.reportId}/media`,
-        { method: "POST", credentials: "include", body: fd },
+        fd,
+        args.onProgress,
       );
-      if (!res.ok) {
-        let body: unknown = null;
-        try {
-          body = await res.json();
-        } catch {
-          /* ignore */
-        }
-        const msg =
-          (body as { message?: string; error?: string })?.message ??
-          (body as { message?: string; error?: string })?.error ??
-          `upload ${res.status}`;
-        throw new Error(msg);
-      }
-      return (await res.json()) as ApiDamageMedia;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: damageReportsKeys.all });
@@ -319,6 +401,7 @@ export function useUploadDraftDamageMedia() {
       draftToken: string;
       file: File;
       durationSec?: number | null;
+      onProgress?: (pct: number) => void;
     }) => {
       const fd = new FormData();
       fd.append("file", args.file);
@@ -326,24 +409,11 @@ export function useUploadDraftDamageMedia() {
       if (args.durationSec != null && args.durationSec > 0) {
         fd.append("durationSec", String(Math.round(args.durationSec)));
       }
-      const res = await fetch(
+      return xhrUploadMedia(
         `${API_BASE}/api/damage-reports/draft-media`,
-        { method: "POST", credentials: "include", body: fd },
+        fd,
+        args.onProgress,
       );
-      if (!res.ok) {
-        let body: unknown = null;
-        try {
-          body = await res.json();
-        } catch {
-          /* ignore */
-        }
-        const msg =
-          (body as { message?: string; error?: string })?.message ??
-          (body as { message?: string; error?: string })?.error ??
-          `upload ${res.status}`;
-        throw new Error(msg);
-      }
-      return (await res.json()) as ApiDamageMedia;
     },
   });
 }

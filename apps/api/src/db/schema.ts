@@ -1142,9 +1142,58 @@ export const damageReports = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
+    /** Этап 2: номер текущей ревизии (1 = создание, +1 на каждую правку). */
+    revisionNo: integer("revision_no").notNull().default(1),
+    /** Head-хэш цепочки ревизий (SHA-256). Защита от подделки. */
+    contentHash: text("content_hash"),
+    /** Кто внёс последнюю правку. */
+    updatedByUserId: bigint("updated_by_user_id", {
+      mode: "number",
+    }).references(() => users.id, { onDelete: "set null" }),
   },
   (t) => ({
     rentalIdx: index("damage_reports_rental_idx").on(t.rentalId),
+  }),
+);
+
+/**
+ * Этап 2 — иммутабельный журнал ревизий акта о повреждениях.
+ * Создание = ревизия 1, каждая правка = новая ревизия (снимок позиций/сумм/
+ * автора/согласия). Старые версии не стираются. Хэш-цепочка
+ * (prevHash → contentHash) не даёт подделать историю незаметно даже в БД.
+ */
+export const damageReportRevisions = pgTable(
+  "damage_report_revisions",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    reportId: bigint("report_id", { mode: "number" })
+      .notNull()
+      .references(() => damageReports.id, { onDelete: "cascade" }),
+    /** 1 = создание акта, далее +1 на каждую правку. */
+    revisionNo: integer("revision_no").notNull(),
+    total: integer("total").notNull(),
+    depositCovered: integer("deposit_covered").notNull(),
+    note: text("note"),
+    /** Снимок позиций на момент ревизии (иммутабельно). */
+    itemsJson: jsonb("items_json").notNull(),
+    /** Снимок статуса согласия на момент ревизии. */
+    clientAgreement: text("client_agreement").notNull(),
+    editedByUserId: bigint("edited_by_user_id", { mode: "number" }).references(
+      () => users.id,
+      { onDelete: "set null" },
+    ),
+    /** Снимок имени автора (переживает удаление пользователя). */
+    editedByUserName: text("edited_by_user_name"),
+    /** Хэш предыдущей ревизии (null для первой) — звено цепочки. */
+    prevHash: text("prev_hash"),
+    /** SHA-256 канонического содержимого + prevHash. */
+    contentHash: text("content_hash").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    reportIdx: index("damage_report_revisions_report_idx").on(t.reportId),
   }),
 );
 
@@ -1861,6 +1910,11 @@ export const debtors = pgTable(
       () => rentals.id,
       { onDelete: "set null" },
     ),
+    // Этап 3: прямая связь с актом о повреждениях (досудебка заводится из акта).
+    damageReportId: bigint("damage_report_id", { mode: "number" }).references(
+      () => damageReports.id,
+      { onDelete: "set null" },
+    ),
     // closing
     closedAt: timestamp("closed_at", { withTimezone: true }),
     closedReason: text("closed_reason"),
@@ -1879,6 +1933,7 @@ export const debtors = pgTable(
     stageIdx: index("debtors_stage_idx").on(t.stage),
     clientIdx: index("debtors_client_idx").on(t.clientId),
     rentalIdx: index("debtors_rental_idx").on(t.relatedRentalId),
+    damageReportIdx: index("debtors_damage_report_idx").on(t.damageReportId),
     createdAtIdx: index("debtors_created_at_idx").on(t.createdAt),
   }),
 );

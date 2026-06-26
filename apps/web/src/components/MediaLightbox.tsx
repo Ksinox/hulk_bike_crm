@@ -1,11 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, ChevronLeft, ChevronRight, Download, Maximize2 } from "lucide-react";
+import { X, ChevronLeft, ChevronRight, Download } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // Лупа-увеличитель фото: размер квадратика и кратность зума.
 const LOUPE_SIZE = 132; // px
 const LOUPE_ZOOM = 2.6;
+
+// Кэш video-элементов между открытиями лайтбокса: повторный тап по тому же
+// ролику НЕ перекачивает его заново — буфер остаётся в переиспользуемом
+// элементе. Ограничиваем ~6 роликами, чтобы не есть память.
+const videoElCache = new Map<string, HTMLVideoElement>();
 
 /**
  * Полноэкранный просмотрщик фото/видео (lightbox) — современный паттерн как в
@@ -48,8 +53,9 @@ export function MediaLightbox({
   const [videoError, setVideoError] = useState(false);
   // Как видео заполняет экран: "cover" = на весь экран без рамок (как
   // рилсы/шортсы, слегка обрезает края) / "contain" = вписать целиком (видно
-  // весь кадр, но возможны чёрные поля). По умолчанию — заполнять (нет рамок).
-  const [videoFit, setVideoFit] = useState<"cover" | "contain">("cover");
+  // весь кадр). Зафиксировано в "contain": видео всегда вписано, переключатель
+  // «вписать/заполнить» убран (для весь-экран — отдельная кнопка).
+  const [videoFit] = useState<"cover" | "contain">("contain");
   // Лупа для фото: долгий тап → квадратик с увеличенным участком над пальцем.
   const imgRef = useRef<HTMLImageElement>(null);
   const [loupe, setLoupe] = useState<{
@@ -66,9 +72,10 @@ export function MediaLightbox({
   const isSwipe = useRef(false);
   useEffect(() => {
     setVideoError(false);
-    setVideoFit("cover");
     setLoupe(null);
-  }, [index]);
+    // cur.url меняется, когда видео доготовилось (оригинал → mp4) — сбрасываем
+    // ошибку, чтобы готовая универсальная версия проигралась.
+  }, [index, cur.url]);
   useEffect(
     () => () => {
       if (holdTimer.current) window.clearTimeout(holdTimer.current);
@@ -154,22 +161,75 @@ export function MediaLightbox({
     else if (dx < -50) go(1);
   };
 
-  // Нативный полный экран ОС (на iOS — webkitEnterFullscreen с поворотом для
-  // 16:9; на Android/десктопе — requestFullscreen). Вызывается из тапа = жест.
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const goFullscreen = () => {
-    const v = videoRef.current as
-      | (HTMLVideoElement & {
-          webkitEnterFullscreen?: () => void;
-          webkitRequestFullscreen?: () => void;
-        })
-      | null;
-    if (!v) return;
-    if (typeof v.webkitEnterFullscreen === "function") v.webkitEnterFullscreen();
-    else if (typeof v.requestFullscreen === "function") void v.requestFullscreen();
-    else if (typeof v.webkitRequestFullscreen === "function")
-      v.webkitRequestFullscreen();
-  };
+  // Ссылка на текущий <video> (имп. элемент кэшируется между открытиями).
+  // Полноэкранный режим даёт сам нативный плеер (кнопка ⛶ в его контролах) —
+  // отдельную кнопку сверху не держим, чтобы не дублировать.
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  // A: переиспользуем video-элемент между открытиями — повторный тап не качает
+  // ролик заново. Монтируем кэшированный элемент в host; при закрытии детачим
+  // (но оставляем в кэше с буфером). Класс «вписать/заполнить» меняем на лету.
+  const videoHostRef = useRef<HTMLDivElement>(null);
+  const fitClass = (fit: "cover" | "contain") =>
+    cn(
+      "bg-black",
+      fit === "cover"
+        ? "h-full w-full object-cover"
+        : "max-h-full max-w-full object-contain",
+    );
+  useEffect(() => {
+    if (cur.kind !== "video" || videoError) return;
+    const host = videoHostRef.current;
+    if (!host) return;
+    let el = videoElCache.get(cur.url);
+    if (!el) {
+      el = document.createElement("video");
+      el.src = cur.url;
+      el.controls = true;
+      el.muted = true;
+      el.playsInline = true;
+      el.setAttribute("playsinline", "");
+      el.setAttribute("webkit-playsinline", "");
+      el.preload = "auto";
+      if (cur.poster) el.poster = cur.poster;
+      videoElCache.set(cur.url, el);
+      if (videoElCache.size > 6) {
+        for (const [k, v] of videoElCache) {
+          if (k === cur.url) continue;
+          v.removeAttribute("src");
+          try {
+            v.load();
+          } catch {
+            /* ignore */
+          }
+          videoElCache.delete(k);
+          break;
+        }
+      }
+    }
+    const videoEl = el;
+    videoEl.className = fitClass(videoFit);
+    videoRef.current = videoEl;
+    const onErr = () => setVideoError(true);
+    videoEl.addEventListener("error", onErr);
+    host.appendChild(videoEl);
+    try {
+      videoEl.currentTime = 0;
+    } catch {
+      /* ignore */
+    }
+    void videoEl.play().catch(() => {});
+    return () => {
+      videoEl.removeEventListener("error", onErr);
+      videoEl.pause();
+      if (videoEl.parentNode === host) host.removeChild(videoEl);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cur.kind, cur.url, cur.poster, videoError]);
+  useEffect(() => {
+    if (videoRef.current) videoRef.current.className = fitClass(videoFit);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [videoFit]);
 
   if (!cur) return null;
 
@@ -190,31 +250,10 @@ export function MediaLightbox({
           {index + 1} / {items.length}
         </span>
         <div className="flex items-center gap-1">
-          {cur.kind === "video" && !cur.processing && !videoError && (
-            <button
-              type="button"
-              onClick={() =>
-                setVideoFit((f) => (f === "cover" ? "contain" : "cover"))
-              }
-              aria-label={
-                videoFit === "cover" ? "Вписать целиком" : "Заполнить экран"
-              }
-              className="flex h-9 items-center justify-center rounded-full px-3 text-[12px] font-semibold text-white/85 transition-colors hover:bg-white/10"
-            >
-              {videoFit === "cover" ? "Вписать" : "Заполнить"}
-            </button>
-          )}
-          {cur.kind === "video" && !cur.processing && !videoError && (
-            <button
-              type="button"
-              onClick={goFullscreen}
-              aria-label="Во весь экран"
-              className="flex h-9 w-9 items-center justify-center rounded-full text-white/80 transition-colors hover:bg-white/10"
-            >
-              <Maximize2 size={18} />
-            </button>
-          )}
-          {cur.downloadUrl && (
+          {/* Видео: «во весь экран» и «скачать» уже есть в НАТИВНЫХ контролах
+              плеера снизу (кнопка ⛶ и меню ⋮) — не дублируем сверху. Скачивание
+              оставляем только для ФОТО (у картинок своего плеера нет). */}
+          {cur.kind === "photo" && cur.downloadUrl && (
             <a
               href={cur.downloadUrl}
               target="_blank"
@@ -253,49 +292,47 @@ export function MediaLightbox({
             alt={cur.name ?? "повреждение"}
             className="max-h-full max-w-full animate-fade-in object-contain"
           />
-        ) : cur.processing ? (
-          <div className="flex max-w-xs flex-col items-center gap-2 px-8 text-center">
-            <span className="h-7 w-7 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-            <span className="text-[14px] font-medium text-white/85">
-              Видео обрабатывается…
-            </span>
-            <span className="text-[12px] text-white/55">
-              Готовим версию, которая откроется на любом устройстве. Обычно
-              несколько секунд.
-            </span>
-          </div>
         ) : videoError ? (
-          <div className="flex max-w-xs flex-col items-center gap-1.5 px-8 text-center">
-            <span className="text-[14px] font-medium text-white/85">
-              Предпросмотр видео недоступен в этом браузере.
-            </span>
-            <span className="text-[12px] text-white/55">
-              Видео приложено к акту — оно сохранится и будет доступно после
-              «Сохранить».
-            </span>
-          </div>
+          cur.processing ? (
+            // Оригинал не проигрался на ЭТОМ устройстве (напр. HEVC на Android),
+            // а универсальная версия ещё готовится в фоне.
+            <div className="flex max-w-xs flex-col items-center gap-2 px-8 text-center">
+              <span className="h-7 w-7 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+              <span className="text-[14px] font-medium text-white/85">
+                Готовим версию для этого устройства…
+              </span>
+              <span className="text-[12px] text-white/55">
+                Видео уже сохранено. Универсальная версия откроется автоматически,
+                как будет готова.
+              </span>
+            </div>
+          ) : (
+            <div className="flex max-w-xs flex-col items-center gap-1.5 px-8 text-center">
+              <span className="text-[14px] font-medium text-white/85">
+                Предпросмотр видео недоступен в этом браузере.
+              </span>
+              <span className="text-[12px] text-white/55">
+                Видео приложено к акту — оно сохранится и будет доступно после
+                «Сохранить».
+              </span>
+            </div>
+          )
         ) : (
-          // muted+autoPlay+playsInline — самый надёжный способ показать кадр
-          // видео встроенно на iOS (без чёрного экрана); poster — пока грузится.
-          // Звук включается тапом по контролам.
-          <video
-            key={cur.url}
-            ref={videoRef}
-            src={cur.url}
-            poster={cur.poster || undefined}
-            controls
-            autoPlay
-            muted
-            playsInline
-            preload="auto"
-            className={cn(
-              "bg-black",
-              videoFit === "cover"
-                ? "h-full w-full object-cover"
-                : "max-h-full max-w-full object-contain",
+          // Играем СРАЗУ. Пока сервер готовит универсальную версию (processing),
+          // показываем оригинал — на устройстве записи он проигрывается. Ждать
+          // обработки не нужно: внизу — ненавязчивый индикатор «готовим».
+          <>
+            <div
+              ref={videoHostRef}
+              className="flex h-full w-full items-center justify-center"
+            />
+            {cur.processing && (
+              <div className="pointer-events-none absolute left-1/2 top-[calc(env(safe-area-inset-top)+3.25rem)] z-10 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-black/60 px-3 py-1.5 text-[12px] font-medium text-white/90 backdrop-blur-sm">
+                <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                Готовим версию для других устройств…
+              </div>
             )}
-            onError={() => setVideoError(true)}
-          />
+          </>
         )}
 
         {canPrev && (
@@ -320,8 +357,10 @@ export function MediaLightbox({
         )}
       </div>
 
-      {/* Точки-индикаторы — поверх медиа снизу. */}
-      {items.length > 1 && (
+      {/* Точки-индикаторы — только для ФОТО. У видео снизу нативные контролы
+          плеера (плей/перемотка/звук/⛶/⋮), а позицию показывает верхний счётчик
+          «N / M» + стрелки ‹ ›; точки бы налегали на контролы. */}
+      {items.length > 1 && cur.kind === "photo" && (
         <div
           className="absolute inset-x-0 bottom-0 z-10 flex flex-wrap justify-center gap-1.5 bg-gradient-to-t from-black/50 to-transparent px-4 pb-[max(env(safe-area-inset-bottom),1rem)] pt-6"
           onClick={(e) => e.stopPropagation()}

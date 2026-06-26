@@ -179,7 +179,13 @@ export function DamageReportDialog({
     !searchLower || it.name.toLowerCase().includes(searchLower);
 
   // === Корзина «выбранных позиций» ===
-  const [selected, setSelected] = useState<Selected[]>(() => {
+  // Переживает F5 (draft per rental): оператор не теряет расчёт при обновлении
+  // страницы / обрыве сети. Только для нового акта; чистим при сохранении.
+  const [selected, setSelected, clearSelectedDraft] = usePersistedState<
+    Selected[]
+  >(
+    `damage-draft-items:rental-${rental.id}`,
+    () => {
     if (existing?.items?.length) {
       return existing.items.map((it, i) => ({
         uid: `existing-${it.id}-${i}`,
@@ -204,7 +210,9 @@ export function DamageReportDialog({
       }));
     }
     return [];
-  });
+    },
+    { disabled: isEdit },
+  );
 
   const addItem = (g: ApiPriceGroup, it: ApiPriceItem) => {
     // Для legacy двух-колоночных групп берём приоритетно цену по модели аренды.
@@ -246,7 +254,10 @@ export function DamageReportDialog({
   // удерживается у нас до полного покрытия долга (информационный режим).
   const depositIsItem = (rental.deposit ?? 0) <= 0;
   const depositMax = Math.min(rental.deposit ?? 0, total);
-  const [depositCovered, setDepositCovered] = useState<number>(() => {
+  const [depositCovered, setDepositCovered, clearDepositDraft] =
+    usePersistedState<number>(
+      `damage-draft-deposit:rental-${rental.id}`,
+      () => {
     if (existing) return existing.depositCovered ?? 0;
     // v0.8.34 (F2): при предзаполнении из потока завершения по умолчанию
     // зачитываем весь применимый залог (как делал прежний finalizeWithAct).
@@ -258,7 +269,9 @@ export function DamageReportDialog({
       return Math.min(rental.deposit ?? 0, seedTotal);
     }
     return 0;
-  });
+      },
+      { disabled: isEdit },
+    );
   useEffect(() => {
     // Если итог уменьшился ниже текущего зачёта — ужмём.
     setDepositCovered((c) => Math.min(c, depositMax));
@@ -267,7 +280,11 @@ export function DamageReportDialog({
 
   // По умолчанию ВЫКЛ — сотрудник явно решает, отправлять ли скутер в ремонт.
   const [sendToRepair, setSendToRepair] = useState(false);
-  const [note, setNote] = useState(existing?.note ?? "");
+  const [note, setNote, clearNoteDraft] = usePersistedState<string>(
+    `damage-draft-note:rental-${rental.id}`,
+    () => existing?.note ?? "",
+    { disabled: isEdit },
+  );
 
   const create = useCreateDamageReport();
   const patch = usePatchDamageReport();
@@ -292,6 +309,8 @@ export function DamageReportDialog({
     existing?.media ?? [],
   );
   const [mediaBusy, setMediaBusy] = useState(false);
+  // Прогресс заливки текущего файла (0..100) — для полосы «как в телеге».
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
 
   // Чистим objectURL'ы при размонтировании, чтобы не текла память.
   useEffect(() => {
@@ -335,10 +354,12 @@ export function DamageReportDialog({
       setStaged((s) => [...s, ...items]);
       for (const it of items) {
         try {
+          setUploadProgress(0);
           const m = await uploadMedia.mutateAsync({
             reportId: existing.id,
             file: it.file,
             durationSec: it.durationSec,
+            onProgress: setUploadProgress,
           });
           setUploadedMedia((u) => [...u, m]);
         } catch (e) {
@@ -346,6 +367,7 @@ export function DamageReportDialog({
         } finally {
           setStaged((s) => s.filter((x) => x.id !== it.id));
           URL.revokeObjectURL(it.previewUrl);
+          setUploadProgress(null);
         }
       }
       setMediaBusy(false);
@@ -357,10 +379,12 @@ export function DamageReportDialog({
       setStaged((s) => [...s, ...items]);
       for (const it of items) {
         try {
+          setUploadProgress(0);
           const m = await uploadDraftMedia.mutateAsync({
             draftToken,
             file: it.file,
             durationSec: it.durationSec,
+            onProgress: setUploadProgress,
           });
           setUploadedMedia((u) => [...u, m]);
           setStaged((s) => s.filter((x) => x.id !== it.id));
@@ -370,6 +394,8 @@ export function DamageReportDialog({
             "Медиа загрузится при сохранении",
             (e as Error).message ?? "",
           );
+        } finally {
+          setUploadProgress(null);
         }
       }
       setMediaBusy(false);
@@ -475,6 +501,9 @@ export function DamageReportDialog({
     if (!isEdit) {
       for (const m of uploadedMedia) deleteMedia.mutate(m.id);
       clearDraftToken();
+      clearSelectedDraft();
+      clearDepositDraft();
+      clearNoteDraft();
     }
     requestClose();
   };
@@ -557,8 +586,13 @@ export function DamageReportDialog({
         setStaged([]);
         setMediaBusy(false);
       }
-      // Акт сохранён, медиа привязаны → черновик-токен больше не нужен.
-      if (!isEdit) clearDraftToken();
+      // Акт сохранён, медиа привязаны → черновик больше не нужен.
+      if (!isEdit) {
+        clearDraftToken();
+        clearSelectedDraft();
+        clearDepositDraft();
+        clearNoteDraft();
+      }
       requestClose();
       window.setTimeout(() => onCreated?.(reportId), 200);
     } catch (e) {
@@ -913,6 +947,7 @@ export function DamageReportDialog({
                   onRemoveStaged={removeStaged}
                   onRemoveUploaded={removeUploaded}
                   busy={mediaBusy}
+                  uploadProgress={uploadProgress}
                   disabled={isPending}
                 />
               </div>
@@ -1180,6 +1215,15 @@ export function DamageReportDialog({
                 Это позиции из прейскуранта (Документы → Прейскурант). Выбери,
                 что повреждено — цену и количество можно поправить.
               </div>
+              {/* Нет нужной позиции в прейскуранте — добавить свою (имя/цену
+                  оператор впишет в «Выбранных»). Десктоп-аналог кнопки с мобилы. */}
+              <button
+                type="button"
+                onClick={addCustomItem}
+                className="mt-2 flex h-9 w-full items-center justify-center gap-2 rounded-[10px] border border-dashed border-blue-300 bg-blue-50 text-[13px] font-semibold text-blue-700 transition-colors hover:bg-blue-100"
+              >
+                <Plus size={15} /> Своя позиция (нет в прейскуранте)
+              </button>
               {needsFallback && (
                 <div className="mt-2 rounded-[10px] bg-amber-50 px-3 py-2 text-[12px] text-amber-900">
                   <div className="font-semibold">
@@ -1344,9 +1388,20 @@ export function DamageReportDialog({
                       >
                         <div className="flex items-start gap-2">
                           <div className="min-w-0 flex-1">
-                            <div className="text-[13px] font-semibold text-ink">
-                              {s.name}
-                            </div>
+                            {s.priceItemId == null ? (
+                              <input
+                                value={s.name}
+                                onChange={(e) =>
+                                  patchSel(s.uid, { name: e.target.value })
+                                }
+                                placeholder="Название позиции"
+                                className="w-full rounded-[6px] border border-border bg-surface-soft px-1.5 py-1 text-[13px] font-semibold text-ink outline-none focus:border-blue-600"
+                              />
+                            ) : (
+                              <div className="text-[13px] font-semibold text-ink">
+                                {s.name}
+                              </div>
+                            )}
                           </div>
                           <button
                             type="button"
@@ -1529,6 +1584,7 @@ export function DamageReportDialog({
                   onRemoveStaged={removeStaged}
                   onRemoveUploaded={removeUploaded}
                   busy={mediaBusy}
+                  uploadProgress={uploadProgress}
                   disabled={isPending}
                 />
               </div>
