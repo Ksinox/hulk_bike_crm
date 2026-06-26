@@ -2534,6 +2534,9 @@ export function RentalCard({
                     amount: debt,
                   })
                 }
+                deposit={rental.deposit ?? 0}
+                depositOriginal={rental.depositOriginal ?? rental.deposit ?? 0}
+                onTopupDeposit={() => setTopupOpen(true)}
               />
             </AccordionSection>
           )}

@@ -1,5 +1,16 @@
 import { useState } from "react";
-import { ChevronDown, History, Pencil, Play, Printer, Scale } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  Clock,
+  History,
+  Pencil,
+  Play,
+  Plus,
+  Printer,
+  Scale,
+  ShieldAlert,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fileUrl } from "@/lib/files";
 import { MediaLightbox, type LightboxItem } from "@/components/MediaLightbox";
@@ -29,6 +40,9 @@ export function DamageActBlock({
   onEditReport,
   onPrintReport,
   onOpenDebtor,
+  deposit,
+  depositOriginal,
+  onTopupDeposit,
 }: {
   reports: ApiDamageReport[];
   /** Открыть последний акт на правку (DamageReportDialog в режиме edit). */
@@ -37,10 +51,24 @@ export function DamageActBlock({
   onPrintReport?: (reportId: number) => void;
   /** Этап 3: открыть/завести досудебное дело по акту (передаём акт + долг). */
   onOpenDebtor?: (report: ApiDamageReport, debt: number) => void;
+  /** Текущий залог аренды — для сигнала «пополнить», если из него списали. */
+  deposit?: number;
+  /** Исходный (полный) залог — если deposit < этого, залог неполный. */
+  depositOriginal?: number;
+  /** Открыть диалог пополнения залога (тот же, что и в «Финансовой»). */
+  onTopupDeposit?: () => void;
 }) {
   const allMedia = reports.flatMap((r) => r.media ?? []);
   const total = reports.reduce((s, r) => s + r.total, 0);
   const debt = reports.reduce((s, r) => s + r.debt, 0);
+  // Состав покрытия ущерба: total = из залога + оплачено деньгами + остаток-долг.
+  const fromDeposit = reports.reduce((s, r) => s + (r.depositCovered ?? 0), 0);
+  const paid = reports.reduce((s, r) => s + (r.paidSum ?? 0), 0);
+  const pct = (n: number) => (total > 0 ? (n / total) * 100 : 0);
+  const depositGap =
+    depositOriginal != null && deposit != null
+      ? Math.max(0, depositOriginal - deposit)
+      : 0;
   const latest = reports[reports.length - 1];
   const agreement = latest
     ? (AGREEMENT[latest.clientAgreement] ?? AGREEMENT.pending)
@@ -84,37 +112,100 @@ export function DamageActBlock({
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-2">
-        <div className="rounded-xl bg-surface-soft px-3 py-2">
-          <div className="text-[11px] text-muted-2">Сумма ущерба</div>
-          <div className="text-[16px] font-bold tabular-nums text-ink">
-            {fmt(total)} ₽
+      {/* Состав расчёта ущерба: сумма + статус-пилл + полоска «из чего сложилось»
+          (из залога / оплачено / долг). Понятнее, чем «Долг погашен 0 ₽». */}
+      <div className="rounded-xl bg-surface-soft px-3 py-2.5">
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <div className="text-[11px] text-muted-2">Сумма ущерба</div>
+            <div className="text-[18px] font-bold tabular-nums text-ink">
+              {fmt(total)} ₽
+            </div>
           </div>
-        </div>
-        <div
-          className={cn(
-            "rounded-xl px-3 py-2",
-            debt > 0 ? "bg-red-soft" : "bg-green-soft",
+          {debt > 0 ? (
+            <span className="flex shrink-0 items-center gap-1 rounded-full bg-red-soft px-2.5 py-1 text-[11px] font-bold text-red-ink">
+              <Clock size={12} /> Долг {fmt(debt)} ₽
+            </span>
+          ) : (
+            <span className="flex shrink-0 items-center gap-1 rounded-full bg-green-soft px-2.5 py-1 text-[11px] font-bold text-green-ink">
+              <Check size={12} /> Оплачен
+            </span>
           )}
-        >
-          <div
-            className={cn(
-              "text-[11px]",
-              debt > 0 ? "text-red-ink" : "text-green-ink",
-            )}
-          >
-            {debt > 0 ? "Непогашенный долг" : "Долг погашен"}
-          </div>
-          <div
-            className={cn(
-              "text-[16px] font-bold tabular-nums",
-              debt > 0 ? "text-red-ink" : "text-green-ink",
-            )}
-          >
-            {fmt(debt)} ₽
-          </div>
         </div>
+        {total > 0 && (
+          <>
+            <div className="mt-2.5 flex h-2 overflow-hidden rounded-full bg-ink/10">
+              {fromDeposit > 0 && (
+                <div
+                  className="bg-amber-400"
+                  style={{ width: `${pct(fromDeposit)}%` }}
+                />
+              )}
+              {paid > 0 && (
+                <div
+                  className="bg-green-500"
+                  style={{ width: `${pct(paid)}%` }}
+                />
+              )}
+              {debt > 0 && (
+                <div className="bg-red-500" style={{ width: `${pct(debt)}%` }} />
+              )}
+            </div>
+            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11.5px] text-muted">
+              {fromDeposit > 0 && (
+                <span className="flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-[2px] bg-amber-400" /> Из
+                  залога{" "}
+                  <span className="font-semibold tabular-nums text-ink">
+                    {fmt(fromDeposit)} ₽
+                  </span>
+                </span>
+              )}
+              {paid > 0 && (
+                <span className="flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-[2px] bg-green-500" /> Оплачено{" "}
+                  <span className="font-semibold tabular-nums text-ink">
+                    {fmt(paid)} ₽
+                  </span>
+                </span>
+              )}
+              {debt > 0 && (
+                <span className="flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-[2px] bg-red-500" /> Долг{" "}
+                  <span className="font-semibold tabular-nums text-red-ink">
+                    {fmt(debt)} ₽
+                  </span>
+                </span>
+              )}
+            </div>
+          </>
+        )}
       </div>
+
+      {/* Сигнал: залог стал неполным (списали в счёт ущерба) — пополнить. Ведёт
+          в тот же диалог, что плашка залога в «Финансовой». Только в карточке
+          аренды (в досудебке onTopupDeposit не передаётся). */}
+      {onTopupDeposit && depositGap > 0 && (
+        <div className="flex items-center gap-2.5 rounded-xl bg-amber-50 px-3 py-2.5">
+          <ShieldAlert size={18} className="shrink-0 text-amber-700" />
+          <div className="min-w-0 flex-1">
+            <div className="text-[12px] font-semibold text-amber-900">
+              Залог неполный — {fmt(deposit ?? 0)} из {fmt(depositOriginal ?? 0)}{" "}
+              ₽
+            </div>
+            <div className="text-[11px] text-amber-700">
+              пополнить на {fmt(depositGap)} ₽
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onTopupDeposit}
+            className="flex shrink-0 items-center gap-1 rounded-full border border-amber-300 px-3 py-1.5 text-[12px] font-bold text-amber-800 transition-colors hover:bg-amber-100"
+          >
+            <Plus size={13} /> Пополнить
+          </button>
+        </div>
+      )}
 
       {allMedia.length > 0 ? (
         <div>
