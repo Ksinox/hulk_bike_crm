@@ -672,7 +672,8 @@ export async function damageReportsRoutes(app: FastifyInstance) {
         entity: "damage_report",
         entityId: id,
         action: "payment",
-        summary: `Платёж за ущерб ${parsed.data.amount} ₽ по акту #${id}`,
+        // «Аренда #NNNN» в начале — для контекста «по какой аренде» в ленте.
+        summary: `Аренда #${String(report.rentalId).padStart(4, "0")}: оплата ущерба ${parsed.data.amount} ₽ (акт #${id})`,
         meta: {
           paymentId: pay!.id,
           amount: parsed.data.amount,
@@ -713,7 +714,9 @@ export async function damageReportsRoutes(app: FastifyInstance) {
           entity: "damage_report",
           entityId: id,
           action: "agreement",
-          summary: `Акт #${id}: согласование «${AGREEMENT_LABEL[from] ?? from}» → «${AGREEMENT_LABEL[to] ?? to}»`,
+          // «Аренда #NNNN» в начале — чтобы лента подтянула контекст «по какой
+          // аренде» (резолвер парсит номер аренды из summary).
+          summary: `Аренда #${String(report.rentalId).padStart(4, "0")}: согласование акта #${id} «${AGREEMENT_LABEL[from] ?? from}» → «${AGREEMENT_LABEL[to] ?? to}»`,
           diff: {
             agreement: {
               label: "Согласование",
