@@ -127,6 +127,17 @@ const PaymentBody = z.object({
   method: z.enum(["cash", "card", "transfer"]).default("cash"),
 });
 
+const AgreementBody = z.object({
+  /** Статус согласования акта клиентом. */
+  agreement: z.enum(["pending", "agreed", "disputed"]),
+});
+
+const AGREEMENT_LABEL: Record<string, string> = {
+  pending: "на согласовании",
+  agreed: "согласовано",
+  disputed: "спор",
+};
+
 function getUserId(req: FastifyRequest): number | null {
   const u = (req as unknown as { user?: { userId?: number } }).user;
   return u?.userId ?? null;
@@ -586,14 +597,62 @@ export async function damageReportsRoutes(app: FastifyInstance) {
         to: "сброшено — на согласовании",
         kind: "text",
       };
+    // Позиционный diff С СУММАМИ — чтобы запись в ленте читалась как история
+    // ревизий («Добавлена «X» +N ₽», итог было→стало). Сопоставление: каталог
+    // по priceItemId, своя позиция — по названию (с резолвом «Прочее
+    // повреждение» → комментарий, как в печати/ревизиях).
+    const posTitle = (it: { name: string; comment?: string | null }) => {
+      const nm = (it.name ?? "").trim();
+      const cm = (it.comment ?? "").trim();
+      return (nm === "" || nm === "Прочее повреждение") && cm ? cm : nm || "Позиция";
+    };
+    const posKey = (it: {
+      priceItemId?: number | null;
+      name: string;
+      comment?: string | null;
+    }) =>
+      it.priceItemId != null
+        ? `cat:${it.priceItemId}`
+        : `custom:${posTitle(it).toLowerCase()}`;
+    const posSum = (it: { finalPrice: number; quantity: number }) =>
+      it.finalPrice * it.quantity;
+    let posDiff:
+      | {
+          added: { name: string; sum: number }[];
+          removed: { name: string; sum: number }[];
+          changed: { name: string; from: number; to: number }[];
+        }
+      | undefined;
+    if (parsed.data.items) {
+      const oldMap = new Map(oldItems.map((it) => [posKey(it), it] as const));
+      const newMap = new Map(newItems.map((it) => [posKey(it), it] as const));
+      posDiff = {
+        added: newItems
+          .filter((it) => !oldMap.has(posKey(it)))
+          .map((it) => ({ name: posTitle(it), sum: posSum(it) })),
+        removed: oldItems
+          .filter((it) => !newMap.has(posKey(it)))
+          .map((it) => ({ name: posTitle(it), sum: posSum(it) })),
+        changed: newItems
+          .filter((it) => {
+            const o = oldMap.get(posKey(it));
+            return !!o && posSum(o) !== posSum(it);
+          })
+          .map((it) => {
+            const o = oldMap.get(posKey(it))!;
+            return { name: posTitle(it), from: posSum(o), to: posSum(it) };
+          }),
+      };
+    }
     await logActivity(req, {
       entity: "damage_report",
       entityId: id,
       action: "updated",
-      summary: `Акт о повреждениях #${id} изменён → ревизия ${nextRevNo}${
+      // «Аренда #NNNN» в начале — контекст «по какой аренде» в ленте.
+      summary: `Аренда #${String(report.rentalId).padStart(4, "0")}: изменён акт #${id} → ревизия ${nextRevNo}${
         wasAgreed ? " (сброшено согласование)" : ""
       }`,
-      meta: { revisionNo: nextRevNo, total: newTotal },
+      meta: { revisionNo: nextRevNo, total: newTotal, posDiff },
       diff: Object.keys(diff).length > 0 ? diff : undefined,
     });
     return await loadReportFull(id);
@@ -661,13 +720,61 @@ export async function damageReportsRoutes(app: FastifyInstance) {
         entity: "damage_report",
         entityId: id,
         action: "payment",
-        summary: `Платёж за ущерб ${parsed.data.amount} ₽ по акту #${id}`,
+        // «Аренда #NNNN» в начале — для контекста «по какой аренде» в ленте.
+        summary: `Аренда #${String(report.rentalId).padStart(4, "0")}: оплата ущерба ${parsed.data.amount} ₽ (акт #${id})`,
         meta: {
           paymentId: pay!.id,
           amount: parsed.data.amount,
           method: parsed.data.method,
         },
       });
+      return await loadReportFull(id);
+    },
+  );
+
+  /** Статус согласования акта клиентом (на согласовании / согласовано / спор).
+   *  Меняет ТОЛЬКО workflow-поле clientAgreement + пишет в ленту с diff. Ревизию
+   *  НЕ создаёт (это не правка позиций), хэш-цепочку ревизий не трогает. */
+  app.post<{ Params: { id: string } }>(
+    "/:id/agreement",
+    async (req, reply) => {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id))
+        return reply.code(400).send({ error: "bad id" });
+      const parsed = AgreementBody.safeParse(req.body);
+      if (!parsed.success)
+        return reply
+          .code(400)
+          .send({ error: "validation", issues: parsed.error.issues });
+      const [report] = await db
+        .select()
+        .from(damageReports)
+        .where(eq(damageReports.id, id));
+      if (!report) return reply.code(404).send({ error: "not found" });
+      const from = report.clientAgreement;
+      const to = parsed.data.agreement;
+      if (from !== to) {
+        await db
+          .update(damageReports)
+          .set({ clientAgreement: to, updatedAt: new Date() })
+          .where(eq(damageReports.id, id));
+        await logActivity(req, {
+          entity: "damage_report",
+          entityId: id,
+          action: "agreement",
+          // «Аренда #NNNN» в начале — чтобы лента подтянула контекст «по какой
+          // аренде» (резолвер парсит номер аренды из summary).
+          summary: `Аренда #${String(report.rentalId).padStart(4, "0")}: согласование акта #${id} «${AGREEMENT_LABEL[from] ?? from}» → «${AGREEMENT_LABEL[to] ?? to}»`,
+          diff: {
+            agreement: {
+              label: "Согласование",
+              from: AGREEMENT_LABEL[from] ?? from,
+              to: AGREEMENT_LABEL[to] ?? to,
+              kind: "text",
+            },
+          },
+        });
+      }
       return await loadReportFull(id);
     },
   );

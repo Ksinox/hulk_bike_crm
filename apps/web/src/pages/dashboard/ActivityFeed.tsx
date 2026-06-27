@@ -250,16 +250,23 @@ function FeedRow({
 }) {
   const drawer = useDashboardDrawer();
   if (compact) {
+    // Акт ущерба / долг: entityId — id акта/дела, поэтому ведём в связанную
+    // аренду (резолвится в parts.rental) — там сам акт в карточке.
+    const rentalCtxId = parts?.rental?.id ?? null;
     const clickable =
-      it.entityId != null &&
-      (it.entity === "rental" ||
-        it.entity === "scooter" ||
-        it.entity === "client");
+      (it.entityId != null &&
+        (it.entity === "rental" ||
+          it.entity === "scooter" ||
+          it.entity === "client")) ||
+      rentalCtxId != null;
     const handleClick = () => {
-      if (it.entityId == null) return;
-      if (it.entity === "rental") drawer.openRental(it.entityId);
-      else if (it.entity === "scooter") drawer.openScooter(it.entityId);
-      else if (it.entity === "client") drawer.openClient(it.entityId);
+      if (it.entity === "rental" && it.entityId != null)
+        drawer.openRental(it.entityId);
+      else if (it.entity === "scooter" && it.entityId != null)
+        drawer.openScooter(it.entityId);
+      else if (it.entity === "client" && it.entityId != null)
+        drawer.openClient(it.entityId);
+      else if (rentalCtxId != null) drawer.openRental(rentalCtxId);
     };
     return (
       <ActivityEventRow

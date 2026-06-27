@@ -107,12 +107,12 @@ export type RevenueTypeFilter =
   | "swap_fee"
   | "parking";
 
+/** Конкретный вид операции (без «all») — для мультифильтра выручки. */
+export type RevenueTypeKey = Exclude<RevenueTypeFilter, "all">;
+
 /** Метка вида операции (без «all»). Продление выделено из аренды. */
-export const REVENUE_TYPE_LABEL: Record<
-  Exclude<RevenueTypeFilter, "all">,
-  string
-> = {
-  rent: "Аренда",
+export const REVENUE_TYPE_LABEL: Record<RevenueTypeKey, string> = {
+  rent: "Новые аренды",
   extend: "Продление",
   fine: "Штраф",
   damage: "Ущерб",
@@ -149,7 +149,7 @@ export function RevenueRentalsList({
   dayFilter,
   range,
   methodFilter = "all",
-  typeFilter = "all",
+  types,
   scope = "all",
 }: {
   period: RevenuePeriod;
@@ -161,8 +161,8 @@ export function RevenueRentalsList({
   range?: { from: string; to: string } | null;
   /** Способ оплаты: всё / только наличные / только безнал. */
   methodFilter?: MethodFilter;
-  /** Вид операции: всё / аренда / продление / штраф / ущерб / экип / … */
-  typeFilter?: RevenueTypeFilter;
+  /** Мультифильтр по видам операций (пусто/undefined = все виды). */
+  types?: Set<RevenueTypeKey>;
   /** Область: только аренды или все операции (на будущее). */
   scope?: RevenueScope;
 }) {
@@ -202,7 +202,7 @@ export function RevenueRentalsList({
         if (t < start.getTime() || t >= end.getTime()) return false;
         if (methodFilter === "cash" && !isCashPayment(p)) return false;
         if (methodFilter === "cashless" && isCashPayment(p)) return false;
-        if (typeFilter !== "all" && paymentTypeKey(p) !== typeFilter)
+        if (types && types.size > 0 && !types.has(paymentTypeKey(p)))
           return false;
         return true;
       })
@@ -249,7 +249,7 @@ export function RevenueRentalsList({
     start,
     end,
     methodFilter,
-    typeFilter,
+    types,
     scope,
   ]);
 

@@ -21,6 +21,7 @@ import {
   scooters,
 } from "../db/schema.js";
 import { LANDLORD } from "./landlord.js";
+import { resolveDamageItemLabel } from "./damage-document.js";
 
 type ClaimBundle = {
   report: typeof damageReports.$inferSelect;
@@ -206,7 +207,8 @@ function tplClaim(b: ClaimBundle, dueDays = 21): string {
     .map((it, i) => {
       const qty = it.quantity ?? 1;
       const lineTotal = it.finalPrice * qty;
-      const nameCell = `${escape(it.name)}${it.comment ? `<br><span class="small">${escape(it.comment)}</span>` : ""}`;
+      const { title, sub } = resolveDamageItemLabel(it);
+      const nameCell = `${escape(title)}${sub ? `<br><span class="small">${escape(sub)}</span>` : ""}`;
       return `<tr>
         <td class="num">${i + 1}</td>
         <td>${nameCell}</td>

@@ -30,7 +30,6 @@ import { useIsMobile } from "@/lib/useIsMobile";
 import { useReloadRestoredState } from "@/lib/usePersistedState";
 import { MobileBottomSheet } from "@/mobile/BottomSheet";
 import { useCallClient } from "@/mobile/call";
-import { openOrCreateDamageDebtor } from "@/lib/api/debtors";
 import {
   MIN_RENTAL_DAYS,
   ratePeriodForDays,
@@ -449,6 +448,30 @@ export function RentalCard({
   // «Пополнить залог» — открывается тапом по плашке залога в «Финансовой
   // информации» (а не из «Принять оплату», где пополнение нелогично).
   const [topupOpen, setTopupOpen] = useState(false);
+  // Подсветка блока акта после перехода из поповера «Долг» (клик по строке
+  // «ущерб» проскролливает к акту и кратко подсвечивает его).
+  const [damageFlash, setDamageFlash] = useState(false);
+  const scrollToDamageAct = () => {
+    // Сначала даём мобильному bottom-sheet KPI доиграть закрытие (~280мс,
+    // см. BottomSheet), иначе скролл стартует на «уезжающем» layout. На
+    // устойчивом layout скроллим к блоку акта и подсвечиваем его.
+    // behavior:'auto' — вложенный overflow-контейнер этого экрана не
+    // поддерживает smooth (проверено: и scrollIntoView, и scrollTo smooth
+    // игнорируются); мгновенный скролл + flash-подсветка как визуальный якорь.
+    window.setTimeout(() => {
+      const el = document.getElementById("damage-act-section");
+      if (!el) return;
+      el.scrollIntoView({ behavior: "auto", block: "start" });
+      setDamageFlash(true);
+      window.setTimeout(() => setDamageFlash(false), 1800);
+    }, 300);
+  };
+  // Недостаток залога (списали в счёт ущерба/удержаний) — для красного флажка
+  // на плашке «Долг» и кнопки пополнения в блоке акта.
+  const depositGap = Math.max(
+    0,
+    (rental.depositOriginal ?? rental.deposit ?? 0) - (rental.deposit ?? 0),
+  );
   const [previewClaimId, setPreviewClaimId] = useState<number | null>(null);
   const [swapOpen, setSwapOpen] = useState(false);
   const [clientQuickView, setClientQuickView] = useState(false);
@@ -754,7 +777,13 @@ export function RentalCard({
   // #26: «за что» ущерб — короткий список повреждённых позиций из акта-должника
   // (для подписи в «Составе долга», чтобы было видно, за что начислен ущерб).
   const damageWhatItems = (reportWithDebt?.items ?? [])
-    .map((i) => i.name)
+    .map((i) => {
+      const nm = (i.name ?? "").trim();
+      const cm = (i.comment ?? "").trim();
+      // Своя позиция с дефолтным именем — показываем комментарий (реальное
+      // описание), как и в печатном акте.
+      return (nm === "" || nm === "Прочее повреждение") && cm ? cm : nm;
+    })
     .filter(Boolean);
   const damageWhatLabel =
     damageWhatItems.length > 0
@@ -1852,6 +1881,17 @@ export function RentalCard({
           здесь только рендер + hover-поповер с детальным составом. */}
       <KpiCard
         label="Долг"
+        damageInDebt={damageBalance > 0}
+        depositAlert={
+          depositGap > 0
+            ? {
+                onClick: () => setTopupOpen(true),
+                title: `Залог неполный: ${fmt(rental.deposit ?? 0)} из ${fmt(
+                  rental.depositOriginal ?? rental.deposit ?? 0,
+                )} ₽ — пополнить`,
+              }
+            : undefined
+        }
         // Подмешиваем сквозной долг: значение = долг этой аренды + с прошлых.
         // Звёздочка сигналит, что в сумме есть долг с других аренд.
         value={
@@ -1905,12 +1945,23 @@ export function RentalCard({
                   <div>просрочка: <b>{fmt(overdueBalance)} ₽</b></div>
                 )}
               {damageBalance > 0 && (
-                <div>
-                  ущерб: <b>{fmt(damageBalance)} ₽</b>
-                  {damageWhatItems.length > 0 && (
-                    <span className="text-muted"> · {damageWhatLabel}</span>
-                  )}
-                </div>
+                <button
+                  type="button"
+                  data-dismiss-sheet
+                  onClick={scrollToDamageAct}
+                  title="Открыть акт о повреждениях"
+                  className="group/da -mx-1 flex w-[calc(100%+0.5rem)] items-start gap-1.5 rounded-md px-1 py-0.5 text-left transition-colors hover:bg-red-soft/60"
+                >
+                  <span className="min-w-0 flex-1">
+                    ущерб: <b>{fmt(damageBalance)} ₽</b>
+                    {damageWhatItems.length > 0 && (
+                      <span className="text-muted"> · {damageWhatLabel}</span>
+                    )}
+                  </span>
+                  <span className="mt-px shrink-0 whitespace-nowrap text-[10px] font-bold uppercase tracking-wide text-red-ink opacity-60 transition-opacity group-hover/da:opacity-100">
+                    к акту →
+                  </span>
+                </button>
               )}
               {equipmentManualBalance > 0 && (
                 <div>за экипировку: <b>{fmt(equipmentManualBalance)} ₽</b></div>
@@ -2510,6 +2561,14 @@ export function RentalCard({
           />
 
           {hasDamage && (
+            <div
+              id="damage-act-section"
+              className={cn(
+                "scroll-mt-4 rounded-2xl transition-shadow duration-500",
+                damageFlash &&
+                  "ring-2 ring-red-400 ring-offset-2 ring-offset-surface",
+              )}
+            >
             <AccordionSection
               title="Акт о повреждениях"
               icon={<AlertTriangle size={15} className="text-red" />}
@@ -2526,16 +2585,15 @@ export function RentalCard({
                 reports={reports}
                 onEditReport={(id) => setEditingReportId(id)}
                 onPrintReport={(id) => setPreviewDamageId(id)}
-                onOpenDebtor={(report, debt) =>
-                  openOrCreateDamageDebtor({
-                    reportId: report.id,
-                    rentalId: report.rentalId,
-                    clientId: rental.clientId ?? null,
-                    amount: debt,
-                  })
-                }
+                // Пока «Должники» не доделаны: кнопка печатает досудебную
+                // претензию, а не заводит дело (переход вернём позже).
+                onPrintClaim={(report) => setPreviewClaimId(report.id)}
+                deposit={rental.deposit ?? 0}
+                depositOriginal={rental.depositOriginal ?? rental.deposit ?? 0}
+                onTopupDeposit={() => setTopupOpen(true)}
               />
             </AccordionSection>
+            </div>
           )}
 
           <AccordionSection
@@ -3499,6 +3557,8 @@ function KpiCard({
   badgeIcon: BadgeIcon,
   accent = "default",
   popover,
+  depositAlert,
+  damageInDebt = false,
 }: {
   label: string;
   value: string;
@@ -3509,6 +3569,12 @@ function KpiCard({
   /** v0.7.8: детальный состав при наведении (hover). Показывается поповером
    *  снизу плашки. Если не передан — плашка ведёт себя как раньше. */
   popover?: React.ReactNode;
+  /** Красный флажок «залог неполный» в углу плашки. Клик → пополнить залог
+   *  (тот же диалог). stopPropagation — не задевает тап/поповер плашки. */
+  depositAlert?: { onClick: () => void; title: string };
+  /** Значок-треугольник «в долг входит ущерб» — рядом со значением, чтобы
+   *  с одного взгляда понять, что по аренде есть повреждения. */
+  damageInDebt?: boolean;
 }) {
   const isMobile = useIsMobile();
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -3570,8 +3636,32 @@ function KpiCard({
           )}
         />
       )}
+      {/* Красный флажок «залог неполный» поверх плашки — клик ведёт в пополнение
+          залога (stopPropagation, чтобы не сработал тап/поповер плашки). */}
+      {depositAlert && (
+        <span
+          role="button"
+          tabIndex={0}
+          title={depositAlert.title}
+          aria-label={depositAlert.title}
+          onClick={(e) => {
+            e.stopPropagation();
+            depositAlert.onClick();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              e.stopPropagation();
+              depositAlert.onClick();
+            }
+          }}
+          className="absolute right-2 top-2 z-10 flex h-6 w-6 cursor-pointer items-center justify-center rounded-full bg-red-soft text-red-ink transition-colors hover:bg-red-100"
+        >
+          <ShieldAlert size={14} />
+        </span>
+      )}
       {/* На мобиле — намёк, что по тапу раскроются подробности. */}
-      {tappable && !BadgeIcon && (
+      {tappable && !BadgeIcon && !depositAlert && (
         <ChevronDown
           size={15}
           className="absolute right-2.5 top-3 text-muted-2"
@@ -3582,10 +3672,17 @@ function KpiCard({
       </div>
       <div
         className={cn(
-          "mt-1 font-display text-[20px] font-extrabold leading-tight tabular-nums",
+          "mt-1 flex items-center gap-1.5 font-display text-[20px] font-extrabold leading-tight tabular-nums",
           valueColor,
         )}
       >
+        {damageInDebt && (
+          <AlertTriangle
+            size={16}
+            className="shrink-0 text-red-ink"
+            aria-label="В долг входит ущерб"
+          />
+        )}
         {value}
       </div>
       {/* Инлайн-расшифровка — только на десктопе; на мобиле она в сниппете. */}
@@ -3665,6 +3762,17 @@ function KpiCard({
             }}
             onMouseEnter={cancelClose}
             onMouseLeave={scheduleClose}
+            onClick={(e) => {
+              // Клик по строке-кнопке с [data-dismiss-sheet] (напр.
+              // «ущерб → к акту») закрывает поповер, чтобы он не висел над
+              // блоком, к которому проскроллили.
+              if (
+                (e.target as HTMLElement).closest?.("[data-dismiss-sheet]")
+              ) {
+                cancelClose();
+                setPopOpen(false);
+              }
+            }}
             className="rounded-xl bg-surface p-3 text-[12px] leading-relaxed text-ink-2 shadow-card-lg ring-1 ring-border"
           >
             {popover}
@@ -3724,7 +3832,15 @@ function KpiDetailSheet({
               <X size={18} />
             </button>
           </div>
-          <div className="space-y-1 text-[14px] leading-relaxed text-ink-2 [&_b]:font-bold [&_b]:text-ink">
+          <div
+            onClick={(e) => {
+              // Строки-кнопки с [data-dismiss-sheet] (напр. «ущерб → к акту»)
+              // закрывают sheet, чтобы стал виден блок, к которому скроллим.
+              if ((e.target as HTMLElement).closest?.("[data-dismiss-sheet]"))
+                close();
+            }}
+            className="space-y-1 text-[14px] leading-relaxed text-ink-2 [&_b]:font-bold [&_b]:text-ink"
+          >
             {children}
           </div>
         </>

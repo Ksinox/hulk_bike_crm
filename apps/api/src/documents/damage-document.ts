@@ -109,6 +109,25 @@ function fmtMoney(n: number): string {
   return Math.abs(Math.round(n)).toLocaleString("ru-RU");
 }
 
+/**
+ * Заголовок позиции для печати. «Своя позиция» (priceItemId=null) обычно
+ * создаётся с дефолтным именем «Прочее повреждение», а реальное описание
+ * оператор пишет в комментарий. Чтобы в акте/претензии своя позиция
+ * печаталась как обычная (без служебного «Прочее повреждение»), при
+ * пустом/дефолтном имени берём комментарий как название.
+ */
+export function resolveDamageItemLabel(it: {
+  name?: string | null;
+  comment?: string | null;
+}): { title: string; sub: string } {
+  const name = (it.name ?? "").trim();
+  const comment = (it.comment ?? "").trim();
+  if ((name === "" || name === "Прочее повреждение") && comment) {
+    return { title: comment, sub: "" };
+  }
+  return { title: name || "Прочее повреждение", sub: comment };
+}
+
 function modelDisplayName(
   scooter: { model: string } | null,
   model: { name: string } | null,
@@ -178,12 +197,13 @@ function buildDamageContext(b: DamageBundle): Record<string, string> {
       // и больше, и меньше введённой — никаких «скидок»/зачёркиваний не
       // показываем, печатаем ровно введённую стоимость.
       const priceCell = `${fmtMoney(it.finalPrice)}`;
+      const { title, sub } = resolveDamageItemLabel(it);
       return `
         <tr>
           <td class="center">${i + 1}</td>
           <td>
-            <b>${escape(it.name)}</b>
-            ${it.comment ? `<br><span class="small">${escape(it.comment)}</span>` : ""}
+            <b>${escape(title)}</b>
+            ${sub ? `<br><span class="small">${escape(sub)}</span>` : ""}
           </td>
           <td class="center">${it.quantity}</td>
           <td class="num">${priceCell}</td>
@@ -308,12 +328,13 @@ function renderDamageHtmlSystem(b: DamageBundle): string {
       // и больше, и меньше введённой — никаких «скидок»/зачёркиваний не
       // показываем, печатаем ровно введённую стоимость.
       const priceCell = `${fmtMoney(it.finalPrice)}`;
+      const { title, sub } = resolveDamageItemLabel(it);
       return `
         <tr>
           <td class="center">${i + 1}</td>
           <td>
-            <b>${escape(it.name)}</b>
-            ${it.comment ? `<br><span class="small">${escape(it.comment)}</span>` : ""}
+            <b>${escape(title)}</b>
+            ${sub ? `<br><span class="small">${escape(sub)}</span>` : ""}
           </td>
           <td class="center">${it.quantity}</td>
           <td class="num">${priceCell}</td>

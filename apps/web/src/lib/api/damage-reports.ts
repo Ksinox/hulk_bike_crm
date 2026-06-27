@@ -269,13 +269,13 @@ export function useDeleteDamageReport() {
   });
 }
 
-/** Установить реакцию клиента на акт (agreed/disputed). v0.2.75. */
+/** Установить статус согласования акта (на согласовании/согласовано/спор). */
 export function useDamageAgreement() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (args: {
       reportId: number;
-      agreement: "agreed" | "disputed";
+      agreement: "pending" | "agreed" | "disputed";
     }) =>
       api.post<ApiDamageReport>(
         `/api/damage-reports/${args.reportId}/agreement`,

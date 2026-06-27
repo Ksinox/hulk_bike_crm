@@ -5,10 +5,11 @@ import {
   RevenueRentalsList,
   resolveRevenueWindow,
   billingPeriodLabel,
+  REVENUE_TYPE_LABEL,
   type RevenuePeriod,
   type MethodFilter,
   type RevenueScope,
-  type RevenueTypeFilter,
+  type RevenueTypeKey,
 } from "./RevenueRentalsList";
 import { useDashboardDrawer } from "./DashboardDrawer";
 import { DateRangePicker } from "@/components/ui/date-picker";
@@ -28,15 +29,16 @@ const METHOD_TABS: { id: MethodFilter; label: string }[] = [
   { id: "cashless", label: "Безнал" },
 ];
 
-const TYPE_TABS: { id: RevenueTypeFilter; label: string }[] = [
-  { id: "all", label: "Все виды" },
-  { id: "rent", label: "Аренда" },
-  { id: "extend", label: "Продление" },
-  { id: "fine", label: "Штраф" },
-  { id: "damage", label: "Ущерб" },
-  { id: "equipment_fee", label: "Экипировка" },
-  { id: "swap_fee", label: "Замена" },
-  { id: "parking", label: "Паркинг" },
+// Мультивыбор видов операций (пустой набор = все). «Новые аренды» и
+// «Продление» — отдельные чипы; можно выбрать несколько (напр. оба вместе).
+const TYPE_CHIPS: RevenueTypeKey[] = [
+  "rent",
+  "extend",
+  "fine",
+  "damage",
+  "equipment_fee",
+  "swap_fee",
+  "parking",
 ];
 
 /**
@@ -78,7 +80,16 @@ export function RevenueListModal({
   } | null>(initialRange);
   const [methodFilter, setMethodFilter] =
     useState<MethodFilter>(initialMethodFilter);
-  const [typeFilter, setTypeFilter] = useState<RevenueTypeFilter>("all");
+  const [selectedTypes, setSelectedTypes] = useState<Set<RevenueTypeKey>>(
+    new Set(),
+  );
+  const toggleType = (k: RevenueTypeKey) =>
+    setSelectedTypes((prev) => {
+      const next = new Set(prev);
+      if (next.has(k)) next.delete(k);
+      else next.add(k);
+      return next;
+    });
   const drawer = useDashboardDrawer();
 
   // Подписка на якоря: окно/подпись расчётного периода читаются из
@@ -91,7 +102,13 @@ export function RevenueListModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [period, customRange, anchorsQ.data],
   );
-  const analytics = useRevenueAnalytics({ scope, start, end });
+  const analytics = useRevenueAnalytics({
+    scope,
+    start,
+    end,
+    types: selectedTypes,
+    method: methodFilter,
+  });
   const periodLabel = customRange
     ? `${customRange.from.slice(8, 10)}.${customRange.from.slice(5, 7)} — ${customRange.to.slice(8, 10)}.${customRange.to.slice(5, 7)}`
     : period === "day"
@@ -147,8 +164,10 @@ export function RevenueListModal({
           </button>
         </div>
 
-        {/* Контролы: период (табы) + произвольный диапазон + фильтр способа */}
-        <div className="flex flex-wrap items-center gap-3 border-b border-border px-5 py-2.5">
+        {/* Контролы: период + диапазон + способ (строка 1) и виды (строка 2).
+            Все фильтры наверху; влияют и на график/сводку, и на список. */}
+        <div className="flex flex-col gap-2.5 border-b border-border px-5 py-2.5">
+          <div className="flex flex-wrap items-center gap-3">
           <div className="inline-flex rounded-full bg-surface-soft p-0.5">
             {TABS.map((t) => (
               <button
@@ -201,6 +220,40 @@ export function RevenueListModal({
               </button>
             ))}
           </div>
+          </div>
+          {/* Строка 2: мультифильтр по видам — влияет на ВСЕ цифры и список. */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="mr-1 text-[11px] font-semibold uppercase tracking-wider text-muted-2">
+              Виды
+            </span>
+            <button
+              type="button"
+              onClick={() => setSelectedTypes(new Set())}
+              className={cn(
+                "rounded-full px-2.5 py-0.5 text-[11.5px] font-semibold transition-colors",
+                selectedTypes.size === 0
+                  ? "bg-blue-600 text-white"
+                  : "bg-surface-soft text-muted-2 hover:text-ink",
+              )}
+            >
+              Все
+            </button>
+            {TYPE_CHIPS.map((k) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => toggleType(k)}
+                className={cn(
+                  "rounded-full px-2.5 py-0.5 text-[11.5px] font-semibold transition-colors",
+                  selectedTypes.has(k)
+                    ? "bg-blue-600 text-white"
+                    : "bg-surface-soft text-muted-2 hover:text-ink",
+                )}
+              >
+                {REVENUE_TYPE_LABEL[k]}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto scrollbar-thin p-4">
@@ -211,34 +264,16 @@ export function RevenueListModal({
             start={start}
             end={end}
           />
-          <div className="mb-2 mt-5 flex flex-wrap items-center gap-2">
-            <span className="mr-1 text-[12px] font-semibold uppercase tracking-wider text-muted-2">
+          <div className="mb-2 mt-5">
+            <span className="text-[12px] font-semibold uppercase tracking-wider text-muted-2">
               Платежи за период · детализация
             </span>
-            {/* Фильтр по виду операции — сужает список (не сводку выше). */}
-            <div className="inline-flex flex-wrap gap-1">
-              {TYPE_TABS.map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => setTypeFilter(t.id)}
-                  className={cn(
-                    "rounded-full px-2.5 py-0.5 text-[11px] font-semibold transition-colors",
-                    typeFilter === t.id
-                      ? "bg-blue-600 text-white"
-                      : "bg-surface-soft text-muted-2 hover:text-ink",
-                  )}
-                >
-                  {t.label}
-                </button>
-              ))}
-            </div>
           </div>
           <RevenueRentalsList
             period={period}
             range={customRange}
             methodFilter={methodFilter}
-            typeFilter={typeFilter}
+            types={selectedTypes}
             scope={scope}
             onRowClick={(id) => {
               requestClose();

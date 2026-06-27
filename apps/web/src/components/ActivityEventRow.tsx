@@ -780,28 +780,121 @@ function buildActivitySummary(
     };
   }
 
-  // ── Начисление долга / ущерб / просрочка ──
-  // Акт ущерба логируется как entity='damage_report' action='created' — ловим
-  // по entity, иначе он проваливался в «Отредактирована аренда» с непонятным
-  // «Позиции: → Приборная панель» (фикс самодостаточности записей журнала).
+  // ── Акт о повреждениях — КАЖДОЕ действие со своей подписью и деталями
+  //    (создан / изменён / оплата / согласование / удалён / медиа), а не общий
+  //    безликий «Зафиксирован ущерб». Правило проекта: запись журнала
+  //    самодостаточна — видно ЧТО изменилось и насколько (было→стало). ──
+  if (item.entity === "damage_report") {
+    const m = readRecord(item.meta);
+    if (action === "payment") {
+      const amount = typeof m?.amount === "number" ? m.amount : null;
+      // Способ оплаты допишет formatActivitySummary («Оплата: …») — не дублируем.
+      return {
+        title: "Оплата ущерба",
+        change: null,
+        extras: [],
+        headline:
+          amount != null
+            ? { text: `+${money(amount)}`, tone: "green" }
+            : undefined,
+      };
+    }
+    if (action === "agreement") {
+      const ag = readRecord(diff?.agreement);
+      return {
+        title: "Согласование акта",
+        change:
+          ag && (ag.from != null || ag.to != null)
+            ? {
+                from: ag.from != null ? String(ag.from) : null,
+                to: ag.to != null ? String(ag.to) : null,
+                tone: "blue",
+              }
+            : null,
+        extras: [],
+      };
+    }
+    if (action === "deleted") {
+      return { title: "Акт ущерба удалён", change: null, extras: [] };
+    }
+    if (action.includes("media")) {
+      const kind = typeof m?.kind === "string" ? m.kind : null;
+      return {
+        title:
+          kind === "video" ? "Добавлено видео к акту" : "Добавлено фото к акту",
+        change: null,
+        extras: [],
+      };
+    }
+    // updated (правка) — читается как история ревизий: ЧТО изменилось
+    // (позиция добавлена/удалена/изменена с суммой) + итог было→стало. Полный
+    // список позиций НЕ перечисляем — важно изменение.
+    if (action === "updated") {
+      const dmg = readRecord(diff?.damage);
+      const pd = readRecord(m?.posDiff);
+      const extras: string[] = [];
+      const each = (
+        arr: unknown,
+        fmt: (r: Record<string, unknown>) => string,
+      ) => {
+        if (Array.isArray(arr))
+          for (const x of arr) {
+            const r = readRecord(x);
+            if (r) extras.push(fmt(r));
+          }
+      };
+      if (pd) {
+        each(pd.added, (r) => `Добавлена «${r.name}» +${money(r.sum)}`);
+        each(pd.removed, (r) => `Удалена «${r.name}» −${money(r.sum)}`);
+        each(
+          pd.changed,
+          (r) => `«${r.name}»: ${money(r.from)} → ${money(r.to)}`,
+        );
+      }
+      // Итог отдельной строкой (в feed-режиме красная change-пилюля не
+      // рендерится — там только синие; денежное идёт текстом).
+      if (
+        dmg &&
+        dmg.from != null &&
+        dmg.to != null &&
+        Number(dmg.from) !== Number(dmg.to)
+      )
+        extras.push(`Итог: ${money(dmg.from)} → ${money(dmg.to)}`);
+      const revNo = typeof m?.revisionNo === "number" ? m.revisionNo : null;
+      return {
+        title: `Изменён акт ущерба${revNo ? ` · ред. ${revNo}` : ""}`,
+        change: null,
+        extras,
+      };
+    }
+    // created — позиции + сумма.
+    const dmgC = readRecord(diff?.damage);
+    const itemsRec = readRecord(diff?.items);
+    const nowItems = itemsRec ? readStringList(itemsRec.to) : [];
+    const extras: string[] = [];
+    if (nowItems.length) extras.push(`Повреждения: ${nowItems.join(", ")}`);
+    return {
+      title: "Зафиксирован ущерб",
+      change: null,
+      extras,
+      headline:
+        dmgC && dmgC.to != null
+          ? { text: `+${money(dmgC.to)}`, tone: "red" }
+          : undefined,
+    };
+  }
+
+  // ── Начисление долга / просрочка (не акт — manual_charge, overdue) ──
   if (
     action.includes("debt") ||
     action.includes("overdue") ||
-    action.includes("damage") ||
-    item.entity === "damage_report"
+    action.includes("damage")
   ) {
     const key = ["debt", "damage", "fine"].find((k) => diff?.[k]);
     const d = key ? readRecord(diff?.[key]) : null;
-    const isDamage =
-      action.includes("damage") || item.entity === "damage_report";
-    const title = isDamage ? "Зафиксирован ущерб" : "Начислен долг";
-    // Позиции повреждений (diff.items.to) — человекочитаемой строкой.
-    const itemsRec = readRecord(diff?.items);
-    const damaged = itemsRec ? readStringList(itemsRec.to) : [];
-    const extras: string[] = [];
-    if (damaged.length) extras.push(`Повреждения: ${damaged.join(", ")}`);
-    // «За что» начислен долг: комментарий оператора. Новые события несут его
-    // в meta.comment; старые — хвостом summary («… по аренде #N: текст»).
+    const title = action.includes("damage") ? "Зафиксирован ущерб" : "Начислен долг";
+    // «За что» начислен долг: комментарий оператора (meta.comment либо хвост
+    // summary у старых записей).
     const mDebt = readRecord(item.meta);
     const debtComment =
       typeof mDebt?.comment === "string" && mDebt.comment.trim()
@@ -809,6 +902,7 @@ function buildActivitySummary(
         : action === "debt_manual"
           ? commentFromSummary(item.summary)
           : null;
+    const extras: string[] = [];
     if (debtComment) extras.push(`«${debtComment}»`);
     return {
       title,
@@ -975,8 +1069,18 @@ function buildActivitySummary(
       })
       .filter((x): x is string => x != null)
       .slice(0, 5);
-    // Если diff не дал человекочитаемых полей — оставляем заголовок без хвоста.
-    return { title: "Отредактирована аренда", change: null, extras };
+    // Заголовок по сущности (а не всегда «аренда») — запись самодостаточна.
+    const editTitle =
+      item.entity === "scooter"
+        ? "Изменён скутер"
+        : item.entity === "client"
+          ? "Изменён клиент"
+          : item.entity === "debtor"
+            ? "Изменение по долгу"
+            : item.entity === "damage_report"
+              ? "Изменён акт ущерба"
+              : "Отредактирована аренда";
+    return { title: editTitle, change: null, extras };
   }
 
   // ── Fallback — короткий заголовок без «#N · Имя · Модель» ──
@@ -1408,16 +1512,24 @@ export function ActivityEventRow({
     const extrasToShow =
       maxExtras != null ? view.extras.slice(0, maxExtras) : view.extras;
     const openPrimary = () => {
-      if (item.entityId == null) return;
-      if (item.entity === "rental") onOpenRental?.(item.entityId);
-      else if (item.entity === "scooter") onOpenScooter?.(item.entityId);
-      else if (item.entity === "client") onOpenClient?.(item.entityId);
+      if (item.entity === "rental" && item.entityId != null)
+        onOpenRental?.(item.entityId);
+      else if (item.entity === "scooter" && item.entityId != null)
+        onOpenScooter?.(item.entityId);
+      else if (item.entity === "client" && item.entityId != null)
+        onOpenClient?.(item.entityId);
+      // Акт ущерба / долг: entityId — это id акта/дела, поэтому открываем
+      // СВЯЗАННУЮ аренду (контекст резолвит её из summary) — там сам акт в
+      // карточке. Запрос заказчика: клик по записи → попасть в акт.
+      else if (contextParts?.rental?.id != null)
+        onOpenRental?.(contextParts.rental.id);
     };
     const primaryClickable =
-      item.entityId != null &&
-      ((item.entity === "rental" && !!onOpenRental) ||
-        (item.entity === "scooter" && !!onOpenScooter) ||
-        (item.entity === "client" && !!onOpenClient));
+      (item.entityId != null &&
+        ((item.entity === "rental" && !!onOpenRental) ||
+          (item.entity === "scooter" && !!onOpenScooter) ||
+          (item.entity === "client" && !!onOpenClient))) ||
+      (contextParts?.rental?.id != null && !!onOpenRental);
     const headlineTone =
       view.headline?.tone === "green"
         ? "text-green-ink"
