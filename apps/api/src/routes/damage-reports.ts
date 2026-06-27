@@ -127,6 +127,17 @@ const PaymentBody = z.object({
   method: z.enum(["cash", "card", "transfer"]).default("cash"),
 });
 
+const AgreementBody = z.object({
+  /** Статус согласования акта клиентом. */
+  agreement: z.enum(["pending", "agreed", "disputed"]),
+});
+
+const AGREEMENT_LABEL: Record<string, string> = {
+  pending: "на согласовании",
+  agreed: "согласовано",
+  disputed: "спор",
+};
+
 function getUserId(req: FastifyRequest): number | null {
   const u = (req as unknown as { user?: { userId?: number } }).user;
   return u?.userId ?? null;
@@ -668,6 +679,51 @@ export async function damageReportsRoutes(app: FastifyInstance) {
           method: parsed.data.method,
         },
       });
+      return await loadReportFull(id);
+    },
+  );
+
+  /** Статус согласования акта клиентом (на согласовании / согласовано / спор).
+   *  Меняет ТОЛЬКО workflow-поле clientAgreement + пишет в ленту с diff. Ревизию
+   *  НЕ создаёт (это не правка позиций), хэш-цепочку ревизий не трогает. */
+  app.post<{ Params: { id: string } }>(
+    "/:id/agreement",
+    async (req, reply) => {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id))
+        return reply.code(400).send({ error: "bad id" });
+      const parsed = AgreementBody.safeParse(req.body);
+      if (!parsed.success)
+        return reply
+          .code(400)
+          .send({ error: "validation", issues: parsed.error.issues });
+      const [report] = await db
+        .select()
+        .from(damageReports)
+        .where(eq(damageReports.id, id));
+      if (!report) return reply.code(404).send({ error: "not found" });
+      const from = report.clientAgreement;
+      const to = parsed.data.agreement;
+      if (from !== to) {
+        await db
+          .update(damageReports)
+          .set({ clientAgreement: to, updatedAt: new Date() })
+          .where(eq(damageReports.id, id));
+        await logActivity(req, {
+          entity: "damage_report",
+          entityId: id,
+          action: "agreement",
+          summary: `Акт #${id}: согласование «${AGREEMENT_LABEL[from] ?? from}» → «${AGREEMENT_LABEL[to] ?? to}»`,
+          diff: {
+            agreement: {
+              label: "Согласование",
+              from: AGREEMENT_LABEL[from] ?? from,
+              to: AGREEMENT_LABEL[to] ?? to,
+              kind: "text",
+            },
+          },
+        });
+      }
       return await loadReportFull(id);
     },
   );

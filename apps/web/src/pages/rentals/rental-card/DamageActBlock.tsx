@@ -14,7 +14,12 @@ import { cn } from "@/lib/utils";
 import { fileUrl } from "@/lib/files";
 import { MediaLightbox, type LightboxItem } from "@/components/MediaLightbox";
 import { DamageRevisionHistory } from "./DamageRevisionHistory";
-import type { ApiDamageReport } from "@/lib/api/damage-reports";
+import {
+  useDamageAgreement,
+  type ApiDamageReport,
+} from "@/lib/api/damage-reports";
+
+type AgreementKey = "pending" | "agreed" | "disputed";
 
 /**
  * Read-only витрина акта(ов) о повреждениях в карточке аренды: суммы + долг +
@@ -39,6 +44,7 @@ export function DamageActBlock({
   onEditReport,
   onPrintReport,
   onOpenDebtor,
+  onPrintClaim,
   deposit,
   depositOriginal,
   onTopupDeposit,
@@ -50,6 +56,9 @@ export function DamageActBlock({
   onPrintReport?: (reportId: number) => void;
   /** Этап 3: открыть/завести досудебное дело по акту (передаём акт + долг). */
   onOpenDebtor?: (report: ApiDamageReport, debt: number) => void;
+  /** Упрощённый путь: открыть печать досудебной претензии по акту (пока вкладка
+   *  «Должники» не доделана — кнопка печатает претензию, а не заводит дело). */
+  onPrintClaim?: (report: ApiDamageReport) => void;
   /** Текущий залог аренды — для сигнала «пополнить», если из него списали. */
   deposit?: number;
   /** Исходный (полный) залог — если deposit < этого, залог неполный. */
@@ -90,24 +99,86 @@ export function DamageActBlock({
   }));
   const [lightbox, setLightbox] = useState<number | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  const setAgreement = useDamageAgreement();
+  const [agreeOpen, setAgreeOpen] = useState(false);
 
   return (
     <div className="flex flex-col gap-3">
-      {agreement && (
+      {agreement && latest && (
         <div className="flex items-center justify-between gap-2">
           <span className="text-[12px] text-muted">
             {reports.length > 1
               ? `${reports.length} акта о повреждениях`
               : "Акт о повреждениях"}
           </span>
-          <span
-            className={cn(
-              "shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-bold",
-              agreement.cls,
+          {/* Статус согласования кликабельный → выбор из трёх состояний. */}
+          <div className="relative shrink-0">
+            <button
+              type="button"
+              onClick={() => setAgreeOpen((v) => !v)}
+              disabled={setAgreement.isPending}
+              title="Сменить статус согласования"
+              className={cn(
+                "flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-bold transition-opacity hover:opacity-80 disabled:opacity-50",
+                agreement.cls,
+              )}
+            >
+              {agreement.label}
+              <ChevronDown
+                size={11}
+                className={cn("transition-transform", agreeOpen && "rotate-180")}
+              />
+            </button>
+            {agreeOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-20"
+                  onClick={() => setAgreeOpen(false)}
+                />
+                <div className="absolute right-0 top-full z-30 mt-1.5 w-48 overflow-hidden rounded-xl border border-border bg-surface py-1 shadow-card-lg">
+                  {(["pending", "agreed", "disputed"] as AgreementKey[]).map(
+                    (k) => {
+                      const cur = latest.clientAgreement === k;
+                      return (
+                        <button
+                          key={k}
+                          type="button"
+                          onClick={() => {
+                            if (!cur)
+                              setAgreement.mutate({
+                                reportId: latest.id,
+                                agreement: k,
+                              });
+                            setAgreeOpen(false);
+                          }}
+                          className={cn(
+                            "flex w-full items-center gap-2 px-3 py-2.5 text-left text-[12.5px] font-semibold text-ink transition-colors hover:bg-surface-soft",
+                            cur && "bg-surface-soft",
+                          )}
+                        >
+                          <span
+                            className={cn(
+                              "h-2.5 w-2.5 shrink-0 rounded-full",
+                              k === "pending" && "bg-orange-ink",
+                              k === "agreed" && "bg-green-ink",
+                              k === "disputed" && "bg-red-ink",
+                            )}
+                          />
+                          {AGREEMENT[k].label}
+                          {cur && (
+                            <Check
+                              size={14}
+                              className="ml-auto shrink-0 text-blue-600"
+                            />
+                          )}
+                        </button>
+                      );
+                    },
+                  )}
+                </div>
+              </>
             )}
-          >
-            {agreement.label}
-          </span>
+          </div>
         </div>
       )}
 
@@ -268,13 +339,16 @@ export function DamageActBlock({
         </button>
       )}
 
-      {latest && debt > 0 && onOpenDebtor && (
+      {latest && debt > 0 && (onPrintClaim || onOpenDebtor) && (
         <button
           type="button"
-          onClick={() => onOpenDebtor(latest, debt)}
+          onClick={() =>
+            onPrintClaim ? onPrintClaim(latest) : onOpenDebtor?.(latest, debt)
+          }
           className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-red-soft text-[13px] font-bold text-red-ink transition-colors active:scale-[0.98]"
         >
-          <Scale size={15} /> Досудебное дело →
+          <Scale size={15} />{" "}
+          {onPrintClaim ? "Досудебная претензия" : "Досудебное дело →"}
         </button>
       )}
 

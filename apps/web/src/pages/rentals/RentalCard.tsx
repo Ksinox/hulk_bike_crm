@@ -30,7 +30,6 @@ import { useIsMobile } from "@/lib/useIsMobile";
 import { useReloadRestoredState } from "@/lib/usePersistedState";
 import { MobileBottomSheet } from "@/mobile/BottomSheet";
 import { useCallClient } from "@/mobile/call";
-import { openOrCreateDamageDebtor } from "@/lib/api/debtors";
 import {
   MIN_RENTAL_DAYS,
   ratePeriodForDays,
@@ -1882,6 +1881,7 @@ export function RentalCard({
           здесь только рендер + hover-поповер с детальным составом. */}
       <KpiCard
         label="Долг"
+        damageInDebt={damageBalance > 0}
         depositAlert={
           depositGap > 0
             ? {
@@ -2585,14 +2585,9 @@ export function RentalCard({
                 reports={reports}
                 onEditReport={(id) => setEditingReportId(id)}
                 onPrintReport={(id) => setPreviewDamageId(id)}
-                onOpenDebtor={(report, debt) =>
-                  openOrCreateDamageDebtor({
-                    reportId: report.id,
-                    rentalId: report.rentalId,
-                    clientId: rental.clientId ?? null,
-                    amount: debt,
-                  })
-                }
+                // Пока «Должники» не доделаны: кнопка печатает досудебную
+                // претензию, а не заводит дело (переход вернём позже).
+                onPrintClaim={(report) => setPreviewClaimId(report.id)}
                 deposit={rental.deposit ?? 0}
                 depositOriginal={rental.depositOriginal ?? rental.deposit ?? 0}
                 onTopupDeposit={() => setTopupOpen(true)}
@@ -3563,6 +3558,7 @@ function KpiCard({
   accent = "default",
   popover,
   depositAlert,
+  damageInDebt = false,
 }: {
   label: string;
   value: string;
@@ -3576,6 +3572,9 @@ function KpiCard({
   /** Красный флажок «залог неполный» в углу плашки. Клик → пополнить залог
    *  (тот же диалог). stopPropagation — не задевает тап/поповер плашки. */
   depositAlert?: { onClick: () => void; title: string };
+  /** Значок-треугольник «в долг входит ущерб» — рядом со значением, чтобы
+   *  с одного взгляда понять, что по аренде есть повреждения. */
+  damageInDebt?: boolean;
 }) {
   const isMobile = useIsMobile();
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -3673,10 +3672,17 @@ function KpiCard({
       </div>
       <div
         className={cn(
-          "mt-1 font-display text-[20px] font-extrabold leading-tight tabular-nums",
+          "mt-1 flex items-center gap-1.5 font-display text-[20px] font-extrabold leading-tight tabular-nums",
           valueColor,
         )}
       >
+        {damageInDebt && (
+          <AlertTriangle
+            size={16}
+            className="shrink-0 text-red-ink"
+            aria-label="В долг входит ущерб"
+          />
+        )}
         {value}
       </div>
       {/* Инлайн-расшифровка — только на десктопе; на мобиле она в сниппете. */}
