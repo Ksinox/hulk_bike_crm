@@ -826,37 +826,53 @@ function buildActivitySummary(
         extras: [],
       };
     }
-    // created / updated — позиции + сумма (на правке показываем было→стало
-    // и что именно добавилось/убавилось).
-    const dmg = readRecord(diff?.damage);
+    // updated (правка) — читается как история ревизий: ЧТО изменилось
+    // (позиция добавлена/удалена/изменена с суммой) + итог было→стало. Полный
+    // список позиций НЕ перечисляем — важно изменение.
+    if (action === "updated") {
+      const dmg = readRecord(diff?.damage);
+      const pd = readRecord(m?.posDiff);
+      const extras: string[] = [];
+      const each = (
+        arr: unknown,
+        fmt: (r: Record<string, unknown>) => string,
+      ) => {
+        if (Array.isArray(arr))
+          for (const x of arr) {
+            const r = readRecord(x);
+            if (r) extras.push(fmt(r));
+          }
+      };
+      if (pd) {
+        each(pd.added, (r) => `Добавлена «${r.name}» +${money(r.sum)}`);
+        each(pd.removed, (r) => `Удалена «${r.name}» −${money(r.sum)}`);
+        each(
+          pd.changed,
+          (r) => `«${r.name}»: ${money(r.from)} → ${money(r.to)}`,
+        );
+      }
+      const revNo = typeof m?.revisionNo === "number" ? m.revisionNo : null;
+      return {
+        title: `Изменён акт ущерба${revNo ? ` · ред. ${revNo}` : ""}`,
+        change: dmg
+          ? { from: money(dmg.from), to: money(dmg.to), tone: "red" }
+          : null,
+        extras,
+      };
+    }
+    // created — позиции + сумма.
+    const dmgC = readRecord(diff?.damage);
     const itemsRec = readRecord(diff?.items);
     const nowItems = itemsRec ? readStringList(itemsRec.to) : [];
-    const wasItems = itemsRec ? readStringList(itemsRec.from) : [];
-    const isEdit = action === "updated" || (!!dmg && Number(dmg.from ?? 0) > 0);
     const extras: string[] = [];
     if (nowItems.length) extras.push(`Повреждения: ${nowItems.join(", ")}`);
-    if (isEdit && wasItems.length) {
-      const added = nowItems.filter((x) => !wasItems.includes(x));
-      const removed = wasItems.filter((x) => !nowItems.includes(x));
-      if (added.length) extras.push(`Добавлено: ${added.join(", ")}`);
-      if (removed.length) extras.push(`Убрано: ${removed.join(", ")}`);
-    }
-    const revNo = typeof m?.revisionNo === "number" ? m.revisionNo : null;
     return {
-      title: isEdit
-        ? `Изменён акт ущерба${revNo ? ` · ред. ${revNo}` : ""}`
-        : "Зафиксирован ущерб",
-      change: dmg
-        ? {
-            from: Number(dmg.from ?? 0) > 0 ? money(dmg.from) : "—",
-            to: money(dmg.to),
-            tone: "red",
-          }
-        : null,
+      title: "Зафиксирован ущерб",
+      change: null,
       extras,
       headline:
-        dmg && dmg.to != null
-          ? { text: isEdit ? money(dmg.to) : `+${money(dmg.to)}`, tone: "red" }
+        dmgC && dmgC.to != null
+          ? { text: `+${money(dmgC.to)}`, tone: "red" }
           : undefined,
     };
   }
@@ -1489,16 +1505,24 @@ export function ActivityEventRow({
     const extrasToShow =
       maxExtras != null ? view.extras.slice(0, maxExtras) : view.extras;
     const openPrimary = () => {
-      if (item.entityId == null) return;
-      if (item.entity === "rental") onOpenRental?.(item.entityId);
-      else if (item.entity === "scooter") onOpenScooter?.(item.entityId);
-      else if (item.entity === "client") onOpenClient?.(item.entityId);
+      if (item.entity === "rental" && item.entityId != null)
+        onOpenRental?.(item.entityId);
+      else if (item.entity === "scooter" && item.entityId != null)
+        onOpenScooter?.(item.entityId);
+      else if (item.entity === "client" && item.entityId != null)
+        onOpenClient?.(item.entityId);
+      // Акт ущерба / долг: entityId — это id акта/дела, поэтому открываем
+      // СВЯЗАННУЮ аренду (контекст резолвит её из summary) — там сам акт в
+      // карточке. Запрос заказчика: клик по записи → попасть в акт.
+      else if (contextParts?.rental?.id != null)
+        onOpenRental?.(contextParts.rental.id);
     };
     const primaryClickable =
-      item.entityId != null &&
-      ((item.entity === "rental" && !!onOpenRental) ||
-        (item.entity === "scooter" && !!onOpenScooter) ||
-        (item.entity === "client" && !!onOpenClient));
+      (item.entityId != null &&
+        ((item.entity === "rental" && !!onOpenRental) ||
+          (item.entity === "scooter" && !!onOpenScooter) ||
+          (item.entity === "client" && !!onOpenClient))) ||
+      (contextParts?.rental?.id != null && !!onOpenRental);
     const headlineTone =
       view.headline?.tone === "green"
         ? "text-green-ink"

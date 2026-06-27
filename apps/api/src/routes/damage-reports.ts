@@ -597,14 +597,62 @@ export async function damageReportsRoutes(app: FastifyInstance) {
         to: "сброшено — на согласовании",
         kind: "text",
       };
+    // Позиционный diff С СУММАМИ — чтобы запись в ленте читалась как история
+    // ревизий («Добавлена «X» +N ₽», итог было→стало). Сопоставление: каталог
+    // по priceItemId, своя позиция — по названию (с резолвом «Прочее
+    // повреждение» → комментарий, как в печати/ревизиях).
+    const posTitle = (it: { name: string; comment?: string | null }) => {
+      const nm = (it.name ?? "").trim();
+      const cm = (it.comment ?? "").trim();
+      return (nm === "" || nm === "Прочее повреждение") && cm ? cm : nm || "Позиция";
+    };
+    const posKey = (it: {
+      priceItemId?: number | null;
+      name: string;
+      comment?: string | null;
+    }) =>
+      it.priceItemId != null
+        ? `cat:${it.priceItemId}`
+        : `custom:${posTitle(it).toLowerCase()}`;
+    const posSum = (it: { finalPrice: number; quantity: number }) =>
+      it.finalPrice * it.quantity;
+    let posDiff:
+      | {
+          added: { name: string; sum: number }[];
+          removed: { name: string; sum: number }[];
+          changed: { name: string; from: number; to: number }[];
+        }
+      | undefined;
+    if (parsed.data.items) {
+      const oldMap = new Map(oldItems.map((it) => [posKey(it), it] as const));
+      const newMap = new Map(newItems.map((it) => [posKey(it), it] as const));
+      posDiff = {
+        added: newItems
+          .filter((it) => !oldMap.has(posKey(it)))
+          .map((it) => ({ name: posTitle(it), sum: posSum(it) })),
+        removed: oldItems
+          .filter((it) => !newMap.has(posKey(it)))
+          .map((it) => ({ name: posTitle(it), sum: posSum(it) })),
+        changed: newItems
+          .filter((it) => {
+            const o = oldMap.get(posKey(it));
+            return !!o && posSum(o) !== posSum(it);
+          })
+          .map((it) => {
+            const o = oldMap.get(posKey(it))!;
+            return { name: posTitle(it), from: posSum(o), to: posSum(it) };
+          }),
+      };
+    }
     await logActivity(req, {
       entity: "damage_report",
       entityId: id,
       action: "updated",
-      summary: `Акт о повреждениях #${id} изменён → ревизия ${nextRevNo}${
+      // «Аренда #NNNN» в начале — контекст «по какой аренде» в ленте.
+      summary: `Аренда #${String(report.rentalId).padStart(4, "0")}: изменён акт #${id} → ревизия ${nextRevNo}${
         wasAgreed ? " (сброшено согласование)" : ""
       }`,
-      meta: { revisionNo: nextRevNo, total: newTotal },
+      meta: { revisionNo: nextRevNo, total: newTotal, posDiff },
       diff: Object.keys(diff).length > 0 ? diff : undefined,
     });
     return await loadReportFull(id);
