@@ -8,6 +8,7 @@ import {
   isRevenuePayment,
   isCashPayment,
   type RevenueScope,
+  type MethodFilter,
 } from "@/pages/dashboard/RevenueRentalsList";
 
 /**
@@ -125,8 +126,12 @@ export function useRevenueAnalytics(opts: {
   scope: RevenueScope;
   start: Date;
   end: Date;
+  /** Мультифильтр по видам операций (пусто/undefined = все виды). */
+  types?: Set<RevenueTypeKey>;
+  /** Фильтр способа оплаты (all/cash/cashless). Пересчитывает ВСЕ цифры. */
+  method?: MethodFilter;
 }): RevenueAnalytics {
-  const { scope, start, end } = opts;
+  const { scope, start, end, types, method = "all" } = opts;
   const { data: payments = [] } = useApiPayments();
   const { data: activeRentalsData = [] } = useApiRentals();
   const { data: archivedRentals = [] } = useApiRentalsArchived();
@@ -159,8 +164,20 @@ export function useRevenueAnalytics(opts: {
     const windowRentalIds = new Set<number>();
     let count = 0;
 
+    // Мультифильтр (виды + способ) — применяем и к текущему окну, и к
+    // предыдущему (для корректного Δ%), чтобы ВСЕ цифры/график/структура
+    // пересчитывались под выбор оператора.
+    const typeSet = types && types.size > 0 ? types : null;
+    const passFilter = (p: ApiPayment) => {
+      if (method === "cash" && !isCashPayment(p)) return false;
+      if (method === "cashless" && isCashPayment(p)) return false;
+      if (typeSet && !typeSet.has(typeKeyOf(p))) return false;
+      return true;
+    };
+
     for (const p of payments) {
       if (!inScope(p)) continue;
+      if (!passFilter(p)) continue;
       const t = new Date(p.paidAt!).getTime();
       // предыдущий период (для Δ%)
       if (t >= prevStartMs && t < startMs) prevTotal += p.amount;
@@ -338,5 +355,7 @@ export function useRevenueAnalytics(opts: {
     scope,
     start,
     end,
+    types,
+    method,
   ]);
 }

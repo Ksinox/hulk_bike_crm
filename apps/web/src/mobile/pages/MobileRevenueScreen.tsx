@@ -5,10 +5,23 @@ import {
   RevenueRentalsList,
   resolveRevenueWindow,
   billingPeriodLabel,
+  REVENUE_TYPE_LABEL,
   type RevenuePeriod,
   type MethodFilter,
   type RevenueScope,
+  type RevenueTypeKey,
 } from "@/pages/dashboard/RevenueRentalsList";
+
+// Мультивыбор видов операций (пустой набор = все), как на десктопе.
+const TYPE_CHIPS: RevenueTypeKey[] = [
+  "rent",
+  "extend",
+  "fine",
+  "damage",
+  "equipment_fee",
+  "swap_fee",
+  "parking",
+];
 import { RevenueDashboard } from "@/pages/dashboard/RevenueDashboard";
 import { InlineRangeCalendar } from "@/components/ui/date-picker";
 import { useRevenueAnalytics } from "@/lib/useRevenueAnalytics";
@@ -34,6 +47,16 @@ export function MobileRevenueScreen({
 }) {
   const [period, setPeriod] = useState<RevenuePeriod>("month");
   const [method, setMethod] = useState<MethodFilter>("all");
+  const [selectedTypes, setSelectedTypes] = useState<Set<RevenueTypeKey>>(
+    new Set(),
+  );
+  const toggleType = (k: RevenueTypeKey) =>
+    setSelectedTypes((prev) => {
+      const next = new Set(prev);
+      if (next.has(k)) next.delete(k);
+      else next.add(k);
+      return next;
+    });
   const [openId, setOpenId] = useState<number | null>(null);
   // #24: произвольный период (календарь) на мобиле — как на десктопе. Если
   // задан, перекрывает чипсы День/Неделя/Месяц (они подсвечиваются как
@@ -55,7 +78,13 @@ export function MobileRevenueScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [period, customRange, anchorsQ.data],
   );
-  const a = useRevenueAnalytics({ scope, start, end });
+  const a = useRevenueAnalytics({
+    scope,
+    start,
+    end,
+    types: selectedTypes,
+    method,
+  });
 
   const active = useRentals();
   const archived = useArchivedRentals();
@@ -170,6 +199,37 @@ export function MobileRevenueScreen({
           value={method}
           onChange={setMethod}
         />
+        {/* Мультифильтр по видам — влияет на все цифры/график и список.
+            Скроллится горизонтально (чипов много на узком экране). */}
+        <div className="-mx-3 flex gap-1.5 overflow-x-auto px-3 pb-0.5 scrollbar-none">
+          <button
+            type="button"
+            onClick={() => setSelectedTypes(new Set())}
+            className={cn(
+              "shrink-0 whitespace-nowrap rounded-full px-3.5 py-2 text-[12.5px] font-semibold transition-colors",
+              selectedTypes.size === 0
+                ? "bg-blue-600 text-white"
+                : "bg-surface-soft text-muted-2",
+            )}
+          >
+            Все
+          </button>
+          {TYPE_CHIPS.map((k) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => toggleType(k)}
+              className={cn(
+                "shrink-0 whitespace-nowrap rounded-full px-3.5 py-2 text-[12.5px] font-semibold transition-colors",
+                selectedTypes.has(k)
+                  ? "bg-blue-600 text-white"
+                  : "bg-surface-soft text-muted-2",
+              )}
+            >
+              {REVENUE_TYPE_LABEL[k]}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Прокручиваемое тело: аналитика + детализация платежей */}
@@ -188,6 +248,7 @@ export function MobileRevenueScreen({
           period={period}
           range={customRange}
           methodFilter={method}
+          types={selectedTypes}
           scope={scope}
           compact={false}
           onRowClick={(id) => setOpenId(id)}
