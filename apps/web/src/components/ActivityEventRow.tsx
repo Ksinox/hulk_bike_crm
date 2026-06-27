@@ -851,12 +851,19 @@ function buildActivitySummary(
           (r) => `«${r.name}»: ${money(r.from)} → ${money(r.to)}`,
         );
       }
+      // Итог отдельной строкой (в feed-режиме красная change-пилюля не
+      // рендерится — там только синие; денежное идёт текстом).
+      if (
+        dmg &&
+        dmg.from != null &&
+        dmg.to != null &&
+        Number(dmg.from) !== Number(dmg.to)
+      )
+        extras.push(`Итог: ${money(dmg.from)} → ${money(dmg.to)}`);
       const revNo = typeof m?.revisionNo === "number" ? m.revisionNo : null;
       return {
         title: `Изменён акт ущерба${revNo ? ` · ред. ${revNo}` : ""}`,
-        change: dmg
-          ? { from: money(dmg.from), to: money(dmg.to), tone: "red" }
-          : null,
+        change: null,
         extras,
       };
     }
