@@ -41,6 +41,7 @@ import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { MobileApp } from "@/mobile/MobileApp";
 import { RentalCalculator } from "@/pages/calculator/RentalCalculator";
+import { DirectorKeyGateProvider } from "@/components/DirectorKeyGate";
 
 export function App() {
   const isMobile = useIsMobile();
@@ -133,6 +134,7 @@ export function App() {
         {updateToastNode}
         <NewApplicationDetector />
         <RentalCalculator />
+        <DirectorKeyGateProvider />
         <ToastContainer />
         <ConfirmContainer />
         <PickContainer />
@@ -147,6 +149,7 @@ export function App() {
       {updateToastNode}
       <NewApplicationDetector />
       <RentalCalculator />
+      <DirectorKeyGateProvider />
       <ToastContainer />
       <ConfirmContainer />
       <PickContainer />

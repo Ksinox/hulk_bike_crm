@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePatchScooter } from "@/lib/api/scooters";
+import { setNextApprovalContext } from "@/lib/directorGate";
 import { useApiRentals } from "@/lib/api/rentals";
 import type { ApiScooter, ScooterBaseStatus } from "@/lib/api/types";
 import { navigate } from "@/app/navigationStore";
@@ -45,6 +46,15 @@ export function ScooterStatusModal({
   const submit = async () => {
     if (selected === scooter.baseStatus) return onClose();
     try {
+      // Пункт 1: перенос техники между категориями — защищённое действие;
+      // краткий отчёт для окна «Ключ директора».
+      setNextApprovalContext({
+        summary: `Перенос ${scooter.name}: «${optionLabel(scooter.baseStatus)}» → «${optionLabel(selected)}»`,
+        details: [
+          `Скутер: ${scooter.name}${scooter.frameNumber ? ` · рама ${scooter.frameNumber}` : ""}`,
+          "Категория в парке изменится сразу после подтверждения.",
+        ],
+      });
       await patch.mutateAsync({ id: scooter.id, patch: { baseStatus: selected } });
       toast.success("Статус изменён", `${scooter.name}: «${optionLabel(selected)}»`);
       onClose();

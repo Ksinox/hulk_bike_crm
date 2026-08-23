@@ -188,8 +188,12 @@ export async function approvalsRoutes(app: FastifyInstance) {
         return reply
           .code(403)
           .send({ error: "wrong_key", message: "Неверный ключ." });
+      // Полезная нагрузка pass-токена отличается от сессионной (dk/act),
+      // поэтому каст: @fastify/jwt типизирован под JwtPayload сессии.
       const pass = app.jwt.sign(
-        { dk: true, act: parsed.data.action ?? null },
+        { dk: true, act: parsed.data.action ?? null } as unknown as Parameters<
+          typeof app.jwt.sign
+        >[0],
         { expiresIn: "5m" },
       );
       return { ok: true, pass };

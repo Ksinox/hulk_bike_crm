@@ -113,6 +113,7 @@ import { confirmDialog, pickAction, promptDialog } from "@/lib/toast";
 import { toast } from "@/lib/toast";
 import { toastRentalDone } from "./rentalUndo";
 import { ApiError, api } from "@/lib/api";
+import { setNextApprovalContext } from "@/lib/directorGate";
 
 // v0.6.44: tabs убраны, оставлен type-alias для совместимости с props
 // (initialTab — может прийти при navigate с дашборда через openTab).
@@ -1460,6 +1461,17 @@ export function RentalCard({
       const reason = await askRentalDeleteReason(rentalNo);
       if (!reason) return;
       try {
+        // Пункт 1: краткий отчёт для окна «Ключ директора» (бэк вернёт 428,
+        // api-клиент откроет гейт с этими деталями).
+        setNextApprovalContext({
+          summary: `Удаление аренды ${rentalNo} — ${client?.name ?? "клиент"}`,
+          details: [
+            `Причина: ${reason}`,
+            `Скутер: ${currentScooter?.name ?? "—"}`,
+            `Сумма аренды: ${fmt(rental.sum ?? 0)} ₽`,
+            "Аренда уйдёт в архив, история сохранится в журнале.",
+          ],
+        });
         await deleteRental.mutateAsync({ id: rental.id, reason });
         toast.success("Аренда удалена", `${rentalNo} · ${reason}`);
       } catch (e) {

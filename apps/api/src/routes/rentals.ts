@@ -48,6 +48,7 @@ function pickRateByPeriod(
 }
 import { logActivity } from "../services/activityLog.js";
 import type { DiffPayload } from "../services/activityLog.js";
+import { requireDirectorApproval } from "./approvals.js";
 import { rentalStatusLabel } from "../services/activityMessages.js";
 import { overdueDailyRate } from "../services/overdueCharge.js";
 
@@ -726,6 +727,9 @@ export async function rentalsRoutes(app: FastifyInstance) {
     }
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
+    // Пункт 1: удаление аренды — защищённое действие, требует ключ директора.
+    if (!(await requireDirectorApproval(app, req, reply, "rental_delete")))
+      return;
 
     // v0.6.51: опциональная причина удаления в архив (напр. «Создано
     // случайно»). Передаётся из карточки аренды; сохраняется в archivedReason

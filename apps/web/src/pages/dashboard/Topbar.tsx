@@ -14,6 +14,7 @@ import {
   Wrench,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ApprovalsBell } from "@/components/ApprovalsInbox";
 import { setRole, useRole, type UserRole } from "@/lib/role";
 import { useLogout, useMe } from "@/lib/api/auth";
 import { GlobalSearch } from "./GlobalSearch";
@@ -108,6 +109,9 @@ export function Topbar() {
         <Settings size={18} />
         <SoonDot />
       </IconBtn>
+
+      {/* Пункт 1: висящие подтверждения ключа директора (виден при запросах). */}
+      <ApprovalsBell />
 
       <div className="relative" ref={bellRef}>
         <IconBtn

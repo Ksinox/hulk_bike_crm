@@ -28,6 +28,7 @@ import { MobileSettings } from "./pages/MobileSettings";
 import { MobileDocuments } from "./pages/MobileDocuments";
 import { MobilePlaceholder } from "./pages/MobilePlaceholder";
 import { StoragePage } from "@/pages/storage/StoragePage";
+import { ApprovalsBell } from "@/components/ApprovalsInbox";
 
 /**
  * Корень мобильного слоя. Полностью отдельная оболочка: верхняя панель,
@@ -195,6 +196,11 @@ function MobileTopBar({ title }: { title: string }) {
       <h1 className="font-display text-[18px] font-bold tracking-tight text-ink">
         {title}
       </h1>
+      <div className="ml-auto">
+        {/* Пункт 1: подтверждения ключа директора — сценарий «директор с
+            телефона видит висящий запрос и подтверждает». */}
+        <ApprovalsBell />
+      </div>
     </header>
   );
 }

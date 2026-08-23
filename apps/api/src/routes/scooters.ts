@@ -5,6 +5,7 @@ import { db } from "../db/index.js";
 import { rentals, scooters, users } from "../db/schema.js";
 import { requireRole } from "../auth/plugin.js";
 import { logActivity } from "../services/activityLog.js";
+import { requireDirectorApproval } from "./approvals.js";
 import { scooterStatusLabel } from "../services/activityMessages.js";
 import { ensureRepairJobForScooter } from "./repair-jobs.js";
 
@@ -173,6 +174,23 @@ export async function scootersRoutes(app: FastifyInstance) {
       }
     }
 
+    // Пункт 1: перенос техники из одной категории в другую — защищённое
+    // действие, требует подтверждения ключом директора.
+    if (
+      parsed.data.baseStatus &&
+      parsed.data.baseStatus !== before.baseStatus
+    ) {
+      if (
+        !(await requireDirectorApproval(
+          app,
+          req,
+          reply,
+          "scooter_status_change",
+        ))
+      )
+        return;
+    }
+
     // Нельзя менять baseStatus у скутера, находящегося в активной аренде.
     // Сначала нужно закрыть аренду (завершить / отменить).
     if (
@@ -247,6 +265,9 @@ export async function scootersRoutes(app: FastifyInstance) {
   app.delete<{ Params: { id: string } }>("/:id", { preHandler: directorOnly }, async (req, reply) => {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
+    // Пункты 1/17: скутер покидает парк — только с ключом директора.
+    if (!(await requireDirectorApproval(app, req, reply, "scooter_remove")))
+      return;
 
     // Причина переноса в архив (опционально). Тело может быть пустым —
     // тогда reason = null. Обрезаем до 300 символов, чтобы не раздувать.

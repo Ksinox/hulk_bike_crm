@@ -9,6 +9,7 @@ import { useMe, useLogout, type AuthRole } from "@/lib/api/auth";
 import { ProfileModal } from "@/pages/dashboard/ProfileModal";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
+import { DirectorKeySection } from "@/pages/settings/DirectorKeySection";
 
 const ROLE_LABEL: Record<AuthRole, string> = {
   creator: "Создатель",
@@ -192,6 +193,9 @@ export function MobileSettings() {
           </SettingCard>
         </>
       )}
+
+      {/* Пункт 1: ключ директора — установка/смена с телефона (паритет). */}
+      {isAdmin && <DirectorKeySection />}
 
       <button
         type="button"

@@ -26,7 +26,10 @@ export type ActivityEntity =
   | "damage_report"
   | "document_template"
   | "repair_job"
-  | "debtor";
+  | "debtor"
+  // Пункт 1: события ключа директора (запрос/подтверждение/отклонение).
+  | "approval"
+  | "settings";
 
 /**
  * v0.6.6: структурированный diff для ленты событий.

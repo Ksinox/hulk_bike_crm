@@ -26,7 +26,11 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(
+  path: string,
+  init?: RequestInit,
+  dkRetried = false,
+): Promise<T> {
   // Content-Type ставим только когда реально шлём тело. Иначе Fastify
   // ругается FST_ERR_CTP_EMPTY_JSON_BODY на DELETE без body, и мы
   // получаем 400 вместо нормального ответа.
@@ -48,6 +52,28 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       body = await res.json();
     } catch {
       /* ignore */
+    }
+    // Пункт 1: защищённое действие требует ключ директора (428).
+    // Открываем гейт (окно ключа / запрос директору) и повторяем запрос
+    // с полученным подтверждением. Один повтор, чтобы не зациклиться.
+    const b = body as { error?: string; action?: string } | null;
+    if (
+      res.status === 428 &&
+      b?.error === "director_key_required" &&
+      !dkRetried
+    ) {
+      const { acquireDirectorApproval } = await import("./directorGate");
+      const approval = await acquireDirectorApproval(b.action ?? "");
+      if (approval) {
+        return request<T>(
+          path,
+          {
+            ...init,
+            headers: { ...headers, "x-director-approval": approval },
+          },
+          true,
+        );
+      }
     }
     throw new ApiError(res.status, body);
   }
