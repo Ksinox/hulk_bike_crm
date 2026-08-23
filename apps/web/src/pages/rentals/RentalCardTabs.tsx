@@ -2797,6 +2797,12 @@ const DEBT_KIND_META: Record<
     sign: "−",
     tone: "green",
   },
+  // Пункт 9: дни выкуплены, штраф за них сохранён в долге.
+  overdue_fine_carry: {
+    label: "Штраф сохранён (дни оплачены)",
+    sign: "+",
+    tone: "red",
+  },
 };
 
 function DebtEntryRow({
