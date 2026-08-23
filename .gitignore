@@ -86,3 +86,4 @@ scripts/_xlsx_*.py
 scripts/_xlsx_*.txt
 scripts/_scooter_diff.*
 scripts/_crm_scooters.txt
+scripts/shots/out/

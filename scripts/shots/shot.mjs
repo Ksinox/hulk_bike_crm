@@ -103,8 +103,30 @@ try {
       await ctx.sleep(1800);
     },
     async shot(name, opts = {}) {
-      const file = path.join(OUT_DIR, name + ".png");
-      await page.screenshot({ path: file, ...(opts.clip ? { clip: opts.clip } : {}) });
+      // Полные кадры — JPEG (в бандл идёт в разы легче), кропы — PNG (текст
+      // чётче). SHOT_OUT=check — служебные кадры мимо public (не в бандл).
+      const dir =
+        process.env.SHOT_OUT === "check"
+          ? path.join(ROOT, "scripts/shots/out")
+          : OUT_DIR;
+      fs.mkdirSync(dir, { recursive: true });
+      const jpeg = opts.jpeg ?? !opts.clip;
+      const file = path.join(dir, name + (jpeg ? ".jpg" : ".png"));
+      // Дожидаемся загрузки всех картинок в кадре (лендинг с фото).
+      await page
+        .evaluate(() =>
+          Promise.all(
+            [...document.images]
+              .filter((i) => !i.complete)
+              .map((i) => new Promise((r) => ((i.onload = r), (i.onerror = r)))),
+          ),
+        )
+        .catch(() => {});
+      await page.screenshot({
+        path: file,
+        ...(jpeg ? { type: "jpeg", quality: 85 } : {}),
+        ...(opts.clip ? { clip: opts.clip } : {}),
+      });
       console.log("SHOT:", path.relative(ROOT, file));
     },
     page,

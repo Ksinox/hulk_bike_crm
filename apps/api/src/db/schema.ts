@@ -2019,3 +2019,49 @@ export const debtorNotes = pgTable("debtor_notes", {
     .notNull()
     .defaultNow(),
 });
+
+/* ============================================================
+   Ключ директора — подтверждение защищённых действий (пункт 1)
+   ============================================================ */
+
+/**
+ * Очередь подтверждений «ключом директора». Менеджер, не знающий ключа,
+ * отправляет запрос — директор видит его (в т.ч. с телефона), знакомится
+ * с кратким отчётом операции и подтверждает вводом ключа. Сам ключ
+ * хранится bcrypt-хэшем в app_settings ('director_key_hash').
+ *
+ *  - action  — машинное имя защищённого действия ('rental_delete',
+ *              'scooter_status_change', 'scooter_remove', …)
+ *  - summary — человекочитаемо «что произойдёт»
+ *  - detailsJson — строки-детали для окна (что/на что повлияет)
+ *  - payloadJson — параметры для выполнения (id сущности и т.п.)
+ *  - status  — pending → approved / rejected / cancelled;
+ *              approved потребляется ровно один раз (consumedAt).
+ */
+export const approvalRequests = pgTable(
+  "approval_requests",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    action: text("action").notNull(),
+    summary: text("summary").notNull(),
+    detailsJson: jsonb("details_json"),
+    payloadJson: jsonb("payload_json"),
+    status: text("status").notNull().default("pending"),
+    requestedByUserId: bigint("requested_by_user_id", {
+      mode: "number",
+    }).references(() => users.id, { onDelete: "set null" }),
+    requestedByName: text("requested_by_name"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    resolvedByUserId: bigint("resolved_by_user_id", {
+      mode: "number",
+    }).references(() => users.id, { onDelete: "set null" }),
+    resolvedByName: text("resolved_by_name"),
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+  },
+  (t) => ({
+    statusIdx: index("approval_requests_status_idx").on(t.status, t.createdAt),
+  }),
+);
