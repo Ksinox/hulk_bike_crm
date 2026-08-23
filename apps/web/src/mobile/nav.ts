@@ -10,6 +10,7 @@ import {
   Settings,
   ShoppingBag,
   Sparkles,
+  TrendingUp,
   UserCog,
   Users,
   Wrench,
@@ -57,6 +58,7 @@ export function buildMoreItems(canManageStaff: boolean): MobileNavItem[] {
   }
   items.push(
     { id: "whats-new", label: "Что нового", icon: Sparkles, ready: true },
+    { id: "progress", label: "Развитие", icon: TrendingUp, ready: true },
     { id: "settings", label: "Настройки", icon: Settings, ready: false },
   );
   return items;

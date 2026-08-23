@@ -15,6 +15,7 @@ import {
   Settings,
   ShoppingBag,
   Sparkles,
+  TrendingUp,
   UserCog,
   Users,
   Wallet,
@@ -60,6 +61,7 @@ function buildMainItems(canManageStaff: boolean): NavItem[] {
     { id: "docs", label: "Документы", icon: FileText, ready: true },
     { id: "debtors", label: "Должники", icon: Scale, ready: true },
     { id: "whats-new", label: "Что нового", icon: Sparkles, ready: true },
+    { id: "progress", label: "Развитие", icon: TrendingUp, ready: true },
   );
   // «Хранилище» — обзор места (БД/файлы/диск) + браузер; только director/creator.
   if (canManageStaff) {

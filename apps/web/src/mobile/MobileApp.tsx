@@ -23,6 +23,7 @@ import { MobileDebtors } from "./pages/MobileDebtors";
 import { MobileService } from "./pages/MobileService";
 import { MobileStaff } from "./pages/MobileStaff";
 import { MobileWhatsNew } from "./pages/MobileWhatsNew";
+import { MobileProgress } from "./pages/MobileProgress";
 import { MobileSettings } from "./pages/MobileSettings";
 import { MobileDocuments } from "./pages/MobileDocuments";
 import { MobilePlaceholder } from "./pages/MobilePlaceholder";
@@ -156,6 +157,8 @@ function MobilePage({
       return <MobileStaff />;
     case "whats-new":
       return <MobileWhatsNew />;
+    case "progress":
+      return <MobileProgress />;
     case "settings":
       return <MobileSettings />;
     case "docs":

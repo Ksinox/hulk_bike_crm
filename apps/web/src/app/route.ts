@@ -15,6 +15,7 @@ export type RouteId =
   | "staff"
   | "storage"
   | "whats-new"
+  | "progress"
   | "settings";
 
 const KEY = "hulk-route";
@@ -30,6 +31,7 @@ const READY: RouteId[] = [
   "docs",
   "storage",
   "whats-new",
+  "progress",
 ];
 
 export function loadRoute(): RouteId {
