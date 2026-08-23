@@ -1,0 +1,118 @@
+/**
+ * Конвейер скриншотов для лендинга «Развитие» (и отчётов заказчику).
+ *
+ * Запускает системный Brave в headless, логинится на preview под тех-юзером
+ * shotbot (director), выполняет сценарий и сохраняет PNG в
+ * apps/web/public/progress/. Поддерживает кроп зон внимания (clip).
+ *
+ * Использование:
+ *   node scripts/shots/shot.mjs scripts/shots/scenarios/<имя>.mjs
+ *
+ * Сценарий — ES-модуль, экспортирующий async run(page, ctx):
+ *   ctx.shot(name, {clip})  — полный кадр или кроп в public/progress/<name>.png
+ *   ctx.gotoRoute(route, extra) — навигация внутри SPA (hulk:navigate)
+ *   ctx.sleep(ms)
+ *
+ * Пароль тех-юзера задаётся env SHOTBOT_PASS (не хардкодим в репо).
+ */
+import puppeteer from "puppeteer-core";
+import path from "node:path";
+import fs from "node:fs";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.resolve(__dirname, "../..");
+const OUT_DIR = path.join(ROOT, "apps/web/public/progress");
+const BASE = process.env.SHOT_BASE ?? "https://crm-preview.104-128-128-96.sslip.io";
+const LOGIN = process.env.SHOTBOT_LOGIN ?? "shotbot";
+const PASS = process.env.SHOTBOT_PASS;
+const BRAVE = "C:/Program Files/BraveSoftware/Brave-Browser/Application/brave.exe";
+
+if (!PASS) {
+  console.error("SHOTBOT_PASS не задан");
+  process.exit(1);
+}
+const scenarioPath = process.argv[2];
+if (!scenarioPath) {
+  console.error("Использование: node shot.mjs <scenario.mjs>");
+  process.exit(1);
+}
+
+fs.mkdirSync(OUT_DIR, { recursive: true });
+
+const browser = await puppeteer.launch({
+  executablePath: BRAVE,
+  headless: "new",
+  args: ["--no-first-run", "--disable-extensions", "--window-size=1600,1000"],
+  defaultViewport: { width: 1600, height: 1000, deviceScaleFactor: 2 },
+});
+try {
+  const page = await browser.newPage();
+  // Отключаем анимации — скриншоты стабильные, без полукадров.
+  await page.evaluateOnNewDocument(() => {
+    const s = document.createElement("style");
+    s.textContent =
+      "*,*::before,*::after{animation:none!important;transition:none!important}";
+    document.addEventListener("DOMContentLoaded", () =>
+      document.head.appendChild(s),
+    );
+  });
+
+  // Логин Node-фетчем (вне браузера) → сессионную куку ставим напрямую:
+  // headless блокирует third-party Set-Cookie при XHR crm→api.
+  const apiBase = BASE.replace("crm-", "api-");
+  const loginResp = await fetch(apiBase + "/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ login: LOGIN, password: PASS, remember: true }),
+  });
+  const setCookie = loginResp.headers.get("set-cookie") ?? "";
+  const m = /hulk_session=([^;]+)/.exec(setCookie);
+  if (loginResp.status !== 200 || !m) {
+    console.error("Логин не удался:", loginResp.status, setCookie.slice(0, 80));
+    process.exit(1);
+  }
+  await page.setCookie({
+    name: "hulk_session",
+    value: m[1],
+    domain: new URL(apiBase).hostname,
+    path: "/",
+    httpOnly: true,
+    secure: true,
+    sameSite: "None",
+  });
+  await page.goto(BASE + "/", { waitUntil: "networkidle2" });
+  await page.waitForFunction(
+    () => document.body.innerText.length > 200,
+    { timeout: 20000 },
+  );
+
+  const ctx = {
+    base: BASE,
+    sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+    async gotoRoute(route, extra = {}) {
+      await page.evaluate(
+        (route, extra) => {
+          window.dispatchEvent(
+            new CustomEvent("hulk:navigate", { detail: { route, ...extra } }),
+          );
+        },
+        route,
+        extra,
+      );
+      await ctx.sleep(1800);
+    },
+    async shot(name, opts = {}) {
+      const file = path.join(OUT_DIR, name + ".png");
+      await page.screenshot({ path: file, ...(opts.clip ? { clip: opts.clip } : {}) });
+      console.log("SHOT:", path.relative(ROOT, file));
+    },
+    page,
+  };
+
+  const mod = await import(pathToFileURL(path.resolve(scenarioPath)).href);
+  await mod.run(page, ctx);
+  console.log("OK");
+} finally {
+  await browser.close();
+}
