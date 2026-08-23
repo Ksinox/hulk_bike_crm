@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
-import { Check, ChevronDown, Loader2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Check, ChevronDown, Loader2, Maximize2, X } from "lucide-react";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import {
   PROGRESS_PERIOD,
@@ -8,6 +9,8 @@ import {
   progressSummary,
   type ProgressItem,
   type ProgressStatus,
+  type ProgressStep,
+  type StoryImage,
 } from "@/data/progress";
 
 /**
@@ -77,6 +80,8 @@ const DOT_TEXTURE = {
 export function ProgressBoard() {
   const s = useMemo(() => progressSummary(), []);
   const [open, setOpen] = useState<Set<string>>(new Set());
+  // Лайтбокс: клик по скриншоту → полный экран.
+  const [zoom, setZoom] = useState<StoryImage | null>(null);
   const toggle = (id: string) =>
     setOpen((prev) => {
       const next = new Set(prev);
@@ -180,6 +185,7 @@ export function ProgressBoard() {
                       item={it}
                       expanded={open.has(it.id)}
                       onToggle={() => toggle(it.id)}
+                      onZoom={setZoom}
                     />
                   ))}
                 </div>
@@ -191,9 +197,57 @@ export function ProgressBoard() {
 
       <footer className="mt-14 border-t border-border pt-5 text-[12px] leading-relaxed text-muted-2">
         Страница обновляется по мере выполнения работ. По завершённым пунктам
-        доступны материалы «было / стало».
+        доступны материалы «было / стало» — любой скриншот открывается на весь
+        экран по клику.
       </footer>
+
+      {zoom && <Lightbox img={zoom} onClose={() => setZoom(null)} />}
     </div>
+  );
+}
+
+/* ─────────────── Лайтбокс скриншота ─────────────── */
+
+function Lightbox({ img, onClose }: { img: StoryImage; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    // Блокируем прокрутку страницы под оверлеем.
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [onClose]);
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[200] flex cursor-zoom-out flex-col items-center justify-center gap-3 bg-ink/90 p-4 backdrop-blur-sm sm:p-8"
+      onClick={onClose}
+    >
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label="Закрыть"
+        className="absolute right-4 top-4 flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/25"
+      >
+        <X size={20} />
+      </button>
+      <img
+        src={img.src}
+        alt={img.label ?? "скриншот"}
+        className="max-h-[86vh] max-w-full rounded-xl shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      />
+      {img.label && (
+        <div className="max-w-2xl text-center text-[13px] leading-snug text-white/80">
+          {img.label}
+        </div>
+      )}
+    </div>,
+    document.body,
   );
 }
 
@@ -294,13 +348,20 @@ function ItemCard({
   item,
   expanded,
   onToggle,
+  onZoom,
 }: {
   item: ProgressItem;
   expanded: boolean;
   onToggle: () => void;
+  onZoom: (img: StoryImage) => void;
 }) {
   const meta = STATUS_META[item.status];
-  const hasDetail = !!(item.quote || item.note || item.shots?.length);
+  const hasDetail = !!(
+    item.quote ||
+    item.note ||
+    item.shots?.length ||
+    item.story?.length
+  );
   return (
     <div className="relative">
       {/* Маркер на линии времени */}
@@ -388,11 +449,40 @@ function ItemCard({
               </p>
             )}
 
+            {/* Пошаговая история: контекст → действие → проблема → исправление */}
+            {item.story && item.story.length > 0 && (
+              <div className="mt-4 flex flex-col">
+                {item.story.map((st, i) => (
+                  <StoryStepRow
+                    key={i}
+                    step={st}
+                    n={i + 1}
+                    last={i === item.story!.length - 1}
+                    onZoom={onZoom}
+                  />
+                ))}
+              </div>
+            )}
+
             {item.shots?.map((sh, i) => (
               <figure key={i} className="mt-4">
                 <div className="grid gap-3 sm:grid-cols-2">
-                  {sh.before && <Shot src={sh.before} label="Было" tone="muted" />}
-                  {sh.after && <Shot src={sh.after} label="Стало" tone="green" />}
+                  {sh.before && (
+                    <Shot
+                      src={sh.before}
+                      label="Было"
+                      tone="muted"
+                      onZoom={onZoom}
+                    />
+                  )}
+                  {sh.after && (
+                    <Shot
+                      src={sh.after}
+                      label="Стало"
+                      tone="green"
+                      onZoom={onZoom}
+                    />
+                  )}
                 </div>
                 {sh.caption && (
                   <figcaption className="mt-2 text-[11.5px] text-muted-2">
@@ -408,14 +498,110 @@ function ItemCard({
   );
 }
 
+/* ─────────────── Шаг истории ─────────────── */
+
+const STEP_TAG = {
+  bug: {
+    label: "Проблема",
+    badge: "bg-red-soft text-red-ink",
+    ring: "bg-red-ink text-white",
+  },
+  fix: {
+    label: "После исправления",
+    badge: "bg-green-soft text-green-ink",
+    ring: "bg-green-ink text-white",
+  },
+} as const;
+
+function StoryStepRow({
+  step,
+  n,
+  last,
+  onZoom,
+}: {
+  step: ProgressStep;
+  n: number;
+  last: boolean;
+  onZoom: (img: StoryImage) => void;
+}) {
+  const tag = step.tag ? STEP_TAG[step.tag] : null;
+  return (
+    <div className="relative flex gap-3 pb-5 sm:gap-4">
+      {/* Нумерация шага на собственной мини-линии */}
+      <div className="flex flex-col items-center">
+        <span
+          className={cn(
+            "flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[12.5px] font-extrabold",
+            tag ? tag.ring : "bg-ink text-white",
+          )}
+        >
+          {n}
+        </span>
+        {!last && <span className="w-px flex-1 bg-border" />}
+      </div>
+
+      <div className="min-w-0 flex-1 pt-0.5">
+        {tag && (
+          <span
+            className={cn(
+              "mb-1.5 inline-block rounded-full px-2.5 py-0.5 text-[10.5px] font-bold uppercase tracking-wide",
+              tag.badge,
+            )}
+          >
+            {tag.label}
+          </span>
+        )}
+        <p className="text-[13px] leading-relaxed text-ink-2">{step.text}</p>
+
+        {step.imgs && step.imgs.length > 0 && (
+          <div
+            className={cn(
+              "mt-2.5 grid gap-2.5",
+              step.imgs.length > 1 && "sm:grid-cols-2",
+            )}
+          >
+            {step.imgs.map((img) => (
+              <figure key={img.src} className="min-w-0">
+                <button
+                  type="button"
+                  onClick={() => onZoom(img)}
+                  title="Открыть на весь экран"
+                  className="group relative block w-full cursor-zoom-in overflow-hidden rounded-xl border border-border bg-surface shadow-card-sm transition-shadow hover:shadow-card"
+                >
+                  <img
+                    src={img.src}
+                    alt={img.label ?? ""}
+                    loading="lazy"
+                    className="max-h-[300px] w-full bg-surface object-contain"
+                  />
+                  <span className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-lg bg-ink/60 text-white opacity-0 transition-opacity group-hover:opacity-100">
+                    <Maximize2 size={14} />
+                  </span>
+                </button>
+                {img.label && (
+                  <figcaption className="mt-1 text-[11px] leading-snug text-muted-2">
+                    {img.label}
+                  </figcaption>
+                )}
+              </figure>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function Shot({
   src,
   label,
   tone,
+  onZoom,
 }: {
   src: string;
   label: string;
   tone: "muted" | "green";
+  onZoom: (img: StoryImage) => void;
 }) {
   return (
     <div>
@@ -427,12 +613,17 @@ function Shot({
       >
         {label}
       </div>
-      <img
-        src={src}
-        alt={label}
-        loading="lazy"
-        className="w-full rounded-xl border border-border bg-surface shadow-card-sm"
-      />
+      <button
+        type="button"
+        onClick={() => onZoom({ src, label })}
+        title="Открыть на весь экран"
+        className="group relative block w-full cursor-zoom-in overflow-hidden rounded-xl border border-border bg-surface shadow-card-sm"
+      >
+        <img src={src} alt={label} loading="lazy" className="w-full" />
+        <span className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-lg bg-ink/60 text-white opacity-0 transition-opacity group-hover:opacity-100">
+          <Maximize2 size={14} />
+        </span>
+      </button>
     </div>
   );
 }
