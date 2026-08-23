@@ -21,7 +21,10 @@ export type DebtKind =
   | "overdue_days_forgive"
   | "overdue_fine_forgive"
   | "overdue_days_payment"
-  | "overdue_fine_payment";
+  | "overdue_fine_payment"
+  // Пункт 9: при выкупе просроченных дней их штраф фиксируется отдельным
+  // начислением (иначе сдвиг endPlanned «прощал» его без оплаты).
+  | "overdue_fine_carry";
 
 export type DebtEntry = {
   id: number;
