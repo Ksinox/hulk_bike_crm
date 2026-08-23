@@ -204,7 +204,7 @@ function ProgressRing({ percent }: { percent: number }) {
   const C = 2 * Math.PI * R;
   const filled = (Math.min(100, Math.max(0, percent)) / 100) * C;
   return (
-    <div className="flex shrink-0 items-center gap-5">
+    <div className="flex shrink-0 items-center justify-center gap-5 lg:justify-end">
       <div className="relative h-[132px] w-[132px] sm:h-[148px] sm:w-[148px]">
         <svg viewBox="0 0 128 128" className="h-full w-full -rotate-90">
           <circle
@@ -215,17 +215,23 @@ function ProgressRing({ percent }: { percent: number }) {
             stroke="rgba(255,255,255,0.14)"
             strokeWidth="9"
           />
-          <circle
-            cx="64"
-            cy="64"
-            r={R}
-            fill="none"
-            stroke="url(#ringGrad)"
-            strokeWidth="9"
-            strokeLinecap="round"
-            strokeDasharray={`${filled} ${C}`}
-            style={{ transition: "stroke-dasharray .9s cubic-bezier(.22,1,.36,1)" }}
-          />
+          {/* При 0 % дугу не рисуем: скруглённый конец давал бы одинокую
+              точку на окружности — читается как артефакт. */}
+          {percent > 0 && (
+            <circle
+              cx="64"
+              cy="64"
+              r={R}
+              fill="none"
+              stroke="url(#ringGrad)"
+              strokeWidth="9"
+              strokeLinecap="round"
+              strokeDasharray={`${filled} ${C}`}
+              style={{
+                transition: "stroke-dasharray .9s cubic-bezier(.22,1,.36,1)",
+              }}
+            />
+          )}
           <defs>
             <linearGradient id="ringGrad" x1="0" y1="0" x2="1" y2="1">
               <stop offset="0%" stopColor="#60A5FA" />
