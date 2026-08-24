@@ -81,6 +81,12 @@ export type ApiScooter = {
   vin: string | null;
   engineNo: string | null;
   frameNumber: string | null;
+  /** Пункт 15: порядковый номер места в арендном парке (1..N). */
+  rentalSlot?: number | null;
+  /** Пункт 16: последний арендный номер — ярлык «был в аренде». */
+  exRentalSlot?: number | null;
+  /** Пункт 15: уникальный ID — 4 последние цифры номера рамы. */
+  uid?: string | null;
   year: number | null;
   color: string | null;
   mileage: number;

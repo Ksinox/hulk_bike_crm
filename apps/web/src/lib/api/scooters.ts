@@ -24,6 +24,29 @@ export function useApiScooter(id: number | null) {
   });
 }
 
+/** Пункт 15: состояние арендных мест. */
+export type SlotsState = {
+  total: number;
+  used: { slot: number; id: number; name: string }[];
+  free: number[];
+};
+
+export function useRentalSlots() {
+  return useQuery({
+    queryKey: [...scootersKeys.all, "slots"] as const,
+    queryFn: () => api.get<SlotsState>("/api/scooters/slots"),
+  });
+}
+
+export function useSetSlotsTotal() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (total: number) =>
+      api.post<{ total: number }>("/api/scooters/slots-total", { total }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: scootersKeys.all }),
+  });
+}
+
 export type CreateScooterInput = {
   name: string;
   model: ApiScooter["model"];
@@ -32,6 +55,8 @@ export type CreateScooterInput = {
   vin?: string | null;
   engineNo?: string | null;
   frameNumber?: string | null;
+  /** Пункт 15: желаемое место в арендном парке (из свободных). */
+  rentalSlot?: number | null;
   year?: number | null;
   color?: string | null;
   mileage?: number;

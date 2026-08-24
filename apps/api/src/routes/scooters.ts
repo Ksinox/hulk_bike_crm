@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { and, eq, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/index.js";
-import { rentals, scooters, users } from "../db/schema.js";
+import { appSettings, rentals, scooters, users } from "../db/schema.js";
 import { requireRole } from "../auth/plugin.js";
 import { logActivity } from "../services/activityLog.js";
 import { requireDirectorApproval } from "./approvals.js";
@@ -38,12 +38,72 @@ const CreateScooterBody = z
     marketValue: z.number().int().min(0).optional().nullable(),
     lastOilChangeMileage: z.number().int().min(0).optional().nullable(),
     note: z.string().max(500).optional().nullable(),
+    /** Пункт 15: желаемое место в арендном парке (из свободных). */
+    rentalSlot: z.number().int().min(1).optional().nullable(),
   })
   .strict();
 
 const PatchScooterBody = CreateScooterBody.partial();
 
 const directorOnly = requireRole("director");
+
+/* ───────────── Пункт 15: арендные места (порядковые номера) ─────────────
+ * Место занято, пока скутер числится в арендном парке (rental_pool /
+ * repair / dtp). Уход в продажу/выкуп/разборку освобождает место, номер
+ * запоминается в exRentalSlot (пункт 16 — ярлык «был в аренде»).
+ */
+
+/** Статусы, в которых скутер занимает арендное место. */
+const SLOT_STATUSES = ["rental_pool", "repair", "dtp"] as const;
+
+function holdsSlot(status: string): boolean {
+  return (SLOT_STATUSES as readonly string[]).includes(status);
+}
+
+/** ID = 4 последние цифры номера рамы (только цифры). */
+function uidFromFrame(frame: string | null | undefined): string | null {
+  const digits = (frame ?? "").replace(/\D/g, "");
+  return digits ? digits.slice(-4) : null;
+}
+
+async function getSlotsTotal(): Promise<number> {
+  const [row] = await db
+    .select({ value: appSettings.value })
+    .from(appSettings)
+    .where(eq(appSettings.key, "rental_slots_total"));
+  const n = Number(row?.value);
+  return Number.isFinite(n) && n >= 0 ? n : 0;
+}
+
+async function getUsedSlots(): Promise<
+  { slot: number; id: number; name: string }[]
+> {
+  const rows = await db
+    .select({
+      slot: scooters.rentalSlot,
+      id: scooters.id,
+      name: scooters.name,
+    })
+    .from(scooters)
+    .where(
+      and(
+        isNotNull(scooters.rentalSlot),
+        isNull(scooters.archivedAt),
+        isNull(scooters.deletedAt),
+      ),
+    );
+  return rows
+    .filter((r): r is { slot: number; id: number; name: string } => r.slot != null)
+    .sort((a, b) => a.slot - b.slot);
+}
+
+/** Свободные места в диапазоне 1..total. */
+function freeSlotList(total: number, used: { slot: number }[]): number[] {
+  const busy = new Set(used.map((u) => u.slot));
+  const free: number[] = [];
+  for (let i = 1; i <= total; i++) if (!busy.has(i)) free.push(i);
+  return free;
+}
 
 async function currentUserName(userId: number | undefined): Promise<string | null> {
   if (!userId) return null;
@@ -67,6 +127,58 @@ export async function scootersRoutes(app: FastifyInstance) {
           .where(isNull(scooters.archivedAt))
           .orderBy(scooters.name);
     return { items: rows };
+  });
+
+  /**
+   * Пункт 15: состояние арендных мест — общее количество (настройка),
+   * занятые (кем) и свободные номера. Для формы добавления/смены места.
+   */
+  app.get("/slots", async () => {
+    const [total, used] = await Promise.all([getSlotsTotal(), getUsedSlots()]);
+    return { total, used, free: freeSlotList(total, used) };
+  });
+
+  /**
+   * Пункт 15: изменить общее количество мест в арендном парке (вручную).
+   * Нельзя опустить ниже максимального занятого номера — сначала
+   * освободите места (переведите технику из аренды).
+   */
+  app.post<{ Body: { total?: number } }>("/slots-total", async (req, reply) => {
+    const total = Number(req.body?.total);
+    if (!Number.isFinite(total) || total < 0 || total > 999) {
+      return reply.code(400).send({ error: "bad total" });
+    }
+    const used = await getUsedSlots();
+    const maxUsed = used.length ? used[used.length - 1]!.slot : 0;
+    if (total < maxUsed) {
+      return reply.code(409).send({
+        error: "slots_in_use",
+        message: `Занято место №${maxUsed} — сначала освободите места выше ${total} (переведите технику из аренды).`,
+      });
+    }
+    const prev = await getSlotsTotal();
+    await db
+      .insert(appSettings)
+      .values({ key: "rental_slots_total", value: String(total) })
+      .onConflictDoUpdate({
+        target: appSettings.key,
+        set: { value: String(total) },
+      });
+    await logActivity(req, {
+      entity: "scooter",
+      entityId: null,
+      action: "rental_slots_total_changed",
+      summary: `Изменено количество мест в арендном парке: ${prev} → ${total}`,
+      diff: {
+        total: {
+          label: "Мест в арендном парке",
+          from: prev,
+          to: total,
+          kind: "number",
+        },
+      },
+    });
+    return { total };
   });
 
   /** GET /api/scooters/archived — список в архиве */
@@ -113,13 +225,45 @@ export async function scootersRoutes(app: FastifyInstance) {
         });
       }
     }
+    // Пункт 15: скутер, попадающий в арендный парк, занимает место.
+    // Место можно указать явно (из свободных) или получить автоматически
+    // (наименьшее свободное). Мест нет → 409, увеличьте общее количество.
+    const status = parsed.data.baseStatus ?? "ready";
+    let slotToUse: number | null = null;
+    if (holdsSlot(status)) {
+      const [total, used] = await Promise.all([getSlotsTotal(), getUsedSlots()]);
+      const free = freeSlotList(total, used);
+      const wanted = (parsed.data as { rentalSlot?: number | null }).rentalSlot;
+      if (wanted != null) {
+        if (wanted > total)
+          return reply.code(409).send({
+            error: "slot_out_of_range",
+            message: `Место №${wanted} больше общего количества мест (${total}).`,
+          });
+        if (!free.includes(wanted))
+          return reply.code(409).send({
+            error: "slot_taken",
+            message: `Место №${wanted} уже занято.`,
+          });
+        slotToUse = wanted;
+      } else {
+        if (free.length === 0)
+          return reply.code(409).send({
+            error: "no_free_slots",
+            message: `Все ${total} мест арендного парка заняты. Увеличьте общее количество мест или освободите место.`,
+          });
+        slotToUse = free[0]!;
+      }
+    }
     try {
       const [row] = await db
         .insert(scooters)
         .values({
           ...parsed.data,
           mileage: parsed.data.mileage ?? 0,
-          baseStatus: parsed.data.baseStatus ?? "ready",
+          baseStatus: status,
+          rentalSlot: slotToUse,
+          uid: uidFromFrame(parsed.data.frameNumber),
         })
         .returning();
       if (!row) return reply.code(500).send({ error: "insert failed" });
@@ -128,7 +272,10 @@ export async function scootersRoutes(app: FastifyInstance) {
         entity: "scooter",
         entityId: row.id,
         action: "created",
-        summary: `Добавлен скутер «${row.name}»`,
+        summary:
+          slotToUse != null
+            ? `Добавлен скутер «${row.name}» — место №${slotToUse} в арендном парке`
+            : `Добавлен скутер «${row.name}»`,
       });
       return reply.code(201).send(row);
     } catch (e) {
@@ -221,12 +368,89 @@ export async function scootersRoutes(app: FastifyInstance) {
       }
     }
 
+    // ── Пункт 15: арендные места ──
+    const patch: Record<string, unknown> = { ...parsed.data };
+    const nextStatus = parsed.data.baseStatus ?? before.baseStatus;
+    const willHold = holdsSlot(nextStatus);
+    const heldBefore = holdsSlot(before.baseStatus);
+
+    // Пересчёт uid при смене номера рамы.
+    if (parsed.data.frameNumber !== undefined) {
+      patch.uid = uidFromFrame(parsed.data.frameNumber);
+    }
+
+    // Ручная смена места (или назначение при входе в арендный парк) —
+    // только на свободное и в пределах общего количества.
+    const wantedSlot = parsed.data.rentalSlot;
+    if (wantedSlot !== undefined || (willHold && !heldBefore)) {
+      const [total, used] = await Promise.all([getSlotsTotal(), getUsedSlots()]);
+      const free = freeSlotList(
+        total,
+        used.filter((u) => u.id !== id),
+      );
+      if (willHold) {
+        if (wantedSlot != null) {
+          if (wantedSlot > total)
+            return reply.code(409).send({
+              error: "slot_out_of_range",
+              message: `Место №${wantedSlot} больше общего количества мест (${total}).`,
+            });
+          if (!free.includes(wantedSlot))
+            return reply.code(409).send({
+              error: "slot_taken",
+              message: `Место №${wantedSlot} уже занято другим скутером.`,
+            });
+          patch.rentalSlot = wantedSlot;
+        } else if (before.rentalSlot == null || wantedSlot === null) {
+          // вход в парк без указания места (или явный сброс) → авто
+          if (free.length === 0)
+            return reply.code(409).send({
+              error: "no_free_slots",
+              message: `Все ${total} мест арендного парка заняты. Увеличьте общее количество мест или освободите место.`,
+            });
+          patch.rentalSlot = free[0]!;
+        }
+      } else {
+        // скутер вне арендного парка место занимать не может
+        patch.rentalSlot = null;
+      }
+    }
+
+    // Уход из арендного парка: место освобождается, номер остаётся ярлыком
+    // «был в аренде» (пункт 16).
+    if (heldBefore && !willHold) {
+      patch.rentalSlot = null;
+      if (before.rentalSlot != null) patch.exRentalSlot = before.rentalSlot;
+    }
+
     const [row] = await db
       .update(scooters)
-      .set({ ...parsed.data, updatedAt: sql`now()` })
+      .set({ ...patch, updatedAt: sql`now()` })
       .where(eq(scooters.id, id))
       .returning();
     if (!row) return reply.code(404).send({ error: "not found" });
+
+    // Пункт 15: смена места — отдельная запись в журнал с diff.
+    if (
+      before.rentalSlot !== row.rentalSlot &&
+      row.rentalSlot != null &&
+      before.rentalSlot != null
+    ) {
+      await logActivity(req, {
+        entity: "scooter",
+        entityId: id,
+        action: "rental_slot_changed",
+        summary: `Место ${row.name} в арендном парке: №${before.rentalSlot} → №${row.rentalSlot}`,
+        diff: {
+          slot: {
+            label: "Место в арендном парке",
+            from: `№${before.rentalSlot}`,
+            to: `№${row.rentalSlot}`,
+            kind: "text",
+          },
+        },
+      });
+    }
 
     // Если сменился статус — отдельным summary с русскими лейблами
     const statusChanged =

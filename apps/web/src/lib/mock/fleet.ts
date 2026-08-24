@@ -65,6 +65,12 @@ export type FleetScooter = {
    */
   maintenanceCostTotal?: number;
   note?: string;
+  /** Пункт 15: порядковый номер места в арендном парке (1..N). */
+  rentalSlot?: number;
+  /** Пункт 16: последний арендный номер — ярлык «был в аренде». */
+  exRentalSlot?: number;
+  /** Пункт 15: уникальный ID — 4 последние цифры номера рамы. */
+  uid?: string;
 };
 
 /**

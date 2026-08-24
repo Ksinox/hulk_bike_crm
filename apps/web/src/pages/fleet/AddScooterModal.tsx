@@ -11,6 +11,7 @@ import {
   scooterPrefixFromModelName,
 } from "./ModelPicker";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
+import { useRentalSlots } from "@/lib/api/scooters";
 import { SCOOTER_BASE_STATUS_OPTIONS } from "./scooterStatusOptions";
 
 function todayRu(): string {
@@ -78,6 +79,11 @@ export function AddScooterModal({ onClose }: { onClose: () => void }) {
   const [marketValue, setMarketValue] = useState("");
   const [status, setStatus] = useState<ScooterBaseStatus>("ready");
   const [note, setNote] = useState("");
+  // Пункт 15: место в арендном парке (null = авто, наименьшее свободное).
+  const [rentalSlot, setRentalSlot] = useState<number | null>(null);
+  const slotsQ = useRentalSlots();
+  const slotsFree = slotsQ.data?.free ?? [];
+  const slotsTotal = slotsQ.data?.total ?? 0;
 
   // при смене префикса модели — пересчитать подсказку по номеру, если пользователь сам ничего не менял
   const [numberTouched, setNumberTouched] = useState(false);
@@ -150,6 +156,7 @@ export function AddScooterModal({ onClose }: { onClose: () => void }) {
           : undefined,
       marketValue: marketValue ? Number(marketValue) || undefined : undefined,
       note: note.trim() || undefined,
+      rentalSlot: rentalSlot ?? undefined,
     });
     requestClose();
   };
@@ -385,6 +392,50 @@ export function AddScooterModal({ onClose }: { onClose: () => void }) {
                 ))}
               </div>
             </Field>
+
+            {/* Пункт 15: место в арендном парке — для техники, попадающей
+                в аренду. «Авто» = наименьшее свободное. */}
+            {(status === "rental_pool" || status === "repair" || status === "dtp") && (
+              <Field label={`Место в аренде · свободно ${slotsFree.length} из ${slotsTotal}`}>
+                {slotsFree.length === 0 ? (
+                  <div className="rounded-[10px] border border-orange-ink/30 bg-orange-soft/50 px-3 py-2 text-[12px] font-semibold text-orange-ink">
+                    Все места заняты — увеличьте общее количество мест на
+                    странице «Скутеры» или освободите место.
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setRentalSlot(null)}
+                      className={cn(
+                        "rounded-[10px] border px-3 py-2 text-[12px] font-semibold transition-colors",
+                        rentalSlot == null
+                          ? "border-blue-600 bg-blue-50 text-blue-700"
+                          : "border-border bg-surface text-ink-2 hover:border-blue-600/50",
+                      )}
+                      title={`Автоматически: место №${slotsFree[0]}`}
+                    >
+                      Авто (№{slotsFree[0]})
+                    </button>
+                    {slotsFree.map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => setRentalSlot(s)}
+                        className={cn(
+                          "min-w-10 rounded-[10px] border px-2.5 py-2 text-[12px] font-bold transition-colors",
+                          rentalSlot === s
+                            ? "border-blue-600 bg-blue-600 text-white"
+                            : "border-border bg-surface text-ink-2 hover:border-blue-600/50",
+                        )}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </Field>
+            )}
 
             <Field label="Комментарий">
               <textarea

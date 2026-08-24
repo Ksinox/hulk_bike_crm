@@ -36,7 +36,11 @@ import { OilChangeDialog } from "./OilChangeDialog";
 import { RepairsTab, ExpensesTab } from "./MaintenanceTab";
 import { useActivityTimeline } from "@/lib/api/activity";
 import { ActivityTimelineSection } from "@/pages/rentals/ActivityTimelineSection";
-import { useArchiveScooter } from "@/lib/api/scooters";
+import {
+  useArchiveScooter,
+  usePatchScooter,
+  useRentalSlots,
+} from "@/lib/api/scooters";
 import { useMe } from "@/lib/api/auth";
 import { Archive, Loader2 } from "lucide-react";
 import { ApiError } from "@/lib/api";
@@ -292,6 +296,26 @@ export function ScooterCard({
           <span className="h-1.5 w-1.5 rounded-full bg-current opacity-70" />
           {SCOOTER_STATUS_LABEL[status]}
         </span>
+        {/* Пункт 15: место в арендном парке / ID по раме. */}
+        {scooter.rentalSlot != null && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-[12px] font-bold text-blue-700">
+            Место №{scooter.rentalSlot}
+          </span>
+        )}
+        {scooter.uid && (
+          <span
+            title="Уникальный ID — 4 последние цифры номера рамы"
+            className="inline-flex items-center gap-1 rounded-full bg-surface px-3 py-1 font-mono text-[12px] font-bold text-ink-2 shadow-card-sm"
+          >
+            ID {scooter.uid}
+          </span>
+        )}
+        {/* Пункт 16: ярлык «был в аренде» у техники вне арендного парка. */}
+        {scooter.rentalSlot == null && scooter.exRentalSlot != null && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-3 py-1 text-[12px] font-bold text-amber-800">
+            Был в аренде · место №{scooter.exRentalSlot}
+          </span>
+        )}
         <div className="flex-1" />
         <button
           type="button"
@@ -362,6 +386,14 @@ export function ScooterCard({
                 value={scooter.engineNo ?? "—"}
                 mono
               />
+              <SpecCell
+                label="Номер рамы"
+                value={scooter.frameNumber ?? "—"}
+                hint={scooter.uid ? `ID ${scooter.uid} — по 4 цифрам рамы` : undefined}
+                mono
+              />
+              {/* Пункт 15: место в арендном парке — смена только на свободное. */}
+              <RentalSlotSpec scooter={scooter} />
               <SpecCell
                 label="Пробег"
                 value={`${fmt(scooter.mileage)} км`}
@@ -1111,6 +1143,100 @@ function SpecCell({
         <div className="mt-0.5 text-[10px] uppercase tracking-wider text-muted-2">
           {hint}
         </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Пункт 15: ячейка «Место в аренде» в техничке. У техники в арендном
+ * парке — номер + смена на любое СВОБОДНОЕ место (мини-меню); вне парка —
+ * прочерк или ярлык «был в аренде №N» (пункт 16).
+ */
+function RentalSlotSpec({ scooter }: { scooter: FleetScooter }) {
+  const [open, setOpen] = useState(false);
+  const slotsQ = useRentalSlots();
+  const patch = usePatchScooter();
+  const inPool = scooter.rentalSlot != null;
+
+  if (!inPool) {
+    return (
+      <SpecCell
+        label="Место в аренде"
+        value={
+          scooter.exRentalSlot != null
+            ? `Был в аренде · №${scooter.exRentalSlot}`
+            : "—"
+        }
+      />
+    );
+  }
+
+  const free = slotsQ.data?.free ?? [];
+  const total = slotsQ.data?.total ?? 0;
+
+  const pick = async (slot: number) => {
+    setOpen(false);
+    if (slot === scooter.rentalSlot) return;
+    try {
+      await patch.mutateAsync({ id: scooter.id, patch: { rentalSlot: slot } });
+      toast.success(
+        "Место изменено",
+        `${scooter.name} теперь на месте №${slot}. Запись в журнале.`,
+      );
+    } catch (e) {
+      toast.error(
+        "Не удалось сменить место",
+        e instanceof Error ? e.message : "Попробуйте ещё раз",
+      );
+    }
+  };
+
+  return (
+    <div className="relative">
+      <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
+        Место в аренде
+      </div>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        disabled={patch.isPending}
+        title="Сменить место (только на свободное)"
+        className="mt-1 inline-flex items-center gap-1.5 rounded-lg border border-transparent px-1.5 py-0.5 -ml-1.5 text-[15px] font-bold leading-tight text-blue-600 transition-colors hover:border-blue-300 hover:bg-blue-50 disabled:opacity-50"
+      >
+        №{scooter.rentalSlot}
+        <Pencil size={12} className="opacity-60" />
+      </button>
+      <div className="mt-0.5 text-[10px] uppercase tracking-wider text-muted-2">
+        из {total} мест
+      </div>
+      {open && (
+        <>
+          <span className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 top-full z-50 mt-1 w-[210px] rounded-xl border border-border bg-surface p-2 shadow-card-lg">
+            <div className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-2">
+              Свободные места
+            </div>
+            {free.length === 0 ? (
+              <div className="px-1 py-1 text-[12px] text-muted">
+                Свободных мест нет
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-1">
+                {free.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => pick(s)}
+                    className="flex h-8 min-w-8 items-center justify-center rounded-lg border border-border bg-surface px-1.5 text-[12.5px] font-bold text-ink-2 transition-colors hover:border-blue-500 hover:bg-blue-600 hover:text-white"
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </>
       )}
     </div>
   );

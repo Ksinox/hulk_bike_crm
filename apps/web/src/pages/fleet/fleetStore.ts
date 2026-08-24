@@ -91,6 +91,8 @@ export function addScooter(data: Omit<FleetScooter, "id">): FleetScooter {
     marketValue: data.marketValue ?? null,
     lastOilChangeMileage: data.lastOilChangeMileage ?? null,
     note: data.note ?? null,
+    // Пункт 15: желаемое место в арендном парке (undefined = авто на бэке).
+    rentalSlot: data.rentalSlot ?? null,
   };
   api
     .post(`/api/scooters`, body)

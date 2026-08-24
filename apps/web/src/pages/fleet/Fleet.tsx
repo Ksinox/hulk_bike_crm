@@ -44,6 +44,8 @@ import {
   normalizeQuery,
 } from "@/lib/search";
 import { useRentals } from "@/pages/rentals/rentalsStore";
+import { useRentalSlots, useSetSlotsTotal } from "@/lib/api/scooters";
+import { toast } from "@/lib/toast";
 import { ScooterCard } from "./ScooterCard";
 import { AddScooterModal } from "./AddScooterModal";
 
@@ -225,9 +227,16 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
           if (!byId && !byEnum) return false;
         }
         if (q.text) {
+          // Пункт 18: ищем и по номеру двигателя, раме, ID (4 цифры рамы)
+          // и месту в аренде — «по любым цифрам в данных скутера».
           const ok =
             matchScooterName(r.scooter.name, q) ||
-            matchText(r.scooter.vin ?? undefined, q);
+            matchText(r.scooter.vin ?? undefined, q) ||
+            matchText(r.scooter.engineNo ?? undefined, q) ||
+            matchText(r.scooter.frameNumber ?? undefined, q) ||
+            matchText(r.scooter.uid ?? undefined, q) ||
+            (r.scooter.rentalSlot != null &&
+              String(r.scooter.rentalSlot) === q.text);
           if (!ok) return false;
         }
         return true;
@@ -401,7 +410,7 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
             onChange={(e) => {
               setQuery(e.target.value);
             }}
-            placeholder="Имя (Jog #42) или VIN"
+            placeholder="Имя, VIN, № двигателя, рама, ID…"
             className="h-9 w-full rounded-full bg-surface pl-9 pr-12 text-[13px] text-ink shadow-card-sm outline-none placeholder:text-muted-2 focus:ring-2 focus:ring-blue-100"
           />
           <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1">
@@ -444,6 +453,9 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
             <LayoutGrid size={15} />
           </button>
         </div>
+
+        {/* Пункт 15: занятость арендных мест + смена общего количества. */}
+        <RentalSlotsBadge />
 
         <button
           type="button"
@@ -1023,5 +1035,83 @@ function SortToggle({
     >
       <Icon size={14} />
     </button>
+  );
+}
+
+/**
+ * Пункт 15: плашка занятости арендных мест «X из N» + смена общего
+ * количества (вручную, как просил заказчик). Уменьшить ниже занятого
+ * максимума не даст бэк (подсказка тостом).
+ */
+function RentalSlotsBadge() {
+  const slotsQ = useRentalSlots();
+  const setTotal = useSetSlotsTotal();
+  const [editing, setEditing] = useState(false);
+  const [totalStr, setTotalStr] = useState("");
+  if (!slotsQ.data) return null;
+  const { total, used } = slotsQ.data;
+
+  const save = async () => {
+    const next = Number(totalStr.replace(/\D/g, ""));
+    if (!Number.isFinite(next) || next < 0) return;
+    try {
+      await setTotal.mutateAsync(next);
+      toast.success(
+        "Количество мест изменено",
+        `В арендном парке теперь ${next} мест.`,
+      );
+      setEditing(false);
+    } catch (e) {
+      toast.error(
+        "Нельзя уменьшить",
+        e instanceof Error ? e.message : "Сначала освободите места",
+      );
+    }
+  };
+
+  return (
+    <div className="flex shrink-0 items-center gap-1.5 rounded-full bg-surface px-3 py-1.5 shadow-card-sm">
+      <span className="text-[12px] font-semibold text-muted">
+        Арендных мест:
+      </span>
+      {editing ? (
+        <span className="flex items-center gap-1">
+          <span className="text-[13px] font-bold tabular-nums text-ink">
+            {used.length} из
+          </span>
+          <input
+            autoFocus
+            inputMode="numeric"
+            value={totalStr}
+            onChange={(e) => setTotalStr(e.target.value.replace(/\D/g, ""))}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") save();
+              if (e.key === "Escape") setEditing(false);
+            }}
+            className="h-7 w-14 rounded-lg border border-blue-300 bg-white px-2 text-center text-[13px] font-bold tabular-nums text-ink outline-none focus:border-blue-500"
+          />
+          <button
+            type="button"
+            onClick={save}
+            disabled={setTotal.isPending}
+            className="flex h-7 items-center rounded-lg bg-blue-600 px-2.5 text-[12px] font-bold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+          >
+            ОК
+          </button>
+        </span>
+      ) : (
+        <button
+          type="button"
+          onClick={() => {
+            setTotalStr(String(total));
+            setEditing(true);
+          }}
+          title="Изменить общее количество мест в арендном парке"
+          className="rounded-lg px-1 text-[13px] font-bold tabular-nums text-blue-700 transition-colors hover:bg-blue-50"
+        >
+          {used.length} из {total}
+        </button>
+      )}
+    </div>
   );
 }

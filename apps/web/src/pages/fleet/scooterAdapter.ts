@@ -27,5 +27,9 @@ export function adaptScooter(a: ApiScooter): FleetScooter {
     marketValue: a.marketValue ?? undefined,
     lastOilChangeMileage: a.lastOilChangeMileage ?? undefined,
     note: a.note ?? undefined,
+    // Пункт 15/16: арендное место, ярлык «был в аренде», ID по раме.
+    rentalSlot: a.rentalSlot ?? undefined,
+    exRentalSlot: a.exRentalSlot ?? undefined,
+    uid: a.uid ?? undefined,
   };
 }
