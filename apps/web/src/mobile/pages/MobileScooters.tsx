@@ -293,10 +293,7 @@ function ParkStrip({
         </div>
       </div>
       <div
-        className={cn(
-          "mt-3 flex h-8 max-w-full items-stretch justify-start gap-[2px] overflow-hidden rounded-[9px] bg-surface-soft/70 p-[2px]",
-          perUnit ? "w-fit" : "w-full",
-        )}
+        className="mt-3 flex h-9 w-full items-stretch gap-[2px] overflow-hidden rounded-[10px] bg-surface-soft/70 p-[2px]"
       >
         {perUnit
           ? segments.flatMap((seg) =>
@@ -304,7 +301,7 @@ function ParkStrip({
                 <span
                   key={`${seg.key}-${i}`}
                   className={cn(
-                    "min-w-[5px] max-w-[26px] flex-1 rounded-[4px] transition-opacity",
+                    "min-w-[5px] flex-1 rounded-[5px] transition-opacity",
                     seg.bar,
                     dim(seg.key),
                   )}
