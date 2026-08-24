@@ -12,6 +12,7 @@ import {
   Phone,
   RefreshCcw,
   Handshake,
+  History,
   Wrench,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -50,7 +51,11 @@ import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { fileUrl } from "@/lib/files";
 import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
 import { toast } from "@/lib/toast";
-import { ScooterName, scooterModelName } from "@/components/ScooterName";
+import {
+  ScooterName,
+  ScooterNumberBadge,
+  scooterModelName,
+} from "@/components/ScooterName";
 import { askArchiveReason } from "./archiveReason";
 
 type TabId =
@@ -185,6 +190,35 @@ export function ScooterCard({
     () => rentals.filter((r) => r.scooter === scooter.name),
     [rentals, scooter.name],
   );
+
+  /**
+   * Пункт 16: арендная биография техники — аренды, дни, заработок и все
+   * номера, под которыми она ходила (текущий + бывшие из журнала смен).
+   */
+  const slotTimelineQ = useActivityTimeline("scooter", scooter.id, 200);
+  const slotTimeline = slotTimelineQ.data?.items ?? [];
+  const rentalSummary = useMemo(() => {
+    const daysTotal = scooterRentals.reduce((acc, r) => acc + (r.days ?? 0), 0);
+    const sumTotal = scooterRentals.reduce((acc, r) => acc + (r.sum ?? 0), 0);
+    const numbers = new Set<number>();
+    if (scooter.rentalSlot != null) numbers.add(scooter.rentalSlot);
+    if (scooter.exRentalSlot != null) numbers.add(scooter.exRentalSlot);
+    // Смены номера пишутся в журнал — вытаскиваем оттуда все, что были.
+    for (const item of slotTimeline) {
+      const text = `${item.summary ?? ""}`;
+      const m = text.match(/№(\d+)\s*→\s*№(\d+)/);
+      if (m) {
+        numbers.add(Number(m[1]));
+        numbers.add(Number(m[2]));
+      }
+    }
+    return {
+      rentalsCount: scooterRentals.length,
+      daysTotal,
+      sumTotal,
+      numbers: [...numbers].filter((n) => Number.isFinite(n)).sort((a, b) => a - b),
+    };
+  }, [scooterRentals, scooter.rentalSlot, scooter.exRentalSlot, slotTimeline]);
 
   const activeRental = useMemo(
     () =>
@@ -322,7 +356,7 @@ export function ScooterCard({
         {/* Пункт 16: ярлык «был в аренде» у техники вне арендного парка. */}
         {scooter.rentalSlot == null && scooter.exRentalSlot != null && (
           <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-3 py-1 text-[12px] font-bold text-amber-800">
-            Был в аренде · номер {scooter.exRentalSlot}
+            Был в аренде
           </span>
         )}
         <div className="flex-1" />
@@ -430,6 +464,62 @@ export function ScooterCard({
                 <SpecCell label="Комментарий" value={scooter.note} />
               )}
             </div>
+
+            {/* Пункт 16 (правка 24.08): техника ушла из аренды — показываем
+                не один бывший номер, а всю её арендную биографию: сколько
+                аренд, сколько дней отработала, под какими номерами ходила.
+                Нужно тому, кто смотрит скутер перед продажей/выкупом. */}
+            {scooter.rentalSlot == null && rentalSummary.rentalsCount > 0 && (
+              <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50/60 p-4">
+                <div className="flex items-center gap-2">
+                  <History size={15} className="text-amber-700" />
+                  <span className="text-[12px] font-bold uppercase tracking-wider text-amber-800">
+                    Был в аренде
+                  </span>
+                </div>
+                <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                  <div>
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
+                      Аренд всего
+                    </div>
+                    <div className="mt-0.5 text-[17px] font-bold tabular-nums text-ink">
+                      {rentalSummary.rentalsCount}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
+                      Дней в аренде
+                    </div>
+                    <div className="mt-0.5 text-[17px] font-bold tabular-nums text-ink">
+                      {rentalSummary.daysTotal}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
+                      Заработал
+                    </div>
+                    <div className="mt-0.5 text-[17px] font-bold tabular-nums text-ink">
+                      {fmt(rentalSummary.sumTotal)} ₽
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                  <span className="text-[11px] font-semibold text-muted">
+                    Номера в аренде:
+                  </span>
+                  {rentalSummary.numbers.length > 0 ? (
+                    rentalSummary.numbers.map((n) => (
+                      <ScooterNumberBadge key={n} number={n} size="sm" tone="muted" />
+                    ))
+                  ) : (
+                    <span className="text-[11px] text-muted-2">не присваивались</span>
+                  )}
+                  <span className="text-[11px] text-muted-2">
+                    · пробег {fmt(scooter.mileage)} км
+                  </span>
+                </div>
+              </div>
+            )}
 
             {/* v0.8.21: заметки скутера стикерами. */}
             <div className="mt-6 border-t border-border pt-5">
