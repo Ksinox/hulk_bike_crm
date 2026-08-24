@@ -3499,6 +3499,42 @@ export async function rentalsRoutes(app: FastifyInstance) {
   }
 
   /**
+   * ХОТФИКС 24.08.2026: начало ТЕКУЩЕГО эпизода просрочки (МСК) —
+   * следующий день после планового возврата.
+   *
+   * Баг: штраф начисляется от ТЕКУЩЕЙ просрочки, а оплаты и прощения
+   * штрафа копились без привязки ко времени и вычитались из любого
+   * будущего начисления. Клиент гасил штрафы за прошлые просрочки,
+   * выкупал просроченные дни (срок сдвигался) — новая просрочка давала
+   * штраф, который тут же «съедался» старыми оплатами. Внешне это
+   * выглядело как «утром исчезли все штрафы за просрочки».
+   *
+   * Теперь штраф гасят только те оплаты и прощения, что сделаны в
+   * текущем эпизоде просрочки; более ранние закрывали прошлые эпизоды.
+   */
+  function overdueEpochStartMs(endPlannedAt: Date): number {
+    const msk = new Date(
+      endPlannedAt.toLocaleString("en-US", { timeZone: "Europe/Moscow" }),
+    );
+    const endDay = new Date(msk.getFullYear(), msk.getMonth(), msk.getDate());
+    return endDay.getTime() + 86_400_000;
+  }
+
+  /** Долговая запись относится к текущему эпизоду просрочки? */
+  function inEpoch(
+    createdAt: Date | string | null | undefined,
+    epochStartMs: number,
+  ): boolean {
+    if (!createdAt) return false;
+    const d = new Date(createdAt);
+    const msk = new Date(
+      d.toLocaleString("en-US", { timeZone: "Europe/Moscow" }),
+    );
+    const day = new Date(msk.getFullYear(), msk.getMonth(), msk.getDate());
+    return day.getTime() >= epochStartMs;
+  }
+
+  /**
    * Расчёт двух компонентов просрочки (v0.4.3 / v0.4.25).
    *  • daysCharge — «долг по неоплаченным дням» = dailyRate × overdueDays
    *  • fineCharge — штраф 50% за каждый день просрочки
@@ -3656,10 +3692,14 @@ export async function rentalsRoutes(app: FastifyInstance) {
 
       // Раскладываем debt_entries
       const myEntries = entries.filter((e) => e.rentalId === r.id);
+      // Хотфикс 24.08: границы текущего эпизода просрочки.
+      const epochStart = endDate.getTime() + 86_400_000;
       let daysForgiveExplicit = 0;
       let fineForgiveExplicit = 0;
       let daysPayExplicit = 0;
       let finePayExplicit = 0;
+      let fineForgiveCurrent = 0;
+      let finePayCurrent = 0;
       let mixedForgive = 0;
       let mixedPayment = 0;
       let manualCharged = 0;
@@ -3671,12 +3711,15 @@ export async function rentalsRoutes(app: FastifyInstance) {
         // уменьшенный fineCharge. Повторно его вычитать нельзя (двойной
         // счёт: после смены периода/повторной просрочки штраф занижался).
         // Вычитаем только САМОСТОЯТЕЛЬНОЕ прощение штрафа («только штраф»).
-        else if (e.kind === "overdue_fine_forgive" && !e.appliedToEndPlanned)
+        else if (e.kind === "overdue_fine_forgive" && !e.appliedToEndPlanned) {
           fineForgiveExplicit += e.amount;
-        else if (e.kind === "overdue_days_payment")
+          if (inEpoch(e.createdAt, epochStart)) fineForgiveCurrent += e.amount;
+        } else if (e.kind === "overdue_days_payment")
           daysPayExplicit += e.amount;
-        else if (e.kind === "overdue_fine_payment")
+        else if (e.kind === "overdue_fine_payment") {
           finePayExplicit += e.amount;
+          if (inEpoch(e.createdAt, epochStart)) finePayCurrent += e.amount;
+        }
         else if (e.kind === "overdue_forgive") mixedForgive += e.amount;
         else if (e.kind === "overdue_payment") mixedPayment += e.amount;
         else if (e.kind === "manual_charge") manualCharged += e.amount;
@@ -3692,9 +3735,10 @@ export async function rentalsRoutes(app: FastifyInstance) {
       void mixedForgive;
       void mixedPayment;
       const daysBalance = daysCharge;
+      // Хотфикс 24.08: гасим только оплатами/прощениями текущего эпизода.
       const fineBalance = Math.max(
         0,
-        fineCharge - fineForgiveExplicit - finePayExplicit,
+        fineCharge - fineForgiveCurrent - finePayCurrent,
       );
       const manualBalance = Math.max(0, manualCharged - manualForgiven);
 
@@ -3829,13 +3873,23 @@ export async function rentalsRoutes(app: FastifyInstance) {
     // счёт). Для отображения «сколько прощено» считаем всё (fineForgiveExplicit),
     // а в баланс идёт только самостоятельное прощение (fineForgiveStandalone).
     let fineForgiveStandalone = 0;
+    // Хотфикс 24.08: суммы текущего эпизода просрочки.
+    const epochStartMs = overdueEpochStartMs(rental.endPlannedAt);
+    let fineForgiveCurrent = 0;
+    let finePayCurrent = 0;
     for (const e of events) {
       if (e.kind === "overdue_days_forgive") daysForgiveExplicit += e.amount;
       else if (e.kind === "overdue_fine_forgive") {
         fineForgiveExplicit += e.amount;
-        if (!e.appliedToEndPlanned) fineForgiveStandalone += e.amount;
+        if (!e.appliedToEndPlanned) {
+          fineForgiveStandalone += e.amount;
+          if (inEpoch(e.createdAt, epochStartMs)) fineForgiveCurrent += e.amount;
+        }
       } else if (e.kind === "overdue_days_payment") daysPayExplicit += e.amount;
-      else if (e.kind === "overdue_fine_payment") finePayExplicit += e.amount;
+      else if (e.kind === "overdue_fine_payment") {
+        finePayExplicit += e.amount;
+        if (inEpoch(e.createdAt, epochStartMs)) finePayCurrent += e.amount;
+      }
       else if (e.kind === "overdue_forgive") mixedForgive += e.amount;
       else if (e.kind === "overdue_payment") mixedPayment += e.amount;
       else if (e.kind === "manual_charge") manualCharged += e.amount;
@@ -3858,9 +3912,10 @@ export async function rentalsRoutes(app: FastifyInstance) {
     void mixedForgive;
     void mixedPayment;
     const daysBalance = daysCharge;
+    // Хотфикс 24.08: гасим только оплатами/прощениями текущего эпизода.
     const fineBalance = Math.max(
       0,
-      fineCharge - fineForgiveStandalone - finePayExplicit,
+      fineCharge - fineForgiveCurrent - finePayCurrent,
     );
     const overdueBalance = daysBalance + fineBalance;
     // Для UI «сколько уже простили/оплатили» — суммируем всё.
