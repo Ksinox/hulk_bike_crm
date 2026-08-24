@@ -92,7 +92,13 @@ try {
     }));
     localStorage.setItem("hulk-seen-applications", JSON.stringify(arr));
   });
-  await page.goto(BASE + "/", { waitUntil: "networkidle2" });
+  // domcontentloaded + ожидание текста: networkidle2 иногда не наступает —
+  // приложение держит открытые запросы (поллинг заявок/уведомлений), и
+  // навигация падала по 30-секундному таймауту на ровном месте.
+  await page.goto(BASE + "/", {
+    waitUntil: "domcontentloaded",
+    timeout: 60000,
+  });
   await page.waitForFunction(
     () => document.body.innerText.length > 200,
     { timeout: 20000 },
