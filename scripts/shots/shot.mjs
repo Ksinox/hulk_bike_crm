@@ -133,8 +133,14 @@ try {
           ),
         )
         .catch(() => {});
+      // captureBeyondViewport:false — ВАЖНО. По умолчанию Puppeteer ради
+      // clip'а вне вьюпорта временно меняет метрики устройства, браузер
+      // отдаёт resize, React-дерево перемонтируется: состояние экрана
+      // слетает (сброшенный фильтр) и заново всплывают модалки (детектор
+      // новой заявки). Из-за этого кадры получались «не про то».
       await page.screenshot({
         path: file,
+        captureBeyondViewport: false,
         ...(jpeg ? { type: "jpeg", quality: 85 } : {}),
         ...(opts.clip ? { clip: opts.clip } : {}),
       });

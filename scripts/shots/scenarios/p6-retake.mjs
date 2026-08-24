@@ -4,13 +4,21 @@ import { clipOf } from "./p9-common.mjs";
 export async function run(page, ctx) {
   await ctx.gotoRoute("rentals");
   await ctx.sleep(1400);
+  // Пункт 5 переименовал кнопку: «Новая сделка» → пункт списка «Аренда».
   await page.evaluate(() => {
     const b = [...document.querySelectorAll("button")].find((x) =>
-      /Новая аренда/.test(x.textContent || ""),
+      /Новая сделка/.test(x.textContent || ""),
     );
     b?.click();
   });
-  await ctx.sleep(1400);
+  await ctx.sleep(700);
+  await page.evaluate(() => {
+    const b = [...document.querySelectorAll("button")].find((x) =>
+      /Скутер напрокат/.test(x.textContent || ""),
+    );
+    b?.click();
+  });
+  await ctx.sleep(1600);
   // клиент: поле модалки «Кликните для списка…» → выбрать Морозова из списка
   await page.evaluate(() => {
     const inp = [...document.querySelectorAll("input")].find((i) =>

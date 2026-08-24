@@ -484,6 +484,7 @@ export const progressItems: ProgressItem[] = [
         imgs: [
           { src: "/progress/p24-1-all-crop.png", label: "Без фильтра: общее число клиентов" },
           { src: "/progress/p24-2-filtered-crop.png", label: "Фильтр «С долгом»: счётчик показывает 4 из 10" },
+          { src: "/progress/p24-2-filters-row.png", label: "Тот самый фильтр, который выбрали" },
         ],
       },
     ],
@@ -716,7 +717,8 @@ export const progressItems: ProgressItem[] = [
         text:
           "Дашборд после правки: слева кольцо «Загрузка парка» (N в аренде из M, процент) — единственный источник этой цифры. Отдельной плитки «Активных аренд» больше нет, путать нечего.",
         imgs: [
-          { src: "/progress/p19-after-dashboard.jpg", label: "Дашборд: ряд показателей без дубля «Активных аренд»" },
+          { src: "/progress/p19-1-row-crop.png", label: "Верхний ряд: загрузка парка, поступления, просрочки — дубля нет (крупно)" },
+          { src: "/progress/p19-after-dashboard.jpg", label: "Общий план дашборда" },
         ],
       },
     ],
