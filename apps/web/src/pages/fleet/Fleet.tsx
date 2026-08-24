@@ -331,11 +331,18 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
       )}
 
       {/* =========== KPI =========== */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
+      <div
+        className={cn(
+          "grid grid-cols-2 gap-3 md:grid-cols-4",
+          // Плитка «Выбыли» появляется только когда такая техника есть —
+          // тогда ряд расширяем до 9, чтобы не переносить её одну вниз.
+          counters.gone > 0 ? "xl:grid-cols-9" : "xl:grid-cols-8",
+        )}
+      >
         <KpiTile
           label="Всего скутеров"
           value={counters.total}
-          hint="в парке (кроме архива)"
+          hint="в обороте, без выбывших"
           icon={Layers}
           accent="slate"
           active={tab === "all"}
