@@ -57,6 +57,8 @@ export type CreateScooterInput = {
   frameNumber?: string | null;
   /** Пункт 15: желаемое место в арендном парке (из свободных). */
   rentalSlot?: number | null;
+  /** Пункт 11: процент инвестора для партнёрской техники (null → 50). */
+  partnerShare?: number | null;
   year?: number | null;
   color?: string | null;
   mileage?: number;

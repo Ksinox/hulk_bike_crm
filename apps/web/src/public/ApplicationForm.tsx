@@ -1881,12 +1881,58 @@ function WishModelStep({
   models: RentalModel[];
   loading: boolean;
 }) {
+  // Пункт 12: выбор «бензин / электро» перед моделью — показываем,
+  // только если в парке есть оба типа техники.
+  const hasElectric = models.some((m) => m.isElectric);
+  const hasPetrol = models.some((m) => !m.isElectric);
+  const showTypePick = hasElectric && hasPetrol;
+  const [fuelType, setFuelType] = useState<"petrol" | "electric">(() => {
+    const cur = models.find((m) => m.name === form.wantModel);
+    return cur?.isElectric ? "electric" : "petrol";
+  });
+  const shownModels = showTypePick
+    ? models.filter((m) => (m.isElectric ?? false) === (fuelType === "electric"))
+    : models;
+  const pickType = (t: "petrol" | "electric") => {
+    setFuelType(t);
+    // выбранная модель другого типа — сбрасываем выбор
+    const cur = models.find((m) => m.name === form.wantModel);
+    if (cur && (cur.isElectric ?? false) !== (t === "electric")) {
+      setField("wantModel", "");
+    }
+  };
   return (
     <div className="space-y-4">
       <h1 className="text-[22px] font-bold text-slate-900">Какой скутер?</h1>
       <p className="text-[14px] text-slate-600">
         Необязательно — можно пропустить, менеджер подберёт при звонке.
       </p>
+
+      {showTypePick && (
+        <div className="flex justify-center">
+          <div className="inline-flex rounded-full bg-slate-100 p-1">
+            {(
+              [
+                ["petrol", "Бензин"],
+                ["electric", "⚡ Электро"],
+              ] as const
+            ).map(([t, lbl]) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => pickType(t)}
+                className={
+                  fuelType === t
+                    ? "rounded-full bg-slate-900 px-5 py-2 text-[14px] font-bold text-white transition-colors"
+                    : "rounded-full px-5 py-2 text-[14px] font-semibold text-slate-600 transition-colors hover:text-slate-900"
+                }
+              >
+                {lbl}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <div className="flex justify-center gap-3 overflow-hidden">
@@ -1903,7 +1949,7 @@ function WishModelStep({
         </div>
       ) : (
         <ScooterCoverflow
-          models={models}
+          models={shownModels}
           value={form.wantModel}
           onSelect={(name) => setField("wantModel", name)}
         />

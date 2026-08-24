@@ -77,10 +77,13 @@ function ScooterTag({
   label,
   mileage,
   size = "sm",
+  electric = false,
 }: {
   label: string;
   mileage?: number | null;
   size?: "sm" | "md";
+  /** Пункт 11: отметка «е-» для электротранспорта. */
+  electric?: boolean;
 }) {
   const { model, num } = parseScooter(label);
   const dot = size === "md" ? "h-6 min-w-6 text-[12px]" : "h-5 min-w-5 text-[11px]";
@@ -97,6 +100,11 @@ function ScooterTag({
         </span>
       )}
       <span className="text-muted">{model}</span>
+      {electric && (
+        <span className="inline-flex items-center rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wide text-emerald-700">
+          e-
+        </span>
+      )}
       {mileage != null && (
         <span className="text-[11px] tabular-nums text-muted-2">
           · {fmt(mileage)} км
@@ -163,6 +171,8 @@ type Row = {
   clientId: number;
   clientName: string;
   scooterLabel: string;
+  /** Пункт 11: электротранспорт — отметка «е-» в списке. */
+  isElectric: boolean;
   scooterAvatarSrc: string | null;
   mileage: number | null;
   startKey: number;
@@ -371,6 +381,8 @@ export function RentalsList({
         clientId: r.clientId,
         clientName: c?.name ?? `Клиент #${r.clientId}`,
         scooterLabel: r.scooter,
+        // Пункт 11: отметка «е-» для электротранспорта в общем списке аренд.
+        isElectric: model?.isElectric ?? false,
         scooterAvatarSrc: fileUrl(model?.avatarKey, { variant: "view" }),
         mileage: scooter?.mileage ?? null,
         startKey: dateKey(r.start),
@@ -672,7 +684,7 @@ function RentalTableRow({
         </div>
       </td>
       <td className="px-4 py-5 text-[13px] whitespace-nowrap">
-        <ScooterTag label={row.scooterLabel} mileage={row.mileage} />
+        <ScooterTag label={row.scooterLabel} mileage={row.mileage} electric={row.isElectric} />
       </td>
       <td className="px-4 py-5 tabular-nums text-muted whitespace-nowrap">
         {row.rental.start}

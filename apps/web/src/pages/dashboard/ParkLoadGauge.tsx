@@ -48,6 +48,7 @@ export function ParkLoadGauge({
   percent,
   active,
   rentable,
+  activeElectro = 0,
   onClick,
   className,
   size = 100,
@@ -56,6 +57,8 @@ export function ParkLoadGauge({
   percent: number;
   active: number;
   rentable: number;
+  /** Пункт 11: сколько из активных — электротранспорт (0 → не показываем). */
+  activeElectro?: number;
   onClick?: () => void;
   className?: string;
   size?: number;
@@ -208,6 +211,14 @@ export function ParkLoadGauge({
           >
             из {rentable} доступных
           </div>
+          {/* Пункт 11: разделение активных на скутеры и электро. */}
+          {activeElectro > 0 && (
+            <div className="mt-0.5 text-[11px] font-semibold">
+              <span className="text-ink-2">{active - activeElectro} скут.</span>
+              <span className="text-muted-2"> · </span>
+              <span className="text-emerald-600">⚡ {activeElectro} электро</span>
+            </div>
+          )}
         </div>
       </button>
     </Card>

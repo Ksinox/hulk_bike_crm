@@ -61,6 +61,7 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
           percent={metrics.loadPercent}
           active={metrics.activeRentalsCount}
           rentable={metrics.rentableFleet}
+          activeElectro={metrics.activeElectroCount}
           onClick={
             metrics.activeRentalsCount > 0
               ? () => drawer.openRentalsList("active")

@@ -28,6 +28,7 @@ import { MobileSettings } from "./pages/MobileSettings";
 import { MobileDocuments } from "./pages/MobileDocuments";
 import { MobilePlaceholder } from "./pages/MobilePlaceholder";
 import { StoragePage } from "@/pages/storage/StoragePage";
+import { Partners } from "@/pages/partners/Partners";
 import { ApprovalsBell } from "@/components/ApprovalsInbox";
 import { DayReportDialog } from "@/components/DayReport";
 
@@ -161,6 +162,14 @@ function MobilePage({
       return <MobileWhatsNew />;
     case "progress":
       return <MobileProgress />;
+    case "partners":
+      // Пункт 11: страница адаптивна (таблица со своим скроллом) —
+      // переиспользуем десктопную в мобильной обёртке.
+      return (
+        <div className="px-1 pb-4">
+          <Partners />
+        </div>
+      );
     case "settings":
       return <MobileSettings />;
     case "docs":

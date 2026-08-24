@@ -87,6 +87,8 @@ export type ApiScooter = {
   exRentalSlot?: number | null;
   /** Пункт 15: уникальный ID — 4 последние цифры номера рамы. */
   uid?: string | null;
+  /** Пункт 11: процент инвестора (партнёрская техника), null → 50. */
+  partnerShare?: number | null;
   year: number | null;
   color: string | null;
   mileage: number;

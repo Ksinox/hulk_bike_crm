@@ -15,6 +15,7 @@ import {
   Settings,
   ShoppingBag,
   Sparkles,
+  Handshake,
   TrendingUp,
   UserCog,
   Users,
@@ -54,6 +55,8 @@ function buildMainItems(canManageStaff: boolean): NavItem[] {
   items.push(
     { id: "rassrochki", label: "Рассрочки", icon: Receipt },
     { id: "sales", label: "Продажи", icon: Wallet },
+    // Пункт 11: расчёт выплат инвестору по партнёрской технике.
+    { id: "partners", label: "Партнёрка", icon: Handshake, ready: true },
     { id: "service", label: "Ремонты", icon: Wrench, ready: true },
     { id: "incidents", label: "Инциденты", icon: CircleAlert },
     { id: "tasks", label: "Задачи", icon: ClipboardCheck },

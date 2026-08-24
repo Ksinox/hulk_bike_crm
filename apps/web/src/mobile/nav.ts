@@ -1,4 +1,5 @@
 import {
+  Handshake,
   Bike,
   FileText,
   HardDrive,
@@ -46,6 +47,8 @@ export function buildMoreItems(canManageStaff: boolean): MobileNavItem[] {
     { id: "debtors", label: "Должники", icon: Scale, ready: true },
     { id: "service", label: "Ремонты", icon: Wrench, ready: true },
     { id: "docs", label: "Документы", icon: FileText, ready: true },
+    // Пункт 11: выплаты инвестору по партнёрской технике.
+    { id: "partners", label: "Партнёрка", icon: Handshake, ready: true },
   ];
   if (canManageStaff) {
     items.push({ id: "staff", label: "Сотрудники", icon: UserCog, ready: true });
@@ -82,6 +85,7 @@ export function routeTitle(route: RouteId): string {
     staff: "Сотрудники",
     storage: "Хранилище",
     "whats-new": "Что нового",
+    partners: "Партнёрка",
     settings: "Настройки",
   };
   return all[route] ?? "Халк Байк";

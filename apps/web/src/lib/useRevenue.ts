@@ -22,6 +22,7 @@
 import { useMemo } from "react";
 import { useApiPayments, type ApiPayment } from "@/lib/api/payments";
 import { useBillingPeriodAnchors } from "@/lib/api/billing-period";
+import { partnerCutOf, usePartnerInfo } from "@/lib/partner";
 import {
   currentBillingPeriod,
   type BillingPeriod,
@@ -30,7 +31,7 @@ import {
 export type RevenueScope = "all" | "rentals";
 
 export type RevenueResult = {
-  /** Сумма ₽ за текущий расчётный период. */
+  /** Сумма ₽ за текущий расчётный период (за вычетом доли инвестора). */
   total: number;
   /** Сколько платежей попало в выборку. */
   count: number;
@@ -38,6 +39,8 @@ export type RevenueResult = {
   period: BillingPeriod;
   /** Платежи по дням периода — для спарклайн-графика. */
   byDay: { date: string; sum: number }[];
+  /** Пункт 11: удержанная доля инвестора (партнёрская техника), ₽. */
+  partnerCut: number;
 };
 
 /**
@@ -70,6 +73,9 @@ export function useBillingPeriodRevenue(
   now: Date = new Date(),
 ): RevenueResult {
   const { data: payments } = useApiPayments();
+  // Пункт 11: выручка партнёрской техники учитывается за вычетом доли
+  // инвестора (расчёт выплат — в разделе «Партнёрка»).
+  const { shareByRental } = usePartnerInfo();
   // Подписываемся на якоря расчётного периода. currentBillingPeriod()
   // читает модульный глобал, который заполняется асинхронно с сервера
   // (setBillingPeriodAnchors на onSuccess). Без этой подписки плашка
@@ -98,12 +104,16 @@ export function useBillingPeriodRevenue(
         ? inPeriod.filter((p) => p.rentalId != null)
         : inPeriod;
     let total = 0;
+    let partnerCut = 0;
     const byDayMap = new Map<string, number>();
     for (const p of filtered) {
-      total += p.amount;
+      const cut = partnerCutOf(p, shareByRental);
+      const net = p.amount - cut;
+      total += net;
+      partnerCut += cut;
       if (p.paidAt) {
         const day = p.paidAt.slice(0, 10);
-        byDayMap.set(day, (byDayMap.get(day) ?? 0) + p.amount);
+        byDayMap.set(day, (byDayMap.get(day) ?? 0) + net);
       }
     }
     const byDay = Array.from(byDayMap.entries())
@@ -114,6 +124,7 @@ export function useBillingPeriodRevenue(
       count: filtered.length,
       period,
       byDay,
+      partnerCut,
     };
-  }, [payments, period, scope]);
+  }, [payments, period, scope, shareByRental]);
 }

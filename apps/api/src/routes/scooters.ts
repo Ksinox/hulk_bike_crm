@@ -40,6 +40,8 @@ const CreateScooterBody = z
     note: z.string().max(500).optional().nullable(),
     /** Пункт 15: желаемое место в арендном парке (из свободных). */
     rentalSlot: z.number().int().min(1).optional().nullable(),
+    /** Пункт 11: процент инвестора (партнёрская техника), null → 50. */
+    partnerShare: z.number().int().min(0).max(100).optional().nullable(),
   })
   .strict();
 

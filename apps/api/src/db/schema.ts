@@ -344,6 +344,12 @@ export const scooters = pgTable(
     exRentalSlot: integer("ex_rental_slot"),
     /** Пункт 15: уникальный ID техники — 4 последние цифры номера рамы. */
     uid: text("uid"),
+    /**
+     * Пункт 11: процент инвестора для партнёрской техники (на единицу).
+     * null → дефолт 50. Применяется к скутерам партнёрских моделей
+     * (scooter_models.is_partner) при расчёте выплат партнёру.
+     */
+    partnerShare: integer("partner_share"),
     /** Год выпуска — для договора проката */
     year: integer("year"),
     /** Цвет — для договора */

@@ -7,6 +7,7 @@ import { useMemo } from "react";
 import { useApiClients } from "@/lib/api/clients";
 import { useApiRentals } from "@/lib/api/rentals";
 import { useApiScooters } from "@/lib/api/scooters";
+import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { useApiPayments, type ApiPayment } from "@/lib/api/payments";
 import { useAllDamageReports } from "@/lib/api/damage-reports";
 import { useDebtAggregate } from "@/lib/api/debt";
@@ -38,6 +39,8 @@ export type DashboardMetrics = {
   overdueDeltaFromYesterday: number; // +1 / 0
 
   activeRentalsCount: number;
+  /** Пункт 11: сколько из активных аренд — на электротранспорте. */
+  activeElectroCount: number;
   fleetTotal: number;
   /** #21: парк, ДОСТУПНЫЙ к аренде (rental_pool) — знаменатель «загрузки». */
   rentableFleet: number;
@@ -163,6 +166,7 @@ export function useDashboardMetrics(): DashboardMetrics {
   const clientsQ = useApiClients();
   const rentalsQ = useApiRentals();
   const scootersQ = useApiScooters();
+  const scooterModelsQ = useApiScooterModels();
   const paymentsQ = useApiPayments();
   const damageReportsQ = useAllDamageReports();
   // v0.4.51: реальный долг по всем live-арендам (учитывает forgive/payment).
@@ -182,6 +186,7 @@ export function useDashboardMetrics(): DashboardMetrics {
     const clients = clientsQ.data ?? [];
     const rentals: ApiRental[] = rentalsQ.data ?? [];
     const scooters: ApiScooter[] = scootersQ.data ?? [];
+    const scooterModels = scooterModelsQ.data ?? [];
     const payments: ApiPayment[] = paymentsQ.data ?? [];
     const damageAll = damageReportsQ.data ?? [];
     const debtAgg = debtAggQ.data ?? [];
@@ -324,6 +329,21 @@ export function useDashboardMetrics(): DashboardMetrics {
     // «Активные» в /rentals).
     const activeRentalsCount = rentals.filter(
       (r) => r.status === "active" && r.scooterId != null,
+    ).length;
+    // Пункт 11: активные аренды на электротранспорте (модель is_electric).
+    const electroModelIds = new Set(
+      scooterModels.filter((m) => m.isElectric).map((m) => m.id),
+    );
+    const electroScooterIds = new Set(
+      scooters
+        .filter((s) => s.modelId != null && electroModelIds.has(s.modelId))
+        .map((s) => s.id),
+    );
+    const activeElectroCount = rentals.filter(
+      (r) =>
+        r.status === "active" &&
+        r.scooterId != null &&
+        electroScooterIds.has(r.scooterId),
     ).length;
 
     // fleetTotal — весь парк в обороте (для панели «Парк · N скутеров»).
@@ -579,6 +599,7 @@ export function useDashboardMetrics(): DashboardMetrics {
       overdueSum,
       overdueDeltaFromYesterday: overdueRentals.length - overdueYesterday,
       activeRentalsCount,
+      activeElectroCount,
       fleetTotal,
       rentableFleet,
       loadPercent,
@@ -609,6 +630,7 @@ export function useDashboardMetrics(): DashboardMetrics {
     clientsQ.data,
     rentalsQ.data,
     scootersQ.data,
+    scooterModelsQ.data,
     paymentsQ.data,
     damageReportsQ.data,
     debtAggQ.data,

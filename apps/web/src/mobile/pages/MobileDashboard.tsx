@@ -119,6 +119,7 @@ export function MobileDashboard({
           percent={m.loadPercent}
           active={m.activeRentalsCount}
           rentable={m.rentableFleet}
+          activeElectro={m.activeElectroCount}
           onClick={() => onSelect("fleet")}
           size={84}
           layout="stack"

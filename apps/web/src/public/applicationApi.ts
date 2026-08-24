@@ -73,6 +73,8 @@ export type RentalModel = {
   shortRate: number;
   weekRate: number;
   monthRate: number;
+  /** Пункт 12: электротранспорт — для шага «бензин / электро». */
+  isElectric?: boolean;
   avatarUrl: string | null;
 };
 

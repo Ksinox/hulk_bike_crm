@@ -131,6 +131,7 @@ export async function publicRoutes(app: FastifyInstance) {
           weekRate: scooterModels.weekRate,
           monthRate: scooterModels.monthRate,
           avatarKey: scooterModels.avatarKey,
+          isElectric: scooterModels.isElectric,
         })
         .from(scooterModels)
         .where(eq(scooterModels.active, true))
@@ -164,6 +165,8 @@ export async function publicRoutes(app: FastifyInstance) {
         shortRate: r.shortRate,
         weekRate: r.weekRate,
         monthRate: r.monthRate,
+        // Пункт 12: тип техники для шага «электро / бензин» в анкете.
+        isElectric: r.isElectric ?? false,
         avatarUrl:
           r.avatarKey && r.avatarKey !== ""
             ? `/api/public/scooter-models/${r.id}/avatar`
