@@ -7,6 +7,7 @@ import {
   ArrowUpNarrowWide,
   Check,
   Droplet,
+  HandCoins,
   HelpCircle,
   Key,
   Layers,
@@ -61,16 +62,21 @@ type StatusTab =
   | "disassembly"
   | "for_sale"
   | "ready"
-  /** Выбывшие из парка: продан / передан в выкуп (пункт заказчика 24.08). */
+  /** Передан клиенту в выкуп — техника наша, пока сумма не закрыта. */
+  | "buyout"
+  /** Продан: права перешли покупателю, в парке не числится. */
   | "gone";
 
 /**
- * Техника выбыла из парка: продана или передана клиенту в выкуп.
- * Правка заказчика 24.08: такие единицы не должны считаться в парке —
- * их у нас физически нет. Остаются в CRM ради истории и документов.
+ * Техника выбыла из парка окончательно — только продажа.
+ *
+ * Правка заказчика 25.08: выкуп сюда НЕ входит. Скутер в выкупе остаётся
+ * нашим: клиент платит по графику, перестанет — технику заберём. Права
+ * переходят к нему только когда сумма закрыта, тогда статус станет
+ * «Продан» и единица выйдет из парка.
  */
 function isGone(status: ScooterDisplayStatus): boolean {
-  return status === "sold" || status === "buyout";
+  return status === "sold";
 }
 
 // v0.3.7: пагинация удалена в пользу одного скролла.
@@ -193,7 +199,9 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
       dtp: 0,
       disassembly: 0,
       for_sale: 0,
-      /** Выбывшие: продан / передан в выкуп — техники у нас больше нет. */
+      /** Передан в выкуп: техника наша, но у клиента (в аренду не идёт). */
+      buyout: 0,
+      /** Продан: права перешли покупателю, техники у нас больше нет. */
       gone: 0,
       total: 0,
     };
@@ -210,6 +218,7 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
       else if (r.status === "dtp") c.dtp++;
       else if (r.status === "disassembly") c.disassembly++;
       else if (r.status === "for_sale") c.for_sale++;
+      else if (r.status === "buyout") c.buyout++;
     }
     return c;
   }, [rows]);
@@ -771,6 +780,7 @@ function ParkOverview({
     dtp: number;
     disassembly: number;
     for_sale: number;
+    buyout: number;
     gone: number;
     total: number;
   };
@@ -929,9 +939,17 @@ function ParkOverview({
               tone: "violet" as const,
             },
             {
+              key: "buyout" as const,
+              label: "В выкупе",
+              hint: "у клиента, техника пока наша",
+              value: counters.buyout,
+              icon: HandCoins,
+              tone: "violet" as const,
+            },
+            {
               key: "gone" as const,
               label: "Проданы",
-              hint: "продажа и выкуп — уже не наши",
+              hint: "права перешли покупателю",
               value: counters.gone,
               icon: LogOut,
               tone: "slate" as const,

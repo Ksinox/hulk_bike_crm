@@ -35,7 +35,9 @@ type Filter =
   | "dtp"
   | "disassembly"
   | "sale"
-  /** Выбывшие: продан / передан в выкуп — в парке их нет. */
+  /** Передан в выкуп — техника наша, но у клиента. */
+  | "buyout"
+  /** Продан: права перешли покупателю, в парке не числится. */
   | "gone";
 
 const MODEL_LABEL: Record<ScooterModel, string> = {
@@ -109,19 +111,27 @@ export function MobileScooters() {
   const displayStatus = (s: ApiScooter): ScooterDisplayStatus =>
     s.baseStatus === "rental_pool" && rentedSet.has(s.id) ? "rented" : s.baseStatus;
 
-  // Выбывшая техника (продана / передана в выкуп) физически не в парке —
-  // держим её отдельно от «живого» списка (правка заказчика 24.08).
+  // Проданная техника физически не в парке — держим её отдельно от
+  // «живого» списка. Выкуп сюда НЕ входит: скутер в выкупе остаётся
+  // нашим, пока клиент не закрыл сумму (правка заказчика 25.08).
   const all = useMemo(
     () => scooters.filter((s) => !s.archivedAt && !s.deletedAt),
     [scooters],
   );
-  const isGone = (s: ApiScooter) =>
-    s.baseStatus === "sold" || s.baseStatus === "buyout";
+  const isGone = (s: ApiScooter) => s.baseStatus === "sold";
   const live = useMemo(() => all.filter((s) => !isGone(s)), [all]);
   const goneList = useMemo(() => all.filter(isGone), [all]);
 
   const counts = useMemo(() => {
-    const c = { rented: 0, rental_pool: 0, repair: 0, dtp: 0, disassembly: 0, sale: 0 };
+    const c = {
+      rented: 0,
+      rental_pool: 0,
+      repair: 0,
+      dtp: 0,
+      disassembly: 0,
+      sale: 0,
+      buyout: 0,
+    };
     for (const s of live) {
       const st = displayStatus(s);
       if (st === "rented") c.rented++;
@@ -130,6 +140,7 @@ export function MobileScooters() {
       else if (st === "dtp") c.dtp++;
       else if (st === "disassembly") c.disassembly++;
       else if (st === "for_sale") c.sale++;
+      else if (st === "buyout") c.buyout++;
     }
     return c;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -165,6 +176,9 @@ export function MobileScooters() {
     { id: "dtp", label: "ДТП", count: counts.dtp },
     { id: "disassembly", label: "Разборка", count: counts.disassembly },
     { id: "sale", label: "Продажа", count: counts.sale },
+    ...(counts.buyout > 0
+      ? [{ id: "buyout" as const, label: "В выкупе", count: counts.buyout }]
+      : []),
     ...(goneList.length > 0
       ? [{ id: "gone" as const, label: "Проданы", count: goneList.length }]
       : []),
