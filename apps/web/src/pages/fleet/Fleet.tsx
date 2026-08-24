@@ -844,6 +844,11 @@ function ParkOverview({
           <ParkMetric
             label="В аренде"
             hint="у клиентов сейчас"
+            extra={
+              counters.total > 0
+                ? `${Math.round((counters.rented / counters.total) * 100)} % парка`
+                : undefined
+            }
             value={counters.rented}
             icon={Key}
             tone="blue"
@@ -853,6 +858,11 @@ function ParkOverview({
           <ParkMetric
             label="Свободны"
             hint="можно выдавать"
+            extra={
+              counters.rental_pool > 0
+                ? "готовы к выдаче прямо сейчас"
+                : "выдавать нечего"
+            }
             value={counters.rental_pool}
             icon={ShoppingBag}
             tone="green"
@@ -939,6 +949,7 @@ function ParkOverview({
 function ParkMetric({
   label,
   hint,
+  extra,
   value,
   icon: Icon,
   tone,
@@ -947,6 +958,8 @@ function ParkMetric({
 }: {
   label: string;
   hint: string;
+  /** Третья строка — чтобы растянутая плитка не пустовала внутри. */
+  extra?: string;
   value: number;
   icon: typeof Key;
   tone: "blue" | "green";
@@ -987,6 +1000,11 @@ function ParkMetric({
           <span className="truncate text-[13px] font-bold text-ink">{label}</span>
         </span>
         <span className="mt-0.5 block truncate text-[11px] text-muted-2">{hint}</span>
+        {extra && (
+          <span className="mt-1.5 block truncate text-[11px] font-semibold text-muted">
+            {extra}
+          </span>
+        )}
       </span>
     </button>
   );
