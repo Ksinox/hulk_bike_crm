@@ -178,6 +178,18 @@ export function MobileScooters() {
   return (
     // pb-20: чтобы FAB «+ Скутер» не перекрывал последнюю карточку.
     <div className="flex flex-col gap-3 pb-20">
+      <ParkStrip
+        counts={{
+          rented: counts.rented,
+          rental_pool: counts.rental_pool,
+          repair: counts.repair,
+          dtp: counts.dtp,
+          disassembly: counts.disassembly,
+          for_sale: counts.sale,
+          total: live.length,
+        }}
+        filter={filter}
+      />
       <MobileSearch value={search} onChange={setSearch} placeholder="Номер, имя, VIN…" />
       <MobileChips options={chips} value={filter} onChange={setFilter} />
 
@@ -214,6 +226,100 @@ export function MobileScooters() {
 
       {/* Добавление скутера — десктоп-модалка (полноэкранная на мобиле). */}
       {newOpen && <AddScooterModal onClose={() => setNewOpen(false)} />}
+    </div>
+  );
+}
+
+/**
+ * Лента состояния парка — мобильная версия того же блока, что на десктопе
+ * (правка заказчика 24.08). Каждая единица техники — штрих, цвет = статус.
+ * Фильтром служат чипы под ней, поэтому лента только показывает состав:
+ * выбран статус — чужие штрихи гаснут.
+ */
+function ParkStrip({
+  counts,
+  filter,
+}: {
+  counts: {
+    rented: number;
+    rental_pool: number;
+    repair: number;
+    dtp: number;
+    disassembly: number;
+    for_sale: number;
+    total: number;
+  };
+  filter: Filter;
+}) {
+  const segments: { key: Filter; bar: string; value: number }[] = [
+    { key: "rented", bar: "bg-blue-600", value: counts.rented },
+    { key: "rental_pool", bar: "bg-emerald-500", value: counts.rental_pool },
+    { key: "repair", bar: "bg-orange-500", value: counts.repair },
+    { key: "dtp", bar: "bg-red", value: counts.dtp },
+    { key: "disassembly", bar: "bg-slate-400", value: counts.disassembly },
+    { key: "sale", bar: "bg-violet-500", value: counts.for_sale },
+  ];
+  if (counts.total === 0) return null;
+  const rentable = counts.rented + counts.rental_pool;
+  const loadPct = rentable > 0 ? Math.round((counts.rented / rentable) * 100) : 0;
+  const perUnit = counts.total <= 24;
+  const dim = (key: Filter) =>
+    filter !== "all" && filter !== key ? "opacity-20" : "opacity-100";
+
+  return (
+    <div className="rounded-2xl bg-surface p-3.5 shadow-card-sm">
+      <div className="flex items-end justify-between gap-3">
+        <div>
+          <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-2">
+            Парк в обороте
+          </div>
+          <div className="mt-0.5 flex items-baseline gap-1.5">
+            <span className="font-display text-[28px] font-extrabold leading-none tabular-nums text-ink">
+              {counts.total}
+            </span>
+            <span className="text-[12px] text-muted">
+              {counts.total === 1 ? "единица" : "единиц"}
+            </span>
+          </div>
+        </div>
+        <div className="text-right">
+          <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-2">
+            Загрузка
+          </div>
+          <div className="mt-0.5 font-display text-[20px] font-extrabold leading-none tabular-nums text-ink">
+            {loadPct}
+            <span className="text-[13px] text-muted-2">%</span>
+          </div>
+        </div>
+      </div>
+      <div className="mt-3 flex h-8 items-stretch gap-[2px] overflow-hidden rounded-[9px] bg-surface-soft/70 p-[2px]">
+        {perUnit
+          ? segments.flatMap((seg) =>
+              Array.from({ length: seg.value }, (_, i) => (
+                <span
+                  key={`${seg.key}-${i}`}
+                  className={cn(
+                    "min-w-[5px] flex-1 rounded-[4px] transition-opacity",
+                    seg.bar,
+                    dim(seg.key),
+                  )}
+                />
+              )),
+            )
+          : segments
+              .filter((seg) => seg.value > 0)
+              .map((seg) => (
+                <span
+                  key={seg.key}
+                  style={{ flexGrow: seg.value, flexBasis: 0 }}
+                  className={cn(
+                    "rounded-[4px] transition-opacity",
+                    seg.bar,
+                    dim(seg.key),
+                  )}
+                />
+              ))}
+      </div>
     </div>
   );
 }

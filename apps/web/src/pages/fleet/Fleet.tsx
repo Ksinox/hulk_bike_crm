@@ -2,24 +2,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { consumePending, navigate, type BackTarget } from "@/app/navigationStore";
 import {
-  AlertTriangle,
   ArrowDownNarrowWide,
   ArrowUpNarrowWide,
   Check,
   Droplet,
-  HelpCircle,
-  Key,
-  Layers,
   LayoutGrid,
   LogOut,
   ListFilter,
-  PackageOpen,
   Plus,
   Rows3,
   Search,
-  ShoppingBag,
-  Tag,
-  Wrench,
 } from "lucide-react";
 import { useMe } from "@/lib/api/auth";
 import {
@@ -753,11 +745,31 @@ function StatusPill({ status }: { status: ScooterDisplayStatus }) {
 }
 
 /**
- * Обзор парка. Заказчик 24.08: «очень-очень сжатые карточки, взгляд
- * теряется» — поэтому вместо девяти равных плиток здесь иерархия:
- * слева главная карта (сколько техники и как она загружена), справа —
- * компактные строки по группам смысла. Всё кликабельно — это фильтры.
+ * Обзор парка — «лента состояния».
+ *
+ * Заказчик 24.08 (второй заход): набор карточек читался как шум. Здесь
+ * одна метафора: парк выложен в строку, каждая единица техники — свой
+ * штрих, цвет штриха = состояние. Объём парка виден длиной, состав —
+ * цветом, проблемы — красными вкраплениями. Легенда снизу работает
+ * фильтром: выбрал статус — чужие штрихи гаснут, свои горят.
+ *
+ * Больше 40 единиц (у заказчика в проде их за сотню) рисовать по штриху
+ * бессмысленно — лента схлопывается в пропорциональные сегменты.
  */
+
+type ParkSegment = {
+  key: StatusTab;
+  label: string;
+  hint: string;
+  value: number;
+  /** Цвет штриха в ленте. */
+  bar: string;
+  /** Цвет точки в легенде. */
+  dot: string;
+  /** Подсветка числа в легенде. */
+  text: string;
+};
+
 function ParkOverview({
   counters,
   tab,
@@ -777,179 +789,226 @@ function ParkOverview({
   tab: StatusTab;
   onTab: (t: StatusTab) => void;
 }) {
-  // Загрузка = занято / (занято + свободно). Ремонт, ДТП и «не распределены»
-  // к выдаче недоступны, поэтому в знаменатель не идут — иначе процент
-  // занижается и не отражает реальную доступность парка.
+  const segments: ParkSegment[] = [
+    {
+      key: "rented",
+      label: "В аренде",
+      hint: "у клиентов сейчас",
+      value: counters.rented,
+      bar: "bg-blue-600",
+      dot: "bg-blue-600",
+      text: "text-blue-700",
+    },
+    {
+      key: "rental_pool",
+      label: "Свободны",
+      hint: "можно выдавать",
+      value: counters.rental_pool,
+      bar: "bg-emerald-500",
+      dot: "bg-emerald-500",
+      text: "text-green-ink",
+    },
+    {
+      key: "ready",
+      label: "Не распределены",
+      hint: "решить, куда поставить",
+      value: counters.ready,
+      bar: "bg-amber-400",
+      dot: "bg-amber-400",
+      text: "text-amber-700",
+    },
+    {
+      key: "repair",
+      label: "Ремонт",
+      hint: "у мастера",
+      value: counters.repair,
+      bar: "bg-orange-500",
+      dot: "bg-orange-500",
+      text: "text-orange-ink",
+    },
+    {
+      key: "dtp",
+      label: "ДТП",
+      hint: "после аварии",
+      value: counters.dtp,
+      bar: "bg-red",
+      dot: "bg-red",
+      text: "text-red-ink",
+    },
+    {
+      key: "disassembly",
+      label: "Разборка",
+      hint: "идут на запчасти",
+      value: counters.disassembly,
+      bar: "bg-slate-400",
+      dot: "bg-slate-400",
+      text: "text-ink-2",
+    },
+    {
+      key: "for_sale",
+      label: "Продаются",
+      hint: "выставлены на витрину",
+      value: counters.for_sale,
+      bar: "bg-violet-500",
+      dot: "bg-violet-500",
+      text: "text-purple-ink",
+    },
+  ];
+
   const rentable = counters.rented + counters.rental_pool;
-  const loadPct = rentable > 0 ? Math.round((counters.rented / rentable) * 100) : 0;
-  const attention = counters.ready + counters.repair + counters.dtp;
+  const loadPct =
+    rentable > 0 ? Math.round((counters.rented / rentable) * 100) : 0;
+  // Штрихами рисуем, пока их можно различить глазом; дальше — пропорции.
+  const perUnit = counters.total > 0 && counters.total <= 40;
 
   return (
-    <section className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
-      {/* ── Главная карта: сколько техники и как она работает ── */}
-      <div
-        className={cn(
-          "relative overflow-hidden rounded-[20px] border bg-surface p-5 shadow-card-sm transition-colors",
-          tab === "all" ? "border-blue-600/40 ring-2 ring-blue-600/15" : "border-border",
-        )}
-      >
-        <div className="flex items-start justify-between gap-4">
-          <button
-            type="button"
-            onClick={() => onTab("all")}
-            className="text-left"
-            title="Показать всю технику в обороте"
-          >
-            <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
-              Парк в обороте
-            </div>
-            <div className="mt-1.5 flex items-baseline gap-2">
-              <span className="font-display text-[46px] font-extrabold leading-none text-ink tabular-nums">
-                {counters.total}
-              </span>
-              <span className="text-[13px] text-muted">
-                {counters.total === 1 ? "единица" : "единиц"} техники
-              </span>
-            </div>
-          </button>
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-ink text-white">
-            <Layers size={20} />
+    <section className="overflow-hidden rounded-[22px] border border-border bg-surface px-5 py-4 shadow-card-sm sm:px-6 sm:py-5">
+      {/* ── Шапка: объём парка и загрузка ── */}
+      <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+        <button
+          type="button"
+          onClick={() => onTab("all")}
+          className="text-left"
+          title="Показать всю технику в обороте"
+        >
+          <div className="text-[10.5px] font-bold uppercase tracking-[0.14em] text-muted-2">
+            Парк в обороте
           </div>
-        </div>
-
-        {/* Полоса загрузки: синее — занято клиентами, зелёное — свободно */}
-        <div className="mt-5">
-          <div className="flex items-baseline justify-between text-[12px]">
-            <span className="font-bold text-ink">Загрузка {loadPct}%</span>
-            <span className="text-muted-2">
-              {rentable > 0
-                ? `${counters.rented} из ${rentable} доступных заняты`
-                : "нет техники, доступной к выдаче"}
+          <div className="mt-1 flex items-baseline gap-2">
+            <span
+              className={cn(
+                "font-display text-[42px] font-extrabold leading-none tabular-nums transition-colors",
+                tab === "all" ? "text-blue-700" : "text-ink",
+              )}
+            >
+              {counters.total}
+            </span>
+            <span className="text-[13px] text-muted">
+              {counters.total === 1 ? "единица" : "единиц"} техники
             </span>
           </div>
-          <div className="mt-2 flex h-2.5 overflow-hidden rounded-full bg-surface-soft">
-            <span
-              className="bg-blue-600 transition-all"
-              style={{ width: `${rentable > 0 ? (counters.rented / rentable) * 100 : 0}%` }}
-            />
-            <span
-              className="bg-green-ink/45 transition-all"
-              style={{ width: `${rentable > 0 ? (counters.rental_pool / rentable) * 100 : 0}%` }}
-            />
-          </div>
-        </div>
+        </button>
 
-        {/* Две операционные метрики — то, чем живёт день */}
-        <div className="mt-4 grid grid-cols-2 gap-2.5">
-          <ParkMetric
-            label="В аренде"
-            hint="у клиентов сейчас"
-            value={counters.rented}
-            icon={Key}
-            tone="blue"
-            active={tab === "rented"}
-            onClick={() => onTab("rented")}
-          />
-          <ParkMetric
-            label="Свободны"
-            hint="можно выдавать"
-            value={counters.rental_pool}
-            icon={ShoppingBag}
-            tone="green"
-            active={tab === "rental_pool"}
-            onClick={() => onTab("rental_pool")}
-          />
+        <div className="flex items-end gap-5">
+          {counters.gone > 0 && (
+            <button
+              type="button"
+              onClick={() => onTab("gone")}
+              className={cn(
+                "flex flex-col items-end rounded-[10px] px-2 py-1 text-right transition-colors",
+                tab === "gone" ? "bg-surface-soft" : "hover:bg-surface-soft/70",
+              )}
+              title="Проданы и переданы в выкуп — в парке не числятся"
+            >
+              <span className="text-[10.5px] font-bold uppercase tracking-[0.14em] text-muted-2">
+                Проданы
+              </span>
+              <span className="mt-0.5 flex items-center gap-1.5 font-display text-[19px] font-extrabold leading-none tabular-nums text-muted">
+                <LogOut size={14} className="text-muted-2" />
+                {counters.gone}
+              </span>
+            </button>
+          )}
+          <div className="text-right">
+            <div className="text-[10.5px] font-bold uppercase tracking-[0.14em] text-muted-2">
+              Загрузка
+            </div>
+            <div className="mt-0.5 font-display text-[28px] font-extrabold leading-none tabular-nums text-ink">
+              {loadPct}
+              <span className="text-[17px] text-muted-2">%</span>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* ── Правая колонка: по группам смысла ── */}
-      <div className="flex flex-col gap-3 rounded-[20px] border border-border bg-surface p-4 shadow-card-sm">
-        <ParkGroup
-          title="Требуют решения"
-          badge={attention}
-          rows={[
-            {
-              key: "ready" as const,
-              label: "Не распределены",
-              hint: "решить, куда поставить",
-              value: counters.ready,
-              icon: HelpCircle,
-              tone: "amber" as const,
-            },
-            {
-              key: "repair" as const,
-              label: "На ремонте",
-              hint: "у мастера",
-              value: counters.repair,
-              icon: Wrench,
-              tone: "red" as const,
-            },
-            {
-              key: "dtp" as const,
-              label: "ДТП",
-              hint: "после аварии",
-              value: counters.dtp,
-              icon: AlertTriangle,
-              tone: "red" as const,
-            },
-          ]}
-          tab={tab}
-          onTab={onTab}
-        />
+      {/* ── Лента парка: каждая единица техники — штрих ── */}
+      <div className="mt-4 flex h-11 items-stretch gap-[3px] overflow-hidden rounded-[10px] bg-surface-soft/70 p-[3px]">
+        {counters.total === 0 ? (
+          <div className="flex w-full items-center justify-center text-[12px] text-muted-2">
+            В парке пока нет техники
+          </div>
+        ) : perUnit ? (
+          segments.flatMap((seg) =>
+            Array.from({ length: seg.value }, (_, i) => (
+              <button
+                key={`${seg.key}-${i}`}
+                type="button"
+                onClick={() => onTab(seg.key)}
+                title={`${seg.label} · ${seg.hint}`}
+                className={cn(
+                  "min-w-[6px] flex-1 rounded-[5px] transition-[opacity,transform] duration-200 hover:-translate-y-0.5",
+                  seg.bar,
+                  tab !== "all" && tab !== seg.key
+                    ? "opacity-20"
+                    : "opacity-100",
+                )}
+              />
+            )),
+          )
+        ) : (
+          segments
+            .filter((seg) => seg.value > 0)
+            .map((seg) => (
+              <button
+                key={seg.key}
+                type="button"
+                onClick={() => onTab(seg.key)}
+                title={`${seg.label}: ${seg.value} · ${seg.hint}`}
+                style={{ flexGrow: seg.value, flexBasis: 0 }}
+                className={cn(
+                  "rounded-[5px] transition-opacity duration-200",
+                  seg.bar,
+                  tab !== "all" && tab !== seg.key
+                    ? "opacity-20"
+                    : "opacity-100",
+                )}
+              />
+            ))
+        )}
+      </div>
 
-        <div className="h-px bg-border" />
-
-        <ParkGroup
-          title="Вне аренды"
-          rows={[
-            {
-              key: "disassembly" as const,
-              label: "На разборку",
-              hint: "идут на запчасти",
-              value: counters.disassembly,
-              icon: PackageOpen,
-              tone: "slate" as const,
-            },
-            {
-              key: "for_sale" as const,
-              label: "Продаются",
-              hint: "выставлены на витрину",
-              value: counters.for_sale,
-              icon: Tag,
-              tone: "violet" as const,
-            },
-            {
-              key: "gone" as const,
-              label: "Проданы",
-              hint: "продажа и выкуп — уже не наши",
-              value: counters.gone,
-              icon: LogOut,
-              tone: "slate" as const,
-            },
-          ]}
-          tab={tab}
-          onTab={onTab}
+      {/* ── Легенда = фильтры ── */}
+      <div className="mt-3.5 flex flex-wrap items-center gap-x-1.5 gap-y-1">
+        <ParkLegendChip
+          label="Все"
+          value={counters.total}
+          active={tab === "all"}
+          onClick={() => onTab("all")}
         />
+        {segments
+          .filter((seg) => seg.value > 0 || seg.key === tab)
+          .map((seg) => (
+            <ParkLegendChip
+              key={seg.key}
+              label={seg.label}
+              hint={seg.hint}
+              value={seg.value}
+              dot={seg.dot}
+              valueCls={seg.text}
+              active={tab === seg.key}
+              onClick={() => onTab(seg.key)}
+            />
+          ))}
       </div>
     </section>
   );
 }
 
-/** Крупная метрика внутри главной карты парка. */
-function ParkMetric({
+/** Чип легенды: точка цвета сегмента, число, подпись. Он же фильтр. */
+function ParkLegendChip({
   label,
   hint,
   value,
-  icon: Icon,
-  tone,
+  dot,
+  valueCls,
   active,
   onClick,
 }: {
   label: string;
-  hint: string;
+  hint?: string;
   value: number;
-  icon: typeof Key;
-  tone: "blue" | "green";
+  dot?: string;
+  valueCls?: string;
   active: boolean;
   onClick: () => void;
 }) {
@@ -957,168 +1016,38 @@ function ParkMetric({
     <button
       type="button"
       onClick={onClick}
+      title={hint}
       className={cn(
-        "flex items-center gap-3 rounded-[14px] border px-3.5 py-3 text-left transition-colors",
+        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1.5 transition-colors",
         active
-          ? tone === "blue"
-            ? "border-blue-600/50 bg-blue-50"
-            : "border-green-ink/40 bg-green-soft"
-          : "border-border bg-surface-soft/50 hover:border-blue-600/30",
+          ? "border-ink bg-ink text-white"
+          : "border-transparent bg-surface-soft/70 hover:bg-surface-soft",
       )}
     >
-      <span
-        className={cn(
-          "flex h-9 w-9 shrink-0 items-center justify-center rounded-full",
-          tone === "blue" ? "bg-blue-50 text-blue-700" : "bg-green-soft text-green-ink",
-        )}
-      >
-        <Icon size={17} />
-      </span>
-      <span className="min-w-0">
-        <span className="flex items-baseline gap-1.5">
-          <span
-            className={cn(
-              "font-display text-[24px] font-extrabold leading-none tabular-nums",
-              tone === "blue" ? "text-blue-700" : "text-green-ink",
-            )}
-          >
-            {value}
-          </span>
-          <span className="truncate text-[13px] font-bold text-ink">{label}</span>
-        </span>
-        <span className="mt-0.5 block truncate text-[11px] text-muted-2">{hint}</span>
-      </span>
-    </button>
-  );
-}
-
-/** Группа статусов справа: заголовок + компактные строки. */
-function ParkGroup({
-  title,
-  badge,
-  rows,
-  tab,
-  onTab,
-}: {
-  title: string;
-  /** Сумма по группе — показываем, только если есть что показывать. */
-  badge?: number;
-  rows: {
-    key: StatusTab;
-    label: string;
-    hint: string;
-    value: number;
-    icon: typeof Key;
-    tone: "amber" | "red" | "violet" | "slate";
-  }[];
-  tab: StatusTab;
-  onTab: (t: StatusTab) => void;
-}) {
-  const visible = rows.filter((r) => r.value > 0 || r.key === tab);
-  return (
-    <div>
-      <div className="mb-2 flex items-center gap-2">
-        <span className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
-          {title}
-        </span>
-        {badge != null && badge > 0 && (
-          <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-900 tabular-nums">
-            {badge}
-          </span>
-        )}
-      </div>
-      {visible.length === 0 ? (
-        <div className="flex items-center gap-2 px-1 py-1.5 text-[12px] text-muted-2">
-          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-green-soft text-green-ink">
-            <Check size={13} strokeWidth={3} />
-          </span>
-          {title === "Требуют решения"
-            ? "Всё в порядке — решать нечего"
-            : "Вся техника в обороте"}
-        </div>
-      ) : (
-        <div className="grid gap-1 sm:grid-cols-2">
-          {visible.map((r) => (
-            <ParkRow
-              key={r.key}
-              label={r.label}
-              hint={r.hint}
-              value={r.value}
-              icon={r.icon}
-              tone={r.tone}
-              active={tab === r.key}
-              onClick={() => onTab(r.key)}
-            />
-          ))}
-        </div>
+      {dot && (
+        <span
+          className={cn(
+            "h-2 w-2 shrink-0 rounded-full",
+            dot,
+            active && "ring-2 ring-white/30",
+          )}
+        />
       )}
-    </div>
-  );
-}
-
-/** Компактная строка статуса — иконка, число, подпись. */
-function ParkRow({
-  label,
-  hint,
-  value,
-  icon: Icon,
-  tone,
-  active,
-  onClick,
-}: {
-  label: string;
-  hint: string;
-  value: number;
-  icon: typeof Key;
-  tone: "amber" | "red" | "violet" | "slate";
-  active: boolean;
-  onClick: () => void;
-}) {
-  const zero = value === 0;
-  const iconCls = zero
-    ? "bg-surface-soft text-muted-2"
-    : tone === "amber"
-      ? "bg-amber-100 text-amber-900"
-      : tone === "red"
-        ? "bg-red-soft text-red-ink"
-        : tone === "violet"
-          ? "bg-purple-soft text-purple-ink"
-          : "bg-surface-soft text-ink-2";
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "flex items-center gap-2.5 rounded-[12px] px-2.5 py-2 text-left transition-colors",
-        active ? "bg-blue-50 ring-1 ring-inset ring-blue-600/30" : "hover:bg-surface-soft/70",
-      )}
-    >
       <span
         className={cn(
-          "flex h-7 w-7 shrink-0 items-center justify-center rounded-full",
-          iconCls,
-        )}
-      >
-        <Icon size={14} />
-      </span>
-      <span
-        className={cn(
-          "w-7 shrink-0 text-right font-display text-[17px] font-extrabold leading-none tabular-nums",
-          zero ? "text-muted-2" : "text-ink",
+          "font-display text-[14px] font-extrabold leading-none tabular-nums",
+          active ? "text-white" : (valueCls ?? "text-ink"),
         )}
       >
         {value}
       </span>
-      <span className="min-w-0 flex-1">
-        <span
-          className={cn(
-            "block truncate text-[12.5px] font-semibold",
-            zero ? "text-muted" : "text-ink",
-          )}
-        >
-          {label}
-        </span>
-        <span className="block truncate text-[11px] text-muted-2">{hint}</span>
+      <span
+        className={cn(
+          "text-[12px] font-semibold leading-none",
+          active ? "text-white/90" : "text-muted",
+        )}
+      >
+        {label}
       </span>
     </button>
   );
