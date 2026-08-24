@@ -188,7 +188,6 @@ export function MobileScooters() {
           for_sale: counts.sale,
           total: live.length,
         }}
-        filter={filter}
       />
       <MobileSearch value={search} onChange={setSearch} placeholder="Номер, имя, VIN…" />
       <MobileChips options={chips} value={filter} onChange={setFilter} />
@@ -231,14 +230,12 @@ export function MobileScooters() {
 }
 
 /**
- * Лента состояния парка — мобильная версия того же блока, что на десктопе
- * (правка заказчика 24.08). Каждая единица техники — штрих, цвет = статус.
- * Фильтром служат чипы под ней, поэтому лента только показывает состав:
- * выбран статус — чужие штрихи гаснут.
+ * Обзор парка на телефоне: объём, загрузка и полоса «занято / свободно»
+ * с подписями. Смысл тот же, что в десктопном блоке (правка 24.08):
+ * цифра, подпись и график рядом, а не одна мелкая легенда.
  */
 function ParkStrip({
   counts,
-  filter,
 }: {
   counts: {
     rented: number;
@@ -249,22 +246,10 @@ function ParkStrip({
     for_sale: number;
     total: number;
   };
-  filter: Filter;
 }) {
-  const segments: { key: Filter; bar: string; value: number }[] = [
-    { key: "rented", bar: "bg-blue-600", value: counts.rented },
-    { key: "rental_pool", bar: "bg-emerald-500", value: counts.rental_pool },
-    { key: "repair", bar: "bg-orange-500", value: counts.repair },
-    { key: "dtp", bar: "bg-red", value: counts.dtp },
-    { key: "disassembly", bar: "bg-slate-400", value: counts.disassembly },
-    { key: "sale", bar: "bg-violet-500", value: counts.for_sale },
-  ];
   if (counts.total === 0) return null;
   const rentable = counts.rented + counts.rental_pool;
   const loadPct = rentable > 0 ? Math.round((counts.rented / rentable) * 100) : 0;
-  const perUnit = counts.total <= 24;
-  const dim = (key: Filter) =>
-    filter !== "all" && filter !== key ? "opacity-20" : "opacity-100";
 
   return (
     <div className="rounded-2xl bg-surface p-3.5 shadow-card-sm">
@@ -292,35 +277,39 @@ function ParkStrip({
           </div>
         </div>
       </div>
-      <div
-        className="mt-3 flex h-9 w-full items-stretch gap-[2px] overflow-hidden rounded-[10px] bg-surface-soft/70 p-[2px]"
-      >
-        {perUnit
-          ? segments.flatMap((seg) =>
-              Array.from({ length: seg.value }, (_, i) => (
-                <span
-                  key={`${seg.key}-${i}`}
-                  className={cn(
-                    "min-w-[5px] flex-1 rounded-[5px] transition-opacity",
-                    seg.bar,
-                    dim(seg.key),
-                  )}
-                />
-              )),
-            )
-          : segments
-              .filter((seg) => seg.value > 0)
-              .map((seg) => (
-                <span
-                  key={seg.key}
-                  style={{ flexGrow: seg.value, flexBasis: 0 }}
-                  className={cn(
-                    "rounded-[4px] transition-opacity",
-                    seg.bar,
-                    dim(seg.key),
-                  )}
-                />
-              ))}
+
+      <div className="mt-3 flex h-2.5 overflow-hidden rounded-full bg-surface-soft">
+        <span
+          className="bg-blue-600"
+          style={{ width: `${rentable > 0 ? (counts.rented / rentable) * 100 : 0}%` }}
+        />
+        <span
+          className="bg-green-ink/45"
+          style={{
+            width: `${rentable > 0 ? (counts.rental_pool / rentable) * 100 : 0}%`,
+          }}
+        />
+      </div>
+
+      <div className="mt-2.5 grid grid-cols-2 gap-2">
+        <div className="flex items-center gap-2 rounded-xl bg-surface-soft/60 px-3 py-2">
+          <span className="font-display text-[19px] font-extrabold leading-none tabular-nums text-blue-600">
+            {counts.rented}
+          </span>
+          <span className="min-w-0">
+            <span className="block text-[12px] font-bold text-ink">В аренде</span>
+            <span className="block text-[10.5px] text-muted-2">у клиентов</span>
+          </span>
+        </div>
+        <div className="flex items-center gap-2 rounded-xl bg-surface-soft/60 px-3 py-2">
+          <span className="font-display text-[19px] font-extrabold leading-none tabular-nums text-green-ink">
+            {counts.rental_pool}
+          </span>
+          <span className="min-w-0">
+            <span className="block text-[12px] font-bold text-ink">Свободны</span>
+            <span className="block text-[10.5px] text-muted-2">можно выдавать</span>
+          </span>
+        </div>
       </div>
     </div>
   );
