@@ -60,7 +60,9 @@ try {
 
   // Логин Node-фетчем (вне браузера) → сессионную куку ставим напрямую:
   // headless блокирует third-party Set-Cookie при XHR crm→api.
-  const apiBase = BASE.replace("crm-", "api-");
+  // SHOT_API — когда фронт поднят локально (снимаем «было» со старой
+  // сборки), а данные берём с preview.
+  const apiBase = process.env.SHOT_API ?? BASE.replace("crm-", "api-");
   const loginResp = await fetch(apiBase + "/api/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -99,6 +101,39 @@ try {
     waitUntil: "domcontentloaded",
     timeout: 60000,
   });
+  // Локальный фронт (SHOT_BASE=localhost) не получает third-party куку —
+  // тогда логинимся через форму теми же кредами.
+  await page.waitForFunction(() => document.body.innerText.length > 40, {
+    timeout: 30000,
+  });
+  const needsLogin = await page.evaluate(() =>
+    /ВХОД В СИСТЕМУ/i.test(document.body.innerText),
+  );
+  if (needsLogin) {
+    await page.evaluate(
+      ({ login, pass }) => {
+        const setV = (el, v) => {
+          const setter = Object.getOwnPropertyDescriptor(
+            window.HTMLInputElement.prototype,
+            "value",
+          ).set;
+          setter.call(el, v);
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+        };
+        const inputs = [...document.querySelectorAll("input")];
+        const l = inputs.find((i) => i.type !== "password");
+        const p = inputs.find((i) => i.type === "password");
+        if (l) setV(l, login);
+        if (p) setV(p, pass);
+        const btn = [...document.querySelectorAll("button")].find((b) =>
+          /Войти|Вход/i.test(b.textContent || ""),
+        );
+        btn?.click();
+      },
+      { login: LOGIN, pass: PASS },
+    );
+    await new Promise((r) => setTimeout(r, 4000));
+  }
   await page.waitForFunction(
     () => document.body.innerText.length > 200,
     { timeout: 20000 },
