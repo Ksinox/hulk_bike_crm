@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Bike, Image as ImageIcon, X, Plus, Minus, Search, ChevronDown, ChevronLeft, Pencil, CheckCircle2, Camera } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ReturnReasonPicker } from "@/components/ReturnReasonPicker";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { MobileNumPad } from "@/mobile/MobileNumPad";
 import {
@@ -98,6 +99,8 @@ export function useReturnIntake(rental: Rental, enabled: boolean) {
   const [scooterNextStatus, setScooterNextStatus] =
     useState<ScooterNextStatus>("rental_pool");
   const [scooterStatusTouched, setScooterStatusTouched] = useState(false);
+  // Пункт 4: обязательная причина возврата (выбор в приёмке).
+  const [returnReason, setReturnReason] = useState<string | null>(null);
   // #28: фото/видео ущерба — копим локально (staged), заливаем в акт после
   // его создания на завершении (PaymentAcceptDialog). Привязка — на весь акт.
   const [mediaStaged, setMediaStaged] = useState<StagedMedia[]>([]);
@@ -279,6 +282,8 @@ export function useReturnIntake(rental: Rental, enabled: boolean) {
     setScooterNextStatus,
     scooterStatusTouched,
     setScooterStatusTouched,
+    returnReason,
+    setReturnReason,
     // #28: медиа ущерба (staged → upload после создания акта)
     mediaStaged,
     addMedia,
@@ -340,6 +345,8 @@ export function ReturnIntakeSection({ intake }: { intake: ReturnIntake }) {
     scooterNextStatus,
     setScooterNextStatus,
     setScooterStatusTouched,
+    returnReason,
+    setReturnReason,
     scooterModel,
     scooterAvatar,
     equipmentItems,
@@ -526,6 +533,12 @@ export function ReturnIntakeSection({ intake }: { intake: ReturnIntake }) {
             ) : null)}
         </div>
       </div>
+
+      {/* Пункт 4: обязательная причина возврата. */}
+      <ReturnReasonPicker
+        value={returnReason}
+        onChange={setReturnReason}
+      />
 
       {/* v0.6.1: выбор статуса скутера после завершения */}
       {rental.scooterId != null && (

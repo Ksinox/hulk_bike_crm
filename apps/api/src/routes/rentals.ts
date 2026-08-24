@@ -145,6 +145,8 @@ const CompleteBody = z
     damageNotes: z.string().optional().nullable(),
     mileageAtReturn: z.number().int().min(0).optional(),
     scooterNextStatus: z.enum(SCOOTER_NEXT_STATUSES).optional(),
+    /** Пункт 4: причина возврата (обязательность обеспечивает UI). */
+    returnReason: z.string().max(200).optional().nullable(),
   })
   .strict();
 
@@ -1626,14 +1628,21 @@ export async function rentalsRoutes(app: FastifyInstance) {
         };
       });
 
+      // Пункт 4: причина возврата — в аренду и в журнал.
+      if (d.returnReason && d.returnReason.trim()) {
+        await db
+          .update(rentals)
+          .set({ returnReason: d.returnReason.trim() })
+          .where(eq(rentals.id, id));
+      }
       const summary = await summaryForRental(id);
       await logActivity(req, {
         entity: "rental",
         entityId: id,
         action: "completed",
-        summary: withDamage
+        summary: `${withDamage
           ? `Завершена аренда ${summary} · зафиксирован ущерб ${(d.damageAmount ?? 0).toLocaleString("ru-RU")} ₽`
-          : `Завершена аренда ${summary} · без ущерба, залог ${d.depositReturned ? "возвращён клиенту" : "удержан"}`,
+          : `Завершена аренда ${summary} · без ущерба, залог ${d.depositReturned ? "возвращён клиенту" : "удержан"}`}${d.returnReason ? ` · причина возврата: ${d.returnReason}` : ""}`,
         diff: {
           status: {
             label: "Статус",

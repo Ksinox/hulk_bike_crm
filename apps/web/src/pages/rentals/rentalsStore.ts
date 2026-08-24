@@ -64,6 +64,8 @@ export type ReturnInspection = {
   equipmentOk: boolean;
   damageNotes?: string;
   depositReturned: boolean;
+  /** Пункт 4: причина возврата (обязательна в UI закрытия). */
+  returnReason?: string | null;
 };
 
 type State = {
@@ -284,6 +286,7 @@ export function completeRentalNoDamage(
       equipmentOk: inspection.equipmentOk,
       depositReturned: inspection.depositReturned,
       mileageAtReturn: inspection.mileage,
+      ...(inspection.returnReason ? { returnReason: inspection.returnReason } : {}),
       ...(scooterNextStatus ? { scooterNextStatus } : {}),
     })
     .then(invAll)
@@ -311,6 +314,7 @@ export function completeRentalWithDamage(
       damageAmount,
       damageNotes: note ?? inspection.damageNotes ?? null,
       mileageAtReturn: inspection.mileage,
+      ...(inspection.returnReason ? { returnReason: inspection.returnReason } : {}),
       ...(scooterNextStatus ? { scooterNextStatus } : {}),
     })
     .then(() => {

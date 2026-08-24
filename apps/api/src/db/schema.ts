@@ -476,6 +476,9 @@ export const rentals = pgTable(
       withTimezone: true,
     }).notNull(),
     endActualAt: timestamp("end_actual_at", { withTimezone: true }),
+    /** Пункт 4: причина возврата при закрытии аренды (обязательна в UI) —
+     *  для отслеживания аргументированного негатива от клиентов. */
+    returnReason: text("return_reason"),
 
     // Денормализованные для скорости (пересчитываются на write)
     days: integer("days").notNull(),

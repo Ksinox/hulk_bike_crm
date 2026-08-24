@@ -1483,6 +1483,15 @@ export function PaymentAcceptDialog({
       // скутера задаёт scooterNextStatus из приёмки.
       if (completing) {
         const dateActual = intake.dateActualForApi();
+        // Пункт 4: причина возврата обязательна.
+        if (!intake.returnReason) {
+          toast.error(
+            "Укажите причину возврата",
+            "Выберите из списка или впишите свой вариант — это обязательное поле.",
+          );
+          setSaving(false);
+          return;
+        }
         const mileage = intake.mileageForApi();
         const scooterNext = intake.scooterNextStatus;
         if (intake.hasDamage) {
@@ -1492,6 +1501,7 @@ export function PaymentAcceptDialog({
               dateActual,
               conditionOk: false,
               equipmentOk: true,
+              returnReason: intake.returnReason,
               // Залог считается «возвращённым» только если зачёта не было.
               depositReturned: depositZachet === 0,
               damageNotes: "",
@@ -1508,6 +1518,7 @@ export function PaymentAcceptDialog({
               dateActual,
               conditionOk: true,
               equipmentOk: true,
+              returnReason: intake.returnReason,
               depositReturned: true,
               mileage,
             },

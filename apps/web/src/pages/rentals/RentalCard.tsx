@@ -2462,6 +2462,15 @@ export function RentalCard({
             </span>
           </div>
         )}
+      {/* Пункт 4: причина возврата — видна в завершённой аренде. */}
+      {rental.status === "completed" && rental.returnReason && (
+        <div className="flex items-center gap-2 rounded-[12px] bg-surface-soft px-3 py-2 text-[12px] text-ink-2">
+          <Flag size={14} className="shrink-0 text-muted-2" />
+          <span>
+            Причина возврата: <b>{rental.returnReason}</b>
+          </span>
+        </div>
+      )}
       {rental.status === "returning" && (
         <div className="flex items-center gap-2 rounded-[12px] bg-orange-soft/70 px-3 py-2 text-[12px] text-orange-ink">
           <Calendar size={14} className="shrink-0" />
