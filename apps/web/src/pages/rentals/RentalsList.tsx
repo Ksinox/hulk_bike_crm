@@ -24,6 +24,7 @@ import {
   PhoneOff,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ElectricMark } from "@/components/PowerTypeBadge";
 import { type Rental } from "@/lib/mock/rentals";
 import { effectiveRentalStatus } from "@/lib/rentalStatus";
 import { initialsOf } from "@/lib/mock/clients";
@@ -89,6 +90,8 @@ function ScooterTag({
   const dot = size === "md" ? "h-6 min-w-6 text-[12px]" : "h-5 min-w-5 text-[11px]";
   return (
     <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+      {/* Пункт 11: электро-отметка ПЕРВОЙ — сразу видно тип техники. */}
+      {electric && <ElectricMark size="sm" />}
       {num != null && (
         <span
           className={cn(
@@ -100,11 +103,6 @@ function ScooterTag({
         </span>
       )}
       <span className="text-muted">{model}</span>
-      {electric && (
-        <span className="inline-flex items-center rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wide text-emerald-700">
-          e-
-        </span>
-      )}
       {mileage != null && (
         <span className="text-[11px] tabular-nums text-muted-2">
           · {fmt(mileage)} км

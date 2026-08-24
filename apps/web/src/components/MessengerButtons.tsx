@@ -12,7 +12,31 @@ import { toast } from "@/lib/toast";
  * MAX — прямой ссылки на чат по номеру НЕ существует (ограничение самого
  * мессенджера), поэтому кнопка копирует номер и открывает web.max.ru:
  * оператор вставляет номер в поиск — два клика вместо нуля, честно и работает.
+ *
+ * ОДНА ВКЛАДКА НА МЕССЕНДЖЕР (правка заказчика 24.08): каждый мессенджер
+ * открывается в именованном окне (WA_TAB/TG_TAB/MAX_TAB). Второй и все
+ * следующие клики из CRM переиспользуют ту же вкладку — новые не плодятся,
+ * чат просто меняется в уже открытой. Браузер не позволяет «захватить»
+ * вкладку, которую оператор открыл руками сам (это защита от подмены
+ * страниц), поэтому первый клик из CRM создаёт свою вкладку — дальше она
+ * и работает как постоянная.
  */
+
+/** Имена окон: одна постоянная вкладка на каждый мессенджер. */
+const TAB = {
+  whatsapp: "hulk_whatsapp",
+  telegram: "hulk_telegram",
+  max: "hulk_max",
+} as const;
+
+/**
+ * Открыть мессенджер в его постоянной вкладке. Если вкладка была закрыта —
+ * браузер откроет новую с тем же именем; фокус переводим на неё.
+ */
+export function openMessengerTab(url: string, tab: keyof typeof TAB) {
+  const win = window.open(url, TAB[tab], "noopener");
+  win?.focus?.();
+}
 /** MAX: копирует номер и открывает веб-версию (прямых чат-ссылок у MAX нет).
  *  Экспорт — для крупных кнопок мобильной карточки клиента. */
 export async function openMaxChat(phone: string) {
@@ -25,7 +49,7 @@ export async function openMaxChat(phone: string) {
   } catch {
     toast.info("MAX", "Скопируйте номер клиента и вставьте в поиск MAX.");
   }
-  window.open("https://web.max.ru/", "_blank", "noopener,noreferrer");
+  openMessengerTab("https://web.max.ru/", "max");
 }
 
 /** Иконка MAX (у lucide нет лого — буква M в кружке). */
@@ -67,24 +91,22 @@ export function MessengerButtons({
 
   return (
     <span className={cn("inline-flex items-center gap-0.5", className)}>
-      <a
-        href={whatsappLink(phone)}
-        target="_blank"
-        rel="noopener noreferrer"
-        title="Написать в WhatsApp"
+      <button
+        type="button"
+        onClick={() => openMessengerTab(whatsappLink(phone), "whatsapp")}
+        title="Написать в WhatsApp (в той же вкладке мессенджера)"
         className={cn(btn, "text-green hover:bg-green/10")}
       >
         <MessageCircle size={icon} />
-      </a>
-      <a
-        href={telegramLink(phone)}
-        target="_blank"
-        rel="noopener noreferrer"
-        title="Написать в Telegram"
+      </button>
+      <button
+        type="button"
+        onClick={() => openMessengerTab(telegramLink(phone), "telegram")}
+        title="Написать в Telegram (в той же вкладке мессенджера)"
         className={cn(btn, "text-sky-600 hover:bg-sky-50")}
       >
         <Send size={icon} />
-      </a>
+      </button>
       <button
         type="button"
         onClick={() => openMaxChat(phone)}

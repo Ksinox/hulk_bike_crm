@@ -1,6 +1,7 @@
 import { Component, Suspense, lazy, useEffect, useRef, useState } from "react";
 import { Card } from "./KpiCard";
 import { cn } from "@/lib/utils";
+import { ElectricMark, PetrolMark } from "@/components/PowerTypeBadge";
 
 const LiquidGradient = lazy(() => import("./LiquidGradient"));
 
@@ -213,10 +214,12 @@ export function ParkLoadGauge({
           </div>
           {/* Пункт 11: разделение активных на скутеры и электро. */}
           {activeElectro > 0 && (
-            <div className="mt-0.5 text-[11px] font-semibold">
-              <span className="text-ink-2">{active - activeElectro} скут.</span>
-              <span className="text-muted-2"> · </span>
-              <span className="text-emerald-600">⚡ {activeElectro} электро</span>
+            <div className="mt-1 flex items-center gap-1.5 text-[11px] font-semibold">
+              <PetrolMark size="sm" />
+              <span className="text-ink-2">{active - activeElectro}</span>
+              <span className="text-muted-2">·</span>
+              <ElectricMark size="sm" />
+              <span className="text-emerald-700">{activeElectro}</span>
             </div>
           )}
         </div>

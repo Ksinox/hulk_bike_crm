@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { Handshake, Pencil, Zap } from "lucide-react";
+import { Handshake, Pencil } from "lucide-react";
+import { ElectricMark } from "@/components/PowerTypeBadge";
 import { Topbar } from "@/pages/dashboard/Topbar";
 import { useApiScooters, usePatchScooter } from "@/lib/api/scooters";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
@@ -206,11 +207,7 @@ export function Partners() {
                         className="flex items-center gap-2 text-left font-semibold text-ink hover:text-blue-700"
                       >
                         {it.scooter.name}
-                        {it.isElectric && (
-                          <span className="inline-flex items-center gap-0.5 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-emerald-700">
-                            <Zap size={9} /> e-
-                          </span>
-                        )}
+                        {it.isElectric && <ElectricMark size="sm" />}
                         <span className="text-[11px] font-normal text-muted-2">
                           {it.modelName}
                           {it.scooter.uid ? ` · ID ${it.scooter.uid}` : ""}

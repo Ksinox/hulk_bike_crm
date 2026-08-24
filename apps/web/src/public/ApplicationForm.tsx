@@ -47,6 +47,7 @@ import {
 import { toTitleCaseRu } from "@/lib/textCase";
 import { RENTAL_AGREEMENT_TEXT } from "@/lib/rentalAgreement";
 import { ScooterCoverflow } from "./ScooterCoverflow";
+import { PowerTypeGlyph } from "@/components/PowerTypeBadge";
 import { EquipmentCoverflow } from "./EquipmentCoverflow";
 import { WishSummaryBar } from "./WishSummaryBar";
 import { DatePicker, InlineRangeCalendar } from "@/components/ui/date-picker";
@@ -1909,28 +1910,43 @@ function WishModelStep({
       </p>
 
       {showTypePick && (
-        <div className="flex justify-center">
-          <div className="inline-flex rounded-full bg-slate-100 p-1">
-            {(
-              [
-                ["petrol", "Бензин"],
-                ["electric", "⚡ Электро"],
-              ] as const
-            ).map(([t, lbl]) => (
+        <div className="grid grid-cols-2 gap-3">
+          {(
+            [
+              ["petrol", "Бензиновый", "Обычный скутер"],
+              ["electric", "Электро", "На аккумуляторе"],
+            ] as const
+          ).map(([t, title, hint]) => {
+            const active = fuelType === t;
+            return (
               <button
                 key={t}
                 type="button"
                 onClick={() => pickType(t)}
                 className={
-                  fuelType === t
-                    ? "rounded-full bg-slate-900 px-5 py-2 text-[14px] font-bold text-white transition-colors"
-                    : "rounded-full px-5 py-2 text-[14px] font-semibold text-slate-600 transition-colors hover:text-slate-900"
+                  "flex items-center gap-3 rounded-2xl border-2 px-4 py-3.5 text-left transition-all " +
+                  (active
+                    ? "border-slate-900 bg-slate-900 text-white shadow-lg"
+                    : "border-slate-200 bg-white text-slate-800 hover:border-slate-400")
                 }
               >
-                {lbl}
+                <PowerTypeGlyph electric={t === "electric"} active={active} />
+                <span className="min-w-0">
+                  <span className="block text-[15px] font-bold leading-tight">
+                    {title}
+                  </span>
+                  <span
+                    className={
+                      "block text-[12px] leading-tight " +
+                      (active ? "text-white/60" : "text-slate-500")
+                    }
+                  >
+                    {hint}
+                  </span>
+                </span>
               </button>
-            ))}
-          </div>
+            );
+          })}
         </div>
       )}
 

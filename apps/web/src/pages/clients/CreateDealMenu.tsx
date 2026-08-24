@@ -14,7 +14,7 @@ import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
 import { navigate } from "@/app/navigationStore";
 import { toast } from "@/lib/toast";
 
-export type DealType = "rental" | "installment" | "sale" | "repair";
+export type DealType = "rental" | "buyout" | "sale" | "repair";
 
 export const DEAL_TYPES: {
   id: DealType;
@@ -31,9 +31,9 @@ export const DEAL_TYPES: {
     blockIfBlacklisted: true,
   },
   {
-    id: "installment",
-    label: "Рассрочка",
-    hint: "Выкуп скутера с еженедельными платежами",
+    id: "buyout",
+    label: "Выкуп",
+    hint: "Скутер переходит клиенту с еженедельными платежами",
     icon: CreditCard,
     blockIfBlacklisted: true,
   },

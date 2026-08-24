@@ -11,6 +11,8 @@ import {
   Image as ImageIcon,
   Wallet,
   Settings2,
+  Zap,
+  Fuel,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -135,14 +137,19 @@ function ModelCard({
               <Star size={10} className="fill-amber-950" /> быстрый
             </div>
           )}
-          {model.isElectric && (
-            <div className="inline-flex items-center gap-1 rounded-full bg-emerald-500/95 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white shadow">
-              ⚡ электро
+          {model.isElectric ? (
+            <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/95 px-2 py-1 shadow">
+              <Zap size={12} strokeWidth={2.8} className="fill-white text-white" />
+              <span className="text-[10px] font-bold uppercase tracking-wider text-white">
+                электро
+              </span>
             </div>
-          )}
-          {model.isPartner && (
-            <div className="inline-flex items-center gap-1 rounded-full bg-violet-500/95 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white shadow">
-              партнёрская
+          ) : (
+            <div className="inline-flex items-center gap-1.5 rounded-full bg-white/95 px-2 py-1 shadow">
+              <Fuel size={12} strokeWidth={2.4} className="text-muted" />
+              <span className="text-[10px] font-bold uppercase tracking-wider text-muted">
+                бензин
+              </span>
             </div>
           )}
         </div>
