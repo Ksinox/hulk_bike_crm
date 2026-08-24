@@ -34,7 +34,9 @@ type Filter =
   | "repair"
   | "dtp"
   | "disassembly"
-  | "sale";
+  | "sale"
+  /** Выбывшие: продан / передан в выкуп — в парке их нет. */
+  | "gone";
 
 const MODEL_LABEL: Record<ScooterModel, string> = {
   jog: "Yamaha Jog",
@@ -107,10 +109,16 @@ export function MobileScooters() {
   const displayStatus = (s: ApiScooter): ScooterDisplayStatus =>
     s.baseStatus === "rental_pool" && rentedSet.has(s.id) ? "rented" : s.baseStatus;
 
-  const live = useMemo(
+  // Выбывшая техника (продана / передана в выкуп) физически не в парке —
+  // держим её отдельно от «живого» списка (правка заказчика 24.08).
+  const all = useMemo(
     () => scooters.filter((s) => !s.archivedAt && !s.deletedAt),
     [scooters],
   );
+  const isGone = (s: ApiScooter) =>
+    s.baseStatus === "sold" || s.baseStatus === "buyout";
+  const live = useMemo(() => all.filter((s) => !isGone(s)), [all]);
+  const goneList = useMemo(() => all.filter(isGone), [all]);
 
   const counts = useMemo(() => {
     const c = { rented: 0, rental_pool: 0, repair: 0, dtp: 0, disassembly: 0, sale: 0 };
@@ -121,7 +129,7 @@ export function MobileScooters() {
       else if (st === "repair") c.repair++;
       else if (st === "dtp") c.dtp++;
       else if (st === "disassembly") c.disassembly++;
-      else if (st === "for_sale" || st === "buyout") c.sale++;
+      else if (st === "for_sale") c.sale++;
     }
     return c;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -131,7 +139,7 @@ export function MobileScooters() {
     const matchStatus = (s: ApiScooter): boolean => {
       if (filter === "all") return true;
       const st = displayStatus(s);
-      if (filter === "sale") return st === "for_sale" || st === "buyout";
+      if (filter === "sale") return st === "for_sale";
       return st === filter;
     };
     const matchSearch = (s: ApiScooter): boolean => {
@@ -143,11 +151,11 @@ export function MobileScooters() {
         matchScooterName(s.vin ?? undefined, q)
       );
     };
-    return live
-      .filter((s) => matchStatus(s) && matchSearch(s))
+    return (filter === "gone" ? goneList : live)
+      .filter((s) => (filter === "gone" ? true : matchStatus(s)) && matchSearch(s))
       .sort((a, b) => a.name.localeCompare(b.name, "ru", { numeric: true }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [live, filter, search, rentedSet]);
+  }, [live, goneList, filter, search, rentedSet]);
 
   const chips: ChipOption<Filter>[] = [
     { id: "all", label: "Все", count: live.length },
@@ -157,6 +165,9 @@ export function MobileScooters() {
     { id: "dtp", label: "ДТП", count: counts.dtp },
     { id: "disassembly", label: "Разборка", count: counts.disassembly },
     { id: "sale", label: "Продажа", count: counts.sale },
+    ...(goneList.length > 0
+      ? [{ id: "gone" as const, label: "Выбыли", count: goneList.length }]
+      : []),
   ];
 
   const openScooter = live.find((s) => s.id === openId) ?? null;

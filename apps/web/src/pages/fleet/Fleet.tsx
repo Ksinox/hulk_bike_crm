@@ -11,6 +11,7 @@ import {
   Key,
   Layers,
   LayoutGrid,
+  LogOut,
   ListFilter,
   PackageOpen,
   Plus,
@@ -59,7 +60,18 @@ type StatusTab =
   | "dtp"
   | "disassembly"
   | "for_sale"
-  | "ready";
+  | "ready"
+  /** Выбывшие из парка: продан / передан в выкуп (пункт заказчика 24.08). */
+  | "gone";
+
+/**
+ * Техника выбыла из парка: продана или передана клиенту в выкуп.
+ * Правка заказчика 24.08: такие единицы не должны считаться в парке —
+ * их у нас физически нет. Остаются в CRM ради истории и документов.
+ */
+function isGone(status: ScooterDisplayStatus): boolean {
+  return status === "sold" || status === "buyout";
+}
 
 // v0.3.7: пагинация удалена в пользу одного скролла.
 
@@ -181,9 +193,16 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
       dtp: 0,
       disassembly: 0,
       for_sale: 0,
-      total: rows.length,
+      /** Выбывшие: продан / передан в выкуп — техники у нас больше нет. */
+      gone: 0,
+      total: 0,
     };
     for (const r of rows) {
+      if (isGone(r.status)) {
+        c.gone++;
+        continue; // в «Всего скутеров» выбывшие не входят
+      }
+      c.total++;
       if (r.status === "ready") c.ready++;
       else if (r.status === "rental_pool") c.rental_pool++;
       else if (r.status === "rented") c.rented++;
@@ -215,7 +234,14 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
     const q = normalizeQuery(query);
     return rows
       .filter((r) => {
-        if (tab !== "all" && r.status !== tab) return false;
+        // Выбывшая техника (продан/выкуп) в общем списке не показывается —
+        // её физически нет в парке. Смотреть — на вкладке «Выбыли».
+        if (tab === "gone") {
+          if (!isGone(r.status)) return false;
+        } else {
+          if (isGone(r.status)) return false;
+          if (tab !== "all" && r.status !== tab) return false;
+        }
         // Фильтр по моделям: пропускаем если совпал FK (modelId) ИЛИ
         // legacy-enum (model). У старых скутеров modelId=null — они
         // должны находиться по enum.
@@ -394,6 +420,19 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
             setTab("for_sale");
           }}
         />
+        {counters.gone > 0 && (
+          <KpiTile
+            label="Выбыли"
+            value={counters.gone}
+            hint="проданы / в выкупе — не в парке"
+            icon={LogOut}
+            accent="slate"
+            active={tab === "gone"}
+            onClick={() => {
+              setTab("gone");
+            }}
+          />
+        )}
       </div>
 
       {/* =========== Поиск + фильтр моделей + добавить =========== */}

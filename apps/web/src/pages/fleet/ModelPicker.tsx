@@ -6,6 +6,7 @@ import {
   useApiScooterModels,
   type ApiScooterModel,
 } from "@/lib/api/scooter-models";
+import { ElectricMark, PetrolMark } from "@/components/PowerTypeBadge";
 
 /**
  * Выбор модели скутера при добавлении.
@@ -23,14 +24,31 @@ export function ModelPicker({
   const { data: allModels = [], isLoading } = useApiScooterModels();
   const [query, setQuery] = useState("");
   const [focused, setFocused] = useState(false);
+  // Правка 24.08: если в каталоге есть оба типа техники — даём отсеять
+  // категорию, чтобы не искать электричку глазами среди бензиновых.
+  const [power, setPower] = useState<"all" | "petrol" | "electric">("all");
 
   // Видимый список — только активные модели. Неактивная модель в БД
   // остаётся для истории, но в выборах CRM не показывается.
   // Если value указывает на неактивную (старая запись) — не теряем
   // её, чтобы пользователь мог её увидеть в форме.
-  const models = useMemo(
+  const visible = useMemo(
     () => allModels.filter((m) => m.active || m.id === value),
     [allModels, value],
+  );
+  const hasBothPowerTypes = useMemo(
+    () =>
+      visible.some((m) => m.isElectric) && visible.some((m) => !m.isElectric),
+    [visible],
+  );
+  const models = useMemo(
+    () =>
+      power === "all"
+        ? visible
+        : visible.filter((m) =>
+            power === "electric" ? m.isElectric : !m.isElectric,
+          ),
+    [visible, power],
   );
 
   const quickPick = useMemo(
@@ -50,6 +68,35 @@ export function ModelPicker({
 
   return (
     <div className="flex flex-col gap-2">
+      {/* Фильтр категорий — только если в парке есть оба типа техники. */}
+      {hasBothPowerTypes && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {(
+            [
+              ["all", "Все"],
+              ["petrol", "Бензин"],
+              ["electric", "Электро"],
+            ] as const
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setPower(key)}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12px] font-semibold transition-colors",
+                power === key
+                  ? "border-blue-600 bg-blue-50 text-blue-700"
+                  : "border-border bg-surface text-muted hover:border-blue-600/40",
+              )}
+            >
+              {key === "electric" && <ElectricMark size="sm" />}
+              {key === "petrol" && <PetrolMark size="sm" />}
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Быстрый выбор */}
       {quickPick.length > 0 && (
         <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
@@ -81,7 +128,16 @@ export function ModelPicker({
                   )}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-[13px] font-semibold">{m.name}</div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="truncate text-[13px] font-semibold">
+                      {m.name}
+                    </span>
+                    {m.isElectric ? (
+                      <ElectricMark size="sm" />
+                    ) : (
+                      <PetrolMark size="sm" />
+                    )}
+                  </div>
                   <div className="truncate text-[10px] text-muted-2">
                     {m.shortRate} ₽/сут (1–3 дн)
                   </div>
@@ -132,7 +188,11 @@ export function ModelPicker({
                   }}
                   className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-surface-soft"
                 >
-                  <Tag size={12} className="text-muted-2" />
+                  {m.isElectric ? (
+                    <ElectricMark size="sm" />
+                  ) : (
+                    <PetrolMark size="sm" />
+                  )}
                   <span className="flex-1 truncate text-[13px] text-ink">
                     {m.name}
                   </span>
@@ -153,11 +213,18 @@ export function ModelPicker({
       )}
 
       {selected && (
-        <div className="text-[11px] text-muted-2">
+        <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-2">
+          {selected.isElectric ? (
+            <ElectricMark size="sm" withText />
+          ) : (
+            <PetrolMark size="sm" withText />
+          )}
+          <span>
           Выбрано: <b className="text-ink">{selected.name}</b> · тариф 1–3 дня{" "}
           <b className="text-ink">{selected.shortRate} ₽/сут</b>, неделя{" "}
           <b className="text-ink">{selected.weekRate} ₽/сут</b>, месяц{" "}
           <b className="text-ink">{selected.monthRate} ₽/сут</b>
+          </span>
         </div>
       )}
     </div>

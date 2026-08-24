@@ -81,6 +81,9 @@ export function AddScooterModal({ onClose }: { onClose: () => void }) {
   const [note, setNote] = useState("");
   // Пункт 15: номер в арендном парке (null = авто, наименьший свободный).
   const [rentalSlot, setRentalSlot] = useState<number | null>(null);
+  // Пункт 11: чья техника. Партнёрская сразу попадает в раздел «Партнёрка»
+  // с общим процентом инвестора — заводить её отдельно не нужно.
+  const [isPartner, setIsPartner] = useState(false);
   const slotsQ = useRentalSlots();
   const slotsFree = slotsQ.data?.free ?? [];
   const slotsTotal = slotsQ.data?.total ?? 0;
@@ -157,6 +160,7 @@ export function AddScooterModal({ onClose }: { onClose: () => void }) {
       marketValue: marketValue ? Number(marketValue) || undefined : undefined,
       note: note.trim() || undefined,
       rentalSlot: rentalSlot ?? undefined,
+      isPartner,
     });
     requestClose();
   };
@@ -388,6 +392,36 @@ export function AddScooterModal({ onClose }: { onClose: () => void }) {
                     title={o.hint}
                   >
                     {o.label}
+                  </button>
+                ))}
+              </div>
+            </Field>
+
+            {/* Пункт 11: чья техника. Партнёрская попадает в раздел
+                «Партнёрка» и считается с процентом инвестора. */}
+            <Field label="Чья техника">
+              <div className="grid grid-cols-2 gap-1.5">
+                {(
+                  [
+                    [false, "Наша", "вся выручка наша"],
+                    [true, "Партнёрская", "делим с инвестором"],
+                  ] as const
+                ).map(([val, label, hint]) => (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => setIsPartner(val)}
+                    className={cn(
+                      "flex flex-col items-start rounded-[10px] border px-3 py-2 text-left transition-colors",
+                      isPartner === val
+                        ? val
+                          ? "border-violet-500 bg-violet-50 text-violet-700"
+                          : "border-blue-600 bg-blue-50 text-blue-700"
+                        : "border-border bg-surface text-ink-2 hover:border-blue-600/50",
+                    )}
+                  >
+                    <span className="text-[12px] font-semibold">{label}</span>
+                    <span className="text-[10.5px] text-muted-2">{hint}</span>
                   </button>
                 ))}
               </div>

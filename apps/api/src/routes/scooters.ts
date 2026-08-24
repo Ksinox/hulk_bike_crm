@@ -51,6 +51,16 @@ const PatchScooterBody = CreateScooterBody.partial();
 
 const directorOnly = requireRole("director");
 
+/**
+ * Имя техники для журнала/сообщений без исторической «решётки».
+ * Правка заказчика 24.08: формата «Jog #03» в CRM быть не должно —
+ * номер заведения оператору ничего не говорит, значим арендный номер.
+ */
+function scooterLabel(name: string, slot?: number | null): string {
+  const model = name.replace(/\s*#\s*\d+\s*$/, "").trim() || name;
+  return slot != null ? `${model} №${slot}` : model;
+}
+
 /* ───────────── Пункт 15: арендные места (порядковые номера) ─────────────
  * Место занято, пока скутер числится в арендном парке (rental_pool /
  * repair / dtp). Уход в продажу/выкуп/разборку освобождает место, номер
@@ -164,7 +174,7 @@ export async function scootersRoutes(app: FastifyInstance) {
     if (total < maxUsed) {
       return reply.code(409).send({
         error: "slots_in_use",
-        message: `Занято место №${maxUsed} — сначала освободите места выше ${total} (переведите технику из аренды).`,
+        message: `Занят номер ${maxUsed} — сначала освободите номера выше ${total} (переведите технику из аренды).`,
       });
     }
     const prev = await getSlotsTotal();
@@ -325,19 +335,19 @@ export async function scootersRoutes(app: FastifyInstance) {
         if (wanted > total)
           return reply.code(409).send({
             error: "slot_out_of_range",
-            message: `Место №${wanted} больше общего количества мест (${total}).`,
+            message: `Номер ${wanted} больше общего количества номеров (${total}).`,
           });
         if (!free.includes(wanted))
           return reply.code(409).send({
             error: "slot_taken",
-            message: `Место №${wanted} уже занято.`,
+            message: `Номер ${wanted} уже занят.`,
           });
         slotToUse = wanted;
       } else {
         if (free.length === 0)
           return reply.code(409).send({
             error: "no_free_slots",
-            message: `Все ${total} мест арендного парка заняты. Увеличьте общее количество мест или освободите место.`,
+            message: `Все ${total} номеров арендного парка заняты. Увеличьте общее количество или освободите один.`,
           });
         slotToUse = free[0]!;
       }
@@ -361,8 +371,8 @@ export async function scootersRoutes(app: FastifyInstance) {
         action: "created",
         summary:
           slotToUse != null
-            ? `Добавлен скутер «${row.name}» — место №${slotToUse} в арендном парке`
-            : `Добавлен скутер «${row.name}»`,
+            ? `Добавлена техника «${scooterLabel(row.name, slotToUse)}» в арендный парк`
+            : `Добавлена техника «${scooterLabel(row.name)}»`,
       });
       return reply.code(201).send(row);
     } catch (e) {
@@ -483,12 +493,12 @@ export async function scootersRoutes(app: FastifyInstance) {
           if (wantedSlot > total)
             return reply.code(409).send({
               error: "slot_out_of_range",
-              message: `Место №${wantedSlot} больше общего количества мест (${total}).`,
+              message: `Номер ${wantedSlot} больше общего количества номеров (${total}).`,
             });
           if (!free.includes(wantedSlot))
             return reply.code(409).send({
               error: "slot_taken",
-              message: `Место №${wantedSlot} уже занято другим скутером.`,
+              message: `Номер ${wantedSlot} уже занят другой техникой.`,
             });
           patch.rentalSlot = wantedSlot;
         } else if (before.rentalSlot == null || wantedSlot === null) {
@@ -496,7 +506,7 @@ export async function scootersRoutes(app: FastifyInstance) {
           if (free.length === 0)
             return reply.code(409).send({
               error: "no_free_slots",
-              message: `Все ${total} мест арендного парка заняты. Увеличьте общее количество мест или освободите место.`,
+              message: `Все ${total} номеров арендного парка заняты. Увеличьте общее количество или освободите один.`,
             });
           patch.rentalSlot = free[0]!;
         }
@@ -530,7 +540,7 @@ export async function scootersRoutes(app: FastifyInstance) {
         entity: "scooter",
         entityId: id,
         action: "rental_slot_changed",
-        summary: `Место ${row.name} в арендном парке: №${before.rentalSlot} → №${row.rentalSlot}`,
+        summary: `Номер техники ${scooterLabel(row.name)} в арендном парке: ${before.rentalSlot} → ${row.rentalSlot}`,
         diff: {
           slot: {
             label: "Место в арендном парке",
@@ -565,8 +575,8 @@ export async function scootersRoutes(app: FastifyInstance) {
       entityId: id,
       action: statusChanged ? "status_changed" : "updated",
       summary: statusChanged
-        ? `Статус ${row.name}: «${scooterStatusLabel(before.baseStatus)}» → «${scooterStatusLabel(row.baseStatus)}»`
-        : `Отредактированы данные скутера ${row.name}`,
+        ? `Статус ${scooterLabel(row.name, row.rentalSlot)}: «${scooterStatusLabel(before.baseStatus)}» → «${scooterStatusLabel(row.baseStatus)}»`
+        : `Отредактированы данные техники ${scooterLabel(row.name, row.rentalSlot)}`,
       meta: { before, after: row },
     });
     return row;
@@ -622,8 +632,8 @@ export async function scootersRoutes(app: FastifyInstance) {
       entityId: id,
       action: "archived",
       summary: archiveReason
-        ? `Скутер «${sc.name}» отправлен в архив · причина: ${archiveReason}`
-        : `Скутер «${sc.name}» отправлен в архив`,
+        ? `Техника «${scooterLabel(sc.name)}» отправлена в архив · причина: ${archiveReason}`
+        : `Техника «${scooterLabel(sc.name)}» отправлена в архив`,
     });
 
     return row;
@@ -656,7 +666,7 @@ export async function scootersRoutes(app: FastifyInstance) {
         entity: "scooter",
         entityId: id,
         action: "restored",
-        summary: `Скутер «${sc.name}» восстановлен из архива`,
+        summary: `Техника «${scooterLabel(sc.name)}» восстановлена из архива`,
       });
       return row;
     },

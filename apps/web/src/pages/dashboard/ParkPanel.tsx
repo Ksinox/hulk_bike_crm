@@ -106,9 +106,11 @@ export function ParkPanel({
     // Сортируем плитки по номеру скутера: #1 → #2 → … → #55. Заказчик
     // хочет видеть единый поток без группировки Jog/Gear блоками —
     // оператор быстрее находит конкретный номер.
-    const scooters = [...(scootersQ.data ?? [])].sort(
-      (a, b) => parkNumber(a.name) - parkNumber(b.name),
-    );
+    // Правка 24.08: проданная и переданная в выкуп техника выбыла —
+    // в парке её не показываем и в счётчиках не учитываем.
+    const scooters = [...(scootersQ.data ?? [])]
+      .filter((s) => s.baseStatus !== "sold" && s.baseStatus !== "buyout")
+      .sort((a, b) => parkNumber(a.name) - parkNumber(b.name));
     const rentals = rentalsQ.data ?? [];
 
     // Скутер «занят» (числится в аренде на дашборде) пока существует
