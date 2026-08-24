@@ -105,6 +105,8 @@ export async function activityRoutes(app: FastifyInstance) {
           "damage",
           "complete",
           "rollback",
+          // Пункт 2: действия, подтверждённые ключом директора.
+          "approved",
         ])
         .optional(),
       // Фильтр по исполнителю (роли): director / admin / creator / mechanic / accountant.
