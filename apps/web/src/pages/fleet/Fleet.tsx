@@ -874,7 +874,7 @@ function ParkOverview({
           <div className="text-[10.5px] font-bold uppercase tracking-[0.14em] text-muted-2">
             Парк в обороте
           </div>
-          <div className="mt-1 flex items-baseline gap-2">
+          <div className="mt-1 flex items-baseline gap-2.5">
             <span
               className={cn(
                 "font-display text-[42px] font-extrabold leading-none tabular-nums transition-colors",
@@ -922,7 +922,7 @@ function ParkOverview({
       </div>
 
       {/* ── Лента парка: каждая единица техники — штрих ── */}
-      <div className="mt-4 flex h-11 items-stretch gap-[3px] overflow-hidden rounded-[10px] bg-surface-soft/70 p-[3px]">
+      <div className="mt-4 flex h-10 items-stretch justify-start gap-[3px] overflow-hidden rounded-[10px] bg-surface-soft/70 p-[3px]">
         {counters.total === 0 ? (
           <div className="flex w-full items-center justify-center text-[12px] text-muted-2">
             В парке пока нет техники
@@ -936,7 +936,7 @@ function ParkOverview({
                 onClick={() => onTab(seg.key)}
                 title={`${seg.label} · ${seg.hint}`}
                 className={cn(
-                  "min-w-[6px] flex-1 rounded-[5px] transition-[opacity,transform] duration-200 hover:-translate-y-0.5",
+                  "min-w-[6px] max-w-[34px] flex-1 rounded-[4px] transition-[opacity,transform] duration-200 hover:-translate-y-0.5",
                   seg.bar,
                   tab !== "all" && tab !== seg.key
                     ? "opacity-20"
