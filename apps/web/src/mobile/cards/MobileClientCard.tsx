@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { whatsappLink, telegramLink } from "@/lib/messengers";
+import { openMaxChat, MaxIcon } from "@/components/MessengerButtons";
 import { getClientDetails, SOURCE_LABEL, type Client } from "@/lib/mock/clients";
 import {
   RentalsTab,
@@ -325,8 +326,8 @@ export function MobileClientCard({
             </a>
             <CreateDealMenu client={client} block />
           </div>
-          {/* Написать — WhatsApp / Telegram (по основному номеру) */}
-          <div className="grid grid-cols-2 gap-2">
+          {/* Пункт 3: Написать — WhatsApp / Telegram / MAX (по основному номеру) */}
+          <div className="grid grid-cols-3 gap-2">
             <a
               href={whatsappLink(client.phone)}
               target="_blank"
@@ -345,6 +346,14 @@ export function MobileClientCard({
               <Send size={16} />
               Telegram
             </a>
+            <button
+              type="button"
+              onClick={() => openMaxChat(client.phone)}
+              className="flex min-h-[46px] items-center justify-center gap-2 rounded-xl bg-indigo-50 text-[13.5px] font-bold text-indigo-600 ring-1 ring-inset ring-indigo-200 active:scale-[0.98]"
+            >
+              <MaxIcon size={16} />
+              MAX
+            </button>
           </div>
           {/* «Не на связи» — вторичный слим-тумблер статуса */}
           <button
@@ -585,6 +594,14 @@ function PhoneRow({ phone, primary }: { phone: string; primary?: boolean }) {
           >
             <MessageCircle size={18} />
           </a>
+          <button
+            type="button"
+            onClick={() => openMaxChat(phone)}
+            aria-label="MAX: скопировать номер и открыть поиск"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 active:scale-90"
+          >
+            <MaxIcon size={17} />
+          </button>
           <a
             href={telegramLink(phone)}
             target="_blank"

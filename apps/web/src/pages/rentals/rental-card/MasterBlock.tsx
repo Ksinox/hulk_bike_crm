@@ -36,6 +36,7 @@ import {
   Wrench,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { MessengerButtons } from "@/components/MessengerButtons";
 import { fileUrl } from "@/lib/files";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { useClientStats } from "@/lib/useClientStats";
@@ -286,12 +287,16 @@ export function MasterBlock({
         {/* Телефоны без подписей — просто в столбик. */}
         <div className="mt-2 flex flex-col items-start gap-1 text-left">
           {client?.phone ? (
-            <a
-              href={`tel:${client.phone.replace(/[^+0-9]/g, "")}`}
-              className="text-left text-[13.5px] tabular-nums text-ink hover:text-blue-700"
-            >
-              {client.phone}
-            </a>
+            <span className="flex items-center gap-1">
+              <a
+                href={`tel:${client.phone.replace(/[^+0-9]/g, "")}`}
+                className="text-left text-[13.5px] tabular-nums text-ink hover:text-blue-700"
+              >
+                {client.phone}
+              </a>
+              {/* Пункт 3: WhatsApp · Telegram · MAX прямо у номера. */}
+              <MessengerButtons phone={client.phone} />
+            </span>
           ) : (
             <span className="text-left text-[13.5px] text-muted-2 italic">— нет телефона</span>
           )}
