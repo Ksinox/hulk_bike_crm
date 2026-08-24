@@ -785,7 +785,7 @@ function ParkOverview({
   const attention = counters.ready + counters.repair + counters.dtp;
 
   return (
-    <section className="grid gap-3 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)]">
+    <section className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
       {/* ── Главная карта: сколько техники и как она работает ── */}
       <div
         className={cn(
@@ -1028,11 +1028,16 @@ function ParkGroup({
         )}
       </div>
       {visible.length === 0 ? (
-        <div className="rounded-[12px] bg-surface-soft/60 px-3 py-2.5 text-[12px] text-muted-2">
-          {title === "Требуют решения" ? "Всё в порядке — нечего решать" : "Пусто"}
+        <div className="flex items-center gap-2 px-1 py-1.5 text-[12px] text-muted-2">
+          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-green-soft text-green-ink">
+            <Check size={13} strokeWidth={3} />
+          </span>
+          {title === "Требуют решения"
+            ? "Всё в порядке — решать нечего"
+            : "Вся техника в обороте"}
         </div>
       ) : (
-        <div className="flex flex-col gap-1">
+        <div className="grid gap-1 sm:grid-cols-2">
           {visible.map((r) => (
             <ParkRow
               key={r.key}
