@@ -208,7 +208,12 @@ export function Clients() {
             {filtered.length !== clients.length && (
               <span className="text-muted-2"> из {clients.length}</span>
             )}{" "}
-            {pluralClients(filtered.length)}
+            {/* «4 из 10 клиентов»: при фильтре склоняем по общему числу. */}
+            {pluralClients(
+              filtered.length !== clients.length
+                ? clients.length
+                : filtered.length,
+            )}
           </span>
         </div>
         <div className="flex items-center gap-2">
