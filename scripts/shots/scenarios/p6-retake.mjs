@@ -83,7 +83,7 @@ export async function run(page, ctx) {
     },
     10,
   );
-  if (clip1) await ctx.shot("p6-1-custom-crop", { clip: clip1 });
+  if (clip1) await ctx.shot("p6-1-custom-v2", { clip: clip1 });
 
   // переключаем ₽/нед
   await page.evaluate(() => {
@@ -115,5 +115,5 @@ export async function run(page, ctx) {
     },
     10,
   );
-  if (clip2) await ctx.shot("p6-2-week-crop", { clip: clip2 });
+  if (clip2) await ctx.shot("p6-2-week-v2", { clip: clip2 });
 }

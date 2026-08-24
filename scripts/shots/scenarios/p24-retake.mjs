@@ -55,7 +55,7 @@ export async function run(page, ctx) {
   const before = await readCounter();
   console.log("no filter:", before);
   const z1 = await zone();
-  if (z1) await ctx.shot("p24-1-all-crop", { clip: z1.header });
+  if (z1) await ctx.shot("p24-1-all-v2", { clip: z1.header });
 
   // Включаем фильтр «С долгом» (точное совпадение — рядом есть строки
   // клиентов со словом «долг», в них попадать нельзя).
@@ -76,10 +76,9 @@ export async function run(page, ctx) {
   // на снятом кадре действительно отфильтрованное состояние).
   const z2 = await zone();
   if (z2) {
-    await ctx.shot("p24-2-filtered-crop", { clip: z2.header });
+    await ctx.shot("p24-2-filtered-v2", { clip: z2.header });
     await ctx.shot("p24-2-filters-row", { clip: z2.filters });
   }
   const after = await readCounter();
   console.log("with filter (after shot):", after);
-  await ctx.shot("p24-3-full", { jpeg: true });
 }

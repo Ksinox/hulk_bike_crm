@@ -44,5 +44,4 @@ export async function run(page, ctx) {
     };
   });
   if (clip) await ctx.shot("p19-1-row-crop", { clip });
-  await ctx.shot("p19-after-dashboard", { jpeg: true });
 }
