@@ -64,6 +64,7 @@ export function adaptRental(
     // TODO Phase 2: переработать карточку аренды.
     paymentConfirmed: null,
     damageAmount: r.damageAmount ?? undefined,
+    returnReason: r.returnReason ?? null,
     parentRentalId: r.parentRentalId ?? undefined,
     archivedAt: r.archivedAt ?? null,
     archivedBy: r.archivedBy ?? null,

@@ -155,6 +155,8 @@ export type ApiRental = {
   equipment: string[];
   equipmentJson: RentalEquipmentItem[];
   damageAmount: number | null;
+  /** Пункт 4: причина возврата, указанная при закрытии аренды. */
+  returnReason?: string | null;
   note: string | null;
   /** Архив (soft-delete). null если активна. */
   archivedAt: string | null;
