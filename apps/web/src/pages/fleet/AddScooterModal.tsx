@@ -99,6 +99,9 @@ export function AddScooterModal({ onClose }: { onClose: () => void }) {
   }, [suggested, numberTouched]);
 
   const name = `${scooterPrefix} #${String(number || "1").padStart(2, "0")}`;
+  /** Статус, при котором техника занимает арендный номер. */
+  const holdsSlotStatus =
+    status === "rental_pool" || status === "repair" || status === "dtp";
   const nameTaken = scooters.some((s) => s.name === name);
 
   // VIN (= номер рамы/шасси) обязан быть уникальным. Проверяем мгновенно
@@ -222,7 +225,8 @@ export function AddScooterModal({ onClose }: { onClose: () => void }) {
                   </span>
                 ) : (
                   <span className="text-[10px] font-semibold text-muted-2">
-                    Имя: <b className="text-ink">{name}</b>
+                    служебный — в CRM техника называется по модели и
+                    арендному номеру
                   </span>
                 )
               }
@@ -429,7 +433,7 @@ export function AddScooterModal({ onClose }: { onClose: () => void }) {
 
             {/* Пункт 15: номер в арендном парке — для техники, попадающей
                 в аренду. «Авто» = наименьший свободный. */}
-            {(status === "rental_pool" || status === "repair" || status === "dtp") && (
+            {holdsSlotStatus && (
               <Field label={`Номер в аренде · свободно ${slotsFree.length} из ${slotsTotal}`}>
                 {slotsFree.length === 0 ? (
                   <div className="rounded-[10px] border border-orange-ink/30 bg-orange-soft/50 px-3 py-2 text-[12px] font-semibold text-orange-ink">
@@ -489,7 +493,15 @@ export function AddScooterModal({ onClose }: { onClose: () => void }) {
               ? "Исправьте номер — такой скутер уже есть в парке."
               : vinTaken
                 ? "Исправьте VIN — такой номер рамы уже есть в парке."
-                : `Появится в парке как «${name}» со статусом «${statusLabel(status)}».`}
+                : `Появится в парке: ${scooterPrefix}${
+                    rentalSlot != null
+                      ? ` под номером ${rentalSlot}`
+                      : holdsSlotStatus
+                        ? ` под первым свободным номером${
+                            slotsFree[0] != null ? ` (${slotsFree[0]})` : ""
+                          }`
+                        : ""
+                  } · статус «${statusLabel(status)}»${isPartner ? " · партнёрская" : ""}.`}
           </div>
           <div className="flex gap-2">
             <button
