@@ -1,4 +1,10 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import { Check, Lock, Search, UserPlus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { initialsOf, type Client } from "@/lib/mock/clients";
@@ -20,6 +26,7 @@ import { useAllClients } from "@/pages/clients/clientStore";
 import { AddClientModal } from "@/pages/clients/AddClientModal";
 import { useApiScooters } from "@/lib/api/scooters";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
+import { ElectricMark, PetrolMark } from "@/components/PowerTypeBadge";
 import { useApiEquipment } from "@/lib/api/equipment";
 import { DatePicker } from "@/components/ui/date-picker";
 import { useIsMobile } from "@/lib/useIsMobile";
@@ -129,6 +136,10 @@ export function NewRentalModal({
   const [clientOpen, setClientOpen] = useState(false);
   const [newClientOpen, setNewClientOpen] = useState(false);
   // Фильтр по модели в селекторе скутеров — пустая строка = все модели.
+  /** Категория техники в выборе скутера: все / бензин / электро. */
+  const [powerFilter, setPowerFilter] = useState<"all" | "petrol" | "electric">(
+    "all",
+  );
   const [scooterModelFilter, setScooterModelFilter] = useState<string>(
     initialModelFilter ?? "",
   );
@@ -355,6 +366,31 @@ export function NewRentalModal({
    * В аренду можно отдавать ТОЛЬКО скутеры со статусом 'rental_pool'
    * (выделенные владельцем в парк аренды).
    */
+  /** Электро-модели каталога — по ним помечаем и фильтруем технику. */
+  const electricModelIds = useMemo(() => {
+    const set = new Set<number>();
+    for (const m of modelsCatalog) if (m.isElectric) set.add(m.id);
+    return set;
+  }, [modelsCatalog]);
+  const isElectricScooter = useCallback(
+    (s: { modelId?: number | null }) =>
+      s.modelId != null && electricModelIds.has(s.modelId),
+    [electricModelIds],
+  );
+  /** Есть ли в свободном парке оба типа — иначе выбор категории не нужен. */
+  const hasBothPower = useMemo(() => {
+    let petrol = false;
+    let electric = false;
+    for (const s of apiScooters ?? []) {
+      if (blocked.has(s.name) || s.baseStatus !== "rental_pool" || s.archivedAt)
+        continue;
+      if (isElectricScooter(s)) electric = true;
+      else petrol = true;
+      if (petrol && electric) return true;
+    }
+    return false;
+  }, [apiScooters, blocked, isElectricScooter]);
+
   const availableScooters = useMemo(
     () =>
       (apiScooters ?? [])
@@ -363,6 +399,8 @@ export function NewRentalModal({
             !blocked.has(s.name) &&
             s.baseStatus === "rental_pool" &&
             !s.archivedAt &&
+            (powerFilter === "all" ||
+              (powerFilter === "electric") === isElectricScooter(s)) &&
             (scooterModelFilter === "" || s.model === scooterModelFilter),
         )
         .map((s) => ({
@@ -370,8 +408,9 @@ export function NewRentalModal({
           model: s.model,
           rentalSlot: s.rentalSlot ?? undefined,
           exRentalSlot: s.exRentalSlot ?? undefined,
+          electric: isElectricScooter(s),
         })),
-    [apiScooters, blocked, scooterModelFilter],
+    [apiScooters, blocked, scooterModelFilter, powerFilter, isElectricScooter],
   );
 
   /** Список моделей с количеством свободных скутеров — для чипов фильтра. */
@@ -382,6 +421,11 @@ export function NewRentalModal({
         blocked.has(s.name) ||
         s.baseStatus !== "rental_pool" ||
         s.archivedAt
+      )
+        continue;
+      if (
+        powerFilter !== "all" &&
+        (powerFilter === "electric") !== isElectricScooter(s)
       )
         continue;
       counts.set(s.model, (counts.get(s.model) ?? 0) + 1);
@@ -673,10 +717,42 @@ export function NewRentalModal({
                 modelChips={modelChips}
                 filter={scooterModelFilter}
                 onFilter={setScooterModelFilter}
+                power={powerFilter}
+                onPower={hasBothPower ? setPowerFilter : undefined}
                 onPick={(name) => setScooterName(name)}
               />
             ) : (
               <>
+              {hasBothPower && (
+                <div className="mb-2 flex flex-wrap items-center gap-1.5">
+                  {(
+                    [
+                      ["all", "Все"],
+                      ["petrol", "Бензин"],
+                      ["electric", "Электро"],
+                    ] as const
+                  ).map(([key, label]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => {
+                        setPowerFilter(key);
+                        setScooterModelFilter("");
+                      }}
+                      className={cn(
+                        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors",
+                        powerFilter === key
+                          ? "border-blue-600 bg-blue-50 text-blue-700"
+                          : "border-border bg-surface text-muted hover:border-blue-600/40",
+                      )}
+                    >
+                      {key === "electric" && <ElectricMark size="sm" />}
+                      {key === "petrol" && <PetrolMark size="sm" />}
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
               {modelChips.length > 1 && (
                 <div className="mb-2 flex flex-wrap gap-1">
                   <button
@@ -721,12 +797,15 @@ export function NewRentalModal({
                       onClick={() => setScooterName(s.name)}
                       className="rounded-full bg-surface-soft px-2.5 py-1 text-[11px] font-semibold text-ink transition-colors hover:bg-blue-50 hover:text-blue-700"
                     >
-                      <ScooterName
-                        name={s.name}
-                        number={s.rentalSlot}
-                        exNumber={s.exRentalSlot}
-                        size="sm"
-                      />
+                      <span className="inline-flex items-center gap-1.5">
+                        {s.electric && <ElectricMark size="sm" />}
+                        <ScooterName
+                          name={s.name}
+                          number={s.rentalSlot}
+                          exNumber={s.exRentalSlot}
+                          size="sm"
+                        />
+                      </span>
                     </button>
                   ))
                 )}
@@ -1412,6 +1491,8 @@ function MobileScooterPicker({
   modelChips,
   filter,
   onFilter,
+  power,
+  onPower,
   onPick,
 }: {
   scooters: {
@@ -1419,14 +1500,48 @@ function MobileScooterPicker({
     model: ScooterModel;
     rentalSlot?: number;
     exRentalSlot?: number;
+    electric?: boolean;
   }[];
   modelChips: [string, number][];
   filter: string;
   onFilter: (m: string) => void;
+  /** Категория техники; onPower не задан — в парке один тип, выбор не нужен. */
+  power: "all" | "petrol" | "electric";
+  onPower?: (p: "all" | "petrol" | "electric") => void;
   onPick: (name: string) => void;
 }) {
   return (
     <div className="flex flex-col gap-2.5">
+      {onPower && (
+        <div className="no-scrollbar -mx-1 flex gap-1.5 overflow-x-auto px-1">
+          {(
+            [
+              ["all", "Все"],
+              ["petrol", "Бензин"],
+              ["electric", "Электро"],
+            ] as const
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => {
+                onPower(key);
+                onFilter("");
+              }}
+              className={cn(
+                "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-[12px] font-semibold",
+                power === key
+                  ? "border-blue-600 bg-blue-50 text-blue-700"
+                  : "border-border bg-surface text-muted",
+              )}
+            >
+              {key === "electric" && <ElectricMark size="sm" />}
+              {key === "petrol" && <PetrolMark size="sm" />}
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
       {modelChips.length > 1 && (
         <div className="no-scrollbar -mx-1 flex gap-1.5 overflow-x-auto px-1">
           <button
@@ -1467,12 +1582,15 @@ function MobileScooterPicker({
               onClick={() => onPick(s.name)}
               className="flex flex-col gap-0.5 rounded-xl border border-border bg-surface p-3 text-left active:bg-blue-50"
             >
-              <ScooterName
-                name={s.name}
-                number={s.rentalSlot}
-                exNumber={s.exRentalSlot}
-                className="text-[15px] font-bold text-ink"
-              />
+              <span className="flex items-center gap-1.5">
+                {s.electric && <ElectricMark size="sm" />}
+                <ScooterName
+                  name={s.name}
+                  number={s.rentalSlot}
+                  exNumber={s.exRentalSlot}
+                  className="text-[15px] font-bold text-ink"
+                />
+              </span>
               <span className="text-[12px] text-muted-2">{MODEL_LABEL[s.model]}</span>
             </button>
           ))}
