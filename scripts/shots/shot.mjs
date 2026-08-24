@@ -81,6 +81,17 @@ try {
     secure: true,
     sameSite: "None",
   });
+  // Профиль браузера чистый на каждый прогон → NewApplicationDetector
+  // всплывал бы модалкой «Новая заявка» поверх любого сценария. Помечаем
+  // все заявки «просмотренными» (id 1..200) до загрузки приложения.
+  await page.evaluateOnNewDocument(() => {
+    const now = new Date().toISOString();
+    const arr = Array.from({ length: 200 }, (_, i) => ({
+      id: i + 1,
+      seenAt: now,
+    }));
+    localStorage.setItem("hulk-seen-applications", JSON.stringify(arr));
+  });
   await page.goto(BASE + "/", { waitUntil: "networkidle2" });
   await page.waitForFunction(
     () => document.body.innerText.length > 200,
