@@ -1943,14 +1943,29 @@ export function RentalCard({
               {pendingOther > 0 && (
                 <div>не оплачено: <b>{fmt(pendingOther)} ₽</b></div>
               )}
+              {/* Правка 24.08: в составе долга видно, ЗА СКОЛЬКО ДНЕЙ
+                  начислено — иначе непонятно, откуда сумма. */}
               {overdueRentBalance > 0 && (
-                <div>аренда за дни: <b>{fmt(overdueRentBalance)} ₽</b></div>
+                <div>
+                  аренда за {overdueDaysCount > 0 ? `${overdueDaysCount} ` : ""}
+                  {overdueDaysCount === 1 ? "день" : "дн"} просрочки:{" "}
+                  <b>{fmt(overdueRentBalance)} ₽</b>
+                </div>
               )}
               {overdueEquipBalance > 0 && (
-                <div>экипировка за дни: <b>{fmt(overdueEquipBalance)} ₽</b></div>
+                <div>
+                  экипировка за{" "}
+                  {overdueDaysCount > 0 ? `${overdueDaysCount} ` : ""}
+                  {overdueDaysCount === 1 ? "день" : "дн"}:{" "}
+                  <b>{fmt(overdueEquipBalance)} ₽</b>
+                </div>
               )}
               {overdueFineBalance > 0 && (
-                <div>штраф: <b>{fmt(overdueFineBalance)} ₽</b></div>
+                <div>
+                  штраф за {overdueDaysCount > 0 ? `${overdueDaysCount} ` : ""}
+                  {overdueDaysCount === 1 ? "день" : "дн"} просрочки:{" "}
+                  <b>{fmt(overdueFineBalance)} ₽</b>
+                </div>
               )}
               {overdueBalance > 0 &&
                 overdueDaysBalance + overdueFineBalance === 0 && (
