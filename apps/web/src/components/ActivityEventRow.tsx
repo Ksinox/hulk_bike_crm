@@ -992,6 +992,34 @@ function buildActivitySummary(
     };
   }
 
+  // ── Пункт 2: удаление аренды в архив / восстановление. Запись
+  //    самодостаточна: причина, судьба выручки, подтверждение ключом. ──
+  if (item.entity === "rental" && action === "archived") {
+    const m = readRecord(item.meta);
+    const extras: string[] = [];
+    if (typeof m?.reason === "string" && m.reason)
+      extras.push(`Причина: ${m.reason}`);
+    const excluded = typeof m?.excludedRevenue === "number" ? m.excludedRevenue : null;
+    if (excluded != null && excluded > 0)
+      extras.push(`Из выручки исключено ${money(excluded)}`);
+    if (m?.directorApproved === true)
+      extras.push("Подтверждено ключом директора");
+    return { title: "Аренда удалена в архив", change: null, extras };
+  }
+  if (item.entity === "rental" && action === "unarchived") {
+    const m = readRecord(item.meta);
+    const returned =
+      typeof m?.returnedRevenue === "number" ? m.returnedRevenue : null;
+    return {
+      title: "Аренда восстановлена из архива",
+      change: null,
+      extras:
+        returned != null && returned > 0
+          ? [`Оплаты возвращены в выручку: ${money(returned)}`]
+          : [],
+    };
+  }
+
   // ── Создание аренды: показываем «тело» — из чего складывается сумма
   //    (аренда + экипировка + залог). Снимок берётся из meta.composition
   //    (см. бэкенд rentals.ts, лог rental_created). ──
