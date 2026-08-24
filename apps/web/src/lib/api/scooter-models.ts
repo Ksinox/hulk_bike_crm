@@ -21,6 +21,10 @@ export type ApiScooterModel = {
    * а удалять нельзя из-за истории.
    */
   active: boolean;
+  /** Пункт 14: электротранспорт (направление «электро», п. 11). */
+  isElectric?: boolean;
+  /** Пункт 14: партнёрская техника (выручка делится с партнёром, п. 11). */
+  isPartner?: boolean;
   /** ₽/сут на коротком прокате 1–2 дня */
   dayRate: number;
   /** ₽/сут на тарифе 3–6 дней */
@@ -47,6 +51,8 @@ export type CreateModelInput = {
   avatarFileName?: string | null;
   quickPick?: boolean;
   active?: boolean;
+  isElectric?: boolean;
+  isPartner?: boolean;
   dayRate?: number;
   shortRate?: number;
   weekRate?: number;

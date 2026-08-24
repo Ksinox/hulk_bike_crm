@@ -743,6 +743,10 @@ export const scooterModels = pgTable(
      * из обращения», но удалять её нельзя — за ней есть история.
      */
     active: boolean("active").notNull().default(true),
+    /** Пункт 14: электротранспорт (задел под направление «электро», п. 11). */
+    isElectric: boolean("is_electric").notNull().default(false),
+    /** Пункт 14: партнёрская техника (выручка делится с партнёром, п. 11). */
+    isPartner: boolean("is_partner").notNull().default(false),
     /** Ставки ₽/сут по периодам аренды */
     dayRate: integer("day_rate").notNull().default(1300), // 1–2 дня
     shortRate: integer("short_rate").notNull().default(700), // 3–6 дней

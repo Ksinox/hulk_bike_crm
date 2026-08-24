@@ -128,12 +128,24 @@ function ModelCard({
           </div>
         )}
 
-        {/* Top-left: бейдж quickPick */}
-        {model.quickPick && model.active !== false && (
-          <div className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-amber-400/95 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-950 shadow">
-            <Star size={10} className="fill-amber-950" /> быстрый
-          </div>
-        )}
+        {/* Top-left: бейджи quickPick / электро / партнёрская (пункт 14) */}
+        <div className="absolute left-2 top-2 flex flex-col items-start gap-1">
+          {model.quickPick && model.active !== false && (
+            <div className="inline-flex items-center gap-1 rounded-full bg-amber-400/95 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-950 shadow">
+              <Star size={10} className="fill-amber-950" /> быстрый
+            </div>
+          )}
+          {model.isElectric && (
+            <div className="inline-flex items-center gap-1 rounded-full bg-emerald-500/95 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white shadow">
+              ⚡ электро
+            </div>
+          )}
+          {model.isPartner && (
+            <div className="inline-flex items-center gap-1 rounded-full bg-violet-500/95 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white shadow">
+              партнёрская
+            </div>
+          )}
+        </div>
         {/* Top-right: бейдж «не активна» */}
         {isInactive && (
           <div className="absolute right-2 top-2 rounded-full bg-white/95 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-muted shadow">
@@ -216,6 +228,9 @@ function ModelFormModal({
   // берём текущее значение. false означает «модель в систему добавлена,
   // но временно не используется» — её скрывают везде в CRM и на лендинге.
   const [active, setActive] = useState(initial?.active ?? true);
+  // Пункт 14: тип техники — электро / партнёрская.
+  const [isElectric, setIsElectric] = useState(initial?.isElectric ?? false);
+  const [isPartner, setIsPartner] = useState(initial?.isPartner ?? false);
   const [maxSpeedKmh, setMaxSpeedKmh] = useState<string>(
     initial?.maxSpeedKmh != null ? String(initial.maxSpeedKmh) : "",
   );
@@ -247,6 +262,8 @@ function ModelFormModal({
       monthRate,
       quickPick,
       active,
+      isElectric,
+      isPartner,
       maxSpeedKmh:
         speedNum != null && Number.isFinite(speedNum) && speedNum >= 0
           ? Math.round(speedNum)
@@ -421,6 +438,22 @@ function ModelFormModal({
               disabled={!active}
               title="Быстрый выбор"
               hint="Отображать первой в форме новой аренды"
+            />
+          </div>
+
+          {/* Пункт 14: тип техники — электро / партнёрская. */}
+          <div className="grid gap-2 sm:grid-cols-2">
+            <ToggleCard
+              checked={isElectric}
+              onChange={setIsElectric}
+              title="Электро"
+              hint="Электротранспорт — отдельное направление"
+            />
+            <ToggleCard
+              checked={isPartner}
+              onChange={setIsPartner}
+              title="Партнёрская"
+              hint="Техника партнёра — выручка делится"
             />
           </div>
 
