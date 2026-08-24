@@ -120,9 +120,22 @@ export function ProgressBoard() {
               {fmtDate(PROGRESS_PERIOD.from)} — {fmtDate(PROGRESS_PERIOD.to, true)}
             </p>
             <p className="mt-2 max-w-md text-[13px] leading-relaxed text-white/50">
-              {s.total} {pluralRu(s.total, "пункт", "пункта", "пунктов")} в работе.
-              Каждый проходит проверку на тестовом окружении и переносится в
-              рабочую систему только после согласования.
+              {s.done > 0 ? (
+                <>
+                  <b className="text-white/85">
+                    {s.done} {pluralRu(s.done, "пункт", "пункта", "пунктов")}
+                  </b>{" "}
+                  {pluralRu(s.done, "готов и ждёт", "готовы и ждут", "готовы и ждут")}{" "}
+                  вашей проверки — у каждого история «было → стало» со
+                  скриншотами. Принятое переносится в рабочую систему.
+                </>
+              ) : (
+                <>
+                  {s.total} {pluralRu(s.total, "пункт", "пункта", "пунктов")} в
+                  работе. Каждый проходит проверку на тестовом окружении и
+                  переносится в рабочую систему только после согласования.
+                </>
+              )}
             </p>
           </div>
 
@@ -140,6 +153,49 @@ export function ProgressBoard() {
         <Stat value={s.inProgress} label="В работе" tone="amber" />
         <Stat value={s.planned} label="Запланировано" tone="muted" />
       </div>
+
+      {/* ─────────────── КАК ПРИНИМАТЬ РАБОТУ ─────────────── */}
+      {s.done > 0 && (
+        <div
+          className="mt-6 rounded-2xl border border-blue-100 bg-blue-50/50 p-5 sm:p-6"
+          style={{ animation: "wnFadeUp .5s ease-out both", animationDelay: "120ms" }}
+        >
+          <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-blue-700">
+            Как принимать работу
+          </div>
+          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+            {[
+              {
+                n: "1",
+                t: "Откройте пункт",
+                d: "Внутри — короткая история со скриншотами: как было, что нажимали, как стало.",
+              },
+              {
+                n: "2",
+                t: "Проверьте вживую",
+                d: "Всё уже работает на тестовой версии CRM — повторите шаги из истории своими руками.",
+              },
+              {
+                n: "3",
+                t: "Напишите «принял»",
+                d: "Сообщение в чат — «пункт N принял» — и он уезжает в рабочую систему.",
+              },
+            ].map((st) => (
+              <div key={st.n} className="flex gap-3">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-600 font-display text-[14px] font-extrabold text-white">
+                  {st.n}
+                </span>
+                <div className="min-w-0">
+                  <div className="text-[13.5px] font-bold text-ink">{st.t}</div>
+                  <div className="mt-0.5 text-[12px] leading-relaxed text-muted">
+                    {st.d}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ─────────────── ГЛАВЫ ─────────────── */}
       <div className="mt-12 flex flex-col gap-14">
@@ -491,6 +547,21 @@ function ItemCard({
                 )}
               </figure>
             ))}
+
+            {/* CTA приёмки: пункт готов — что сделать, чтобы он уехал в прод */}
+            {item.status === "done" && (
+              <div className="mt-4 flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50/60 px-4 py-3">
+                <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white">
+                  <Check size={13} strokeWidth={3} />
+                </span>
+                <p className="text-[12.5px] leading-relaxed text-ink-2">
+                  <b>Готово к вашей проверке.</b> Повторите шаги на тестовой
+                  версии CRM — и, если всё устраивает, напишите в чат:{" "}
+                  <b>«пункт {item.id} принял»</b>. После этого изменение
+                  переедет в рабочую систему.
+                </p>
+              </div>
+            )}
           </div>
         )}
       </div>
