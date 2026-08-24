@@ -260,8 +260,10 @@ function ScooterTile({
           </div>
         </div>
       </div>
-      <div className="flex items-center justify-between gap-1">
-        <span className="flex min-w-0 items-center gap-1">
+      {/* flex-wrap: на узкой плитке (2 колонки на 360px) статус + «масло» +
+          пробег не помещались в строку и наезжали друг на друга. */}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span className="flex min-w-0 flex-wrap items-center gap-1">
           <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold", meta.cls)}>
             {meta.label}
           </span>
@@ -278,7 +280,9 @@ function ScooterTile({
             </span>
           )}
         </span>
-        <span className="shrink-0 text-[11px] text-muted-2">{num(scooter.mileage)} км</span>
+        <span className="ml-auto shrink-0 text-[11px] tabular-nums text-muted-2">
+          {num(scooter.mileage)} км
+        </span>
       </div>
     </button>
   );
