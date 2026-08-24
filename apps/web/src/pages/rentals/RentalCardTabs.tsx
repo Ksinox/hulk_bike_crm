@@ -29,6 +29,7 @@ import {
   FileText,
   Gauge,
   History,
+  Pencil,
   Plus,
   Repeat,
   ShieldCheck,
@@ -44,8 +45,10 @@ import {
 } from "@/lib/mock/rentals";
 import {
   addRentalIncident,
+  changePaymentMethod,
   getRentalChainIds,
   markPaymentPaid,
+  type Payment,
   toggleTask,
   useArchivedRentals,
   useInspection,
@@ -927,7 +930,7 @@ export function PaymentsTab({
                     {fmt(p.amount)} ₽
                   </td>
                   <td className="px-3 py-2 text-muted">
-                    {PAYMENT_LABEL[p.method]}
+                    <PaymentMethodCell payment={p} />
                   </td>
                   <td className="px-3 py-2">
                     {p.paid ? (
@@ -955,6 +958,89 @@ export function PaymentsTab({
         Приоритет списания: штрафы → ущерб → неустойка → аренда → выкуп
       </div>
     </div>
+  );
+}
+
+/**
+ * Пункт 8: способ оплаты в таблице платежей — кликабельный. У проведённого
+ * платежа (кроме оплат из залога/депозита) можно сменить формат
+ * «наличные ↔ безнал»: клик открывает мини-меню, выбор — PATCH + запись
+ * в журнал (бэк пишет diff «было → стало»). Вся аналитика нал/безнал
+ * (Выручка, Сводка дня) пересчитывается сама — она читает method.
+ */
+function PaymentMethodCell({ payment }: { payment: Payment }) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  // Оплаты из залога/депозита — не деньги клиента, формат не меняется.
+  const editable = payment.paid && payment.method !== "deposit";
+  if (!editable) return <>{PAYMENT_LABEL[payment.method]}</>;
+
+  const pick = async (m: "cash" | "transfer") => {
+    setOpen(false);
+    if (
+      m === payment.method ||
+      (m === "transfer" && payment.method === "card")
+    )
+      return;
+    setBusy(true);
+    await changePaymentMethod(payment.id, m);
+    setBusy(false);
+    toast.success(
+      "Способ оплаты изменён",
+      `${fmt(payment.amount)} ₽ — теперь ${m === "cash" ? "наличные" : "безнал"}. Запись в журнале.`,
+    );
+  };
+
+  return (
+    <span className="relative inline-flex">
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => setOpen((v) => !v)}
+        title="Сменить способ оплаты (нал ↔ безнал)"
+        className="inline-flex items-center gap-1 rounded-full border border-transparent px-1.5 py-0.5 text-muted transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 disabled:opacity-50"
+      >
+        {PAYMENT_LABEL[payment.method]}
+        <Pencil size={10} className="opacity-60" />
+      </button>
+      {open && (
+        <>
+          {/* клик мимо — закрыть */}
+          <span
+            className="fixed inset-0 z-40"
+            onClick={() => setOpen(false)}
+          />
+          <span className="absolute left-0 top-full z-50 mt-1 flex w-[150px] flex-col overflow-hidden rounded-xl border border-border bg-surface py-1 shadow-card-lg">
+            {(
+              [
+                ["cash", "Наличные"],
+                ["transfer", "Безнал"],
+              ] as const
+            ).map(([m, lbl]) => {
+              const active =
+                payment.method === m ||
+                (m === "transfer" && payment.method === "card");
+              return (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => pick(m)}
+                  className={cn(
+                    "flex items-center gap-2 px-3 py-2 text-left text-[12px] font-semibold transition-colors",
+                    active
+                      ? "bg-blue-50 text-blue-700"
+                      : "text-ink-2 hover:bg-surface-soft",
+                  )}
+                >
+                  {active && <Check size={12} />}
+                  {lbl}
+                </button>
+              );
+            })}
+          </span>
+        </>
+      )}
+    </span>
   );
 }
 

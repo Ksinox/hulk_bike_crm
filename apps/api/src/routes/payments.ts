@@ -4,6 +4,24 @@ import { z } from "zod";
 import { db } from "../db/index.js";
 import { payments, rentals } from "../db/schema.js";
 import { mirrorRentalPaymentToDebtor } from "../services/debtorMirror.js";
+import { logActivity } from "../services/activityLog.js";
+
+/** Человекочитаемый способ оплаты для журнала (пункт 8). */
+const METHOD_RU: Record<string, string> = {
+  cash: "наличные",
+  card: "карта",
+  transfer: "безнал",
+  deposit: "из залога/депозита",
+};
+
+const PAYMENT_TYPE_RU: Record<string, string> = {
+  rent: "аренда",
+  deposit: "залог",
+  fine: "штраф",
+  damage: "ущерб",
+  refund: "возврат",
+  swap_fee: "доплата за замену",
+};
 
 const CreatePaymentBody = z
   .object({
@@ -134,12 +152,46 @@ export async function paymentsRoutes(app: FastifyInstance) {
     if (parsed.data.paidAt !== undefined) {
       patch.paidAt = parsed.data.paidAt ? new Date(parsed.data.paidAt) : null;
     }
+    // Пункт 8: для журнала смены способа нужно состояние ДО патча.
+    const [before] = await db
+      .select()
+      .from(payments)
+      .where(eq(payments.id, id));
     const [row] = await db
       .update(payments)
       .set(patch)
       .where(eq(payments.id, id))
       .returning();
     if (!row) return reply.code(404).send({ error: "not found" });
+    // Пункт 8: смена способа у УЖЕ проведённого платежа — в журнал с diff.
+    // Приём placeholder'ов (paid false→true с установкой метода) не логируем:
+    // это не «смена формата», а первичный выбор при оплате.
+    if (
+      parsed.data.method &&
+      before &&
+      before.paid &&
+      before.method !== row.method
+    ) {
+      await logActivity(req, {
+        entity: "rental",
+        entityId: row.rentalId,
+        action: "payment_method_changed",
+        summary: `Изменён способ оплаты: ${row.amount} ₽ (${
+          PAYMENT_TYPE_RU[row.type] ?? row.type
+        }) — ${METHOD_RU[before.method] ?? before.method} → ${
+          METHOD_RU[row.method] ?? row.method
+        }`,
+        meta: { paymentId: row.id, amount: row.amount, type: row.type },
+        diff: {
+          method: {
+            label: "Способ оплаты",
+            from: METHOD_RU[before.method] ?? before.method,
+            to: METHOD_RU[row.method] ?? row.method,
+            kind: "text",
+          },
+        },
+      });
+    }
     if (parsed.data.paid === true) {
       await maybeAutoClose(row.rentalId);
       await mirrorRentalPaymentToDebtor(req, {

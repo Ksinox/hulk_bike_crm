@@ -354,6 +354,15 @@ export function markPaymentPaid(id: number, paid = true) {
     .catch(logErr("markPaymentPaid"));
 }
 
+/** Пункт 8: смена способа уже проведённого платежа (нал ↔ безнал).
+ *  Бэк пишет запись в журнал с diff «было → стало». */
+export function changePaymentMethod(id: number, method: "cash" | "transfer") {
+  return api
+    .patch(`/api/payments/${id}`, { method })
+    .then(invAll)
+    .catch(logErr("changePaymentMethod"));
+}
+
 export function addRentalIncident(
   rentalId: number,
   inc: Omit<RentalIncident, "id" | "rentalId" | "paid"> & { paid?: number },

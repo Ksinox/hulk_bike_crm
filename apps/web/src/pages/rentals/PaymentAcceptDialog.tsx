@@ -39,6 +39,7 @@ import {
   Minus,
   Plus,
   Pencil,
+  ArrowLeftRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast, confirmDialog } from "@/lib/toast";
@@ -855,7 +856,18 @@ export function PaymentAcceptDialog({
     setAcceptedStr(target > 0 ? String(target) : "");
   }, [grossTotal, securityToUse, depositToUse, mode, isMobile, cashTouched]);
 
+  // Пункт 8: раздельная оплата — клиент даёт часть наличными, часть
+  // безналом. Разбиение валидно, когда обе части ≥ 1 ₽.
+  const [splitMode, setSplitMode] = useState(false);
+  const [splitCashStr, setSplitCashStr] = useState("");
+
   const accepted = Number(acceptedStr.replace(/\D/g, "")) || 0;
+  const splitCash = Math.min(
+    accepted,
+    Number(splitCashStr.replace(/\D/g, "")) || 0,
+  );
+  const splitTransfer = accepted - splitCash;
+  const splitValid = splitMode && accepted > 0 && splitCash >= 1 && splitTransfer >= 1;
   const totalReceived = depositToUse + securityToUse + accepted;
   // v0.6.11: вычитаем topup из подсчёта overpay/underpay — пополнение
   // залога это «своя» строка платежа, не относится к закрытию долга.
@@ -969,6 +981,12 @@ export function PaymentAcceptDialog({
   const [saving, setSaving] = useState(false);
   const qc = useQueryClient();
 
+  // Пункт 8: выбор одиночного способа выключает раздельный режим
+  // (split заменяет одиночный выбор, и наоборот).
+  useEffect(() => {
+    if (method !== null) setSplitMode(false);
+  }, [method]);
+
   const fmt = (n: number) => n.toLocaleString("ru-RU");
 
   type OpTarget =
@@ -1055,10 +1073,22 @@ export function PaymentAcceptDialog({
     // депозит идут method='deposit' (в выручку повторно не падают); удержанный
     // залог проводим доходом отдельно (deposit_forfeit) в submit().
     const ops: Op[] = [];
+    // Пункт 8: при раздельной оплате принятые деньги — два источника
+    // с разными методами (нал + безнал); иначе один, как раньше.
+    const acceptedFunding: { amount: number; method: PaymentMethod }[] =
+      splitValid
+        ? [
+            { amount: Math.min(splitCash, acceptedAvail), method: "cash" },
+            {
+              amount: acceptedAvail - Math.min(splitCash, acceptedAvail),
+              method: "transfer",
+            },
+          ]
+        : [{ amount: acceptedAvail, method: payMethod }];
     const funding: { amount: number; method: PaymentMethod }[] = [
       { amount: securityToUse, method: "deposit" },
       { amount: depositToUse, method: "deposit" },
-      { amount: acceptedAvail, method: payMethod },
+      ...acceptedFunding,
     ];
     let fundIdx = 0;
     let fundLeft = funding[0]?.amount ?? 0;
@@ -1111,8 +1141,15 @@ export function PaymentAcceptDialog({
     // v0.9: способ оплаты обязателен, когда реально принимаем деньги от
     // клиента (accepted>0). Без осознанного выбора нал/безнал не проводим —
     // иначе статистика по способам будет неверной.
-    if (accepted > 0 && method === null) {
-      toast.error("Выберите способ оплаты", "Наличные или безнал");
+    if (accepted > 0 && method === null && !splitValid) {
+      if (splitMode) {
+        toast.error(
+          "Заполните разбиение",
+          "Обе части (наличные и безнал) должны быть больше нуля.",
+        );
+      } else {
+        toast.error("Выберите способ оплаты", "Наличные или безнал");
+      }
       return;
     }
     setSaving(true);
@@ -1759,8 +1796,83 @@ export function PaymentAcceptDialog({
   // приняты все позиции; способ оплаты обязателен только при accepted>0.
   const submitDisabled =
     saving ||
-    (accepted > 0 && method === null) ||
+    (accepted > 0 && method === null && !splitValid) ||
     (completing ? intake.blocked : totalReceived <= 0 && !forgiveDebt);
+
+  /**
+   * Пункт 8: блок «Разделить нал/безнал» — рендерится под кнопками способа
+   * во всех раскладках диалога. Тумблер включает режим, поле задаёт
+   * наличную часть, безнал считается автоматически (accepted − нал).
+   */
+  const renderSplitPay = (opts?: { dense?: boolean }) => {
+    if (accepted < 2) return null;
+    const dense = opts?.dense ?? false;
+    return (
+      <div className={dense ? "mt-1.5" : "mt-2"}>
+        <button
+          type="button"
+          onClick={() => {
+            const next = !splitMode;
+            setSplitMode(next);
+            if (next) {
+              setMethod(null);
+              // стартовое разбиение — пополам, оператор поправит
+              if (!splitCashStr) setSplitCashStr(String(Math.floor(accepted / 2)));
+            }
+          }}
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11.5px] font-semibold transition-colors",
+            splitMode
+              ? "bg-blue-600 text-white"
+              : "text-blue-700 hover:bg-blue-50",
+          )}
+        >
+          <ArrowLeftRight size={12} />
+          Разделить нал/безнал
+        </button>
+        {splitMode && (
+          <div
+            className={cn(
+              "mt-1.5 grid grid-cols-2 gap-2 rounded-xl border border-blue-200 bg-blue-50/40 p-2",
+            )}
+          >
+            <label className="flex flex-col gap-0.5">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
+                Наличными
+              </span>
+              <div className="flex items-center gap-1 rounded-lg border border-border bg-surface px-2">
+                <input
+                  inputMode="numeric"
+                  value={splitCashStr}
+                  onChange={(e) =>
+                    setSplitCashStr(e.target.value.replace(/\D/g, ""))
+                  }
+                  className="h-9 w-full bg-transparent text-[14px] font-bold tabular-nums text-ink outline-none"
+                />
+                <span className="text-[12px] text-muted">₽</span>
+              </div>
+            </label>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
+                Безналом
+              </span>
+              <div className="flex h-9 items-center justify-between rounded-lg bg-surface-soft px-2">
+                <span className="text-[14px] font-bold tabular-nums text-ink">
+                  {fmt(splitTransfer)}
+                </span>
+                <span className="text-[12px] text-muted">₽</span>
+              </div>
+            </div>
+            {!splitValid && (
+              <div className="col-span-2 text-[10.5px] font-semibold text-orange-ink">
+                Обе части должны быть больше нуля (всего {fmt(accepted)} ₽).
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const mainPanel = (
       <div
@@ -2897,7 +3009,7 @@ export function PaymentAcceptDialog({
                 <span className="text-[10.5px] font-bold uppercase tracking-wider text-muted-2">
                   Способ оплаты
                 </span>
-                {accepted > 0 && method === null && (
+                {accepted > 0 && method === null && !splitMode && (
                   <span className="rounded-full bg-orange-soft px-1.5 py-0.5 text-[10px] font-bold text-orange-ink">
                     выберите
                   </span>
@@ -2906,7 +3018,8 @@ export function PaymentAcceptDialog({
               <div className="grid grid-cols-2 gap-2">
                 {METHODS.map((m) => {
                   const active = method === m.id;
-                  const needsChoice = accepted > 0 && method === null;
+                  const needsChoice =
+                    accepted > 0 && method === null && !splitMode;
                   return (
                     <button
                       key={m.id}
@@ -2928,6 +3041,7 @@ export function PaymentAcceptDialog({
                   );
                 })}
               </div>
+              {renderSplitPay()}
             </div>
             <div className="flex items-center gap-2">
               <button
@@ -3553,7 +3667,7 @@ export function PaymentAcceptDialog({
                 <span className="text-[10.5px] font-bold uppercase tracking-wider text-muted-2">
                   Способ
                 </span>
-                {accepted > 0 && method === null && (
+                {accepted > 0 && method === null && !splitMode && (
                   <span className="rounded-full bg-orange-soft px-1.5 py-0.5 text-[10px] font-bold text-orange-ink">
                     выберите
                   </span>
@@ -3562,7 +3676,8 @@ export function PaymentAcceptDialog({
               <div className="flex overflow-hidden rounded-xl border border-border text-[12.5px]">
                 {METHODS.map((m, i) => {
                   const active = method === m.id;
-                  const needsChoice = accepted > 0 && method === null;
+                  const needsChoice =
+                    accepted > 0 && method === null && !splitMode;
                   return (
                     <button
                       key={m.id}
@@ -3584,6 +3699,7 @@ export function PaymentAcceptDialog({
                   );
                 })}
               </div>
+              {renderSplitPay({ dense: true })}
             </div>
           </div>
         )}
@@ -3990,7 +4106,7 @@ export function PaymentAcceptDialog({
                         <span className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
                           Способ оплаты
                         </span>
-                        {accepted > 0 && method === null && (
+                        {accepted > 0 && method === null && !splitMode && (
                           <span className="rounded-full bg-orange-soft px-1.5 py-0.5 text-[10px] font-bold text-orange-ink">
                             выберите
                           </span>
@@ -4016,6 +4132,7 @@ export function PaymentAcceptDialog({
                           );
                         })}
                       </div>
+                      {renderSplitPay()}
                     </div>
                   </>
                 ) : (
@@ -4631,23 +4748,26 @@ export function PaymentAcceptDialog({
                   </span>
                 </button>
                 {accepted > 0 && (
-                  <div className="mb-2.5 flex items-center gap-2">
-                    {METHODS.map((m) => {
-                      const active = method === m.id;
-                      return (
-                        <button
-                          key={m.id}
-                          type="button"
-                          onClick={() => setMethod(m.id)}
-                          className={cn("flex h-10 flex-1 items-center justify-center gap-1.5 rounded-xl border text-[13px] font-semibold transition-colors", active ? "border-blue-600 bg-blue-600 text-white" : "border-border bg-surface text-ink-2")}
-                        >
-                          <m.Icon size={15} /> {m.label}
-                        </button>
-                      );
-                    })}
-                    {method === null && (
-                      <span className="shrink-0 rounded-full bg-orange-soft px-1.5 py-1 text-[10px] font-bold text-orange-ink">способ?</span>
-                    )}
+                  <div className="mb-2.5">
+                    <div className="flex items-center gap-2">
+                      {METHODS.map((m) => {
+                        const active = method === m.id;
+                        return (
+                          <button
+                            key={m.id}
+                            type="button"
+                            onClick={() => setMethod(m.id)}
+                            className={cn("flex h-10 flex-1 items-center justify-center gap-1.5 rounded-xl border text-[13px] font-semibold transition-colors", active ? "border-blue-600 bg-blue-600 text-white" : "border-border bg-surface text-ink-2")}
+                          >
+                            <m.Icon size={15} /> {m.label}
+                          </button>
+                        );
+                      })}
+                      {method === null && !splitMode && (
+                        <span className="shrink-0 rounded-full bg-orange-soft px-1.5 py-1 text-[10px] font-bold text-orange-ink">способ?</span>
+                      )}
+                    </div>
+                    {renderSplitPay({ dense: true })}
                   </div>
                 )}
                 <div className="flex gap-2">
