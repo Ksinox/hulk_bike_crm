@@ -54,7 +54,9 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
     <div className="grid auto-rows-[minmax(120px,auto)] grid-cols-12 gap-4">
       {/* #дашборд: круговая загрузка парка — первой картой (вместо «Новых
           заявок», которые остаются в разделе «Заявки»). */}
-      <div className="col-span-3 [&>div]:h-full">
+      {/* Пункт 19: плитка «Активных аренд» убрана — дублировала кольцо
+          «Загрузка парка» (там та же цифра «N в аренде из M»). */}
+      <div className="col-span-4 [&>div]:h-full">
         <ParkLoadGauge
           percent={metrics.loadPercent}
           active={metrics.activeRentalsCount}
@@ -66,7 +68,7 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
           }
         />
       </div>
-      <div className="col-span-3 [&>div]:h-full">
+      <div className="col-span-4 [&>div]:h-full">
         <KpiCard
           blue
           title="Поступит сегодня"
@@ -95,7 +97,7 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
           }
         />
       </div>
-      <div className="col-span-3 [&>div]:h-full">
+      <div className="col-span-4 [&>div]:h-full">
         <KpiCard
           title="Просрочено"
           value={String(metrics.overdueCount)}
@@ -125,27 +127,6 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
             ) : (
               <span>нет просрочек</span>
             )
-          }
-        />
-      </div>
-      <div className="col-span-3 [&>div]:h-full">
-        <KpiCard
-          title="Активных аренд"
-          value={String(metrics.activeRentalsCount)}
-          unit={
-            metrics.rentableFleet > 0 ? `/ ${metrics.rentableFleet}` : undefined
-          }
-          onClick={
-            metrics.activeRentalsCount > 0
-              ? () => drawer.openRentalsList("active")
-              : undefined
-          }
-          foot={
-            <span>
-              {metrics.rentableFleet > 0
-                ? `${metrics.loadPercent}% загрузка парка`
-                : "парк пока пустой"}
-            </span>
           }
         />
       </div>
@@ -187,7 +168,7 @@ function ClassicVariant({ metrics }: { metrics: DashboardMetrics }) {
   return (
     <div className="grid auto-rows-[minmax(120px,auto)] grid-cols-12 gap-4">
       <ClassicKpi
-        className="col-span-3"
+        className="col-span-4"
         title="Поступит сегодня"
         value={metrics.todayIncoming > 0 ? formatRub(metrics.todayIncoming) : "0"}
         unit="₽"
@@ -210,7 +191,7 @@ function ClassicVariant({ metrics }: { metrics: DashboardMetrics }) {
         }
       />
       <ClassicKpi
-        className="col-span-3"
+        className="col-span-4"
         title="Просрочено"
         value={String(metrics.overdueCount)}
         valueRed={metrics.overdueCount > 0}
@@ -229,24 +210,8 @@ function ClassicVariant({ metrics }: { metrics: DashboardMetrics }) {
           </span>
         }
       />
-      <ClassicKpi
-        className="col-span-3"
-        title="Активных аренд"
-        value={String(metrics.activeRentalsCount)}
-        unit={
-          metrics.rentableFleet > 0 ? `/${metrics.rentableFleet}` : undefined
-        }
-        icon={CLASSIC_KPI_ICONS.rent}
-        iconTone="blue"
-        foot={
-          <span>
-            {metrics.rentableFleet > 0
-              ? `${metrics.loadPercent}% загрузка`
-              : "парк пустой"}
-          </span>
-        }
-      />
-      <NewApplicationsWidget className="col-span-3" />
+      {/* Пункт 19: «Активных аренд» убрана — есть «Загрузка парка». */}
+      <NewApplicationsWidget className="col-span-4" />
 
       <ReturnsTable
         className="col-span-8"
