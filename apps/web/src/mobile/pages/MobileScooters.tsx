@@ -166,11 +166,13 @@ export function MobileScooters() {
     { id: "disassembly", label: "Разборка", count: counts.disassembly },
     { id: "sale", label: "Продажа", count: counts.sale },
     ...(goneList.length > 0
-      ? [{ id: "gone" as const, label: "Выбыли", count: goneList.length }]
+      ? [{ id: "gone" as const, label: "Проданы", count: goneList.length }]
       : []),
   ];
 
-  const openScooter = live.find((s) => s.id === openId) ?? null;
+  // Ищем среди ВСЕЙ техники, а не только «живой»: карточка проданной
+  // единицы тоже должна открываться (её смотрят из чипа «Проданы»).
+  const openScooter = all.find((s) => s.id === openId) ?? null;
   const openFleet = openId != null ? fleet.find((f) => f.id === openId) ?? null : null;
 
   return (
