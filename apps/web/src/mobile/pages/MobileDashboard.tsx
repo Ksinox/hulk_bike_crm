@@ -20,6 +20,11 @@ import { ParkLoadGauge } from "@/pages/dashboard/ParkLoadGauge";
 import { useBillingPeriodRevenue } from "@/lib/useRevenue";
 import { MobileRevenueScreen } from "./MobileRevenueScreen";
 import { RowCallButton, useCallClient } from "../call";
+import { usePageFab } from "../fab";
+import { MobileBottomSheet } from "../BottomSheet";
+import { DEAL_TYPES, type DealType } from "@/pages/clients/CreateDealMenu";
+import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
+import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 import {
   formatRub,
@@ -52,6 +57,16 @@ export function MobileDashboard({
   // Полноэкранный список ВСЕХ просрочек (с дашборда «Все →»): звонок + карточка.
   const [overdueListOpen, setOverdueListOpen] = useState(false);
   const { callClient, callSheet } = useCallClient();
+
+  // Пункт 5: «Новая сделка» с главного экрана — лист типов сделки
+  // (та же механика, что «Создать сделку» у клиента; живая пока «Аренда»).
+  const [dealSheetOpen, setDealSheetOpen] = useState(false);
+  const [newRentalOpen, setNewRentalOpen] = useState(false);
+  usePageFab(
+    "Сделка",
+    () => setDealSheetOpen(true),
+    openRentalId != null || overdueListOpen || revenueOpen || newRentalOpen,
+  );
 
   if (m.isLoading) {
     return <DashboardSkeleton />;
@@ -274,6 +289,89 @@ export function MobileDashboard({
       {/* Выбор номера для звонка (если у клиента два телефона) — общий
           нижний лист из mobile/call. */}
       {callSheet}
+
+      {/* Пункт 5: нижний лист «Новая сделка» — крупные пункты под палец,
+          пункты включаются по мере готовности (живая пока «Аренда»). */}
+      {dealSheetOpen && (
+        <MobileBottomSheet onClose={() => setDealSheetOpen(false)}>
+          {({ close }) => (
+            <div className="px-4 pt-1">
+              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-2">
+                Новая сделка
+              </div>
+              <div className="mb-3 text-[17px] font-bold text-ink">
+                Что оформляем?
+              </div>
+              <div className="flex flex-col gap-2">
+                {DEAL_TYPES.map((dt) => {
+                  const Icon = dt.icon;
+                  const enabled = dt.id === ("rental" as DealType);
+                  return (
+                    <button
+                      key={dt.id}
+                      type="button"
+                      disabled={!enabled}
+                      onClick={
+                        enabled
+                          ? () => {
+                              close();
+                              window.setTimeout(
+                                () => setNewRentalOpen(true),
+                                290,
+                              );
+                            }
+                          : undefined
+                      }
+                      className={cn(
+                        "flex min-h-[64px] w-full items-center gap-3 rounded-2xl border px-3.5 py-3 text-left transition-colors",
+                        enabled
+                          ? "border-blue-200 bg-blue-50/60 active:bg-blue-100"
+                          : "border-border bg-surface-soft opacity-60",
+                      )}
+                    >
+                      <div
+                        className={cn(
+                          "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl",
+                          enabled
+                            ? "bg-blue-600 text-white"
+                            : "bg-surface text-muted-2",
+                        )}
+                      >
+                        <Icon size={20} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 text-[15px] font-bold text-ink">
+                          {dt.label}
+                          {!enabled && (
+                            <span className="rounded-full bg-surface px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-muted-2">
+                              скоро
+                            </span>
+                          )}
+                        </div>
+                        <div className="mt-0.5 text-[12px] text-muted">
+                          {dt.hint}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </MobileBottomSheet>
+      )}
+
+      {/* Создание аренды из листа сделки (модалка уже адаптивна). */}
+      {newRentalOpen && (
+        <NewRentalModal
+          onClose={() => setNewRentalOpen(false)}
+          onCreated={(r) => {
+            setNewRentalOpen(false);
+            toast.success("Аренда создана");
+            navigate({ route: "rentals", rentalId: r.id });
+          }}
+        />
+      )}
     </div>
   );
 }

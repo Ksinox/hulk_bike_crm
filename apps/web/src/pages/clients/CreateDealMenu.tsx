@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   Bike,
+  ChevronDown,
   CreditCard,
   Plus,
   Wallet,
@@ -13,9 +14,9 @@ import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
 import { navigate } from "@/app/navigationStore";
 import { toast } from "@/lib/toast";
 
-type DealType = "rental" | "installment" | "sale" | "repair";
+export type DealType = "rental" | "installment" | "sale" | "repair";
 
-const DEAL_TYPES: {
+export const DEAL_TYPES: {
   id: DealType;
   label: string;
   hint: string;
@@ -51,6 +52,157 @@ const DEAL_TYPES: {
     blockIfBlacklisted: false,
   },
 ];
+
+/**
+ * Список типов сделки внутри выпадающего меню — общий для карточки клиента
+ * (CreateDealMenu) и кнопки «Новая сделка» в шапке (NewDealButton, пункт 5).
+ * Пункты открываются по мере готовности: пока живая только «Аренда»,
+ * остальные помечены «скоро» (заказчик: подключать по мере готовности).
+ */
+function DealTypeList({
+  blacklisted,
+  onPick,
+}: {
+  blacklisted?: boolean;
+  onPick: (type: DealType) => void;
+}) {
+  return (
+    <div className="py-1">
+      {DEAL_TYPES.map((dt) => {
+        const Icon = dt.icon;
+        const blockedByBlacklist = dt.blockIfBlacklisted && !!blacklisted;
+        // Пока включена только «Аренда»; остальные типы — «скоро».
+        const enabled = dt.id === "rental" && !blockedByBlacklist;
+        return (
+          <button
+            key={dt.id}
+            type="button"
+            disabled={!enabled}
+            onClick={enabled ? () => onPick(dt.id) : undefined}
+            title={
+              enabled
+                ? ""
+                : blockedByBlacklist
+                  ? "Клиент в чёрном списке"
+                  : "Скоро появится"
+            }
+            className={cn(
+              "flex w-full items-start gap-3 px-3 py-2.5 text-left transition-colors",
+              enabled
+                ? "hover:bg-surface-soft"
+                : "cursor-not-allowed opacity-55",
+            )}
+          >
+            <div
+              className={cn(
+                "flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]",
+                enabled
+                  ? "bg-blue-50 text-blue-600"
+                  : "bg-surface-soft text-muted-2",
+              )}
+            >
+              <Icon size={16} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 text-[13px] font-semibold text-ink">
+                {dt.label}
+                {!enabled && (
+                  <span className="rounded-full bg-surface-soft px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-muted-2">
+                    {blockedByBlacklist ? "ЧС" : "скоро"}
+                  </span>
+                )}
+              </div>
+              <div className="mt-0.5 text-[11px] text-muted">{dt.hint}</div>
+            </div>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * Пункт 5 — кнопка «Новая сделка» в шапке (вместо «Новая аренда»).
+ * Тот же выпадающий список типов, но клиент ещё не выбран — «Аренда»
+ * открывает обычное окно создания аренды с выбором клиента внутри.
+ */
+export function NewDealButton({
+  onRental,
+}: {
+  /** Если задан — «Аренда» отдаётся родителю (Topbar сам рендерит окно
+   *  с нужной логикой навигации), иначе окно открывается здесь. */
+  onRental?: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [rentalOpen, setRentalOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onClick = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("mousedown", onClick);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("mousedown", onClick);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const handlePick = (type: DealType) => {
+    setOpen(false);
+    if (type === "rental") {
+      if (onRental) onRental();
+      else setRentalOpen(true);
+    }
+  };
+
+  return (
+    <div ref={ref} className="relative hidden md:block">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex items-center gap-1.5 rounded-full bg-ink px-3 py-1.5 text-[13px] font-bold text-white transition-colors hover:bg-blue-600"
+        title="Новая сделка"
+      >
+        <Plus size={14} /> Новая сделка
+        <ChevronDown
+          size={13}
+          className={cn("transition-transform", open && "rotate-180")}
+        />
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full z-50 mt-2 w-[280px] origin-top-right animate-modal-in overflow-hidden rounded-[14px] border border-border bg-surface shadow-card-lg">
+          <div className="border-b border-border bg-surface-soft px-3 py-2">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-2">
+              Тип сделки
+            </div>
+            <div className="text-[13px] font-semibold text-ink">
+              Что оформляем?
+            </div>
+          </div>
+          <DealTypeList onPick={handlePick} />
+        </div>
+      )}
+
+      {rentalOpen && (
+        <NewRentalModal
+          onClose={() => setRentalOpen(false)}
+          onCreated={(r) => {
+            setRentalOpen(false);
+            toast.success("Аренда создана");
+            navigate({ route: "rentals", rentalId: r.id });
+          }}
+        />
+      )}
+    </div>
+  );
+}
 
 export function CreateDealMenu({
   client,
@@ -112,60 +264,10 @@ export function CreateDealMenu({
               {client.name.split(" ")[0]} {client.name.split(" ")[1]?.[0]}.
             </div>
           </div>
-          <div className="py-1">
-            {DEAL_TYPES.map((dt) => {
-              const Icon = dt.icon;
-              const blockedByBlacklist =
-                dt.blockIfBlacklisted && !!client.blacklisted;
-              // Пока включена только «Аренда»; остальные типы — «скоро».
-              const enabled = dt.id === "rental" && !blockedByBlacklist;
-              return (
-                <button
-                  key={dt.id}
-                  type="button"
-                  disabled={!enabled}
-                  onClick={enabled ? () => handlePick(dt.id) : undefined}
-                  title={
-                    enabled
-                      ? ""
-                      : blockedByBlacklist
-                        ? "Клиент в чёрном списке"
-                        : "Скоро появится"
-                  }
-                  className={cn(
-                    "flex w-full items-start gap-3 px-3 py-2.5 text-left transition-colors",
-                    enabled
-                      ? "hover:bg-surface-soft"
-                      : "cursor-not-allowed opacity-55",
-                  )}
-                >
-                  <div
-                    className={cn(
-                      "flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]",
-                      enabled
-                        ? "bg-blue-50 text-blue-600"
-                        : "bg-surface-soft text-muted-2",
-                    )}
-                  >
-                    <Icon size={16} />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 text-[13px] font-semibold text-ink">
-                      {dt.label}
-                      {!enabled && (
-                        <span className="rounded-full bg-surface-soft px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-muted-2">
-                          {blockedByBlacklist ? "ЧС" : "скоро"}
-                        </span>
-                      )}
-                    </div>
-                    <div className="mt-0.5 text-[11px] text-muted">
-                      {dt.hint}
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
+          <DealTypeList
+            blacklisted={!!client.blacklisted}
+            onPick={handlePick}
+          />
         </div>
       )}
 

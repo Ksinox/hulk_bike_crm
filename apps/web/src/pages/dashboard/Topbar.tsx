@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
   Bell,
-  Bike,
   Calendar,
   ChevronDown,
   Crown,
@@ -20,6 +19,7 @@ import { useLogout, useMe } from "@/lib/api/auth";
 import { GlobalSearch } from "./GlobalSearch";
 import { ProfileModal } from "./ProfileModal";
 import { AddClientModal } from "@/pages/clients/AddClientModal";
+import { NewDealButton } from "@/pages/clients/CreateDealMenu";
 import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
 import { useDashboardDrawer } from "./DashboardDrawer";
 import { navigate } from "@/app/navigationStore";
@@ -94,14 +94,10 @@ export function Topbar() {
       >
         <UserPlus size={14} /> Новый клиент
       </button>
-      <button
-        type="button"
-        onClick={() => setNewRentalOpen(true)}
-        className="hidden md:inline-flex items-center gap-1.5 rounded-full bg-ink px-3 py-1.5 text-[13px] font-bold text-white transition-colors hover:bg-blue-600"
-        title="Новая аренда"
-      >
-        <Bike size={14} /> Новая аренда
-      </button>
+      {/* Пункт 5: «Новая сделка» — выпадающий список типов (аренда,
+          рассрочка, продажа, ремонт); пункты включаются по мере
+          готовности. Механика та же, что «Создать сделку» у клиента. */}
+      <NewDealButton onRental={() => setNewRentalOpen(true)} />
 
       {isCreator && <CreatorViewSwitcher current={role} onChange={setRole} />}
 
