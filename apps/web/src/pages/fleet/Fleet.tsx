@@ -922,7 +922,12 @@ function ParkOverview({
       </div>
 
       {/* ── Лента парка: каждая единица техники — штрих ── */}
-      <div className="mt-4 flex h-10 items-stretch justify-start gap-[3px] overflow-hidden rounded-[10px] bg-surface-soft/70 p-[3px]">
+      <div
+        className={cn(
+          "mt-4 flex h-10 max-w-full items-stretch justify-start gap-[3px] overflow-hidden rounded-[10px] bg-surface-soft/70 p-[3px]",
+          perUnit ? "w-fit" : "w-full",
+        )}
+      >
         {counters.total === 0 ? (
           <div className="flex w-full items-center justify-center text-[12px] text-muted-2">
             В парке пока нет техники

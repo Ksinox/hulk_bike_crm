@@ -292,7 +292,12 @@ function ParkStrip({
           </div>
         </div>
       </div>
-      <div className="mt-3 flex h-8 items-stretch justify-start gap-[2px] overflow-hidden rounded-[9px] bg-surface-soft/70 p-[2px]">
+      <div
+        className={cn(
+          "mt-3 flex h-8 max-w-full items-stretch justify-start gap-[2px] overflow-hidden rounded-[9px] bg-surface-soft/70 p-[2px]",
+          perUnit ? "w-fit" : "w-full",
+        )}
+      >
         {perUnit
           ? segments.flatMap((seg) =>
               Array.from({ length: seg.value }, (_, i) => (
