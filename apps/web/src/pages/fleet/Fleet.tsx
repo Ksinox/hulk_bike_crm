@@ -330,117 +330,8 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
         </header>
       )}
 
-      {/* =========== KPI =========== */}
-      <div
-        className={cn(
-          "grid grid-cols-2 gap-3 md:grid-cols-4",
-          // Плитка «Выбыли» появляется только когда такая техника есть —
-          // тогда ряд расширяем до 9, чтобы не переносить её одну вниз.
-          counters.gone > 0 ? "xl:grid-cols-9" : "xl:grid-cols-8",
-        )}
-      >
-        <KpiTile
-          label="Всего скутеров"
-          value={counters.total}
-          hint="в обороте, без выбывших"
-          icon={Layers}
-          accent="slate"
-          active={tab === "all"}
-          onClick={() => {
-            setTab("all");
-          }}
-        />
-        <KpiTile
-          label="Готов к аренде"
-          value={counters.rental_pool}
-          hint="свободны, можно выдавать"
-          icon={ShoppingBag}
-          accent="green"
-          active={tab === "rental_pool"}
-          onClick={() => {
-            setTab("rental_pool");
-          }}
-        />
-        <KpiTile
-          label="Активная аренда"
-          value={counters.rented}
-          hint="действующие договоры"
-          icon={Key}
-          accent="blue"
-          active={tab === "rented"}
-          onClick={() => {
-            setTab("rented");
-          }}
-        />
-        <KpiTile
-          label="Не распределены"
-          value={counters.ready}
-          hint="нужно решить куда"
-          icon={HelpCircle}
-          accent="slate"
-          active={tab === "ready"}
-          onClick={() => {
-            setTab("ready");
-          }}
-        />
-        <KpiTile
-          label="На ремонте"
-          value={counters.repair}
-          hint="у мастера"
-          icon={Wrench}
-          accent="red"
-          active={tab === "repair"}
-          onClick={() => {
-            setTab("repair");
-          }}
-        />
-        <KpiTile
-          label="ДТП"
-          value={counters.dtp}
-          hint="после аварии"
-          icon={AlertTriangle}
-          accent="rose"
-          active={tab === "dtp"}
-          onClick={() => {
-            setTab("dtp");
-          }}
-        />
-        <KpiTile
-          label="На разборку"
-          value={counters.disassembly}
-          hint="идут на запчасти"
-          icon={PackageOpen}
-          accent="slate"
-          active={tab === "disassembly"}
-          onClick={() => {
-            setTab("disassembly");
-          }}
-        />
-        <KpiTile
-          label="Продаются"
-          value={counters.for_sale}
-          hint="выставлены на витрину"
-          icon={Tag}
-          accent="violet"
-          active={tab === "for_sale"}
-          onClick={() => {
-            setTab("for_sale");
-          }}
-        />
-        {counters.gone > 0 && (
-          <KpiTile
-            label="Выбыли"
-            value={counters.gone}
-            hint="проданы / в выкупе — не в парке"
-            icon={LogOut}
-            accent="slate"
-            active={tab === "gone"}
-            onClick={() => {
-              setTab("gone");
-            }}
-          />
-        )}
-      </div>
+      {/* =========== Обзор парка =========== */}
+      <ParkOverview counters={counters} tab={tab} onTab={setTab} />
 
       {/* =========== Поиск + фильтр моделей + добавить =========== */}
       <div className="flex flex-wrap items-center gap-3">
@@ -861,76 +752,369 @@ function StatusPill({ status }: { status: ScooterDisplayStatus }) {
   );
 }
 
-function KpiTile({
+/**
+ * Обзор парка. Заказчик 24.08: «очень-очень сжатые карточки, взгляд
+ * теряется» — поэтому вместо девяти равных плиток здесь иерархия:
+ * слева главная карта (сколько техники и как она загружена), справа —
+ * компактные строки по группам смысла. Всё кликабельно — это фильтры.
+ */
+function ParkOverview({
+  counters,
+  tab,
+  onTab,
+}: {
+  counters: {
+    ready: number;
+    rental_pool: number;
+    rented: number;
+    repair: number;
+    dtp: number;
+    disassembly: number;
+    for_sale: number;
+    gone: number;
+    total: number;
+  };
+  tab: StatusTab;
+  onTab: (t: StatusTab) => void;
+}) {
+  // Загрузка = занято / (занято + свободно). Ремонт, ДТП и «не распределены»
+  // к выдаче недоступны, поэтому в знаменатель не идут — иначе процент
+  // занижается и не отражает реальную доступность парка.
+  const rentable = counters.rented + counters.rental_pool;
+  const loadPct = rentable > 0 ? Math.round((counters.rented / rentable) * 100) : 0;
+  const attention = counters.ready + counters.repair + counters.dtp;
+
+  return (
+    <section className="grid gap-3 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)]">
+      {/* ── Главная карта: сколько техники и как она работает ── */}
+      <div
+        className={cn(
+          "relative overflow-hidden rounded-[20px] border bg-surface p-5 shadow-card-sm transition-colors",
+          tab === "all" ? "border-blue-600/40 ring-2 ring-blue-600/15" : "border-border",
+        )}
+      >
+        <div className="flex items-start justify-between gap-4">
+          <button
+            type="button"
+            onClick={() => onTab("all")}
+            className="text-left"
+            title="Показать всю технику в обороте"
+          >
+            <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
+              Парк в обороте
+            </div>
+            <div className="mt-1.5 flex items-baseline gap-2">
+              <span className="font-display text-[46px] font-extrabold leading-none text-ink tabular-nums">
+                {counters.total}
+              </span>
+              <span className="text-[13px] text-muted">
+                {counters.total === 1 ? "единица" : "единиц"} техники
+              </span>
+            </div>
+          </button>
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-ink text-white">
+            <Layers size={20} />
+          </div>
+        </div>
+
+        {/* Полоса загрузки: синее — занято клиентами, зелёное — свободно */}
+        <div className="mt-5">
+          <div className="flex items-baseline justify-between text-[12px]">
+            <span className="font-bold text-ink">Загрузка {loadPct}%</span>
+            <span className="text-muted-2">
+              {rentable > 0
+                ? `${counters.rented} из ${rentable} доступных заняты`
+                : "нет техники, доступной к выдаче"}
+            </span>
+          </div>
+          <div className="mt-2 flex h-2.5 overflow-hidden rounded-full bg-surface-soft">
+            <span
+              className="bg-blue-600 transition-all"
+              style={{ width: `${rentable > 0 ? (counters.rented / rentable) * 100 : 0}%` }}
+            />
+            <span
+              className="bg-green-ink/45 transition-all"
+              style={{ width: `${rentable > 0 ? (counters.rental_pool / rentable) * 100 : 0}%` }}
+            />
+          </div>
+        </div>
+
+        {/* Две операционные метрики — то, чем живёт день */}
+        <div className="mt-4 grid grid-cols-2 gap-2.5">
+          <ParkMetric
+            label="В аренде"
+            hint="у клиентов сейчас"
+            value={counters.rented}
+            icon={Key}
+            tone="blue"
+            active={tab === "rented"}
+            onClick={() => onTab("rented")}
+          />
+          <ParkMetric
+            label="Свободны"
+            hint="можно выдавать"
+            value={counters.rental_pool}
+            icon={ShoppingBag}
+            tone="green"
+            active={tab === "rental_pool"}
+            onClick={() => onTab("rental_pool")}
+          />
+        </div>
+      </div>
+
+      {/* ── Правая колонка: по группам смысла ── */}
+      <div className="flex flex-col gap-3 rounded-[20px] border border-border bg-surface p-4 shadow-card-sm">
+        <ParkGroup
+          title="Требуют решения"
+          badge={attention}
+          rows={[
+            {
+              key: "ready" as const,
+              label: "Не распределены",
+              hint: "решить, куда поставить",
+              value: counters.ready,
+              icon: HelpCircle,
+              tone: "amber" as const,
+            },
+            {
+              key: "repair" as const,
+              label: "На ремонте",
+              hint: "у мастера",
+              value: counters.repair,
+              icon: Wrench,
+              tone: "red" as const,
+            },
+            {
+              key: "dtp" as const,
+              label: "ДТП",
+              hint: "после аварии",
+              value: counters.dtp,
+              icon: AlertTriangle,
+              tone: "red" as const,
+            },
+          ]}
+          tab={tab}
+          onTab={onTab}
+        />
+
+        <div className="h-px bg-border" />
+
+        <ParkGroup
+          title="Вне аренды"
+          rows={[
+            {
+              key: "disassembly" as const,
+              label: "На разборку",
+              hint: "идут на запчасти",
+              value: counters.disassembly,
+              icon: PackageOpen,
+              tone: "slate" as const,
+            },
+            {
+              key: "for_sale" as const,
+              label: "Продаются",
+              hint: "выставлены на витрину",
+              value: counters.for_sale,
+              icon: Tag,
+              tone: "violet" as const,
+            },
+            {
+              key: "gone" as const,
+              label: "Проданы",
+              hint: "продажа и выкуп — уже не наши",
+              value: counters.gone,
+              icon: LogOut,
+              tone: "slate" as const,
+            },
+          ]}
+          tab={tab}
+          onTab={onTab}
+        />
+      </div>
+    </section>
+  );
+}
+
+/** Крупная метрика внутри главной карты парка. */
+function ParkMetric({
   label,
-  value,
   hint,
+  value,
   icon: Icon,
-  accent,
+  tone,
   active,
   onClick,
 }: {
   label: string;
-  value: number;
   hint: string;
+  value: number;
   icon: typeof Key;
-  accent: "green" | "blue" | "red" | "rose" | "violet" | "slate";
+  tone: "blue" | "green";
   active: boolean;
   onClick: () => void;
 }) {
-  const iconCls =
-    accent === "green"
-      ? "bg-green-soft text-green-ink"
-      : accent === "blue"
-        ? "bg-blue-50 text-blue-700"
-        : accent === "red"
-          ? "bg-red-soft text-red-ink"
-          : accent === "rose"
-            ? "bg-red text-white"
-            : accent === "slate"
-              ? "bg-ink text-white"
-              : "bg-purple-soft text-purple-ink";
-  const valueCls =
-    accent === "green"
-      ? "text-green-ink"
-      : accent === "blue"
-        ? "text-blue-700"
-        : accent === "red"
-          ? "text-red-ink"
-          : accent === "rose"
-            ? "text-red-ink"
-            : accent === "slate"
-              ? "text-ink"
-              : "text-purple-ink";
   return (
     <button
       type="button"
       onClick={onClick}
       className={cn(
-        "relative overflow-hidden rounded-[18px] border bg-surface px-5 py-4 text-left shadow-card-sm transition-all hover:-translate-y-0.5 hover:shadow-card",
+        "flex items-center gap-3 rounded-[14px] border px-3.5 py-3 text-left transition-colors",
         active
-          ? "border-blue-600/40 ring-2 ring-blue-600/15"
-          : "border-border",
+          ? tone === "blue"
+            ? "border-blue-600/50 bg-blue-50"
+            : "border-green-ink/40 bg-green-soft"
+          : "border-border bg-surface-soft/50 hover:border-blue-600/30",
       )}
     >
-      <div className="flex items-start justify-between">
-        <div className={cn("flex h-10 w-10 items-center justify-center rounded-full", iconCls)}>
-          <Icon size={18} />
-        </div>
-      </div>
-      <div
+      <span
         className={cn(
-          "mt-4 font-display text-[36px] font-extrabold leading-none tabular-nums",
-          valueCls,
+          "flex h-9 w-9 shrink-0 items-center justify-center rounded-full",
+          tone === "blue" ? "bg-blue-50 text-blue-700" : "bg-green-soft text-green-ink",
+        )}
+      >
+        <Icon size={17} />
+      </span>
+      <span className="min-w-0">
+        <span className="flex items-baseline gap-1.5">
+          <span
+            className={cn(
+              "font-display text-[24px] font-extrabold leading-none tabular-nums",
+              tone === "blue" ? "text-blue-700" : "text-green-ink",
+            )}
+          >
+            {value}
+          </span>
+          <span className="truncate text-[13px] font-bold text-ink">{label}</span>
+        </span>
+        <span className="mt-0.5 block truncate text-[11px] text-muted-2">{hint}</span>
+      </span>
+    </button>
+  );
+}
+
+/** Группа статусов справа: заголовок + компактные строки. */
+function ParkGroup({
+  title,
+  badge,
+  rows,
+  tab,
+  onTab,
+}: {
+  title: string;
+  /** Сумма по группе — показываем, только если есть что показывать. */
+  badge?: number;
+  rows: {
+    key: StatusTab;
+    label: string;
+    hint: string;
+    value: number;
+    icon: typeof Key;
+    tone: "amber" | "red" | "violet" | "slate";
+  }[];
+  tab: StatusTab;
+  onTab: (t: StatusTab) => void;
+}) {
+  const visible = rows.filter((r) => r.value > 0 || r.key === tab);
+  return (
+    <div>
+      <div className="mb-2 flex items-center gap-2">
+        <span className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
+          {title}
+        </span>
+        {badge != null && badge > 0 && (
+          <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-900 tabular-nums">
+            {badge}
+          </span>
+        )}
+      </div>
+      {visible.length === 0 ? (
+        <div className="rounded-[12px] bg-surface-soft/60 px-3 py-2.5 text-[12px] text-muted-2">
+          {title === "Требуют решения" ? "Всё в порядке — нечего решать" : "Пусто"}
+        </div>
+      ) : (
+        <div className="flex flex-col gap-1">
+          {visible.map((r) => (
+            <ParkRow
+              key={r.key}
+              label={r.label}
+              hint={r.hint}
+              value={r.value}
+              icon={r.icon}
+              tone={r.tone}
+              active={tab === r.key}
+              onClick={() => onTab(r.key)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Компактная строка статуса — иконка, число, подпись. */
+function ParkRow({
+  label,
+  hint,
+  value,
+  icon: Icon,
+  tone,
+  active,
+  onClick,
+}: {
+  label: string;
+  hint: string;
+  value: number;
+  icon: typeof Key;
+  tone: "amber" | "red" | "violet" | "slate";
+  active: boolean;
+  onClick: () => void;
+}) {
+  const zero = value === 0;
+  const iconCls = zero
+    ? "bg-surface-soft text-muted-2"
+    : tone === "amber"
+      ? "bg-amber-100 text-amber-900"
+      : tone === "red"
+        ? "bg-red-soft text-red-ink"
+        : tone === "violet"
+          ? "bg-purple-soft text-purple-ink"
+          : "bg-surface-soft text-ink-2";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex items-center gap-2.5 rounded-[12px] px-2.5 py-2 text-left transition-colors",
+        active ? "bg-blue-50 ring-1 ring-inset ring-blue-600/30" : "hover:bg-surface-soft/70",
+      )}
+    >
+      <span
+        className={cn(
+          "flex h-7 w-7 shrink-0 items-center justify-center rounded-full",
+          iconCls,
+        )}
+      >
+        <Icon size={14} />
+      </span>
+      <span
+        className={cn(
+          "w-7 shrink-0 text-right font-display text-[17px] font-extrabold leading-none tabular-nums",
+          zero ? "text-muted-2" : "text-ink",
         )}
       >
         {value}
-      </div>
-      <div className="mt-2 text-[13px] font-semibold text-ink">{label}</div>
-      <div className="text-[11px] text-muted-2">{hint}</div>
-      {active && (
-        <span className="absolute inset-x-5 bottom-0 h-0.5 rounded-t-full bg-blue-600" />
-      )}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span
+          className={cn(
+            "block truncate text-[12.5px] font-semibold",
+            zero ? "text-muted" : "text-ink",
+          )}
+        >
+          {label}
+        </span>
+        <span className="block truncate text-[11px] text-muted-2">{hint}</span>
+      </span>
     </button>
   );
 }
