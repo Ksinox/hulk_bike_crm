@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Calculator, Plus } from "lucide-react";
+import { Calculator, Plus, ReceiptText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { RouteId } from "@/app/route";
 import { useMe, useLogout } from "@/lib/api/auth";
@@ -29,6 +29,7 @@ import { MobileDocuments } from "./pages/MobileDocuments";
 import { MobilePlaceholder } from "./pages/MobilePlaceholder";
 import { StoragePage } from "@/pages/storage/StoragePage";
 import { ApprovalsBell } from "@/components/ApprovalsInbox";
+import { DayReportDialog } from "@/components/DayReport";
 
 /**
  * Корень мобильного слоя. Полностью отдельная оболочка: верхняя панель,
@@ -180,6 +181,8 @@ function MobilePage({
 /* ───────────────────────── верхняя панель ───────────────────────── */
 
 function MobileTopBar({ title }: { title: string }) {
+  // Пункт 7: сводка дня (Z-отчёт) — доступна в любой момент с телефона.
+  const [dayReportOpen, setDayReportOpen] = useState(false);
   return (
     <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-surface px-4 pt-[env(safe-area-inset-top)]">
       <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-[10px] bg-ink text-white">
@@ -196,11 +199,22 @@ function MobileTopBar({ title }: { title: string }) {
       <h1 className="font-display text-[18px] font-bold tracking-tight text-ink">
         {title}
       </h1>
-      <div className="ml-auto">
+      <div className="ml-auto flex items-center gap-1.5">
+        <button
+          type="button"
+          aria-label="Сводка дня"
+          onClick={() => setDayReportOpen(true)}
+          className="flex h-10 w-10 items-center justify-center rounded-full text-muted transition-colors active:bg-surface-soft"
+        >
+          <ReceiptText size={19} />
+        </button>
         {/* Пункт 1: подтверждения ключа директора — сценарий «директор с
             телефона видит висящий запрос и подтверждает». */}
         <ApprovalsBell />
       </div>
+      {dayReportOpen && (
+        <DayReportDialog onClose={() => setDayReportOpen(false)} />
+      )}
     </header>
   );
 }

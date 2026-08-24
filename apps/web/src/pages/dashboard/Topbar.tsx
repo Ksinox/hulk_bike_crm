@@ -5,6 +5,7 @@ import {
   ChevronDown,
   Crown,
   LogOut,
+  ReceiptText,
   Settings,
   ShieldCheck,
   UserCog,
@@ -19,6 +20,7 @@ import { useLogout, useMe } from "@/lib/api/auth";
 import { GlobalSearch } from "./GlobalSearch";
 import { ProfileModal } from "./ProfileModal";
 import { AddClientModal } from "@/pages/clients/AddClientModal";
+import { DayReportDialog } from "@/components/DayReport";
 import { NewDealButton } from "@/pages/clients/CreateDealMenu";
 import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
 import { useDashboardDrawer } from "./DashboardDrawer";
@@ -36,6 +38,8 @@ export function Topbar() {
   const [newClientOpen, setNewClientOpen] = useState(false);
   const [newRentalOpen, setNewRentalOpen] = useState(false);
   const [bellOpen, setBellOpen] = useState(false);
+  // Пункт 7: сводка дня (Z-отчёт)
+  const [dayReportOpen, setDayReportOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const bellRef = useRef<HTMLDivElement>(null);
   const { unreadCount: changelogUnread } = useUnreadChangelog();
@@ -100,6 +104,16 @@ export function Topbar() {
       <NewDealButton onRental={() => setNewRentalOpen(true)} />
 
       {isCreator && <CreatorViewSwitcher current={role} onChange={setRole} />}
+
+      {/* Пункт 7: сводка за текущие сутки (Z-отчёт) — доступна в любой
+          момент дня, не кассовая. */}
+      <IconBtn
+        aria-label="Сводка дня"
+        title="Сводка дня (Z-отчёт)"
+        onClick={() => setDayReportOpen(true)}
+      >
+        <ReceiptText size={18} />
+      </IconBtn>
 
       <IconBtn aria-label="Настройки — скоро" title="Настройки — скоро" disabled>
         <Settings size={18} />
@@ -179,6 +193,9 @@ export function Topbar() {
         )}
       </div>
       {profileOpen && <ProfileModal onClose={() => setProfileOpen(false)} />}
+      {dayReportOpen && (
+        <DayReportDialog onClose={() => setDayReportOpen(false)} />
+      )}
       {newClientOpen && (
         <AddClientModal
           onClose={() => setNewClientOpen(false)}
