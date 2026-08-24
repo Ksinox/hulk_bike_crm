@@ -79,7 +79,7 @@ export function AddScooterModal({ onClose }: { onClose: () => void }) {
   const [marketValue, setMarketValue] = useState("");
   const [status, setStatus] = useState<ScooterBaseStatus>("ready");
   const [note, setNote] = useState("");
-  // Пункт 15: место в арендном парке (null = авто, наименьшее свободное).
+  // Пункт 15: номер в арендном парке (null = авто, наименьший свободный).
   const [rentalSlot, setRentalSlot] = useState<number | null>(null);
   const slotsQ = useRentalSlots();
   const slotsFree = slotsQ.data?.free ?? [];
@@ -393,14 +393,14 @@ export function AddScooterModal({ onClose }: { onClose: () => void }) {
               </div>
             </Field>
 
-            {/* Пункт 15: место в арендном парке — для техники, попадающей
-                в аренду. «Авто» = наименьшее свободное. */}
+            {/* Пункт 15: номер в арендном парке — для техники, попадающей
+                в аренду. «Авто» = наименьший свободный. */}
             {(status === "rental_pool" || status === "repair" || status === "dtp") && (
-              <Field label={`Место в аренде · свободно ${slotsFree.length} из ${slotsTotal}`}>
+              <Field label={`Номер в аренде · свободно ${slotsFree.length} из ${slotsTotal}`}>
                 {slotsFree.length === 0 ? (
                   <div className="rounded-[10px] border border-orange-ink/30 bg-orange-soft/50 px-3 py-2 text-[12px] font-semibold text-orange-ink">
-                    Все места заняты — увеличьте общее количество мест на
-                    странице «Скутеры» или освободите место.
+                    Все номера заняты — увеличьте общее количество номеров на
+                    странице «Скутеры» или освободите один.
                   </div>
                 ) : (
                   <div className="flex flex-wrap gap-1.5">
@@ -413,7 +413,7 @@ export function AddScooterModal({ onClose }: { onClose: () => void }) {
                           ? "border-blue-600 bg-blue-50 text-blue-700"
                           : "border-border bg-surface text-ink-2 hover:border-blue-600/50",
                       )}
-                      title={`Автоматически: место №${slotsFree[0]}`}
+                      title={`Автоматически: номер ${slotsFree[0]}`}
                     >
                       Авто (№{slotsFree[0]})
                     </button>

@@ -53,6 +53,7 @@ import {
   useRentalsByClient,
 } from "@/pages/rentals/rentalsStore";
 import { navigate } from "@/app/navigationStore";
+import { scooterModelName } from "@/components/ScooterName";
 import type { CardTab } from "@/pages/clients/ClientCard";
 
 function daysWord(n: number): string {
@@ -232,7 +233,7 @@ export function MobileClientCard({
                     }
                     className="inline-flex items-center rounded-full bg-green-soft px-2 py-0.5 text-[11px] font-bold text-green-ink active:bg-green/20"
                   >
-                    аренда {activeRental.scooter}
+                    аренда {scooterModelName(activeRental.scooter)}
                   </button>
                 )}
                 {activeDebtor && (

@@ -9,6 +9,7 @@ import { useApiClients } from "@/lib/api/clients";
 import { useApiScooters } from "@/lib/api/scooters";
 import { useBillingPeriodAnchors } from "@/lib/api/billing-period";
 import { currentBillingPeriod } from "@/lib/billingPeriod";
+import { useScooterNaming } from "@/lib/scooterNaming";
 import { useDashboardDrawer } from "./DashboardDrawer";
 
 export type RevenuePeriod = "day" | "week" | "month";
@@ -183,6 +184,7 @@ export function RevenueRentalsList({
   // v0.9.7: раскрытие состава аренды (тело) у платежа по клику на шеврон.
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const { data: scooters = [] } = useApiScooters();
+  const naming = useScooterNaming();
   // Якоря расчётного периода грузятся с сервера асинхронно и пишутся в
   // глобал billingPeriod. Подписываемся, чтобы окно ниже пересчиталось,
   // когда они догрузятся (иначе список фильтровал бы по стале-периоду).
@@ -336,7 +338,8 @@ export function RevenueRentalsList({
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-[13px] font-semibold text-ink">
-                      {r.scooterName} · {r.clientName}
+                      {naming.render(r.scooterName, { size: "sm" })} ·{" "}
+                      {r.clientName}
                     </div>
                     <div className="text-[11px] text-muted-2">{r.typeLabel}</div>
                   </div>

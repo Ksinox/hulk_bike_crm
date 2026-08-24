@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Check, Lock, Search, UserPlus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { initialsOf, type Client } from "@/lib/mock/clients";
@@ -24,6 +24,7 @@ import { useApiEquipment } from "@/lib/api/equipment";
 import { DatePicker } from "@/components/ui/date-picker";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { ChevronLeft, ArrowRight } from "lucide-react";
+import { ScooterName } from "@/components/ScooterName";
 
 // Заголовки шагов мобильного мастера аренды.
 const STEP_TITLES = ["Клиент", "Скутер", "Срок", "Оплата"] as const;
@@ -364,7 +365,12 @@ export function NewRentalModal({
             !s.archivedAt &&
             (scooterModelFilter === "" || s.model === scooterModelFilter),
         )
-        .map((s) => ({ name: s.name, model: s.model })),
+        .map((s) => ({
+          name: s.name,
+          model: s.model,
+          rentalSlot: s.rentalSlot ?? undefined,
+          exRentalSlot: s.exRentalSlot ?? undefined,
+        })),
     [apiScooters, blocked, scooterModelFilter],
   );
 
@@ -647,7 +653,12 @@ export function NewRentalModal({
               >
                 <div>
                   <div className="text-[13px] font-semibold text-ink">
-                    {scooterName}
+                    <ScooterName
+                      name={scooterName}
+                      number={selectedScooter?.rentalSlot ?? undefined}
+                      exNumber={selectedScooter?.exRentalSlot ?? undefined}
+                      size="sm"
+                    />
                   </div>
                   <div className="text-[11px] text-muted-2">
                     {MODEL_LABEL[model]} · тариф{" "}
@@ -710,7 +721,12 @@ export function NewRentalModal({
                       onClick={() => setScooterName(s.name)}
                       className="rounded-full bg-surface-soft px-2.5 py-1 text-[11px] font-semibold text-ink transition-colors hover:bg-blue-50 hover:text-blue-700"
                     >
-                      {s.name}
+                      <ScooterName
+                        name={s.name}
+                        number={s.rentalSlot}
+                        exNumber={s.exRentalSlot}
+                        size="sm"
+                      />
                     </button>
                   ))
                 )}
@@ -1098,6 +1114,8 @@ export function NewRentalModal({
               <OrderSummary
                 clientName={client?.name ?? "—"}
                 scooterName={scooterName}
+                scooterNumber={selectedScooter?.rentalSlot ?? undefined}
+                scooterExNumber={selectedScooter?.exRentalSlot ?? undefined}
                 model={MODEL_LABEL[model]}
                 period={`${start} ${startTime} → ${endPlanned} ${startTime}`}
                 days={days}
@@ -1396,7 +1414,12 @@ function MobileScooterPicker({
   onFilter,
   onPick,
 }: {
-  scooters: { name: string; model: ScooterModel }[];
+  scooters: {
+    name: string;
+    model: ScooterModel;
+    rentalSlot?: number;
+    exRentalSlot?: number;
+  }[];
   modelChips: [string, number][];
   filter: string;
   onFilter: (m: string) => void;
@@ -1444,7 +1467,12 @@ function MobileScooterPicker({
               onClick={() => onPick(s.name)}
               className="flex flex-col gap-0.5 rounded-xl border border-border bg-surface p-3 text-left active:bg-blue-50"
             >
-              <span className="text-[15px] font-bold text-ink">{s.name}</span>
+              <ScooterName
+                name={s.name}
+                number={s.rentalSlot}
+                exNumber={s.exRentalSlot}
+                className="text-[15px] font-bold text-ink"
+              />
               <span className="text-[12px] text-muted-2">{MODEL_LABEL[s.model]}</span>
             </button>
           ))}
@@ -1457,6 +1485,8 @@ function MobileScooterPicker({
 function OrderSummary({
   clientName,
   scooterName,
+  scooterNumber,
+  scooterExNumber,
   model,
   period,
   days,
@@ -1468,6 +1498,9 @@ function OrderSummary({
 }: {
   clientName: string;
   scooterName: string | null;
+  /** Арендный номер выбранного скутера — для круглого бейджа. */
+  scooterNumber?: number;
+  scooterExNumber?: number;
   model: string;
   period: string;
   days: number;
@@ -1486,7 +1519,21 @@ function OrderSummary({
         <SummaryRow label="Клиент" value={clientName} />
         <SummaryRow
           label="Скутер"
-          value={scooterName ? `${scooterName} · ${model}` : "—"}
+          value={
+            scooterName ? (
+              <span className="inline-flex items-center gap-1.5">
+                <ScooterName
+                  name={scooterName}
+                  number={scooterNumber}
+                  exNumber={scooterExNumber}
+                  size="sm"
+                />
+                <span>· {model}</span>
+              </span>
+            ) : (
+              "—"
+            )
+          }
         />
         <SummaryRow label="Срок" value={`${period} · ${days} дн`} />
         <SummaryRow label="Тариф" value={`${rate} ₽/${rateUnit}`} />
@@ -1503,7 +1550,13 @@ function OrderSummary({
   );
 }
 
-function SummaryRow({ label, value }: { label: string; value: string }) {
+function SummaryRow({
+  label,
+  value,
+}: {
+  label: string;
+  value: ReactNode;
+}) {
   return (
     <div className="flex items-start justify-between gap-3">
       <dt className="shrink-0 text-muted-2">{label}</dt>

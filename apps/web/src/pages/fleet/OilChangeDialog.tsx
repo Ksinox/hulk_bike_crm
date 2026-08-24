@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { scooterModelName } from "@/components/ScooterName";
 import { Droplets, Loader2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePatchScooter } from "@/lib/api/scooters";
@@ -89,7 +90,7 @@ export function OilChangeDialog({
       });
       toast.success(
         "Замена масла зафиксирована",
-        `${scooterName}: с ${fmtKm(mileageNum)} км · след. при ${fmtKm(
+        `${scooterModelName(scooterName)}: с ${fmtKm(mileageNum)} км · след. при ${fmtKm(
           mileageNum + OIL_INTERVAL_DEFAULT_KM,
         )} км`,
       );
@@ -117,7 +118,9 @@ export function OilChangeDialog({
               <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-2">
                 Замена масла
               </div>
-              <div className="text-[15px] font-bold text-ink">{scooterName}</div>
+              <div className="text-[15px] font-bold text-ink">
+                {scooterModelName(scooterName)}
+              </div>
             </div>
           </div>
           <button

@@ -22,6 +22,7 @@ import {
 import { useAllClients } from "@/pages/clients/clientStore";
 import { ScooterQuickView } from "@/pages/fleet/ScooterQuickView";
 import { useFleetScooters } from "@/pages/fleet/fleetStore";
+import { useScooterNaming } from "@/lib/scooterNaming";
 import { ClientCard } from "@/pages/clients/ClientCard";
 import { effectiveRentalStatus } from "@/lib/rentalStatus";
 import { useDebtAggregate } from "@/lib/api/debt";
@@ -910,6 +911,7 @@ function RentalsListDrawerContent({
   onPickRental: (id: number) => void;
 }) {
   const active = useRentals();
+  const naming = useScooterNaming();
   // v0.4.53: подмешиваем фактический долг — если 0, не показываем
   // красную просрочку (effectiveStatus вернёт 'returning' для
   // просроченных по дате но без долга аренд).
@@ -1015,9 +1017,11 @@ function RentalsListDrawerContent({
                     >
                       {RENTAL_STATUS_LABEL[eff] ?? eff}
                     </span>
-                    <span className="ml-auto font-mono text-[12px] tabular-nums text-ink-2">
-                      {r.scooter}
-                    </span>
+                    {naming.render(r.scooter, {
+                      size: "sm",
+                      className:
+                        "ml-auto font-mono text-[12px] tabular-nums text-ink-2",
+                    })}
                   </div>
                   <div className="text-[12px] text-muted">
                     {r.start} → {r.endPlanned} · {r.days} дн ·{" "}

@@ -44,6 +44,7 @@ import {
   normalizeQuery,
 } from "@/lib/search";
 import { useRentals } from "@/pages/rentals/rentalsStore";
+import { ScooterName } from "@/components/ScooterName";
 import { ScooterCard } from "./ScooterCard";
 import { AddScooterModal } from "./AddScooterModal";
 
@@ -594,9 +595,12 @@ function FleetRow({
       <div className="flex min-w-0 items-center gap-3">
         <ScooterAvatar model={scooter.model} />
         <div className="min-w-0">
-          <div className="truncate text-[14px] font-bold text-ink">
-            {scooter.name}
-          </div>
+          <ScooterName
+            name={scooter.name}
+            number={scooter.rentalSlot}
+            exNumber={scooter.exRentalSlot}
+            className="text-[14px] font-bold text-ink"
+          />
           <div className="truncate text-[11px] uppercase tracking-wider text-muted-2">
             {MODEL_LABEL[scooter.model]}
           </div>
@@ -701,9 +705,12 @@ function FleetTile({
       <div className="flex items-center gap-2">
         <ScooterAvatar model={scooter.model} />
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[14px] font-bold text-ink">
-            {scooter.name}
-          </div>
+          <ScooterName
+            name={scooter.name}
+            number={scooter.rentalSlot}
+            exNumber={scooter.exRentalSlot}
+            className="text-[14px] font-bold text-ink"
+          />
           <div className="truncate text-[10px] uppercase tracking-wider text-muted-2">
             {MODEL_LABEL[scooter.model]}
           </div>

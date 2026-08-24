@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useReloadRestoredState } from "@/lib/usePersistedState";
+import { useScooterNaming } from "@/lib/scooterNaming";
 import { Bike, ChevronRight, Maximize2 } from "lucide-react";
 import { consumePending, onNavigate } from "@/app/navigationStore";
 import {
@@ -315,6 +316,7 @@ function RentalRow({
   const meta = statusMeta(rental, debt);
   const hasPhone = !!(client?.phone || client?.extraPhone);
   const stickers = useRentalStickers(rental.id);
+  const naming = useScooterNaming();
   return (
     // Обёртка-div: внутри две кнопки (открыть карточку + позвонить).
     <div className="flex items-center gap-2 rounded-2xl bg-surface p-3 shadow-card-sm">
@@ -341,8 +343,8 @@ function RentalRow({
               {meta.label}
             </span>
           </div>
-          <div className="mt-0.5 truncate text-[12px] text-muted">
-            {rental.scooter} · до {rental.endPlanned}
+          <div className="mt-0.5 flex min-w-0 items-center gap-1 truncate text-[12px] text-muted">
+            {naming.render(rental.scooter, { size: "sm" })} · до {rental.endPlanned}
           </div>
         </div>
         <div className="shrink-0 text-right">

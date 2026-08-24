@@ -8,6 +8,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { useRentals } from "@/pages/rentals/rentalsStore";
+import { useScooterNaming } from "@/lib/scooterNaming";
 import { RentalCard } from "@/pages/rentals/RentalCard";
 import { ErrorBoundary } from "@/app/ErrorBoundary";
 import { navigate } from "@/app/navigationStore";
@@ -602,6 +603,7 @@ function ReturnRow({
   onCall: () => void;
 }) {
   const hasPhone = !!(item.clientPhone || item.clientPhone2);
+  const naming = useScooterNaming();
   return (
     <div className="flex items-center gap-2 py-1">
       <button
@@ -614,7 +616,7 @@ function ReturnRow({
             {item.clientName}
           </div>
           <div className="truncate text-[11px] text-muted">
-            {item.scooterName}
+            {naming.render(item.scooterName, { size: "sm" })}
           </div>
         </div>
         <div className="text-right">
@@ -641,6 +643,7 @@ function OverdueRow({
   onCall: () => void;
 }) {
   const hasPhone = !!(item.clientPhone || item.clientPhone2);
+  const naming = useScooterNaming();
   return (
     <div className="flex items-center gap-2 py-1">
       <button
@@ -653,7 +656,7 @@ function OverdueRow({
             {item.clientName}
           </div>
           <div className="truncate text-[11px] text-muted">
-            {item.scooterName}
+            {naming.render(item.scooterName, { size: "sm" })}
           </div>
         </div>
         <div className="text-right">

@@ -43,6 +43,7 @@ import {
   analyzeFile,
   type StagedMedia,
 } from "./DamageMediaCapture";
+import { ScooterName } from "@/components/ScooterName";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { MobileNumPad } from "@/mobile/MobileNumPad";
 
@@ -776,7 +777,12 @@ export function DamageReportDialog({
               {isEdit ? "Изменить акт" : "Зафиксировать ущерб"}
             </div>
             <div className="truncate text-[11px] text-muted-2">
-              {rental.scooter}
+              <ScooterName
+                name={rental.scooter}
+                number={scooter?.rentalSlot ?? undefined}
+                exNumber={scooter?.exRentalSlot ?? undefined}
+                size="sm"
+              />
               {modelName ? ` · ${modelName}` : ""} · {clientName}
             </div>
           </div>
@@ -1189,7 +1195,12 @@ export function DamageReportDialog({
               {String(rental.id).padStart(4, "0")}
             </div>
             <div className="text-[12px] text-muted-2">
-              {rental.scooter}
+              <ScooterName
+                name={rental.scooter}
+                number={scooter?.rentalSlot ?? undefined}
+                exNumber={scooter?.exRentalSlot ?? undefined}
+                size="sm"
+              />
               {modelName ? ` · ${modelName}` : ""} · {clientName}
             </div>
           </div>

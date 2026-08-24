@@ -9,6 +9,7 @@ import {
   type OverdueItem,
 } from "./useDashboardMetrics";
 import { navigate } from "@/app/navigationStore";
+import { useScooterNaming } from "@/lib/scooterNaming";
 
 /**
  * «Долги к сбору» — единый блок «кому звонить за деньгами» на дашборде
@@ -179,6 +180,7 @@ function DebtRowView({
 }) {
   const isOverdue = row.kind === "overdue";
   const days = row.daysOverdue ?? 0;
+  const naming = useScooterNaming();
   // Накал срочности — цвет левой полосы.
   const stripColor = isOverdue
     ? days >= 4
@@ -208,9 +210,14 @@ function DebtRowView({
             {row.clientName}
           </div>
           <div className="truncate text-[11.5px] text-muted-2">
-            {isOverdue
-              ? `${row.scooterName} · аренда ${pad(row.rentalId!)}`
-              : "нет активной аренды"}
+            {isOverdue ? (
+              <>
+                {naming.render(row.scooterName, { size: "sm" })} · аренда{" "}
+                {pad(row.rentalId!)}
+              </>
+            ) : (
+              "нет активной аренды"
+            )}
           </div>
         </div>
         <span

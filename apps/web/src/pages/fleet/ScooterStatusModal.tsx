@@ -15,6 +15,7 @@ import { navigate } from "@/app/navigationStore";
 import { toast } from "@/lib/toast";
 import { ApiError } from "@/lib/api";
 import { SCOOTER_BASE_STATUS_OPTIONS } from "./scooterStatusOptions";
+import { ScooterName, scooterModelName } from "@/components/ScooterName";
 
 const OPTIONS = SCOOTER_BASE_STATUS_OPTIONS.map((o) => ({
   id: o.value,
@@ -49,14 +50,14 @@ export function ScooterStatusModal({
       // Пункт 1: перенос техники между категориями — защищённое действие;
       // краткий отчёт для окна «Ключ директора».
       setNextApprovalContext({
-        summary: `Перенос ${scooter.name}: «${optionLabel(scooter.baseStatus)}» → «${optionLabel(selected)}»`,
+        summary: `Перенос ${scooterModelName(scooter.name)}: «${optionLabel(scooter.baseStatus)}» → «${optionLabel(selected)}»`,
         details: [
-          `Скутер: ${scooter.name}${scooter.frameNumber ? ` · рама ${scooter.frameNumber}` : ""}`,
+          `Скутер: ${scooterModelName(scooter.name)}${scooter.frameNumber ? ` · рама ${scooter.frameNumber}` : ""}`,
           "Категория в парке изменится сразу после подтверждения.",
         ],
       });
       await patch.mutateAsync({ id: scooter.id, patch: { baseStatus: selected } });
-      toast.success("Статус изменён", `${scooter.name}: «${optionLabel(selected)}»`);
+      toast.success("Статус изменён", `${scooterModelName(scooter.name)}: «${optionLabel(selected)}»`);
       onClose();
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) {
@@ -89,7 +90,13 @@ export function ScooterStatusModal({
             <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-2">
               Статус скутера
             </div>
-            <div className="text-[15px] font-bold text-ink">{scooter.name}</div>
+            <div className="text-[15px] font-bold text-ink">
+              <ScooterName
+                name={scooter.name}
+                number={scooter.rentalSlot}
+                exNumber={scooter.exRentalSlot}
+              />
+            </div>
           </div>
           <button
             type="button"

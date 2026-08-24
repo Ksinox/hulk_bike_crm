@@ -21,6 +21,7 @@ import {
   type Client,
 } from "@/lib/mock/clients";
 import { MODEL_LABEL } from "@/lib/mock/rentals";
+import { scooterModelName } from "@/components/ScooterName";
 import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
 import { toast, confirmDialog } from "@/lib/toast";
 import {
@@ -246,7 +247,7 @@ export function ClientCard({ client }: { client: Client }) {
                     className="inline-flex items-center rounded-full bg-green-soft px-2 py-0.5 text-[11px] font-bold text-green-ink transition-colors hover:bg-green/20"
                     title="Открыть аренду"
                   >
-                    аренда {activeRental.scooter}
+                    аренда {scooterModelName(activeRental.scooter)}
                   </button>
                 )}
                 {activeDebtor && (

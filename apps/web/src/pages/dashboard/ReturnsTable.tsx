@@ -5,6 +5,7 @@ import { Card } from "./KpiCard";
 import { StatusPill } from "./StatusPill";
 import { ClientAvatar } from "./ReturnsList";
 import { Td, Th } from "./OverdueTable";
+import { useScooterNaming } from "@/lib/scooterNaming";
 import type { ReturnItem } from "./useDashboardMetrics";
 
 export function ReturnsTable({
@@ -67,6 +68,7 @@ function Row({
 }) {
   const initials = initialsOf(r.clientName);
   const time = formatTime(r.endPlannedAt);
+  const naming = useScooterNaming();
   return (
     <tr
       className="group cursor-pointer"
@@ -81,7 +83,7 @@ function Row({
           </div>
         </div>
       </Td>
-      <Td>{r.scooterName}</Td>
+      <Td>{naming.render(r.scooterName, { size: "sm" })}</Td>
       <Td>{time}</Td>
       <Td>
         <span className="text-[13px] text-muted">{r.clientPhone}</span>

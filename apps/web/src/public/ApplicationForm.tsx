@@ -9,6 +9,7 @@ import {
   ShieldCheck,
   Sparkles,
   X,
+  Banknote,
 } from "lucide-react";
 import {
   ApiError,
@@ -908,8 +909,8 @@ function CashReminderModal({
         className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 text-[28px]">
-          💵
+        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+          <Banknote size={28} strokeWidth={2.2} />
         </div>
         <h2 className="mt-4 text-[20px] font-bold text-slate-900">
           Старт аренды — наличными

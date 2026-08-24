@@ -2,6 +2,7 @@ import { Check, Phone } from "lucide-react";
 import { Card } from "./KpiCard";
 import { StatusPill } from "./StatusPill";
 import { navigate } from "@/app/navigationStore";
+import { useScooterNaming } from "@/lib/scooterNaming";
 import type { ReturnItem } from "./useDashboardMetrics";
 
 export function ReturnsList({
@@ -14,6 +15,7 @@ export function ReturnsList({
   /** v0.3.1: если передан — открываем drawer на дашборде, без навигации. */
   onOpenRental?: (rentalId: number) => void;
 }) {
+  const naming = useScooterNaming();
   return (
     <Card className={className}>
       <div className="mb-1 flex items-center justify-between">
@@ -59,7 +61,7 @@ export function ReturnsList({
                     {r.clientName}
                   </div>
                   <div className="text-xs text-muted truncate">
-                    {r.scooterName} · {when}
+                    {naming.render(r.scooterName, { size: "sm" })} · {when}
                   </div>
                   {r.clientPhone && (
                     <a

@@ -15,6 +15,7 @@ import { AddScooterModal } from "@/pages/fleet/AddScooterModal";
 import { MobileScooterCard } from "../cards/MobileScooterCard";
 import { useFleetScooters } from "@/pages/fleet/fleetStore";
 import { ErrorBoundary } from "@/app/ErrorBoundary";
+import { ScooterName } from "@/components/ScooterName";
 import { usePageFab } from "../fab";
 import type { ApiScooter, ScooterModel } from "@/lib/api/types";
 import { matchId, matchScooterName, normalizeQuery } from "@/lib/search";
@@ -235,7 +236,11 @@ function ScooterTile({
         </span>
         <div className="min-w-0 flex-1">
           <div className="truncate font-display text-[15px] font-bold text-ink">
-            {scooter.name}
+            <ScooterName
+              name={scooter.name}
+              number={scooter.rentalSlot ?? undefined}
+              exNumber={scooter.exRentalSlot ?? undefined}
+            />
           </div>
           <div className="truncate text-[12px] text-muted">
             {MODEL_LABEL[scooter.model]}

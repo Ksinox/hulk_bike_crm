@@ -22,6 +22,7 @@ import { MODEL_LABEL, type Rental } from "@/lib/mock/rentals";
 import { SCOOTER_BASE_STATUS_OPTIONS } from "@/pages/fleet/scooterStatusOptions";
 import type { ApiScooter, ScooterBaseStatus } from "@/lib/api/types";
 import { ScooterPosterAvatar } from "./ScooterPosterAvatar";
+import { ScooterName, scooterModelName } from "@/components/ScooterName";
 
 type OldStatus = ScooterBaseStatus;
 
@@ -336,7 +337,13 @@ export function SwapScooterDialog({
 
         {/* КОНТЕКСТ: текущий → новый */}
         <div className="flex items-center gap-2 border-b border-border bg-white px-4 py-2 text-[12px]">
-          <span className="font-semibold text-ink">{rental.scooter}</span>
+          <ScooterName
+            name={rental.scooter}
+            number={currentScooter?.rentalSlot ?? undefined}
+            exNumber={currentScooter?.exRentalSlot ?? undefined}
+            size="sm"
+            className="font-semibold text-ink"
+          />
           <ArrowRight size={14} className="text-blue-600" />
           <span
             className={cn(
@@ -344,7 +351,16 @@ export function SwapScooterDialog({
               newScooter ? "text-blue-700" : "text-muted-2",
             )}
           >
-            {newScooter ? newScooter.name : "не выбран"}
+            {newScooter ? (
+              <ScooterName
+                name={newScooter.name}
+                number={newScooter.rentalSlot ?? undefined}
+                exNumber={newScooter.exRentalSlot ?? undefined}
+                size="sm"
+              />
+            ) : (
+              "не выбран"
+            )}
           </span>
         </div>
 
@@ -359,7 +375,12 @@ export function SwapScooterDialog({
                     Текущий скутер
                   </div>
                   <div className="font-display text-[18px] font-extrabold leading-tight text-ink">
-                    {rental.scooter}
+                    <ScooterName
+                      name={rental.scooter}
+                      number={currentScooter?.rentalSlot ?? undefined}
+                      exNumber={currentScooter?.exRentalSlot ?? undefined}
+                      size="lg"
+                    />
                   </div>
                   <div className="text-[12px] text-muted-2">
                     {modelNameOf(currentScooter)}
@@ -514,7 +535,12 @@ export function SwapScooterDialog({
                   <div className="flex flex-col items-center gap-1">
                     <ScooterPosterAvatar scooter={currentScooter} size="md" />
                     <div className="text-[12px] font-bold text-ink">
-                      {rental.scooter}
+                      <ScooterName
+                        name={rental.scooter}
+                        number={currentScooter?.rentalSlot ?? undefined}
+                        exNumber={currentScooter?.exRentalSlot ?? undefined}
+                        size="sm"
+                      />
                     </div>
                   </div>
                   <ArrowRight size={22} className="text-blue-600" />
@@ -525,7 +551,16 @@ export function SwapScooterDialog({
                       highlighted
                     />
                     <div className="text-[12px] font-bold text-blue-700">
-                      {newScooter?.name ?? "—"}
+                      {newScooter ? (
+                        <ScooterName
+                          name={newScooter.name}
+                          number={newScooter.rentalSlot ?? undefined}
+                          exNumber={newScooter.exRentalSlot ?? undefined}
+                          size="sm"
+                        />
+                      ) : (
+                        "—"
+                      )}
                     </div>
                   </div>
                 </div>
@@ -626,7 +661,12 @@ export function SwapScooterDialog({
                 Текущий
               </div>
               <div className="mt-0.5 font-display text-[18px] font-extrabold leading-tight text-ink">
-                {rental.scooter}
+                <ScooterName
+                  name={rental.scooter}
+                  number={currentScooter?.rentalSlot ?? undefined}
+                  exNumber={currentScooter?.exRentalSlot ?? undefined}
+                  size="lg"
+                />
               </div>
               <div className="text-[12px] text-muted-2">
                 {(() => {
@@ -664,7 +704,12 @@ export function SwapScooterDialog({
               {newScooter ? (
                 <>
                   <div className="mt-0.5 font-display text-[18px] font-extrabold leading-tight text-blue-700">
-                    {newScooter.name}
+                    <ScooterName
+                      name={newScooter.name}
+                      number={newScooter.rentalSlot ?? undefined}
+                      exNumber={newScooter.exRentalSlot ?? undefined}
+                      size="lg"
+                    />
                   </div>
                   <div className="text-[12px] text-muted-2">
                     {(() => {
@@ -696,7 +741,7 @@ export function SwapScooterDialog({
           {/* LEFT: status picker */}
           <div className="flex min-h-0 flex-col border-b border-border lg:border-b-0 lg:border-r">
             <div className="border-b border-border bg-surface-soft/50 px-5 py-2 text-[11px] font-bold uppercase tracking-wider text-muted-2">
-              Куда деть текущий скутер ({rental.scooter})
+              Куда деть текущий скутер ({scooterModelName(rental.scooter)})
             </div>
             <div className="flex-1 overflow-y-auto p-3">
               <div className="flex flex-col gap-1">
@@ -889,13 +934,16 @@ function ParkGroup({
       >
         {items.map((s) => {
           const isSel = selectedId === s.id;
-          const num = s.name.split("#")[1] ?? s.name;
+          const num =
+            s.rentalSlot != null
+              ? String(s.rentalSlot)
+              : (s.name.split("#")[1] ?? s.name);
           return (
             <button
               key={s.id}
               type="button"
               onClick={() => onPick(s.id)}
-              title={s.name}
+              title={scooterModelName(s.name)}
               className={cn(
                 "flex aspect-square cursor-pointer flex-col items-center justify-center rounded-[12px] border-2 font-bold transition-all",
                 big ? "text-[15px]" : "text-[12px] hover:-translate-y-0.5",

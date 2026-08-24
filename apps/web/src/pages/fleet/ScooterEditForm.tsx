@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import type { FleetScooter } from "@/lib/mock/fleet";
 import type { ScooterModel } from "@/lib/mock/rentals";
 import { patchScooter } from "./fleetStore";
+import { ScooterName } from "@/components/ScooterName";
 import { useRole } from "@/lib/role";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import {
@@ -168,7 +169,11 @@ export function ScooterEditForm({
               Редактирование
             </div>
             <div className="mt-0.5 font-display text-[17px] font-extrabold text-ink">
-              {scooter.name}
+              <ScooterName
+                name={scooter.name}
+                number={scooter.rentalSlot}
+                exNumber={scooter.exRentalSlot}
+              />
             </div>
           </div>
           <button

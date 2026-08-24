@@ -24,6 +24,7 @@ import { useScooterMaintenance } from "@/lib/api/scooter-maintenance";
 import { useRepairJobs } from "@/lib/api/repair-jobs";
 import { useRole } from "@/lib/role";
 import { MODEL_LABEL } from "@/lib/mock/rentals";
+import { ScooterName, scooterModelName } from "@/components/ScooterName";
 import { effectiveRentalStatus } from "@/lib/rentalStatus";
 import { STATUS_LABEL as RENTAL_STATUS_LABEL } from "@/lib/mock/rentals";
 import { useApiClients } from "@/lib/api/clients";
@@ -142,7 +143,7 @@ export function MobileScooterCard({
     if (!reason) return;
     try {
       await archiveMut.mutateAsync({ id: scooter.id, reason });
-      toast.success(`«${scooter.name}» перенесён в архив`, `Причина: ${reason}`);
+      toast.success(`«${scooterModelName(scooter.name)}» перенесён в архив`, `Причина: ${reason}`);
       onBack();
     } catch (e) {
       if (e instanceof ApiError && e.status === 409)
@@ -227,7 +228,11 @@ export function MobileScooterCard({
           <ChevronLeft size={24} />
         </button>
         <h1 className="min-w-0 flex-1 truncate font-display text-[17px] font-bold text-ink">
-          {scooter.name}
+          <ScooterName
+            name={scooter.name}
+            number={scooter.rentalSlot}
+            exNumber={scooter.exRentalSlot}
+          />
         </h1>
         <button
           type="button"
@@ -246,7 +251,12 @@ export function MobileScooterCard({
           <div className="flex items-center justify-between gap-2 px-4 py-3">
             <div className="min-w-0">
               <div className="truncate font-display text-[20px] font-extrabold leading-tight text-ink">
-                {scooter.name}
+                <ScooterName
+                  name={scooter.name}
+                  number={scooter.rentalSlot}
+                  exNumber={scooter.exRentalSlot}
+                  size="lg"
+                />
               </div>
               <div className="text-[12px] text-muted">{MODEL_LABEL[scooter.model]}</div>
             </div>

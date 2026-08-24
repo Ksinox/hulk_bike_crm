@@ -56,6 +56,8 @@ import {
 } from "@/lib/api/clients";
 import { queryClient } from "@/lib/queryClient";
 import { useApiScooters } from "@/lib/api/scooters";
+import { scooterModelName } from "@/components/ScooterName";
+import { useScooterNaming } from "@/lib/scooterNaming";
 import { navigate } from "@/app/navigationStore";
 // v0.6.44: tabs убраны из карточки — новый 2-col layout (MasterBlock +
 // CalendarPanel/DocsInline). Сами компоненты табов остаются доступны
@@ -420,6 +422,8 @@ export function RentalCard({
 }) {
   void onPaymentOpenChange;
   void initialTab; // v0.6.44: tabs убраны, prop оставлен для совместимости.
+  // Имя техники показываем как «модель + бейдж арендного номера».
+  const naming = useScooterNaming();
   const [action, setAction] = useState<ActionKind | null>(null);
   // v0.9.4: «Завершить аренду» открывает компактную карточку-модалку по
   // центру (PaymentAcceptDialog completing сам рисует центрированный
@@ -1079,7 +1083,7 @@ export function RentalCard({
           title: "Нужен скутер для возобновления",
           message: noScooter
             ? "Сейчас к аренде не привязан скутер. Чтобы перевести в активный статус, выберите скутер из парка."
-            : `Текущий скутер «${currentScooter?.name ?? rental.scooter}» в ремонте. Чтобы возобновить, замените его на свободный из парка${debtSum > 0 ? ` (долг ${debtSum.toLocaleString("ru-RU")} ₽ останется на клиенте)` : ""}.`,
+            : `Текущий скутер «${scooterModelName(currentScooter?.name ?? rental.scooter)}» в ремонте. Чтобы возобновить, замените его на свободный из парка${debtSum > 0 ? ` (долг ${debtSum.toLocaleString("ru-RU")} ₽ останется на клиенте)` : ""}.`,
           confirmText: "Выбрать скутер",
           cancelText: "Отмена",
         });
@@ -2011,7 +2015,8 @@ export function RentalCard({
                       className="flex items-center justify-between gap-2"
                     >
                       <span className="min-w-0 flex-1 truncate text-muted">
-                        {s.scooterName} · #{String(s.rentalId).padStart(4, "0")}
+                        {naming.render(s.scooterName, { size: "sm" })} · #
+                        {String(s.rentalId).padStart(4, "0")}
                       </span>
                       <b className="shrink-0 tabular-nums">{fmt(s.amount)} ₽</b>
                     </div>
@@ -2704,7 +2709,7 @@ export function RentalCard({
                       >
                         <div className="min-w-0 flex-1">
                           <div className="truncate text-[12px] font-semibold text-ink">
-                            {s.scooterName}{" "}
+                            {naming.render(s.scooterName, { size: "sm" })}{" "}
                             <span className="font-mono text-[10px] text-muted-2">
                               #{String(s.rentalId).padStart(4, "0")}
                             </span>

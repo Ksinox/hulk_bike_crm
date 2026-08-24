@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from "react";
+import { ScooterName, scooterModelName } from "@/components/ScooterName";
 import {
   ArrowRight,
   Bike,
@@ -259,7 +260,7 @@ function ActiveRepairCard({ job }: { job: ApiRepairJob }) {
       });
       toast.success(
         "Скутер в парке",
-        `${scooter?.name ?? job.scooter?.name ?? "Скутер"} готов к аренде`,
+        `${scooterModelName(scooter?.name ?? job.scooter?.name ?? "Скутер")} готов к аренде`,
       );
     } catch (e) {
       toast.error("Не удалось закрыть ремонт", (e as Error).message ?? "");
@@ -283,7 +284,16 @@ function ActiveRepairCard({ job }: { job: ApiRepairJob }) {
                 <Wrench size={11} className="text-orange-600" /> На ремонте
               </div>
               <div className="mt-0.5 font-display text-[18px] font-extrabold leading-tight text-ink">
-                {job.scooter?.name ?? `#${job.scooterId}`}
+                {job.scooter?.name ? (
+                  <ScooterName
+                    name={job.scooter.name}
+                    number={scooter?.rentalSlot}
+                    exNumber={scooter?.exRentalSlot}
+                    size="lg"
+                  />
+                ) : (
+                  `#${job.scooterId}`
+                )}
               </div>
               <div className="text-[12px] text-muted-2">
                 {modelLabelFor(scooter, job.scooter?.model)}
@@ -658,7 +668,15 @@ function JournalRow({ job }: { job: ApiRepairJob }) {
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-[14px] font-bold text-ink">
-              {job.scooter?.name ?? `#${job.scooterId}`}
+              {job.scooter?.name ? (
+                <ScooterName
+                  name={job.scooter.name}
+                  number={scooter?.rentalSlot}
+                  exNumber={scooter?.exRentalSlot}
+                />
+              ) : (
+                `#${job.scooterId}`
+              )}
             </span>
             <span className="text-[12px] text-muted-2">
               {modelLabelFor(scooter, job.scooter?.model)}

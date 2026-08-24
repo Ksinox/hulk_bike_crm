@@ -167,7 +167,7 @@ export function ScooterCard({
     if (!reason) return;
     try {
       await archiveMut.mutateAsync({ id: scooter.id, reason });
-      toast.success(`«${scooter.name}» перенесён в архив`, `Причина: ${reason}`);
+      toast.success(`«${scooterModelName(scooter.name)}» перенесён в архив`, `Причина: ${reason}`);
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) {
         toast.error(
@@ -1250,7 +1250,7 @@ function SpecCell({
 }
 
 /**
- * Пункт 15: ячейка «Место в аренде» в техничке. У техники в арендном
+ * Пункт 15: ячейка «Номер в аренде» в техничке. У техники в арендном
  * парке — номер + смена на любое СВОБОДНОЕ место (мини-меню); вне парка —
  * прочерк или ярлык «был в аренде №N» (пункт 16).
  */
