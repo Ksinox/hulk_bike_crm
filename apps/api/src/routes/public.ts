@@ -1,8 +1,8 @@
 import type { FastifyInstance } from "fastify";
-import { and, eq, isNotNull, ne, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import { db } from "../db/index.js";
-import { scooterModels, equipmentItems, users } from "../db/schema.js";
+import { scooterModels, scooters, equipmentItems, users } from "../db/schema.js";
 import { getObjectStream, statObject } from "../storage/index.js";
 import { variantKey } from "../storage/image.js";
 
@@ -115,25 +115,49 @@ export async function publicRoutes(app: FastifyInstance) {
 
   /* GET /api/public/rental-models
    * G3: модели для шага «Что хотите арендовать» в публичной анкете.
-   * Возвращает ВСЕ АКТИВНЫЕ модели (в отличие от /scooter-models, аватар
-   * необязателен — карточка покажет фолбэк). Отключение модели (active=false)
-   * в каталоге «Скутеры → Модели» автоматически убирает её из анкеты. */
+   * Активные модели каталога, у которых РЕАЛЬНО есть техника в арендном
+   * парке (пункт 10): хотя бы один живой скутер в статусе «Парк аренды»
+   * или временно «На ремонте». Модель без такой техники (каталожная
+   * запись, всё продано/в разборке) клиенту в анкете не предлагается.
+   * Отключение модели (active=false) убирает её из анкеты как раньше. */
   app.get("/rental-models", async () => {
-    const rows = await db
-      .select({
-        id: scooterModels.id,
-        name: scooterModels.name,
-        dayRate: scooterModels.dayRate,
-        shortRate: scooterModels.shortRate,
-        weekRate: scooterModels.weekRate,
-        monthRate: scooterModels.monthRate,
-        avatarKey: scooterModels.avatarKey,
-      })
-      .from(scooterModels)
-      .where(eq(scooterModels.active, true))
-      .orderBy(scooterModels.id);
+    const [rows, fleet] = await Promise.all([
+      db
+        .select({
+          id: scooterModels.id,
+          name: scooterModels.name,
+          dayRate: scooterModels.dayRate,
+          shortRate: scooterModels.shortRate,
+          weekRate: scooterModels.weekRate,
+          monthRate: scooterModels.monthRate,
+          avatarKey: scooterModels.avatarKey,
+        })
+        .from(scooterModels)
+        .where(eq(scooterModels.active, true))
+        .orderBy(scooterModels.id),
+      db
+        .select({ modelId: scooters.modelId, model: scooters.model })
+        .from(scooters)
+        .where(
+          and(
+            isNull(scooters.archivedAt),
+            isNull(scooters.deletedAt),
+            inArray(scooters.baseStatus, ["rental_pool", "repair"]),
+          ),
+        ),
+    ]);
+    // Наличие техники: новые скутеры — по FK modelId, legacy — по enum-имени.
+    const availByFk = new Set(
+      fleet.map((f) => f.modelId).filter((x): x is number => x != null),
+    );
+    const availByEnum = new Set(fleet.map((f) => f.model));
+    const available = rows.filter(
+      (r) =>
+        availByFk.has(r.id) ||
+        availByEnum.has(r.name.toLowerCase() as (typeof fleet)[number]["model"]),
+    );
     return {
-      items: rows.map((r) => ({
+      items: available.map((r) => ({
         id: r.id,
         name: r.name,
         dayRate: r.dayRate,
