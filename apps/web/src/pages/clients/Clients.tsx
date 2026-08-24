@@ -201,8 +201,14 @@ export function Clients() {
           <h1 className="font-display text-[34px] font-extrabold leading-none text-ink">
             Клиенты
           </h1>
+          {/* Пункт 24: счётчик = сколько клиентов ПОД ФИЛЬТРОМ (раньше всегда
+              показывал общее число и не менялся). При активном фильтре — «N из M». */}
           <span className="rounded-full bg-surface-soft px-3 py-1 text-[13px] font-semibold text-muted">
-            {clients.length} клиентов
+            {filtered.length}
+            {filtered.length !== clients.length && (
+              <span className="text-muted-2"> из {clients.length}</span>
+            )}{" "}
+            {pluralClients(filtered.length)}
           </span>
         </div>
         <div className="flex items-center gap-2">
@@ -250,4 +256,13 @@ export function Clients() {
       {addOpen && <AddClientModal onClose={() => setAddOpen(false)} />}
     </main>
   );
+}
+
+/** Пункт 24: склонение счётчика клиентов (1 клиент / 2 клиента / 5 клиентов). */
+function pluralClients(n: number): string {
+  const m10 = n % 10;
+  const m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return "клиент";
+  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return "клиента";
+  return "клиентов";
 }
