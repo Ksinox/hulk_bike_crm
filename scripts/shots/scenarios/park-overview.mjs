@@ -54,7 +54,16 @@ export async function run(page, ctx) {
       (x) => x.json(),
     );
     const items = r.items ?? r;
-    const free = items.filter((s) => s.baseStatus === "rental_pool");
+    // берём свободные (не в активной аренде) — иначе перевод отобьётся 409
+    const rentals = await fetch(api + "/api/rentals", { credentials: "include" })
+      .then((x) => x.json())
+      .then((x) => x.items ?? x);
+    const busy = new Set(
+      rentals.filter((r) => r.status === "active").map((r) => r.scooterId),
+    );
+    const free = items.filter(
+      (s) => s.baseStatus === "rental_pool" && !busy.has(s.id),
+    );
     return free.slice(0, 2).map((s) => s.id);
   }, API(ctx.base));
   console.log("меняем статусы у:", JSON.stringify(ids));
