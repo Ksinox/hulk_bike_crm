@@ -45,6 +45,45 @@ async function setStatus(page, ctx, id, status) {
 }
 
 export async function run(page, ctx) {
+  // Заводим единицу «в выкупе» — проверяем, что она осталась в парке,
+  // а не улетела к проданным (правка заказчика 25.08).
+  const prep = await page.evaluate(async (api) => {
+    const items = await fetch(api + "/api/scooters", { credentials: "include" })
+      .then((x) => x.json())
+      .then((x) => x.items ?? x);
+    const already = items.find((s) => s.baseStatus === "buyout");
+    if (already) return { reused: already.name };
+    const rentals = await fetch(api + "/api/rentals", { credentials: "include" })
+      .then((x) => x.json())
+      .then((x) => x.items ?? x);
+    const busy = new Set(
+      rentals.filter((r) => r.status === "active").map((r) => r.scooterId),
+    );
+    const free = items.find(
+      (s) => s.baseStatus === "rental_pool" && !busy.has(s.id),
+    );
+    if (!free) return { ok: false, reason: "нет свободной техники" };
+    const v = await fetch(api + "/api/approvals/verify", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key: "2626", action: "scooter_status_change" }),
+    }).then((x) => x.json());
+    const r = await fetch(api + "/api/scooters/" + free.id, {
+      method: "PATCH",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+        ...(v?.pass ? { "x-director-approval": "pass:" + v.pass } : {}),
+      },
+      body: JSON.stringify({ baseStatus: "buyout" }),
+    });
+    return { ok: r.ok, status: r.status, name: free.name };
+  }, API(ctx.base));
+  console.log("выкуп:", JSON.stringify(prep));
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await ctx.sleep(2200);
+
   // ── 1. Спокойное состояние: страница парка + кроп блока ──
   await ctx.gotoRoute("fleet");
   await ctx.sleep(2600);
@@ -54,8 +93,9 @@ export async function run(page, ctx) {
       total: (t.match(/(\d+)\s*\n\s*единиц/) || [])[1] ?? null,
       load: (t.match(/Загрузка \d+%/) || [""])[0],
       inRent: /В аренде/.test(t),
-      zeros: /ДТП/.test(t) && /Разборка/.test(t),
+      zeros: /ДТП/.test(t) && /На разборку/.test(t),
       sold: /Проданы/.test(t),
+      buyout: /В выкупе/.test(t),
     };
   });
   console.log("спокойное состояние:", JSON.stringify(calm));
