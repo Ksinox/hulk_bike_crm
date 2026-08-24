@@ -1,6 +1,5 @@
 import { useMemo } from "react";
-import { useApiScooters } from "@/lib/api/scooters";
-import { useApiScooterModels } from "@/lib/api/scooter-models";
+import { useApiScooters, usePartnerShare } from "@/lib/api/scooters";
 import { useApiRentals, useApiRentalsArchived } from "@/lib/api/rentals";
 
 /**
@@ -29,18 +28,18 @@ export type PartnerInfo = {
 
 export function usePartnerInfo(): PartnerInfo {
   const { data: scooters = [] } = useApiScooters();
-  const { data: models = [] } = useApiScooterModels();
+  const shareQ = usePartnerShare();
   const { data: active = [] } = useApiRentals();
   const { data: archived = [] } = useApiRentalsArchived();
 
   return useMemo(() => {
-    const partnerModelIds = new Set(
-      models.filter((m) => m.isPartner).map((m) => m.id),
-    );
+    // Правка 24.08: партнёрская — сама ЕДИНИЦА техники (scooters.isPartner),
+    // модель тут ни при чём. Процент — свой у единицы либо общий из настроек.
+    const fallback = shareQ.data?.value ?? DEFAULT_PARTNER_SHARE;
     const shareByScooter = new Map<number, number>();
     for (const s of scooters) {
-      if (s.modelId != null && partnerModelIds.has(s.modelId)) {
-        const pct = s.partnerShare ?? DEFAULT_PARTNER_SHARE;
+      if (s.isPartner) {
+        const pct = s.partnerShare ?? fallback;
         shareByScooter.set(s.id, Math.min(100, Math.max(0, pct)) / 100);
       }
     }
@@ -55,7 +54,7 @@ export function usePartnerInfo(): PartnerInfo {
       shareByRental,
       hasPartnerTech: shareByScooter.size > 0,
     };
-  }, [scooters, models, active, archived]);
+  }, [scooters, shareQ.data, active, archived]);
 }
 
 /**

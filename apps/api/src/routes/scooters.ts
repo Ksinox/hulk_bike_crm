@@ -40,7 +40,9 @@ const CreateScooterBody = z
     note: z.string().max(500).optional().nullable(),
     /** Пункт 15: желаемое место в арендном парке (из свободных). */
     rentalSlot: z.number().int().min(1).optional().nullable(),
-    /** Пункт 11: процент инвестора (партнёрская техника), null → 50. */
+    /** Пункт 11: партнёрская техника (свойство единицы, не модели). */
+    isPartner: z.boolean().optional(),
+    /** Процент инвестора по единице; null → общий процент из настроек. */
     partnerShare: z.number().int().min(0).max(100).optional().nullable(),
   })
   .strict();
@@ -189,6 +191,82 @@ export async function scootersRoutes(app: FastifyInstance) {
     });
     return { total };
   });
+
+  /**
+   * Пункт 11 (правка 24.08): общий процент инвестора по партнёрской
+   * технике. Применяется ко всем единицам, где не выставлен свой.
+   */
+  app.get("/partner-share", async () => {
+    const [row] = await db
+      .select({ value: appSettings.value })
+      .from(appSettings)
+      .where(eq(appSettings.key, "partner_share_default"));
+    const n = Number(row?.value);
+    const custom = await db
+      .select({ id: scooters.id, name: scooters.name, share: scooters.partnerShare })
+      .from(scooters)
+      .where(
+        and(
+          eq(scooters.isPartner, true),
+          isNotNull(scooters.partnerShare),
+          isNull(scooters.archivedAt),
+          isNull(scooters.deletedAt),
+        ),
+      );
+    return {
+      value: Number.isFinite(n) ? n : 50,
+      /** Техника с персональным процентом — о ней предупреждаем при «применить ко всем». */
+      custom: custom.map((c) => ({ id: c.id, name: c.name, share: c.share })),
+    };
+  });
+
+  /**
+   * Изменить общий процент. mode:
+   *   'default'   — только значение по умолчанию (персональные не трогаем);
+   *   'apply_all' — сбросить персональные проценты (всё по общему).
+   */
+  app.post<{ Body: { value?: number; mode?: "default" | "apply_all" } }>(
+    "/partner-share",
+    async (req, reply) => {
+      const value = Number(req.body?.value);
+      if (!Number.isFinite(value) || value < 0 || value > 100) {
+        return reply.code(400).send({ error: "bad value" });
+      }
+      const mode = req.body?.mode === "apply_all" ? "apply_all" : "default";
+      await db
+        .insert(appSettings)
+        .values({ key: "partner_share_default", value: String(value) })
+        .onConflictDoUpdate({
+          target: appSettings.key,
+          set: { value: String(value) },
+        });
+      let reset = 0;
+      if (mode === "apply_all") {
+        const rows = await db
+          .update(scooters)
+          .set({ partnerShare: null, updatedAt: sql`now()` })
+          .where(
+            and(
+              eq(scooters.isPartner, true),
+              isNotNull(scooters.partnerShare),
+              isNull(scooters.archivedAt),
+            ),
+          )
+          .returning({ id: scooters.id });
+        reset = rows.length;
+      }
+      await logActivity(req, {
+        entity: "scooter",
+        entityId: null,
+        action: "partner_share_changed",
+        summary:
+          mode === "apply_all"
+            ? `Процент инвестора ${value} % применён ко всей партнёрской технике (персональные сброшены: ${reset})`
+            : `Общий процент инвестора: ${value} %`,
+      });
+      return { value, reset };
+    },
+  );
 
   /** GET /api/scooters/archived — список в архиве */
   app.get("/archived", async () => {

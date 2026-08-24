@@ -237,7 +237,6 @@ function ModelFormModal({
   const [active, setActive] = useState(initial?.active ?? true);
   // Пункт 14: тип техники — электро / партнёрская.
   const [isElectric, setIsElectric] = useState(initial?.isElectric ?? false);
-  const [isPartner, setIsPartner] = useState(initial?.isPartner ?? false);
   const [maxSpeedKmh, setMaxSpeedKmh] = useState<string>(
     initial?.maxSpeedKmh != null ? String(initial.maxSpeedKmh) : "",
   );
@@ -270,7 +269,6 @@ function ModelFormModal({
       quickPick,
       active,
       isElectric,
-      isPartner,
       maxSpeedKmh:
         speedNum != null && Number.isFinite(speedNum) && speedNum >= 0
           ? Math.round(speedNum)
@@ -448,19 +446,15 @@ function ModelFormModal({
             />
           </div>
 
-          {/* Пункт 14: тип техники — электро / партнёрская. */}
+          {/* Пункт 14: тип техники. «Партнёрская» переехала в карточку
+              конкретного скутера (правка 24.08): у одной модели бывают и
+              наши экземпляры, и партнёрские. */}
           <div className="grid gap-2 sm:grid-cols-2">
             <ToggleCard
               checked={isElectric}
               onChange={setIsElectric}
               title="Электро"
-              hint="Электротранспорт — отдельное направление"
-            />
-            <ToggleCard
-              checked={isPartner}
-              onChange={setIsPartner}
-              title="Партнёрская"
-              hint="Техника партнёра — выручка делится"
+              hint="Электротранспорт — своё направление и отметка в CRM"
             />
           </div>
 

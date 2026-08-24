@@ -11,6 +11,7 @@ import {
   Pencil,
   Phone,
   RefreshCcw,
+  Handshake,
   Wrench,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -38,6 +39,7 @@ import { useActivityTimeline } from "@/lib/api/activity";
 import { ActivityTimelineSection } from "@/pages/rentals/ActivityTimelineSection";
 import {
   useArchiveScooter,
+  usePartnerShare,
   usePatchScooter,
   useRentalSlots,
 } from "@/lib/api/scooters";
@@ -311,6 +313,12 @@ export function ScooterCard({
             ID {scooter.uid}
           </span>
         )}
+        {/* Партнёрская техника (правка 24.08 — свойство единицы, не модели). */}
+        {scooter.isPartner && (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-violet-100 px-3 py-1 text-[12px] font-bold text-violet-700">
+            <Handshake size={13} /> Партнёрская
+          </span>
+        )}
         {/* Пункт 16: ярлык «был в аренде» у техники вне арендного парка. */}
         {scooter.rentalSlot == null && scooter.exRentalSlot != null && (
           <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-3 py-1 text-[12px] font-bold text-amber-800">
@@ -393,8 +401,10 @@ export function ScooterCard({
                 hint={scooter.uid ? `ID ${scooter.uid} — 6 последних цифр VIN` : undefined}
                 mono
               />
-              {/* Пункт 15: место в арендном парке — смена только на свободное. */}
+              {/* Пункт 15: номер в арендном парке — смена только на свободный. */}
               <RentalSlotSpec scooter={scooter} />
+              {/* Партнёрская техника: флаг у КОНКРЕТНОЙ единицы (правка 24.08). */}
+              <PartnerSpec scooter={scooter} />
               <SpecCell
                 label="Пробег"
                 value={`${fmt(scooter.mileage)} км`}
@@ -1235,6 +1245,69 @@ function RentalSlotSpec({ scooter }: { scooter: FleetScooter }) {
             )}
           </div>
         </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Партнёрская техника (правка заказчика 24.08): раньше флаг стоял у МОДЕЛИ,
+ * но у одной модели бывают и наши экземпляры, и партнёрские. Теперь это
+ * свойство конкретного скутера: переключатель прямо в карточке, а процент
+ * инвестора берётся общий (Партнёрка) либо персональный у этой единицы.
+ */
+function PartnerSpec({ scooter }: { scooter: FleetScooter }) {
+  const patch = usePatchScooter();
+  const shareQ = usePartnerShare();
+  const on = !!scooter.isPartner;
+  const share = scooter.partnerShare ?? shareQ.data?.value ?? 50;
+
+  const toggle = async () => {
+    try {
+      await patch.mutateAsync({
+        id: scooter.id,
+        patch: { isPartner: !on },
+      });
+      toast.success(
+        !on ? "Техника партнёрская" : "Техника снова наша",
+        !on
+          ? `Выплаты инвестору считаются в разделе «Партнёрка» (${share} %).`
+          : "Из расчёта выплат инвестору убрана.",
+      );
+    } catch {
+      toast.error("Не удалось изменить");
+    }
+  };
+
+  return (
+    <div>
+      <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
+        Принадлежность
+      </div>
+      <button
+        type="button"
+        onClick={toggle}
+        disabled={patch.isPending}
+        title={
+          on
+            ? "Партнёрская техника — выручка делится с инвестором"
+            : "Наша техника. Клик — отметить как партнёрскую"
+        }
+        className={cn(
+          "mt-1 -ml-1.5 inline-flex items-center gap-1.5 rounded-lg border border-transparent px-1.5 py-0.5 text-[15px] font-bold leading-tight transition-colors disabled:opacity-50",
+          on
+            ? "text-violet-700 hover:bg-violet-50"
+            : "text-ink hover:border-blue-300 hover:bg-blue-50",
+        )}
+      >
+        {on ? "Партнёрская" : "Наша"}
+        <Pencil size={12} className="opacity-60" />
+      </button>
+      {on && (
+        <div className="mt-0.5 text-[10px] uppercase tracking-wider text-muted-2">
+          инвестору {share} %
+          {scooter.partnerShare != null ? " (свой)" : ""}
+        </div>
       )}
     </div>
   );

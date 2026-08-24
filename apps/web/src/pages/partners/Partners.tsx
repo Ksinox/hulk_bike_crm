@@ -1,8 +1,14 @@
 import { useMemo, useState } from "react";
 import { Handshake, Pencil } from "lucide-react";
 import { ElectricMark } from "@/components/PowerTypeBadge";
+import { ScooterName, scooterModelName } from "@/components/ScooterName";
 import { Topbar } from "@/pages/dashboard/Topbar";
-import { useApiScooters, usePatchScooter } from "@/lib/api/scooters";
+import {
+  useApiScooters,
+  usePartnerShare,
+  usePatchScooter,
+  useSetPartnerShare,
+} from "@/lib/api/scooters";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { useApiPayments, type ApiPayment } from "@/lib/api/payments";
 import { useApiRentals, useApiRentalsArchived } from "@/lib/api/rentals";
@@ -10,7 +16,7 @@ import { useBillingPeriodAnchors } from "@/lib/api/billing-period";
 import { currentBillingPeriod } from "@/lib/billingPeriod";
 import { DEFAULT_PARTNER_SHARE } from "@/lib/partner";
 import { navigate } from "@/app/navigationStore";
-import { toast } from "@/lib/toast";
+import { toast, pickAction } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 
 /**
@@ -42,6 +48,10 @@ export function Partners() {
   const { data: archived = [] } = useApiRentalsArchived();
   const anchorsQ = useBillingPeriodAnchors();
   const patchScooter = usePatchScooter();
+  const shareQ = usePartnerShare();
+  const setShare = useSetPartnerShare();
+  const [commonStr, setCommonStr] = useState("");
+  const [commonEdit, setCommonEdit] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
   const [shareStr, setShareStr] = useState("");
 
@@ -53,12 +63,10 @@ export function Partners() {
 
   // Выручка периода по каждому партнёрскому скутеру + итоги.
   const calc = useMemo(() => {
-    const partnerModels = new Map(
-      models.filter((m) => m.isPartner).map((m) => [m.id, m] as const),
-    );
-    const partnerScooters = scooters.filter(
-      (s) => s.modelId != null && partnerModels.has(s.modelId),
-    );
+    const modelById = new Map(models.map((m) => [m.id, m] as const));
+    // Правка 24.08: партнёрская — сама единица техники.
+    const partnerScooters = scooters.filter((s) => s.isPartner);
+    const fallbackShare = shareQ.data?.value ?? DEFAULT_PARTNER_SHARE;
     const partnerIds = new Set(partnerScooters.map((s) => s.id));
     const rentalToScooter = new Map<number, number>();
     for (const r of [...active, ...archived]) {
@@ -81,13 +89,15 @@ export function Partners() {
     }
     const items = partnerScooters.map((s) => {
       const revenue = revenueByScooter.get(s.id) ?? 0;
-      const sharePct = s.partnerShare ?? DEFAULT_PARTNER_SHARE;
+      const custom = s.partnerShare != null;
+      const sharePct = s.partnerShare ?? fallbackShare;
       const payout = Math.floor((revenue * sharePct) / 100);
-      const model = s.modelId != null ? partnerModels.get(s.modelId) : null;
+      const model = s.modelId != null ? modelById.get(s.modelId) : null;
       return {
         scooter: s,
         modelName: model?.name ?? "—",
         isElectric: model?.isElectric ?? false,
+        custom,
         revenue,
         sharePct,
         payout,
@@ -103,7 +113,62 @@ export function Partners() {
       { revenue: 0, payout: 0, ours: 0 },
     );
     return { items, totals };
-  }, [models, scooters, active, archived, payments, period]);
+  }, [models, scooters, active, archived, payments, period, shareQ.data]);
+
+  /**
+   * Общий процент инвестора. Если у части техники выставлен свой —
+   * спрашиваем, что делать: применить ко всем (сбросив персональные)
+   * или сохранить общий, оставив персональные как есть.
+   */
+  const saveCommonShare = async () => {
+    const value = Number(commonStr.replace(/\D/g, ""));
+    if (!Number.isFinite(value) || value < 0 || value > 100) return;
+    const custom = shareQ.data?.custom ?? [];
+    let mode: "default" | "apply_all" = "default";
+    if (custom.length > 0) {
+      const names = custom
+        .map((c) => scooterModelName(c.name) + " \u2014 " + c.share + " %")
+        .join(", ");
+      const answer = await pickAction({
+        title: "Применить " + value + " % ко всей технике?",
+        message:
+          "У части техники выставлен свой процент: " +
+          names +
+          ". Что делать с ней?",
+        options: [
+          {
+            id: "keep",
+            label: "Оставить персональные",
+            hint: "Общий процент применится ко всем, кроме этой техники",
+            tone: "primary",
+          },
+          {
+            id: "all",
+            label: "Применить ко всем",
+            hint: "Персональные проценты будут сброшены на общий",
+          },
+        ],
+      });
+      if (!answer) return;
+      mode = answer === "all" ? "apply_all" : "default";
+    }
+    try {
+      const res = await setShare.mutateAsync({ value, mode });
+      toast.success(
+        "Процент инвестора обновлён",
+        mode === "apply_all"
+          ? "Теперь " +
+              value +
+              " % по всей партнёрской технике (персональных сброшено: " +
+              res.reset +
+              ")."
+          : "Общий процент \u2014 " + value + " %. Персональные сохранены.",
+      );
+      setCommonEdit(false);
+    } catch {
+      toast.error("Не удалось сохранить процент");
+    }
+  };
 
   const saveShare = async (id: number) => {
     const pct = Number(shareStr.replace(/\D/g, ""));
@@ -145,13 +210,76 @@ export function Partners() {
             Партнёрской техники пока нет
           </div>
           <div className="max-w-[440px] text-[13px] leading-relaxed text-muted">
-            Пометьте модель переключателем «Партнёрская» в каталоге
-            (Скутеры → Модели) — вся техника этой модели появится здесь
-            с расчётом выплат инвестору.
+            Отметьте скутер как партнёрский в его карточке (Скутеры →
+            карточка техники) — он появится здесь с расчётом выплат.
+            Партнёрство задаётся у каждой единицы отдельно: у одной модели
+            могут быть и наши экземпляры, и партнёрские.
           </div>
         </div>
       ) : (
         <>
+          {/* Общий процент инвестора (правка заказчика 24.08) */}
+          <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-violet-200 bg-violet-50/50 px-4 py-3">
+            <span className="text-[12.5px] font-semibold text-ink-2">
+              Процент инвестора по умолчанию
+            </span>
+            {commonEdit ? (
+              <span className="flex items-center gap-1.5">
+                <input
+                  autoFocus
+                  inputMode="numeric"
+                  value={commonStr}
+                  onChange={(e) =>
+                    setCommonStr(e.target.value.replace(/\D/g, ""))
+                  }
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") saveCommonShare();
+                    if (e.key === "Escape") setCommonEdit(false);
+                  }}
+                  className="h-9 w-16 rounded-lg border border-violet-300 bg-white px-2 text-center text-[14px] font-bold tabular-nums outline-none focus:border-violet-500"
+                />
+                <span className="text-[13px] font-bold text-ink-2">%</span>
+                <button
+                  type="button"
+                  onClick={saveCommonShare}
+                  disabled={setShare.isPending}
+                  className="h-9 rounded-lg bg-violet-600 px-3 text-[12.5px] font-bold text-white transition-colors hover:bg-violet-700 disabled:opacity-50"
+                >
+                  Применить
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCommonEdit(false)}
+                  className="h-9 rounded-lg px-2 text-[12.5px] font-semibold text-muted hover:text-ink"
+                >
+                  Отмена
+                </button>
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setCommonStr(
+                    String(shareQ.data?.value ?? DEFAULT_PARTNER_SHARE),
+                  );
+                  setCommonEdit(true);
+                }}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-1.5 text-[14px] font-bold tabular-nums text-violet-700 shadow-card-sm transition-colors hover:bg-violet-100"
+              >
+                {shareQ.data?.value ?? DEFAULT_PARTNER_SHARE} %
+                <Pencil size={12} className="opacity-60" />
+              </button>
+            )}
+            <span className="text-[11.5px] text-muted">
+              Применяется ко всей партнёрской технике, у которой не задан свой
+              процент.
+              {(shareQ.data?.custom.length ?? 0) > 0 &&
+                " Сейчас со своим процентом: " +
+                  shareQ.data?.custom.length +
+                  "."}
+            </span>
+          </div>
+
           {/* Итоги периода */}
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="rounded-2xl bg-surface p-4 shadow-card-sm">
@@ -206,7 +334,12 @@ export function Partners() {
                         }
                         className="flex items-center gap-2 text-left font-semibold text-ink hover:text-blue-700"
                       >
-                        {it.scooter.name}
+                        <ScooterName
+                          name={it.scooter.name}
+                          number={it.scooter.rentalSlot}
+                          exNumber={it.scooter.exRentalSlot}
+                          size="sm"
+                        />
                         {it.isElectric && <ElectricMark size="sm" />}
                         <span className="text-[11px] font-normal text-muted-2">
                           {it.modelName}
@@ -248,10 +381,24 @@ export function Partners() {
                             setEditId(it.scooter.id);
                             setShareStr(String(it.sharePct));
                           }}
-                          title="Изменить процент инвестора для этой единицы"
-                          className="inline-flex items-center gap-1 rounded-lg px-1.5 py-0.5 font-bold tabular-nums text-violet-700 transition-colors hover:bg-violet-50"
+                          title={
+                            it.custom
+                              ? "Персональный процент для этой единицы. Клик — изменить"
+                              : "Берётся общий процент. Клик — задать свой"
+                          }
+                          className={cn(
+                            "inline-flex items-center gap-1 rounded-lg px-1.5 py-0.5 font-bold tabular-nums transition-colors",
+                            it.custom
+                              ? "bg-violet-50 text-violet-700 hover:bg-violet-100"
+                              : "text-muted hover:bg-surface-soft hover:text-ink",
+                          )}
                         >
                           {it.sharePct} %
+                          {it.custom && (
+                            <span className="text-[9px] font-bold uppercase">
+                              свой
+                            </span>
+                          )}
                           <Pencil size={11} className="opacity-60" />
                         </button>
                       )}

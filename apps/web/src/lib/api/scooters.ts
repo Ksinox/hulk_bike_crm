@@ -47,6 +47,31 @@ export function useSetSlotsTotal() {
   });
 }
 
+/** Пункт 11: общий процент инвестора + техника с персональным. */
+export type PartnerShareState = {
+  value: number;
+  custom: { id: number; name: string; share: number | null }[];
+};
+
+export function usePartnerShare() {
+  return useQuery({
+    queryKey: [...scootersKeys.all, "partner-share"] as const,
+    queryFn: () => api.get<PartnerShareState>("/api/scooters/partner-share"),
+  });
+}
+
+export function useSetPartnerShare() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { value: number; mode: "default" | "apply_all" }) =>
+      api.post<{ value: number; reset: number }>(
+        "/api/scooters/partner-share",
+        args,
+      ),
+    onSuccess: () => qc.invalidateQueries({ queryKey: scootersKeys.all }),
+  });
+}
+
 export type CreateScooterInput = {
   name: string;
   model: ApiScooter["model"];
@@ -57,7 +82,9 @@ export type CreateScooterInput = {
   frameNumber?: string | null;
   /** Пункт 15: желаемое место в арендном парке (из свободных). */
   rentalSlot?: number | null;
-  /** Пункт 11: процент инвестора для партнёрской техники (null → 50). */
+  /** Пункт 11: партнёрская техника (свойство единицы, не модели). */
+  isPartner?: boolean;
+  /** Процент инвестора по единице; null → общий из настроек. */
   partnerShare?: number | null;
   year?: number | null;
   color?: string | null;

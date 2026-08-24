@@ -31,5 +31,7 @@ export function adaptScooter(a: ApiScooter): FleetScooter {
     rentalSlot: a.rentalSlot ?? undefined,
     exRentalSlot: a.exRentalSlot ?? undefined,
     uid: a.uid ?? undefined,
+    isPartner: a.isPartner ?? false,
+    partnerShare: a.partnerShare ?? undefined,
   };
 }
