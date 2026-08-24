@@ -232,6 +232,34 @@ export function NewRentalModal({
   const [customMode, setCustomMode] = useState<boolean>(false);
   const [customUnit, setCustomUnit] = useState<"day" | "week">("day");
   const [customRate, setCustomRate] = useState<string>("");
+
+  // Пункт 6 (мерцание при «своём тарифе»): раньше включение произвольного
+  // тарифа обнуляло ставку (поле пустое → «Ставка 0 ₽», «Итог 0 ₽»), а
+  // переключение сут↔нед заставляло цифры прыгать (7 дн → «1 неделя», ставка
+  // оставалась суточной). Теперь переключения БЕСШОВНЫЕ:
+  //  • включили «Произвольный тариф» → ставка предзаполняется текущей;
+  //  • сут → нед: ставка ×7, срок округляется до целых недель;
+  //  • нед → сут: ставка ÷7. Цифры «Ставка/Итог» не мигают нулями.
+  const toggleCustomMode = (on: boolean) => {
+    setCustomMode(on);
+    if (on && !customRate) {
+      const base =
+        customUnit === "week" ? computedRate * 7 : computedRate;
+      if (base > 0) setCustomRate(String(base));
+    }
+  };
+  const switchCustomUnit = (u: "day" | "week") => {
+    if (u === customUnit) return;
+    const cur = Number(customRate) || 0;
+    if (u === "week") {
+      if (cur > 0) setCustomRate(String(cur * 7));
+      // срок — до целых недель (иначе поле «недель» и дни расходятся)
+      setDays(Math.max(7, Math.round(days / 7) * 7));
+    } else if (cur > 0) {
+      setCustomRate(String(Math.max(1, Math.round(cur / 7))));
+    }
+    setCustomUnit(u);
+  };
   const rate = customMode
     ? Math.max(0, Number(customRate) || 0)
     : computedRate;
@@ -780,7 +808,7 @@ export function NewRentalModal({
                         key={p}
                         aria-disabled={!active}
                         className={cn(
-                          "relative rounded-[10px] border px-3 py-2 text-[11px] transition-all",
+                          "relative rounded-[10px] border px-3 py-2 text-[11px] transition-colors",
                           active
                             ? "border-blue-500 bg-blue-50 text-blue-700 ring-1 ring-blue-500"
                             : "border-transparent bg-surface-soft text-muted-2 opacity-55",
@@ -822,7 +850,7 @@ export function NewRentalModal({
                 <input
                   type="checkbox"
                   checked={customMode}
-                  onChange={(e) => setCustomMode(e.target.checked)}
+                  onChange={(e) => toggleCustomMode(e.target.checked)}
                   className="h-4 w-4 cursor-pointer accent-blue-600"
                 />
                 <span className="text-[12px] font-semibold">
@@ -846,7 +874,7 @@ export function NewRentalModal({
                       <button
                         key={u}
                         type="button"
-                        onClick={() => setCustomUnit(u)}
+                        onClick={() => switchCustomUnit(u)}
                         className={cn(
                           "rounded-[6px] px-2 py-1 text-[11px] font-semibold transition-colors",
                           customUnit === u

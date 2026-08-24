@@ -2463,8 +2463,17 @@ export function PaymentAcceptDialog({
                               setExtInputOverride(
                                 Math.max(1, Math.round(extDays / 7)),
                               );
+                              // Пункт 6: ставка тоже конвертируется (₽/сут →
+                              // ₽/нед = ×7), иначе итог резко «мерцал»:
+                              // 600 ₽/сут при 7 днях → вдруг 600 ₽/НЕД.
+                              if (extCustomRate > 0)
+                                setExtCustomRate(extCustomRate * 7);
                             } else {
                               setExtInputOverride(Math.max(0, extDays));
+                              if (extCustomRate > 0)
+                                setExtCustomRate(
+                                  Math.max(1, Math.round(extCustomRate / 7)),
+                                );
                             }
                             setExtCustomUnit(u);
                           }}
