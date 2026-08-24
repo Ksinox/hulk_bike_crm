@@ -48,6 +48,7 @@ import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { fileUrl } from "@/lib/files";
 import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
 import { toast } from "@/lib/toast";
+import { ScooterName, scooterModelName } from "@/components/ScooterName";
 import { askArchiveReason } from "./archiveReason";
 
 type TabId =
@@ -284,8 +285,13 @@ export function ScooterCard({
           <ArrowLeft size={18} />
           {backLabel}
         </button>
-        <h1 className="font-display text-[32px] font-extrabold leading-none text-ink">
-          {scooter.name}
+        <h1 className="flex items-center gap-2.5 font-display text-[32px] font-extrabold leading-none text-ink">
+          <ScooterName
+            name={scooter.name}
+            number={scooter.rentalSlot}
+            exNumber={scooter.exRentalSlot}
+            size="lg"
+          />
         </h1>
         <span
           className={cn(
@@ -296,15 +302,10 @@ export function ScooterCard({
           <span className="h-1.5 w-1.5 rounded-full bg-current opacity-70" />
           {SCOOTER_STATUS_LABEL[status]}
         </span>
-        {/* Пункт 15: место в арендном парке / ID по раме. */}
-        {scooter.rentalSlot != null && (
-          <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-[12px] font-bold text-blue-700">
-            Место №{scooter.rentalSlot}
-          </span>
-        )}
+        {/* Пункт 15: уникальный ID (6 цифр VIN). Номер — в заголовке. */}
         {scooter.uid && (
           <span
-            title="Уникальный ID — 4 последние цифры номера рамы"
+            title="Уникальный ID — 6 последних цифр VIN"
             className="inline-flex items-center gap-1 rounded-full bg-surface px-3 py-1 font-mono text-[12px] font-bold text-ink-2 shadow-card-sm"
           >
             ID {scooter.uid}
@@ -313,7 +314,7 @@ export function ScooterCard({
         {/* Пункт 16: ярлык «был в аренде» у техники вне арендного парка. */}
         {scooter.rentalSlot == null && scooter.exRentalSlot != null && (
           <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-3 py-1 text-[12px] font-bold text-amber-800">
-            Был в аренде · место №{scooter.exRentalSlot}
+            Был в аренде · номер {scooter.exRentalSlot}
           </span>
         )}
         <div className="flex-1" />
@@ -389,7 +390,7 @@ export function ScooterCard({
               <SpecCell
                 label="Номер рамы"
                 value={scooter.frameNumber ?? "—"}
-                hint={scooter.uid ? `ID ${scooter.uid} — по 4 цифрам рамы` : undefined}
+                hint={scooter.uid ? `ID ${scooter.uid} — 6 последних цифр VIN` : undefined}
                 mono
               />
               {/* Пункт 15: место в арендном парке — смена только на свободное. */}
@@ -1162,10 +1163,10 @@ function RentalSlotSpec({ scooter }: { scooter: FleetScooter }) {
   if (!inPool) {
     return (
       <SpecCell
-        label="Место в аренде"
+        label="Номер в аренде"
         value={
           scooter.exRentalSlot != null
-            ? `Был в аренде · №${scooter.exRentalSlot}`
+            ? `Был в аренде · номер ${scooter.exRentalSlot}`
             : "—"
         }
       />
@@ -1173,7 +1174,6 @@ function RentalSlotSpec({ scooter }: { scooter: FleetScooter }) {
   }
 
   const free = slotsQ.data?.free ?? [];
-  const total = slotsQ.data?.total ?? 0;
 
   const pick = async (slot: number) => {
     setOpen(false);
@@ -1181,8 +1181,8 @@ function RentalSlotSpec({ scooter }: { scooter: FleetScooter }) {
     try {
       await patch.mutateAsync({ id: scooter.id, patch: { rentalSlot: slot } });
       toast.success(
-        "Место изменено",
-        `${scooter.name} теперь на месте №${slot}. Запись в журнале.`,
+        "Номер изменён",
+        `${scooterModelName(scooter.name)} теперь под номером ${slot}. Запись в журнале.`,
       );
     } catch (e) {
       toast.error(
@@ -1195,31 +1195,29 @@ function RentalSlotSpec({ scooter }: { scooter: FleetScooter }) {
   return (
     <div className="relative">
       <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
-        Место в аренде
+        Номер в аренде
       </div>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         disabled={patch.isPending}
-        title="Сменить место (только на свободное)"
+        title="Сменить номер (только на свободный)"
         className="mt-1 inline-flex items-center gap-1.5 rounded-lg border border-transparent px-1.5 py-0.5 -ml-1.5 text-[15px] font-bold leading-tight text-blue-600 transition-colors hover:border-blue-300 hover:bg-blue-50 disabled:opacity-50"
       >
-        №{scooter.rentalSlot}
+        {scooter.rentalSlot}
         <Pencil size={12} className="opacity-60" />
       </button>
-      <div className="mt-0.5 text-[10px] uppercase tracking-wider text-muted-2">
-        из {total} мест
-      </div>
+
       {open && (
         <>
           <span className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
           <div className="absolute left-0 top-full z-50 mt-1 w-[210px] rounded-xl border border-border bg-surface p-2 shadow-card-lg">
             <div className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-2">
-              Свободные места
+              Свободные номера
             </div>
             {free.length === 0 ? (
               <div className="px-1 py-1 text-[12px] text-muted">
-                Свободных мест нет
+                Свободных номеров нет
               </div>
             ) : (
               <div className="flex flex-wrap gap-1">

@@ -62,10 +62,17 @@ function holdsSlot(status: string): boolean {
   return (SLOT_STATUSES as readonly string[]).includes(status);
 }
 
-/** ID = 4 последние цифры номера рамы (только цифры). */
-function uidFromFrame(frame: string | null | undefined): string | null {
-  const digits = (frame ?? "").replace(/\D/g, "");
-  return digits ? digits.slice(-4) : null;
+/**
+ * Уникальный ID техники — 6 последних цифр VIN (правка заказчика 24.08:
+ * было 4, но при 4 цифрах реален риск совпадения со старым скутером).
+ * VIN и номер рамы в CRM — одно и то же поле, берём что заполнено.
+ */
+function uidFromVin(...sources: (string | null | undefined)[]): string | null {
+  for (const src of sources) {
+    const digits = (src ?? "").replace(/\D/g, "");
+    if (digits) return digits.slice(-6);
+  }
+  return null;
 }
 
 async function getSlotsTotal(): Promise<number> {
@@ -265,7 +272,7 @@ export async function scootersRoutes(app: FastifyInstance) {
           mileage: parsed.data.mileage ?? 0,
           baseStatus: status,
           rentalSlot: slotToUse,
-          uid: uidFromFrame(parsed.data.frameNumber),
+          uid: uidFromVin(parsed.data.vin, parsed.data.frameNumber),
         })
         .returning();
       if (!row) return reply.code(500).send({ error: "insert failed" });
@@ -376,9 +383,12 @@ export async function scootersRoutes(app: FastifyInstance) {
     const willHold = holdsSlot(nextStatus);
     const heldBefore = holdsSlot(before.baseStatus);
 
-    // Пересчёт uid при смене номера рамы.
-    if (parsed.data.frameNumber !== undefined) {
-      patch.uid = uidFromFrame(parsed.data.frameNumber);
+    // Пересчёт uid при смене VIN / номера рамы.
+    if (parsed.data.vin !== undefined || parsed.data.frameNumber !== undefined) {
+      patch.uid = uidFromVin(
+        parsed.data.vin ?? before.vin,
+        parsed.data.frameNumber ?? before.frameNumber,
+      );
     }
 
     // Ручная смена места (или назначение при входе в арендный парк) —

@@ -79,14 +79,20 @@ function ScooterTag({
   mileage,
   size = "sm",
   electric = false,
+  rentalNumber,
 }: {
   label: string;
   mileage?: number | null;
   size?: "sm" | "md";
-  /** Пункт 11: отметка «е-» для электротранспорта. */
+  /** Пункт 11: отметка электро. */
   electric?: boolean;
+  /** Арендный номер техники (пункт 15) — приоритетнее номера из имени. */
+  rentalNumber?: number | null;
 }) {
-  const { model, num } = parseScooter(label);
+  const { model, num: nameNum } = parseScooter(label);
+  // Правка 24.08: в кружке показываем АРЕНДНЫЙ номер; «#NN» из имени —
+  // исторический порядок заведения, оператору он не нужен.
+  const num = rentalNumber != null ? String(rentalNumber) : nameNum;
   const dot = size === "md" ? "h-6 min-w-6 text-[12px]" : "h-5 min-w-5 text-[11px]";
   return (
     <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
@@ -169,8 +175,10 @@ type Row = {
   clientId: number;
   clientName: string;
   scooterLabel: string;
-  /** Пункт 11: электротранспорт — отметка «е-» в списке. */
+  /** Пункт 11: электротранспорт — отметка в списке. */
   isElectric: boolean;
+  /** Пункт 15: арендный номер техники (для кружка вместо «#NN»). */
+  rentalNumber: number | null;
   scooterAvatarSrc: string | null;
   mileage: number | null;
   startKey: number;
@@ -379,8 +387,9 @@ export function RentalsList({
         clientId: r.clientId,
         clientName: c?.name ?? `Клиент #${r.clientId}`,
         scooterLabel: r.scooter,
-        // Пункт 11: отметка «е-» для электротранспорта в общем списке аренд.
+        // Пункт 11: отметка электро в общем списке аренд.
         isElectric: model?.isElectric ?? false,
+        rentalNumber: scooter?.rentalSlot ?? null,
         scooterAvatarSrc: fileUrl(model?.avatarKey, { variant: "view" }),
         mileage: scooter?.mileage ?? null,
         startKey: dateKey(r.start),
@@ -682,7 +691,12 @@ function RentalTableRow({
         </div>
       </td>
       <td className="px-4 py-5 text-[13px] whitespace-nowrap">
-        <ScooterTag label={row.scooterLabel} mileage={row.mileage} electric={row.isElectric} />
+        <ScooterTag
+          label={row.scooterLabel}
+          mileage={row.mileage}
+          electric={row.isElectric}
+          rentalNumber={row.rentalNumber}
+        />
       </td>
       <td className="px-4 py-5 tabular-nums text-muted whitespace-nowrap">
         {row.rental.start}
@@ -818,7 +832,8 @@ function RentalTile({
         </div>
         {/* Метка скутера — правый нижний угол: круглый номер + модель. */}
         {(() => {
-          const { model, num } = parseScooter(row.scooterLabel);
+          const { model, num: nameNum } = parseScooter(row.scooterLabel);
+          const num = row.rentalNumber != null ? String(row.rentalNumber) : nameNum;
           return (
             <span className="absolute bottom-2 right-2 inline-flex items-center gap-1 rounded-full bg-ink/75 py-0.5 pl-0.5 pr-2 text-[10px] font-semibold text-white">
               {num != null && (
