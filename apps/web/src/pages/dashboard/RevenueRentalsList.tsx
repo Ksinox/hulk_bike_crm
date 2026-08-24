@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { Check, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { changePaymentMethod } from "@/pages/rentals/rentalsStore";
+import { toast } from "@/lib/toast";
 import { useApiRentals, useApiRentalsArchived } from "@/lib/api/rentals";
 import { useApiPayments, type ApiPayment } from "@/lib/api/payments";
 import { useApiClients } from "@/lib/api/clients";
@@ -234,6 +236,9 @@ export function RevenueRentalsList({
           paidAt: p.paidAt!,
           amount: p.amount,
           cash: isCashPayment(p),
+          // Пункт 8: исходный способ — оплаты из залога/депозита формат
+          // не меняют (это не деньги клиента).
+          method: p.method,
           typeLabel: REVENUE_TYPE_LABEL[tk],
           clientName: client?.name ?? "—",
           scooterName: scooter?.name ?? "—",
@@ -335,20 +340,18 @@ export function RevenueRentalsList({
                     </div>
                     <div className="text-[11px] text-muted-2">{r.typeLabel}</div>
                   </div>
-                  <span
-                    className={cn(
-                      "rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider",
-                      r.cash
-                        ? "bg-green-soft text-green-ink"
-                        : "bg-blue-50 text-blue-700",
-                    )}
-                  >
-                    {r.cash ? "нал" : "безнал"}
-                  </span>
                   <div className="w-[72px] text-right text-[13px] font-bold tabular-nums text-ink">
                     {fmt(r.amount)} ₽
                   </div>
                 </button>
+                {/* Пункт 8: бейдж способа — кликабельный (нал ↔ безнал).
+                    Вынесен из кнопки-строки: кнопка в кнопке невалидна. */}
+                <MethodBadge
+                  paymentId={r.paymentId}
+                  method={r.method}
+                  cash={r.cash}
+                  amount={r.amount}
+                />
                 {/* Шеврон «состав аренды» — только у платежей аренды/продления. */}
                 {r.comp ? (
                   <button
@@ -455,6 +458,95 @@ function CompositionRow({
         {value}
       </span>
     </div>
+  );
+}
+
+/**
+ * Пункт 8: кликабельный бейдж способа оплаты в строке платежа.
+ * Клик открывает мини-меню «Наличные / Безнал»; выбор — PATCH платежа,
+ * бэк пишет запись в журнал с diff «было → стало». Оплаты из
+ * залога/депозита (method='deposit') формат не меняют — бейдж статичен.
+ */
+function MethodBadge({
+  paymentId,
+  method,
+  cash,
+  amount,
+}: {
+  paymentId: number;
+  method: ApiPayment["method"];
+  cash: boolean;
+  amount: number;
+}) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const badge = (
+    <span
+      className={cn(
+        "rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider",
+        cash ? "bg-green-soft text-green-ink" : "bg-blue-50 text-blue-700",
+      )}
+    >
+      {cash ? "нал" : "безнал"}
+    </span>
+  );
+  if (method === "deposit") return <span className="shrink-0">{badge}</span>;
+
+  const pick = async (m: "cash" | "transfer") => {
+    setOpen(false);
+    if ((m === "cash") === cash) return;
+    setBusy(true);
+    await changePaymentMethod(paymentId, m);
+    setBusy(false);
+    toast.success(
+      "Способ оплаты изменён",
+      `${amount.toLocaleString("ru-RU")} ₽ — теперь ${m === "cash" ? "наличные" : "безнал"}. Запись в журнале.`,
+    );
+  };
+
+  return (
+    <span className="relative shrink-0">
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => setOpen((v) => !v)}
+        title="Сменить способ оплаты (нал ↔ безнал)"
+        className="rounded-full transition-transform hover:scale-105 disabled:opacity-50"
+      >
+        {badge}
+      </button>
+      {open && (
+        <>
+          <span className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <span className="absolute right-0 top-full z-50 mt-1 flex w-[140px] flex-col overflow-hidden rounded-xl border border-border bg-white py-1 shadow-card-lg">
+            {(
+              [
+                ["cash", "Наличные"],
+                ["transfer", "Безнал"],
+              ] as const
+            ).map(([m, lbl]) => {
+              const active = (m === "cash") === cash;
+              return (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => pick(m)}
+                  className={cn(
+                    "flex items-center gap-2 px-3 py-2 text-left text-[12px] font-semibold transition-colors",
+                    active
+                      ? "bg-blue-50 text-blue-700"
+                      : "text-ink-2 hover:bg-surface-soft",
+                  )}
+                >
+                  {active && <Check size={12} />}
+                  {lbl}
+                </button>
+              );
+            })}
+          </span>
+        </>
+      )}
+    </span>
   );
 }
 
