@@ -13,6 +13,7 @@ import {
   Settings2,
   Zap,
   Fuel,
+  Eye,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -252,6 +253,12 @@ function ModelFormModal({
 
   const pending = createMut.isPending || patchMut.isPending;
   const canSave = name.trim().length >= 1;
+  // Аватарку читаем из кеша: после загрузки превью должно обновиться сразу,
+  // а в props у модалки останется прежний (stale) ключ.
+  const { data: allModels = [] } = useApiScooterModels();
+  const liveAvatarKey = isEdit
+    ? (allModels.find((m) => m.id === initial.id)?.avatarKey ?? initial.avatarKey)
+    : null;
 
   const submit = async () => {
     setErr(null);
@@ -311,7 +318,7 @@ function ModelFormModal({
     // в карточки-toggle, где хинт читается без потери приоритета.
     <div className="fixed inset-0 z-[100] flex items-stretch justify-center overflow-y-auto bg-ink/55 p-0 backdrop-blur-sm sm:items-start sm:p-6">
       <div
-        className="flex min-h-[100dvh] w-full flex-col overflow-hidden rounded-none bg-surface shadow-card-lg sm:mt-16 sm:min-h-0 sm:max-w-[560px] sm:rounded-2xl"
+        className="flex min-h-[100dvh] w-full flex-col overflow-hidden rounded-none bg-surface shadow-card-lg sm:mt-10 sm:min-h-0 sm:max-w-[940px] sm:rounded-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Шапка */}
@@ -336,19 +343,9 @@ function ModelFormModal({
           </button>
         </header>
 
-        {/* Тело */}
-        <div className="flex flex-col gap-5 overflow-y-auto px-6 py-5">
-          {isEdit && <AvatarEditor model={initial} />}
-          {!isEdit && (
-            <div className="flex items-start gap-2.5 rounded-[12px] border border-blue-100 bg-blue-50/60 px-3.5 py-2.5 text-[12px] text-blue-900">
-              <ImageIcon size={14} className="mt-0.5 shrink-0 text-blue-500" />
-              <span>
-                Аватарку загрузите после создания — откройте модель снова
-                кнопкой «Изменить».
-              </span>
-            </div>
-          )}
-
+        {/* Тело: слева поля, справа — живое превью и аватарка. */}
+        <div className="grid gap-6 overflow-y-auto px-6 py-5 lg:grid-cols-[1fr_300px]">
+          <div className="flex min-w-0 flex-col gap-5">
           <Field label="Название модели" required>
             <input
               type="text"
@@ -467,6 +464,42 @@ function ModelFormModal({
               className="w-full resize-none rounded-[10px] border border-border bg-white px-3.5 py-2.5 text-[13px] outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
             />
           </Field>
+          </div>
+
+          {/* ── Правая колонка: как это будет выглядеть ── */}
+          <aside className="flex flex-col gap-4 lg:sticky lg:top-0 lg:self-start">
+            <div>
+              <div className="mb-2 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-2">
+                <Eye size={12} /> Так будет выглядеть
+              </div>
+              <ModelPreviewCard
+                name={name}
+                dayRate={dayRate}
+                shortRate={shortRate}
+                weekRate={weekRate}
+                monthRate={monthRate}
+                quickPick={quickPick}
+                active={active}
+                isElectric={isElectric}
+                avatarKey={isEdit ? liveAvatarKey : null}
+              />
+            </div>
+
+            {isEdit ? (
+              <AvatarEditor model={initial} />
+            ) : (
+              <div className="rounded-[14px] border border-dashed border-border bg-surface-soft/60 p-3.5">
+                <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-2">
+                  <ImageIcon size={12} /> Фото модели
+                </div>
+                <p className="mt-2 text-[12px] leading-relaxed text-muted">
+                  Загрузите сразу после создания — модель откроется снова
+                  кнопкой «Изменить», и фото встанет в карточку.
+                </p>
+                <AvatarHints />
+              </div>
+            )}
+          </aside>
 
           {err && (
             <div className="flex items-start gap-2 rounded-[10px] border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-700">
@@ -604,6 +637,122 @@ function ToggleCard({
   );
 }
 
+/**
+ * Живое превью карточки модели — та же вёрстка, что в каталоге: фото 4:3,
+ * бейджи, название и сетка тарифов. Обновляется по мере заполнения формы,
+ * чтобы было видно результат ещё до сохранения (правка заказчика 24.08).
+ */
+function ModelPreviewCard({
+  name,
+  dayRate,
+  shortRate,
+  weekRate,
+  monthRate,
+  quickPick,
+  active,
+  isElectric,
+  avatarKey,
+}: {
+  name: string;
+  dayRate: number;
+  shortRate: number;
+  weekRate: number;
+  monthRate: number;
+  quickPick: boolean;
+  active: boolean;
+  isElectric: boolean;
+  avatarKey: string | null;
+}) {
+  const src = fileUrl(avatarKey, { variant: "view" });
+  return (
+    <div
+      className={cn(
+        "flex w-full flex-col overflow-hidden rounded-2xl border border-border bg-surface shadow-card-sm",
+        !active && "opacity-70",
+      )}
+    >
+      <div className="relative aspect-[4/3] overflow-hidden rounded-t-2xl bg-white">
+        {src ? (
+          <img
+            src={src}
+            alt={name || "модель"}
+            className="absolute inset-0 h-full w-full object-contain p-2 drop-shadow-[0_12px_18px_rgba(15,23,42,0.18)]"
+            style={{ transform: "translateY(-6%) scale(1.18)" }}
+          />
+        ) : (
+          <div className="flex h-full w-full flex-col items-center justify-center gap-1 text-muted-2">
+            <Tag size={34} strokeWidth={1.5} />
+            <span className="text-[10.5px]">фото не загружено</span>
+          </div>
+        )}
+        <div className="absolute left-2 top-2 flex flex-col items-start gap-1">
+          {quickPick && active && (
+            <div className="inline-flex items-center gap-1 rounded-full bg-amber-400/95 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-950 shadow">
+              <Star size={10} className="fill-amber-950" /> быстрый
+            </div>
+          )}
+          {isElectric ? (
+            <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/95 px-2 py-1 shadow">
+              <Zap size={12} strokeWidth={2.8} className="fill-white text-white" />
+              <span className="text-[10px] font-bold uppercase tracking-wider text-white">
+                электро
+              </span>
+            </div>
+          ) : (
+            <div className="inline-flex items-center gap-1.5 rounded-full bg-white/95 px-2 py-1 shadow">
+              <Fuel size={12} strokeWidth={2.4} className="text-muted" />
+              <span className="text-[10px] font-bold uppercase tracking-wider text-muted">
+                бензин
+              </span>
+            </div>
+          )}
+        </div>
+        {!active && (
+          <div className="absolute right-2 top-2 rounded-full bg-white/95 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-muted shadow">
+            не активна
+          </div>
+        )}
+      </div>
+      <div className="flex flex-col gap-2 p-3.5">
+        <div
+          className={cn(
+            "truncate text-[15px] font-bold",
+            name.trim() ? "text-ink" : "text-muted-2",
+          )}
+        >
+          {name.trim() || "Название модели"}
+        </div>
+        <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] text-muted-2">
+          <span>
+            1–2 дн: <b className="text-ink">{dayRate}₽</b>
+          </span>
+          <span>
+            3–6 дн: <b className="text-ink">{shortRate}₽</b>
+          </span>
+          <span>
+            7–29 дн: <b className="text-ink">{weekRate}₽</b>
+          </span>
+          <span>
+            30+ дн: <b className="text-ink">{monthRate}₽</b>
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Требования к фото — чтобы не гадать, какую картинку готовить. */
+function AvatarHints() {
+  return (
+    <ul className="mt-2.5 flex flex-col gap-1 text-[11.5px] leading-snug text-muted-2">
+      <li>• PNG или WEBP на прозрачном фоне — скутер «парит» в карточке</li>
+      <li>• пропорции 4:3, от 1200×900 — рамка кропа ровно такая же</li>
+      <li>• скутер боком, целиком, по центру, без лишних предметов</li>
+      <li>• после загрузки можно кропнуть — кнопка «Кропнуть»</li>
+    </ul>
+  );
+}
+
 function AvatarEditor({ model }: { model: ApiScooterModel }) {
   const uploadMut = useUploadScooterModelAvatar();
   const deleteMut = useDeleteScooterModelAvatar();
@@ -614,8 +763,8 @@ function AvatarEditor({ model }: { model: ApiScooterModel }) {
   const live = models.find((m) => m.id === model.id) ?? model;
   return (
     <div>
-      <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-2">
-        Аватарка
+      <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-muted-2">
+        <ImageIcon size={12} /> Фото модели
       </div>
       <AvatarUpload
         avatarKey={live.avatarKey}
@@ -632,9 +781,10 @@ function AvatarEditor({ model }: { model: ApiScooterModel }) {
         cropAspect={4 / 3}
         cropTitle={`Кропнуть аватарку «${model.name}»`}
       />
-      <div className="mt-1 text-[11px] text-muted-2">
-        Эта картинка показывается в карточке скутера и в блоке «Скутер» при аренде.
+      <div className="mt-1.5 text-[11px] text-muted-2">
+        Показывается в карточке модели, у скутера и в блоке «Скутер» при аренде.
       </div>
+      <AvatarHints />
     </div>
   );
 }
