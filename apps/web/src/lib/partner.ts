@@ -2,7 +2,6 @@ import { useMemo } from "react";
 import { useApiScooters } from "@/lib/api/scooters";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import { useApiRentals, useApiRentalsArchived } from "@/lib/api/rentals";
-import type { ApiPayment } from "@/lib/api/payments";
 
 /**
  * Пункт 11 — партнёрская техника.
@@ -64,7 +63,7 @@ export function usePartnerInfo(): PartnerInfo {
  * относится к аренде партнёрской техники.
  */
 export function partnerCutOf(
-  p: Pick<ApiPayment, "rentalId" | "amount">,
+  p: { rentalId?: number | null; amount: number },
   shareByRental: Map<number, number>,
 ): number {
   if (p.rentalId == null) return 0;

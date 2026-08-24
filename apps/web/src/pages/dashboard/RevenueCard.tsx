@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
+import { partnerCutOf, usePartnerInfo } from "@/lib/partner";
 import { Card, DeltaPill } from "./KpiCard";
 import { formatRub, type DashboardMetrics } from "./useDashboardMetrics";
 import {
@@ -55,6 +56,11 @@ export function RevenueCard({
     return periodWindow(period);
   }, [period, customRange]);
 
+  // Пункт 11: выручка партнёрской техники — за вычетом доли инвестора.
+  const { shareByRental } = usePartnerInfo();
+  const netOf = (p: { rentalId: number | null; amount: number }) =>
+    p.amount - partnerCutOf(p, shareByRental);
+
   const { total, chart, paymentsCount } = useMemo(() => {
     const today = new Date();
 
@@ -70,7 +76,7 @@ export function RevenueCard({
       const t = new Date(p.paidAt).getTime();
       return t >= win.start.getTime() && t < win.end.getTime();
     });
-    const totalSum = inWindow.reduce((s, p) => s + p.amount, 0);
+    const totalSum = inWindow.reduce((s, p) => s + netOf(p), 0);
 
     // На произвольном диапазоне график не строим (может быть длинным) —
     // показываем сумму + разбивку + список за период.
@@ -83,7 +89,7 @@ export function RevenueCard({
       const d = (p.paidAt ?? "").slice(0, 10);
       if (!d) continue;
       const cur = byDay.get(d) ?? { sum: 0, count: 0 };
-      cur.sum += p.amount;
+      cur.sum += netOf(p);
       cur.count += 1;
       byDay.set(d, cur);
     }
@@ -98,7 +104,7 @@ export function RevenueCard({
         if (!p.paidAt) continue;
         const h = new Date(p.paidAt).getHours();
         const cur = byHour.get(h) ?? { sum: 0, count: 0 };
-        cur.sum += p.amount;
+        cur.sum += netOf(p);
         cur.count += 1;
         byHour.set(h, cur);
       }
@@ -156,7 +162,7 @@ export function RevenueCard({
     }
 
     return { total: totalSum, chart: bars, paymentsCount: inWindow.length };
-  }, [period, payments, win, customRange]);
+  }, [period, payments, win, customRange, shareByRental]);
 
   // Разбивка нал/безнал за окно (учитывает выбранный день). Всегда показывает
   // оба значения — независимо от фильтра (фильтр сужает только список).
@@ -172,11 +178,11 @@ export function RevenueCard({
       if (t < win.start.getTime() || t >= win.end.getTime()) continue;
       if (!customRange && selectedDay && p.paidAt.slice(0, 10) !== selectedDay)
         continue;
-      if (p.method === "cash") cash += p.amount;
-      else cashless += p.amount;
+      if (p.method === "cash") cash += netOf(p);
+      else cashless += netOf(p);
     }
     return { cash, cashless };
-  }, [payments, win, selectedDay, customRange]);
+  }, [payments, win, selectedDay, customRange, shareByRental]);
   const breakdownTotal = breakdown.cash + breakdown.cashless;
   const cashPct =
     breakdownTotal > 0 ? (breakdown.cash / breakdownTotal) * 100 : 0;
