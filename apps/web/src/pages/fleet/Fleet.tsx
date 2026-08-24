@@ -863,12 +863,12 @@ function ParkOverview({
 
   return (
     <section className="overflow-hidden rounded-[22px] border border-border bg-surface px-5 py-4 shadow-card-sm sm:px-6 sm:py-5">
-      {/* ── Шапка: объём парка и загрузка ── */}
-      <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-4">
+        {/* Объём парка */}
         <button
           type="button"
           onClick={() => onTab("all")}
-          className="text-left"
+          className="shrink-0 text-left"
           title="Показать всю технику в обороте"
         >
           <div className="text-[10.5px] font-bold uppercase tracking-[0.14em] text-muted-2">
@@ -877,7 +877,7 @@ function ParkOverview({
           <div className="mt-1 flex items-baseline gap-2.5">
             <span
               className={cn(
-                "font-display text-[42px] font-extrabold leading-none tabular-nums transition-colors",
+                "font-display text-[40px] font-extrabold leading-none tabular-nums transition-colors",
                 tab === "all" ? "text-blue-700" : "text-ink",
               )}
             >
@@ -889,7 +889,56 @@ function ParkOverview({
           </div>
         </button>
 
-        <div className="flex items-end gap-5">
+        {/* Лента состояния: каждая единица техники — свой штрих */}
+        <div className="order-last w-full min-w-[220px] flex-1 basis-full lg:order-none lg:basis-0">
+          <div className="flex h-11 items-stretch gap-[3px] overflow-hidden rounded-[12px] bg-surface-soft/70 p-[3px]">
+            {counters.total === 0 ? (
+              <div className="flex w-full items-center justify-center text-[12px] text-muted-2">
+                В парке пока нет техники
+              </div>
+            ) : perUnit ? (
+              segments.flatMap((seg) =>
+                Array.from({ length: seg.value }, (_, i) => (
+                  <button
+                    key={`${seg.key}-${i}`}
+                    type="button"
+                    onClick={() => onTab(seg.key)}
+                    title={`${seg.label} · ${seg.hint}`}
+                    className={cn(
+                      "min-w-[6px] flex-1 rounded-[6px] transition-[opacity,transform] duration-200 hover:-translate-y-0.5",
+                      seg.bar,
+                      tab !== "all" && tab !== seg.key
+                        ? "opacity-15"
+                        : "opacity-100",
+                    )}
+                  />
+                )),
+              )
+            ) : (
+              segments
+                .filter((seg) => seg.value > 0)
+                .map((seg) => (
+                  <button
+                    key={seg.key}
+                    type="button"
+                    onClick={() => onTab(seg.key)}
+                    title={`${seg.label}: ${seg.value} · ${seg.hint}`}
+                    style={{ flexGrow: seg.value, flexBasis: 0 }}
+                    className={cn(
+                      "rounded-[6px] transition-opacity duration-200",
+                      seg.bar,
+                      tab !== "all" && tab !== seg.key
+                        ? "opacity-15"
+                        : "opacity-100",
+                    )}
+                  />
+                ))
+            )}
+          </div>
+        </div>
+
+        {/* Выбывшие и загрузка */}
+        <div className="flex shrink-0 items-end gap-5">
           {counters.gone > 0 && (
             <button
               type="button"
@@ -903,7 +952,7 @@ function ParkOverview({
               <span className="text-[10.5px] font-bold uppercase tracking-[0.14em] text-muted-2">
                 Проданы
               </span>
-              <span className="mt-0.5 flex items-center gap-1.5 font-display text-[19px] font-extrabold leading-none tabular-nums text-muted">
+              <span className="mt-1 flex items-center gap-1.5 font-display text-[20px] font-extrabold leading-none tabular-nums text-muted">
                 <LogOut size={14} className="text-muted-2" />
                 {counters.gone}
               </span>
@@ -913,66 +962,15 @@ function ParkOverview({
             <div className="text-[10.5px] font-bold uppercase tracking-[0.14em] text-muted-2">
               Загрузка
             </div>
-            <div className="mt-0.5 font-display text-[28px] font-extrabold leading-none tabular-nums text-ink">
+            <div className="mt-1 font-display text-[30px] font-extrabold leading-none tabular-nums text-ink">
               {loadPct}
-              <span className="text-[17px] text-muted-2">%</span>
+              <span className="text-[18px] text-muted-2">%</span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* ── Лента парка: каждая единица техники — штрих ── */}
-      <div
-        className={cn(
-          "mt-4 flex h-10 max-w-full items-stretch justify-start gap-[3px] overflow-hidden rounded-[10px] bg-surface-soft/70 p-[3px]",
-          perUnit ? "w-fit" : "w-full",
-        )}
-      >
-        {counters.total === 0 ? (
-          <div className="flex w-full items-center justify-center text-[12px] text-muted-2">
-            В парке пока нет техники
-          </div>
-        ) : perUnit ? (
-          segments.flatMap((seg) =>
-            Array.from({ length: seg.value }, (_, i) => (
-              <button
-                key={`${seg.key}-${i}`}
-                type="button"
-                onClick={() => onTab(seg.key)}
-                title={`${seg.label} · ${seg.hint}`}
-                className={cn(
-                  "min-w-[6px] max-w-[34px] flex-1 rounded-[4px] transition-[opacity,transform] duration-200 hover:-translate-y-0.5",
-                  seg.bar,
-                  tab !== "all" && tab !== seg.key
-                    ? "opacity-20"
-                    : "opacity-100",
-                )}
-              />
-            )),
-          )
-        ) : (
-          segments
-            .filter((seg) => seg.value > 0)
-            .map((seg) => (
-              <button
-                key={seg.key}
-                type="button"
-                onClick={() => onTab(seg.key)}
-                title={`${seg.label}: ${seg.value} · ${seg.hint}`}
-                style={{ flexGrow: seg.value, flexBasis: 0 }}
-                className={cn(
-                  "rounded-[5px] transition-opacity duration-200",
-                  seg.bar,
-                  tab !== "all" && tab !== seg.key
-                    ? "opacity-20"
-                    : "opacity-100",
-                )}
-              />
-            ))
-        )}
-      </div>
-
-      {/* ── Легенда = фильтры ── */}
+      {/* Легенда = фильтры */}
       <div className="mt-3.5 flex flex-wrap items-center gap-x-1.5 gap-y-1">
         <ParkLegendChip
           label="Все"
