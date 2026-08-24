@@ -789,7 +789,7 @@ function ParkOverview({
       {/* ── Главная карта: сколько техники и как она работает ── */}
       <div
         className={cn(
-          "relative overflow-hidden rounded-[20px] border bg-surface p-5 shadow-card-sm transition-colors",
+          "relative flex flex-col overflow-hidden rounded-[20px] border bg-surface p-5 shadow-card-sm transition-colors",
           tab === "all" ? "border-blue-600/40 ring-2 ring-blue-600/15" : "border-border",
         )}
       >
@@ -840,7 +840,7 @@ function ParkOverview({
         </div>
 
         {/* Две операционные метрики — то, чем живёт день */}
-        <div className="mt-4 grid grid-cols-2 gap-2.5">
+        <div className="mt-4 grid flex-1 grid-cols-2 gap-2.5">
           <ParkMetric
             label="В аренде"
             hint="у клиентов сейчас"
@@ -958,7 +958,7 @@ function ParkMetric({
       type="button"
       onClick={onClick}
       className={cn(
-        "flex items-center gap-3 rounded-[14px] border px-3.5 py-3 text-left transition-colors",
+        "flex h-full items-center gap-3 rounded-[14px] border px-3.5 py-3 text-left transition-colors",
         active
           ? tone === "blue"
             ? "border-blue-600/50 bg-blue-50"
