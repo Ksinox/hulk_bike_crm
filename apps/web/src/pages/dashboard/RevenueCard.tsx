@@ -62,6 +62,7 @@ export function RevenueCard({
     // (method=deposit — внутренний, нал+безнал = total).
     const inWindow = payments.filter((p) => {
       if (!p.paid || !p.paidAt) return false;
+      if (p.excludedFromRevenue) return false; // пункт 2: аренда удалена
       if (p.type === "deposit" || p.type === "refund") return false;
       // deposit_forfeit (удержанный в ущерб залог) — доход, остальные
       // method='deposit' — внутренние, в выручку не идут.
@@ -164,6 +165,7 @@ export function RevenueCard({
     let cashless = 0;
     for (const p of payments) {
       if (!p.paid || !p.paidAt) continue;
+      if (p.excludedFromRevenue) continue; // пункт 2: аренда удалена
       if (p.type === "deposit" || p.type === "refund") continue;
       if (p.method === "deposit" && p.type !== "deposit_forfeit") continue;
       const t = new Date(p.paidAt).getTime();

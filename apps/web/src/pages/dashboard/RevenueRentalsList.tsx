@@ -86,6 +86,9 @@ export function isCashPayment(p: { method: string }): boolean {
 
 /** Считать ли платёж выручкой нал/безнал (не залог/возврат, не из депозита). */
 export function isRevenuePayment(p: ApiPayment): boolean {
+  // Пункт 2: оплаты удалённых аренд исключены из выручки (бэк ставит флаг
+  // при ручном удалении и снимает при восстановлении из архива).
+  if (p.excludedFromRevenue) return false;
   if (!p.paid || !p.paidAt) return false;
   if (p.type === "deposit" || p.type === "refund") return false;
   // method='deposit' — оплата из депозита клиента: не нал и не безнал

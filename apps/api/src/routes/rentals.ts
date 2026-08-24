@@ -981,11 +981,47 @@ export async function rentalsRoutes(app: FastifyInstance) {
       }
     }
 
+    // Пункт 2: оплаты удалённой аренды исключаем из выручки (флагом, не
+    // удалением — история платежей сохраняется и видна в карточке).
+    // Сумму «сколько ушло из выручки» считаем по тем же правилам, что и
+    // выручка: paid, не залог/возврат, не оплата из депозита (кроме
+    // deposit_forfeit — удержанный залог был доходом).
+    const rentPays = await db
+      .select()
+      .from(payments)
+      .where(eq(payments.rentalId, id));
+    const excludedRevenue = rentPays
+      .filter(
+        (p) =>
+          p.paid &&
+          !p.excludedFromRevenue &&
+          p.type !== "deposit" &&
+          p.type !== "refund" &&
+          !(p.method === "deposit" && p.type !== "deposit_forfeit"),
+      )
+      .reduce((s, p) => s + p.amount, 0);
+    await db
+      .update(payments)
+      .set({ excludedFromRevenue: true })
+      .where(eq(payments.rentalId, id));
+
     await logActivity(req, {
       entity: "rental",
       entityId: id,
       action: "archived",
-      summary: `Аренда #${String(id).padStart(4, "0")} перемещена в архив${archiveReason ? ` · ${archiveReason}` : ""}`,
+      summary: `Аренда #${String(id).padStart(4, "0")} удалена в архив${archiveReason ? ` · ${archiveReason}` : ""}${excludedRevenue > 0 ? ` · из выручки исключено ${excludedRevenue} ₽` : ""} · подтверждено ключом директора`,
+      meta: { directorApproved: true, excludedRevenue, reason: archiveReason },
+      diff:
+        excludedRevenue > 0
+          ? {
+              revenue: {
+                label: "В выручке от аренды",
+                from: excludedRevenue,
+                to: 0,
+                kind: "money",
+              },
+            }
+          : undefined,
     });
     return reply.code(204).send();
   });
@@ -1266,11 +1302,33 @@ export async function rentalsRoutes(app: FastifyInstance) {
           .code(404)
           .send({ error: "not found or not archived" });
 
+      // Пункт 2: восстановление возвращает оплаты аренды в выручку.
+      const backPays = await db
+        .update(payments)
+        .set({ excludedFromRevenue: false })
+        .where(
+          and(
+            eq(payments.rentalId, id),
+            eq(payments.excludedFromRevenue, true),
+          ),
+        )
+        .returning();
+      const returnedRevenue = backPays
+        .filter(
+          (p) =>
+            p.paid &&
+            p.type !== "deposit" &&
+            p.type !== "refund" &&
+            !(p.method === "deposit" && p.type !== "deposit_forfeit"),
+        )
+        .reduce((s, p) => s + p.amount, 0);
+
       await logActivity(req, {
         entity: "rental",
         entityId: id,
         action: "unarchived",
-        summary: `Аренда #${String(id).padStart(4, "0")} восстановлена из архива`,
+        summary: `Аренда #${String(id).padStart(4, "0")} восстановлена из архива${returnedRevenue > 0 ? ` · оплаты возвращены в выручку (${returnedRevenue} ₽)` : ""}`,
+        meta: { returnedRevenue },
       });
       return row;
     },

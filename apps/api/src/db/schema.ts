@@ -580,6 +580,15 @@ export const payments = pgTable(
      * = снять флаг «оплачено».
      */
     rollbackSnapshot: jsonb("rollback_snapshot"),
+    /**
+     * Пункт 2: платёж исключён из выручки. Ставится при ручном удалении
+     * аренды (её оплаты не должны оставаться в выручке), снимается при
+     * восстановлении из архива. Сам платёж НЕ удаляем — финансовая
+     * история неприкосновенна, карточка аренды его по-прежнему покажет.
+     */
+    excludedFromRevenue: boolean("excluded_from_revenue")
+      .notNull()
+      .default(false),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

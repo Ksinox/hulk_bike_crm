@@ -306,6 +306,8 @@ const JOURNAL_CATEGORIES: { key: string; label: string }[] = [
   { key: "damage", label: "Ущерб и долги" },
   { key: "complete", label: "Завершение" },
   { key: "rollback", label: "Откаты" },
+  // Пункт 2: действия, прошедшие через ключ директора.
+  { key: "approved", label: "Ключ директора" },
 ];
 
 /** Роли-исполнители для фильтра «кто сделал». Ключи = activity_log.user_role. */

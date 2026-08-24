@@ -53,6 +53,14 @@ function categoryCondition(cat: string): SQL | undefined {
       return or(ilike(A, "%complet%"), ilike(A, "%status%"));
     case "rollback":
       return or(ilike(A, "%rolled_back%"), eq(A, "revert_completion"));
+    case "approved":
+      // Пункт 2: фильтр «подтверждено ключом директора» — сами события
+      // очереди подтверждений + действия, выполненные с подтверждением
+      // (meta.directorApproved = true).
+      return or(
+        eq(E, "approval"),
+        sql`(${activityLog.meta} ->> 'directorApproved')::boolean IS TRUE`,
+      );
     default:
       return undefined;
   }
