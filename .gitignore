@@ -87,3 +87,6 @@ scripts/_xlsx_*.txt
 scripts/_scooter_diff.*
 scripts/_crm_scooters.txt
 scripts/shots/out/
+
+# локальный адрес API для съёмки кадров «было» (vite-прокси)
+apps/web/.shot-proxy

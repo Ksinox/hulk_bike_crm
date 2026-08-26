@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { scooterModelName } from "@/components/ScooterName";
 import { Bike, Image as ImageIcon, X, Plus, Minus, Search, ChevronDown, ChevronLeft, Pencil, CheckCircle2, Camera } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ReturnReasonPicker } from "@/components/ReturnReasonPicker";
@@ -414,8 +415,8 @@ export function ReturnIntakeSection({ intake }: { intake: ReturnIntake }) {
         </div>
         {/* Скутер — основная позиция, во всю ширину */}
         <ReturnItemCard
-          title={rental.scooter}
-          subtitle={scooterModel?.name ?? rental.scooter}
+          title={scooterModelName(rental.scooter)}
+          subtitle={scooterModel?.name ?? scooterModelName(rental.scooter)}
           imageUrl={scooterAvatar}
           fallbackIcon="scooter"
           state={scooterState}
@@ -660,7 +661,7 @@ export function ReturnDamagePicker({ intake }: { intake: ReturnIntake }) {
       scooterModelId={t.kind === "scooter" ? (scooter?.modelId ?? null) : null}
       title={
         t.kind === "scooter"
-          ? `Повреждения · ${rental.scooter}`
+          ? `Повреждения · ${scooterModelName(rental.scooter)}`
           : `Ущерб · ${t.name}`
       }
       subtitle={

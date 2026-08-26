@@ -21,6 +21,7 @@
  *  6. Излишек → депозит клиента
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { scooterModelName } from "@/components/ScooterName";
 import { createPortal } from "react-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -3302,7 +3303,7 @@ export function PaymentAcceptDialog({
             {(rental as { clientName?: string }).clientName
               ? `${(rental as { clientName?: string }).clientName} · `
               : ""}
-            {rental.scooter}
+            {scooterModelName(rental.scooter)}
           </div>
         </div>
         <button
@@ -3803,7 +3804,7 @@ export function PaymentAcceptDialog({
                 Завершение · #{String(rental.id).padStart(4, "0")}
               </div>
               <div className="truncate text-[11px] text-muted-2">
-                {rental.scooter}
+                {scooterModelName(rental.scooter)}
               </div>
             </div>
             <div className="text-[11px] font-semibold text-muted-2">
@@ -4359,7 +4360,7 @@ export function PaymentAcceptDialog({
               <div className="truncate text-[15px] font-semibold text-ink">
                 Принять платёж · #{String(rental.id).padStart(4, "0")}
               </div>
-              <div className="truncate text-[11px] text-muted-2">{rental.scooter}</div>
+              <div className="truncate text-[11px] text-muted-2">{scooterModelName(rental.scooter)}</div>
             </div>
             <div className="text-[11px] font-semibold text-muted-2">
               {payStep + 1}/{stepCount}

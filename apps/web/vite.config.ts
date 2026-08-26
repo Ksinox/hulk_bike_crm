@@ -46,6 +46,24 @@ function emitVersionJson(): Plugin {
   };
 }
 
+/**
+ * Съёмка кадров «БЫЛО» для лендинга «Развитие»: локальный фронт старой
+ * ревизии + данные preview. Адрес API кладётся в apps/web/.shot-proxy
+ * (файл в .gitignore) — тогда dev-сервер проксирует /api туда, запросы
+ * остаются same-origin, и CORS/third-party-куки не мешают.
+ */
+function shotProxyTarget(): string | null {
+  if (process.env.SHOT_PROXY_API) return process.env.SHOT_PROXY_API;
+  try {
+    const v = fs
+      .readFileSync(path.resolve(__dirname, ".shot-proxy"), "utf8")
+      .trim();
+    return v || null;
+  } catch {
+    return null;
+  }
+}
+
 export default defineConfig({
   plugins: [react(), emitVersionJson()],
   base: "./",
@@ -57,6 +75,17 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
+    ...(shotProxyTarget()
+      ? {
+          proxy: {
+            "/api": {
+              target: shotProxyTarget()!,
+              changeOrigin: true,
+              secure: false,
+            },
+          },
+        }
+      : {}),
   },
   build: {
     outDir: "dist",
