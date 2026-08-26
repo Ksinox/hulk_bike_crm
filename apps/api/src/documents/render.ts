@@ -1264,10 +1264,13 @@ function ebikeText(html: string): string {
 
 /** Заменяет ТЕКСТ пункта договора по его номеру, сохраняя нумерацию. */
 function replaceClause(html: string, num: string, text: string): string {
+  // num приходит как «2.3.18.» — точки экранируем, чтобы они не были
+  // «любым символом», иначе шаблон совпадёт не с тем пунктом.
+  const escaped = num.split(".").join("\\.");
   const re = new RegExp(
-    `(<p class="cl2?"><b>${num.replace(/\./g, "\.")}</b>)[\s\S]*?(</p>)`,
+    "(<p class=\"cl2?\"><b>" + escaped + "</b>)[^]*?(</p>)",
   );
-  return html.replace(re, `$1${text}$2`);
+  return html.replace(re, "$1" + text + "$2");
 }
 
 function tplContractEbike(b: Bundle): string {
