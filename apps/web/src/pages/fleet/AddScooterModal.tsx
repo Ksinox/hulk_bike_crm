@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, X } from "lucide-react";
+import {
+  Check,
+  HandCoins,
+  HelpCircle,
+  Key,
+  Tag,
+  X,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ScooterModel } from "@/lib/mock/rentals";
 import type { ScooterBaseStatus } from "@/lib/mock/fleet";
@@ -35,6 +42,62 @@ function suggestNextNumberByPrefix(
   while (used.has(n)) n++;
   return n;
 }
+
+/** Правки 2.0, п.10: подразделения при добавлении техники. */
+const MODE_CARDS: {
+  id: "rental" | "sale" | "buyout" | "unassigned";
+  label: string;
+  hint: string;
+  icon: typeof Key;
+  defaultStatus: ScooterBaseStatus;
+}[] = [
+  {
+    id: "rental",
+    label: "В аренду",
+    hint: "будет сдаваться клиентам",
+    icon: Key,
+    defaultStatus: "rental_pool",
+  },
+  {
+    id: "sale",
+    label: "На продажу",
+    hint: "выставляем на витрину",
+    icon: Tag,
+    defaultStatus: "for_sale",
+  },
+  {
+    id: "buyout",
+    label: "В выкуп",
+    hint: "клиент выкупает по графику",
+    icon: HandCoins,
+    defaultStatus: "buyout",
+  },
+  {
+    id: "unassigned",
+    label: "Пока не решили",
+    hint: "определимся позже",
+    icon: HelpCircle,
+    defaultStatus: "ready",
+  },
+];
+
+/** Статус → подразделение (для подсветки выбранной карточки). */
+const MODE_OF_STATUS: Record<string, "rental" | "sale" | "buyout" | "unassigned"> =
+  {
+    rental_pool: "rental",
+    repair: "rental",
+    dtp: "rental",
+    disassembly: "rental",
+    for_sale: "sale",
+    sold: "sale",
+    buyout: "buyout",
+    ready: "unassigned",
+  };
+
+/** Состояния внутри арендного подразделения. */
+const RENTAL_STATES = SCOOTER_BASE_STATUS_OPTIONS.filter((o) =>
+  ["rental_pool", "repair", "dtp", "disassembly"].includes(o.value),
+);
 
 export function AddScooterModal({ onClose }: { onClose: () => void }) {
   const role = useRole();
@@ -380,26 +443,77 @@ export function AddScooterModal({ onClose }: { onClose: () => void }) {
               />
             </Field>
 
-            <Field label="Стартовый статус">
-              <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
-                {SCOOTER_BASE_STATUS_OPTIONS.map((o) => (
-                  <button
-                    key={o.value}
-                    type="button"
-                    onClick={() => setStatus(o.value)}
-                    className={cn(
-                      "rounded-[10px] border px-3 py-2 text-[12px] font-semibold transition-colors",
-                      status === o.value
-                        ? "border-blue-600 bg-blue-50 text-blue-700"
-                        : "border-border bg-surface text-ink-2 hover:border-blue-600/50",
-                    )}
-                    title={o.hint}
-                  >
-                    {o.label}
-                  </button>
-                ))}
+            {/* Правки 2.0, п.10: сначала подразделение («куда эта
+                техника»), потом — уточнение состояния внутри аренды. */}
+            <Field label="Куда добавляем">
+              <div className="grid grid-cols-2 gap-1.5">
+                {MODE_CARDS.map((m) => {
+                  const Icon = m.icon;
+                  const active = MODE_OF_STATUS[status] === m.id;
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => setStatus(m.defaultStatus)}
+                      className={cn(
+                        "flex items-start gap-2.5 rounded-[12px] border px-3 py-2.5 text-left transition-colors",
+                        active
+                          ? "border-blue-600 bg-blue-50"
+                          : "border-border bg-surface hover:border-blue-600/50",
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full",
+                          active
+                            ? "bg-blue-600 text-white"
+                            : "bg-surface-soft text-muted",
+                        )}
+                      >
+                        <Icon size={14} />
+                      </span>
+                      <span className="min-w-0">
+                        <span
+                          className={cn(
+                            "block text-[12.5px] font-bold",
+                            active ? "text-blue-700" : "text-ink",
+                          )}
+                        >
+                          {m.label}
+                        </span>
+                        <span className="block text-[10.5px] leading-snug text-muted-2">
+                          {m.hint}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             </Field>
+
+            {/* Внутри аренды — состояние единицы. */}
+            {MODE_OF_STATUS[status] === "rental" && (
+              <Field label="Состояние">
+                <div className="flex flex-wrap gap-1.5">
+                  {RENTAL_STATES.map((o) => (
+                    <button
+                      key={o.value}
+                      type="button"
+                      onClick={() => setStatus(o.value)}
+                      className={cn(
+                        "rounded-full border px-3 py-1.5 text-[12px] font-semibold transition-colors",
+                        status === o.value
+                          ? "border-blue-600 bg-blue-50 text-blue-700"
+                          : "border-border bg-surface text-ink-2 hover:border-blue-600/50",
+                      )}
+                      title={o.hint}
+                    >
+                      {o.label}
+                    </button>
+                  ))}
+                </div>
+              </Field>
+            )}
 
             {/* Пункт 11: чья техника. Партнёрская попадает в раздел
                 «Партнёрка» и считается с процентом инвестора. */}

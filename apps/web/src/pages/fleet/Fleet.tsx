@@ -107,7 +107,42 @@ type RentalInfo = {
   isLate: boolean;
 };
 
-export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
+/**
+ * Правки 2.0, п.10: к какому подразделению относится статус техники.
+ * Изоляция: в режиме аренды не видно продажу и наоборот.
+ */
+export type FleetMode = "rental" | "sale" | "buyout" | "unassigned";
+
+const MODE_OF: Record<ScooterDisplayStatus, FleetMode> = {
+  rented: "rental",
+  rental_pool: "rental",
+  repair: "rental",
+  dtp: "rental",
+  disassembly: "rental",
+  for_sale: "sale",
+  sold: "sale",
+  buyout: "buyout",
+  ready: "unassigned",
+};
+
+const MODE_TITLE: Record<FleetMode, string> = {
+  rental: "Парк аренды",
+  sale: "На продажу",
+  buyout: "В выкупе",
+  unassigned: "Не распределены",
+};
+
+const MODE_HINT: Record<FleetMode, string> = {
+  rental: "техника, которая сдаётся клиентам",
+  sale: "витрина и проданные единицы",
+  buyout: "у клиентов по договору выкупа — пока платят, техника наша",
+  unassigned: "заведены, но подразделение ещё не выбрано",
+};
+
+export function Fleet({
+  embedded = false,
+  mode = "rental",
+}: { embedded?: boolean; mode?: FleetMode } = {}) {
   const rentals = useRentals();
   const FLEET = useFleetScooters();
   const { data: apiClients } = useApiClients();
@@ -190,6 +225,12 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
     });
   }, [FLEET, rentalByScooter]);
 
+  // Изоляция режимов (п.10): работаем только с техникой этого подразделения.
+  const modeRows = useMemo(
+    () => rows.filter((r) => MODE_OF[r.status] === mode),
+    [rows, mode],
+  );
+
   const counters = useMemo(() => {
     const c = {
       ready: 0,
@@ -205,7 +246,7 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
       gone: 0,
       total: 0,
     };
-    for (const r of rows) {
+    for (const r of modeRows) {
       if (isGone(r.status)) {
         c.gone++;
         continue; // в «Всего скутеров» выбывшие не входят
@@ -221,7 +262,7 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
       else if (r.status === "buyout") c.buyout++;
     }
     return c;
-  }, [rows]);
+  }, [modeRows]);
 
   // Для каждого выбранного modelId вычисляем legacy enum (jog/gear/honda/tank)
   // — нужно для фильтрации старых скутеров, у которых modelId ещё не проставлен.
@@ -241,7 +282,7 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
 
   const filtered = useMemo(() => {
     const q = normalizeQuery(query);
-    return rows
+    return modeRows
       .filter((r) => {
         // Выбывшая техника (продан/выкуп) в общем списке не показывается —
         // её физически нет в парке. Смотреть — на вкладке «Выбыли».
@@ -299,6 +340,7 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
     query,
     sortBy,
     sortDir,
+    modeRows,
   ]);
 
   // ============ ДЕТАЛЬНАЯ КАРТОЧКА ============
@@ -340,7 +382,12 @@ export function Fleet({ embedded = false }: { embedded?: boolean } = {}) {
       )}
 
       {/* =========== Обзор парка =========== */}
-      <ParkOverview counters={counters} tab={tab} onTab={setTab} />
+      <ParkOverview
+        counters={counters}
+        tab={tab}
+        onTab={setTab}
+        mode={mode}
+      />
 
       {/* =========== Поиск + фильтр моделей + добавить =========== */}
       <div className="flex flex-wrap items-center gap-3">
@@ -771,7 +818,10 @@ function ParkOverview({
   counters,
   tab,
   onTab,
+  mode,
 }: {
+  /** Правки 2.0, п.10: режим подразделения — от него зависит содержимое. */
+  mode: FleetMode;
   counters: {
     ready: number;
     rental_pool: number;
@@ -811,14 +861,14 @@ function ParkOverview({
             title="Показать всю технику в обороте"
           >
             <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
-              Парк в обороте
+              {MODE_TITLE[mode]}
             </div>
             <div className="mt-1.5 flex items-baseline gap-2">
               <span className="font-display text-[46px] font-extrabold leading-none text-ink tabular-nums">
                 {counters.total}
               </span>
               <span className="text-[13px] text-muted">
-                {counters.total === 1 ? "единица" : "единиц"} техники
+                {counters.total === 1 ? "единица" : "единиц"} · {MODE_HINT[mode]}
               </span>
             </div>
           </button>
@@ -827,8 +877,10 @@ function ParkOverview({
           </div>
         </div>
 
-        {/* Полоса загрузки: синее — занято клиентами, зелёное — свободно */}
-        <div className="mt-5">
+        {/* Полоса загрузки: синее — занято клиентами, зелёное — свободно.
+            Правки 2.0, п.10: только в режиме аренды — в продаже и выкупе
+            «загрузка» смысла не имеет. */}
+        <div className={cn("mt-5", mode !== "rental" && "hidden")}>
           <div className="flex items-baseline justify-between text-[12px]">
             <span className="font-bold text-ink">Загрузка {loadPct}%</span>
             <span className="text-muted-2">
@@ -850,7 +902,12 @@ function ParkOverview({
         </div>
 
         {/* Две операционные метрики — то, чем живёт день */}
-        <div className="mt-4 grid flex-1 grid-cols-2 gap-2.5">
+        <div
+          className={cn(
+            "mt-4 grid flex-1 grid-cols-2 gap-2.5",
+            mode !== "rental" && "hidden",
+          )}
+        >
           <ParkMetric
             label="В аренде"
             hint="у клиентов сейчас"
