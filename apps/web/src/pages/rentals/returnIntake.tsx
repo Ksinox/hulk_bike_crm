@@ -197,8 +197,12 @@ export function useReturnIntake(rental: Rental, enabled: boolean) {
 
   // Кнопка «Завершить» заблокирована, пока по каждой позиции не выбрано
   // состояние и все проблемы не заполнены.
+  // Правка 2.3 (26.08): пробег при возврате обязателен — без него
+  // не бьётся статистика износа и интервалы замены масла.
+  const mileageMissing = !mileageAtReturn.trim();
   const blocked =
     !allDecided ||
+    mileageMissing ||
     (cardStates[scooterCard] === "problem" && !linesFilled(scooterDamages)) ||
     !allEquipmentProblemsFilled;
 
@@ -306,6 +310,7 @@ export function useReturnIntake(rental: Rental, enabled: boolean) {
     equipmentDamageTotal,
     hasDamage,
     blocked,
+    mileageMissing,
     damageLines,
     // helpers
     dateActualForApi,
@@ -498,13 +503,21 @@ export function ReturnIntakeSection({ intake }: { intake: ReturnIntake }) {
         <div>
           <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-2">
             Пробег, км{" "}
-            {currentMileage != null ? (
+            {currentMileage != null && (
               <span className="normal-case text-muted-2/70">
                 · было {currentMileage.toLocaleString("ru-RU")}
               </span>
-            ) : (
-              <span className="normal-case text-muted-2/70">опц.</span>
-            )}
+            )}{" "}
+            <span
+              className={cn(
+                "normal-case",
+                mileageAtReturn.trim()
+                  ? "text-muted-2/70"
+                  : "font-bold text-red-ink",
+              )}
+            >
+              обязательно
+            </span>
           </label>
           <input
             type="number"
@@ -516,7 +529,12 @@ export function ReturnIntakeSection({ intake }: { intake: ReturnIntake }) {
                 ? `${currentMileage.toLocaleString("ru-RU")}`
                 : "—"
             }
-            className="mt-1 h-9 w-full rounded-[10px] border border-border bg-surface px-3 text-[13px] tabular-nums outline-none focus:border-blue-600"
+            className={cn(
+              "mt-1 h-9 w-full rounded-[10px] border bg-surface px-3 text-[13px] tabular-nums outline-none focus:border-blue-600",
+              mileageAtReturn.trim()
+                ? "border-border"
+                : "border-red-ink/40 bg-red-soft/30",
+            )}
           />
           {currentMileage != null &&
             mileageAtReturn &&
@@ -528,7 +546,7 @@ export function ReturnIntakeSection({ intake }: { intake: ReturnIntake }) {
             ) : Number(mileageAtReturn) > 0 &&
               Number(mileageAtReturn) < currentMileage ? (
               <div className="mt-1 text-[10.5px] text-orange-ink">
-                ⚠ меньше текущего — изменение игнорируется
+                меньше текущего — изменение игнорируется
               </div>
             ) : null)}
         </div>

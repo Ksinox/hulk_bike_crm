@@ -393,6 +393,31 @@ export async function scootersRoutes(app: FastifyInstance) {
     const [before] = await db.select().from(scooters).where(eq(scooters.id, id));
     if (!before) return reply.code(404).send({ error: "not found" });
 
+    // Правка 2.2 (26.08): смена номера РАМЫ (VIN) или ДВИГАТЕЛЯ у уже
+    // существующего скутера — только с ключом директора. Идентификаторы
+    // техники завязаны на договоры и акты; тихая правка = риск подмены.
+    // Первичное ЗАПОЛНЕНИЕ пустого поля ключом не защищаем — это
+    // до-внесение данных, а не изменение.
+    {
+      const identityChanged = (
+        [
+          [before.vin, parsed.data.vin],
+          [before.frameNumber, parsed.data.frameNumber],
+          [before.engineNo, parsed.data.engineNo],
+        ] as const
+      ).some(
+        ([oldV, newV]) =>
+          newV !== undefined &&
+          (oldV ?? "").trim() !== "" &&
+          (newV ?? "").trim() !== (oldV ?? "").trim(),
+      );
+      if (
+        identityChanged &&
+        !(await requireDirectorApproval(app, req, reply, "scooter_identity_change"))
+      )
+        return;
+    }
+
     // Запрет дубля VIN при редактировании: если меняем VIN на уже занятый
     // другим НЕархивным скутером — отклоняем (пустой VIN не проверяем).
     if (parsed.data.vin !== undefined) {

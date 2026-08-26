@@ -4,7 +4,8 @@ import { cn } from "@/lib/utils";
 import type { FleetScooter } from "@/lib/mock/fleet";
 import type { ScooterModel } from "@/lib/mock/rentals";
 import { patchScooter } from "./fleetStore";
-import { ScooterName } from "@/components/ScooterName";
+import { setNextApprovalContext } from "@/lib/directorGate";
+import { ScooterName, scooterModelName } from "@/components/ScooterName";
 import { useRole } from "@/lib/role";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import {
@@ -144,6 +145,32 @@ export function ScooterEditForm({
     // директору»: это договорная величина, не закупочная себестоимость.
     const mv = Number(marketValue);
     patch.marketValue = Number.isFinite(mv) && mv > 0 ? mv : undefined;
+    // Правка 2.2: смена рамы/двигателя защищена ключом директора (бэк
+    // ответит 428) — заранее кладём в окно подтверждения, что именно
+    // меняется, чтобы директор видел старое и новое значение.
+    const identityDetails: string[] = [];
+    if (
+      (scooter.frameNumber ?? "").trim() &&
+      frameNumber.trim() !== (scooter.frameNumber ?? "").trim()
+    ) {
+      identityDetails.push(
+        `Рама/VIN: ${scooter.frameNumber} → ${frameNumber.trim() || "—"}`,
+      );
+    }
+    if (
+      (scooter.engineNo ?? "").trim() &&
+      engineNo.trim() !== (scooter.engineNo ?? "").trim()
+    ) {
+      identityDetails.push(
+        `Двигатель: ${scooter.engineNo} → ${engineNo.trim() || "—"}`,
+      );
+    }
+    if (identityDetails.length > 0) {
+      setNextApprovalContext({
+        summary: `Смена идентификаторов техники ${scooterModelName(scooter.name)}`,
+        details: identityDetails,
+      });
+    }
     patchScooter(scooter.id, patch);
     requestClose();
   };

@@ -4,6 +4,10 @@
  * никаких моков. Пустые состояния (0 скутеров, 0 аренд) — норма.
  */
 import { useMemo } from "react";
+import {
+  equipmentDailyOf,
+  expectedExtensionSum,
+} from "@/lib/expectedExtension";
 import { useApiClients } from "@/lib/api/clients";
 import { useApiRentals } from "@/lib/api/rentals";
 import { useApiScooters } from "@/lib/api/scooters";
@@ -230,8 +234,18 @@ export function useDashboardMetrics(): DashboardMetrics {
         r.endPlannedAt.slice(0, 10) === todayKey &&
         !r.endActualAt,
     );
+    // Правка 2.1 (26.08): не история оплат (r.sum копит все продления),
+    // а ВЕРОЯТНОЕ ПРОДЛЕНИЕ: тариф клиента × его текущий период.
+    const expectedFor = (r: ApiRental): number =>
+      expectedExtensionSum({
+        rate: r.rate,
+        rateUnit: r.rateUnit,
+        tariffPeriod: r.tariffPeriod,
+        days: r.days,
+        equipmentDaily: equipmentDailyOf(r.equipmentJson),
+      });
     const todayIncoming = returnsTodayRentals.reduce(
-      (s, r) => s + (r.sum ?? 0),
+      (s, r) => s + expectedFor(r),
       0,
     );
     const todayIncomingCount = returnsTodayRentals.length;
@@ -243,7 +257,7 @@ export function useDashboardMetrics(): DashboardMetrics {
       (r) => r.endPlannedAt.slice(0, 10) === yesterdayKey,
     );
     const yesterdayIncoming = yesterdayRentals.reduce(
-      (s, r) => s + (r.sum ?? 0),
+      (s, r) => s + expectedFor(r),
       0,
     );
     const todayIncomingDelta =
@@ -410,7 +424,8 @@ export function useDashboardMetrics(): DashboardMetrics {
           clientPhone: cl?.phone ?? "",
           clientPhone2: cl?.extraPhone ?? "",
           endPlannedAt: r.endPlannedAt,
-          sum: r.sum,
+          // Правка 2.1: в списке возвратов — тоже ожидаемое продление.
+          sum: expectedFor(r),
         };
       })
       .sort((a, b) => a.endPlannedAt.localeCompare(b.endPlannedAt));
