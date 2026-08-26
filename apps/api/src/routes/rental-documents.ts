@@ -297,6 +297,8 @@ function docFilename(type: DocumentType, rentalId: number): string {
     contract: `Договор_проката_№${rentalId}`,
     contract_full: `Договор_проката_и_акт_№${rentalId}`,
     contract_full_intl: `Договор_проката_и_акт_иностранец_№${rentalId}`,
+    contract_ebike: `Договор_проката_электровелосипеда_№${rentalId}`,
+    contract_full_ebike: `Договор_и_акт_электровелосипед_№${rentalId}`,
     act_transfer: `Акт_приёма-передачи_№${rentalId}`,
     act_return: `Акт_возврата_№${rentalId}`,
     act_swap: `Акт_замены_скутера_№${rentalId}`,

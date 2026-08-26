@@ -69,6 +69,19 @@ export async function run(page, ctx) {
     };
   });
   console.log("форма добавления:", JSON.stringify(form));
+  // Прокручиваем тело модалки к блоку выбора режима
+  await page.evaluate(() => {
+    const box = [...document.querySelectorAll("div")].find(
+      (d) => d.scrollHeight > d.clientHeight + 40 && d.clientHeight > 260,
+    );
+    const target = [...document.querySelectorAll("label")].find((l) =>
+      /куда добавляем/i.test(l.textContent || ""),
+    );
+    if (box && target) {
+      box.scrollTop = Math.max(0, target.offsetTop - 120);
+    }
+  });
+  await ctx.sleep(800);
   await ctx.shot("v2-10-add-modes", { jpeg: true });
   const clip = await clipOf(
     page,

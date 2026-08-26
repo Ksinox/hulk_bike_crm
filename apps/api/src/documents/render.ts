@@ -21,6 +21,8 @@ export type DocumentType =
   | "contract" // Договор проката скутера (только сам договор)
   | "contract_full" // Договор + акт приёма-передачи на одной странице (для гр. РФ)
   | "contract_full_intl" // Договор + акт для иностранного гражданина
+  | "contract_ebike" // Правки 2.0, п.11: договор аренды электровелосипеда
+  | "contract_full_ebike" // Электровелосипед: договор + акт приёма-передачи
   | "act_transfer" // Приложение №1 — Акт приёма-передачи (выдача)
   | "act_return" // Приложение №2 — Акт возврата
   | "act_swap" // Акт приёма-передачи и замены скутера
@@ -30,6 +32,8 @@ export const DOCUMENT_LABEL: Record<DocumentType, string> = {
   contract: "Договор проката",
   contract_full: "Договор + Акт приёма-передачи",
   contract_full_intl: "Договор + Акт (для иностранца)",
+  contract_ebike: "Договор проката электровелосипеда",
+  contract_full_ebike: "Договор + Акт (электровелосипед)",
   act_transfer: "Акт приёма-передачи (выдача)",
   act_return: "Акт возврата",
   act_swap: "Акт приёма-передачи и замены скутера",
@@ -1042,6 +1046,8 @@ const TITLES: Record<DocumentType, string> = {
   contract: "Договор проката",
   contract_full: "Договор + Акт приёма-передачи",
   contract_full_intl: "Договор + Акт (для иностранца)",
+  contract_ebike: "Договор проката электровелосипеда",
+  contract_full_ebike: "Договор + Акт (электровелосипед)",
   act_transfer: "Акт приёма-передачи",
   act_return: "Акт возврата",
   act_swap: "Акт приёма-передачи и замены скутера",
@@ -1069,6 +1075,10 @@ export async function renderDocumentHtml(
       return tplContractFull(bundle);
     case "contract_full_intl":
       return tplContractFullIntl(bundle);
+    case "contract_ebike":
+      return tplContractEbike(bundle);
+    case "contract_full_ebike":
+      return tplContractFullEbike(bundle);
     case "act_transfer":
       return tplActTransfer(bundle);
     case "act_return":
@@ -1223,6 +1233,96 @@ function convertToTiptapFriendlyHtml(html: string): string {
  * содержимое <body>...</body> у акта, вставляем после контента договора
  * с page-break-before: always.
  */
+/**
+ * Правки 2.0, п.11: договор проката ЭЛЕКТРОВЕЛОСИПЕДА.
+ *
+ * Собирается из действующего договора скутера: меняем термин во всех
+ * падежах и вычищаем пункты, которые относятся только к мототехнике
+ * (масло, топливо, ГСМ, категории прав, номер двигателя). Взамен —
+ * пункт про возврат с заряженной батареей.
+ *
+ * Почему трансформацией, а не копией текста: договор скутера ещё будет
+ * меняться (штрафы, условия), и копия быстро разъедется с оригиналом.
+ */
+function ebikeText(html: string): string {
+  const forms: [RegExp, string][] = [
+    [/Скутера/g, "Электровелосипеда"],
+    [/Скутеру/g, "Электровелосипеду"],
+    [/Скутером/g, "Электровелосипедом"],
+    [/Скутере/g, "Электровелосипеде"],
+    [/Скутер/g, "Электровелосипед"],
+    [/скутера/g, "электровелосипеда"],
+    [/скутеру/g, "электровелосипеду"],
+    [/скутером/g, "электровелосипедом"],
+    [/скутере/g, "электровелосипеде"],
+    [/скутер/g, "электровелосипед"],
+  ];
+  let out = html;
+  for (const [re, to] of forms) out = out.replace(re, to);
+  return out;
+}
+
+/** Удаляет пункт договора целиком по его номеру («2.3.18.»). */
+function dropClause(html: string, num: string): string {
+  const re = new RegExp(
+    `<p class="cl2?"><b>${num.replace(/\./g, "\\.")}</b>[\\s\\S]*?</p>`,
+    "g",
+  );
+  return html.replace(re, "");
+}
+
+function tplContractEbike(b: Bundle): string {
+  let html = tplContract(b);
+
+  // Пункты, применимые только к мототехнике.
+  html = dropClause(html, "2.3.18."); // плановая замена масла
+  html = dropClause(html, "2.3.19."); // уровень топлива при возврате
+
+  // Категории прав к электровелосипеду не относятся.
+  html = html.replace(" (категории М, А1, А, В)", "");
+
+  // ГСМ → расходы на зарядку.
+  html = html.replace(
+    "в том числе расходы на ГСМ,",
+    "в том числе расходы на зарядку аккумулятора,",
+  );
+
+  // Номер двигателя у электровелосипеда не заполняется — номер рамы есть.
+  html = html.replace(
+    /\s*№ двигателя: <b>[^<]*<\/b><br>/g,
+    "",
+  );
+  html = html.replace(
+    /\s*<li>Номер двигателя: <b>[^<]*<\/b><\/li>/g,
+    "",
+  );
+
+  // Возврат с заряженной батареей — аналог «того же уровня топлива».
+  html = html.replace(
+    "<p class=\"cl2\"><b>2.3.20.</b>",
+    `<p class="cl2"><b>2.3.18.</b>Вернуть Электровелосипед с заряженным аккумулятором (не ниже уровня заряда на момент выдачи). Уровень заряда при выдаче фиксируется в видео-акте передачи. При возврате с существенно меньшим уровнем заряда Арендатор уплачивает Арендодателю компенсацию в размере 350 (триста пятьдесят) рублей 00 копеек.</p>
+  <p class="cl2"><b>2.3.19.</b>Заряжать Электровелосипед только штатным зарядным устройством, переданным по Акту приёма-передачи, и не оставлять аккумулятор на зарядке без присмотра.</p>
+  <p class="cl2"><b>2.3.20.</b>`,
+  );
+
+  html = ebikeText(html);
+  return html.replace(
+    /<title>[^<]*<\/title>/,
+    `<title>Договор проката электровелосипеда №${b.rootRentalId}</title>`,
+  );
+}
+
+function tplContractFullEbike(b: Bundle): string {
+  const contractHtml = tplContractEbike(b);
+  const actHtml = ebikeText(tplActTransfer(b));
+  const actBodyMatch = actHtml.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+  const actInner = actBodyMatch ? actBodyMatch[1] : actHtml;
+  return contractHtml.replace(
+    "</body>",
+    `<div style="page-break-before: always"></div>${actInner}</body>`,
+  );
+}
+
 function tplContractFull(b: Bundle): string {
   const contractHtml = tplContract(b);
   const actHtml = tplActTransfer(b);
