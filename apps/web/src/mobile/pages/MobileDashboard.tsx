@@ -116,11 +116,11 @@ export function MobileDashboard({
           «Просрочено» / «Активных аренд» / «Загрузка парка» убраны: просрочки
           видны списком ниже, активные аренды и % загрузки — внутри круга. */}
       <div className="grid grid-cols-2 items-stretch gap-3">
+        {/* Правки 2.0, п.4: наш (бензиновый) парк — без электротранспорта. */}
         <ParkLoadGauge
           percent={m.loadPercent}
-          active={m.activeRentalsCount}
+          active={m.activePetrolCount}
           rentable={m.rentableFleet}
-          activeElectro={m.activeElectroCount}
           onClick={() => onSelect("fleet")}
           size={84}
           layout="stack"
@@ -139,6 +139,21 @@ export function MobileDashboard({
           }
         />
       </div>
+
+      {/* Правки 2.0, п.4: второй чипс — партнёрский электротранспорт. */}
+      {(m.rentableElectro > 0 || m.activeElectroCount > 0) && (
+        <ParkLoadGauge
+          title="Электротранспорт"
+          tone="electro"
+          percent={m.loadPercentElectro}
+          active={m.activeElectroCount}
+          rentable={m.rentableElectro}
+          onClick={() => onSelect("partners")}
+          size={84}
+          layout="row"
+          className="rounded-2xl p-3.5"
+        />
+      )}
 
       {/* #дашборд: долги (просрочки + висящие) подняты НАД парком — заказчик:
           горящие деньги первыми, парк ниже (на мобиле тоже). */}

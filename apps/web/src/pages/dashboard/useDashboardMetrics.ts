@@ -48,7 +48,12 @@ export type DashboardMetrics = {
   fleetTotal: number;
   /** #21: парк, ДОСТУПНЫЙ к аренде (rental_pool) — знаменатель «загрузки». */
   rentableFleet: number;
-  loadPercent: number; // 0..100 (active / rentableFleet)
+  loadPercent: number; // 0..100 (active / rentableFleet), только бензин
+  /** Правки 2.0, п.4: отдельный чипс загрузки электротранспорта. */
+  rentableElectro: number;
+  loadPercentElectro: number;
+  /** Активные аренды НАШЕЙ (бензиновой) техники — для первого чипса. */
+  activePetrolCount: number;
 
   tasksToday: number; // пока 0 — задач ещё нет в API
 
@@ -376,14 +381,28 @@ export function useDashboardMetrics(): DashboardMetrics {
     // знаменатель не идут. rentableFleet включает и сейчас арендованные (они
     // остаются rental_pool, просто заняты). max(...) — страховка от >100% при
     // редком проскальзывании статусов.
-    const rentableFleet = scooters.filter(
+    // Правки 2.0, п.4: загрузка парка считается ТОЛЬКО по нашей
+    // бензиновой технике. Электротранспорт всегда партнёрский, у него
+    // свой чипс — он не влияет ни на процент, ни на общее количество.
+    const isElectroScooter = (s: ApiScooter): boolean =>
+      s.modelId != null && electroModelIds.has(s.modelId);
+    const rentableAll = scooters.filter(
       (s) =>
         s.baseStatus === "rental_pool" &&
         !(s as { archivedAt?: string | null }).archivedAt,
-    ).length;
-    const denom = Math.max(rentableFleet, activeRentalsCount);
+    );
+    const rentableFleet = rentableAll.filter((s) => !isElectroScooter(s)).length;
+    const rentableElectro = rentableAll.filter(isElectroScooter).length;
+    const activePetrolCount = activeRentalsCount - activeElectroCount;
+    const denom = Math.max(rentableFleet, activePetrolCount);
     const loadPercent =
-      denom > 0 ? Math.round((activeRentalsCount / denom) * 100) : 0;
+      denom > 0 ? Math.round((activePetrolCount / denom) * 100) : 0;
+    // Тот же расчёт для электро — второй чипс (п.4).
+    const denomElectro = Math.max(rentableElectro, activeElectroCount);
+    const loadPercentElectro =
+      denomElectro > 0
+        ? Math.round((activeElectroCount / denomElectro) * 100)
+        : 0;
 
     // ===== Парк по статусам
     const park = {
@@ -618,6 +637,9 @@ export function useDashboardMetrics(): DashboardMetrics {
       fleetTotal,
       rentableFleet,
       loadPercent,
+      rentableElectro,
+      loadPercentElectro,
+      activePetrolCount,
       tasksToday: 0, // задач ещё нет в API
       park,
       returnsToday,

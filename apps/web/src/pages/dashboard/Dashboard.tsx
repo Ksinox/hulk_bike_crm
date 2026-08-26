@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { navigate } from "@/app/navigationStore";
 import { Topbar } from "./Topbar";
 import { Greeting } from "./Greeting";
 import { KpiCard } from "./KpiCard";
@@ -56,19 +57,32 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
           заявок», которые остаются в разделе «Заявки»). */}
       {/* Пункт 19: плитка «Активных аренд» убрана — дублировала кольцо
           «Загрузка парка» (там та же цифра «N в аренде из M»). */}
+      {/* Правки 2.0, п.4: загрузка НАШЕГО (бензинового) парка. */}
       <div className="col-span-4 [&>div]:h-full">
         <ParkLoadGauge
           percent={metrics.loadPercent}
-          active={metrics.activeRentalsCount}
+          active={metrics.activePetrolCount}
           rentable={metrics.rentableFleet}
-          activeElectro={metrics.activeElectroCount}
           onClick={
-            metrics.activeRentalsCount > 0
+            metrics.activePetrolCount > 0
               ? () => drawer.openRentalsList("active")
               : undefined
           }
         />
       </div>
+      {/* Второй чипс — партнёрский электротранспорт (тот же компонент). */}
+      {(metrics.rentableElectro > 0 || metrics.activeElectroCount > 0) && (
+        <div className="col-span-4 [&>div]:h-full">
+          <ParkLoadGauge
+            title="Электротранспорт"
+            tone="electro"
+            percent={metrics.loadPercentElectro}
+            active={metrics.activeElectroCount}
+            rentable={metrics.rentableElectro}
+            onClick={() => navigate({ route: "partners" })}
+          />
+        </div>
+      )}
       <div className="col-span-4 [&>div]:h-full">
         <KpiCard
           blue

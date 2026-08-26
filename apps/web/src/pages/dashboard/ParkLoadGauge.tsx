@@ -50,6 +50,8 @@ export function ParkLoadGauge({
   active,
   rentable,
   activeElectro = 0,
+  title = "Загрузка парка",
+  tone = "petrol",
   onClick,
   className,
   size = 100,
@@ -60,6 +62,10 @@ export function ParkLoadGauge({
   rentable: number;
   /** Пункт 11: сколько из активных — электротранспорт (0 → не показываем). */
   activeElectro?: number;
+  /** Правки 2.0, п.4: свой заголовок — «Загрузка парка» / «Электротранспорт». */
+  title?: string;
+  /** Тон кольца: наш парк (зелёный) или партнёрский электро (изумруд+молния). */
+  tone?: "petrol" | "electro";
   onClick?: () => void;
   className?: string;
   size?: number;
@@ -192,8 +198,9 @@ export function ParkLoadGauge({
         {/* Подписи: справа (row) или под кругом по центру (stack) */}
         <div className={cn("min-w-0", stack && "flex flex-col items-center")}>
           {!stack && (
-            <div className="text-[12px] font-medium text-muted">
-              Загрузка парка
+            <div className="flex items-center gap-1.5 text-[12px] font-medium text-muted">
+              {tone === "electro" && <ElectricMark size="sm" />}
+              {title}
             </div>
           )}
           <div
@@ -210,7 +217,7 @@ export function ParkLoadGauge({
               stack ? "mt-0.5" : "mt-0.5",
             )}
           >
-            из {rentable} доступных
+            из {rentable} {tone === "electro" ? "в парке" : "доступных"}
           </div>
           {/* Пункт 11: разделение активных на скутеры и электро. */}
           {activeElectro > 0 && (
