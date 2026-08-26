@@ -408,4 +408,22 @@
   main .auto-rows-\[minmax\(120px\,auto\)\] {
     grid-auto-rows: minmax(104px, auto);
   }
+
+  /* Шапка (поиск, дата, действия) — на 6px ниже */
+  main > .flex.items-center.gap-3.rounded-xl.bg-surface.px-4 {
+    padding-top: 0.4rem;
+    padding-bottom: 0.4rem;
+  }
+
+  /* Подзаголовок приветствия не нужен так крупно */
+  main h1.font-display + div,
+  main h1.font-display ~ .text-\[13px\] {
+    font-size: 12px;
+  }
+
+  /* Списки: строки чуть плотнее — больше записей на экран */
+  main .py-3\.5 {
+    padding-top: 0.6rem;
+    padding-bottom: 0.6rem;
+  }
 }
