@@ -41,6 +41,12 @@ export type RevenueResult = {
   byDay: { date: string; sum: number }[];
   /** Пункт 11: удержанная доля инвестора (партнёрская техника), ₽. */
   partnerCut: number;
+  /** Правки 2.0, п.12: выручка партнёрской техники до вычета доли. */
+  partnerGross: number;
+  /** Наша доля партнёрской выручки. */
+  partnerOurs: number;
+  /** Выручка нашей собственной техники. */
+  ownTotal: number;
 };
 
 /**
@@ -105,12 +111,19 @@ export function useBillingPeriodRevenue(
         : inPeriod;
     let total = 0;
     let partnerCut = 0;
+    // Правки 2.0, п.12: раздельный учёт — где наша техника, где
+    // партнёрская. partnerGross — вся выручка партнёрских единиц,
+    // partnerOurs — что из неё осталось нам, partnerCut — доля инвестора.
+    let partnerGross = 0;
+    let ownTotal = 0;
     const byDayMap = new Map<string, number>();
     for (const p of filtered) {
       const cut = partnerCutOf(p, shareByRental);
       const net = p.amount - cut;
       total += net;
       partnerCut += cut;
+      if (cut > 0) partnerGross += p.amount;
+      else ownTotal += p.amount;
       if (p.paidAt) {
         const day = p.paidAt.slice(0, 10);
         byDayMap.set(day, (byDayMap.get(day) ?? 0) + net);
@@ -125,6 +138,12 @@ export function useBillingPeriodRevenue(
       period,
       byDay,
       partnerCut,
+      /** Вся выручка партнёрской техники (до вычета доли инвестора). */
+      partnerGross,
+      /** Наша доля партнёрской выручки (partnerGross − partnerCut). */
+      partnerOurs: partnerGross - partnerCut,
+      /** Выручка нашей собственной техники. */
+      ownTotal,
     };
   }, [payments, period, scope, shareByRental]);
 }

@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import { partnerCutOf, usePartnerInfo } from "@/lib/partner";
+import { ElectricMark } from "@/components/PowerTypeBadge";
 import { Card, DeltaPill } from "./KpiCard";
 import { formatRub, type DashboardMetrics } from "./useDashboardMetrics";
 import {
@@ -61,7 +62,7 @@ export function RevenueCard({
   const netOf = (p: { rentalId: number | null; amount: number }) =>
     p.amount - partnerCutOf(p, shareByRental);
 
-  const { total, chart, paymentsCount } = useMemo(() => {
+  const { total, chart, paymentsCount, partnerSplit } = useMemo(() => {
     const today = new Date();
 
     // Платежи-выручка в окне: paid, не залог/возврат, не из депозита
@@ -77,11 +78,29 @@ export function RevenueCard({
       return t >= win.start.getTime() && t < win.end.getTime();
     });
     const totalSum = inWindow.reduce((s, p) => s + netOf(p), 0);
+    // Разбивка «наше / партнёрское / инвестору» за то же окно (п.12).
+    let pGross = 0;
+    let pCut = 0;
+    let own = 0;
+    for (const p of inWindow) {
+      const cut = partnerCutOf(p, shareByRental);
+      if (cut > 0) {
+        pGross += p.amount;
+        pCut += cut;
+      } else {
+        own += p.amount;
+      }
+    }
 
     // На произвольном диапазоне график не строим (может быть длинным) —
     // показываем сумму + разбивку + список за период.
     if (customRange) {
-      return { total: totalSum, chart: [], paymentsCount: inWindow.length };
+      return {
+        total: totalSum,
+        chart: [],
+        paymentsCount: inWindow.length,
+        partnerSplit: { gross: pGross, cut: pCut, ours: pGross - pCut, own },
+      };
     }
 
     const byDay = new Map<string, { sum: number; count: number }>();
@@ -161,7 +180,12 @@ export function RevenueCard({
       }
     }
 
-    return { total: totalSum, chart: bars, paymentsCount: inWindow.length };
+    return {
+      total: totalSum,
+      chart: bars,
+      paymentsCount: inWindow.length,
+      partnerSplit: { gross: pGross, cut: pCut, ours: pGross - pCut, own },
+    };
   }, [period, payments, win, customRange, shareByRental]);
 
   // Разбивка нал/безнал за окно (учитывает выбранный день). Всегда показывает
@@ -350,6 +374,37 @@ export function RevenueCard({
               <b className="tabular-nums">{formatRub(breakdown.cashless)} ₽</b>
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Правки 2.0, п.12: явное разделение — где наши доходы, где
+          партнёрские и сколько уходит инвестору. Строка появляется, только
+          когда партнёрская техника вообще заработала за период. */}
+      {partnerSplit.gross > 0 && (
+        <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-white/10 px-2.5 py-1.5 text-[11.5px] text-white/85">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full bg-white/80" />
+            наша техника{" "}
+            <b className="tabular-nums text-white">
+              {formatRub(partnerSplit.own)} ₽
+            </b>
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <ElectricMark size="sm" />
+            партнёрская{" "}
+            <b className="tabular-nums text-white">
+              {formatRub(partnerSplit.ours)} ₽
+            </b>
+            <span className="text-white/60">
+              из {formatRub(partnerSplit.gross)} ₽
+            </span>
+          </span>
+          <span className="inline-flex items-center gap-1.5 text-white/70">
+            инвестору{" "}
+            <b className="tabular-nums text-white/90">
+              {formatRub(partnerSplit.cut)} ₽
+            </b>
+          </span>
         </div>
       )}
 
