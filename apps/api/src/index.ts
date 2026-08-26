@@ -203,6 +203,9 @@ async function bootstrap() {
     await protectedApp.register(usersRoutes, { prefix: "/api/users" });
     // Пункт 1: ключ директора — подтверждение защищённых действий
     await protectedApp.register(approvalsRoutes, { prefix: "/api/approvals" });
+    // Правки 2.0: инвесторы партнёрской техники (п.6-8)
+    const { investorsRoutes } = await import("./routes/investors.js");
+    await protectedApp.register(investorsRoutes, { prefix: "/api/investors" });
     // Каталоги
     await protectedApp.register(scooterModelsRoutes, { prefix: "/api/scooter-models" });
     await protectedApp.register(equipmentRoutes, { prefix: "/api/equipment" });

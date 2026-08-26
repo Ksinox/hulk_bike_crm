@@ -23,6 +23,7 @@ import {
   date,
   timestamp,
   uniqueIndex,
+  unique,
   index,
   primaryKey,
   jsonb,
@@ -350,6 +351,11 @@ export const scooters = pgTable(
      * и партнёрские.
      */
     isPartner: boolean("is_partner").notNull().default(false),
+    /**
+     * Правки 2.0, п.7: инвестор партнёрской техники. Техника добавляется
+     * ЧЕРЕЗ инвестора; задан investor_id → единица партнёрская.
+     */
+    investorId: bigint("investor_id", { mode: "number" }),
     /**
      * Процент инвестора по этой единице. null → берётся общий процент
      * из настроек (app_settings['partner_share_default'], по умолчанию 50).
@@ -2102,4 +2108,46 @@ export const approvalRequests = pgTable(
   (t) => ({
     statusIdx: index("approval_requests_status_idx").on(t.status, t.createdAt),
   }),
+);
+
+/* ─────────────── Правки 2.0: партнёрка ─────────────── */
+
+/**
+ * Инвесторы партнёрской техники (п.7-8). Вся партнёрская техника (пока
+ * это электротранспорт) принадлежит какому-то инвестору; у каждого свои
+ * настройки выплат (п.6): периодичность и день.
+ */
+export const investors = pgTable("investors", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  name: text("name").notNull(),
+  phone: text("phone"),
+  note: text("note"),
+  /** 'week' | 'month' */
+  payoutPeriod: text("payout_period").notNull().default("week"),
+  /** week: 1 (пн) … 7 (вс); month: 1…31 (число). */
+  payoutDay: integer("payout_day").notNull().default(5),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+});
+
+/**
+ * Факт выплаты инвестору за расчётный период (галочка в графике, п.6).
+ * Сам график вычисляется на лету из периодичности инвестора.
+ */
+export const investorPayouts = pgTable(
+  "investor_payouts",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    investorId: bigint("investor_id", { mode: "number" }).notNull(),
+    periodStart: date("period_start").notNull(),
+    periodEnd: date("period_end").notNull(),
+    /** Сумма выплаты, ₽ — доля инвестора от выручки его техники. */
+    amount: integer("amount").notNull(),
+    paidAt: timestamp("paid_at", { withTimezone: true }).notNull().defaultNow(),
+    paidBy: bigint("paid_by", { mode: "number" }),
+    note: text("note"),
+  },
+  (t) => [unique("investor_payouts_period_uniq").on(t.investorId, t.periodStart, t.periodEnd)],
 );

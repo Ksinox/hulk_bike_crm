@@ -44,6 +44,11 @@ const CreateScooterBody = z
     isPartner: z.boolean().optional(),
     /** Процент инвестора по единице; null → общий процент из настроек. */
     partnerShare: z.number().int().min(0).max(100).optional().nullable(),
+    /**
+     * Правки 2.0, п.7: инвестор партнёрской техники. Задан → единица
+     * автоматически считается партнёрской (isPartner=true).
+     */
+    investorId: z.number().int().positive().optional().nullable(),
   })
   .strict();
 
@@ -361,6 +366,11 @@ export async function scootersRoutes(app: FastifyInstance) {
           baseStatus: status,
           rentalSlot: slotToUse,
           uid: uidFromVin(parsed.data.vin, parsed.data.frameNumber),
+          // Правки 2.0, п.7: техника заведена под инвестора → она
+          // партнёрская по определению.
+          isPartner: parsed.data.investorId
+            ? true
+            : (parsed.data.isPartner ?? false),
         })
         .returning();
       if (!row) return reply.code(500).send({ error: "insert failed" });
@@ -546,6 +556,12 @@ export async function scootersRoutes(app: FastifyInstance) {
     if (heldBefore && !willHold) {
       patch.rentalSlot = null;
       if (before.rentalSlot != null) patch.exRentalSlot = before.rentalSlot;
+    }
+
+    // Правки 2.0, п.7: привязали инвестора → техника партнёрская;
+    // отвязали (investorId=null) → снова наша.
+    if (patch.investorId !== undefined) {
+      patch.isPartner = patch.investorId != null;
     }
 
     const [row] = await db
