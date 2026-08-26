@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ElectricMark } from "@/components/PowerTypeBadge";
 import { Check, ChevronDown, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Card } from "./KpiCard";
@@ -152,7 +153,12 @@ function OverdueRow({
           </div>
         </div>
       </Td>
-      <Td overdue>{naming.render(o.scooterName, { size: "sm" })}</Td>
+      <Td overdue>
+        <span className="inline-flex items-center gap-1.5">
+          {naming.isPartner(o.scooterName) && <ElectricMark size="sm" />}
+          {naming.render(o.scooterName, { size: "sm" })}
+        </span>
+      </Td>
       <Td overdue>
         <span className="font-bold text-red-ink">{formatRub(o.debt)} ₽</span>
       </Td>

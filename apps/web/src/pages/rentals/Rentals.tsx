@@ -444,6 +444,15 @@ export function Rentals() {
     }
   }, [selectedId, activeRentals, archivedList]);
 
+  /**
+   * Правки 2.0, п.9: имена партнёрской техники — её аренды живут в
+   * разделе «Партнёрка» и в этом списке не показываются.
+   */
+  const partnerScooterNames = useMemo(
+    () => new Set(apiScooters.filter((s) => s.isPartner).map((s) => s.name)),
+    [apiScooters],
+  );
+
   const filtered = useMemo(() => {
     // v0.4.57: фильтр диапазона дат выдачи аренды через DateRangeFilter.
     // Старый PeriodFilter (по биллинговым периодам 15→14) выпилен —
@@ -475,6 +484,10 @@ export function Rentals() {
     return rentals
       .filter(
         (r) =>
+          // Правки 2.0, п.9: аренды ПАРТНЁРСКОЙ техники сюда не попадают —
+          // у них своё пространство в разделе «Партнёрка». В общий контур
+          // из них выходят только должники (дашборд).
+          !partnerScooterNames.has(r.scooter) &&
           matchStatus(
             r,
             filters.status,
@@ -491,7 +504,7 @@ export function Rentals() {
         if (sr !== 0) return sr;
         return b.id - a.id;
       });
-  }, [filters, rentals, unreachable, apiClients, today, rentalPoolSize]);
+  }, [filters, rentals, unreachable, apiClients, today, rentalPoolSize, partnerScooterNames]);
 
   const kpi = useMemo<Kpi[]>(() => {
     // v0.4.10: период и сумма выручки приходят из useBillingPeriodRevenue —

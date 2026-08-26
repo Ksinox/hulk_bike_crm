@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ElectricMark } from "@/components/PowerTypeBadge";
 import { ChevronDown, ChevronRight, Phone, Wallet } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Card } from "./KpiCard";
@@ -212,6 +213,9 @@ function DebtRowView({
           <div className="truncate text-[11.5px] text-muted-2">
             {isOverdue ? (
               <>
+                {naming.isPartner(row.scooterName) && (
+                  <ElectricMark size="sm" className="mr-1" />
+                )}
                 {naming.render(row.scooterName, { size: "sm" })} · аренда{" "}
                 {pad(row.rentalId!)}
               </>
