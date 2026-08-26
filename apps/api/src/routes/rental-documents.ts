@@ -22,6 +22,8 @@ const TypeEnum = z.enum([
   "contract",
   "contract_full",
   "contract_full_intl",
+  "contract_ebike",
+  "contract_full_ebike",
   "act_transfer",
   "act_return",
   "act_swap",
