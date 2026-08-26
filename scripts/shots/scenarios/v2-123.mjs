@@ -29,7 +29,8 @@ export async function run(page, ctx) {
         .filter(
           (d) =>
             /Поступит сегодня/.test(d.textContent || "") &&
-            (d.textContent || "").length < 200,
+            /возврат|₽/.test(d.textContent || "") &&
+            (d.textContent || "").length < 220,
         )
         .pop();
       return el ?? document.body;
