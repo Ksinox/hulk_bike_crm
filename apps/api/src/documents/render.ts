@@ -1273,6 +1273,14 @@ function replaceClause(html: string, num: string, text: string): string {
   return html.replace(re, "$1" + text + "$2");
 }
 
+/** Убирает строки, применимые только к мототехнике (номер двигателя). */
+function dropMotoLines(html: string): string {
+  return html
+    .replace(/\s*№ двигателя: <b>[^<]*<\/b><br>/g, "")
+    .replace(/\s*<li>Номер двигателя: <b>[^<]*<\/b><\/li>/g, "")
+    .replace(/\s*<div class="row"><b>№ двигателя<\/b>[^<]*<\/div>/g, "");
+}
+
 function tplContractEbike(b: Bundle): string {
   let html = tplContract(b);
 
@@ -1300,8 +1308,7 @@ function tplContractEbike(b: Bundle): string {
   );
 
   // У электровелосипеда номера двигателя нет — строку убираем.
-  html = html.replace(/\s*№ двигателя: <b>[^<]*<\/b><br>/g, "");
-  html = html.replace(/\s*<li>Номер двигателя: <b>[^<]*<\/b><\/li>/g, "");
+  html = dropMotoLines(html);
 
   html = ebikeText(html);
   return html.replace(
@@ -1312,7 +1319,9 @@ function tplContractEbike(b: Bundle): string {
 
 function tplContractFullEbike(b: Bundle): string {
   const contractHtml = tplContractEbike(b);
-  const actHtml = ebikeText(tplActTransfer(b));
+  // Акт печатается вместе с договором — в нём тоже меняем термин и
+  // убираем строки, которых у электровелосипеда нет (номер двигателя).
+  const actHtml = ebikeText(dropMotoLines(tplActTransfer(b)));
   const actBodyMatch = actHtml.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
   const actInner = actBodyMatch ? actBodyMatch[1] : actHtml;
   return contractHtml.replace(
