@@ -86,6 +86,8 @@ export type CreateScooterInput = {
   isPartner?: boolean;
   /** Процент инвестора по единице; null → общий из настроек. */
   partnerShare?: number | null;
+  /** Правки 2.0, п.7: инвестор — техника заводится через него. */
+  investorId?: number | null;
   year?: number | null;
   color?: string | null;
   mileage?: number;

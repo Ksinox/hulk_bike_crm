@@ -352,8 +352,39 @@ export async function investorsRoutes(app: FastifyInstance) {
           : null,
       });
     }
+    // Текущий НАКАПЛИВАЮЩИЙСЯ период: от последнего дня выплаты до
+    // следующего. Показываем «набежало N ₽, выплата такого-то числа» —
+    // чтобы сумма была видна не только в день выплаты.
+    const lastDue = periods[0]!.due;
+    const nextDue =
+      inv.payoutPeriod === "month"
+        ? new Date(lastDue.getFullYear(), lastDue.getMonth() + 1, lastDue.getDate())
+        : new Date(lastDue.getTime() + 7 * 86_400_000);
+    const { income: currentIncome } = await investorIncome(
+      units,
+      lastDue,
+      new Date(),
+      shareDefault,
+    );
+    const current = {
+      periodStart: ymd(lastDue),
+      periodEnd: ymd(nextDue),
+      dueDate: ymd(nextDue),
+      amount: currentIncome,
+      daysLeft: Math.max(
+        0,
+        Math.ceil((nextDue.getTime() - Date.now()) / 86_400_000),
+      ),
+    };
+
     return {
-      investor: { id: inv.id, name: inv.name, payoutPeriod: inv.payoutPeriod, payoutDay: inv.payoutDay },
+      investor: {
+        id: inv.id,
+        name: inv.name,
+        payoutPeriod: inv.payoutPeriod,
+        payoutDay: inv.payoutDay,
+      },
+      current,
       items,
     };
   });
