@@ -33,12 +33,6 @@ export function Dashboard() {
     saveView(v);
   };
 
-  // Правки 2.0, п.4: верхний ряд — 3 карточки, а с чипсом электро — 4,
-  // чтобы «Просрочено» не переносилось на вторую строку.
-  const hasElectroGauge =
-    metrics.rentableElectro > 0 || metrics.activeElectroCount > 0;
-  const topSpan = hasElectroGauge ? "col-span-3" : "col-span-4";
-
   return (
     // v0.4.8: DrawerProvider поднят в App.tsx, теперь стек работает на
     // любых страницах (Клиенты, Аренды, Парк, Ремонты, etc) — связь
@@ -58,6 +52,12 @@ export function Dashboard() {
 
 function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
   const drawer = useDashboardDrawer();
+  // Правки 2.0, п.4: верхний ряд — 3 карточки, а с чипсом электро — 4,
+  // чтобы «Просрочено» не переносилось на вторую строку.
+  const hasElectroGauge =
+    metrics.rentableElectro > 0 || metrics.activeElectroCount > 0;
+  const topSpan = hasElectroGauge ? "col-span-3" : "col-span-4";
+
   return (
     <div className="grid auto-rows-[minmax(120px,auto)] grid-cols-12 gap-4">
       {/* #дашборд: круговая загрузка парка — первой картой (вместо «Новых
