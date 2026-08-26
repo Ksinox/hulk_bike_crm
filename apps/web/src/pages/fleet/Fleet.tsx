@@ -249,7 +249,9 @@ export function Fleet({
     for (const r of modeRows) {
       if (isGone(r.status)) {
         c.gone++;
-        continue; // в «Всего скутеров» выбывшие не входят
+        // Проданные не входят в счётчик ПАРКА (аренда), но в режиме
+        // продажи это и есть предмет работы — там их считаем (п.10).
+        if (mode !== "sale") continue;
       }
       c.total++;
       if (r.status === "ready") c.ready++;
@@ -262,7 +264,7 @@ export function Fleet({
       else if (r.status === "buyout") c.buyout++;
     }
     return c;
-  }, [modeRows]);
+  }, [modeRows, mode]);
 
   // Для каждого выбранного modelId вычисляем legacy enum (jog/gear/honda/tank)
   // — нужно для фильтрации старых скутеров, у которых modelId ещё не проставлен.
