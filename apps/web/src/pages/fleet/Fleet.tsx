@@ -286,12 +286,13 @@ export function Fleet({
     const q = normalizeQuery(query);
     return modeRows
       .filter((r) => {
-        // Выбывшая техника (продан/выкуп) в общем списке не показывается —
-        // её физически нет в парке. Смотреть — на вкладке «Выбыли».
+        // Проданная техника не показывается в парке аренды — её физически
+        // нет. Но в режиме «Продажа» (п.10) она и есть предмет работы,
+        // поэтому там видна наравне с витриной.
         if (tab === "gone") {
           if (!isGone(r.status)) return false;
         } else {
-          if (isGone(r.status)) return false;
+          if (isGone(r.status) && mode !== "sale") return false;
           if (tab !== "all" && r.status !== tab) return false;
         }
         // Фильтр по моделям: пропускаем если совпал FK (modelId) ИЛИ
@@ -343,6 +344,7 @@ export function Fleet({
     sortBy,
     sortDir,
     modeRows,
+    mode,
   ]);
 
   // ============ ДЕТАЛЬНАЯ КАРТОЧКА ============
