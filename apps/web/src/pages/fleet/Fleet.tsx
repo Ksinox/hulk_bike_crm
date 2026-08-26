@@ -846,179 +846,250 @@ function ParkOverview({
   // занижается и не отражает реальную доступность парка.
   const rentable = counters.rented + counters.rental_pool;
   const loadPct = rentable > 0 ? Math.round((counters.rented / rentable) * 100) : 0;
-  const attention = counters.ready + counters.repair + counters.dtp;
+  const isRental = mode === "rental";
 
-  return (
-    <section className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
-      {/* ── Главная карта: сколько техники и как она работает ── */}
-      <div
-        className={cn(
-          "relative flex flex-col overflow-hidden rounded-[20px] border bg-surface p-5 shadow-card-sm transition-colors",
-          tab === "all" ? "border-blue-600/40 ring-2 ring-blue-600/15" : "border-border",
-        )}
-      >
-        <div className="flex items-start justify-between gap-4">
-          <button
-            type="button"
-            onClick={() => onTab("all")}
-            className="text-left"
-            title="Показать всю технику в обороте"
-          >
-            <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
-              {MODE_TITLE[mode]}
-            </div>
-            <div className="mt-1.5 flex items-baseline gap-2">
-              <span className="font-display text-[46px] font-extrabold leading-none text-ink tabular-nums">
-                {counters.total}
-              </span>
-              <span className="text-[13px] text-muted">
-                {counters.total === 1 ? "единица" : "единиц"} · {MODE_HINT[mode]}
-              </span>
-            </div>
-          </button>
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-ink text-white">
-            <Layers size={20} />
-          </div>
-        </div>
-
-        {/* Полоса загрузки: синее — занято клиентами, зелёное — свободно.
-            Правки 2.0, п.10: только в режиме аренды — в продаже и выкупе
-            «загрузка» смысла не имеет. */}
-        <div className={cn("mt-5", mode !== "rental" && "hidden")}>
-          <div className="flex items-baseline justify-between text-[12px]">
-            <span className="font-bold text-ink">Загрузка {loadPct}%</span>
-            <span className="text-muted-2">
-              {rentable > 0
-                ? `${counters.rented} из ${rentable} доступных заняты`
-                : "нет техники, доступной к выдаче"}
-            </span>
-          </div>
-          <div className="mt-2 flex h-2.5 overflow-hidden rounded-full bg-surface-soft">
-            <span
-              className="bg-blue-600 transition-all"
-              style={{ width: `${rentable > 0 ? (counters.rented / rentable) * 100 : 0}%` }}
-            />
-            <span
-              className="bg-green-ink/45 transition-all"
-              style={{ width: `${rentable > 0 ? (counters.rental_pool / rentable) * 100 : 0}%` }}
-            />
-          </div>
-        </div>
-
-        {/* Две операционные метрики — то, чем живёт день */}
-        <div
-          className={cn(
-            "mt-4 grid flex-1 grid-cols-2 gap-2.5",
-            mode !== "rental" && "hidden",
-          )}
-        >
-          <ParkMetric
-            label="В аренде"
-            hint="у клиентов сейчас"
-            extra={
-              counters.total > 0
-                ? `${Math.round((counters.rented / counters.total) * 100)} % парка`
-                : undefined
-            }
-            value={counters.rented}
-            icon={Key}
-            tone="blue"
-            active={tab === "rented"}
-            onClick={() => onTab("rented")}
-          />
-          <ParkMetric
-            label="Свободны"
-            hint="можно выдавать"
-            extra={
-              counters.rental_pool > 0
-                ? "готовы к выдаче прямо сейчас"
-                : "выдавать нечего"
-            }
-            value={counters.rental_pool}
-            icon={ShoppingBag}
-            tone="green"
-            active={tab === "rental_pool"}
-            onClick={() => onTab("rental_pool")}
-          />
-        </div>
-      </div>
-
-      {/* ── Правая колонка: по группам смысла ── */}
-      <div className="flex flex-col gap-3 rounded-[20px] border border-border bg-surface p-4 shadow-card-sm">
-        <ParkGroup
-          title="Требуют решения"
-          badge={attention}
-          rows={[
+  /** Метрики левой карты — свои для каждого режима (п.10). */
+  const metrics: {
+    key: StatusTab;
+    label: string;
+    hint: string;
+    extra?: string;
+    value: number;
+    icon: typeof Key;
+    tone: "blue" | "green";
+  }[] = isRental
+    ? [
+        {
+          key: "rented",
+          label: "В аренде",
+          hint: "у клиентов сейчас",
+          extra:
+            counters.total > 0
+              ? `${Math.round((counters.rented / counters.total) * 100)} % парка`
+              : undefined,
+          value: counters.rented,
+          icon: Key,
+          tone: "blue",
+        },
+        {
+          key: "rental_pool",
+          label: "Свободны",
+          hint: "можно выдавать",
+          extra:
+            counters.rental_pool > 0
+              ? "готовы к выдаче прямо сейчас"
+              : "выдавать нечего",
+          value: counters.rental_pool,
+          icon: ShoppingBag,
+          tone: "green",
+        },
+      ]
+    : mode === "sale"
+      ? [
+          {
+            key: "for_sale",
+            label: "На витрине",
+            hint: "ждут покупателя",
+            extra: counters.for_sale > 0 ? "выставлены на продажу" : "витрина пуста",
+            value: counters.for_sale,
+            icon: Tag,
+            tone: "blue",
+          },
+          {
+            key: "gone",
+            label: "Проданы",
+            hint: "права перешли покупателю",
+            extra: "остаются в CRM ради истории",
+            value: counters.gone,
+            icon: LogOut,
+            tone: "green",
+          },
+        ]
+      : mode === "buyout"
+        ? [
             {
-              key: "ready" as const,
-              label: "Не распределены",
-              hint: "решить, куда поставить",
+              key: "buyout",
+              label: "В выкупе",
+              hint: "у клиентов по договору",
+              extra: "пока платят — техника наша",
+              value: counters.buyout,
+              icon: HandCoins,
+              tone: "blue",
+            },
+          ]
+        : [
+            {
+              key: "ready",
+              label: "Ждут решения",
+              hint: "подразделение не выбрано",
+              extra: "определите: аренда, продажа или выкуп",
               value: counters.ready,
               icon: HelpCircle,
-              tone: "amber" as const,
+              tone: "blue",
             },
+          ];
+
+  /** Правая панель — только статусы этого режима. */
+  const groups: {
+    title: string;
+    badge?: number;
+    rows: {
+      key: StatusTab;
+      label: string;
+      hint: string;
+      value: number;
+      icon: typeof Key;
+      tone: "amber" | "red" | "violet" | "slate";
+    }[];
+  }[] = isRental
+    ? [
+        {
+          title: "Требуют решения",
+          badge: counters.repair + counters.dtp,
+          rows: [
             {
-              key: "repair" as const,
+              key: "repair",
               label: "На ремонте",
               hint: "у мастера",
               value: counters.repair,
               icon: Wrench,
-              tone: "red" as const,
+              tone: "red",
             },
             {
-              key: "dtp" as const,
+              key: "dtp",
               label: "ДТП",
               hint: "после аварии",
               value: counters.dtp,
               icon: AlertTriangle,
-              tone: "red" as const,
+              tone: "red",
             },
-          ]}
-          tab={tab}
-          onTab={onTab}
-        />
-
-        <div className="h-px bg-border" />
-
-        <ParkGroup
-          title="Вне аренды"
-          rows={[
+          ],
+        },
+        {
+          title: "Не катают",
+          rows: [
             {
-              key: "disassembly" as const,
+              key: "disassembly",
               label: "На разборку",
               hint: "идут на запчасти",
               value: counters.disassembly,
               icon: PackageOpen,
-              tone: "slate" as const,
+              tone: "slate",
             },
-            {
-              key: "for_sale" as const,
-              label: "Продаются",
-              hint: "выставлены на витрину",
-              value: counters.for_sale,
-              icon: Tag,
-              tone: "violet" as const,
-            },
-            {
-              key: "buyout" as const,
-              label: "В выкупе",
-              hint: "у клиента, техника пока наша",
-              value: counters.buyout,
-              icon: HandCoins,
-              tone: "violet" as const,
-            },
-            {
-              key: "gone" as const,
-              label: "Проданы",
-              hint: "права перешли покупателю",
-              value: counters.gone,
-              icon: LogOut,
-              tone: "slate" as const,
-            },
-          ]}
-          tab={tab}
-          onTab={onTab}
-        />
+          ],
+        },
+      ]
+    : [];
+
+  return (
+    <section className="overflow-hidden rounded-[22px] border border-border bg-surface px-5 py-4 shadow-card-sm sm:px-6 sm:py-5">
+      <div
+        className={cn(
+          "grid gap-3",
+          groups.length > 0
+            ? "lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]"
+            : "lg:grid-cols-1",
+        )}
+      >
+        {/* Левая часть: объём режима + его метрики */}
+        <div className="flex flex-col">
+          <div className="flex items-start justify-between gap-4">
+            <button
+              type="button"
+              onClick={() => onTab("all")}
+              className="text-left"
+              title="Показать всю технику режима"
+            >
+              <div className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
+                {MODE_TITLE[mode]}
+              </div>
+              <div className="mt-1.5 flex items-baseline gap-2">
+                <span
+                  className={cn(
+                    "font-display text-[46px] font-extrabold leading-none tabular-nums",
+                    tab === "all" ? "text-blue-700" : "text-ink",
+                  )}
+                >
+                  {counters.total}
+                </span>
+                <span className="max-w-[280px] text-[13px] text-muted">
+                  {counters.total === 1 ? "единица" : "единиц"} ·{" "}
+                  {MODE_HINT[mode]}
+                </span>
+              </div>
+            </button>
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-ink text-white">
+              <Layers size={20} />
+            </div>
+          </div>
+
+          {/* Полоса загрузки — только для аренды */}
+          {isRental && (
+            <div className="mt-5">
+              <div className="flex items-baseline justify-between text-[12px]">
+                <span className="font-bold text-ink">Загрузка {loadPct}%</span>
+                <span className="text-muted-2">
+                  {rentable > 0
+                    ? `${counters.rented} из ${rentable} доступных заняты`
+                    : "нет техники, доступной к выдаче"}
+                </span>
+              </div>
+              <div className="mt-2 flex h-2.5 overflow-hidden rounded-full bg-surface-soft">
+                <span
+                  className="bg-blue-600 transition-all"
+                  style={{
+                    width: `${rentable > 0 ? (counters.rented / rentable) * 100 : 0}%`,
+                  }}
+                />
+                <span
+                  className="bg-green-ink/45 transition-all"
+                  style={{
+                    width: `${rentable > 0 ? (counters.rental_pool / rentable) * 100 : 0}%`,
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
+          <div
+            className={cn(
+              "mt-4 grid flex-1 gap-2.5",
+              metrics.length > 1 ? "grid-cols-2" : "grid-cols-1",
+            )}
+          >
+            {metrics.map((m) => (
+              <ParkMetric
+                key={m.key}
+                label={m.label}
+                hint={m.hint}
+                extra={m.extra}
+                value={m.value}
+                icon={m.icon}
+                tone={m.tone}
+                active={tab === m.key}
+                onClick={() => onTab(m.key)}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* Правая часть: статусы режима (в аренде — проблемы и «не катают») */}
+        {groups.length > 0 && (
+          <div className="flex flex-col gap-3 rounded-[20px] border border-border bg-surface p-4 shadow-card-sm">
+            {groups.map((g, i) => (
+              <div key={g.title} className="contents">
+                {i > 0 && <div className="h-px bg-border" />}
+                <ParkGroup
+                  title={g.title}
+                  badge={g.badge}
+                  rows={g.rows}
+                  tab={tab}
+                  onTab={onTab}
+                />
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </section>
   );
