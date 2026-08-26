@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { cn } from "@/lib/utils";
 import { navigate } from "@/app/navigationStore";
 import { Topbar } from "./Topbar";
 import { Greeting } from "./Greeting";
@@ -32,6 +33,12 @@ export function Dashboard() {
     saveView(v);
   };
 
+  // Правки 2.0, п.4: верхний ряд — 3 карточки, а с чипсом электро — 4,
+  // чтобы «Просрочено» не переносилось на вторую строку.
+  const hasElectroGauge =
+    metrics.rentableElectro > 0 || metrics.activeElectroCount > 0;
+  const topSpan = hasElectroGauge ? "col-span-3" : "col-span-4";
+
   return (
     // v0.4.8: DrawerProvider поднят в App.tsx, теперь стек работает на
     // любых страницах (Клиенты, Аренды, Парк, Ремонты, etc) — связь
@@ -58,7 +65,7 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
       {/* Пункт 19: плитка «Активных аренд» убрана — дублировала кольцо
           «Загрузка парка» (там та же цифра «N в аренде из M»). */}
       {/* Правки 2.0, п.4: загрузка НАШЕГО (бензинового) парка. */}
-      <div className="col-span-4 [&>div]:h-full">
+      <div className={cn(topSpan, "[&>div]:h-full")}>
         <ParkLoadGauge
           percent={metrics.loadPercent}
           active={metrics.activePetrolCount}
@@ -72,7 +79,7 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
       </div>
       {/* Второй чипс — партнёрский электротранспорт (тот же компонент). */}
       {(metrics.rentableElectro > 0 || metrics.activeElectroCount > 0) && (
-        <div className="col-span-4 [&>div]:h-full">
+        <div className={cn(topSpan, "[&>div]:h-full")}>
           <ParkLoadGauge
             title="Электротранспорт"
             tone="electro"
@@ -83,7 +90,7 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
           />
         </div>
       )}
-      <div className="col-span-4 [&>div]:h-full">
+      <div className={cn(topSpan, "[&>div]:h-full")}>
         <KpiCard
           blue
           title="Поступит сегодня"
@@ -112,7 +119,7 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
           }
         />
       </div>
-      <div className="col-span-4 [&>div]:h-full">
+      <div className={cn(topSpan, "[&>div]:h-full")}>
         <KpiCard
           title="Просрочено"
           value={String(metrics.overdueCount)}
