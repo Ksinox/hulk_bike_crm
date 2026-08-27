@@ -5,6 +5,7 @@ import { ElectricMark, PetrolMark } from "@/components/PowerTypeBadge";
 
 const LiquidGradient = lazy(() => import("./LiquidGradient"));
 const ElectricGradient = lazy(() => import("./ElectricGradient"));
+const LightningStrikes = lazy(() => import("./LightningStrikes"));
 
 /**
  * Круговая загрузка парка — KPI-карточка-герой. Светлый круг, внутри
@@ -120,14 +121,22 @@ export function ParkLoadGauge({
    * Форма кромки. Жидкость — плавная синусоида; энергия — рваная ломаная
    * (разряд). Тайл бесшовный: и левый, и правый край на высоте a.
    */
-  const surfacePath = (w: number, a: number) =>
+  const surfacePath = (w: number, a: number, h: number) =>
     electro
-      ? `M0 ${a} L${w * 0.125} ${a * 0.08} L${w * 0.25} ${a * 1.55} L${w * 0.375} ${a * 0.3} L${w * 0.5} ${a * 1.15} L${w * 0.625} ${a * 0.04} L${w * 0.75} ${a * 1.5} L${w * 0.875} ${a * 0.38} L${w} ${a} V${SIZE} H0 Z`
-      : `M0 ${a} Q${w / 4} 0 ${w / 2} ${a} T${w} ${a} V${SIZE} H0 Z`;
+      ? `M0 ${a} L${w * 0.125} ${a * 0.45} L${w * 0.25} ${a * 1.35} L${w * 0.375} ${a * 0.35} L${w * 0.5} ${a * 1.1} L${w * 0.625} ${a * 0.3} L${w * 0.75} ${a * 1.4} L${w * 0.875} ${a * 0.5} L${w} ${a} V${h} H0 Z`
+      : `M0 ${a} Q${w / 4} 0 ${w / 2} ${a} T${w} ${a} V${h} H0 Z`;
+
+  /**
+   * Тайл маски вдвое выше круга. Маска не повторяется по вертикали, а кадры
+   * анимации сдвигают её вверх на амплитуду волны — при заливке под 100 %
+   * тайла высотой ровно в круг не хватало, и внизу оставалась непрокрашенная
+   * полоса (выглядело как «съехало»). Двойная высота закрывает низ всегда.
+   */
+  const TILE_H = SIZE * 2;
 
   const surfaceTile = (w: number, a: number) =>
     `url("data:image/svg+xml,${encodeURIComponent(
-      `<svg xmlns='http://www.w3.org/2000/svg' width='${w}' height='${SIZE}' preserveAspectRatio='none'><path d='${surfacePath(w, a)}' fill='white'/></svg>`,
+      `<svg xmlns='http://www.w3.org/2000/svg' width='${w}' height='${TILE_H}' preserveAspectRatio='none'><path d='${surfacePath(w, a, TILE_H)}' fill='white'/></svg>`,
     )}")`;
 
   const surfaceLayer = (w: number, a: number): React.CSSProperties => ({
@@ -135,18 +144,30 @@ export function ParkLoadGauge({
     maskImage: surfaceTile(w, a),
     WebkitMaskRepeat: "repeat-x",
     maskRepeat: "repeat-x",
-    WebkitMaskSize: `${w}px ${SIZE}px`,
-    maskSize: `${w}px ${SIZE}px`,
+    WebkitMaskSize: `${w}px ${TILE_H}px`,
+    maskSize: `${w}px ${TILE_H}px`,
   });
 
   /** Наполнитель круга — жидкость или энергия. */
-  const Fill = ({ bolts }: { bolts?: boolean }) => (
+  const Fill = () => (
     <GLBoundary electro={electro}>
       <Suspense fallback={<GradientFallback electro={electro} />}>
-        {electro ? <ElectricGradient bolts={bolts} /> : <LiquidGradient />}
+        {electro ? <ElectricGradient /> : <LiquidGradient />}
       </Suspense>
     </GLBoundary>
   );
+
+  /**
+   * Заполнено под завязку — «дырка» доната закрашивается в цвет заливки, а
+   * текст инвертируется в белый. Иначе на сплошном круге белый центр выглядел
+   * чужеродной заплаткой.
+   */
+  const full = pct >= 100;
+  const centerBg = !full
+    ? "#ffffff"
+    : electro
+      ? "linear-gradient(160deg, #2563EB 0%, #1E3A8A 100%)"
+      : "linear-gradient(160deg, #22A8C0 0%, #1D9E75 100%)";
 
   return (
     <Card className={cn("flex h-full items-center", className)}>
@@ -191,7 +212,7 @@ export function ParkLoadGauge({
               animation: `pkWaveA ${electro ? "3.2s" : "5s"} linear infinite`,
             }}
           >
-            <Fill bolts />
+            <Fill />
           </div>
 
           {/* Ближний слой — полупрозрачный гребень для глубины/параллакса */}
@@ -206,23 +227,57 @@ export function ParkLoadGauge({
             <Fill />
           </div>
 
-          {/* Белый круг по центру → донат-диаграмма, % на белом */}
+          {/* Круг по центру → донат-диаграмма */}
           <div
-            className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center rounded-full bg-white"
+            className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full"
             style={{
               width: CENTER,
               height: CENTER,
-              boxShadow: "0 1px 6px rgba(15,23,42,0.13)",
+              background: centerBg,
+              boxShadow: full
+                ? "inset 0 0 0 1.5px rgba(255,255,255,0.22)"
+                : "0 1px 6px rgba(15,23,42,0.13)",
             }}
+          />
+
+          {/* Молнии бьют поверх диска (в кольце они читались бы как иконка),
+              но обрезаны по уровню заливки — той же маской, что и энергия. */}
+          {electro && (
+            <div
+              className="absolute inset-0"
+              style={{
+                ...surfaceLayer(W1, A1),
+                animation: "pkWaveA 3.2s linear infinite",
+              }}
+            >
+              <Suspense fallback={null}>
+                <LightningStrikes />
+              </Suspense>
+            </div>
+          )}
+
+          {/* Текст — поверх всего, чтобы разряды по нему не били */}
+          <div
+            className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center"
+            style={{ width: CENTER, height: CENTER }}
           >
             <span
-              className="font-display font-extrabold leading-none tabular-nums text-ink"
-              style={{ fontSize: Math.round(SIZE * 0.2) }}
+              className={cn(
+                "font-display font-extrabold leading-none tabular-nums",
+                full ? "text-white" : "text-ink",
+              )}
+              style={{
+                fontSize: Math.round(SIZE * 0.2),
+                textShadow: full ? "0 1px 6px rgba(15,23,42,0.4)" : undefined,
+              }}
             >
               {shown}%
             </span>
             <span
-              className="mt-0.5 font-bold uppercase tracking-[0.12em] text-muted-2"
+              className={cn(
+                "mt-0.5 font-bold uppercase tracking-[0.12em]",
+                full ? "text-white/75" : "text-muted-2",
+              )}
               style={{ fontSize: Math.max(7, Math.round(SIZE * 0.072)) }}
             >
               загрузка

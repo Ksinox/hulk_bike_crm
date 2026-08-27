@@ -1,5 +1,4 @@
 /** Правки 2.0, п.4: два чипса загрузки — наш парк и электротранспорт. */
-import { clipOf } from "./p9-common.mjs";
 
 export async function run(page, ctx) {
   await ctx.gotoRoute("dashboard");
@@ -15,21 +14,31 @@ export async function run(page, ctx) {
   });
   console.log("чипсы:", JSON.stringify(st));
   await ctx.shot("v2-4-gauges", { jpeg: true });
-  const clip = await clipOf(
-    page,
-    () => {
-      const el = [...document.querySelectorAll("div")]
-        .filter(
-          (d) =>
-            /Загрузка парка/.test(d.textContent || "") &&
-            /Электротранспорт/.test(d.textContent || "") &&
-            (d.textContent || "").length < 400,
-        )
-        .pop();
-      return el ?? document.body;
-    },
-    10,
-  );
+  // Крупный план обоих колец: чипсы — разные карточки, поэтому берём
+  // объединение их прямоугольников. Внимание: «5 в аренде» набрано с
+  // неразрывными пробелами, в регулярке нужен \s, а не обычный пробел.
+  const clip = await page.evaluate(() => {
+    const pick = (re) => {
+      const els = [...document.querySelectorAll("button")].filter(
+        (b) =>
+          re.test(b.textContent || "") && /в\sаренде/.test(b.textContent || ""),
+      );
+      return els[els.length - 1] ?? null;
+    };
+    const a = pick(/Загрузка парка/);
+    const b = pick(/Электротранспорт/);
+    if (!a || !b) return null;
+    const ra = a.getBoundingClientRect();
+    const rb = b.getBoundingClientRect();
+    const x = Math.min(ra.x, rb.x) - 14;
+    const y = Math.min(ra.y, rb.y) - 14;
+    return {
+      x,
+      y,
+      width: Math.max(ra.right, rb.right) - x + 14,
+      height: Math.max(ra.bottom, rb.bottom) - y + 14,
+    };
+  });
   if (clip) await ctx.shot("v2-4-gauges-crop", { clip });
 
   // мобильный вид
