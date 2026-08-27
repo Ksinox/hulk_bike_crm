@@ -500,6 +500,19 @@ export async function scootersRoutes(app: FastifyInstance) {
       }
     }
 
+    // Правка 27.08: партнёрская техника — не наша, передать её в выкуп
+    // нельзя (выкуп = переход права собственности от нас к клиенту).
+    if (
+      parsed.data.baseStatus === "buyout" &&
+      (parsed.data.isPartner ?? before.isPartner)
+    ) {
+      return reply.code(409).send({
+        error: "partner_no_buyout",
+        message:
+          "Партнёрская техника принадлежит инвестору — передать её в выкуп нельзя.",
+      });
+    }
+
     // ── Пункт 15: арендные места ──
     const patch: Record<string, unknown> = { ...parsed.data };
     const nextStatus = parsed.data.baseStatus ?? before.baseStatus;

@@ -16,6 +16,7 @@ import { RentalsList } from "./RentalsList";
 import { RentalsKpi, type Kpi } from "./RentalsKpi";
 import { RentalCard, ActTransferPreview, RentalHistoryColumn } from "./RentalCard";
 import { cn } from "@/lib/utils";
+import { ElectricMark, PetrolMark } from "@/components/PowerTypeBadge";
 import { useIsMobile } from "@/lib/useIsMobile";
 import { DocumentPreviewModal } from "./DocumentPreviewModal";
 import { consumePending, onNavigate } from "@/app/navigationStore";
@@ -453,6 +454,20 @@ export function Rentals() {
     [apiScooters],
   );
 
+  /**
+   * Правка 27.08: два таба техники — «Бензиновые» (наши, по умолчанию) и
+   * «Партнёрская». Партнёрские аренды по-прежнему живут в «Партнёрке», но
+   * отсюда их тоже видно: тот же список, те же колонки, та же карточка.
+   */
+  const [fleetTab, setFleetTab] = useState<"petrol" | "partner">("petrol");
+  const partnerRentalsCount = useMemo(
+    () =>
+      rentals.filter(
+        (r) => partnerScooterNames.has(r.scooter) && r.status === "active",
+      ).length,
+    [rentals, partnerScooterNames],
+  );
+
   const filtered = useMemo(() => {
     // v0.4.57: фильтр диапазона дат выдачи аренды через DateRangeFilter.
     // Старый PeriodFilter (по биллинговым периодам 15→14) выпилен —
@@ -484,10 +499,12 @@ export function Rentals() {
     return rentals
       .filter(
         (r) =>
-          // Правки 2.0, п.9: аренды ПАРТНЁРСКОЙ техники сюда не попадают —
-          // у них своё пространство в разделе «Партнёрка». В общий контур
-          // из них выходят только должники (дашборд).
-          !partnerScooterNames.has(r.scooter) &&
+          // Правки 2.0, п.9 + 27.08: списки не смешиваются. Таб
+          // «Бензиновые» — только наша техника, таб «Партнёрская» —
+          // только техника инвесторов (та же, что в «Партнёрке»).
+          (fleetTab === "partner"
+            ? partnerScooterNames.has(r.scooter)
+            : !partnerScooterNames.has(r.scooter)) &&
           matchStatus(
             r,
             filters.status,
@@ -504,7 +521,7 @@ export function Rentals() {
         if (sr !== 0) return sr;
         return b.id - a.id;
       });
-  }, [filters, rentals, unreachable, apiClients, today, rentalPoolSize, partnerScooterNames]);
+  }, [filters, rentals, unreachable, apiClients, today, rentalPoolSize, partnerScooterNames, fleetTab]);
 
   const kpi = useMemo<Kpi[]>(() => {
     // v0.4.10: период и сумма выручки приходят из useBillingPeriodRevenue —
@@ -730,6 +747,42 @@ export function Rentals() {
               <h1 className="font-display text-[26px] font-extrabold leading-none text-ink">
                 Аренды
               </h1>
+              {/* Правка 27.08: табы техники — бензиновые (наши) и
+                  партнёрская. Второй таб виден, только если партнёрская
+                  техника вообще есть. */}
+              {partnerScooterNames.size > 0 && (
+                <div className="flex shrink-0 items-center rounded-full bg-surface-soft p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setFleetTab("petrol")}
+                    className={cn(
+                      "inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-[12px] font-semibold transition-colors",
+                      fleetTab === "petrol"
+                        ? "bg-surface text-ink shadow-card-sm"
+                        : "text-muted hover:text-ink",
+                    )}
+                  >
+                    <PetrolMark size="sm" /> Бензиновые
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFleetTab("partner")}
+                    className={cn(
+                      "inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-[12px] font-semibold transition-colors",
+                      fleetTab === "partner"
+                        ? "bg-surface text-ink shadow-card-sm"
+                        : "text-muted hover:text-ink",
+                    )}
+                  >
+                    <ElectricMark size="sm" /> Партнёрская
+                    {partnerRentalsCount > 0 && (
+                      <span className="rounded-full bg-emerald-100 px-1.5 text-[10.5px] font-bold text-emerald-700">
+                        {partnerRentalsCount}
+                      </span>
+                    )}
+                  </button>
+                </div>
+              )}
               {/* v0.7.2: когда панель скрыта, но аренда выбрана — вкладка
                   «Показать карточку» возвращает панель. */}
               {selected && !panelOpen && (

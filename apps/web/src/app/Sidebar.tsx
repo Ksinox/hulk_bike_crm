@@ -152,7 +152,13 @@ export function Sidebar({
           </svg>
         </div>
 
-        <div className="flex flex-col gap-1">
+        {/* Фикс 27.08: на низких экранах пунктов больше, чем помещается по
+            высоте, а overflow-hidden их просто обрезал — нижние разделы
+            (Документы, Должники, Аналитика…) было НЕ НАЖАТЬ. Теперь середина
+            скроллится (колёсиком/тачпадом), а «Настройки»/«Выход» всегда
+            прижаты снизу. На высоких экранах ничего не меняется — скролла
+            нет. Плюс компакт-режим строк на низких экранах (index.css). */}
+        <div className="sidebar-scroll -mx-1 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-1">
           {mainItems.map((item) => (
             <NavRow
               key={item.id}
@@ -173,8 +179,6 @@ export function Sidebar({
           ))}
         </div>
 
-        <div className="flex-1" />
-
         <UpdateBanner phase={phase} version={version} expanded={expanded} />
 
         {/* Калькулятор аренды — плавающее окно (не раздел). Открывается отсюда,
@@ -184,7 +188,7 @@ export function Sidebar({
           onMouseEnter={(e) => handleEnter(e, "Калькулятор · Alt + C")}
           onMouseLeave={handleLeave}
           onClick={() => toggleCalculator()}
-          className="relative mb-1 flex h-11 items-center gap-3 overflow-hidden whitespace-nowrap rounded-[14px] px-3 text-left text-muted transition-colors hover:bg-blue-50 hover:text-blue-600"
+          className="sidebar-row relative mb-1 flex h-11 shrink-0 items-center gap-3 overflow-hidden whitespace-nowrap rounded-[14px] px-3 text-left text-muted transition-colors hover:bg-blue-50 hover:text-blue-600"
         >
           <span className="relative flex-shrink-0">
             <Calculator size={20} />
@@ -280,7 +284,7 @@ function NavRow({
       }}
       title={disabled ? "Раздел в разработке" : undefined}
       className={cn(
-        "relative flex h-11 items-center gap-3 overflow-hidden whitespace-nowrap rounded-[14px] px-3 text-left transition-colors",
+        "sidebar-row relative flex h-11 shrink-0 items-center gap-3 overflow-hidden whitespace-nowrap rounded-[14px] px-3 text-left transition-colors",
         active && "bg-ink text-white",
         !active && !disabled && "text-muted hover:bg-blue-50 hover:text-blue-600",
         !active && disabled && "cursor-not-allowed text-muted-2 opacity-50",

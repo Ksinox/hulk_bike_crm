@@ -44,6 +44,15 @@ export function ScooterStatusModal({
   );
   const locked = !!activeRental;
 
+  /**
+   * Правка 27.08: партнёрская техника — НЕ наша, передать её в выкуп мы
+   * не можем (выкуп — переход права собственности от нас к клиенту).
+   * Для партнёрских единиц статус «Передан в выкуп» скрываем.
+   */
+  const options = scooter.isPartner
+    ? OPTIONS.filter((o) => o.id !== "buyout")
+    : OPTIONS;
+
   const submit = async () => {
     if (selected === scooter.baseStatus) return onClose();
     try {
@@ -136,7 +145,7 @@ export function ScooterStatusModal({
         )}
 
         <div className="flex flex-col gap-1 px-3 py-3">
-          {OPTIONS.map((o) => {
+          {options.map((o) => {
             const active = o.id === selected;
             const isCurrent = o.id === scooter.baseStatus;
             const disabled = locked && !isCurrent;

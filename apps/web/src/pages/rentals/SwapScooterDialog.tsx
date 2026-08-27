@@ -396,7 +396,11 @@ export function SwapScooterDialog({
                 Что делаем со старым скутером?
               </div>
               <div className="flex flex-col gap-2">
-                {SCOOTER_BASE_STATUS_OPTIONS.map((o) => {
+                {SCOOTER_BASE_STATUS_OPTIONS.filter(
+                  // Правка 27.08: партнёрская техника не наша — в выкуп её
+                  // передать нельзя, статус скрываем.
+                  (o) => !(o.value === "buyout" && currentScooter?.isPartner),
+                ).map((o) => {
                   const active = o.value === oldStatus;
                   return (
                     <button
@@ -745,7 +749,11 @@ export function SwapScooterDialog({
             </div>
             <div className="flex-1 overflow-y-auto p-3">
               <div className="flex flex-col gap-1">
-                {SCOOTER_BASE_STATUS_OPTIONS.map((o) => {
+                {SCOOTER_BASE_STATUS_OPTIONS.filter(
+                  // Правка 27.08: партнёрская техника не наша — в выкуп её
+                  // передать нельзя, статус скрываем.
+                  (o) => !(o.value === "buyout" && currentScooter?.isPartner),
+                ).map((o) => {
                   const active = o.value === oldStatus;
                   return (
                     <button

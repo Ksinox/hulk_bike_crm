@@ -19,6 +19,8 @@ import { useRentalStickers } from "@/lib/api/stickers";
 import { MiniStickers } from "@/components/StickerStack";
 import type { Rental } from "@/lib/mock/rentals";
 import { useApiClients } from "@/lib/api/clients";
+import { useApiScooters } from "@/lib/api/scooters";
+import { ElectricMark, PetrolMark } from "@/components/PowerTypeBadge";
 import { useDebtAggregate } from "@/lib/api/debt";
 import { effectiveRentalStatus } from "@/lib/rentalStatus";
 import type { ApiClient } from "@/lib/api/types";
@@ -97,6 +99,20 @@ export function MobileRentals() {
 
   const [filter, setFilter] = useState<Filter>("active");
   const [search, setSearch] = useState("");
+  /**
+   * Правка 27.08 (паритет с десктопом): табы техники — «Бензиновые» (наши)
+   * и «Партнёрская». Второй виден, только если партнёрская техника есть.
+   */
+  const { data: apiScooters = [] } = useApiScooters();
+  const partnerNames = useMemo(
+    () => new Set(apiScooters.filter((s) => s.isPartner).map((s) => s.name)),
+    [apiScooters],
+  );
+  const [fleetTab, setFleetTab] = useState<"petrol" | "partner">("petrol");
+  const inFleetTab = (r: Rental): boolean =>
+    fleetTab === "partner"
+      ? partnerNames.has(r.scooter)
+      : !partnerNames.has(r.scooter);
   const [openId, setOpenId] = useReloadRestoredState<number | null>(
     "mobile:rentals:openId",
     null,
@@ -140,6 +156,7 @@ export function MobileRentals() {
     let over = 0;
     let ret = 0;
     for (const r of active) {
+      if (!inFleetTab(r)) continue;
       const finished = r.status === "completed" || r.status === "cancelled";
       if (!finished) act++;
       if (isOverdue(r, realDebtOf(r.id))) over++;
@@ -148,7 +165,7 @@ export function MobileRentals() {
     }
     return { act, over, ret };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, today, debtAgg]);
+  }, [active, today, debtAgg, fleetTab, partnerNames]);
 
   const filtered = useMemo(() => {
     const matchStatus = (r: Rental): boolean => {
@@ -175,10 +192,10 @@ export function MobileRentals() {
       );
     };
     return source
-      .filter((r) => matchStatus(r) && matchSearch(r))
+      .filter((r) => inFleetTab(r) && matchStatus(r) && matchSearch(r))
       .sort((a, b) => b.id - a.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [source, filter, search, clientById, today, debtAgg]);
+  }, [source, filter, search, clientById, today, debtAgg, fleetTab, partnerNames]);
 
   // F5: «Сумма» строки = «Эта аренда» (текущий период), как в карточке и
   // десктоп-списке. Один и тот же computeCurrentPeriod.
@@ -226,6 +243,36 @@ export function MobileRentals() {
         onChange={setSearch}
         placeholder="Клиент, скутер, телефон, №…"
       />
+      {/* Правка 27.08: табы техники (виден только при наличии партнёрской) */}
+      {partnerNames.size > 0 && (
+        <div className="flex items-center rounded-full bg-surface p-0.5 shadow-card-sm">
+          {(
+            [
+              ["petrol", "Бензиновые"],
+              ["partner", "Партнёрская"],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setFleetTab(id)}
+              className={
+                "flex h-9 flex-1 items-center justify-center gap-1.5 rounded-full text-[13px] font-semibold transition-colors " +
+                (fleetTab === id
+                  ? "bg-ink text-white"
+                  : "text-muted active:text-ink")
+              }
+            >
+              {id === "petrol" ? (
+                <PetrolMark size="sm" />
+              ) : (
+                <ElectricMark size="sm" />
+              )}
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
       <MobileChips options={chips} value={filter} onChange={setFilter} />
 
       {filtered.length === 0 ? (
