@@ -18,27 +18,32 @@
  * намёка на электричество.
  */
 function Bolt({
-  left,
-  top,
-  size,
+  cx,
+  cy,
+  sizePct,
   delay,
   dur,
 }: {
-  left: number;
-  top: number;
-  size: number;
+  /** Центр молнии в % круга. Середина закрыта белым кругом доната, поэтому
+      молнии живут в КОЛЬЦЕ — иначе их просто не видно. */
+  cx: number;
+  cy: number;
+  /** Размер в % диаметра — чтобы совпадал с шириной кольца на любом size. */
+  sizePct: number;
   delay: number;
   dur: number;
 }) {
   return (
     <svg
       viewBox="0 0 24 24"
-      width={size}
-      height={size}
       className="absolute"
       style={{
-        left: `${left}%`,
-        top: `${top}%`,
+        left: `${cx}%`,
+        top: `${cy}%`,
+        width: `${sizePct}%`,
+        height: `${sizePct}%`,
+        marginLeft: `-${sizePct / 2}%`,
+        marginTop: `-${sizePct / 2}%`,
         animation: `pkBolt ${dur}s linear infinite`,
         animationDelay: `${delay}s`,
         filter: "drop-shadow(0 0 6px rgba(191,219,254,0.95))",
@@ -106,11 +111,12 @@ export default function ElectricGradient({
 
       {bolts && (
         <>
-          {/* Разнесены и по высоте: при неполной заливке нижние всё равно
-              попадают в видимую часть круга. */}
-          <Bolt left={15} top={46} size={18} delay={0} dur={3.1} />
-          <Bolt left={57} top={28} size={13} delay={1.4} dur={2.6} />
-          <Bolt left={37} top={68} size={12} delay={2.3} dur={3.6} />
+          {/* По кольцу: бока и низ. Низ виден при любой заливке, бока — от
+              половины и выше. Мигают вразнобой (разные delay/длительность). */}
+          <Bolt cx={8.5} cy={50} sizePct={13} delay={0} dur={3.1} />
+          <Bolt cx={91.5} cy={50} sizePct={13} delay={1.4} dur={2.6} />
+          <Bolt cx={29} cy={86} sizePct={11} delay={2.3} dur={3.6} />
+          <Bolt cx={71} cy={86} sizePct={11} delay={0.8} dur={4.1} />
         </>
       )}
     </div>
