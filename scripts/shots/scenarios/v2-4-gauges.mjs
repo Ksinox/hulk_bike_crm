@@ -13,6 +13,30 @@ export async function run(page, ctx) {
     };
   });
   console.log("чипсы:", JSON.stringify(st));
+
+  /**
+   * Кадр для лендинга делаем ДЕТЕРМИНИРОВАННЫМ: иначе разряд молнии (он живёт
+   * доли секунды) и пузырьки попадают в кадр как повезёт. Ставим анимации на
+   * нужный момент и замораживаем — снимаем не «случайный миг», а тот, что
+   * показывает эффект. Запускать с SHOT_ANIM=1.
+   */
+  const frozen = await page.evaluate(() => {
+    let n = 0;
+    for (const a of document.getAnimations()) {
+      const name = a.animationName || "";
+      let t = null;
+      if (/^pk(Flash|Draw|LeaderFade)/.test(name)) t = 265; // пик вспышки
+      else if (name === "pkBubble") t = 2100; // пузырьки на середине подъёма
+      if (t === null) continue;
+      a.currentTime = t;
+      a.pause();
+      n++;
+    }
+    return n;
+  });
+  console.log("заморожено анимаций:", frozen);
+  await ctx.sleep(150);
+
   await ctx.shot("v2-4-gauges", { jpeg: true });
   // Крупный план обоих колец: чипсы — разные карточки, поэтому берём
   // объединение их прямоугольников. Внимание: «5 в аренде» набрано с

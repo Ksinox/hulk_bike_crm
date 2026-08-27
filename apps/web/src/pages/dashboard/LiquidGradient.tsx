@@ -11,13 +11,17 @@
 
 /** Пузырьки: разный размер, скорость и снос вбок — иначе видно «строй». */
 const BUBBLES = [
-  { left: 22, size: 7, dur: 5.2, delay: 0, drift: 5 },
-  { left: 38, size: 4, dur: 4.1, delay: 1.6, drift: -4 },
-  { left: 52, size: 9, dur: 6.4, delay: 0.7, drift: 6 },
-  { left: 64, size: 5, dur: 4.6, delay: 2.4, drift: -5 },
-  { left: 78, size: 6, dur: 5.6, delay: 3.3, drift: 4 },
-  { left: 30, size: 3, dur: 3.6, delay: 2.9, drift: 3 },
-  { left: 70, size: 3.5, dur: 4.0, delay: 1.1, drift: -3 },
+  // Позиции разнесены к краям: середину круга закрывает белый центр доната,
+  // и пузырьки оттуда просто не видно (кроме случая полной заливки, когда
+  // центр прозрачный — под это оставлена пара штук по середине).
+  { left: 11, size: 7, dur: 5.2, delay: 0, drift: 5 },
+  { left: 19, size: 4, dur: 4.1, delay: 1.6, drift: -4 },
+  { left: 27, size: 5.5, dur: 6.4, delay: 0.7, drift: 6 },
+  { left: 47, size: 6, dur: 5.0, delay: 2.2, drift: -5 },
+  { left: 57, size: 3.5, dur: 4.4, delay: 3.6, drift: 4 },
+  { left: 73, size: 5, dur: 4.6, delay: 2.4, drift: -5 },
+  { left: 81, size: 6.5, dur: 5.6, delay: 3.3, drift: 4 },
+  { left: 89, size: 3.5, dur: 3.9, delay: 1.1, drift: -3 },
 ];
 
 export default function LiquidGradient() {
