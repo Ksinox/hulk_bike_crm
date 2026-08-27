@@ -459,7 +459,14 @@ export function Rentals() {
    * «Партнёрская». Партнёрские аренды по-прежнему живут в «Партнёрке», но
    * отсюда их тоже видно: тот же список, те же колонки, та же карточка.
    */
-  const [fleetTab, setFleetTab] = useState<"petrol" | "partner">("petrol");
+  const [fleetTab, setFleetTabRaw] = useState<"petrol" | "partner">("petrol");
+  /** Смена таба закрывает открытую карточку — она из другого списка. */
+  const setFleetTab = (t: "petrol" | "partner") => {
+    if (t === fleetTab) return;
+    setFleetTabRaw(t);
+    setSelectedId(null);
+    setPanelOpen(false);
+  };
   const partnerRentalsCount = useMemo(
     () =>
       rentals.filter(
