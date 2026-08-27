@@ -38,7 +38,13 @@ export async function run(page, ctx) {
   await ctx.sleep(3000);
   const mob = await page.evaluate(() => {
     const t = document.body.innerText;
-    return { park: /загрузка/i.test(t), electro: /Электротранспорт/.test(t) };
+    return {
+      park: /загрузка/i.test(t),
+      // На мобиле чипсы подписаны коротко: «Бензиновые» и «Электро».
+      petrol: /Бензиновые/.test(t),
+      electro: /Электро/.test(t),
+      incomingBelow: /Поступит сегодня/.test(t),
+    };
   });
   console.log("мобила:", JSON.stringify(mob));
   await ctx.shot("v2-4-gauges-mobile", { jpeg: true });
