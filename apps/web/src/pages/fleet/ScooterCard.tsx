@@ -446,7 +446,7 @@ export function ScooterCard({
           )}
         >
           {/* фото */}
-          <ScooterPhotoArea scooter={scooter} />
+          <ScooterPhotoArea scooter={scooter} compact={drawerChrome} />
 
           {/* техничка */}
           <div className="flex flex-col gap-0 p-6">
@@ -1580,7 +1580,14 @@ export type { ScooterModel };
  *            2) аватарка модели (scooter_models.avatarKey) —
  *            3) заглушка «Нет фото».
  */
-function ScooterPhotoArea({ scooter }: { scooter: FleetScooter }) {
+function ScooterPhotoArea({
+  scooter,
+  compact = false,
+}: {
+  scooter: FleetScooter;
+  /** Дровер (правка 27.08): фото-зона ниже, без гигантской пустоты. */
+  compact?: boolean;
+}) {
   const { data: models = [] } = useApiScooterModels();
   // Ищем модель по modelId (новый FK); если нет — по совпадению названия с enum
   const model = scooter.modelId
@@ -1591,7 +1598,12 @@ function ScooterPhotoArea({ scooter }: { scooter: FleetScooter }) {
   const modelAvatar = fileUrl(model?.avatarKey, { variant: "view" });
 
   return (
-    <div className="relative flex min-h-[480px] flex-col items-center justify-end gap-2 overflow-visible bg-white p-5 pb-4 text-muted-2 md:border-r md:border-border">
+    <div
+      className={cn(
+        "relative flex flex-col items-center justify-end gap-2 overflow-visible bg-white p-5 pb-4 text-muted-2 md:border-r md:border-border",
+        compact ? "min-h-[220px] border-b border-border md:border-r-0" : "min-h-[480px]",
+      )}
+    >
       {modelAvatar ? (
         <>
           {/*
@@ -1603,7 +1615,10 @@ function ScooterPhotoArea({ scooter }: { scooter: FleetScooter }) {
           <img
             src={modelAvatar}
             alt={model?.name ?? ""}
-            className="-mt-8 h-[28rem] w-auto max-w-none object-contain drop-shadow-[0_18px_24px_rgba(15,23,42,0.18)]"
+            className={cn(
+              "w-auto max-w-none object-contain drop-shadow-[0_18px_24px_rgba(15,23,42,0.18)]",
+              compact ? "h-48" : "-mt-8 h-[28rem]",
+            )}
           />
           <div className="text-[15px] font-bold text-ink">
             {model?.name ?? MODEL_LABEL[scooter.model]}
