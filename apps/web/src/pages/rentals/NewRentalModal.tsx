@@ -22,6 +22,7 @@ import {
 import { addRental, addRentalAsync, useRentals } from "./rentalsStore";
 import { RentalContractPreview } from "./RentalContractPreview";
 import { toast } from "@/lib/toast";
+import { ApiError } from "@/lib/api";
 import { useAllClients } from "@/pages/clients/clientStore";
 import { AddClientModal } from "@/pages/clients/AddClientModal";
 import { useApiScooters } from "@/lib/api/scooters";
@@ -442,7 +443,17 @@ export function NewRentalModal({
   // со страницы Аренды). onCreated/закрытие вызываем уже после превью.
   const [createdRental, setCreatedRental] = useState<Rental | null>(null);
 
-  const handleSave = async () => {
+  /**
+   * Правка 27.08: у клиента уже есть открытая аренда. API отдаёт 409
+   * client_busy, и вместо глухой ошибки спрашиваем оператора: закрыть
+   * прошлую или это правда вторая единица.
+   */
+  const [secondRentalAsk, setSecondRentalAsk] = useState<{
+    rentalId: number;
+    message: string;
+  } | null>(null);
+
+  const handleSave = async (allowSecondForClient = false) => {
     if (!canSave || !scooterName || saving) return;
     setSaving(true);
 
@@ -486,15 +497,28 @@ export function NewRentalModal({
         note: note.trim() || undefined,
         contractUploaded: false,
         paymentConfirmed: null,
+        allowSecondForClient,
       } as Parameters<typeof addRental>[0]);
       // НЕ закрываем сразу: показываем превью договора поверх (z-120).
       // onCreated(created) + requestClose() вызовем при закрытии превью.
       setCreatedRental(created);
+      setSecondRentalAsk(null);
     } catch (e) {
-      toast.error(
-        "Не удалось создать аренду",
-        (e as Error).message ?? "Попробуйте ещё раз",
-      );
+      const err = e as ApiError;
+      const body = err?.body as
+        | { error?: string; message?: string; rentalId?: number }
+        | undefined;
+      if (err?.status === 409 && body?.error === "client_busy") {
+        setSecondRentalAsk({
+          rentalId: body.rentalId ?? 0,
+          message: body.message ?? "У клиента уже есть открытая аренда.",
+        });
+      } else {
+        toast.error(
+          "Не удалось создать аренду",
+          (e as Error).message ?? "Попробуйте ещё раз",
+        );
+      }
     } finally {
       setSaving(false);
     }
@@ -1247,7 +1271,7 @@ export function NewRentalModal({
               <button
                 type="button"
                 disabled={!canSave || saving}
-                onClick={handleSave}
+                onClick={() => void handleSave()}
                 className={cn(
                   "flex min-h-[48px] flex-1 items-center justify-center rounded-xl text-[14px] font-bold transition-colors",
                   canSave && !saving
@@ -1275,7 +1299,7 @@ export function NewRentalModal({
               <button
                 type="button"
                 disabled={!canSave}
-                onClick={handleSave}
+                onClick={() => void handleSave()}
                 className={cn(
                   "rounded-full px-4 py-1.5 text-[12px] font-semibold transition-colors",
                   canSave
@@ -1312,6 +1336,50 @@ export function NewRentalModal({
             requestClose();
           }}
         />
+      )}
+
+      {/* Правка 27.08: у клиента уже открыта аренда. Чаще всего это забытая
+          незакрытая сделка — по ней потом двоятся долги и залог. Показываем,
+          какая именно открыта, и требуем осознанного решения. */}
+      {secondRentalAsk && (
+        <div className="fixed inset-0 z-[130] flex items-center justify-center bg-ink/55 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-[420px] rounded-2xl bg-surface p-5 shadow-card-lg">
+            <div className="flex items-start gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-50 text-amber-600">
+                <Lock size={18} />
+              </span>
+              <div className="min-w-0">
+                <div className="font-display text-[17px] font-bold text-ink">
+                  У клиента уже есть аренда
+                </div>
+                <p className="mt-1 text-[13px] leading-snug text-muted">
+                  {secondRentalAsk.message}
+                </p>
+                <p className="mt-2 text-[12px] leading-snug text-muted-2">
+                  Если прошлую сделку просто забыли закрыть — закройте её, иначе
+                  долги и залог будут считаться по двум арендам сразу.
+                </p>
+              </div>
+            </div>
+            <div className="mt-5 flex flex-col gap-2 sm:flex-row-reverse">
+              <button
+                type="button"
+                onClick={() => setSecondRentalAsk(null)}
+                className="h-11 flex-1 rounded-xl bg-blue-600 px-4 text-[14px] font-bold text-white active:scale-[0.99]"
+              >
+                Вернуться и проверить
+              </button>
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => void handleSave(true)}
+                className="h-11 flex-1 rounded-xl border border-border px-4 text-[14px] font-semibold text-ink disabled:opacity-60"
+              >
+                Это вторая единица
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

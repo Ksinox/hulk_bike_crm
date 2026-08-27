@@ -409,6 +409,8 @@ export async function addRentalAsync(
   r: Omit<Rental, "id"> & {
     depositItem?: string | null;
     equipmentJson?: { itemId?: number | null; name: string; price: number; free: boolean }[];
+    /** Оператор подтвердил вторую открытую аренду этому же клиенту. */
+    allowSecondForClient?: boolean;
   },
 ): Promise<Rental> {
   const body = buildRentalBody(r);
@@ -421,9 +423,11 @@ function buildRentalBody(
   r: Omit<Rental, "id"> & {
     depositItem?: string | null;
     equipmentJson?: { itemId?: number | null; name: string; price: number; free: boolean }[];
+    allowSecondForClient?: boolean;
   },
 ): Record<string, unknown> {
   return {
+    ...(r.allowSecondForClient ? { allowSecondForClient: true } : {}),
     clientId: r.clientId,
     scooterId: r.scooterId ?? null,
     parentRentalId: r.parentRentalId ?? null,

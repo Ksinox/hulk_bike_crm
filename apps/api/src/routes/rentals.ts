@@ -93,6 +93,11 @@ const CreateRentalBody = z
     note: z.string().optional().nullable(),
     /** v0.9.8: создана по произвольному («своему») тарифу (ставка вручную). */
     customTariff: z.boolean().optional(),
+    /**
+     * Осознанное согласие оформить клиенту ВТОРУЮ открытую аренду.
+     * По умолчанию вторая аренда блокируется (см. проверку client_busy).
+     */
+    allowSecondForClient: z.boolean().optional(),
   })
   .strict();
 
@@ -269,6 +274,43 @@ export async function rentalsRoutes(app: FastifyInstance) {
           message: `Скутер ещё в открытой аренде #${String(r.id).padStart(4, "0")} (${rentalStatusLabel(r.status)}). Сначала закройте её.`,
           rentalId: r.id,
           rentalStatus: r.status,
+        });
+      }
+    }
+
+    /**
+     * Одна открытая аренда на клиента (правка 27.08).
+     *
+     * Заказчик увидел на превью двух активных аренд у одного человека и
+     * сказал, что так быть не должно. На практике вторая открытая аренда —
+     * почти всегда ошибка оператора: прошлую не закрыли, а оформили новую,
+     * и дальше по клиенту двоятся долги, депозит и просрочка.
+     *
+     * Блокируем, но не намертво: редкий законный случай (человек берёт
+     * вторую единицу) проходит с флагом allowSecondForClient — фронт
+     * показывает, какая аренда уже открыта, и спрашивает подтверждение.
+     *
+     * Продление (parentRentalId) под проверку не попадает: это
+     * продолжение той же сделки, а не второй договор.
+     */
+    if (!d.allowSecondForClient && !d.parentRentalId) {
+      const openForClient = await db
+        .select({ id: rentals.id, scooterId: rentals.scooterId })
+        .from(rentals)
+        .where(
+          and(
+            eq(rentals.clientId, d.clientId),
+            sql`${rentals.status} = 'active'`,
+            isNull(rentals.archivedAt),
+          ),
+        );
+      if (openForClient.length > 0) {
+        const open = openForClient[0]!;
+        return reply.code(409).send({
+          error: "client_busy",
+          message: `У клиента уже открыта аренда #${String(open.id).padStart(4, "0")}. Сначала закройте её — или подтвердите, что это вторая единица.`,
+          rentalId: open.id,
+          scooterId: open.scooterId,
         });
       }
     }
