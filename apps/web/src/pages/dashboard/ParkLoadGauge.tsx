@@ -188,11 +188,10 @@ export function ParkLoadGauge({
    * текст инвертируется в белый. Иначе на сплошном круге белый центр выглядел
    * чужеродной заплаткой.
    */
-  const centerBg = !full
-    ? "#ffffff"
-    : electro
-      ? "linear-gradient(160deg, #2563EB 0%, #1E3A8A 100%)"
-      : "linear-gradient(160deg, #22A8C0 0%, #1D9E75 100%)";
+  // Заливка переливается, поэтому фиксированный цвет центра с ней не
+  // совпадал бы. Делаем «дырку» прозрачной — это и есть ровно тот же цвет в
+  // любой момент, а заодно разряды и пузырьки проходят через весь круг.
+  const centerBg = full ? "transparent" : "#ffffff";
 
   return (
     <Card className={cn("flex h-full items-center", className)}>
