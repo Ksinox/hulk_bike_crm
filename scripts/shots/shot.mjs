@@ -49,14 +49,21 @@ const browser = await puppeteer.launch({
 try {
   const page = await browser.newPage();
   // Отключаем анимации — скриншоты стабильные, без полукадров.
-  await page.evaluateOnNewDocument(() => {
-    const s = document.createElement("style");
-    s.textContent =
-      "*,*::before,*::after{animation:none!important;transition:none!important}";
-    document.addEventListener("DOMContentLoaded", () =>
-      document.head.appendChild(s),
-    );
-  });
+  //
+  // SHOT_ANIM=1 оставляет анимации включёнными. Нужно там, где сам эффект и
+  // есть предмет съёмки (круги загрузки: уровень заливки, разряды молний,
+  // пузырьки). Без этого кадр показывает застывшее состояние, которое живой
+  // пользователь никогда не видит.
+  if (process.env.SHOT_ANIM !== "1") {
+    await page.evaluateOnNewDocument(() => {
+      const s = document.createElement("style");
+      s.textContent =
+        "*,*::before,*::after{animation:none!important;transition:none!important}";
+      document.addEventListener("DOMContentLoaded", () =>
+        document.head.appendChild(s),
+      );
+    });
+  }
 
   // Логин Node-фетчем (вне браузера) → сессионную куку ставим напрямую:
   // headless блокирует third-party Set-Cookie при XHR crm→api.

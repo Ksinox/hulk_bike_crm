@@ -166,6 +166,12 @@ export function ParkLoadGauge({
     maskRepeat: "repeat-x",
     WebkitMaskSize: `${w}px ${TILE_H}px`,
     maskSize: `${w}px ${TILE_H}px`,
+    // Уровень заливки задан и СТАТИЧНО, не только в кадрах анимации: при
+    // отключённой анимации (prefers-reduced-motion, конвейер скриншотов)
+    // mask-position падал в 0 0, кромка уезжала под самый верх круга и
+    // выглядела зубчатым срезом.
+    WebkitMaskPosition: `0 ${sY - a}px`,
+    maskPosition: `0 ${sY - a}px`,
   });
 
   /** Наполнитель круга — жидкость или энергия. */

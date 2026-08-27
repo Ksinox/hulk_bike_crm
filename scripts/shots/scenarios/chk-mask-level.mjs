@@ -14,18 +14,13 @@ export async function run(page, ctx) {
     const layers = [...circle.children].filter(
       (c) => c.tagName === "DIV" && getComputedStyle(c).maskImage !== "none",
     );
-    const style = document.querySelector("style[data-x]") || null;
-    const kf = [...document.querySelectorAll("style")]
-      .map((s) => s.textContent || "")
-      .filter((t) => /pkWaveA/.test(t))
-      .join("|")
-      .slice(0, 240);
+    const own = circle.querySelector("style");
+    const cs = getComputedStyle(layers[0]);
     return {
-      version: window.__APP_VERSION__ ?? null,
       layers: layers.length,
-      maskSize: layers[0] ? getComputedStyle(layers[0]).maskSize : null,
-      keyframes: kf,
-      hasStyleX: !!style,
+      animName: cs.animationName,
+      maskSize: cs.maskSize,
+      ownKeyframes: (own && own.textContent ? own.textContent : "").slice(0, 170),
     };
   });
   console.log(JSON.stringify(info, null, 1));

@@ -14,13 +14,16 @@
  *
  * Два приёма, без которых разряд выглядел «трещинами на стекле»:
  *  • канал СУЖАЕТСЯ кверху — он разбит на три сегмента с убывающей толщиной,
- *    и они прорисовываются снизу вверх по очереди (заодно это и есть рост
- *    разряда);
+ *    и они вспыхивают снизу вверх по очереди (заодно это и есть рост разряда);
  *  • у каждой линии два ореола свечения (ближний плотный и дальний мягкий) —
  *    именно свечение отличает молнию от простой белой черты.
  *
- * Технически: пути с pathLength=1 и анимацией stroke-dashoffset. У лидера
- * offset идёт −1 → 0 (прорисовка сверху вниз), у возвратного удара 1 → 0.
+ * Разделение анимаций принципиально: прорисовку (stroke-dashoffset) вешаем на
+ * ПУТИ, а вспышку и затухание (opacity) — на ГРУППУ. Иначе кадры opacity
+ * затирают собственную прозрачность ореолов, и свечение становится таким же
+ * ярким, как ядро. Базовое состояние группы — opacity 0: при отключённой
+ * анимации разряд не показывается вовсе, вместо того чтобы застыть
+ * прорисованным (именно так он и превращался в «трещины»).
  *
  * Слой рисуется ПОВЕРХ центрального круга: в узком кольце разряд читался бы
  * иконкой. Текст — выше слоя.
@@ -38,22 +41,21 @@ const BRANCHES = [
   { d: "M54 71 L61 66 L59 59", w: 0.55 },
 ];
 
-function Bolt({
+/** Один сегмент разряда: ядро + два ореола. Прорисовка снизу вверх. */
+function Segment({
   d,
   w,
   scale,
   delay,
   dur,
-  leader,
 }: {
   d: string;
   w: number;
   scale: number;
   delay: number;
   dur: number;
-  leader?: boolean;
 }) {
-  const common = {
+  const base = {
     d,
     pathLength: 1,
     strokeDasharray: 1,
@@ -61,33 +63,28 @@ function Bolt({
     strokeLinecap: "round" as const,
     strokeLinejoin: "round" as const,
     style: {
-      animation: `${leader ? "pkLeader" : "pkReturn"} ${dur}s linear infinite`,
+      strokeDashoffset: 1,
+      animation: `pkDraw ${dur}s linear infinite`,
       animationDelay: `${delay}s`,
     },
   };
-  if (leader) {
-    return <path {...common} stroke="#DBEAFE" strokeWidth={w * scale * 0.45} />;
-  }
   return (
     <>
-      {/* Дальний мягкий ореол */}
       <path
-        {...common}
+        {...base}
         stroke="#7DD3FC"
         strokeWidth={w * scale * 7}
-        opacity={0.22}
+        opacity={0.2}
         filter="url(#pkGlowFar)"
       />
-      {/* Ближний плотный ореол */}
       <path
-        {...common}
+        {...base}
         stroke="#BAE6FD"
-        strokeWidth={w * scale * 3}
-        opacity={0.6}
+        strokeWidth={w * scale * 2.8}
+        opacity={0.55}
         filter="url(#pkGlowNear)"
       />
-      {/* Ядро разряда */}
-      <path {...common} stroke="#ffffff" strokeWidth={w * scale} />
+      <path {...base} stroke="#ffffff" strokeWidth={w * scale} />
     </>
   );
 }
@@ -106,38 +103,62 @@ function Strike({
   return (
     <g transform={transform}>
       {/* Лидер: тускло, сверху вниз */}
-      {TRUNK.map((s, i) => (
-        <Bolt
-          key={`l${i}`}
-          d={s.d}
-          w={s.w}
-          scale={scale}
-          dur={dur}
-          delay={delay + (TRUNK.length - 1 - i) * 0.04}
-          leader
-        />
-      ))}
-      {/* Возвратный удар: сегменты вспыхивают снизу вверх → канал «растёт» */}
-      {TRUNK.map((s, i) => (
-        <Bolt
-          key={`t${i}`}
-          d={s.d}
-          w={s.w}
-          scale={scale}
-          dur={dur}
-          delay={delay + i * 0.035}
-        />
-      ))}
-      {BRANCHES.map((b, i) => (
-        <Bolt
-          key={`b${i}`}
-          d={b.d}
-          w={b.w}
-          scale={scale}
-          dur={dur}
-          delay={delay + 0.07 + i * 0.03}
-        />
-      ))}
+      <g
+        style={{
+          opacity: 0,
+          animation: `pkLeaderFade ${dur}s linear infinite`,
+          animationDelay: `${delay}s`,
+        }}
+      >
+        {TRUNK.map((s, i) => (
+          <path
+            key={`l${i}`}
+            d={s.d}
+            pathLength={1}
+            strokeDasharray={1}
+            fill="none"
+            stroke="#DBEAFE"
+            strokeWidth={s.w * scale * 0.45}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            style={{
+              strokeDashoffset: -1,
+              animation: `pkDrawDown ${dur}s linear infinite`,
+              animationDelay: `${delay + (TRUNK.length - 1 - i) * 0.04}s`,
+            }}
+          />
+        ))}
+      </g>
+
+      {/* Возвратный удар: вспышка и мерцание — на группе, прорисовка — на путях */}
+      <g
+        style={{
+          opacity: 0,
+          animation: `pkFlash ${dur}s linear infinite`,
+          animationDelay: `${delay}s`,
+        }}
+      >
+        {TRUNK.map((s, i) => (
+          <Segment
+            key={`t${i}`}
+            d={s.d}
+            w={s.w}
+            scale={scale}
+            dur={dur}
+            delay={delay + i * 0.035}
+          />
+        ))}
+        {BRANCHES.map((b, i) => (
+          <Segment
+            key={`b${i}`}
+            d={b.d}
+            w={b.w}
+            scale={scale}
+            dur={dur}
+            delay={delay + 0.07 + i * 0.03}
+          />
+        ))}
+      </g>
     </g>
   );
 }
@@ -150,9 +171,9 @@ export default function LightningStrikes() {
       className="pointer-events-none absolute inset-0 h-full w-full"
     >
       {/* Цикл 5 с. Лидер ползёт вниз 0–6%, возвратный удар бьёт на 6–8%,
-          дальше мерцание из нескольких ударов и затухание к 20%. Разряды
+          дальше мерцание из нескольких ударов и затухание к 21%. Разряды
           разнесены по времени так, чтобы одновременно бил только один. */}
-      <style>{`@keyframes pkLeader{0%{stroke-dashoffset:-1;opacity:0}1%{opacity:.45}6%{stroke-dashoffset:0;opacity:.5}8%{opacity:0}100%{opacity:0;stroke-dashoffset:-1}}@keyframes pkReturn{0%,5.9%{stroke-dashoffset:1;opacity:0}6%{opacity:1}8%{stroke-dashoffset:0;opacity:1}9.5%{opacity:.1}11%{opacity:.9}12.5%{opacity:.08}14%{opacity:.7}16%{opacity:.05}18%{opacity:.35}21%{opacity:0;stroke-dashoffset:0}100%{opacity:0;stroke-dashoffset:1}}`}</style>
+      <style>{`@keyframes pkDraw{0%,5.9%{stroke-dashoffset:1}8%{stroke-dashoffset:0}100%{stroke-dashoffset:0}}@keyframes pkDrawDown{0%{stroke-dashoffset:-1}6%{stroke-dashoffset:0}100%{stroke-dashoffset:0}}@keyframes pkLeaderFade{0%{opacity:0}1%{opacity:.45}6%{opacity:.5}8%{opacity:0}100%{opacity:0}}@keyframes pkFlash{0%,5.9%{opacity:0}6%{opacity:1}9.5%{opacity:.1}11%{opacity:.9}12.5%{opacity:.08}14%{opacity:.7}16%{opacity:.05}18%{opacity:.35}21%{opacity:0}100%{opacity:0}}`}</style>
       <defs>
         <filter id="pkGlowNear" x="-80%" y="-80%" width="260%" height="260%">
           <feGaussianBlur stdDeviation="1.6" />
