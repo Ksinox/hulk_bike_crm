@@ -28,11 +28,13 @@ export default function LiquidGradient() {
         className="absolute inset-[-30%]"
         style={{
           background: [
+            // Палитра держится в зелёно-бирюзовом: синее пятно убрано —
+            // в своей фазе градиент уплывал в синий и путался с электро.
             "radial-gradient(circle at 25% 25%, #34D399 0%, transparent 45%)",
-            "radial-gradient(circle at 80% 30%, #17E7FF 0%, transparent 45%)",
-            "radial-gradient(circle at 70% 80%, #2F86DB 0%, transparent 50%)",
+            "radial-gradient(circle at 80% 30%, #5EEAD4 0%, transparent 45%)",
+            "radial-gradient(circle at 70% 80%, #0E9F8A 0%, transparent 50%)",
             "radial-gradient(circle at 25% 75%, #1D9E75 0%, transparent 50%)",
-            "#22A8C0",
+            "#16B8A6",
           ].join(","),
           backgroundSize: "200% 200%",
           animation: "parkLiquidFlow 9s ease-in-out infinite",

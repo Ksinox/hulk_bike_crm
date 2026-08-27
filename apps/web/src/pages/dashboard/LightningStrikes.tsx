@@ -74,14 +74,14 @@ function Segment({
         {...base}
         stroke="#7DD3FC"
         strokeWidth={w * scale * 7}
-        opacity={0.2}
+        opacity={0.3}
         filter="url(#pkGlowFar)"
       />
       <path
         {...base}
         stroke="#BAE6FD"
         strokeWidth={w * scale * 2.8}
-        opacity={0.55}
+        opacity={0.7}
         filter="url(#pkGlowNear)"
       />
       <path {...base} stroke="#ffffff" strokeWidth={w * scale} />
@@ -170,7 +170,7 @@ export default function LightningStrikes() {
       preserveAspectRatio="none"
       className="pointer-events-none absolute inset-0 h-full w-full"
     >
-      {/* Цикл 5 с. Лидер ползёт вниз 0–6%, возвратный удар бьёт на 6–8%,
+      {/* Цикл 3.6 с. Лидер ползёт вниз 0–6%, возвратный удар бьёт на 6–8%,
           дальше мерцание из нескольких ударов и затухание к 21%. Разряды
           разнесены по времени так, чтобы одновременно бил только один. */}
       <style>{`@keyframes pkDraw{0%,5.9%{stroke-dashoffset:1}8%{stroke-dashoffset:0}100%{stroke-dashoffset:0}}@keyframes pkDrawDown{0%{stroke-dashoffset:-1}6%{stroke-dashoffset:0}100%{stroke-dashoffset:0}}@keyframes pkLeaderFade{0%{opacity:0}1%{opacity:.45}6%{opacity:.5}8%{opacity:0}100%{opacity:0}}@keyframes pkFlash{0%,5.9%{opacity:0}6%{opacity:1}9.5%{opacity:.1}11%{opacity:.9}12.5%{opacity:.08}14%{opacity:.7}16%{opacity:.05}18%{opacity:.35}21%{opacity:0}100%{opacity:0}}`}</style>
@@ -183,18 +183,18 @@ export default function LightningStrikes() {
         </filter>
       </defs>
       {/* Бьют по очереди и каждый раз в другом месте круга */}
-      <Strike transform="translate(2 2)" delay={0} dur={5} scale={1} />
+      <Strike transform="translate(2 2)" delay={0} dur={3.6} scale={1.15} />
       <Strike
         transform="translate(-24 4) rotate(-10 50 60)"
-        delay={1.7}
-        dur={5}
-        scale={0.85}
+        delay={1.2}
+        dur={3.6}
+        scale={1}
       />
       <Strike
         transform="translate(25 6) rotate(12 50 60)"
-        delay={3.4}
-        dur={5}
-        scale={0.8}
+        delay={2.4}
+        dur={3.6}
+        scale={0.95}
       />
     </svg>
   );
