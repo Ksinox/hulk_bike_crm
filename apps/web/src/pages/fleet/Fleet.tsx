@@ -1002,13 +1002,13 @@ function ParkOverview({
     : [];
 
   return (
-    <section className="overflow-hidden rounded-[22px] border border-border bg-surface px-5 py-4 shadow-card-sm sm:px-6 sm:py-5">
+    <section className="@container overflow-hidden rounded-[22px] border border-border bg-surface px-5 py-4 shadow-card-sm sm:px-6 sm:py-5">
       <div
         className={cn(
           "grid gap-3",
           groups.length > 0
-            ? "lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]"
-            : "lg:grid-cols-1",
+            ? "@[880px]:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]"
+            : "grid-cols-1",
         )}
       >
         {/* Левая часть: объём режима + его метрики */}
@@ -1071,10 +1071,13 @@ function ParkOverview({
             </div>
           )}
 
+          {/* Контейнер-запрос: при открытом дровере колонка узкая, и две
+              колонки метрик резали подписи («В аре…»). Ширина меряется по
+              КОНТЕЙНЕРУ, не по вьюпорту. */}
           <div
             className={cn(
               "mt-4 grid flex-1 gap-2.5",
-              metrics.length > 1 ? "grid-cols-2" : "grid-cols-1",
+              metrics.length > 1 ? "@[400px]:grid-cols-2" : "grid-cols-1",
             )}
           >
             {metrics.map((m) => (
@@ -1221,7 +1224,7 @@ function ParkGroup({
             </span>
           ))}
       </div>
-      <div className="grid gap-1 sm:grid-cols-2">
+      <div className="grid gap-1 @[860px]:grid-cols-2">
         {rows.map((r) => (
           <ParkRow
             key={r.key}
