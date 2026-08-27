@@ -1,34 +1,78 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Bike, Handshake, Users } from "lucide-react";
 import { Topbar } from "@/pages/dashboard/Topbar";
 import { cn } from "@/lib/utils";
+import { useFleetScooters } from "@/pages/fleet/fleetStore";
+import { useRentals } from "@/pages/rentals/rentalsStore";
+import { ScooterCard } from "@/pages/fleet/ScooterCard";
+import type { ScooterDisplayStatus } from "@/lib/mock/fleet";
 import { InvestorsTab } from "./InvestorsTab";
 import { PartnerFleet } from "./PartnerFleet";
 import { PartnerRentals } from "./PartnerRentals";
 
 /**
- * Правки 2.0, п.5 и 9: «Партнёрка» — самостоятельное рабочее пространство
- * с тремя сущностями: инвесторы, электротранспорт, аренды этой техники.
+ * Правки 2.0, п.5 и 9 + правки 27.08: «Партнёрка» — самостоятельное рабочее
+ * пространство («отдельное государство»): аренды, электротранспорт и
+ * инвесторы партнёрской техники. ВСЁ открывается внутри партнёрки — наружу
+ * (в общие «Аренды»/«Скутеры») отсюда не выкидывает:
+ *   • аренда → такой же боковой дровер с той же карточкой, что в «Арендах»;
+ *   • техника → та же карточка скутера, но внутри партнёрки;
+ *   • техника добавляется прямо здесь (кнопка как в «Скутерах»).
+ *
+ * Порядок вкладок (правка 27.08): «Аренды» — главная (здесь операции),
+ * затем «Электротранспорт» (аналог «Скутеров»), «Инвесторы» — последняя.
  *
  * Наружу отсюда уходит только информация о должниках (просрочка или день
  * оплаты) — она попадает в общий дашборд с пометкой, что это электричка.
- * Аренды партнёрской техники во вкладке «Аренды» наших скутеров не
- * показываются.
- *
- * Партнёрка пока работает только с электротранспортом: свои электрички не
- * закупаются, поэтому блок совмещает партнёрку и будущий блок электричек.
  */
 
-type Tab = "investors" | "fleet" | "rentals";
+type Tab = "rentals" | "fleet" | "investors";
 
 const TABS: { id: Tab; label: string; icon: typeof Users }[] = [
-  { id: "investors", label: "Инвесторы", icon: Users },
-  { id: "fleet", label: "Электротранспорт", icon: Handshake },
   { id: "rentals", label: "Аренды", icon: Bike },
+  { id: "fleet", label: "Электротранспорт", icon: Handshake },
+  { id: "investors", label: "Инвесторы", icon: Users },
 ];
 
 export function Partners() {
-  const [tab, setTab] = useState<Tab>("investors");
+  const [tab, setTab] = useState<Tab>("rentals");
+  /**
+   * Открытая карточка техники — рендерится ВНУТРИ партнёрки на всю ширину
+   * (та же ScooterCard, что в «Скутерах»), с возвратом назад в партнёрку.
+   */
+  const [openScooterId, setOpenScooterId] = useState<number | null>(null);
+
+  const FLEET = useFleetScooters();
+  const rentals = useRentals();
+
+  /** Статус техники — та же логика, что в Fleet.tsx. */
+  const openScooter = useMemo(() => {
+    if (openScooterId == null) return null;
+    const s = FLEET.find((x) => x.id === openScooterId);
+    if (!s) return null;
+    const hasRental = rentals.some(
+      (r) =>
+        r.scooter === s.name &&
+        (r.status === "active" || r.status === "overdue" || r.status === "returning"),
+    );
+    const status: ScooterDisplayStatus =
+      hasRental && s.baseStatus === "rental_pool" ? "rented" : s.baseStatus;
+    return { scooter: s, status };
+  }, [openScooterId, FLEET, rentals]);
+
+  if (openScooter) {
+    return (
+      <main className="flex min-w-0 flex-1 flex-col gap-4">
+        <Topbar />
+        <ScooterCard
+          scooter={openScooter.scooter}
+          status={openScooter.status}
+          onBack={() => setOpenScooterId(null)}
+          backLabel="в партнёрку"
+        />
+      </main>
+    );
+  }
 
   return (
     <main className="flex min-w-0 flex-1 flex-col gap-4">
@@ -61,9 +105,9 @@ export function Partners() {
         ))}
       </div>
 
-      {tab === "investors" && <InvestorsTab />}
-      {tab === "fleet" && <PartnerFleet />}
       {tab === "rentals" && <PartnerRentals />}
+      {tab === "fleet" && <PartnerFleet onOpenScooter={setOpenScooterId} />}
+      {tab === "investors" && <InvestorsTab onOpenScooter={setOpenScooterId} />}
     </main>
   );
 }

@@ -73,6 +73,8 @@ export type FleetScooter = {
   uid?: string;
   /** Партнёрская техника (свойство единицы, не модели). */
   isPartner?: boolean;
+  /** Правка 27.08: инвестор единицы — его процент техника наследует. */
+  investorId?: number | null;
   /** Персональный процент инвестора; нет — берётся общий. */
   partnerShare?: number;
 };

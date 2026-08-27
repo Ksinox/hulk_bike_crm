@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { and, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
 import {
   appSettings,
@@ -9,22 +9,33 @@ import {
   payments,
   rentals,
   scooters,
+  users,
 } from "../db/schema.js";
 import { logActivity } from "../services/activityLog.js";
 
 /**
- * Правки 2.0 (26.08): инвесторы партнёрской техники — п.6, 7, 8.
+ * Правки 2.0 (26.08) + правки 27.08: инвесторы партнёрской техники.
  *
- * Техника добавляется ЧЕРЕЗ инвестора (scooters.investor_id). Метрики
- * инвестора (п.8):
+ * Техника добавляется ЧЕРЕЗ инвестора (scooters.investor_id). Процент —
+ * свойство ИНВЕСТОРА (investors.share, правка 27.08): задаётся при
+ * добавлении/изменении, его техника наследует процент автоматически.
+ * scooters.partner_share остался только как fallback для партнёрских
+ * единиц без инвестора (legacy).
+ *
+ * Метрики инвестора (п.8):
  *   • units — живая техника (без archived/deleted);
  *   • invested — размер инвестиций = Σ цен закупа его единиц;
  *   • income — доход инвестора за период = его доля от выручки техники.
  * Выручка считается по тем же правилам, что и общая «Выручка» CRM
- * (paid-платежи без залогов/возвратов) — см. countsAsRevenueWhere().
+ * (paid-платежи без залогов/возвратов).
  *
- * Выплаты (п.6): график вычисляется на лету из payout_period/payout_day
- * инвестора; факт «выплачено» — запись в investor_payouts.
+ * Выплаты (правка 27.08) — «накопилось → выплатили», без графика периодов:
+ *   • accrued = доля инвестора от выручки его техники ЗА ВСЁ ВРЕМЯ минус
+ *     сумма уже произведённых выплат;
+ *   • POST /:id/payouts фиксирует выплату «сейчас» на сумму accrued
+ *     (сервер сам считает — оператор не может выплатить будущим/задним
+ *     числом или больше, чем накопилось), при нуле — 409 nothing_to_pay;
+ *   • история выплат — записи с датой, суммой и кто провёл.
  */
 
 const CreateInvestorBody = z
@@ -34,12 +45,14 @@ const CreateInvestorBody = z
     note: z.string().max(500).optional().nullable(),
     payoutPeriod: z.enum(["week", "month"]).optional(),
     payoutDay: z.number().int().min(1).max(31).optional(),
+    /** Процент инвестора (его доля от выручки его техники). */
+    share: z.number().int().min(0).max(100).optional(),
   })
   .strict();
 
 const PatchInvestorBody = CreateInvestorBody.partial();
 
-/** Дефолтный процент инвестора из настроек (fallback 50). */
+/** Дефолтный процент из настроек (fallback 50) — для единиц без инвестора. */
 async function defaultShare(): Promise<number> {
   const [row] = await db
     .select({ value: appSettings.value })
@@ -53,7 +66,6 @@ type ScooterLite = {
   id: number;
   name: string;
   purchasePrice: number | null;
-  partnerShare: number | null;
 };
 
 /** Живая техника инвестора (без архива и удалённых). */
@@ -64,7 +76,6 @@ async function scootersOf(investorIds: number[]): Promise<Map<number, ScooterLit
       id: scooters.id,
       name: scooters.name,
       purchasePrice: scooters.purchasePrice,
-      partnerShare: scooters.partnerShare,
       investorId: scooters.investorId,
     })
     .from(scooters)
@@ -85,16 +96,15 @@ async function scootersOf(investorIds: number[]): Promise<Map<number, ScooterLit
 }
 
 /**
- * Доход инвестора за период [from..to]: Σ по его технике
- * (выручка единицы × её процент). Правила выручки — как в CRM:
- * paid=true, не исключено из выручки, тип не залог/возврат, метод
- * «из залога» не считается (кроме удержания deposit_forfeit).
+ * Доход инвестора за период [from..to]: выручка его техники × его процент.
+ * Правила выручки — как в CRM: paid=true, не исключено из выручки, тип не
+ * залог/возврат, метод «из залога» не считается (кроме deposit_forfeit).
  */
 async function investorIncome(
   units: ScooterLite[],
   from: Date,
   to: Date,
-  shareDefault: number,
+  sharePct: number,
 ): Promise<{ revenue: number; income: number }> {
   if (units.length === 0) return { revenue: 0, income: 0 };
   const scooterIds = units.map((u) => u.id);
@@ -116,22 +126,13 @@ async function investorIncome(
         sql`${payments.excludedFromRevenue} IS NOT TRUE`,
       ),
     );
-  const revByScooter = new Map<number, number>();
+  let revenue = 0;
   for (const r of rows) {
     if (r.type === "deposit" || r.type === "refund") continue;
     if (r.method === "deposit" && r.type !== "deposit_forfeit") continue;
-    if (r.scooterId == null) continue;
-    revByScooter.set(r.scooterId, (revByScooter.get(r.scooterId) ?? 0) + r.amount);
+    revenue += r.amount;
   }
-  let revenue = 0;
-  let income = 0;
-  for (const u of units) {
-    const rev = revByScooter.get(u.id) ?? 0;
-    const share = u.partnerShare ?? shareDefault;
-    revenue += rev;
-    income += Math.floor((rev * share) / 100);
-  }
-  return { revenue, income };
+  return { revenue, income: Math.floor((revenue * sharePct) / 100) };
 }
 
 /** ISO-дата (локальная, без времени). */
@@ -142,42 +143,46 @@ function ymd(d: Date): string {
 }
 
 /**
- * График выплат: последние `count` РАСЧЁТНЫХ периодов инвестора,
- * заканчивая ближайшим прошедшим/сегодняшним днём выплаты.
- * Период = [прошлый день выплаты, следующий день выплаты).
+ * Ближайший день выплаты (сегодня или позже) по настройке инвестора.
+ * Это НАПОМИНАНИЕ, не график: платить можно в любой день, когда накопилось.
  */
-function payoutPeriods(
-  period: string,
-  day: number,
-  count: number,
-  now = new Date(),
-): { start: Date; end: Date; due: Date }[] {
-  const res: { start: Date; end: Date; due: Date }[] = [];
+function nextDueDate(period: string, day: number, now = new Date()): Date {
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   if (period === "month") {
-    const dom = Math.min(Math.max(day, 1), 28); // 29-31 схлопываем к 28 — есть у всех месяцев
-    // Ближайший день выплаты (включая сегодня)
-    let due = new Date(today.getFullYear(), today.getMonth(), dom);
-    if (due.getTime() > today.getTime()) due = new Date(today.getFullYear(), today.getMonth() - 1, dom);
-    for (let i = 0; i < count; i++) {
-      const d = new Date(due.getFullYear(), due.getMonth() - i, dom);
-      const start = new Date(d.getFullYear(), d.getMonth() - 1, dom);
-      res.push({ start, end: d, due: d });
-    }
-  } else {
-    // week: day 1 (пн) … 7 (вс); JS getDay(): 0 вс … 6 сб
-    const jsDay = day % 7; // 7 (вс) → 0
-    let due = new Date(today);
-    while (due.getDay() !== jsDay) due.setDate(due.getDate() - 1);
-    for (let i = 0; i < count; i++) {
-      const d = new Date(due);
-      d.setDate(d.getDate() - 7 * i);
-      const start = new Date(d);
-      start.setDate(start.getDate() - 7);
-      res.push({ start, end: d, due: d });
-    }
+    const dom = Math.min(Math.max(day, 1), 28);
+    const thisMonth = new Date(today.getFullYear(), today.getMonth(), dom);
+    return thisMonth.getTime() >= today.getTime()
+      ? thisMonth
+      : new Date(today.getFullYear(), today.getMonth() + 1, dom);
   }
-  return res;
+  const jsDay = day % 7; // 7 (вс) → 0
+  const d = new Date(today);
+  while (d.getDay() !== jsDay) d.setDate(d.getDate() + 1);
+  return d;
+}
+
+/** Начало отсчёта «за всё время» — раньше любых данных CRM. */
+const EPOCH = new Date("2020-01-01T00:00:00");
+
+/** Накоплено к выплате: доход за всё время минус уже выплаченное. */
+async function accruedOf(
+  invId: number,
+  sharePct: number,
+): Promise<{ accrued: number; incomeAll: number; revenueAll: number; paidTotal: number }> {
+  const unitsBy = await scootersOf([invId]);
+  const units = unitsBy.get(invId) ?? [];
+  const { revenue, income } = await investorIncome(units, EPOCH, new Date(), sharePct);
+  const [paidRow] = await db
+    .select({ total: sql<number>`coalesce(sum(${investorPayouts.amount}), 0)::int` })
+    .from(investorPayouts)
+    .where(eq(investorPayouts.investorId, invId));
+  const paidTotal = paidRow?.total ?? 0;
+  return {
+    accrued: Math.max(0, income - paidTotal),
+    incomeAll: income,
+    revenueAll: revenue,
+    paidTotal,
+  };
 }
 
 export async function investorsRoutes(app: FastifyInstance) {
@@ -197,13 +202,12 @@ export async function investorsRoutes(app: FastifyInstance) {
       .where(isNull(investors.deletedAt))
       .orderBy(investors.name);
     const unitsBy = await scootersOf(list.map((i) => i.id));
-    const shareDefault = await defaultShare();
 
     const items = [];
     for (const inv of list) {
       const units = unitsBy.get(inv.id) ?? [];
       const invested = units.reduce((s, u) => s + (u.purchasePrice ?? 0), 0);
-      const { revenue, income } = await investorIncome(units, from, to, shareDefault);
+      const { revenue, income } = await investorIncome(units, from, to, inv.share);
       // Средний ЕЖЕМЕСЯЧНЫЙ доход: доход за период, приведённый к 30 дням.
       const periodDays = Math.max(1, Math.round((to.getTime() - from.getTime()) / 86_400_000));
       const monthlyIncome = Math.round((income * 30) / periodDays);
@@ -224,6 +228,7 @@ export async function investorsRoutes(app: FastifyInstance) {
     const parsed = CreateInvestorBody.safeParse(req.body);
     if (!parsed.success)
       return reply.code(400).send({ error: "validation", issues: parsed.error.issues });
+    const share = parsed.data.share ?? (await defaultShare());
     const [row] = await db
       .insert(investors)
       .values({
@@ -232,13 +237,14 @@ export async function investorsRoutes(app: FastifyInstance) {
         note: parsed.data.note ?? null,
         payoutPeriod: parsed.data.payoutPeriod ?? "week",
         payoutDay: parsed.data.payoutDay ?? 5,
+        share,
       })
       .returning();
     await logActivity(req, {
       entity: "investor",
       entityId: row!.id,
       action: "created",
-      summary: `Добавлен инвестор «${row!.name}»`,
+      summary: `Добавлен инвестор «${row!.name}» · процент ${share} %`,
     });
     return reply.code(201).send(row);
   });
@@ -257,6 +263,8 @@ export async function investorsRoutes(app: FastifyInstance) {
       .where(eq(investors.id, id))
       .returning();
     const changes: string[] = [];
+    if (parsed.data.share != null && parsed.data.share !== before.share)
+      changes.push(`процент: ${before.share} % → ${parsed.data.share} %`);
     if (parsed.data.payoutPeriod && parsed.data.payoutPeriod !== before.payoutPeriod)
       changes.push(
         `периодичность: ${before.payoutPeriod === "week" ? "неделя" : "месяц"} → ${parsed.data.payoutPeriod === "week" ? "неделя" : "месяц"}`,
@@ -310,130 +318,104 @@ export async function investorsRoutes(app: FastifyInstance) {
   });
 
   /**
-   * П.6: график выплат инвестора — последние N периодов с суммами и
-   * статусом «выплачено». due=сегодня и не выплачено → напоминание.
+   * Правка 27.08: выплаты инвестора — накоплено + история.
+   * accrued считается на сервере: доход за всё время − выплачено.
    */
   app.get<{ Params: { id: string } }>("/:id/payouts", async (req, reply) => {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
     const [inv] = await db.select().from(investors).where(eq(investors.id, id));
     if (!inv || inv.deletedAt) return reply.code(404).send({ error: "not found" });
-    const q = req.query as { count?: string };
-    const count = Math.min(Math.max(Number(q.count) || 8, 1), 26);
 
-    const unitsBy = await scootersOf([id]);
-    const units = unitsBy.get(id) ?? [];
-    const shareDefault = await defaultShare();
-    const periods = payoutPeriods(inv.payoutPeriod, inv.payoutDay, count);
+    const { accrued, incomeAll, revenueAll, paidTotal } = await accruedOf(id, inv.share);
 
-    const paidRows = await db
-      .select()
+    const history = await db
+      .select({
+        id: investorPayouts.id,
+        amount: investorPayouts.amount,
+        paidAt: investorPayouts.paidAt,
+        paidBy: investorPayouts.paidBy,
+        note: investorPayouts.note,
+        userName: users.name,
+      })
       .from(investorPayouts)
-      .where(eq(investorPayouts.investorId, id));
-    const paidByKey = new Map(paidRows.map((p) => [`${p.periodStart}_${p.periodEnd}`, p]));
+      .leftJoin(users, eq(investorPayouts.paidBy, users.id))
+      .where(eq(investorPayouts.investorId, id))
+      .orderBy(desc(investorPayouts.paidAt));
 
+    const due = nextDueDate(inv.payoutPeriod, inv.payoutDay);
     const todayKey = ymd(new Date());
-    const items = [];
-    for (const p of periods) {
-      // Период выручки: [start, end) — конец не включается (это уже
-      // следующий период).
-      const endExclusive = new Date(p.end.getTime() - 1);
-      const { income } = await investorIncome(units, p.start, endExclusive, shareDefault);
-      const key = `${ymd(p.start)}_${ymd(p.end)}`;
-      const paid = paidByKey.get(key) ?? null;
-      items.push({
-        periodStart: ymd(p.start),
-        periodEnd: ymd(p.end),
-        dueDate: ymd(p.due),
-        amount: income,
-        isDueToday: ymd(p.due) === todayKey,
-        paid: paid
-          ? { id: paid.id, amount: paid.amount, paidAt: paid.paidAt, note: paid.note }
-          : null,
-      });
-    }
-    // Текущий НАКАПЛИВАЮЩИЙСЯ период: от последнего дня выплаты до
-    // следующего. Показываем «набежало N ₽, выплата такого-то числа» —
-    // чтобы сумма была видна не только в день выплаты.
-    const lastDue = periods[0]!.due;
-    const nextDue =
-      inv.payoutPeriod === "month"
-        ? new Date(lastDue.getFullYear(), lastDue.getMonth() + 1, lastDue.getDate())
-        : new Date(lastDue.getTime() + 7 * 86_400_000);
-    const { income: currentIncome } = await investorIncome(
-      units,
-      lastDue,
-      new Date(),
-      shareDefault,
-    );
-    const current = {
-      periodStart: ymd(lastDue),
-      periodEnd: ymd(nextDue),
-      dueDate: ymd(nextDue),
-      amount: currentIncome,
-      daysLeft: Math.max(
-        0,
-        Math.ceil((nextDue.getTime() - Date.now()) / 86_400_000),
-      ),
-    };
-
     return {
       investor: {
         id: inv.id,
         name: inv.name,
         payoutPeriod: inv.payoutPeriod,
         payoutDay: inv.payoutDay,
+        share: inv.share,
       },
-      current,
-      items,
+      accrued: {
+        amount: accrued,
+        incomeAll,
+        revenueAll,
+        paidTotal,
+      },
+      nextDue: {
+        date: ymd(due),
+        isToday: ymd(due) === todayKey,
+      },
+      history: history.map((h) => ({
+        id: h.id,
+        amount: h.amount,
+        paidAt: h.paidAt,
+        by: h.userName ?? null,
+        note: h.note,
+      })),
     };
   });
 
-  /** Отметить выплату произведённой (галочка в графике). */
+  /**
+   * Выплатить накопленное. Сумму считает СЕРВЕР на момент нажатия —
+   * оператор не может выплатить будущим/задним числом или больше accrued.
+   * Ноль к выплате → 409 nothing_to_pay.
+   */
   app.post<{ Params: { id: string } }>("/:id/payouts", async (req, reply) => {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
     const Body = z
-      .object({
-        periodStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-        periodEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-        amount: z.number().int().min(0),
-        note: z.string().max(300).optional().nullable(),
-      })
+      .object({ note: z.string().max(300).optional().nullable() })
       .strict();
-    const parsed = Body.safeParse(req.body);
+    const parsed = Body.safeParse(req.body ?? {});
     if (!parsed.success)
       return reply.code(400).send({ error: "validation", issues: parsed.error.issues });
     const [inv] = await db.select().from(investors).where(eq(investors.id, id));
     if (!inv || inv.deletedAt) return reply.code(404).send({ error: "not found" });
-    const userId = req.user?.userId ?? null;
-    try {
-      const [row] = await db
-        .insert(investorPayouts)
-        .values({
-          investorId: id,
-          periodStart: parsed.data.periodStart,
-          periodEnd: parsed.data.periodEnd,
-          amount: parsed.data.amount,
-          paidBy: userId,
-          note: parsed.data.note ?? null,
-        })
-        .returning();
-      await logActivity(req, {
-        entity: "investor",
-        entityId: id,
-        action: "payout",
-        summary: `Выплата инвестору «${inv.name}»: ${parsed.data.amount.toLocaleString("ru-RU")} ₽ за период ${parsed.data.periodStart} — ${parsed.data.periodEnd}`,
+
+    const { accrued } = await accruedOf(id, inv.share);
+    if (accrued <= 0)
+      return reply.code(409).send({
+        error: "nothing_to_pay",
+        message: "Нет средств к выплате — доля инвестора ещё не накопилась.",
       });
-      return reply.code(201).send(row);
-    } catch (e) {
-      if (String(e).includes("investor_payouts_period_uniq"))
-        return reply.code(409).send({ error: "already_paid" });
-      throw e;
-    }
+
+    const [row] = await db
+      .insert(investorPayouts)
+      .values({
+        investorId: id,
+        amount: accrued,
+        paidBy: req.user?.userId ?? null,
+        note: parsed.data.note ?? null,
+      })
+      .returning();
+    await logActivity(req, {
+      entity: "investor",
+      entityId: id,
+      action: "payout",
+      summary: `Выплата инвестору «${inv.name}»: ${accrued.toLocaleString("ru-RU")} ₽ (процент ${inv.share} %, счётчик обнулён)`,
+    });
+    return reply.code(201).send(row);
   });
 
-  /** Снять отметку выплаты (ошиблись галочкой). */
+  /** Отменить выплату (провели по ошибке) — сумма вернётся в «к выплате». */
   app.delete<{ Params: { id: string; payoutId: string } }>(
     "/:id/payouts/:payoutId",
     async (req, reply) => {
@@ -451,7 +433,7 @@ export async function investorsRoutes(app: FastifyInstance) {
         entity: "investor",
         entityId: id,
         action: "payout_undo",
-        summary: `Снята отметка выплаты «${inv?.name ?? id}» за ${row.periodStart} — ${row.periodEnd} (${row.amount.toLocaleString("ru-RU")} ₽)`,
+        summary: `Отменена выплата инвестору «${inv?.name ?? id}» на ${row.amount.toLocaleString("ru-RU")} ₽ — сумма вернулась в «к выплате»`,
       });
       return { ok: true };
     },

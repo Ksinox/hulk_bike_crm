@@ -1,14 +1,16 @@
 import { useMemo } from "react";
 import { useApiScooters, usePartnerShare } from "@/lib/api/scooters";
+import { useApiInvestors } from "@/lib/api/investors";
 import { useApiRentals, useApiRentalsArchived } from "@/lib/api/rentals";
 
 /**
  * Пункт 11 — партнёрская техника.
  *
- * Партнёрской считается техника моделей с флагом is_partner (пункт 14).
- * Процент инвестора задаётся НА ЕДИНИЦУ техники (scooters.partner_share),
- * по умолчанию 50 %. Выручка партнёрской техники попадает в общую выручку
- * ЗА ВЫЧЕТОМ доли инвестора; сам расчёт выплат — в разделе «Партнёрка».
+ * Правка 27.08: процент — свойство ИНВЕСТОРА (investors.share). Единица
+ * с инвестором наследует его процент; scooters.partner_share остался
+ * только как fallback для партнёрских единиц без инвестора (legacy).
+ * Выручка партнёрской техники попадает в общую выручку ЗА ВЫЧЕТОМ доли
+ * инвестора; сам расчёт выплат — в разделе «Партнёрка».
  *
  * ВАЖНО: «Сводка дня» (касса) долю НЕ вычитает — деньги физически
  * получены, выплата инвестору происходит отдельно. Вычет применяется
@@ -29,17 +31,25 @@ export type PartnerInfo = {
 export function usePartnerInfo(): PartnerInfo {
   const { data: scooters = [] } = useApiScooters();
   const shareQ = usePartnerShare();
+  const { data: investorsData } = useApiInvestors();
   const { data: active = [] } = useApiRentals();
   const { data: archived = [] } = useApiRentalsArchived();
 
   return useMemo(() => {
-    // Правка 24.08: партнёрская — сама ЕДИНИЦА техники (scooters.isPartner),
-    // модель тут ни при чём. Процент — свой у единицы либо общий из настроек.
+    // Правка 24.08: партнёрская — сама ЕДИНИЦА техники (scooters.isPartner).
+    // Правка 27.08: процент подтягивается от ИНВЕСТОРА единицы; единица без
+    // инвестора — её старый процент либо общий из настроек (legacy).
     const fallback = shareQ.data?.value ?? DEFAULT_PARTNER_SHARE;
+    const shareByInvestor = new Map(
+      (investorsData?.items ?? []).map((i) => [i.id, i.share] as const),
+    );
     const shareByScooter = new Map<number, number>();
     for (const s of scooters) {
       if (s.isPartner) {
-        const pct = s.partnerShare ?? fallback;
+        const pct =
+          (s.investorId != null ? shareByInvestor.get(s.investorId) : null) ??
+          s.partnerShare ??
+          fallback;
         shareByScooter.set(s.id, Math.min(100, Math.max(0, pct)) / 100);
       }
     }
@@ -54,7 +64,7 @@ export function usePartnerInfo(): PartnerInfo {
       shareByRental,
       hasPartnerTech: shareByScooter.size > 0,
     };
-  }, [scooters, shareQ.data, active, archived]);
+  }, [scooters, shareQ.data, investorsData, active, archived]);
 }
 
 /**

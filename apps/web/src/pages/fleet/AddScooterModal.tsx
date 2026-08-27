@@ -18,6 +18,7 @@ import {
   scooterPrefixFromModelName,
 } from "./ModelPicker";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
+import { useApiInvestors } from "@/lib/api/investors";
 import { useRentalSlots } from "@/lib/api/scooters";
 import { SCOOTER_BASE_STATUS_OPTIONS } from "./scooterStatusOptions";
 
@@ -99,7 +100,21 @@ const RENTAL_STATES = SCOOTER_BASE_STATUS_OPTIONS.filter((o) =>
   ["rental_pool", "repair", "dtp", "disassembly"].includes(o.value),
 );
 
-export function AddScooterModal({ onClose }: { onClose: () => void }) {
+export function AddScooterModal({
+  onClose,
+  partner = false,
+  defaultInvestorId,
+}: {
+  onClose: () => void;
+  /**
+   * Правка 27.08: техника добавляется прямо из «Партнёрки». В этом режиме
+   * единица всегда партнёрская, обязателен инвестор (его процент техника
+   * наследует автоматически), модель по умолчанию — электро.
+   */
+  partner?: boolean;
+  /** Из карточки инвестора — он уже выбран. */
+  defaultInvestorId?: number;
+}) {
   const role = useRole();
   const scooters = useFleetScooters();
   const { data: models = [] } = useApiScooterModels();
@@ -107,8 +122,16 @@ export function AddScooterModal({ onClose }: { onClose: () => void }) {
 
   // Выбираем модель по умолчанию: первая quickPick, иначе первая из списка
   const defaultModel = useMemo(
-    () => models.find((m) => m.quickPick) ?? models[0] ?? null,
-    [models],
+    () =>
+      partner
+        ? // Партнёрка = электротранспорт: по умолчанию первая электро-модель.
+          (models.find((m) => m.isElectric && m.quickPick) ??
+            models.find((m) => m.isElectric) ??
+            models.find((m) => m.quickPick) ??
+            models[0] ??
+            null)
+        : (models.find((m) => m.quickPick) ?? models[0] ?? null),
+    [models, partner],
   );
   const [modelId, setModelId] = useState<number | null>(null);
   const [modelName, setModelName] = useState<string>("");
@@ -146,7 +169,14 @@ export function AddScooterModal({ onClose }: { onClose: () => void }) {
   const [rentalSlot, setRentalSlot] = useState<number | null>(null);
   // Пункт 11: чья техника. Партнёрская сразу попадает в раздел «Партнёрка»
   // с общим процентом инвестора — заводить её отдельно не нужно.
-  const [isPartner, setIsPartner] = useState(false);
+  const [isPartner, setIsPartner] = useState(partner);
+  // Правка 27.08: чей это электротранспорт. Процент техника наследует
+  // от инвестора — на единице он больше не задаётся.
+  const [investorId, setInvestorId] = useState<number | null>(
+    defaultInvestorId ?? null,
+  );
+  const { data: investorsData } = useApiInvestors();
+  const investorsList = investorsData?.items ?? [];
   const slotsQ = useRentalSlots();
   const slotsFree = slotsQ.data?.free ?? [];
   const slotsTotal = slotsQ.data?.total ?? 0;
@@ -184,7 +214,13 @@ export function AddScooterModal({ onClose }: { onClose: () => void }) {
     yearTrim === "" ||
     (Number.isInteger(yearNum) && yearNum >= 1980 && yearNum <= currentYear + 1);
   const canSave =
-    !!number && !nameTaken && !vinTaken && modelId != null && yearValid;
+    !!number &&
+    !nameTaken &&
+    !vinTaken &&
+    modelId != null &&
+    yearValid &&
+    // Партнёрка: техника заводится через инвестора — без него не сохраняем.
+    (!partner || investorId != null);
 
   const requestClose = () => {
     if (closing) return;
@@ -227,6 +263,7 @@ export function AddScooterModal({ onClose }: { onClose: () => void }) {
       note: note.trim() || undefined,
       rentalSlot: rentalSlot ?? undefined,
       isPartner,
+      investorId: isPartner ? investorId : null,
     });
     requestClose();
   };
@@ -251,10 +288,10 @@ export function AddScooterModal({ onClose }: { onClose: () => void }) {
         <div className="flex items-center gap-3 border-b border-border bg-surface-soft px-5 py-3">
           <div className="min-w-0 flex-1">
             <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-2">
-              Новый скутер
+              {partner ? "Партнёрка · новая техника" : "Новый скутер"}
             </div>
             <div className="mt-0.5 font-display text-[17px] font-extrabold text-ink">
-              Добавление в парк
+              {partner ? "Добавление техники инвестора" : "Добавление в парк"}
             </div>
           </div>
           <button
@@ -515,35 +552,70 @@ export function AddScooterModal({ onClose }: { onClose: () => void }) {
               </Field>
             )}
 
-            {/* Пункт 11: чья техника. Партнёрская попадает в раздел
-                «Партнёрка» и считается с процентом инвестора. */}
-            <Field label="Чья техника">
-              <div className="grid grid-cols-2 gap-1.5">
-                {(
-                  [
-                    [false, "Наша", "вся выручка наша"],
-                    [true, "Партнёрская", "делим с инвестором"],
-                  ] as const
-                ).map(([val, label, hint]) => (
-                  <button
-                    key={label}
-                    type="button"
-                    onClick={() => setIsPartner(val)}
-                    className={cn(
-                      "flex flex-col items-start rounded-[10px] border px-3 py-2 text-left transition-colors",
-                      isPartner === val
-                        ? val
-                          ? "border-violet-500 bg-violet-50 text-violet-700"
-                          : "border-blue-600 bg-blue-50 text-blue-700"
-                        : "border-border bg-surface text-ink-2 hover:border-blue-600/50",
-                    )}
-                  >
-                    <span className="text-[12px] font-semibold">{label}</span>
-                    <span className="text-[10.5px] text-muted-2">{hint}</span>
-                  </button>
-                ))}
-              </div>
-            </Field>
+            {/* Пункт 11 + правка 27.08: чья техника. Из партнёрки единица
+                всегда партнёрская — вместо тумблера выбираем ИНВЕСТОРА,
+                его процент техника наследует автоматически. */}
+            {partner ? (
+              <Field label="Инвестор">
+                {investorsList.length === 0 ? (
+                  <div className="rounded-[10px] border border-orange-ink/30 bg-orange-soft/50 px-3 py-2 text-[12px] font-semibold text-orange-ink">
+                    Сначала добавьте инвестора на вкладке «Инвесторы» —
+                    партнёрская техника заводится через него.
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {investorsList.map((inv) => (
+                      <button
+                        key={inv.id}
+                        type="button"
+                        onClick={() => setInvestorId(inv.id)}
+                        className={cn(
+                          "flex flex-col items-start rounded-[10px] border px-3 py-2 text-left transition-colors",
+                          investorId === inv.id
+                            ? "border-violet-500 bg-violet-50 text-violet-700"
+                            : "border-border bg-surface text-ink-2 hover:border-violet-400",
+                        )}
+                      >
+                        <span className="text-[12px] font-semibold">
+                          {inv.name}
+                        </span>
+                        <span className="text-[10.5px] text-muted-2">
+                          процент {inv.share} %
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </Field>
+            ) : (
+              <Field label="Чья техника">
+                <div className="grid grid-cols-2 gap-1.5">
+                  {(
+                    [
+                      [false, "Наша", "вся выручка наша"],
+                      [true, "Партнёрская", "делим с инвестором"],
+                    ] as const
+                  ).map(([val, label, hint]) => (
+                    <button
+                      key={label}
+                      type="button"
+                      onClick={() => setIsPartner(val)}
+                      className={cn(
+                        "flex flex-col items-start rounded-[10px] border px-3 py-2 text-left transition-colors",
+                        isPartner === val
+                          ? val
+                            ? "border-violet-500 bg-violet-50 text-violet-700"
+                            : "border-blue-600 bg-blue-50 text-blue-700"
+                          : "border-border bg-surface text-ink-2 hover:border-blue-600/50",
+                      )}
+                    >
+                      <span className="text-[12px] font-semibold">{label}</span>
+                      <span className="text-[10.5px] text-muted-2">{hint}</span>
+                    </button>
+                  ))}
+                </div>
+              </Field>
+            )}
 
             {/* Пункт 15: номер в арендном парке — для техники, попадающей
                 в аренду. «Авто» = наименьший свободный. */}
@@ -615,7 +687,17 @@ export function AddScooterModal({ onClose }: { onClose: () => void }) {
                             slotsFree[0] != null ? ` (${slotsFree[0]})` : ""
                           }`
                         : ""
-                  } · статус «${statusLabel(status)}»${isPartner ? " · партнёрская" : ""}.`}
+                  } · статус «${statusLabel(status)}»${
+                    isPartner
+                      ? ` · партнёрская${
+                          investorId != null
+                            ? ` (${investorsList.find((i) => i.id === investorId)?.name ?? "инвестор"})`
+                            : partner
+                              ? " — выберите инвестора"
+                              : ""
+                        }`
+                      : ""
+                  }.`}
           </div>
           <div className="flex gap-2">
             <button

@@ -96,6 +96,8 @@ export function addScooter(data: Omit<FleetScooter, "id">): FleetScooter {
     // Пункт 11: чья техника — наша или партнёрская (свойство единицы).
     isPartner: data.isPartner ?? false,
     partnerShare: data.partnerShare ?? null,
+    // Правка 27.08: техника заводится через инвестора — процент наследуется.
+    investorId: data.investorId ?? null,
   };
   api
     .post(`/api/scooters`, body)

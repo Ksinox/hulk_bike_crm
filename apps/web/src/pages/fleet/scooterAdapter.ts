@@ -32,6 +32,7 @@ export function adaptScooter(a: ApiScooter): FleetScooter {
     exRentalSlot: a.exRentalSlot ?? undefined,
     uid: a.uid ?? undefined,
     isPartner: a.isPartner ?? false,
+    investorId: a.investorId ?? null,
     partnerShare: a.partnerShare ?? undefined,
   };
 }

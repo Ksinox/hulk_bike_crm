@@ -18,6 +18,8 @@ export type ApiInvestor = {
   payoutPeriod: "week" | "month";
   /** week: 1 (пн) … 7 (вс); month: число месяца. */
   payoutDay: number;
+  /** Правка 27.08: процент инвестора — его доля от выручки его техники. */
+  share: number;
   createdAt: string;
   /** Живая техника инвестора. */
   units: number;
@@ -32,31 +34,38 @@ export type ApiInvestor = {
   scooterIds: number[];
 };
 
-export type InvestorPayoutRow = {
-  periodStart: string;
-  periodEnd: string;
-  dueDate: string;
+/** Одна произведённая выплата (история). */
+export type InvestorPayoutRecord = {
+  id: number;
   amount: number;
-  isDueToday: boolean;
-  paid: { id: number; amount: number; paidAt: string; note: string | null } | null;
+  paidAt: string;
+  /** Кто провёл выплату. */
+  by: string | null;
+  note: string | null;
 };
 
+/**
+ * Правка 27.08: механика «накопилось → выплатили» вместо графика периодов.
+ * accrued считает СЕРВЕР: доход инвестора за всё время − уже выплачено.
+ */
 export type InvestorPayouts = {
   investor: {
     id: number;
     name: string;
     payoutPeriod: "week" | "month";
     payoutDay: number;
+    share: number;
   };
-  /** Текущий незакрытый период — «набежало N ₽, выплата такого-то». */
-  current: {
-    periodStart: string;
-    periodEnd: string;
-    dueDate: string;
+  accrued: {
+    /** К выплате сейчас, ₽. */
     amount: number;
-    daysLeft: number;
+    incomeAll: number;
+    revenueAll: number;
+    paidTotal: number;
   };
-  items: InvestorPayoutRow[];
+  /** Напоминание о дне выплаты (не ограничение). */
+  nextDue: { date: string; isToday: boolean };
+  history: InvestorPayoutRecord[];
 };
 
 export const investorsKeys = {
@@ -96,6 +105,7 @@ export type InvestorInput = {
   note?: string | null;
   payoutPeriod?: "week" | "month";
   payoutDay?: number;
+  share?: number;
 };
 
 export function useCreateInvestor() {
@@ -124,25 +134,22 @@ export function useDeleteInvestor() {
   });
 }
 
-/** Отметить выплату произведённой (галочка в графике). */
+/**
+ * Выплатить накопленное. Сумму считает сервер на момент нажатия; при нуле
+ * вернётся 409 nothing_to_pay («Нет средств к выплате»).
+ */
 export function useMarkPayout() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({
-      id,
-      ...body
-    }: {
-      id: number;
-      periodStart: string;
-      periodEnd: string;
-      amount: number;
-      note?: string | null;
-    }) => api.post(`/api/investors/${id}/payouts`, body),
+    mutationFn: ({ id, note }: { id: number; note?: string | null }) =>
+      api.post<InvestorPayoutRecord>(`/api/investors/${id}/payouts`, {
+        note: note ?? null,
+      }),
     onSuccess: () => qc.invalidateQueries({ queryKey: investorsKeys.all }),
   });
 }
 
-/** Снять отметку выплаты. */
+/** Отменить выплату (по ошибке) — сумма вернётся в «к выплате». */
 export function useUnmarkPayout() {
   const qc = useQueryClient();
   return useMutation({

@@ -2126,6 +2126,11 @@ export const investors = pgTable("investors", {
   payoutPeriod: text("payout_period").notNull().default("week"),
   /** week: 1 (пн) … 7 (вс); month: 1…31 (число). */
   payoutDay: integer("payout_day").notNull().default(5),
+  /**
+   * Правка 27.08: процент инвестора — свойство ИНВЕСТОРА, задаётся при
+   * добавлении/изменении. Его техника наследует процент автоматически.
+   */
+  share: integer("share").notNull().default(50),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -2133,21 +2138,21 @@ export const investors = pgTable("investors", {
 });
 
 /**
- * Факт выплаты инвестору за расчётный период (галочка в графике, п.6).
- * Сам график вычисляется на лету из периодичности инвестора.
+ * Факт выплаты инвестору.
+ *
+ * Правка 27.08: механика «накопилось → выплатили». Доля инвестора копится с
+ * каждой оплаченной аренды его техники; кнопка «Выплатить» фиксирует запись
+ * с датой и суммой и обнуляет счётчик. Период (period_start/period_end) —
+ * legacy от старого «графика периодов», для новых записей null.
  */
-export const investorPayouts = pgTable(
-  "investor_payouts",
-  {
-    id: bigserial("id", { mode: "number" }).primaryKey(),
-    investorId: bigint("investor_id", { mode: "number" }).notNull(),
-    periodStart: date("period_start").notNull(),
-    periodEnd: date("period_end").notNull(),
-    /** Сумма выплаты, ₽ — доля инвестора от выручки его техники. */
-    amount: integer("amount").notNull(),
-    paidAt: timestamp("paid_at", { withTimezone: true }).notNull().defaultNow(),
-    paidBy: bigint("paid_by", { mode: "number" }),
-    note: text("note"),
-  },
-  (t) => [unique("investor_payouts_period_uniq").on(t.investorId, t.periodStart, t.periodEnd)],
-);
+export const investorPayouts = pgTable("investor_payouts", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  investorId: bigint("investor_id", { mode: "number" }).notNull(),
+  periodStart: date("period_start"),
+  periodEnd: date("period_end"),
+  /** Сумма выплаты, ₽ — доля инвестора от выручки его техники. */
+  amount: integer("amount").notNull(),
+  paidAt: timestamp("paid_at", { withTimezone: true }).notNull().defaultNow(),
+  paidBy: bigint("paid_by", { mode: "number" }),
+  note: text("note"),
+});
