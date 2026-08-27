@@ -347,30 +347,20 @@ export function Fleet({
     mode,
   ]);
 
-  // ============ ДЕТАЛЬНАЯ КАРТОЧКА ============
-  if (selectedId != null) {
-    const sel = rows.find((r) => r.scooter.id === selectedId);
-    if (sel) {
-      return (
-        <ScooterCard
-          scooter={sel.scooter}
-          status={sel.status}
-          onBack={() => {
-            if (backTo?.route === "rentals") {
-              navigate({ route: "rentals", rentalId: backTo.rentalId });
-              setBackTo(null);
-            }
-            setSelectedId(null);
-          }}
-          backLabel={
-            backTo?.route === "rentals" && backTo.rentalId
-              ? `к аренде #${String(backTo.rentalId).padStart(4, "0")}`
-              : undefined
-          }
-        />
-      );
+  // ============ ДЕТАЛЬНАЯ КАРТОЧКА (правка 27.08: боковой ДРОВЕР) ============
+  // Раньше карточка заменяла страницу целиком. Теперь — философия карточки
+  // аренды: список сужается, справа выезжает компактная колонка-дровер.
+  const sel =
+    selectedId != null
+      ? rows.find((r) => r.scooter.id === selectedId) ?? null
+      : null;
+  const closeCard = () => {
+    if (backTo?.route === "rentals") {
+      navigate({ route: "rentals", rentalId: backTo.rentalId });
+      setBackTo(null);
     }
-  }
+    setSelectedId(null);
+  };
 
   const Root: React.ElementType = embedded ? "div" : "main";
 
@@ -385,6 +375,8 @@ export function Fleet({
         </header>
       )}
 
+      <div className="flex min-w-0 items-start gap-4">
+      <div className="flex min-w-0 flex-1 flex-col gap-4">
       {/* =========== Обзор парка =========== */}
       <ParkOverview
         counters={counters}
@@ -534,6 +526,34 @@ export function Fleet({
           </div>
         )}
       </div>
+      )}
+      </div>
+
+      </div>
+
+      {/* Дровер карточки скутера (десктоп): sticky-колонка со своей
+          прокруткой — как карточка аренды на странице «Аренды». */}
+      {sel && (
+        <div className="sticky top-4 hidden h-[calc(100dvh-32px)] w-[620px] shrink-0 flex-col overflow-hidden rounded-2xl bg-surface shadow-card lg:flex">
+          <ScooterCard
+            drawerChrome
+            scooter={sel.scooter}
+            status={sel.status}
+            onBack={closeCard}
+          />
+        </div>
+      )}
+
+      {/* Узкие экраны: та же карточка полноэкранно. */}
+      {sel && (
+        <div className="fixed inset-0 z-[55] flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-surface animate-slide-in-right lg:hidden">
+          <ScooterCard
+            drawerChrome
+            scooter={sel.scooter}
+            status={sel.status}
+            onBack={closeCard}
+          />
+        </div>
       )}
       </div>
 

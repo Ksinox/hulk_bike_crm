@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   ArrowRight,
   BadgeCheck,
+  PanelRightClose,
   Calendar,
   Crown,
   ImageOff,
@@ -142,11 +143,19 @@ export function ScooterCard({
   status,
   onBack,
   backLabel,
+  drawerChrome = false,
 }: {
   scooter: FleetScooter;
   status: ScooterDisplayStatus;
   onBack: () => void;
   backLabel?: string;
+  /**
+   * Правка 27.08: карточка в боковом ДРОВЕРЕ (философия карточки аренды):
+   * список сужается, карточка выезжает справа колонкой. Вся информация
+   * сохраняется, но раскладка одноколоночная и компактная; шапка — sticky
+   * с кнопкой «Скрыть». false — прежний полноэкранный режим (мобила).
+   */
+  drawerChrome?: boolean;
 }) {
   const rentals = useRentals();
   const { data: apiClients } = useApiClients();
@@ -304,29 +313,58 @@ export function ScooterCard({
   const statusPill = statusPillClass(status);
 
   return (
-    <main className="flex min-w-0 flex-1 flex-col gap-4">
+    <main
+      className={cn(
+        drawerChrome
+          ? // Дровер: своя прокрутка, компактные отступы, sticky-шапка ниже.
+            "flex h-full min-h-0 flex-col gap-3 overflow-y-auto p-3"
+          : "flex min-w-0 flex-1 flex-col gap-4",
+      )}
+    >
       {/* Topbar здесь не рендерим — он уже в шапке Garage (родительский). */}
 
       {/* ======== HEADER ======== */}
-      <header className="flex flex-wrap items-center gap-3">
+      <header
+        className={cn(
+          "flex flex-wrap items-center",
+          drawerChrome
+            ? "sticky -top-3 z-20 -mx-3 -mt-3 gap-2 border-b border-border bg-surface px-3 py-2.5"
+            : "gap-3",
+        )}
+      >
         <button
           type="button"
           onClick={onBack}
-          title={backLabel ? `Назад ${backLabel}` : "Назад к списку"}
+          title={
+            drawerChrome
+              ? "Скрыть карточку"
+              : backLabel
+                ? `Назад ${backLabel}`
+                : "Назад к списку"
+          }
           className={cn(
             "inline-flex shrink-0 items-center gap-1.5 rounded-full bg-surface shadow-card-sm transition-colors hover:bg-surface-soft",
-            backLabel ? "h-10 px-3 text-[13px] font-semibold" : "h-10 w-10 justify-center",
+            drawerChrome
+              ? "h-9 px-3 text-[12.5px] font-semibold"
+              : backLabel
+                ? "h-10 px-3 text-[13px] font-semibold"
+                : "h-10 w-10 justify-center",
           )}
         >
-          <ArrowLeft size={18} />
-          {backLabel}
+          {drawerChrome ? <PanelRightClose size={16} /> : <ArrowLeft size={18} />}
+          {drawerChrome ? "Скрыть" : backLabel}
         </button>
-        <h1 className="flex items-center gap-2.5 font-display text-[32px] font-extrabold leading-none text-ink">
+        <h1
+          className={cn(
+            "flex items-center gap-2.5 font-display font-extrabold leading-none text-ink",
+            drawerChrome ? "text-[20px]" : "text-[32px]",
+          )}
+        >
           <ScooterName
             name={scooter.name}
             number={scooter.rentalSlot}
             exNumber={scooter.exRentalSlot}
-            size="lg"
+            size={drawerChrome ? "md" : "lg"}
           />
         </h1>
         <span
@@ -393,9 +431,20 @@ export function ScooterCard({
       </header>
 
       {/* ======== MAIN GRID ======== */}
-      <div className="grid gap-4 lg:grid-cols-[1fr_340px]">
+      <div
+        className={cn(
+          drawerChrome
+            ? "flex flex-col gap-3"
+            : "grid gap-4 lg:grid-cols-[1fr_340px]",
+        )}
+      >
         {/* ========== ЛЕВЫЙ БЛОК: ФОТО + ТЕХНИЧКА ========== */}
-        <section className="grid gap-0 overflow-hidden rounded-2xl bg-surface shadow-card-sm md:grid-cols-[260px_1fr]">
+        <section
+          className={cn(
+            "grid gap-0 overflow-hidden rounded-2xl bg-surface shadow-card-sm",
+            !drawerChrome && "md:grid-cols-[260px_1fr]",
+          )}
+        >
           {/* фото */}
           <ScooterPhotoArea scooter={scooter} />
 
@@ -828,7 +877,12 @@ export function ScooterCard({
             </div>
           )}
 
-          <div className="mt-5 grid gap-5 lg:grid-cols-[260px_1fr]">
+          <div
+            className={cn(
+              "mt-5 grid gap-5",
+              !drawerChrome && "lg:grid-cols-[260px_1fr]",
+            )}
+          >
             {/* Donut */}
             <div className="flex flex-col items-center gap-3 rounded-2xl bg-surface-soft p-5">
               {profitIndex != null ? (

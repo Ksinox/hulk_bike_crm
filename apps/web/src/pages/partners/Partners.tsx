@@ -60,20 +60,6 @@ export function Partners() {
     return { scooter: s, status };
   }, [openScooterId, FLEET, rentals]);
 
-  if (openScooter) {
-    return (
-      <main className="flex min-w-0 flex-1 flex-col gap-4">
-        <Topbar />
-        <ScooterCard
-          scooter={openScooter.scooter}
-          status={openScooter.status}
-          onBack={() => setOpenScooterId(null)}
-          backLabel="в партнёрку"
-        />
-      </main>
-    );
-  }
-
   return (
     <main className="flex min-w-0 flex-1 flex-col gap-4">
       <Topbar />
@@ -86,28 +72,57 @@ export function Partners() {
         </span>
       </header>
 
-      <div className="flex w-fit max-w-full gap-1 overflow-x-auto rounded-full bg-surface p-1 shadow-card-sm">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => setTab(t.id)}
-            className={cn(
-              "inline-flex shrink-0 items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-semibold transition-colors",
-              tab === t.id
-                ? "bg-ink text-white"
-                : "text-muted hover:text-ink",
-            )}
-          >
-            <t.icon size={14} />
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <div className="flex min-w-0 items-start gap-4">
+        <div className="flex min-w-0 flex-1 flex-col gap-4">
+          <div className="flex w-fit max-w-full gap-1 overflow-x-auto rounded-full bg-surface p-1 shadow-card-sm">
+            {TABS.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setTab(t.id)}
+                className={cn(
+                  "inline-flex shrink-0 items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-semibold transition-colors",
+                  tab === t.id
+                    ? "bg-ink text-white"
+                    : "text-muted hover:text-ink",
+                )}
+              >
+                <t.icon size={14} />
+                {t.label}
+              </button>
+            ))}
+          </div>
 
-      {tab === "rentals" && <PartnerRentals />}
-      {tab === "fleet" && <PartnerFleet onOpenScooter={setOpenScooterId} />}
-      {tab === "investors" && <InvestorsTab onOpenScooter={setOpenScooterId} />}
+          {tab === "rentals" && <PartnerRentals />}
+          {tab === "fleet" && <PartnerFleet onOpenScooter={setOpenScooterId} />}
+          {tab === "investors" && (
+            <InvestorsTab onOpenScooter={setOpenScooterId} />
+          )}
+        </div>
+
+        {/* Дровер карточки техники — как в «Скутерах» (правка 27.08):
+            список сужается, карточка выезжает справа, всё внутри партнёрки. */}
+        {openScooter && (
+          <div className="sticky top-4 hidden h-[calc(100dvh-32px)] w-[620px] shrink-0 flex-col overflow-hidden rounded-2xl bg-surface shadow-card lg:flex">
+            <ScooterCard
+              drawerChrome
+              scooter={openScooter.scooter}
+              status={openScooter.status}
+              onBack={() => setOpenScooterId(null)}
+            />
+          </div>
+        )}
+        {openScooter && (
+          <div className="fixed inset-0 z-[55] flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-surface animate-slide-in-right lg:hidden">
+            <ScooterCard
+              drawerChrome
+              scooter={openScooter.scooter}
+              status={openScooter.status}
+              onBack={() => setOpenScooterId(null)}
+            />
+          </div>
+        )}
+      </div>
     </main>
   );
 }
