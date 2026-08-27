@@ -1,4 +1,12 @@
-import { Component, Suspense, lazy, useEffect, useRef, useState } from "react";
+import {
+  Component,
+  Suspense,
+  lazy,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
 import { Card } from "./KpiCard";
 import { cn } from "@/lib/utils";
 import { ElectricMark, PetrolMark } from "@/components/PowerTypeBadge";
@@ -89,6 +97,15 @@ export function ParkLoadGauge({
   const CENTER = Math.round(size * 0.66);
   const stack = layout === "stack";
   const electro = tone === "electro";
+  /**
+   * Имена keyframes уникальны для КАЖДОГО круга. На дашборде их два, а
+   * @keyframes — глобальные: при одинаковых именах побеждало последнее
+   * объявление, и электро-круг заливался по проценту бензинового (у нас
+   * 100 % рисовался уровнем 83 %, из-за чего сверху лезла зубчатая насечка).
+   */
+  const uid = useId().replace(/[^a-zA-Z0-9]/g, "");
+  const kA = `pkWaveA${uid}`;
+  const kB = `pkWaveB${uid}`;
 
   // Число считается вверх 0 → pct.
   const [shown, setShown] = useState(0);
@@ -204,14 +221,14 @@ export function ParkLoadGauge({
         >
           {/* Бегущая кромка — mask-position-x скроллит тайл (уровень sY вшит
               в кадры по Y). Разные направления → слои расходятся. */}
-          <style>{`@keyframes pkWaveA{from{-webkit-mask-position:0 ${sY - A1}px;mask-position:0 ${sY - A1}px}to{-webkit-mask-position:-${W1}px ${sY - A1}px;mask-position:-${W1}px ${sY - A1}px}}@keyframes pkWaveB{from{-webkit-mask-position:0 ${sY - A2}px;mask-position:0 ${sY - A2}px}to{-webkit-mask-position:${W2}px ${sY - A2}px;mask-position:${W2}px ${sY - A2}px}}`}</style>
+          <style>{`@keyframes ${kA}{from{-webkit-mask-position:0 ${sY - A1}px;mask-position:0 ${sY - A1}px}to{-webkit-mask-position:-${W1}px ${sY - A1}px;mask-position:-${W1}px ${sY - A1}px}}@keyframes ${kB}{from{-webkit-mask-position:0 ${sY - A2}px;mask-position:0 ${sY - A2}px}to{-webkit-mask-position:${W2}px ${sY - A2}px;mask-position:${W2}px ${sY - A2}px}}`}</style>
 
           {/* Дальний слой — основное тело (у электро в нём живут молнии) */}
           <div
             className="absolute inset-0"
             style={{
               ...surfaceLayer(W1, A1),
-              animation: `pkWaveA ${electro ? "3.2s" : "5s"} linear infinite`,
+              animation: `${kA} ${electro ? "3.2s" : "5s"} linear infinite`,
             }}
           >
             <Fill />
@@ -223,7 +240,7 @@ export function ParkLoadGauge({
             style={{
               ...surfaceLayer(W2, A2),
               opacity: 0.5,
-              animation: `pkWaveB ${electro ? "2.1s" : "3.4s"} linear infinite`,
+              animation: `${kB} ${electro ? "2.1s" : "3.4s"} linear infinite`,
             }}
           >
             <Fill />
@@ -249,7 +266,7 @@ export function ParkLoadGauge({
               className="absolute inset-0"
               style={{
                 ...surfaceLayer(W1, A1),
-                animation: "pkWaveA 3.2s linear infinite",
+                animation: `${kA} 3.2s linear infinite`,
               }}
             >
               <Suspense fallback={null}>
