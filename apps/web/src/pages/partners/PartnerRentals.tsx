@@ -206,7 +206,7 @@ export function PartnerRentals() {
           Оплату/завершение/историю карточка ведёт сама (внутренние overlay).
           Sticky + своя высота → скроллится независимо от списка. */}
       {selected && (
-        <div className="sticky top-4 hidden h-[calc(100dvh-32px)] w-[560px] shrink-0 flex-col overflow-hidden rounded-2xl bg-surface shadow-card lg:flex">
+        <div className="sticky top-4 hidden h-[calc(100dvh-32px)] w-[480px] xl:w-[560px] shrink-0 flex-col overflow-hidden rounded-2xl bg-surface shadow-card lg:flex">
           <ErrorBoundary key={selected.id}>
             <RentalCard
               rental={selected}

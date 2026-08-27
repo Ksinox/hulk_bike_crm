@@ -534,7 +534,7 @@ export function Fleet({
       {/* Дровер карточки скутера (десктоп): sticky-колонка со своей
           прокруткой — как карточка аренды на странице «Аренды». */}
       {sel && (
-        <div className="sticky top-4 hidden h-[calc(100dvh-32px)] w-[620px] shrink-0 flex-col overflow-hidden rounded-2xl bg-surface shadow-card lg:flex">
+        <div className="sticky top-4 hidden h-[calc(100dvh-32px)] w-[480px] xl:w-[560px] 2xl:w-[620px] shrink-0 flex-col overflow-hidden rounded-2xl bg-surface shadow-card lg:flex">
           <ScooterCard
             drawerChrome
             scooter={sel.scooter}
