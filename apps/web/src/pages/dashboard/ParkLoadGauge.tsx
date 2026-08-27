@@ -4,36 +4,42 @@ import { cn } from "@/lib/utils";
 import { ElectricMark, PetrolMark } from "@/components/PowerTypeBadge";
 
 const LiquidGradient = lazy(() => import("./LiquidGradient"));
+const ElectricGradient = lazy(() => import("./ElectricGradient"));
 
 /**
- * Круговая загрузка парка — KPI-карточка-герой. Светлый круг (бело-серый
- * градиент), внутри морфящийся зелёно-синий градиент (LiquidGradient) залит
- * снизу на % загрузки. Поверхность — ДВЕ БЕГУЩИЕ ВОЛНЫ (alpha-маска по
- * тайлу-синусоиде, mask-position-x анимируется; разная длина/скорость/
- * направление → параллакс «живой жидкости»), а не статичная линия. По центру
- * белый круг с крупным % → донат-диаграмма. Градиент ленив (отдельный чанк) +
+ * Круговая загрузка парка — KPI-карточка-герой. Светлый круг, внутри
+ * морфящийся градиент, залитый снизу на % загрузки; по центру белый круг с
+ * крупным % → донат-диаграмма. Градиент ленив (отдельный чанк) +
  * ErrorBoundary с CSS-градиент-фолбэком.
  *
- * size  — диаметр круга (десктоп 100, мобила компактнее).
+ * ДВА ХАРАКТЕРА заливки — по типу техники (правка 27.08):
+ *  • petrol  — «жидкость»: зелёно-бирюзовый градиент, поверхность из двух
+ *    бегущих синусоид (разная длина/скорость/направление → параллакс);
+ *  • electro — «энергия»: холодный синий поток, бегущие вверх линии заряда и
+ *    вспышки молний, а поверхность — рваная дуга разряда вместо волны.
+ * Логика одна, отличаются форма кромки и наполнитель.
+ *
+ * size  — диаметр круга (десктоп 110, мобила компактнее).
  * layout — "row" (круг + подписи сбоку, десктоп) | "stack" (круг сверху,
  *          подписи под ним по центру — для узкой мобильной колонки).
  */
 
-/** Запасной CSS-градиент (зелёно-синий) — пока грузится Neat / если WebGL упал. */
-function GradientFallback() {
+/** Запасной CSS-градиент — пока грузится наполнитель / если он упал. */
+function GradientFallback({ electro }: { electro?: boolean }) {
   return (
     <div
       className="absolute inset-0"
       style={{
-        background:
-          "linear-gradient(155deg, #1D9E75 0%, #22A8C0 50%, #2F86DB 100%)",
+        background: electro
+          ? "linear-gradient(155deg, #4F46E5 0%, #2563EB 50%, #22D3EE 100%)"
+          : "linear-gradient(155deg, #1D9E75 0%, #22A8C0 50%, #2F86DB 100%)",
       }}
     />
   );
 }
 
 class GLBoundary extends Component<
-  { children: React.ReactNode },
+  { children: React.ReactNode; electro?: boolean },
   { failed: boolean }
 > {
   state = { failed: false };
@@ -41,7 +47,11 @@ class GLBoundary extends Component<
     return { failed: true };
   }
   render() {
-    return this.state.failed ? <GradientFallback /> : this.props.children;
+    return this.state.failed ? (
+      <GradientFallback electro={this.props.electro} />
+    ) : (
+      this.props.children
+    );
   }
 }
 
@@ -54,7 +64,7 @@ export function ParkLoadGauge({
   tone = "petrol",
   onClick,
   className,
-  size = 100,
+  size = 110,
   layout = "row",
 }: {
   percent: number;
@@ -64,7 +74,7 @@ export function ParkLoadGauge({
   activeElectro?: number;
   /** Правки 2.0, п.4: свой заголовок — «Загрузка парка» / «Электротранспорт». */
   title?: string;
-  /** Тон кольца: наш парк (зелёный) или партнёрский электро (изумруд+молния). */
+  /** Характер заливки: топливо (жидкость) или заряд (энергия и молнии). */
   tone?: "petrol" | "electro";
   onClick?: () => void;
   className?: string;
@@ -73,8 +83,11 @@ export function ParkLoadGauge({
 }) {
   const pct = Math.max(0, Math.min(100, Math.round(percent)));
   const SIZE = size;
-  const CENTER = Math.round(size * 0.6); // белый круг по центру → донат
+  // Белый круг по центру — 0.66 диаметра (правка 27.08: и сам круг, и
+  // «дырка» доната стали крупнее, круг перестал теряться в карточке).
+  const CENTER = Math.round(size * 0.66);
   const stack = layout === "stack";
+  const electro = tone === "electro";
 
   // Число считается вверх 0 → pct.
   const [shown, setShown] = useState(0);
@@ -93,27 +106,47 @@ export function ParkLoadGauge({
     };
   }, [pct]);
 
-  // Уровень поверхности жидкости (0..SIZE сверху вниз) на % загрузки.
+  // Уровень поверхности (0..SIZE сверху вниз) на % загрузки.
   const sY = SIZE - (SIZE * pct) / 100;
-  // Две «живые» волны: разная длина/амплитуда/скорость/направление → параллакс.
-  // Маска (alpha) по тайлу-синусоиде, бесшовно повторяется по X; уровень sY
-  // вшит в кадры анимации mask-position.
+  // Две «живые» кромки: разная длина/амплитуда/скорость/направление → параллакс.
+  // Маска (alpha) по тайлу, бесшовно повторяется по X; уровень sY вшит в
+  // кадры анимации mask-position.
   const W1 = 46,
-    A1 = 6.5; // дальняя волна — медленная, влево, основное тело
+    A1 = 6.5; // дальняя — медленная, влево, основное тело
   const W2 = 30,
-    A2 = 4.5; // ближняя волна — быстрее, вправо, полупрозрачный гребень
-  const waveTile = (w: number, a: number) =>
+    A2 = 4.5; // ближняя — быстрее, вправо, полупрозрачный гребень
+
+  /**
+   * Форма кромки. Жидкость — плавная синусоида; энергия — рваная ломаная
+   * (разряд). Тайл бесшовный: и левый, и правый край на высоте a.
+   */
+  const surfacePath = (w: number, a: number) =>
+    electro
+      ? `M0 ${a} L${w * 0.125} ${a * 0.08} L${w * 0.25} ${a * 1.55} L${w * 0.375} ${a * 0.3} L${w * 0.5} ${a * 1.15} L${w * 0.625} ${a * 0.04} L${w * 0.75} ${a * 1.5} L${w * 0.875} ${a * 0.38} L${w} ${a} V${SIZE} H0 Z`
+      : `M0 ${a} Q${w / 4} 0 ${w / 2} ${a} T${w} ${a} V${SIZE} H0 Z`;
+
+  const surfaceTile = (w: number, a: number) =>
     `url("data:image/svg+xml,${encodeURIComponent(
-      `<svg xmlns='http://www.w3.org/2000/svg' width='${w}' height='${SIZE}' preserveAspectRatio='none'><path d='M0 ${a} Q${w / 4} 0 ${w / 2} ${a} T${w} ${a} V${SIZE} H0 Z' fill='white'/></svg>`,
+      `<svg xmlns='http://www.w3.org/2000/svg' width='${w}' height='${SIZE}' preserveAspectRatio='none'><path d='${surfacePath(w, a)}' fill='white'/></svg>`,
     )}")`;
-  const waveLayer = (w: number, a: number): React.CSSProperties => ({
-    WebkitMaskImage: waveTile(w, a),
-    maskImage: waveTile(w, a),
+
+  const surfaceLayer = (w: number, a: number): React.CSSProperties => ({
+    WebkitMaskImage: surfaceTile(w, a),
+    maskImage: surfaceTile(w, a),
     WebkitMaskRepeat: "repeat-x",
     maskRepeat: "repeat-x",
     WebkitMaskSize: `${w}px ${SIZE}px`,
     maskSize: `${w}px ${SIZE}px`,
   });
+
+  /** Наполнитель круга — жидкость или энергия. */
+  const Fill = ({ bolts }: { bolts?: boolean }) => (
+    <GLBoundary electro={electro}>
+      <Suspense fallback={<GradientFallback electro={electro} />}>
+        {electro ? <ElectricGradient bolts={bolts} /> : <LiquidGradient />}
+      </Suspense>
+    </GLBoundary>
+  );
 
   return (
     <Card className={cn("flex h-full items-center", className)}>
@@ -129,46 +162,48 @@ export function ParkLoadGauge({
           onClick ? "cursor-pointer" : "cursor-default",
         )}
       >
-        {/* Светлый круг с жидкостью */}
+        {/* Светлый круг с заливкой */}
         <div
-          className="relative shrink-0 overflow-hidden rounded-full ring-1 ring-black/[0.06]"
+          className={cn(
+            "relative shrink-0 overflow-hidden rounded-full ring-1",
+            electro ? "ring-sky-500/15" : "ring-black/[0.06]",
+          )}
           style={{
             width: SIZE,
             height: SIZE,
-            background: "radial-gradient(circle at 50% 30%, #ffffff, #e9edf2)",
-            boxShadow: "inset 0 1px 4px rgba(15,23,42,0.08)",
+            background: electro
+              ? "radial-gradient(circle at 50% 30%, #ffffff, #e6ecf6)"
+              : "radial-gradient(circle at 50% 30%, #ffffff, #e9edf2)",
+            boxShadow: electro
+              ? "inset 0 1px 4px rgba(30,58,138,0.10)"
+              : "inset 0 1px 4px rgba(15,23,42,0.08)",
           }}
         >
-          {/* Бегущие волны — mask-position-x скроллит тайл-синусоиду (уровень
-              sY вшит в кадры по Y). Разные направления → волны расходятся. */}
+          {/* Бегущая кромка — mask-position-x скроллит тайл (уровень sY вшит
+              в кадры по Y). Разные направления → слои расходятся. */}
           <style>{`@keyframes pkWaveA{from{-webkit-mask-position:0 ${sY - A1}px;mask-position:0 ${sY - A1}px}to{-webkit-mask-position:-${W1}px ${sY - A1}px;mask-position:-${W1}px ${sY - A1}px}}@keyframes pkWaveB{from{-webkit-mask-position:0 ${sY - A2}px;mask-position:0 ${sY - A2}px}to{-webkit-mask-position:${W2}px ${sY - A2}px;mask-position:${W2}px ${sY - A2}px}}`}</style>
 
-          {/* Дальняя волна — основное тело жидкости */}
-          <div
-            className="absolute inset-0"
-            style={{ ...waveLayer(W1, A1), animation: "pkWaveA 5s linear infinite" }}
-          >
-            <GLBoundary>
-              <Suspense fallback={<GradientFallback />}>
-                <LiquidGradient />
-              </Suspense>
-            </GLBoundary>
-          </div>
-
-          {/* Ближняя волна — полупрозрачный гребень для глубины/параллакса */}
+          {/* Дальний слой — основное тело (у электро в нём живут молнии) */}
           <div
             className="absolute inset-0"
             style={{
-              ...waveLayer(W2, A2),
-              opacity: 0.5,
-              animation: "pkWaveB 3.4s linear infinite",
+              ...surfaceLayer(W1, A1),
+              animation: `pkWaveA ${electro ? "3.2s" : "5s"} linear infinite`,
             }}
           >
-            <GLBoundary>
-              <Suspense fallback={<GradientFallback />}>
-                <LiquidGradient />
-              </Suspense>
-            </GLBoundary>
+            <Fill bolts />
+          </div>
+
+          {/* Ближний слой — полупрозрачный гребень для глубины/параллакса */}
+          <div
+            className="absolute inset-0"
+            style={{
+              ...surfaceLayer(W2, A2),
+              opacity: 0.5,
+              animation: `pkWaveB ${electro ? "2.1s" : "3.4s"} linear infinite`,
+            }}
+          >
+            <Fill />
           </div>
 
           {/* Белый круг по центру → донат-диаграмма, % на белом */}
@@ -182,13 +217,13 @@ export function ParkLoadGauge({
           >
             <span
               className="font-display font-extrabold leading-none tabular-nums text-ink"
-              style={{ fontSize: Math.round(SIZE * 0.21) }}
+              style={{ fontSize: Math.round(SIZE * 0.2) }}
             >
               {shown}%
             </span>
             <span
               className="mt-0.5 font-bold uppercase tracking-[0.12em] text-muted-2"
-              style={{ fontSize: Math.max(7, Math.round(SIZE * 0.078)) }}
+              style={{ fontSize: Math.max(7, Math.round(SIZE * 0.072)) }}
             >
               загрузка
             </span>
@@ -197,12 +232,22 @@ export function ParkLoadGauge({
 
         {/* Подписи: справа (row) или под кругом по центру (stack) */}
         <div className={cn("min-w-0", stack && "flex flex-col items-center")}>
-          {!stack && (
-            <div className="flex items-center gap-1.5 text-[12px] font-medium text-muted">
-              {tone === "electro" && <ElectricMark size="sm" />}
-              {title}
-            </div>
-          )}
+          {/* Заголовок с меткой типа топлива: в stack-раскладке два чипса
+              стоят рядом, и без метки их не различить. */}
+          <div
+            className={cn(
+              "flex items-center gap-1.5 font-medium text-muted",
+              stack ? "justify-center text-[11px]" : "text-[12px]",
+              !stack && !electro && "text-[12px]",
+            )}
+          >
+            {electro ? (
+              <ElectricMark size="sm" />
+            ) : stack ? (
+              <PetrolMark size="sm" />
+            ) : null}
+            {title}
+          </div>
           <div
             className={cn(
               "font-display font-extrabold leading-tight text-ink",
@@ -211,13 +256,8 @@ export function ParkLoadGauge({
           >
             {active}&nbsp;в&nbsp;аренде
           </div>
-          <div
-            className={cn(
-              "text-[11px] text-muted-2",
-              stack ? "mt-0.5" : "mt-0.5",
-            )}
-          >
-            из {rentable} {tone === "electro" ? "в парке" : "доступных"}
+          <div className="mt-0.5 text-[11px] text-muted-2">
+            из {rentable} {electro ? "в парке" : "доступных"}
           </div>
           {/* Пункт 11: разделение активных на скутеры и электро. */}
           {activeElectro > 0 && (

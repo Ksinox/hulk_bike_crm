@@ -50,6 +50,8 @@ export function MobileDashboard({
 }) {
   const { data: me } = useMe();
   const m = useDashboardMetrics();
+  // Есть ли электротранспорт — от этого зависит раскладка верхних плиток.
+  const hasElectro = m.rentableElectro > 0 || m.activeElectroCount > 0;
   const rev = useBillingPeriodRevenue("all");
   const [revenueOpen, setRevenueOpen] = useState(false);
   // #172: открытие карточки аренды из строк просрочки/возврата + звонок.
@@ -115,19 +117,53 @@ export function MobileDashboard({
           и активные аренды) РЯДОМ с плашкой «Поступит сегодня». Плашки
           «Просрочено» / «Активных аренд» / «Загрузка парка» убраны: просрочки
           видны списком ниже, активные аренды и % загрузки — внутри круга. */}
+      {/* Правка 27.08: два чипса парка стоят РЯДОМ (бензин + электро) — их
+          логично сравнивать друг с другом, а не через «Поступит сегодня».
+          Деньги переехали под них во всю ширину. Если электротранспорта нет,
+          пара как раньше: парк + деньги. */}
       <div className="grid grid-cols-2 items-stretch gap-3">
-        {/* Правки 2.0, п.4: наш (бензиновый) парк — без электротранспорта. */}
         <ParkLoadGauge
+          title="Бензиновые"
           percent={m.loadPercent}
           active={m.activePetrolCount}
           rentable={m.rentableFleet}
           onClick={() => onSelect("fleet")}
-          size={84}
+          size={92}
           layout="stack"
           className="rounded-2xl p-3.5"
         />
+        {hasElectro ? (
+          <ParkLoadGauge
+            title="Электро"
+            tone="electro"
+            percent={m.loadPercentElectro}
+            active={m.activeElectroCount}
+            rentable={m.rentableElectro}
+            onClick={() => onSelect("partners")}
+            size={92}
+            layout="stack"
+            className="rounded-2xl p-3.5"
+          />
+        ) : (
+          <KpiTile
+            icon={<Wallet size={16} />}
+            tone="green"
+            label="Поступит сегодня"
+            value={m.todayIncoming > 0 ? formatRub(m.todayIncoming) : "0"}
+            unit="₽"
+            foot={
+              m.todayIncomingCount > 0
+                ? `${m.todayIncomingCount} ${plural(m.todayIncomingCount, ["возврат", "возврата", "возвратов"])}`
+                : "нет возвратов"
+            }
+          />
+        )}
+      </div>
+
+      {hasElectro && (
         <KpiTile
-          icon={<Wallet size={16} />}
+          wide
+          icon={<Wallet size={18} />}
           tone="green"
           label="Поступит сегодня"
           value={m.todayIncoming > 0 ? formatRub(m.todayIncoming) : "0"}
@@ -137,21 +173,6 @@ export function MobileDashboard({
               ? `${m.todayIncomingCount} ${plural(m.todayIncomingCount, ["возврат", "возврата", "возвратов"])}`
               : "нет возвратов"
           }
-        />
-      </div>
-
-      {/* Правки 2.0, п.4: второй чипс — партнёрский электротранспорт. */}
-      {(m.rentableElectro > 0 || m.activeElectroCount > 0) && (
-        <ParkLoadGauge
-          title="Электротранспорт"
-          tone="electro"
-          percent={m.loadPercentElectro}
-          active={m.activeElectroCount}
-          rentable={m.rentableElectro}
-          onClick={() => onSelect("partners")}
-          size={84}
-          layout="row"
-          className="rounded-2xl p-3.5"
         />
       )}
 
@@ -412,6 +433,7 @@ function KpiTile({
   unit,
   foot,
   onClick,
+  wide,
 }: {
   icon: React.ReactNode;
   tone: Tone;
@@ -420,8 +442,54 @@ function KpiTile({
   unit?: string;
   foot: string;
   onClick?: () => void;
+  /** Плитка во всю ширину: раскладка в строку, иначе справа пустует место. */
+  wide?: boolean;
 }) {
   const s = toneStyles[tone];
+  if (wide) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={!onClick}
+        className={cn(
+          "flex items-center gap-3 rounded-2xl bg-surface p-3.5 text-left shadow-card",
+          onClick && "active:scale-[0.98]",
+        )}
+      >
+        <span
+          className={cn(
+            "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl",
+            s.icon,
+          )}
+        >
+          {icon}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="text-[11px] font-medium leading-tight text-muted">
+            {label}
+          </div>
+          <div className="mt-0.5 text-[11px] leading-tight text-muted-2">
+            {foot}
+          </div>
+        </div>
+        <div className="flex shrink-0 items-baseline gap-1">
+          <span
+            className={cn(
+              "font-display text-[26px] font-bold leading-none tabular-nums",
+              s.value,
+            )}
+          >
+            {value}
+          </span>
+          {unit && (
+            <span className="text-[13px] font-semibold text-muted">{unit}</span>
+          )}
+        </div>
+        {onClick && <ArrowRight size={14} className="shrink-0 text-muted-2" />}
+      </button>
+    );
+  }
   return (
     <button
       type="button"
