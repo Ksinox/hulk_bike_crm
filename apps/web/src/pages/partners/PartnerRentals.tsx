@@ -102,13 +102,10 @@ export function PartnerRentals() {
           </div>
         ) : (
           /* Тот же список, что в «Арендах»: все колонки + бейдж инвестора.
-             overflow-x-auto — при открытом дровере таблице может быть тесно. */
-          <div
-            className={cn(
-              "overflow-hidden rounded-2xl bg-surface shadow-card-sm",
-              selected && "overflow-x-auto",
-            )}
-          >
+             @container + narrowAware: при открытом дровере колонки
+             складываются по приоритету (сумма → № → связь → выдан), долг и
+             статус видимы всегда; overflow-x — последний рубеж. */
+          <div className="@container overflow-x-auto rounded-2xl bg-surface shadow-card-sm">
             <RentalsList
               items={items}
               selectedId={selectedId}
@@ -117,6 +114,7 @@ export function PartnerRentals() {
               }
               viewMode="list"
               investorOf={(name) => partnerMeta.get(name) ?? null}
+              narrowAware
             />
           </div>
         )}

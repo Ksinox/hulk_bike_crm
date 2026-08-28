@@ -293,6 +293,7 @@ export function RentalsList({
   onNew,
   onMeasureWidth,
   investorOf,
+  narrowAware = false,
 }: {
   items: Rental[];
   selectedId: number | null;
@@ -303,6 +304,14 @@ export function RentalsList({
    * в колонке «Скутер» появляется фиолетовый бейдж с именем инвестора.
    */
   investorOf?: (scooterName: string) => string | null;
+  /**
+   * Правка 28.08 (партнёрка): контейнерная адаптация колонок. Родитель
+   * оборачивает список в @container; на узком контейнере колонки прячутся
+   * по приоритету — сначала «Сумма аренды», потом «№», «Связь», «Выдан».
+   * Долг и статус видимы всегда. Без обёртки-@container включать нельзя —
+   * колонки останутся скрытыми (min-width-запросу не с чем сравняться).
+   */
+  narrowAware?: boolean;
   /** v0.8.11: открыть «Новая аренда» — для плитки-заглушки в режиме плиток. */
   onNew?: () => void;
   /**
@@ -522,17 +531,17 @@ export function RentalsList({
       <table ref={tableRef} className="w-auto border-collapse text-left">
         <thead className="sticky top-0 z-10 bg-surface">
           <tr className="text-[11px] font-semibold uppercase tracking-wide text-muted-2">
-            <Th label="№" col="id" sort={sort} onSort={toggleSort} />
+            <Th label="№" col="id" sort={sort} onSort={toggleSort} className={COL.id(narrowAware)} />
             <Th label="Клиент" col="client" sort={sort} onSort={toggleSort} />
-            <Th label="Связь" col="contact" sort={sort} onSort={toggleSort} align="center" />
+            <Th label="Связь" col="contact" sort={sort} onSort={toggleSort} align="center" className={COL.contact(narrowAware)} />
             <Th label="Скутер" col="scooter" sort={sort} onSort={toggleSort} />
-            <Th label="Выдан" col="start" sort={sort} onSort={toggleSort} />
+            <Th label="Выдан" col="start" sort={sort} onSort={toggleSort} className={COL.start(narrowAware)} />
             <Th label="Возврат" col="end" sort={sort} onSort={toggleSort} />
             <Th label="Дней" col="days" sort={sort} onSort={toggleSort} align="center" />
             {hasAnyParking && (
               <Th label="Паркинг" col="parking" sort={sort} onSort={toggleSort} align="center" />
             )}
-            <Th label="Сумма аренды" col="rentSum" sort={sort} onSort={toggleSort} align="right" />
+            <Th label="Сумма аренды" col="rentSum" sort={sort} onSort={toggleSort} align="right" className={COL.rentSum(narrowAware)} />
             <Th label="Долг" col="sum" sort={sort} onSort={toggleSort} align="right" />
             <Th label="Статус" col="status" sort={sort} onSort={toggleSort} />
           </tr>
@@ -545,6 +554,7 @@ export function RentalsList({
               active={row.rental.id === selectedId}
               onSelect={onSelect}
               showParking={hasAnyParking}
+              narrowAware={narrowAware}
             />
           ))}
         </tbody>
@@ -552,6 +562,20 @@ export function RentalsList({
     </div>
   );
 }
+
+/**
+ * Приоритеты колонок при узком КОНТЕЙНЕРЕ (партнёрка, narrowAware):
+ * раньше таблица просто уезжала под горизонтальный скролл, и «куча
+ * информации скрывалась» — долг и статус оказывались за краем. Теперь
+ * первыми складываются наименее критичные колонки, а долг/статус видимы
+ * всегда. Пороги — ширина контейнера, не окна.
+ */
+const COL = {
+  rentSum: (on: boolean) => (on ? "hidden @[980px]:table-cell" : undefined),
+  id: (on: boolean) => (on ? "hidden @[1060px]:table-cell" : undefined),
+  contact: (on: boolean) => (on ? "hidden @[1140px]:table-cell" : undefined),
+  start: (on: boolean) => (on ? "hidden @[1220px]:table-cell" : undefined),
+};
 
 function Th({
   label,
@@ -565,6 +589,8 @@ function Th({
   sort: { col: SortCol; dir: "asc" | "desc" } | null;
   onSort: (col: SortCol) => void;
   align?: "left" | "center" | "right";
+  /** Контейнерная адаптация (партнёрка): колонка прячется на узком. */
+  className?: string;
 }) {
   const activeSort = sort?.col === col;
   return (
@@ -573,6 +599,7 @@ function Th({
         "whitespace-nowrap border-b border-border px-4 py-2.5 font-semibold select-none",
         align === "right" && "text-right",
         align === "center" && "text-center",
+        className,
       )}
     >
       <button
@@ -654,11 +681,13 @@ function RentalTableRow({
   active,
   onSelect,
   showParking,
+  narrowAware = false,
 }: {
   row: Row;
   active: boolean;
   onSelect: (id: number) => void;
   showParking?: boolean;
+  narrowAware?: boolean;
 }) {
   return (
     <tr
@@ -674,7 +703,12 @@ function RentalTableRow({
             : "hover:bg-surface-soft/70",
       )}
     >
-      <td className="px-4 py-5 tabular-nums font-mono text-[12px] text-muted-2 whitespace-nowrap">
+      <td
+        className={cn(
+          "px-4 py-5 tabular-nums font-mono text-[12px] text-muted-2 whitespace-nowrap",
+          COL.id(narrowAware),
+        )}
+      >
         #{String(row.rental.id).padStart(4, "0")}
       </td>
       <td className="px-4 py-5">
@@ -694,7 +728,7 @@ function RentalTableRow({
         </div>
       </td>
       {/* v0.8.26 (G2): «Связь» сразу после имени — статус читается рядом с ФИО. */}
-      <td className="px-4 py-5 text-center">
+      <td className={cn("px-4 py-5 text-center", COL.contact(narrowAware))}>
         <div className="flex justify-center">
           <ContactToggle clientId={row.clientId} unreachable={row.unreachable} />
         </div>
@@ -715,7 +749,12 @@ function RentalTableRow({
           )}
         </span>
       </td>
-      <td className="px-4 py-5 tabular-nums text-muted whitespace-nowrap">
+      <td
+        className={cn(
+          "px-4 py-5 tabular-nums text-muted whitespace-nowrap",
+          COL.start(narrowAware),
+        )}
+      >
         {row.rental.start}
       </td>
       <td className="px-4 py-5 tabular-nums text-muted whitespace-nowrap">
@@ -748,7 +787,12 @@ function RentalTableRow({
       )}
       {/* F5: «Сумма аренды» = «Эта аренда» из карточки (текущий период),
           а не накопительная rental.sum по всем продлениям. */}
-      <td className="px-4 py-5 text-right tabular-nums whitespace-nowrap font-semibold text-ink-2">
+      <td
+        className={cn(
+          "px-4 py-5 text-right tabular-nums whitespace-nowrap font-semibold text-ink-2",
+          COL.rentSum(narrowAware),
+        )}
+      >
         {fmt(row.currentPeriodSum)} ₽
       </td>
       {/* «Долг» — задолженность (просрочка/ущерб/паркинг/неоплачено). */}
