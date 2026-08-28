@@ -327,9 +327,11 @@ export function ScooterCard({
       className={cn(
         drawerChrome
           ? // Дровер: своя прокрутка, компактные отступы, sticky-шапка ниже.
-            // pb-8: без запаса последний блок («Окупаемость», таблица истории)
-            // упирался в край и выглядел обрезанным.
-            "flex h-full min-h-0 flex-col gap-3 overflow-y-auto p-3 pb-8"
+            // [&>*]:shrink-0 — КОРЕНЬ бага «блок Окупаемости не видно»:
+            // main — flex-колонка, и при переполнении flex ужимал секции
+            // вместо прокрутки (ROI схлопывался до 32px, вкладки до 1px).
+            // pb-8 — запас, чтобы последний блок не упирался в край.
+            "flex h-full min-h-0 flex-col gap-3 overflow-y-auto p-3 pb-8 [&>*]:shrink-0"
           : "flex min-w-0 flex-1 flex-col gap-4",
       )}
     >
