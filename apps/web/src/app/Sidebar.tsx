@@ -152,11 +152,6 @@ export function Sidebar({
 
   const shownItems = mainItems.slice(0, visibleCount);
   const hiddenItems = mainItems.slice(visibleCount);
-  (window as unknown as Record<string, unknown>).__dbg = {
-    visibleCount,
-    hidden: hiddenItems.length,
-    moreOpen,
-  };
 
   const openMore = () => {
     if (closeTimer.current) window.clearTimeout(closeTimer.current);
@@ -167,16 +162,10 @@ export function Sidebar({
       setMoreTop(Math.min(r.top, window.innerHeight - height - 16));
     }
     setMoreOpen(true);
-    (window as unknown as { __moreCalls?: number }).__moreCalls =
-      ((window as unknown as { __moreCalls?: number }).__moreCalls ?? 0) + 1;
   };
   const scheduleCloseMore = () => {
     if (closeTimer.current) window.clearTimeout(closeTimer.current);
-    closeTimer.current = window.setTimeout(() => {
-      (window as unknown as { __moreCloses?: number }).__moreCloses =
-        ((window as unknown as { __moreCloses?: number }).__moreCloses ?? 0) + 1;
-      setMoreOpen(false);
-    }, 180);
+    closeTimer.current = window.setTimeout(() => setMoreOpen(false), 180);
   };
 
   useEffect(() => {

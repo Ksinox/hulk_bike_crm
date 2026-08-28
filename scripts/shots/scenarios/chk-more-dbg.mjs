@@ -30,22 +30,15 @@ export async function run(page, ctx) {
   }));
   console.log("после наведения:", JSON.stringify(afterHover));
 
-  // 2) клик по DOM
-  await page.evaluate(() => {
-    const aside = document.querySelector("aside");
-    const btns = aside ? [...aside.querySelectorAll("button")] : [];
-    const t = btns.find((b) => (b.textContent || "").trim().startsWith("Ещё"));
-    t?.click();
-  });
-  await ctx.sleep(600);
-  const afterClick = await page.evaluate(() => ({
-    calls: window.__moreCalls ?? 0, closes: window.__moreCloses ?? 0,
+
+  const afterHover2 = await page.evaluate(() => ({
+    calls: window.__moreCalls ?? 0, dbg: window.__dbg, closes: window.__moreCloses ?? 0,
     panel: /Ещё разделы/.test(document.body.innerText),
     fixedDivs: [...document.querySelectorAll("div")].filter(
       (d) => getComputedStyle(d).position === "fixed" && d.textContent?.includes("Ещё разделы"),
     ).length,
   }));
-  console.log("после клика:", JSON.stringify(afterClick));
+  console.log("состояние:", JSON.stringify(afterHover2));
   console.log("ошибки:", JSON.stringify(errors.slice(0, 5)));
   await ctx.shot("chk-more-dbg", { jpeg: true });
 }
