@@ -60,12 +60,30 @@ import {
 import { askArchiveReason } from "./archiveReason";
 
 type TabId =
+  | "overview"
+  | "econ"
   | "history"
   | "timeline"
   | "repairs"
   | "expenses"
   | "incidents"
   | "docs";
+/**
+ * Правка 28.08: в дровере карточка разложена по вкладкам — раньше это было
+ * длинное полотно, которое приходилось долго листать. «Обзор» — техпаспорт,
+ * статус и активная аренда; «Экономика» — окупаемость (только директору);
+ * дальше прежние разделы. В полноэкранном режиме порядок прежний.
+ */
+const DRAWER_TABS: { id: TabId; label: string }[] = [
+  { id: "overview", label: "Обзор" },
+  { id: "econ", label: "Экономика" },
+  { id: "history", label: "Аренды" },
+  { id: "timeline", label: "События" },
+  { id: "repairs", label: "Ремонты" },
+  { id: "expenses", label: "Расходы" },
+  { id: "docs", label: "Документы" },
+];
+
 const TABS: { id: TabId; label: string; count?: number }[] = [
   { id: "history", label: "История аренд" },
   // v0.4.5: единая лента событий — все аренды на этом скутере + ремонты +
@@ -161,7 +179,7 @@ export function ScooterCard({
   const { data: apiClients } = useApiClients();
   const { data: cardModels = [] } = useApiScooterModels();
   const role = useRole();
-  const [tab, setTab] = useState<TabId>("history");
+  const [tab, setTab] = useState<TabId>(drawerChrome ? "overview" : "history");
   const [editOpen, setEditOpen] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
   const [newRentalOpen, setNewRentalOpen] = useState(false);
@@ -342,7 +360,7 @@ export function ScooterCard({
         className={cn(
           "flex flex-wrap items-center",
           drawerChrome
-            ? "sticky -top-3 z-20 -mx-3 -mt-3 gap-2 border-b border-border bg-surface px-3 py-2.5"
+            ? "@container sticky -top-3 z-20 -mx-3 -mt-3 gap-x-2 gap-y-1.5 border-b border-border bg-surface px-3 py-2"
             : "gap-3",
         )}
       >
@@ -383,7 +401,8 @@ export function ScooterCard({
         </h1>
         <span
           className={cn(
-            "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[12px] font-bold",
+            "inline-flex items-center gap-1.5 rounded-full font-bold",
+            drawerChrome ? "px-2 py-0.5 text-[11px]" : "px-3 py-1 text-[12px]",
             statusPill,
           )}
         >
@@ -394,14 +413,22 @@ export function ScooterCard({
         {scooter.uid && (
           <span
             title="Уникальный ID — 6 последних цифр VIN"
-            className="inline-flex items-center gap-1 rounded-full bg-surface px-3 py-1 font-mono text-[12px] font-bold text-ink-2 shadow-card-sm"
+            className={cn(
+              "inline-flex items-center gap-1 rounded-full bg-surface font-mono font-bold text-ink-2 shadow-card-sm",
+              drawerChrome ? "px-2 py-0.5 text-[11px]" : "px-3 py-1 text-[12px]",
+            )}
           >
             ID {scooter.uid}
           </span>
         )}
         {/* Партнёрская техника (правка 24.08 — свойство единицы, не модели). */}
         {scooter.isPartner && (
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-violet-100 px-3 py-1 text-[12px] font-bold text-violet-700">
+          <span
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-full bg-violet-100 font-bold text-violet-700",
+              drawerChrome ? "px-2 py-0.5 text-[11px]" : "px-3 py-1 text-[12px]",
+            )}
+          >
             <Handshake size={13} /> Партнёрская
           </span>
         )}
@@ -412,19 +439,34 @@ export function ScooterCard({
           </span>
         )}
         <div className="flex-1" />
+        {/* Действия: в дровере — компактный ряд, без разъезжающихся кнопок */}
         <button
           type="button"
           onClick={() => setStatusOpen(true)}
-          className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface px-4 py-2 text-[13px] font-semibold text-ink-2 transition-colors hover:bg-surface-soft"
+          title="Изменить статус"
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-full border border-border bg-surface font-semibold text-ink-2 transition-colors hover:bg-surface-soft",
+            drawerChrome ? "h-8 px-2.5 text-[12px]" : "px-4 py-2 text-[13px]",
+          )}
         >
-          <RefreshCcw size={14} /> Изменить статус
+          <RefreshCcw size={drawerChrome ? 13 : 14} />
+          <span className={drawerChrome ? "hidden @[420px]:inline" : ""}>
+            {drawerChrome ? "Статус" : "Изменить статус"}
+          </span>
         </button>
         <button
           type="button"
           onClick={() => setEditOpen(true)}
-          className="inline-flex items-center gap-1.5 rounded-full bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-blue-700"
+          title="Редактировать"
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-full bg-blue-600 font-semibold text-white transition-colors hover:bg-blue-700",
+            drawerChrome ? "h-8 px-2.5 text-[12px]" : "px-4 py-2 text-[13px]",
+          )}
         >
-          <Pencil size={14} /> Редактировать
+          <Pencil size={drawerChrome ? 13 : 14} />
+          <span className={drawerChrome ? "hidden @[420px]:inline" : ""}>
+            {drawerChrome ? "Править" : "Редактировать"}
+          </span>
         </button>
         {canArchive && (
           <button
@@ -432,19 +474,70 @@ export function ScooterCard({
             onClick={doArchive}
             disabled={archiveMut.isPending}
             title="Перенести в архив"
-            className="inline-flex items-center gap-1.5 rounded-full border border-red-400/30 bg-red-soft px-3 py-2 text-[12px] font-bold text-red-ink transition-colors hover:bg-red hover:text-white"
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-full border border-red-400/30 bg-red-soft font-bold text-red-ink transition-colors hover:bg-red hover:text-white",
+              drawerChrome ? "h-8 px-2.5 text-[11.5px]" : "px-3 py-2 text-[12px]",
+            )}
           >
             {archiveMut.isPending ? (
               <Loader2 size={13} className="animate-spin" />
             ) : (
               <Archive size={13} />
             )}
-            В архив
+            <span className={drawerChrome ? "hidden @[420px]:inline" : ""}>
+              В архив
+            </span>
           </button>
         )}
       </header>
 
+      {/* ======== ВКЛАДКИ ДРОВЕРА ======== */}
+      {drawerChrome && (
+        <div className="scrollbar-thin -mx-3 flex gap-1 overflow-x-auto border-b border-border px-3">
+          {DRAWER_TABS.filter(
+            (t) => t.id !== "econ" || role === "director",
+          ).map((t) => {
+            const count =
+              t.id === "history"
+                ? scooterRentals.length
+                : t.id === "repairs"
+                  ? repairsCount
+                  : t.id === "expenses"
+                    ? expensesCount
+                    : 0;
+            return (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setTab(t.id)}
+                className={cn(
+                  "relative -mb-px inline-flex shrink-0 items-center gap-1.5 px-2.5 py-2 text-[12.5px] font-semibold transition-colors",
+                  tab === t.id
+                    ? "border-b-2 border-blue-600 text-blue-600"
+                    : "border-b-2 border-transparent text-muted hover:text-ink",
+                )}
+              >
+                {t.label}
+                {count > 0 && (
+                  <span
+                    className={cn(
+                      "inline-flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-[10px] font-bold tabular-nums",
+                      tab === t.id
+                        ? "bg-blue-50 text-blue-700"
+                        : "bg-surface-soft text-muted",
+                    )}
+                  >
+                    {count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {/* ======== MAIN GRID ======== */}
+      {(!drawerChrome || tab === "overview") && (
       <div
         className={cn(
           drawerChrome
@@ -849,8 +942,10 @@ export function ScooterCard({
         </aside>
       </div>
 
+      )}
+
       {/* ======== DIRECTOR-ONLY: ROI ======== */}
-      {role === "director" && (
+      {role === "director" && (!drawerChrome || tab === "econ") && (
         <section
           className={cn(
             "relative overflow-hidden rounded-2xl bg-surface shadow-card-sm",
@@ -1143,15 +1238,9 @@ export function ScooterCard({
         </section>
       )}
 
-      {/* ======== TABS ======== */}
-      <div
-        className={cn(
-          "flex gap-1 border-b border-border",
-          // В узком дровере вкладок больше, чем помещается — даём им
-          // горизонтальную прокрутку вместо переноса и слипания.
-          drawerChrome && "scrollbar-thin overflow-x-auto",
-        )}
-      >
+      {/* ======== TABS (полноэкранный режим) ======== */}
+      {!drawerChrome && (
+      <div className="flex gap-1 border-b border-border">
         {TABS.map((t) => {
           const count =
             t.id === "history"
@@ -1192,6 +1281,7 @@ export function ScooterCard({
           );
         })}
       </div>
+      )}
 
       <div className="flex-1">
         {tab === "history" && (
