@@ -530,8 +530,17 @@ export function RentalsList({
 
   return (
     <div className="scrollbar-thin h-full overflow-auto px-2">
-      {/* w-auto: колонки прижаты к содержимому (не растянуты на всю ширину). */}
-      <table ref={tableRef} className="w-auto border-collapse text-left">
+      {/* w-auto: колонки прижаты к содержимому (не растянуты на всю ширину).
+          Правка 28.08: в narrowAware (партнёрка) таблица тянется на всю
+          ширину карточки — иначе строка выглядела «сжатой», хотя справа
+          оставалось пустое место. */}
+      <table
+        ref={tableRef}
+        className={cn(
+          "border-collapse text-left",
+          narrowAware ? "w-full" : "w-auto",
+        )}
+      >
         <thead className="sticky top-0 z-10 bg-surface">
           <tr className="text-[11px] font-semibold uppercase tracking-wide text-muted-2">
             <Th label="№" col="id" sort={sort} onSort={toggleSort} className={COL.id(narrowAware)} />
