@@ -583,6 +583,7 @@ function Th({
   sort,
   onSort,
   align = "left",
+  className,
 }: {
   label: string;
   col: SortCol;
