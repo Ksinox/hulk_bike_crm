@@ -42,10 +42,10 @@ export async function run(page, ctx) {
   // 2.5 / 2.9: главная вкладка «Аренды» + дровер карточки внутри партнёрки
   await ctx.shot("v2-5-investors", { jpeg: true });
   await page.evaluate(() => {
-    const row = [...document.querySelectorAll("button")].find(
-      (b) => /#\d{4}/.test(b.textContent || "") && /₽/.test(b.textContent || ""),
+    const tr = [...document.querySelectorAll("tr")].find((x) =>
+      /#00\d\d/.test(x.textContent || ""),
     );
-    row?.click();
+    tr?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
   });
   await ctx.sleep(1800);
   await ctx.shot("v2-9-partner-rentals", { jpeg: true });
