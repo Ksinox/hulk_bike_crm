@@ -159,6 +159,7 @@ export function ScooterCard({
 }) {
   const rentals = useRentals();
   const { data: apiClients } = useApiClients();
+  const { data: cardModels = [] } = useApiScooterModels();
   const role = useRole();
   const [tab, setTab] = useState<TabId>("history");
   const [editOpen, setEditOpen] = useState(false);
@@ -312,6 +313,15 @@ export function ScooterCard({
 
   const statusPill = statusPillClass(status);
 
+  /**
+   * Есть ли фото модели. В дровере пустая колонка-заглушка занимала место
+   * зря — если фото нет, секция становится одноколоночной.
+   */
+  const modelForPhoto = scooter.modelId
+    ? cardModels.find((m) => m.id === scooter.modelId)
+    : cardModels.find((m) => m.name.toLowerCase().includes(scooter.model));
+  const hasModelPhoto = !!modelForPhoto?.avatarKey;
+
   return (
     <main
       className={cn(
@@ -452,21 +462,28 @@ export function ScooterCard({
           className={cn(
             "grid gap-0 overflow-hidden rounded-2xl bg-surface shadow-card-sm",
             drawerChrome
-              ? "@[380px]:grid-cols-[150px_1fr]"
+              ? hasModelPhoto && "@[380px]:grid-cols-[150px_1fr]"
               : "md:grid-cols-[260px_1fr]",
           )}
         >
-          {/* фото */}
-          <ScooterPhotoArea scooter={scooter} compact={drawerChrome} />
+          {/* фото — в дровере только если оно есть */}
+          {(!drawerChrome || hasModelPhoto) && (
+            <ScooterPhotoArea scooter={scooter} compact={drawerChrome} />
+          )}
 
           {/* техничка */}
-          <div className="flex flex-col gap-0 p-6">
+          <div className={cn("flex flex-col gap-0", drawerChrome ? "p-4" : "p-6")}>
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-center gap-2">
-                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-50 text-blue-700">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-700">
                   <Info size={14} />
                 </span>
-                <h2 className="font-display text-[18px] font-extrabold text-ink">
+                <h2
+                  className={cn(
+                    "font-display font-extrabold text-ink",
+                    drawerChrome ? "text-[15px]" : "text-[18px]",
+                  )}
+                >
                   Технические характеристики
                 </h2>
               </div>
