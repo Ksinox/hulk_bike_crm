@@ -444,9 +444,13 @@ export function ScooterCard({
         {/* Правка 28.08: и в дровере фото слева, характеристики справа —
             так на экран помещается заметно больше без лишнего скролла.
             Ширина колонки фото меряется по КОНТЕЙНЕРУ (@container). */}
+        {/* @container — на ОБЁРТКЕ: элемент не может реагировать на
+            собственную ширину, поэтому запрос вешаем на родителя, а
+            grid-классы — на саму секцию. */}
+        <div className="@container">
         <section
           className={cn(
-            "@container grid gap-0 overflow-hidden rounded-2xl bg-surface shadow-card-sm",
+            "grid gap-0 overflow-hidden rounded-2xl bg-surface shadow-card-sm",
             drawerChrome
               ? "@[380px]:grid-cols-[150px_1fr]"
               : "md:grid-cols-[260px_1fr]",
@@ -589,6 +593,7 @@ export function ScooterCard({
             </div>
           </div>
         </section>
+        </div>
 
         {/* ========== ПРАВЫЙ СТОЛБЕЦ ========== */}
         <aside className="flex flex-col gap-4">
