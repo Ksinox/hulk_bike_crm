@@ -478,12 +478,16 @@ export function Fleet({
         </div>
       ) : (
       /* =========== TABLE =========== */
-      <div className="overflow-hidden rounded-2xl bg-surface shadow-card-sm">
-        <div className="grid grid-cols-[2fr_1fr_1.5fr_1.3fr_1fr_auto] gap-4 border-b border-border px-5 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-2">
+      <div className="@container overflow-hidden rounded-2xl bg-surface shadow-card-sm">
+        {/* Правка 28.08: колонки складываются по ширине КОНТЕЙНЕРА — при
+            открытом дровере список узкий, и «Пробег»/«Дата возврата»/
+            «Клиент» уходили в кашу из переносов. Теперь они скрываются по
+            приоритету, а важное (имя, статус) остаётся читаемым. */}
+        <div className={cn(FLEET_GRID, "gap-4 border-b border-border px-5 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-2")}>
           <span>Имя и модель</span>
           <span>Статус</span>
-          <span>Текущий клиент</span>
-          <span>Дата возврата</span>
+          <span className={FLEET_COL.client}>Текущий клиент</span>
+          <span className={FLEET_COL.date}>Дата возврата</span>
           <button
             type="button"
             onClick={() => {
@@ -496,6 +500,7 @@ export function Fleet({
             }}
             className={cn(
               "flex items-center justify-end gap-1 text-right transition-colors hover:text-ink",
+              FLEET_COL.mileage,
               sortBy === "mileage" && "text-blue-700",
             )}
             title="Сортировать по пробегу"
@@ -505,7 +510,7 @@ export function Fleet({
               <span className="text-[10px]">{sortDir === "desc" ? "↓" : "↑"}</span>
             )}
           </button>
-          <span />
+          <span className={FLEET_COL.action} />
         </div>
 
         {filtered.length === 0 && (
@@ -590,6 +595,20 @@ function OilBadge({ state }: { state: "overdue" | "warn" }) {
   );
 }
 
+/**
+ * Сетка списка техники и приоритеты колонок при узком контейнере
+ * (открыт дровер карточки). Порядок складывания: пробег → дата возврата →
+ * клиент → кнопка «Открыть» (строка и так кликабельна целиком).
+ */
+const FLEET_GRID =
+  "grid grid-cols-[1fr_auto] @[560px]:grid-cols-[2fr_1fr_1.5fr] @[720px]:grid-cols-[2fr_1fr_1.5fr_1.3fr] @[880px]:grid-cols-[2fr_1fr_1.5fr_1.3fr_1fr] @[980px]:grid-cols-[2fr_1fr_1.5fr_1.3fr_1fr_auto]";
+const FLEET_COL = {
+  client: "hidden @[560px]:block",
+  date: "hidden @[720px]:block",
+  mileage: "hidden @[880px]:flex",
+  action: "hidden @[980px]:block",
+};
+
 function FleetRow({
   row,
   onOpen,
@@ -620,7 +639,8 @@ function FleetRow({
         if (e.key === "Enter" || e.key === " ") onOpen();
       }}
       className={cn(
-        "relative grid cursor-pointer grid-cols-[2fr_1fr_1.5fr_1.3fr_1fr_auto] items-center gap-4 border-b border-border/60 px-5 py-3.5 transition-colors last:border-b-0",
+        FLEET_GRID,
+        "relative cursor-pointer items-center gap-4 border-b border-border/60 px-5 py-3.5 transition-colors last:border-b-0",
         active
           ? "bg-blue-50 before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-blue-600"
           : "hover:bg-surface-soft/40",
@@ -643,12 +663,12 @@ function FleetRow({
       </div>
 
       {/* status */}
-      <div>
+      <div className="whitespace-nowrap">
         <StatusPill status={status} />
       </div>
 
       {/* client */}
-      <div className="min-w-0">
+      <div className={cn("min-w-0", FLEET_COL.client)}>
         {rental ? (
           <div className="flex items-center gap-2">
             <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-50 text-[11px] font-bold text-blue-700">
@@ -666,7 +686,7 @@ function FleetRow({
       </div>
 
       {/* return date */}
-      <div className="tabular-nums">
+      <div className={cn("tabular-nums", FLEET_COL.date)}>
         {rental ? (
           <span
             className={cn(
@@ -687,7 +707,7 @@ function FleetRow({
       </div>
 
       {/* mileage + флаг масла */}
-      <div className="text-right">
+      <div className={cn("text-right", FLEET_COL.mileage, "@[880px]:block")}>
         <div className="text-[13px] font-semibold tabular-nums text-ink">
           {fmt(scooter.mileage)} км
         </div>
@@ -699,7 +719,7 @@ function FleetRow({
       </div>
 
       {/* action */}
-      <div>
+      <div className={FLEET_COL.action}>
         <button
           type="button"
           title="Карточка скутера (скоро)"
