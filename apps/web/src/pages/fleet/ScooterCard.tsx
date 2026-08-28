@@ -317,7 +317,9 @@ export function ScooterCard({
       className={cn(
         drawerChrome
           ? // Дровер: своя прокрутка, компактные отступы, sticky-шапка ниже.
-            "flex h-full min-h-0 flex-col gap-3 overflow-y-auto p-3"
+            // pb-8: без запаса последний блок («Окупаемость», таблица истории)
+            // упирался в край и выглядел обрезанным.
+            "flex h-full min-h-0 flex-col gap-3 overflow-y-auto p-3 pb-8"
           : "flex min-w-0 flex-1 flex-col gap-4",
       )}
     >
@@ -439,10 +441,15 @@ export function ScooterCard({
         )}
       >
         {/* ========== ЛЕВЫЙ БЛОК: ФОТО + ТЕХНИЧКА ========== */}
+        {/* Правка 28.08: и в дровере фото слева, характеристики справа —
+            так на экран помещается заметно больше без лишнего скролла.
+            Ширина колонки фото меряется по КОНТЕЙНЕРУ (@container). */}
         <section
           className={cn(
-            "grid gap-0 overflow-hidden rounded-2xl bg-surface shadow-card-sm",
-            !drawerChrome && "md:grid-cols-[260px_1fr]",
+            "@container grid gap-0 overflow-hidden rounded-2xl bg-surface shadow-card-sm",
+            drawerChrome
+              ? "@[380px]:grid-cols-[150px_1fr]"
+              : "md:grid-cols-[260px_1fr]",
           )}
         >
           {/* фото */}
@@ -820,14 +827,36 @@ export function ScooterCard({
 
       {/* ======== DIRECTOR-ONLY: ROI ======== */}
       {role === "director" && (
-        <section className="relative overflow-hidden rounded-2xl bg-surface p-6 shadow-card-sm">
+        <section
+          className={cn(
+            "relative overflow-hidden rounded-2xl bg-surface shadow-card-sm",
+            drawerChrome ? "p-4" : "p-6",
+          )}
+        >
           <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="min-w-0 flex items-start gap-2">
-              <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-purple-soft px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-purple-ink">
+            {/* В дровере бейдж «Только директору» встаёт НАД заголовком —
+                иначе на узкой колонке он наезжал на текст. */}
+            <div
+              className={cn(
+                "min-w-0 flex gap-2",
+                drawerChrome ? "flex-col items-start" : "items-start",
+              )}
+            >
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-full bg-purple-soft px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-purple-ink",
+                  !drawerChrome && "mt-1",
+                )}
+              >
                 <Crown size={11} /> Только директору
               </span>
               <div>
-                <h2 className="font-display text-[22px] font-extrabold leading-tight text-ink">
+                <h2
+                  className={cn(
+                    "font-display font-extrabold leading-tight text-ink",
+                    drawerChrome ? "text-[17px]" : "text-[22px]",
+                  )}
+                >
                   Окупаемость и здоровье актива
                 </h2>
                 <div className="mt-1 text-[13px] text-muted">
@@ -879,12 +908,18 @@ export function ScooterCard({
 
           <div
             className={cn(
-              "mt-5 grid gap-5",
+              "grid",
+              drawerChrome ? "mt-3 gap-3" : "mt-5 gap-5",
               !drawerChrome && "lg:grid-cols-[260px_1fr]",
             )}
           >
             {/* Donut */}
-            <div className="flex flex-col items-center gap-3 rounded-2xl bg-surface-soft p-5">
+            <div
+              className={cn(
+                "flex flex-col items-center gap-3 rounded-2xl bg-surface-soft",
+                drawerChrome ? "p-3" : "p-5",
+              )}
+            >
               {profitIndex != null ? (
                 <>
                   <Donut value={profitIndex} />
@@ -1085,7 +1120,14 @@ export function ScooterCard({
       )}
 
       {/* ======== TABS ======== */}
-      <div className="flex gap-1 border-b border-border">
+      <div
+        className={cn(
+          "flex gap-1 border-b border-border",
+          // В узком дровере вкладок больше, чем помещается — даём им
+          // горизонтальную прокрутку вместо переноса и слипания.
+          drawerChrome && "scrollbar-thin overflow-x-auto",
+        )}
+      >
         {TABS.map((t) => {
           const count =
             t.id === "history"
@@ -1601,7 +1643,9 @@ function ScooterPhotoArea({
     <div
       className={cn(
         "relative flex flex-col items-center justify-end gap-2 overflow-visible bg-white p-5 pb-4 text-muted-2 md:border-r md:border-border",
-        compact ? "min-h-[220px] border-b border-border md:border-r-0" : "min-h-[480px]",
+        compact
+          ? "min-h-[180px] border-b border-border @[380px]:border-b-0 @[380px]:border-r"
+          : "min-h-[480px]",
       )}
     >
       {modelAvatar ? (
@@ -1617,7 +1661,7 @@ function ScooterPhotoArea({
             alt={model?.name ?? ""}
             className={cn(
               "w-auto max-w-none object-contain drop-shadow-[0_18px_24px_rgba(15,23,42,0.18)]",
-              compact ? "h-48" : "-mt-8 h-[28rem]",
+              compact ? "h-32 @[380px]:h-36" : "-mt-8 h-[28rem]",
             )}
           />
           <div className="text-[15px] font-bold text-ink">

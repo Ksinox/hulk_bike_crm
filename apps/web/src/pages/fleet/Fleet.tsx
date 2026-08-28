@@ -375,16 +375,20 @@ export function Fleet({
         </header>
       )}
 
-      <div className="flex min-w-0 items-start gap-4">
-      <div className="flex min-w-0 flex-1 flex-col gap-4">
       {/* =========== Обзор парка =========== */}
+      {/* Правка 28.08: статистика парка — НАД split-зоной, на всю ширину.
+          Дровер карточки встаёт вровень со списком, а не с обзором: видно,
+          что открылась карточка именно выбранной строки. */}
       <ParkOverview
         counters={counters}
         tab={tab}
         onTab={setTab}
         mode={mode}
+        compact={sel != null}
       />
 
+      <div className="flex min-w-0 items-start gap-4">
+      <div className="flex min-w-0 flex-1 flex-col gap-4">
       {/* =========== Поиск + фильтр моделей + добавить =========== */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative min-w-[240px] flex-1">
@@ -516,7 +520,10 @@ export function Fleet({
           <FleetRow
             key={row.scooter.id}
             row={row}
-            onOpen={() => setSelectedId(row.scooter.id)}
+            active={row.scooter.id === selectedId}
+            onOpen={() =>
+              setSelectedId(selectedId === row.scooter.id ? null : row.scooter.id)
+            }
           />
         ))}
 
@@ -586,6 +593,7 @@ function OilBadge({ state }: { state: "overdue" | "warn" }) {
 function FleetRow({
   row,
   onOpen,
+  active = false,
 }: {
   row: {
     scooter: FleetScooter;
@@ -593,6 +601,11 @@ function FleetRow({
     rental?: RentalInfo;
   };
   onOpen: () => void;
+  /**
+   * Правка 28.08: строка открытой в дровере техники подсвечена — иначе
+   * непонятно, чью карточку сейчас смотришь (как в «Арендах»).
+   */
+  active?: boolean;
 }) {
   const { scooter, status, rental } = row;
   // Бейдж масла показываем только для катающих скутеров (парк/в аренде).
@@ -606,7 +619,12 @@ function FleetRow({
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") onOpen();
       }}
-      className="grid cursor-pointer grid-cols-[2fr_1fr_1.5fr_1.3fr_1fr_auto] items-center gap-4 border-b border-border/60 px-5 py-3.5 transition-colors last:border-b-0 hover:bg-surface-soft/40"
+      className={cn(
+        "relative grid cursor-pointer grid-cols-[2fr_1fr_1.5fr_1.3fr_1fr_auto] items-center gap-4 border-b border-border/60 px-5 py-3.5 transition-colors last:border-b-0",
+        active
+          ? "bg-blue-50 before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-blue-600"
+          : "hover:bg-surface-soft/40",
+      )}
     >
       {/* name + model */}
       <div className="flex min-w-0 items-center gap-3">
@@ -843,7 +861,14 @@ function ParkOverview({
   tab,
   onTab,
   mode,
+  compact = false,
 }: {
+  /**
+   * Правка 28.08: при открытом дровере обзор ужимается — он справочный,
+   * а работа идёт в списке и карточке. Крупные цифры меньше, отступы
+   * плотнее, полоса загрузки тоньше.
+   */
+  compact?: boolean;
   /** Правки 2.0, п.10: режим подразделения — от него зависит содержимое. */
   mode: FleetMode;
   counters: {
@@ -1002,7 +1027,12 @@ function ParkOverview({
     : [];
 
   return (
-    <section className="@container overflow-hidden rounded-[22px] border border-border bg-surface px-5 py-4 shadow-card-sm sm:px-6 sm:py-5">
+    <section
+      className={cn(
+        "@container overflow-hidden rounded-[22px] border border-border bg-surface shadow-card-sm",
+        compact ? "px-4 py-3" : "px-5 py-4 sm:px-6 sm:py-5",
+      )}
+    >
       <div
         className={cn(
           "grid gap-3",
@@ -1026,7 +1056,8 @@ function ParkOverview({
               <div className="mt-1.5 flex items-baseline gap-2">
                 <span
                   className={cn(
-                    "font-display text-[46px] font-extrabold leading-none tabular-nums",
+                    "font-display font-extrabold leading-none tabular-nums",
+                    compact ? "text-[30px]" : "text-[46px]",
                     tab === "all" ? "text-blue-700" : "text-ink",
                   )}
                 >
@@ -1038,14 +1069,19 @@ function ParkOverview({
                 </span>
               </div>
             </button>
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-ink text-white">
-              <Layers size={20} />
+            <div
+              className={cn(
+                "flex shrink-0 items-center justify-center rounded-full bg-ink text-white",
+                compact ? "h-8 w-8" : "h-11 w-11",
+              )}
+            >
+              <Layers size={compact ? 15 : 20} />
             </div>
           </div>
 
           {/* Полоса загрузки — только для аренды */}
           {isRental && (
-            <div className="mt-5">
+            <div className={compact ? "mt-3" : "mt-5"}>
               <div className="flex items-baseline justify-between text-[12px]">
                 <span className="font-bold text-ink">Загрузка {loadPct}%</span>
                 <span className="text-muted-2">
@@ -1054,7 +1090,12 @@ function ParkOverview({
                     : "нет техники, доступной к выдаче"}
                 </span>
               </div>
-              <div className="mt-2 flex h-2.5 overflow-hidden rounded-full bg-surface-soft">
+              <div
+                className={cn(
+                  "mt-2 flex overflow-hidden rounded-full bg-surface-soft",
+                  compact ? "h-1.5" : "h-2.5",
+                )}
+              >
                 <span
                   className="bg-blue-600 transition-all"
                   style={{
@@ -1076,7 +1117,8 @@ function ParkOverview({
               КОНТЕЙНЕРУ, не по вьюпорту. */}
           <div
             className={cn(
-              "mt-4 grid flex-1 gap-2.5",
+              "grid flex-1 gap-2.5",
+              compact ? "mt-2.5" : "mt-4",
               metrics.length > 1 ? "@[400px]:grid-cols-2" : "grid-cols-1",
             )}
           >
@@ -1091,6 +1133,7 @@ function ParkOverview({
                 tone={m.tone}
                 active={tab === m.key}
                 onClick={() => onTab(m.key)}
+                compact={compact}
               />
             ))}
           </div>
@@ -1098,7 +1141,12 @@ function ParkOverview({
 
         {/* Правая часть: статусы режима (в аренде — проблемы и «не катают») */}
         {groups.length > 0 && (
-          <div className="flex flex-col gap-3 rounded-[20px] border border-border bg-surface p-4 shadow-card-sm">
+          <div
+            className={cn(
+              "flex flex-col rounded-[20px] border border-border bg-surface shadow-card-sm",
+              compact ? "gap-2 p-3" : "gap-3 p-4",
+            )}
+          >
             {groups.map((g, i) => (
               <div key={g.title} className="contents">
                 {i > 0 && <div className="h-px bg-border" />}
@@ -1128,6 +1176,7 @@ function ParkMetric({
   tone,
   active,
   onClick,
+  compact = false,
 }: {
   label: string;
   hint: string;
@@ -1138,13 +1187,16 @@ function ParkMetric({
   tone: "blue" | "green";
   active: boolean;
   onClick: () => void;
+  /** Компактный режим (открыт дровер): плитка ниже, третья строка скрыта. */
+  compact?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       className={cn(
-        "flex h-full items-center gap-3 rounded-[14px] border px-3.5 py-3 text-left transition-colors",
+        "flex h-full items-center gap-3 rounded-[14px] border text-left transition-colors",
+        compact ? "px-3 py-2" : "px-3.5 py-3",
         active
           ? tone === "blue"
             ? "border-blue-600/50 bg-blue-50"
@@ -1154,17 +1206,19 @@ function ParkMetric({
     >
       <span
         className={cn(
-          "flex h-9 w-9 shrink-0 items-center justify-center rounded-full",
+          "flex shrink-0 items-center justify-center rounded-full",
+          compact ? "h-7 w-7" : "h-9 w-9",
           tone === "blue" ? "bg-blue-50 text-blue-700" : "bg-green-soft text-green-ink",
         )}
       >
-        <Icon size={17} />
+        <Icon size={compact ? 14 : 17} />
       </span>
       <span className="min-w-0">
         <span className="flex items-baseline gap-1.5">
           <span
             className={cn(
-              "font-display text-[24px] font-extrabold leading-none tabular-nums",
+              "font-display font-extrabold leading-none tabular-nums",
+              compact ? "text-[19px]" : "text-[24px]",
               tone === "blue" ? "text-blue-700" : "text-green-ink",
             )}
           >
@@ -1172,8 +1226,12 @@ function ParkMetric({
           </span>
           <span className="truncate text-[13px] font-bold text-ink">{label}</span>
         </span>
-        <span className="mt-0.5 block truncate text-[11px] text-muted-2">{hint}</span>
-        {extra && (
+        {!compact && (
+          <span className="mt-0.5 block truncate text-[11px] text-muted-2">
+            {hint}
+          </span>
+        )}
+        {extra && !compact && (
           <span className="mt-1.5 block truncate text-[11px] font-semibold text-muted">
             {extra}
           </span>

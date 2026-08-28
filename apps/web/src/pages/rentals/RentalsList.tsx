@@ -573,19 +573,24 @@ export function RentalsList({
  * первыми складываются наименее критичные колонки, а долг/статус видимы
  * всегда. Пороги — ширина контейнера, не окна.
  */
+/**
+ * Пороги подобраны по РЕАЛЬНОЙ ширине колонок (правка 28.08): раньше они
+ * были завышены, и строка складывалась, когда места ещё хватало — справа
+ * оставалась пустота. Прикидка ширин: клиент ~230, скутер с инвестором
+ * ~300, дни ~70, долг ~110, статус ~110 → базовый набор ≈ 820. Всё
+ * остальное подключается по мере появления места.
+ */
 const COL = {
-  rentSum: (on: boolean) => (on ? "hidden @[980px]:table-cell" : undefined),
-  id: (on: boolean) => (on ? "hidden @[1060px]:table-cell" : undefined),
-  contact: (on: boolean) => (on ? "hidden @[1140px]:table-cell" : undefined),
-  start: (on: boolean) => (on ? "hidden @[1220px]:table-cell" : undefined),
-  /** «Возврат» на самом узком складывается — срок виден в чипе «Дней». */
-  end: (on: boolean) => (on ? "hidden @[860px]:table-cell" : undefined),
-  /**
-   * Долг и статус НЕ исчезают: на самом узком их колонки складываются, а
-   * значения переезжают чипами под имя клиента (перекомпоновка, не потеря).
-   */
-  debt: (on: boolean) => (on ? "hidden @[980px]:table-cell" : undefined),
-  status: (on: boolean) => (on ? "hidden @[980px]:table-cell" : undefined),
+  /** Долг и статус — последнее, что складывается: до 700 они колонками,
+   *  ниже переезжают чипами под имя клиента (перекомпоновка, не потеря). */
+  debt: (on: boolean) => (on ? "hidden @[700px]:table-cell" : undefined),
+  status: (on: boolean) => (on ? "hidden @[700px]:table-cell" : undefined),
+  /** «Возврат»: срок дублируется чипом «Дней», поэтому уходит раньше. */
+  end: (on: boolean) => (on ? "hidden @[820px]:table-cell" : undefined),
+  rentSum: (on: boolean) => (on ? "hidden @[930px]:table-cell" : undefined),
+  start: (on: boolean) => (on ? "hidden @[1030px]:table-cell" : undefined),
+  id: (on: boolean) => (on ? "hidden @[1110px]:table-cell" : undefined),
+  contact: (on: boolean) => (on ? "hidden @[1190px]:table-cell" : undefined),
 };
 
 function Th({
@@ -726,7 +731,7 @@ function RentalTableRow({
       <td className="px-4 py-5">
         <div className="flex items-center gap-3 min-w-0">
           {/* На узком контейнере фото складывается — имя и чипы важнее. */}
-          <span className={cn(narrowAware && "hidden @[900px]:block")}>
+          <span className={cn(narrowAware && "hidden @[640px]:block")}>
             <ClientAvatar clientId={row.clientId} name={row.clientName} w={42} h={42} />
           </span>
           <div className="min-w-0">
@@ -743,7 +748,7 @@ function RentalTableRow({
                 значения показываем чипами здесь, под именем. Информация
                 перекомпонована, а не скрыта. */}
             {narrowAware && (
-              <span className="mt-1 flex flex-wrap items-center gap-1.5 @[980px]:hidden">
+              <span className="mt-1 flex flex-wrap items-center gap-1.5 @[700px]:hidden">
                 <StatusPill status={row.effStatus} />
                 {row.hasDebt && (
                   <span className="text-[12px] font-bold tabular-nums text-red-ink">
@@ -773,14 +778,14 @@ function RentalTableRow({
             mileage={row.mileage}
             electric={row.isElectric}
             rentalNumber={row.rentalNumber}
-            kmClassName={narrowAware ? "hidden @[1000px]:inline" : undefined}
+            kmClassName={narrowAware ? "hidden @[880px]:inline" : undefined}
           />
           {/* Партнёрка (27.08): чья техника катается в этой аренде. */}
           {row.investorName && (
             <span
               className={cn(
                 "rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-700",
-                narrowAware && "max-w-[110px] truncate @[1100px]:max-w-none",
+                narrowAware && "max-w-[130px] truncate @[1000px]:max-w-none",
               )}
               title={row.investorName}
             >
