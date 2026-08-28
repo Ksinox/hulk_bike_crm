@@ -24,6 +24,17 @@ import {
  * не расходились. Данные — `@/data/progress`.
  */
 
+
+/**
+ * Кадры пересъёмок живут под теми же именами файлов, из-за чего браузер
+ * показывал старые версии из кэша (заказчик ловил «противоречие»: текст
+ * новый — картинка старая). ?v=<билд> заставляет браузер перечитать
+ * картинки после каждого деплоя; между деплоями кэш работает как обычно.
+ */
+function shotSrc(src: string): string {
+  return `${src}?v=${__BUILD_VERSION__}`;
+}
+
 const MONTHS_RU = [
   "января", "февраля", "марта", "апреля", "мая", "июня",
   "июля", "августа", "сентября", "октября", "ноября", "декабря",
@@ -292,7 +303,7 @@ function Lightbox({ img, onClose }: { img: StoryImage; onClose: () => void }) {
         <X size={20} />
       </button>
       <img
-        src={img.src}
+        src={shotSrc(img.src)}
         alt={img.label ?? "скриншот"}
         className="max-h-[86vh] max-w-full rounded-xl shadow-2xl"
         onClick={(e) => e.stopPropagation()}
@@ -640,7 +651,7 @@ function StoryStepRow({
                   className="group relative block w-full cursor-zoom-in overflow-hidden rounded-xl border border-border bg-surface shadow-card-sm transition-shadow hover:shadow-card"
                 >
                   <img
-                    src={img.src}
+                    src={shotSrc(img.src)}
                     alt={img.label ?? ""}
                     loading="lazy"
                     className="max-h-[300px] w-full bg-surface object-contain"
@@ -690,7 +701,7 @@ function Shot({
         title="Открыть на весь экран"
         className="group relative block w-full cursor-zoom-in overflow-hidden rounded-xl border border-border bg-surface shadow-card-sm"
       >
-        <img src={src} alt={label} loading="lazy" className="w-full" />
+        <img src={shotSrc(src)} alt={label} loading="lazy" className="w-full" />
         <span className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-lg bg-ink/60 text-white opacity-0 transition-opacity group-hover:opacity-100">
           <Maximize2 size={14} />
         </span>
