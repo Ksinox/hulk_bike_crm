@@ -23,6 +23,7 @@ import {
   Wrench,
 } from "lucide-react";
 import { useMe } from "@/lib/api/auth";
+import { useIsCompactScreen } from "@/lib/useIsMobile";
 import {
   makeViewMode,
   runViewModeTransition,
@@ -169,6 +170,11 @@ export function Fleet({
 
   // v0.8.22: режим «Список/Плитки» (пер-пользователь, морфинг как в Арендах).
   const { data: me } = useMe();
+  /**
+   * Правка 28.08: обзор парка ужимается не только при открытом дровере, но
+   * и на маленьких ноутбуках — там он занимал слишком много рабочего места.
+   */
+  const compactScreen = useIsCompactScreen();
   const fleetView = useMemo(() => makeViewMode("fleet", "list"), []);
   const [viewMode, setViewMode] = useState<ViewMode>(() => fleetView.load(undefined));
   useEffect(() => {
@@ -384,7 +390,7 @@ export function Fleet({
         tab={tab}
         onTab={setTab}
         mode={mode}
-        compact={sel != null}
+        compact={sel != null || compactScreen}
       />
 
       <div className="flex min-w-0 items-start gap-4">

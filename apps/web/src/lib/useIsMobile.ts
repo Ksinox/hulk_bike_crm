@@ -83,3 +83,26 @@ export function useIsMobile(breakpoint = 768): boolean {
 
   return isMobile;
 }
+
+/**
+ * Правка 28.08: «тесный» экран — небольшой ноутбук (13–14"), где крупные
+ * справочные блоки съедают рабочее место. Отличается от useIsMobile: это
+ * НЕ мобильный слой, а обычный десктоп, которому нужна плотная вёрстка.
+ *
+ * Порог: высота ≤ 860 (1280×720, 1366×768) или ширина ≤ 1440.
+ */
+export function useIsCompactScreen(): boolean {
+  const compute = () => {
+    if (typeof window === "undefined") return false;
+    return window.innerHeight <= 860 || window.innerWidth <= 1440;
+  };
+  const [compact, setCompact] = useState<boolean>(compute);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const update = () => setCompact(compute());
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+  return compact;
+}
