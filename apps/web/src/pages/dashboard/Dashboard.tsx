@@ -56,16 +56,25 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
   // чтобы «Просрочено» не переносилось на вторую строку.
   const hasElectroGauge =
     metrics.rentableElectro > 0 || metrics.activeElectroCount > 0;
-  const topSpan = hasElectroGauge ? "col-span-3" : "col-span-4";
+  /**
+   * Правка 28.08: раскладка живёт по ширине КОНТЕЙНЕРА (@container), а не
+   * окна. Когда открыт дровер быстрого просмотра, контент сужается — и
+   * раньше жёсткие col-span-3/4 давили карточки в кашу («Загруз… 5 в а…»).
+   * Теперь: узко → верхние плитки 2×2, «Выручка» уходит под основную
+   * колонку; широко → прежние 3-4 плитки в ряд и сплит 8/4.
+   */
+  const topSpan = hasElectroGauge
+    ? "@[900px]:col-span-3"
+    : "@[900px]:col-span-4";
 
   return (
-    <div className="grid auto-rows-[minmax(120px,auto)] grid-cols-12 gap-4">
+    <div className="@container grid auto-rows-[minmax(120px,auto)] grid-cols-12 gap-4">
       {/* #дашборд: круговая загрузка парка — первой картой (вместо «Новых
           заявок», которые остаются в разделе «Заявки»). */}
       {/* Пункт 19: плитка «Активных аренд» убрана — дублировала кольцо
           «Загрузка парка» (там та же цифра «N в аренде из M»). */}
       {/* Правки 2.0, п.4: загрузка НАШЕГО (бензинового) парка. */}
-      <div className={cn(topSpan, "[&>div]:h-full")}>
+      <div className={cn("col-span-6", topSpan, "[&>div]:h-full")}>
         <ParkLoadGauge
           percent={metrics.loadPercent}
           active={metrics.activePetrolCount}
@@ -79,7 +88,7 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
       </div>
       {/* Второй чипс — партнёрский электротранспорт (тот же компонент). */}
       {(metrics.rentableElectro > 0 || metrics.activeElectroCount > 0) && (
-        <div className={cn(topSpan, "[&>div]:h-full")}>
+        <div className={cn("col-span-6", topSpan, "[&>div]:h-full")}>
           <ParkLoadGauge
             title="Электротранспорт"
             tone="electro"
@@ -90,7 +99,7 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
           />
         </div>
       )}
-      <div className={cn(topSpan, "[&>div]:h-full")}>
+      <div className={cn("col-span-6", topSpan, "[&>div]:h-full")}>
         <KpiCard
           blue
           title="Поступит сегодня"
@@ -119,7 +128,7 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
           }
         />
       </div>
-      <div className={cn(topSpan, "[&>div]:h-full")}>
+      <div className={cn("col-span-6", topSpan, "[&>div]:h-full")}>
         <KpiCard
           title="Просрочено"
           value={String(metrics.overdueCount)}
@@ -158,7 +167,7 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
           аренд — ParkPanel слева остаётся той же высоты, не растягивается.
           items-start гарантирует что флексы не растягиваются друг под друга. */}
       <div className="col-span-12 grid auto-rows-[minmax(120px,max-content)] grid-cols-12 items-start gap-4">
-        <div className="col-span-8 flex flex-col gap-4">
+        <div className="col-span-12 @[980px]:col-span-8 flex flex-col gap-4">
           {/* #дашборд: «Долги к сбору» подняты НАД парком — горящие деньги
               первыми, парк (на 100+ скутеров разрастается) ниже. */}
           <DebtsToCollect
@@ -173,7 +182,7 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
           />
           <ActivityFeed />
         </div>
-        <div className="col-span-4 flex flex-col gap-4">
+        <div className="col-span-12 @[980px]:col-span-4 flex flex-col gap-4">
           <RevenueCard metrics={metrics} />
           <ReturnsList
             items={metrics.returnsToday}
@@ -188,9 +197,10 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
 function ClassicVariant({ metrics }: { metrics: DashboardMetrics }) {
   const drawer = useDashboardDrawer();
   return (
-    <div className="grid auto-rows-[minmax(120px,auto)] grid-cols-12 gap-4">
+    // Правка 28.08: та же контейнерная адаптация, что в ParkVariant.
+    <div className="@container grid auto-rows-[minmax(120px,auto)] grid-cols-12 gap-4">
       <ClassicKpi
-        className="col-span-4"
+        className="col-span-6 @[900px]:col-span-4"
         title="Поступит сегодня"
         value={metrics.todayIncoming > 0 ? formatRub(metrics.todayIncoming) : "0"}
         unit="₽"
@@ -213,7 +223,7 @@ function ClassicVariant({ metrics }: { metrics: DashboardMetrics }) {
         }
       />
       <ClassicKpi
-        className="col-span-4"
+        className="col-span-6 @[900px]:col-span-4"
         title="Просрочено"
         value={String(metrics.overdueCount)}
         valueRed={metrics.overdueCount > 0}
@@ -233,14 +243,14 @@ function ClassicVariant({ metrics }: { metrics: DashboardMetrics }) {
         }
       />
       {/* Пункт 19: «Активных аренд» убрана — есть «Загрузка парка». */}
-      <NewApplicationsWidget className="col-span-4" />
+      <NewApplicationsWidget className="col-span-12 @[900px]:col-span-4" />
 
       <ReturnsTable
-        className="col-span-8"
+        className="col-span-12 @[980px]:col-span-8"
         items={metrics.returnsToday}
         onOpenRental={(id) => drawer.openRental(id)}
       />
-      <ActivityFeed className="col-span-4" compact />
+      <ActivityFeed className="col-span-12 @[980px]:col-span-4" compact />
       <OverdueTable
         className="col-span-12"
         items={metrics.overdue}
