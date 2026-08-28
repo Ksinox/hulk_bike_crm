@@ -182,76 +182,95 @@ export function PartnerFleet({
             </div>
           </div>
 
-          {/* Таблица техники */}
-          <div className="overflow-x-auto rounded-2xl bg-surface shadow-card-sm">
-            <table className="w-full min-w-[680px] text-[13px]">
-              <thead>
-                <tr className="text-left text-[11px] font-bold uppercase tracking-wider text-muted-2">
-                  <th className="px-4 py-3">Техника</th>
-                  <th className="px-4 py-3">Инвестор</th>
-                  <th className="px-4 py-3 text-right">Выручка за период</th>
-                  <th className="px-4 py-3 text-right">% инвестора</th>
-                  <th className="px-4 py-3 text-right">Доля инвестора</th>
-                  <th className="px-4 py-3 text-right">Наша доля</th>
-                </tr>
-              </thead>
-              <tbody>
-                {calc.items.map((it) => (
-                  <tr
-                    key={it.scooter.id}
-                    onClick={() => onOpenScooter(it.scooter.id)}
-                    className="cursor-pointer border-t border-border/60 transition-colors hover:bg-surface-soft/60"
-                  >
-                    <td className="px-4 py-3">
-                      <span className="flex items-center gap-2 font-semibold text-ink">
-                        <ScooterName
-                          name={it.scooter.name}
-                          number={it.scooter.rentalSlot}
-                          exNumber={it.scooter.exRentalSlot}
-                          size="sm"
-                        />
-                        {it.isElectric && <ElectricMark size="sm" />}
-                        <span className="text-[11px] font-normal text-muted-2">
-                          {it.modelName}
-                          {it.scooter.uid ? ` · ID ${it.scooter.uid}` : ""}
-                        </span>
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      {it.investor ? (
-                        <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[11.5px] font-semibold text-violet-700">
-                          {it.investor.name}
-                        </span>
-                      ) : (
-                        <span className="text-[11.5px] text-muted-2">
-                          не привязан
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-right font-bold tabular-nums">
-                      {fmt(it.revenue)} ₽
-                    </td>
-                    <td
-                      className="px-4 py-3 text-right font-bold tabular-nums text-muted"
-                      title="Процент задаётся у инвестора — техника наследует его автоматически"
-                    >
-                      {it.sharePct} %
-                    </td>
-                    <td className="px-4 py-3 text-right font-bold tabular-nums text-violet-700">
-                      {fmt(it.payout)} ₽
-                    </td>
-                    <td
-                      className={cn(
-                        "px-4 py-3 text-right font-bold tabular-nums",
-                        it.ours > 0 ? "text-green-ink" : "text-muted",
-                      )}
-                    >
+          {/* Список техники. Правка 28.08: не таблица с min-width и
+              горизонтальным скроллом (он появлялся при открытом дровере), а
+              сетка, которая складывает колонки по ширине КОНТЕЙНЕРА. Долю
+              инвестора и нашу долю не прячем — на узком они переезжают под
+              название техники. */}
+          <div className="@container overflow-hidden rounded-2xl bg-surface shadow-card-sm">
+            <div className="hidden gap-3 border-b border-border px-4 py-3 text-[11px] font-bold uppercase tracking-wider text-muted-2 @[720px]:grid @[720px]:grid-cols-[1.6fr_1.1fr_auto_auto_auto] @[980px]:grid-cols-[1.6fr_1.1fr_auto_auto_auto_auto]">
+              <span>Техника</span>
+              <span>Инвестор</span>
+              <span className="hidden text-right @[980px]:block">Выручка</span>
+              <span className="text-right">%</span>
+              <span className="text-right">Инвестору</span>
+              <span className="text-right">Наша доля</span>
+            </div>
+            {calc.items.map((it) => (
+              <button
+                key={it.scooter.id}
+                type="button"
+                onClick={() => onOpenScooter(it.scooter.id)}
+                className="grid w-full grid-cols-1 gap-x-3 gap-y-1.5 border-t border-border/60 px-4 py-3 text-left transition-colors first:border-t-0 hover:bg-surface-soft/60 @[720px]:grid-cols-[1.6fr_1.1fr_auto_auto_auto] @[720px]:items-center @[980px]:grid-cols-[1.6fr_1.1fr_auto_auto_auto_auto]"
+              >
+                {/* Техника */}
+                <span className="flex min-w-0 flex-wrap items-center gap-2 font-semibold text-ink">
+                  <ScooterName
+                    name={it.scooter.name}
+                    number={it.scooter.rentalSlot}
+                    exNumber={it.scooter.exRentalSlot}
+                    size="sm"
+                  />
+                  {it.isElectric && <ElectricMark size="sm" />}
+                  <span className="truncate text-[11px] font-normal text-muted-2">
+                    {it.scooter.uid ? `ID ${it.scooter.uid}` : it.modelName}
+                  </span>
+                </span>
+
+                {/* Инвестор — на узком уходит под название, но не режется */}
+                <span className="min-w-0">
+                  {it.investor ? (
+                    <span className="inline-block max-w-full truncate rounded-full bg-violet-50 px-2 py-0.5 text-[11.5px] font-semibold text-violet-700">
+                      {it.investor.name}
+                    </span>
+                  ) : (
+                    <span className="text-[11.5px] text-muted-2">не привязан</span>
+                  )}
+                </span>
+
+                {/* Выручка — самая необязательная колонка, уходит первой */}
+                <span className="hidden text-right text-[13px] font-bold tabular-nums @[980px]:block">
+                  {fmt(it.revenue)} ₽
+                </span>
+
+                {/* Проценты и доли: на узком — одной строкой чипами */}
+                <span
+                  className="hidden text-right text-[13px] font-bold tabular-nums text-muted @[720px]:block"
+                  title="Процент задаётся у инвестора — техника наследует его автоматически"
+                >
+                  {it.sharePct} %
+                </span>
+                <span className="hidden text-right text-[13px] font-bold tabular-nums text-violet-700 @[720px]:block">
+                  {fmt(it.payout)} ₽
+                </span>
+                <span
+                  className={cn(
+                    "hidden text-right text-[13px] font-bold tabular-nums @[720px]:block",
+                    it.ours > 0 ? "text-green-ink" : "text-muted",
+                  )}
+                >
+                  {fmt(it.ours)} ₽
+                </span>
+
+                {/* Узкий контейнер: всё то же самое, но компактной строкой */}
+                <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] tabular-nums @[720px]:hidden">
+                  <span className="text-muted-2">
+                    выручка <b className="text-ink">{fmt(it.revenue)} ₽</b>
+                  </span>
+                  <span className="text-muted-2">
+                    инвестору{" "}
+                    <b className="text-violet-700">{fmt(it.payout)} ₽</b>
+                    <span className="ml-1 text-muted-2">({it.sharePct} %)</span>
+                  </span>
+                  <span className="text-muted-2">
+                    наша{" "}
+                    <b className={it.ours > 0 ? "text-green-ink" : "text-muted"}>
                       {fmt(it.ours)} ₽
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    </b>
+                  </span>
+                </span>
+              </button>
+            ))}
           </div>
 
           <div className="text-[11.5px] leading-relaxed text-muted-2">

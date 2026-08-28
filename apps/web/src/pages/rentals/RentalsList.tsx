@@ -529,7 +529,14 @@ export function RentalsList({
   const hasAnyParking = rows.some((r) => r.parkingDays > 0);
 
   return (
-    <div className="scrollbar-thin h-full overflow-auto px-2">
+    <div
+      className={cn(
+        "scrollbar-thin h-full px-2",
+        // Правка 28.08: в узком режиме горизонтальной прокрутки быть не
+        // должно — колонки складываются, а не уезжают за край.
+        narrowAware ? "overflow-y-auto overflow-x-hidden" : "overflow-auto",
+      )}
+    >
       {/* w-auto: колонки прижаты к содержимому (не растянуты на всю ширину).
           Правка 28.08: в narrowAware (партнёрка) таблица тянется на всю
           ширину карточки — иначе строка выглядела «сжатой», хотя справа

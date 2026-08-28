@@ -49,8 +49,14 @@ export function ScooterStatusModal({
    * не можем (выкуп — переход права собственности от нас к клиенту).
    * Для партнёрских единиц статус «Передан в выкуп» скрываем.
    */
+  /**
+   * Партнёрская техника не наша: её нельзя ни передать в выкуп, ни продать
+   * (правка 28.08). Партнёрка — только аренда.
+   */
   const options = scooter.isPartner
-    ? OPTIONS.filter((o) => o.id !== "buyout")
+    ? OPTIONS.filter(
+        (o) => o.id !== "buyout" && o.id !== "for_sale" && o.id !== "sold",
+      )
     : OPTIONS;
 
   const submit = async () => {

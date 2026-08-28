@@ -105,7 +105,7 @@ export function PartnerRentals() {
              @container + narrowAware: при открытом дровере колонки
              складываются по приоритету (сумма → № → связь → выдан), долг и
              статус видимы всегда; overflow-x — последний рубеж. */
-          <div className="@container overflow-x-auto rounded-2xl bg-surface shadow-card-sm">
+          <div className="@container overflow-hidden rounded-2xl bg-surface shadow-card-sm">
             <RentalsList
               items={items}
               selectedId={selectedId}

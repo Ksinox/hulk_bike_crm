@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   BarChart3,
   Bike,
@@ -21,6 +21,7 @@ import {
   Users,
   Wallet,
   Wrench,
+  MoreHorizontal,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -107,6 +108,65 @@ export function Sidebar({
     left: number;
   } | null>(null);
   const asideRef = useRef<HTMLElement>(null);
+  /**
+   * Правка 28.08: на низких экранах пункты меню не помещались. Скрытая
+   * прокрутка колёсиком была так себе решением — заказчик прав. Теперь
+   * показываем СТОЛЬКО, сколько реально влезает, а остальные прячем за
+   * кнопкой «Ещё»: наведение (или клик) открывает панель сбоку со всеми
+   * оставшимися разделами.
+   */
+  const listRef = useRef<HTMLDivElement>(null);
+  const [visibleCount, setVisibleCount] = useState(mainItems.length);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [moreTop, setMoreTop] = useState(0);
+  const moreBtnRef = useRef<HTMLButtonElement>(null);
+  const closeTimer = useRef<number | null>(null);
+
+  /** Сколько пунктов помещается по высоте: меряем реальную высоту строки. */
+  useLayoutEffect(() => {
+    const measure = () => {
+      const list = listRef.current;
+      const aside = asideRef.current;
+      if (!list || !aside) return;
+      const rowH = list.firstElementChild
+        ? (list.firstElementChild as HTMLElement).offsetHeight + 4
+        : 48;
+      const available = list.clientHeight;
+      if (available <= 0 || rowH <= 0) return;
+      // Место под кнопку «Ещё», если поместились не все.
+      const fitsAll = Math.floor(available / rowH) >= mainItems.length;
+      const n = fitsAll
+        ? mainItems.length
+        : Math.max(1, Math.floor(available / rowH) - 1);
+      setVisibleCount(n);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    if (listRef.current) ro.observe(listRef.current);
+    window.addEventListener("resize", measure);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [mainItems.length]);
+
+  const shownItems = mainItems.slice(0, visibleCount);
+  const hiddenItems = mainItems.slice(visibleCount);
+
+  const openMore = () => {
+    if (closeTimer.current) window.clearTimeout(closeTimer.current);
+    const r = moreBtnRef.current?.getBoundingClientRect();
+    if (r) {
+      // Панель выравниваем по кнопке, но не даём уехать за низ экрана.
+      const height = Math.min(hiddenItems.length * 44 + 16, 420);
+      setMoreTop(Math.min(r.top, window.innerHeight - height - 16));
+    }
+    setMoreOpen(true);
+  };
+  const scheduleCloseMore = () => {
+    if (closeTimer.current) window.clearTimeout(closeTimer.current);
+    closeTimer.current = window.setTimeout(() => setMoreOpen(false), 180);
+  };
 
   useEffect(() => {
     if (expanded) setTooltip(null);
@@ -158,8 +218,11 @@ export function Sidebar({
             скроллится (колёсиком/тачпадом), а «Настройки»/«Выход» всегда
             прижаты снизу. На высоких экранах ничего не меняется — скролла
             нет. Плюс компакт-режим строк на низких экранах (index.css). */}
-        <div className="sidebar-scroll -mx-1 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-1">
-          {mainItems.map((item) => (
+        <div
+          ref={listRef}
+          className="-mx-1 flex min-h-0 flex-1 flex-col gap-1 overflow-hidden px-1"
+        >
+          {shownItems.map((item) => (
             <NavRow
               key={item.id}
               item={item}
@@ -177,6 +240,51 @@ export function Sidebar({
               }
             />
           ))}
+
+          {/* Не поместившиеся разделы — за кнопкой «Ещё» */}
+          {hiddenItems.length > 0 && (
+            <button
+              ref={moreBtnRef}
+              type="button"
+              onMouseEnter={openMore}
+              onMouseLeave={scheduleCloseMore}
+              onClick={() => (moreOpen ? setMoreOpen(false) : openMore())}
+              className={cn(
+                "sidebar-row relative flex h-11 shrink-0 items-center gap-3 overflow-hidden whitespace-nowrap rounded-[14px] px-3 text-left transition-colors",
+                moreOpen
+                  ? "bg-blue-50 text-blue-600"
+                  : "text-muted hover:bg-blue-50 hover:text-blue-600",
+              )}
+            >
+              <span className="relative flex-shrink-0">
+                <MoreHorizontal size={20} />
+                {/* Красная точка, если в скрытых есть непрочитанное */}
+                {!expanded &&
+                  hiddenItems.some(
+                    (i) => i.id === "whats-new" && changelogUnread > 0,
+                  ) && (
+                    <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-red ring-2 ring-surface" />
+                  )}
+              </span>
+              <span
+                className={cn(
+                  "flex min-w-0 flex-1 items-center gap-2 text-[13px] font-semibold transition-[opacity,transform]",
+                  expanded
+                    ? "pointer-events-auto translate-x-0 opacity-100 [transition-delay:80ms]"
+                    : "pointer-events-none -translate-x-1.5 opacity-0",
+                )}
+                style={{
+                  transitionDuration: "320ms",
+                  transitionTimingFunction: "cubic-bezier(0.22,1,0.36,1)",
+                }}
+              >
+                <span className="truncate">Ещё</span>
+                <span className="ml-auto rounded-full bg-surface-soft px-1.5 py-0.5 text-[10px] font-bold text-muted-2">
+                  {hiddenItems.length}
+                </span>
+              </span>
+            </button>
+          )}
         </div>
 
         <UpdateBanner phase={phase} version={version} expanded={expanded} />
@@ -226,6 +334,66 @@ export function Sidebar({
           ))}
         </div>
       </aside>
+
+      {/* Панель со скрытыми разделами — выезжает сбоку от кнопки «Ещё».
+          Держится, пока курсор на кнопке или на самой панели. */}
+      {moreOpen && hiddenItems.length > 0 && (
+        <div
+          onMouseEnter={() => {
+            if (closeTimer.current) window.clearTimeout(closeTimer.current);
+          }}
+          onMouseLeave={scheduleCloseMore}
+          className="fixed z-[9998] w-[228px] rounded-2xl border border-border bg-surface p-1.5 shadow-card-lg animate-slide-in-right"
+          style={{ left: expanded ? 244 : 80, top: moreTop }}
+        >
+          <div className="px-2 py-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-2">
+            Ещё разделы
+          </div>
+          {hiddenItems.map((item) => {
+            const Icon = item.icon;
+            const disabled = item.ready !== true;
+            const badge =
+              item.id === "whats-new"
+                ? changelogUnread
+                : item.id === "applications"
+                  ? newApplicationsCount
+                  : 0;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                disabled={disabled}
+                onClick={() => {
+                  if (disabled) return;
+                  onSelect(item.id as RouteId);
+                  setMoreOpen(false);
+                }}
+                className={cn(
+                  "flex h-10 w-full items-center gap-2.5 rounded-xl px-2.5 text-left text-[13px] font-semibold transition-colors",
+                  item.id === activeId
+                    ? "bg-ink text-white"
+                    : disabled
+                      ? "cursor-not-allowed text-muted-2 opacity-60"
+                      : "text-ink-2 hover:bg-blue-50 hover:text-blue-600",
+                )}
+              >
+                <Icon size={17} className="shrink-0" />
+                <span className="truncate">{item.label}</span>
+                {disabled && (
+                  <span className="ml-auto rounded-full bg-surface-soft px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-muted-2">
+                    скоро
+                  </span>
+                )}
+                {!disabled && badge > 0 && (
+                  <span className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red px-1.5 text-[10px] font-bold text-white">
+                    {badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {tooltip && (
         <div

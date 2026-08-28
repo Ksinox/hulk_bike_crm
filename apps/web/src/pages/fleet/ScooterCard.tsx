@@ -1461,62 +1461,40 @@ function RentalSlotSpec({ scooter }: { scooter: FleetScooter }) {
 }
 
 /**
- * Партнёрская техника (правка заказчика 24.08): раньше флаг стоял у МОДЕЛИ,
- * но у одной модели бывают и наши экземпляры, и партнёрские. Теперь это
- * свойство конкретного скутера: переключатель прямо в карточке, а процент
- * инвестора берётся общий (Партнёрка) либо персональный у этой единицы.
+ * Принадлежность техники — ТОЛЬКО ЧТЕНИЕ (правка 28.08).
+ *
+ * Раньше это был переключатель прямо в карточке, и менеджер мог случайным
+ * кликом сделать нашу технику партнёрской (или наоборот) — а от этого
+ * зависит расчёт выплат инвестору. Теперь партнёрство задаётся ОДИН раз при
+ * добавлении техники из раздела «Партнёрка» (там же выбирается инвестор,
+ * чей процент единица наследует). Здесь — только факт.
  */
 function PartnerSpec({ scooter }: { scooter: FleetScooter }) {
-  const patch = usePatchScooter();
   const shareQ = usePartnerShare();
   const on = !!scooter.isPartner;
   const share = scooter.partnerShare ?? shareQ.data?.value ?? 50;
-
-  const toggle = async () => {
-    try {
-      await patch.mutateAsync({
-        id: scooter.id,
-        patch: { isPartner: !on },
-      });
-      toast.success(
-        !on ? "Техника партнёрская" : "Техника снова наша",
-        !on
-          ? `Выплаты инвестору считаются в разделе «Партнёрка» (${share} %).`
-          : "Из расчёта выплат инвестору убрана.",
-      );
-    } catch {
-      toast.error("Не удалось изменить");
-    }
-  };
 
   return (
     <div>
       <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
         Принадлежность
       </div>
-      <button
-        type="button"
-        onClick={toggle}
-        disabled={patch.isPending}
+      <div
         title={
           on
-            ? "Партнёрская техника — выручка делится с инвестором"
-            : "Наша техника. Клик — отметить как партнёрскую"
+            ? "Партнёрская техника инвестора — задаётся при добавлении в разделе «Партнёрка»"
+            : "Наша техника"
         }
         className={cn(
-          "mt-1 -ml-1.5 inline-flex items-center gap-1.5 rounded-lg border border-transparent px-1.5 py-0.5 text-[15px] font-bold leading-tight transition-colors disabled:opacity-50",
-          on
-            ? "text-violet-700 hover:bg-violet-50"
-            : "text-ink hover:border-blue-300 hover:bg-blue-50",
+          "mt-1 text-[15px] font-bold leading-tight",
+          on ? "text-violet-700" : "text-ink",
         )}
       >
         {on ? "Партнёрская" : "Наша"}
-        <Pencil size={12} className="opacity-60" />
-      </button>
+      </div>
       {on && (
         <div className="mt-0.5 text-[10px] uppercase tracking-wider text-muted-2">
           инвестору {share} %
-          {scooter.partnerShare != null ? " (свой)" : ""}
         </div>
       )}
     </div>
