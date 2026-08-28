@@ -162,6 +162,8 @@ export function Sidebar({
       setMoreTop(Math.min(r.top, window.innerHeight - height - 16));
     }
     setMoreOpen(true);
+    (window as unknown as { __moreCalls?: number }).__moreCalls =
+      ((window as unknown as { __moreCalls?: number }).__moreCalls ?? 0) + 1;
   };
   const scheduleCloseMore = () => {
     if (closeTimer.current) window.clearTimeout(closeTimer.current);

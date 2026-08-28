@@ -1,5 +1,10 @@
 /** Диагностика: открывается ли панель «Ещё» по наведению и по клику. */
 export async function run(page, ctx) {
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(String(e).slice(0, 160)));
+  page.on("console", (m) => {
+    if (m.type() === "error") errors.push("console: " + m.text().slice(0, 160));
+  });
   await page.setViewport({ width: 1280, height: 720, deviceScaleFactor: 1 });
   await ctx.gotoRoute("dashboard");
   await ctx.sleep(2600);
@@ -40,5 +45,6 @@ export async function run(page, ctx) {
     ).length,
   }));
   console.log("после клика:", JSON.stringify(afterClick));
+  console.log("ошибки:", JSON.stringify(errors.slice(0, 5)));
   await ctx.shot("chk-more-dbg", { jpeg: true });
 }
