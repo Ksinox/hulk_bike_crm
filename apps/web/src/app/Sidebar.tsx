@@ -152,6 +152,11 @@ export function Sidebar({
 
   const shownItems = mainItems.slice(0, visibleCount);
   const hiddenItems = mainItems.slice(visibleCount);
+  (window as unknown as Record<string, unknown>).__dbg = {
+    visibleCount,
+    hidden: hiddenItems.length,
+    moreOpen,
+  };
 
   const openMore = () => {
     if (closeTimer.current) window.clearTimeout(closeTimer.current);

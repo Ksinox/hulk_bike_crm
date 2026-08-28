@@ -39,7 +39,7 @@ export async function run(page, ctx) {
   });
   await ctx.sleep(600);
   const afterClick = await page.evaluate(() => ({
-    calls: window.__moreCalls ?? 0,
+    calls: window.__moreCalls ?? 0, closes: window.__moreCloses ?? 0,
     panel: /Ещё разделы/.test(document.body.innerText),
     fixedDivs: [...document.querySelectorAll("div")].filter(
       (d) => getComputedStyle(d).position === "fixed" && d.textContent?.includes("Ещё разделы"),
