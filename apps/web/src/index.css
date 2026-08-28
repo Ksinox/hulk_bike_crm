@@ -455,3 +455,21 @@
     border-radius: 10px;
   }
 }
+
+/* Правка 28.08: плавное появление боковых push-дроверов (карточка аренды в
+   партнёрке, карточка техники) — та же кривая, что у полноэкранного
+   slide-in-right в «Арендах», но с меньшим смещением: колонка не влетает
+   с края экрана, а мягко выезжает и проявляется. */
+@keyframes drawer-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(28px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+.drawer-slide-in {
+  animation: drawer-slide-in 340ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}

@@ -196,6 +196,8 @@ type Row = {
   onParking: boolean;
   parkingDays: number;
   unreachable: boolean;
+  /** Партнёрка (27.08): имя инвестора техники — бейдж в колонке «Скутер». */
+  investorName: string | null;
 };
 
 /**
@@ -290,11 +292,17 @@ export function RentalsList({
   viewMode,
   onNew,
   onMeasureWidth,
+  investorOf,
 }: {
   items: Rental[];
   selectedId: number | null;
   onSelect: (id: number) => void;
   viewMode: RentalsViewMode;
+  /**
+   * Партнёрка (27.08): резолвер «имя техники → инвестор». Когда передан,
+   * в колонке «Скутер» появляется фиолетовый бейдж с именем инвестора.
+   */
+  investorOf?: (scooterName: string) => string | null;
   /** v0.8.11: открыть «Новая аренда» — для плитки-заглушки в режиме плиток. */
   onNew?: () => void;
   /**
@@ -412,9 +420,10 @@ export function RentalsList({
           .filter((p) => p.rentalId === r.id)
           .reduce((s, p) => s + p.days, 0),
         unreachable: unreachableSet.has(r.clientId),
+        investorName: investorOf?.(r.scooter) ?? null,
       };
     });
-  }, [items, apiClients, apiScooters, models, debtAgg, parkingAll, unreachableSet, periodSums]);
+  }, [items, apiClients, apiScooters, models, debtAgg, parkingAll, unreachableSet, periodSums, investorOf]);
 
   const sortedRows = useMemo<Row[]>(() => {
     if (!sort) return rows;
@@ -691,12 +700,20 @@ function RentalTableRow({
         </div>
       </td>
       <td className="px-4 py-5 text-[13px] whitespace-nowrap">
-        <ScooterTag
-          label={row.scooterLabel}
-          mileage={row.mileage}
-          electric={row.isElectric}
-          rentalNumber={row.rentalNumber}
-        />
+        <span className="inline-flex items-center gap-1.5">
+          <ScooterTag
+            label={row.scooterLabel}
+            mileage={row.mileage}
+            electric={row.isElectric}
+            rentalNumber={row.rentalNumber}
+          />
+          {/* Партнёрка (27.08): чья техника катается в этой аренде. */}
+          {row.investorName && (
+            <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-700">
+              {row.investorName}
+            </span>
+          )}
+        </span>
       </td>
       <td className="px-4 py-5 tabular-nums text-muted whitespace-nowrap">
         {row.rental.start}
