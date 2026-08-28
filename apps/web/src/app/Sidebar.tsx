@@ -187,7 +187,10 @@ export function Sidebar({
       <aside
         ref={asideRef}
         onMouseEnter={() => setExpanded(true)}
-        onMouseLeave={() => setExpanded(false)}
+        onMouseLeave={() => {
+          setExpanded(false);
+          scheduleCloseMore();
+        }}
         className={cn(
           "sticky z-50 flex flex-shrink-0 flex-col overflow-hidden rounded-2xl bg-surface py-4 shadow-card transition-[width,padding,box-shadow]",
           expanded ? "w-[232px] px-3 shadow-card-lg" : "w-[68px] px-[10px]",
@@ -246,8 +249,10 @@ export function Sidebar({
             <button
               ref={moreBtnRef}
               type="button"
+              // Закрытие не вешаем на саму кнопку: при наведении сайдбар
+              // расширяется, кнопка смещается под курсором и ловит ложный
+              // mouseleave — панель схлопывалась сразу после открытия.
               onMouseEnter={openMore}
-              onMouseLeave={scheduleCloseMore}
               onClick={() => (moreOpen ? setMoreOpen(false) : openMore())}
               className={cn(
                 "sidebar-row relative flex h-11 shrink-0 items-center gap-3 overflow-hidden whitespace-nowrap rounded-[14px] px-3 text-left transition-colors",
