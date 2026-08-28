@@ -1,14 +1,44 @@
-/** Диагностика кнопки «Ещё». */
+/** Диагностика: открывается ли панель «Ещё» по наведению и по клику. */
 export async function run(page, ctx) {
   await page.setViewport({ width: 1280, height: 720, deviceScaleFactor: 1 });
   await ctx.gotoRoute("dashboard");
   await ctx.sleep(2600);
-  const dbg = await page.evaluate(() => {
+
+  const pos = await page.evaluate(() => {
     const aside = document.querySelector("aside");
     const btns = aside ? [...aside.querySelectorAll("button")] : [];
-    return {
-      texts: btns.map((b) => (b.textContent || "").trim().slice(0, 22)),
-    };
+    const t = btns.find((b) => (b.textContent || "").trim().startsWith("Ещё"));
+    if (!t) return null;
+    const r = t.getBoundingClientRect();
+    return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
   });
-  console.log(JSON.stringify(dbg, null, 1));
+  console.log("кнопка:", JSON.stringify(pos));
+
+  // 1) наведение
+  await page.mouse.move(600, 400);
+  await ctx.sleep(150);
+  if (pos) await page.mouse.move(pos.x, pos.y, { steps: 10 });
+  await ctx.sleep(700);
+  const afterHover = await page.evaluate(() => ({
+    expanded: (document.querySelector("aside")?.className || "").includes("w-[232px]"),
+    panel: /Ещё разделы/.test(document.body.innerText),
+  }));
+  console.log("после наведения:", JSON.stringify(afterHover));
+
+  // 2) клик по DOM
+  await page.evaluate(() => {
+    const aside = document.querySelector("aside");
+    const btns = aside ? [...aside.querySelectorAll("button")] : [];
+    const t = btns.find((b) => (b.textContent || "").trim().startsWith("Ещё"));
+    t?.click();
+  });
+  await ctx.sleep(600);
+  const afterClick = await page.evaluate(() => ({
+    panel: /Ещё разделы/.test(document.body.innerText),
+    fixedDivs: [...document.querySelectorAll("div")].filter(
+      (d) => getComputedStyle(d).position === "fixed" && d.textContent?.includes("Ещё разделы"),
+    ).length,
+  }));
+  console.log("после клика:", JSON.stringify(afterClick));
+  await ctx.shot("chk-more-dbg", { jpeg: true });
 }

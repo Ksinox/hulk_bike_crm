@@ -246,13 +246,14 @@ export function Sidebar({
 
           {/* Не поместившиеся разделы — за кнопкой «Ещё» */}
           {hiddenItems.length > 0 && (
+            /* Закрытие не вешаем на саму кнопку: при наведении сайдбар
+               расширяется, кнопка смещается под курсором и ловит ложный
+               mouseleave — панель схлопывалась сразу после открытия. */
             <button
               ref={moreBtnRef}
               type="button"
-              // Закрытие не вешаем на саму кнопку: при наведении сайдбар
-              // расширяется, кнопка смещается под курсором и ловит ложный
-              // mouseleave — панель схлопывалась сразу после открытия.
               onMouseEnter={openMore}
+              onFocus={openMore}
               onClick={() => (moreOpen ? setMoreOpen(false) : openMore())}
               className={cn(
                 "sidebar-row relative flex h-11 shrink-0 items-center gap-3 overflow-hidden whitespace-nowrap rounded-[14px] px-3 text-left transition-colors",
