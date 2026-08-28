@@ -1,5 +1,9 @@
 import type { Config } from "tailwindcss";
 import animate from "tailwindcss-animate";
+// Правка 28.08: container queries (@container / @[900px]:) — блоки
+// перестраиваются по ширине СВОЕГО контейнера, а не окна (дровер открыт →
+// контент сузился → сетки складываются). В Tailwind 3.4 это плагин.
+import containerQueries from "@tailwindcss/container-queries";
 
 const config: Config = {
   darkMode: ["class"],
@@ -162,7 +166,7 @@ const config: Config = {
       },
     },
   },
-  plugins: [animate],
+  plugins: [animate, containerQueries],
 };
 
 export default config;
