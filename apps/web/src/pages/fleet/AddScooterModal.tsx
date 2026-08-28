@@ -309,6 +309,7 @@ export function AddScooterModal({
           <div className="flex flex-col gap-4">
             <Field label="Модель">
               <ModelPicker
+                electricOnly={partner}
                 value={modelId}
                 onChange={(id, m) => {
                   setModelId(id);

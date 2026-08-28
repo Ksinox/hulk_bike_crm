@@ -17,9 +17,16 @@ import { ElectricMark, PetrolMark } from "@/components/PowerTypeBadge";
 export function ModelPicker({
   value,
   onChange,
+  electricOnly = false,
 }: {
   value: number | null;
   onChange: (modelId: number, model: ApiScooterModel) => void;
+  /**
+   * Правка 28.08: партнёрка — это электротранспорт. При добавлении оттуда
+   * выбор типа не нужен: показываем только электро-модели и прячем фильтр
+   * категорий, чтобы оператор не выбрал бензиновую по ошибке.
+   */
+  electricOnly?: boolean;
 }) {
   const { data: allModels = [], isLoading } = useApiScooterModels();
   const [query, setQuery] = useState("");
@@ -33,8 +40,12 @@ export function ModelPicker({
   // Если value указывает на неактивную (старая запись) — не теряем
   // её, чтобы пользователь мог её увидеть в форме.
   const visible = useMemo(
-    () => allModels.filter((m) => m.active || m.id === value),
-    [allModels, value],
+    () =>
+      allModels.filter(
+        (m) =>
+          (m.active || m.id === value) && (!electricOnly || m.isElectric),
+      ),
+    [allModels, value, electricOnly],
   );
   const hasBothPowerTypes = useMemo(
     () =>
@@ -69,7 +80,7 @@ export function ModelPicker({
   return (
     <div className="flex flex-col gap-2">
       {/* Фильтр категорий — только если в парке есть оба типа техники. */}
-      {hasBothPowerTypes && (
+      {hasBothPowerTypes && !electricOnly && (
         <div className="flex flex-wrap items-center gap-1.5">
           {(
             [
