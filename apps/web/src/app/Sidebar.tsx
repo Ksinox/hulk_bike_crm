@@ -167,7 +167,11 @@ export function Sidebar({
   };
   const scheduleCloseMore = () => {
     if (closeTimer.current) window.clearTimeout(closeTimer.current);
-    closeTimer.current = window.setTimeout(() => setMoreOpen(false), 180);
+    closeTimer.current = window.setTimeout(() => {
+      (window as unknown as { __moreCloses?: number }).__moreCloses =
+        ((window as unknown as { __moreCloses?: number }).__moreCloses ?? 0) + 1;
+      setMoreOpen(false);
+    }, 180);
   };
 
   useEffect(() => {
