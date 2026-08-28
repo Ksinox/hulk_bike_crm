@@ -438,7 +438,10 @@ export function ScooterCard({
             Был в аренде
           </span>
         )}
-        <div className="flex-1" />
+        {/* В дровере распорку не ставим: кнопки идут подряд компактным
+            рядом сразу за бейджами, а не разлетаются по краям. */}
+        {!drawerChrome && <div className="flex-1" />}
+        {drawerChrome && <div className="w-full @[560px]:w-auto @[560px]:flex-1" />}
         {/* Действия: в дровере — компактный ряд, без разъезжающихся кнопок */}
         <button
           type="button"
