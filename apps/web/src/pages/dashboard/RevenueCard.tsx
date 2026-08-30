@@ -384,33 +384,21 @@ export function RevenueCard({
         </div>
       )}
 
-      {/* Правки 2.0, п.12: явное разделение — где наши доходы, где
-          партнёрские и сколько уходит инвестору. Строка появляется, только
-          когда партнёрская техника вообще заработала за период. */}
+      {/* Правка 31.08: партнёрский электротранспорт в выручку НЕ входит —
+          сумма выше только по нашей технике. Строку оставляем справкой, но
+          подписываем явно, чтобы её не приняли за часть выручки. */}
       {partnerSplit.gross > 0 && (
         <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-white/10 px-2.5 py-1.5 text-[11.5px] text-white/85">
           <span className="inline-flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full bg-white/80" />
-            наша техника{" "}
-            <b className="tabular-nums text-white">
-              {formatRub(partnerSplit.own)} ₽
-            </b>
-          </span>
-          <span className="inline-flex items-center gap-1.5">
             <ElectricMark size="sm" />
-            партнёрская{" "}
+            электротранспорт инвесторов{" "}
             <b className="tabular-nums text-white">
-              {formatRub(partnerSplit.ours)} ₽
+              {formatRub(partnerSplit.gross)} ₽
             </b>
-            <span className="text-white/60">
-              из {formatRub(partnerSplit.gross)} ₽
-            </span>
           </span>
-          <span className="inline-flex items-center gap-1.5 text-white/70">
-            инвестору{" "}
-            <b className="tabular-nums text-white/90">
-              {formatRub(partnerSplit.cut)} ₽
-            </b>
+          <span className="text-white/60">
+            в выручку не входит · инвестору {formatRub(partnerSplit.cut)} ₽ ·
+            подробно в «Партнёрке»
           </span>
         </div>
       )}

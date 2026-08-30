@@ -93,7 +93,15 @@ export function Sidebar({
   activeId: RouteId;
   onSelect: (id: RouteId) => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  /**
+   * Правка 31.08: сайдбар держится раскрытым, пока курсор на нём ИЛИ на
+   * панели «Ещё разделы». Раньше при переходе мыши на панель срабатывал
+   * mouseleave сайдбара, он схлопывался, панель прыгала следом — рваная
+   * анимация. Теперь сначала закрывается панель, затем задвигается
+   * сайдбар, и только когда курсор ушёл с обеих зон.
+   */
+  const [hoverAside, setHoverAside] = useState(false);
+  const [hoverPanel, setHoverPanel] = useState(false);
   const { phase, version } = useDesktopUpdate();
   const { data: me } = useMe();
   const canManageStaff = me?.role === "creator" || me?.role === "director";
@@ -118,6 +126,8 @@ export function Sidebar({
   const listRef = useRef<HTMLDivElement>(null);
   const [visibleCount, setVisibleCount] = useState(mainItems.length);
   const [moreOpen, setMoreOpen] = useState(false);
+  /** Рейка раскрыта, пока курсор на ней, на панели «Ещё» или панель открыта. */
+  const expanded = hoverAside || hoverPanel || moreOpen;
   const [moreTop, setMoreTop] = useState(0);
   const moreBtnRef = useRef<HTMLButtonElement>(null);
   const closeTimer = useRef<number | null>(null);
@@ -165,7 +175,8 @@ export function Sidebar({
   };
   const scheduleCloseMore = () => {
     if (closeTimer.current) window.clearTimeout(closeTimer.current);
-    closeTimer.current = window.setTimeout(() => setMoreOpen(false), 180);
+    // 220 мс — успеть перевести курсор с рейки на панель и обратно.
+    closeTimer.current = window.setTimeout(() => setMoreOpen(false), 220);
   };
 
   useEffect(() => {
@@ -186,9 +197,12 @@ export function Sidebar({
     <>
       <aside
         ref={asideRef}
-        onMouseEnter={() => setExpanded(true)}
+        onMouseEnter={() => {
+          if (closeTimer.current) window.clearTimeout(closeTimer.current);
+          setHoverAside(true);
+        }}
         onMouseLeave={() => {
-          setExpanded(false);
+          setHoverAside(false);
           scheduleCloseMore();
         }}
         className={cn(
@@ -347,10 +361,16 @@ export function Sidebar({
         <div
           onMouseEnter={() => {
             if (closeTimer.current) window.clearTimeout(closeTimer.current);
+            setHoverPanel(true);
           }}
-          onMouseLeave={scheduleCloseMore}
-          className="fixed z-[9998] w-[228px] rounded-2xl border border-border bg-surface p-1.5 shadow-card-lg animate-slide-in-right"
-          style={{ left: expanded ? 244 : 80, top: moreTop }}
+          onMouseLeave={() => {
+            setHoverPanel(false);
+            scheduleCloseMore();
+          }}
+          // pl-3 + отрицательный сдвиг — прозрачный «мостик» между рейкой и
+          // панелью: курсор проходит по нему, не проваливаясь в пустоту.
+          className="fixed z-[9998] w-[240px] rounded-2xl border border-border bg-surface p-1.5 pl-3 shadow-card-lg animate-slide-in-right"
+          style={{ left: expanded ? 236 : 72, top: moreTop }}
         >
           <div className="px-2 py-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-2">
             Ещё разделы
