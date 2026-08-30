@@ -118,6 +118,7 @@ export async function activityRoutes(app: FastifyInstance) {
           "damage",
           "complete",
           "rollback",
+          "scooter",
           // Пункт 2: действия, подтверждённые ключом директора.
           "approved",
         ])

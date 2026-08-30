@@ -678,10 +678,15 @@ export async function scootersRoutes(app: FastifyInstance) {
       ["frameNumber", "vin", "engineNo"].includes(c.field),
     );
 
-    const outOfPark =
-      holdsSlot(before.baseStatus) && !holdsSlot(row.baseStatus);
-    const backToPark =
-      !holdsSlot(before.baseStatus) && holdsSlot(row.baseStatus);
+    /**
+     * «Выбыл из парка аренды» считаем по ДОСТУПНОСТИ К СДАЧЕ, а не по
+     * занятому месту: ремонт и ДТП место держат, но сдавать такую технику
+     * нельзя — и именно она пропадает из счётчика «N в парке». Ровно так у
+     * заказчика «исчез» скутер, уехавший в ремонт.
+     */
+    const rentable = (st: string) => st === "rental_pool";
+    const outOfPark = rentable(before.baseStatus) && !rentable(row.baseStatus);
+    const backToPark = !rentable(before.baseStatus) && rentable(row.baseStatus);
     const ident = [
       row.uid ? `ID ${row.uid}` : null,
       row.frameNumber ? `рама ${row.frameNumber}` : null,
