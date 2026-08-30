@@ -386,9 +386,26 @@ export function useDashboardMetrics(): DashboardMetrics {
     // свой чипс — он не влияет ни на процент, ни на общее количество.
     const isElectroScooter = (s: ApiScooter): boolean =>
       s.modelId != null && electroModelIds.has(s.modelId);
+    /**
+     * Правка 31.08 (заказчик): в знаменатель круга идёт ВСЯ техника
+     * арендного режима, включая ремонт, ДТП и разборку, а не только
+     * свободная к выдаче.
+     *
+     * Почему: раньше показатель назывался «доступно к аренде», и стоило
+     * одному скутеру уехать в ремонт — общее число падало (62 → 61).
+     * Заказчик каждый раз шёл в журнал выяснять, куда делась единица.
+     * Ремонт и ДТП у нас короткие, внутри арендного парка техника просто
+     * мигрирует между статусами — поэтому считаем «всего техники в парке».
+     */
+    const RENTAL_MODE_STATUSES = new Set([
+      "rental_pool",
+      "repair",
+      "dtp",
+      "disassembly",
+    ]);
     const rentableAll = scooters.filter(
       (s) =>
-        s.baseStatus === "rental_pool" &&
+        RENTAL_MODE_STATUSES.has(s.baseStatus) &&
         !(s as { archivedAt?: string | null }).archivedAt,
     );
     const rentableFleet = rentableAll.filter((s) => !isElectroScooter(s)).length;

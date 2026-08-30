@@ -57,10 +57,15 @@ export function RevenueCard({
     return periodWindow(period);
   }, [period, customRange]);
 
-  // Пункт 11: выручка партнёрской техники — за вычетом доли инвестора.
+  /**
+   * Правка 31.08 (заказчик): выручка — только НАША техника. Операции по
+   * партнёрскому электротранспорту (аренда, продление, просрочка, штрафы,
+   * ущерб) в «Выручку» не попадают вовсе. Раньше они входили за вычетом
+   * доли инвестора, и в списке платежей мелькали чужие строки.
+   */
   const { shareByRental } = usePartnerInfo();
-  const netOf = (p: { rentalId: number | null; amount: number }) =>
-    p.amount - partnerCutOf(p, shareByRental);
+  const isPartnerPayment = (p: { rentalId: number | null }) =>
+    p.rentalId != null && shareByRental.has(p.rentalId);
 
   const { total, chart, paymentsCount, partnerSplit } = useMemo(() => {
     const today = new Date();
@@ -77,20 +82,20 @@ export function RevenueCard({
       const t = new Date(p.paidAt).getTime();
       return t >= win.start.getTime() && t < win.end.getTime();
     });
-    const totalSum = inWindow.reduce((s, p) => s + netOf(p), 0);
+    // Партнёрские операции считаем отдельно — они нужны для подписи, но
+    // не входят ни в сумму, ни в график, ни в список платежей.
+    const partnerOnly = inWindow.filter(isPartnerPayment);
+    const ownOnly = inWindow.filter((p) => !isPartnerPayment(p));
+    const totalSum = ownOnly.reduce((s, p) => s + p.amount, 0);
     // Разбивка «наше / партнёрское / инвестору» за то же окно (п.12).
     let pGross = 0;
     let pCut = 0;
     let own = 0;
-    for (const p of inWindow) {
-      const cut = partnerCutOf(p, shareByRental);
-      if (cut > 0) {
-        pGross += p.amount;
-        pCut += cut;
-      } else {
-        own += p.amount;
-      }
+    for (const p of partnerOnly) {
+      pGross += p.amount;
+      pCut += partnerCutOf(p, shareByRental);
     }
+    for (const p of ownOnly) own += p.amount;
 
     // На произвольном диапазоне график не строим (может быть длинным) —
     // показываем сумму + разбивку + список за период.
@@ -98,17 +103,17 @@ export function RevenueCard({
       return {
         total: totalSum,
         chart: [],
-        paymentsCount: inWindow.length,
+        paymentsCount: ownOnly.length,
         partnerSplit: { gross: pGross, cut: pCut, ours: pGross - pCut, own },
       };
     }
 
     const byDay = new Map<string, { sum: number; count: number }>();
-    for (const p of inWindow) {
+    for (const p of ownOnly) {
       const d = (p.paidAt ?? "").slice(0, 10);
       if (!d) continue;
       const cur = byDay.get(d) ?? { sum: 0, count: 0 };
-      cur.sum += netOf(p);
+      cur.sum += p.amount;
       cur.count += 1;
       byDay.set(d, cur);
     }
@@ -119,11 +124,11 @@ export function RevenueCard({
     if (period === "day") {
       const hours = workingHoursList();
       const byHour = new Map<number, { sum: number; count: number }>();
-      for (const p of inWindow) {
+      for (const p of ownOnly) {
         if (!p.paidAt) continue;
         const h = new Date(p.paidAt).getHours();
         const cur = byHour.get(h) ?? { sum: 0, count: 0 };
-        cur.sum += netOf(p);
+        cur.sum += p.amount;
         cur.count += 1;
         byHour.set(h, cur);
       }
@@ -183,7 +188,7 @@ export function RevenueCard({
     return {
       total: totalSum,
       chart: bars,
-      paymentsCount: inWindow.length,
+      paymentsCount: ownOnly.length,
       partnerSplit: { gross: pGross, cut: pCut, ours: pGross - pCut, own },
     };
   }, [period, payments, win, customRange, shareByRental]);
@@ -202,8 +207,10 @@ export function RevenueCard({
       if (t < win.start.getTime() || t >= win.end.getTime()) continue;
       if (!customRange && selectedDay && p.paidAt.slice(0, 10) !== selectedDay)
         continue;
-      if (p.method === "cash") cash += netOf(p);
-      else cashless += netOf(p);
+      // Электротранспорт инвесторов в нал/безнал не попадает (31.08).
+      if (isPartnerPayment(p)) continue;
+      if (p.method === "cash") cash += p.amount;
+      else cashless += p.amount;
     }
     return { cash, cashless };
   }, [payments, win, selectedDay, customRange, shareByRental]);

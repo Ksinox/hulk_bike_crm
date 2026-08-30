@@ -5,6 +5,7 @@ import { changePaymentMethod } from "@/pages/rentals/rentalsStore";
 import { toast } from "@/lib/toast";
 import { useApiRentals, useApiRentalsArchived } from "@/lib/api/rentals";
 import { useApiPayments, type ApiPayment } from "@/lib/api/payments";
+import { usePartnerInfo } from "@/lib/partner";
 import { useApiClients } from "@/lib/api/clients";
 import { useApiScooters } from "@/lib/api/scooters";
 import { useBillingPeriodAnchors } from "@/lib/api/billing-period";
@@ -179,6 +180,7 @@ export function RevenueRentalsList({
     [activeRentals, archivedRentals],
   );
   const { data: payments = [] } = useApiPayments();
+  const { shareByRental } = usePartnerInfo();
   const { data: clients = [] } = useApiClients();
   const drawer = useDashboardDrawer();
   // v0.9.7: раскрытие состава аренды (тело) у платежа по клику на шеврон.
@@ -204,6 +206,10 @@ export function RevenueRentalsList({
     return payments
       .filter((p) => {
         if (!isRevenuePayment(p)) return false;
+        // Правка 31.08: в списке выручки не должно быть НИ ОДНОЙ операции
+        // по партнёрскому электротранспорту — ни аренды, ни просрочки, ни
+        // штрафов. Эти деньги живут в разделе «Партнёрка».
+        if (p.rentalId != null && shareByRental.has(p.rentalId)) return false;
         if (scope === "rentals" && p.rentalId == null) return false;
         const t = new Date(p.paidAt!).getTime();
         if (t < start.getTime() || t >= end.getTime()) return false;
@@ -252,6 +258,7 @@ export function RevenueRentalsList({
       // при продлении), тонул вниз, хотя приняли его только что.
       .sort((a, b) => b.paymentId - a.paymentId);
   }, [
+    shareByRental,
     rentals,
     payments,
     clients,

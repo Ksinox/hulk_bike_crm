@@ -105,10 +105,23 @@ export function useBillingPeriodRevenue(
     // привязаны к арендам. Когда появятся другие модули, добавим
     // отдельный источник для 'all' и оставим 'rentals' как фильтр
     // только связанных с rentalId.
-    const filtered =
+    const scoped =
       scope === "rentals"
         ? inPeriod.filter((p) => p.rentalId != null)
         : inPeriod;
+    /**
+     * Правка 31.08 (заказчик): выручка — это ТОЛЬКО наша техника.
+     * Любые операции по партнёрскому электротранспорту (аренда, продление,
+     * просрочка, штрафы, ущерб) из выручки исключаются целиком, а не
+     * учитываются за вычетом доли инвестора, как было раньше. Деньги
+     * инвестора живут в разделе «Партнёрка», а «Выручка» на дашборде
+     * отвечает на вопрос «сколько заработали МЫ».
+     */
+    const filtered = scoped.filter(
+      (p) => p.rentalId == null || !shareByRental.has(p.rentalId),
+    );
+    /** Отфильтрованные партнёрские операции — для подписи «сколько скрыто». */
+    const partnerExcluded = scoped.length - filtered.length;
     let total = 0;
     let partnerCut = 0;
     // Правки 2.0, п.12: раздельный учёт — где наша техника, где
@@ -117,17 +130,22 @@ export function useBillingPeriodRevenue(
     let partnerGross = 0;
     let ownTotal = 0;
     const byDayMap = new Map<string, number>();
+    // В filtered партнёрских операций уже нет — считаем прямо по сумме.
     for (const p of filtered) {
-      const cut = partnerCutOf(p, shareByRental);
-      const net = p.amount - cut;
-      total += net;
-      partnerCut += cut;
-      if (cut > 0) partnerGross += p.amount;
-      else ownTotal += p.amount;
+      total += p.amount;
+      ownTotal += p.amount;
       if (p.paidAt) {
         const day = p.paidAt.slice(0, 10);
-        byDayMap.set(day, (byDayMap.get(day) ?? 0) + net);
+        byDayMap.set(day, (byDayMap.get(day) ?? 0) + p.amount);
       }
+    }
+    // Партнёрская выручка считается ОТДЕЛЬНО (для раздела «Партнёрка» и
+    // подписи), в общий total она больше не входит ни в каком виде.
+    for (const p of scoped) {
+      if (p.rentalId == null || !shareByRental.has(p.rentalId)) continue;
+      const cut = partnerCutOf(p, shareByRental);
+      partnerCut += cut;
+      partnerGross += p.amount;
     }
     const byDay = Array.from(byDayMap.entries())
       .map(([date, sum]) => ({ date, sum }))
@@ -135,6 +153,8 @@ export function useBillingPeriodRevenue(
     return {
       total,
       count: filtered.length,
+      /** Сколько операций по электротранспорту не показано в выручке. */
+      partnerExcluded,
       period,
       byDay,
       partnerCut,

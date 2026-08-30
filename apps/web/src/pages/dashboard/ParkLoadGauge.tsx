@@ -336,7 +336,9 @@ export function ParkLoadGauge({
             {active}&nbsp;в&nbsp;аренде
           </div>
           <div className="mt-0.5 text-[11px] text-muted-2">
-            из {rentable} {electro ? "в парке" : "доступных"}
+            {/* Правка 31.08: подпись «всего в парке» вместо «доступных» —
+                знаменатель теперь вся техника арендного режима. */}
+            из {rentable} в парке
           </div>
           {/* Пункт 11: разделение активных на скутеры и электро. */}
           {activeElectro > 0 && (
