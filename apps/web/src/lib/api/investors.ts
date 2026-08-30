@@ -65,6 +65,9 @@ export type InvestorPayouts = {
   };
   /** Напоминание о дне выплаты (не ограничение). */
   nextDue: { date: string; isToday: boolean };
+  /** Сумма выплат за выбранный период (для детализации). */
+  periodTotal: number;
+  periodFilter: { from: string | null; to: string | null };
   history: InvestorPayoutRecord[];
 };
 
@@ -89,11 +92,23 @@ export function useApiInvestors(period?: { from?: string; to?: string }) {
   });
 }
 
-export function useInvestorPayouts(id: number | null, count = 8) {
+/**
+ * Правка 31.08: детализация выплат — можно запросить историю за
+ * произвольный период (from/to в формате YYYY-MM-DD). Без периода
+ * приходит вся история, как раньше.
+ */
+export function useInvestorPayouts(
+  id: number | null,
+  range?: { from?: string; to?: string },
+) {
+  const qs = new URLSearchParams();
+  if (range?.from) qs.set("from", range.from);
+  if (range?.to) qs.set("to", range.to);
+  const suffix = qs.toString() ? `?${qs}` : "";
   return useQuery({
-    queryKey: investorsKeys.payouts(id ?? 0),
+    queryKey: [...investorsKeys.payouts(id ?? 0), range?.from, range?.to],
     queryFn: () =>
-      api.get<InvestorPayouts>(`/api/investors/${id}/payouts?count=${count}`),
+      api.get<InvestorPayouts>(`/api/investors/${id}/payouts${suffix}`),
     enabled: id != null,
     staleTime: 15_000,
   });

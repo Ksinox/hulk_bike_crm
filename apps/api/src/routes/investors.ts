@@ -321,11 +321,21 @@ export async function investorsRoutes(app: FastifyInstance) {
    * Правка 27.08: выплаты инвестора — накоплено + история.
    * accrued считается на сервере: доход за всё время − выплачено.
    */
-  app.get<{ Params: { id: string } }>("/:id/payouts", async (req, reply) => {
+  app.get<{ Params: { id: string }; Querystring: { from?: string; to?: string } }>(
+    "/:id/payouts",
+    async (req, reply) => {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
     const [inv] = await db.select().from(investors).where(eq(investors.id, id));
     if (!inv || inv.deletedAt) return reply.code(404).send({ error: "not found" });
+
+    /**
+     * Правка 31.08 (заказчик): детализация выплат — история за прошлые
+     * периоды с возможностью выбрать произвольный диапазон. Без from/to
+     * отдаём всю историю, как раньше.
+     */
+    const from = req.query.from ? new Date(req.query.from + "T00:00:00") : null;
+    const to = req.query.to ? new Date(req.query.to + "T23:59:59") : null;
 
     const { accrued, incomeAll, revenueAll, paidTotal } = await accruedOf(id, inv.share);
 
@@ -340,7 +350,13 @@ export async function investorsRoutes(app: FastifyInstance) {
       })
       .from(investorPayouts)
       .leftJoin(users, eq(investorPayouts.paidBy, users.id))
-      .where(eq(investorPayouts.investorId, id))
+      .where(
+        and(
+          eq(investorPayouts.investorId, id),
+          ...(from ? [gte(investorPayouts.paidAt, from)] : []),
+          ...(to ? [lte(investorPayouts.paidAt, to)] : []),
+        ),
+      )
       .orderBy(desc(investorPayouts.paidAt));
 
     const due = nextDueDate(inv.payoutPeriod, inv.payoutDay);
@@ -370,8 +386,15 @@ export async function investorsRoutes(app: FastifyInstance) {
         by: h.userName ?? null,
         note: h.note,
       })),
+      /** Итог по выбранному периоду — для подписи в детализации. */
+      periodTotal: history.reduce((sum, h) => sum + h.amount, 0),
+      periodFilter: {
+        from: req.query.from ?? null,
+        to: req.query.to ?? null,
+      },
     };
-  });
+  },
+  );
 
   /**
    * Выплатить накопленное. Сумму считает СЕРВЕР на момент нажатия —

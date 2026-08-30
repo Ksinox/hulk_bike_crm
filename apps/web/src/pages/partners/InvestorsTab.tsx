@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import {
   Banknote,
   CalendarClock,
+  ListFilter,
   ChevronRight,
   Pencil,
   Percent,
@@ -41,6 +42,15 @@ import { ElectricMark } from "@/components/PowerTypeBadge";
  */
 
 const fmt = (n: number) => n.toLocaleString("ru-RU");
+
+/** Склонение для подписи количества выплат. */
+function plural(n: number, forms: [string, string, string]): string {
+  const m10 = n % 10;
+  const m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return forms[0];
+  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return forms[1];
+  return forms[2];
+}
 
 const WEEK_DAYS = [
   { value: 1, label: "понедельник" },
@@ -319,7 +329,18 @@ function InvestorDetails({
   onOpenScooter: (id: number) => void;
 }) {
   const { data: scooters = [] } = useApiScooters();
-  const payoutsQ = useInvestorPayouts(investor.id);
+  /**
+   * Правка 31.08 (заказчик): детализация выплат — история за прошлые
+   * периоды с выбором произвольного диапазона. По умолчанию показываем
+   * всю историю; период сужает список и даёт итог за него.
+   */
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const payoutsQ = useInvestorPayouts(
+    investor.id,
+    detailOpen && (from || to) ? { from: from || undefined, to: to || undefined } : undefined,
+  );
   const mark = useMarkPayout();
   const unmark = useUnmarkPayout();
   const del = useDeleteInvestor();
@@ -452,7 +473,22 @@ function InvestorDetails({
       {/* Выплаты (правка 27.08): накопилось → выплатили → история. */}
       <div className="overflow-hidden rounded-2xl bg-surface shadow-card-sm">
         <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
-          <div className="text-[13px] font-bold text-ink">Выплаты</div>
+          <div className="flex items-center gap-2">
+            <span className="text-[13px] font-bold text-ink">Выплаты</span>
+            <button
+              type="button"
+              onClick={() => setDetailOpen((v) => !v)}
+              className={cn(
+                "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11.5px] font-bold transition-colors",
+                detailOpen
+                  ? "bg-violet-600 text-white"
+                  : "bg-violet-50 text-violet-700 hover:bg-violet-100",
+              )}
+            >
+              <ListFilter size={12} />
+              Детализация
+            </button>
+          </div>
           {payouts && (
             <div className="text-[11.5px] text-muted">
               день выплаты: {ruDate(payouts.nextDue.date)}
@@ -514,10 +550,68 @@ function InvestorDetails({
               </div>
             </div>
 
+            {/* Детализация: произвольный период + итог за него */}
+            {detailOpen && (
+              <div className="flex flex-wrap items-end gap-3 border-b border-border/60 bg-surface-soft/40 px-4 py-3">
+                <label className="flex flex-col gap-1">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
+                    Период с
+                  </span>
+                  <input
+                    type="date"
+                    value={from}
+                    onChange={(e) => setFrom(e.target.value)}
+                    className="h-9 rounded-[10px] border border-border bg-surface px-2.5 text-[13px] tabular-nums outline-none focus:border-violet-500"
+                  />
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
+                    по
+                  </span>
+                  <input
+                    type="date"
+                    value={to}
+                    onChange={(e) => setTo(e.target.value)}
+                    className="h-9 rounded-[10px] border border-border bg-surface px-2.5 text-[13px] tabular-nums outline-none focus:border-violet-500"
+                  />
+                </label>
+                {(from || to) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFrom("");
+                      setTo("");
+                    }}
+                    className="h-9 rounded-full px-3 text-[12.5px] font-semibold text-muted hover:text-ink"
+                  >
+                    Сбросить
+                  </button>
+                )}
+                <div className="ml-auto text-right">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
+                    {from || to ? "Выплачено за период" : "Выплачено за всё время"}
+                  </div>
+                  <div className="font-display text-[20px] font-extrabold tabular-nums text-ink">
+                    {fmt(payouts?.periodTotal ?? 0)} ₽
+                  </div>
+                  <div className="text-[11px] text-muted-2">
+                    {payouts?.history.length ?? 0}{" "}
+                    {plural(payouts?.history.length ?? 0, [
+                      "выплата",
+                      "выплаты",
+                      "выплат",
+                    ])}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* История выплат */}
             {(payouts?.history.length ?? 0) === 0 ? (
               <div className="px-4 py-6 text-center text-[12.5px] text-muted-2">
-                Выплат ещё не было — история появится после первой выплаты.
+                {from || to
+                  ? "За выбранный период выплат не было."
+                  : "Выплат ещё не было — история появится после первой выплаты."}
               </div>
             ) : (
               payouts!.history.map((rec) => (
