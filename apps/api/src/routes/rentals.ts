@@ -49,7 +49,7 @@ function pickRateByPeriod(
 import { logActivity } from "../services/activityLog.js";
 import type { DiffPayload } from "../services/activityLog.js";
 import { requireDirectorApproval } from "./approvals.js";
-import { rentalStatusLabel } from "../services/activityMessages.js";
+import { rentalStatusLabel, scooterStatusLabel } from "../services/activityMessages.js";
 import { overdueDailyRate } from "../services/overdueCharge.js";
 
 const RentalStatusEnum = z.enum(["active", "completed"]);
@@ -3503,7 +3503,14 @@ export async function rentalsRoutes(app: FastifyInstance) {
         entity: "rental",
         entityId: id,
         action: "scooter_swapped",
-        summary: `Замена скутера${catLabel ? ` · ${catLabel}` : ""} в аренде #${String(id).padStart(4, "0")}${result.feeAmount > 0 ? ` (доплата ${result.feeAmount} ₽)` : ""}${result.canceledFee > 0 ? ` (погашен долг по замене ${result.canceledFee} ₽)` : ""}${result.refundToDeposit > 0 ? ` (возврат ${result.refundToDeposit} ₽ в депозит)` : ""}`,
+        /**
+         * Правка 31.08: в тексте видно, КАКАЯ техника снята и КУДА она
+         * ушла. Раньше строка была «Замена скутера · Другое в аренде
+         * #0262» — по ней нельзя было понять, что снятый скутер уехал в
+         * ремонт и выбыл из парка аренды. Именно так у заказчика «пропала»
+         * единица из 62.
+         */
+        summary: `Замена скутера в аренде #${String(id).padStart(4, "0")}: ${prevScooterName} → ${newScooterName}${catLabel ? ` · причина: ${catLabel}` : ""}${d.oldScooterStatus ? ` · снятый переведён в «${scooterStatusLabel(d.oldScooterStatus)}»` : ""}${result.feeAmount > 0 ? ` · доплата ${result.feeAmount} ₽` : ""}${result.canceledFee > 0 ? ` · погашен долг по замене ${result.canceledFee} ₽` : ""}${result.refundToDeposit > 0 ? ` · возврат ${result.refundToDeposit} ₽ в депозит` : ""}`,
         // v0.8.14: «ревизорские» поля — кто на кого заменён, причина и куда
         // ушёл старый скутер (в ремонт / обратно в парк) на момент замены.
         meta: {

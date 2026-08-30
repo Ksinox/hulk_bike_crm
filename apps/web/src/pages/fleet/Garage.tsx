@@ -5,6 +5,7 @@ import {
   HelpCircle,
   Key,
   Package,
+  ScrollText,
   Tag,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -13,6 +14,7 @@ import { Fleet } from "./Fleet";
 import { ModelsCatalog } from "./ModelsCatalog";
 import { EquipmentCatalog } from "./EquipmentCatalog";
 import { ScooterArchive } from "./ScooterArchive";
+import { ScooterJournal } from "./ScooterJournal";
 
 /**
  * «Скутеры» — контейнер рабочих режимов (правки 2.0, п.10).
@@ -27,7 +29,7 @@ import { ScooterArchive } from "./ScooterArchive";
  */
 
 export type FleetMode = "rental" | "sale" | "buyout" | "unassigned";
-type GarageTab = FleetMode | "models" | "equipment" | "archive";
+type GarageTab = FleetMode | "models" | "equipment" | "archive" | "journal";
 
 const MODES: { id: FleetMode; label: string; icon: typeof Key }[] = [
   { id: "rental", label: "Аренда", icon: Key },
@@ -40,6 +42,8 @@ const SETTINGS: { id: GarageTab; label: string; icon: typeof Tag }[] = [
   { id: "models", label: "Модели", icon: Tag },
   { id: "equipment", label: "Экипировка", icon: Package },
   { id: "archive", label: "Архив", icon: Archive },
+  // Правка 31.08: журнал техники — все действия со скутерами в одном окне.
+  { id: "journal", label: "Журнал", icon: ScrollText },
 ];
 
 export function Garage() {
@@ -124,6 +128,7 @@ export function Garage() {
       {tab === "models" && <ModelsCatalog />}
       {tab === "equipment" && <EquipmentCatalog />}
       {tab === "archive" && <ScooterArchive />}
+      {tab === "journal" && <ScooterJournal />}
     </main>
   );
 }

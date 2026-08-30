@@ -624,14 +624,103 @@ export async function scootersRoutes(app: FastifyInstance) {
         req.log?.warn?.({ err: e }, "ensureRepairJobForScooter failed");
       }
     }
+/**
+     * Смена статуса техники пишется ПОДРОБНО (правка 31.08).
+     *
+     * Причина: у заказчика в парке «исчез» скутер, и по журналу нельзя было
+     * понять, что именно произошло — строка «Статус X: A → B» не отвечала на
+     * вопросы «а это точно та машина?», «где она физически?», «кто и когда».
+     * Теперь в записи есть опознавательные данные (ID/VIN, номер в аренде,
+     * пробег), последствие для парка и явный источник действия, а meta несёт
+     * scooterId для клика — карточка открывается прямо из журнала.
+     */
+    /**
+     * Правка 31.08: правки паспортных данных техники пишутся ПОИМЁННО.
+     * Раньше любая правка давала одну строку «Отредактированы данные
+     * техники» — по журналу нельзя было увидеть, что кто-то поменял номер
+     * рамы или двигателя, а это как раз то, по чему технику опознают.
+     * Теперь каждое поле — своей строкой «было → стало», и такие записи
+     * ищутся в журнале по фильтру «Техника».
+     */
+    const TRACKED_FIELDS: {
+      key: keyof typeof row & keyof typeof before;
+      label: string;
+    }[] = [
+      { key: "frameNumber", label: "номер рамы" },
+      { key: "vin", label: "VIN" },
+      { key: "engineNo", label: "номер двигателя" },
+      { key: "name", label: "название" },
+      { key: "mileage", label: "пробег" },
+      { key: "rentalSlot", label: "номер в аренде" },
+      { key: "purchasePrice", label: "цена закупа" },
+      { key: "marketValue", label: "рыночная стоимость" },
+      { key: "year", label: "год выпуска" },
+      { key: "color", label: "цвет" },
+    ];
+    const fieldChanges = TRACKED_FIELDS.flatMap((f) => {
+      const from = before[f.key];
+      const to = row[f.key];
+      if (from === to) return [];
+      const fmtVal = (v: unknown) =>
+        v == null || v === "" ? "—" : String(v);
+      return [
+        {
+          field: String(f.key),
+          label: f.label,
+          from: fmtVal(from),
+          to: fmtVal(to),
+          text: `${f.label} ${fmtVal(from)} → ${fmtVal(to)}`,
+        },
+      ];
+    });
+    /** Смена паспортных номеров — повод присмотреться, помечаем отдельно. */
+    const identityChanged = fieldChanges.some((c) =>
+      ["frameNumber", "vin", "engineNo"].includes(c.field),
+    );
+
+    const outOfPark =
+      holdsSlot(before.baseStatus) && !holdsSlot(row.baseStatus);
+    const backToPark =
+      !holdsSlot(before.baseStatus) && holdsSlot(row.baseStatus);
+    const ident = [
+      row.uid ? `ID ${row.uid}` : null,
+      row.frameNumber ? `рама ${row.frameNumber}` : null,
+      row.mileage != null ? `пробег ${row.mileage.toLocaleString("ru-RU")} км` : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    const consequence = outOfPark
+      ? " · выбыл из парка аренды (сдавать нельзя)"
+      : backToPark
+        ? " · вернулся в парк аренды"
+        : "";
+
     await logActivity(req, {
       entity: "scooter",
       entityId: id,
-      action: statusChanged ? "status_changed" : "updated",
+      action: statusChanged
+        ? "status_changed"
+        : identityChanged
+          ? "identity_changed"
+          : "updated",
       summary: statusChanged
-        ? `Статус ${scooterLabel(row.name, row.rentalSlot)}: «${scooterStatusLabel(before.baseStatus)}» → «${scooterStatusLabel(row.baseStatus)}»`
-        : `Отредактированы данные техники ${scooterLabel(row.name, row.rentalSlot)}`,
-      meta: { before, after: row },
+        ? `Статус ${scooterLabel(row.name, row.rentalSlot)}: «${scooterStatusLabel(before.baseStatus)}» → «${scooterStatusLabel(row.baseStatus)}»${consequence}${ident ? ` · ${ident}` : ""} · вручную в карточке техники`
+        : fieldChanges.length > 0
+          ? `${scooterLabel(row.name, row.rentalSlot)}: ${fieldChanges.map((c) => c.text).join(" · ")}`
+          : `Отредактированы данные техники ${scooterLabel(row.name, row.rentalSlot)}`,
+      meta: {
+        before,
+        after: row,
+        // Для клика по записи в журнале → карточка техники.
+        scooterId: id,
+        scooterName: row.name,
+        statusFrom: before.baseStatus,
+        statusTo: row.baseStatus,
+        outOfPark,
+        fieldChanges,
+        identityChanged,
+        source: "scooter_card",
+      },
     });
     return row;
   });
@@ -742,14 +831,53 @@ export async function scootersRoutes(app: FastifyInstance) {
       if (!sc) return reply.code(404).send({ error: "not found" });
       if (!sc.archivedAt)
         return reply.code(400).send({ error: "must be archived first" });
+      /**
+       * Правка 31.08: удаление НАВСЕГДА требует ключа директора.
+       * Раньше ключ спрашивали при отправке в архив, а сам «стереть
+       * навсегда» шёл без подтверждения — и техника исчезала из базы одним
+       * кликом. Именно так на проде пропал скутер: архив и удаление прошли
+       * в одну минуту.
+       */
+      if (!(await requireDirectorApproval(app, req, reply, "scooter_purge")))
+        return;
 
       const name = sc.name;
       await db.delete(scooters).where(eq(scooters.id, id));
+      /**
+       * Правка 31.08 (по следам инцидента на проде): удаление навсегда —
+       * единственная операция, после которой данных о технике в базе НЕ
+       * остаётся. Раньше в журнал шла только строка с именем, и понять,
+       * какую именно машину стёрли (VIN, рама, двигатель, пробег, статус),
+       * было невозможно. Теперь в записи — полный опознавательный набор, а
+       * в meta лежит СНИМОК всей строки: по нему технику можно опознать и
+       * при необходимости завести заново.
+       */
+      const ident = [
+        sc.uid ? `ID ${sc.uid}` : null,
+        sc.frameNumber ? `рама ${sc.frameNumber}` : null,
+        sc.engineNo ? `двигатель ${sc.engineNo}` : null,
+        sc.mileage != null
+          ? `пробег ${sc.mileage.toLocaleString("ru-RU")} км`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(" · ");
       await logActivity(req, {
         entity: "scooter",
         entityId: id,
         action: "deleted",
-        summary: `Скутер «${name}» удалён из архива навсегда`,
+        summary:
+          `УДАЛЁН НАВСЕГДА: ${scooterLabel(sc.name, sc.rentalSlot)}` +
+          ` · статус на момент удаления «${scooterStatusLabel(sc.baseStatus)}»` +
+          (sc.archivedReason ? ` · причина архивации: ${sc.archivedReason}` : "") +
+          (ident ? ` · ${ident}` : "") +
+          " · восстановить нельзя",
+        meta: {
+          snapshot: sc,
+          scooterName: sc.name,
+          statusFrom: sc.baseStatus,
+          irreversible: true,
+        },
       });
       return reply.code(204).send();
     },
