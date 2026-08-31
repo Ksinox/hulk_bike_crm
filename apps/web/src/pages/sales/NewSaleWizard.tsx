@@ -229,6 +229,36 @@ export function NewSaleWizard({
     }
   };
 
+  /**
+   * Правка 31.08 (заказчик): не хочется целиться мышью — на каждом шаге
+   * нужное поле само в фокусе, Enter ведёт дальше. Печатаешь → Enter →
+   * печатаешь → Enter.
+   */
+  const bodyRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      const el = bodyRef.current?.querySelector<HTMLElement>(
+        "input:not([type=file]):not([disabled])",
+      );
+      el?.focus();
+      if (el instanceof HTMLInputElement && el.value) el.select();
+    }, 60);
+    return () => window.clearTimeout(t);
+  }, [step]);
+
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key !== "Enter" || e.shiftKey) return;
+    const el = e.target as HTMLElement;
+    // В многострочном комментарии Enter — перенос строки, а не «Далее».
+    if (el.tagName === "TEXTAREA") return;
+    e.preventDefault();
+    if (step < STEPS.length - 1) {
+      if (canNext && !busy) void next();
+    } else if (!busy) {
+      void finish();
+    }
+  };
+
   const canNext =
     (step === 0 && !!clientId) ||
     (step === 1 && !!scooterId) ||
@@ -294,7 +324,11 @@ export function NewSaleWizard({
         </header>
 
         {/* Тело шага */}
-        <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
+        <div
+          ref={bodyRef}
+          onKeyDown={onKeyDown}
+          className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5"
+        >
           {step === 0 && (
             <StepClient
               clients={clients}
@@ -397,6 +431,9 @@ export function NewSaleWizard({
             </button>
           )}
           <div className="flex-1" />
+          <span className="hidden text-[11px] text-muted-2 sm:inline">
+            Enter — дальше
+          </span>
           {step < STEPS.length - 1 ? (
             <button
               type="button"
