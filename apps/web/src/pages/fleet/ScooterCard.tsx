@@ -746,11 +746,15 @@ export function ScooterCard({
               <RentalSlotSpec scooter={scooter} />
               {/* Партнёрская техника: флаг у КОНКРЕТНОЙ единицы (правка 24.08). */}
               <PartnerSpec scooter={scooter} />
-              <SpecCell
-                label="Пробег"
-                value={`${fmt(scooter.mileage)} км`}
-                accent="blue"
-              />
+              {/* В дровере пробег показан выше, в блоке состояния — здесь
+                  он был бы вторым таким же числом. */}
+              {!drawerChrome && (
+                <SpecCell
+                  label="Пробег"
+                  value={`${fmt(scooter.mileage)} км`}
+                  accent="blue"
+                />
+              )}
               <SpecCell
                 label="Дата покупки"
                 value={
