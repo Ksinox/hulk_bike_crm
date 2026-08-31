@@ -62,14 +62,13 @@ export function plural(n: number, forms: [string, string, string]): string {
   return forms[2];
 }
 
-/** Компактно: 1 250 000 → «1,25 млн». Для крупных сумм в плитках. */
+/**
+ * Компактно: 1 250 000 → «1,25 млн». Сокращаем только миллионы — иначе в
+ * одной строке соседствуют «218 тыс» и «75 000», и читается это рвано.
+ */
 export function fmtCompact(n: number): string {
-  const abs = Math.abs(n);
-  if (abs >= 1_000_000) {
+  if (Math.abs(n) >= 1_000_000) {
     return `${(n / 1_000_000).toLocaleString("ru-RU", { maximumFractionDigits: 2 })} млн`;
-  }
-  if (abs >= 100_000) {
-    return `${(n / 1000).toLocaleString("ru-RU", { maximumFractionDigits: 0 })} тыс`;
   }
   return fmt(n);
 }
@@ -252,7 +251,11 @@ export function series(
   }
   const points = [...map.values()];
 
-  if (!withForecast || points.length < 2) {
+  // Прогноз имеет смысл, только когда есть по чему строить тренд. На одной
+  // продаже за месяц линейная регрессия даёт «−87%» — цифру, которая
+  // пугает и ничего не значит.
+  const filled = points.filter((p) => p.revenue > 0).length;
+  if (!withForecast || points.length < 2 || filled < 3) {
     return { points, forecast: null, trendPct: null };
   }
   // Линейный тренд по выручке.

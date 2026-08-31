@@ -246,8 +246,13 @@ export function SalesOverview({
               </div>
             ) : (
               <>
-                <div className="flex h-32 items-end gap-1.5 overflow-x-auto pb-5">
-                  {chart.map((p) => {
+                <div className="flex h-32 items-end gap-1.5 pb-5">
+                  {chart.map((p, i) => {
+                    // Подписи через шаг: при месяце по дням 31 подпись
+                    // слипается в нечитаемую кашу и лезет за карточку.
+                    const every = Math.ceil(chart.length / 12);
+                    const showLabel =
+                      p.forecast || chart.length <= 12 || i % every === 0;
                     const h = Math.max(
                       (p.revenue / maxRevenue) * 110,
                       p.revenue > 0 ? 3 : 1,
@@ -268,9 +273,11 @@ export function SalesOverview({
                           )}
                           style={{ height: `${h}px` }}
                         />
-                        <span className="absolute left-1/2 top-full -translate-x-1/2 whitespace-nowrap pt-1 text-[9px] font-medium text-muted-2">
-                          {p.label}
-                        </span>
+                        {showLabel && (
+                          <span className="absolute left-1/2 top-full -translate-x-1/2 whitespace-nowrap pt-1 text-[9px] font-medium text-muted-2">
+                            {p.label}
+                          </span>
+                        )}
                         <div className="pointer-events-none absolute -top-1 left-1/2 z-10 hidden -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-[8px] bg-ink px-2.5 py-1.5 text-[11px] text-white shadow-lg group-hover:block">
                           <div className="text-white/70">
                             {p.forecast ? "прогноз на следующий период" : p.label}
@@ -366,7 +373,7 @@ export function SalesOverview({
                     <th className="px-2 py-2 text-right font-bold">Выручка</th>
                     <th className="px-2 py-2 text-right font-bold">Прибыль</th>
                     <th className="px-2 py-2 text-right font-bold">Ср. чек</th>
-                    <th className="px-4 py-2 text-right font-bold">Ему</th>
+                    <th className="px-4 py-2 text-right font-bold">Менеджеру</th>
                   </tr>
                 </thead>
                 <tbody>
