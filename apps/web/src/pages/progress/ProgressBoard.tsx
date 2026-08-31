@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useProgressSeen } from "./useProgressSeen";
 import { Check, ChevronDown, Loader2, Maximize2, X } from "lucide-react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
@@ -93,6 +94,7 @@ export function ProgressBoard() {
   const [open, setOpen] = useState<Set<string>>(new Set());
   // Лайтбокс: клик по скриншоту → полный экран.
   const [zoom, setZoom] = useState<StoryImage | null>(null);
+  const { isFresh, markSeen, markAllSeen, freshCount } = useProgressSeen();
   const toggle = (id: string) =>
     setOpen((prev) => {
       const next = new Set(prev);
@@ -153,6 +155,31 @@ export function ProgressBoard() {
           <ProgressRing percent={s.percent} />
         </div>
       </header>
+
+      {/* Свежие изменения с прошлого просмотра — точки на самих пунктах,
+          здесь общий счётчик и способ погасить всё разом. */}
+      {freshCount > 0 && (
+        <div
+          className="mt-6 flex flex-wrap items-center gap-2 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3"
+          style={{ animation: "wnFadeUp .5s ease-out both", animationDelay: "60ms" }}
+        >
+          <span className="inline-block h-2 w-2 shrink-0 rounded-full bg-blue-600" />
+          <span className="text-[13px] font-semibold text-blue-700">
+            Обновлено с прошлого просмотра: {freshCount}{" "}
+            {freshCount === 1 ? "пункт" : freshCount < 5 ? "пункта" : "пунктов"}
+          </span>
+          <span className="text-[12px] text-blue-700/70">
+            — они помечены точкой; точка гаснет, когда пункт откроешь
+          </span>
+          <button
+            type="button"
+            onClick={markAllSeen}
+            className="ml-auto rounded-full bg-white px-3 py-1.5 text-[12px] font-bold text-blue-700 shadow-card-sm transition-colors hover:bg-blue-100"
+          >
+            Отметить всё просмотренным
+          </button>
+        </div>
+      )}
 
       {/* ─────────────── СТАТИСТИКА ─────────────── */}
       <div
@@ -251,7 +278,11 @@ export function ProgressBoard() {
                       key={it.id}
                       item={it}
                       expanded={open.has(it.id)}
-                      onToggle={() => toggle(it.id)}
+                      fresh={isFresh(it.id, it.updatedAt)}
+                      onToggle={() => {
+                        toggle(it.id);
+                        markSeen(it.id, it.updatedAt);
+                      }}
                       onZoom={setZoom}
                     />
                   ))}
@@ -414,11 +445,14 @@ function Stat({
 function ItemCard({
   item,
   expanded,
+  fresh,
   onToggle,
   onZoom,
 }: {
   item: ProgressItem;
   expanded: boolean;
+  /** Пункт меняли после того, как его последний раз открывали. */
+  fresh: boolean;
   onToggle: () => void;
   onZoom: (img: StoryImage) => void;
 }) {
@@ -460,6 +494,13 @@ function ItemCard({
 
           <span className="min-w-0 flex-1 text-[13.5px] font-bold leading-snug text-ink sm:text-[14.5px]">
             {item.title}
+            {/* Точка «здесь есть свежее» — гаснет, когда пункт открыли. */}
+            {fresh && (
+              <span
+                title="Есть изменения с прошлого просмотра"
+                className="ml-2 inline-block h-2 w-2 shrink-0 translate-y-[-1px] rounded-full bg-blue-600 align-middle"
+              />
+            )}
           </span>
 
           <span

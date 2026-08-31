@@ -55,6 +55,12 @@ export type ProgressItem = {
   shots?: ProgressShot[];
   /** Пошаговая история со скриншотами (главный формат подачи). */
   story?: ProgressStep[];
+  /**
+   * Когда пункт последний раз меняли (YYYY-MM-DD). По этой дате страница
+   * зажигает точку «здесь есть свежее»: браузер помнит, с какой датой
+   * пункт уже открывали, и гасит точку — до следующего изменения.
+   */
+  updatedAt?: string;
 };
 
 export type ProgressGroup = {
@@ -1282,6 +1288,7 @@ export const progressItems: ProgressItem[] = [
   },
   {
     id: "2.13",
+    updatedAt: "2026-08-30",
     group: "fixes2",
     title: "Адаптив под маленькие экраны ноутбуков",
     quote:
@@ -1326,6 +1333,7 @@ export const progressItems: ProgressItem[] = [
   },
   {
     id: "2.14",
+    updatedAt: "2026-08-30",
     group: "fixes2",
     title: "Карточка техники — боковой дровер, как у аренды",
     quote:
@@ -1370,6 +1378,7 @@ export const progressItems: ProgressItem[] = [
   // ─────────────── Новые разделы ───────────────
   {
     id: "2.15",
+    updatedAt: "2026-08-31",
     group: "fixes2",
     title: "Журнал техники: все действия со скутерами в одном окне",
     quote:
@@ -1408,6 +1417,7 @@ export const progressItems: ProgressItem[] = [
   },
   {
     id: "2.16",
+    updatedAt: "2026-08-31",
     group: "fixes2",
     title: "Круг парка считает всю технику, а не только свободную",
     quote:
@@ -1428,6 +1438,7 @@ export const progressItems: ProgressItem[] = [
   },
   {
     id: "2.17",
+    updatedAt: "2026-08-31",
     group: "fixes2",
     title: "Выручка — только наша техника, без электротранспорта",
     quote:
@@ -1453,6 +1464,7 @@ export const progressItems: ProgressItem[] = [
   },
   {
     id: "2.18",
+    updatedAt: "2026-08-31",
     group: "fixes2",
     title: "Детализация выплат инвестору за любой период",
     quote:
@@ -1473,6 +1485,7 @@ export const progressItems: ProgressItem[] = [
   },
   {
     id: "2.19",
+    updatedAt: "2026-08-31",
     group: "fixes2",
     title: "Блок «Продажи» — от витрины до подписанного договора",
     quote:
@@ -1587,6 +1600,7 @@ export const progressItems: ProgressItem[] = [
   },
   {
     id: "2.20",
+    updatedAt: "2026-08-31",
     group: "fixes2",
     title: "Меню: рабочее сверху, «скоро» вниз, калькулятор убран",
     quote:
@@ -1612,6 +1626,7 @@ export const progressItems: ProgressItem[] = [
   },
   {
     id: "2.21",
+    updatedAt: "2026-08-31",
     group: "fixes2",
     title: "Заявки переехали в свои разделы, анкета покупателя — отдельная",
     quote:
@@ -1664,6 +1679,7 @@ export const progressItems: ProgressItem[] = [
   },
   {
     id: "2.22",
+    updatedAt: "2026-08-31",
     group: "fixes2",
     title: "Карточка техники: боковые разделы, обложка и данные без дублей",
     quote:
