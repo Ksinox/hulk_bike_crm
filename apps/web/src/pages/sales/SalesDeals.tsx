@@ -192,14 +192,14 @@ export function SalesDeals({
               ))}
             </div>
             <div className="hidden overflow-x-auto md:block">
-            <table className="w-full min-w-[880px] text-[12.5px]">
+            <table className="w-full min-w-[640px] text-[12.5px]">
               <thead>
                 <tr className="border-b border-border/60 text-[10.5px] font-bold uppercase tracking-wider text-muted-2">
                   <th className="px-4 py-2 text-left font-bold">Сделка</th>
                   <th className="px-2 py-2 text-left font-bold">Техника</th>
                   <th className="px-2 py-2 text-left font-bold">Клиент</th>
-                  <th className="px-2 py-2 text-left font-bold">Менеджер</th>
-                  <th className="px-2 py-2 text-right font-bold">Закуп</th>
+                  <th className="hidden px-2 py-2 text-left font-bold xl:table-cell">Менеджер</th>
+                  <th className="hidden px-2 py-2 text-right font-bold 2xl:table-cell">Закуп</th>
                   <th className="px-2 py-2 text-right font-bold">Продажа</th>
                   <th className="px-2 py-2 text-right font-bold">Прибыль</th>
                   <th className="px-4 py-2 text-right font-bold">Статус</th>
@@ -313,7 +313,7 @@ function DealRow({ deal, onOpen }: { deal: SaleDeal; onOpen: () => void }) {
         <div className="max-w-[160px] truncate text-ink">{deal.clientName ?? "—"}</div>
         <div className="text-[11px] text-muted-2">{deal.clientPhone ?? ""}</div>
       </td>
-      <td className="px-2 py-2.5">
+      <td className="hidden px-2 py-2.5 xl:table-cell">
         {deal.managerName ? (
           <span className="flex items-center gap-1.5">
             <ManagerAvatar name={deal.managerName} color={deal.managerColor} size={22} />
@@ -323,15 +323,15 @@ function DealRow({ deal, onOpen }: { deal: SaleDeal; onOpen: () => void }) {
           <span className="text-muted-2">—</span>
         )}
       </td>
-      <td className="px-2 py-2.5 text-right tabular-nums text-muted">
+      <td className="hidden whitespace-nowrap px-2 py-2.5 text-right tabular-nums text-muted 2xl:table-cell">
         {deal.purchasePrice != null ? `${fmt(deal.purchasePrice)} ₽` : "—"}
       </td>
-      <td className="px-2 py-2.5 text-right font-bold tabular-nums text-ink">
+      <td className="whitespace-nowrap px-2 py-2.5 text-right font-bold tabular-nums text-ink">
         {fmt(deal.price)} ₽
       </td>
       <td
         className={cn(
-          "px-2 py-2.5 text-right tabular-nums",
+          "whitespace-nowrap px-2 py-2.5 text-right tabular-nums",
           profit >= 0 ? "text-emerald-700" : "text-red-ink",
         )}
       >

@@ -68,7 +68,9 @@ export function StatTile({
         )}
         <span
           className={cn(
-            "truncate text-[11px] font-bold uppercase tracking-wider",
+            // Без truncate: на телефоне подписи вроде «Ожидаемая прибыль»
+            // обрезались в «ОЖИДАЕМАЯ ПРИБ…». Пусть переносятся.
+            "text-[11px] font-bold uppercase leading-tight tracking-wider",
             accent ? "text-white/70" : "text-muted-2",
           )}
         >
