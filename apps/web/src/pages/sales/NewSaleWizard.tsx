@@ -460,7 +460,9 @@ function StepClient({
     <div className="flex flex-col gap-3">
       <StepHint text="Покупатель попадёт в договор — нужны паспортные данные. Если клиента ещё нет в базе, заведите его здесь же или отправьте ему анкету: заполненная придёт в «Заявки», оттуда одним нажатием станет клиентом." />
       <div className="flex flex-wrap gap-2">
-        <div className="relative min-w-0 flex-1">
+        {/* min-w — чтобы на телефоне поле не схлопывалось до «Имя или телес»,
+            а кнопки уезжали на вторую строку. */}
+        <div className="relative min-w-[200px] flex-1">
           <Search
             size={15}
             className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-2"
