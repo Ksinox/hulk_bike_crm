@@ -29,11 +29,15 @@ import { SalesChart } from "./SalesChart";
 import {
   BUCKET_AXIS,
   deltaPct,
+  panView,
+  rangeFromView,
+  viewForPreset,
+  zoomView,
+  type ChartView,
   fmt,
   fmtCompact,
   managerRating,
   modelRating,
-  presetRange,
   previousRange,
   series,
   soldIn,
@@ -51,17 +55,9 @@ import {
  * динамика — и кто из менеджеров и какие модели тянут результат.
  */
 
-/**
- * Разрез графика — следствие выбранного периода, а не отдельный
- * переключатель (правка 31.08): «Сегодня» рисуем по часам, «Неделя» и
- * «Месяц» — по дням, «Год» — по месяцам. Для произвольного диапазона
- * выбираем по его длине. Два переключателя рядом были задвоением.
- */
-function bucketFor(preset: PeriodPreset, r: Range): Bucket {
-  if (preset === "today") return "hour";
-  if (preset === "year") return "month";
-  if (preset !== "custom") return "day";
-  const days = Math.max(1, (r.to.getTime() - r.from.getTime()) / 86_400_000);
+/** Масштаб для произвольного диапазона из календаря — по его длине. */
+function bucketForRange(from: Date, to: Date): Bucket {
+  const days = Math.max(1, (to.getTime() - from.getTime()) / 86_400_000);
   if (days <= 2) return "hour";
   if (days <= 60) return "day";
   if (days <= 400) return "month";
@@ -90,14 +86,14 @@ export function SalesOverview({
   const [managerId, setManagerId] = useState<number | null>(null);
   const [planOpen, setPlanOpen] = useState(false);
 
-  const range: Range = useMemo(() => {
-    if (preset === "custom" && custom.from && custom.to) {
-      const from = new Date(`${custom.from}T00:00:00`);
-      const to = new Date(`${custom.to}T23:59:59`);
-      return { from, to, label: `${custom.from} — ${custom.to}` };
-    }
-    return presetRange(preset === "custom" ? "month" : preset);
-  }, [preset, custom]);
+  /**
+   * Окно графика: скользящее, правый край — «сейчас» (правка 31.08).
+   * Колесо над графиком меняет масштаб, перетаскивание двигает во времени;
+   * пресеты сверху просто задают стартовое окно.
+   */
+  const [view, setView] = useState<ChartView>(() => viewForPreset("month"));
+  const range: Range = useMemo(() => rangeFromView(view), [view]);
+  const bucket = view.bucket;
 
   const sold = useMemo(() => soldIn(deals, range, managerId), [deals, range, managerId]);
   const prev = useMemo(
@@ -115,7 +111,6 @@ export function SalesOverview({
     return { units: list.length, price, expectedProfit: price - cost };
   }, [scooters]);
 
-  const bucket = useMemo(() => bucketFor(preset, range), [preset, range]);
   const dyn = useMemo(() => series(sold, range, bucket), [sold, range, bucket]);
 
   const mRating = useMemo(() => managerRating(sold, managers), [sold, managers]);
@@ -137,6 +132,28 @@ export function SalesOverview({
           onChange={(p, c) => {
             setPreset(p);
             setCustom(c);
+            if (p === "custom" && c.from && c.to) {
+              const from = new Date(`${c.from}T00:00:00`);
+              const to = new Date(`${c.to}T23:59:59`);
+              const b = bucketForRange(from, to);
+              const stepMs =
+                b === "hour"
+                  ? 3_600_000
+                  : b === "day"
+                    ? 86_400_000
+                    : b === "week"
+                      ? 7 * 86_400_000
+                      : b === "month"
+                        ? 30 * 86_400_000
+                        : 365 * 86_400_000;
+              setView({
+                bucket: b,
+                count: Math.max(2, Math.round((to.getTime() - from.getTime()) / stepMs) + 1),
+                end: to,
+              });
+            } else {
+              setView(viewForPreset(p));
+            }
           }}
         />
         <div className="flex-1" />
@@ -245,6 +262,14 @@ export function SalesOverview({
                 points={dyn.points}
                 forecast={dyn.forecast}
                 bucket={bucket}
+                onZoom={(dir) => {
+                  setPreset("custom");
+                  setView((v) => zoomView(v, dir));
+                }}
+                onPan={(steps) => {
+                  setPreset("custom");
+                  setView((v) => panView(v, steps));
+                }}
               />
             )}
           </div>

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { BUCKET_AXIS, fmt, fmtCompact, type Bucket, type Point } from "./salesUtils";
 
@@ -31,6 +31,8 @@ export function SalesChart({
   bucket,
   metric = "revenue",
   height = 168,
+  onZoom,
+  onPan,
 }: {
   points: Point[];
   forecast: Point | null;
@@ -38,8 +40,59 @@ export function SalesChart({
   /** Что рисуем: деньги или штуки. */
   metric?: "revenue" | "units";
   height?: number;
+  /** Колесо над графиком: +1 приблизить, −1 отдалить (правка 31.08). */
+  onZoom?: (dir: 1 | -1) => void;
+  /** Перетаскивание мышью: сдвиг окна на n интервалов. */
+  onPan?: (steps: number) => void;
 }) {
   const [hover, setHover] = useState<string | null>(null);
+  const fieldRef = useRef<HTMLDivElement | null>(null);
+  const drag = useRef<{ x: number; moved: number } | null>(null);
+  const [dragging, setDragging] = useState(false);
+
+  // Колесо приближает/отдаляет масштаб. passive:false — иначе браузер
+  // прокрутит страницу вместо зума.
+  useEffect(() => {
+    const el = fieldRef.current;
+    if (!el || !onZoom) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      onZoom(e.deltaY < 0 ? 1 : -1);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [onZoom]);
+
+  // Перетаскивание: считаем, на сколько столбиков «уехала» мышь.
+  useEffect(() => {
+    if (!dragging || !onPan) return;
+    const barW = () => {
+      const el = fieldRef.current;
+      const n = Math.max(1, points.length + (forecast ? 1 : 0));
+      return el ? el.getBoundingClientRect().width / n : 40;
+    };
+    const onMove = (e: MouseEvent) => {
+      const st = drag.current;
+      if (!st) return;
+      const dx = e.clientX - st.x;
+      const steps = Math.trunc(dx / barW());
+      if (steps !== 0) {
+        // Тянем вправо — уходим в прошлое.
+        onPan(-steps);
+        drag.current = { x: e.clientX, moved: st.moved + Math.abs(steps) };
+      }
+    };
+    const onUp = () => {
+      drag.current = null;
+      setDragging(false);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [dragging, onPan, points.length, forecast]);
   const all = useMemo(
     () => (forecast ? [...points, forecast] : points),
     [points, forecast],
@@ -67,7 +120,19 @@ export function SalesChart({
         </div>
 
         {/* Поле графика */}
-        <div className="relative min-w-0 flex-1" style={{ height: height + 20 }}>
+        <div
+          ref={fieldRef}
+          onMouseDown={(e) => {
+            if (!onPan) return;
+            drag.current = { x: e.clientX, moved: 0 };
+            setDragging(true);
+          }}
+          className={cn(
+            "relative min-w-0 flex-1 select-none",
+            onPan && (dragging ? "cursor-grabbing" : "cursor-grab"),
+          )}
+          style={{ height: height + 20 }}
+        >
           {/* Сетка */}
           <div className="absolute inset-x-0 top-0" style={{ height }}>
             {grid.map((g, i) => (
@@ -148,6 +213,11 @@ export function SalesChart({
 
       <div className="flex flex-wrap items-center gap-2 pl-11 text-[10.5px] text-muted-2">
         <span>{BUCKET_AXIS[bucket]}</span>
+        {(onZoom || onPan) && (
+          <span className="text-muted-2">
+            · колесо — масштаб, перетаскивание — сдвиг по времени
+          </span>
+        )}
         {forecast && (
           <>
             <span className="inline-block h-2.5 w-2.5 rounded-[2px] border-2 border-dashed border-emerald-400 bg-emerald-50" />

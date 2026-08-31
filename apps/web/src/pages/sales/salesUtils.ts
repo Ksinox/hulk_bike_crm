@@ -112,6 +112,115 @@ export function presetRange(preset: PeriodPreset, now = new Date()): Range {
   }
 }
 
+/* ==================== окно графика ==================== */
+
+/**
+ * Окно графика (правки 31.08 по фидбэку заказчика).
+ *
+ * Период — это НЕ календарная коробка («август»), а скользящее окно,
+ * которое заканчивается «сейчас»: правый столбик всегда текущий момент,
+ * слева — то, что было до него. «Неделя» = семь дней до сегодняшнего
+ * включительно, даже если сегодня понедельник (раньше в таком случае
+ * рисовался единственный столбик).
+ *
+ * Окно можно приближать колесом (годы → месяцы → недели → дни → часы) и
+ * таскать мышью во времени — поэтому оно описано тройкой «шаг,
+ * сколько шагов, конец».
+ */
+export type ChartView = { bucket: Bucket; count: number; end: Date };
+
+/** Порядок масштабов от крупного к мелкому — по нему работает зум. */
+export const ZOOM_ORDER: Bucket[] = ["year", "month", "week", "day", "hour"];
+
+/** Сколько интервалов показываем на каждом масштабе по умолчанию. */
+export const DEFAULT_COUNT: Record<Bucket, number> = {
+  hour: 24,
+  day: 14,
+  week: 12,
+  month: 12,
+  year: 6,
+};
+
+export function viewForPreset(p: PeriodPreset, now = new Date()): ChartView {
+  const end = new Date(now);
+  switch (p) {
+    case "today":
+      return { bucket: "hour", count: end.getHours() + 1, end };
+    case "week":
+      return { bucket: "day", count: 7, end };
+    case "year":
+      return { bucket: "month", count: 12, end };
+    case "month":
+    default:
+      return { bucket: "day", count: 30, end };
+  }
+}
+
+/** Сдвиг даты на n шагов выбранного масштаба. */
+function shift(d: Date, bucket: Bucket, n: number): Date {
+  const x = new Date(d);
+  if (bucket === "hour") x.setHours(x.getHours() + n);
+  else if (bucket === "day") x.setDate(x.getDate() + n);
+  else if (bucket === "week") x.setDate(x.getDate() + n * 7);
+  else if (bucket === "month") x.setMonth(x.getMonth() + n);
+  else x.setFullYear(x.getFullYear() + n);
+  return x;
+}
+
+/** Начало интервала, в который попадает дата. */
+function floorTo(d: Date, bucket: Bucket): Date {
+  const x = new Date(d);
+  if (bucket === "hour") x.setMinutes(0, 0, 0);
+  else if (bucket === "day") x.setHours(0, 0, 0, 0);
+  else if (bucket === "week") {
+    x.setHours(0, 0, 0, 0);
+    x.setDate(x.getDate() - ((x.getDay() + 6) % 7));
+  } else if (bucket === "month") {
+    x.setHours(0, 0, 0, 0);
+    x.setDate(1);
+  } else {
+    x.setHours(0, 0, 0, 0);
+    x.setMonth(0, 1);
+  }
+  return x;
+}
+
+const BUCKET_TITLE: Record<Bucket, [string, string, string]> = {
+  hour: ["час", "часа", "часов"],
+  day: ["день", "дня", "дней"],
+  week: ["неделя", "недели", "недель"],
+  month: ["месяц", "месяца", "месяцев"],
+  year: ["год", "года", "лет"],
+};
+
+export function rangeFromView(v: ChartView, now = new Date()): Range {
+  const from = floorTo(shift(v.end, v.bucket, -(v.count - 1)), v.bucket);
+  const isNow = Math.abs(v.end.getTime() - now.getTime()) < 60_000;
+  const word = plural(v.count, BUCKET_TITLE[v.bucket]);
+  const label = isNow
+    ? v.bucket === "hour"
+      ? `последние ${v.count} ${word}`
+      : `последние ${v.count} ${word}`
+    : `${from.toLocaleDateString("ru-RU", { day: "numeric", month: "short" })} — ${v.end.toLocaleDateString("ru-RU", { day: "numeric", month: "short", year: "numeric" })}`;
+  return { from, to: new Date(v.end), label };
+}
+
+/** Приблизить (dir=1) или отдалить (dir=-1) масштаб окна. */
+export function zoomView(v: ChartView, dir: 1 | -1): ChartView {
+  const i = ZOOM_ORDER.indexOf(v.bucket);
+  const next = Math.min(ZOOM_ORDER.length - 1, Math.max(0, i + dir));
+  if (next === i) return v;
+  const bucket = ZOOM_ORDER[next]!;
+  return { bucket, count: DEFAULT_COUNT[bucket], end: v.end };
+}
+
+/** Сдвинуть окно на n интервалов (минус — в прошлое). */
+export function panView(v: ChartView, n: number, now = new Date()): ChartView {
+  const end = shift(v.end, v.bucket, n);
+  // В будущее не уезжаем — правее «сейчас» данных не бывает.
+  return { ...v, end: end.getTime() > now.getTime() ? new Date(now) : end };
+}
+
 /** Предыдущий сопоставимый период — для дельты «было / стало». */
 export function previousRange(r: Range): Range {
   const len = r.to.getTime() - r.from.getTime();
