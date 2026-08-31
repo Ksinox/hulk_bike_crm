@@ -32,6 +32,7 @@ import {
   normalizeQuery,
 } from "@/lib/search";
 import { cn } from "@/lib/utils";
+import { ApplicationsButton } from "@/pages/applications/ApplicationsPanel";
 import {
   MobileChips,
   MobileEmpty,
@@ -237,6 +238,10 @@ export function MobileRentals() {
           нажмите для разбивки
         </div>
       </button>
+
+      {/* Правка 31.08: заявки на аренду живут внутри раздела — на телефоне
+          кнопка открывает список сразу (наведения на тач-экране нет). */}
+      <ApplicationsButton purpose="rent" className="w-full justify-center py-2.5" />
 
       <MobileSearch
         value={search}
