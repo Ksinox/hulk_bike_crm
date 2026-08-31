@@ -8,7 +8,7 @@ import { dealProfit } from "@/lib/api/sales";
  */
 
 export type PeriodPreset = "today" | "week" | "month" | "year" | "custom";
-export type Bucket = "day" | "week" | "month" | "year";
+export type Bucket = "hour" | "day" | "week" | "month" | "year";
 
 export type Range = { from: Date; to: Date; label: string };
 
@@ -52,6 +52,15 @@ export function ruDateShort(d: Date | string | null | undefined): string {
 }
 
 export const fmt = (n: number) => Math.round(n).toLocaleString("ru-RU");
+
+/** Человеческое имя разреза — для подписи оси графика. */
+export const BUCKET_AXIS: Record<string, string> = {
+  hour: "по часам",
+  day: "по дням",
+  week: "по неделям",
+  month: "по месяцам",
+  year: "по годам",
+};
 
 /** Склонение: plural(3, ["сделка","сделки","сделок"]) → «сделки». */
 export function plural(n: number, forms: [string, string, string]): string {
@@ -173,6 +182,8 @@ export type Point = {
 
 function bucketKey(d: Date, b: Bucket): string {
   switch (b) {
+    case "hour":
+      return `${isoDate(d)}T${String(d.getHours()).padStart(2, "0")}`;
     case "day":
       return isoDate(d);
     case "week": {
@@ -188,6 +199,8 @@ function bucketKey(d: Date, b: Bucket): string {
 
 function bucketLabel(key: string, b: Bucket): string {
   switch (b) {
+    case "hour":
+      return `${key.slice(11)}:00`;
     case "day": {
       const d = new Date(key);
       return d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
@@ -210,9 +223,11 @@ function bucketLabel(key: string, b: Bucket): string {
 function stepDates(r: Range, b: Bucket): Date[] {
   const out: Date[] = [];
   const cur = new Date(r.from);
+  if (b === "hour") cur.setMinutes(0, 0, 0);
   while (cur.getTime() <= r.to.getTime() && out.length < 400) {
     out.push(new Date(cur));
-    if (b === "day") cur.setDate(cur.getDate() + 1);
+    if (b === "hour") cur.setHours(cur.getHours() + 1);
+    else if (b === "day") cur.setDate(cur.getDate() + 1);
     else if (b === "week") cur.setDate(cur.getDate() + 7);
     else if (b === "month") cur.setMonth(cur.getMonth() + 1);
     else cur.setFullYear(cur.getFullYear() + 1);

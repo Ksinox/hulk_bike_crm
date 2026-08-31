@@ -144,6 +144,10 @@ const config: Config = {
           "0%": { opacity: "1", transform: "translateY(0)" },
           "100%": { opacity: "0", transform: "translateY(-24px)" },
         },
+        "bar-grow": {
+          "0%": { transform: "scaleY(0)", opacity: "0.4" },
+          "100%": { transform: "scaleY(1)", opacity: "1" },
+        },
         "pop-in": {
           "0%": { opacity: "0", transform: "scale(0.92)" },
           "100%": { opacity: "1", transform: "scale(1)" },
@@ -163,6 +167,8 @@ const config: Config = {
           "slide-in-down 300ms cubic-bezier(0.22, 1, 0.36, 1) both",
         "slide-out-up": "slide-out-up 220ms ease-in both",
         "pop-in": "pop-in 200ms cubic-bezier(0.22, 1, 0.36, 1) both",
+        // Столбик графика вырастает снизу — «Продажи», динамика.
+        "bar-grow": "bar-grow 520ms cubic-bezier(0.22, 1, 0.36, 1) both",
       },
     },
   },

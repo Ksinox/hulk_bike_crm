@@ -25,6 +25,7 @@ import {
   SectionCard,
   StatTile,
 } from "./SalesUI";
+import { SalesChart } from "./SalesChart";
 import {
   deltaPct,
   fmt,
@@ -50,11 +51,19 @@ import {
  */
 
 const BUCKETS: { id: Bucket; label: string }[] = [
-  { id: "day", label: "День" },
-  { id: "week", label: "Неделя" },
-  { id: "month", label: "Месяц" },
-  { id: "year", label: "Год" },
+  { id: "hour", label: "Часы" },
+  { id: "day", label: "Дни" },
+  { id: "week", label: "Недели" },
+  { id: "month", label: "Месяцы" },
+  { id: "year", label: "Годы" },
 ];
+
+/** Разрез по умолчанию под выбранный период — чтобы не получить 365 столбиков. */
+function defaultBucket(preset: PeriodPreset): Bucket {
+  if (preset === "today") return "hour";
+  if (preset === "year") return "month";
+  return "day";
+}
 
 export function SalesOverview({
   onOpenStock,
@@ -105,8 +114,6 @@ export function SalesOverview({
   }, [scooters]);
 
   const dyn = useMemo(() => series(sold, range, bucket), [sold, range, bucket]);
-  const chart = dyn.forecast ? [...dyn.points, dyn.forecast] : dyn.points;
-  const maxRevenue = Math.max(1, ...chart.map((p) => p.revenue));
 
   const mRating = useMemo(() => managerRating(sold, managers), [sold, managers]);
   const modRating = useMemo(() => modelRating(sold), [sold]);
@@ -117,7 +124,7 @@ export function SalesOverview({
   const plan = (plansData?.items ?? []).find((p) => p.period.slice(0, 7) === planPeriod);
 
   return (
-    <div className="flex min-w-0 flex-col gap-4">
+    <div className="flex min-w-0 flex-col gap-3">
       {/* Фильтры */}
       <div className="flex flex-wrap items-center gap-2">
         <PeriodPicker
@@ -126,9 +133,9 @@ export function SalesOverview({
           onChange={(p, c) => {
             setPreset(p);
             setCustom(c);
-            // Крупный период — крупный разрез, иначе 300 столбиков по дням.
-            if (p === "year") setBucket("month");
-            else if (p === "today") setBucket("day");
+            // Разрез подстраиваем под период: за день интереснее по часам,
+            // за год — по месяцам, иначе получим 365 столбиков.
+            setBucket(defaultBucket(p));
           }}
         />
         <div className="flex-1" />
@@ -216,7 +223,7 @@ export function SalesOverview({
         />
       </div>
 
-      <div className="grid min-w-0 items-start gap-4 xl:grid-cols-[1.6fr_1fr]">
+      <div className="grid min-w-0 items-stretch gap-3 xl:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
         {/* Динамика */}
         <SectionCard
           title="Динамика продаж"
@@ -239,81 +246,17 @@ export function SalesOverview({
             </div>
           }
         >
-          <div className="flex flex-col gap-3 p-4">
+          <div className="flex flex-1 flex-col justify-center p-4">
             {now.units === 0 ? (
-              <div className="py-6 text-center text-[13px] text-muted">
+              <div className="py-8 text-center text-[13px] text-muted">
                 За выбранный период продаж не было.
               </div>
             ) : (
-              <>
-                <div className="flex h-32 items-end gap-1.5 pb-5">
-                  {chart.map((p, i) => {
-                    // Подписи через шаг: при месяце по дням 31 подпись
-                    // слипается в нечитаемую кашу и лезет за карточку.
-                    const every = Math.ceil(chart.length / 12);
-                    const showLabel =
-                      p.forecast || chart.length <= 12 || i % every === 0;
-                    const h = Math.max(
-                      (p.revenue / maxRevenue) * 110,
-                      p.revenue > 0 ? 3 : 1,
-                    );
-                    return (
-                      <div
-                        key={p.key}
-                        className="group relative flex min-w-[14px] flex-1 flex-col-reverse items-stretch"
-                      >
-                        <div
-                          className={cn(
-                            "w-full rounded-t transition-colors",
-                            p.forecast
-                              ? "border-2 border-dashed border-emerald-400 bg-emerald-50"
-                              : p.revenue > 0
-                                ? "bg-emerald-500 group-hover:bg-emerald-600"
-                                : "bg-surface-soft",
-                          )}
-                          style={{ height: `${h}px` }}
-                        />
-                        {showLabel && (
-                          <span className="absolute left-1/2 top-full -translate-x-1/2 whitespace-nowrap pt-1 text-[9px] font-medium text-muted-2">
-                            {p.label}
-                          </span>
-                        )}
-                        <div className="pointer-events-none absolute -top-1 left-1/2 z-10 hidden -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-[8px] bg-ink px-2.5 py-1.5 text-[11px] text-white shadow-lg group-hover:block">
-                          <div className="text-white/70">
-                            {p.forecast ? "прогноз на следующий период" : p.label}
-                          </div>
-                          <div className="font-bold tabular-nums">{fmt(p.revenue)} ₽</div>
-                          <div className="text-[10px] text-white/70">
-                            {p.units} ед.
-                            {!p.forecast && p.profit > 0 && ` · прибыль ${fmt(p.profit)} ₽`}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-                {dyn.forecast && (
-                  <div className="flex flex-wrap items-center gap-2 rounded-xl bg-surface-soft px-3 py-2 text-[12px] text-muted">
-                    <span className="inline-block h-3 w-3 rounded border-2 border-dashed border-emerald-400 bg-emerald-50" />
-                    Прогноз на следующий интервал:{" "}
-                    <b className="text-ink">{fmt(dyn.forecast.revenue)} ₽</b>
-                    {dyn.trendPct != null && (
-                      <span
-                        className={cn(
-                          "rounded-full px-1.5 py-0.5 text-[11px] font-bold",
-                          dyn.trendPct >= 0
-                            ? "bg-emerald-50 text-emerald-700"
-                            : "bg-red-soft text-red-ink",
-                        )}
-                      >
-                        {dyn.trendPct > 0 ? "+" : ""}
-                        {dyn.trendPct}%
-                      </span>
-                    )}
-                    <span className="text-muted-2">— по тренду выбранного периода</span>
-                  </div>
-                )}
-              </>
+              <SalesChart
+                points={dyn.points}
+                forecast={dyn.forecast}
+                bucket={bucket}
+              />
             )}
           </div>
         </SectionCard>
@@ -334,7 +277,7 @@ export function SalesOverview({
             )
           }
         >
-          <div className="flex flex-col gap-4 p-4">
+          <div className="flex flex-1 flex-col justify-between gap-3 p-4">
             <PlanBar label="Единиц" fact={now.units} plan={plan?.units ?? 0} unit="ед." />
             <PlanBar label="Выручка" fact={now.revenue} plan={plan?.revenue ?? 0} unit="₽" />
             <PlanBar label="Прибыль" fact={now.profit} plan={plan?.profit ?? 0} unit="₽" />
@@ -353,7 +296,7 @@ export function SalesOverview({
         </SectionCard>
       </div>
 
-      <div className="grid min-w-0 items-start gap-4 xl:grid-cols-2">
+      <div className="grid min-w-0 items-stretch gap-3 xl:grid-cols-2">
         {/* Рейтинг менеджеров */}
         <SectionCard
           title="Рейтинг менеджеров"
@@ -456,11 +399,15 @@ export function SalesOverview({
         </SectionCard>
       </div>
 
-      {/* Последние сделки — быстрый вход в детализацию */}
+      {/* Последние сделки — быстрый вход в детализацию. Сеткой, а не
+          длинными строками во всю ширину: так на экран помещается больше. */}
       {sold.length > 0 && (
-        <SectionCard title="Последние продажи" hint={range.label}>
-          <div className="flex flex-col">
-            {sold.slice(0, 5).map((d) => (
+        <SectionCard
+          title="Последние продажи"
+          hint={`${range.label} · ${sold.length} за период`}
+        >
+          <div className="grid gap-2 p-3 sm:grid-cols-2 2xl:grid-cols-3">
+            {sold.slice(0, 6).map((d) => (
               <RecentRow key={d.id} deal={d} onOpen={() => onOpenDeal(d.id)} />
             ))}
           </div>
@@ -483,23 +430,18 @@ function RecentRow({ deal, onOpen }: { deal: SaleDeal; onOpen: () => void }) {
     <button
       type="button"
       onClick={onOpen}
-      className="flex items-center gap-3 border-b border-border/60 px-4 py-2.5 text-left transition-colors last:border-b-0 hover:bg-surface-soft/60"
+      className="flex items-center gap-3 rounded-xl bg-surface-soft/60 px-3 py-2.5 text-left transition-colors hover:bg-surface-soft"
     >
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[13px] font-semibold text-ink">
           {deal.modelName || deal.scooterName || "Техника"}
-          {deal.vin && (
-            <span className="ml-1.5 text-[11.5px] font-normal text-muted-2">
-              VIN {deal.vin}
-            </span>
-          )}
         </span>
         <span className="block truncate text-[11.5px] text-muted">
           {deal.clientName ?? "клиент не указан"}
           {deal.managerName && ` · ${deal.managerName}`}
         </span>
       </span>
-      <span className="text-right">
+      <span className="shrink-0 text-right">
         <span className="block text-[13px] font-bold tabular-nums text-ink">
           {fmt(deal.price)} ₽
         </span>
