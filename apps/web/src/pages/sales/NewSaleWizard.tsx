@@ -62,12 +62,15 @@ const STEPS = [
 export function NewSaleWizard({
   dealId: initialDealId,
   presetScooterId,
+  presetClientId,
   onClose,
 }: {
   /** Продолжить уже начатую сделку. */
   dealId?: number | null;
   /** Открыть сразу с выбранной техникой (кнопка «Продать» в списке). */
   presetScooterId?: number | null;
+  /** Клиент уже выбран — пришли из его карточки («Создать сделку»). */
+  presetClientId?: number | null;
   onClose: () => void;
 }) {
   const { data: dealsData } = useSaleDeals();
@@ -89,7 +92,9 @@ export function NewSaleWizard({
     (dealId != null && dealsData?.items.find((d) => d.id === dealId)) || null;
 
   const [step, setStep] = useState(0);
-  const [clientId, setClientId] = useState<number | null>(deal?.clientId ?? null);
+  const [clientId, setClientId] = useState<number | null>(
+    deal?.clientId ?? presetClientId ?? null,
+  );
   const [scooterId, setScooterId] = useState<number | null>(
     deal?.scooterId ?? presetScooterId ?? null,
   );

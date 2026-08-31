@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
-import { BarChart3, Handshake, Package, Plus, Users } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { BarChart3, Handshake, Package, Users } from "lucide-react";
 import { Topbar } from "@/pages/dashboard/Topbar";
+import { consumePending } from "@/app/navigationStore";
 import { ApplicationsButton } from "@/pages/applications/ApplicationsPanel";
 import { cn } from "@/lib/utils";
 import { useFleetScooters } from "@/pages/fleet/fleetStore";
@@ -40,8 +41,20 @@ export function Sales() {
   const [openScooterId, setOpenScooterId] = useState<number | null>(null);
   const [openDealId, setOpenDealId] = useState<number | null>(null);
   const [wizard, setWizard] = useState<
-    { open: false } | { open: true; dealId?: number | null; scooterId?: number | null }
+    | { open: false }
+    | {
+        open: true;
+        dealId?: number | null;
+        scooterId?: number | null;
+        clientId?: number | null;
+      }
   >({ open: false });
+
+  // Переход из «Новой сделки» → сразу открываем мастер продажи.
+  useEffect(() => {
+    const p = consumePending("sales");
+    if (p?.newSale) setWizard({ open: true, clientId: p.clientId ?? null });
+  }, []);
 
   const FLEET = useFleetScooters();
   const rentals = useRentals();
@@ -103,15 +116,10 @@ export function Sales() {
           </button>
         )}
         <div className="flex-1" />
-        {/* Заявки на покупку — рядом с созданием продажи (правка 31.08). */}
+        {/* Заявки на покупку (правка 31.08). Отдельной кнопки «Новая
+            продажа» здесь нет: сделка заводится из «Новой сделки» в шапке,
+            где выбирается её тип — иначе две кнопки об одном и том же. */}
         <ApplicationsButton purpose="sale" />
-        <button
-          type="button"
-          onClick={() => setWizard({ open: true })}
-          className="inline-flex items-center gap-1.5 rounded-full bg-emerald-600 px-4 py-2 text-[13px] font-bold text-white transition-transform active:scale-[0.98]"
-        >
-          <Plus size={15} /> Новая продажа
-        </button>
       </header>
 
       <div className="flex min-w-0 items-start gap-4">
@@ -228,6 +236,7 @@ export function Sales() {
         <NewSaleWizard
           dealId={wizard.dealId ?? null}
           presetScooterId={wizard.scooterId ?? null}
+          presetClientId={wizard.clientId ?? null}
           onClose={() => setWizard({ open: false })}
         />
       )}

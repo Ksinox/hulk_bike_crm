@@ -53,11 +53,14 @@ export const DEAL_TYPES: {
   },
 ];
 
+/** Типы сделки, которые уже работают (правка 31.08: продажи запущены). */
+const READY_TYPES: DealType[] = ["rental", "sale"];
+
 /**
  * Список типов сделки внутри выпадающего меню — общий для карточки клиента
  * (CreateDealMenu) и кнопки «Новая сделка» в шапке (NewDealButton, пункт 5).
- * Пункты открываются по мере готовности: пока живая только «Аренда»,
- * остальные помечены «скоро» (заказчик: подключать по мере готовности).
+ * Пункты открываются по мере готовности: сейчас живые «Аренда» и
+ * «Продажа», остальные помечены «скоро».
  */
 function DealTypeList({
   blacklisted,
@@ -71,8 +74,7 @@ function DealTypeList({
       {DEAL_TYPES.map((dt) => {
         const Icon = dt.icon;
         const blockedByBlacklist = dt.blockIfBlacklisted && !!blacklisted;
-        // Пока включена только «Аренда»; остальные типы — «скоро».
-        const enabled = dt.id === "rental" && !blockedByBlacklist;
+        const enabled = READY_TYPES.includes(dt.id) && !blockedByBlacklist;
         return (
           <button
             key={dt.id}
@@ -158,6 +160,10 @@ export function NewDealButton({
     if (type === "rental") {
       if (onRental) onRental();
       else setRentalOpen(true);
+    } else if (type === "sale") {
+      // Продажа оформляется мастером в своём разделе — ведём туда и сразу
+      // открываем мастер (правка 31.08).
+      navigate({ route: "sales", newSale: true });
     }
   };
 
@@ -234,9 +240,11 @@ export function CreateDealMenu({
 
   const handlePick = (type: DealType) => {
     setOpen(false);
-    // Пока включена только «Аренда» — открываем создание аренды с уже
-    // выбранным клиентом. Остальные типы сделок помечены «скоро».
     if (type === "rental") setRentalOpen(true);
+    else if (type === "sale") {
+      // Продажа — мастер в разделе «Продажи», клиент уже выбран.
+      navigate({ route: "sales", newSale: true, clientId: client.id });
+    }
   };
 
   return (

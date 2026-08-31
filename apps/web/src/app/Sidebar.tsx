@@ -28,6 +28,7 @@ import { isElectron } from "@/platform";
 import type { RouteId } from "./route";
 import { useMe } from "@/lib/api/auth";
 import { useUnreadChangelog } from "@/pages/whats-new/useUnreadChangelog";
+import { countFreshProgress } from "@/pages/progress/useFreshProgress";
 import { useApplications } from "@/lib/api/clientApplications";
 
 type NavItem = {
@@ -122,6 +123,18 @@ export function Sidebar({
     (a) => (a.purpose ?? "rent") === "rent",
   ).length;
   const newSaleApplications = newApps.filter((a) => a.purpose === "sale").length;
+  /**
+   * Правка 31.08: точка у «Развития», пока есть пункты с изменениями,
+   * которые заказчик ещё не открывал. Пересчитываем при возврате на
+   * вкладку и при смене раздела — отметки живут в localStorage.
+   */
+  const [freshProgress, setFreshProgress] = useState(countFreshProgress);
+  useEffect(() => {
+    const recount = () => setFreshProgress(countFreshProgress());
+    recount();
+    window.addEventListener("focus", recount);
+    return () => window.removeEventListener("focus", recount);
+  }, [activeId]);
   const [tooltip, setTooltip] = useState<{
     label: string;
     top: number;
@@ -267,7 +280,9 @@ export function Sidebar({
                     ? newRentApplications
                     : item.id === "sales"
                       ? newSaleApplications
-                      : 0
+                      : item.id === "progress"
+                        ? freshProgress
+                        : 0
               }
             />
           ))}
@@ -368,7 +383,9 @@ export function Sidebar({
                   ? newRentApplications
                   : item.id === "sales"
                     ? newSaleApplications
-                    : 0;
+                    : item.id === "progress"
+                      ? freshProgress
+                      : 0;
             return (
               <button
                 key={item.id}

@@ -63,14 +63,5 @@ export function useProgressSeen() {
     [isFresh],
   );
 
-  const markAllSeen = useCallback(() => {
-    const next: SeenMap = { ...load() };
-    for (const i of progressItems) {
-      if (i.updatedAt) next[i.id] = i.updatedAt;
-    }
-    save(next);
-    setSeen(next);
-  }, []);
-
-  return { isFresh, markSeen, markAllSeen, freshCount };
+  return { isFresh, markSeen, freshCount };
 }

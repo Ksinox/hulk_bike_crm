@@ -94,7 +94,29 @@ export function ProgressBoard() {
   const [open, setOpen] = useState<Set<string>>(new Set());
   // Лайтбокс: клик по скриншоту → полный экран.
   const [zoom, setZoom] = useState<StoryImage | null>(null);
-  const { isFresh, markSeen, markAllSeen, freshCount } = useProgressSeen();
+  const { isFresh, markSeen, freshCount } = useProgressSeen();
+  /**
+   * Правка 31.08 (заказчик): вместо плашки — окно при входе. Кнопка ведёт
+   * к первому непросмотренному пункту: раскрывает его и подводит к нему
+   * страницу. Отдельной «отметить всё» нет — открыл, значит посмотрел.
+   */
+  const [newsOpen, setNewsOpen] = useState(freshCount > 0);
+  const firstFresh = useMemo(
+    () => progressItems.find((i) => isFresh(i.id, i.updatedAt)) ?? null,
+    [isFresh],
+  );
+
+  const goToFresh = () => {
+    setNewsOpen(false);
+    if (!firstFresh) return;
+    setOpen((prev) => new Set(prev).add(firstFresh.id));
+    markSeen(firstFresh.id, firstFresh.updatedAt);
+    window.setTimeout(() => {
+      document
+        .getElementById(`progress-item-${firstFresh.id}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 80);
+  };
   const toggle = (id: string) =>
     setOpen((prev) => {
       const next = new Set(prev);
@@ -155,31 +177,6 @@ export function ProgressBoard() {
           <ProgressRing percent={s.percent} />
         </div>
       </header>
-
-      {/* Свежие изменения с прошлого просмотра — точки на самих пунктах,
-          здесь общий счётчик и способ погасить всё разом. */}
-      {freshCount > 0 && (
-        <div
-          className="mt-6 flex flex-wrap items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3"
-          style={{ animation: "wnFadeUp .5s ease-out both", animationDelay: "60ms" }}
-        >
-          <span className="inline-block h-2 w-2 shrink-0 rounded-full bg-amber-500" />
-          <span className="text-[13px] font-semibold text-amber-700">
-            Обновлено с прошлого просмотра: {freshCount}{" "}
-            {freshCount === 1 ? "пункт" : freshCount < 5 ? "пункта" : "пунктов"}
-          </span>
-          <span className="text-[12px] text-amber-700/70">
-            — они помечены жёлтой точкой слева; откроешь пункт — точка станет серой
-          </span>
-          <button
-            type="button"
-            onClick={markAllSeen}
-            className="ml-auto rounded-full bg-white px-3 py-1.5 text-[12px] font-bold text-amber-700 shadow-card-sm transition-colors hover:bg-amber-100"
-          >
-            Отметить всё просмотренным
-          </button>
-        </div>
-      )}
 
       {/* ─────────────── СТАТИСТИКА ─────────────── */}
       <div
@@ -292,6 +289,54 @@ export function ProgressBoard() {
           );
         })}
       </div>
+
+      {newsOpen && freshCount > 0 && (
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-ink/45 p-4 backdrop-blur-sm"
+          onClick={() => setNewsOpen(false)}
+        >
+          <div
+            className="w-full max-w-[420px] overflow-hidden rounded-[22px] bg-surface shadow-card-lg animate-modal-in"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="relative overflow-hidden bg-gradient-to-br from-ink to-[#1b2a4a] px-6 pb-7 pt-6 text-white">
+              <span className="absolute -right-10 -top-12 h-36 w-36 rounded-full bg-amber-400/20 blur-2xl" />
+              <div className="relative flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.14em] text-amber-300">
+                <span className="inline-block h-2 w-2 rounded-full bg-amber-400" />
+                Свежие правки
+              </div>
+              <div className="relative mt-2 font-display text-[26px] font-extrabold leading-tight">
+                {freshCount}{" "}
+                {freshCount === 1
+                  ? "пункт обновлён"
+                  : freshCount < 5
+                    ? "пункта обновлены"
+                    : "пунктов обновлено"}
+              </div>
+              <div className="relative mt-1.5 text-[13px] leading-relaxed text-white/70">
+                С прошлого визита правки доехали до тестовой версии. Обновлённые
+                пункты помечены жёлтой точкой — открыли пункт, точка гаснет.
+              </div>
+            </div>
+            <div className="flex flex-col gap-2 p-4">
+              <button
+                type="button"
+                onClick={goToFresh}
+                className="flex h-11 w-full items-center justify-center gap-2 rounded-full bg-blue-600 text-[14px] font-bold text-white transition-colors hover:bg-blue-700"
+              >
+                Посмотреть новые изменения
+              </button>
+              <button
+                type="button"
+                onClick={() => setNewsOpen(false)}
+                className="h-9 text-[13px] font-semibold text-muted transition-colors hover:text-ink"
+              >
+                Позже
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <footer className="mt-14 border-t border-border pt-5 text-[12px] leading-relaxed text-muted-2">
         Страница обновляется по мере выполнения работ. По завершённым пунктам
@@ -464,7 +509,7 @@ function ItemCard({
     item.story?.length
   );
   return (
-    <div className="relative">
+    <div className="relative" id={`progress-item-${item.id}`}>
       {/* Маркер на линии времени.
           Правка 31.08 (заказчик): точек было две — статусная и «свежее».
           Оставили одну: жёлтая — в пункте есть изменения с прошлого
