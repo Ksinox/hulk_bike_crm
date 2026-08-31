@@ -21,7 +21,18 @@ type Messenger = "wa" | "tg";
  * получателя → «Отправить» → открывается чат прямо с этим номером (без
  * сохранения в контакты) с уже вписанным текстом-ссылкой на анкету.
  */
-export function SendApplicationButton({ className }: { className?: string }) {
+export function SendApplicationButton({
+  className,
+  label,
+  text,
+}: {
+  className?: string;
+  /** Подпись кнопки (по умолчанию «Отправить анкету»). */
+  label?: string;
+  /** Вступление сообщения; ссылка на анкету дописывается сама.
+   *  В продаже оно про покупку, а не про аренду. */
+  text?: string;
+}) {
   const [open, setOpen] = useState(false);
   const [messenger, setMessenger] = useState<Messenger | null>(null);
   const [phone, setPhone] = useState("");
@@ -34,10 +45,11 @@ export function SendApplicationButton({ className }: { className?: string }) {
 
   const send = () => {
     if (!phone.trim() || !messenger) return;
+    // Ссылка на анкету дописывается всегда — вызывающий передаёт только
+    // вступление («…для оформления покупки…»).
+    const body = text ? `${text}${PUBLIC_FORM_URL}` : SHARE_TEXT;
     const link =
-      messenger === "wa"
-        ? whatsappLink(phone, SHARE_TEXT)
-        : telegramLink(phone, SHARE_TEXT);
+      messenger === "wa" ? whatsappLink(phone, body) : telegramLink(phone, body);
     if (link) window.open(link, "_blank", "noopener");
     close();
   };
@@ -52,7 +64,7 @@ export function SendApplicationButton({ className }: { className?: string }) {
           className,
         )}
       >
-        <Send size={15} /> Отправить анкету
+        <Send size={15} /> {label ?? "Отправить анкету"}
       </button>
 
       {open && (

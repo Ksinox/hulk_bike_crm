@@ -17,6 +17,7 @@ import { toast } from "@/lib/toast";
 import { fileUrl } from "@/lib/files";
 import { useAllClients } from "@/pages/clients/clientStore";
 import { AddClientModal } from "@/pages/clients/AddClientModal";
+import { SendApplicationButton } from "@/pages/applications/SendApplicationButton";
 import { useApiScooters } from "@/lib/api/scooters";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import {
@@ -457,8 +458,8 @@ function StepClient({
 
   return (
     <div className="flex flex-col gap-3">
-      <StepHint text="Покупатель попадёт в договор — нужны паспортные данные. Если клиента ещё нет в базе, заведите его здесь же: откроется обычная карточка клиента с анкетой." />
-      <div className="flex gap-2">
+      <StepHint text="Покупатель попадёт в договор — нужны паспортные данные. Если клиента ещё нет в базе, заведите его здесь же или отправьте ему анкету: заполненная придёт в «Заявки», оттуда одним нажатием станет клиентом." />
+      <div className="flex flex-wrap gap-2">
         <div className="relative min-w-0 flex-1">
           <Search
             size={15}
@@ -478,6 +479,11 @@ function StepClient({
         >
           <UserPlus size={15} /> Новый
         </button>
+        <SendApplicationButton
+          label="Анкета"
+          text="Здравствуйте! Для оформления покупки скутера в Халк Байк заполните, пожалуйста, короткую анкету с паспортными данными: "
+          className="h-11 shrink-0 rounded-[14px]"
+        />
       </div>
 
       {selected && !hasPassport && (
