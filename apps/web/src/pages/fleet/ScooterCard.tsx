@@ -582,7 +582,12 @@ export function ScooterCard({
             совсем, и шапка карточки выглядела сломанной. */}
         {drawerChrome && (
           <section className="overflow-hidden rounded-2xl bg-surface shadow-card-sm">
-            <div className="flex h-40 items-center justify-center bg-white p-3">
+            <div
+              className={cn(
+                "flex items-center justify-center bg-white p-3",
+                hasModelPhoto ? "h-40" : "h-24",
+              )}
+            >
               {hasModelPhoto ? (
                 <img
                   src={fileUrl(modelForPhoto?.avatarKey, { variant: "view" }) ?? ""}
@@ -596,20 +601,18 @@ export function ScooterCard({
                 </div>
               )}
             </div>
-            <div className="flex items-center justify-between gap-2 border-t border-border px-4 py-2.5">
-              <div className="min-w-0">
-                <div className="truncate font-display text-[18px] font-extrabold leading-tight text-ink">
-                  <ScooterName
-                    name={scooter.name}
-                    number={scooter.rentalSlot}
-                    exNumber={scooter.exRentalSlot}
-                    size="md"
-                  />
-                </div>
-                <div className="text-[12px] text-muted">
-                  {MODEL_LABEL[scooter.model]}
-                </div>
-              </div>
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 border-t border-border px-4 py-2">
+              <span className="font-display text-[15px] font-extrabold text-ink">
+                {MODEL_LABEL[scooter.model]}
+              </span>
+              <span className="text-[12px] text-muted">
+                {[
+                  scooter.year ? `${scooter.year} г.` : null,
+                  scooter.color,
+                ]
+                  .filter(Boolean)
+                  .join(" · ") || "год и цвет не указаны"}
+              </span>
             </div>
           </section>
         )}
