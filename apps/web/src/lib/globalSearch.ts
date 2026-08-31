@@ -187,6 +187,12 @@ export function searchEverything(
   // ── Аренды ──
   const clientById = new Map(src.clients.map((c) => [c.id, c]));
   const scooterById = new Map(src.scooters.map((s) => [s.id, s]));
+  /** «Jog #01» из базы → «Yamaha Jog №1»: решётка в интерфейсе запрещена. */
+  const techLabel = (s: ApiScooter | null | undefined): string => {
+    if (!s) return "";
+    const model = src.modelName?.(s.modelId) ?? MODEL_LABELS[s.model] ?? s.model;
+    return `${model}${s.rentalSlot != null ? ` №${s.rentalSlot}` : ""}`;
+  };
   for (const r of src.rentals) {
     const cl = clientById.get(r.clientId);
     const sc = r.scooterId != null ? scooterById.get(r.scooterId) : null;
@@ -194,7 +200,8 @@ export function searchEverything(
       [idRank(r.id, q), `аренда #${r.id}`],
       [textRank(cl?.name, q), cl?.name ?? ""],
       [phoneRank(cl?.phone, q), cl?.phone ?? ""],
-      [textRank(sc?.name, q), sc?.name ?? ""],
+      [textRank(sc?.name, q), techLabel(sc)],
+      [textRank(techLabel(sc), q), techLabel(sc)],
       [idRank(sc?.vin, q), `VIN ${sc?.vin ?? ""}`],
     ]);
     if (!hit) continue;
@@ -202,7 +209,7 @@ export function searchEverything(
       kind: "rental",
       id: r.id,
       title: `Аренда #${String(r.id).padStart(4, "0")}`,
-      subtitle: `${cl?.name ?? "—"} · ${sc?.name ?? "без техники"}`,
+      subtitle: `${cl?.name ?? "—"} · ${techLabel(sc) || "без техники"}`,
       matched: hit.matched,
       rank: hit.rank,
       weight: r.status === "active" ? 2 : 0,
