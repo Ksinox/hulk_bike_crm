@@ -814,7 +814,7 @@ export function ScooterCard({
                     drawerChrome ? "text-[15px]" : "text-[18px]",
                   )}
                 >
-                  Технические характеристики
+                  {drawerChrome ? "Покупка и стоимость" : "Технические характеристики"}
                 </h2>
               </div>
               {scooter.vin && (
