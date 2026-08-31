@@ -1,11 +1,10 @@
-import { useState, type ReactNode } from "react";
-import { ArrowDownRight, ArrowUpRight, CalendarRange } from "lucide-react";
+import type { ReactNode } from "react";
+import { ArrowDownRight, ArrowUpRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { DateRangeFilter } from "@/pages/clients/DateRangeFilter";
 import {
   AVATAR_CLASS,
   initials,
-  isoDate,
-  presetRange,
   type PeriodPreset,
   type Range,
 } from "./salesUtils";
@@ -136,8 +135,11 @@ const PRESETS: { id: PeriodPreset; label: string }[] = [
 ];
 
 /**
- * Переключатель периода: пресеты + произвольный диапазон. Диапазон
- * раскрывается по кнопке — в свёрнутом виде не занимает место.
+ * Переключатель периода: пресеты + произвольный диапазон.
+ *
+ * Правка 31.08 (заказчик): произвольный период выбирается ТЕМ ЖЕ
+ * календарём, что и в «Клиентах» и «Арендах» (DateRangeFilter) — люди к
+ * нему привыкли, свой велосипед из двух полей тут не нужен.
  */
 export function PeriodPicker({
   preset,
@@ -148,7 +150,6 @@ export function PeriodPicker({
   custom: { from: string; to: string };
   onChange: (preset: PeriodPreset, custom: { from: string; to: string }) => void;
 }) {
-  const [open, setOpen] = useState(preset === "custom");
   return (
     <div className="flex flex-wrap items-center gap-2">
       <div className="flex gap-1 rounded-full bg-surface p-1 shadow-card-sm">
@@ -156,10 +157,7 @@ export function PeriodPicker({
           <button
             key={p.id}
             type="button"
-            onClick={() => {
-              setOpen(false);
-              onChange(p.id, custom);
-            }}
+            onClick={() => onChange(p.id, { from: "", to: "" })}
             className={cn(
               "rounded-full px-3 py-1.5 text-[12.5px] font-semibold transition-colors",
               preset === p.id ? "bg-ink text-white" : "text-muted hover:text-ink",
@@ -168,46 +166,21 @@ export function PeriodPicker({
             {p.label}
           </button>
         ))}
-        <button
-          type="button"
-          onClick={() => {
-            const next = !open;
-            setOpen(next);
-            if (next) {
-              const r = presetRange("month");
-              onChange("custom", {
-                from: custom.from || isoDate(r.from),
-                to: custom.to || isoDate(r.to),
-              });
-            } else {
-              onChange("month", custom);
-            }
-          }}
-          className={cn(
-            "inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-[12.5px] font-semibold transition-colors",
-            preset === "custom" ? "bg-ink text-white" : "text-muted hover:text-ink",
-          )}
-        >
-          <CalendarRange size={13} /> Период
-        </button>
       </div>
-      {open && (
-        <div className="flex items-center gap-2 rounded-full bg-surface px-3 py-1.5 shadow-card-sm">
-          <input
-            type="date"
-            value={custom.from}
-            onChange={(e) => onChange("custom", { ...custom, from: e.target.value })}
-            className="h-7 rounded-lg border border-border bg-surface px-2 text-[12.5px] tabular-nums outline-none focus:border-emerald-500"
-          />
-          <span className="text-[12px] text-muted-2">—</span>
-          <input
-            type="date"
-            value={custom.to}
-            onChange={(e) => onChange("custom", { ...custom, to: e.target.value })}
-            className="h-7 rounded-lg border border-border bg-surface px-2 text-[12.5px] tabular-nums outline-none focus:border-emerald-500"
-          />
-        </div>
-      )}
+      <DateRangeFilter
+        from={custom.from || null}
+        to={custom.to || null}
+        placeholder="Свой период"
+        titleApplied="Произвольный период продаж"
+        titleNotApplied="Выбрать произвольный период"
+        onChange={({ from, to }) => {
+          if (from || to) {
+            onChange("custom", { from: from ?? "", to: to ?? "" });
+          } else {
+            onChange("month", { from: "", to: "" });
+          }
+        }}
+      />
     </div>
   );
 }

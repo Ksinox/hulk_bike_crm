@@ -14,6 +14,33 @@ const PUBLIC_FORM_URL =
 const SHARE_INTRO =
   "Здравствуйте! Для оформления аренды скутера в Халк Байк заполните, пожалуйста, короткую анкету: ";
 
+/** Адрес арендной анкеты — нужен и меню «Заявки». */
+export const RENT_FORM_URL = PUBLIC_FORM_URL;
+export const RENT_SHARE_INTRO = SHARE_INTRO;
+
+/** Копирование с запасным путём для старых браузеров. */
+export async function copyToClipboard(value: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(value);
+    return true;
+  } catch {
+    const ta = document.createElement("textarea");
+    ta.value = value;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try {
+      ok = document.execCommand("copy");
+    } catch {
+      ok = false;
+    }
+    document.body.removeChild(ta);
+    return ok;
+  }
+}
+
 type Messenger = "wa" | "tg" | "max";
 
 /**
@@ -31,6 +58,9 @@ export function SendApplicationButton({
   label,
   text,
   formUrl,
+  openWith,
+  hideTrigger,
+  onClosed,
 }: {
   className?: string;
   /** Подпись кнопки (по умолчанию «Отправить анкету»). */
@@ -40,9 +70,14 @@ export function SendApplicationButton({
   text?: string;
   /** Адрес анкеты, если он не стандартный (напр. анкета покупателя). */
   formUrl?: string;
+  /** Открыть сразу на конкретном канале (из меню «Заявки»). */
+  openWith?: Messenger | null;
+  /** Управляемый режим: кнопку не рисуем, окно показывает родитель. */
+  hideTrigger?: boolean;
+  onClosed?: () => void;
 }) {
-  const [open, setOpen] = useState(false);
-  const [messenger, setMessenger] = useState<Messenger | null>(null);
+  const [open, setOpen] = useState(!!hideTrigger);
+  const [messenger, setMessenger] = useState<Messenger | null>(openWith ?? null);
   const [phone, setPhone] = useState("");
   const [copied, setCopied] = useState<"link" | "text" | null>(null);
 
@@ -54,28 +89,15 @@ export function SendApplicationButton({
     setMessenger(null);
     setPhone("");
     setCopied(null);
+    onClosed?.();
   };
 
   const copy = async (what: "link" | "text") => {
     const value = what === "link" ? url : body;
-    try {
-      await navigator.clipboard.writeText(value);
-    } catch {
-      // Старые браузеры и небезопасный контекст — запасной путь.
-      const ta = document.createElement("textarea");
-      ta.value = value;
-      ta.style.position = "fixed";
-      ta.style.opacity = "0";
-      document.body.appendChild(ta);
-      ta.select();
-      try {
-        document.execCommand("copy");
-      } catch {
-        toast.error("Не удалось скопировать — выделите ссылку вручную");
-        document.body.removeChild(ta);
-        return;
-      }
-      document.body.removeChild(ta);
+    const ok = await copyToClipboard(value);
+    if (!ok) {
+      toast.error("Не удалось скопировать — выделите ссылку вручную");
+      return;
     }
     setCopied(what);
     toast.success(what === "link" ? "Ссылка скопирована" : "Текст скопирован");
@@ -92,16 +114,18 @@ export function SendApplicationButton({
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className={cn(
-          "inline-flex items-center gap-1.5 rounded-full bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-blue-700",
-          className,
-        )}
-      >
-        <Send size={15} /> {label ?? "Отправить анкету"}
-      </button>
+      {!hideTrigger && (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-full bg-blue-600 px-4 py-2 text-[13px] font-semibold text-white transition-colors hover:bg-blue-700",
+            className,
+          )}
+        >
+          <Send size={15} /> {label ?? "Отправить анкету"}
+        </button>
+      )}
 
       {open && (
         <div

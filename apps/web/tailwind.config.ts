@@ -144,6 +144,11 @@ const config: Config = {
           "0%": { opacity: "1", transform: "translateY(0)" },
           "100%": { opacity: "0", transform: "translateY(-24px)" },
         },
+        // «Погружение» в раздел: экран влетает вперёд, а не выезжает сбоку.
+        "dive-in": {
+          "0%": { opacity: "0", transform: "scale(0.94)" },
+          "100%": { opacity: "1", transform: "scale(1)" },
+        },
         "bar-grow": {
           "0%": { transform: "scaleY(0)", opacity: "0.4" },
           "100%": { transform: "scaleY(1)", opacity: "1" },
@@ -169,6 +174,7 @@ const config: Config = {
         "pop-in": "pop-in 200ms cubic-bezier(0.22, 1, 0.36, 1) both",
         // Столбик графика вырастает снизу — «Продажи», динамика.
         "bar-grow": "bar-grow 520ms cubic-bezier(0.22, 1, 0.36, 1) both",
+        "dive-in": "dive-in 260ms cubic-bezier(0.22, 1, 0.36, 1) both",
       },
     },
   },

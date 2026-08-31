@@ -27,6 +27,7 @@ import {
 } from "./SalesUI";
 import { SalesChart } from "./SalesChart";
 import {
+  BUCKET_AXIS,
   deltaPct,
   fmt,
   fmtCompact,
@@ -50,19 +51,21 @@ import {
  * динамика — и кто из менеджеров и какие модели тянут результат.
  */
 
-const BUCKETS: { id: Bucket; label: string }[] = [
-  { id: "hour", label: "Часы" },
-  { id: "day", label: "Дни" },
-  { id: "week", label: "Недели" },
-  { id: "month", label: "Месяцы" },
-  { id: "year", label: "Годы" },
-];
-
-/** Разрез по умолчанию под выбранный период — чтобы не получить 365 столбиков. */
-function defaultBucket(preset: PeriodPreset): Bucket {
+/**
+ * Разрез графика — следствие выбранного периода, а не отдельный
+ * переключатель (правка 31.08): «Сегодня» рисуем по часам, «Неделя» и
+ * «Месяц» — по дням, «Год» — по месяцам. Для произвольного диапазона
+ * выбираем по его длине. Два переключателя рядом были задвоением.
+ */
+function bucketFor(preset: PeriodPreset, r: Range): Bucket {
   if (preset === "today") return "hour";
   if (preset === "year") return "month";
-  return "day";
+  if (preset !== "custom") return "day";
+  const days = Math.max(1, (r.to.getTime() - r.from.getTime()) / 86_400_000);
+  if (days <= 2) return "hour";
+  if (days <= 60) return "day";
+  if (days <= 400) return "month";
+  return "year";
 }
 
 export function SalesOverview({
@@ -85,7 +88,6 @@ export function SalesOverview({
   const [preset, setPreset] = useState<PeriodPreset>("month");
   const [custom, setCustom] = useState({ from: "", to: "" });
   const [managerId, setManagerId] = useState<number | null>(null);
-  const [bucket, setBucket] = useState<Bucket>("day");
   const [planOpen, setPlanOpen] = useState(false);
 
   const range: Range = useMemo(() => {
@@ -113,6 +115,7 @@ export function SalesOverview({
     return { units: list.length, price, expectedProfit: price - cost };
   }, [scooters]);
 
+  const bucket = useMemo(() => bucketFor(preset, range), [preset, range]);
   const dyn = useMemo(() => series(sold, range, bucket), [sold, range, bucket]);
 
   const mRating = useMemo(() => managerRating(sold, managers), [sold, managers]);
@@ -133,9 +136,6 @@ export function SalesOverview({
           onChange={(p, c) => {
             setPreset(p);
             setCustom(c);
-            // Разрез подстраиваем под период: за день интереснее по часам,
-            // за год — по месяцам, иначе получим 365 столбиков.
-            setBucket(defaultBucket(p));
           }}
         />
         <div className="flex-1" />
@@ -178,7 +178,7 @@ export function SalesOverview({
             suffix="ед."
             hint={
               stock.units
-                ? `на ${fmtCompact(stock.price)} ₽ · прибыль ~${fmtCompact(stock.expectedProfit)} ₽`
+                ? `сейчас · на ${fmtCompact(stock.price)} ₽ · прибыль ~${fmtCompact(stock.expectedProfit)} ₽`
                 : "техники в продаже нет"
             }
             icon={<Package size={13} />}
@@ -229,21 +229,9 @@ export function SalesOverview({
           title="Динамика продаж"
           hint={range.label}
           action={
-            <div className="flex gap-1 rounded-full bg-surface-soft p-0.5">
-              {BUCKETS.map((b) => (
-                <button
-                  key={b.id}
-                  type="button"
-                  onClick={() => setBucket(b.id)}
-                  className={cn(
-                    "rounded-full px-2.5 py-1 text-[11.5px] font-semibold transition-colors",
-                    bucket === b.id ? "bg-surface text-ink shadow-card-sm" : "text-muted",
-                  )}
-                >
-                  {b.label}
-                </button>
-              ))}
-            </div>
+            <span className="rounded-full bg-surface-soft px-2.5 py-1 text-[11px] font-semibold text-muted-2">
+              {BUCKET_AXIS[bucket]}
+            </span>
           }
         >
           <div className="flex flex-1 flex-col justify-center p-4">
