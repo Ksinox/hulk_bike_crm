@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { BarChart3, Handshake, Package, Users } from "lucide-react";
 import { Topbar } from "@/pages/dashboard/Topbar";
-import { consumePending } from "@/app/navigationStore";
+import { consumePending, onNavigate } from "@/app/navigationStore";
 import { ApplicationsButton } from "@/pages/applications/ApplicationsPanel";
 import { cn } from "@/lib/utils";
 import { useFleetScooters } from "@/pages/fleet/fleetStore";
@@ -50,10 +50,22 @@ export function Sales() {
       }
   >({ open: false });
 
-  // Переход из «Новой сделки» → сразу открываем мастер продажи.
+  /**
+   * Переход из «Новой сделки» → сразу открываем мастер продажи.
+   *
+   * Читаем и pending при монтировании, и события навигации: если мы УЖЕ
+   * в «Продажах», раздел не перемонтируется, и одного эффекта на монтаж
+   * не хватало — по кнопке ничего не происходило (баг 31.08).
+   */
   useEffect(() => {
     const p = consumePending("sales");
     if (p?.newSale) setWizard({ open: true, clientId: p.clientId ?? null });
+    return onNavigate((req) => {
+      if (req.route === "sales" && req.newSale) {
+        consumePending("sales");
+        setWizard({ open: true, clientId: req.clientId ?? null });
+      }
+    });
   }, []);
 
   const FLEET = useFleetScooters();

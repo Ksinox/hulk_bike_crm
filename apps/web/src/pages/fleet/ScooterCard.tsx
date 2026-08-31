@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { EntityNotes } from "@/components/EntityNotes";
 import {
   ArrowLeft,
@@ -361,15 +361,19 @@ export function ScooterCard({
   const [headerH, setHeaderH] = useState(46);
   const switchedAt = useRef(0);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = headerRef.current;
     if (!el || !drawerChrome) return;
     const measure = () => setHeaderH(el.getBoundingClientRect().height);
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(el);
-    return () => ro.disconnect();
-  }, [drawerChrome]);
+    window.addEventListener("resize", measure);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [drawerChrome, tab]);
 
   const visibleTabs = useMemo(
     () => DRAWER_TABS.filter((t) => t.id !== "econ" || role === "director"),
@@ -382,9 +386,12 @@ export function ScooterCard({
     const onWheel = (e: WheelEvent) => {
       const now = Date.now();
       if (now - switchedAt.current < 600) return;
+      // Порог в 4px и требование, чтобы прокрутка вообще существовала:
+      // на коротких разделах «низ» наступал сразу и раздел проскакивал.
+      const scrollable = el.scrollHeight - el.clientHeight > 8;
       const atBottom =
-        el.scrollTop + el.clientHeight >= el.scrollHeight - 2;
-      const atTop = el.scrollTop <= 0;
+        scrollable && el.scrollTop + el.clientHeight >= el.scrollHeight - 4;
+      const atTop = !scrollable || el.scrollTop <= 4;
       const idx = visibleTabs.findIndex((t) => t.id === tab);
       if (e.deltaY > 0 && atBottom && idx < visibleTabs.length - 1) {
         switchedAt.current = now;
@@ -568,15 +575,15 @@ export function ScooterCard({
           Правка 31.08 (заказчик): вместо горизонтальных вкладок с нижним
           скроллом — боковая панель с иконками. Все разделы видны сразу,
           ничего не «уезжает» за край, переход между ними анимирован. */}
-      <div
-        className={cn(
-          drawerChrome && "flex min-h-0 flex-1 flex-row-reverse gap-2.5",
-        )}
-      >
+      {/* Без flex-1/min-h-0: с ними обёртка занимала ровно высоту дровера,
+          переполнение не попадало в область прокрутки, и карточка считала
+          себя долистанной раньше времени — раздел переключался, хотя
+          контент ещё не показали (баг 31.08). */}
+      <div className={cn(drawerChrome && "flex flex-row-reverse gap-2.5")}>
         {drawerChrome && (
           <nav
             className="sticky z-10 flex w-[62px] shrink-0 flex-col gap-1 self-start"
-            style={{ top: headerH }}
+            style={{ top: Math.max(0, headerH - 12) }}
           >
             {visibleTabs.map((t) => {
               const count =
@@ -671,49 +678,46 @@ export function ScooterCard({
               </div>
 
               <div className="flex min-w-0 flex-1 flex-col gap-2">
-                <div className="min-w-0">
-                  <div className="truncate font-display text-[16px] font-extrabold leading-tight text-ink">
-                    {MODEL_LABEL[scooter.model]}
+                <div className="flex min-w-0 items-center gap-2">
+                  <div className="min-w-0">
+                    <div className="truncate font-display text-[16px] font-extrabold leading-tight text-ink">
+                      {MODEL_LABEL[scooter.model]}
+                    </div>
+                    <div className="text-[11.5px] text-muted">
+                      {[scooter.year ? `${scooter.year} г.` : null, scooter.color]
+                        .filter(Boolean)
+                        .join(" · ") || "год и цвет не указаны"}
+                    </div>
                   </div>
-                  <div className="text-[11.5px] text-muted">
-                    {[scooter.year ? `${scooter.year} г.` : null, scooter.color]
-                      .filter(Boolean)
-                      .join(" · ") || "год и цвет не указаны"}
-                  </div>
+                  {/* Номер в аренде — бейджем у названия (правка 31.08):
+                      отдельная строка ради одной цифры не нужна. */}
+                  <span className="ml-auto shrink-0 text-right">
+                    {scooter.rentalSlot != null ? (
+                      <ScooterNumberBadge number={scooter.rentalSlot} size="md" />
+                    ) : (
+                      <span className="rounded-full bg-surface-soft px-2 py-0.5 text-[10px] font-semibold text-muted-2">
+                        без номера
+                      </span>
+                    )}
+                  </span>
                 </div>
 
                 <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
                   <MiniSpec
-                    label={sameVinFrame ? "VIN / рама" : "VIN"}
-                    value={scooter.vin ?? scooter.frameNumber ?? "—"}
+                    label="VIN"
+                    value={scooter.vin ?? "—"}
                     hint={scooter.uid ? `ID ${scooter.uid}` : undefined}
                     mono
-                    wide
                   />
-                  {!sameVinFrame && (
-                    <MiniSpec
-                      label="Номер рамы"
-                      value={scooter.frameNumber ?? "—"}
-                      mono
-                      wide
-                    />
-                  )}
+                  <MiniSpec
+                    label="Номер рамы"
+                    value={scooter.frameNumber ?? scooter.vin ?? "—"}
+                    mono
+                  />
                   <MiniSpec
                     label="Двигатель"
                     value={scooter.engineNo ?? "—"}
                     mono
-                  />
-                  <MiniSpec
-                    label="Номер в аренде"
-                    value={
-                      scooter.rentalSlot != null
-                        ? String(scooter.rentalSlot)
-                        : "—"
-                    }
-                  />
-                  <MiniSpec
-                    label="Принадлежность"
-                    value={scooter.isPartner ? "Партнёрская" : "Наша"}
                   />
                 </div>
               </div>

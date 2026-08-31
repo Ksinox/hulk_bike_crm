@@ -443,13 +443,27 @@ export function SalesOverview({
         {sold.length > 0 && (
           <SectionCard
             title="Последние продажи"
-            hint={`${sold.length} за период`}
+            hint={`${sold.length} за период · сверху свежие`}
             className="xl:col-span-2 2xl:col-span-1"
           >
-            <div className="grid gap-2 p-3 sm:grid-cols-2 2xl:grid-cols-1">
-              {sold.slice(0, 6).map((d) => (
-                <RecentRow key={d.id} deal={d} onOpen={() => onOpenDeal(d.id)} />
-              ))}
+            {/* Лентой сверху вниз: свежая продажа первая, у каждой дата и
+                время. Сеткой в две колонки хронология не читалась вовсе. */}
+            <div className="flex flex-col">
+              {[...sold]
+                .sort(
+                  (a, b) =>
+                    new Date(b.soldAt ?? b.createdAt).getTime() -
+                    new Date(a.soldAt ?? a.createdAt).getTime(),
+                )
+                .slice(0, 6)
+                .map((d, i) => (
+                  <RecentRow
+                    key={d.id}
+                    deal={d}
+                    latest={i === 0}
+                    onOpen={() => onOpenDeal(d.id)}
+                  />
+                ))}
             </div>
           </SectionCard>
         )}
@@ -466,16 +480,41 @@ export function SalesOverview({
   );
 }
 
-function RecentRow({ deal, onOpen }: { deal: SaleDeal; onOpen: () => void }) {
+function RecentRow({
+  deal,
+  latest,
+  onOpen,
+}: {
+  deal: SaleDeal;
+  /** Самая свежая продажа периода — помечаем, чтобы не искать глазами. */
+  latest?: boolean;
+  onOpen: () => void;
+}) {
   return (
     <button
       type="button"
       onClick={onOpen}
-      className="flex items-center gap-3 rounded-xl bg-surface-soft/60 px-3 py-2.5 text-left transition-colors hover:bg-surface-soft"
+      className="flex items-start gap-3 border-b border-border/60 px-4 py-2.5 text-left transition-colors last:border-b-0 hover:bg-surface-soft/60"
     >
+      {/* Колонка времени — по ней и читается хронология. */}
+      <span className="w-[86px] shrink-0 pt-0.5">
+        <span className="block text-[11.5px] font-semibold tabular-nums text-ink-2">
+          {saleWhen(deal.soldAt ?? deal.createdAt)}
+        </span>
+        {latest && (
+          <span className="mt-0.5 inline-block rounded-full bg-emerald-50 px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wider text-emerald-700">
+            последняя
+          </span>
+        )}
+      </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[13px] font-semibold text-ink">
           {deal.modelName || deal.scooterName || "Техника"}
+          {deal.vin && (
+            <span className="ml-1.5 font-mono text-[11px] font-normal text-muted-2">
+              {deal.vin}
+            </span>
+          )}
         </span>
         <span className="block truncate text-[11.5px] text-muted">
           {deal.clientName ?? "клиент не указан"}
@@ -492,6 +531,24 @@ function RecentRow({ deal, onOpen }: { deal: SaleDeal; onOpen: () => void }) {
       </span>
     </button>
   );
+}
+
+/** «сегодня 14:20» / «вчера 09:05» / «28 авг 17:40». */
+function saleWhen(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  const time = d.toLocaleTimeString("ru-RU", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  const day = new Date(d);
+  day.setHours(0, 0, 0, 0);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const diff = Math.round((today.getTime() - day.getTime()) / 86_400_000);
+  if (diff === 0) return `сегодня ${time}`;
+  if (diff === 1) return `вчера ${time}`;
+  return `${d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" })} ${time}`;
 }
 
 /** Диалог «Задать план» — четыре числа на месяц. */

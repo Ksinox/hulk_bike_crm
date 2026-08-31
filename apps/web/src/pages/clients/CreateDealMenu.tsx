@@ -23,6 +23,8 @@ export const DEAL_TYPES: {
   icon: LucideIcon;
   blockIfBlacklisted: boolean;
 }[] = [
+  // Порядок: сначала то, что работает, потом «скоро» (правка 31.08) —
+  // вперемешку активные и серые пункты читались хуже.
   {
     id: "rental",
     label: "Аренда",
@@ -31,17 +33,17 @@ export const DEAL_TYPES: {
     blockIfBlacklisted: true,
   },
   {
-    id: "buyout",
-    label: "Выкуп",
-    hint: "Скутер переходит клиенту с еженедельными платежами",
-    icon: CreditCard,
-    blockIfBlacklisted: true,
-  },
-  {
     id: "sale",
     label: "Продажа",
     hint: "Продать скутер клиенту — разовая оплата",
     icon: Wallet,
+    blockIfBlacklisted: true,
+  },
+  {
+    id: "buyout",
+    label: "Выкуп",
+    hint: "Скутер переходит клиенту с еженедельными платежами",
+    icon: CreditCard,
     blockIfBlacklisted: true,
   },
   {
