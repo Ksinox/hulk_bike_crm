@@ -15,6 +15,10 @@ import {
   Handshake,
   History,
   Wrench,
+  Activity,
+  FileText,
+  Receipt,
+  TrendingUp,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -74,14 +78,18 @@ type TabId =
  * статус и активная аренда; «Экономика» — окупаемость (только директору);
  * дальше прежние разделы. В полноэкранном режиме порядок прежний.
  */
-const DRAWER_TABS: { id: TabId; label: string }[] = [
-  { id: "overview", label: "Обзор" },
-  { id: "econ", label: "Экономика" },
-  { id: "history", label: "Аренды" },
-  { id: "timeline", label: "События" },
-  { id: "repairs", label: "Ремонты" },
-  { id: "expenses", label: "Расходы" },
-  { id: "docs", label: "Документы" },
+const DRAWER_TABS: {
+  id: TabId;
+  label: string;
+  icon: typeof Info;
+}[] = [
+  { id: "overview", label: "Обзор", icon: Info },
+  { id: "econ", label: "Деньги", icon: TrendingUp },
+  { id: "history", label: "Аренды", icon: History },
+  { id: "timeline", label: "События", icon: Activity },
+  { id: "repairs", label: "Ремонты", icon: Wrench },
+  { id: "expenses", label: "Расходы", icon: Receipt },
+  { id: "docs", label: "Файлы", icon: FileText },
 ];
 
 const TABS: { id: TabId; label: string; count?: number }[] = [
@@ -494,52 +502,68 @@ export function ScooterCard({
         )}
       </header>
 
-      {/* ======== ВКЛАДКИ ДРОВЕРА ======== */}
-      {drawerChrome && (
-        <div className="scrollbar-thin -mx-3 flex gap-1 overflow-x-auto border-b border-border px-3">
-          {DRAWER_TABS.filter(
-            (t) => t.id !== "econ" || role === "director",
-          ).map((t) => {
-            const count =
-              t.id === "history"
-                ? scooterRentals.length
-                : t.id === "repairs"
-                  ? repairsCount
-                  : t.id === "expenses"
-                    ? expensesCount
-                    : 0;
-            return (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => setTab(t.id)}
-                className={cn(
-                  "relative -mb-px inline-flex shrink-0 items-center gap-1.5 px-2.5 py-2 text-[12.5px] font-semibold transition-colors",
-                  tab === t.id
-                    ? "border-b-2 border-blue-600 text-blue-600"
-                    : "border-b-2 border-transparent text-muted hover:text-ink",
-                )}
-              >
-                {t.label}
-                {count > 0 && (
-                  <span
-                    className={cn(
-                      "inline-flex h-4 min-w-[16px] items-center justify-center rounded-full px-1 text-[10px] font-bold tabular-nums",
-                      tab === t.id
-                        ? "bg-blue-50 text-blue-700"
-                        : "bg-surface-soft text-muted",
-                    )}
-                  >
-                    {count}
+      {/* ======== РАЗДЕЛЫ КАРТОЧКИ ========
+          Правка 31.08 (заказчик): вместо горизонтальных вкладок с нижним
+          скроллом — боковая панель с иконками. Все разделы видны сразу,
+          ничего не «уезжает» за край, переход между ними анимирован. */}
+      <div className={cn(drawerChrome && "flex min-h-0 flex-1 gap-2.5")}>
+        {drawerChrome && (
+          <nav className="sticky top-[46px] z-10 flex w-[62px] shrink-0 flex-col gap-1 self-start">
+            {DRAWER_TABS.filter(
+              (t) => t.id !== "econ" || role === "director",
+            ).map((t) => {
+              const count =
+                t.id === "history"
+                  ? scooterRentals.length
+                  : t.id === "repairs"
+                    ? repairsCount
+                    : t.id === "expenses"
+                      ? expensesCount
+                      : 0;
+              const active = tab === t.id;
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setTab(t.id)}
+                  title={t.label}
+                  className={cn(
+                    "relative flex flex-col items-center gap-0.5 rounded-[14px] px-1 py-2 transition-colors",
+                    active
+                      ? "bg-ink text-white"
+                      : "text-muted hover:bg-surface-soft hover:text-ink",
+                  )}
+                >
+                  <t.icon size={17} />
+                  <span className="text-[9.5px] font-semibold leading-tight">
+                    {t.label}
                   </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-      )}
+                  {count > 0 && (
+                    <span
+                      className={cn(
+                        "absolute right-1 top-1 inline-flex h-[15px] min-w-[15px] items-center justify-center rounded-full px-[3px] text-[9px] font-bold tabular-nums",
+                        active ? "bg-white/20 text-white" : "bg-surface-soft text-muted-2",
+                      )}
+                    >
+                      {count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </nav>
+        )}
 
-      {/* ======== MAIN GRID ======== */}
+        {/* Содержимое выбранного раздела. key — чтобы при переключении
+            секция появлялась с анимацией, а не подменялась рывком. */}
+        <div
+          key={drawerChrome ? tab : "full"}
+          className={cn(
+            drawerChrome
+              ? "flex min-w-0 flex-1 flex-col gap-3 animate-slide-in-down [&>*]:shrink-0"
+              : "flex min-w-0 flex-1 flex-col gap-4",
+          )}
+        >
       {(!drawerChrome || tab === "overview") && (
       <div
         className={cn(
@@ -1303,6 +1327,9 @@ export function ScooterCard({
           <Empty text="По этому скутеру не было инцидентов" />
         )}
         {tab === "docs" && <ScooterDocumentsTab scooter={scooter} />}
+      </div>
+
+        </div>
       </div>
 
       {editOpen && (
