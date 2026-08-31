@@ -86,7 +86,10 @@ export function fmtCompact(n: number): string {
 export function presetRange(preset: PeriodPreset, now = new Date()): Range {
   switch (preset) {
     case "today":
-      return { from: startOfDay(now), to: endOfDay(now), label: "сегодня" };
+      // Правый край графика — текущий момент, а не конец суток: рисовать
+      // пустые часы «из будущего» бессмысленно (требование заказчика —
+      // последний столбик всегда «сейчас»).
+      return { from: startOfDay(now), to: new Date(now), label: "сегодня" };
     case "week": {
       // Понедельник текущей недели.
       const dow = (now.getDay() + 6) % 7;
