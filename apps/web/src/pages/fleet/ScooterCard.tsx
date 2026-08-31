@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { EntityNotes } from "@/components/EntityNotes";
 import {
   ArrowLeft,
@@ -347,12 +347,70 @@ export function ScooterCard({
     ? cardModels.find((m) => m.id === scooter.modelId)
     : cardModels.find((m) => m.name.toLowerCase().includes(scooter.model));
   const hasModelPhoto = !!modelForPhoto?.avatarKey;
+
+  /**
+   * Правки 31.08 (заказчик):
+   *   • панель разделов фиксируется ПОД шапкой — раньше она уезжала под
+   *     неё при прокрутке. Высоту шапки меряем, она плавает: на узком
+   *     дровере кнопки переносятся на вторую строку;
+   *   • докрутил раздел до конца и продолжил крутить — переходим к
+   *     следующему; так колесом можно пройти всю карточку насквозь.
+   */
+  const scrollRef = useRef<HTMLElement | null>(null);
+  const headerRef = useRef<HTMLElement | null>(null);
+  const [headerH, setHeaderH] = useState(46);
+  const switchedAt = useRef(0);
+
+  useEffect(() => {
+    const el = headerRef.current;
+    if (!el || !drawerChrome) return;
+    const measure = () => setHeaderH(el.getBoundingClientRect().height);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [drawerChrome]);
+
+  const visibleTabs = useMemo(
+    () => DRAWER_TABS.filter((t) => t.id !== "econ" || role === "director"),
+    [role],
+  );
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || !drawerChrome) return;
+    const onWheel = (e: WheelEvent) => {
+      const now = Date.now();
+      if (now - switchedAt.current < 600) return;
+      const atBottom =
+        el.scrollTop + el.clientHeight >= el.scrollHeight - 2;
+      const atTop = el.scrollTop <= 0;
+      const idx = visibleTabs.findIndex((t) => t.id === tab);
+      if (e.deltaY > 0 && atBottom && idx < visibleTabs.length - 1) {
+        switchedAt.current = now;
+        setTab(visibleTabs[idx + 1]!.id);
+        el.scrollTop = 0;
+      } else if (e.deltaY < 0 && atTop && idx > 0) {
+        switchedAt.current = now;
+        setTab(visibleTabs[idx - 1]!.id);
+        // Предыдущий раздел открываем с конца — как будто листаем назад.
+        window.setTimeout(() => {
+          if (scrollRef.current) {
+            scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+          }
+        }, 30);
+      }
+    };
+    el.addEventListener("wheel", onWheel, { passive: true });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [drawerChrome, tab, visibleTabs]);
   /** VIN и номер рамы у скутера — одно клеймо; в базе они дублируются. */
   const sameVinFrame =
     (scooter.vin ?? "").trim() === (scooter.frameNumber ?? "").trim();
 
   return (
     <main
+      ref={scrollRef}
       className={cn(
         drawerChrome
           ? // Дровер: своя прокрутка, компактные отступы, sticky-шапка ниже.
@@ -368,6 +426,7 @@ export function ScooterCard({
 
       {/* ======== HEADER ======== */}
       <header
+        ref={headerRef}
         className={cn(
           "flex flex-wrap items-center",
           drawerChrome
@@ -509,12 +568,17 @@ export function ScooterCard({
           Правка 31.08 (заказчик): вместо горизонтальных вкладок с нижним
           скроллом — боковая панель с иконками. Все разделы видны сразу,
           ничего не «уезжает» за край, переход между ними анимирован. */}
-      <div className={cn(drawerChrome && "flex min-h-0 flex-1 gap-2.5")}>
+      <div
+        className={cn(
+          drawerChrome && "flex min-h-0 flex-1 flex-row-reverse gap-2.5",
+        )}
+      >
         {drawerChrome && (
-          <nav className="sticky top-[46px] z-10 flex w-[62px] shrink-0 flex-col gap-1 self-start">
-            {DRAWER_TABS.filter(
-              (t) => t.id !== "econ" || role === "director",
-            ).map((t) => {
+          <nav
+            className="sticky z-10 flex w-[62px] shrink-0 flex-col gap-1 self-start"
+            style={{ top: headerH }}
+          >
+            {visibleTabs.map((t) => {
               const count =
                 t.id === "history"
                   ? scooterRentals.length
@@ -576,93 +640,145 @@ export function ScooterCard({
         )}
       >
         {/* ========== ОБЛОЖКА (дровер) ==========
-            Правка 31.08 (заказчик): как на телефоне — сверху фото модели,
-            под ним имя, модель и статус. Раньше в дровере фото жалось в
-            узкую колонку слева, а если у модели его нет — пропадало
-            совсем, и шапка карточки выглядела сломанной. */}
+            Правка 31.08 (заказчик): фото модели слева — скутеры снимают
+            вертикально или 4:3, широкая полоса под них не подходит. Справа
+            в освободившемся месте — то, что смотрят чаще всего: модель,
+            VIN/рама, двигатель, номер в аренде, принадлежность. Снизу
+            состояние чипами; чип масла — сразу фиксация замены. */}
         {drawerChrome && (
           <section className="overflow-hidden rounded-2xl bg-surface shadow-card-sm">
-            <div
-              className={cn(
-                "flex items-center justify-center bg-white p-3",
-                hasModelPhoto ? "h-40" : "h-24",
-              )}
-            >
-              {hasModelPhoto ? (
-                <img
-                  src={fileUrl(modelForPhoto?.avatarKey, { variant: "view" }) ?? ""}
-                  alt={scooter.name}
-                  className="h-full w-full object-contain"
-                />
-              ) : (
-                <div className="flex flex-col items-center gap-1 text-muted-2">
-                  <ImageOff size={26} />
-                  <span className="text-[12px]">Фото модели не загружено</span>
-                </div>
-              )}
-            </div>
-            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 border-t border-border px-4 py-2">
-              <span className="font-display text-[15px] font-extrabold text-ink">
-                {MODEL_LABEL[scooter.model]}
-              </span>
-              <span className="text-[12px] text-muted">
-                {[
-                  scooter.year ? `${scooter.year} г.` : null,
-                  scooter.color,
-                ]
-                  .filter(Boolean)
-                  .join(" · ") || "год и цвет не указаны"}
-              </span>
-            </div>
-          </section>
-        )}
-
-        {/* ========== СОСТОЯНИЕ (дровер) ==========
-            Заказчик: сначала «как техника себя чувствует», потом её паспорт. */}
-        {drawerChrome && (
-          <section className="grid grid-cols-3 gap-2">
-            <div className="rounded-2xl bg-surface p-3 shadow-card-sm">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
-                Пробег
-              </div>
-              <div className="mt-0.5 font-display text-[19px] font-extrabold tabular-nums text-ink">
-                {fmt(scooter.mileage)}
-                <span className="ml-1 text-[12px] font-semibold text-muted">км</span>
-              </div>
-            </div>
-            <div className="rounded-2xl bg-surface p-3 shadow-card-sm">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
-                Масло
-              </div>
+            <div className="flex gap-3 p-3">
               <div
                 className={cn(
-                  "mt-0.5 font-display text-[19px] font-extrabold tabular-nums",
-                  oilOverdue ? "text-red-ink" : oilWarn ? "text-orange-ink" : "text-ink",
+                  "flex w-[124px] shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white",
+                  "aspect-[3/4]",
                 )}
               >
-                {oilOverdue ? "\u2212" : ""}
-                {fmt(Math.abs(oil.remainKm))}
-                <span className="ml-1 text-[12px] font-semibold text-muted">км</span>
+                {hasModelPhoto ? (
+                  <img
+                    src={fileUrl(modelForPhoto?.avatarKey, { variant: "view" }) ?? ""}
+                    alt={scooter.name}
+                    className="h-full w-full object-contain"
+                  />
+                ) : (
+                  <div className="flex flex-col items-center gap-1 px-2 text-center text-muted-2">
+                    <ImageOff size={22} />
+                    <span className="text-[10.5px] leading-tight">
+                      Фото модели нет
+                    </span>
+                  </div>
+                )}
               </div>
-              <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-surface-soft">
-                <div
-                  className={cn(
-                    "h-full rounded-full",
-                    oilOverdue ? "bg-red-ink" : oilWarn ? "bg-orange-ink" : "bg-blue-600",
+
+              <div className="flex min-w-0 flex-1 flex-col gap-2">
+                <div className="min-w-0">
+                  <div className="truncate font-display text-[16px] font-extrabold leading-tight text-ink">
+                    {MODEL_LABEL[scooter.model]}
+                  </div>
+                  <div className="text-[11.5px] text-muted">
+                    {[scooter.year ? `${scooter.year} г.` : null, scooter.color]
+                      .filter(Boolean)
+                      .join(" · ") || "год и цвет не указаны"}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+                  <MiniSpec
+                    label={sameVinFrame ? "VIN / рама" : "VIN"}
+                    value={scooter.vin ?? scooter.frameNumber ?? "—"}
+                    hint={scooter.uid ? `ID ${scooter.uid}` : undefined}
+                    mono
+                    wide
+                  />
+                  {!sameVinFrame && (
+                    <MiniSpec
+                      label="Номер рамы"
+                      value={scooter.frameNumber ?? "—"}
+                      mono
+                      wide
+                    />
                   )}
-                  style={{ width: `${Math.min(100, Math.round(oil.usedRatio * 100))}%` }}
-                />
+                  <MiniSpec
+                    label="Двигатель"
+                    value={scooter.engineNo ?? "—"}
+                    mono
+                  />
+                  <MiniSpec
+                    label="Номер в аренде"
+                    value={
+                      scooter.rentalSlot != null
+                        ? String(scooter.rentalSlot)
+                        : "—"
+                    }
+                  />
+                  <MiniSpec
+                    label="Принадлежность"
+                    value={scooter.isPartner ? "Партнёрская" : "Наша"}
+                  />
+                </div>
               </div>
             </div>
-            <div className="rounded-2xl bg-surface p-3 shadow-card-sm">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
-                Обслуживание
+
+            {/* Состояние — чипами. «Масло» открывает фиксацию замены. */}
+            <div className="grid grid-cols-3 gap-px border-t border-border bg-border">
+              <div className="bg-surface px-3 py-2">
+                <div className="text-[9.5px] font-bold uppercase tracking-wider text-muted-2">
+                  Пробег
+                </div>
+                <div className="font-display text-[16px] font-extrabold tabular-nums text-ink">
+                  {fmt(scooter.mileage)}
+                  <span className="ml-1 text-[11px] font-semibold text-muted">км</span>
+                </div>
               </div>
-              <div className="mt-0.5 font-display text-[19px] font-extrabold tabular-nums text-ink">
-                {fmt(scooter.maintenanceCostTotal ?? 0)}
-                <span className="ml-1 text-[12px] font-semibold text-muted">₽</span>
+              <button
+                type="button"
+                onClick={() => setOilOpen(true)}
+                title="Зафиксировать замену масла"
+                className="bg-surface px-3 py-2 text-left transition-colors hover:bg-surface-soft"
+              >
+                <div className="flex items-center gap-1 text-[9.5px] font-bold uppercase tracking-wider text-muted-2">
+                  Масло <Pencil size={9} />
+                </div>
+                <div
+                  className={cn(
+                    "font-display text-[16px] font-extrabold tabular-nums",
+                    oilOverdue
+                      ? "text-red-ink"
+                      : oilWarn
+                        ? "text-orange-ink"
+                        : "text-ink",
+                  )}
+                >
+                  {oilOverdue ? "−" : ""}
+                  {fmt(Math.abs(oil.remainKm))}
+                  <span className="ml-1 text-[11px] font-semibold text-muted">км</span>
+                </div>
+                <div className="mt-1 h-1 overflow-hidden rounded-full bg-surface-soft">
+                  <div
+                    className={cn(
+                      "h-full rounded-full",
+                      oilOverdue
+                        ? "bg-red-ink"
+                        : oilWarn
+                          ? "bg-orange-ink"
+                          : "bg-blue-600",
+                    )}
+                    style={{
+                      width: `${Math.min(100, Math.round(oil.usedRatio * 100))}%`,
+                    }}
+                  />
+                </div>
+              </button>
+              <div className="bg-surface px-3 py-2">
+                <div className="text-[9.5px] font-bold uppercase tracking-wider text-muted-2">
+                  Обслуживание
+                </div>
+                <div className="font-display text-[16px] font-extrabold tabular-nums text-ink">
+                  {fmt(scooter.maintenanceCostTotal ?? 0)}
+                  <span className="ml-1 text-[11px] font-semibold text-muted">₽</span>
+                </div>
+                <div className="text-[9.5px] text-muted-2">за всё время</div>
               </div>
-              <div className="text-[10.5px] text-muted-2">за всё время</div>
             </div>
           </section>
         )}
@@ -708,44 +824,49 @@ export function ScooterCard({
               )}
             </div>
 
-            <div className="mt-5 grid gap-x-6 gap-y-5 sm:grid-cols-2">
-              <SpecCell label="Модель" value={MODEL_LABEL[scooter.model]} />
-              {/* Правка 31.08: VIN и номер рамы у скутера — одно клеймо.
-                  Показываем одной строкой; двумя — только если в базе они
-                  реально разошлись. */}
-              {sameVinFrame ? (
-                <SpecCell
-                  label="VIN / номер рамы"
-                  value={scooter.vin ?? scooter.frameNumber ?? "—"}
-                  hint={
-                    scooter.uid ? `ID ${scooter.uid} — 6 последних цифр` : undefined
-                  }
-                  mono
-                />
-              ) : (
+            <div
+              className={cn(
+                "grid",
+                drawerChrome
+                  ? "mt-3 gap-x-4 gap-y-3 grid-cols-2 @[440px]:grid-cols-3"
+                  : "mt-5 gap-x-6 gap-y-5 sm:grid-cols-2",
+              )}
+            >
+              {!drawerChrome && (
+                <SpecCell label="Модель" value={MODEL_LABEL[scooter.model]} />
+              )}
+              {!drawerChrome && (
                 <>
-                  <SpecCell label="VIN номер" value={scooter.vin ?? "—"} mono />
+                  {sameVinFrame ? (
+                    <SpecCell
+                      label="VIN / номер рамы"
+                      value={scooter.vin ?? scooter.frameNumber ?? "—"}
+                      hint={
+                        scooter.uid ? `ID ${scooter.uid} — 6 последних цифр` : undefined
+                      }
+                      mono
+                    />
+                  ) : (
+                    <>
+                      <SpecCell label="VIN номер" value={scooter.vin ?? "—"} mono />
+                      <SpecCell
+                        label="Номер рамы"
+                        value={scooter.frameNumber ?? "—"}
+                        mono
+                      />
+                    </>
+                  )}
                   <SpecCell
-                    label="Номер рамы"
-                    value={scooter.frameNumber ?? "—"}
-                    hint={
-                      scooter.uid
-                        ? `ID ${scooter.uid} — 6 последних цифр VIN`
-                        : undefined
-                    }
+                    label="Номер двигателя"
+                    value={scooter.engineNo ?? "—"}
                     mono
                   />
                 </>
               )}
-              <SpecCell
-                label="Номер двигателя"
-                value={scooter.engineNo ?? "—"}
-                mono
-              />
-              {/* Пункт 15: номер в арендном парке — смена только на свободный. */}
-              <RentalSlotSpec scooter={scooter} />
-              {/* Партнёрская техника: флаг у КОНКРЕТНОЙ единицы (правка 24.08). */}
-              <PartnerSpec scooter={scooter} />
+              {/* Пункт 15: номер в арендном парке — смена только на свободный.
+                  В дровере номер и принадлежность показаны в обложке. */}
+              {!drawerChrome && <RentalSlotSpec scooter={scooter} />}
+              {!drawerChrome && <PartnerSpec scooter={scooter} />}
               {/* В дровере пробег показан выше, в блоке состояния — здесь
                   он был бы вторым таким же числом. */}
               {!drawerChrome && (
@@ -1972,5 +2093,43 @@ function ScooterTimelineTab({ scooterId }: { scooterId: number }) {
       items={q.data?.items ?? []}
       loading={q.isLoading}
     />
+  );
+}
+
+/**
+ * Компактная пара «подпись — значение» для обложки карточки (31.08).
+ * Мельче, чем SpecCell: в обложку помещается вдвое больше данных.
+ */
+function MiniSpec({
+  label,
+  value,
+  hint,
+  mono,
+  wide,
+}: {
+  label: string;
+  value: string;
+  hint?: string;
+  mono?: boolean;
+  wide?: boolean;
+}) {
+  return (
+    <div className={cn("min-w-0", wide && "col-span-2")}>
+      <div className="text-[9.5px] font-bold uppercase tracking-wider text-muted-2">
+        {label}
+      </div>
+      <div
+        className={cn(
+          "truncate text-[12.5px] font-bold text-ink",
+          mono && "font-mono text-[12px]",
+        )}
+        title={value}
+      >
+        {value}
+      </div>
+      {hint && (
+        <div className="truncate text-[9.5px] text-muted-2">{hint}</div>
+      )}
+    </div>
   );
 }

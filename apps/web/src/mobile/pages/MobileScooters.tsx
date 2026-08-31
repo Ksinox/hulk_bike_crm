@@ -115,7 +115,9 @@ export function MobileScooters() {
   // «живого» списка. Выкуп сюда НЕ входит: скутер в выкупе остаётся
   // нашим, пока клиент не закрыл сумму (правка заказчика 25.08).
   const all = useMemo(
-    () => scooters.filter((s) => !s.archivedAt && !s.deletedAt),
+    // Партнёрская техника живёт в «Партнёрке», в нашем парке её нет
+    // (правка 31.08 — паритет с десктопом).
+    () => scooters.filter((s) => !s.archivedAt && !s.deletedAt && !s.isPartner),
     [scooters],
   );
   const isGone = (s: ApiScooter) => s.baseStatus === "sold";

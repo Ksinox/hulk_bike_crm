@@ -405,6 +405,8 @@ export function useDashboardMetrics(): DashboardMetrics {
     ]);
     const rentableAll = scooters.filter(
       (s) =>
+        // Партнёрская техника в наш парк не входит — у неё свой раздел.
+        !s.isPartner &&
         RENTAL_MODE_STATUSES.has(s.baseStatus) &&
         !(s as { archivedAt?: string | null }).archivedAt,
     );
