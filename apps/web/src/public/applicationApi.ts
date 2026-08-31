@@ -24,6 +24,8 @@ function url(path: string): string {
 export type ClientSource = "avito" | "repeat" | "ref" | "maps" | "other";
 
 export type ApplicationFields = {
+  /** Зачем клиент пришёл: аренда (по умолчанию) или покупка. */
+  purpose?: "rent" | "sale";
   name?: string | null;
   phone?: string | null;
   extraPhone?: string | null;

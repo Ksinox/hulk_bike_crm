@@ -1499,6 +1499,12 @@ export const clientApplications = pgTable(
   {
     id: bigserial("id", { mode: "number" }).primaryKey(),
     status: clientApplicationStatusEnum("status").notNull().default("draft"),
+    /**
+     * Зачем клиент пришёл: 'rent' — аренда (анкета по умолчанию),
+     * 'sale' — покупка. У покупателя своя анкета: без выбора модели,
+     * экипировки, срока и водительских прав — только паспорт и его фото.
+     */
+    purpose: text("purpose").notNull().default("rent"),
 
     // Поля как в clients (всё nullable — черновик может быть неполным)
     name: text("name"),

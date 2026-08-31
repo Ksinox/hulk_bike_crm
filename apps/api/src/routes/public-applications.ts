@@ -49,6 +49,9 @@ const ApplicationFieldsBody = z
     passportRegistration: z.string().max(500).optional().nullable(),
     liveAddress: z.string().max(500).optional().nullable(),
     sameAddress: z.boolean().optional(),
+    /** Зачем пришёл: аренда (по умолчанию) или покупка — у покупателя
+     *  своя анкета без модели/экипировки/срока и водительских прав. */
+    purpose: z.enum(["rent", "sale"]).optional(),
     /** Откуда узнал — клиент выбирает на отдельном шаге анкеты.
      *  При convert копируется в clients.source. */
     source: ClientSourceEnum.optional().nullable(),

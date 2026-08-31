@@ -65,6 +65,8 @@ export type ApiApplication = {
   requestedModel: string | null;
   /** Точное имя выбранной модели из каталога («Yamaha Jog»…) — для показа. */
   requestedModelName: string | null;
+  /** Зачем пришёл: 'rent' — аренда, 'sale' — покупка (своя анкета). */
+  purpose?: "rent" | "sale";
   requestedDays: number | null;
   /** G3: id выбранной экипировки (equipment_items). */
   requestedEquipmentIds: number[] | null;

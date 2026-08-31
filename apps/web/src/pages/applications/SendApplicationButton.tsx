@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { ArrowLeft, MessageCircle, Send, X } from "lucide-react";
+import { ArrowLeft, Check, Copy, Link2, MessageCircle, Send, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toast } from "@/lib/toast";
 import { whatsappLink, telegramLink } from "@/lib/messengers";
 
 // Hash-route (#/apply) — vite собирает бандл с base "./".
@@ -10,21 +11,26 @@ const PUBLIC_FORM_URL =
     ? `${window.location.origin}/#/apply`
     : "/#/apply");
 
-const SHARE_TEXT = `Здравствуйте! Для оформления аренды скутера в Халк Байк заполните, пожалуйста, короткую анкету: ${PUBLIC_FORM_URL}`;
+const SHARE_INTRO =
+  "Здравствуйте! Для оформления аренды скутера в Халк Байк заполните, пожалуйста, короткую анкету: ";
 
-type Messenger = "wa" | "tg";
+type Messenger = "wa" | "tg" | "max";
 
 /**
- * «Отправить анкету» — кнопка в разделе «Заявки».
+ * «Отправить анкету» — кнопка в «Заявках» и в мастере продажи.
  *
- * Flow по умолчанию: выбрать мессенджер (WhatsApp/Telegram) → ввести номер
- * получателя → «Отправить» → открывается чат прямо с этим номером (без
- * сохранения в контакты) с уже вписанным текстом-ссылкой на анкету.
+ * WhatsApp и Telegram умеют открывать чат ПО НОМЕРУ без сохранения контакта —
+ * там спрашиваем номер и открываем переписку с уже вписанным текстом.
+ *
+ * У МАКС такой ссылки нет (мессенджер её не даёт), поэтому для него — и для
+ * любого другого канала — есть «Скопировать ссылку»: текст с адресом анкеты
+ * ложится в буфер, останется вставить в нужный чат.
  */
 export function SendApplicationButton({
   className,
   label,
   text,
+  formUrl,
 }: {
   className?: string;
   /** Подпись кнопки (по умолчанию «Отправить анкету»). */
@@ -32,22 +38,52 @@ export function SendApplicationButton({
   /** Вступление сообщения; ссылка на анкету дописывается сама.
    *  В продаже оно про покупку, а не про аренду. */
   text?: string;
+  /** Адрес анкеты, если он не стандартный (напр. анкета покупателя). */
+  formUrl?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [messenger, setMessenger] = useState<Messenger | null>(null);
   const [phone, setPhone] = useState("");
+  const [copied, setCopied] = useState<"link" | "text" | null>(null);
+
+  const url = formUrl ?? PUBLIC_FORM_URL;
+  const body = `${text ?? SHARE_INTRO}${url}`;
 
   const close = () => {
     setOpen(false);
     setMessenger(null);
     setPhone("");
+    setCopied(null);
+  };
+
+  const copy = async (what: "link" | "text") => {
+    const value = what === "link" ? url : body;
+    try {
+      await navigator.clipboard.writeText(value);
+    } catch {
+      // Старые браузеры и небезопасный контекст — запасной путь.
+      const ta = document.createElement("textarea");
+      ta.value = value;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand("copy");
+      } catch {
+        toast.error("Не удалось скопировать — выделите ссылку вручную");
+        document.body.removeChild(ta);
+        return;
+      }
+      document.body.removeChild(ta);
+    }
+    setCopied(what);
+    toast.success(what === "link" ? "Ссылка скопирована" : "Текст скопирован");
+    window.setTimeout(() => setCopied(null), 2000);
   };
 
   const send = () => {
-    if (!phone.trim() || !messenger) return;
-    // Ссылка на анкету дописывается всегда — вызывающий передаёт только
-    // вступление («…для оформления покупки…»).
-    const body = text ? `${text}${PUBLIC_FORM_URL}` : SHARE_TEXT;
+    if (!phone.trim() || !messenger || messenger === "max") return;
     const link =
       messenger === "wa" ? whatsappLink(phone, body) : telegramLink(phone, body);
     if (link) window.open(link, "_blank", "noopener");
@@ -89,7 +125,7 @@ export function SendApplicationButton({
                   </button>
                 )}
                 <div className="text-[15px] font-bold text-ink">
-                  Отправить анкету
+                  {label ?? "Отправить анкету"}
                 </div>
               </div>
               <button
@@ -103,37 +139,91 @@ export function SendApplicationButton({
             </div>
 
             {!messenger ? (
-              /* Шаг 1 — выбор мессенджера */
+              /* Шаг 1 — куда отправить */
               <>
                 <div className="mb-3 text-[13px] text-muted">
                   Куда отправить ссылку на анкету?
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
+                <div className="grid grid-cols-3 gap-2">
+                  <ChannelTile
+                    label="WhatsApp"
                     onClick={() => setMessenger("wa")}
-                    className="flex flex-col items-center gap-1.5 rounded-2xl border border-border bg-surface py-4 transition-colors hover:border-green-400 hover:bg-green-50 active:scale-[0.98]"
-                  >
-                    <span className="flex h-10 w-10 items-center justify-center rounded-full bg-green/10 text-green">
-                      <MessageCircle size={20} />
-                    </span>
-                    <span className="text-[13px] font-semibold text-ink">
-                      WhatsApp
-                    </span>
-                  </button>
-                  <button
-                    type="button"
+                    hover="hover:border-green-400 hover:bg-green-50"
+                    iconWrap="bg-green/10 text-green"
+                    icon={<MessageCircle size={20} />}
+                  />
+                  <ChannelTile
+                    label="Telegram"
                     onClick={() => setMessenger("tg")}
-                    className="flex flex-col items-center gap-1.5 rounded-2xl border border-border bg-surface py-4 transition-colors hover:border-sky-400 hover:bg-sky-50 active:scale-[0.98]"
-                  >
-                    <span className="flex h-10 w-10 items-center justify-center rounded-full bg-sky-100 text-sky-600">
-                      <Send size={19} />
-                    </span>
-                    <span className="text-[13px] font-semibold text-ink">
-                      Telegram
-                    </span>
-                  </button>
+                    hover="hover:border-sky-400 hover:bg-sky-50"
+                    iconWrap="bg-sky-100 text-sky-600"
+                    icon={<Send size={19} />}
+                  />
+                  <ChannelTile
+                    label="МАКС"
+                    onClick={() => setMessenger("max")}
+                    hover="hover:border-violet-400 hover:bg-violet-50"
+                    iconWrap="bg-violet-100 text-violet-600"
+                    icon={<span className="text-[15px] font-extrabold">M</span>}
+                  />
                 </div>
+
+                {/* Ссылку можно просто скопировать — для почты, Авито,
+                    объявления или любого другого канала. */}
+                <div className="mt-3 flex flex-col gap-2 rounded-2xl bg-surface-soft p-3">
+                  <div className="flex items-center gap-2 text-[12px] text-muted">
+                    <Link2 size={14} className="shrink-0" />
+                    <span className="min-w-0 flex-1 truncate" title={url}>
+                      {url}
+                    </span>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => copy("link")}
+                      className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-xl bg-ink px-3 text-[12.5px] font-bold text-white transition-transform active:scale-[0.98]"
+                    >
+                      {copied === "link" ? <Check size={14} /> : <Copy size={14} />}
+                      {copied === "link" ? "Скопировано" : "Скопировать ссылку"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => copy("text")}
+                      className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl bg-surface px-3 text-[12.5px] font-semibold text-ink shadow-card-sm transition-transform active:scale-[0.98]"
+                      title="Скопировать сообщение целиком"
+                    >
+                      {copied === "text" ? <Check size={14} /> : <Copy size={14} />}
+                      С текстом
+                    </button>
+                  </div>
+                </div>
+              </>
+            ) : messenger === "max" ? (
+              /* МАКС не умеет открывать чат по номеру — копируем сообщение */
+              <>
+                <div className="text-[13px] leading-relaxed text-muted">
+                  МАКС не открывает чат по номеру телефона — такой ссылки
+                  мессенджер не даёт. Скопируйте сообщение и вставьте его в чат
+                  с клиентом.
+                </div>
+                <div className="mt-3 rounded-xl bg-surface-soft p-3 text-[12.5px] leading-relaxed text-ink-2">
+                  {body}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => copy("text")}
+                  className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 py-3 text-[14px] font-bold text-white transition-colors hover:bg-violet-700"
+                >
+                  {copied === "text" ? <Check size={16} /> : <Copy size={16} />}
+                  {copied === "text" ? "Скопировано" : "Скопировать сообщение"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => window.open("https://max.ru", "_blank", "noopener")}
+                  className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-surface-soft py-2.5 text-[13px] font-semibold text-ink"
+                >
+                  Открыть МАКС
+                </button>
               </>
             ) : (
               /* Шаг 2 — номер получателя + отправка */
@@ -180,5 +270,40 @@ export function SendApplicationButton({
         </div>
       )}
     </>
+  );
+}
+
+function ChannelTile({
+  label,
+  onClick,
+  hover,
+  iconWrap,
+  icon,
+}: {
+  label: string;
+  onClick: () => void;
+  hover: string;
+  iconWrap: string;
+  icon: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex flex-col items-center gap-1.5 rounded-2xl border border-border bg-surface py-3.5 transition-colors active:scale-[0.98]",
+        hover,
+      )}
+    >
+      <span
+        className={cn(
+          "flex h-10 w-10 items-center justify-center rounded-full",
+          iconWrap,
+        )}
+      >
+        {icon}
+      </span>
+      <span className="text-[12.5px] font-semibold text-ink">{label}</span>
+    </button>
   );
 }

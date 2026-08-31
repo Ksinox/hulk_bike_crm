@@ -97,7 +97,27 @@ type StepId =
   | "agreement"
   | "confirm";
 
-function getSteps(isForeigner: boolean): StepId[] {
+/**
+ * Анкета покупателя (31.08) — открывается по ссылке «#/apply?p=sale».
+ * Отличия от арендной: не спрашиваем модель, экипировку и срок аренды,
+ * не просим водительские права — при покупке они не нужны. Остаётся
+ * паспорт, его фото и селфи для подтверждения личности.
+ */
+export type ApplicationPurpose = "rent" | "sale";
+
+function readPurpose(): ApplicationPurpose {
+  if (typeof window === "undefined") return "rent";
+  const hash = window.location.hash;
+  const qs = hash.includes("?") ? hash.slice(hash.indexOf("?") + 1) : "";
+  const p = new URLSearchParams(qs).get("p");
+  return p === "sale" ? "sale" : "rent";
+}
+
+/** Режим задан адресом страницы и в рантайме не меняется — под-компоненты
+ *  читают его отсюда, чтобы не тащить проп через десяток шагов. */
+const IS_SALE = readPurpose() === "sale";
+
+function getSteps(isForeigner: boolean, purpose: ApplicationPurpose): StepId[] {
   const all: StepId[] = [
     "contact",
     "passport",
@@ -113,7 +133,20 @@ function getSteps(isForeigner: boolean): StepId[] {
     "agreement",
     "confirm",
   ];
-  return isForeigner ? all.filter((s) => s !== "photo_passport_reg") : all;
+  const SALE_SKIP: StepId[] = [
+    "wish_model",
+    "wish_equipment",
+    "wish_period",
+    "photo_license",
+    // «Инструктаж при передаче скутера» — правила проката, к покупке
+    // отношения не имеют.
+    "agreement",
+  ];
+  const byPurpose =
+    purpose === "sale" ? all.filter((x) => !SALE_SKIP.includes(x)) : all;
+  return isForeigner
+    ? byPurpose.filter((x) => x !== "photo_passport_reg")
+    : byPurpose;
 }
 
 type ClientSourceChoice = "avito" | "repeat" | "ref" | "maps" | "other";
@@ -307,7 +340,12 @@ export function ApplicationForm() {
     setWishBarTouched(false);
   }, [step]);
 
-  const steps = useMemo(() => getSteps(form.isForeigner), [form.isForeigner]);
+  const purpose = useMemo(readPurpose, []);
+  const isSale = purpose === "sale";
+  const steps = useMemo(
+    () => getSteps(form.isForeigner, purpose),
+    [form.isForeigner, purpose],
+  );
   const totalSteps = steps.length;
   const currentStepId: StepId = steps[Math.min(step - 1, totalSteps - 1)];
 
@@ -367,7 +405,7 @@ export function ApplicationForm() {
   }, [currentStepId]);
 
   const ensureDraft = async (): Promise<{ id: number; tok: string }> => {
-    const fields = fieldsFromState(form);
+    const fields = { ...fieldsFromState(form), purpose };
     if (appId && token) {
       try {
         await applicationApi.patch(appId, token, fields);
@@ -415,13 +453,13 @@ export function ApplicationForm() {
 
   const canSubmit =
     form.agreedPdn &&
-    agreedRules &&
+    (isSale || agreedRules) &&
     canNextContact &&
     canNextPassport &&
     canNextAddress &&
     canNextSource &&
     uploaded.has("passport_main") &&
-    uploaded.has("license") &&
+    (isSale || uploaded.has("license")) &&
     uploaded.has("selfie") &&
     (form.isForeigner || uploaded.has("passport_reg"));
 
@@ -832,7 +870,9 @@ export function ApplicationForm() {
             {currentStepId === "confirm" && (
               <button
                 type="button"
-                onClick={() => setShowCashReminder(true)}
+                onClick={() =>
+                  isSale ? void submit() : setShowCashReminder(true)
+                }
                 disabled={busy || !canSubmit}
                 className="inline-flex h-12 flex-1 items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-4 text-[14px] font-semibold text-white disabled:opacity-50"
               >
@@ -978,7 +1018,8 @@ function Step1({
     <div className="space-y-4">
       <h1 className="text-[22px] font-bold text-slate-900">Контактные данные</h1>
       <p className="text-[14px] text-slate-600">
-        Эти данные нужны менеджеру, чтобы связаться с вами и оформить аренду.
+        Эти данные нужны менеджеру, чтобы связаться с вами и оформить{" "}
+        {IS_SALE ? "покупку" : "аренду"}.
       </p>
 
       <div>
@@ -1346,7 +1387,7 @@ function SourceStep({
       </h1>
       <p className="text-[14px] text-slate-600">
         Это нужно нам, чтобы понимать, какая реклама работает. Выбор не
-        влияет на оформление аренды.
+        влияет на оформление {IS_SALE ? "покупки" : "аренды"}.
       </p>
 
       <div className="grid gap-2">
@@ -1622,12 +1663,15 @@ function Confirm({
         />
         <span className="text-[13px] text-slate-700">
           Я согласен(а) на обработку моих персональных данных Халк Байк в целях
-          оформления договора аренды транспортного средства.
+          оформления договора{" "}
+          {IS_SALE ? "купли-продажи" : "аренды"} транспортного средства.
         </span>
       </label>
 
       {/* R2.7: соглашение принимается на отдельном шаге «Инструктаж» (до
-          подтверждения). Здесь — только статус, read-only. */}
+          подтверждения). Здесь — только статус, read-only.
+          При покупке шага «Инструктаж» нет — это правила проката. */}
+      {!IS_SALE && (
       <div
         className={`flex items-start gap-3 rounded-xl border p-3 ${
           agreedRules
@@ -1648,6 +1692,7 @@ function Confirm({
             : "Вернитесь на шаг «Инструктаж» и примите правила — без этого заявку не отправить."}
         </span>
       </div>
+      )}
     </div>
   );
 }
@@ -1677,7 +1722,8 @@ function SuccessScreen() {
         </h1>
         <p className="mt-3 text-[14px] text-slate-600">
           Менеджер Халк Байк свяжется с вами по указанному телефону, чтобы
-          согласовать время приезда и оформить аренду.
+          согласовать время приезда и оформить{" "}
+          {IS_SALE ? "покупку" : "аренду"}.
         </p>
         <div className="mt-8 rounded-xl bg-white p-4 text-[13px] text-slate-700 shadow-sm">
           Эту страницу можно закрыть.

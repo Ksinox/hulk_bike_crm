@@ -33,6 +33,7 @@ import {
   type SaleDeal,
 } from "@/lib/api/sales";
 import { ManagerAvatar } from "./SalesUI";
+import { saleFormUrl } from "./saleForm";
 import { fmt } from "./salesUtils";
 
 /**
@@ -482,8 +483,9 @@ function StepClient({
           <UserPlus size={15} /> Новый
         </button>
         <SendApplicationButton
-          label="Анкета"
+          label="Анкета покупателя"
           text="Здравствуйте! Для оформления покупки скутера в Халк Байк заполните, пожалуйста, короткую анкету с паспортными данными: "
+          formUrl={saleFormUrl()}
           className="h-11 shrink-0 rounded-[14px]"
         />
       </div>
