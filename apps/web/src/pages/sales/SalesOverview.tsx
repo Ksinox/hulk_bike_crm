@@ -28,7 +28,6 @@ import {
 } from "./SalesUI";
 import { SalesChart } from "./SalesChart";
 import {
-  BUCKET_AXIS,
   deltaPct,
   isAtNow,
   panView,
@@ -134,9 +133,12 @@ export function SalesOverview({
 
   return (
     <div className="flex min-w-0 flex-col gap-3">
-      {/* Фильтры */}
+      {/* Фильтр по менеджеру. Период переехал в шапку «Динамики продаж»
+          (правка 31.08): рядом с табами раздела получался частокол
+          одинаковых переключателей. */}
       <div className="flex flex-wrap items-center gap-2">
-        <PeriodPicker
+        <div className="hidden" aria-hidden>
+          <PeriodPicker
           preset={preset}
           custom={custom}
           onChange={(p, c) => {
@@ -165,7 +167,8 @@ export function SalesOverview({
               setView(viewForPreset(p));
             }
           }}
-        />
+          />
+        </div>
         <div className="flex-1" />
         {managers.length > 0 && (
           <div className="flex max-w-full flex-wrap items-center gap-1 rounded-full bg-surface p-1 shadow-card-sm">
@@ -258,6 +261,39 @@ export function SalesOverview({
           hint={range.label}
           action={
             <>
+              <PeriodPicker
+                preset={preset}
+                custom={custom}
+                onChange={(p, c) => {
+                  setPreset(p);
+                  setCustom(c);
+                  if (p === "custom" && c.from && c.to) {
+                    const from = new Date(`${c.from}T00:00:00`);
+                    const to = new Date(`${c.to}T23:59:59`);
+                    const b = bucketForRange(from, to);
+                    const stepMs =
+                      b === "hour"
+                        ? 3_600_000
+                        : b === "day"
+                          ? 86_400_000
+                          : b === "week"
+                            ? 7 * 86_400_000
+                            : b === "month"
+                              ? 30 * 86_400_000
+                              : 365 * 86_400_000;
+                    setView({
+                      bucket: b,
+                      count: Math.max(
+                        2,
+                        Math.round((to.getTime() - from.getTime()) / stepMs) + 1,
+                      ),
+                      end: to,
+                    });
+                  } else {
+                    setView(viewForPreset(p));
+                  }
+                }}
+              />
               {!isAtNow(view) && (
                 <button
                   type="button"
@@ -270,9 +306,6 @@ export function SalesOverview({
                   <RotateCcw size={11} /> К сегодняшнему дню
                 </button>
               )}
-              <span className="rounded-full bg-surface-soft px-2.5 py-1 text-[11px] font-semibold text-muted-2">
-                {BUCKET_AXIS[bucket]}
-              </span>
             </>
           }
         >

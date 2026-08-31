@@ -112,21 +112,6 @@ export function SalesDeals({
             setCustom(c);
           }}
         />
-        <div className="flex gap-1 rounded-full bg-surface p-1 shadow-card-sm">
-          {STATUS_TABS.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => setStatus(t.id)}
-              className={cn(
-                "rounded-full px-3 py-1.5 text-[12.5px] font-semibold transition-colors",
-                status === t.id ? "bg-ink text-white" : "text-muted hover:text-ink",
-              )}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
         <div className="relative min-w-[220px] flex-1">
           <Search
             size={15}
@@ -147,6 +132,23 @@ export function SalesDeals({
               <X size={14} />
             </button>
           )}
+        </div>
+        {/* Статусы — у правого края: слева период, посередине поиск
+            (порядок по фидбэку 31.08). */}
+        <div className="ml-auto flex gap-1 rounded-full bg-surface p-1 shadow-card-sm">
+          {STATUS_TABS.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setStatus(t.id)}
+              className={cn(
+                "rounded-full px-3 py-1.5 text-[12.5px] font-semibold transition-colors",
+                status === t.id ? "bg-ink text-white" : "text-muted hover:text-ink",
+              )}
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
       </div>
 

@@ -137,9 +137,14 @@ const PRESETS: { id: PeriodPreset; label: string }[] = [
 /**
  * Переключатель периода: пресеты + произвольный диапазон.
  *
- * Правка 31.08 (заказчик): произвольный период выбирается ТЕМ ЖЕ
- * календарём, что и в «Клиентах» и «Арендах» (DateRangeFilter) — люди к
- * нему привыкли, свой велосипед из двух полей тут не нужен.
+ * Правки 31.08: живёт в шапке «Динамики продаж», а не отдельной строкой
+ * над показателями — рядом с табами раздела получался частокол
+ * одинаковых переключателей. Стиль намеренно другой: полупрозрачное
+ * «стекло» с тонкой рамкой вместо плотных пилюль, чтобы взгляд не путал
+ * его с навигацией.
+ *
+ * Произвольный период выбирается тем же календарём, что в «Клиентах» и
+ * «Арендах» (DateRangeFilter) — люди к нему привыкли.
  */
 export function PeriodPicker({
   preset,
@@ -151,16 +156,18 @@ export function PeriodPicker({
   onChange: (preset: PeriodPreset, custom: { from: string; to: string }) => void;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <div className="flex gap-1 rounded-full bg-surface p-1 shadow-card-sm">
+    <div className="flex flex-wrap items-center gap-1.5">
+      <div className="flex gap-0.5 rounded-full border border-border/70 bg-surface-soft/50 p-0.5 backdrop-blur-sm">
         {PRESETS.map((p) => (
           <button
             key={p.id}
             type="button"
             onClick={() => onChange(p.id, { from: "", to: "" })}
             className={cn(
-              "rounded-full px-3 py-1.5 text-[12.5px] font-semibold transition-colors",
-              preset === p.id ? "bg-ink text-white" : "text-muted hover:text-ink",
+              "rounded-full px-2.5 py-1 text-[11.5px] font-semibold transition-colors",
+              preset === p.id
+                ? "bg-surface text-ink shadow-card-sm"
+                : "text-muted-2 hover:text-ink",
             )}
           >
             {p.label}
@@ -170,7 +177,7 @@ export function PeriodPicker({
       <DateRangeFilter
         from={custom.from || null}
         to={custom.to || null}
-        placeholder="Свой период"
+        placeholder="Период"
         titleApplied="Произвольный период продаж"
         titleNotApplied="Выбрать произвольный период"
         onChange={({ from, to }) => {
