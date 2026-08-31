@@ -7,6 +7,7 @@ import {
   Rows3,
 } from "lucide-react";
 import { Topbar } from "@/pages/dashboard/Topbar";
+import { ApplicationsButton } from "@/pages/applications/ApplicationsPanel";
 import { type Rental, type RentalStatus } from "@/lib/mock/rentals";
 import {
   RentalsFilters,
@@ -754,6 +755,9 @@ export function Rentals() {
               <h1 className="font-display text-[26px] font-extrabold leading-none text-ink">
                 Аренды
               </h1>
+              {/* Правка 31.08: заявки на аренду живут здесь, а не отдельным
+                  пунктом меню — работают с ними именно отсюда. */}
+              <ApplicationsButton purpose="rent" />
               {/* Правка 27.08: табы техники — бензиновые (наши) и
                   партнёрская. Второй таб виден, только если партнёрская
                   техника вообще есть. */}

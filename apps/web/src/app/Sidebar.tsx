@@ -7,7 +7,6 @@ import {
   FileText,
   HardDrive,
   Home,
-  Inbox,
   LogOut,
   Receipt,
   Scale,
@@ -41,13 +40,16 @@ type NavItem = {
 function buildMainItems(canManageStaff: boolean): NavItem[] {
   /**
    * Правка 31.08 (заказчик): порядок — по тому, как разделом пользуются.
+   *
+   * «Заявок» здесь больше нет: пока анкета была одна (на аренду), ей был
+   * нужен свой пункт. Теперь их два вида, и каждая лежит там, где с ней
+   * работают — арендные в «Арендах», на покупку в «Продажах».
    * Сверху ежедневная работа, ниже — справочное, и в самом конце разделы
    * «скоро»: раньше они стояли вперемешку с рабочими и первыми занимали
    * место на коротком экране, вытесняя нужное в «Ещё».
    */
   const items: NavItem[] = [
     { id: "dashboard", label: "Дашборд", icon: Home, ready: true },
-    { id: "applications", label: "Заявки", icon: Inbox, ready: true },
     { id: "clients", label: "Клиенты", icon: Users, ready: true },
     { id: "rentals", label: "Аренды", icon: Bike, ready: true },
     { id: "fleet", label: "Скутеры", icon: ShoppingBag, ready: true },
@@ -112,8 +114,14 @@ export function Sidebar({
   const mainItems = buildMainItems(canManageStaff);
   const { unreadCount: changelogUnread } = useUnreadChangelog();
   // Считаем «новые» заявки (status='new'). polling уже включен в хуке.
+  // Правка 31.08: счётчик показываем на разделе, где с заявкой работают —
+  // арендные на «Арендах», на покупку на «Продажах».
   const newApplicationsQ = useApplications({ status: "new", poll: true });
-  const newApplicationsCount = newApplicationsQ.data?.length ?? 0;
+  const newApps = newApplicationsQ.data ?? [];
+  const newRentApplications = newApps.filter(
+    (a) => (a.purpose ?? "rent") === "rent",
+  ).length;
+  const newSaleApplications = newApps.filter((a) => a.purpose === "sale").length;
   const [tooltip, setTooltip] = useState<{
     label: string;
     top: number;
@@ -255,9 +263,11 @@ export function Sidebar({
               badgeCount={
                 item.id === "whats-new"
                   ? changelogUnread
-                  : item.id === "applications"
-                    ? newApplicationsCount
-                    : 0
+                  : item.id === "rentals"
+                    ? newRentApplications
+                    : item.id === "sales"
+                      ? newSaleApplications
+                      : 0
               }
             />
           ))}
@@ -354,9 +364,11 @@ export function Sidebar({
             const badge =
               item.id === "whats-new"
                 ? changelogUnread
-                : item.id === "applications"
-                  ? newApplicationsCount
-                  : 0;
+                : item.id === "rentals"
+                  ? newRentApplications
+                  : item.id === "sales"
+                    ? newSaleApplications
+                    : 0;
             return (
               <button
                 key={item.id}

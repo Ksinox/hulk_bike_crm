@@ -4,7 +4,6 @@ import {
   FileText,
   HardDrive,
   Home,
-  Inbox,
   LayoutGrid,
   LogOut,
   Scale,
@@ -44,7 +43,6 @@ export const tabItems: MobileNavItem[] = [
 /** Раздел «Ещё» — раскрывается шторкой снизу. */
 export function buildMoreItems(canManageStaff: boolean): MobileNavItem[] {
   const items: MobileNavItem[] = [
-    { id: "applications", label: "Заявки", icon: Inbox, ready: true },
     { id: "debtors", label: "Должники", icon: Scale, ready: true },
     { id: "service", label: "Ремонты", icon: Wrench, ready: true },
     { id: "docs", label: "Документы", icon: FileText, ready: true },

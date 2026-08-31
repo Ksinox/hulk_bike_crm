@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { BarChart3, Handshake, Package, Plus, Users } from "lucide-react";
 import { Topbar } from "@/pages/dashboard/Topbar";
+import { ApplicationsButton } from "@/pages/applications/ApplicationsPanel";
 import { cn } from "@/lib/utils";
 import { useFleetScooters } from "@/pages/fleet/fleetStore";
 import { useRentals } from "@/pages/rentals/rentalsStore";
@@ -102,6 +103,8 @@ export function Sales() {
           </button>
         )}
         <div className="flex-1" />
+        {/* Заявки на покупку — рядом с созданием продажи (правка 31.08). */}
+        <ApplicationsButton purpose="sale" />
         <button
           type="button"
           onClick={() => setWizard({ open: true })}

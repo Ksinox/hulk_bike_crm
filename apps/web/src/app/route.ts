@@ -1,6 +1,8 @@
 export type RouteId =
   | "dashboard"
   | "clients"
+  // Правка 31.08: отдельного раздела в меню больше нет — заявки открываются
+  // кнопкой внутри «Аренд» и «Продаж». Маршрут оставлен для старых ссылок.
   | "applications"
   | "rentals"
   | "debtors"
@@ -24,7 +26,6 @@ const KEY = "hulk-route";
 const READY: RouteId[] = [
   "dashboard",
   "clients",
-  "applications",
   "rentals",
   "debtors",
   "fleet",
