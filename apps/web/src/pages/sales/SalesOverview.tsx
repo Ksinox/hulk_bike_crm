@@ -296,7 +296,7 @@ export function SalesOverview({
         </SectionCard>
       </div>
 
-      <div className="grid min-w-0 items-stretch gap-3 xl:grid-cols-2">
+      <div className="grid min-w-0 items-stretch gap-3 xl:grid-cols-2 2xl:grid-cols-3">
         {/* Рейтинг менеджеров */}
         <SectionCard
           title="Рейтинг менеджеров"
@@ -397,22 +397,23 @@ export function SalesOverview({
             </div>
           )}
         </SectionCard>
-      </div>
 
-      {/* Последние сделки — быстрый вход в детализацию. Сеткой, а не
-          длинными строками во всю ширину: так на экран помещается больше. */}
-      {sold.length > 0 && (
-        <SectionCard
-          title="Последние продажи"
-          hint={`${range.label} · ${sold.length} за период`}
-        >
-          <div className="grid gap-2 p-3 sm:grid-cols-2 2xl:grid-cols-3">
-            {sold.slice(0, 6).map((d) => (
-              <RecentRow key={d.id} deal={d} onOpen={() => onOpenDeal(d.id)} />
-            ))}
-          </div>
-        </SectionCard>
-      )}
+        {/* Последние сделки — третьей карточкой в том же ряду, чтобы не
+            занимать отдельную широкую строку ради пары записей. */}
+        {sold.length > 0 && (
+          <SectionCard
+            title="Последние продажи"
+            hint={`${sold.length} за период`}
+            className="xl:col-span-2 2xl:col-span-1"
+          >
+            <div className="grid gap-2 p-3 sm:grid-cols-2 2xl:grid-cols-1">
+              {sold.slice(0, 6).map((d) => (
+                <RecentRow key={d.id} deal={d} onOpen={() => onOpenDeal(d.id)} />
+              ))}
+            </div>
+          </SectionCard>
+        )}
+      </div>
 
       {planOpen && (
         <PlanDialog

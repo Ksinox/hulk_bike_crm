@@ -243,7 +243,7 @@ export function SectionCard({
   );
 }
 
-/** Полоса выполнения плана. */
+/** Полоса выполнения плана — три строки в одной компактной группе. */
 export function PlanBar({
   label,
   fact,
@@ -255,43 +255,38 @@ export function PlanBar({
   plan: number;
   unit?: string;
 }) {
-  const pct = plan > 0 ? Math.min(200, Math.round((fact / plan) * 100)) : 0;
+  const pct = plan > 0 ? Math.round((fact / plan) * 100) : 0;
   const done = pct >= 100;
   return (
-    <div className="flex min-w-0 flex-col gap-1.5">
+    <div className="flex min-w-0 flex-col gap-1">
       <div className="flex items-baseline gap-2">
-        <span className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
+        <span className="text-[10.5px] font-bold uppercase tracking-wider text-muted-2">
           {label}
         </span>
         <span className="ml-auto text-[13px] font-bold tabular-nums text-ink">
           {fact.toLocaleString("ru-RU")}
           {unit ? ` ${unit}` : ""}
         </span>
-        <span className="text-[11.5px] text-muted-2">
-          из {plan > 0 ? plan.toLocaleString("ru-RU") : "—"}
-          {plan > 0 && unit ? ` ${unit}` : ""}
+        <span className="text-[11px] text-muted-2">
+          {plan > 0 ? (
+            <>
+              из {plan.toLocaleString("ru-RU")}
+              {unit ? ` ${unit}` : ""} ·{" "}
+              <b className={done ? "text-emerald-700" : "text-ink-2"}>{pct}%</b>
+            </>
+          ) : (
+            "плана нет"
+          )}
         </span>
       </div>
-      <div className="h-2 overflow-hidden rounded-full bg-surface-soft">
+      <div className="h-1.5 overflow-hidden rounded-full bg-surface-soft">
         <div
           className={cn(
-            "h-full rounded-full transition-[width] duration-500",
+            "h-full rounded-full transition-[width] duration-700",
             done ? "bg-emerald-500" : "bg-blue-600",
           )}
           style={{ width: `${plan > 0 ? Math.min(100, pct) : 0}%` }}
         />
-      </div>
-      <div className="text-[11px] text-muted-2">
-        {plan > 0 ? (
-          <>
-            выполнено <b className={done ? "text-emerald-700" : "text-ink-2"}>{pct}%</b>
-            {!done && plan > fact && (
-              <> · осталось {(plan - fact).toLocaleString("ru-RU")}{unit ? ` ${unit}` : ""}</>
-            )}
-          </>
-        ) : (
-          "план не задан"
-        )}
       </div>
     </div>
   );
