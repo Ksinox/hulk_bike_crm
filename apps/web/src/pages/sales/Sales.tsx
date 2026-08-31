@@ -14,6 +14,7 @@ import { SalesStock } from "./SalesStock";
 import { SalesManagers } from "./SalesManagers";
 import { NewSaleWizard } from "./NewSaleWizard";
 import { SaleDealDrawer } from "./SaleDealDrawer";
+import { plural } from "./salesUtils";
 
 /**
  * Раздел «Продажи» (задание заказчика 31.08).
@@ -97,7 +98,7 @@ export function Sales() {
             onClick={() => setTab("deals")}
             className="rounded-full bg-orange-soft px-3 py-1 text-[11.5px] font-bold text-orange-ink"
           >
-            {inWork} сделок в работе
+            {inWork} {plural(inWork, ["сделка", "сделки", "сделок"])} в работе
           </button>
         )}
         <div className="flex-1" />

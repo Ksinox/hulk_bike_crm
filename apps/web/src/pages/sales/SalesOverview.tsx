@@ -6,7 +6,6 @@ import {
   Target,
   TrendingUp,
   Trophy,
-  Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useMe } from "@/lib/api/auth";
@@ -30,7 +29,6 @@ import {
   deltaPct,
   fmt,
   fmtCompact,
-  isoDate,
   managerRating,
   modelRating,
   presetRange,
@@ -218,7 +216,7 @@ export function SalesOverview({
         />
       </div>
 
-      <div className="grid min-w-0 gap-4 xl:grid-cols-[1.6fr_1fr]">
+      <div className="grid min-w-0 items-start gap-4 xl:grid-cols-[1.6fr_1fr]">
         {/* Динамика */}
         <SectionCard
           title="Динамика продаж"
@@ -243,7 +241,7 @@ export function SalesOverview({
         >
           <div className="flex flex-col gap-3 p-4">
             {now.units === 0 ? (
-              <div className="py-10 text-center text-[13px] text-muted">
+              <div className="py-6 text-center text-[13px] text-muted">
                 За выбранный период продаж не было.
               </div>
             ) : (
@@ -348,14 +346,14 @@ export function SalesOverview({
         </SectionCard>
       </div>
 
-      <div className="grid min-w-0 gap-4 xl:grid-cols-2">
+      <div className="grid min-w-0 items-start gap-4 xl:grid-cols-2">
         {/* Рейтинг менеджеров */}
         <SectionCard
           title="Рейтинг менеджеров"
           hint={`${range.label} · кто сколько продал`}
         >
           {mRating.length === 0 ? (
-            <div className="px-4 py-10 text-center text-[13px] text-muted">
+            <div className="px-4 py-7 text-center text-[13px] text-muted">
               За период продаж не было.
             </div>
           ) : (
@@ -419,7 +417,7 @@ export function SalesOverview({
         {/* Рейтинг моделей */}
         <SectionCard title="Рейтинг моделей" hint="что продаётся чаще">
           {modRating.length === 0 ? (
-            <div className="px-4 py-10 text-center text-[13px] text-muted">
+            <div className="px-4 py-7 text-center text-[13px] text-muted">
               За период продаж не было.
             </div>
           ) : (
@@ -617,5 +615,3 @@ function PlanField({
   );
 }
 
-void Users;
-void isoDate;

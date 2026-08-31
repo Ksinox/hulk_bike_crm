@@ -53,6 +53,15 @@ export function ruDateShort(d: Date | string | null | undefined): string {
 
 export const fmt = (n: number) => Math.round(n).toLocaleString("ru-RU");
 
+/** Склонение: plural(3, ["сделка","сделки","сделок"]) → «сделки». */
+export function plural(n: number, forms: [string, string, string]): string {
+  const m10 = n % 10;
+  const m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return forms[0];
+  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return forms[1];
+  return forms[2];
+}
+
 /** Компактно: 1 250 000 → «1,25 млн». Для крупных сумм в плитках. */
 export function fmtCompact(n: number): string {
   const abs = Math.abs(n);

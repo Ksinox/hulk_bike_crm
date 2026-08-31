@@ -103,7 +103,16 @@ export function NewSaleWizard({
 
   // Продолжение начатой сделки: подставляем сохранённое и встаём на первый
   // незаполненный шаг, чтобы не прокликивать заново то, что уже указано.
+  //
+  // Только для сделки, ОТКРЫТОЙ на продолжение (initialDealId). Иначе
+  // эффект срабатывал и на черновик, который мы сами создали на первом
+  // шаге, и затирал уже выбранное — например технику, подставленную
+  // кнопкой «Продать» (тогда «Далее» на шаге 2 оставалась неактивной).
   useEffect(() => {
+    if (initialDealId == null) {
+      hydrated.current = true;
+      return;
+    }
     if (!deal || hydrated.current) return;
     hydrated.current = true;
     setClientId(deal.clientId);
@@ -116,7 +125,7 @@ export function NewSaleWizard({
     else if (deal.price) setStep(3);
     else if (deal.scooterId) setStep(2);
     else if (deal.clientId) setStep(1);
-  }, [deal]);
+  }, [deal, initialDealId]);
 
   const modelById = useMemo(
     () => new Map(models.map((m) => [m.id, m] as const)),
