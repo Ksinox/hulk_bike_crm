@@ -121,6 +121,7 @@ export function SalesOverview({
   const mRating = useMemo(() => managerRating(sold, managers), [sold, managers]);
   const modRating = useMemo(() => modelRating(sold), [sold]);
   const maxModelUnits = Math.max(1, ...modRating.map((m) => m.units));
+  const maxManagerRevenue = Math.max(1, ...mRating.map((m) => m.revenue));
 
   // План берём на месяц, в котором заканчивается период.
   const planPeriod = `${range.to.getFullYear()}-${String(range.to.getMonth() + 1).padStart(2, "0")}`;
@@ -178,7 +179,7 @@ export function SalesOverview({
             suffix="ед."
             hint={
               stock.units
-                ? `сейчас · на ${fmtCompact(stock.price)} ₽ · прибыль ~${fmtCompact(stock.expectedProfit)} ₽`
+                ? `сейчас на ${fmtCompact(stock.price)} ₽`
                 : "техники в продаже нет"
             }
             icon={<Package size={13} />}
@@ -295,59 +296,54 @@ export function SalesOverview({
               За период продаж не было.
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[520px] text-[12.5px]">
-                <thead>
-                  <tr className="border-b border-border/60 text-[10.5px] font-bold uppercase tracking-wider text-muted-2">
-                    <th className="px-4 py-2 text-left font-bold">Менеджер</th>
-                    <th className="px-2 py-2 text-right font-bold">Продано</th>
-                    <th className="px-2 py-2 text-right font-bold">Выручка</th>
-                    <th className="px-2 py-2 text-right font-bold">Прибыль</th>
-                    <th className="px-2 py-2 text-right font-bold">Ср. чек</th>
-                    <th className="px-4 py-2 text-right font-bold">Менеджеру</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {mRating.map((row, i) => (
-                    <tr
-                      key={row.managerId ?? "none"}
-                      className="border-b border-border/60 last:border-b-0"
-                    >
-                      <td className="px-4 py-2.5">
-                        <span className="flex items-center gap-2">
-                          <span className="w-4 text-[11px] font-bold text-muted-2">
-                            {i + 1}
-                          </span>
-                          <ManagerAvatar name={row.name} color={row.color} size={26} />
-                          <span className="min-w-0 truncate font-semibold text-ink">
-                            {row.name}
-                          </span>
-                          {row.manager && row.manager.commissionPct > 0 && (
-                            <span className="rounded-full bg-surface-soft px-1.5 py-0.5 text-[10px] font-bold text-muted-2">
-                              {row.manager.commissionPct}%
-                            </span>
-                          )}
-                        </span>
-                      </td>
-                      <td className="px-2 py-2.5 text-right font-bold tabular-nums text-ink">
-                        {row.units}
-                      </td>
-                      <td className="px-2 py-2.5 text-right tabular-nums">
+            /* Списком, а не таблицей: в узкой колонке семь столбцов
+               обрезались по краю и половина цифр была не видна. */
+            <div className="flex flex-col gap-2 p-3">
+              {mRating.map((row, i) => {
+                const share =
+                  maxManagerRevenue > 0 ? (row.revenue / maxManagerRevenue) * 100 : 0;
+                return (
+                  <div
+                    key={row.managerId ?? "none"}
+                    className="flex min-w-0 flex-col gap-1.5 rounded-xl bg-surface-soft/60 p-2.5"
+                  >
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span className="w-3 shrink-0 text-[11px] font-bold text-muted-2">
+                        {i + 1}
+                      </span>
+                      <ManagerAvatar name={row.name} color={row.color} size={26} />
+                      <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink">
+                        {row.name}
+                      </span>
+                      <span className="shrink-0 text-[13px] font-bold tabular-nums text-ink">
                         {fmt(row.revenue)} ₽
-                      </td>
-                      <td className="px-2 py-2.5 text-right tabular-nums text-emerald-700">
-                        {fmt(row.profit)} ₽
-                      </td>
-                      <td className="px-2 py-2.5 text-right tabular-nums text-muted">
-                        {fmt(row.avgCheck)} ₽
-                      </td>
-                      <td className="px-4 py-2.5 text-right tabular-nums text-muted">
-                        {row.commission ? `${fmt(row.commission)} ₽` : "—"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                      </span>
+                    </div>
+                    <div className="h-1.5 overflow-hidden rounded-full bg-surface">
+                      <div
+                        className="h-full rounded-full bg-emerald-500"
+                        style={{ width: `${share}%` }}
+                      />
+                    </div>
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-2">
+                      <span>
+                        продано <b className="text-ink-2">{row.units}</b>
+                      </span>
+                      <span>
+                        прибыль{" "}
+                        <b className="text-emerald-700">{fmt(row.profit)} ₽</b>
+                      </span>
+                      <span>ср. чек {fmt(row.avgCheck)} ₽</span>
+                      {row.commission > 0 && (
+                        <span>
+                          ему {fmt(row.commission)} ₽
+                          {row.manager ? ` (${row.manager.commissionPct}%)` : ""}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </SectionCard>
