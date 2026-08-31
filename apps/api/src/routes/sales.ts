@@ -14,6 +14,7 @@ import {
 } from "../db/schema.js";
 import { logActivity } from "../services/activityLog.js";
 import { requireRole } from "../auth/plugin.js";
+import { scooterLabel } from "./scooters.js";
 import { makeFileKey, removeObject } from "../storage/index.js";
 import { putObjectWithImageVariants } from "../storage/image.js";
 
@@ -398,7 +399,7 @@ export async function salesRoutes(app: FastifyInstance) {
           entity: "scooter",
           entityId: deal.scooterId,
           action: "status_changed",
-          summary: `Статус ${sc.name}: «Продаётся» → «Продан» · продан по сделке #${id} за ${fmtMoney(row!.price)} ₽ · из парка выбыл`,
+          summary: `Статус ${scooterLabel(sc.name, sc.rentalSlot)}: «Продаётся» → «Продан» · продан по сделке #${id} за ${fmtMoney(row!.price)} ₽ · техника выбыла из оборота`,
           meta: { statusFrom: sc.baseStatus, statusTo: "sold", dealId: id },
         });
       }
@@ -672,7 +673,7 @@ async function buildDealValues(
               .from(scooterModels)
               .where(eq(scooterModels.id, sc.modelId))
           : [];
-        values.scooterName = sc.name;
+        values.scooterName = scooterLabel(sc.name, sc.rentalSlot);
         values.modelName = model?.name ?? null;
         values.vin = sc.vin;
         values.engineNo = sc.engineNo;

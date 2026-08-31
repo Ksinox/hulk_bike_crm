@@ -65,7 +65,7 @@ const directorOnly = requireRole("director");
  * Правка заказчика 24.08: формата «Jog #03» в CRM быть не должно —
  * номер заведения оператору ничего не говорит, значим арендный номер.
  */
-function scooterLabel(name: string, slot?: number | null): string {
+export function scooterLabel(name: string, slot?: number | null): string {
   const model = name.replace(/\s*#\s*\d+\s*$/, "").trim() || name;
   return slot != null ? `${model} №${slot}` : model;
 }
