@@ -214,11 +214,35 @@ export function zoomView(v: ChartView, dir: 1 | -1): ChartView {
   return { bucket, count: DEFAULT_COUNT[bucket], end: v.end };
 }
 
-/** Сдвинуть окно на n интервалов (минус — в прошлое). */
-export function panView(v: ChartView, n: number, now = new Date()): ChartView {
+/**
+ * Сдвинуть окно на n интервалов (минус — в прошлое).
+ *
+ * Окно упирается в стенки, а не улетает в пустоту (фидбэк 31.08):
+ * справа — «сейчас», слева — первая продажа (её передаёт вызывающий).
+ * Раньше можно было утащить график в год, где данных нет, и остаться
+ * с пустым экраном без понятного способа вернуться.
+ */
+export function panView(
+  v: ChartView,
+  n: number,
+  now = new Date(),
+  earliest?: Date | null,
+): ChartView {
   const end = shift(v.end, v.bucket, n);
-  // В будущее не уезжаем — правее «сейчас» данных не бывает.
-  return { ...v, end: end.getTime() > now.getTime() ? new Date(now) : end };
+  if (end.getTime() > now.getTime()) return { ...v, end: new Date(now) };
+  if (earliest) {
+    // Левая стенка: в окно должна попадать хотя бы первая продажа.
+    const minEnd = earliest;
+    if (end.getTime() < minEnd.getTime()) {
+      return { ...v, end: new Date(minEnd) };
+    }
+  }
+  return { ...v, end };
+}
+
+/** Окно стоит на «сейчас»? (нужно, чтобы показать кнопку возврата) */
+export function isAtNow(v: ChartView, now = new Date()): boolean {
+  return Math.abs(v.end.getTime() - now.getTime()) < 60_000;
 }
 
 /** Предыдущий сопоставимый период — для дельты «было / стало». */

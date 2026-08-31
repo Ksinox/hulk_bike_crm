@@ -160,21 +160,21 @@ export function ProgressBoard() {
           здесь общий счётчик и способ погасить всё разом. */}
       {freshCount > 0 && (
         <div
-          className="mt-6 flex flex-wrap items-center gap-2 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3"
+          className="mt-6 flex flex-wrap items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3"
           style={{ animation: "wnFadeUp .5s ease-out both", animationDelay: "60ms" }}
         >
-          <span className="inline-block h-2 w-2 shrink-0 rounded-full bg-blue-600" />
-          <span className="text-[13px] font-semibold text-blue-700">
+          <span className="inline-block h-2 w-2 shrink-0 rounded-full bg-amber-500" />
+          <span className="text-[13px] font-semibold text-amber-700">
             Обновлено с прошлого просмотра: {freshCount}{" "}
             {freshCount === 1 ? "пункт" : freshCount < 5 ? "пункта" : "пунктов"}
           </span>
-          <span className="text-[12px] text-blue-700/70">
-            — они помечены точкой; точка гаснет, когда пункт откроешь
+          <span className="text-[12px] text-amber-700/70">
+            — они помечены жёлтой точкой слева; откроешь пункт — точка станет серой
           </span>
           <button
             type="button"
             onClick={markAllSeen}
-            className="ml-auto rounded-full bg-white px-3 py-1.5 text-[12px] font-bold text-blue-700 shadow-card-sm transition-colors hover:bg-blue-100"
+            className="ml-auto rounded-full bg-white px-3 py-1.5 text-[12px] font-bold text-amber-700 shadow-card-sm transition-colors hover:bg-amber-100"
           >
             Отметить всё просмотренным
           </button>
@@ -465,11 +465,17 @@ function ItemCard({
   );
   return (
     <div className="relative">
-      {/* Маркер на линии времени */}
+      {/* Маркер на линии времени.
+          Правка 31.08 (заказчик): точек было две — статусная и «свежее».
+          Оставили одну: жёлтая — в пункте есть изменения с прошлого
+          просмотра, серая — уже смотрели. Статус и так виден пилюлей. */}
       <span
+        title={
+          fresh ? "Есть изменения с прошлого просмотра" : "Просмотрено"
+        }
         className={cn(
-          "absolute -left-7 top-[18px] h-[9px] w-[9px] rounded-full ring-4 ring-surface sm:-left-9",
-          meta.dot,
+          "absolute -left-7 top-[18px] h-[9px] w-[9px] rounded-full ring-4 ring-surface transition-colors sm:-left-9",
+          fresh ? "bg-amber-500" : "bg-muted-2/40",
         )}
       />
 
@@ -494,13 +500,6 @@ function ItemCard({
 
           <span className="min-w-0 flex-1 text-[13.5px] font-bold leading-snug text-ink sm:text-[14.5px]">
             {item.title}
-            {/* Точка «здесь есть свежее» — гаснет, когда пункт открыли. */}
-            {fresh && (
-              <span
-                title="Есть изменения с прошлого просмотра"
-                className="ml-2 inline-block h-2 w-2 shrink-0 translate-y-[-1px] rounded-full bg-blue-600 align-middle"
-              />
-            )}
           </span>
 
           <span

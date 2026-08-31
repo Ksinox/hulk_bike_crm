@@ -3,6 +3,7 @@ import {
   BadgePercent,
   Banknote,
   Package,
+  RotateCcw,
   Target,
   TrendingUp,
   Trophy,
@@ -29,6 +30,7 @@ import { SalesChart } from "./SalesChart";
 import {
   BUCKET_AXIS,
   deltaPct,
+  isAtNow,
   panView,
   rangeFromView,
   viewForPreset,
@@ -110,6 +112,14 @@ export function SalesOverview({
     const cost = list.reduce((s, x) => s + (x.purchasePrice ?? 0), 0);
     return { units: list.length, price, expectedProfit: price - cost };
   }, [scooters]);
+
+  /** Левая стенка графика: раньше первой продажи смотреть не на что. */
+  const earliestSale = useMemo(() => {
+    const dates = deals
+      .filter((d) => d.status === "signed" && d.soldAt)
+      .map((d) => new Date(d.soldAt!).getTime());
+    return dates.length ? new Date(Math.min(...dates)) : null;
+  }, [deals]);
 
   const dyn = useMemo(() => series(sold, range, bucket), [sold, range, bucket]);
 
@@ -247,17 +257,38 @@ export function SalesOverview({
           title="Динамика продаж"
           hint={range.label}
           action={
-            <span className="rounded-full bg-surface-soft px-2.5 py-1 text-[11px] font-semibold text-muted-2">
-              {BUCKET_AXIS[bucket]}
-            </span>
+            <>
+              {!isAtNow(view) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPreset("month");
+                    setView(viewForPreset("month"));
+                  }}
+                  className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700 transition-colors hover:bg-emerald-100"
+                >
+                  <RotateCcw size={11} /> К сегодняшнему дню
+                </button>
+              )}
+              <span className="rounded-full bg-surface-soft px-2.5 py-1 text-[11px] font-semibold text-muted-2">
+                {BUCKET_AXIS[bucket]}
+              </span>
+            </>
           }
         >
           <div className="flex flex-1 flex-col justify-center p-4">
-            {now.units === 0 ? (
-              <div className="py-8 text-center text-[13px] text-muted">
-                За выбранный период продаж не было.
+            {/* График рисуем всегда — даже когда продаж нет: пустая сетка
+                честнее, чем текст вместо графика, и из неё видно, куда
+                уехало окно (фидбэк 31.08). */}
+            {now.units === 0 && (
+              <div className="mb-2 text-center text-[12.5px] text-muted-2">
+                За это окно продаж не было
+                {earliestSale
+                  ? ` — первая продажа ${earliestSale.toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" })}`
+                  : ""}
               </div>
-            ) : (
+            )}
+            {(
               <SalesChart
                 points={dyn.points}
                 forecast={dyn.forecast}
@@ -268,7 +299,7 @@ export function SalesOverview({
                 }}
                 onPan={(steps) => {
                   setPreset("custom");
-                  setView((v) => panView(v, steps));
+                  setView((v) => panView(v, steps, new Date(), earliestSale));
                 }}
               />
             )}
