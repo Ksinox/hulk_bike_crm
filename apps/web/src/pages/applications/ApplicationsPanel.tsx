@@ -48,6 +48,13 @@ export function ApplicationsButton({
     null,
   );
   const closeTimer = useRef<number | null>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  /**
+   * С какой стороны раскрывать меню (правка 31.08): кнопка «Заявки» в
+   * «Продажах» стоит у правого края, и меню, раскрытое вправо, обрезалось
+   * экраном. Считаем по месту: не влезает вправо — открываем влево.
+   */
+  const [alignRight, setAlignRight] = useState(false);
 
   const q = useApplications({ status: "active", poll: true });
   const fresh = (q.data ?? []).filter(
@@ -59,8 +66,11 @@ export function ApplicationsButton({
   const intro = isSale ? SALE_INTRO : RENT_SHARE_INTRO;
   const label = isSale ? "Анкета покупателя" : "Анкета аренды";
 
+  const MENU_W = 236;
   const openMenu = () => {
     if (closeTimer.current) window.clearTimeout(closeTimer.current);
+    const r = wrapRef.current?.getBoundingClientRect();
+    if (r) setAlignRight(r.left + MENU_W > window.innerWidth - 12);
     setMenu(true);
   };
   const scheduleClose = () => {
@@ -79,6 +89,7 @@ export function ApplicationsButton({
   return (
     <>
       <div
+        ref={wrapRef}
         className="relative"
         onMouseEnter={openMenu}
         onMouseLeave={scheduleClose}
@@ -105,7 +116,12 @@ export function ApplicationsButton({
 
         {menu && (
           // pt-1.5 — «мостик» под курсор между кнопкой и меню.
-          <div className="absolute left-0 top-full z-[60] pt-1.5">
+          <div
+            className={cn(
+              "absolute top-full z-[60] pt-1.5",
+              alignRight ? "right-0" : "left-0",
+            )}
+          >
             <div className="w-[236px] overflow-hidden rounded-2xl border border-border bg-surface p-1.5 shadow-card-lg animate-slide-in-down">
               <button
                 type="button"
