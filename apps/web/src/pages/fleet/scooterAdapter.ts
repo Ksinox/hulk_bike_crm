@@ -25,6 +25,8 @@ export function adaptScooter(a: ApiScooter): FleetScooter {
     purchaseDate: isoDateToRu(a.purchaseDate),
     purchasePrice: a.purchasePrice ?? undefined,
     marketValue: a.marketValue ?? undefined,
+    salePrice: a.salePrice ?? undefined,
+    purchaseBatch: a.purchaseBatch ?? undefined,
     lastOilChangeMileage: a.lastOilChangeMileage ?? undefined,
     note: a.note ?? undefined,
     // Пункт 15/16: арендное место, ярлык «был в аренде», ID по раме.

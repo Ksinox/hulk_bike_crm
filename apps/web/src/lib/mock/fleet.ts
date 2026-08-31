@@ -57,6 +57,10 @@ export type FleetScooter = {
   purchasePrice?: number;
   /** рыночная стоимость, ₽ — в договор (стоимость при утрате) */
   marketValue?: number;
+  /** Блок «Продажи» (31.08): цена, по которой единица стоит в продаже. */
+  salePrice?: number;
+  /** Партия закупа — «Партия 3, апрель 2026». */
+  purchaseBatch?: string;
   /** Пробег скутера на момент последней замены масла, км */
   lastOilChangeMileage?: number;
   /**

@@ -36,6 +36,10 @@ const CreateScooterBody = z
     purchaseDate: z.string().optional().nullable(),
     purchasePrice: z.number().int().min(0).optional().nullable(),
     marketValue: z.number().int().min(0).optional().nullable(),
+    /** Блок «Продажи» (31.08): цена продажи и партия закупа — редактируются
+     *  в карточке техники, читаются и в «Скутерах», и в «Продажах». */
+    salePrice: z.number().int().min(0).optional().nullable(),
+    purchaseBatch: z.string().max(120).optional().nullable(),
     lastOilChangeMileage: z.number().int().min(0).optional().nullable(),
     note: z.string().max(500).optional().nullable(),
     /** Пункт 15: желаемое место в арендном парке (из свободных). */
@@ -653,6 +657,8 @@ export async function scootersRoutes(app: FastifyInstance) {
       { key: "mileage", label: "пробег" },
       { key: "rentalSlot", label: "номер в аренде" },
       { key: "purchasePrice", label: "цена закупа" },
+      { key: "salePrice", label: "цена продажи" },
+      { key: "purchaseBatch", label: "партия закупа" },
       { key: "marketValue", label: "рыночная стоимость" },
       { key: "year", label: "год выпуска" },
       { key: "color", label: "цвет" },

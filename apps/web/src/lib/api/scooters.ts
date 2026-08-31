@@ -95,6 +95,10 @@ export type CreateScooterInput = {
   purchaseDate?: string | null;
   purchasePrice?: number | null;
   marketValue?: number | null;
+  /** Блок «Продажи»: цена, по которой единица выставлена в продажу. */
+  salePrice?: number | null;
+  /** Партия закупа — «Партия 3, апрель 2026». */
+  purchaseBatch?: string | null;
   lastOilChangeMileage?: number | null;
   note?: string | null;
 };

@@ -375,6 +375,12 @@ export const scooters = pgTable(
     /** Рыночная стоимость, ₽. Подставляется в договор (п. 4.1 «стоимость
      *  Скутера при утрате»). NULL → договор берёт purchasePrice (back-compat). */
     marketValue: integer("market_value"),
+    /** Блок «Продажи» (31.08): цена, по которой единица выставлена в продажу.
+     *  Живёт в карточке техники — «Продажи» и «Скутеры» смотрят в одно поле. */
+    salePrice: integer("sale_price"),
+    /** Партия закупа — в какой поставке приехала единица (для детализации
+     *  сделки: «партия»). Свободный текст: «Партия 3, апрель 2026». */
+    purchaseBatch: text("purchase_batch"),
     /** Пробег на момент последней замены масла, км */
     lastOilChangeMileage: integer("last_oil_change_mileage"),
     note: text("note"),
@@ -2155,4 +2161,119 @@ export const investorPayouts = pgTable("investor_payouts", {
   paidAt: timestamp("paid_at", { withTimezone: true }).notNull().defaultNow(),
   paidBy: bigint("paid_by", { mode: "number" }),
   note: text("note"),
+});
+
+
+/* ============================================================
+ * ПРОДАЖИ (задание 31.08)
+ *
+ * sale_managers — кто продаёт. Это не учётки CRM: продавец может не иметь
+ *   доступа в систему. commissionPct — его процент (считаем с прибыли).
+ * sale_deals — сделка. Ведётся по шагам: клиент → скутер → цена →
+ *   менеджер → договор → подпись со сканом. Числовые поля снимаются на
+ *   момент продажи, чтобы правка карточки техники не переписала отчёт.
+ * sale_deal_documents — скан/фото подписанного договора.
+ * sale_plans — план продаж на месяц (единицы, выручка, прибыль, маржа).
+ * ============================================================ */
+
+export const saleDealStatusEnum = pgEnum("sale_deal_status", [
+  "draft", // сделка собирается: выбираем клиента, технику, цену, менеджера
+  "contract", // договор сформирован, ждём подписания
+  "signed", // подписан — продажа состоялась, техника переведена в «Продан»
+  "cancelled", // отменена
+]);
+
+export const saleManagers = pgTable("sale_managers", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  name: text("name").notNull(),
+  phone: text("phone"),
+  /** Цвет аватара-плитки: blue / purple / green / orange / pink — как на
+   *  экране входа, чтобы менеджер узнавался в списках по цвету и инициалам. */
+  avatarColor: text("avatar_color").notNull().default("blue"),
+  /** Процент менеджера с прибыли сделки. */
+  commissionPct: integer("commission_pct").notNull().default(0),
+  /** Опциональная связь с учёткой CRM (если у продавца есть логин). */
+  userId: bigint("user_id", { mode: "number" }),
+  active: boolean("active").notNull().default(true),
+  note: text("note"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
+});
+
+export const saleDeals = pgTable(
+  "sale_deals",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    status: saleDealStatusEnum("status").notNull().default("draft"),
+    clientId: bigint("client_id", { mode: "number" }),
+    scooterId: bigint("scooter_id", { mode: "number" }),
+    managerId: bigint("manager_id", { mode: "number" }),
+    /** Продажная стоимость сделки, ₽ (может отличаться от цены в карточке). */
+    price: integer("price").notNull().default(0),
+    /** Снимок цены закупа — база для прибыли. */
+    purchasePrice: integer("purchase_price"),
+    managerCommissionPct: integer("manager_commission_pct"),
+    managerCommission: integer("manager_commission"),
+    // Снимки техники — чтобы сделку можно было прочитать даже если
+    // технику потом отредактировали или удалили.
+    scooterName: text("scooter_name"),
+    modelName: text("model_name"),
+    vin: text("vin"),
+    engineNo: text("engine_no"),
+    frameNumber: text("frame_number"),
+    purchaseBatch: text("purchase_batch"),
+    mileage: integer("mileage"),
+    comment: text("comment"),
+    cancelReason: text("cancel_reason"),
+    contractAt: timestamp("contract_at", { withTimezone: true }),
+    signedAt: timestamp("signed_at", { withTimezone: true }),
+    /** Дата продажи — по ней сделка попадает в показатели периода. */
+    soldAt: timestamp("sold_at", { withTimezone: true }),
+    createdByUserId: bigint("created_by_user_id", { mode: "number" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    statusIdx: index("sale_deals_status_idx").on(t.status),
+    soldIdx: index("sale_deals_sold_at_idx").on(t.soldAt),
+    managerIdx: index("sale_deals_manager_idx").on(t.managerId),
+  }),
+);
+
+export const saleDealDocuments = pgTable(
+  "sale_deal_documents",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    dealId: bigint("deal_id", { mode: "number" }).notNull(),
+    fileKey: text("file_key").notNull(),
+    fileName: text("file_name").notNull(),
+    mimeType: text("mime_type").notNull(),
+    size: integer("size").notNull(),
+    title: text("title"),
+    uploadedAt: timestamp("uploaded_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    dealIdx: index("sale_deal_documents_deal_idx").on(t.dealId),
+  }),
+);
+
+export const salePlans = pgTable("sale_plans", {
+  id: bigserial("id", { mode: "number" }).primaryKey(),
+  /** Первое число месяца, на который поставлен план. */
+  period: date("period").notNull(),
+  units: integer("units").notNull().default(0),
+  revenue: integer("revenue").notNull().default(0),
+  profit: integer("profit").notNull().default(0),
+  marginPct: integer("margin_pct").notNull().default(0),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
 });

@@ -103,6 +103,9 @@ export type ApiScooter = {
   purchaseDate: string | null;
   purchasePrice: number | null;
   marketValue: number | null;
+  /** Блок «Продажи» (31.08): цена продажи и партия закупа. */
+  salePrice: number | null;
+  purchaseBatch: string | null;
   lastOilChangeMileage: number | null;
   note: string | null;
   archivedAt: string | null;

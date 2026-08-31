@@ -2,7 +2,6 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   BarChart3,
   Bike,
-  Calculator,
   CircleAlert,
   ClipboardCheck,
   FileText,
@@ -31,7 +30,6 @@ import type { RouteId } from "./route";
 import { useMe } from "@/lib/api/auth";
 import { useUnreadChangelog } from "@/pages/whats-new/useUnreadChangelog";
 import { useApplications } from "@/lib/api/clientApplications";
-import { toggleCalculator } from "@/lib/calc/calcStore";
 
 type NavItem = {
   id: RouteId | "logout";
@@ -41,33 +39,32 @@ type NavItem = {
 };
 
 function buildMainItems(canManageStaff: boolean): NavItem[] {
+  /**
+   * Правка 31.08 (заказчик): порядок — по тому, как разделом пользуются.
+   * Сверху ежедневная работа, ниже — справочное, и в самом конце разделы
+   * «скоро»: раньше они стояли вперемешку с рабочими и первыми занимали
+   * место на коротком экране, вытесняя нужное в «Ещё».
+   */
   const items: NavItem[] = [
     { id: "dashboard", label: "Дашборд", icon: Home, ready: true },
-    { id: "clients", label: "Клиенты", icon: Users, ready: true },
     { id: "applications", label: "Заявки", icon: Inbox, ready: true },
+    { id: "clients", label: "Клиенты", icon: Users, ready: true },
     { id: "rentals", label: "Аренды", icon: Bike, ready: true },
     { id: "fleet", label: "Скутеры", icon: ShoppingBag, ready: true },
+    { id: "sales", label: "Продажи", icon: Wallet, ready: true },
+    { id: "partners", label: "Партнёрка", icon: Handshake, ready: true },
+    { id: "service", label: "Ремонты", icon: Wrench, ready: true },
+    { id: "debtors", label: "Должники", icon: Scale, ready: true },
+    { id: "docs", label: "Документы", icon: FileText, ready: true },
   ];
-  // «Сотрудники» — полностью скрыты для admin/mechanic/accountant.
-  // Показываются только director/creator.
+  // «Сотрудники» и «Хранилище» — только director/creator.
   if (canManageStaff) {
     items.push({ id: "staff", label: "Сотрудники", icon: UserCog, ready: true });
   }
   items.push(
-    { id: "rassrochki", label: "Рассрочки", icon: Receipt },
-    { id: "sales", label: "Продажи", icon: Wallet },
-    // Пункт 11: расчёт выплат инвестору по партнёрской технике.
-    { id: "partners", label: "Партнёрка", icon: Handshake, ready: true },
-    { id: "service", label: "Ремонты", icon: Wrench, ready: true },
-    { id: "incidents", label: "Инциденты", icon: CircleAlert },
-    { id: "tasks", label: "Задачи", icon: ClipboardCheck },
-    { id: "analytics", label: "Аналитика", icon: BarChart3 },
-    { id: "docs", label: "Документы", icon: FileText, ready: true },
-    { id: "debtors", label: "Должники", icon: Scale, ready: true },
     { id: "whats-new", label: "Что нового", icon: Sparkles, ready: true },
     { id: "progress", label: "Развитие", icon: TrendingUp, ready: true },
   );
-  // «Хранилище» — обзор места (БД/файлы/диск) + браузер; только director/creator.
   if (canManageStaff) {
     items.push({
       id: "storage",
@@ -76,6 +73,13 @@ function buildMainItems(canManageStaff: boolean): NavItem[] {
       ready: true,
     });
   }
+  // Разделы «скоро» — всегда в конце списка.
+  items.push(
+    { id: "rassrochki", label: "Рассрочки", icon: Receipt },
+    { id: "incidents", label: "Инциденты", icon: CircleAlert },
+    { id: "tasks", label: "Задачи", icon: ClipboardCheck },
+    { id: "analytics", label: "Аналитика", icon: BarChart3 },
+  );
   return items;
 }
 
@@ -308,37 +312,6 @@ export function Sidebar({
         </div>
 
         <UpdateBanner phase={phase} version={version} expanded={expanded} />
-
-        {/* Калькулятор аренды — плавающее окно (не раздел). Открывается отсюда,
-            хоткеями Alt+C / Num+, и из мобильного «Ещё». */}
-        <button
-          type="button"
-          onMouseEnter={(e) => handleEnter(e, "Калькулятор · Alt + C")}
-          onMouseLeave={handleLeave}
-          onClick={() => toggleCalculator()}
-          className="sidebar-row relative mb-1 flex h-11 shrink-0 items-center gap-3 overflow-hidden whitespace-nowrap rounded-[14px] px-3 text-left text-muted transition-colors hover:bg-blue-50 hover:text-blue-600"
-        >
-          <span className="relative flex-shrink-0">
-            <Calculator size={20} />
-          </span>
-          <span
-            className={cn(
-              "flex min-w-0 flex-1 items-center gap-2 text-[13px] font-semibold transition-[opacity,transform]",
-              expanded
-                ? "pointer-events-auto translate-x-0 opacity-100 [transition-delay:80ms]"
-                : "pointer-events-none -translate-x-1.5 opacity-0",
-            )}
-            style={{
-              transitionDuration: "320ms",
-              transitionTimingFunction: "cubic-bezier(0.22,1,0.36,1)",
-            }}
-          >
-            <span className="truncate">Калькулятор</span>
-            <span className="ml-auto rounded-md bg-surface-soft px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-muted-2">
-              Alt C
-            </span>
-          </span>
-        </button>
 
         <div className="flex flex-col gap-1">
           {footerItems.map((item) => (

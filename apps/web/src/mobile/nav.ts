@@ -14,6 +14,7 @@ import {
   TrendingUp,
   UserCog,
   Users,
+  Wallet,
   Wrench,
   type LucideIcon,
 } from "lucide-react";
@@ -47,6 +48,8 @@ export function buildMoreItems(canManageStaff: boolean): MobileNavItem[] {
     { id: "debtors", label: "Должники", icon: Scale, ready: true },
     { id: "service", label: "Ремонты", icon: Wrench, ready: true },
     { id: "docs", label: "Документы", icon: FileText, ready: true },
+    // Блок «Продажи» (31.08): сделки, техника в продаже, менеджеры.
+    { id: "sales", label: "Продажи", icon: Wallet, ready: true },
     // Пункт 11: выплаты инвестору по партнёрской технике.
     { id: "partners", label: "Партнёрка", icon: Handshake, ready: true },
   ];

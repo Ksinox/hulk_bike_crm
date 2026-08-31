@@ -84,6 +84,12 @@ export function ScooterEditForm({
   const [marketValue, setMarketValue] = useState(
     scooter.marketValue != null ? String(scooter.marketValue) : "",
   );
+  // Блок «Продажи» (31.08): цена продажи и партия закупа живут здесь же —
+  // «Продажи» читают ровно эти поля, второй копии данных нет.
+  const [salePrice, setSalePrice] = useState(
+    scooter.salePrice != null ? String(scooter.salePrice) : "",
+  );
+  const [purchaseBatch, setPurchaseBatch] = useState(scooter.purchaseBatch ?? "");
 
   const requestClose = () => {
     if (closing) return;
@@ -145,6 +151,9 @@ export function ScooterEditForm({
     // директору»: это договорная величина, не закупочная себестоимость.
     const mv = Number(marketValue);
     patch.marketValue = Number.isFinite(mv) && mv > 0 ? mv : undefined;
+    const sp = Number(salePrice);
+    patch.salePrice = Number.isFinite(sp) && sp > 0 ? sp : undefined;
+    patch.purchaseBatch = purchaseBatch.trim() || undefined;
     // Правка 2.2: смена рамы/двигателя защищена ключом директора (бэк
     // ответит 428) — заранее кладём в окно подтверждения, что именно
     // меняется, чтобы директор видел старое и новое значение.
@@ -350,6 +359,39 @@ export function ScooterEditForm({
                 onChange={(e) => setMarketValue(e.target.value)}
                 placeholder="150000"
                 className="h-10 w-full rounded-[10px] border border-border bg-surface px-3 text-[14px] font-semibold tabular-nums text-ink outline-none focus:border-blue-600"
+              />
+            </Field>
+
+            <Field
+              label="Цена продажи, ₽"
+              hint={
+                <span className="text-[11px] text-muted-2">
+                  для раздела «Продажи»
+                </span>
+              }
+            >
+              <input
+                type="number"
+                value={salePrice}
+                onChange={(e) => setSalePrice(e.target.value)}
+                placeholder="120000"
+                className="h-10 w-full rounded-[10px] border border-border bg-surface px-3 text-[14px] font-semibold tabular-nums text-ink outline-none focus:border-blue-600"
+              />
+            </Field>
+
+            <Field
+              label="Партия закупа"
+              hint={
+                <span className="text-[11px] text-muted-2">
+                  в какой поставке приехал
+                </span>
+              }
+            >
+              <input
+                value={purchaseBatch}
+                onChange={(e) => setPurchaseBatch(e.target.value)}
+                placeholder="Партия 3, апрель 2026"
+                className="h-10 w-full rounded-[10px] border border-border bg-surface px-3 text-[14px] text-ink outline-none focus:border-blue-600"
               />
             </Field>
 

@@ -158,6 +158,12 @@ export function patchScooter(id: number, patch: Partial<FleetScooter>) {
   if (patch.marketValue !== undefined) {
     apiPatch.marketValue = patch.marketValue ?? null;
   }
+  if (patch.salePrice !== undefined) {
+    apiPatch.salePrice = patch.salePrice ?? null;
+  }
+  if (patch.purchaseBatch !== undefined) {
+    apiPatch.purchaseBatch = patch.purchaseBatch ?? null;
+  }
   if (patch.lastOilChangeMileage !== undefined) {
     apiPatch.lastOilChangeMileage = patch.lastOilChangeMileage ?? null;
   }

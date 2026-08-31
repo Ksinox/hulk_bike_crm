@@ -29,6 +29,7 @@ import { MobileDocuments } from "./pages/MobileDocuments";
 import { MobilePlaceholder } from "./pages/MobilePlaceholder";
 import { StoragePage } from "@/pages/storage/StoragePage";
 import { Partners } from "@/pages/partners/Partners";
+import { Sales } from "@/pages/sales/Sales";
 import { ApprovalsBell } from "@/components/ApprovalsInbox";
 import { DayReportDialog } from "@/components/DayReport";
 
@@ -162,6 +163,14 @@ function MobilePage({
       return <MobileWhatsNew />;
     case "progress":
       return <MobileProgress />;
+    case "sales":
+      // Раздел свёрстан адаптивно: на телефоне таблицы заменяются
+      // карточными списками, мастер продажи — полноэкранный.
+      return (
+        <div className="px-1 pb-4">
+          <Sales />
+        </div>
+      );
     case "partners":
       // Пункт 11: страница адаптивна (таблица со своим скроллом) —
       // переиспользуем десктопную в мобильной обёртке.

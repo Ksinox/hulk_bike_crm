@@ -206,6 +206,9 @@ async function bootstrap() {
     // Правки 2.0: инвесторы партнёрской техники (п.6-8)
     const { investorsRoutes } = await import("./routes/investors.js");
     await protectedApp.register(investorsRoutes, { prefix: "/api/investors" });
+    // Блок «Продажи» (31.08): сделки, менеджеры, план, договор купли-продажи
+    const { salesRoutes } = await import("./routes/sales.js");
+    await protectedApp.register(salesRoutes, { prefix: "/api/sales" });
     // Каталоги
     await protectedApp.register(scooterModelsRoutes, { prefix: "/api/scooter-models" });
     await protectedApp.register(equipmentRoutes, { prefix: "/api/equipment" });

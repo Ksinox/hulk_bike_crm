@@ -31,6 +31,9 @@ export type ActivityEntity =
   | "approval"
   // Правки 2.0, п.6-8: инвесторы партнёрской техники и выплаты им.
   | "investor"
+  // Блок «Продажи» (31.08): сделки и менеджеры продаж.
+  | "sale_deal"
+  | "sale_manager"
   | "settings";
 
 /**

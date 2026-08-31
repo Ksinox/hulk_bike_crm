@@ -13,6 +13,7 @@ import { StoragePage } from "@/pages/storage/StoragePage";
 import { WhatsNew } from "@/pages/whats-new/WhatsNew";
 import { Progress } from "@/pages/progress/Progress";
 import { Partners } from "@/pages/partners/Partners";
+import { Sales } from "@/pages/sales/Sales";
 import { Applications } from "@/pages/applications/Applications";
 import { UpdateToast } from "./UpdateToast";
 import { TitleBar } from "./TitleBar";
@@ -260,6 +261,8 @@ function AppShell({
       <Progress />
     ) : route === "partners" ? (
       <Partners />
+    ) : route === "sales" ? (
+      <Sales />
     ) : route === "settings" ? (
       <Settings />
     ) : route === "storage" ? (
