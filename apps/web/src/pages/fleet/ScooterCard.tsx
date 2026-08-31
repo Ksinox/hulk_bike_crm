@@ -347,6 +347,9 @@ export function ScooterCard({
     ? cardModels.find((m) => m.id === scooter.modelId)
     : cardModels.find((m) => m.name.toLowerCase().includes(scooter.model));
   const hasModelPhoto = !!modelForPhoto?.avatarKey;
+  /** VIN и номер рамы у скутера — одно клеймо; в базе они дублируются. */
+  const sameVinFrame =
+    (scooter.vin ?? "").trim() === (scooter.frameNumber ?? "").trim();
 
   return (
     <main
@@ -572,6 +575,95 @@ export function ScooterCard({
             : "grid gap-4 lg:grid-cols-[1fr_340px]",
         )}
       >
+        {/* ========== ОБЛОЖКА (дровер) ==========
+            Правка 31.08 (заказчик): как на телефоне — сверху фото модели,
+            под ним имя, модель и статус. Раньше в дровере фото жалось в
+            узкую колонку слева, а если у модели его нет — пропадало
+            совсем, и шапка карточки выглядела сломанной. */}
+        {drawerChrome && (
+          <section className="overflow-hidden rounded-2xl bg-surface shadow-card-sm">
+            <div className="flex h-40 items-center justify-center bg-white p-3">
+              {hasModelPhoto ? (
+                <img
+                  src={fileUrl(modelForPhoto?.avatarKey, { variant: "view" }) ?? ""}
+                  alt={scooter.name}
+                  className="h-full w-full object-contain"
+                />
+              ) : (
+                <div className="flex flex-col items-center gap-1 text-muted-2">
+                  <ImageOff size={26} />
+                  <span className="text-[12px]">Фото модели не загружено</span>
+                </div>
+              )}
+            </div>
+            <div className="flex items-center justify-between gap-2 border-t border-border px-4 py-2.5">
+              <div className="min-w-0">
+                <div className="truncate font-display text-[18px] font-extrabold leading-tight text-ink">
+                  <ScooterName
+                    name={scooter.name}
+                    number={scooter.rentalSlot}
+                    exNumber={scooter.exRentalSlot}
+                    size="md"
+                  />
+                </div>
+                <div className="text-[12px] text-muted">
+                  {MODEL_LABEL[scooter.model]}
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {/* ========== СОСТОЯНИЕ (дровер) ==========
+            Заказчик: сначала «как техника себя чувствует», потом её паспорт. */}
+        {drawerChrome && (
+          <section className="grid grid-cols-3 gap-2">
+            <div className="rounded-2xl bg-surface p-3 shadow-card-sm">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
+                Пробег
+              </div>
+              <div className="mt-0.5 font-display text-[19px] font-extrabold tabular-nums text-ink">
+                {fmt(scooter.mileage)}
+                <span className="ml-1 text-[12px] font-semibold text-muted">км</span>
+              </div>
+            </div>
+            <div className="rounded-2xl bg-surface p-3 shadow-card-sm">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
+                Масло
+              </div>
+              <div
+                className={cn(
+                  "mt-0.5 font-display text-[19px] font-extrabold tabular-nums",
+                  oilOverdue ? "text-red-ink" : oilWarn ? "text-orange-ink" : "text-ink",
+                )}
+              >
+                {oilOverdue ? "\u2212" : ""}
+                {fmt(Math.abs(oil.remainKm))}
+                <span className="ml-1 text-[12px] font-semibold text-muted">км</span>
+              </div>
+              <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-surface-soft">
+                <div
+                  className={cn(
+                    "h-full rounded-full",
+                    oilOverdue ? "bg-red-ink" : oilWarn ? "bg-orange-ink" : "bg-blue-600",
+                  )}
+                  style={{ width: `${Math.min(100, Math.round(oil.usedRatio * 100))}%` }}
+                />
+              </div>
+            </div>
+            <div className="rounded-2xl bg-surface p-3 shadow-card-sm">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
+                Обслуживание
+              </div>
+              <div className="mt-0.5 font-display text-[19px] font-extrabold tabular-nums text-ink">
+                {fmt(scooter.maintenanceCostTotal ?? 0)}
+                <span className="ml-1 text-[12px] font-semibold text-muted">₽</span>
+              </div>
+              <div className="text-[10.5px] text-muted-2">за всё время</div>
+            </div>
+          </section>
+        )}
+
         {/* ========== ЛЕВЫЙ БЛОК: ФОТО + ТЕХНИЧКА ========== */}
         {/* Правка 28.08: и в дровере фото слева, характеристики справа —
             так на экран помещается заметно больше без лишнего скролла.
@@ -583,15 +675,12 @@ export function ScooterCard({
         <section
           className={cn(
             "grid gap-0 overflow-hidden rounded-2xl bg-surface shadow-card-sm",
-            drawerChrome
-              ? hasModelPhoto && "@[380px]:grid-cols-[150px_1fr]"
-              : "md:grid-cols-[260px_1fr]",
+            drawerChrome ? "" : "md:grid-cols-[260px_1fr]",
           )}
         >
-          {/* фото — в дровере только если оно есть */}
-          {(!drawerChrome || hasModelPhoto) && (
-            <ScooterPhotoArea scooter={scooter} compact={drawerChrome} />
-          )}
+          {/* В дровере фото вынесено в обложку сверху (правка 31.08) —
+              здесь оно осталось только для полноэкранного режима. */}
+          {!drawerChrome && <ScooterPhotoArea scooter={scooter} compact={false} />}
 
           {/* техничка */}
           <div className={cn("flex flex-col gap-0", drawerChrome ? "p-4" : "p-6")}>
@@ -618,20 +707,36 @@ export function ScooterCard({
 
             <div className="mt-5 grid gap-x-6 gap-y-5 sm:grid-cols-2">
               <SpecCell label="Модель" value={MODEL_LABEL[scooter.model]} />
-              <SpecCell
-                label="VIN номер"
-                value={scooter.vin ?? "—"}
-                mono
-              />
+              {/* Правка 31.08: VIN и номер рамы у скутера — одно клеймо.
+                  Показываем одной строкой; двумя — только если в базе они
+                  реально разошлись. */}
+              {sameVinFrame ? (
+                <SpecCell
+                  label="VIN / номер рамы"
+                  value={scooter.vin ?? scooter.frameNumber ?? "—"}
+                  hint={
+                    scooter.uid ? `ID ${scooter.uid} — 6 последних цифр` : undefined
+                  }
+                  mono
+                />
+              ) : (
+                <>
+                  <SpecCell label="VIN номер" value={scooter.vin ?? "—"} mono />
+                  <SpecCell
+                    label="Номер рамы"
+                    value={scooter.frameNumber ?? "—"}
+                    hint={
+                      scooter.uid
+                        ? `ID ${scooter.uid} — 6 последних цифр VIN`
+                        : undefined
+                    }
+                    mono
+                  />
+                </>
+              )}
               <SpecCell
                 label="Номер двигателя"
                 value={scooter.engineNo ?? "—"}
-                mono
-              />
-              <SpecCell
-                label="Номер рамы"
-                value={scooter.frameNumber ?? "—"}
-                hint={scooter.uid ? `ID ${scooter.uid} — 6 последних цифр VIN` : undefined}
                 mono
               />
               {/* Пункт 15: номер в арендном парке — смена только на свободный. */}
