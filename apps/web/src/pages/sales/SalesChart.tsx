@@ -149,7 +149,9 @@ export function SalesChart({
 
           {/* Столбики */}
           <div
-            className="absolute inset-x-0 top-0 flex items-end justify-start gap-[3px]"
+            // justify-between: при малом числе столбиков они не жмутся
+            // влево — последний (текущий момент) стоит у правого края.
+            className="absolute inset-x-0 top-0 flex items-end justify-between gap-[3px]"
             style={{ height }}
           >
             {all.map((p, i) => {
@@ -163,7 +165,7 @@ export function SalesChart({
                   onMouseEnter={() => setHover(p.key)}
                   onMouseLeave={() => setHover(null)}
                   className="group relative flex h-full min-w-0 flex-1 flex-col justify-end"
-                  style={{ maxWidth: 56 }}
+                  style={{ maxWidth: 72 }}
                 >
                   <div
                     className={cn(
