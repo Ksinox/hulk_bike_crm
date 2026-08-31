@@ -233,6 +233,21 @@ function buildActivitySummary(
 ): ActivitySummaryView {
   const action = item.action;
   const diff = readRecord(readRecord(item.meta)?.diff);
+
+  /**
+   * События по ТЕХНИКЕ бэк описывает готовым предложением: «Статус Jog №3:
+   * «Не распределён» → «Продаётся» · ID · рама · пробег · вручную в
+   * карточке». Показываем его как есть.
+   *
+   * Без этой ветки запись со статусом попадала в арендную (`action`
+   * содержит «status»), где ждут diff.status от аренды: пилюли «было →
+   * стало» не находились, и в журнале техники оставался голый заголовок
+   * «Изменён статус» — ровно то, из-за чего и не могли понять, куда делся
+   * скутер.
+   */
+  if (item.entity === "scooter" && (item.summary || "").trim()) {
+    return { title: item.summary.trim(), change: null, extras: [] };
+  }
   const money = (v: unknown): string =>
     `${Number(v ?? 0).toLocaleString("ru-RU")} ₽`;
   const fee = readRecord(diff?.fee);
