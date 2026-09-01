@@ -41,7 +41,9 @@ export function ManagerAvatar({
  */
 export function StatRow({ children }: { children: ReactNode }) {
   return (
-    <div className="flex flex-wrap gap-3 [&>*]:min-w-[178px] [&>*]:flex-1">
+    // 158px — минимум, при котором на телефоне (390px) в ряд встают две
+    // плитки, а не одна: иначе пять показателей растягиваются на пол-экрана.
+    <div className="flex flex-wrap gap-3 [&>*]:min-w-[158px] [&>*]:flex-1">
       {children}
     </div>
   );
