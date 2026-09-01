@@ -80,18 +80,14 @@ export function Card({
   children,
   blue,
   className,
-  ref,
   ...rest
 }: {
   children: React.ReactNode;
   blue?: boolean;
   className?: string;
-  /** Нужен плашкам, которые меряют собственную ширину (01.09). */
-  ref?: React.Ref<HTMLDivElement>;
 } & React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      ref={ref}
       className={cn(
         "relative rounded-xl p-[18px] shadow-card",
         blue ? "text-white" : "bg-surface",

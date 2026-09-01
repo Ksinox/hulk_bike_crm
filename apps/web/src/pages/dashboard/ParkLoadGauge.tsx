@@ -99,13 +99,13 @@ export function ParkLoadGauge({
    * Меряем СВОЮ ширину (не окно — окно-то широкое) и ниже 300px
    * переходим на вертикальную раскладку с кругом поменьше.
    */
-  const cardRef = useRef<HTMLDivElement>(null);
+  const cardRef = useRef<HTMLButtonElement>(null);
   const [narrow, setNarrow] = useState(false);
   useEffect(() => {
     const el = cardRef.current;
     if (!el) return;
     const ro = new ResizeObserver(([entry]) => {
-      if (entry) setNarrow(entry.contentRect.width < 300);
+      if (entry) setNarrow(entry.contentRect.width < 260);
     });
     ro.observe(el);
     return () => ro.disconnect();
@@ -214,8 +214,11 @@ export function ParkLoadGauge({
   const centerBg = full ? "transparent" : "#ffffff";
 
   return (
-    <Card ref={cardRef} className={cn("flex h-full items-center", className)}>
+    <Card className={cn("flex h-full items-center", className)}>
+      {/* Меряем именно кнопку: React 18 не пробрасывает ref в обычный
+          компонент, а ширина кнопки и есть рабочая ширина плашки. */}
       <button
+        ref={cardRef}
         type="button"
         onClick={onClick}
         disabled={!onClick}
