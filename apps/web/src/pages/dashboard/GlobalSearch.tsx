@@ -134,7 +134,7 @@ export function GlobalSearch() {
   return (
     // min-w-0 + flex-1: поиск сжимается первым, вместо того чтобы
     // выталкивать кнопки на вторую строку (правка 01.09).
-    <div ref={ref} className="relative min-w-[150px] max-w-[420px] flex-1">
+    <div ref={ref} className="relative min-w-[112px] max-w-[420px] flex-1">
       <div
         className={cn(
           "flex items-center gap-2.5 rounded-full border px-3.5 py-2 transition-colors",

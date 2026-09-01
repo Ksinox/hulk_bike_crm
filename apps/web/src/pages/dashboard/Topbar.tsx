@@ -256,7 +256,10 @@ function CreatorViewSwitcher({
         className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-purple-soft px-3 py-1.5 text-[12px] font-bold text-purple-ink transition-colors hover:bg-purple/20"
         title="Creator: смотреть как роль"
       >
-        <Crown size={13} /> Смотрю как: {label}
+        <Crown size={13} />
+        {/* В тесноте (например когда справа открыта карточка) остаётся
+            корона — панель не должна ломаться из-за подписи (01.09). */}
+        <span className="hidden @[880px]:inline">Смотрю как: {label}</span>
         <ChevronDown size={12} />
       </button>
       {open && (

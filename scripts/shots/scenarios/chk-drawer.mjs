@@ -28,7 +28,11 @@ export async function run(page, ctx) {
       );
       const r = aside?.getBoundingClientRect();
       const scroller = aside?.parentElement;
+      const bar = [...document.querySelectorAll("div")].find(
+        (d) => d.className && String(d.className).includes("rounded-xl bg-surface px-3 py-2.5"),
+      );
       return {
+        barHeight: bar ? Math.round(bar.getBoundingClientRect().height) : null,
         drawerWidth: r ? Math.round(r.width) : null,
         drawerRight: r ? Math.round(r.right) : null,
         viewport: window.innerWidth,
