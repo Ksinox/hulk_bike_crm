@@ -322,6 +322,12 @@ export const CONTENT_FLOOR_W = 430;
 export const CONTENT_COMFORT_W = 760;
 /** Зазор между колонками (ml-3) и такой же отступ справа. */
 const GUTTER = 12;
+/**
+ * Ширина контента, при которой дашборд ещё делится пополам: слева
+ * компактные плитки, справа выручка (фидбэк 01.09). Ради этой раскладки
+ * карточку можно чуть ужать — но только если это реально её достигает.
+ */
+const CONTENT_SPLIT_W = 660;
 
 /**
  * Сколько отдать колонкам и сколько оставить контенту.
@@ -341,9 +347,19 @@ export function drawerLayout(
   // Колонки ужимаем пропорционально — но не ниже минимума, иначе
   // карточка перестаёт быть карточкой и лучше честный скролл.
   let scale = 1;
-  if (forColumns - wanted < CONTENT_FLOOR_W) {
+
+  // Чуть-чуть ужать карточку ради двухколоночного дашборда стоит только
+  // тогда, когда этого хватает. Если даже минимальная ширина карточки не
+  // даёт контенту нужного места — не жмём вообще: смысла терять ширину
+  // карточки ради всё равно однколоночной раскладки нет.
+  const needForSplit = (forColumns - CONTENT_SPLIT_W) / wanted;
+  if (needForSplit < 1 && needForSplit >= DRAWER_MIN_W / DRAWER_MAX_W) {
+    scale = needForSplit;
+  }
+
+  if (forColumns - wanted * scale < CONTENT_FLOOR_W) {
     const room = forColumns - CONTENT_FLOOR_W;
-    scale = Math.min(1, Math.max(DRAWER_MIN_W / DRAWER_MAX_W, room / wanted));
+    scale = Math.min(scale, Math.max(DRAWER_MIN_W / DRAWER_MAX_W, room / wanted));
   }
   const used = wanted * scale;
   const contentMin = Math.max(
