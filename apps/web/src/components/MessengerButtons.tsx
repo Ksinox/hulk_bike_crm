@@ -174,7 +174,7 @@ export function MessengerButtons({
       <button
         type="button"
         onClick={() => openMaxChat(phone)}
-        title="MAX: скопировать номер и открыть поиск"
+        title="MAX: открыть чат с клиентом по номеру"
         className={cn(btn, "text-indigo-600 hover:bg-indigo-50")}
       >
         <MaxIcon size={icon} />
