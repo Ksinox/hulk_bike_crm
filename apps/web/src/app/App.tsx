@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Sidebar } from "./Sidebar";
 import { Dashboard } from "@/pages/dashboard/Dashboard";
 import { Clients } from "@/pages/clients/Clients";
@@ -37,6 +37,9 @@ import {
 import {
   DashboardDrawerProvider,
   DashboardDrawerStack,
+  drawerLayout,
+  sideColumnWidth,
+  DRAWER_MAX_W,
   useDashboardDrawer,
 } from "@/pages/dashboard/DashboardDrawer";
 import { NewApplicationDetector } from "@/pages/clients/NewApplicationDetector";
@@ -177,7 +180,7 @@ function AppShell({
   route: RouteId;
   onSelect: (id: RouteId) => void;
 }) {
-  const { stack, close } = useDashboardDrawer();
+  const { stack, close, side } = useDashboardDrawer();
   const hasDrawers = stack.length > 0;
   // v0.9.2: уход на ДРУГУЮ страницу закрывает quick-view drawer — иначе
   // карточка drawer'а накладывается на собственную панель страницы
@@ -201,6 +204,35 @@ function AppShell({
   const scrollRef = useRef<HTMLDivElement>(null);
   // Высота скролл-области = вьюпорт минус electron-titlebar (36px).
   const shellHeight = isElectron ? "calc(100vh - 36px)" : "100vh";
+
+  /**
+   * Ширина ряда «контент + колонки». Нужна, чтобы карточка помещалась
+   * целиком: контент сжимается под неё, а не выталкивает её за экран
+   * (фидбэк 01.09). Меряем сам контейнер, а не окно — так учитываются
+   * и сайдбар, и полосы прокрутки.
+   */
+  const [shellWidth, setShellWidth] = useState(() =>
+    typeof window === "undefined" ? 1440 : window.innerWidth,
+  );
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => {
+      if (entry) setShellWidth(Math.round(entry.contentRect.width));
+    });
+    ro.observe(el);
+    setShellWidth(Math.round(el.getBoundingClientRect().width));
+    return () => ro.disconnect();
+  }, [hasDrawers]);
+
+  /** Сколько места оставить контенту под открытыми колонками. */
+  const drawerFit = useMemo(() => {
+    const widths = [
+      ...stack.map(() => DRAWER_MAX_W),
+      ...(side ? [sideColumnWidth(side.kind)] : []),
+    ];
+    return drawerLayout(shellWidth, widths);
+  }, [stack.length, side, shellWidth]);
 
   // Авто-скролл вправо при добавлении новой панели — свежий drawer в фокусе.
   useEffect(() => {
@@ -305,7 +337,9 @@ function AppShell({
                 горизонтальный скролл всего ряда. */}
             <div
               className="flex min-h-0 flex-1 overflow-y-auto"
-              style={{ minWidth: fullWidth ? undefined : 760 }}
+              style={{
+                minWidth: fullWidth ? undefined : drawerFit.contentMin,
+              }}
             >
               <div
                 className={cn(
@@ -316,7 +350,7 @@ function AppShell({
                 {pageNode}
               </div>
             </div>
-            <DashboardDrawerStack />
+            <DashboardDrawerStack available={shellWidth} />
           </div>
         ) : (
           <div

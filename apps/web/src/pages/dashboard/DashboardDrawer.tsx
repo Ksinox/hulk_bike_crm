@@ -298,6 +298,66 @@ export function DashboardDrawerProvider({ children }: { children: ReactNode }) {
   );
 }
 
+/* ============================================================
+ *  Ширины push-колонок
+ *
+ * Фидбэк 01.09: «карточка обрезается, у неё как будто нет боковых
+ * граней — дашборд должен сжаться так, чтобы карточка была видна
+ * целиком». Раньше колонка была ровно 600px, а контент страницы держал
+ * min-width 760px: на ноутбуке 1366px сумма не помещалась, включался
+ * горизонтальный скролл — и карточка уезжала за правый край окна.
+ *
+ * Теперь ширины считаются от реального места: сначала сжимается контент
+ * (до предела читаемости), и только потом — сама колонка. Горизонтальный
+ * скролл остаётся для цепочки из нескольких колонок, где иначе никак.
+ * ============================================================ */
+
+/** Комфортная ширина карточки — как в «Арендах». */
+export const DRAWER_MAX_W = 600;
+/** Уже этого карточка становится теснее, чем полезной. */
+export const DRAWER_MIN_W = 440;
+/** Пол для контента страницы под напором колонок. */
+export const CONTENT_FLOOR_W = 430;
+/** Ширина, ниже которой контент сжимать не хочется без нужды. */
+export const CONTENT_COMFORT_W = 760;
+/** Зазор между колонками (ml-3) и такой же отступ справа. */
+const GUTTER = 12;
+
+/**
+ * Сколько отдать колонкам и сколько оставить контенту.
+ * `available` — ширина scroll-контейнера, `columns` — сумма «желаемых»
+ * ширин открытых колонок (карточки + боковая оплата/история).
+ */
+export function drawerLayout(
+  available: number,
+  columnWidths: number[],
+): { scale: number; contentMin: number } {
+  const n = columnWidths.length;
+  if (n === 0) return { scale: 1, contentMin: CONTENT_COMFORT_W };
+  const gutters = GUTTER * (n + 1);
+  const wanted = columnWidths.reduce((a, b) => a + b, 0);
+  const forColumns = Math.max(0, available - gutters);
+
+  // Колонки ужимаем пропорционально — но не ниже минимума, иначе
+  // карточка перестаёт быть карточкой и лучше честный скролл.
+  let scale = 1;
+  if (forColumns - wanted < CONTENT_FLOOR_W) {
+    const room = forColumns - CONTENT_FLOOR_W;
+    scale = Math.min(1, Math.max(DRAWER_MIN_W / DRAWER_MAX_W, room / wanted));
+  }
+  const used = wanted * scale;
+  const contentMin = Math.max(
+    CONTENT_FLOOR_W,
+    Math.min(CONTENT_COMFORT_W, forColumns - used),
+  );
+  return { scale, contentMin };
+}
+
+/** Ширина боковой колонки (оплата/история/паркинг) по её типу. */
+export function sideColumnWidth(kind: string): number {
+  return kind === "payment" ? 480 : kind === "parking" ? 460 : 420;
+}
+
 /**
  * v0.7.18: drawer-стек больше НЕ overlay (fixed inset-0 + backdrop).
  * Теперь это набор inline push-колонок, которые рендерятся ВНУТРИ общего
@@ -310,7 +370,12 @@ export function DashboardDrawerProvider({ children }: { children: ReactNode }) {
  * scroll-контейнером). Здесь — только Esc (закрыть верхнюю панель) и
  * рендер колонок в прямом порядке (старые слева, свежая справа).
  */
-export function DashboardDrawerStack() {
+export function DashboardDrawerStack({
+  available,
+}: {
+  /** Ширина scroll-контейнера — от неё считается ширина колонок. */
+  available?: number;
+}) {
   const ctx = useContext(DashboardDrawerCtx);
   const stack = ctx?.stack ?? [];
   const side = ctx?.side ?? null;
@@ -343,8 +408,14 @@ export function DashboardDrawerStack() {
 
   if (!ctx || (stack.length === 0 && !renderedSide)) return null;
 
-  // Ширина колонки = как у карточки в «Аренды» (600px) для единообразия.
-  const DRAWER_W = 600;
+  // Ширина колонки = как у карточки в «Аренды» (600px), но ужимается,
+  // если иначе карточка не поместится в окно (фидбэк 01.09).
+  const widths = [
+    ...stack.map(() => DRAWER_MAX_W),
+    ...(renderedSide ? [sideColumnWidth(renderedSide.kind)] : []),
+  ];
+  const { scale } = drawerLayout(available ?? window.innerWidth, widths);
+  const DRAWER_W = Math.round(DRAWER_MAX_W * scale);
   return (
     <>
       {stack.map((target, idx) => {
@@ -372,6 +443,7 @@ export function DashboardDrawerStack() {
               <SideDrawerColumn
                 key={`side-${sideForThis.kind}`}
                 data={sideForThis}
+                scale={scale}
                 closing={
                   !side ||
                   side.rentalId !== sideForThis.rentalId ||
@@ -386,6 +458,11 @@ export function DashboardDrawerStack() {
           </Fragment>
         );
       })}
+      {/* Правое поле: без него последняя карточка липнет к краю окна и
+          выглядит обрезанной — «нет боковых граней» (фидбэк 01.09).
+          Именно спейсер, а не padding контейнера: padding-right у
+          горизонтального скролла браузеры применяют непредсказуемо. */}
+      <div className="h-full w-3 shrink-0" aria-hidden />
     </>
   );
 }
@@ -398,6 +475,7 @@ export function DashboardDrawerStack() {
 function SideDrawerColumn({
   data,
   closing,
+  scale,
   onClosePayment,
   onCloseHistory,
   onCloseParking,
@@ -405,6 +483,8 @@ function SideDrawerColumn({
 }: {
   data: NonNullable<SideColumn>;
   closing: boolean;
+  /** Общий масштаб колонок — чтобы цепочка сжималась целиком. */
+  scale: number;
   onClosePayment: () => void;
   onCloseHistory: () => void;
   onCloseParking: () => void;
@@ -422,8 +502,7 @@ function SideDrawerColumn({
     };
   }, []);
   const isOpen = entered && !closing;
-  const width =
-    data.kind === "payment" ? 480 : data.kind === "parking" ? 460 : 420;
+  const width = Math.round(sideColumnWidth(data.kind) * scale);
   return (
     <aside
       className={cn(
