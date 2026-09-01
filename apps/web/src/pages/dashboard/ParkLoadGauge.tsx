@@ -256,11 +256,11 @@ export function ParkLoadGauge({
             {electro ? <ElectricMark size="sm" /> : <PetrolMark size="sm" />}
             <span className="min-w-0 truncate">{title}</span>
           </span>
-          <span className="relative mt-1 flex items-baseline gap-1.5">
-            <span className="font-display text-[24px] font-extrabold leading-none tracking-[-0.02em] text-ink">
+          <span className="relative mt-1 block">
+            <span className="block font-display text-[26px] font-extrabold leading-none tracking-[-0.02em] text-ink">
               {pct}%
             </span>
-            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
+            <span className="mt-0.5 block text-[9.5px] font-bold uppercase tracking-[0.14em] text-muted-2">
               загрузка
             </span>
           </span>

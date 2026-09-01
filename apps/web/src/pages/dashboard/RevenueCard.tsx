@@ -316,7 +316,8 @@ export function RevenueCard({
                 </span>
               )}
             </div>
-            {!selectedBar &&
+            {!compact &&
+              !selectedBar &&
               !customRange &&
               period === "month" &&
               metrics.revenueExpected > 0 && (
@@ -423,7 +424,7 @@ export function RevenueCard({
       {/* Правка 31.08: партнёрский электротранспорт в выручку НЕ входит —
           сумма выше только по нашей технике. Строку оставляем справкой, но
           подписываем явно, чтобы её не приняли за часть выручки. */}
-      {partnerSplit.gross > 0 && (
+      {!compact && partnerSplit.gross > 0 && (
         <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl bg-white/10 px-2.5 py-1.5 text-[11.5px] text-white/85">
           <span className="inline-flex items-center gap-1.5">
             <ElectricMark size="sm" />
@@ -441,7 +442,7 @@ export function RevenueCard({
 
       {/* График — только для периодов (день/неделя/месяц), не для произвольного
           диапазона. Каждый столбик кликабельный → фильтр по дню. */}
-      {!customRange && chart.length > 0 && (
+      {!compact && !customRange && chart.length > 0 && (
         <div
           className={cn(
             "flex items-end gap-1",
