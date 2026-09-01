@@ -326,7 +326,7 @@ export function RevenueRentalsList({
           )}
         </span>
       </div>
-      <div className="flex flex-col divide-y divide-border rounded-[10px] border border-border bg-white">
+      <div className="@container flex flex-col divide-y divide-border rounded-[10px] border border-border bg-white">
         {rows.map((r) => {
           const expanded = expandedId === r.paymentId;
           return (
@@ -338,9 +338,11 @@ export function RevenueRentalsList({
                     if (onRowClick) onRowClick(r.rentalId);
                     else drawer.openRental(r.rentalId);
                   }}
-                  className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2 text-left"
+                  className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left @[380px]:gap-3"
                 >
-                  <div className="w-[68px] shrink-0 text-[11px] font-medium tabular-nums leading-tight text-muted-2">
+                  {/* Узкая колонка (01.09): дата уезжает во вторую строку,
+                      иначе на имя клиента остаётся два символа. */}
+                  <div className="hidden w-[68px] shrink-0 text-[11px] font-medium tabular-nums leading-tight text-muted-2 @[380px]:block">
                     {fmtDateTime(r.paidAt)}
                   </div>
                   <div className="min-w-0 flex-1">
@@ -348,9 +350,14 @@ export function RevenueRentalsList({
                       {naming.render(r.scooterName, { size: "sm" })} ·{" "}
                       {r.clientName}
                     </div>
-                    <div className="text-[11px] text-muted-2">{r.typeLabel}</div>
+                    <div className="truncate text-[11px] text-muted-2">
+                      <span className="tabular-nums @[380px]:hidden">
+                        {fmtDateTime(r.paidAt)} ·{" "}
+                      </span>
+                      {r.typeLabel}
+                    </div>
                   </div>
-                  <div className="w-[72px] text-right text-[13px] font-bold tabular-nums text-ink">
+                  <div className="shrink-0 text-right text-[13px] font-bold tabular-nums text-ink @[380px]:w-[72px]">
                     {fmt(r.amount)} ₽
                   </div>
                 </button>

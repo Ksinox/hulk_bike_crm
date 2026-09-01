@@ -45,7 +45,7 @@ export function KpiCard({
     >
       <div
         className={cn(
-          "flex items-center gap-1.5 font-medium",
+          "flex items-center gap-1.5 truncate pr-9 font-medium",
           compact ? "text-[11.5px]" : "text-[13px]",
           blue ? "text-white/75" : "text-muted",
         )}
