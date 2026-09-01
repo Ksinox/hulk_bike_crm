@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { BarChart3, Handshake, Package, Users } from "lucide-react";
 import { Topbar } from "@/pages/dashboard/Topbar";
+import { useIsMobile } from "@/lib/useIsMobile";
 import { consumePending, onNavigate } from "@/app/navigationStore";
 import { ApplicationsButton } from "@/pages/applications/ApplicationsPanel";
 import { cn } from "@/lib/utils";
@@ -107,10 +108,13 @@ export function Sales() {
   );
 
   const drawer = openDeal ? "deal" : openScooter ? "scooter" : null;
+  const isMobile = useIsMobile();
 
   return (
     <main className="flex min-w-0 flex-1 flex-col gap-4">
-      <Topbar />
+      {/* На телефоне свой app-shell со своей шапкой — десктопная панель
+          поверх него дублировала поиск и ломала строку (фидбэк 01.09). */}
+      {!isMobile && <Topbar />}
       <header className="flex flex-wrap items-center gap-3">
         <h1 className="font-display text-[34px] font-extrabold leading-none text-ink">
           Продажи

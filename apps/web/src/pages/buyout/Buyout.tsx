@@ -10,6 +10,7 @@ import {
   X,
 } from "lucide-react";
 import { Topbar } from "@/pages/dashboard/Topbar";
+import { useIsMobile } from "@/lib/useIsMobile";
 import { cn } from "@/lib/utils";
 import { consumePending, onNavigate } from "@/app/navigationStore";
 import { useFleetScooters } from "@/pages/fleet/fleetStore";
@@ -121,10 +122,13 @@ export function Buyout() {
   }, [openScooterId, FLEET, rentals]);
 
   const drawer = openDeal ? "deal" : openScooter ? "scooter" : null;
+  const isMobile = useIsMobile();
 
   return (
     <main className="flex min-w-0 flex-1 flex-col gap-4">
-      <Topbar />
+      {/* На телефоне свой app-shell со своей шапкой — десктопная панель
+          поверх него дублировала поиск и ломала строку (фидбэк 01.09). */}
+      {!isMobile && <Topbar />}
       <header className="flex flex-wrap items-center gap-3">
         <h1 className="font-display text-[34px] font-extrabold leading-none text-ink">
           Выкуп
@@ -147,7 +151,8 @@ export function Buyout() {
         <div className="flex min-w-0 flex-1 flex-col gap-4">
           {/* Когда открыта карточка, места мало: подписи неактивных вкладок
               скрываются, остаются иконки — и это плавно, а не «сжатием»
-              текста (правка 01.09). */}
+              текста. На телефоне те же подписи прячутся у неактивных, чтобы
+              все четыре вкладки помещались без прокрутки (правка 01.09). */}
           <div className="flex w-fit max-w-full gap-1 rounded-full bg-surface p-1 shadow-card-sm">
             {TABS.map((t) => (
               <button
@@ -164,7 +169,7 @@ export function Buyout() {
                 <span
                   className={cn(
                     "overflow-hidden whitespace-nowrap transition-all duration-300",
-                    drawer && tab !== t.id
+                    (drawer || isMobile) && tab !== t.id
                       ? "max-w-0 opacity-0"
                       : "max-w-[120px] opacity-100",
                   )}
