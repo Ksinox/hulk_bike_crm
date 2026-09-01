@@ -325,15 +325,19 @@ export function ParkLoadGauge({
             ) : stack ? (
               <PetrolMark size="sm" />
             ) : null}
-            {title}
+            {/* Узкая колонка (например когда справа открыта карточка):
+                заголовок обрезается многоточием, а не уезжает за край. */}
+            <span className="min-w-0 truncate">{title}</span>
           </div>
+          {/* Без неразрывных пробелов: в тесноте строка переносится, а
+              не обрезается на «5 в аренд…» (фидбэк 01.09). */}
           <div
             className={cn(
               "font-display font-extrabold leading-tight text-ink",
               stack ? "text-[15px]" : "mt-1 text-[19px]",
             )}
           >
-            {active}&nbsp;в&nbsp;аренде
+            {active} в аренде
           </div>
           <div className="mt-0.5 text-[11px] text-muted-2">
             {/* Правка 31.08: подпись «всего в парке» вместо «доступных» —

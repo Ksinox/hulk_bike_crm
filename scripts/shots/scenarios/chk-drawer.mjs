@@ -33,6 +33,15 @@ export async function run(page, ctx) {
       );
       return {
         barHeight: bar ? Math.round(bar.getBoundingClientRect().height) : null,
+        // всё ли в шапке помещается: считаем иконки правее её правой границы
+        barSpill: bar
+          ? [...bar.querySelectorAll("button,a,div")].filter(
+              (el) =>
+                el.getBoundingClientRect().width > 8 &&
+                el.getBoundingClientRect().right >
+                  bar.getBoundingClientRect().right + 1,
+            ).length
+          : null,
         drawerWidth: r ? Math.round(r.width) : null,
         drawerRight: r ? Math.round(r.right) : null,
         viewport: window.innerWidth,
