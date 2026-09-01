@@ -89,6 +89,8 @@ export type BuyoutPaymentRecord = {
   amount: number;
   paidAt: string;
   method: string;
+  cashAmount: number;
+  transferAmount: number;
   kind: "down_payment" | "regular" | "early_partial" | "early_full";
   note: string | null;
 };
@@ -180,7 +182,10 @@ export function useBuyoutPayment() {
     }: {
       id: number;
       amount: number;
-      method?: "cash" | "card" | "transfer";
+      method?: "cash" | "transfer" | "mixed";
+      /** Доли смешанной оплаты — нужны для сведения с кассой. */
+      cashAmount?: number;
+      transferAmount?: number;
       note?: string | null;
       /** Полное досрочное погашение — сервер сам возьмёт остаток. */
       payoff?: boolean;

@@ -172,14 +172,17 @@ export function NewDealButton({
   };
 
   return (
-    <div ref={ref} className="relative hidden md:block">
+    <div ref={ref} className="relative hidden shrink-0 md:block">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1.5 rounded-full bg-ink px-3 py-1.5 text-[13px] font-bold text-white transition-colors hover:bg-blue-600"
+        className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-ink px-3 py-1.5 text-[13px] font-bold text-white transition-colors hover:bg-blue-600"
         title="Новая сделка"
       >
-        <Plus size={14} /> Новая сделка
+        <Plus size={14} />
+        {/* На узком экране остаётся иконка — панель не переносится
+            на вторую строку (правка 01.09). */}
+        <span className="hidden xl:inline">Новая сделка</span>
         <ChevronDown
           size={13}
           className={cn("transition-transform", open && "rotate-180")}

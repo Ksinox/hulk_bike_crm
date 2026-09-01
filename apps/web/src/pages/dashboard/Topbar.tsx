@@ -79,13 +79,16 @@ export function Topbar() {
     .join("");
 
   return (
-    <div className="flex items-center gap-3 rounded-xl bg-surface px-4 py-2.5 shadow-card-sm">
+    // flex-nowrap: панель обязана оставаться ОДНОЙ строкой. Раньше при
+    // сужении окна кнопки переносились на вторую строку и «толстели» —
+    // вместо этого подписи сворачиваются, остаются иконки (правка 01.09).
+    <div className="flex min-w-0 flex-nowrap items-center gap-2 rounded-xl bg-surface px-3 py-2.5 shadow-card-sm">
       <GlobalSearch />
-      <div className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1.5 text-[13px] font-semibold text-blue-700">
+      <div className="hidden shrink-0 items-center gap-2 whitespace-nowrap rounded-full bg-blue-50 px-3 py-1.5 text-[13px] font-semibold text-blue-700 xl:inline-flex">
         <Calendar size={14} />
         {formatTodayRu()}
       </div>
-      <div className="flex-1" />
+      <div className="min-w-0 flex-1" />
 
       {/* v0.3.1: быстрые действия с дашборда — оператору не нужно
           переходить в «Клиенты» / «Аренды» чтобы создать запись.
@@ -93,10 +96,11 @@ export function Topbar() {
       <button
         type="button"
         onClick={() => setNewClientOpen(true)}
-        className="hidden md:inline-flex items-center gap-1.5 rounded-full border border-border bg-surface-soft px-3 py-1.5 text-[13px] font-semibold text-ink-2 transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
+        className="hidden shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-border bg-surface-soft px-2.5 py-1.5 text-[13px] font-semibold text-ink-2 transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 md:inline-flex"
         title="Новый клиент"
       >
-        <UserPlus size={14} /> Новый клиент
+        <UserPlus size={14} />
+        <span className="hidden 2xl:inline">Новый клиент</span>
       </button>
       {/* Пункт 5: «Новая сделка» — выпадающий список типов (аренда,
           рассрочка, продажа, ремонт); пункты включаются по мере

@@ -116,7 +116,9 @@ export function StatTile({
       {hint && (
         <div
           className={cn(
-            "truncate text-[11.5px]",
+            // Без truncate: подсказка вроде «ещё 45 000 ₽ к получению»
+            // обрывалась на полуслове (правка 01.09).
+            "text-[11.5px] leading-tight",
             accent ? "text-white/70" : "text-muted-2",
           )}
         >

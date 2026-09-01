@@ -2166,6 +2166,10 @@ export const investorPayouts = pgTable("investor_payouts", {
   amount: integer("amount").notNull(),
   paidAt: timestamp("paid_at", { withTimezone: true }).notNull().defaultNow(),
   paidBy: bigint("paid_by", { mode: "number" }),
+  /** Как выплатили: cash | transfer | mixed (01.09). */
+  method: text("method").notNull().default("cash"),
+  cashAmount: integer("cash_amount").notNull().default(0),
+  transferAmount: integer("transfer_amount").notNull().default(0),
   note: text("note"),
 });
 
@@ -2222,6 +2226,10 @@ export const saleDeals = pgTable(
     purchasePrice: integer("purchase_price"),
     managerCommissionPct: integer("manager_commission_pct"),
     managerCommission: integer("manager_commission"),
+    /** Как рассчитались за технику: cash | transfer | mixed (01.09). */
+    payMethod: text("pay_method").notNull().default("cash"),
+    payCash: integer("pay_cash").notNull().default(0),
+    payTransfer: integer("pay_transfer").notNull().default(0),
     // Снимки техники — чтобы сделку можно было прочитать даже если
     // технику потом отредактировали или удалили.
     scooterName: text("scooter_name"),
@@ -2383,7 +2391,11 @@ export const buyoutPayments = pgTable(
     dealId: bigint("deal_id", { mode: "number" }).notNull(),
     amount: integer("amount").notNull(),
     paidAt: timestamp("paid_at", { withTimezone: true }).notNull().defaultNow(),
+    /** cash | transfer | mixed — как пришли деньги (правка 01.09). */
     method: text("method").notNull().default("cash"),
+    /** Разбивка смешанной оплаты: без неё «смешанный» не свести с кассой. */
+    cashAmount: integer("cash_amount").notNull().default(0),
+    transferAmount: integer("transfer_amount").notNull().default(0),
     /** down_payment | regular | early_partial | early_full */
     kind: text("kind").notNull().default("regular"),
     userId: bigint("user_id", { mode: "number" }),

@@ -113,21 +113,34 @@ export function Buyout() {
 
       <div className="flex min-w-0 items-start gap-4">
         <div className="flex min-w-0 flex-1 flex-col gap-4">
-          <div className="flex w-fit max-w-full gap-1 overflow-x-auto rounded-full bg-surface p-1 shadow-card-sm">
+          {/* Когда открыта карточка, места мало: подписи неактивных вкладок
+              скрываются, остаются иконки — и это плавно, а не «сжатием»
+              текста (правка 01.09). */}
+          <div className="flex w-fit max-w-full gap-1 rounded-full bg-surface p-1 shadow-card-sm">
             {TABS.map((t) => (
               <button
                 key={t.id}
                 type="button"
                 onClick={() => setTab(t.id)}
+                title={t.label}
                 className={cn(
-                  "inline-flex shrink-0 items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-semibold transition-colors",
-                  tab === t.id ? "bg-ink text-white" : "text-muted hover:text-ink",
+                  "inline-flex shrink-0 items-center gap-1.5 rounded-full py-2 text-[13px] font-semibold transition-all duration-300",
+                  tab === t.id ? "bg-ink px-4 text-white" : "px-3 text-muted hover:text-ink",
                 )}
               >
-                <t.icon size={14} />
-                {t.label}
+                <t.icon size={14} className="shrink-0" />
+                <span
+                  className={cn(
+                    "overflow-hidden whitespace-nowrap transition-all duration-300",
+                    drawer && tab !== t.id
+                      ? "max-w-0 opacity-0"
+                      : "max-w-[120px] opacity-100",
+                  )}
+                >
+                  {t.label}
+                </span>
                 {t.id === "overdue" && overdue.length > 0 && (
-                  <span className="rounded-full bg-red px-1.5 text-[10px] font-bold text-white">
+                  <span className="shrink-0 rounded-full bg-red px-1.5 text-[10px] font-bold text-white">
                     {overdue.length}
                   </span>
                 )}
@@ -239,11 +252,13 @@ function Overview({
 
   return (
     <div className="flex min-w-0 flex-col gap-3">
-      <div className="grid gap-3 grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+      {/* Плитки: на узком — 2 в ряд, на среднем — 3, на широком — все 5.
+          Пятая больше не висит одна в пустом ряду (правка 01.09). */}
+      <div className="grid gap-3 grid-cols-2 md:grid-cols-3 2xl:grid-cols-5">
         <StatTile
           label="Активных выкупов"
           value={String(active.length)}
-          hint={`ещё ${fmtCompact(money.portfolio)} ₽ к получению`}
+          hint={`ещё ${fmtCompact(money.portfolio)} ₽`}
           icon={<HandCoins size={13} />}
         />
         <StatTile
@@ -258,20 +273,20 @@ function Overview({
           label="Проблемных"
           value={String(problem.length)}
           hint={
-            money.overdue > 0 ? `просрочено ${fmtCompact(money.overdue)} ₽` : "просрочек нет"
+            money.overdue > 0 ? `долг ${fmtCompact(money.overdue)} ₽` : "просрочек нет"
           }
           icon={<AlertTriangle size={13} />}
         />
         <StatTile
           label="Закрытых"
           value={String(closed.length)}
-          hint={defaulted.length > 0 ? `сорвано ${defaulted.length}` : "все дошли до конца"}
+          hint={defaulted.length > 0 ? `сорвано ${defaulted.length}` : "дошли до конца"}
         />
         <StatTile
-          label="Заработок на рассрочке"
+          label="Заработок"
           value={fmtCompact(money.markup)}
           suffix="₽"
-          hint="наценка активных и закрытых"
+          hint="наценка по рассрочке"
         />
       </div>
 

@@ -313,6 +313,7 @@ export async function buyoutRoutes(app: FastifyInstance) {
       await db.insert(buyoutPayments).values({
         dealId: id,
         amount: deal.downPayment,
+        cashAmount: deal.downPayment,
         kind: "down_payment",
         userId: req.user?.userId ?? null,
         note: "Первоначальный взнос",
@@ -370,7 +371,11 @@ export async function buyoutRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const Body = z.object({
         amount: z.number().int().min(1),
-        method: z.enum(["cash", "card", "transfer"]).optional(),
+        /** Наличные, перевод или смешанно (правка 01.09). */
+        method: z.enum(["cash", "transfer", "mixed"]).optional(),
+        /** Доли смешанной оплаты — нужны для сведения с кассой. */
+        cashAmount: z.number().int().min(0).optional(),
+        transferAmount: z.number().int().min(0).optional(),
         note: z.string().max(500).optional().nullable(),
         /** Полное досрочное погашение — гасим весь остаток. */
         payoff: z.boolean().optional(),
@@ -415,10 +420,22 @@ export async function buyoutRoutes(app: FastifyInstance) {
         : updates.length > 1
           ? "early_partial"
           : "regular";
+      // Доли считаем здесь: при «наличными» всё в кассу, при «переводом» —
+      // всё на счёт, при смешанной берём указанное и добираем остаток.
+      const method = parsed.data.method ?? "cash";
+      const cashPart =
+        method === "cash"
+          ? amount
+          : method === "transfer"
+            ? 0
+            : Math.min(amount, Math.max(0, parsed.data.cashAmount ?? 0));
+      const transferPart = amount - cashPart;
       await db.insert(buyoutPayments).values({
         dealId: id,
         amount,
-        method: parsed.data.method ?? "cash",
+        method,
+        cashAmount: cashPart,
+        transferAmount: transferPart,
         kind,
         userId: req.user?.userId ?? null,
         note: parsed.data.note ?? null,
@@ -465,9 +482,15 @@ export async function buyoutRoutes(app: FastifyInstance) {
         action: closed ? "closed" : "payment",
         summary: closed
           ? `ВЫКУП ЗАКРЫТ: ${dealLabel(deal)} · последний платёж ${fmtMoney(amount)} ₽ · выплачено полностью ${fmtMoney(deal.total)} ₽`
-          : `Платёж по выкупу ${fmtMoney(amount)} ₽ · ${dealLabel(deal)} · закрыто ${p2.paidCount} из ${after.length} · остаток ${fmtMoney(p2.left)} ₽` +
+          : `Платёж по выкупу ${fmtMoney(amount)} ₽ · ${dealLabel(deal)} · ` +
+            (method === "mixed"
+              ? `наличными ${fmtMoney(cashPart)} ₽ + переводом ${fmtMoney(transferPart)} ₽ · `
+              : method === "transfer"
+                ? "переводом · "
+                : "наличными · ") +
+            `закрыто ${p2.paidCount} из ${after.length} · остаток ${fmtMoney(p2.left)} ₽` +
             (kind === "early_partial" ? " · досрочно" : ""),
-        meta: { amount, kind, left: p2.left },
+        meta: { amount, kind, method, cashPart, transferPart, left: p2.left },
       });
       return { ok: true, closed, progress: p2 };
     },

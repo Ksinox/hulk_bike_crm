@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Ban,
   Check,
@@ -386,7 +386,18 @@ export function BuyoutDealCard({
   );
 }
 
-/** Приём платежа: обычный, частично досрочный или погашение остатка. */
+/**
+ * Приём платежа (переработано 01.09 по фидбэку).
+ *
+ * Подсказки сумм — только осмысленные и никогда больше остатка: раньше
+ * предлагался «регулярный платёж» 60 000 при остатке 45 000, то есть
+ * переплата. Теперь первым идёт то, что реально нужно внести сейчас
+ * (просрочка или ближайший платёж), затем суммы, которыми клиент платил
+ * раньше, и только в конце — весь остаток.
+ *
+ * Способ оплаты как везде в CRM: наличные, перевод или смешанно — с
+ * разбивкой, иначе смешанную оплату не свести с кассой.
+ */
 function PaymentDialog({
   deal,
   onClose,
@@ -395,22 +406,60 @@ function PaymentDialog({
   onClose: () => void;
 }) {
   const pay = useBuyoutPayment();
+  const detail = useBuyoutPayments(deal.id);
   const p = deal.progress;
-  const suggested = p.overdueAmount > 0 ? p.overdueAmount : (p.nextDue?.amount ?? deal.paymentAmount);
-  const [amount, setAmount] = useState(String(suggested || ""));
-  const [method, setMethod] = useState<"cash" | "card" | "transfer">("cash");
+
+  /** Сколько нужно внести прямо сейчас — но не больше остатка. */
+  const dueNow = Math.min(
+    p.left,
+    p.overdueAmount > 0 ? p.overdueAmount : p.nextDue?.amount ?? deal.paymentAmount,
+  );
+
+  const suggestions = useMemo(() => {
+    const out: { value: number; label: string }[] = [];
+    const add = (value: number, label: string) => {
+      const v = Math.min(Math.round(value), p.left);
+      if (v <= 0 || out.some((x) => x.value === v)) return;
+      out.push({ value: v, label });
+    };
+    if (p.overdueAmount > 0) add(p.overdueAmount, "просрочка");
+    if (p.nextDue) add(p.nextDue.amount, "ближайший");
+    // Суммы, которыми клиент платил раньше — самые частые сверху.
+    const freq = new Map<number, number>();
+    for (const x of detail.data?.payments ?? []) {
+      if (x.kind === "down_payment") continue;
+      freq.set(x.amount, (freq.get(x.amount) ?? 0) + 1);
+    }
+    [...freq.entries()]
+      .sort((a, b) => b[1] - a[1] || b[0] - a[0])
+      .slice(0, 2)
+      .forEach(([v]) => add(v, "как обычно"));
+    add(p.left, "весь остаток");
+    return out.slice(0, 4);
+  }, [p, detail.data, deal.paymentAmount]);
+
+  const [amount, setAmount] = useState(String(dueNow || ""));
+  const [method, setMethod] = useState<"cash" | "transfer" | "mixed">("cash");
+  const [cashPart, setCashPart] = useState("");
+
+  const value = Number(amount) || 0;
+  const cash = method === "mixed" ? Math.min(Number(cashPart) || 0, value) : 0;
+  const transfer = method === "mixed" ? value - cash : 0;
+  const overpay = value > p.left;
 
   const send = async (payoff: boolean) => {
-    const value = payoff ? p.left : Number(amount) || 0;
-    if (value <= 0) {
+    const sum = payoff ? p.left : Math.min(value, p.left);
+    if (sum <= 0) {
       toast.error("Укажите сумму");
       return;
     }
     try {
       const res = await pay.mutateAsync({
         id: deal.id,
-        amount: value,
-        method,
+        amount: sum,
+        method: payoff ? "cash" : method,
+        cashAmount: method === "mixed" ? cash : undefined,
+        transferAmount: method === "mixed" ? transfer : undefined,
         payoff,
       });
       toast.success(
@@ -431,8 +480,8 @@ function PaymentDialog({
           <div>
             <div className="text-[16px] font-bold text-ink">Платёж по выкупу</div>
             <div className="mt-0.5 text-[12px] text-muted">
-              Деньги гасят ближайшие непогашенные платежи, переплата уходит
-              вперёд по графику.
+              Деньги гасят ближайшие непогашенные платежи. Осталось{" "}
+              <b className="text-ink">{fmt(p.left)} ₽</b>.
             </div>
           </div>
           <button type="button" onClick={onClose} className="text-muted-2 hover:text-ink">
@@ -457,42 +506,58 @@ function PaymentDialog({
               inputMode="numeric"
               value={amount}
               onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ""))}
-              className="h-14 w-full rounded-[16px] border-2 border-border bg-surface pl-4 pr-10 font-display text-[24px] font-extrabold tabular-nums outline-none focus:border-emerald-500"
+              className={cn(
+                "h-14 w-full rounded-[16px] border-2 bg-surface pl-4 pr-10 font-display text-[24px] font-extrabold tabular-nums outline-none",
+                overpay ? "border-orange-300" : "border-border focus:border-emerald-500",
+              )}
             />
             <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-[18px] font-bold text-muted-2">
               ₽
             </span>
           </span>
         </label>
+        {overpay && (
+          <div className="mt-1.5 text-[11.5px] text-orange-ink">
+            Это больше остатка — примем {fmt(p.left)} ₽.
+          </div>
+        )}
 
         <div className="mt-2 flex flex-wrap gap-1.5">
-          {[deal.paymentAmount, p.nextDue?.amount, p.overdueAmount, p.left]
-            .filter((v): v is number => !!v && v > 0)
-            .filter((v, i, arr) => arr.indexOf(v) === i)
-            .map((v) => (
-              <button
-                key={v}
-                type="button"
-                onClick={() => setAmount(String(v))}
-                className="rounded-full bg-surface-soft px-2.5 py-1 text-[11.5px] font-semibold text-muted hover:text-ink"
-              >
-                {fmt(v)} ₽
-              </button>
-            ))}
+          {suggestions.map((sg) => (
+            <button
+              key={sg.value}
+              type="button"
+              onClick={() => setAmount(String(sg.value))}
+              className={cn(
+                "rounded-full px-2.5 py-1 text-[11.5px] font-semibold transition-colors",
+                Number(amount) === sg.value
+                  ? "bg-ink text-white"
+                  : "bg-surface-soft text-muted hover:text-ink",
+              )}
+            >
+              {fmt(sg.value)} ₽
+              <span className="ml-1 opacity-60">{sg.label}</span>
+            </button>
+          ))}
         </div>
 
         <div className="mt-3 flex gap-1 rounded-full bg-surface-soft p-1">
           {(
             [
               ["cash", "Наличные"],
-              ["card", "Карта"],
               ["transfer", "Перевод"],
+              ["mixed", "Смешанно"],
             ] as const
           ).map(([id, label]) => (
             <button
               key={id}
               type="button"
-              onClick={() => setMethod(id)}
+              onClick={() => {
+                setMethod(id);
+                if (id === "mixed" && !cashPart) {
+                  setCashPart(String(Math.floor(value / 2)));
+                }
+              }}
               className={cn(
                 "flex-1 rounded-full py-1.5 text-[12.5px] font-semibold transition-colors",
                 method === id ? "bg-surface text-ink shadow-card-sm" : "text-muted",
@@ -503,22 +568,49 @@ function PaymentDialog({
           ))}
         </div>
 
+        {method === "mixed" && (
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <label className="flex flex-col gap-1">
+              <span className="text-[10.5px] font-bold uppercase tracking-wider text-muted-2">
+                Наличными
+              </span>
+              <input
+                inputMode="numeric"
+                value={cashPart}
+                onChange={(e) => setCashPart(e.target.value.replace(/[^\d]/g, ""))}
+                className="h-10 rounded-xl border border-border bg-surface px-3 text-[14px] font-bold tabular-nums outline-none focus:border-emerald-500"
+              />
+            </label>
+            <div className="flex flex-col gap-1">
+              <span className="text-[10.5px] font-bold uppercase tracking-wider text-muted-2">
+                Переводом
+              </span>
+              <div className="flex h-10 items-center rounded-xl bg-surface-soft px-3 text-[14px] font-bold tabular-nums text-ink">
+                {fmt(transfer)} ₽
+              </div>
+            </div>
+          </div>
+        )}
+
         <button
           type="button"
           onClick={() => send(false)}
-          disabled={pay.isPending}
+          disabled={pay.isPending || value <= 0}
           className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-full bg-emerald-600 text-[14px] font-bold text-white disabled:opacity-60"
         >
-          <Check size={16} /> Принять платёж
+          <Check size={16} /> Принять{" "}
+          {value > 0 ? `${fmt(Math.min(value, p.left))} ₽` : "платёж"}
         </button>
-        <button
-          type="button"
-          onClick={() => send(true)}
-          disabled={pay.isPending || p.left <= 0}
-          className="mt-2 flex h-10 w-full items-center justify-center gap-2 rounded-full bg-ink text-[13px] font-bold text-white disabled:opacity-50"
-        >
-          <Zap size={14} /> Погасить остаток целиком — {fmt(p.left)} ₽
-        </button>
+        {dueNow < p.left && (
+          <button
+            type="button"
+            onClick={() => send(true)}
+            disabled={pay.isPending || p.left <= 0}
+            className="mt-2 flex h-10 w-full items-center justify-center gap-2 rounded-full bg-ink text-[13px] font-bold text-white disabled:opacity-50"
+          >
+            <Zap size={14} /> Погасить остаток целиком — {fmt(p.left)} ₽
+          </button>
+        )}
       </div>
     </div>
   );
