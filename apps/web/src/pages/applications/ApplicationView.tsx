@@ -250,7 +250,16 @@ export function ApplicationView({
         app.birthDate
       );
 
-  const docsPresent = DOC_ORDER.filter((k) => haveKinds.has(k)).length;
+  /*
+   * Заявка на ПОКУПКУ (правка 01.09): водительского удостоверения в ней нет
+   * и быть не должно — человек покупает технику, а не берёт прокатную.
+   * Иначе карточка вечно показывала «2/3» и пустую плитку «Права», как
+   * будто клиент чего-то недодал.
+   */
+  const docKinds = DOC_ORDER.filter(
+    (k) => k !== "license" || app.purpose !== "sale",
+  );
+  const docsPresent = docKinds.filter((k) => haveKinds.has(k)).length;
   const hasAddress = !!(app.passportRegistration || app.liveAddress);
   const addressBadge = app.sameAddress
     ? "Совпадают"
@@ -479,8 +488,14 @@ export function ApplicationView({
     <AccordionCard
       icon={<FileText size={13} />}
       title="Документы"
-      badge={`${docsPresent}/3`}
-      badgeTone={docsPresent === 3 ? "green" : docsPresent > 0 ? "amber" : "red"}
+      badge={`${docsPresent}/${docKinds.length}`}
+      badgeTone={
+        docsPresent === docKinds.length
+          ? "green"
+          : docsPresent > 0
+            ? "amber"
+            : "red"
+      }
       defaultOpen
     >
       {app.files.length === 0 ? (
@@ -489,7 +504,7 @@ export function ApplicationView({
         </div>
       ) : (
         <div className="grid grid-cols-3 gap-2">
-          {DOC_ORDER.map((kind) => (
+          {docKinds.map((kind) => (
             <DocTile
               key={kind}
               app={app}

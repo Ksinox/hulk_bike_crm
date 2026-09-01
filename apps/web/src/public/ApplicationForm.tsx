@@ -1331,6 +1331,32 @@ const PHOTO_STEP_META: Record<
   },
 };
 
+/**
+ * Человеческие названия недостающих полей (правка 01.09). Сервер отвечает
+ * кодами вида «file:license» — клиенту такое показывать нельзя, он не
+ * поймёт, куда возвращаться.
+ */
+const MISSING_LABEL: Record<string, string> = {
+  name: "ФИО",
+  phone: "телефон",
+  birthDate: "дата рождения",
+  liveAddress: "адрес проживания",
+  passportRaw: "данные документа",
+  passportSeries: "серия паспорта",
+  passportNumber: "номер паспорта",
+  passportIssuedOn: "дата выдачи паспорта",
+  passportIssuer: "кем выдан паспорт",
+  passportRegistration: "адрес регистрации",
+  "file:passport_main": "фото главного разворота паспорта",
+  "file:passport_reg": "фото страницы с пропиской",
+  "file:selfie": "селфи",
+  "file:license": "фото водительского удостоверения",
+};
+
+function missingLabel(code: string): string {
+  return MISSING_LABEL[code] ?? code;
+}
+
 function PhotoStep({
   kind,
   applicationId,
@@ -1649,8 +1675,8 @@ function Confirm({
 
       {missingFields.length > 0 && (
         <div className="rounded-xl bg-red-50 p-3 text-[13px] text-red-700">
-          Не заполнены поля: {missingFields.join(", ")}. Вернитесь назад и
-          проверьте.
+          Не хватает: {missingFields.map(missingLabel).join(", ")}. Вернитесь
+          назад и проверьте.
         </div>
       )}
 

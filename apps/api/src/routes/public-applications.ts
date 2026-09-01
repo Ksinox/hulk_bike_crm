@@ -483,8 +483,17 @@ export async function publicApplicationsRoutes(app: FastifyInstance) {
         if (!haveKinds.has("passport_reg")) issues.push("file:passport_reg");
         if (!haveKinds.has("selfie")) issues.push("file:selfie");
       }
-      // Фото ВУ обязательно для всех
-      if (!haveKinds.has("license")) issues.push("file:license");
+      /*
+       * Фото ВУ — только для аренды (баг 01.09).
+       *
+       * В анкете покупателя шага с правами нет вовсе: человек покупает
+       * технику, а не садится на прокатную. Сервер же требовал ВУ у всех —
+       * и заявка на продажу упиралась в «file:license» без единого способа
+       * это исправить со стороны клиента.
+       */
+      if (application.purpose !== "sale" && !haveKinds.has("license")) {
+        issues.push("file:license");
+      }
 
       if (issues.length > 0) {
         return reply.code(400).send({ error: "incomplete", missing: issues });
