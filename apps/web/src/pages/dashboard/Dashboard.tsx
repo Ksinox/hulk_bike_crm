@@ -69,11 +69,17 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
    */
   const rootRef = useRef<HTMLDivElement>(null);
   const [compact, setCompact] = useState(false);
+  const [tight, setTight] = useState(false);
   useEffect(() => {
     const el = rootRef.current;
     if (!el) return;
     const ro = new ResizeObserver(([entry]) => {
-      if (entry) setCompact(entry.contentRect.width < 900);
+      if (!entry) return;
+      const w = entry.contentRect.width;
+      setCompact(w < 900);
+      // Совсем узко (окно ~1024 с открытой карточкой): делить пополам
+      // уже нечего — плитки и выручка встают друг под другом.
+      setTight(w < 620);
     });
     ro.observe(el);
     return () => ro.disconnect();
@@ -183,7 +189,12 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
     >
       {compact ? (
         // Тесно: слева пары мини-плиток, справа выручка с платежами.
-        <div className="col-span-12 grid grid-cols-2 items-start gap-4">
+        <div
+          className={cn(
+            "col-span-12 grid items-start gap-4",
+            tight ? "grid-cols-1" : "grid-cols-2",
+          )}
+        >
           <div className="flex min-w-0 flex-col gap-3">
             <div className="grid grid-cols-2 gap-3 [&>div]:h-full">
               {gaugePetrol}

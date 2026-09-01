@@ -243,8 +243,10 @@ export function RevenueCard({
 
   return (
     <Card blue className={className}>
-      <div className="flex items-start justify-between gap-3">
-        <div>
+      {/* Узкая колонка (01.09): заголовок и переключатель переносятся, а
+          не наезжают друг на друга. */}
+      <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
+        <div className="min-w-0">
           <div className="text-[13px] font-medium text-white/80">
             Выручка
             {(selectedBar || customRange) && (
