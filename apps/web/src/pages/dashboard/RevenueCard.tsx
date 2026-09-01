@@ -580,6 +580,7 @@ export function RevenueCard({
           )}
         >
           <RevenueRentalsList
+            hideSummary={compact}
             period={period}
             dayFilter={customRange ? null : selectedDay}
             range={customRange}

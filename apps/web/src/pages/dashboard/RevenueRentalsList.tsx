@@ -158,10 +158,13 @@ export function RevenueRentalsList({
   methodFilter = "all",
   types,
   scope = "all",
+  hideSummary,
 }: {
   period: RevenuePeriod;
   onRowClick?: (rentalId: number) => void;
   compact?: boolean;
+  /** Итоговая строка не нужна: те же числа уже стоят в шапке блока (01.09). */
+  hideSummary?: boolean;
   /** Конкретный день (YYYY-MM-DD) — фильтр по клику на столбик графика. */
   dayFilter?: string | null;
   /** Произвольный диапазон (YYYY-MM-DD) — приоритетнее period/dayFilter. */
@@ -300,7 +303,12 @@ export function RevenueRentalsList({
 
   return (
     <div className="flex flex-col gap-1.5">
-      <div className="flex items-center justify-between text-[11px] text-muted-2">
+      <div
+        className={cn(
+          "items-center justify-between text-[11px] text-muted-2",
+          hideSummary ? "hidden" : "flex",
+        )}
+      >
         <span>
           {rows.length}{" "}
           {plural(rows.length, ["платёж", "платежа", "платежей"])}
