@@ -16,6 +16,7 @@ import { MobileNewClient } from "../forms/MobileNewClient";
 import { NewRentalModal } from "@/pages/rentals/NewRentalModal";
 import { ApplicationView } from "@/pages/applications/ApplicationView";
 import { SendApplicationButton } from "@/pages/applications/SendApplicationButton";
+import { saleFormUrl } from "@/pages/sales/saleForm";
 import type { ClientSource } from "@/lib/mock/clients";
 import {
   MobileChips,
@@ -32,6 +33,17 @@ function isoToBirth(iso: string | null): string {
 }
 
 type Filter = "active" | "all" | "accepted" | "rejected";
+
+/**
+ * Тип анкеты (паритет с компьютером, 01.09). На телефоне была только
+ * арендная ссылка, а заявки на покупку валились в общий список — при том
+ * что на компьютере это два раздельных потока: «Заявки» в Арендах и
+ * «Заявки» в Продажах.
+ */
+type Purpose = "rent" | "sale";
+
+const SALE_INTRO =
+  "Здравствуйте! Для оформления покупки скутера в Халк Байк заполните, пожалуйста, короткую анкету с паспортными данными: ";
 
 const STATUS_META: Record<ApplicationStatus, { label: string; cls: string }> = {
   draft: { label: "Черновик", cls: "bg-surface-soft text-muted" },
@@ -56,6 +68,7 @@ function formatDate(iso: string | null): string {
 
 export function MobileApplications() {
   const [filter, setFilter] = useState<Filter>("active");
+  const [purpose, setPurpose] = useState<Purpose>("rent");
   const [openId, setOpenId] = useReloadRestoredState<number | null>(
     "mobile:applications:openId",
     null,
@@ -89,23 +102,81 @@ export function MobileApplications() {
     }
   };
 
+  const ofPurpose = useMemo(
+    () => items.filter((a) => (a.purpose ?? "rent") === purpose),
+    [items, purpose],
+  );
   const sorted = useMemo(
-    () => [...items].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
-    [items],
+    () => [...ofPurpose].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    [ofPurpose],
   );
 
+  /** Счётчик новых — по своему типу, иначе бейдж врёт. */
+  const freshOfPurpose = newItems.filter(
+    (a) => (a.purpose ?? "rent") === purpose,
+  ).length;
+  const freshSale = newItems.filter((a) => a.purpose === "sale").length;
+  const freshRent = newItems.length - freshSale;
+
   const chips: ChipOption<Filter>[] = [
-    { id: "active", label: "Активные", count: newItems.length },
+    { id: "active", label: "Активные", count: freshOfPurpose },
     { id: "all", label: "Все" },
     { id: "accepted", label: "Принятые" },
     { id: "rejected", label: "Отклонённые" },
   ];
 
+  const isSale = purpose === "sale";
   const openApp = items.find((a) => a.id === openId) ?? null;
 
   return (
     <div className="flex flex-col gap-3">
-      <SendApplicationButton className="w-full justify-center py-2.5 text-[14px]" />
+      {/* Аренда / Покупка — два потока, как на компьютере (01.09). */}
+      <div className="flex gap-1 rounded-full bg-surface-soft p-1">
+        {(
+          [
+            ["rent", "Аренда", freshRent],
+            ["sale", "Покупка", freshSale],
+          ] as const
+        ).map(([id, label, count]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => {
+              setPurpose(id);
+              setOpenId(null);
+            }}
+            className={cn(
+              "flex flex-1 items-center justify-center gap-1.5 rounded-full py-2 text-[13.5px] font-bold transition-colors",
+              purpose === id ? "bg-surface text-ink shadow-card-sm" : "text-muted",
+            )}
+          >
+            {label}
+            {count > 0 && (
+              <span
+                className={cn(
+                  "rounded-full px-1.5 text-[11px] font-bold",
+                  purpose === id
+                    ? "bg-orange-soft text-orange-ink"
+                    : "bg-orange text-white",
+                )}
+              >
+                {count}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      <SendApplicationButton
+        className="w-full justify-center py-2.5 text-[14px]"
+        {...(isSale
+          ? {
+              label: "Анкета покупателя",
+              text: SALE_INTRO,
+              formUrl: saleFormUrl(),
+            }
+          : {})}
+      />
       <MobileChips options={chips} value={filter} onChange={setFilter} />
 
       {isLoading ? (
@@ -113,7 +184,7 @@ export function MobileApplications() {
       ) : sorted.length === 0 ? (
         <MobileEmpty
           icon={<Inbox size={26} />}
-          title="Заявок нет"
+          title={isSale ? "Заявок на покупку нет" : "Заявок на аренду нет"}
           hint="Здесь появятся анкеты, заполненные по публичной ссылке"
         />
       ) : (
