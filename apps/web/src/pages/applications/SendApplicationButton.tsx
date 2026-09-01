@@ -243,7 +243,7 @@ export function SendApplicationButton({
                 </button>
                 <button
                   type="button"
-                  onClick={() => window.open("https://max.ru", "_blank", "noopener")}
+                  onClick={() => window.open("https://web.max.ru/", "_blank", "noopener")}
                   className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-surface-soft py-2.5 text-[13px] font-semibold text-ink"
                 >
                   Открыть МАКС
