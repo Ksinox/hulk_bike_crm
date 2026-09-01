@@ -25,6 +25,7 @@ import {
   PlanBar,
   SectionCard,
   StatTile,
+  StatRow,
 } from "./SalesUI";
 import { SalesChart } from "./SalesChart";
 import {
@@ -201,7 +202,7 @@ export function SalesOverview({
       </div>
 
       {/* Показатели */}
-      <div className="grid gap-3 grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+      <StatRow>
         <button type="button" onClick={onOpenStock} className="text-left">
           <StatTile
             label="В продаже"
@@ -252,7 +253,7 @@ export function SalesOverview({
           hint={`было ${before.marginPct}%`}
           icon={<BadgePercent size={13} />}
         />
-      </div>
+      </StatRow>
 
       <div className="grid min-w-0 items-stretch gap-3 xl:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
         {/* Динамика */}

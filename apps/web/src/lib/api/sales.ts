@@ -151,8 +151,20 @@ export function useGenerateSaleContract() {
 export function useSignSaleDeal() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: number) =>
-      api.post<SaleDeal>(`/api/sales/deals/${id}/sign`, {}),
+    mutationFn: ({
+      id,
+      payMethod,
+      payCash,
+    }: {
+      id: number;
+      /** Чем рассчитались за технику (01.09). */
+      payMethod?: "cash" | "transfer" | "mixed";
+      payCash?: number;
+    }) =>
+      api.post<SaleDeal>(`/api/sales/deals/${id}/sign`, {
+        ...(payMethod ? { payMethod } : {}),
+        ...(payMethod === "mixed" ? { payCash: payCash ?? 0 } : {}),
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: salesKeys.all });
       qc.invalidateQueries({ queryKey: ["scooters"] });

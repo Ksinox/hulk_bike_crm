@@ -42,6 +42,10 @@ export type InvestorPayoutRecord = {
   /** Кто провёл выплату. */
   by: string | null;
   note: string | null;
+  /** Чем выплатили (01.09). */
+  method?: "cash" | "transfer" | "mixed";
+  cashAmount?: number;
+  transferAmount?: number;
 };
 
 /**
@@ -156,9 +160,23 @@ export function useDeleteInvestor() {
 export function useMarkPayout() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, note }: { id: number; note?: string | null }) =>
+    mutationFn: ({
+      id,
+      note,
+      method,
+      cashAmount,
+    }: {
+      id: number;
+      note?: string | null;
+      /** Способ расчёта: нал, перевод или смешанно (01.09). */
+      method?: "cash" | "transfer" | "mixed";
+      /** Для смешанного — сколько наличными; переводом уходит остаток. */
+      cashAmount?: number;
+    }) =>
       api.post<InvestorPayoutRecord>(`/api/investors/${id}/payouts`, {
         note: note ?? null,
+        ...(method ? { method } : {}),
+        ...(method === "mixed" ? { cashAmount: cashAmount ?? 0 } : {}),
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: investorsKeys.all }),
   });

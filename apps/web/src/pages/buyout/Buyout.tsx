@@ -22,7 +22,7 @@ import {
   BUYOUT_STATUS_LABEL,
   type BuyoutDeal,
 } from "@/lib/api/buyout";
-import { StatTile, SectionCard, EmptyState } from "@/pages/sales/SalesUI";
+import { StatTile, StatRow, SectionCard, EmptyState } from "@/pages/sales/SalesUI";
 import { fmt, fmtCompact, ruDateShort } from "@/pages/sales/salesUtils";
 import { NewBuyoutWizard } from "./NewBuyoutWizard";
 import { BuyoutDealCard } from "./BuyoutDealCard";
@@ -62,10 +62,21 @@ export function Buyout() {
   useEffect(() => {
     const p = consumePending("rassrochki");
     if (p?.newSale) setWizard({ open: true, clientId: p.clientId ?? null });
+    // Переход из напоминания — сразу нужная сделка (01.09).
+    if (p?.buyoutDealId != null) {
+      setTab("deals");
+      setOpenDealId(p.buyoutDealId);
+    }
     return onNavigate((req) => {
-      if (req.route === "rassrochki" && req.newSale) {
+      if (req.route !== "rassrochki") return;
+      if (req.newSale) {
         consumePending("rassrochki");
         setWizard({ open: true, clientId: req.clientId ?? null });
+      }
+      if (req.buyoutDealId != null) {
+        consumePending("rassrochki");
+        setTab("deals");
+        setOpenDealId(req.buyoutDealId);
       }
     });
   }, []);
@@ -252,9 +263,7 @@ function Overview({
 
   return (
     <div className="flex min-w-0 flex-col gap-3">
-      {/* Плитки: на узком — 2 в ряд, на среднем — 3, на широком — все 5.
-          Пятая больше не висит одна в пустом ряду (правка 01.09). */}
-      <div className="grid gap-3 grid-cols-2 md:grid-cols-3 2xl:grid-cols-5">
+      <StatRow>
         <StatTile
           label="Активных выкупов"
           value={String(active.length)}
@@ -288,7 +297,7 @@ function Overview({
           suffix="₽"
           hint="наценка по рассрочке"
         />
-      </div>
+      </StatRow>
 
       <div className="grid min-w-0 items-stretch gap-3 xl:grid-cols-2">
         <SectionCard title="Ближайшие платежи" hint="кого ждём в первую очередь">

@@ -346,6 +346,9 @@ export async function investorsRoutes(app: FastifyInstance) {
         paidAt: investorPayouts.paidAt,
         paidBy: investorPayouts.paidBy,
         note: investorPayouts.note,
+        method: investorPayouts.method,
+        cashAmount: investorPayouts.cashAmount,
+        transferAmount: investorPayouts.transferAmount,
         userName: users.name,
       })
       .from(investorPayouts)
@@ -385,6 +388,9 @@ export async function investorsRoutes(app: FastifyInstance) {
         paidAt: h.paidAt,
         by: h.userName ?? null,
         note: h.note,
+        method: h.method,
+        cashAmount: h.cashAmount,
+        transferAmount: h.transferAmount,
       })),
       /** Итог по выбранному периоду — для подписи в детализации. */
       periodTotal: history.reduce((sum, h) => sum + h.amount, 0),
@@ -404,8 +410,14 @@ export async function investorsRoutes(app: FastifyInstance) {
   app.post<{ Params: { id: string } }>("/:id/payouts", async (req, reply) => {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return reply.code(400).send({ error: "bad id" });
+    // Способ расчёта — как везде по проекту: нал, перевод или смешанно.
+    // Для смешанного храним обе доли, иначе выплату не свести с кассой.
     const Body = z
-      .object({ note: z.string().max(300).optional().nullable() })
+      .object({
+        note: z.string().max(300).optional().nullable(),
+        method: z.enum(["cash", "transfer", "mixed"]).optional(),
+        cashAmount: z.number().int().min(0).optional(),
+      })
       .strict();
     const parsed = Body.safeParse(req.body ?? {});
     if (!parsed.success)
@@ -420,6 +432,15 @@ export async function investorsRoutes(app: FastifyInstance) {
         message: "Нет средств к выплате — доля инвестора ещё не накопилась.",
       });
 
+    const method = parsed.data.method ?? "cash";
+    const cashPart =
+      method === "cash"
+        ? accrued
+        : method === "transfer"
+          ? 0
+          : Math.min(accrued, Math.max(0, parsed.data.cashAmount ?? 0));
+    const transferPart = accrued - cashPart;
+
     const [row] = await db
       .insert(investorPayouts)
       .values({
@@ -427,13 +448,22 @@ export async function investorsRoutes(app: FastifyInstance) {
         amount: accrued,
         paidBy: req.user?.userId ?? null,
         note: parsed.data.note ?? null,
+        method,
+        cashAmount: cashPart,
+        transferAmount: transferPart,
       })
       .returning();
+    const methodText =
+      method === "mixed"
+        ? `смешанно: ${cashPart.toLocaleString("ru-RU")} ₽ наличными и ${transferPart.toLocaleString("ru-RU")} ₽ переводом`
+        : method === "transfer"
+          ? "переводом"
+          : "наличными";
     await logActivity(req, {
       entity: "investor",
       entityId: id,
       action: "payout",
-      summary: `Выплата инвестору «${inv.name}»: ${accrued.toLocaleString("ru-RU")} ₽ (процент ${inv.share} %, счётчик обнулён)`,
+      summary: `Выплата инвестору «${inv.name}»: ${accrued.toLocaleString("ru-RU")} ₽ ${methodText} (процент ${inv.share} %, счётчик обнулён)`,
     });
     return reply.code(201).send(row);
   });

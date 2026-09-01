@@ -1,10 +1,12 @@
 import { useState } from "react";
 import {
+  AlarmClock,
   AlertTriangle,
   ArrowRight,
   ChevronLeft,
   Clock,
   Maximize2,
+  Phone,
   Wallet,
 } from "lucide-react";
 import { useRentals } from "@/pages/rentals/rentalsStore";
@@ -12,6 +14,7 @@ import { useScooterNaming } from "@/lib/scooterNaming";
 import { RentalCard } from "@/pages/rentals/RentalCard";
 import { ErrorBoundary } from "@/app/ErrorBoundary";
 import { navigate } from "@/app/navigationStore";
+import { useReminders } from "@/lib/api/reminders";
 import type { RouteId } from "@/app/route";
 import { useMe } from "@/lib/api/auth";
 import { useApiScooters } from "@/lib/api/scooters";
@@ -60,6 +63,9 @@ export function MobileDashboard({
   // Полноэкранный список ВСЕХ просрочек (с дашборда «Все →»): звонок + карточка.
   const [overdueListOpen, setOverdueListOpen] = useState(false);
   const { callClient, callSheet } = useCallClient();
+  // Напоминания — тот же источник, что на десктопе (01.09).
+  const { data: remindersData } = useReminders();
+  const reminders = remindersData?.items ?? [];
 
   // Пункт 5: «Новая сделка» с главного экрана — лист типов сделки
   // (та же механика, что «Создать сделку» у клиента; живая пока «Аренда»).
@@ -174,6 +180,73 @@ export function MobileDashboard({
               : "нет возвратов"
           }
         />
+      )}
+
+      {/* Напоминания: кому звонить про платёж по выкупу и когда выплата
+          инвестору. Паритет с десктопом (01.09). */}
+      {reminders.length > 0 && (
+        <Section
+          title="Напоминания"
+          count={reminders.length}
+          icon={<AlarmClock size={15} />}
+          tone={remindersData?.counts.overdue ? "red" : undefined}
+        >
+          {reminders.slice(0, 6).map((r) => (
+            <button
+              key={r.id}
+              type="button"
+              onClick={() =>
+                r.link?.section === "rassrochki"
+                  ? navigate({ route: "rassrochki", buyoutDealId: r.link.entityId })
+                  : navigate({ route: "partners" })
+              }
+              className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left active:bg-surface-soft"
+            >
+              <span
+                className={cn(
+                  "h-2 w-2 shrink-0 rounded-full",
+                  r.urgency === "overdue"
+                    ? "bg-red"
+                    : r.urgency === "today"
+                      ? "bg-orange"
+                      : "bg-blue",
+                )}
+              />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[14px] font-bold text-ink">
+                  {r.title}
+                </span>
+                <span className="block truncate text-[12px] text-muted">
+                  {r.subtitle}
+                </span>
+              </span>
+              {r.amount != null && (
+                <span className="shrink-0 text-[13.5px] font-bold tabular-nums text-ink-2">
+                  {r.amount.toLocaleString("ru-RU")} ₽
+                </span>
+              )}
+              {r.phone && (
+                <span
+                  role="button"
+                  tabIndex={0}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    callClient(r.title, [r.phone]);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.stopPropagation();
+                      callClient(r.title, [r.phone]);
+                    }
+                  }}
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-green-soft text-green-ink"
+                >
+                  <Phone size={15} />
+                </span>
+              )}
+            </button>
+          ))}
+        </Section>
       )}
 
       {/* #дашборд: долги (просрочки + висящие) подняты НАД парком — заказчик:

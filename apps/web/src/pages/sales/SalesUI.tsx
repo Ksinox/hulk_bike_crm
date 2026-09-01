@@ -34,6 +34,19 @@ export function ManagerAvatar({
 }
 
 /** KPI-плитка: крупное число, подпись и дельта к прошлому периоду. */
+/**
+ * Ряд показателей. Не сетка, а «резиновая» строка: когда плиток пять, а в
+ * ряд помещается три, последние две растягиваются на всю ширину — раньше
+ * рядом с «Заработком» зияла пустая ячейка (фидбэк 01.09).
+ */
+export function StatRow({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex flex-wrap gap-3 [&>*]:min-w-[178px] [&>*]:flex-1">
+      {children}
+    </div>
+  );
+}
+
 export function StatTile({
   label,
   value,

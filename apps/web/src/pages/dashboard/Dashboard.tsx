@@ -11,6 +11,7 @@ import { ReturnsTable } from "./ReturnsTable";
 import { OverdueTable } from "./OverdueTable";
 import { DebtorsNoRentalCard } from "./DebtorsNoRentalCard";
 import { DebtsToCollect } from "./DebtsToCollect";
+import { RemindersCard } from "./RemindersCard";
 import { ParkLoadGauge } from "./ParkLoadGauge";
 import { ActivityFeed } from "./ActivityFeed";
 import { ClassicKpi, CLASSIC_KPI_ICONS } from "./ClassicKpi";
@@ -170,6 +171,9 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
         <div className="col-span-12 @[980px]:col-span-8 flex flex-col gap-4">
           {/* #дашборд: «Долги к сбору» подняты НАД парком — горящие деньги
               первыми, парк (на 100+ скутеров разрастается) ниже. */}
+          {/* Напоминания над долгами: сначала «кому позвонить прямо
+              сейчас», потом уже суммы к сбору (01.09). */}
+          <RemindersCard />
           <DebtsToCollect
             overdue={metrics.overdue}
             debtors={metrics.debtorsNoRental}

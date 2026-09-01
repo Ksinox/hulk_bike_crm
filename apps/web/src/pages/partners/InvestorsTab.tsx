@@ -12,6 +12,7 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { PayMethodPicker, type PayMethod, splitByMethod } from "@/components/PayMethodPicker";
 import { toast, confirmDialog } from "@/lib/toast";
 import {
   useApiInvestors,
@@ -345,22 +346,22 @@ function InvestorDetails({
   const unmark = useUnmarkPayout();
   const del = useDeleteInvestor();
   const [addOpen, setAddOpen] = useState(false);
+  const [payOpen, setPayOpen] = useState(false);
 
   const units = scooters.filter((s) => s.investorId === investor.id);
   const payouts = payoutsQ.data;
   const accrued = payouts?.accrued.amount ?? 0;
 
-  /** Выплатить накопленное: подтверждение → POST (сумму считает сервер). */
-  const payOut = async () => {
+  /**
+   * Выплатить накопленное. Сумму считает сервер, оператор выбирает только
+   * способ расчёта — наличные, перевод или смешанно (фидбэк 01.09):
+   * без этого выплату потом не свести с кассой.
+   */
+  const payOut = async (method: PayMethod, cashAmount: number) => {
     if (accrued <= 0) return;
-    const ok = await confirmDialog({
-      title: `Выплатить ${fmt(accrued)} ₽ инвестору?`,
-      message: `${investor.name} · процент ${investor.share} %. Счётчик «к выплате» обнулится, в истории останется запись с датой и суммой.`,
-      confirmText: "Выплатить",
-    });
-    if (!ok) return;
+    setPayOpen(false);
     try {
-      await mark.mutateAsync({ id: investor.id });
+      await mark.mutateAsync({ id: investor.id, method, cashAmount });
       toast.success(
         "Выплата проведена",
         `${fmt(accrued)} ₽ · ${investor.name}. Счётчик обнулён.`,
@@ -530,7 +531,7 @@ function InvestorDetails({
               <div className="flex flex-col items-end gap-1">
                 <button
                   type="button"
-                  onClick={payOut}
+                  onClick={() => setPayOpen(true)}
                   disabled={accrued <= 0 || mark.isPending}
                   className={cn(
                     "inline-flex items-center gap-1.5 rounded-full px-5 py-2.5 text-[13.5px] font-bold transition-transform",
@@ -625,6 +626,14 @@ function InvestorDetails({
                   {rec.by && (
                     <span className="text-[11.5px] text-muted-2">{rec.by}</span>
                   )}
+                  {/* Чем выплатили — видно прямо в истории (01.09) */}
+                  <span className="rounded-full bg-surface-soft px-2 py-0.5 text-[11px] font-semibold text-muted">
+                    {rec.method === "mixed"
+                      ? `${fmt(rec.cashAmount ?? 0)} нал + ${fmt(rec.transferAmount ?? 0)} перевод`
+                      : rec.method === "transfer"
+                        ? "переводом"
+                        : "наличными"}
+                  </span>
                   {rec.note && (
                     <span className="truncate text-[11.5px] text-muted">
                       {rec.note}
@@ -698,6 +707,84 @@ function InvestorDetails({
           onClose={() => setAddOpen(false)}
         />
       )}
+
+      {payOpen && (
+        <PayoutDialog
+          investorName={investor.name}
+          share={investor.share}
+          amount={accrued}
+          pending={mark.isPending}
+          onClose={() => setPayOpen(false)}
+          onConfirm={payOut}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Подтверждение выплаты инвестору. Раньше это был обычный confirm — но
+ * выплату нужно уметь свести с кассой, поэтому здесь выбирается способ
+ * расчёта и, для смешанного, доли (01.09).
+ */
+function PayoutDialog({
+  investorName,
+  share,
+  amount,
+  pending,
+  onClose,
+  onConfirm,
+}: {
+  investorName: string;
+  share: number;
+  amount: number;
+  pending: boolean;
+  onClose: () => void;
+  onConfirm: (method: PayMethod, cashAmount: number) => void;
+}) {
+  const [method, setMethod] = useState<PayMethod>("cash");
+  const [cash, setCash] = useState(0);
+  const parts = splitByMethod(amount, method, cash);
+
+  return (
+    <div className="fixed inset-0 z-[85] flex items-center justify-center bg-black/40 p-4 animate-backdrop-in">
+      <div className="w-full max-w-[400px] rounded-2xl bg-surface p-5 shadow-card-lg animate-modal-in">
+        <div className="text-[16px] font-bold text-ink">
+          Выплатить {fmt(amount)} ₽ инвестору?
+        </div>
+        <div className="mt-1 text-[12.5px] leading-snug text-muted">
+          {investorName} · процент {share} %. Счётчик «к выплате» обнулится, в
+          истории останется запись с датой, суммой и способом расчёта.
+        </div>
+
+        <div className="mt-4">
+          <PayMethodPicker
+            total={amount}
+            method={method}
+            onMethod={setMethod}
+            cash={cash}
+            onCash={setCash}
+          />
+        </div>
+
+        <div className="mt-4 flex gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="h-11 flex-1 rounded-full bg-surface-soft text-[13.5px] font-bold text-muted"
+          >
+            Отмена
+          </button>
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => onConfirm(method, parts.cash)}
+            className="h-11 flex-[1.4] rounded-full bg-violet-600 text-[13.5px] font-bold text-white disabled:opacity-60"
+          >
+            Выплатить {fmt(amount)} ₽
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -357,6 +357,19 @@ export async function salesRoutes(app: FastifyInstance) {
    */
   app.post<{ Params: { id: string } }>("/deals/:id/sign", async (req, reply) => {
     const id = Number(req.params.id);
+    // Способ расчёта фиксируется в момент подписания: деньги за технику
+    // приходят разом, отдельного приёма платежа в продаже нет (01.09).
+    const SignBody = z
+      .object({
+        payMethod: z.enum(["cash", "transfer", "mixed"]).optional(),
+        payCash: z.number().int().min(0).optional(),
+      })
+      .strict();
+    const signParsed = SignBody.safeParse(req.body ?? {});
+    if (!signParsed.success)
+      return reply
+        .code(400)
+        .send({ error: "validation", issues: signParsed.error.issues });
     const [deal] = await db
       .select()
       .from(saleDeals)
@@ -371,12 +384,23 @@ export async function salesRoutes(app: FastifyInstance) {
     const now = new Date();
     const profit = deal.price - (deal.purchasePrice ?? 0);
     const pct = deal.managerCommissionPct ?? 0;
+    const payMethod = signParsed.data.payMethod ?? "cash";
+    const payCash =
+      payMethod === "cash"
+        ? deal.price
+        : payMethod === "transfer"
+          ? 0
+          : Math.min(deal.price, Math.max(0, signParsed.data.payCash ?? 0));
+    const payTransfer = deal.price - payCash;
     const [row] = await db
       .update(saleDeals)
       .set({
         status: "signed",
         signedAt: now,
         soldAt: now,
+        payMethod,
+        payCash,
+        payTransfer,
         managerCommission:
           pct > 0 ? Math.max(0, Math.round((profit * pct) / 100)) : 0,
         updatedAt: now,
@@ -415,7 +439,14 @@ export async function salesRoutes(app: FastifyInstance) {
           : "") +
         (row!.managerCommission
           ? ` · менеджеру ${fmtMoney(row!.managerCommission)} ₽`
-          : ""),
+          : "") +
+        ` · расчёт ${
+          payMethod === "mixed"
+            ? `смешанный: ${fmtMoney(payCash)} ₽ наличными и ${fmtMoney(payTransfer)} ₽ переводом`
+            : payMethod === "transfer"
+              ? "переводом"
+              : "наличными"
+        }`,
       meta: { price: row!.price, profit, dealId: id },
     });
     return row;

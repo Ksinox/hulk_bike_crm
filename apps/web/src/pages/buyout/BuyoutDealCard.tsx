@@ -12,6 +12,11 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast, confirmDialog } from "@/lib/toast";
+import {
+  PayMethodPicker,
+  splitByMethod,
+  type PayMethod,
+} from "@/components/PayMethodPicker";
 import { useMe } from "@/lib/api/auth";
 import {
   buyoutContractUrl,
@@ -439,12 +444,11 @@ function PaymentDialog({
   }, [p, detail.data, deal.paymentAmount]);
 
   const [amount, setAmount] = useState(String(dueNow || ""));
-  const [method, setMethod] = useState<"cash" | "transfer" | "mixed">("cash");
-  const [cashPart, setCashPart] = useState("");
+  const [method, setMethod] = useState<PayMethod>("cash");
+  const [cashPart, setCashPart] = useState(0);
 
   const value = Number(amount) || 0;
-  const cash = method === "mixed" ? Math.min(Number(cashPart) || 0, value) : 0;
-  const transfer = method === "mixed" ? value - cash : 0;
+  const { cash, transfer } = splitByMethod(Math.min(value, p.left), method, cashPart);
   const overpay = value > p.left;
 
   const send = async (payoff: boolean) => {
@@ -541,56 +545,16 @@ function PaymentDialog({
           ))}
         </div>
 
-        <div className="mt-3 flex gap-1 rounded-full bg-surface-soft p-1">
-          {(
-            [
-              ["cash", "Наличные"],
-              ["transfer", "Перевод"],
-              ["mixed", "Смешанно"],
-            ] as const
-          ).map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => {
-                setMethod(id);
-                if (id === "mixed" && !cashPart) {
-                  setCashPart(String(Math.floor(value / 2)));
-                }
-              }}
-              className={cn(
-                "flex-1 rounded-full py-1.5 text-[12.5px] font-semibold transition-colors",
-                method === id ? "bg-surface text-ink shadow-card-sm" : "text-muted",
-              )}
-            >
-              {label}
-            </button>
-          ))}
+        <div className="mt-3">
+          <PayMethodPicker
+            total={Math.min(value, p.left)}
+            method={method}
+            onMethod={setMethod}
+            cash={cashPart}
+            onCash={setCashPart}
+            compact
+          />
         </div>
-
-        {method === "mixed" && (
-          <div className="mt-2 grid grid-cols-2 gap-2">
-            <label className="flex flex-col gap-1">
-              <span className="text-[10.5px] font-bold uppercase tracking-wider text-muted-2">
-                Наличными
-              </span>
-              <input
-                inputMode="numeric"
-                value={cashPart}
-                onChange={(e) => setCashPart(e.target.value.replace(/[^\d]/g, ""))}
-                className="h-10 rounded-xl border border-border bg-surface px-3 text-[14px] font-bold tabular-nums outline-none focus:border-emerald-500"
-              />
-            </label>
-            <div className="flex flex-col gap-1">
-              <span className="text-[10.5px] font-bold uppercase tracking-wider text-muted-2">
-                Переводом
-              </span>
-              <div className="flex h-10 items-center rounded-xl bg-surface-soft px-3 text-[14px] font-bold tabular-nums text-ink">
-                {fmt(transfer)} ₽
-              </div>
-            </div>
-          </div>
-        )}
 
         <button
           type="button"

@@ -14,6 +14,11 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
+import {
+  PayMethodPicker,
+  splitByMethod,
+  type PayMethod,
+} from "@/components/PayMethodPicker";
 import { fileUrl } from "@/lib/files";
 import { useAllClients } from "@/pages/clients/clientStore";
 import { AddClientModal } from "@/pages/clients/AddClientModal";
@@ -84,6 +89,9 @@ export function NewSaleWizard({
   const patchDeal = usePatchSaleDeal();
   const genContract = useGenerateSaleContract();
   const signDeal = useSignSaleDeal();
+  /** Способ расчёта за технику — фиксируется на шаге подписи (01.09). */
+  const [payMethod, setPayMethod] = useState<PayMethod>("cash");
+  const [payCash, setPayCash] = useState(0);
   const upload = useUploadSaleDocument();
   const delDoc = useDeleteSaleDocument();
 
@@ -219,7 +227,8 @@ export function NewSaleWizard({
     if (dealId == null) return;
     setBusy(true);
     try {
-      await signDeal.mutateAsync(dealId);
+      const parts = splitByMethod(deal?.price ?? 0, payMethod, payCash);
+      await signDeal.mutateAsync({ id: dealId, payMethod, payCash: parts.cash });
       toast.success("Продажа оформлена — техника переведена в «Продан»");
       onClose();
     } catch {
@@ -391,6 +400,10 @@ export function NewSaleWizard({
           {step === 5 && (
             <StepSign
               deal={deal}
+              payMethod={payMethod}
+              onPayMethod={setPayMethod}
+              payCash={payCash}
+              onPayCash={setPayCash}
               onPick={() => fileRef.current?.click()}
               onDelete={async (docId) => {
                 if (dealId == null) return;
@@ -870,11 +883,19 @@ function StepSign({
   onPick,
   onDelete,
   uploading,
+  payMethod,
+  onPayMethod,
+  payCash,
+  onPayCash,
 }: {
   deal: SaleDeal | null;
   onPick: () => void;
   onDelete: (docId: number) => void;
   uploading: boolean;
+  payMethod: PayMethod;
+  onPayMethod: (m: PayMethod) => void;
+  payCash: number;
+  onPayCash: (v: number) => void;
 }) {
   const docs = deal?.documents ?? [];
   return (
@@ -885,6 +906,26 @@ function StepSign({
         <CheckItem done={!!deal?.contractAt} text="Договор сформирован" />
         <CheckItem done={docs.length > 0} text="Копия подписанного договора приложена" />
       </ol>
+
+      {/* Как рассчитались — фиксируем при подписании (01.09) */}
+      <div className="rounded-2xl bg-surface-soft/60 p-3">
+        <div className="mb-2 flex items-baseline justify-between gap-2">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-muted-2">
+            Расчёт за технику
+          </span>
+          <span className="font-display text-[15px] font-extrabold tabular-nums text-ink">
+            {(deal?.price ?? 0).toLocaleString("ru-RU")} ₽
+          </span>
+        </div>
+        <PayMethodPicker
+          total={deal?.price ?? 0}
+          method={payMethod}
+          onMethod={onPayMethod}
+          cash={payCash}
+          onCash={onPayCash}
+          compact
+        />
+      </div>
 
       <button
         type="button"

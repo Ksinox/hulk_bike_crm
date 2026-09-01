@@ -212,6 +212,10 @@ async function bootstrap() {
     // Блок «Аренда с выкупом» (01.09): сделки, график платежей, договор
     const { buyoutRoutes } = await import("./routes/buyout.js");
     await protectedApp.register(buyoutRoutes, { prefix: "/api/buyout" });
+
+    // Напоминания: платежи по выкупу и дни выплат инвесторам (01.09).
+    const { remindersRoutes } = await import("./routes/reminders.js");
+    await protectedApp.register(remindersRoutes, { prefix: "/api/reminders" });
     // Каталоги
     await protectedApp.register(scooterModelsRoutes, { prefix: "/api/scooter-models" });
     await protectedApp.register(equipmentRoutes, { prefix: "/api/equipment" });
