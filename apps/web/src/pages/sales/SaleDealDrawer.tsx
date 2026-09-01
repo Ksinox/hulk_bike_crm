@@ -1,5 +1,6 @@
 import {
   Ban,
+  Banknote,
   ChevronRight,
   FileText,
   Pencil,
@@ -100,6 +101,21 @@ export function SaleDealDrawer({
               tone={profit >= 0 ? "good" : "bad"}
             />
           </div>
+
+          {/* Чем рассчитались — видно сразу, не заглядывая в журнал (01.09) */}
+          {deal.status === "signed" && (
+            <div className="flex items-center gap-2 rounded-xl bg-surface-soft/70 px-3 py-2 text-[12.5px]">
+              <Banknote size={14} className="shrink-0 text-muted-2" />
+              <span className="text-muted">Расчёт</span>
+              <span className="ml-auto font-semibold text-ink">
+                {deal.payMethod === "mixed"
+                  ? `${fmt(deal.payCash ?? 0)} ₽ наличными + ${fmt(deal.payTransfer ?? 0)} ₽ переводом`
+                  : deal.payMethod === "transfer"
+                    ? "переводом"
+                    : "наличными"}
+              </span>
+            </div>
+          )}
 
           {/* Техника */}
           <Section title="Техника">

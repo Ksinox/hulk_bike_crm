@@ -33,6 +33,10 @@ export type SaleDeal = {
   purchasePrice: number | null;
   managerCommissionPct: number | null;
   managerCommission: number | null;
+  /** Чем рассчитались за технику — фиксируется при подписании (01.09). */
+  payMethod?: "cash" | "transfer" | "mixed";
+  payCash?: number;
+  payTransfer?: number;
   scooterName: string | null;
   modelName: string | null;
   vin: string | null;
