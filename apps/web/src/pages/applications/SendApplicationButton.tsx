@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ArrowLeft, Check, Copy, Link2, MessageCircle, Send, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
+import { openMessengerTab } from "@/components/MessengerButtons";
 import { whatsappLink, telegramLink } from "@/lib/messengers";
 
 // Hash-route (#/apply) — vite собирает бандл с base "./".
@@ -108,7 +109,9 @@ export function SendApplicationButton({
     if (!phone.trim() || !messenger || messenger === "max") return;
     const link =
       messenger === "wa" ? whatsappLink(phone, body) : telegramLink(phone, body);
-    if (link) window.open(link, "_blank", "noopener");
+    // Та же постоянная вкладка мессенджера, что и у кнопок в карточке
+    // клиента — иначе отправка анкеты плодит вкладки (правка 01.09).
+    if (link) openMessengerTab(link, messenger === "wa" ? "whatsapp" : "telegram");
     close();
   };
 
