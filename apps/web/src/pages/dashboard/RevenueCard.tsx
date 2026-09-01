@@ -266,7 +266,12 @@ export function RevenueCard({
           не наезжают друг на друга. */}
       <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
         <div className="min-w-0">
-          <div className="text-[13px] font-medium text-white/80">
+          <div
+            className={cn(
+              "font-medium text-white/80",
+              compact ? "text-[12px]" : "text-[13px]",
+            )}
+          >
             Выручка
             {(selectedBar || customRange) && (
               <span className="ml-2 rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider">
@@ -301,7 +306,12 @@ export function RevenueCard({
               ₽
             </span>
           </div>
-          <div className="mt-1.5 flex flex-col gap-0.5 text-xs text-white/80">
+          <div
+            className={cn(
+              "flex flex-col gap-0.5 text-xs text-white/80",
+              compact ? "mt-1 hidden" : "mt-1.5",
+            )}
+          >
             <div className="flex items-center gap-1.5">
               {!isEmpty && displayCount > 0 && (
                 <DeltaPill
@@ -340,7 +350,12 @@ export function RevenueCard({
         {/* На узкой колонке (≈1150px) переключатель с кнопкой разворота
             вылезал за край карточки и давал горизонтальную прокрутку всей
             страницы. Теперь ряд умеет переноситься и сжиматься (01.09). */}
-        <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+        <div
+          className={cn(
+            "flex min-w-0 items-center justify-end gap-2",
+            compact ? "flex-nowrap" : "flex-wrap",
+          )}
+        >
           <div className="inline-flex shrink-0 rounded-full bg-white/15 p-0.5">
             {TABS.map((t) => (
               <button
@@ -352,7 +367,8 @@ export function RevenueCard({
                   setCustomRange(null);
                 }}
                 className={cn(
-                  "rounded-full px-2.5 py-1 text-xs font-semibold transition-colors",
+                  "rounded-full font-semibold transition-colors",
+                  compact ? "px-2 py-0.5 text-[11px]" : "px-2.5 py-1 text-xs",
                   !customRange && period === t.id
                     ? "bg-white text-blue-700"
                     : "bg-transparent text-white/75 hover:text-white",
@@ -380,7 +396,12 @@ export function RevenueCard({
               style={{ width: `${100 - cashPct}%` }}
             />
           </div>
-          <div className="mt-1.5 flex items-center justify-between gap-2 text-[11px]">
+          <div
+            className={cn(
+              "flex items-center justify-between gap-2",
+              compact ? "mt-1 text-[10.5px]" : "mt-1.5 text-[11px]",
+            )}
+          >
             <button
               type="button"
               onClick={() =>
@@ -511,11 +532,31 @@ export function RevenueCard({
             : "mt-4",
         )}
       >
-        <div className="mb-2 flex items-center justify-between gap-2">
-          <span className="text-[12px] font-semibold uppercase tracking-wider text-muted-2">
+        <div
+          className={cn(
+            "flex items-center justify-between gap-2",
+            compact ? "mb-1.5" : "mb-2",
+          )}
+        >
+          <span
+            className={cn(
+              "font-semibold uppercase tracking-wider text-muted-2",
+              compact ? "text-[10.5px]" : "text-[12px]",
+            )}
+          >
             Платежи за {rangeLabel}
           </span>
-          {/* Произвольный период — фирменный календарь (день или диапазон). */}
+          {compact && (
+            <span className="text-[10.5px] text-muted-2">
+              {paymentsCount}{" "}
+              {plural(paymentsCount, ["платёж", "платежа", "платежей"])} ·{" "}
+              <b className="tabular-nums text-ink">{formatRub(total)} ₽</b>
+            </span>
+          )}
+          {/* Произвольный период — фирменный календарь (день или диапазон).
+              В тесной раскладке его прячем: место дороже, а выбрать период
+              можно в развёрнутом окне выручки. */}
+          {!compact && (
           <DateRangePicker
             from={customRange?.from ?? null}
             to={customRange?.to ?? null}
@@ -530,6 +571,7 @@ export function RevenueCard({
               }
             }}
           />
+          )}
         </div>
         <div
           className={cn(
