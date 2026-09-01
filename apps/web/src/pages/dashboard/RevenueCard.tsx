@@ -293,7 +293,7 @@ export function RevenueCard({
           <div
             className={cn(
               "font-display font-extrabold tabular-nums",
-              compact ? "mt-1 text-[22px]" : "mt-2 text-[28px]",
+              compact ? "mt-0.5 text-[21px]" : "mt-2 text-[28px]",
             )}
           >
             {isEmpty ? "0" : formatRub(displayTotal)}
@@ -385,7 +385,7 @@ export function RevenueCard({
       {/* Деление нал/безнал — кликабельно: фильтрует список ниже (для сверки
           бухгалтерии «сколько наличкой / сколько переводами»). */}
       {breakdownTotal > 0 && (
-        <div className={compact ? "mt-2" : "mt-3.5"}>
+        <div className={compact ? "mt-1.5" : "mt-3.5"}>
           <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-white/20">
             <div
               className="bg-white transition-all"
