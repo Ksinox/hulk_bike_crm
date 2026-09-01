@@ -91,11 +91,31 @@ export function ParkLoadGauge({
   layout?: "row" | "stack";
 }) {
   const pct = Math.max(0, Math.min(100, Math.round(percent)));
-  const SIZE = size;
+
+  /**
+   * Плашка сама решает, как встать (фидбэк 01.09). Когда справа открыта
+   * карточка быстрого просмотра, колонке дашборда достаётся мало места:
+   * в раскладке «круг слева, текст справа» заголовок сжимался до «Загр…».
+   * Меряем СВОЮ ширину (не окно — окно-то широкое) и ниже 300px
+   * переходим на вертикальную раскладку с кругом поменьше.
+   */
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [narrow, setNarrow] = useState(false);
+  useEffect(() => {
+    const el = cardRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => {
+      if (entry) setNarrow(entry.contentRect.width < 300);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const SIZE = narrow ? Math.round(size * 0.78) : size;
   // Белый круг по центру — 0.66 диаметра (правка 27.08: и сам круг, и
   // «дырка» доната стали крупнее, круг перестал теряться в карточке).
-  const CENTER = Math.round(size * 0.66);
-  const stack = layout === "stack";
+  const CENTER = Math.round(SIZE * 0.66);
+  const stack = layout === "stack" || narrow;
   const electro = tone === "electro";
   /**
    * Имена keyframes уникальны для КАЖДОГО круга. На дашборде их два, а
@@ -194,7 +214,7 @@ export function ParkLoadGauge({
   const centerBg = full ? "transparent" : "#ffffff";
 
   return (
-    <Card className={cn("flex h-full items-center", className)}>
+    <Card ref={cardRef} className={cn("flex h-full items-center", className)}>
       <button
         type="button"
         onClick={onClick}
