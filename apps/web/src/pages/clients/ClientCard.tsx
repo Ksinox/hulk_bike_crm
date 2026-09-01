@@ -541,8 +541,9 @@ export function ClientCard({ client }: { client: Client }) {
         <EntityNotes entity="client" entityId={client.id} />
       </div>
 
-      {/* Tabs */}
-      <div className="mt-1 flex gap-1 border-b border-border">
+      {/* Tabs. В узкой колонке (карточка быстрого просмотра) вкладки
+          переносятся на вторую строку, а не обрезаются краем (01.09). */}
+      <div className="mt-1 flex flex-wrap gap-x-1 border-b border-border">
         {tabs.map((t) => (
           <button
             key={t.id}
