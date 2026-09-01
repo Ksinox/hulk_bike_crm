@@ -34,6 +34,8 @@ export type ActivityEntity =
   // Блок «Продажи» (31.08): сделки и менеджеры продаж.
   | "sale_deal"
   | "sale_manager"
+  // Блок «Аренда с выкупом» (01.09).
+  | "buyout"
   | "settings";
 
 /**

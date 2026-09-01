@@ -2283,3 +2283,113 @@ export const salePlans = pgTable("sale_plans", {
     .notNull()
     .defaultNow(),
 });
+
+
+/* ============================================================
+ * АРЕНДА С ВЫКУПОМ (задание 01.09)
+ *
+ * Клиент забирает технику сразу, вносит первоначальный взнос и гасит
+ * остаток равными платежами. Стоимость увеличивается на наценку за срок
+ * (справочник в app_settings, правится с ключом директора).
+ *
+ * График (buyoutSchedule) и факт (buyoutPayments) разделены намеренно:
+ * только так видно просрочку, частичную оплату и досрочное погашение —
+ * без переписывания истории.
+ * ============================================================ */
+
+export const buyoutStatusEnum = pgEnum("buyout_status", [
+  "draft",
+  "contract",
+  "active",
+  "closed",
+  "defaulted",
+  "cancelled",
+]);
+
+export const buyoutDeals = pgTable(
+  "buyout_deals",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    status: buyoutStatusEnum("status").notNull().default("draft"),
+    clientId: bigint("client_id", { mode: "number" }),
+    scooterId: bigint("scooter_id", { mode: "number" }),
+    managerId: bigint("manager_id", { mode: "number" }),
+    /** Базовая стоимость техники на момент сделки. */
+    scooterPrice: integer("scooter_price").notNull().default(0),
+    termMonths: integer("term_months").notNull().default(1),
+    /** Наценка за срок — из справочника, но в сделке это снимок. */
+    markup: integer("markup").notNull().default(0),
+    total: integer("total").notNull().default(0),
+    downPayment: integer("down_payment").notNull().default(0),
+    /** Сколько остаётся выплатить после взноса. */
+    financed: integer("financed").notNull().default(0),
+    /** Периодичность платежей: month | week. */
+    period: text("period").notNull().default("month"),
+    paymentAmount: integer("payment_amount").notNull().default(0),
+    paymentsCount: integer("payments_count").notNull().default(0),
+    startDate: date("start_date"),
+    /** Менеджер отметил, что проверил клиента по чёрным спискам. */
+    blacklistChecked: boolean("blacklist_checked").notNull().default(false),
+    /** Подтверждено, что на технику установлен AirTag. */
+    airtagConfirmed: boolean("airtag_confirmed").notNull().default(false),
+    scooterName: text("scooter_name"),
+    modelName: text("model_name"),
+    vin: text("vin"),
+    engineNo: text("engine_no"),
+    frameNumber: text("frame_number"),
+    mileage: integer("mileage"),
+    comment: text("comment"),
+    cancelReason: text("cancel_reason"),
+    contractAt: timestamp("contract_at", { withTimezone: true }),
+    signedAt: timestamp("signed_at", { withTimezone: true }),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    createdByUserId: bigint("created_by_user_id", { mode: "number" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    statusIdx: index("buyout_deals_status_idx").on(t.status),
+    clientIdx: index("buyout_deals_client_idx").on(t.clientId),
+  }),
+);
+
+export const buyoutSchedule = pgTable(
+  "buyout_schedule",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    dealId: bigint("deal_id", { mode: "number" }).notNull(),
+    /** Порядковый номер платежа, с 1. */
+    seq: integer("seq").notNull(),
+    dueDate: date("due_date").notNull(),
+    amount: integer("amount").notNull(),
+    paidAmount: integer("paid_amount").notNull().default(0),
+    paidAt: timestamp("paid_at", { withTimezone: true }),
+    note: text("note"),
+  },
+  (t) => ({
+    dealIdx: index("buyout_schedule_deal_idx").on(t.dealId),
+    dueIdx: index("buyout_schedule_due_idx").on(t.dueDate),
+  }),
+);
+
+export const buyoutPayments = pgTable(
+  "buyout_payments",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    dealId: bigint("deal_id", { mode: "number" }).notNull(),
+    amount: integer("amount").notNull(),
+    paidAt: timestamp("paid_at", { withTimezone: true }).notNull().defaultNow(),
+    method: text("method").notNull().default("cash"),
+    /** down_payment | regular | early_partial | early_full */
+    kind: text("kind").notNull().default("regular"),
+    userId: bigint("user_id", { mode: "number" }),
+    note: text("note"),
+  },
+  (t) => ({
+    dealIdx: index("buyout_payments_deal_idx").on(t.dealId),
+  }),
+);

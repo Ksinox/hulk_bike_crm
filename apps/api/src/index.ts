@@ -209,6 +209,9 @@ async function bootstrap() {
     // Блок «Продажи» (31.08): сделки, менеджеры, план, договор купли-продажи
     const { salesRoutes } = await import("./routes/sales.js");
     await protectedApp.register(salesRoutes, { prefix: "/api/sales" });
+    // Блок «Аренда с выкупом» (01.09): сделки, график платежей, договор
+    const { buyoutRoutes } = await import("./routes/buyout.js");
+    await protectedApp.register(buyoutRoutes, { prefix: "/api/buyout" });
     // Каталоги
     await protectedApp.register(scooterModelsRoutes, { prefix: "/api/scooter-models" });
     await protectedApp.register(equipmentRoutes, { prefix: "/api/equipment" });
