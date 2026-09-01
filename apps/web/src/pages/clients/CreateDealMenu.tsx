@@ -56,7 +56,7 @@ export const DEAL_TYPES: {
 ];
 
 /** Типы сделки, которые уже работают (правка 31.08: продажи запущены). */
-const READY_TYPES: DealType[] = ["rental", "sale"];
+const READY_TYPES: DealType[] = ["rental", "sale", "buyout"];
 
 /**
  * Список типов сделки внутри выпадающего меню — общий для карточки клиента
@@ -166,6 +166,8 @@ export function NewDealButton({
       // Продажа оформляется мастером в своём разделе — ведём туда и сразу
       // открываем мастер (правка 31.08).
       navigate({ route: "sales", newSale: true });
+    } else if (type === "buyout") {
+      navigate({ route: "rassrochki", newSale: true });
     }
   };
 
@@ -246,6 +248,8 @@ export function CreateDealMenu({
     else if (type === "sale") {
       // Продажа — мастер в разделе «Продажи», клиент уже выбран.
       navigate({ route: "sales", newSale: true, clientId: client.id });
+    } else if (type === "buyout") {
+      navigate({ route: "rassrochki", newSale: true, clientId: client.id });
     }
   };
 

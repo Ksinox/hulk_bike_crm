@@ -76,9 +76,9 @@ function buildMainItems(canManageStaff: boolean): NavItem[] {
       ready: true,
     });
   }
+  items.push({ id: "rassrochki", label: "Выкуп", icon: Receipt, ready: true });
   // Разделы «скоро» — всегда в конце списка.
   items.push(
-    { id: "rassrochki", label: "Рассрочки", icon: Receipt },
     { id: "incidents", label: "Инциденты", icon: CircleAlert },
     { id: "tasks", label: "Задачи", icon: ClipboardCheck },
     { id: "analytics", label: "Аналитика", icon: BarChart3 },

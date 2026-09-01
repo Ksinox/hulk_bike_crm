@@ -30,6 +30,7 @@ const READY: RouteId[] = [
   "debtors",
   "fleet",
   "sales",
+  "rassrochki",
   "service",
   "docs",
   "storage",
