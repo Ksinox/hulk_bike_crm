@@ -6,6 +6,7 @@ import {
   Home,
   LayoutGrid,
   LogOut,
+  Receipt,
   Scale,
   Settings,
   ShoppingBag,
@@ -48,6 +49,8 @@ export function buildMoreItems(canManageStaff: boolean): MobileNavItem[] {
     { id: "docs", label: "Документы", icon: FileText, ready: true },
     // Блок «Продажи» (31.08): сделки, техника в продаже, менеджеры.
     { id: "sales", label: "Продажи", icon: Wallet, ready: true },
+    // Блок «Аренда с выкупом» (01.09).
+    { id: "rassrochki", label: "Выкуп", icon: Receipt, ready: true },
     // Пункт 11: выплаты инвестору по партнёрской технике.
     { id: "partners", label: "Партнёрка", icon: Handshake, ready: true },
   ];

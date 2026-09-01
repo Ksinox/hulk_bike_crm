@@ -30,6 +30,7 @@ import { MobilePlaceholder } from "./pages/MobilePlaceholder";
 import { StoragePage } from "@/pages/storage/StoragePage";
 import { Partners } from "@/pages/partners/Partners";
 import { Sales } from "@/pages/sales/Sales";
+import { Buyout } from "@/pages/buyout/Buyout";
 import { ApprovalsBell } from "@/components/ApprovalsInbox";
 import { DayReportDialog } from "@/components/DayReport";
 
@@ -169,6 +170,14 @@ function MobilePage({
       return (
         <div className="px-1 pb-4">
           <Sales />
+        </div>
+      );
+    case "rassrochki":
+      // Раздел свёрстан адаптивно: списки — карточками, мастер выкупа
+      // полноэкранный (паритет с десктопом).
+      return (
+        <div className="px-1 pb-4">
+          <Buyout />
         </div>
       );
     case "partners":
