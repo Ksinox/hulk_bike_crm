@@ -377,6 +377,42 @@ function stepDates(r: Range, b: Bucket): Date[] {
  * закрытым интервалам: показывает, куда идут продажи, а не просто повтор
  * последнего значения.
  */
+/**
+ * Та же раскладка по календарю, но для произвольных денежных событий —
+ * например платежей по выкупу (01.09). Прогноз здесь не нужен: платежи
+ * идут по графику, предсказывать нечего.
+ */
+/** Масштаб для произвольного диапазона из календаря — по его длине. */
+export function bucketForRange(from: Date, to: Date): Bucket {
+  const days = Math.max(1, (to.getTime() - from.getTime()) / 86_400_000);
+  if (days <= 2) return "hour";
+  if (days <= 60) return "day";
+  if (days <= 400) return "month";
+  return "year";
+}
+
+export function seriesOfEvents(
+  events: { at: string; amount: number }[],
+  r: Range,
+  b: Bucket,
+): Point[] {
+  const grid = stepDates(r, b);
+  const map = new Map<string, Point>();
+  for (const d of grid) {
+    const key = bucketKey(d, b);
+    if (!map.has(key)) {
+      map.set(key, { key, label: bucketLabel(key, b), units: 0, revenue: 0, profit: 0 });
+    }
+  }
+  for (const e of events) {
+    const p = map.get(bucketKey(new Date(e.at), b));
+    if (!p) continue;
+    p.units += 1;
+    p.revenue += e.amount;
+  }
+  return [...map.values()];
+}
+
 export function series(
   deals: SaleDeal[],
   r: Range,

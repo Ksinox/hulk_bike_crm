@@ -286,3 +286,21 @@ export const BUYOUT_STATUS_CLASS: Record<BuyoutStatus, string> = {
   defaulted: "bg-red-soft text-red-ink",
   cancelled: "bg-surface-soft text-muted-2",
 };
+
+/** Платёж по любому выкупу — для «Динамики платежей» в обзоре (01.09). */
+export type BuyoutPaymentRow = {
+  id: number;
+  dealId: number;
+  amount: number;
+  kind: string;
+  method: string | null;
+  paidAt: string;
+  clientName: string | null;
+};
+
+export function useAllBuyoutPayments() {
+  return useQuery({
+    queryKey: ["buyout", "payments", "all"],
+    queryFn: () => api.get<{ items: BuyoutPaymentRow[] }>("/api/buyout/payments"),
+  });
+}

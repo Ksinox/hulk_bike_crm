@@ -18,12 +18,33 @@ import { ScooterCard } from "@/pages/fleet/ScooterCard";
 import type { ScooterDisplayStatus } from "@/lib/mock/fleet";
 import {
   useBuyoutDeals,
+  useAllBuyoutPayments,
   BUYOUT_STATUS_CLASS,
   BUYOUT_STATUS_LABEL,
   type BuyoutDeal,
 } from "@/lib/api/buyout";
-import { StatTile, StatRow, SectionCard, EmptyState } from "@/pages/sales/SalesUI";
-import { fmt, fmtCompact, ruDateShort } from "@/pages/sales/salesUtils";
+import {
+  StatTile,
+  StatRow,
+  SectionCard,
+  EmptyState,
+  PeriodPicker,
+} from "@/pages/sales/SalesUI";
+import { SalesChart } from "@/pages/sales/SalesChart";
+import {
+  fmt,
+  fmtCompact,
+  ruDateShort,
+  isAtNow,
+  panView,
+  rangeFromView,
+  seriesOfEvents,
+  viewForPreset,
+  zoomView,
+  bucketForRange,
+  type ChartView,
+  type PeriodPreset,
+} from "@/pages/sales/salesUtils";
 import { NewBuyoutWizard } from "./NewBuyoutWizard";
 import { BuyoutDealCard } from "./BuyoutDealCard";
 
@@ -248,18 +269,48 @@ function Overview({
   const problem = active.filter((d) => d.progress.overdueCount > 0);
   const defaulted = deals.filter((d) => d.status === "defaulted");
 
+  /**
+   * Период (фидбэк 01.09: «это всё должно быть в привязке к календарю»).
+   * Тот же календарь и то же скользящее окно, что в «Продажах», — иначе
+   * в CRM было бы два разных способа выбрать один и тот же месяц.
+   */
+  const [preset, setPreset] = useState<PeriodPreset>("month");
+  const [custom, setCustom] = useState({ from: "", to: "" });
+  const [view, setView] = useState<ChartView>(() => viewForPreset("month"));
+  const range = useMemo(() => rangeFromView(view), [view]);
+  const paymentsQ = useAllBuyoutPayments();
+  const payments = useMemo(
+    () => paymentsQ.data?.items ?? [],
+    [paymentsQ.data],
+  );
+  /** Платежи выбранного периода — из них считаются «Собрано» и график. */
+  const inRange = useMemo(
+    () =>
+      payments.filter((x) => {
+        const t = new Date(x.paidAt).getTime();
+        return t >= range.from.getTime() && t <= range.to.getTime();
+      }),
+    [payments, range],
+  );
+  const chart = useMemo(
+    () =>
+      seriesOfEvents(
+        inRange.map((x) => ({ at: x.paidAt, amount: x.amount })),
+        range,
+        view.bucket,
+      ),
+    [inRange, range, view.bucket],
+  );
+
   const money = useMemo(() => {
     const portfolio = active.reduce((s, d) => s + d.progress.left, 0);
-    const collected = deals.reduce(
-      (s, d) => s + d.progress.paid + d.downPayment,
-      0,
-    );
+    const collected = inRange.reduce((s, x) => s + x.amount, 0);
     const overdue = problem.reduce((s, d) => s + d.progress.overdueAmount, 0);
     const markup = deals
       .filter((d) => d.status === "active" || d.status === "closed")
       .reduce((s, d) => s + d.markup, 0);
     return { portfolio, collected, overdue, markup };
-  }, [deals, active, problem]);
+  }, [deals, active, problem, inRange]);
 
   return (
     <div className="flex min-w-0 flex-col gap-3">
@@ -274,7 +325,7 @@ function Overview({
           label="Собрано"
           value={fmtCompact(money.collected)}
           suffix="₽"
-          hint="взносы и платежи"
+          hint={`взносы и платежи · ${range.label}`}
           icon={<CheckCircle2 size={13} />}
           accent
         />
@@ -298,6 +349,70 @@ function Overview({
           hint="наценка по рассрочке"
         />
       </StatRow>
+
+      <SectionCard
+        title="Динамика платежей"
+        hint={range.label}
+        action={
+          <>
+            <PeriodPicker
+              preset={preset}
+              custom={custom}
+              onChange={(pr, c) => {
+                setPreset(pr);
+                setCustom(c);
+                if (pr === "custom" && c.from && c.to) {
+                  const from = new Date(`${c.from}T00:00:00`);
+                  const to = new Date(`${c.to}T23:59:59`);
+                  const b = bucketForRange(from, to);
+                  const stepMs =
+                    b === "hour"
+                      ? 3_600_000
+                      : b === "day"
+                        ? 86_400_000
+                        : b === "week"
+                          ? 7 * 86_400_000
+                          : b === "month"
+                            ? 30 * 86_400_000
+                            : 365 * 86_400_000;
+                  setView({
+                    bucket: b,
+                    count: Math.max(
+                      2,
+                      Math.round((to.getTime() - from.getTime()) / stepMs) + 1,
+                    ),
+                    end: to,
+                  });
+                } else {
+                  setView(viewForPreset(pr));
+                }
+              }}
+            />
+            {!isAtNow(view) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setPreset("month");
+                  setView(viewForPreset("month"));
+                }}
+                className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700 transition-colors hover:bg-emerald-100"
+              >
+                К сегодня
+              </button>
+            )}
+          </>
+        }
+      >
+        <div className="p-4 pt-2">
+          <SalesChart
+            points={chart}
+            forecast={null}
+            bucket={view.bucket}
+            onZoom={(dir) => setView((v) => zoomView(v, dir))}
+            onPan={(steps) => setView((v) => panView(v, steps))}
+          />
+        </div>
+      </SectionCard>
 
       <div className="grid min-w-0 items-stretch gap-3 xl:grid-cols-2">
         <SectionCard title="Ближайшие платежи" hint="кого ждём в первую очередь">

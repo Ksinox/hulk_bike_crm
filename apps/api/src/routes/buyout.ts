@@ -188,6 +188,32 @@ export async function buyoutRoutes(app: FastifyInstance) {
     };
   });
 
+  /**
+   * Все платежи по выкупам одним списком (01.09).
+   *
+   * Нужен для «Динамики платежей» в обзоре: график и цифры должны быть
+   * привязаны к календарю, как в «Продажах». Тянуть их по одной сделке
+   * значило бы делать N запросов ради одной кривой.
+   */
+  app.get("/payments", async () => {
+    const rows = await db
+      .select({
+        id: buyoutPayments.id,
+        dealId: buyoutPayments.dealId,
+        amount: buyoutPayments.amount,
+        kind: buyoutPayments.kind,
+        method: buyoutPayments.method,
+        paidAt: buyoutPayments.paidAt,
+        clientName: clients.name,
+      })
+      .from(buyoutPayments)
+      .leftJoin(buyoutDeals, eq(buyoutDeals.id, buyoutPayments.dealId))
+      .leftJoin(clients, eq(clients.id, buyoutDeals.clientId))
+      .orderBy(desc(buyoutPayments.paidAt))
+      .limit(5000);
+    return { items: rows };
+  });
+
   app.post("/deals", async (req, reply) => {
     const parsed = DealBody.safeParse(req.body);
     if (!parsed.success) {

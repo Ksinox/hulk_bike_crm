@@ -31,6 +31,7 @@ import { SalesChart } from "./SalesChart";
 import {
   deltaPct,
   isAtNow,
+  bucketForRange,
   panView,
   rangeFromView,
   viewForPreset,
@@ -44,7 +45,6 @@ import {
   series,
   soldIn,
   totals,
-  type Bucket,
   type PeriodPreset,
   type Range,
 } from "./salesUtils";
@@ -56,15 +56,6 @@ import {
  * сколько продали и заработали за период, как идём к плану, куда движется
  * динамика — и кто из менеджеров и какие модели тянут результат.
  */
-
-/** Масштаб для произвольного диапазона из календаря — по его длине. */
-function bucketForRange(from: Date, to: Date): Bucket {
-  const days = Math.max(1, (to.getTime() - from.getTime()) / 86_400_000);
-  if (days <= 2) return "hour";
-  if (days <= 60) return "day";
-  if (days <= 400) return "month";
-  return "year";
-}
 
 export function SalesOverview({
   onOpenStock,
@@ -134,42 +125,10 @@ export function SalesOverview({
 
   return (
     <div className="flex min-w-0 flex-col gap-3">
-      {/* Фильтр по менеджеру. Период переехал в шапку «Динамики продаж»
+      {/* Фильтр по менеджеру. Период живёт в шапке «Динамики продаж»
           (правка 31.08): рядом с табами раздела получался частокол
           одинаковых переключателей. */}
       <div className="flex flex-wrap items-center gap-2">
-        <div className="hidden" aria-hidden>
-          <PeriodPicker
-          preset={preset}
-          custom={custom}
-          onChange={(p, c) => {
-            setPreset(p);
-            setCustom(c);
-            if (p === "custom" && c.from && c.to) {
-              const from = new Date(`${c.from}T00:00:00`);
-              const to = new Date(`${c.to}T23:59:59`);
-              const b = bucketForRange(from, to);
-              const stepMs =
-                b === "hour"
-                  ? 3_600_000
-                  : b === "day"
-                    ? 86_400_000
-                    : b === "week"
-                      ? 7 * 86_400_000
-                      : b === "month"
-                        ? 30 * 86_400_000
-                        : 365 * 86_400_000;
-              setView({
-                bucket: b,
-                count: Math.max(2, Math.round((to.getTime() - from.getTime()) / stepMs) + 1),
-                end: to,
-              });
-            } else {
-              setView(viewForPreset(p));
-            }
-          }}
-          />
-        </div>
         <div className="flex-1" />
         {managers.length > 0 && (
           <div className="flex max-w-full flex-wrap items-center gap-1 rounded-full bg-surface p-1 shadow-card-sm">
