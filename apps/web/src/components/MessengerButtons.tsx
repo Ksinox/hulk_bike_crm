@@ -2,6 +2,7 @@ import { MessageCircle, Send } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { whatsappLink, telegramLink, phoneDigits } from "@/lib/messengers";
 import { toast } from "@/lib/toast";
+import { openMaxChatViaHelper } from "@/lib/maxHelper";
 
 /**
  * Пункт 3 — виджет мессенджеров у телефона клиента: WhatsApp · Telegram · MAX.
@@ -58,25 +59,62 @@ export function openMessengerTab(url: string, tab: keyof typeof TAB) {
   const win = window.open(url, TAB[tab]);
   win?.focus?.();
 }
-/** Инструкция по установке (сам скрипт — /max-autofind.user.js). */
+/** Страница разовой настройки помощника. */
 export const MAX_SETUP_URL = "/max-setup.html";
 
-/** Оператор уже ставил скрипт (или сознательно отказался) — не повторяем. */
+/** Подсказку про настройку показываем один раз, дальше не мешаем. */
 const MAX_HINT_KEY = "hulk-max-hint-shown";
 
+function hintAlreadyShown(): boolean {
+  try {
+    return localStorage.getItem(MAX_HINT_KEY) === "1";
+  } catch {
+    return true;
+  }
+}
+
+function rememberHint() {
+  try {
+    localStorage.setItem(MAX_HINT_KEY, "1");
+  } catch {
+    /* приватный режим — покажем в другой раз */
+  }
+}
+
 /**
- * MAX: открыть чат с клиентом. Номер уходит в адрес постоянной вкладки —
- * скрипт на стороне MAX (если установлен) сам найдёт человека по номеру.
- * Номер параллельно кладём в буфер: без скрипта его надо вставить руками.
- * Экспорт — для крупных кнопок мобильной карточки клиента.
+ * MAX: открыть чат с клиентом по номеру.
+ *
+ * Если установлен наш помощник (дополнение к браузеру) — он находит УЖЕ
+ * открытую вкладку MAX (даже ту, что оператор открыл сам), переключается
+ * на неё и открывает чат. Это единственный способ: сама страница CRM до
+ * чужой вкладки дотянуться не может — так устроена защита браузера.
+ *
+ * Без помощника работает прежний путь: открываем MAX в своей постоянной
+ * вкладке и кладём номер в буфер — вставить в поиск руками.
  */
 export async function openMaxChat(phone: string) {
+  const viaHelper = openMaxChatViaHelper(phone);
+  if (viaHelper) {
+    const t = toast.info("Открываю чат в MAX…", phone);
+    const res = await viaHelper;
+    toast.dismiss(t);
+    if (res.ok) return;
+    // Помощник есть, но не справился (MAX не загрузился / не нашёл номер).
+    toast.error(
+      "MAX не открыл чат",
+      res.error === "no_hint"
+        ? "Номер не найден в MAX — проверьте его вручную."
+        : "Попробуйте ещё раз: вкладка MAX могла не успеть загрузиться.",
+    );
+    return;
+  }
+
   let copied = false;
   try {
     await navigator.clipboard.writeText(phone);
     copied = true;
   } catch {
-    /* буфер недоступен — не беда, номер виден в карточке */
+    /* буфер недоступен — номер всё равно виден в карточке */
   }
 
   openMessengerTab(
@@ -84,16 +122,7 @@ export async function openMaxChat(phone: string) {
     "max",
   );
 
-  // Первый раз рассказываем про скрипт: с ним чат открывается сам.
-  const hintShown = (() => {
-    try {
-      return localStorage.getItem(MAX_HINT_KEY) === "1";
-    } catch {
-      return true;
-    }
-  })();
-
-  if (!hintShown) {
+  if (!hintAlreadyShown()) {
     toast.action({
       kind: "info",
       title: "MAX открыт",
@@ -103,19 +132,9 @@ export async function openMaxChat(phone: string) {
       ttl: 12000,
       onAction: () => {
         window.open(MAX_SETUP_URL, "_blank", "noopener");
-        try {
-          localStorage.setItem(MAX_HINT_KEY, "1");
-        } catch {
-          /* приватный режим — покажем подсказку в другой раз */
-        }
+        rememberHint();
       },
-      onExpire: () => {
-        try {
-          localStorage.setItem(MAX_HINT_KEY, "1");
-        } catch {
-          /* см. выше */
-        }
-      },
+      onExpire: rememberHint,
     });
     return;
   }
@@ -123,8 +142,8 @@ export async function openMaxChat(phone: string) {
   toast.success(
     "MAX открыт",
     copied
-      ? "Ищем клиента по номеру — он же скопирован в буфер."
-      : "Ищем клиента по номеру в открытой вкладке MAX.",
+      ? "Найдите клиента по номеру — он скопирован в буфер."
+      : "Найдите клиента по номеру в открытой вкладке MAX.",
   );
 }
 

@@ -11,6 +11,7 @@
         --muted: #64748b;
         --line: #e2e8f0;
         --blue: #2563eb;
+        --green: #059669;
         --bg: #f5f7fb;
       }
       * { box-sizing: border-box; }
@@ -23,7 +24,7 @@
       }
       .wrap { max-width: 680px; margin: 0 auto; }
       h1 { font-size: 28px; line-height: 1.15; margin: 0 0 8px; }
-      .lead { color: var(--muted); margin: 0 0 28px; }
+      .lead { color: var(--muted); margin: 0 0 24px; }
       .card {
         background: #fff;
         border: 1px solid var(--line);
@@ -32,116 +33,233 @@
         margin-bottom: 14px;
         box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
       }
+      .status {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        border-radius: 16px;
+        padding: 16px 20px;
+        margin-bottom: 18px;
+        font-weight: 700;
+      }
+      .status.on { background: #dcfce7; color: #065f46; }
+      .status.off { background: #fee2e2; color: #991b1b; }
+      .status .dot {
+        width: 12px; height: 12px; border-radius: 999px; flex: none;
+        background: currentColor;
+      }
+      .status small { display: block; font-weight: 500; opacity: 0.85; }
       .step { display: flex; gap: 14px; align-items: flex-start; }
       .num {
-        flex: none;
-        width: 28px; height: 28px;
-        border-radius: 999px;
-        background: var(--ink);
-        color: #fff;
-        font-weight: 700; font-size: 14px;
+        flex: none; width: 28px; height: 28px; border-radius: 999px;
+        background: var(--ink); color: #fff; font-weight: 700; font-size: 14px;
         display: flex; align-items: center; justify-content: center;
       }
       .step h2 { font-size: 16px; margin: 3px 0 6px; }
       .step p { margin: 0 0 10px; color: var(--ink-2); }
-      a.btn {
-        display: inline-block;
-        background: var(--blue);
-        color: #fff;
-        text-decoration: none;
-        font-weight: 700;
-        padding: 10px 16px;
-        border-radius: 999px;
+      a.btn, button.btn {
+        display: inline-block; background: var(--blue); color: #fff;
+        text-decoration: none; font: 700 15px/1 inherit; font-family: inherit;
+        padding: 12px 18px; border: 0; border-radius: 999px; cursor: pointer;
       }
-      a.btn.ghost {
-        background: #fff;
-        color: var(--ink);
-        border: 1px solid var(--line);
+      button.btn.ghost { background: #fff; color: var(--ink); border: 1px solid var(--line); }
+      button.btn:disabled { opacity: 0.55; cursor: default; }
+      code { background: #eef2f7; border-radius: 6px; padding: 1px 6px; font-size: 13px; }
+      .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+      input[type="tel"] {
+        flex: 1 1 200px; min-width: 0; height: 46px; padding: 0 14px;
+        border: 1px solid var(--line); border-radius: 12px; font: inherit;
       }
-      code {
-        background: #eef2f7;
-        border-radius: 6px;
-        padding: 1px 6px;
-        font-size: 13px;
-      }
+      .result { margin-top: 12px; font-weight: 600; }
+      .result.ok { color: var(--green); }
+      .result.bad { color: #b91c1c; }
       .note {
-        color: var(--muted);
-        font-size: 13.5px;
-        border-left: 3px solid var(--line);
-        padding-left: 12px;
-        margin-top: 22px;
+        color: var(--muted); font-size: 13.5px;
+        border-left: 3px solid var(--line); padding-left: 12px; margin-top: 22px;
       }
+      .hidden { display: none; }
     </style>
   </head>
   <body>
     <div class="wrap">
       <h1>Чтобы чат в MAX открывался сам</h1>
       <p class="lead">
-        Один раз на компьютер — дальше кнопка «MAX» в карточке клиента будет
-        сразу открывать переписку с ним, без поиска руками.
+        Разовая настройка на этом компьютере. После неё кнопка «MAX» в
+        карточке клиента сразу открывает переписку с ним — искать по номеру
+        руками не нужно.
       </p>
 
-      <div class="card">
+      <div id="status" class="status off">
+        <span class="dot"></span>
+        <span>
+          <span id="statusText">Проверяем…</span>
+          <small id="statusHint"></small>
+        </span>
+      </div>
+
+      <div id="install">
+        <div class="card">
+          <div class="step">
+            <div class="num">1</div>
+            <div>
+              <h2>Установите помощник</h2>
+              <p>
+                Скачайте архив и добавьте его в браузер — это делается один раз
+                и занимает минуту. Дальше эта страница сама увидит, что помощник
+                появился.
+              </p>
+              <a class="btn" id="installBtn" href="/max-helper.zip" download
+                >Скачать помощник</a
+              >
+              <ol style="margin: 14px 0 0; padding-left: 20px; color: var(--ink-2)">
+                <li>Распакуйте скачанный архив в любую папку.</li>
+                <li>
+                  Откройте <code>chrome://extensions</code> (в Brave —
+                  <code>brave://extensions</code>).
+                </li>
+                <li>Включите «Режим разработчика» в правом верхнем углу.</li>
+                <li>
+                  Нажмите «Загрузить распакованное расширение» и выберите папку.
+                </li>
+              </ol>
+              <p style="margin-top: 10px; font-size: 13px; color: var(--muted)">
+                Помощник работает только на <code>web.max.ru</code> и умеет одно
+                действие — найти клиента по номеру и открыть чат. Переписку не
+                читает и ничего не отправляет.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
         <div class="step">
-          <div class="num">1</div>
-          <div>
-            <h2>Поставьте Tampermonkey</h2>
-            <p>
-              Это бесплатное дополнение к браузеру, которое умеет запускать
-              небольшие скрипты на сайтах. Ставится в два клика.
-            </p>
-            <a
-              class="btn"
-              href="https://chromewebstore.google.com/detail/tampermonkey/dhdgffkkebhmkfjojejmpbldmpobfkfo"
-              target="_blank"
-              rel="noopener"
-              >Открыть в Chrome Web Store</a
-            >
+            <div class="num">2</div>
+            <div>
+              <h2>Войдите в MAX</h2>
+              <p>Один раз — дальше вход не слетает.</p>
+              <a class="btn ghost" href="https://web.max.ru/" target="_blank" rel="noopener"
+                >Открыть web.max.ru</a
+              >
+            </div>
           </div>
         </div>
       </div>
 
-      <div class="card">
+      <div class="card" id="checkCard">
         <div class="step">
-          <div class="num">2</div>
-          <div>
-            <h2>Установите наш скрипт</h2>
+          <div class="num">✓</div>
+          <div style="flex: 1">
+            <h2>Проверка</h2>
             <p>
-              Откроется окно Tampermonkey с текстом скрипта — нажмите
-              «Установить». Скрипт работает только на <code>web.max.ru</code> и
-              умеет ровно одно: вставить номер в поиск и открыть чат.
+              Введите любой номер, который есть в MAX, и нажмите «Проверить» —
+              откроется чат с этим человеком.
             </p>
-            <a class="btn" href="/max-autofind.user.js">Установить скрипт</a>
-          </div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="step">
-          <div class="num">3</div>
-          <div>
-            <h2>Войдите в MAX и пользуйтесь</h2>
-            <p>
-              Откройте <code>web.max.ru</code> и войдите в свой аккаунт. Дальше
-              из CRM жмите «MAX» у телефона клиента — вкладка MAX сама найдёт
-              человека по номеру и откроет переписку.
-            </p>
-            <a class="btn ghost" href="https://web.max.ru/" target="_blank" rel="noopener"
-              >Открыть web.max.ru</a
-            >
+            <div class="row">
+              <input
+                type="tel"
+                id="phone"
+                placeholder="+7 (___) ___-__-__"
+                autocomplete="off"
+              />
+              <button class="btn" id="checkBtn" type="button">Проверить</button>
+            </div>
+            <div class="result" id="result"></div>
           </div>
         </div>
       </div>
 
       <p class="note">
-        Почему нельзя проще. У MAX нет ссылки на чат по номеру: адрес вида
-        <code>web.max.ru/202811141</code> при прямом открытии сбрасывается на
-        список чатов. А «нажать» что-то внутри чужого сайта прямо из CRM
-        браузер не даёт — это его защита, иначе любой сайт мог бы хозяйничать
-        в вашей почте. Поэтому шаги выполняет отдельный скрипт на стороне MAX.
-        Без него всё работает как раньше: MAX откроется, номер уже в буфере
-        обмена — вставьте его в поиск.
+        Почему нельзя одной кнопкой прямо отсюда. Браузеры с 2018 года
+        запрещают сайтам ставить дополнения самим — иначе любая страница молча
+        добавляла бы себе расширения. Ближайшее к «одной кнопке» — публикация в
+        магазине браузера: тогда установка это одно нажатие «Установить» в окне
+        магазина, а шаги с папкой и режимом разработчика исчезнут. Пока не
+        опубликовано — ставим из архива.
       </p>
     </div>
+
+    <script>
+      // После публикации в Chrome Web Store сюда встанет ссылка магазина —
+      // тогда установка станет одним нажатием «Установить» в его окне.
+      var STORE_URL = "/max-helper.zip";
+
+      var statusEl = document.getElementById("status");
+      var statusText = document.getElementById("statusText");
+      var statusHint = document.getElementById("statusHint");
+      var installBlock = document.getElementById("install");
+      var installBtn = document.getElementById("installBtn");
+      var resultEl = document.getElementById("result");
+      installBtn.href = STORE_URL;
+
+      function installed() {
+        return !!document.documentElement.dataset.hulkMaxHelper;
+      }
+
+      function render() {
+        if (installed()) {
+          statusEl.className = "status on";
+          statusText.textContent = "Помощник установлен";
+          statusHint.textContent =
+            "версия " + document.documentElement.dataset.hulkMaxHelper +
+            " · чат открывается по кнопке «MAX» в карточке клиента";
+          installBlock.classList.add("hidden");
+        } else {
+          statusEl.className = "status off";
+          statusText.textContent = "Помощник не установлен";
+          statusHint.textContent =
+            "Пока без него: MAX открывается, номер копируется в буфер — вставить в поиск руками.";
+          installBlock.classList.remove("hidden");
+        }
+      }
+      render();
+      // Установили в соседней вкладке — увидим это без перезагрузки.
+      setInterval(render, 1500);
+
+      document.getElementById("checkBtn").addEventListener("click", function () {
+        var phone = document.getElementById("phone").value.trim();
+        if (!phone) {
+          resultEl.className = "result bad";
+          resultEl.textContent = "Введите номер.";
+          return;
+        }
+        if (!installed()) {
+          resultEl.className = "result bad";
+          resultEl.textContent =
+            "Помощник не установлен — сначала выполните шаг 1.";
+          return;
+        }
+        resultEl.className = "result";
+        resultEl.textContent = "Открываем чат…";
+
+        var requestId = "check-" + Date.now();
+        var done = false;
+        function onMessage(e) {
+          var d = e.data;
+          if (!d || d.source !== "hulk-max-helper") return;
+          if (d.requestId !== requestId) return;
+          done = true;
+          window.removeEventListener("message", onMessage);
+          var ok = d.result && d.result.ok;
+          resultEl.className = "result " + (ok ? "ok" : "bad");
+          resultEl.textContent = ok
+            ? "Проверка пройдена — чат открылся в MAX."
+            : d.result && d.result.error === "no_hint"
+              ? "MAX не нашёл такой номер. Возьмите номер, который точно есть в MAX."
+              : "Не получилось. Откройте web.max.ru, войдите в аккаунт и повторите.";
+        }
+        window.addEventListener("message", onMessage);
+        window.postMessage(
+          { source: "hulk-crm", type: "hulk-open-max", phone: phone, requestId: requestId },
+          "*",
+        );
+        setTimeout(function () {
+          if (done) return;
+          window.removeEventListener("message", onMessage);
+          resultEl.className = "result bad";
+          resultEl.textContent =
+            "Ответа нет. Проверьте, что вкладка MAX открыта и вы вошли в аккаунт.";
+        }, 30000);
+      });
+    </script>
   </body>
 </html>
