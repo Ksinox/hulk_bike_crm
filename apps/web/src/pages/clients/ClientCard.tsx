@@ -370,16 +370,20 @@ export function ClientCard({ client }: { client: Client }) {
                 }
                 tone={activeRental ? "neutral" : "gray"}
               />
-              <KpiBox
-                label="Дней в аренде"
-                value={
-                  totalRentedDays > 0
-                    ? `${totalRentedDays} ${daysWord(totalRentedDays)}`
-                    : "—"
-                }
-                hint="суммарно по истории"
-                tone={totalRentedDays > 0 ? "neutral" : "gray"}
-              />
+              {/* Третья плитка занимает весь ряд: иначе рядом с ней
+                  оставалась пустая ячейка (фидбэк 01.09). */}
+              <div className="col-span-2">
+                <KpiBox
+                  label="Дней в аренде"
+                  value={
+                    totalRentedDays > 0
+                      ? `${totalRentedDays} ${daysWord(totalRentedDays)}`
+                      : "—"
+                  }
+                  hint="суммарно по истории"
+                  tone={totalRentedDays > 0 ? "neutral" : "gray"}
+                />
+              </div>
             </div>
             <div className="flex h-full flex-col gap-2">
               <KpiBox
