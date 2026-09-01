@@ -46,8 +46,8 @@ export function openMessengerTab(url: string, tab: keyof typeof TAB) {
   const win = window.open(url, TAB[tab], "noopener");
   win?.focus?.();
 }
-/** Ссылка на скрипт автопоиска — отдаётся статикой самой CRM. */
-export const MAX_SCRIPT_URL = "/max-autofind.user.js";
+/** Инструкция по установке (сам скрипт — /max-autofind.user.js). */
+export const MAX_SETUP_URL = "/max-setup.html";
 
 /** Оператор уже ставил скрипт (или сознательно отказался) — не повторяем. */
 const MAX_HINT_KEY = "hulk-max-hint-shown";
@@ -86,11 +86,11 @@ export async function openMaxChat(phone: string) {
       kind: "info",
       title: "MAX открыт",
       message:
-        "Чтобы чат открывался сам, поставьте наше дополнение для MAX — один раз на компьютер.",
-      actionLabel: "Поставить",
+        "Чтобы чат клиента открывался сам, нужна разовая настройка — 2 минуты.",
+      actionLabel: "Как настроить",
       ttl: 12000,
       onAction: () => {
-        window.open(MAX_SCRIPT_URL, "_blank", "noopener");
+        window.open(MAX_SETUP_URL, "_blank", "noopener");
         try {
           localStorage.setItem(MAX_HINT_KEY, "1");
         } catch {
