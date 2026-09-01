@@ -12,81 +12,115 @@
         --line: #e2e8f0;
         --blue: #2563eb;
         --green: #059669;
+        --red: #dc2626;
         --bg: #f5f7fb;
       }
       * { box-sizing: border-box; }
       body {
         margin: 0;
-        padding: 32px 20px 64px;
+        padding: 32px 20px 72px;
         background: var(--bg);
         color: var(--ink);
         font: 15px/1.55 -apple-system, "Segoe UI", Roboto, system-ui, sans-serif;
       }
-      .wrap { max-width: 680px; margin: 0 auto; }
-      h1 { font-size: 28px; line-height: 1.15; margin: 0 0 8px; }
-      .lead { color: var(--muted); margin: 0 0 24px; }
-      .card {
-        background: #fff;
-        border: 1px solid var(--line);
-        border-radius: 16px;
-        padding: 20px 22px;
-        margin-bottom: 14px;
-        box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
-      }
+      .wrap { max-width: 760px; margin: 0 auto; }
+      h1 { font-size: 30px; line-height: 1.12; margin: 0 0 8px; }
+      .lead { color: var(--muted); margin: 0 0 22px; font-size: 16px; }
+
       .status {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        border-radius: 16px;
-        padding: 16px 20px;
-        margin-bottom: 18px;
+        display: flex; align-items: center; gap: 12px;
+        border-radius: 16px; padding: 16px 20px; margin-bottom: 22px;
         font-weight: 700;
       }
       .status.on { background: #dcfce7; color: #065f46; }
       .status.off { background: #fee2e2; color: #991b1b; }
-      .status .dot {
-        width: 12px; height: 12px; border-radius: 999px; flex: none;
-        background: currentColor;
-      }
+      .status .dot { width: 12px; height: 12px; border-radius: 999px; flex: none; background: currentColor; }
       .status small { display: block; font-weight: 500; opacity: 0.85; }
-      .step { display: flex; gap: 14px; align-items: flex-start; }
+
+      .card {
+        background: #fff; border: 1px solid var(--line); border-radius: 18px;
+        padding: 22px 24px; margin-bottom: 14px;
+        box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+      }
+      .step { display: flex; gap: 16px; align-items: flex-start; }
       .num {
-        flex: none; width: 28px; height: 28px; border-radius: 999px;
-        background: var(--ink); color: #fff; font-weight: 700; font-size: 14px;
+        flex: none; width: 32px; height: 32px; border-radius: 999px;
+        background: var(--ink); color: #fff; font-weight: 800; font-size: 15px;
         display: flex; align-items: center; justify-content: center;
       }
-      .step h2 { font-size: 16px; margin: 3px 0 6px; }
-      .step p { margin: 0 0 10px; color: var(--ink-2); }
+      .body { flex: 1; min-width: 0; }
+      .step h2 { font-size: 17px; margin: 4px 0 8px; }
+      .step p { margin: 0 0 12px; color: var(--ink-2); }
+
       a.btn, button.btn {
-        display: inline-block; background: var(--blue); color: #fff;
-        text-decoration: none; font: 700 15px/1 inherit; font-family: inherit;
-        padding: 12px 18px; border: 0; border-radius: 999px; cursor: pointer;
+        display: inline-flex; align-items: center; gap: 8px;
+        background: var(--blue); color: #fff; text-decoration: none;
+        font: 700 15px/1 inherit; font-family: inherit;
+        padding: 13px 20px; border: 0; border-radius: 999px; cursor: pointer;
       }
-      a.btn.ghost, button.btn.ghost { background: #fff; color: var(--ink); border: 1px solid var(--line); }
-      button.btn:disabled { opacity: 0.55; cursor: default; }
-      code { background: #eef2f7; border-radius: 6px; padding: 1px 6px; font-size: 13px; }
+      a.btn.ghost, button.btn.ghost {
+        background: #fff; color: var(--ink); border: 1px solid var(--line);
+      }
+      a.btn.big { font-size: 16px; padding: 15px 26px; }
+
+      code {
+        background: #eef2f7; border-radius: 6px; padding: 2px 7px;
+        font: 600 13.5px/1.4 ui-monospace, Consolas, monospace;
+      }
+      .addr {
+        display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+        margin-bottom: 12px;
+      }
+      .addr code { font-size: 15px; padding: 8px 12px; }
+      .copied { color: var(--green); font-weight: 700; font-size: 13px; }
+
+      /* Скриншот с указателями */
+      .shot { position: relative; margin: 4px 0 6px; }
+      .shot img {
+        display: block; width: 100%; height: auto;
+        border: 1px solid var(--line); border-radius: 12px;
+      }
+      .pin {
+        position: absolute; transform: translate(-50%, -50%);
+        width: 30px; height: 30px; border-radius: 999px;
+        background: var(--red); color: #fff;
+        font: 800 15px/1 inherit; display: flex; align-items: center;
+        justify-content: center;
+        box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.22);
+      }
+      .box {
+        position: absolute; border: 3px solid var(--red); border-radius: 10px;
+        pointer-events: none;
+      }
+      .cap { color: var(--muted); font-size: 13px; margin: 0 0 4px; }
+
       .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
       input[type="tel"] {
-        flex: 1 1 200px; min-width: 0; height: 46px; padding: 0 14px;
+        flex: 1 1 220px; min-width: 0; height: 48px; padding: 0 14px;
         border: 1px solid var(--line); border-radius: 12px; font: inherit;
       }
-      .result { margin-top: 12px; font-weight: 600; }
+      .result { margin-top: 12px; font-weight: 700; }
       .result.ok { color: var(--green); }
-      .result.bad { color: #b91c1c; }
+      .result.bad { color: var(--red); }
+
       .note {
         color: var(--muted); font-size: 13.5px;
-        border-left: 3px solid var(--line); padding-left: 12px; margin-top: 22px;
+        border-left: 3px solid var(--line); padding-left: 14px; margin-top: 26px;
       }
       .hidden { display: none; }
+      @media (max-width: 560px) {
+        .pin { width: 24px; height: 24px; font-size: 13px; }
+        h1 { font-size: 25px; }
+      }
     </style>
   </head>
   <body>
     <div class="wrap">
       <h1>Чтобы чат в MAX открывался сам</h1>
       <p class="lead">
-        Разовая настройка на этом компьютере. После неё кнопка «MAX» в
-        карточке клиента сразу открывает переписку с ним — искать по номеру
-        руками не нужно.
+        Настройка делается один раз на этом компьютере и занимает пару минут.
+        После неё кнопка «MAX» в карточке клиента сразу открывает переписку с
+        ним — искать по номеру руками больше не нужно.
       </p>
 
       <div id="status" class="status off">
@@ -98,69 +132,176 @@
       </div>
 
       <div id="install">
+        <!-- 1 -->
         <div class="card">
           <div class="step">
             <div class="num">1</div>
-            <div>
-              <h2>Установите помощник</h2>
+            <div class="body">
+              <h2>Скачайте помощник</h2>
               <p>
-                Скачайте архив и добавьте его в браузер — это делается один раз
-                и занимает минуту. Дальше эта страница сама увидит, что помощник
-                появился.
+                Файл <code>max-helper.zip</code> попадёт в папку «Загрузки» —
+                браузер покажет его внизу окна.
               </p>
-              <a class="btn" id="installBtn" href="/max-helper.zip" download
-                >Скачать помощник</a
-              >
-              <ol style="margin: 14px 0 0; padding-left: 20px; color: var(--ink-2)">
-                <li>Распакуйте скачанный архив в любую папку.</li>
-                <li>
-                  Откройте <code>chrome://extensions</code> (в Brave —
-                  <code>brave://extensions</code>).
-                </li>
-                <li>Включите «Режим разработчика» в правом верхнем углу.</li>
-                <li>
-                  Нажмите «Загрузить распакованное расширение» и выберите папку.
-                </li>
-              </ol>
-              <p style="margin-top: 10px; font-size: 13px; color: var(--muted)">
-                Помощник работает только на <code>web.max.ru</code> и умеет одно
-                действие — найти клиента по номеру и открыть чат. Переписку не
-                читает и ничего не отправляет.
+              <a class="btn big" id="installBtn" href="/max-helper.zip" download>
+                Скачать помощник
+              </a>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2 -->
+        <div class="card">
+          <div class="step">
+            <div class="num">2</div>
+            <div class="body">
+              <h2>Распакуйте архив</h2>
+              <p>
+                Нажмите на скачанный файл правой кнопкой мыши → «Извлечь всё…»
+                → «Извлечь». Появится папка <code>max-helper</code> — запомните,
+                где она лежит, она понадобится на шаге 5. Удалять её потом
+                нельзя: браузер берёт помощник именно оттуда.
+              </p>
+              <svg viewBox="0 0 520 120" width="100%" height="120" role="img"
+                   aria-label="Архив распаковывается в папку">
+                <rect x="8" y="26" width="150" height="68" rx="12" fill="#eef2f7"
+                      stroke="#cbd5e1" />
+                <rect x="28" y="46" width="46" height="10" rx="5" fill="#94a3b8" />
+                <rect x="28" y="64" width="86" height="8" rx="4" fill="#cbd5e1" />
+                <text x="83" y="112" text-anchor="middle" font-size="13"
+                      fill="#64748b" font-family="system-ui">max-helper.zip</text>
+                <path d="M182 60 h96" stroke="#2563eb" stroke-width="4"
+                      stroke-linecap="round" />
+                <path d="M266 48 l16 12 -16 12 z" fill="#2563eb" />
+                <text x="230" y="44" text-anchor="middle" font-size="13"
+                      fill="#2563eb" font-family="system-ui">извлечь</text>
+                <path d="M312 40 h56 l10 12 h84 a10 10 0 0 1 10 10 v34
+                         a10 10 0 0 1 -10 10 h-150 a10 10 0 0 1 -10 -10 v-46
+                         a10 10 0 0 1 10 -10 z" fill="#dbeafe" stroke="#60a5fa" />
+                <text x="397" y="112" text-anchor="middle" font-size="13"
+                      fill="#64748b" font-family="system-ui">папка max-helper</text>
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3 -->
+        <div class="card">
+          <div class="step">
+            <div class="num">3</div>
+            <div class="body">
+              <h2>Откройте страницу расширений браузера</h2>
+              <p>
+                Скопируйте адрес, вставьте в адресную строку браузера и нажмите
+                Enter. Через меню эта страница тоже открывается: «Настройки» →
+                «Расширения».
+              </p>
+              <div class="addr">
+                <code id="addrBrave">brave://extensions</code>
+                <button class="btn ghost" type="button" data-copy="addrBrave">
+                  Копировать
+                </button>
+                <span class="copied hidden" id="copiedBrave">скопировано</span>
+              </div>
+              <p style="font-size: 13.5px; color: var(--muted)">
+                В Chrome адрес другой — <code>chrome://extensions</code>, в Edge —
+                <code>edge://extensions</code>. Дальше всё одинаково.
+              </p>
+              <p class="cap">Так выглядит эта страница:</p>
+              <div class="shot">
+                <img src="/help/ext-1-page.jpg" alt="Страница «Расширения»" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4 -->
+        <div class="card">
+          <div class="step">
+            <div class="num">4</div>
+            <div class="body">
+              <h2>Включите «Режим разработчика»</h2>
+              <p>
+                Тумблер в правом верхнем углу страницы. Как только вы его
+                включите, слева появятся три кнопки.
+              </p>
+              <div class="shot">
+                <img src="/help/ext-2-devmode.jpg"
+                     alt="Включённый режим разработчика и кнопка загрузки" />
+                <span class="pin" style="left: 97.5%; top: 12%">4</span>
+                <span class="box" style="left: 1%; top: 26%; width: 21%; height: 20%"></span>
+                <span class="pin" style="left: 11.5%; top: 36%">5</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 5 -->
+        <div class="card">
+          <div class="step">
+            <div class="num">5</div>
+            <div class="body">
+              <h2>Нажмите «Загрузить распакованное расширение»</h2>
+              <p>
+                Это первая из появившихся кнопок (обведена на картинке выше).
+                Откроется окно выбора папки — укажите папку
+                <code>max-helper</code> из шага 2 и нажмите «Выбор папки».
+              </p>
+              <p style="font-size: 13.5px; color: var(--muted)">
+                Важно: выбирать нужно саму папку, а не файлы внутри неё.
               </p>
             </div>
           </div>
         </div>
 
+        <!-- 6 -->
         <div class="card">
-        <div class="step">
-            <div class="num">2</div>
-            <div>
+          <div class="step">
+            <div class="num">6</div>
+            <div class="body">
+              <h2>Готово — помощник появился в списке</h2>
+              <p>
+                Так это выглядит после установки. Ничего больше настраивать не
+                нужно: вернитесь на эту страницу, и она сама покажет зелёную
+                отметку.
+              </p>
+              <div class="shot">
+                <img src="/help/ext-3-installed.jpg"
+                     alt="Установленное дополнение в списке расширений" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 7 -->
+        <div class="card">
+          <div class="step">
+            <div class="num">7</div>
+            <div class="body">
               <h2>Войдите в MAX</h2>
-              <p>Один раз — дальше вход не слетает.</p>
-              <a class="btn ghost" href="https://web.max.ru/" target="_blank" rel="noopener"
-                >Открыть web.max.ru</a
-              >
+              <p>
+                Один раз войдите в свой аккаунт в веб-версии — дальше вход не
+                слетает.
+              </p>
+              <a class="btn ghost" href="https://web.max.ru/" target="_blank" rel="noopener">
+                Открыть web.max.ru
+              </a>
             </div>
           </div>
         </div>
       </div>
 
+      <!-- Проверка -->
       <div class="card" id="checkCard">
         <div class="step">
           <div class="num">✓</div>
-          <div style="flex: 1">
+          <div class="body">
             <h2>Проверка</h2>
             <p>
               Введите любой номер, который есть в MAX, и нажмите «Проверить» —
-              откроется чат с этим человеком.
+              должен открыться чат с этим человеком.
             </p>
             <div class="row">
-              <input
-                type="tel"
-                id="phone"
-                placeholder="+7 (___) ___-__-__"
-                autocomplete="off"
-              />
+              <input type="tel" id="phone" placeholder="+7 (___) ___-__-__" autocomplete="off" />
               <button class="btn" id="checkBtn" type="button">Проверить</button>
             </div>
             <div class="result" id="result"></div>
@@ -169,27 +310,23 @@
       </div>
 
       <p class="note">
-        Почему нельзя одной кнопкой прямо отсюда. Браузеры с 2018 года
-        запрещают сайтам ставить дополнения самим — иначе любая страница молча
-        добавляла бы себе расширения. Ближайшее к «одной кнопке» — публикация в
-        магазине браузера: тогда установка это одно нажатие «Установить» в окне
-        магазина, а шаги с папкой и режимом разработчика исчезнут. Пока не
-        опубликовано — ставим из архива.
+        Что умеет помощник и чего не умеет. Он работает только на
+        <code>web.max.ru</code> и выполняет одно действие: вставляет номер в
+        поиск и открывает чат — ровно то, что вы делали руками. Переписку он не
+        читает и ничего не отправляет. Прямой ссылки на чат по номеру у MAX нет,
+        а «нажать» что-то внутри чужого сайта прямо из CRM браузер не разрешает —
+        поэтому и понадобилось дополнение. Установить его одной кнопкой прямо
+        отсюда тоже нельзя: браузеры запретили это в 2018 году, иначе любой сайт
+        молча ставил бы себе расширения.
       </p>
     </div>
 
     <script>
-      // После публикации в Chrome Web Store сюда встанет ссылка магазина —
-      // тогда установка станет одним нажатием «Установить» в его окне.
-      var STORE_URL = "/max-helper.zip";
-
       var statusEl = document.getElementById("status");
       var statusText = document.getElementById("statusText");
       var statusHint = document.getElementById("statusHint");
       var installBlock = document.getElementById("install");
-      var installBtn = document.getElementById("installBtn");
       var resultEl = document.getElementById("result");
-      installBtn.href = STORE_URL;
 
       function installed() {
         return !!document.documentElement.dataset.hulkMaxHelper;
@@ -198,10 +335,10 @@
       function render() {
         if (installed()) {
           statusEl.className = "status on";
-          statusText.textContent = "Помощник установлен";
+          statusText.textContent = "Помощник установлен — всё готово";
           statusHint.textContent =
             "версия " + document.documentElement.dataset.hulkMaxHelper +
-            " · чат открывается по кнопке «MAX» в карточке клиента";
+            " · чат открывается кнопкой «MAX» в карточке клиента";
           installBlock.classList.add("hidden");
         } else {
           statusEl.className = "status off";
@@ -215,6 +352,30 @@
       // Установили в соседней вкладке — увидим это без перезагрузки.
       setInterval(render, 1500);
 
+      // Копирование адреса страницы расширений
+      document.querySelectorAll("[data-copy]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          var src = document.getElementById(btn.dataset.copy);
+          var text = src.textContent.trim();
+          function done() {
+            var mark = document.getElementById("copiedBrave");
+            mark.classList.remove("hidden");
+            setTimeout(function () { mark.classList.add("hidden"); }, 2000);
+          }
+          if (navigator.clipboard) {
+            navigator.clipboard.writeText(text).then(done, fallback);
+          } else fallback();
+          function fallback() {
+            var ta = document.createElement("textarea");
+            ta.value = text;
+            document.body.appendChild(ta);
+            ta.select();
+            try { document.execCommand("copy"); done(); } catch (e) {}
+            ta.remove();
+          }
+        });
+      });
+
       document.getElementById("checkBtn").addEventListener("click", function () {
         var phone = document.getElementById("phone").value.trim();
         if (!phone) {
@@ -224,8 +385,7 @@
         }
         if (!installed()) {
           resultEl.className = "result bad";
-          resultEl.textContent =
-            "Помощник не установлен — сначала выполните шаг 1.";
+          resultEl.textContent = "Помощник не установлен — пройдите шаги 1–6.";
           return;
         }
         resultEl.className = "result";
@@ -235,8 +395,7 @@
         var done = false;
         function onMessage(e) {
           var d = e.data;
-          if (!d || d.source !== "hulk-max-helper") return;
-          if (d.requestId !== requestId) return;
+          if (!d || d.source !== "hulk-max-helper" || d.requestId !== requestId) return;
           done = true;
           window.removeEventListener("message", onMessage);
           var ok = d.result && d.result.ok;
