@@ -45,14 +45,16 @@ export function KpiCard({
     >
       <div
         className={cn(
-          "flex items-center gap-1.5 truncate pr-9 font-medium",
-          compact ? "text-[11.5px]" : "text-[13px]",
+          "flex items-center gap-1.5 font-medium",
+          compact ? "pr-7 text-[11.5px]" : "pr-9 text-[13px]",
           blue ? "text-white/75" : "text-muted",
         )}
       >
-        {title}
+        {/* Заголовок в тесноте обрезается многоточием, а не режется краем
+            карточки: у flex-контейнера свой текст не эллипсится (01.09). */}
+        <span className="min-w-0 truncate">{title}</span>
       </div>
-      <GoButton blue={blue} />
+      <GoButton blue={blue} compact={compact} />
       <div
         className={cn(
           "font-display tabular-nums leading-[1.1] tracking-[-0.02em] font-extrabold",
@@ -119,16 +121,17 @@ export function Card({
   );
 }
 
-function GoButton({ blue }: { blue?: boolean }) {
+function GoButton({ blue, compact }: { blue?: boolean; compact?: boolean }) {
   return (
     <button
       type="button"
       className={cn(
-        "absolute right-3.5 top-3.5 flex h-8 w-8 items-center justify-center rounded-full transition-transform hover:translate-x-0.5 hover:-translate-y-0.5",
+        "absolute flex items-center justify-center rounded-full transition-transform hover:translate-x-0.5 hover:-translate-y-0.5",
+        compact ? "right-2 top-2 h-6 w-6" : "right-3.5 top-3.5 h-8 w-8",
         blue ? "bg-white text-blue-600" : "bg-ink text-white",
       )}
     >
-      <ArrowUpRight size={14} strokeWidth={2.2} />
+      <ArrowUpRight size={compact ? 12 : 14} strokeWidth={2.2} />
     </button>
   );
 }
