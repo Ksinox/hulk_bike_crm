@@ -172,7 +172,7 @@ export function NewDealButton({
   };
 
   return (
-    <div ref={ref} className="relative hidden shrink-0 md:block">
+    <div ref={ref} className="relative hidden shrink-0 @[560px]:block">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -182,7 +182,7 @@ export function NewDealButton({
         <Plus size={14} />
         {/* На узком экране остаётся иконка — панель не переносится
             на вторую строку (правка 01.09). */}
-        <span className="hidden xl:inline">Новая сделка</span>
+        <span className="hidden @[1000px]:inline">Новая сделка</span>
         <ChevronDown
           size={13}
           className={cn("transition-transform", open && "rotate-180")}

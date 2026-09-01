@@ -79,12 +79,15 @@ export function Topbar() {
     .join("");
 
   return (
-    // flex-nowrap: панель обязана оставаться ОДНОЙ строкой. Раньше при
-    // сужении окна кнопки переносились на вторую строку и «толстели» —
-    // вместо этого подписи сворачиваются, остаются иконки (правка 01.09).
-    <div className="flex min-w-0 flex-nowrap items-center gap-2 rounded-xl bg-surface px-3 py-2.5 shadow-card-sm">
+    // flex-nowrap: панель обязана оставаться ОДНОЙ строкой. Подписи
+    // сворачиваются до иконок, а не переносятся на вторую строку.
+    //
+    // @container, а не обычные брейкпоинты по окну (правка 01.09): когда
+    // справа выезжает карточка быстрого просмотра, окно широкое, а места
+    // у шапки мало — по окну она считала бы себя просторной и ломалась.
+    <div className="@container flex min-w-0 flex-nowrap items-center gap-2 rounded-xl bg-surface px-3 py-2.5 shadow-card-sm">
       <GlobalSearch />
-      <div className="hidden shrink-0 items-center gap-2 whitespace-nowrap rounded-full bg-blue-50 px-3 py-1.5 text-[13px] font-semibold text-blue-700 xl:inline-flex">
+      <div className="hidden shrink-0 items-center gap-2 whitespace-nowrap rounded-full bg-blue-50 px-3 py-1.5 text-[13px] font-semibold text-blue-700 @[1140px]:inline-flex">
         <Calendar size={14} />
         {formatTodayRu()}
       </div>
@@ -96,11 +99,11 @@ export function Topbar() {
       <button
         type="button"
         onClick={() => setNewClientOpen(true)}
-        className="hidden shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-border bg-surface-soft px-2.5 py-1.5 text-[13px] font-semibold text-ink-2 transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 md:inline-flex"
+        className="hidden shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-border bg-surface-soft px-2.5 py-1.5 text-[13px] font-semibold text-ink-2 transition-colors hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 @[560px]:inline-flex"
         title="Новый клиент"
       >
         <UserPlus size={14} />
-        <span className="hidden 2xl:inline">Новый клиент</span>
+        <span className="hidden @[1320px]:inline">Новый клиент</span>
       </button>
       {/* Пункт 5: «Новая сделка» — выпадающий список типов (аренда,
           рассрочка, продажа, ремонт); пункты включаются по мере
@@ -246,11 +249,11 @@ function CreatorViewSwitcher({
   const label = current === "director" ? "Директор" : "Администратор";
 
   return (
-    <div className="relative" ref={ref}>
+    <div className="relative shrink-0" ref={ref}>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1.5 rounded-full bg-purple-soft px-3 py-1.5 text-[12px] font-bold text-purple-ink transition-colors hover:bg-purple/20"
+        className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-purple-soft px-3 py-1.5 text-[12px] font-bold text-purple-ink transition-colors hover:bg-purple/20"
         title="Creator: смотреть как роль"
       >
         <Crown size={13} /> Смотрю как: {label}
