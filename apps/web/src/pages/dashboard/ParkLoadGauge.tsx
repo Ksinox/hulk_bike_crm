@@ -219,6 +219,62 @@ export function ParkLoadGauge({
   // любой момент, а заодно разряды и пузырьки проходят через весь круг.
   const centerBg = full ? "transparent" : "#ffffff";
 
+  /*
+   * Тесная раскладка (фидбэк 01.09): «может быть, сам квадратик будет
+   * заполняться, но так, чтобы текст читался». Круг в половине плашки
+   * съедал место и читался хуже цифры — здесь загрузка это уровень
+   * заливки самой плашки снизу вверх, а текст лежит поверх и остаётся
+   * тёмным на светлой заливке.
+   */
+  if (compact) {
+    const fill = electro
+      ? "linear-gradient(180deg, rgba(37,99,235,0.20), rgba(37,99,235,0.30))"
+      : "linear-gradient(180deg, rgba(16,185,129,0.20), rgba(16,185,129,0.32))";
+    const edge = electro ? "rgba(37,99,235,0.55)" : "rgba(16,185,129,0.55)";
+    return (
+      <Card className={cn("relative h-full overflow-hidden p-0", className)}>
+        <button
+          type="button"
+          onClick={onClick}
+          disabled={!onClick}
+          className={cn(
+            "relative flex h-full w-full flex-col justify-between p-3 text-left",
+            onClick ? "cursor-pointer" : "cursor-default",
+          )}
+        >
+          {/* Уровень заливки = загрузка парка. */}
+          <span
+            aria-hidden
+            className="absolute inset-x-0 bottom-0 transition-[height] duration-700 ease-out"
+            style={{
+              height: `${pct}%`,
+              background: fill,
+              borderTop: `2px solid ${edge}`,
+            }}
+          />
+          <span className="relative flex items-center gap-1.5 text-[11px] font-medium text-muted">
+            {electro ? <ElectricMark size="sm" /> : <PetrolMark size="sm" />}
+            <span className="min-w-0 truncate">{title}</span>
+          </span>
+          <span className="relative mt-1 flex items-baseline gap-1.5">
+            <span className="font-display text-[24px] font-extrabold leading-none tracking-[-0.02em] text-ink">
+              {pct}%
+            </span>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-2">
+              загрузка
+            </span>
+          </span>
+          <span className="relative mt-1 block text-[12.5px] font-bold leading-tight text-ink">
+            {active} в аренде
+            <span className="block text-[10.5px] font-medium text-muted-2">
+              из {rentable} в парке
+            </span>
+          </span>
+        </button>
+      </Card>
+    );
+  }
+
   return (
     <Card
       className={cn("flex h-full items-center", compact && "p-3", className)}

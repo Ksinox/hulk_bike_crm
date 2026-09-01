@@ -1,18 +1,15 @@
-import { ChevronDown, LayoutGrid, Menu } from "lucide-react";
-import { cn } from "@/lib/utils";
-import type { DashboardView } from "./view";
 import { useMe } from "@/lib/api/auth";
 import { greetingByHour, type DashboardMetrics } from "./useDashboardMetrics";
 
-export function Greeting({
-  view,
-  onViewChange,
-  metrics,
-}: {
-  view: DashboardView;
-  onViewChange: (v: DashboardView) => void;
-  metrics: DashboardMetrics;
-}) {
+/**
+ * Приветствие и сводка одной строкой.
+ *
+ * Правка 01.09: убраны переключатель «Парк / Классика» (парком пользуются
+ * всегда, второй вид никто не открывал) и неактивная кнопка «Этот месяц» —
+ * ряд занимал высоту, а работы не делал. Блоки дашборда поднялись ближе к
+ * заголовку.
+ */
+export function Greeting({ metrics }: { metrics: DashboardMetrics }) {
   const { data: me } = useMe();
   const firstName = (me?.name ?? "").split(/\s+/)[0] || "";
   const tod = greetingByHour();
@@ -62,58 +59,7 @@ export function Greeting({
         </h1>
         <div className="mt-1 text-sm text-muted">{subtitle}</div>
       </div>
-      <div className="flex items-center gap-2.5">
-        <div className="inline-flex gap-0.5 rounded-full bg-surface p-1 shadow-card-sm">
-          <ViewButton
-            active={view === "park"}
-            onClick={() => onViewChange("park")}
-          >
-            <LayoutGrid size={14} />
-            Парк
-          </ViewButton>
-          <ViewButton
-            active={view === "classic"}
-            onClick={() => onViewChange("classic")}
-          >
-            <Menu size={14} />
-            Классика
-          </ViewButton>
-        </div>
-        <button
-          type="button"
-          disabled
-          title="Выбор периода — скоро"
-          className="inline-flex cursor-not-allowed items-center gap-2 rounded-xl border border-border-strong bg-surface px-3.5 py-2 text-[13px] font-semibold text-muted-2 opacity-70"
-        >
-          Этот месяц
-          <ChevronDown size={14} />
-        </button>
-      </div>
     </div>
   );
 }
 
-function ViewButton({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-full px-4 py-2 text-[13px] font-semibold transition-colors",
-        active
-          ? "bg-ink text-white"
-          : "bg-transparent text-muted hover:text-ink",
-      )}
-    >
-      {children}
-    </button>
-  );
-}

@@ -7,18 +7,12 @@ import { KpiCard } from "./KpiCard";
 import { ParkPanel } from "./ParkPanel";
 import { RevenueCard } from "./RevenueCard";
 import { ReturnsList } from "./ReturnsList";
-import { ReturnsTable } from "./ReturnsTable";
-import { OverdueTable } from "./OverdueTable";
-import { DebtorsNoRentalCard } from "./DebtorsNoRentalCard";
 import { DebtsToCollect } from "./DebtsToCollect";
 import { RemindersCard } from "./RemindersCard";
 import { ParkLoadGauge } from "./ParkLoadGauge";
 import { ActivityFeed } from "./ActivityFeed";
-import { ClassicKpi, CLASSIC_KPI_ICONS } from "./ClassicKpi";
-import { NewApplicationsWidget } from "./NewApplicationsWidget";
 import { DuplicateRentalsBanner } from "./DuplicateRentalsBanner";
 import { useDashboardDrawer } from "./DashboardDrawer";
-import { loadView, saveView, type DashboardView } from "./view";
 import {
   formatRub,
   useDashboardMetrics,
@@ -26,13 +20,7 @@ import {
 } from "./useDashboardMetrics";
 
 export function Dashboard() {
-  const [view, setView] = useState<DashboardView>(() => loadView());
   const metrics = useDashboardMetrics();
-
-  const onViewChange = (v: DashboardView) => {
-    setView(v);
-    saveView(v);
-  };
 
   return (
     // v0.4.8: DrawerProvider поднят в App.tsx, теперь стек работает на
@@ -40,13 +28,10 @@ export function Dashboard() {
     // прослеживается одинаково везде.
     <main className="flex min-w-0 flex-1 flex-col gap-4">
       <Topbar />
-      <Greeting view={view} onViewChange={onViewChange} metrics={metrics} />
+      <Greeting metrics={metrics} />
       <DuplicateRentalsBanner metrics={metrics} />
-      {view === "park" ? (
-        <ParkVariant metrics={metrics} />
-      ) : (
-        <ClassicVariant metrics={metrics} />
-      )}
+      {/* «Классика» убрана (01.09): пользовались только парком. */}
+      <ParkVariant metrics={metrics} />
     </main>
   );
 }
@@ -70,6 +55,34 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [compact, setCompact] = useState(false);
   const [tight, setTight] = useState(false);
+  /**
+   * Высоты левых рядов (фидбэк 01.09): «синий блок выручки должен быть
+   * такой же высоты, как верхние два чипса, а платежи за месяц — как
+   * нижние два». Меряем ряды и отдаём эти числа карточке выручки.
+   */
+  const gaugesRowRef = useRef<HTMLDivElement>(null);
+  const leftColRef = useRef<HTMLDivElement>(null);
+  const [rowH, setRowH] = useState<{ gauges: number; total: number } | null>(null);
+  useEffect(() => {
+    if (!compact || tight) {
+      setRowH(null);
+      return;
+    }
+    const g = gaugesRowRef.current;
+    const c = leftColRef.current;
+    if (!g || !c) return;
+    const measure = () => {
+      setRowH({
+        gauges: Math.round(g.getBoundingClientRect().height),
+        total: Math.round(c.getBoundingClientRect().height),
+      });
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(g);
+    ro.observe(c);
+    return () => ro.disconnect();
+  }, [compact, tight]);
   useEffect(() => {
     const el = rootRef.current;
     if (!el) return;
@@ -195,8 +208,8 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
             tight ? "grid-cols-1" : "grid-cols-2",
           )}
         >
-          <div className="flex min-w-0 flex-col gap-3">
-            <div className="grid grid-cols-2 gap-3 [&>div]:h-full">
+          <div ref={leftColRef} className="flex min-w-0 flex-col gap-3">
+            <div ref={gaugesRowRef} className="grid grid-cols-2 gap-3 [&>div]:h-full">
               {gaugePetrol}
               {gaugeElectro}
             </div>
@@ -205,8 +218,16 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
               {kpiOverdue}
             </div>
           </div>
-          <div className="min-w-0">
-            <RevenueCard metrics={metrics} />
+          <div
+            className="min-w-0"
+            style={rowH ? { height: rowH.total } : undefined}
+          >
+            <RevenueCard
+              metrics={metrics}
+              compact
+              blueHeight={rowH?.gauges}
+              className="h-full"
+            />
           </div>
         </div>
       ) : (
@@ -265,75 +286,6 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
           />
         </div>
       </div>
-    </div>
-  );
-}
-
-function ClassicVariant({ metrics }: { metrics: DashboardMetrics }) {
-  const drawer = useDashboardDrawer();
-  return (
-    // Правка 28.08: та же контейнерная адаптация, что в ParkVariant.
-    <div className="@container grid auto-rows-[minmax(120px,auto)] grid-cols-12 gap-4">
-      <ClassicKpi
-        className="col-span-6 @[900px]:col-span-4"
-        title="Поступит сегодня"
-        value={metrics.todayIncoming > 0 ? formatRub(metrics.todayIncoming) : "0"}
-        unit="₽"
-        icon={CLASSIC_KPI_ICONS.money}
-        iconTone="green"
-        delta={
-          metrics.todayIncomingDelta != null
-            ? {
-                tone: metrics.todayIncomingDelta >= 0 ? "up" : "down",
-                label: `${metrics.todayIncomingDelta >= 0 ? "+" : ""}${metrics.todayIncomingDelta}%`,
-              }
-            : undefined
-        }
-        foot={
-          <span>
-            {metrics.todayIncomingCount > 0
-              ? `${metrics.todayIncomingCount} ${plural(metrics.todayIncomingCount, ["платёж", "платежа", "платежей"])}`
-              : "нет платежей"}
-          </span>
-        }
-      />
-      <ClassicKpi
-        className="col-span-6 @[900px]:col-span-4"
-        title="Просрочено"
-        value={String(metrics.overdueCount)}
-        valueRed={metrics.overdueCount > 0}
-        icon={CLASSIC_KPI_ICONS.alert}
-        iconTone="red"
-        delta={
-          metrics.overdueDeltaFromYesterday > 0
-            ? { tone: "down", label: `+${metrics.overdueDeltaFromYesterday}` }
-            : undefined
-        }
-        foot={
-          <span>
-            {metrics.overdueCount > 0
-              ? `долг ${formatRub(metrics.overdueSum)} ₽`
-              : "нет просрочек"}
-          </span>
-        }
-      />
-      {/* Пункт 19: «Активных аренд» убрана — есть «Загрузка парка». */}
-      <NewApplicationsWidget className="col-span-12 @[900px]:col-span-4" />
-
-      <ReturnsTable
-        className="col-span-12 @[980px]:col-span-8"
-        items={metrics.returnsToday}
-        onOpenRental={(id) => drawer.openRental(id)}
-      />
-      <ActivityFeed className="col-span-12 @[980px]:col-span-4" compact />
-      <OverdueTable
-        className="col-span-12"
-        items={metrics.overdue}
-        showPhoneColumn
-        compactHeader
-        onOpenRental={(id) => drawer.openRental(id)}
-      />
-      <DebtorsNoRentalCard className="col-span-12" items={metrics.debtorsNoRental} />
     </div>
   );
 }

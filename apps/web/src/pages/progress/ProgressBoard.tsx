@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useProgressSeen } from "./useProgressSeen";
-import { Check, ChevronDown, Loader2, Maximize2, X } from "lucide-react";
+import { Check, ChevronDown, Download, Loader2, Maximize2, X } from "lucide-react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import {
@@ -719,6 +719,23 @@ function StoryStepRow({
           </span>
         )}
         <p className="text-[13px] leading-relaxed text-ink-2">{step.text}</p>
+
+        {step.link && (
+          <div className="mt-2.5 flex flex-wrap items-center gap-2">
+            <a
+              href={step.link.href}
+              target="_blank"
+              rel="noopener"
+              className="inline-flex items-center gap-1.5 rounded-full bg-ink px-4 py-2 text-[12.5px] font-bold text-white transition-colors hover:bg-blue-600"
+            >
+              <Download size={14} />
+              {step.link.label}
+            </a>
+            {step.link.hint && (
+              <span className="text-[11.5px] text-muted-2">{step.link.hint}</span>
+            )}
+          </div>
+        )}
 
         {step.imgs && step.imgs.length > 0 && (
           <div

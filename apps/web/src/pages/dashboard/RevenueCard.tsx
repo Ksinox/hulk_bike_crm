@@ -26,9 +26,18 @@ const TABS: { id: Period; label: string }[] = [
 export function RevenueCard({
   className,
   metrics,
+  compact,
+  blueHeight,
 }: {
   className?: string;
   metrics: DashboardMetrics;
+  /**
+   * Тесная раскладка (фидбэк 01.09): текст мельче, отступы уже, график
+   * ниже — чтобы блок встал вровень с плашками слева, а не растягивался.
+   */
+  compact?: boolean;
+  /** Высота синей части: ровно как ряд плашек загрузки слева. */
+  blueHeight?: number;
 }) {
   const [period, setPeriod] = useState<Period>("month");
   const [fullscreen, setFullscreen] = useState(false);
@@ -242,7 +251,17 @@ export function RevenueCard({
           : "месяц";
 
   return (
-    <Card blue className={className}>
+    <Card
+      blue
+      className={cn(
+        compact && "flex h-full flex-col p-3",
+        className,
+      )}
+    >
+      <div
+        className={cn(compact && "flex min-h-0 flex-col overflow-hidden")}
+        style={compact && blueHeight ? { height: blueHeight } : undefined}
+      >
       {/* Узкая колонка (01.09): заголовок и переключатель переносятся, а
           не наезжают друг на друга. */}
       <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
@@ -266,9 +285,21 @@ export function RevenueCard({
               </span>
             )}
           </div>
-          <div className="mt-2 font-display text-[28px] font-extrabold tabular-nums">
+          <div
+            className={cn(
+              "font-display font-extrabold tabular-nums",
+              compact ? "mt-1 text-[22px]" : "mt-2 text-[28px]",
+            )}
+          >
             {isEmpty ? "0" : formatRub(displayTotal)}
-            <span className="ml-1 text-[18px] font-bold text-white/70">₽</span>
+            <span
+              className={cn(
+                "ml-1 font-bold text-white/70",
+                compact ? "text-[14px]" : "text-[18px]",
+              )}
+            >
+              ₽
+            </span>
           </div>
           <div className="mt-1.5 flex flex-col gap-0.5 text-xs text-white/80">
             <div className="flex items-center gap-1.5">
@@ -337,7 +368,7 @@ export function RevenueCard({
       {/* Деление нал/безнал — кликабельно: фильтрует список ниже (для сверки
           бухгалтерии «сколько наличкой / сколько переводами»). */}
       {breakdownTotal > 0 && (
-        <div className="mt-3.5">
+        <div className={compact ? "mt-2" : "mt-3.5"}>
           <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-white/20">
             <div
               className="bg-white transition-all"
@@ -411,10 +442,18 @@ export function RevenueCard({
       {/* График — только для периодов (день/неделя/месяц), не для произвольного
           диапазона. Каждый столбик кликабельный → фильтр по дню. */}
       {!customRange && chart.length > 0 && (
-        <div className="mt-4 flex h-20 items-end gap-1">
+        <div
+          className={cn(
+            "flex items-end gap-1",
+            compact ? "mt-2 h-10" : "mt-4 h-20",
+          )}
+        >
           {chart.map((b) => {
             const isSelected = b.date === selectedDay;
-            const heightPx = Math.max((b.sum / max) * 80, b.sum > 0 ? 2 : 1);
+            const heightPx = Math.max(
+              (b.sum / max) * (compact ? 40 : 80),
+              b.sum > 0 ? 2 : 1,
+            );
             const showLabel =
               chart.length <= 7 ||
               chart.indexOf(b) % Math.ceil(chart.length / 10) === 0;
@@ -460,8 +499,17 @@ export function RevenueCard({
         </div>
       )}
 
+      </div>
+
       {/* Список платежей за выбранный срез — на белой плашке. */}
-      <div className="mt-4 -mx-4 -mb-4 rounded-b-[16px] bg-white px-4 pb-4 pt-3">
+      <div
+        className={cn(
+          "-mx-4 -mb-4 rounded-b-[16px] bg-white px-4 pb-4 pt-3",
+          compact
+            ? "mt-3 -mx-3 -mb-3 flex min-h-0 flex-1 flex-col px-3 pb-3 pt-2.5"
+            : "mt-4",
+        )}
+      >
         <div className="mb-2 flex items-center justify-between gap-2">
           <span className="text-[12px] font-semibold uppercase tracking-wider text-muted-2">
             Платежи за {rangeLabel}
@@ -482,7 +530,12 @@ export function RevenueCard({
             }}
           />
         </div>
-        <div className="max-h-[300px] overflow-y-auto scrollbar-thin">
+        <div
+          className={cn(
+            "overflow-y-auto scrollbar-thin",
+            compact ? "min-h-0 flex-1" : "max-h-[300px]",
+          )}
+        >
           <RevenueRentalsList
             period={period}
             dayFilter={customRange ? null : selectedDay}
