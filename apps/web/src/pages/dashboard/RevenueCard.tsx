@@ -303,8 +303,11 @@ export function RevenueCard({
               )}
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="inline-flex rounded-full bg-white/15 p-0.5">
+        {/* На узкой колонке (≈1150px) переключатель с кнопкой разворота
+            вылезал за край карточки и давал горизонтальную прокрутку всей
+            страницы. Теперь ряд умеет переноситься и сжиматься (01.09). */}
+        <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+          <div className="inline-flex shrink-0 rounded-full bg-white/15 p-0.5">
             {TABS.map((t) => (
               <button
                 key={t.id}
@@ -315,7 +318,7 @@ export function RevenueCard({
                   setCustomRange(null);
                 }}
                 className={cn(
-                  "rounded-full px-3 py-1 text-xs font-semibold transition-colors",
+                  "rounded-full px-2.5 py-1 text-xs font-semibold transition-colors",
                   !customRange && period === t.id
                     ? "bg-white text-blue-700"
                     : "bg-transparent text-white/75 hover:text-white",
