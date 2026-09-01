@@ -14,6 +14,12 @@ export type KpiCardProps = {
   /** v0.3.1 (idea 4): если задан — карточка кликабельна и
    *  открывает соответствующий drawer-список. */
   onClick?: () => void;
+  /**
+   * Тесная раскладка (01.09): когда справа открыта карточка, плитки
+   * занимали пол-экрана, хотя человек и так видит эти цифры. Ужимаем —
+   * освободившееся место отдаём «Выручке».
+   */
+  compact?: boolean;
 };
 
 export function KpiCard({
@@ -25,6 +31,7 @@ export function KpiCard({
   blue,
   valueTone = "default",
   onClick,
+  compact,
 }: KpiCardProps) {
   const clickable = !!onClick;
   return (
@@ -33,11 +40,13 @@ export function KpiCard({
       onClick={onClick}
       className={cn(
         clickable && "cursor-pointer transition-shadow hover:shadow-card-lg",
+        compact && "p-3",
       )}
     >
       <div
         className={cn(
-          "flex items-center gap-1.5 text-[13px] font-medium",
+          "flex items-center gap-1.5 font-medium",
+          compact ? "text-[11.5px]" : "text-[13px]",
           blue ? "text-white/75" : "text-muted",
         )}
       >
@@ -46,8 +55,8 @@ export function KpiCard({
       <GoButton blue={blue} />
       <div
         className={cn(
-          "mt-3 font-display tabular-nums leading-[1.1] tracking-[-0.02em]",
-          "text-[34px] font-extrabold",
+          "font-display tabular-nums leading-[1.1] tracking-[-0.02em] font-extrabold",
+          compact ? "mt-1 text-[21px]" : "mt-3 text-[34px]",
           valueTone === "red" && !blue ? "text-red" : "",
         )}
       >
@@ -55,7 +64,8 @@ export function KpiCard({
         {unit && (
           <span
             className={cn(
-              "ml-1 text-[20px] font-bold",
+              "ml-1 font-bold",
+              compact ? "text-[13px]" : "text-[20px]",
               blue ? "text-white" : "text-muted",
             )}
           >
@@ -65,7 +75,8 @@ export function KpiCard({
       </div>
       <div
         className={cn(
-          "mt-2.5 flex items-center gap-1.5 text-xs",
+          "flex items-center gap-1.5",
+          compact ? "mt-1 text-[10.5px]" : "mt-2.5 text-xs",
           blue ? "text-white/75" : "text-muted",
         )}
       >

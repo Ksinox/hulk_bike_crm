@@ -75,6 +75,7 @@ export function ParkLoadGauge({
   className,
   size = 110,
   layout = "row",
+  compact = false,
 }: {
   percent: number;
   active: number;
@@ -89,6 +90,11 @@ export function ParkLoadGauge({
   className?: string;
   size?: number;
   layout?: "row" | "stack";
+  /**
+   * Тесная раскладка (01.09): при открытой карточке справа две плашки
+   * встают в половину прежнего места — круг меньше, подписи мельче.
+   */
+  compact?: boolean;
 }) {
   const pct = Math.max(0, Math.min(100, Math.round(percent)));
 
@@ -111,11 +117,11 @@ export function ParkLoadGauge({
     return () => ro.disconnect();
   }, []);
 
-  const SIZE = narrow ? Math.round(size * 0.78) : size;
+  const SIZE = compact ? 54 : narrow ? Math.round(size * 0.78) : size;
   // Белый круг по центру — 0.66 диаметра (правка 27.08: и сам круг, и
   // «дырка» доната стали крупнее, круг перестал теряться в карточке).
   const CENTER = Math.round(SIZE * 0.66);
-  const stack = layout === "stack" || narrow;
+  const stack = layout === "stack" || narrow || compact;
   const electro = tone === "electro";
   /**
    * Имена keyframes уникальны для КАЖДОГО круга. На дашборде их два, а
@@ -214,7 +220,9 @@ export function ParkLoadGauge({
   const centerBg = full ? "transparent" : "#ffffff";
 
   return (
-    <Card className={cn("flex h-full items-center", className)}>
+    <Card
+      className={cn("flex h-full items-center", compact && "p-3", className)}
+    >
       {/* Меряем именно кнопку: React 18 не пробрасывает ref в обычный
           компонент, а ширина кнопки и есть рабочая ширина плашки. */}
       <button
@@ -340,6 +348,7 @@ export function ParkLoadGauge({
             className={cn(
               "flex items-center gap-1.5 font-medium text-muted",
               stack ? "justify-center text-[11px]" : "text-[12px]",
+              compact && "text-[10.5px]",
               !stack && !electro && "text-[12px]",
             )}
           >
@@ -358,11 +367,17 @@ export function ParkLoadGauge({
             className={cn(
               "font-display font-extrabold leading-tight text-ink",
               stack ? "text-[15px]" : "mt-1 text-[19px]",
+              compact && "text-[13px]",
             )}
           >
             {active} в аренде
           </div>
-          <div className="mt-0.5 text-[11px] text-muted-2">
+          <div
+            className={cn(
+              "mt-0.5 text-muted-2",
+              compact ? "text-[10px]" : "text-[11px]",
+            )}
+          >
             {/* Правка 31.08: подпись «всего в парке» вместо «доступных» —
                 знаменатель теперь вся техника арендного режима. */}
             из {rentable} в парке

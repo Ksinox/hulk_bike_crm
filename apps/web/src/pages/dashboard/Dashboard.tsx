@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { navigate } from "@/app/navigationStore";
 import { Topbar } from "./Topbar";
@@ -57,111 +57,170 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
   // чтобы «Просрочено» не переносилось на вторую строку.
   const hasElectroGauge =
     metrics.rentableElectro > 0 || metrics.activeElectroCount > 0;
+
   /**
-   * Правка 28.08: раскладка живёт по ширине КОНТЕЙНЕРА (@container), а не
-   * окна. Когда открыт дровер быстрого просмотра, контент сужается — и
-   * раньше жёсткие col-span-3/4 давили карточки в кашу («Загруз… 5 в а…»).
-   * Теперь: узко → верхние плитки 2×2, «Выручка» уходит под основную
-   * колонку; широко → прежние 3-4 плитки в ряд и сплит 8/4.
+   * Тесная раскладка (фидбэк 01.09). Когда справа открыта карточка
+   * быстрого просмотра, плитки занимали половину экрана — «человек и так
+   * видит эти цифры». Ужимаем их вдвое и ставим попарно: слева две
+   * загрузки и две денежные плитки, а освободившуюся половину отдаём
+   * «Выручке» — графику и списку платежей за месяц.
+   *
+   * Порог меряем по КОНТЕЙНЕРУ, а не по окну: окно широкое, а места мало.
    */
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [compact, setCompact] = useState(false);
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => {
+      if (entry) setCompact(entry.contentRect.width < 900);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   const topSpan = hasElectroGauge
     ? "@[900px]:col-span-3"
     : "@[900px]:col-span-4";
 
+  const gaugePetrol = (
+    <ParkLoadGauge
+      compact={compact}
+      percent={metrics.loadPercent}
+      active={metrics.activePetrolCount}
+      rentable={metrics.rentableFleet}
+      onClick={
+        metrics.activePetrolCount > 0
+          ? () => drawer.openRentalsList("active")
+          : undefined
+      }
+    />
+  );
+
+  const gaugeElectro = hasElectroGauge ? (
+    <ParkLoadGauge
+      compact={compact}
+      title="Электротранспорт"
+      tone="electro"
+      percent={metrics.loadPercentElectro}
+      active={metrics.activeElectroCount}
+      rentable={metrics.rentableElectro}
+      onClick={() => navigate({ route: "partners" })}
+    />
+  ) : null;
+
+  const kpiIncoming = (
+    <KpiCard
+      blue
+      compact={compact}
+      title="Поступит сегодня"
+      value={metrics.todayIncoming > 0 ? `+${formatRub(metrics.todayIncoming)}` : "0"}
+      unit="₽"
+      // v0.4.15: клик → drawer со списком возвращающих сегодня.
+      onClick={
+        metrics.todayIncomingCount > 0
+          ? () => drawer.openRentalsList("returnsToday")
+          : undefined
+      }
+      delta={
+        metrics.todayIncomingDelta != null
+          ? {
+              tone: metrics.todayIncomingDelta >= 0 ? "up" : "down",
+              label: `${metrics.todayIncomingDelta >= 0 ? "+" : ""}${metrics.todayIncomingDelta}%`,
+            }
+          : undefined
+      }
+      foot={
+        <span>
+          {metrics.todayIncomingCount > 0
+            ? `${metrics.todayIncomingCount} ${plural(metrics.todayIncomingCount, ["возврат — продление?", "возврата — продления?", "возвратов — продления?"])}`
+            : "сегодня никто не возвращает"}
+        </span>
+      }
+    />
+  );
+
+  const kpiOverdue = (
+    <KpiCard
+      compact={compact}
+      title="Просрочено"
+      value={String(metrics.overdueCount)}
+      unit={metrics.overdueCount > 0 ? "шт" : undefined}
+      valueTone={metrics.overdueCount > 0 ? "red" : undefined}
+      onClick={
+        metrics.overdueCount > 0
+          ? () => drawer.openRentalsList("overdue")
+          : undefined
+      }
+      delta={
+        metrics.overdueDeltaFromYesterday > 0
+          ? { tone: "down", label: `+${metrics.overdueDeltaFromYesterday}` }
+          : undefined
+      }
+      foot={
+        metrics.overdueCount > 0 ? (
+          // v0.4.17: сумма долга в footer — крупнее обычного и красным,
+          // чтоб была заметна.
+          <span
+            className={cn(
+              "font-bold text-red",
+              compact ? "text-[11px]" : "text-[14px]",
+            )}
+          >
+            {formatRub(metrics.overdueSum)} ₽ долг
+          </span>
+        ) : (
+          <span>нет просрочек</span>
+        )
+      }
+    />
+  );
+
   return (
-    <div className="@container grid auto-rows-[minmax(120px,auto)] grid-cols-12 gap-4">
-      {/* #дашборд: круговая загрузка парка — первой картой (вместо «Новых
-          заявок», которые остаются в разделе «Заявки»). */}
-      {/* Пункт 19: плитка «Активных аренд» убрана — дублировала кольцо
-          «Загрузка парка» (там та же цифра «N в аренде из M»). */}
-      {/* Правки 2.0, п.4: загрузка НАШЕГО (бензинового) парка. */}
-      <div className={cn("col-span-6", topSpan, "[&>div]:h-full")}>
-        <ParkLoadGauge
-          percent={metrics.loadPercent}
-          active={metrics.activePetrolCount}
-          rentable={metrics.rentableFleet}
-          onClick={
-            metrics.activePetrolCount > 0
-              ? () => drawer.openRentalsList("active")
-              : undefined
-          }
-        />
-      </div>
-      {/* Второй чипс — партнёрский электротранспорт (тот же компонент). */}
-      {(metrics.rentableElectro > 0 || metrics.activeElectroCount > 0) && (
-        <div className={cn("col-span-6", topSpan, "[&>div]:h-full")}>
-          <ParkLoadGauge
-            title="Электротранспорт"
-            tone="electro"
-            percent={metrics.loadPercentElectro}
-            active={metrics.activeElectroCount}
-            rentable={metrics.rentableElectro}
-            onClick={() => navigate({ route: "partners" })}
-          />
+    <div
+      ref={rootRef}
+      className="@container grid auto-rows-[minmax(120px,auto)] grid-cols-12 gap-4"
+    >
+      {compact ? (
+        // Тесно: слева пары мини-плиток, справа выручка с платежами.
+        <div className="col-span-12 grid grid-cols-2 items-start gap-4">
+          <div className="flex min-w-0 flex-col gap-3">
+            <div className="grid grid-cols-2 gap-3 [&>div]:h-full">
+              {gaugePetrol}
+              {gaugeElectro}
+            </div>
+            <div className="grid grid-cols-2 gap-3 [&>div]:h-full">
+              {kpiIncoming}
+              {kpiOverdue}
+            </div>
+          </div>
+          <div className="min-w-0">
+            <RevenueCard metrics={metrics} />
+          </div>
         </div>
+      ) : (
+        <>
+          {/* #дашборд: круговая загрузка парка — первой картой (вместо
+              «Новых заявок», которые остаются в разделе «Заявки»).
+              Пункт 19: плитка «Активных аренд» убрана — дублировала
+              кольцо «Загрузка парка». */}
+          <div className={cn("col-span-6", topSpan, "[&>div]:h-full")}>
+            {gaugePetrol}
+          </div>
+          {/* Второй чипс — партнёрский электротранспорт. */}
+          {gaugeElectro && (
+            <div className={cn("col-span-6", topSpan, "[&>div]:h-full")}>
+              {gaugeElectro}
+            </div>
+          )}
+          <div className={cn("col-span-6", topSpan, "[&>div]:h-full")}>
+            {kpiIncoming}
+          </div>
+          <div className={cn("col-span-6", topSpan, "[&>div]:h-full")}>
+            {kpiOverdue}
+          </div>
+        </>
       )}
-      <div className={cn("col-span-6", topSpan, "[&>div]:h-full")}>
-        <KpiCard
-          blue
-          title="Поступит сегодня"
-          value={metrics.todayIncoming > 0 ? `+${formatRub(metrics.todayIncoming)}` : "0"}
-          unit="₽"
-          // v0.4.15: клик → drawer со списком возвращающих сегодня.
-          onClick={
-            metrics.todayIncomingCount > 0
-              ? () => drawer.openRentalsList("returnsToday")
-              : undefined
-          }
-          delta={
-            metrics.todayIncomingDelta != null
-              ? {
-                  tone: metrics.todayIncomingDelta >= 0 ? "up" : "down",
-                  label: `${metrics.todayIncomingDelta >= 0 ? "+" : ""}${metrics.todayIncomingDelta}%`,
-                }
-              : undefined
-          }
-          foot={
-            <span>
-              {metrics.todayIncomingCount > 0
-                ? `${metrics.todayIncomingCount} ${plural(metrics.todayIncomingCount, ["возврат — продление?", "возврата — продления?", "возвратов — продления?"])}`
-                : "сегодня никто не возвращает"}
-            </span>
-          }
-        />
-      </div>
-      <div className={cn("col-span-6", topSpan, "[&>div]:h-full")}>
-        <KpiCard
-          title="Просрочено"
-          value={String(metrics.overdueCount)}
-          unit={metrics.overdueCount > 0 ? "шт" : undefined}
-          valueTone={metrics.overdueCount > 0 ? "red" : undefined}
-          onClick={
-            metrics.overdueCount > 0
-              ? () => drawer.openRentalsList("overdue")
-              : undefined
-          }
-          delta={
-            metrics.overdueDeltaFromYesterday > 0
-              ? {
-                  tone: "down",
-                  label: `+${metrics.overdueDeltaFromYesterday}`,
-                }
-              : undefined
-          }
-          foot={
-            metrics.overdueCount > 0 ? (
-              // v0.4.17: сумма долга в footer — крупнее обычного и
-              // красным, чтоб была заметна. Высота карточки остаётся как
-              // у соседних (без secondaryValue), весь ряд ровный.
-              <span className="text-[14px] font-bold text-red">
-                {formatRub(metrics.overdueSum)} ₽ долг
-              </span>
-            ) : (
-              <span>нет просрочек</span>
-            )
-          }
-        />
-      </div>
 
       {/* Главная двухколоночная зона — левая и правая колонки независимы
           по высоте. Если RevenueCard справа разворачивается со списком
@@ -187,7 +246,8 @@ function ParkVariant({ metrics }: { metrics: DashboardMetrics }) {
           <ActivityFeed />
         </div>
         <div className="col-span-12 @[980px]:col-span-4 flex flex-col gap-4">
-          <RevenueCard metrics={metrics} />
+          {/* В тесной раскладке «Выручка» уже стоит наверху. */}
+          {!compact && <RevenueCard metrics={metrics} />}
           <ReturnsList
             items={metrics.returnsToday}
             onOpenRental={(id) => drawer.openRental(id)}
