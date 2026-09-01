@@ -134,12 +134,17 @@ export function RemindersCard({ className }: { className?: string }) {
                 </span>
               )}
               {r.phone && (
+                // Тот же зелёный «телефон-пилюля», что в «Долгах к сбору»
+                // прямо под этим блоком — иначе два соседних списка выглядят
+                // как из разных программ.
                 <a
                   href={`tel:${r.phone}`}
+                  onClick={(e) => e.stopPropagation()}
                   title={`Позвонить ${r.phone}`}
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-soft text-muted transition-colors hover:bg-emerald-600 hover:text-white"
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-[10px] bg-green-soft px-2.5 py-1.5 font-mono text-[12.5px] font-bold text-ink transition-colors hover:bg-green-soft/70"
                 >
-                  <Phone size={14} />
+                  <Phone size={13} className="text-green-ink" />
+                  <span className="hidden xl:inline">{r.phone}</span>
                 </a>
               )}
               <button

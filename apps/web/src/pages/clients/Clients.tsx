@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Plus } from "lucide-react";
+import { ArrowLeft, ChevronLeft, Plus } from "lucide-react";
 import { Topbar } from "@/pages/dashboard/Topbar";
+import { cn } from "@/lib/utils";
 import { type Client } from "@/lib/mock/clients";
 import {
   consumePending,
@@ -123,6 +124,12 @@ export function Clients() {
     return set;
   }, [rentals]);
   const [selectedId, setSelectedId] = useState<number>(17);
+  /**
+   * Открыл ли пользователь карточку САМ. На узком экране только тогда
+   * список уступает ей место: предвыбранный клиент не должен встречать
+   * оператора карточкой вместо списка.
+   */
+  const [narrowCardOpen, setNarrowCardOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [backTo, setBackTo] = useState<BackTarget | null>(null);
 
@@ -228,32 +235,67 @@ export function Clients() {
         </div>
       </header>
 
-      <ApplicationsBlock />
+      {/*
+        Узкий экран (фидбэк 01.09): раньше карточка клиента падала ПОД
+        список — открыл клиента и смотришь в хвост списка из десяти
+        человек, карточку надо ещё найти прокруткой. Теперь ниже lg
+        работает как на телефоне: выбрал клиента — список и его фильтры
+        уступают место карточке, наверху кнопка «Назад к списку». Две
+        колонки остаются там, где они реально помещаются.
+      */}
+      <div className={cn(narrowCardOpen && "hidden lg:block")}>
+        <ApplicationsBlock />
+      </div>
 
-      <ClientsFilters value={filters} onChange={setFilters} />
+      <div className={cn(narrowCardOpen && "hidden lg:block")}>
+        <ClientsFilters value={filters} onChange={setFilters} />
+      </div>
 
       {filters.status === "applications" ? (
         <ApplicationsTab />
       ) : (
       <div className="grid flex-1 gap-4 lg:grid-cols-[360px_1fr]">
-        <ClientsList
-          items={filtered}
-          selectedId={selectedId}
-          onSelect={setSelectedId}
-        />
+        <div className={cn("min-w-0", narrowCardOpen && "hidden lg:block")}>
+          <ClientsList
+            items={filtered}
+            selectedId={selectedId}
+            onSelect={(id) => {
+              setSelectedId(id);
+              setNarrowCardOpen(true);
+            }}
+          />
+        </div>
 
         {(() => {
           const selected = clients.find((c) => c.id === selectedId);
           if (!selected) {
             return (
-              <div className="flex min-h-[400px] items-center justify-center rounded-2xl bg-surface p-10 text-center shadow-card-sm">
+              <div className="hidden min-h-[400px] items-center justify-center rounded-2xl bg-surface p-10 text-center shadow-card-sm lg:flex">
                 <div className="text-[13px] text-muted">
                   Выберите клиента из списка
                 </div>
               </div>
             );
           }
-          return <ClientCard key={selected.id} client={selected} />;
+          return (
+            // На узком карточка живёт вместо списка — и только когда её
+            // открыли; иначе она снова оказалась бы «в подвале» страницы.
+            <div
+              className={cn(
+                "min-w-0 flex-col gap-2 lg:flex",
+                narrowCardOpen ? "flex" : "hidden",
+              )}
+            >
+              <button
+                type="button"
+                onClick={() => setNarrowCardOpen(false)}
+                className="inline-flex h-10 w-fit items-center gap-1.5 rounded-full bg-surface px-4 text-[13px] font-semibold text-muted shadow-card-sm transition-colors hover:text-ink lg:hidden"
+              >
+                <ChevronLeft size={16} /> Назад к списку
+              </button>
+              <ClientCard key={selected.id} client={selected} />
+            </div>
+          );
         })()}
       </div>
       )}
