@@ -346,8 +346,33 @@ export function useDashboardMetrics(): DashboardMetrics {
     // руках, парк занят. Считать их в «активных» для нагрузки парка
     // правильно (раньше returning исключался — расходилось с фильтром
     // «Активные» в /rentals).
+    /*
+     * Числитель «в аренде» (правка 04.09): считаем только аренды техники,
+     * которая сейчас в арендном парке. Техника на выкупе, в продаже или
+     * проданная — уже не аренда, у неё свои разделы. Раньше сюда попадала
+     * любая живая аренда, и после ухода Gear №06 на выкуп с незакрытой
+     * арендой дашборд показывал «4 в аренде из 3 в парке».
+     */
+    const RENTAL_MODE_STATUSES = new Set([
+      "rental_pool",
+      "repair",
+      "dtp",
+      "disassembly",
+    ]);
+    const parkScooterIds = new Set(
+      scooters
+        .filter(
+          (s) =>
+            RENTAL_MODE_STATUSES.has(s.baseStatus) &&
+            !(s as { archivedAt?: string | null }).archivedAt,
+        )
+        .map((s) => s.id),
+    );
     const activeRentalsCount = rentals.filter(
-      (r) => r.status === "active" && r.scooterId != null,
+      (r) =>
+        r.status === "active" &&
+        r.scooterId != null &&
+        parkScooterIds.has(r.scooterId),
     ).length;
     // Пункт 11: активные аренды на электротранспорте (модель is_electric).
     const electroModelIds = new Set(
@@ -362,6 +387,7 @@ export function useDashboardMetrics(): DashboardMetrics {
       (r) =>
         r.status === "active" &&
         r.scooterId != null &&
+        parkScooterIds.has(r.scooterId) &&
         electroScooterIds.has(r.scooterId),
     ).length;
 
@@ -397,12 +423,6 @@ export function useDashboardMetrics(): DashboardMetrics {
      * Ремонт и ДТП у нас короткие, внутри арендного парка техника просто
      * мигрирует между статусами — поэтому считаем «всего техники в парке».
      */
-    const RENTAL_MODE_STATUSES = new Set([
-      "rental_pool",
-      "repair",
-      "dtp",
-      "disassembly",
-    ]);
     const inRentalMode = scooters.filter(
       (s) =>
         RENTAL_MODE_STATUSES.has(s.baseStatus) &&

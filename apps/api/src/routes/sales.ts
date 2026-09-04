@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "../db/index.js";
+import { activeRentalIds, activeRentalConflict } from "../services/rentalGuard.js";
 import {
   clients,
   saleDealDocuments,
@@ -256,6 +257,11 @@ export async function salesRoutes(app: FastifyInstance) {
         .code(400)
         .send({ error: "bad body", details: parsed.error.issues });
     }
+    // Техника в живой аренде не продаётся — правило заказчика (04.09).
+    if (parsed.data.scooterId != null) {
+      const busy = await activeRentalIds(parsed.data.scooterId);
+      if (busy.length) return reply.code(409).send(activeRentalConflict(busy));
+    }
     const values = await buildDealValues(parsed.data, null);
     const [row] = await db
       .insert(saleDeals)
@@ -284,6 +290,13 @@ export async function salesRoutes(app: FastifyInstance) {
     if (!before) return reply.code(404).send({ error: "not found" });
     if (before.status === "signed") {
       return reply.code(409).send({ error: "deal_signed" });
+    }
+    if (
+      parsed.data.scooterId != null &&
+      parsed.data.scooterId !== before.scooterId
+    ) {
+      const busy = await activeRentalIds(parsed.data.scooterId);
+      if (busy.length) return reply.code(409).send(activeRentalConflict(busy));
     }
     const values = await buildDealValues(parsed.data, before);
     const [row] = await db
@@ -380,6 +393,10 @@ export async function salesRoutes(app: FastifyInstance) {
     }
     if (!deal.clientId || !deal.scooterId || !deal.price) {
       return reply.code(409).send({ error: "deal_incomplete" });
+    }
+    {
+      const busy = await activeRentalIds(deal.scooterId);
+      if (busy.length) return reply.code(409).send(activeRentalConflict(busy));
     }
     const now = new Date();
     const profit = deal.price - (deal.purchasePrice ?? 0);

@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { asc, desc, eq, inArray } from "drizzle-orm";
 import { db } from "../db/index.js";
+import { activeRentalIds, activeRentalConflict } from "../services/rentalGuard.js";
 import {
   appSettings,
   buyoutDeals,
@@ -221,6 +222,11 @@ export async function buyoutRoutes(app: FastifyInstance) {
         .code(400)
         .send({ error: "bad body", details: parsed.error.issues });
     }
+    // Техника в живой аренде в выкуп не идёт — правило заказчика (04.09).
+    if (parsed.data.scooterId != null) {
+      const busy = await activeRentalIds(parsed.data.scooterId);
+      if (busy.length) return reply.code(409).send(activeRentalConflict(busy));
+    }
     const values = await buildValues(parsed.data, null);
     const [row] = await db
       .insert(buyoutDeals)
@@ -249,6 +255,13 @@ export async function buyoutRoutes(app: FastifyInstance) {
     if (before.status === "active" || before.status === "closed") {
       // Условия подписанной сделки не редактируем: график уже построен.
       return reply.code(409).send({ error: "deal_started" });
+    }
+    if (
+      parsed.data.scooterId != null &&
+      parsed.data.scooterId !== before.scooterId
+    ) {
+      const busy = await activeRentalIds(parsed.data.scooterId);
+      if (busy.length) return reply.code(409).send(activeRentalConflict(busy));
     }
     const values = await buildValues(parsed.data, before);
     const [row] = await db
@@ -316,6 +329,12 @@ export async function buyoutRoutes(app: FastifyInstance) {
     }
     if (!deal.airtagConfirmed) {
       return reply.code(409).send({ error: "airtag_required" });
+    }
+    // Аренду могли открыть уже после выбора техники в черновике —
+    // проверяем ещё раз в момент, когда техника реально меняет статус.
+    {
+      const busy = await activeRentalIds(deal.scooterId);
+      if (busy.length) return reply.code(409).send(activeRentalConflict(busy));
     }
     const now = new Date();
     const start =

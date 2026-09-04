@@ -18,6 +18,7 @@ import { useAllClients } from "@/pages/clients/clientStore";
 import { AddClientModal } from "@/pages/clients/AddClientModal";
 import { SendApplicationButton } from "@/pages/applications/SendApplicationButton";
 import { useApiScooters } from "@/lib/api/scooters";
+import { useRentals } from "@/pages/rentals/rentalsStore";
 import { useApiScooterModels } from "@/lib/api/scooter-models";
 import {
   buyoutContractUrl,
@@ -62,6 +63,23 @@ export function NewBuyoutWizard({
   const { data: markupsData } = useBuyoutMarkups();
   const clients = useAllClients();
   const { data: scooters = [] } = useApiScooters();
+  const rentals = useRentals();
+  /** Техника с живой арендой — в выкуп нельзя (правило 04.09). */
+  const busyScooterIds = useMemo(
+    () =>
+      new Set(
+        rentals
+          .filter(
+            (r) =>
+              r.status === "active" ||
+              r.status === "overdue" ||
+              r.status === "returning",
+          )
+          .map((r) => r.scooterId)
+          .filter((id): id is number => id != null),
+      ),
+    [rentals],
+  );
   const { data: models = [] } = useApiScooterModels();
 
   const createDeal = useCreateBuyoutDeal();
@@ -138,12 +156,15 @@ export function NewBuyoutWizard({
         (s) =>
           !s.archivedAt &&
           !s.isPartner &&
+          // Пока техника у клиента — в выкуп не предлагаем: сначала
+          // завершить аренду. Сервер это правило тоже держит.
+          (!busyScooterIds.has(s.id) || s.id === scooterId) &&
           (s.baseStatus === "for_sale" ||
             s.baseStatus === "ready" ||
             s.baseStatus === "rental_pool" ||
             s.id === scooterId),
       ),
-    [scooters, scooterId],
+    [scooters, scooterId, busyScooterIds],
   );
 
   const client = clients.find((c) => c.id === clientId) ?? null;

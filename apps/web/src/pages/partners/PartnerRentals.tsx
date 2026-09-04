@@ -27,6 +27,12 @@ export function PartnerRentals() {
 
   /** Открытая в дровере аренда (внутри партнёрки, как в «Арендах»). */
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  /**
+   * Фильтр как в «Арендах» (правка 04.09): по умолчанию — живые аренды,
+   * завершённые отдельно. Раньше список валил всё подряд, и завершённая
+   * аренда с зелёным «2д» выглядела как идущая — на 500 аренд это каша.
+   */
+  const [filter, setFilter] = useState<Filter>("active");
 
   /** Партнёрская техника: имя → инвестор. */
   const partnerMeta = useMemo(() => {
@@ -57,15 +63,25 @@ export function PartnerRentals() {
   );
 
   const todayKey = new Date().toISOString().slice(0, 10);
-  const active = items.filter(
-    (r) => r.status === "active" || r.status === "returning",
-  );
-  const overdueCount = items.filter(
-    (r) =>
-      r.status === "active" &&
+  const isFinished = (r: (typeof items)[number]) =>
+    r.status === "completed" || r.status === "cancelled";
+  const isOverdue = (r: (typeof items)[number]) =>
+    r.status === "overdue" ||
+    (r.status === "active" &&
       !!ymdFromRu(r.endPlanned) &&
-      ymdFromRu(r.endPlanned) < todayKey,
-  ).length;
+      ymdFromRu(r.endPlanned) < todayKey);
+  // Живые = всё, что не завершено: активные, просроченные, возвращаются.
+  const active = items.filter((r) => !isFinished(r));
+  const overdue = items.filter(isOverdue);
+  const finished = items.filter(isFinished);
+  const visible =
+    filter === "active"
+      ? active
+      : filter === "overdue"
+        ? overdue
+        : filter === "finished"
+          ? finished
+          : items;
 
   const selected =
     selectedId != null ? items.find((r) => r.id === selectedId) ?? null : null;
@@ -74,18 +90,48 @@ export function PartnerRentals() {
     <div className="flex min-h-0 min-w-0 flex-1 items-start gap-4">
       {/* Левая часть: метрики + список. При открытой карточке сужается. */}
       <div className="flex min-w-0 flex-1 flex-col gap-3">
-        <div className="grid gap-3 sm:grid-cols-3">
-          <Tile label="Всего аренд" value={String(items.length)} hint="за всё время" />
-          <Tile label="Активных" value={String(active.length)} hint="идут сейчас" />
+        {/* Плитки — они же фильтр, как в «Арендах». */}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <Tile
-            label="Просрочек"
-            value={String(overdueCount)}
+            label="Активные"
+            value={String(active.length)}
+            hint="идут сейчас"
+            active={filter === "active"}
+            onClick={() => setFilter("active")}
+          />
+          <Tile
+            label="Просрочки"
+            value={String(overdue.length)}
             hint="требуют звонка"
             danger
+            active={filter === "overdue"}
+            onClick={() => setFilter("overdue")}
+          />
+          <Tile
+            label="Завершённые"
+            value={String(finished.length)}
+            hint="архив"
+            active={filter === "finished"}
+            onClick={() => setFilter("finished")}
+          />
+          <Tile
+            label="Всего"
+            value={String(items.length)}
+            hint="за всё время"
+            active={filter === "all"}
+            onClick={() => setFilter("all")}
           />
         </div>
 
-        {items.length === 0 ? (
+        {items.length > 0 && visible.length === 0 ? (
+          <div className="rounded-2xl bg-surface px-6 py-10 text-center text-[13px] text-muted shadow-card-sm">
+            {filter === "active"
+              ? "Сейчас партнёрская техника не в аренде."
+              : filter === "overdue"
+                ? "Просрочек нет."
+                : "Завершённых аренд пока нет."}
+          </div>
+        ) : items.length === 0 ? (
           <div className="flex flex-col items-center gap-2.5 rounded-2xl bg-surface px-6 py-14 text-center shadow-card-sm">
             <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-violet-100 text-violet-600">
               <Bike size={22} />
@@ -107,7 +153,7 @@ export function PartnerRentals() {
              статус видимы всегда; overflow-x — последний рубеж. */
           <div className="@container overflow-hidden rounded-2xl bg-surface shadow-card-sm">
             <RentalsList
-              items={items}
+              items={visible}
               selectedId={selectedId}
               onSelect={(id) =>
                 setSelectedId(selectedId === id ? null : id)
@@ -154,19 +200,32 @@ export function PartnerRentals() {
   );
 }
 
+type Filter = "active" | "overdue" | "finished" | "all";
+
 function Tile({
   label,
   value,
   hint,
   danger,
+  active,
+  onClick,
 }: {
   label: string;
   value: string;
   hint: string;
   danger?: boolean;
+  active?: boolean;
+  onClick?: () => void;
 }) {
   return (
-    <div className="rounded-2xl bg-surface px-4 py-3 shadow-card-sm">
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "rounded-2xl bg-surface px-4 py-3 text-left shadow-card-sm transition-shadow hover:shadow-card",
+        active && "ring-2 ring-ink",
+      )}
+    >
       <div className="text-[10.5px] font-bold uppercase tracking-wider text-muted-2">
         {label}
       </div>
@@ -179,6 +238,6 @@ function Tile({
         {value}
       </div>
       <div className="mt-1 text-[11.5px] text-muted-2">{hint}</div>
-    </div>
+    </button>
   );
 }

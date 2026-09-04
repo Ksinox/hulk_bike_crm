@@ -380,14 +380,19 @@ export function RentalsList({
       const delta = daysToEnd(r.endPlanned);
       const overdueDays = delta < 0 ? Math.abs(delta) : 0;
       const daysLeft = delta > 0 ? delta : 0;
-      const badgeText =
-        isOverdue && overdueDays > 0
+      // Завершённой аренде «дней до возврата» не бывает: раньше у неё
+      // горел зелёный «2д», и список читался как живой (правка 04.09).
+      const finished = r.status === "completed" || r.status === "cancelled";
+      const badgeText = finished
+        ? "—"
+        : isOverdue && overdueDays > 0
           ? `${overdueDays}д`
           : delta === 0
             ? "0д"
             : `${daysLeft}д`;
-      const badgeTone =
-        isOverdue || hasDebt
+      const badgeTone = finished
+        ? "bg-surface-soft text-muted-2"
+        : isOverdue || hasDebt
           ? "bg-red-600 text-white"
           : delta === 0
             ? "bg-orange-500 text-white"
