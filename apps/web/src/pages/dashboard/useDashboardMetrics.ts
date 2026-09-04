@@ -403,15 +403,26 @@ export function useDashboardMetrics(): DashboardMetrics {
       "dtp",
       "disassembly",
     ]);
-    const rentableAll = scooters.filter(
+    const inRentalMode = scooters.filter(
       (s) =>
-        // Партнёрская техника в наш парк не входит — у неё свой раздел.
-        !s.isPartner &&
         RENTAL_MODE_STATUSES.has(s.baseStatus) &&
         !(s as { archivedAt?: string | null }).archivedAt,
     );
-    const rentableFleet = rentableAll.filter((s) => !isElectroScooter(s)).length;
-    const rentableElectro = rentableAll.filter(isElectroScooter).length;
+    // Наш парк — без партнёрской техники: у неё свой раздел и свой чипс.
+    const rentableFleet = inRentalMode.filter(
+      (s) => !s.isPartner && !isElectroScooter(s),
+    ).length;
+    /*
+     * Знаменатель электро-чипса (баг найден 04.09).
+     *
+     * Раньше он считался из того же списка, откуда партнёрская техника уже
+     * ВЫЧЕРКНУТА, — а электротранспорт как раз весь партнёрский. Поэтому
+     * «в парке» всегда выходил ноль, и чипс показывался, только пока шла
+     * активная аренда: закончилась — плашка исчезала с дашборда целиком,
+     * хотя техника никуда не делась. Отсюда же и странное «2 в аренде из
+     * 0 в парке» на прежних снимках.
+     */
+    const rentableElectro = inRentalMode.filter(isElectroScooter).length;
     const activePetrolCount = activeRentalsCount - activeElectroCount;
     const denom = Math.max(rentableFleet, activePetrolCount);
     const loadPercent =
