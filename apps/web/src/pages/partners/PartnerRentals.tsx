@@ -222,8 +222,10 @@ function Tile({
       type="button"
       onClick={onClick}
       className={cn(
-        "rounded-2xl bg-surface px-4 py-3 text-left shadow-card-sm transition-shadow hover:shadow-card",
-        active && "ring-2 ring-ink",
+        // Рамка, а не ring: ring живёт в box-shadow и его перебивает тень
+        // карточки — выбранная плитка оставалась без отметки.
+        "rounded-2xl border-2 bg-surface px-4 py-3 text-left shadow-card-sm transition-colors",
+        active ? "border-ink" : "border-transparent hover:border-border",
       )}
     >
       <div className="text-[10.5px] font-bold uppercase tracking-wider text-muted-2">
