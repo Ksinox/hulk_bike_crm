@@ -1,4 +1,4 @@
-import type { ReactNode, MouseEvent } from "react";
+import { Children, cloneElement, isValidElement, type ReactNode, type MouseEvent } from "react";
 import { Eye, EyeOff, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -85,8 +85,10 @@ export function Sensitive({
         className,
       )}
     >
-      {/* Само значение не показываем совсем — только держим им ширину. */}
-      <span className="invisible">{children}</span>
+      {/* Само значение в разметку не попадает: цифры подменены точками —
+          не прочитать ни глазом, ни через код страницы. Ширина сохраняется,
+          потому что символов столько же. */}
+      <span className="invisible">{maskNode(children)}</span>
       <span
         aria-hidden
         className={cn(
@@ -140,4 +142,21 @@ export function SensitiveToggle({ className }: { className?: string }) {
       {revealed ? "Скрыть прибыль" : "Прибыль скрыта"}
     </button>
   );
+}
+
+/**
+ * Подменяет цифры точками, сохраняя длину строки: «295 000 ₽» → «••• ••• ₽».
+ * Так под плашкой лежит не настоящее значение, а маска — подсмотреть
+ * нечего, а ширина блока остаётся прежней.
+ */
+function maskNode(node: ReactNode): ReactNode {
+  if (typeof node === "string") return node.replace(/[\d]/g, "•");
+  if (typeof node === "number") return String(node).replace(/[\d]/g, "•");
+  if (Array.isArray(node)) return Children.map(node, maskNode);
+  if (isValidElement(node)) {
+    const el = node as React.ReactElement<{ children?: ReactNode }>;
+    if (el.props?.children === undefined) return el;
+    return cloneElement(el, { children: maskNode(el.props.children) });
+  }
+  return node;
 }
