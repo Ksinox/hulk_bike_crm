@@ -102,7 +102,7 @@ export function AnalyticsTile({
       onDragEnd={dragHandlers?.onDragEnd}
       style={{ gridColumn: `span ${span.col}`, gridRow: `span ${span.row}` }}
       className={cn(
-        "group relative flex min-w-0 flex-col justify-between overflow-hidden rounded-[20px] transition-shadow",
+        "group relative flex min-w-0 flex-col overflow-hidden rounded-[20px] transition-shadow",
         wall
           ? "border border-white/10 bg-white/[0.06] p-6 backdrop-blur"
           : "bg-surface p-4 shadow-card-sm",
@@ -167,8 +167,9 @@ export function AnalyticsTile({
         )}
       </div>
 
-      {/* Значение */}
-      <div className="mt-2 flex min-w-0 flex-col gap-1">
+      {/* Значение — по центру плитки: на крупных блоках число не должно
+          прилипать к нижнему краю, его читают первым. */}
+      <div className="mt-2 flex min-w-0 flex-1 flex-col justify-center gap-1">
         <div
           className={cn(
             "font-display font-extrabold tabular-nums",

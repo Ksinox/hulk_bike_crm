@@ -114,7 +114,7 @@ export function AnalyticsWall() {
 
       <div
         className={cn(
-          "grid auto-rows-[minmax(150px,1fr)] gap-4",
+          "grid auto-rows-[minmax(136px,1fr)] gap-4",
           "grid-cols-2 xl:grid-cols-4",
         )}
       >
