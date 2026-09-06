@@ -1738,8 +1738,6 @@ function SpecCell({
  */
 function RentalSlotSpec({ scooter }: { scooter: FleetScooter }) {
   const [open, setOpen] = useState(false);
-  /** Занятый номер, по которому ждём подтверждения обмена. */
-  const [confirmSlot, setConfirmSlot] = useState<number | null>(null);
   /** Добавление номеров в парк: поле с новым общим количеством. */
   const [moreOpen, setMoreOpen] = useState(false);
   const [moreTotal, setMoreTotal] = useState("");
@@ -1769,25 +1767,20 @@ function RentalSlotSpec({ scooter }: { scooter: FleetScooter }) {
   const numbers = Array.from({ length: total }, (_, i) => i + 1);
 
   /**
-   * Заказчик 06.09 (п.7): «сейчас этот номер изменить не получается» —
-   * свободных номеров в парке обычно нет. Теперь показываем все номера:
-   * свободный берём сразу, занятый — обменом (тот скутер получает наш).
+   * Заказчик 06.09 (п.7): «сейчас этот номер изменить не получается».
+   * Показываем все номера парка: свободный можно взять, занятый — только
+   * посмотреть, кто на нём (номер физически наклеен на скутер и
+   * освобождается, когда техника уходит из аренды). Если свободных нет —
+   * тут же добавляются новые номера.
    */
-  const pick = async (slot: number, swap = false) => {
+  const pick = async (slot: number) => {
     setOpen(false);
-    setConfirmSlot(null);
     if (slot === scooter.rentalSlot) return;
-    const holder = holderOf.get(slot);
     try {
-      await patch.mutateAsync({
-        id: scooter.id,
-        patch: swap ? { rentalSlot: slot, slotSwap: true } : { rentalSlot: slot },
-      });
+      await patch.mutateAsync({ id: scooter.id, patch: { rentalSlot: slot } });
       toast.success(
-        swap ? "Номера поменяны местами" : "Номер изменён",
-        swap && holder
-          ? `${scooterModelName(scooter.name)} теперь №${slot}, ${scooterModelName(holder.name)} — №${scooter.rentalSlot}. Обе записи в журнале.`
-          : `${scooterModelName(scooter.name)} теперь под номером ${slot}. Запись в журнале.`,
+        "Номер изменён",
+        `${scooterModelName(scooter.name)} теперь под номером ${slot}. Запись в журнале.`,
       );
     } catch (e) {
       toast.error(
@@ -1825,7 +1818,7 @@ function RentalSlotSpec({ scooter }: { scooter: FleetScooter }) {
         type="button"
         onClick={() => setOpen((v) => !v)}
         disabled={patch.isPending}
-        title="Сменить номер: свободный — сразу, занятый — обменом"
+        title="Сменить номер на свободный"
         className="mt-1 inline-flex items-center gap-1.5 rounded-lg border border-transparent px-1.5 py-0.5 -ml-1.5 text-[15px] font-bold leading-tight text-blue-600 transition-colors hover:border-blue-300 hover:bg-blue-50 disabled:opacity-50"
       >
         {scooter.rentalSlot}
@@ -1838,7 +1831,6 @@ function RentalSlotSpec({ scooter }: { scooter: FleetScooter }) {
             className="fixed inset-0 z-40"
             onClick={() => {
               setOpen(false);
-              setConfirmSlot(null);
               setMoreOpen(false);
             }}
           />
@@ -1863,23 +1855,21 @@ function RentalSlotSpec({ scooter }: { scooter: FleetScooter }) {
                     <button
                       key={s}
                       type="button"
-                      disabled={mine}
+                      disabled={mine || taken}
                       title={
                         mine
                           ? "Текущий номер"
                           : taken
-                            ? `${scooterModelName(holder!.name)} — поменяться номерами`
-                            : "Свободен"
+                            ? `Занят: ${scooterModelName(holder!.name)}`
+                            : "Свободен — нажмите, чтобы взять"
                       }
-                      onClick={() => (taken ? setConfirmSlot(s) : pick(s))}
+                      onClick={() => pick(s)}
                       className={cn(
                         "flex h-8 min-w-8 items-center justify-center rounded-lg border px-1.5 text-[12.5px] font-bold transition-colors",
                         mine
                           ? "border-blue-600 bg-blue-600 text-white"
                           : taken
-                            ? confirmSlot === s
-                              ? "border-amber-500 bg-amber-100 text-amber-900"
-                              : "border-border bg-surface-soft text-muted hover:border-amber-400 hover:bg-amber-50 hover:text-amber-900"
+                            ? "cursor-not-allowed border-transparent bg-surface-soft text-muted-2 line-through decoration-muted-2/60"
                             : "border-border bg-surface text-ink-2 hover:border-blue-500 hover:bg-blue-600 hover:text-white",
                       )}
                     >
@@ -1890,32 +1880,9 @@ function RentalSlotSpec({ scooter }: { scooter: FleetScooter }) {
               </div>
             )}
             <div className="mt-1.5 text-[10.5px] text-muted-2">
-              Белые — свободны, серые — заняты (обмен номерами).
+              Белые — свободны. Зачёркнутые заняты: номер наклеен на скутер и
+              освободится, когда та техника уйдёт из аренды.
             </div>
-
-            {confirmSlot != null && holderOf.get(confirmSlot) && (
-              <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2 text-[12px] text-amber-900">
-                Поменяться с{" "}
-                <b>{scooterModelName(holderOf.get(confirmSlot)!.name)}</b>: он получит
-                №{scooter.rentalSlot}, эта техника — №{confirmSlot}.
-                <div className="mt-1.5 flex gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => pick(confirmSlot, true)}
-                    className="h-8 flex-1 rounded-lg bg-ink text-[12px] font-bold text-white"
-                  >
-                    Поменять
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setConfirmSlot(null)}
-                    className="h-8 rounded-lg border border-border bg-surface px-3 text-[12px] font-semibold text-muted"
-                  >
-                    Отмена
-                  </button>
-                </div>
-              </div>
-            )}
 
             {moreOpen ? (
               <div className="mt-2 flex items-center gap-1.5">

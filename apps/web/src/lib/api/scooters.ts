@@ -103,10 +103,7 @@ export type CreateScooterInput = {
   note?: string | null;
 };
 
-export type PatchScooterInput = Partial<CreateScooterInput> & {
-  /** Обмен арендными номерами с держателем выбранного номера (06.09, п.7). */
-  slotSwap?: boolean;
-};
+export type PatchScooterInput = Partial<CreateScooterInput>;
 
 export function useCreateScooter() {
   const qc = useQueryClient();
