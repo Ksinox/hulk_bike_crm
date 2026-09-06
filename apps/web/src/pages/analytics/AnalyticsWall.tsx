@@ -161,6 +161,7 @@ export function AnalyticsWall() {
         style={{
           gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
           gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))`,
+          gridAutoFlow: "row dense",
         }}
       >
         {tiles.map((tile) => {
@@ -206,15 +207,15 @@ export function packedRows(
 ): number {
   const occupied = new Set<string>();
   const busy = (r: number, c: number) => occupied.has(`${r}:${c}`);
-  let curR = 0;
-  let curC = 0;
   let maxRow = 0;
 
   for (const s of spans) {
     const w = Math.min(s.col, cols);
     const h = s.row;
-    let r = curR;
-    let c = curC;
+    let r = 0;
+    let c = 0;
+    // Плотная укладка: ищем первую подходящую дырку с самого начала —
+    // мелкие плитки затыкают пустоты, и рядов выходит меньше.
     for (;;) {
       if (c + w > cols) {
         r += 1;
@@ -234,8 +235,6 @@ export function packedRows(
     for (let dr = 0; dr < h; dr++)
       for (let dc = 0; dc < w; dc++) occupied.add(`${r + dr}:${c + dc}`);
     maxRow = Math.max(maxRow, r + h);
-    curR = r;
-    curC = c + w;
   }
   return Math.max(1, maxRow);
 }
