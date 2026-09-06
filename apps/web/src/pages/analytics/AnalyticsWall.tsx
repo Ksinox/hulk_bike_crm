@@ -114,7 +114,7 @@ export function AnalyticsWall() {
 
       <div
         className={cn(
-          "grid auto-rows-[minmax(136px,1fr)] gap-4",
+          "grid auto-rows-[minmax(172px,1fr)] gap-4",
           "grid-cols-2 xl:grid-cols-4",
         )}
       >
@@ -128,6 +128,7 @@ export function AnalyticsWall() {
                 tile={tile}
                 tiles={board.tiles}
                 values={values}
+                periodOf={periodOf}
                 wall
               />
             );
@@ -138,6 +139,7 @@ export function AnalyticsWall() {
               def={def}
               value={values[tile.metric]}
               tile={tile}
+              period={periodOf(tile.metric)}
               wall
             />
           );

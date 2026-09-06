@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   Check,
   LayoutGrid,
@@ -33,6 +33,8 @@ import {
 } from "./metrics";
 import { AnalyticsTile } from "./AnalyticsTile";
 import { PlanSummaryTile } from "./PlanSummaryTile";
+import { useFlip } from "./useFlip";
+import { useTileDrag } from "./useTileDrag";
 
 /**
  * Аналитика (06.09) — экран показателей.
@@ -63,6 +65,11 @@ export function Analytics() {
   }, [board]);
 
   const values = useMetricValues(periodOf);
+
+  // move вызывается из обработчиков указателя — доску берём через ref,
+  // иначе в замыкании останется устаревший порядок плиток.
+  const boardRef = useRef(board);
+  boardRef.current = board;
 
   const patchTile = (index: number, patch: Partial<BoardTile>) => {
     setDraft((prev) => {
@@ -99,20 +106,25 @@ export function Analytics() {
     });
   };
 
-  /* ---- перетаскивание ---- */
-  const [dragIndex, setDragIndex] = useState<number | null>(null);
-  const [overIndex, setOverIndex] = useState<number | null>(null);
+  /* ---- перетаскивание «как в Notion» ---- */
+  const gridRef = useRef<HTMLDivElement>(null);
 
-  const move = (from: number, to: number) => {
+  const move = useCallback((from: number, to: number) => {
     setDraft((prev) => {
-      const base = prev ?? board;
+      const base = prev ?? boardRef.current;
       const tiles = [...base.tiles];
       const [moved] = tiles.splice(from, 1);
       if (!moved) return base;
-      tiles.splice(to > from ? to - 1 : to, 0, moved);
+      tiles.splice(to, 0, moved);
       return { ...base, tiles };
     });
-  };
+  }, []);
+
+  const { drag, start: startDrag } = useTileDrag(move);
+
+  // Отпечаток порядка и размеров: поменялся — плитки доезжают анимацией.
+  const flipKey = board.tiles.map((t) => `${t.metric}:${t.size}`).join("|");
+  useFlip(gridRef, flipKey, editing);
 
   const onSave = async () => {
     if (!draft) return;
@@ -216,13 +228,28 @@ export function Analytics() {
         {editing && " Перетаскивайте плитки, меняйте размер и задавайте план."}
       </div>
 
+      {/* Плитка «в руке»: точная копия под курсором — видно, что несёшь. */}
+      {drag && (
+        <div
+          aria-hidden
+          className="pointer-events-none fixed z-[9999]"
+          style={{
+            left: drag.x - drag.offsetX,
+            top: drag.y - drag.offsetY,
+            width: drag.width,
+            height: drag.height,
+            transform: "rotate(-1.5deg) scale(1.03)",
+            filter: "drop-shadow(0 24px 48px rgba(15,23,42,0.28))",
+          }}
+          dangerouslySetInnerHTML={{ __html: drag.html }}
+        />
+      )}
+
       <div className="flex min-w-0 flex-col gap-4 xl:flex-row">
         {/* Доска */}
         <div
+          ref={gridRef}
           className="grid min-w-0 flex-1 auto-rows-[minmax(116px,auto)] grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4"
-          onDragOver={(e) => {
-            if (dragIndex != null) e.preventDefault();
-          }}
         >
           {board.tiles.map((tile, i) => {
             const def = METRIC_BY_ID.get(tile.metric);
@@ -231,65 +258,35 @@ export function Analytics() {
               return (
                 <PlanSummaryTile
                   key={tile.metric}
+                  index={i}
                   tile={tile}
                   tiles={board.tiles}
                   values={values}
+                  periodOf={periodOf}
                   compact={isMobile}
                   editing={editing}
                   onRemove={() => removeTile(i)}
                   onSize={(size: TileSize) => patchTile(i, { size })}
-                  dragging={dragIndex === i}
-                  dropBefore={overIndex === i && dragIndex !== i}
-                  dragHandlers={{
-                    onDragStart: () => setDragIndex(i),
-                    onDragOver: (e: React.DragEvent) => {
-                      e.preventDefault();
-                      setOverIndex(i);
-                    },
-                    onDrop: (e: React.DragEvent) => {
-                      e.preventDefault();
-                      if (dragIndex != null) move(dragIndex, i);
-                      setDragIndex(null);
-                      setOverIndex(null);
-                    },
-                    onDragEnd: () => {
-                      setDragIndex(null);
-                      setOverIndex(null);
-                    },
-                  }}
+                  onDragStart={(e) => startDrag(i, e)}
+                  ghost={drag?.index === i}
                 />
               );
             }
             return (
               <AnalyticsTile
                 key={tile.metric}
+                index={i}
                 def={def}
                 value={values[tile.metric]}
                 tile={tile}
+                period={periodOf(tile.metric)}
                 compact={isMobile}
                 editing={editing}
                 onSize={(size) => patchTile(i, { size })}
                 onRemove={() => removeTile(i)}
                 onPlan={(plan) => patchTile(i, { plan })}
-                dragging={dragIndex === i}
-                dropBefore={overIndex === i && dragIndex !== i}
-                dragHandlers={{
-                  onDragStart: () => setDragIndex(i),
-                  onDragOver: (e) => {
-                    e.preventDefault();
-                    setOverIndex(i);
-                  },
-                  onDrop: (e) => {
-                    e.preventDefault();
-                    if (dragIndex != null) move(dragIndex, i);
-                    setDragIndex(null);
-                    setOverIndex(null);
-                  },
-                  onDragEnd: () => {
-                    setDragIndex(null);
-                    setOverIndex(null);
-                  },
-                }}
+                onDragStart={(e) => startDrag(i, e)}
+                ghost={drag?.index === i}
               />
             );
           })}

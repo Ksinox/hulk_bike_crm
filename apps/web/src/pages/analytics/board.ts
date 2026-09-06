@@ -37,7 +37,9 @@ export const PERIOD_LABEL: Record<BoardPeriod, string> = {
 
 /** Доска по умолчанию — то, что директор хотел видеть в первую очередь. */
 export const DEFAULT_BOARD: Board = {
-  period: "week",
+  // Планы у нас месячные (как в «Продажах»), поэтому доска по умолчанию
+  // смотрит на месяц: тогда видно темп — успеваем ли к концу месяца.
+  period: "month",
   title: "Как идут дела",
   tiles: [
     { metric: "rent.park_load", size: "l", plan: null },

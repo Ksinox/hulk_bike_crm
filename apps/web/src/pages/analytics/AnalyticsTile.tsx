@@ -1,19 +1,21 @@
 import { useState } from "react";
-import { GripVertical, Minus, Plus, Target, X } from "lucide-react";
+import { GripVertical, Target, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Sensitive } from "@/components/Sensitive";
 import { useSensitiveRevealed } from "@/lib/sensitive";
-import type { BoardTile, TileSize } from "./board";
+import type { BoardPeriod, BoardTile, TileSize } from "./board";
 import type { MetricDef, MetricValue } from "./metrics";
+import { planState, STATUS_UI, TONE_UI } from "./status";
+import { PlanRing, PlanBarThick, StatusChip } from "./Gauge";
+import { SizePicker } from "./SizePicker";
 
 /**
- * Плитка показателя (06.09).
+ * Плитка показателя (06.09; переработана вечером по фидбэку заказчика).
  *
- * Одна плитка — один вопрос и один ответ: крупное число, под ним строка
- * контекста, и полоса плана, если план задан. Цвет говорит сам за себя:
- * зелёный — идём хорошо, жёлтый — присмотреться, красный — горит.
- * На экране-стене (второй монитор под потолком) те же плитки, но
- * типографика крупнее, а фон тёмный — читается издалека.
+ * Правило одно: плитка должна читаться раньше, чем её начали читать.
+ * Поэтому статус несёт не полоска в два пикселя, а сама плитка — цветная
+ * заливка, толстая полоса слева и кольцо с процентом. Зелёная стена
+ * плиток и один красный блок среди них видны от двери, без чтения цифр.
  */
 
 export const SIZE_SPAN: Record<TileSize, { col: number; row: number }> = {
@@ -22,37 +24,26 @@ export const SIZE_SPAN: Record<TileSize, { col: number; row: number }> = {
   l: { col: 2, row: 2 },
 };
 
-const TONE_ACCENT = {
-  good: "text-green-ink",
-  warn: "text-orange-ink",
-  bad: "text-red-ink",
-  neutral: "text-ink",
-} as const;
-
-const TONE_ACCENT_WALL = {
-  good: "text-emerald-300",
-  warn: "text-amber-300",
-  bad: "text-red-400",
-  neutral: "text-white",
-} as const;
-
 export function AnalyticsTile({
   def,
   value,
   tile,
+  period,
   wall = false,
   compact = false,
   editing = false,
   onSize,
   onRemove,
   onPlan,
-  dragHandlers,
-  dragging,
-  dropBefore,
+  onDragStart,
+  ghost,
+  index,
 }: {
   def: MetricDef;
   value: MetricValue | undefined;
   tile: BoardTile;
+  /** Действующий период плитки — от него считается ожидаемый темп. */
+  period: BoardPeriod;
   wall?: boolean;
   /** Узкий экран: высокие плитки не растягиваем на две строки. */
   compact?: boolean;
@@ -60,107 +51,129 @@ export function AnalyticsTile({
   onSize?: (size: TileSize) => void;
   onRemove?: () => void;
   onPlan?: (plan: number | null) => void;
-  dragHandlers?: {
-    onDragStart: (e: React.DragEvent) => void;
-    onDragOver: (e: React.DragEvent) => void;
-    onDrop: (e: React.DragEvent) => void;
-    onDragEnd: () => void;
-  };
-  dragging?: boolean;
-  dropBefore?: boolean;
+  /** Взяли плитку в руку (своё перетаскивание, не HTML5-drag). */
+  onDragStart?: (e: React.PointerEvent) => void;
+  /** Плитка сейчас «в руке» — на её месте держим пустое гнездо. */
+  ghost?: boolean;
+  /** Позиция на доске: по ней ищем, над какой плиткой курсор. */
+  index?: number;
 }) {
   const [planOpen, setPlanOpen] = useState(false);
   const [planDraft, setPlanDraft] = useState(
     tile.plan != null ? String(tile.plan) : "",
   );
   const span = SIZE_SPAN[tile.size];
-  const tone = value?.tone ?? "neutral";
   const big = tile.size === "l";
-
-  // У закрытых показателей прячем не только само число, но и процент с
-  // полосой: «59% из 500 000 ₽» — это та же прибыль, только в уме.
   const revealed = useSensitiveRevealed();
   const hidden = !!def.sensitive && !revealed;
 
-  const planValue = tile.plan ?? null;
-  const fact = value?.value ?? 0;
-  const pct =
-    planValue && planValue > 0
-      ? Math.min(999, Math.round((fact / planValue) * 100))
+  const planValue = tile.plan != null && tile.plan > 0 ? tile.plan : null;
+  const state =
+    planValue != null
+      ? planState(value?.value ?? 0, planValue, !!def.periodic, period)
       : null;
-  const planDone = pct != null && pct >= 100;
+  const tone = value?.tone ?? "neutral";
+  const toneUi = TONE_UI[tone];
+  const statusUi = state ? STATUS_UI[state.status] : null;
+
+  // Кольцо помещается только на широких плитках; на маленькой — толстая шкала.
+  const ringSize = wall ? (big ? 208 : 132) : big ? 128 : 84;
+  const ringStroke = wall ? (big ? 26 : 18) : big ? 16 : 11;
+  const withRing = state != null && tile.size !== "s" && !compact;
 
   const numberClass = wall
     ? big
-      ? "text-[92px] leading-[0.95]"
+      ? "text-[86px] leading-[0.92]"
       : tile.size === "m"
-        ? "text-[68px] leading-[0.95]"
-        : "text-[54px] leading-[0.95]"
+        ? "text-[62px] leading-[0.92]"
+        : "text-[50px] leading-[0.92]"
     : big
-      ? "text-[46px] leading-none"
+      ? "text-[44px] leading-none"
       : tile.size === "m"
         ? "text-[34px] leading-none"
-        : "text-[28px] leading-none";
+        : "text-[27px] leading-none";
+
+  const spanStyle = {
+    gridColumn: `span ${span.col}`,
+    gridRow: `span ${compact ? 1 : span.row}`,
+  };
+
+  // Плитка «в руке» — на доске от неё остаётся пустое гнездо, и оно
+  // переезжает вместе с порядком: видно, куда плитка сядет.
+  if (ghost) {
+    return (
+      <div
+        data-tile-index={index}
+        data-flip-key={def.id}
+        style={spanStyle}
+        className="rounded-[20px] border-2 border-dashed border-blue-500/70 bg-blue-500/[0.07]"
+      />
+    );
+  }
 
   return (
     <div
-      draggable={editing}
-      onDragStart={dragHandlers?.onDragStart}
-      onDragOver={dragHandlers?.onDragOver}
-      onDrop={dragHandlers?.onDrop}
-      onDragEnd={dragHandlers?.onDragEnd}
-      style={{
-        gridColumn: `span ${span.col}`,
-        gridRow: `span ${compact ? 1 : span.row}`,
-      }}
+      data-tile-index={index}
+      data-flip-key={def.id}
+      style={spanStyle}
       className={cn(
-        "group relative flex min-w-0 flex-col overflow-hidden rounded-[20px] transition-shadow",
+        "group/tile relative flex min-w-0 flex-col overflow-hidden rounded-[20px]",
         wall
-          ? "border border-white/10 bg-white/[0.06] p-6 backdrop-blur"
-          : "bg-surface p-4 shadow-card-sm",
-        editing && "cursor-grab",
-        dragging && "opacity-40",
-        dropBefore && (wall ? "ring-2 ring-white/60" : "ring-2 ring-blue-500"),
+          ? cn(
+              "border border-white/10 backdrop-blur",
+              statusUi ? statusUi.fillWall : "bg-white/[0.06]",
+            )
+          : cn("shadow-card-sm", statusUi ? statusUi.fill : "bg-surface"),
+        wall ? "p-6 pl-8" : "p-4 pl-5",
+        editing && "select-none",
       )}
     >
+      {/* Полоса статуса слева — то, что видно первым и издалека. */}
+      <span
+        aria-hidden
+        className={cn(
+          "absolute inset-y-0 left-0",
+          wall ? "w-[10px]" : "w-[6px]",
+          statusUi
+            ? wall
+              ? statusUi.railWall
+              : statusUi.rail
+            : wall
+              ? toneUi.railWall
+              : toneUi.rail,
+        )}
+      />
+
       {/* Заголовок */}
       <div className="flex items-start justify-between gap-2">
         <div
           className={cn(
             "font-bold uppercase tracking-wider",
-            wall ? "text-[15px] text-white/60" : "text-[11px] text-muted-2",
+            wall ? "text-[16px] text-white/65" : "text-[11px] text-muted-2",
           )}
         >
           {def.title}
         </div>
         {editing && (
-          <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
-            <GripVertical size={14} className="text-muted-2" />
-            <button
-              type="button"
-              title="Меньше"
-              onClick={() => onSize?.(smaller(tile.size))}
-              disabled={tile.size === "s"}
-              className="flex h-6 w-6 items-center justify-center rounded-md text-muted-2 hover:bg-surface-soft hover:text-ink disabled:opacity-30"
+          <div
+            className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover/tile:opacity-100"
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            <span
+              title="Перетащить"
+              onPointerDown={onDragStart}
+              className="flex h-6 w-6 cursor-grab items-center justify-center rounded-md text-muted-2 hover:bg-white/60 hover:text-ink active:cursor-grabbing"
             >
-              <Minus size={13} />
-            </button>
-            <button
-              type="button"
-              title="Больше"
-              onClick={() => onSize?.(bigger(tile.size))}
-              disabled={tile.size === "l"}
-              className="flex h-6 w-6 items-center justify-center rounded-md text-muted-2 hover:bg-surface-soft hover:text-ink disabled:opacity-30"
-            >
-              <Plus size={13} />
-            </button>
+              <GripVertical size={15} />
+            </span>
+            <SizePicker value={tile.size} onChange={(s) => onSize?.(s)} />
             {def.planable && (
               <button
                 type="button"
                 title="План"
                 onClick={() => setPlanOpen((v) => !v)}
                 className={cn(
-                  "flex h-6 w-6 items-center justify-center rounded-md hover:bg-surface-soft",
+                  "flex h-6 w-6 items-center justify-center rounded-md hover:bg-white/60",
                   planValue != null ? "text-blue-600" : "text-muted-2 hover:text-ink",
                 )}
               >
@@ -179,98 +192,106 @@ export function AnalyticsTile({
         )}
       </div>
 
-      {/* Значение — по центру плитки: на крупных блоках число не должно
-          прилипать к нижнему краю, его читают первым. */}
-      <div className="mt-2 flex min-w-0 flex-1 flex-col justify-center gap-1">
-        <div
-          className={cn(
-            "font-display font-extrabold tabular-nums",
-            numberClass,
-            wall ? TONE_ACCENT_WALL[tone] : TONE_ACCENT[tone],
+      {/* Цифра + кольцо */}
+      <div
+        className={cn(
+          "mt-2 flex min-w-0 flex-1 items-center",
+          withRing ? "gap-4" : "flex-col justify-center",
+          withRing && (big ? "gap-6" : "gap-4"),
+        )}
+      >
+        <div className={cn("flex min-w-0 flex-1 flex-col justify-center", wall ? "gap-1.5" : "gap-1")}>
+          <div
+            className={cn(
+              "font-display font-extrabold tabular-nums",
+              numberClass,
+              statusUi
+                ? wall
+                  ? statusUi.inkWall
+                  : statusUi.ink
+                : wall
+                  ? toneUi.inkWall
+                  : toneUi.ink,
+            )}
+          >
+            {def.sensitive ? (
+              <Sensitive dark={wall}>{value?.display ?? "—"}</Sensitive>
+            ) : (
+              (value?.display ?? "—")
+            )}
+          </div>
+          {value?.caption && (
+            <div className={cn(wall ? "text-[18px] text-white/70" : "text-[12.5px] text-muted")}>
+              {value.caption}
+            </div>
           )}
-        >
-          {/* Прибыль и закуп прячем и на стене: экран видят все, кто рядом.
-              Открывается тем же ключом директора, что и в «Продажах». */}
-          {def.sensitive ? (
-            <Sensitive dark={wall}>{value?.display ?? "—"}</Sensitive>
-          ) : (
-            (value?.display ?? "—")
+          {value?.extra && (
+            <div
+              className={cn(
+                "font-semibold",
+                wall ? "text-[16px] text-white/60" : "text-[12px] text-muted-2",
+              )}
+            >
+              {value.extra}
+            </div>
+          )}
+          {state && !hidden && (
+            <StatusChip state={state} wall={wall} className={wall ? "mt-1 self-start" : "mt-0.5 self-start"} />
           )}
         </div>
-        {value?.caption && (
-          <div
-            className={cn(
-              wall ? "text-[17px] text-white/70" : "text-[12.5px] text-muted",
-            )}
-          >
-            {value.caption}
-          </div>
-        )}
-        {value?.extra && (
-          <div
-            className={cn(
-              "font-semibold",
-              wall ? "text-[16px] text-white/60" : "text-[12px] text-muted-2",
-            )}
-          >
-            {value.extra}
-          </div>
+
+        {withRing && state && (
+          <PlanRing
+            state={state}
+            size={ringSize}
+            stroke={ringStroke}
+            wall={wall}
+            hidden={hidden}
+          />
         )}
       </div>
 
-      {/* План */}
-      {planValue != null && planValue > 0 && (
-        <div className="mt-3 flex flex-col gap-1">
+      {/* План: подпись + толстая шкала (на плитках без кольца) */}
+      {state && (
+        <div className={cn("flex flex-col", wall ? "mt-4 gap-2" : "mt-3 gap-1.5")}>
           <div
             className={cn(
-              "flex items-baseline justify-between",
-              wall ? "text-[15px]" : "text-[11px]",
+              "flex items-baseline justify-between gap-2",
+              wall ? "text-[16px]" : "text-[11.5px]",
             )}
           >
             <span className={wall ? "text-white/60" : "text-muted-2"}>
-              план {def.format(planValue)}
+              план {def.format(planValue!)}
             </span>
-            <span
-              className={cn(
-                "font-bold tabular-nums",
-                planDone
-                  ? wall
-                    ? "text-emerald-300"
-                    : "text-green-ink"
-                  : wall
-                    ? "text-white/80"
-                    : "text-ink-2",
-              )}
-            >
-              {hidden ? <Sensitive dark={wall}>{pct}%</Sensitive> : `${pct}%`}
-            </span>
-          </div>
-          <div
-            className={cn(
-              "overflow-hidden rounded-full",
-              wall ? "h-2.5 bg-white/15" : "h-1.5 bg-surface-soft",
+            {!withRing && (
+              <span
+                className={cn(
+                  "font-bold tabular-nums",
+                  wall ? statusUi!.inkWall : statusUi!.ink,
+                  wall ? "text-[20px]" : "text-[13px]",
+                )}
+              >
+                {hidden ? <Sensitive dark={wall}>{state.pct}%</Sensitive> : `${state.pct}%`}
+              </span>
             )}
-          >
-            <div
-              className={cn(
-                "h-full rounded-full transition-[width] duration-700",
-                planDone
-                  ? wall
-                    ? "bg-emerald-400"
-                    : "bg-green"
-                  : wall
-                    ? "bg-white/70"
-                    : "bg-blue-600",
-              )}
-              style={{ width: hidden ? 0 : `${Math.min(100, pct ?? 0)}%` }}
-            />
           </div>
+          {!withRing && (
+            <PlanBarThick
+              state={state}
+              wall={wall}
+              hidden={hidden}
+              height={wall ? 20 : 10}
+            />
+          )}
         </div>
       )}
 
       {/* Ввод плана */}
       {editing && planOpen && (
-        <div className="absolute inset-x-3 bottom-3 flex items-center gap-1.5 rounded-xl border border-border bg-surface p-2 shadow-card">
+        <div
+          className="absolute inset-x-3 bottom-3 z-20 flex items-center gap-1.5 rounded-xl border border-border bg-surface p-2 shadow-card"
+          onPointerDown={(e) => e.stopPropagation()}
+        >
           <input
             autoFocus
             inputMode="numeric"
@@ -307,11 +328,4 @@ export function AnalyticsTile({
       )}
     </div>
   );
-}
-
-function smaller(s: TileSize): TileSize {
-  return s === "l" ? "m" : "s";
-}
-function bigger(s: TileSize): TileSize {
-  return s === "s" ? "m" : "l";
 }
