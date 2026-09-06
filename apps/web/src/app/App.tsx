@@ -10,6 +10,8 @@ import { Service } from "@/pages/service/Service";
 import { Settings } from "@/pages/settings/Settings";
 import { Staff } from "@/pages/staff/Staff";
 import { StoragePage } from "@/pages/storage/StoragePage";
+import { Analytics } from "@/pages/analytics/Analytics";
+import { AnalyticsWall } from "@/pages/analytics/AnalyticsWall";
 import { WhatsNew } from "@/pages/whats-new/WhatsNew";
 import { Progress } from "@/pages/progress/Progress";
 import { Partners } from "@/pages/partners/Partners";
@@ -105,6 +107,15 @@ export function App() {
   // Нет сессии → экран входа
   if (isError || !me) {
     return <Login />;
+  }
+
+  // Экран на второй монитор (06.09): отдельное окно без сайдбара и шапки —
+  // открывается кнопкой «На второй монитор» в «Аналитике».
+  if (
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).get("screen") === "analytics-wall"
+  ) {
+    return <AnalyticsWall />;
   }
 
   // Юзер обязан сменить пароль (создан/сброшен creator'ом или director'ом).
@@ -302,6 +313,8 @@ function AppShell({
       <Settings />
     ) : route === "storage" ? (
       <StoragePage />
+    ) : route === "analytics" ? (
+      <Analytics />
     ) : (
       <Dashboard />
     );

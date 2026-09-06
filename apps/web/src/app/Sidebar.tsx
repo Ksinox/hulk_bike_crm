@@ -78,10 +78,11 @@ function buildMainItems(canManageStaff: boolean): NavItem[] {
   }
   items.push({ id: "rassrochki", label: "Выкуп", icon: Receipt, ready: true });
   // Разделы «скоро» — всегда в конце списка.
+  // Аналитика открыта с 06.09 — доска показателей и экран на второй монитор.
+  items.push({ id: "analytics", label: "Аналитика", icon: BarChart3, ready: true });
   items.push(
     { id: "incidents", label: "Инциденты", icon: CircleAlert },
     { id: "tasks", label: "Задачи", icon: ClipboardCheck },
-    { id: "analytics", label: "Аналитика", icon: BarChart3 },
   );
   return items;
 }

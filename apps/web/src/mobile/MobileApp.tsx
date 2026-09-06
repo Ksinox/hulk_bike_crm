@@ -30,6 +30,7 @@ import { MobilePlaceholder } from "./pages/MobilePlaceholder";
 import { StoragePage } from "@/pages/storage/StoragePage";
 import { Partners } from "@/pages/partners/Partners";
 import { Sales } from "@/pages/sales/Sales";
+import { Analytics } from "@/pages/analytics/Analytics";
 import { Buyout } from "@/pages/buyout/Buyout";
 import { ApprovalsBell } from "@/components/ApprovalsInbox";
 import { DayReportDialog } from "@/components/DayReport";
@@ -158,6 +159,13 @@ function MobilePage({
       return <MobileDebtors />;
     case "service":
       return <MobileService />;
+    case "analytics":
+      // Доска показателей: на телефоне те же плитки в одну-две колонки.
+      return (
+        <div className="px-1 pb-4">
+          <Analytics />
+        </div>
+      );
     case "staff":
       return <MobileStaff />;
     case "whats-new":

@@ -216,6 +216,8 @@ async function bootstrap() {
     // Напоминания: платежи по выкупу и дни выплат инвесторам (01.09).
     const { remindersRoutes } = await import("./routes/reminders.js");
     await protectedApp.register(remindersRoutes, { prefix: "/api/reminders" });
+    const { analyticsRoutes } = await import("./routes/analytics.js");
+    await protectedApp.register(analyticsRoutes, { prefix: "/api/analytics" });
     // Каталоги
     await protectedApp.register(scooterModelsRoutes, { prefix: "/api/scooter-models" });
     await protectedApp.register(equipmentRoutes, { prefix: "/api/equipment" });

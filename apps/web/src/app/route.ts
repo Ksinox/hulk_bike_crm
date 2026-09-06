@@ -37,6 +37,8 @@ const READY: RouteId[] = [
   "whats-new",
   "progress",
   "partners",
+  // Аналитика (06.09): раздел показателей и экран на второй монитор.
+  "analytics",
 ];
 
 export function loadRoute(): RouteId {
