@@ -748,7 +748,8 @@ function AvatarHints() {
       <li>• PNG или WEBP на прозрачном фоне — скутер «парит» в карточке</li>
       <li>• пропорции 4:3, от 1200×900 — рамка кропа ровно такая же</li>
       <li>• скутер боком, целиком, по центру, без лишних предметов</li>
-      <li>• после выбора файла откроется обрезка — подвиньте кадр под рамку</li>
+      <li>• после выбора файла откроется обрезка — впишите технику в рамку</li>
+      <li>• кадр можно поправить позже кнопкой «Перекадрировать» — файл не нужен</li>
     </ul>
   );
 }
@@ -769,10 +770,24 @@ function AvatarEditor({ model }: { model: ApiScooterModel }) {
       <AvatarUpload
         avatarKey={live.avatarKey}
         avatarThumbKey={live.avatarThumbKey}
+        originalKey={live.avatarOriginalKey}
+        crop={live.avatarCrop ?? null}
         uploading={uploadMut.isPending}
         removing={deleteMut.isPending}
-        onUpload={({ full, thumb }) =>
-          uploadMut.mutateAsync({ id: model.id, file: full, thumb })
+        // Рамка-ориентир и живое превью карточек (06.09): менеджеру не надо
+        // подбирать крупность на глаз — вписал технику в рамку и видит, как
+        // она сядет в карточку модели, в анкету и в карточку аренды.
+        guide
+        previews={["model", "application", "rental"]}
+        previewName={model.name}
+        onUpload={({ full, thumb, original, meta }) =>
+          uploadMut.mutateAsync({
+            id: model.id,
+            file: full,
+            thumb,
+            original,
+            crop: meta,
+          })
         }
         onRemove={() => deleteMut.mutateAsync(model.id)}
         // Карточка модели и постер скутера показывают аватарку в рамке 4:3

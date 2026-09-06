@@ -1,10 +1,15 @@
 import { useRef, useState } from "react";
-import { ImagePlus, Loader2, Trash2 } from "lucide-react";
+import { Crop, ImagePlus, Loader2, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { fileUrl } from "@/lib/files";
 import { toast } from "@/lib/toast";
 import { deleteFileWithUndo } from "@/lib/deleteFileWithUndo";
-import { ImageCropDialog, type CropResult } from "@/components/ImageCropDialog";
+import {
+  ImageCropDialog,
+  type CropMeta,
+  type CropPreviewKind,
+  type CropResult,
+} from "@/components/ImageCropDialog";
 
 /**
  * Универсальный загрузчик аватарки для каталогов (модели, экипировка).
@@ -12,15 +17,18 @@ import { ImageCropDialog, type CropResult } from "@/components/ImageCropDialog";
  * Поток:
  *  1. Пользователь выбирает файл (фильтр accept="image/*" — только картинки)
  *  2. Открывается ImageCropDialog с превью и зумом
- *  3. По «Сохранить» — на сервер уходят два blob'а: оригинал + thumbnail
- *  4. На стороне сервера оба сохраняются, в БД — avatarKey + avatarThumbKey
+ *  3. По «Сохранить» — на сервер уходят кадр, миниатюра, исходник и параметры кадра
+ *  4. На стороне сервера всё сохраняется, в БД — avatarKey + avatarThumbKey +
+ *     avatarOriginalKey + avatarCrop
  *
- * В местах где аватарка маленькая (плитки/списки) показываем thumb
- * из avatarThumbKey, а в карточке/превью — оригинал.
+ * Правка 06.09: кнопка «Перекадрировать» — открывает сохранённый исходник в
+ * той же рамке, где её оставили. Файл на компьютере для этого не нужен.
  */
 export function AvatarUpload({
   avatarKey,
   avatarThumbKey,
+  originalKey,
+  crop,
   onUpload,
   onRemove,
   uploading,
@@ -28,10 +36,17 @@ export function AvatarUpload({
   size = 80,
   cropAspect = 1,
   cropTitle = "Обрежьте аватарку",
+  guide = false,
+  previews,
+  previewName,
 }: {
   avatarKey: string | null | undefined;
   /** Опционально — миниатюра. Если есть, в превью используем её. */
   avatarThumbKey?: string | null;
+  /** Исходник до кропа — по нему работает «Перекадрировать». */
+  originalKey?: string | null;
+  /** Параметры прошлого кадра — чтобы открыть рамку там же. */
+  crop?: CropMeta | null;
   onUpload: (result: CropResult) => unknown | Promise<unknown>;
   onRemove?: () => unknown | Promise<unknown>;
   uploading?: boolean;
@@ -40,9 +55,17 @@ export function AvatarUpload({
   /** Соотношение кропа (1 = квадрат, 16/9 для обложек и т.п.). */
   cropAspect?: number;
   cropTitle?: string;
+  /** Рамка-ориентир в кропе (для техники). */
+  guide?: boolean;
+  /** Живое превью карточек в кропе. */
+  previews?: CropPreviewKind[];
+  previewName?: string;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
+  /** Кадрируем сохранённый исходник (а не только что выбранный файл). */
+  const [reCrop, setReCrop] = useState(false);
+  const [loadingSource, setLoadingSource] = useState(false);
   // Во время окна отмены прячем аватарку из превью (как будто уже удалена).
   const [optimisticallyRemoved, setOptimisticallyRemoved] = useState(false);
 
@@ -61,7 +84,40 @@ export function AvatarUpload({
       return;
     }
     // Открываем диалог кропа — он сам сожмёт оригинал и сделает миниатюру.
+    setReCrop(false);
     setPendingFile(f);
+  };
+
+  /**
+   * «Перекадрировать»: тянем сохранённый исходник с сервера и открываем тот
+   * же диалог. Если исходника нет (аватарку загрузили до этой правки),
+   * работаем по уже кадрированной картинке — подвинуть кадр внутри неё можно,
+   * вернуть отрезанное — нет, поэтому честно предупреждаем.
+   */
+  const startReCrop = async () => {
+    const key = originalKey || avatarKey;
+    if (!key) return;
+    setLoadingSource(true);
+    try {
+      const src = fileUrl(key);
+      if (!src) return;
+      const res = await fetch(src, { credentials: "include" });
+      if (!res.ok) throw new Error(String(res.status));
+      const blob = await res.blob();
+      const name = key.split("/").pop() || "avatar";
+      setReCrop(true);
+      setPendingFile(new File([blob], name, { type: blob.type || "image/webp" }));
+      if (!originalKey) {
+        toast.info(
+          "Исходник не сохранён",
+          "Эту аватарку загрузили раньше — кадрируем то, что есть. Чтобы вернуть обрезанные края, загрузите фото заново.",
+        );
+      }
+    } catch {
+      toast.error("Не удалось открыть исходник", "Попробуйте загрузить фото заново");
+    } finally {
+      setLoadingSource(false);
+    }
   };
 
   return (
@@ -114,6 +170,22 @@ export function AvatarUpload({
         />
 
         <div className="flex flex-col gap-1">
+          {url && (
+            <button
+              type="button"
+              onClick={() => void startReCrop()}
+              disabled={uploading || loadingSource}
+              title="Подвинуть рамку у уже загруженного фото — файл заново искать не нужно"
+              className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1.5 text-[12px] font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-50"
+            >
+              {loadingSource ? (
+                <Loader2 size={12} className="animate-spin" />
+              ) : (
+                <Crop size={12} />
+              )}
+              Перекадрировать
+            </button>
+          )}
           <button
             type="button"
             onClick={() => inputRef.current?.click()}
@@ -156,7 +228,15 @@ export function AvatarUpload({
         aspect={cropAspect}
         title={cropTitle}
         format="webp"
-        onClose={() => setPendingFile(null)}
+        reCrop={reCrop}
+        initialMeta={reCrop ? crop ?? null : null}
+        guide={guide}
+        previews={previews}
+        previewName={previewName}
+        onClose={() => {
+          setPendingFile(null);
+          setReCrop(false);
+        }}
         onSave={async (result) => {
           await onUpload(result);
         }}

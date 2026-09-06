@@ -473,3 +473,10 @@
 .drawer-slide-in {
   animation: drawer-slide-in 340ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
+
+/* Кадрирование аватарки (06.09): рамка кропа тонкой белой линией — сам
+   ориентир «поместите скутер сюда» рисуется отдельным слоем поверх. */
+.hb-crop-area {
+  border: 1px solid rgba(255, 255, 255, 0.55) !important;
+  box-shadow: 0 0 0 9999em rgba(9, 14, 26, 0.72) !important;
+}

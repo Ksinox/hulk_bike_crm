@@ -741,6 +741,21 @@ export const clientsRelations = relations(clients, ({ many }) => ({
  * Тарифы подтягиваются в аренду в зависимости от выбранного скутера.
  * ============================================================ */
 
+/**
+ * Параметры кадрирования аватарки (06.09): чтобы «Перекадрировать»
+ * открывало рамку там же, где её оставили.
+ */
+export type AvatarCrop = {
+  /** Позиция кадра в координатах react-easy-crop. */
+  crop: { x: number; y: number };
+  zoom: number;
+  rotation: number;
+  /** Картинку отзеркалили по горизонтали. */
+  flipped: boolean;
+  /** Соотношение сторон рамки, с которым кадрировали. */
+  aspect?: number;
+};
+
 export const scooterModels = pgTable(
   "scooter_models",
   {
@@ -753,6 +768,14 @@ export const scooterModels = pgTable(
      *  чтобы не дёргать оригинал при каждом рендере. */
     avatarThumbKey: text("avatar_thumb_key"),
     avatarThumbFileName: text("avatar_thumb_file_name"),
+    /**
+     * Исходник до кадрирования (06.09) — по нему работает «Перекадрировать»:
+     * рамку можно подвинуть, не имея файла под рукой.
+     */
+    avatarOriginalKey: text("avatar_original_key"),
+    avatarOriginalFileName: text("avatar_original_file_name"),
+    /** Параметры последнего кадра: зум, сдвиг, поворот, отзеркаливание. */
+    avatarCrop: jsonb("avatar_crop").$type<AvatarCrop | null>(),
     /**
      * true → показывается в быстром пикере при создании аренды.
      * Обычно 4 самых частых моделей отмечены true, остальное ищется
@@ -814,6 +837,10 @@ export const equipmentItems = pgTable(
     avatarFileName: text("avatar_file_name"),
     avatarThumbKey: text("avatar_thumb_key"),
     avatarThumbFileName: text("avatar_thumb_file_name"),
+    /** Исходник и параметры кадра — для «Перекадрировать» (06.09). */
+    avatarOriginalKey: text("avatar_original_key"),
+    avatarOriginalFileName: text("avatar_original_file_name"),
+    avatarCrop: jsonb("avatar_crop").$type<AvatarCrop | null>(),
     quickPick: boolean("quick_pick").notNull().default(true),
     /** Цена за всю аренду (не за сутки) */
     price: integer("price").notNull().default(0),

@@ -195,6 +195,9 @@ export async function scooterModelsRoutes(app: FastifyInstance) {
       if (existing.avatarKey) {
         await removeObject(existing.avatarKey).catch(() => null);
       }
+      if (existing.avatarOriginalKey) {
+        await removeObject(existing.avatarOriginalKey).catch(() => null);
+      }
 
       await db.delete(scooterModels).where(eq(scooterModels.id, id));
       await logActivity(req, {
@@ -210,10 +213,12 @@ export async function scooterModelsRoutes(app: FastifyInstance) {
   /**
    * POST /api/scooter-models/:id/avatar (multipart)
    * Поля:
-   *   • file  — оригинал (JPG/PNG/WEBP, до 5 МБ).
-   *   • thumb — опционально, кропнутая миниатюра (генерируется на клиенте
-   *             через ImageCropDialog). Если есть — кладём отдельно
-   *             в MinIO и сохраняем avatarThumbKey/avatarThumbFileName.
+   *   • file     — кадрированная картинка (JPG/PNG/WEBP, до 5 МБ).
+   *   • thumb    — опционально, миниатюра того же кадра.
+   *   • original — опционально, исходник до кадрирования (06.09): по нему
+   *                работает «Перекадрировать», когда файла нет под рукой.
+   *   • crop     — опционально, JSON с параметрами кадра (зум, сдвиг,
+   *                поворот, отзеркаливание) — чтобы открыть рамку там же.
    */
   app.post<{ Params: { id: string } }>(
     "/:id/avatar",
@@ -228,24 +233,39 @@ export async function scooterModelsRoutes(app: FastifyInstance) {
         .where(eq(scooterModels.id, id));
       if (!existing) return reply.code(404).send({ error: "not found" });
 
-      // Принимаем до двух файлов: основной (file) и миниатюру (thumb).
-      const parts = req.parts({ limits: { fileSize: MAX_AVATAR, files: 2 } });
+      // Принимаем до трёх файлов: кадр (file), миниатюра (thumb) и
+      // исходник (original) — плюс текстовое поле crop с параметрами кадра.
+      const parts = req.parts({ limits: { fileSize: MAX_AVATAR, files: 3 } });
       let fileBuf: Buffer | null = null;
       let fileName = "avatar";
       let mimeType = "application/octet-stream";
       let thumbBuf: Buffer | null = null;
       let thumbName = "avatar-thumb";
       let thumbMime = "image/jpeg";
+      let originalBuf: Buffer | null = null;
+      let originalName = "avatar-original";
+      let originalMime = "image/jpeg";
+      let cropMeta: unknown = undefined;
       for await (const part of parts) {
         if (part.type === "file") {
           if (part.fieldname === "thumb") {
             thumbBuf = await part.toBuffer();
             thumbName = part.filename || thumbName;
             thumbMime = part.mimetype || thumbMime;
+          } else if (part.fieldname === "original") {
+            originalBuf = await part.toBuffer();
+            originalName = part.filename || originalName;
+            originalMime = part.mimetype || originalMime;
           } else {
             fileBuf = await part.toBuffer();
             fileName = part.filename;
             mimeType = part.mimetype;
+          }
+        } else if (part.type === "field" && part.fieldname === "crop") {
+          try {
+            cropMeta = JSON.parse(String(part.value));
+          } catch {
+            cropMeta = undefined;
           }
         }
       }
@@ -271,6 +291,23 @@ export async function scooterModelsRoutes(app: FastifyInstance) {
         await putObjectWithImageVariants(thumbKey, thumbBuf, thumbMime);
       }
 
+      // Исходник (06.09): нужен, чтобы позже подвинуть рамку без файла на руках.
+      let originalKey: string | null = existing.avatarOriginalKey;
+      let originalFileName: string | null = existing.avatarOriginalFileName;
+      if (originalBuf) {
+        if (!/^image\//.test(originalMime))
+          return reply.code(400).send({ error: "original must be image" });
+        originalKey = makeFileKey(`models/${id}/original`, originalName);
+        await putObjectWithImageVariants(originalKey, originalBuf, originalMime);
+        originalFileName = originalName;
+        if (
+          existing.avatarOriginalKey &&
+          existing.avatarOriginalKey !== originalKey
+        ) {
+          await removeObject(existing.avatarOriginalKey).catch(() => null);
+        }
+      }
+
       // Удаляем старые ключи (и оригинал и старую миниатюру).
       if (existing.avatarKey && existing.avatarKey !== key) {
         await removeObject(existing.avatarKey).catch(() => null);
@@ -286,6 +323,9 @@ export async function scooterModelsRoutes(app: FastifyInstance) {
           avatarFileName: fileName,
           avatarThumbKey: thumbKey,
           avatarThumbFileName: thumbBuf ? thumbName : null,
+          avatarOriginalKey: originalKey,
+          avatarOriginalFileName: originalFileName,
+          avatarCrop: (cropMeta as never) ?? existing.avatarCrop,
           updatedAt: new Date(),
         })
         .where(eq(scooterModels.id, id))
@@ -320,6 +360,9 @@ export async function scooterModelsRoutes(app: FastifyInstance) {
       if (existing.avatarThumbKey) {
         await removeObject(existing.avatarThumbKey).catch(() => null);
       }
+      if (existing.avatarOriginalKey) {
+        await removeObject(existing.avatarOriginalKey).catch(() => null);
+      }
       const [updated] = await db
         .update(scooterModels)
         .set({
@@ -327,6 +370,9 @@ export async function scooterModelsRoutes(app: FastifyInstance) {
           avatarFileName: null,
           avatarThumbKey: null,
           avatarThumbFileName: null,
+          avatarOriginalKey: null,
+          avatarOriginalFileName: null,
+          avatarCrop: null,
           updatedAt: new Date(),
         })
         .where(eq(scooterModels.id, id))

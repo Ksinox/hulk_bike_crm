@@ -14,6 +14,17 @@ export type ApiScooterModel = {
   /** Кропнутая миниатюра (≤512px JPEG) — для плиток/списков. */
   avatarThumbKey: string | null;
   avatarThumbFileName: string | null;
+  /** Исходник до кадрирования (06.09) — по нему работает «Перекадрировать». */
+  avatarOriginalKey?: string | null;
+  avatarOriginalFileName?: string | null;
+  /** Параметры последнего кадра: зум, сдвиг, поворот, отзеркаливание. */
+  avatarCrop?: {
+    crop: { x: number; y: number };
+    zoom: number;
+    rotation: number;
+    flipped: boolean;
+    aspect?: number;
+  } | null;
   quickPick: boolean;
   /**
    * false → модель не показывается на лендинге и в выборах CRM
@@ -159,13 +170,29 @@ export function useDeleteScooterModel() {
 export function useUploadScooterModelAvatar() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (args: { id: number; file: Blob; thumb?: Blob }) => {
+    mutationFn: async (args: {
+      id: number;
+      file: Blob;
+      thumb?: Blob;
+      /** Исходник до кадрирования — чтобы кадр можно было поправить позже. */
+      original?: Blob;
+      /** Параметры кадра (зум/сдвиг/поворот/зеркало). */
+      crop?: unknown;
+    }) => {
       const fd = new FormData();
+      // Имя файла определяет расширение ключа в хранилище: кадр приходит
+      // WebP, поэтому и называем его .webp (раньше был .jpg при webp-байтах).
       const fileName =
-        args.file instanceof File ? args.file.name : "avatar.jpg";
+        args.file instanceof File ? args.file.name : "avatar.webp";
       fd.append("file", args.file, fileName);
       if (args.thumb) {
-        fd.append("thumb", args.thumb, "thumb.jpg");
+        fd.append("thumb", args.thumb, "thumb.webp");
+      }
+      if (args.original) {
+        fd.append("original", args.original, "original.webp");
+      }
+      if (args.crop) {
+        fd.append("crop", JSON.stringify(args.crop));
       }
       const base =
         import.meta.env.VITE_API_URL?.replace(/\/$/, "") ??
