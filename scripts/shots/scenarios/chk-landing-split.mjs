@@ -13,7 +13,7 @@ export async function run(page, ctx) {
 
   const info = await page.evaluate(() => {
     const t = document.body.innerText;
-    const ids = (t.match(/\b2\.(3[2-9]|4[0-9])\b/g) || []);
+    const ids = (t.match(/\b2\.(3[2-9]|4[0-9]|5[0-4])\b/g) || []);
     return {
       пунктов: [...new Set(ids)].sort().join(","),
       overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth,

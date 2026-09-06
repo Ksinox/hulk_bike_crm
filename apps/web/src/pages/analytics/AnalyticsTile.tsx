@@ -176,7 +176,9 @@ export function AnalyticsTile({
             wall ? TONE_ACCENT_WALL[tone] : TONE_ACCENT[tone],
           )}
         >
-          {def.sensitive && !wall ? (
+          {/* Прибыль и закуп прячем и на стене: экран видят все, кто рядом.
+              Открывается тем же ключом директора, что и в «Продажах». */}
+          {def.sensitive ? (
             <Sensitive>{value?.display ?? "—"}</Sensitive>
           ) : (
             (value?.display ?? "—")

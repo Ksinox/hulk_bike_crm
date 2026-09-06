@@ -59,12 +59,7 @@ export function Analytics() {
 
   const periodOf = useMemo(() => {
     const map = new Map(board.tiles.map((t) => [t.metric, t.period ?? null]));
-    return (metricId: string): BoardPeriod => {
-      const own = map.get(metricId);
-      if (own) return own;
-      const def = METRIC_BY_ID.get(metricId);
-      return def?.defaultPeriod && !board.period ? def.defaultPeriod : board.period;
-    };
+    return (metricId: string): BoardPeriod => map.get(metricId) ?? board.period;
   }, [board]);
 
   const values = useMetricValues(periodOf);
