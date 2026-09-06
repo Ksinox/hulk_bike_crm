@@ -2,6 +2,7 @@ import { useState } from "react";
 import { GripVertical, Minus, Plus, Target, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Sensitive } from "@/components/Sensitive";
+import { useSensitiveRevealed } from "@/lib/sensitive";
 import type { BoardTile, TileSize } from "./board";
 import type { MetricDef, MetricValue } from "./metrics";
 
@@ -72,6 +73,11 @@ export function AnalyticsTile({
   const span = SIZE_SPAN[tile.size];
   const tone = value?.tone ?? "neutral";
   const big = tile.size === "l";
+
+  // У закрытых показателей прячем не только само число, но и процент с
+  // полосой: «59% из 500 000 ₽» — это та же прибыль, только в уме.
+  const revealed = useSensitiveRevealed();
+  const hidden = !!def.sensitive && !revealed;
 
   const planValue = tile.plan ?? null;
   const fact = value?.value ?? 0;
@@ -230,7 +236,7 @@ export function AnalyticsTile({
                     : "text-ink-2",
               )}
             >
-              {pct}%
+              {hidden ? <Sensitive dark={wall}>{pct}%</Sensitive> : `${pct}%`}
             </span>
           </div>
           <div
@@ -250,7 +256,7 @@ export function AnalyticsTile({
                     ? "bg-white/70"
                     : "bg-blue-600",
               )}
-              style={{ width: `${Math.min(100, pct ?? 0)}%` }}
+              style={{ width: hidden ? 0 : `${Math.min(100, pct ?? 0)}%` }}
             />
           </div>
         </div>

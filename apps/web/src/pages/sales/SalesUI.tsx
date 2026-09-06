@@ -10,6 +10,7 @@ import {
   type Range,
 } from "./salesUtils";
 import { Sensitive } from "@/components/Sensitive";
+import { useSensitiveRevealed } from "@/lib/sensitive";
 
 /** Мелкие переиспользуемые элементы блока «Продажи». */
 
@@ -262,6 +263,10 @@ export function PlanBar({
 }) {
   const pct = plan > 0 ? Math.round((fact / plan) * 100) : 0;
   const Wrap = sensitive ? Sensitive : Fragment;
+  // Полоса — тот же факт, только нарисованный: у закрытых показателей её
+  // не заливаем, иначе цифра считается по проценту заполнения.
+  const revealed = useSensitiveRevealed();
+  const hidden = !!sensitive && !revealed;
   const done = pct >= 100;
   return (
     <div className="flex min-w-0 flex-col gap-1">
@@ -293,7 +298,7 @@ export function PlanBar({
             "h-full rounded-full transition-[width] duration-700",
             done ? "bg-emerald-500" : "bg-blue-600",
           )}
-          style={{ width: `${plan > 0 ? Math.min(100, pct) : 0}%` }}
+          style={{ width: `${plan > 0 && !hidden ? Math.min(100, pct) : 0}%` }}
         />
       </div>
     </div>

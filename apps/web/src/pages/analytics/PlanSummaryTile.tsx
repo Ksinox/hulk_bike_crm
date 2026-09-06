@@ -1,5 +1,7 @@
 import { GripVertical, Minus, Plus, Target, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Sensitive } from "@/components/Sensitive";
+import { useSensitiveRevealed } from "@/lib/sensitive";
 import type { BoardTile, TileSize } from "./board";
 import { METRIC_BY_ID, type MetricValue } from "./metrics";
 import { SIZE_SPAN } from "./AnalyticsTile";
@@ -39,6 +41,9 @@ export function PlanSummaryTile({
   dropBefore?: boolean;
 }) {
   const span = SIZE_SPAN[tile.size];
+  // Прибыль закрыта ключом директора — в сводке нельзя показывать ни сумму,
+  // ни процент: по «59% из 500 000 ₽» цифра считается в уме.
+  const revealed = useSensitiveRevealed();
   const rows = tiles
     .filter((t) => t.plan != null && t.plan > 0)
     .map((t) => {
@@ -47,7 +52,14 @@ export function PlanSummaryTile({
       if (!def || !v) return null;
       const plan = t.plan ?? 0;
       const pct = plan > 0 ? Math.round((v.value / plan) * 100) : 0;
-      return { id: t.metric, title: def.title, fact: def.format(v.value), plan: def.format(plan), pct };
+      return {
+        id: t.metric,
+        title: def.title,
+        fact: def.format(v.value),
+        plan: def.format(plan),
+        pct,
+        hidden: !!def.sensitive && !revealed,
+      };
     })
     .filter(Boolean) as {
     id: string;
@@ -55,6 +67,7 @@ export function PlanSummaryTile({
     fact: string;
     plan: string;
     pct: number;
+    hidden: boolean;
   }[];
 
   return (
@@ -148,7 +161,15 @@ export function PlanSummaryTile({
                       wall ? "text-[16px] text-white/70" : "text-[12px] text-muted",
                     )}
                   >
-                    {r.fact} из {r.plan}
+                    {r.hidden ? (
+                      <>
+                        <Sensitive dark={wall}>{r.fact}</Sensitive> из {r.plan}
+                      </>
+                    ) : (
+                      <>
+                        {r.fact} из {r.plan}
+                      </>
+                    )}
                   </span>
                   <span
                     className={cn(
@@ -162,7 +183,11 @@ export function PlanSummaryTile({
                           : "text-[13px] text-ink",
                     )}
                   >
-                    {r.pct}%
+                    {r.hidden ? (
+                      <Sensitive dark={wall}>{r.pct}%</Sensitive>
+                    ) : (
+                      `${r.pct}%`
+                    )}
                   </span>
                 </div>
                 <div
@@ -171,6 +196,7 @@ export function PlanSummaryTile({
                     wall ? "h-2 bg-white/15" : "h-1.5 bg-surface-soft",
                   )}
                 >
+                  {/* Полоса тоже выдаёт цифру — у закрытых показателей её нет. */}
                   <div
                     className={cn(
                       "h-full rounded-full transition-[width] duration-700",
@@ -182,7 +208,7 @@ export function PlanSummaryTile({
                           ? "bg-white/70"
                           : "bg-blue-600",
                     )}
-                    style={{ width: `${Math.min(100, r.pct)}%` }}
+                    style={{ width: r.hidden ? 0 : `${Math.min(100, r.pct)}%` }}
                   />
                 </div>
               </div>
