@@ -152,7 +152,11 @@ export function BuyoutDealCard({
             <Row label="Первоначальный взнос" value={`${fmt(deal.downPayment)} ₽`} />
             <Row
               label="График"
-              value={`${deal.paymentsCount} × ${fmt(deal.paymentAmount)} ₽ ${deal.period === "week" ? "еженедельно" : "ежемесячно"}`}
+              value={
+                deal.customSchedule?.length || (deal.schedule.length > 1 && new Set(deal.schedule.map((r) => r.amount)).size > 2)
+                  ? `${deal.schedule.length || deal.paymentsCount} платежей по своему графику`
+                  : `${deal.paymentsCount} × ${fmt(deal.paymentAmount)} ₽ ${deal.period === "week" ? "еженедельно" : "ежемесячно"}`
+              }
             />
             <Row
               label="Метка на технике"

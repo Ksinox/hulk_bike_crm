@@ -409,10 +409,13 @@ export async function buyoutRoutes(app: FastifyInstance) {
       });
     }
     if (deal.downPayment > 0) {
+      // Сделка задним числом (06.09): взнос был в день первого платежа.
+      const todayIso = now.toISOString().slice(0, 10);
       await db.insert(buyoutPayments).values({
         dealId: id,
         amount: deal.downPayment,
         cashAmount: deal.downPayment,
+        paidAt: start < todayIso ? new Date(`${start}T12:00:00`) : now,
         kind: "down_payment",
         userId: req.user?.userId ?? null,
         note: "Первоначальный взнос",
