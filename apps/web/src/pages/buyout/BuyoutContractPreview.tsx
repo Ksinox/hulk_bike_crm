@@ -19,6 +19,8 @@ export function BuyoutContractPreview({
       htmlUrl={buyoutContractUrl(dealId, "html")}
       docxUrl={buyoutContractUrl(dealId, "docx")}
       docxFilename={`Договор_выкупа_${num}.doc`}
+      templateKey="contract_buyout"
+      templateName="Договор аренды с правом выкупа"
       onClose={onClose}
     />
   );

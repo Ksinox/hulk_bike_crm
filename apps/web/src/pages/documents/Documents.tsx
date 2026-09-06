@@ -14,6 +14,8 @@ import { Topbar } from "@/pages/dashboard/Topbar";
 import { PriceListView } from "@/pages/rentals/PriceListView";
 import { DocumentPreviewModal } from "@/pages/rentals/DocumentPreviewModal";
 import { StaticDocPreview } from "@/components/StaticDocPreview";
+import { BuyoutContractPreview } from "@/pages/buyout/BuyoutContractPreview";
+import { useBuyoutDeals } from "@/lib/api/buyout";
 import { useApiRentals } from "@/lib/api/rentals";
 import { TemplateEditorPage } from "./editor/TemplateEditorPage";
 import { useApiDocumentTemplates } from "@/lib/api/document-templates";
@@ -98,7 +100,7 @@ type TemplateMeta = {
   badgeTone: "blue" | "amber" | "green" | "red" | "purple";
   icon: typeof FileText;
   /** Для открытия превью: rental-based, damage, statement, static. */
-  kind: "rental" | "damage" | "statement" | "static";
+  kind: "rental" | "damage" | "statement" | "static" | "buyout";
   /** Тип документа в API (только для rental-based). */
   rentalType?:
     | "contract"
@@ -189,6 +191,16 @@ const TEMPLATES: TemplateMeta[] = [
     rentalType: "purchase_deposit",
   },
   {
+    id: "contract_buyout",
+    title: "Договор аренды с правом выкупа",
+    subtitle:
+      "Договор по образцу заказчика (06.09): стороны, срок, выкупная стоимость, платёж в период, гарантийный взнос, график, права и обязанности, реквизиты и Приложение №1 — акт приёма-передачи. Печатается из карточки выкупа.",
+    badge: "Выкуп",
+    badgeTone: "purple",
+    icon: FileSignature,
+    kind: "buyout",
+  },
+  {
     id: "damage",
     title: "Акт о повреждениях",
     subtitle:
@@ -233,11 +245,14 @@ const EDITABLE_KEYS = new Set([
   "act_swap",
   "purchase_deposit",
   "damage",
+  "contract_buyout",
 ]);
 
 function TemplatesGallery() {
   const { data: rentals = [], isLoading } = useApiRentals();
   const { data: overrides = [] } = useApiDocumentTemplates();
+  const { data: buyoutData } = useBuyoutDeals();
+  const sampleBuyout = (buyoutData?.items ?? []).find((d) => d.scooterId && d.clientId) ?? null;
   const [previewing, setPreviewing] = useState<TemplateMeta | null>(null);
   /** Что открыто в редакторе. Раньше поддерживался ещё «custom» / «new»
    *  (произвольные шаблоны юзера), но мы их выпилили — заказчик ими не
@@ -289,8 +304,9 @@ function TemplatesGallery() {
         {TEMPLATES.map((t) => {
           const Icon = t.icon;
           const disabled =
-            (t.kind === "rental" || t.kind === "damage" || t.kind === "statement") &&
-            !sampleRental;
+            ((t.kind === "rental" || t.kind === "damage" || t.kind === "statement") &&
+              !sampleRental) ||
+            (t.kind === "buyout" && !sampleBuyout);
           const overridden = hasOverride(t.id);
           return (
             <div
@@ -316,7 +332,9 @@ function TemplatesGallery() {
                         ? "из ущерба"
                         : t.kind === "statement"
                           ? "из клиента"
-                          : "готовый текст"}
+                          : t.kind === "buyout"
+                            ? "из выкупа"
+                            : "готовый текст"}
                   </div>
                 </div>
                 {overridden && (
@@ -381,7 +399,14 @@ function TemplatesGallery() {
         />
       )}
 
-      {previewing && previewing.kind !== "static" && sampleRental && (
+      {previewing?.kind === "buyout" && sampleBuyout && (
+        <BuyoutContractPreview
+          dealId={sampleBuyout.id}
+          onClose={() => setPreviewing(null)}
+        />
+      )}
+
+      {previewing && previewing.kind !== "static" && previewing.kind !== "buyout" && sampleRental && (
         <TemplatePreview
           template={previewing}
           rentalId={sampleRental.id}
