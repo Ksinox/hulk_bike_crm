@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import { Maximize2, Minimize2, RefreshCw } from "lucide-react";
-import { cn } from "@/lib/utils";
 import {
   DEFAULT_BOARD,
   PERIOD_LABEL,
@@ -8,40 +7,52 @@ import {
   type BoardPeriod,
 } from "./board";
 import { METRIC_BY_ID, periodRange, useMetricValues } from "./metrics";
-import { AnalyticsTile } from "./AnalyticsTile";
+import { AnalyticsTile, SIZE_SPAN } from "./AnalyticsTile";
 import { PlanSummaryTile } from "./PlanSummaryTile";
 
 /**
- * Экран на второй монитор (06.09).
+ * Экран на второй монитор (07.09, вторая правка заказчика).
  *
- * Открывается отдельным окном (кнопка «На второй монитор» в «Аналитике»),
- * чтобы его можно было перетащить на висящий монитор и включить полный
- * экран. Тёмный фон и крупная типографика — экран читают от двери, а не
- * с рабочего кресла. Ничего не редактируется: доска собирается в CRM,
- * а сюда прилетает сама (раз в минуту доска, раз в 30 секунд цифры).
+ * Главное требование: «он должен понимать границы нашего монитора» —
+ * экран НИКОГДА не прокручивается. Сколько бы показателей ни было на
+ * доске, они раскладываются на столько рядов, сколько нужно, ряды делят
+ * высоту поровну, а внутри плиток всё измеряется в единицах контейнера.
+ * Мелкий монитор — цифры мельче, большой — крупнее, но помещается всегда.
  */
 export function AnalyticsWall() {
   const boardQ = useAnalyticsBoard();
   const board = boardQ.data?.board ?? DEFAULT_BOARD;
   const [now, setNow] = useState(() => new Date());
   const [full, setFull] = useState(false);
+  const [vp, setVp] = useState(() => ({
+    w: typeof window === "undefined" ? 1920 : window.innerWidth,
+    h: typeof window === "undefined" ? 1080 : window.innerHeight,
+  }));
 
-  // Часы в шапке + мягкое обновление цифр.
   useEffect(() => {
     const t = window.setInterval(() => setNow(new Date()), 30_000);
     return () => window.clearInterval(t);
   }, []);
 
   useEffect(() => {
+    const onResize = () =>
+      setVp({ w: window.innerWidth, h: window.innerHeight });
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  useEffect(() => {
     document.title = board.title ? `${board.title} — Халк Байк` : "Аналитика — Халк Байк";
   }, [board.title]);
 
-  // Тёмный фон на всё окно, пока экран открыт.
   useEffect(() => {
-    const prev = document.body.style.background;
-    document.body.style.background = "#080d18";
+    const prevBg = document.body.style.background;
+    const prevOv = document.body.style.overflow;
+    document.body.style.background = "#070b14";
+    document.body.style.overflow = "hidden";
     return () => {
-      document.body.style.background = prev;
+      document.body.style.background = prevBg;
+      document.body.style.overflow = prevOv;
     };
   }, []);
 
@@ -51,6 +62,24 @@ export function AnalyticsWall() {
   }, [board]);
   const values = useMetricValues(periodOf);
   const range = periodRange(board.period, now);
+
+  /**
+   * Колонок берём по форме экрана: на широком мониторе плитки не должны
+   * растягиваться в ленты, на узком — не должны сжиматься в столбик.
+   */
+  const cols = useMemo(() => {
+    const ratio = vp.w / Math.max(1, vp.h);
+    if (vp.w < 900) return 2;
+    if (ratio > 2.1) return 8;
+    if (ratio < 1.25) return 4;
+    return 6;
+  }, [vp]);
+
+  const tiles = board.tiles.filter((t) => METRIC_BY_ID.has(t.metric));
+  const rows = useMemo(
+    () => packedRows(tiles.map((t) => SIZE_SPAN[t.size]), cols),
+    [tiles, cols],
+  );
 
   const toggleFull = async () => {
     try {
@@ -67,25 +96,22 @@ export function AnalyticsWall() {
   };
 
   return (
-    <div className="min-h-[100dvh] w-full bg-[#080d18] p-5 text-white lg:p-8">
-      <header className="mb-5 flex flex-wrap items-center gap-4 lg:mb-7">
+    <div className="flex h-[100dvh] w-full flex-col overflow-hidden bg-[#070b14] p-[1.6vmin] text-white">
+      <header className="flex shrink-0 flex-wrap items-center gap-[2vmin] px-[1vmin] pb-[1.4vmin]">
         <div className="min-w-0">
-          <div className="font-display text-[30px] font-extrabold leading-none lg:text-[40px]">
+          <div className="font-display text-[min(4.4vmin,52px)] font-extrabold leading-none tracking-[-0.02em]">
             {board.title || "Как идут дела"}
           </div>
-          <div className="mt-1 text-[15px] text-white/50 lg:text-[18px]">
+          <div className="mt-[0.5vmin] text-[min(1.9vmin,22px)] text-white/40">
             {PERIOD_LABEL[board.period]} · {range.label}
           </div>
         </div>
-        <div className="ml-auto flex items-center gap-4">
+        <div className="ml-auto flex items-center gap-[1.6vmin]">
           <div className="text-right">
-            <div className="font-display text-[30px] font-extrabold leading-none tabular-nums lg:text-[40px]">
-              {now.toLocaleTimeString("ru-RU", {
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
+            <div className="font-display text-[min(4.4vmin,52px)] font-extrabold leading-none tabular-nums">
+              {now.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}
             </div>
-            <div className="mt-1 text-[14px] text-white/40 lg:text-[16px]">
+            <div className="mt-[0.5vmin] text-[min(1.8vmin,20px)] text-white/35">
               {now.toLocaleDateString("ru-RU", {
                 day: "numeric",
                 month: "long",
@@ -97,30 +123,36 @@ export function AnalyticsWall() {
             type="button"
             onClick={() => boardQ.refetch()}
             title="Обновить"
-            className="flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-white/70 transition-colors hover:bg-white/20 hover:text-white"
+            className="flex h-[max(32px,4vmin)] w-[max(32px,4vmin)] items-center justify-center rounded-full bg-white/[0.07] text-white/60 transition-colors hover:bg-white/15 hover:text-white"
           >
-            <RefreshCw size={18} />
+            <RefreshCw className="h-[45%] w-[45%]" />
           </button>
           <button
             type="button"
             onClick={toggleFull}
             title={full ? "Выйти из полного экрана" : "Полный экран"}
-            className="flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-white/70 transition-colors hover:bg-white/20 hover:text-white"
+            className="flex h-[max(32px,4vmin)] w-[max(32px,4vmin)] items-center justify-center rounded-full bg-white/[0.07] text-white/60 transition-colors hover:bg-white/15 hover:text-white"
           >
-            {full ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+            {full ? (
+              <Minimize2 className="h-[45%] w-[45%]" />
+            ) : (
+              <Maximize2 className="h-[45%] w-[45%]" />
+            )}
           </button>
         </div>
       </header>
 
+      {/* Сетка занимает ровно остаток экрана: ряды делят высоту поровну,
+          поэтому доска любой длины укладывается без прокрутки. */}
       <div
-        className={cn(
-          "grid auto-rows-[minmax(172px,1fr)] gap-4",
-          "grid-cols-2 xl:grid-cols-4",
-        )}
+        className="grid min-h-0 flex-1 gap-[1.2vmin]"
+        style={{
+          gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
+          gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))`,
+        }}
       >
-        {board.tiles.map((tile) => {
-          const def = METRIC_BY_ID.get(tile.metric);
-          if (!def) return null;
+        {tiles.map((tile) => {
+          const def = METRIC_BY_ID.get(tile.metric)!;
           if (def.group === "plan") {
             return (
               <PlanSummaryTile
@@ -129,6 +161,7 @@ export function AnalyticsWall() {
                 tiles={board.tiles}
                 values={values}
                 periodOf={periodOf}
+                cols={cols}
                 wall
               />
             );
@@ -140,15 +173,57 @@ export function AnalyticsWall() {
               value={values[tile.metric]}
               tile={tile}
               period={periodOf(tile.metric)}
+              cols={cols}
               wall
             />
           );
         })}
       </div>
-
-      <footer className="mt-6 text-[13px] text-white/30">
-        Доска собирается в CRM: «Аналитика» → «Настроить». Этот экран обновляется сам.
-      </footer>
     </div>
   );
+}
+
+/**
+ * Сколько рядов займёт доска — повторяем раскладку CSS grid (без dense):
+ * идём по плиткам, каждую ставим в первую подходящую позицию не раньше
+ * курсора. Знать число рядов нужно заранее, иначе нечего делить поровну.
+ */
+export function packedRows(
+  spans: { col: number; row: number }[],
+  cols: number,
+): number {
+  const occupied = new Set<string>();
+  const busy = (r: number, c: number) => occupied.has(`${r}:${c}`);
+  let curR = 0;
+  let curC = 0;
+  let maxRow = 0;
+
+  for (const s of spans) {
+    const w = Math.min(s.col, cols);
+    const h = s.row;
+    let r = curR;
+    let c = curC;
+    for (;;) {
+      if (c + w > cols) {
+        r += 1;
+        c = 0;
+        continue;
+      }
+      let fits = true;
+      for (let dr = 0; dr < h && fits; dr++)
+        for (let dc = 0; dc < w; dc++)
+          if (busy(r + dr, c + dc)) {
+            fits = false;
+            break;
+          }
+      if (fits) break;
+      c += 1;
+    }
+    for (let dr = 0; dr < h; dr++)
+      for (let dc = 0; dc < w; dc++) occupied.add(`${r + dr}:${c + dc}`);
+    maxRow = Math.max(maxRow, r + h);
+    curR = r;
+    curC = c + w;
+  }
+  return Math.max(1, maxRow);
 }

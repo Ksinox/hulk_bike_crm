@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
   LayoutGrid,
@@ -65,6 +65,20 @@ export function Analytics() {
   }, [board]);
 
   const values = useMetricValues(periodOf);
+
+  /**
+   * Колонки считаем сами, а не классами: плитки знают, сколько колонок
+   * занимать, и на узком экране не должны вылезать за край сетки.
+   */
+  const [cols, setCols] = useState(() =>
+    typeof window === "undefined" ? 6 : colsFor(window.innerWidth),
+  );
+  useEffect(() => {
+    const onResize = () => setCols(colsFor(window.innerWidth));
+    onResize();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   // move вызывается из обработчиков указателя — доску берём через ref,
   // иначе в замыкании останется устаревший порядок плиток.
@@ -249,7 +263,11 @@ export function Analytics() {
         {/* Доска */}
         <div
           ref={gridRef}
-          className="grid min-w-0 flex-1 auto-rows-[minmax(116px,auto)] grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4"
+          className="grid min-w-0 flex-1 gap-3"
+          style={{
+            gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
+            gridAutoRows: `minmax(${isMobile ? 132 : 150}px, auto)`,
+          }}
         >
           {board.tiles.map((tile, i) => {
             const def = METRIC_BY_ID.get(tile.metric);
@@ -263,6 +281,7 @@ export function Analytics() {
                   tiles={board.tiles}
                   values={values}
                   periodOf={periodOf}
+                  cols={cols}
                   compact={isMobile}
                   editing={editing}
                   onRemove={() => removeTile(i)}
@@ -280,6 +299,7 @@ export function Analytics() {
                 value={values[tile.metric]}
                 tile={tile}
                 period={periodOf(tile.metric)}
+                cols={cols}
                 compact={isMobile}
                 editing={editing}
                 onSize={(size) => patchTile(i, { size })}
@@ -345,4 +365,11 @@ export function Analytics() {
       </div>
     </main>
   );
+}
+
+/** Сколько колонок помещается: телефон — 2, планшет — 4, компьютер — 6. */
+function colsFor(width: number): number {
+  if (width < 700) return 2;
+  if (width < 1180) return 4;
+  return 6;
 }

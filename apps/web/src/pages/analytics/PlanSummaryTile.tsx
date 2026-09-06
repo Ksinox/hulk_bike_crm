@@ -6,16 +6,14 @@ import type { BoardPeriod, BoardTile, TileSize } from "./board";
 import { METRIC_BY_ID, type MetricValue } from "./metrics";
 import { SIZE_SPAN } from "./AnalyticsTile";
 import { planState, STATUS_UI, type PlanState } from "./status";
-import { PlanBarThick } from "./Gauge";
 import { SizePicker } from "./SizePicker";
 
 /**
- * Плитка «План и факт» (06.09; переработана вечером по фидбэку).
+ * Плитка «План и факт» (07.09, вторая правка).
  *
- * Главный ответ на вопрос «как идут дела»: все планы доски одним списком.
- * Полосы намеренно толстые, с засечкой «где мы должны быть сегодня», и
- * каждая красится по статусу — список читается сверху вниз как светофор,
- * без чтения цифр.
+ * Список всех планов доски. Высота у плитки чужая — её задаёт сетка,
+ * поэтому строки делят её поровну: чем больше планов, тем мельче строка,
+ * но список всегда помещается целиком, без прокрутки и обрезки.
  */
 export function PlanSummaryTile({
   tile,
@@ -24,6 +22,7 @@ export function PlanSummaryTile({
   periodOf,
   wall = false,
   compact = false,
+  cols = 6,
   editing = false,
   onSize,
   onRemove,
@@ -34,11 +33,11 @@ export function PlanSummaryTile({
   tile: BoardTile;
   tiles: BoardTile[];
   values: Record<string, MetricValue>;
-  /** Действующий период плитки — от него считается ожидаемый темп. */
   periodOf: (metricId: string) => BoardPeriod;
   wall?: boolean;
-  /** Узкий экран: список растёт по содержимому, а не на две строки. */
   compact?: boolean;
+  /** Сколько колонок в сетке — чтобы плитка не вылезала за её край. */
+  cols?: number;
   editing?: boolean;
   onSize?: (size: TileSize) => void;
   onRemove?: () => void;
@@ -54,7 +53,6 @@ export function PlanSummaryTile({
     .map((t) => {
       const def = METRIC_BY_ID.get(t.metric);
       const v = values[t.metric];
-      // Раздел не запущен — в сводке такой строке делать нечего.
       if (!def || !v || def.comingSoon) return null;
       const plan = t.plan ?? 0;
       return {
@@ -76,7 +74,7 @@ export function PlanSummaryTile({
   }[];
 
   const spanStyle = {
-    gridColumn: `span ${span.col}`,
+    gridColumn: `span ${Math.min(span.col, cols)}`,
     gridRow: `span ${compact ? 1 : span.row}`,
   };
 
@@ -86,32 +84,39 @@ export function PlanSummaryTile({
         data-tile-index={index}
         data-flip-key="plan.summary"
         style={spanStyle}
-        className="rounded-[20px] border-2 border-dashed border-blue-500/70 bg-blue-500/[0.07]"
+        className="rounded-[clamp(14px,2.5cqmin,28px)] border-2 border-dashed border-blue-500/70 bg-blue-500/[0.07]"
       />
     );
   }
+
+  // Строка занимает свою долю высоты: 100% / (кол-во строк) с запасом на
+  // заголовок. Дальше всё внутри строки считается от этого кегля.
+  const n = Math.max(1, rows.length);
+  const line = `min(${(72 / n).toFixed(2)}cqh, ${wall ? 22 : 15}px)`;
 
   return (
     <div
       data-tile-index={index}
       data-flip-key="plan.summary"
-      style={spanStyle}
+      style={{ ...spanStyle, containerType: "size" }}
       className={cn(
-        "group/tile relative flex min-w-0 flex-col overflow-hidden rounded-[20px]",
+        "group/tile relative flex min-h-0 min-w-0 flex-col overflow-hidden",
+        "rounded-[clamp(14px,3cqmin,30px)] p-[clamp(10px,3.4cqmin,28px)]",
         wall
-          ? "border border-white/10 bg-white/[0.06] p-6 backdrop-blur"
-          : "bg-surface p-4 shadow-card-sm",
+          ? "border border-white/[0.07] bg-white/[0.04]"
+          : "border border-black/[0.04] bg-surface shadow-card-sm",
         editing && "select-none",
       )}
     >
-      <div className="flex items-start justify-between gap-2">
+      <div className="flex shrink-0 items-start justify-between gap-2">
         <div
           className={cn(
-            "flex items-center gap-1.5 font-bold uppercase tracking-wider",
-            wall ? "text-[16px] text-white/65" : "text-[11px] text-muted-2",
+            "flex items-center gap-[0.8cqmin] font-bold uppercase tracking-[0.14em]",
+            "text-[max(8px,min(3cqmin,17px))]",
+            wall ? "text-white/45" : "text-muted-2",
           )}
         >
-          <Target size={wall ? 16 : 12} /> План и факт
+          <Target className="h-[1em] w-[1em]" /> План и факт
         </div>
         {editing && (
           <div
@@ -144,29 +149,27 @@ export function PlanSummaryTile({
       {rows.length === 0 ? (
         <div
           className={cn(
-            "mt-3 leading-snug",
-            wall ? "text-[18px] text-white/60" : "text-[12.5px] text-muted",
+            "mt-[2cqmin] leading-snug text-[max(10px,min(3.6cqmin,20px))]",
+            wall ? "text-white/50" : "text-muted",
           )}
         >
           Планы пока не заданы. Нажмите «Настроить», выберите плитку и поставьте
           план кнопкой-мишенью — здесь появится строка «факт из плана».
         </div>
       ) : (
-        <div
-          className={cn(
-            "mt-3 flex min-h-0 flex-1 flex-col justify-center overflow-hidden",
-            wall ? "gap-3.5" : "gap-2.5",
-          )}
-        >
+        <div className="mt-[1.6cqmin] flex min-h-0 flex-1 flex-col justify-between">
           {rows.map((r) => {
             const ui = STATUS_UI[r.state.status];
             return (
-              <div key={r.id} className="flex flex-col gap-1">
-                <div className="flex items-baseline justify-between gap-2">
+              <div key={r.id} className="flex min-h-0 flex-col justify-center gap-[0.5cqh]">
+                <div
+                  className="flex items-baseline justify-between gap-[1.5cqmin]"
+                  style={{ fontSize: line }}
+                >
                   <span
                     className={cn(
-                      "min-w-0 truncate font-semibold",
-                      wall ? "text-[19px] text-white/85" : "text-[12.5px] text-ink-2",
+                      "min-w-0 flex-1 truncate font-semibold",
+                      wall ? "text-white/85" : "text-ink-2",
                     )}
                   >
                     {r.title}
@@ -174,8 +177,9 @@ export function PlanSummaryTile({
                   <span
                     className={cn(
                       "shrink-0 tabular-nums",
-                      wall ? "text-[17px] text-white/70" : "text-[12px] text-muted",
+                      wall ? "text-white/55" : "text-muted",
                     )}
+                    style={{ fontSize: `calc(${line} * 0.88)` }}
                   >
                     {r.hidden ? (
                       <>
@@ -190,9 +194,9 @@ export function PlanSummaryTile({
                   <span
                     className={cn(
                       "shrink-0 text-right font-extrabold tabular-nums",
-                      wall ? "w-[86px] text-[22px]" : "w-[52px] text-[14px]",
                       wall ? ui.inkWall : ui.ink,
                     )}
+                    style={{ fontSize: `calc(${line} * 1.12)`, width: "4.2em" }}
                   >
                     {r.hidden ? (
                       <Sensitive dark={wall}>{r.state.pct}%</Sensitive>
@@ -201,12 +205,35 @@ export function PlanSummaryTile({
                     )}
                   </span>
                 </div>
-                <PlanBarThick
-                  state={r.state}
-                  wall={wall}
-                  hidden={r.hidden}
-                  height={wall ? 16 : 9}
-                />
+                <div
+                  className={cn(
+                    "relative w-full overflow-hidden rounded-full",
+                    wall ? ui.trackWall : ui.track,
+                  )}
+                  style={{ height: `calc(${line} * 0.42)` }}
+                >
+                  <div
+                    className={cn(
+                      "h-full rounded-full transition-[width] duration-700",
+                      wall ? ui.barWall : ui.bar,
+                    )}
+                    style={{
+                      width: r.hidden ? 0 : `${Math.min(100, r.state.pct)}%`,
+                    }}
+                  />
+                  {!r.hidden &&
+                    r.state.expectedPct > 3 &&
+                    r.state.expectedPct < 98 && (
+                      <span
+                        aria-hidden
+                        className={cn(
+                          "absolute top-0 h-full w-[2px] rounded-full",
+                          wall ? "bg-white/80" : "bg-ink/50",
+                        )}
+                        style={{ left: `calc(${r.state.expectedPct}% - 1px)` }}
+                      />
+                    )}
+                </div>
               </div>
             );
           })}

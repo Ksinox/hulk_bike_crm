@@ -6,22 +6,29 @@ import { useSensitiveRevealed } from "@/lib/sensitive";
 import type { BoardPeriod, BoardTile, TileSize } from "./board";
 import type { MetricDef, MetricValue } from "./metrics";
 import { planState, STATUS_UI, TONE_UI } from "./status";
-import { PlanRing, PlanBarThick, StatusChip } from "./Gauge";
+import { HalfRing, PlanBarThick, StatusChip } from "./Gauge";
 import { SizePicker } from "./SizePicker";
 
 /**
- * Плитка показателя (06.09; переработана вечером по фидбэку заказчика).
+ * Плитка показателя (07.09, вторая правка заказчика).
  *
- * Правило одно: плитка должна читаться раньше, чем её начали читать.
- * Поэтому статус несёт не полоска в два пикселя, а сама плитка — цветная
- * заливка, толстая полоса слева и кольцо с процентом. Зелёная стена
- * плиток и один красный блок среди них видны от двери, без чтения цифр.
+ * Два требования, из которых вырос весь этот файл:
+ *
+ * 1. «Аккуратно» — бенто-сетка: крупная плитка-герой с фактурой и мягкой
+ *    маской, остальные спокойные, с тонкой рамкой; ничего не кричит,
+ *    кроме цифры.
+ * 2. «Должно подстраиваться под монитор» — ни одного фиксированного
+ *    кегля. Плитка объявлена контейнером (container-type: size), и все
+ *    размеры внутри заданы в cqmin/cqh: стала плитка меньше (мелкий
+ *    монитор или много показателей) — пропорционально уменьшились цифра,
+ *    подписи, отступы и гейдж. Ничего не обрезается и не переносится.
  */
 
+/** Ширина плитки в колонках 6-колоночной бенто-сетки и высота в рядах. */
 export const SIZE_SPAN: Record<TileSize, { col: number; row: number }> = {
   s: { col: 1, row: 1 },
   m: { col: 2, row: 1 },
-  l: { col: 2, row: 2 },
+  l: { col: 3, row: 2 },
 };
 
 export function AnalyticsTile({
@@ -31,6 +38,7 @@ export function AnalyticsTile({
   period,
   wall = false,
   compact = false,
+  cols = 6,
   editing = false,
   onSize,
   onRemove,
@@ -47,15 +55,14 @@ export function AnalyticsTile({
   wall?: boolean;
   /** Узкий экран: высокие плитки не растягиваем на две строки. */
   compact?: boolean;
+  /** Сколько колонок в сетке — чтобы плитка не вылезала за её край. */
+  cols?: number;
   editing?: boolean;
   onSize?: (size: TileSize) => void;
   onRemove?: () => void;
   onPlan?: (plan: number | null) => void;
-  /** Взяли плитку в руку (своё перетаскивание, не HTML5-drag). */
   onDragStart?: (e: React.PointerEvent) => void;
-  /** Плитка сейчас «в руке» — на её месте держим пустое гнездо. */
   ghost?: boolean;
-  /** Позиция на доске: по ней ищем, над какой плиткой курсор. */
   index?: number;
 }) {
   const [planOpen, setPlanOpen] = useState(false);
@@ -63,12 +70,10 @@ export function AnalyticsTile({
     tile.plan != null ? String(tile.plan) : "",
   );
   const span = SIZE_SPAN[tile.size];
-  const big = tile.size === "l";
+  const hero = tile.size === "l";
   const revealed = useSensitiveRevealed();
   const hidden = !!def.sensitive && !revealed;
 
-  // У показателя, раздел которого ещё не запущен, факт всегда ноль —
-  // красить плитку красным «отстаём» было бы враньём.
   const planValue =
     !def.comingSoon && tile.plan != null && tile.plan > 0 ? tile.plan : null;
   const state =
@@ -77,50 +82,33 @@ export function AnalyticsTile({
       : null;
   const tone = value?.tone ?? "neutral";
   const toneUi = TONE_UI[tone];
-  const statusUi = state ? STATUS_UI[state.status] : null;
+  const ui = state ? STATUS_UI[state.status] : null;
 
-  // Кольцо помещается только на широких плитках; на маленькой — толстая шкала.
-  const ringSize = wall ? (big ? 208 : 132) : big ? 128 : 84;
-  const ringStroke = wall ? (big ? 26 : 18) : big ? 16 : 11;
-  const withRing = state != null && tile.size !== "s" && !compact;
-  // Загрузка парка: кольцо рисует сам показатель, засечка — план.
-  const ringIsValue = withRing && !!def.percentValue;
+  // Загрузка парка сама в процентах: дуга рисует показатель, засечка — план.
+  const ringIsValue = !!def.percentValue && state != null;
   const ringState =
     ringIsValue && state
-      ? { ...state, pct: Math.round(value?.value ?? 0), expectedPct: Math.min(100, planValue!) }
+      ? {
+          ...state,
+          pct: Math.round(value?.value ?? 0),
+          expectedPct: Math.min(100, planValue!),
+        }
       : state;
-
-  // Без кольца цифре достаётся вся плитка — значит, она должна быть крупнее.
-  const numberClass = wall
-    ? big
-      ? withRing
-        ? "text-[86px] leading-[0.92]"
-        : "text-[104px] leading-[0.92]"
-      : tile.size === "m"
-        ? "text-[62px] leading-[0.92]"
-        : "text-[50px] leading-[0.92]"
-    : big
-      ? withRing
-        ? "text-[44px] leading-none"
-        : "text-[56px] leading-none"
-      : tile.size === "m"
-        ? "text-[34px] leading-none"
-        : "text-[27px] leading-none";
+  // Полукруг помещается только там, где плитка шире одной колонки.
+  const withRing = state != null && tile.size !== "s" && !compact;
 
   const spanStyle = {
-    gridColumn: `span ${span.col}`,
+    gridColumn: `span ${Math.min(span.col, cols)}`,
     gridRow: `span ${compact ? 1 : span.row}`,
   };
 
-  // Плитка «в руке» — на доске от неё остаётся пустое гнездо, и оно
-  // переезжает вместе с порядком: видно, куда плитка сядет.
   if (ghost) {
     return (
       <div
         data-tile-index={index}
         data-flip-key={def.id}
         style={spanStyle}
-        className="rounded-[20px] border-2 border-dashed border-blue-500/70 bg-blue-500/[0.07]"
+        className="rounded-[clamp(14px,2.5cqmin,28px)] border-2 border-dashed border-blue-500/70 bg-blue-500/[0.07]"
       />
     );
   }
@@ -129,50 +117,39 @@ export function AnalyticsTile({
     <div
       data-tile-index={index}
       data-flip-key={def.id}
-      style={spanStyle}
+      style={{ ...spanStyle, containerType: "size" }}
       className={cn(
-        "group/tile relative flex min-w-0 flex-col overflow-hidden rounded-[20px]",
-        wall
-          ? cn(
-              "border border-white/10 backdrop-blur",
-              statusUi ? statusUi.fillWall : "bg-white/[0.06]",
-            )
-          : cn("shadow-card-sm", statusUi ? statusUi.fill : "bg-surface"),
-        wall ? "p-6 pl-8" : "p-4 pl-5",
+        "group/tile relative flex min-h-0 min-w-0 flex-col overflow-hidden",
+        "rounded-[clamp(14px,3cqmin,30px)]",
+        "p-[clamp(10px,4cqmin,34px)]",
+        heroSurface(hero, wall, ui),
         editing && "select-none",
       )}
     >
-      {/* Полоса статуса слева — то, что видно первым и издалека. */}
-      <span
-        aria-hidden
-        className={cn(
-          "absolute inset-y-0 left-0",
-          wall ? "w-[10px]" : "w-[6px]",
-          statusUi
-            ? wall
-              ? statusUi.railWall
-              : statusUi.rail
-            : wall
-              ? toneUi.railWall
-              : toneUi.rail,
-        )}
-      />
+      {hero && <HeroTexture wall={wall} />}
 
-      {/* Заголовок */}
-      <div className="flex items-start justify-between gap-2">
-        <div
+      {/* Заголовок: пилюля у героя, микро-строчка у остальных */}
+      <header className="relative flex shrink-0 items-start justify-between gap-2">
+        <span
           className={cn(
-            "font-bold uppercase tracking-wider",
-            wall ? "text-[16px] text-white/65" : "text-[11px] text-muted-2",
+            "font-bold uppercase tracking-[0.14em]",
+            "text-[max(8px,min(3cqmin,17px))]",
+            hero
+              ? cn(
+                  "rounded-full px-[max(6px,1.6cqmin)] py-[max(2px,0.8cqmin)]",
+                  wall ? "bg-white/10 text-white/70" : "bg-ink/[0.06] text-ink/55",
+                )
+              : wall
+                ? "text-white/45"
+                : "text-muted-2",
           )}
         >
           {def.title}
-        </div>
+        </span>
         {editing && (
           <div
             className={cn(
               "flex shrink-0 items-center gap-0.5 transition-opacity",
-              // На телефоне наведения нет — панель держим видимой.
               compact ? "opacity-100" : "opacity-0 group-hover/tile:opacity-100",
             )}
             onPointerDown={(e) => e.stopPropagation()}
@@ -185,7 +162,7 @@ export function AnalyticsTile({
               <GripVertical size={15} />
             </span>
             <SizePicker value={tile.size} onChange={(s) => onSize?.(s)} />
-            {def.planable && (
+            {def.planable && !def.comingSoon && (
               <button
                 type="button"
                 title="План"
@@ -208,49 +185,57 @@ export function AnalyticsTile({
             </button>
           </div>
         )}
-      </div>
+      </header>
 
-      {/* Цифра + кольцо */}
+      {/* Тело: цифра слева, гейдж справа */}
       <div
         className={cn(
-          "mt-2 flex min-w-0 flex-1",
-          withRing
-            ? cn("items-center", big ? "gap-6" : "gap-4")
-            : "flex-col items-start justify-center",
+          "relative flex min-h-0 flex-1",
+          withRing ? "items-center gap-[3cqmin]" : "flex-col justify-center",
+          tile.size === "s" && "justify-center",
         )}
       >
-        <div className={cn("flex min-w-0 flex-1 flex-col justify-center", wall ? "gap-1.5" : "gap-1")}>
-          {!ringIsValue && (
-          <div
-            className={cn(
-              "font-display font-extrabold tabular-nums",
-              numberClass,
-              statusUi
-                ? wall
-                  ? statusUi.inkWall
-                  : statusUi.ink
-                : wall
-                  ? toneUi.inkWall
-                  : toneUi.ink,
-            )}
-          >
-            {def.sensitive ? (
-              <Sensitive dark={wall}>{value?.display ?? "—"}</Sensitive>
-            ) : (
-              (value?.display ?? "—")
-            )}
-          </div>
+        <div
+          className={cn(
+            "flex min-w-0 flex-col justify-center",
+            withRing ? "flex-1" : "w-full",
+            "gap-[max(2px,1.2cqmin)]",
           )}
+        >
+          {!ringIsValue && (
+            <div
+              className={cn(
+                "font-display font-extrabold leading-[0.9] tracking-[-0.03em] tabular-nums",
+                numberSize(tile.size, withRing),
+                hero
+                  ? wall
+                    ? "text-white"
+                    : "text-ink"
+                  : ui
+                    ? wall
+                      ? ui.inkWall
+                      : ui.ink
+                    : wall
+                      ? toneUi.inkWall
+                      : toneUi.ink,
+              )}
+            >
+              {def.sensitive ? (
+                <Sensitive dark={wall}>{value?.display ?? "—"}</Sensitive>
+              ) : (
+                (value?.display ?? "—")
+              )}
+            </div>
+          )}
+
           {value?.caption && (
             <div
               className={cn(
+                "truncate",
                 ringIsValue
-                  ? wall
-                    ? "text-[26px] font-bold text-white/85"
-                    : "text-[17px] font-bold text-ink-2"
-                  : wall
-                    ? "text-[18px] text-white/70"
-                    : "text-[12.5px] text-muted",
+                  ? "text-[max(11px,min(5cqmin,30px))] font-bold"
+                  : "text-[max(9px,min(3.6cqmin,22px))]",
+                wall ? "text-white/60" : "text-muted",
               )}
             >
               {value.caption}
@@ -259,74 +244,63 @@ export function AnalyticsTile({
           {value?.extra && (
             <div
               className={cn(
-                "font-semibold",
-                wall ? "text-[16px] text-white/60" : "text-[12px] text-muted-2",
+                "truncate font-semibold text-[max(8px,min(3.2cqmin,19px))]",
+                wall ? "text-white/45" : "text-muted-2",
               )}
             >
               {value.extra}
             </div>
           )}
           {state && !hidden && (
-            <StatusChip state={state} wall={wall} className={wall ? "mt-1 self-start" : "mt-0.5 self-start"} />
-          )}
-          {state && withRing && (
-            <div
-              className={cn(
-                wall ? "mt-1 text-[17px] text-white/55" : "text-[11.5px] text-muted-2",
-              )}
-            >
-              план {def.format(planValue!)}
-            </div>
+            <StatusChip state={state} wall={wall} className="mt-[0.6cqmin]" />
           )}
         </div>
 
         {withRing && ringState && (
-          <PlanRing
-            state={ringState}
-            size={ringSize}
-            stroke={ringStroke}
-            wall={wall}
-            hidden={hidden}
-          />
+          <div
+            className={cn(
+              "flex shrink-0 items-center justify-center",
+              hero ? "w-[46%]" : "w-[40%]",
+            )}
+          >
+            <HalfRing
+              state={ringState}
+              wall={wall}
+              hidden={hidden}
+              showLabels={hero}
+            />
+          </div>
         )}
       </div>
 
-      {/* План: подпись + толстая шкала (на плитках без кольца) */}
-      {state && !withRing && (
-        <div className={cn("flex flex-col", wall ? "mt-4 gap-2" : "mt-3 gap-1.5")}>
+      {/* План внизу: подпись + шкала там, где нет полукруга */}
+      {state && (
+        <footer className="relative mt-[2cqmin] flex shrink-0 flex-col gap-[1.2cqmin]">
           <div
             className={cn(
               "flex items-baseline justify-between gap-2",
-              wall ? "text-[16px]" : "text-[11.5px]",
+              "text-[max(8px,min(3.2cqmin,19px))]",
             )}
           >
-            <span className={wall ? "text-white/60" : "text-muted-2"}>
+            <span className={wall ? "text-white/45" : "text-muted-2"}>
               план {def.format(planValue!)}
             </span>
-            {(
+            {!withRing && (
               <span
                 className={cn(
-                  "font-bold tabular-nums",
-                  wall ? statusUi!.inkWall : statusUi!.ink,
-                  wall ? "text-[20px]" : "text-[13px]",
+                  "font-extrabold tabular-nums",
+                  "text-[max(10px,min(4.4cqmin,24px))]",
+                  wall ? ui!.inkWall : ui!.ink,
                 )}
               >
                 {hidden ? <Sensitive dark={wall}>{state.pct}%</Sensitive> : `${state.pct}%`}
               </span>
             )}
           </div>
-          {(
-            <PlanBarThick
-              state={state}
-              wall={wall}
-              hidden={hidden}
-              height={wall ? 20 : 10}
-            />
-          )}
-        </div>
+          {!withRing && <PlanBarThick state={state} wall={wall} hidden={hidden} />}
+        </footer>
       )}
 
-      {/* Ввод плана */}
       {editing && planOpen && (
         <div
           className="absolute inset-x-3 bottom-3 z-20 flex items-center gap-1.5 rounded-xl border border-border bg-surface p-2 shadow-card"
@@ -367,5 +341,56 @@ export function AnalyticsTile({
         </div>
       )}
     </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+
+/** Кегль цифры — в единицах контейнера, поэтому едет вместе с плиткой. */
+function numberSize(size: TileSize, withRing: boolean): string {
+  if (size === "l")
+    return withRing
+      ? "text-[min(15cqh,11cqw)]"
+      : "text-[min(26cqh,13cqw)]";
+  if (size === "m")
+    return withRing ? "text-[min(26cqh,9cqw)]" : "text-[min(34cqh,11cqw)]";
+  return "text-[min(26cqh,20cqw)]";
+}
+
+/** Поверхность плитки: герой заметный, остальные спокойные. */
+function heroSurface(
+  hero: boolean,
+  wall: boolean,
+  ui: (typeof STATUS_UI)[keyof typeof STATUS_UI] | null,
+): string {
+  if (wall) {
+    return hero
+      ? cn("border border-white/10", ui ? ui.fillWall : "bg-white/[0.07]")
+      : cn("border border-white/[0.07]", ui ? ui.fillWall : "bg-white/[0.04]");
+  }
+  return hero
+    ? cn("border border-black/[0.04] shadow-card", ui ? ui.fill : "bg-surface")
+    : cn("border border-black/[0.04] shadow-card-sm", ui ? ui.fill : "bg-surface");
+}
+
+/**
+ * Фактура плитки-героя: тонкая диагональная штриховка, погашенная
+ * радиальной маской — как в образце заказчика. Чистый CSS, ничего не грузим.
+ */
+function HeroTexture({ wall }: { wall: boolean }) {
+  return (
+    <span
+      aria-hidden
+      className="pointer-events-none absolute inset-0"
+      style={{
+        backgroundImage: `repeating-linear-gradient(45deg, ${
+          wall ? "rgba(255,255,255,0.10)" : "rgba(15,23,42,0.07)"
+        } 0px 1px, transparent 1px 10px)`,
+        WebkitMaskImage:
+          "radial-gradient(ellipse 80% 60% at 100% 0%, #000 55%, transparent 105%)",
+        maskImage:
+          "radial-gradient(ellipse 80% 60% at 100% 0%, #000 55%, transparent 105%)",
+      }}
+    />
   );
 }
